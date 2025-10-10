@@ -1,0 +1,46 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-09-02 18:12:03.693162",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "plant_section",
+  "disease",
+  "stage"
+ ],
+ "fields": [
+  {
+   "fieldname": "plant_section",
+   "fieldtype": "Link",
+   "label": "Plant Section",
+   "options": "Plant Section"
+  },
+  {
+   "fieldname": "disease",
+   "fieldtype": "Link",
+   "label": "Disease",
+   "options": "Plant Disease"
+  },
+  {
+   "fieldname": "stage",
+   "fieldtype": "Data",
+   "label": "Stage"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-10-10 22:23:10.286382",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Diseases Scouting Entry",
+ "owner": "judah@upande.com",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

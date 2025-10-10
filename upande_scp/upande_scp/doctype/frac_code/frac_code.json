@@ -1,0 +1,68 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "allow_rename": 1,
+ "autoname": "field:frac_code",
+ "creation": "2025-09-26 22:48:34.964492",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "frac_code",
+  "risk_level",
+  "mode_of_action",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "frac_code",
+   "fieldtype": "Data",
+   "label": "FRAC Code",
+   "unique": 1
+  },
+  {
+   "fieldname": "risk_level",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Risk Level",
+   "options": "Low\nLow to Medium\nMedium\nMedium to High\nHigh"
+  },
+  {
+   "fieldname": "mode_of_action",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Mode of Action"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-10-10 23:50:08.297112",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "FRAC Code",
+ "naming_rule": "By fieldname",
+ "owner": "judah@upande.com",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

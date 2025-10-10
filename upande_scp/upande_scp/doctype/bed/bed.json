@@ -1,0 +1,85 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "allow_rename": 1,
+ "autoname": "format:{greenhouse} - Bed {bed}",
+ "creation": "2025-09-02 20:09:36.282475",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "greenhouse",
+  "bed",
+  "bed_length",
+  "bed_width",
+  "variety",
+  "bed__area",
+  "total_variety_area"
+ ],
+ "fields": [
+  {
+   "fieldname": "greenhouse",
+   "fieldtype": "Link",
+   "label": "Greenhouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "bed",
+   "fieldtype": "Data",
+   "label": "Bed"
+  },
+  {
+   "fieldname": "bed_length",
+   "fieldtype": "Float",
+   "label": "Bed Length(m)"
+  },
+  {
+   "fieldname": "bed_width",
+   "fieldtype": "Data",
+   "label": "Bed Width"
+  },
+  {
+   "fieldname": "variety",
+   "fieldtype": "Link",
+   "label": "Variety",
+   "options": "Item"
+  },
+  {
+   "fieldname": "bed__area",
+   "fieldtype": "Float",
+   "label": "Bed Area",
+   "precision": "1"
+  },
+  {
+   "fieldname": "total_variety_area",
+   "fieldtype": "Float",
+   "label": "Total Variety Area"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-10-10 23:16:55.185682",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Bed",
+ "naming_rule": "Expression",
+ "owner": "judah@upande.com",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

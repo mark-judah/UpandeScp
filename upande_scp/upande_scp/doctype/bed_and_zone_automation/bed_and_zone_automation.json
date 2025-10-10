@@ -1,0 +1,60 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:greenhouse",
+ "creation": "2025-09-02 20:58:21.513804",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "greenhouse",
+  "sectors",
+  "zones_geojson"
+ ],
+ "fields": [
+  {
+   "fieldname": "greenhouse",
+   "fieldtype": "Link",
+   "label": "Greenhouse",
+   "options": "Warehouse",
+   "unique": 1
+  },
+  {
+   "fieldname": "sectors",
+   "fieldtype": "Table",
+   "label": "Sectors",
+   "options": "Greenhouse Sectors"
+  },
+  {
+   "fieldname": "zones_geojson",
+   "fieldtype": "Code",
+   "label": "Zones Geojson"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-10-10 23:18:07.873116",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Bed And Zone Automation",
+ "naming_rule": "By fieldname",
+ "owner": "judah@upande.com",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

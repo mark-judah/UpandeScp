@@ -1,0 +1,77 @@
+{
+ "add_total_row": 0,
+ "add_translate_data": 0,
+ "columns": [],
+ "creation": "2025-09-17 10:02:43.026126",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [
+  {
+   "fieldname": "date_of_capture",
+   "fieldtype": "Date",
+   "label": "Date",
+   "mandatory": 0,
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "greenhouse",
+   "fieldtype": "Link",
+   "label": "Greenhouse",
+   "mandatory": 0,
+   "options": "Warehouse",
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "scouts_name",
+   "fieldtype": "Link",
+   "label": "Scout",
+   "mandatory": 0,
+   "options": "Employee",
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "page_size",
+   "fieldtype": "Select",
+   "label": "Records per Page",
+   "mandatory": 0,
+   "options": "20\n40\n60\n80\n100\nAll",
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "observation_type",
+   "fieldtype": "Select",
+   "label": "Observation Type",
+   "mandatory": 0,
+   "options": "Pests\nDiseases\nWeeds\nPredators\nIncidents\nAll",
+   "wildcard_filter": 0
+  }
+ ],
+ "idx": 12,
+ "is_standard": "Yes",
+ "letter_head": "Karen Roses Horizontal Logo",
+ "letterhead": null,
+ "modified": "2025-10-11 01:09:16.170808",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Scouting Obeservations",
+ "owner": "judah@upande.com",
+ "prepared_report": 0,
+ "query": "def execute(filters=None):\n    if not filters:\n        filters = {}\n\n    columns = [\n        {\"label\": \"Date\", \"fieldname\": \"date\", \"fieldtype\": \"Date\", \"width\": 100},\n        {\"label\": \"Time\", \"fieldname\": \"time\", \"fieldtype\": \"Time\", \"width\": 100},\n        {\"label\": \"Scout Name\", \"fieldname\": \"scout_name\", \"fieldtype\": \"Data\", \"width\": 150},\n        {\"label\": \"Greenhouse\", \"fieldname\": \"greenhouse\", \"fieldtype\": \"Data\", \"width\": 120},\n        {\"label\": \"Bed\", \"fieldname\": \"bed\", \"fieldtype\": \"Data\", \"width\": 120},\n        {\"label\": \"Zone\", \"fieldname\": \"zone\", \"fieldtype\": \"Data\", \"width\": 120},\n        {\"label\": \"Diseases\", \"fieldname\": \"diseases\", \"fieldtype\": \"Data\", \"width\": 150},\n        {\"label\": \"Pests\", \"fieldname\": \"pests\", \"fieldtype\": \"Data\", \"width\": 150},\n        {\"label\": \"Weeds\", \"fieldname\": \"weeds\", \"fieldtype\": \"Data\", \"width\": 150},\n        {\"label\": \"Predators\", \"fieldname\": \"predators\", \"fieldtype\": \"Data\", \"width\": 150},\n        {\"label\": \"Incidents\", \"fieldname\": \"incidents\", \"fieldtype\": \"Data\", \"width\": 150},\n    ]\n\n    # Filters for ORM\n    scouting_entry_filters = {}\n    if filters.get(\"date_of_capture\"):\n        scouting_entry_filters[\"date_of_capture\"] = filters[\"date_of_capture\"]\n    if filters.get(\"scout\"):\n        scouting_entry_filters[\"scouts_name\"] = filters[\"scout\"]\n    if filters.get(\"greenhouse\"):\n        scouting_entry_filters[\"greenhouse\"] = filters[\"greenhouse\"]\n\n    # Pagination params from report UI\n    start = cint(filters.get(\"start\") or 0)\n    page_length = cint(filters.get(\"page_length\") or 20)\n\n    # Total count (for frontend pagination UI)\n    total_records = frappe.db.count(\"Scouting Entry\", filters=scouting_entry_filters)\n\n    # Fetch paginated entries\n    scouting_entries = frappe.get_all(\n        \"Scouting Entry\",\n        filters=scouting_entry_filters,\n        fields=[\"name\", \"scouts_name\", \"greenhouse\", \"bed\", \"zone\", \"date_of_capture\", \"time_of_capture\"],\n        limit_start=start,\n        limit_page_length=page_length,\n        order_by=\"date_of_capture desc, time_of_capture desc\",\n    )\n\n    data = []\n    for entry in scouting_entries:\n        scout_name = frappe.db.get_value(\"Employee\", entry.scouts_name, \"employee_name\") or \"N/A\"\n\n        diseases = frappe.get_all(\"Diseases Scouting Entry\", filters={\"parent\": entry.name}, fields=[\"disease\", \"stage\"])\n        pests = frappe.get_all(\"Pests Scouting Entry\", filters={\"parent\": entry.name}, fields=[\"pest\", \"count\", \"stage\"])\n        weeds = frappe.get_all(\"Weeds Scouting Entry\", filters={\"parent\": entry.name}, fields=[\"weed\"])\n        predators = frappe.get_all(\"Predators Scouting Entry\", filters={\"parent\": entry.name}, fields=[\"predator\", \"count\", \"stage\"])\n        incidents = frappe.get_all(\"Incidents Scouting Entry\", filters={\"parent\": entry.name}, fields=[\"incident\"])\n\n        row = {\n            \"date\": entry.date_of_capture,\n            \"time\": entry.time_of_capture,\n            \"scout_name\": scout_name,\n            \"greenhouse\": entry.greenhouse,\n            \"bed\": entry.bed,\n            \"zone\": entry.zone,\n            \"diseases\": \", \".join([f\"{d.disease} ({d.stage})\" for d in diseases]) if diseases else \"\",\n            \"pests\": \", \".join([f\"{p.pest} ({p.count} {p.stage})\" for p in pests]) if pests else \"\",\n            \"weeds\": \", \".join([w.weed for w in weeds]) if weeds else \"\",\n            \"predators\": \", \".join([f\"{p.predator} ({p.count} {p.stage})\" for p in predators]) if predators else \"\",\n            \"incidents\": \", \".join([i.incident for i in incidents]) if incidents else \"\",\n        }\n        data.append(row)\n\n    return columns, data\n",
+ "ref_doctype": "Scouting Entry",
+ "report_name": "Scouting Obeservations",
+ "report_script": "if not filters:\n    filters = {}\n\n# Columns\ncolumns = [\n    {\"label\": \"Date\", \"fieldname\": \"date\", \"fieldtype\": \"Date\", \"width\": 100},\n    {\"label\": \"Time\", \"fieldname\": \"time\", \"fieldtype\": \"Time\", \"width\": 100},\n    {\"label\": \"Scout Name\", \"fieldname\": \"scout_name\", \"fieldtype\": \"Data\", \"width\": 150},\n    {\"label\": \"Greenhouse\", \"fieldname\": \"greenhouse\", \"fieldtype\": \"Data\", \"width\": 120},\n    {\"label\": \"Bed\", \"fieldname\": \"bed\", \"fieldtype\": \"Data\", \"width\": 120},\n    {\"label\": \"Zone\", \"fieldname\": \"zone\", \"fieldtype\": \"Data\", \"width\": 120},\n    {\"label\": \"Diseases\", \"fieldname\": \"diseases\", \"fieldtype\": \"Data\", \"width\": 150},\n    {\"label\": \"Pests\", \"fieldname\": \"pests\", \"fieldtype\": \"Data\", \"width\": 150},\n    {\"label\": \"Weeds\", \"fieldname\": \"weeds\", \"fieldtype\": \"Data\", \"width\": 150},\n    {\"label\": \"Predators\", \"fieldname\": \"predators\", \"fieldtype\": \"Data\", \"width\": 150},\n    {\"label\": \"Incidents\", \"fieldname\": \"incidents\", \"fieldtype\": \"Data\", \"width\": 150}\n]\n\n# Page size (default = 20)\npage_size = 20\nif filters.get(\"page_size\"):\n    if filters[\"page_size\"] == \"All\":\n        page_size = None\n    else:\n        page_size = int(filters[\"page_size\"])\n\n# Observation type filter\nobservation_type = filters.get(\"observation_type\")\n\n# Build scouting entry filters\nscouting_entry_filters = {}\nif filters.get(\"date_of_capture\"):\n    scouting_entry_filters[\"date_of_capture\"] = filters[\"date_of_capture\"]\nif filters.get(\"scouts_name\"):\n    scouting_entry_filters[\"scouts_name\"] = filters[\"scouts_name\"]\nif filters.get(\"greenhouse\"):\n    scouting_entry_filters[\"greenhouse\"] = filters[\"greenhouse\"]\n\n# Fetch all matching scouting entries (no pagination yet)\nall_entries = frappe.get_all(\n    \"Scouting Entry\",\n    filters=scouting_entry_filters,\n    fields=[\"name\", \"scouts_name\", \"greenhouse\", \"bed\", \"zone\", \"date_of_capture\", \"time_of_capture\"],\n    order_by=\"date_of_capture desc, time_of_capture desc\"\n)\n\nrows = []\n\nfor entry in all_entries:\n    scout_name = \"N/A\"\n    employee_records = frappe.get_all(\n        \"Employee\",\n        filters={\"name\": entry.scouts_name},\n        fields=[\"employee_name\"]\n    )\n    if employee_records:\n        scout_name = employee_records[0].employee_name\n\n    diseases_summary = \"\"\n    pests_summary = \"\"\n    weeds_summary = \"\"\n    predators_summary = \"\"\n    incidents_summary = \"\"\n\n    # Fetch observations depending on filter\n    if not observation_type or observation_type == \"Diseases\":\n        diseases = frappe.get_all(\n            \"Diseases Scouting Entry\",\n            filters={\"parent\": entry.name},\n            fields=[\"disease\", \"stage\"]\n        )\n        if diseases:\n            diseases_summary = \", \".join([f\"{d.disease} ({d.stage})\" for d in diseases])\n\n    if not observation_type or observation_type == \"Pests\":\n        pests = frappe.get_all(\n            \"Pests Scouting Entry\",\n            filters={\"parent\": entry.name},\n            fields=[\"pest\", \"count\", \"stage\"]\n        )\n        if pests:\n            pests_summary = \", \".join([f\"{p.pest} ({p.count} {p.stage})\" for p in pests])\n\n    if not observation_type or observation_type == \"Weeds\":\n        weeds = frappe.get_all(\n            \"Weeds Scouting Entry\",\n            filters={\"parent\": entry.name},\n            fields=[\"weed\"]\n        )\n        if weeds:\n            weeds_summary = \", \".join([w.weed for w in weeds])\n\n    if not observation_type or observation_type == \"Predators\":\n        predators = frappe.get_all(\n            \"Predators Scouting Entry\",\n            filters={\"parent\": entry.name},\n            fields=[\"predator\", \"count\", \"stage\"]\n        )\n        if predators:\n            predators_summary = \", \".join([f\"{p.predator} ({p.count} {p.stage})\" for p in predators])\n\n    if not observation_type or observation_type == \"Incidents\":\n        incidents = frappe.get_all(\n            \"Incidents Scouting Entry\",\n            filters={\"parent\": entry.name},\n            fields=[\"incident\"]\n        )\n        if incidents:\n            incidents_summary = \", \".join([i.incident for i in incidents])\n\n    # Only keep row if it has data for the selected observation_type\n    if not observation_type or (\n        (observation_type == \"Diseases\" and diseases_summary) or\n        (observation_type == \"Pests\" and pests_summary) or\n        (observation_type == \"Weeds\" and weeds_summary) or\n        (observation_type == \"Predators\" and predators_summary) or\n        (observation_type == \"Incidents\" and incidents_summary)\n    ):\n        rows.append({\n            \"date\": entry.date_of_capture,\n            \"time\": entry.time_of_capture,\n            \"scout_name\": scout_name,\n            \"greenhouse\": entry.greenhouse,\n            \"bed\": entry.bed,\n            \"zone\": entry.zone,\n            \"diseases\": diseases_summary,\n            \"pests\": pests_summary,\n            \"weeds\": weeds_summary,\n            \"predators\": predators_summary,\n            \"incidents\": incidents_summary\n        })\n\n# Apply pagination AFTER filtering\nif page_size:\n    rows = rows[:page_size]\n\ndata = [columns, rows]",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Auditor"
+  },
+  {
+   "role": "Purchase User"
+  }
+ ],
+ "timeout": 0
+}

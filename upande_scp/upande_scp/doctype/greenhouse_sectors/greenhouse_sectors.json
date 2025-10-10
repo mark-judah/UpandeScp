@@ -1,0 +1,45 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-09-06 21:47:00.095692",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sector",
+  "from_bed",
+  "to_bed"
+ ],
+ "fields": [
+  {
+   "fieldname": "sector",
+   "fieldtype": "Link",
+   "label": "Sector",
+   "options": "Item"
+  },
+  {
+   "fieldname": "from_bed",
+   "fieldtype": "Int",
+   "label": "From Bed"
+  },
+  {
+   "fieldname": "to_bed",
+   "fieldtype": "Int",
+   "label": "To Bed"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-10-11 00:59:36.407910",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Greenhouse Sectors",
+ "owner": "judah@upande.com",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

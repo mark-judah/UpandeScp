@@ -1,0 +1,51 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-09-08 18:16:49.938841",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "severity",
+  "from",
+  "to",
+  "color"
+ ],
+ "fields": [
+  {
+   "fieldname": "severity",
+   "fieldtype": "Select",
+   "label": "Severity",
+   "options": "Low\nModerate\nHigh"
+  },
+  {
+   "fieldname": "from",
+   "fieldtype": "Int",
+   "label": "From"
+  },
+  {
+   "fieldname": "to",
+   "fieldtype": "Int",
+   "label": "To"
+  },
+  {
+   "fieldname": "color",
+   "fieldtype": "Color",
+   "label": "Color"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-10-11 01:01:42.810271",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Scouting Severity Scale",
+ "owner": "judah@upande.com",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

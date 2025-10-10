@@ -1,0 +1,32 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-09-18 15:53:16.486773",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "ingredient"
+ ],
+ "fields": [
+  {
+   "fieldname": "ingredient",
+   "fieldtype": "Data",
+   "label": "Ingredient"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-10-11 00:59:05.885566",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Active Ingredient",
+ "owner": "judah@upande.com",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

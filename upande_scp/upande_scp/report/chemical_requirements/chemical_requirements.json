@@ -1,0 +1,36 @@
+{
+ "add_total_row": 0,
+ "add_translate_data": 0,
+ "columns": [],
+ "creation": "2025-09-25 15:47:32.969743",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [],
+ "idx": 4,
+ "is_standard": "Yes",
+ "letter_head": "Karen Roses Horizontal Logo",
+ "letterhead": null,
+ "modified": "2025-10-11 01:09:34.253754",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Chemical Requirements",
+ "owner": "judah@upande.com",
+ "prepared_report": 0,
+ "ref_doctype": "Item",
+ "report_name": "Chemical Requirements",
+ "report_script": "if not filters:\n    filters = {}\n\ncolumns = [\n    {\"label\": \"Variety\", \"fieldname\": \"variety\", \"fieldtype\": \"Link\", \"options\": \"Item\", \"width\": 200},\n    {\"label\": \"Pest\", \"fieldname\": \"pest\", \"fieldtype\": \"Data\", \"width\": 150},\n    {\"label\": \"Scope\", \"fieldname\": \"scope\", \"fieldtype\": \"Data\", \"width\": 120},\n    {\"label\": \"Low (% Area)\", \"fieldname\": \"low\", \"fieldtype\": \"Int\", \"width\": 200},\n    {\"label\": \"Moderate (% Area)\", \"fieldname\": \"moderate\", \"fieldtype\": \"Int\", \"width\": 200},\n    {\"label\": \"High (% Area)\", \"fieldname\": \"high\", \"fieldtype\": \"Int\", \"width\": 200},\n]\n\nitem_filters = {\n    \"disabled\": 0,\n    \"item_group\": [\"in\", [\"Standard Roses\", \"Spray Roses\", \"Summer Flowers\"]],\n}\nif filters.get(\"variety\"):\n    item_filters[\"name\"] = filters[\"variety\"]\n\nitems = frappe.get_all(\"Item\", filters=item_filters, fields=[\"name\"], order_by=\"name\")\n\nrows = []\nfor item in items:\n    thresholds = frappe.get_all(\n        \"Chemical Requirements\",\n        filters={\"parent\": item.name},\n        fields=[\"pest\", \"scope\", \"low\", \"moderate\", \"high\"],\n        order_by=\"pest, scope\"\n    )\n    for t in thresholds:\n        rows.append({\n            \"variety\": item.name,\n            \"pest\": t.pest,\n            \"scope\": t.scope,\n            \"low\": t.low,\n            \"moderate\": t.moderate,\n            \"high\": t.high,\n        })\n\ndata = [columns, rows]\n",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Auditor"
+  },
+  {
+   "role": "Purchase User"
+  }
+ ],
+ "timeout": 0
+}

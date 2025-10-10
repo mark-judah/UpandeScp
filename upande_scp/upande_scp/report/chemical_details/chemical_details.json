@@ -1,0 +1,63 @@
+{
+ "add_total_row": 0,
+ "add_translate_data": 0,
+ "columns": [],
+ "creation": "2025-09-27 20:27:55.684769",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [],
+ "idx": 2,
+ "is_standard": "Yes",
+ "letter_head": "Karen Roses Horizontal Logo",
+ "letterhead": null,
+ "modified": "2025-10-11 01:08:59.190276",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Chemical Details",
+ "owner": "judah@upande.com",
+ "prepared_report": 0,
+ "ref_doctype": "Item",
+ "report_name": "Chemical Details",
+ "report_script": "columns = [\n    {\"label\": \"Chemical\", \"fieldname\": \"chemical\", \"fieldtype\": \"Data\", \"width\": 200},\n    {\"label\": \"Type\", \"fieldname\": \"custom_type\", \"fieldtype\": \"Data\", \"width\": 200},\n    {\"label\": \"FRAC\", \"fieldname\": \"custom_frac\", \"fieldtype\": \"Data\", \"width\": 150},\n    {\"label\": \"IRAC\", \"fieldname\": \"custom_irac\", \"fieldtype\": \"Data\", \"width\": 150},\n    {\"label\": \"GHS\", \"fieldname\": \"custom_ghs\", \"fieldtype\": \"Data\", \"width\": 150},\n    {\"label\": \"Hazard Classification\", \"fieldname\": \"custom_toxicity\", \"fieldtype\": \"Data\", \"width\": 150},\n    {\"label\": \"Targets\", \"fieldname\": \"targets\", \"fieldtype\": \"Data\", \"width\": 200},\n    {\"label\": \"Active Ingredients\", \"fieldname\": \"active_ingredients\", \"fieldtype\": \"Data\", \"width\": 250},\n    {\"label\": \"Re-Entry Interval (Hrs)\", \"fieldname\": \"custom_reentry_interval_hrs\", \"fieldtype\": \"Data\", \"width\": 180},\n]\n\nitems = frappe.get_all(\n    \"Item\",\n    filters={\n        \"item_group\": [\"in\", [\"AVOCADO CHEMICALS\", \"CHEMICALS\"]],\n        \"disabled\": 0\n    },\n    fields=[\n        \"name\",\n        \"item_name as chemical\",\n        \"custom_type\",\n        \"custom_toxicity\",\n        \"custom_reentry_interval_hrs\"\n    ],\n    order_by=\"item_name\"\n)\n\nrows = []\nfor i in items:\n    # --- Table MultiSelects (all use `code`) - handle None values ---\n    fracs = frappe.get_all(\"FRAC Code Filter\", filters={\"parent\": i.name}, fields=[\"code\"])\n    i.custom_frac = \", \".join([f.code or \"\" for f in fracs]) if fracs else \"\"\n    \n    iracs = frappe.get_all(\"IRAC Code Filter\", filters={\"parent\": i.name}, fields=[\"code\"])\n    i.custom_irac = \", \".join([ir.code or \"\" for ir in iracs]) if iracs else \"\"\n    \n    ghs_codes = frappe.get_all(\"GHS Code Filter\", filters={\"parent\": i.name}, fields=[\"code\"])\n    i.custom_ghs = \", \".join([g.code or \"\" for g in ghs_codes]) if ghs_codes else \"\"\n    \n    # --- Other child tables - handle None values ---\n    targets = frappe.get_all(\"Chemical Targets\", filters={\"parent\": i.name}, fields=[\"disease\", \"pest\"])\n    i.targets = \", \".join([t.disease or t.pest or \"\" for t in targets]) if targets else \"\"\n    \n    active_ingredients = frappe.get_all(\"Active Ingredient\", filters={\"parent\": i.name}, fields=[\"ingredient\"]) \n    i.active_ingredients = \", \".join([a.ingredient or \"\" for a in active_ingredients]) if active_ingredients else \"\"\n    \n    # Only add rows if something meaningful exists\n    if (\n        i.custom_frac or i.custom_irac or i.custom_ghs or i.custom_type or\n        i.custom_toxicity or i.custom_reentry_interval_hrs or\n        i.targets or i.active_ingredients\n    ):\n        rows.append(i)\n\ndata = [columns, rows]",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "Item Manager"
+  },
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Purchase User"
+  },
+  {
+   "role": "Stock Manager"
+  },
+  {
+   "role": "Desk User"
+  },
+  {
+   "role": "Stock User"
+  },
+  {
+   "role": "Manufacturing User"
+  },
+  {
+   "role": "Sales User"
+  },
+  {
+   "role": "Maintenance User"
+  },
+  {
+   "role": "Assistant Packhouse Manager"
+  },
+  {
+   "role": "AR Accountant"
+  },
+  {
+   "role": "Agriculture User"
+  }
+ ],
+ "timeout": 0
+}

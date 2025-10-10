@@ -242,3 +242,103 @@ app_license = "mit"
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+fixtures = [
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            ["dt", "=", "Warehouse"],
+            ["fieldname", "in", [
+                "custom_raw_geojson",
+                "custom_location",
+                "custom_bed_numbering",
+                "custom_zone_numbering"
+            ]]
+        ]
+    },
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            ["dt", "=", "Item"],
+            ["fieldname", "in", [
+                "custom_section_break_vuei1",
+                "custom_chemical_intervention_threshhold",
+                "custom_type",
+                "custom_frac",
+                "custom_frac_moa",
+                "custom_irac",
+                "custom_irac_moa",
+                "custom_ghs",
+                "custom_ghs_description",
+                "custom_toxicity",
+                "custom_reentry_interval_hrs",
+                "custom_active_ingredients",
+                "custom_targets"
+            ]]
+        ]
+    },
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            ["dt", "=", "BOM"],
+            ["fieldname", "in", [
+                "custom_water_hardness",
+                "custom_water_ph",
+                "custom_item_group"
+            ]]
+        ]
+    },
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            ["dt", "=", "BOM Item"],
+            ["fieldname", "in", [
+                "custom_application_rateper_ha_"
+            ]]
+        ]
+    },
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            ["dt", "=", "Work Order"],
+            ["fieldname", "in", [
+                "custom_spray_team",
+                "custom_reentry_time",
+                "custom_scheduled_application_time",
+                "custom_reentry_period_hrs",
+                "custom_scope_details",
+                "custom_water_hardness",
+                "custom_water_ph",
+                "custom_water_volume",
+                "custom_area",
+                "custom_type",
+                "custom_scope",
+                "custom_kit",
+                "custom_spray_type",
+                "custom_targets",
+                "custom_variety",
+                "custom_greenhouse",
+                "custom_application_floor_plan"
+            ]]
+        ]
+    },
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            ["dt", "=", "Work Order Item"],
+            ["fieldname", "in", [
+                "custom_updated_required_qty"
+            ]]
+        ]
+    },
+    {
+        "doctype": "Web Page",
+        "filters": [
+            ["name", "in", [
+                "variety-map",
+                "map",
+                "scouting-analysis",
+                "new-spray-plan"
+            ]]
+        ]
+    }
+]

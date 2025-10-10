@@ -1,0 +1,84 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "allow_rename": 1,
+ "autoname": "field:moa_group",
+ "creation": "2025-09-27 01:47:40.403273",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "moa_group",
+  "primary_site_of_action",
+  "sub_group_name",
+  "active_ingredients",
+  "cross_resistance_notes",
+  "moa_information_quality",
+  "physiological_category"
+ ],
+ "fields": [
+  {
+   "fieldname": "moa_group",
+   "fieldtype": "Data",
+   "label": "MOA Group",
+   "unique": 1
+  },
+  {
+   "fieldname": "primary_site_of_action",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Primary Site Of Action"
+  },
+  {
+   "fieldname": "sub_group_name",
+   "fieldtype": "Data",
+   "label": "Sub Group Name"
+  },
+  {
+   "fieldname": "active_ingredients",
+   "fieldtype": "Small Text",
+   "label": "Active Ingredients"
+  },
+  {
+   "fieldname": "cross_resistance_notes",
+   "fieldtype": "Small Text",
+   "label": "Cross Resistance Notes"
+  },
+  {
+   "fieldname": "moa_information_quality",
+   "fieldtype": "Data",
+   "label": "MOA Information Quality"
+  },
+  {
+   "fieldname": "physiological_category",
+   "fieldtype": "Data",
+   "label": "Physiological Category"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-10-10 23:52:50.132354",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "IRAC Code",
+ "naming_rule": "By fieldname",
+ "owner": "judah@upande.com",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

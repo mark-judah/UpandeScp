@@ -1,0 +1,67 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-09-17 18:00:07.569659",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item",
+  "item_name",
+  "continious_usage",
+  "period",
+  "required_break",
+  "required_break_period"
+ ],
+ "fields": [
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Item",
+   "link_filters": "[[\"Item\", \"item_group\", \"=\", \"Chemicals\"]]",
+   "options": "Item"
+  },
+  {
+   "fetch_from": "item.item_name",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name"
+  },
+  {
+   "fieldname": "continious_usage",
+   "fieldtype": "Float",
+   "label": "Continious Usage"
+  },
+  {
+   "fieldname": "period",
+   "fieldtype": "Select",
+   "label": "Continious Usage Period",
+   "options": "Week\nMonth\nYear"
+  },
+  {
+   "fieldname": "required_break",
+   "fieldtype": "Float",
+   "label": "Required Break"
+  },
+  {
+   "fieldname": "required_break_period",
+   "fieldtype": "Select",
+   "label": "Required Break Period",
+   "options": "Week\nMonth\nYear"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-10-10 23:45:13.388133",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "FRAC Chemical Frequency",
+ "owner": "judah@upande.com",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

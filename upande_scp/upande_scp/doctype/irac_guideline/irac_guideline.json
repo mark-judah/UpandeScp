@@ -1,0 +1,97 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:guideline_name",
+ "creation": "2025-09-27 01:41:13.304514",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "guideline_name",
+  "category",
+  "description",
+  "enabled",
+  "parameter_coding",
+  "parameters",
+  "irac_code_filter_rationale",
+  "irac_code_filter",
+  "error_message"
+ ],
+ "fields": [
+  {
+   "fieldname": "guideline_name",
+   "fieldtype": "Data",
+   "label": "Guideline Name",
+   "unique": 1
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "label": "Category",
+   "options": "Rotation Rules\nApplication Limits\nMixture Rules\nTiming and Strategy\nPathogen and Crop Specificity"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "parameter_coding",
+   "fieldtype": "Data",
+   "label": "Parameter Coding"
+  },
+  {
+   "fieldname": "parameters",
+   "fieldtype": "Code",
+   "label": "Parameters"
+  },
+  {
+   "fieldname": "irac_code_filter_rationale",
+   "fieldtype": "Data",
+   "label": "Irac Code Filter Rationale"
+  },
+  {
+   "fieldname": "irac_code_filter",
+   "fieldtype": "Table MultiSelect",
+   "label": "IRAC Code Filter",
+   "options": "IRAC Code Filter"
+  },
+  {
+   "fieldname": "error_message",
+   "fieldtype": "Data",
+   "label": "Error Message"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-10-10 23:52:19.683430",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "IRAC Guideline",
+ "naming_rule": "By fieldname",
+ "owner": "judah@upande.com",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

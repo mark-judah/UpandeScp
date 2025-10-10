@@ -1,0 +1,199 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2025-08-08 15:07:40.257444",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "scouts_name",
+  "greenhouse",
+  "bed",
+  "zone",
+  "column_break_frpc",
+  "time_of_capture",
+  "date_of_capture",
+  "latitude",
+  "longitude",
+  "section_break_hwtj",
+  "pests_scouting_entry",
+  "section_break_usor",
+  "diseases_scouting_entry",
+  "section_break_luxj",
+  "predators_scouting_entry",
+  "section_break_ocal",
+  "column_break_frgz",
+  "weeds_scouting_entry",
+  "section_break_dlwd",
+  "incidents_scouting_entry",
+  "section_break_betj",
+  "physiological_disorders_entry"
+ ],
+ "fields": [
+  {
+   "default": "SCE-.YYYY.-",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "no_copy": 1,
+   "options": "SCE-.YYYY.-",
+   "print_hide": 1,
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "scouts_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Scouts Name",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fieldname": "greenhouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Greenhouse",
+   "options": "Warehouse",
+   "reqd": 1
+  },
+  {
+   "fieldname": "bed",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Bed",
+   "options": "Bed",
+   "reqd": 1
+  },
+  {
+   "fieldname": "zone",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Zone",
+   "options": "Zone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_frpc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "time_of_capture",
+   "fieldtype": "Time",
+   "label": "Time Of Capture",
+   "reqd": 1
+  },
+  {
+   "fieldname": "date_of_capture",
+   "fieldtype": "Date",
+   "label": "Date Of Capture",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "latitude",
+   "fieldtype": "Data",
+   "label": "Latitude",
+   "reqd": 1
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Data",
+   "label": "Longitude",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_hwtj",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "pests_scouting_entry",
+   "fieldtype": "Table",
+   "label": "Pests",
+   "options": "Pests Scouting Entry"
+  },
+  {
+   "fieldname": "section_break_usor",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "diseases_scouting_entry",
+   "fieldtype": "Table",
+   "label": "Diseases",
+   "options": "Diseases Scouting Entry"
+  },
+  {
+   "fieldname": "section_break_luxj",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "predators_scouting_entry",
+   "fieldtype": "Table",
+   "label": "Predators",
+   "options": "Predators Scouting Entry"
+  },
+  {
+   "fieldname": "section_break_ocal",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_frgz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "weeds_scouting_entry",
+   "fieldtype": "Table",
+   "label": "Weeds",
+   "options": "Weeds Scouting Entry"
+  },
+  {
+   "fieldname": "section_break_dlwd",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "incidents_scouting_entry",
+   "fieldtype": "Table",
+   "label": "Incidents",
+   "options": "Incidents Scouting Entry"
+  },
+  {
+   "fieldname": "section_break_betj",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "physiological_disorders_entry",
+   "fieldtype": "Table",
+   "label": "Physiological Disorders",
+   "options": "Physiological Disorders Entry"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-10-11 01:01:06.419010",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Scouting Entry",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "judah@upande.com",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

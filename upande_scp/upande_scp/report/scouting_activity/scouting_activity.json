@@ -1,0 +1,38 @@
+{
+ "add_total_row": 0,
+ "add_translate_data": 0,
+ "columns": [],
+ "creation": "2025-09-12 17:56:04.626388",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "mandatory": 1,
+   "wildcard_filter": 0
+  }
+ ],
+ "idx": 10,
+ "is_standard": "Yes",
+ "letter_head": "Karen Roses Horizontal Logo",
+ "letterhead": null,
+ "modified": "2025-10-11 01:08:01.301638",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Scouting Activity",
+ "owner": "judah@upande.com",
+ "prepared_report": 0,
+ "ref_doctype": "Scouting Entry",
+ "report_name": "Scouting Activity",
+ "report_script": "date_str = filters.get(\"date\")\nif not date_str:\n    frappe.throw(\"The date is required.\")\n\n# 1. Fetch scouting entries\nscouting_entries = frappe.get_all(\n    \"Scouting Entry\",\n    fields=[\"name\", \"scouts_name\", \"greenhouse\", \"bed\", \"zone\", \"time_of_capture\"],\n    filters={\"date_of_capture\": date_str},\n    order_by=\"time_of_capture asc\"\n)\n\n# If no entries \u2192 empty report\nif not scouting_entries:\n    data = [[], []]\nelse:\n    # 2. Map scout IDs to names\n    scout_ids = []\n    for entry in scouting_entries:\n        scout_id = entry.get(\"scouts_name\")\n        if scout_id and scout_id not in scout_ids:\n            scout_ids.append(scout_id)\n\n    employee_map = frappe.get_all(\n        \"Employee\",\n        filters={\"name\": (\"in\", scout_ids)},\n        fields=[\"name\", \"employee_name\"]\n    )\n\n    emp_lookup = {}\n    for emp in employee_map:\n        emp_lookup[emp.get(\"name\")] = emp.get(\"employee_name\")\n\n    # 3. Group entries\n    scout_greenhouse_sessions = {}\n    for record in scouting_entries:\n        scout_id = record.get(\"scouts_name\")\n        scout_name = emp_lookup.get(scout_id, scout_id)\n        greenhouse = record.get(\"greenhouse\")\n        toc = record.get(\"time_of_capture\")\n\n        if scout_name and greenhouse and toc:\n            session_key = (scout_name, greenhouse)\n            if session_key not in scout_greenhouse_sessions:\n                scout_greenhouse_sessions[session_key] = []\n            scout_greenhouse_sessions[session_key].append(record)\n\n    # 4. Define columns\n    columns = [\n        {\"label\": \"Scout\", \"fieldname\": \"name\", \"fieldtype\": \"Data\", \"width\": 150},\n        {\"label\": \"Greenhouse\", \"fieldname\": \"greenhouse\", \"fieldtype\": \"Data\", \"width\": 150},\n        {\"label\": \"Start Time\", \"fieldname\": \"start\", \"fieldtype\": \"Time\", \"width\": 100},\n        {\"label\": \"End Time\", \"fieldname\": \"end\", \"fieldtype\": \"Time\", \"width\": 100},\n        {\"label\": \"Beds Covered\", \"fieldname\": \"beds\", \"fieldtype\": \"Int\", \"width\": 100},\n        {\"label\": \"Avg Zones/Bed\", \"fieldname\": \"zonesPerBed\", \"fieldtype\": \"Float\", \"width\": 120},\n        {\"label\": \"Avg Mins/Bed\", \"fieldname\": \"minutesPerBed\", \"fieldtype\": \"Float\", \"width\": 120},\n    ]\n\n    # 5. Build rows\n    rows = []\n    for key in scout_greenhouse_sessions:\n        session_records = scout_greenhouse_sessions[key]\n        scout_name = key[0]\n        greenhouse_name = key[1]\n\n        session_records.sort(key=lambda x: x['time_of_capture'])\n\n        start_time_str = session_records[0]['time_of_capture']\n        end_time_str = session_records[-1]['time_of_capture']\n\n        start_time_obj = frappe.utils.to_timedelta(start_time_str)\n        end_time_obj = frappe.utils.to_timedelta(end_time_str)\n        minutes_spent = (end_time_obj - start_time_obj).total_seconds() / 60\n\n        # Collect unique beds\n        session_beds = []\n        for e in session_records:\n            if e['bed'] not in session_beds:\n                session_beds.append(e['bed'])\n        total_session_beds = len(session_beds)\n\n        # Count zones safely\n        total_session_zones = 0\n        for bed in session_beds:\n            zones = []\n            for e in session_records:\n                if e['bed'] == bed and e['zone'] not in zones:\n                    zones.append(e['zone'])\n            total_session_zones = total_session_zones + len(zones)\n\n        if total_session_beds > 0:\n            zones_per_bed = float(total_session_zones) / float(total_session_beds)\n            minutes_per_bed = float(minutes_spent) / float(total_session_beds)\n        else:\n            zones_per_bed = 0\n            minutes_per_bed = 0\n\n        rows.append({\n            \"name\": scout_name,\n            \"greenhouse\": greenhouse_name,\n            \"start\": start_time_str,\n            \"end\": end_time_str,\n            \"beds\": total_session_beds,\n            \"zonesPerBed\": zones_per_bed,\n            \"minutesPerBed\": minutes_per_bed,\n        })\n\n    # 6. Old style output\n    data = [columns, rows]\n",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ],
+ "timeout": 0
+}

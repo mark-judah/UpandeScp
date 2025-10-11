@@ -340,5 +340,60 @@ fixtures = [
                 "new-spray-plan"
             ]]
         ]
+    },
+    {
+        "dt": "Client Script",
+        "filters": [
+            [
+                "name",
+                "in",
+                [
+                    "Bed And Zone Automation Tool",
+                    "Work Order Toggle Fields",
+                    "BOM Toggle Fields",
+                    "Items Toggle Fields",
+                    "Greenhouse Map",
+                    "Pests Legend Color Toggle",
+                    "Refresh Greenhouse Rentry Time"
+                ]
+            ]
+        ]
+    },
+    {
+        "dt": "Server Script",
+        "filters": [
+            [
+                "name",
+                "in",
+                [
+                    "Get Pests Data",
+                    "Get Plant Diseases Data",
+                    "Zone Atomation Tool",
+                    "Beds & Zones",
+                    "Get Panorama Analysis",
+                    "Get BOM Stock Balances",
+                    "Get Greenhouse Reentry Status",
+                    "Create Scouting Entry",
+                    "Pre-Validate Frac/Irac Guidelines",
+                    'Store Updated WO Required Qty',
+                    "Restore Updated WO Required Qty",
+                    "Create Chemical Plan Work Order",
+                    "Get Scouting Analysis",
+                    "Get Scouting Data"
+                ]
+            ]
+        ]
+    },
+    {
+        "dt": "Print Format",
+        "filters": [
+            [
+                "name",
+                "in",
+                [
+                    "Spray Plan"
+                ]
+            ]
+        ]
     }
 ]

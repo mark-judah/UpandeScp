@@ -246,88 +246,55 @@ fixtures = [
     {
         "doctype": "Custom Field",
         "filters": [
-            ["dt", "=", "Warehouse"],
-            ["fieldname", "in", [
-                "custom_raw_geojson",
-                "custom_location",
-                "custom_bed_numbering",
-                "custom_zone_numbering"
-            ]]
-        ]
-    },
-    {
-        "doctype": "Custom Field",
-        "filters": [
-            ["dt", "=", "Item"],
-            ["fieldname", "in", [
-                "custom_section_break_vuei1",
-                "custom_chemical_intervention_threshhold",
-                "custom_type",
-                "custom_frac",
-                "custom_frac_moa",
-                "custom_irac",
-                "custom_irac_moa",
-                "custom_ghs",
-                "custom_ghs_description",
-                "custom_toxicity",
-                "custom_reentry_interval_hrs",
-                "custom_active_ingredients",
-                "custom_targets"
-            ]]
-        ]
-    },
-    {
-        "doctype": "Custom Field",
-        "filters": [
-            ["dt", "=", "BOM"],
-            ["fieldname", "in", [
-                "custom_water_hardness",
-                "custom_water_ph",
-                "custom_item_group"
-            ]]
-        ]
-    },
-    {
-        "doctype": "Custom Field",
-        "filters": [
-            ["dt", "=", "BOM Item"],
-            ["fieldname", "in", [
-                "custom_application_rateper_ha_"
-            ]]
-        ]
-    },
-    {
-        "doctype": "Custom Field",
-        "filters": [
-            ["dt", "=", "Work Order"],
-            ["fieldname", "in", [
-                "custom_spray_team",
-                "custom_reentry_time",
-                "custom_scheduled_application_time",
-                "custom_reentry_period_hrs",
-                "custom_scope_details",
-                "custom_water_hardness",
-                "custom_water_ph",
-                "custom_water_volume",
-                "custom_area",
-                "custom_type",
-                "custom_scope",
-                "custom_kit",
-                "custom_spray_type",
-                "custom_targets",
-                "custom_variety",
-                "custom_greenhouse",
-                "custom_application_floor_plan"
-            ]]
-        ]
-    },
-    {
-        "doctype": "Custom Field",
-        "filters": [
-            ["dt", "=", "Work Order Item"],
-            ["fieldname", "in", [
-                "custom_updated_required_qty"
-            ]]
+            [
+                "name", "in", [
+                        # Warehouse fields
+                        "Warehouse-custom_zone_numbering",
+                        "Warehouse-custom_bed_numbering",
+                        "Warehouse-custom_raw_geojson",
+                        "Warehouse-custom_location",
+                        # Item fields
+                        "Item-custom_ghs",
+                        "Item-custom_irac",
+                        "Item-custom_frac",
+                        "Item-custom_type",
+                        "Item-custom_ghs_description",
+                        "Item-custom_irac_moa",
+                        "Item-custom_frac_moa",
+                        "Item-custom_active_ingredients",
+                        "Item-custom_toxicity",
+                        "Item-custom_reentry_interval_hrs",
+                        "Item-custom_targets",
+                        "Item-custom_section_break_vuei1",
+                        "Item-custom_chemical_intervention_threshhold",
+                        # BOM fields
+                        "BOM-custom_water_hardness",
+                        "BOM-custom_water_ph",
+                        "BOM-custom_item_group",
+                        # BOM Item fields
+                        "BOM Item-custom_application_rateper_ha_",
+                        # Work Order fields
+                        "Work Order-custom_spray_team",
+                        "Work Order-custom_reentry_time",
+                        "Work Order-custom_scheduled_application_time",
+                        "Work Order-custom_reentry_period_hrs",
+                        "Work Order-custom_scope_details",
+                        "Work Order-custom_water_hardness",
+                        "Work Order-custom_water_ph",
+                        "Work Order-custom_water_volume",
+                        "Work Order-custom_area",
+                        "Work Order-custom_type",
+                        "Work Order-custom_scope",
+                        "Work Order-custom_kit",
+                        "Work Order-custom_spray_type",
+                        "Work Order-custom_targets",
+                        "Work Order-custom_variety",
+                        "Work Order-custom_greenhouse",
+                        "Work Order-custom_application_floor_plan",
+                        # Work Order Item fields
+                        "Work Order Item-custom_updated_required_qty"
+                ]
+            ]
         ]
     },
     {

@@ -346,7 +346,10 @@ fixtures = [
                     "Restore Updated WO Required Qty",
                     "Create Chemical Plan Work Order",
                     "Get Scouting Analysis",
-                    "Get Scouting Data"
+                    "Get Scouting Data",
+                    "Fetch Scouting Observations",
+                    "Fetch Greenhouse Beds",
+                    "Fetch Scheduled Applications"
                 ]
             ]
         ]

@@ -1,18 +1,15 @@
 import json
 import frappe
-from shapely.geometry import Point, LineString, Polygon
+from shapely.geometry import Point, LineString
 
-def get_zone_from_coordinates(latitude, longitude, bed):
-    """
-    Determines the zone based on coordinates and bed.
-    Uses buffer around LineString to create polygons for zone detection.
-    """
+def get_zone_from_coordinates(latitude, longitude, bed, accuracy=15.0):
     try:
         lat = float(latitude)
         lon = float(longitude)
+        accuracy_m = float(accuracy)
         
         # Create point from scout's coordinates
-        scout_point = Point(lon, lat)  # Note: GeoJSON uses lon, lat order
+        scout_point = Point(lon, lat)  # GeoJSON uses lon, lat order
         
         # Get all zones for the specified bed
         zones = frappe.get_all(
@@ -22,11 +19,18 @@ def get_zone_from_coordinates(latitude, longitude, bed):
         )
         
         if not zones:
-            frappe.log_error(f"No zones found for bed: {bed}")
-            return None
+            return None, 0.0, f"No zones found for bed: {bed}"
+        
+        # Adaptive buffer based on GPS accuracy
+        # Convert meters to degrees (approximation at equator: 1 degree ≈ 111,000 meters)
+        buffer_degrees = accuracy_m / 111000.0
+        
+        # Set reasonable bounds (3m minimum, 50m maximum)
+        buffer_degrees = max(0.00003, min(buffer_degrees, 0.00045))
         
         closest_zone = None
         min_distance = float('inf')
+        confidence = 0.0
         
         for zone in zones:
             try:
@@ -36,7 +40,6 @@ def get_zone_from_coordinates(latitude, longitude, bed):
                 # Parse GeoJSON
                 geojson_data = json.loads(zone.raw_geojson)
                 
-                # Extract coordinates from the LineString
                 if (geojson_data.get("type") == "FeatureCollection" and 
                     geojson_data.get("features")):
                     
@@ -47,66 +50,102 @@ def get_zone_from_coordinates(latitude, longitude, bed):
                         coords = geometry.get("coordinates", [])
                         
                         if len(coords) >= 2:
-                            # Create a LineString from coordinates
                             line = LineString(coords)
-                            
-                            # Calculate distance from point to line
                             distance = scout_point.distance(line)
                             
-                            # Create a buffer around the line to check if point is within zone
-                            # Buffer distance can be adjusted based on your needs (in degrees)
-                            # ~0.00005 degrees ≈ 5-6 meters at the equator
-                            buffer_distance = 0.00005
-                            zone_polygon = line.buffer(buffer_distance)
+                            # Convert distance to meters for comparison
+                            distance_m = distance * 111000.0
                             
-                            # Check if point is within the buffered zone
+                            # Create adaptive buffer based on GPS accuracy
+                            zone_polygon = line.buffer(buffer_degrees)
+                            
+                            # Check if point is within buffered zone
                             if zone_polygon.contains(scout_point):
                                 if distance < min_distance:
                                     min_distance = distance
                                     closest_zone = zone.name
-                            # If no zone contains the point, track the closest one
+                                    
+                                    # Calculate confidence based on distance vs accuracy
+                                    # Very confident if distance is much less than accuracy
+                                    if distance_m <= accuracy_m * 0.3:
+                                        confidence = 1.0  # Excellent - right on the line
+                                    elif distance_m <= accuracy_m * 0.6:
+                                        confidence = 0.9  # Very good
+                                    elif distance_m <= accuracy_m:
+                                        confidence = 0.8  # Good - within accuracy circle
+                                    else:
+                                        confidence = 0.7  # Acceptable - within buffer
+                                        
+                            # If not in buffer, still track closest zone
                             elif distance < min_distance:
                                 min_distance = distance
                                 closest_zone = zone.name
+                                
+                                # Lower confidence if outside buffer
+                                distance_m = distance * 111000.0
+                                if distance_m <= accuracy_m * 1.5:
+                                    confidence = 0.5  # Fair - close but outside buffer
+                                elif distance_m <= accuracy_m * 2.0:
+                                    confidence = 0.3  # Poor - might be adjacent zone
+                                else:
+                                    confidence = 0.1  # Very poor - likely wrong zone
                 
             except Exception as e:
                 frappe.log_error(f"Error processing zone {zone.name}: {str(e)}")
                 continue
         
         if closest_zone:
-            frappe.log_error(f"Zone determined: {closest_zone} (distance: {min_distance})")
-            return closest_zone
+            min_distance_m = min_distance * 111000.0
+            
+            # Build detailed message
+            message = (f"Zone: {closest_zone} | "
+                      f"Distance: {min_distance_m:.1f}m | "
+                      f"GPS Accuracy: ±{accuracy_m:.1f}m | "
+                      f"Confidence: {confidence*100:.0f}% | "
+                      f"Buffer: {buffer_degrees*111000:.1f}m")
+            
+            frappe.log_error(message)  # Log for analysis
+            
+            return closest_zone, confidence, message
         else:
-            frappe.log_error(f"Could not determine zone for coordinates: {lat}, {lon} in bed: {bed}")
-            return None
+            return None, 0.0, f"No zone found within range (accuracy: {accuracy_m}m)"
             
     except Exception as e:
-        frappe.log_error(f"Error in get_zone_from_coordinates: {str(e)}")
-        return None
+        error_msg = f"Error in get_zone_from_coordinates: {str(e)}"
+        frappe.log_error(error_msg)
+        return None, 0.0, error_msg
+
 
 @frappe.whitelist()
 def createScoutingEntry():
     try:
         data = frappe.request.get_json()
         if not data:
-            frappe.throw(_("Scouting data is missing from the request body."))
+            frappe.throw("Scouting data is missing from the request body.")
 
         if isinstance(data, dict):
             data_list = [data]
         elif isinstance(data, list):
             data_list = data
         else:
-            frappe.throw(_("Expected a single scouting entry or a list of entries."))
+            frappe.throw("Expected a single scouting entry or a list of entries.")
 
         results = []
 
         for entry_data in data_list:
             try:
-                # Get latitude and longitude from entry data
+                # Extract location data
                 latitude = entry_data.get('latitude')
                 longitude = entry_data.get('longitude')
+                accuracy = entry_data.get('accuracy', 15.0)
                 bed = entry_data.get('bed')
                 
+                # Extract optional metadata from Flutter
+                quality_level = entry_data.get('quality_level', 'unknown')
+                samples_used = entry_data.get('samples_used', 0)
+                is_stationary = entry_data.get('is_stationary', False)
+                
+                # Validate required fields
                 if not latitude or not longitude:
                     results.append({
                         "status": "error",
@@ -121,17 +160,28 @@ def createScoutingEntry():
                     })
                     continue
                 
-                # Determine zone from coordinates
-                determined_zone = get_zone_from_coordinates(latitude, longitude, bed)
+                # Determine zone with accuracy-aware logic
+                determined_zone, confidence, zone_message = get_zone_from_coordinates(
+                    latitude, 
+                    longitude, 
+                    bed,
+                    accuracy
+                )
                 
                 if not determined_zone:
                     results.append({
                         "status": "error",
-                        "message": f"Could not determine zone for coordinates ({latitude}, {longitude}) in bed {bed}."
+                        "message": f"Could not determine zone: {zone_message}",
+                        "coordinates": f"({latitude}, {longitude})",
+                        "accuracy": accuracy,
+                        "bed": bed
                     })
                     continue
                 
-                # Check for duplicate entry with the determined zone
+                # Warn if confidence is too low (but still allow submission)
+                requires_review = confidence < 0.5
+                
+                # Check for duplicate entry
                 duplicate_entry = frappe.db.exists(
                     "Scouting Entry", {
                         "scouts_name": entry_data.get('scouts_name'),
@@ -169,11 +219,19 @@ def createScoutingEntry():
                 scout_doc.scouts_name = employee_id[0].name
                 scout_doc.greenhouse = entry_data.get('greenhouse')
                 scout_doc.bed = bed
-                scout_doc.zone = determined_zone  # Use the determined zone
+                scout_doc.zone = determined_zone
                 scout_doc.time_of_capture = entry_data.get('time_of_capture')
                 scout_doc.date_of_capture = entry_data.get('date_of_capture')
                 scout_doc.latitude = latitude
                 scout_doc.longitude = longitude
+                
+                # Store GPS metadata in custom fields (if they exist in your doctype)
+                # Uncomment if you have these fields:
+                # scout_doc.gps_accuracy = accuracy
+                # scout_doc.gps_quality = quality_level
+                # scout_doc.gps_confidence = confidence
+                # scout_doc.gps_samples = samples_used
+                # scout_doc.was_stationary = is_stationary
                 
                 def add_child_items(parent_doc, parent_field, items_list):
                     if items_list and isinstance(items_list, list):
@@ -221,15 +279,28 @@ def createScoutingEntry():
                 scout_doc.insert()
                 frappe.db.commit()
 
-                results.append({
+                # Build success response with detailed info
+                result = {
                     "status": "success",
                     "message": "Scouting Entry created successfully.",
                     "name": scout_doc.name,
-                    "determined_zone": determined_zone
-                })
+                    "determined_zone": determined_zone,
+                    "zone_confidence": round(confidence * 100, 1),
+                    "gps_accuracy": accuracy,
+                    "quality_level": quality_level,
+                    "zone_detection_details": zone_message
+                }
+                
+                # Add warning if confidence is low
+                if requires_review:
+                    result["warning"] = (f"Low confidence ({confidence*100:.0f}%) - "
+                                        f"Zone may need manual verification")
+                
+                results.append(result)
 
             except Exception as e:
                 frappe.db.rollback()
+                frappe.log_error(f"Error creating scouting entry: {str(e)}")
                 results.append({
                     "status": "error",
                     "message": str(e)
@@ -238,4 +309,8 @@ def createScoutingEntry():
         frappe.response["data"] = results
 
     except Exception as e:
-        frappe.response["data"] = str(e)
+        frappe.log_error(f"Fatal error in createScoutingEntry: {str(e)}")
+        frappe.response["data"] = {
+            "status": "error",
+            "message": str(e)
+        }

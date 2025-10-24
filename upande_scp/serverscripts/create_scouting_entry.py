@@ -1,72 +1,104 @@
 import json
 import frappe
 from shapely.geometry import Point, LineString
+from shapely.ops import transform
+from pyproj import Transformer
+from functools import partial
+
+# UTM Zone Configuration
+# IMPORTANT: Update this when deploying to different regions
+# Find your UTM zone: https://mangomap.com/robertyoung/maps/69585/what-utm-zone-am-i-in-
+UTM_ZONES = {
+    # Longitude 36°E - 42°E (Nairobi, Thika, Mombasa)
+    "Kenya_East": "EPSG:32637",
+    "Kenya_West": "EPSG:32636",      # Longitude 30°E - 36°E (Kisumu, Eldoret)
+    "Tanzania": "EPSG:32737",        # Southern hemisphere zones
+    "South_Africa": "EPSG:32735",
+    "UK": "EPSG:32630",
+    "USA_East": "EPSG:32617",
+}
+
+# SET YOUR REGION HERE - Change this based on farm location
+CURRENT_REGION = "Kenya_East"
+
 
 def get_zone_from_coordinates(latitude, longitude, bed, accuracy=15.0):
     try:
         lat = float(latitude)
         lon = float(longitude)
         accuracy_m = float(accuracy)
-        
-        # Create point from scout's coordinates
+
+        # Create point from scout's coordinates (WGS84)
         scout_point = Point(lon, lat)  # GeoJSON uses lon, lat order
-        
+
         # Get all zones for the specified bed
         zones = frappe.get_all(
             "Zone",
             filters={"bed": bed},
             fields=["name", "raw_geojson"]
         )
-        
+
         if not zones:
             return None, 0.0, f"No zones found for bed: {bed}"
-        
-        # Adaptive buffer based on GPS accuracy
-        # Convert meters to degrees (approximation at equator: 1 degree ≈ 111,000 meters)
-        buffer_degrees = accuracy_m / 111000.0
-        
-        # Set reasonable bounds (3m minimum, 50m maximum)
-        buffer_degrees = max(0.00003, min(buffer_degrees, 0.00045))
-        
+
+        # Get UTM zone from configuration
+        utm_epsg = UTM_ZONES.get(CURRENT_REGION)
+
+        # Create transformer for WGS84 to UTM
+        # This converts lat/lon (degrees) to x/y (meters) for accurate distance calculations
+        project_to_utm = Transformer.from_crs(
+            "EPSG:4326",  # FROM: GPS coordinates (universal - never changes)
+            utm_epsg,     # TO: Regional meters (changes per region)
+            always_xy=True
+        ).transform
+
+        # Transform scout point to UTM (meters)
+        scout_point_utm = transform(project_to_utm, scout_point)
+
+        # Set reasonable bounds for buffer (3m minimum, 50m maximum)
+        buffer_m = max(3.0, min(accuracy_m, 50.0))
+
         closest_zone = None
         min_distance = float('inf')
         confidence = 0.0
-        
+
         for zone in zones:
             try:
                 if not zone.raw_geojson:
                     continue
-                
+
                 # Parse GeoJSON
                 geojson_data = json.loads(zone.raw_geojson)
-                
-                if (geojson_data.get("type") == "FeatureCollection" and 
-                    geojson_data.get("features")):
-                    
+
+                if (geojson_data.get("type") == "FeatureCollection" and
+                        geojson_data.get("features")):
+
                     feature = geojson_data["features"][0]
                     geometry = feature.get("geometry", {})
-                    
+
                     if geometry.get("type") == "LineString":
                         coords = geometry.get("coordinates", [])
-                        
+
                         if len(coords) >= 2:
+                            # Create line in WGS84
                             line = LineString(coords)
-                            distance = scout_point.distance(line)
-                            
-                            # Convert distance to meters for comparison
-                            distance_m = distance * 111000.0
-                            
-                            # Create adaptive buffer based on GPS accuracy
-                            zone_polygon = line.buffer(buffer_degrees)
-                            
+
+                            # Transform line to UTM (meters)
+                            line_utm = transform(project_to_utm, line)
+
+                            # Calculate distance in meters (now accurate!)
+                            distance_m = scout_point_utm.distance(line_utm)
+
+                            # Create adaptive buffer in meters (not degrees!)
+                            zone_polygon_utm = line_utm.buffer(buffer_m)
+
                             # Check if point is within buffered zone
-                            if zone_polygon.contains(scout_point):
-                                if distance < min_distance:
-                                    min_distance = distance
+                            if zone_polygon_utm.contains(scout_point_utm):
+                                if distance_m < min_distance:
+                                    min_distance = distance_m
                                     closest_zone = zone.name
-                                    
+
                                     # Calculate confidence based on distance vs accuracy
-                                    # Very confident if distance is much less than accuracy
                                     if distance_m <= accuracy_m * 0.3:
                                         confidence = 1.0  # Excellent - right on the line
                                     elif distance_m <= accuracy_m * 0.6:
@@ -75,37 +107,35 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy=15.0):
                                         confidence = 0.8  # Good - within accuracy circle
                                     else:
                                         confidence = 0.7  # Acceptable - within buffer
-                                        
+
                             # If not in buffer, still track closest zone
-                            elif distance < min_distance:
-                                min_distance = distance
+                            elif distance_m < min_distance:
+                                min_distance = distance_m
                                 closest_zone = zone.name
-                                
+
                                 # Lower confidence if outside buffer
-                                distance_m = distance * 111000.0
                                 if distance_m <= accuracy_m * 1.5:
                                     confidence = 0.5  # Fair - close but outside buffer
                                 elif distance_m <= accuracy_m * 2.0:
                                     confidence = 0.3  # Poor - might be adjacent zone
                                 else:
                                     confidence = 0.1  # Very poor - likely wrong zone
-                
+
             except Exception as e:
-                frappe.log_error(f"Error processing zone {zone.name}: {str(e)}")
+                frappe.log_error(
+                    f"Error processing zone {zone.name}: {str(e)}")
                 continue
-        
+
         if closest_zone:
-            min_distance_m = min_distance * 111000.0
-            
-            # Build detailed message
+            # Build detailed message with actual meter distances
             message = {
-                    "distance": f"{min_distance_m:.1f}",
-                    "buffer": f"{buffer_degrees * 111000:.1f}"
-                }
+                "distance": f"{min_distance:.1f}",
+                "buffer": f"{buffer_m:.1f}"
+            }
             return closest_zone, confidence, message
         else:
             return None, 0.0, f"No zone found within range (accuracy: {accuracy_m}m)"
-            
+
     except Exception as e:
         error_msg = f"Error in get_zone_from_coordinates: {str(e)}"
         frappe.log_error(error_msg)
@@ -117,16 +147,27 @@ def createScoutingEntry():
     try:
         data = frappe.request.get_json()
         if not data:
-            frappe.throw("Scouting data is missing from the request body.")
+            frappe.response.http_status_code = 400
+            frappe.response["data"] = {
+                "status": "error",
+                "message": "Scouting data is missing from the request body."
+            }
+            return
 
         if isinstance(data, dict):
             data_list = [data]
         elif isinstance(data, list):
             data_list = data
         else:
-            frappe.throw("Expected a single scouting entry or a list of entries.")
+            frappe.response.http_status_code = 400
+            frappe.response["data"] = {
+                "status": "error",
+                "message": "Expected a single scouting entry or a list of entries."
+            }
+            return
 
         results = []
+        has_errors = False
 
         for entry_data in data_list:
             try:
@@ -135,36 +176,39 @@ def createScoutingEntry():
                 longitude = entry_data.get('longitude')
                 accuracy = entry_data.get('accuracy', 15.0)
                 bed = entry_data.get('bed')
-                
+
                 # Extract optional metadata from Flutter
                 quality_level = entry_data.get('quality_level', 'unknown')
                 samples_used = entry_data.get('samples_used', 0)
                 is_stationary = entry_data.get('is_stationary', False)
-                
+
                 # Validate required fields
                 if not latitude or not longitude:
+                    has_errors = True
                     results.append({
                         "status": "error",
                         "message": "Latitude and longitude are required."
                     })
                     continue
-                
+
                 if not bed:
+                    has_errors = True
                     results.append({
                         "status": "error",
                         "message": "Bed is required to determine zone."
                     })
                     continue
-                
+
                 # Determine zone with accuracy-aware logic
                 determined_zone, confidence, zone_message = get_zone_from_coordinates(
-                    latitude, 
-                    longitude, 
+                    latitude,
+                    longitude,
                     bed,
                     accuracy
                 )
-                
+
                 if not determined_zone:
+                    has_errors = True
                     results.append({
                         "status": "error",
                         "message": f"Could not determine zone: {zone_message}",
@@ -173,10 +217,10 @@ def createScoutingEntry():
                         "bed": bed
                     })
                     continue
-                
+
                 # Warn if confidence is too low (but still allow submission)
                 requires_review = confidence < 0.5
-                
+
                 # Check for duplicate entry
                 duplicate_entry = frappe.db.exists(
                     "Scouting Entry", {
@@ -190,26 +234,28 @@ def createScoutingEntry():
                 )
 
                 if duplicate_entry:
+                    has_errors = True
                     results.append({
                         "status": "error",
                         "message": "Duplicate scouting entry found for this scout, greenhouse, bed, zone, and time."
                     })
                     continue
-                
+
                 # Get employee ID
                 employee_id = frappe.get_all(
                     "Employee",
                     fields=["name"],
                     filters={"employee_name": entry_data.get('scouts_name')}
                 )
-                
+
                 if not employee_id:
+                    has_errors = True
                     results.append({
                         "status": "error",
                         "message": f"Employee not found: {entry_data.get('scouts_name')}"
                     })
                     continue
-                
+
                 # Create scouting entry
                 scout_doc = frappe.new_doc("Scouting Entry")
                 scout_doc.scouts_name = employee_id[0].name
@@ -220,7 +266,8 @@ def createScoutingEntry():
                 scout_doc.date_of_capture = entry_data.get('date_of_capture')
                 scout_doc.latitude = latitude
                 scout_doc.longitude = longitude
-                
+
+                # Create metadata document (will be inserted after scout_doc)
                 scout_metadata_doc = frappe.new_doc("Scouting Entry Metadata")
                 scout_metadata_doc.latitude = latitude
                 scout_metadata_doc.longitude = longitude
@@ -232,7 +279,7 @@ def createScoutingEntry():
                 scout_metadata_doc.stationary = is_stationary
                 scout_metadata_doc.zone_buffer = zone_message["buffer"]
                 scout_metadata_doc.distance = zone_message["distance"]
-                
+
                 def add_child_items(parent_doc, parent_field, items_list):
                     if items_list and isinstance(items_list, list):
                         for item in items_list:
@@ -240,28 +287,33 @@ def createScoutingEntry():
                                 continue
 
                             child_row = parent_doc.append(parent_field, {})
-                            
+
                             if parent_field == "predators_scouting_entry":
-                                child_row.plant_section = item.get("plant_section")
+                                child_row.plant_section = item.get(
+                                    "plant_section")
                                 child_row.predator = item.get("predator")
                                 child_row.stage = item.get("stage")
                                 child_row.count = item.get("count")
-                            
+
                             elif parent_field == "diseases_scouting_entry":
-                                child_row.plant_section = item.get("plant_section")
+                                child_row.plant_section = item.get(
+                                    "plant_section")
                                 child_row.disease = item.get("disease")
                                 child_row.count = item.get("count")
                                 child_row.stage = item.get("stage")
-                                
+
                             elif parent_field == "physiological_disorders_entry":
-                                child_row.plant_section = item.get("plant_section")
-                                child_row.physiological_disorders = item.get("disorder")
+                                child_row.plant_section = item.get(
+                                    "plant_section")
+                                child_row.physiological_disorders = item.get(
+                                    "disorder")
 
                             elif parent_field == "weeds_scouting_entry":
                                 child_row.weed = item.get("weed")
 
                             elif parent_field == "pests_scouting_entry":
-                                child_row.plant_section = item.get("plant_section")
+                                child_row.plant_section = item.get(
+                                    "plant_section")
                                 child_row.pest = item.get("pest")
                                 child_row.stage = item.get("stage")
                                 child_row.count = item.get("count")
@@ -269,47 +321,74 @@ def createScoutingEntry():
                             elif parent_field == "incidents_scouting_entry":
                                 child_row.incident = item.get("incident")
 
-                add_child_items(scout_doc, "predators_scouting_entry", entry_data.get("predators_scouting_entry"))
-                add_child_items(scout_doc, "diseases_scouting_entry", entry_data.get("diseases_scouting_entry"))
-                add_child_items(scout_doc, "physiological_disorders_entry", entry_data.get("physiological_disorders_entry"))
-                add_child_items(scout_doc, "weeds_scouting_entry", entry_data.get("weeds_scouting_entry"))
-                add_child_items(scout_doc, "pests_scouting_entry", entry_data.get("pests_scouting_entry"))
-                add_child_items(scout_doc, "incidents_scouting_entry", entry_data.get("incidents_scouting_entry"))
+                add_child_items(scout_doc, "predators_scouting_entry",
+                                entry_data.get("predators_scouting_entry"))
+                add_child_items(scout_doc, "diseases_scouting_entry",
+                                entry_data.get("diseases_scouting_entry"))
+                add_child_items(scout_doc, "physiological_disorders_entry", entry_data.get(
+                    "physiological_disorders_entry"))
+                add_child_items(scout_doc, "weeds_scouting_entry",
+                                entry_data.get("weeds_scouting_entry"))
+                add_child_items(scout_doc, "pests_scouting_entry",
+                                entry_data.get("pests_scouting_entry"))
+                add_child_items(scout_doc, "incidents_scouting_entry",
+                                entry_data.get("incidents_scouting_entry"))
 
+                # Insert scout entry first
                 scout_doc.insert()
+
+                # Link metadata to scout entry and insert
+                scout_metadata_doc.scouting_entry = scout_doc.name
                 scout_metadata_doc.insert()
+
+                # Commit both documents
                 frappe.db.commit()
-             
+
                 # Build success response with detailed info
                 result = {
                     "status": "success",
                     "message": "Scouting Entry created successfully.",
                     "name": scout_doc.name,
+                    "metadata_name": scout_metadata_doc.name,
                     "determined_zone": determined_zone,
                     "zone_confidence": round(confidence * 100, 1),
                     "gps_accuracy": accuracy,
                     "quality_level": quality_level,
                     "zone_detection_details": zone_message
                 }
-                
+
                 # Add warning if confidence is low
                 if requires_review:
                     result["warning"] = (f"Low confidence ({confidence*100:.0f}%) - "
-                                        f"Zone may need manual verification")
-                
+                                         f"Zone may need manual verification")
+
                 results.append(result)
 
             except Exception as e:
+                has_errors = True
                 frappe.db.rollback()
                 frappe.log_error(f"Error creating scouting entry: {str(e)}")
                 results.append({
                     "status": "error",
                     "message": str(e)
                 })
-        
+
+        # Set appropriate HTTP status code based on results
+        if has_errors:
+            if len(results) > 0 and all(r.get("status") == "error" for r in results):
+                # All entries failed
+                frappe.response.http_status_code = 400
+            else:
+                # Partial success (some succeeded, some failed)
+                frappe.response.http_status_code = 207  # Multi-Status
+        else:
+            # All succeeded
+            frappe.response.http_status_code = 200
+
         frappe.response["data"] = results
 
     except Exception as e:
+        frappe.response.http_status_code = 500
         frappe.log_error(f"Fatal error in createScoutingEntry: {str(e)}")
         frappe.response["data"] = {
             "status": "error",

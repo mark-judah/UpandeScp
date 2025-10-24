@@ -98,14 +98,10 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy=15.0):
             min_distance_m = min_distance * 111000.0
             
             # Build detailed message
-            message = (f"Zone: {closest_zone} | "
-                      f"Distance: {min_distance_m:.1f}m | "
-                      f"GPS Accuracy: ±{accuracy_m:.1f}m | "
-                      f"Confidence: {confidence*100:.0f}% | "
-                      f"Buffer: {buffer_degrees*111000:.1f}m")
-            
-            frappe.log_error(message)  # Log for analysis
-            
+            message = {
+                    "distance": f"{min_distance_m:.1f}",
+                    "buffer": f"{buffer_degrees * 111000:.1f}"
+                }
             return closest_zone, confidence, message
         else:
             return None, 0.0, f"No zone found within range (accuracy: {accuracy_m}m)"
@@ -225,13 +221,17 @@ def createScoutingEntry():
                 scout_doc.latitude = latitude
                 scout_doc.longitude = longitude
                 
-                # Store GPS metadata in custom fields (if they exist in your doctype)
-                # Uncomment if you have these fields:
-                # scout_doc.gps_accuracy = accuracy
-                # scout_doc.gps_quality = quality_level
-                # scout_doc.gps_confidence = confidence
-                # scout_doc.gps_samples = samples_used
-                # scout_doc.was_stationary = is_stationary
+                scout_metadata_doc = frappe.new_doc("Scouting Entry Metadata")
+                scout_metadata_doc.latitude = latitude
+                scout_metadata_doc.longitude = longitude
+                scout_metadata_doc.calculated_zone = determined_zone
+                scout_metadata_doc.gps_accuracy = accuracy
+                scout_metadata_doc.gps_quality = quality_level
+                scout_metadata_doc.gps_confidence = confidence
+                scout_metadata_doc.gps_samples_used = samples_used
+                scout_metadata_doc.stationary = is_stationary
+                scout_metadata_doc.zone_buffer = zone_message["buffer"]
+                scout_metadata_doc.distance = zone_message["distance"]
                 
                 def add_child_items(parent_doc, parent_field, items_list):
                     if items_list and isinstance(items_list, list):
@@ -277,8 +277,9 @@ def createScoutingEntry():
                 add_child_items(scout_doc, "incidents_scouting_entry", entry_data.get("incidents_scouting_entry"))
 
                 scout_doc.insert()
+                scout_metadata_doc.insert()
                 frappe.db.commit()
-
+             
                 # Build success response with detailed info
                 result = {
                     "status": "success",

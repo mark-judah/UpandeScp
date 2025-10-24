@@ -1,0 +1,110 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:SEM-{###}",
+ "creation": "2025-10-24 16:16:17.229191",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "latitude",
+  "longitude",
+  "zone_buffer",
+  "calculated_zone",
+  "distance",
+  "gps_accuracy",
+  "gps_quality",
+  "gps_confidence",
+  "gps_samples_used",
+  "stationary"
+ ],
+ "fields": [
+  {
+   "fieldname": "latitude",
+   "fieldtype": "Data",
+   "label": "Latitude"
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Data",
+   "label": "Longitude"
+  },
+  {
+   "description": "Auto-determined zone from GPS coordinates",
+   "fieldname": "calculated_zone",
+   "fieldtype": "Link",
+   "label": "Calculated Zone",
+   "options": "Zone"
+  },
+  {
+   "description": "The accuracy comes from the location service on the moble app",
+   "fieldname": "gps_accuracy",
+   "fieldtype": "Data",
+   "label": "GPS Accuracy"
+  },
+  {
+   "description": "GPS signal quality assessment",
+   "fieldname": "gps_quality",
+   "fieldtype": "Data",
+   "label": "GPS Quality"
+  },
+  {
+   "description": "1.0: Excellent - On zone line\n0.9: Very Good - High precision\n0.8: Good - Within accuracy range\n0.7: Acceptable - Within buffer\n0.5: Fair - Near buffer edge\n0.3: Poor - May need verification\n0.1: Very Poor - Manual review required",
+   "fieldname": "gps_confidence",
+   "fieldtype": "Data",
+   "label": "GPS Confidence"
+  },
+  {
+   "description": "Number of GPS samples averaged for this reading",
+   "fieldname": "gps_samples_used",
+   "fieldtype": "Data",
+   "label": "GPS Samples Used"
+  },
+  {
+   "default": "0",
+   "description": "Whether device was stationary during capture",
+   "fieldname": "stationary",
+   "fieldtype": "Check",
+   "label": "Stationary"
+  },
+  {
+   "description": "A buffer is created around the zone based on the gps accuracy. The buffer is a rectangular polygon around the zone.",
+   "fieldname": "zone_buffer",
+   "fieldtype": "Float",
+   "label": "Zone Buffer (m)"
+  },
+  {
+   "description": "Distance from scout to nearest zone boundary (meters)",
+   "fieldname": "distance",
+   "fieldtype": "Float",
+   "label": "Distance (m)"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-10-24 18:35:44.886378",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Scouting Entry Metadata",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

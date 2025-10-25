@@ -5,24 +5,22 @@ from shapely.ops import transform
 from pyproj import Transformer
 from functools import partial
 
-# UTM Zone Configuration
-# IMPORTANT: Update this when deploying to different regions
-# Find your UTM zone: https://mangomap.com/robertyoung/maps/69585/what-utm-zone-am-i-in-
-UTM_ZONES = {
-    # Longitude 36°E - 42°E (Nairobi, Thika, Mombasa)
-    "Kenya_East": "EPSG:32637",
-    "Kenya_West": "EPSG:32636",      # Longitude 30°E - 36°E (Kisumu, Eldoret)
-    "Tanzania": "EPSG:32737",        # Southern hemisphere zones
-    "South_Africa": "EPSG:32735",
-    "UK": "EPSG:32630",
-    "USA_East": "EPSG:32617",
-}
+def get_dynamic_utm_epsg(latitude, longitude):
+    """Calculates the correct UTM EPSG code based on a point's coordinates."""
+    
+    # 1. Determine Zone Number (1 to 60)
+    zone_number = int((longitude + 180) / 6) + 1
 
-# SET YOUR REGION HERE - Change this based on farm location
-CURRENT_REGION = "Kenya_East"
+    # 2. Determine Hemisphere Prefix (326 for N, 327 for S)
+    if latitude >= 0:
+        epsg_prefix = 326 # Northern Hemisphere
+    else:
+        epsg_prefix = 327 # Southern Hemisphere
 
+    # 3. Construct the full EPSG code string
+    return f"EPSG:{epsg_prefix}{zone_number:02d}"
 
-def get_zone_from_coordinates(latitude, longitude, bed, accuracy=15.0):
+def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
     try:
         lat = float(latitude)
         lon = float(longitude)
@@ -42,7 +40,7 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy=15.0):
             return None, 0.0, f"No zones found for bed: {bed}"
 
         # Get UTM zone from configuration
-        utm_epsg = UTM_ZONES.get(CURRENT_REGION)
+        utm_epsg = get_dynamic_utm_epsg(lat, lon)
 
         # Create transformer for WGS84 to UTM
         # This converts lat/lon (degrees) to x/y (meters) for accurate distance calculations
@@ -80,6 +78,7 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy=15.0):
                         coords = geometry.get("coordinates", [])
 
                         if len(coords) >= 2:
+                            frappe.log_error("Coords", str(coords))
                             # Create line in WGS84
                             line = LineString(coords)
 
@@ -174,7 +173,7 @@ def createScoutingEntry():
                 # Extract location data
                 latitude = entry_data.get('latitude')
                 longitude = entry_data.get('longitude')
-                accuracy = entry_data.get('accuracy', 15.0)
+                accuracy = entry_data.get('accuracy')
                 bed = entry_data.get('bed')
 
                 # Extract optional metadata from Flutter

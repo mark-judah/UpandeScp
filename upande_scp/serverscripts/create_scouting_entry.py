@@ -306,7 +306,7 @@ def createScoutingEntry():
                                 child_row.plant_section = item.get(
                                     "plant_section")
                                 child_row.physiological_disorders = item.get(
-                                    "disorder")
+                                    "physiological_disorders")
 
                             elif parent_field == "weeds_scouting_entry":
                                 child_row.weed = item.get("weed")

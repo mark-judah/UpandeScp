@@ -242,9 +242,9 @@ app_license = "mit"
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 website_route_rules = [
-    {"from_route": "/scouts-map", "to_route": "/observation_map"},
-    {"from_route": "/observation-map", "to_route": "/observation_map"},
-    {"from_route": "/variety-map", "to_route": "/variety_map"}
+    {"from_route": "/scouts-map", "to_route": "/scouts_map"},
+    {"from_route": "/observations-map", "to_route": "/observations_map"},
+    {"from_route": "/variety-map", "to_route": "/variety_map"},
 ]
 
 fixtures = [
@@ -347,7 +347,6 @@ fixtures = [
                     "Create Chemical Plan Work Order",
                     "Get Scouting Analysis",
                     "Get Scouting Data",
-                    "Fetch Scouting Observations",
                     "Fetch Greenhouse Beds",
                     "Fetch Scheduled Applications"
                 ]

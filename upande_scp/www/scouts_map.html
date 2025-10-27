@@ -1,0 +1,460 @@
+{% extends "upande_scp/www/base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+
+{% block page_content %}
+<style>
+    html,
+    body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        overflow-x: hidden;
+    }
+
+    #map-page {
+        height: 100vh;
+        width: 100%;
+        position: relative;
+    }
+
+    #map-container,
+    #map {
+        height: 100%;
+        width: 100%;
+    }
+
+    #date-filter-container {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        z-index: 1001;
+        background: white;
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
+        display: flex;
+        align-items: center;
+    }
+
+    #date-filter-container input[type="date"] {
+        border: 1px solid #ccc;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-size: 0.875rem;
+    }
+
+    #scout-legend {
+        position: absolute;
+        bottom: 5rem;
+        left: 1rem;
+        z-index: 1000;
+        background: white;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
+        max-height: 50%;
+        overflow-y: auto;
+    }
+
+    #scout-legend label {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .line-id-label {
+        font-family: sans-serif;
+        pointer-events: none;
+    }
+
+    .leaflet-top.leaflet-right {
+        margin-top: 4rem !important;
+    }
+
+    #map-loader {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.9);
+        z-index: 2000;
+        display: none;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        color: #555;
+        font-family: sans-serif;
+    }
+
+    .spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 10px;
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+</head>
+
+<div class="tw-bg-white tw-font-sans">
+    <div class="main-container">
+        <div id="map-loader">
+            <div class="spinner"></div>
+            <p>Loading scouting data...</p>
+        </div>
+        <div id="map-page" class="tw-w-full tw-h-full tw-p-0 tw-flex tw-flex-col">
+            <div id="date-filter-container" class="tw-flex tw-items-center tw-space-x-2">
+                <label for="scout-date-picker" class="tw-text-sm tw-font-medium">Date:</label>
+                <input type="date" id="scout-date-picker" class="tw-text-sm" />
+            </div>
+            <div id="scout-legend" class="tw-bg-white tw-p-4 tw-rounded tw-shadow tw-space-y-2 tw-max-w-xs">
+                <p class="tw-text-sm tw-font-semibold tw-mb-1">Scout Coverage</p>
+            </div>
+            <div id="map-container" class="tw-w-full tw-flex-grow">
+                <div id="map" class="tw-w-full tw-h-full"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-providers/1.13.0/leaflet-providers.min.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://unpkg.com/protomaps-leaflet@5.0.0/dist/protomaps-leaflet.js"></script>
+
+    <script>
+        window.onload = function () {
+            window.map = null;
+            let mapInitialized = false;
+            window.zoneLayer = null;
+            window.lineIdLabels = null;
+            window.scoutLayers = {};
+            window.scoutedBedOverlay = null;
+            let protomapsLayer = null;
+            let layersControl = null;
+            let darkFlavor = false;
+            window.lastScoutingData = null;
+            window.allLatLngs = [];
+            const palette = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#f43f5e', '#22c55e'];
+
+            const showLoader = () => {
+                const loader = document.getElementById('map-loader');
+                if (loader) loader.style.display = 'flex';
+            };
+
+            const hideLoader = () => {
+                const loader = document.getElementById('map-loader');
+                if (loader) loader.style.display = 'none';
+            };
+
+            const generateScoutColors = (data) => {
+                const scouts = (data.scouting_entries || []).map(i => i.scouts_name).filter(Boolean);
+                const unique = new Set(scouts);
+                const colors = {};
+                let idx = 0;
+                unique.forEach(name => {
+                    colors[name] = palette[idx % palette.length];
+                    idx++;
+                });
+                return colors;
+            };
+
+            const getGeoJsonCentroid = (geojson) => {
+                try {
+                    const feature = geojson.features[0];
+                    if (!feature) return null;
+                    if (feature.geometry && feature.geometry.coordinates) {
+                        const centroid = turf.centroid(feature);
+                        const [lon, lat] = centroid.geometry.coordinates;
+                        return [lat, lon];
+                    }
+                } catch (e) {
+                    console.error("Error calculating centroid:", e);
+                }
+                return null;
+            };
+
+            function getEdgeMidpoint(coords) {
+                try {
+                    const pts = coords.map(c => [c[1], c[0]]);
+                    let maxDist = 0, pair = [];
+                    for (let i = 0; i < pts.length; i++) {
+                        const p1 = pts[i];
+                        const p2 = pts[(i + 1) % pts.length];
+                        const dist = turf.distance(turf.point([p1[1], p1[0]]), turf.point([p2[1], p2[0]]));
+                        if (dist > maxDist) {
+                            maxDist = dist;
+                            pair = [p1, p2];
+                        }
+                    }
+                    return [(pair[0][0] + pair[1][0]) / 2, (pair[0][1] + pair[1][1]) / 2];
+                } catch {
+                    return coords[0] ? [coords[0][1], coords[0][0]] : null;
+                }
+            }
+
+            function generateWalkPath(start, end) {
+                if (!start || !end) return [];
+                return [start, end];
+            }
+
+            const initializeMap = () => {
+                if (mapInitialized) return;
+                window.map = L.map('map', { zoomSnap: 0.1, zoomDelta: 0.1, maxZoom: 22.4, zoomControl: false });
+                mapInitialized = true;
+                renderBaseLayers();
+                map.setView([0.0685, 35.7476], 18);
+
+                const picker = document.getElementById('scout-date-picker');
+                const today = new Date().toISOString().slice(0, 10);
+                picker.value = today;
+                fetchAllData(today);
+                picker.addEventListener('change', e => fetchAllData(e.target.value));
+            };
+
+            const renderBaseLayers = () => {
+                const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 25 });
+                const pmtilesUrl = 'https://res.cloudinary.com/dorft5vxy/raw/upload/v1757410567/eldama-ravine_gdtrsv.pmtiles';
+                protomapsLayer = protomapsL.leafletLayer({
+                    url: pmtilesUrl,
+                    flavor: "light",
+                    attribution: "© Protomaps © OpenStreetMap"
+                });
+                protomapsLayer.addTo(map);
+                layersControl = L.control.layers({ "Satellite": googleSat, "Protomaps": protomapsLayer }, {}, { collapsed: false }).addTo(map);
+            };
+
+            const fetchAllData = (date) => {
+                if (window.scoutedBedOverlay) map.removeLayer(window.scoutedBedOverlay);
+                window.scoutLayers = {};
+                document.getElementById('scout-legend').innerHTML = '<p class="tw-text-sm tw-font-semibold tw-mb-1">Scout Coverage</p>';
+                window.allLatLngs = [];
+
+                showLoader();
+                fetch('/api/method/upande_scp.serverscripts.get_scouting_analysis.getScoutingAnalysis', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Frappe-CSRF-Token': "{{csrf_token}}"
+                    },
+                    body: JSON.stringify({
+                        date: date
+                    })
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(r => {
+                        const allData = r.message || r.data;
+                        if (allData) {
+                            window.lastScoutingData = allData;
+                            allData.scouting_entries = (allData.scouting_entries || []).filter(e => e.scouts_name);
+                            const scoutColors = generateScoutColors(allData);
+                            window.scoutedBedOverlay = L.layerGroup().addTo(map);
+
+                            renderZones(allData);
+                            renderScoutFlowLines(allData.scouting_entries || [], allData.all_zones_geojson || [], scoutColors);
+                            renderScoutedBeds(allData.scouting_entries || [], allData.all_zones_geojson || [], scoutColors);
+                            renderScoutLegend(scoutColors);
+
+                            if (window.allLatLngs.length) {
+                                map.fitBounds(L.latLngBounds(window.allLatLngs), { padding: [50, 50] });
+                                map.setZoom(Math.max(18, map.getZoom()));
+                            }
+                        } else {
+                            document.getElementById('scout-legend').innerHTML = '<p>No Scout Data</p>';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching scouting data:', error);
+                        document.getElementById('scout-legend').innerHTML = `<p>Error fetching data: ${error.message}</p>`;
+                    })
+                    .finally(() => {
+                        hideLoader();
+                    });
+            };
+
+            function renderScoutedBeds(scoutingData, zonesGeojson, scoutColors) {
+                const zoneScoutMap = {};
+                scoutingData.forEach(entry => {
+                    if (!zoneScoutMap[entry.zone]) {
+                        zoneScoutMap[entry.zone] = { scout: entry.scouts_name, count: 0, latestEntry: null };
+                    }
+                    zoneScoutMap[entry.zone].count++;
+                    if (!zoneScoutMap[entry.zone].latestEntry || entry.creation > zoneScoutMap[entry.zone].latestEntry) {
+                        zoneScoutMap[entry.zone].latestEntry = entry.creation;
+                    }
+                    if (!window.scoutLayers[entry.scouts_name]) window.scoutLayers[entry.scouts_name] = L.layerGroup();
+                });
+
+                const zoneMap = new Map((zonesGeojson || []).map(z => [z.name, z]));
+                Object.entries(zoneScoutMap).forEach(([zoneName, info]) => {
+                    const zone = zoneMap.get(zoneName);
+                    if (!zone) return;
+                    try {
+                        const geo = JSON.parse(zone.raw_geojson);
+                        const coords = geo.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
+                        const color = scoutColors[info.scout];
+
+                        const line = L.polyline(coords, { color, weight: 0, opacity: 1, pane: 'overlayPane' });
+
+                        line.bindTooltip(`<div class='tw-text-xs'><strong>${zone.name}</strong><br>${info.scout}<br>${info.count} entries</div>`);
+                        window.scoutLayers[info.scout].addLayer(line);
+                        window.allLatLngs.push(...coords);
+                        if (!window.scoutedBedOverlay.hasLayer(window.scoutLayers[info.scout])) window.scoutedBedOverlay.addLayer(window.scoutLayers[info.scout]);
+                    } catch { }
+                });
+            }
+
+            function renderScoutFlowLines(scoutingEntries, zonesGeojson, scoutColors) {
+                const zoneMap = new Map((zonesGeojson || []).map(z => [z.name, z]));
+                const movement = new Map();
+
+                scoutingEntries.sort((a, b) => new Date(a.creation) - new Date(b.creation))
+                    .forEach(entry => {
+                        const zone = zoneMap.get(entry.zone);
+                        if (!zone) return;
+                        try {
+                            const geo = JSON.parse(zone.raw_geojson);
+                            const centroid = getGeoJsonCentroid(geo);
+                            if (centroid) {
+                                if (!movement.has(entry.scouts_name)) movement.set(entry.scouts_name, []);
+                                const path = movement.get(entry.scouts_name);
+                                const last = path.slice(-1)[0];
+                                if (!last || last.zoneName !== entry.zone) {
+                                    path.push({ zoneName: entry.zone, coords: geo.features[0].geometry.coordinates, centroid });
+                                }
+                            }
+                        } catch (e) { console.warn("flow error", e); }
+                    });
+
+                movement.forEach((visits, scoutName) => {
+                    const color = scoutColors[scoutName] || palette[0];
+                    if (!window.scoutLayers[scoutName]) window.scoutLayers[scoutName] = L.layerGroup();
+                    const group = window.scoutLayers[scoutName];
+                    for (let i = 0; i < visits.length - 1; i++) {
+                        const start = getEdgeMidpoint(visits[i].coords);
+                        const end = getEdgeMidpoint(visits[i + 1].coords);
+
+                        const pathCoords = generateWalkPath(start, end);
+
+                        const line = L.polyline(pathCoords, {
+                            color,
+                            weight: 2.5,
+                            opacity: 0.8,
+                            smoothFactor: 1.2,
+                            lineJoin: 'round'
+                        });
+                        line.bindTooltip(`<div class='tw-text-xs'><strong>${scoutName}</strong><br>${visits[i].zoneName} → ${visits[i + 1].zoneName}</div>`);
+                        group.addLayer(line);
+                    }
+                });
+            }
+
+            const renderScoutLegend = (scoutColors) => {
+                const legend = document.getElementById('scout-legend');
+                legend.innerHTML = '<p class="tw-text-sm tw-font-semibold tw-mb-1">Show Scouts</p>';
+                Object.keys(window.scoutLayers).forEach(name => {
+                    const color = scoutColors[name];
+                    const item = document.createElement('div');
+                    item.className = 'tw-flex tw-items-center tw-space-x-2';
+                    item.innerHTML = `
+                        <input type="checkbox" data-scout="${name}" checked class="tw-h-4 tw-w-4 tw-rounded tw-text-blue-600" />
+                        <span class="tw-w-3 tw-h-3 tw-rounded-full" style="background:${color}"></span>
+                        <label class="tw-text-sm">${name}</label>`;
+                    const checkbox = item.querySelector('input');
+                    checkbox.addEventListener('change', e => {
+                        const scoutName = e.target.dataset.scout;
+                        const layer = window.scoutLayers[scoutName];
+                        if (layer) {
+                            if (e.target.checked) window.scoutedBedOverlay.addLayer(layer);
+                            else window.scoutedBedOverlay.removeLayer(layer);
+                        }
+                    });
+                    legend.appendChild(item);
+                });
+            };
+
+            const renderZones = (data) => {
+                if (window.zoneLayer) map.removeLayer(window.zoneLayer);
+                if (window.lineIdLabels) { map.removeLayer(window.lineIdLabels); window.lineIdLabels = null; }
+                const lines = {};
+                (data.all_zones_geojson || []).forEach(zone => {
+                    try {
+                        const geo = JSON.parse(zone.raw_geojson);
+                        const ghName = zone.name.split(" - ")[0];
+                        if (geo.features) {
+                            geo.features.forEach(f => {
+                                const lid = f.properties.line_id;
+                                const key = `${ghName}_line_${lid}`;
+                                f.properties.zone_name = zone.name;
+                                if (!lines[key]) lines[key] = [];
+                                lines[key].push(f);
+                            });
+                        }
+                    } catch { }
+                });
+
+                window.lineIdLabels = L.layerGroup().addTo(map);
+                Object.keys(lines).forEach(key => {
+                    const feats = lines[key];
+                    if (feats.length > 0) {
+                        feats.sort((a, b) => a.properties.zone_id - b.properties.zone_id);
+                        const coords = feats.flatMap(f => f.geometry.coordinates);
+                        const lid = feats[0].properties.line_id;
+                        const isOdd = parseInt(lid) % 2 !== 0;
+                        const markerPoint = isOdd ? coords[0] : coords[coords.length - 1];
+                        const lbl = L.marker([markerPoint[1], markerPoint[0]], {
+                            icon: L.divIcon({
+                                className: 'line-id-label',
+                                html: `<div class="${darkFlavor ? 'tw-text-white' : 'tw-text-black'} tw-text-[7px]" style="transform:rotate(45deg)">${lid}</div>`,
+                                iconSize: [20, 10],
+                                iconAnchor: [0, 0]
+                            })
+                        });
+                        window.lineIdLabels.addLayer(lbl);
+                    }
+                });
+
+                const allFeats = { type: "FeatureCollection", features: Object.values(lines).flat() };
+                window.zoneLayer = L.geoJSON(allFeats, {
+                    style: { color: darkFlavor ? '#fff' : '#000', weight: 0.6, opacity: 0.8 },
+                    onEachFeature: (f, layer) => {
+                        if (f.properties?.zone_name) {
+                            const parts = f.properties.zone_name.split(" - ");
+                            const html = parts.length >= 4
+                                ? `<div class='tw-text-xs'><strong>${parts[0]}</strong><br>${parts[1]}<br>${parts[2]}<br>${parts[3]}</div>`
+                                : f.properties.zone_name;
+                            layer.bindTooltip(html);
+                        }
+                    }
+                });
+                if (map.getZoom() >= 15) window.zoneLayer.addTo(map);
+            };
+
+            initializeMap();
+        };
+    </script>
+</div>
+{% endblock %}

@@ -301,7 +301,6 @@ fixtures = [
         "doctype": "Web Page",
         "filters": [
             ["name", "in", [
-                "variety-map",
                 "map",
                 "scouting-analysis",
                 "new-spray-plan"
@@ -336,7 +335,6 @@ fixtures = [
                     "Get Pests Data",
                     "Get Plant Diseases Data",
                     "Zone Atomation Tool",
-                    "Beds & Zones",
                     "Get Panorama Analysis",
                     "Get BOM Stock Balances",
                     "Get Greenhouse Reentry Status",

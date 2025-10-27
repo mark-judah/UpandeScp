@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scouting Map</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            prefix: "tw-",
+        };
+    </script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            overflow-x: hidden;
+        }
+
+        .main-container {
+            max-width: 100%;
+        }
+
+        #map-page {
+            height: 100vh;
+            width: 100%;
+            position: relative;
+        }
+
+        #map-container,
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        .leaflet-control-layers.leaflet-control-layers-expanded {
+            padding: 6px;
+        }
+
+        .leaflet-control-layers-toggle {
+            display: none;
+        }
+
+        /* NEW CSS for Date Picker Container */
+        #date-filter-container {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            z-index: 1001;
+            /* Higher than map controls */
+            background: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
+            display: flex;
+            align-items: center;
+        }
+
+        #date-filter-container input[type="date"] {
+            border: 1px solid #ccc;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.875rem;
+        }
+
+        #pest-legend {
+            position: absolute;
+            bottom: 8rem;
+            left: 1rem;
+            z-index: 1000;
+            background: white;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
+            max-height: 50%;
+            overflow-y: auto;
+        }
+
+        #pest-legend label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            margin-bottom: 0.5rem;
+        }
+
+        .line-id-label {
+            font-family: sans-serif;
+            pointer-events: none;
+        }
+
+        .protomaps-legend {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
+            position: absolute;
+            bottom: 3rem;
+            right: 1rem;
+            z-index: 1000;
+            display: none;
+        }
+
+        .protomaps-legend label {
+            display: block;
+            cursor: pointer;
+        }
+
+        .leaflet-top.leaflet-right {
+            /* Adjusted to accommodate the date picker */
+            margin-top: 4rem !important;
+        }
+    </style>
+</head>
+
+<body class="tw-bg-white tw-font-sans">
+    <div class="main-container">
+        <div id="map-page" class="tw-w-full tw-h-full tw-p-0 tw-flex tw-flex-col">
+            <div id="date-filter-container" class="tw-flex tw-items-center tw-space-x-2">
+                <label for="scout-date-picker" class="tw-text-sm tw-font-medium">Date:</label>
+                <input type="date" id="scout-date-picker" class="tw-text-sm" />
+            </div>
+            <div id="pest-legend" class="tw-bg-white tw-p-4 tw-rounded tw-shadow tw-space-y-2 tw-max-w-xs">
+                <p class="tw-text-sm tw-font-semibold tw-mb-1">Pest Legend</p>
+            </div>
+
+            <div id="map-container" class="tw-w-full tw-flex-grow">
+                <div id="map" class="tw-w-full tw-h-full"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-providers/1.13.0/leaflet-providers.min.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://unpkg.com/protomaps-leaflet@5.0.0/dist/protomaps-leaflet.js"></script>
+    <script src="/assets/frappe/js/frappe-web.min.js"></script>
+    <script>
+        window.onload = function () {
+            /* ---------------- 1. Globals ---------------- */
+            window.map = null;
+            let mapInitialized = false;
+            window.zoneLayer = null;
+            window.lineIdLabels = null;
+            window.pestOverlayLayer = null;
+            let protomapsLayer = null;
+            let layersControl = null;
+            let darkFlavor = false;
+            window.allPests = [];
+            window.selectedPests = []; // **THIS MUST PERSIST ACROSS date changes**
+            window.lastScoutingData = null;
+            window.lastZonesGeojson = null;
+
+            /* ---------------- 2. Init Map ---------------- */
+            const initializeMap = () => {
+                if (mapInitialized) return;
+
+                window.map = L.map('map', {
+                    zoomSnap: 0.1,
+                    zoomDelta: 0.1,
+                    maxZoom: 22.4,
+                    zoomControl: false
+                });
+
+                mapInitialized = true;
+                renderBaseLayers();
+                window.map.setView([0.069507, 35.755801], 18);
+
+                const datePicker = document.getElementById('scout-date-picker');
+                const today = new Date().toISOString().slice(0, 10);
+                datePicker.value = today;
+
+                fetchAllData(today);
+
+                datePicker.addEventListener('change', (e) => {
+                    fetchAllData(e.target.value);
+                });
+
+                window.map.on('zoomend', () => {
+                    const currentZoom = window.map.getZoom();
+                });
+            };
+
+            const renderBaseLayers = () => {
+                const googleSatelliteLayer = L.tileLayer(
+                    'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                    maxZoom: 25
+                }
+                );
+                const openStreetMapLayer = L.tileLayer(
+                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 25
+                }
+                );
+                const osmSateliteLayer = L.tileLayer(
+                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    maxZoom: 25
+                }
+                );
+
+                const pmtilesUrl = 'https://res.cloudinary.com/dorft5vxy/raw/upload/v1757410567/eldama-ravine_gdtrsv.pmtiles';
+                protomapsLayer = protomapsL.leafletLayer({
+                    url: pmtilesUrl,
+                    flavor: "light",
+                    attribution: "© Protomaps © OpenStreetMap"
+                });
+
+                protomapsLayer.addTo(window.map);
+
+                const baseMaps = {
+                    "Satellite View": googleSatelliteLayer,
+                    "Street Map": openStreetMapLayer,
+                    "OSM Satelite": osmSateliteLayer,
+                    "Protomaps Layer": protomapsLayer
+                };
+
+                layersControl = L.control.layers(baseMaps, {}, {
+                    collapsed: false,
+                    position: 'topright'
+                }).addTo(window.map);
+
+                const ProtomapsLegendControl = L.Control.extend({
+                    onAdd: function (map) {
+                        const div = L.DomUtil.create('div', 'protomaps-legend');
+                        div.innerHTML = `
+                            <p class="tw-text-sm tw-font-semibold tw-mb-1">Map Flavor</p>
+                            <label><input type="radio" name="flavor" value="light" checked> Light</label>
+                            <label><input type="radio" name="flavor" value="dark"> Dark</label>
+                            <label><input type="radio" name="flavor" value="white"> White</label>
+                            <label><input type="radio" name="flavor" value="grayscale"> Grayscale</label>
+                            <label><input type="radio" name="flavor" value="black"> Black</label>
+                        `;
+
+                        L.DomEvent.on(div, 'change', (e) => {
+                            if (e.target.name === 'flavor') {
+                                const newFlavor = e.target.value;
+                                if (newFlavor == "dark" || newFlavor == "black") {
+                                    darkFlavor = true
+                                } else {
+                                    darkFlavor = false
+                                }
+                                if (window.lastZoneData) {
+                                    renderZones(window.lastZoneData);
+                                }
+                                if (window.map.hasLayer(protomapsLayer)) {
+                                    window.map.removeLayer(protomapsLayer);
+                                    layersControl.removeLayer(protomapsLayer);
+                                }
+                                protomapsLayer = protomapsL.leafletLayer({
+                                    url: pmtilesUrl,
+                                    flavor: newFlavor,
+                                    attribution: "© Protomaps © OpenStreetMap"
+                                });
+                                protomapsLayer.addTo(window.map);
+                                layersControl.addBaseLayer(protomapsLayer, "Protomaps Layer");
+                            }
+                        });
+                        return div;
+                    }
+                });
+
+                const protomapsLegend = new ProtomapsLegendControl({
+                    position: 'bottomright'
+                }).addTo(window.map);
+
+                window.map.on('baselayerchange', function (e) {
+                    if (e.name === "Protomaps Layer") {
+                        protomapsLegend.getContainer().style.display = 'block';
+                    } else {
+                        protomapsLegend.getContainer().style.display = 'none';
+                    }
+                });
+            };
+
+            // Renders the pest legend with checkboxes
+            const renderPestLegend = (pests, blendedColors = {}) => {
+                const pestLegend = document.getElementById('pest-legend');
+
+                // Filter the global selection list to only include pests available in the new data
+                const availablePestNames = new Set(pests.map(p => p.name));
+                const currentSelections = new Set(window.selectedPests.filter(p => availablePestNames.has(p)));
+
+                const legendItems = pests.map(pest => {
+                    if (!pest || !pest.name) {
+                        return '';
+                    }
+                    // Checkbox status is determined by currentSelections
+                    const isChecked = currentSelections.has(pest.name);
+                    return `
+                        <label>
+                            <input type="checkbox" name="pest-filter" value="${pest.name}" class="tw-mr-2 tw-rounded tw-text-blue-600 tw-shadow-sm focus:tw-border-blue-300 focus:tw-ring focus:tw-ring-blue-200 focus:tw-ring-opacity-50" ${isChecked ? 'checked' : ''}>
+                            <span class="tw-mr-2 tw-w-4 tw-h-4 tw-rounded-full tw-inline-block" style="background-color: ${pest.pests_legend_color || '#999'};"></span>
+                            <span>${pest.name}</span>
+                        </label>
+                    `;
+                }).join('');
+
+                const blendedItems = Object.entries(blendedColors).map(([name, color]) => {
+                    const comboPests = name.split(' + ');
+                    // A blended combination is checked if ALL its component pests are in currentSelections
+                    const isChecked = comboPests.every(p => currentSelections.has(p));
+                    return `
+                        <label>
+                            <input type="checkbox" name="blended-filter" value="${name}" class="tw-mr-2 tw-rounded tw-text-blue-600 tw-shadow-sm focus:tw-border-blue-300 focus:tw-ring focus:tw-ring-blue-200 focus:tw-ring-opacity-50" ${isChecked ? 'checked' : ''}>
+                            <span class="tw-mr-2 tw-w-4 tw-h-4 tw-rounded-full tw-inline-block" style="background-color: ${color};"></span>
+                            <span>${name}</span>
+                        </label>
+                    `;
+                }).join('');
+
+                pestLegend.innerHTML = `
+                    <p class="tw-text-sm tw-font-semibold tw-mb-1">Pest Legend</p>
+                    ${legendItems}
+                    ${blendedItems}
+                `;
+            };
+
+            // Attaches event listeners to the pest legend checkboxes
+            const addPestLegendEventListeners = () => {
+                // Event listeners for individual pest checkboxes
+                const checkboxes = document.querySelectorAll('#pest-legend input[name="pest-filter"]');
+                checkboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', (e) => {
+                        const pestName = e.target.value;
+                        if (e.target.checked) {
+                            window.selectedPests.push(pestName);
+                        } else {
+                            window.selectedPests = window.selectedPests.filter(p => p !== pestName);
+                        }
+                        // Re-render overlay using the updated global selection list
+                        renderPestOverlay(window.map, window.lastScoutingData, window.lastZonesGeojson);
+                    });
+                });
+
+                // Event listeners for blended combination checkboxes
+                const blendedCheckboxes = document.querySelectorAll('#pest-legend input[name="blended-filter"]');
+                blendedCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', (e) => {
+                        const blendedNames = e.target.value.split(' + ');
+                        if (e.target.checked) {
+                            // Add all component pests to the selectedPests array
+                            window.selectedPests = [...new Set([...window.selectedPests, ...blendedNames])];
+                        } else {
+                            const pestsToKeep = new Set(window.selectedPests.filter(p => !blendedNames.includes(p)));
+                            const otherBlendedCombinations = [...document.querySelectorAll('#pest-legend input[name="blended-filter"]:checked')]
+                                .filter(cb => cb !== e.target)
+                                .map(cb => cb.value.split(' + '));
+
+                            otherBlendedCombinations.forEach(combo => {
+                                combo.forEach(pest => pestsToKeep.add(pest));
+                            });
+
+                            document.querySelectorAll('#pest-legend input[name="pest-filter"]:checked').forEach(cb => {
+                                pestsToKeep.add(cb.value);
+                            });
+
+                            window.selectedPests = Array.from(pestsToKeep);
+                        }
+                        renderPestOverlay(window.map, window.lastScoutingData, window.lastZonesGeojson);
+                    });
+                });
+            };
+
+            /* ---------------- 3. Data Fetch (FIXED) ---------------- */
+            const fetchAllData = (date) => {
+                // The clearing of pestOverlayLayer is handled inside renderPestOverlay, no need to clear here.
+
+                frappe.call({
+                    method: "getPanoramaAnalysis",
+                    args: {
+                        date: date
+                    },
+                    freeze: true,
+                    callback: function (r) {
+                        if (r.data) {
+                            const allData = r.data;
+                            window.lastZoneData = allData;
+                            window.allPests = allData.all_pests_names || [];
+
+                            // FIX: If selectedPests is empty (initial load), select all.
+                            // Otherwise, preserve the current selection state (user filters).
+                            if (window.selectedPests.length === 0) {
+                                window.selectedPests = window.allPests.map(p => p.name);
+                            }
+
+                            // Store data
+                            window.lastScoutingData = allData.scouting_entries;
+                            window.lastZonesGeojson = allData.all_zones_geojson;
+
+                            // Render map elements based on potentially filtered selection
+                            renderZones(allData);
+                            renderPestOverlay(window.map, window.lastScoutingData, window.lastZonesGeojson);
+
+                            // The renderPestOverlay function now calls renderPestLegend with the correct blended colors
+                            // and the checkbox states are handled within renderPestLegend based on window.selectedPests.
+
+                        } else {
+                            console.error('Error fetching all data:', r);
+                        }
+                    }
+                });
+            };
+
+            /* ---------------- 4. Zones with Line Numbers ---------------- */
+            const renderZones = (data) => {
+                if (window.zoneLayer) window.map.removeLayer(window.zoneLayer);
+                if (window.lineIdLabels) {
+                    window.map.removeLayer(window.lineIdLabels);
+                    window.lineIdLabels = null;
+                }
+
+                const lines = {};
+                (data.all_zones_geojson || []).forEach(zone => {
+                    try {
+                        const geoJson = JSON.parse(zone.raw_geojson);
+                        const greenhouseName = zone.name.split(" - ")[0];
+                        if (geoJson.features) {
+                            geoJson.features.forEach(feature => {
+                                const lineId = feature.properties.line_id;
+                                const uniqueKey = `${greenhouseName}_line_${lineId}`;
+                                feature.properties.zone_name = zone.name;
+                                if (!lines[uniqueKey]) lines[uniqueKey] = [];
+                                lines[uniqueKey].push(feature);
+                            });
+                        }
+                    } catch (e) {
+                        console.error("Invalid GeoJSON for zone:", zone.name, e);
+                    }
+                });
+
+                window.lineIdLabels = L.layerGroup().addTo(window.map);
+
+                Object.keys(lines).forEach(key => {
+                    const lineFeatures = lines[key];
+                    if (lineFeatures.length > 0) {
+                        lineFeatures.sort((a, b) => a.properties.zone_id - b.properties.zone_id);
+                        const allLineCoords = lineFeatures.flatMap(f => f.geometry.coordinates);
+                        const lineId = lineFeatures[0].properties.line_id;
+                        const isOdd = parseInt(lineId) % 2 !== 0;
+
+                        const markerPoint = isOdd
+                            ? allLineCoords[0]
+                            : allLineCoords[allLineCoords.length - 1];
+
+                        const lineIdLabel = L.marker([markerPoint[1], markerPoint[0]], {
+                            icon: L.divIcon({
+                                className: 'line-id-label',
+                                html: `<div class="${darkFlavor ? 'tw-text-white' : 'tw-text-black'} tw-text-[7px] tw-font-thin" style="transform: rotate(45deg);">${lineId}</div>`,
+                                iconSize: [20, 10],
+                                iconAnchor: [0, 0]
+                            })
+                        });
+                        window.lineIdLabels.addLayer(lineIdLabel);
+                    }
+                });
+
+                const allZoneFeatures = {
+                    type: "FeatureCollection",
+                    features: Object.values(lines).flat()
+                };
+
+                window.zoneLayer = L.geoJSON(allZoneFeatures, {
+                    style: {
+                        color: darkFlavor ? '#ffffff' : '#000000',
+                        weight: 0.6,
+                        opacity: 0.8
+                    },
+                    onEachFeature: (feature, layer) => {
+                        if (feature.properties && feature.properties.zone_id) {
+                            const zoneName = feature.properties.zone_name || feature.properties.name || "";
+                            const parts = zoneName.split(" - ");
+                            let tooltipHtml = zoneName;
+
+                            if (parts.length >= 4) {
+                                const [gh, kr, bed, zone] = parts;
+                                tooltipHtml = `
+            <div class="tw-text-xs tw-leading-tight">
+              <strong>${gh}</strong><br>
+              ${kr}<br>
+              ${bed}<br>
+              ${zone}
+            </div>
+          `;
+                            }
+
+                            layer.bindTooltip(tooltipHtml, {
+                                permanent: false,
+                                direction: 'top'
+                            });
+                        }
+                    }
+                });
+
+                window.map.on('zoomend', () => {
+                    const z = window.map.getZoom();
+                    if (window.zoneLayer) {
+                        if (z >= 15) {
+                            if (!window.map.hasLayer(window.zoneLayer)) window.zoneLayer.addTo(window.map);
+                        } else {
+                            if (window.map.hasLayer(window.zoneLayer)) window.map.removeLayer(window.zoneLayer);
+                        }
+                    }
+                    if (window.lineIdLabels) {
+                        if (z >= 18) {
+                            if (!window.map.hasLayer(window.lineIdLabels)) window.lineIdLabels.addTo(window.map);
+                        } else {
+                            if (window.map.hasLayer(window.lineIdLabels)) window.map.removeLayer(window.lineIdLabels);
+                        }
+                    }
+                });
+
+                if (window.map.getZoom() >= 15 && window.zoneLayer) {
+                    window.zoneLayer.addTo(window.map);
+                }
+                if (window.map.getZoom() >= 18 && window.lineIdLabels) {
+                    window.lineIdLabels.addTo(window.map);
+                }
+            };
+
+            /* ---------------- 5. Pest Overlay ---------------- */
+            function blendColors(colors) {
+                if (colors.length === 0) return "#999";
+                let r = 0,
+                    g = 0,
+                    b = 0;
+                colors.forEach(c => {
+                    const hex = c.replace("#", "");
+                    r += parseInt(hex.substring(0, 2), 16);
+                    g += parseInt(hex.substring(2, 4), 16);
+                    b += parseInt(hex.substring(4, 6), 16);
+                });
+                r = Math.round(r / colors.length);
+                g = Math.round(g / colors.length);
+                b = Math.round(b / colors.length);
+                return `rgb(${r},${g},${b})`;
+            }
+
+            function renderPestOverlay(map, scoutingData, zonesGeojson) {
+                if (window.pestOverlayLayer) map.removeLayer(window.pestOverlayLayer);
+
+                const overlayGroup = L.layerGroup();
+                // Filter scouting data using the global selectedPests list
+                const filteredPests = new Set(window.selectedPests);
+                const blendedPestColors = {};
+
+                (zonesGeojson || []).forEach(zone => {
+                    const zoneGeojson = JSON.parse(zone.raw_geojson);
+                    const coords = zoneGeojson.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
+                    const line = turf.lineString(coords.map(c => [c[1], c[0]]));
+
+                    const entries = (scoutingData || []).filter(e => e.zone === zone.name);
+                    if (entries.length === 0) return;
+
+                    const totalLength = turf.length(line, {
+                        units: "meters"
+                    });
+                    const segmentLength = totalLength / entries.length;
+
+                    entries.forEach((entry, i) => {
+                        const start = turf.along(line, i * segmentLength, {
+                            units: "meters"
+                        });
+                        const end = turf.along(line, (i + 1) * segmentLength, {
+                            units: "meters"
+                        });
+
+                        const segmentCoords = [
+                            [start.geometry.coordinates[1], start.geometry.coordinates[0]],
+                            [end.geometry.coordinates[1], end.geometry.coordinates[0]]
+                        ];
+
+                        const relevantPests = (entry.pests_scouting_entry || []).filter(p => filteredPests.has(p.pest));
+                        if (relevantPests.length === 0) return;
+
+                        const colors = relevantPests.map(p => p.color).filter(Boolean);
+                        const blendedColor = blendColors(colors);
+
+                        if (relevantPests.length > 1) {
+                            const uniquePests = new Set(relevantPests.map(p => p.pest));
+                            if (uniquePests.size > 1) {
+                                const pestNames = Array.from(uniquePests).sort().join(" + ");
+                                blendedPestColors[pestNames] = blendedColor;
+                            }
+                        }
+
+                        const tooltipText = relevantPests.map(p => {
+                            const name = p.pest || "Unknown";
+                            const stage = p.symbol ? ` (${p.symbol})` : "";
+                            return `${name}${stage}: ${p.count || 0}`;
+                        }).join("<br>");
+
+                        const segment = L.polyline(segmentCoords, {
+                            color: blendedColor,
+                            weight: 4.5,
+                            opacity: 0.9
+                        });
+
+                        segment.bindTooltip(
+                            `<div class="tw-text-xs tw-leading-tight">
+            <strong>${zone.name}</strong><br>
+            ${tooltipText}
+          </div>`, {
+                            sticky: true
+                        }
+                        );
+
+                        segment.addTo(overlayGroup);
+                    });
+                });
+
+                overlayGroup.addTo(map);
+                window.pestOverlayLayer = overlayGroup;
+
+                // FIX: Re-render legend AFTER rendering the overlay to get blended colors
+                renderPestLegend(window.allPests, blendedPestColors);
+                // FIX: Re-add listeners to the newly rendered checkboxes
+                addPestLegendEventListeners();
+            }
+
+            initializeMap();
+        };
+    </script>
+</body>
+
+</html>

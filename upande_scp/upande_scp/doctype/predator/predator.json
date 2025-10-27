@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:common_name",
  "creation": "2025-08-08 15:56:53.624921",
@@ -8,7 +9,11 @@
  "field_order": [
   "common_name",
   "scientific_name",
-  "target_pest"
+  "identification_guideline",
+  "photo",
+  "predator_legend_color",
+  "target_pest",
+  "predator_stages"
  ],
  "fields": [
   {
@@ -27,12 +32,33 @@
    "fieldtype": "Table",
    "label": "Target Pest",
    "options": "Predator Targets"
+  },
+  {
+   "fieldname": "identification_guideline",
+   "fieldtype": "Small Text",
+   "label": "Identification Guideline"
+  },
+  {
+   "fieldname": "photo",
+   "fieldtype": "Attach Image",
+   "label": "Photo"
+  },
+  {
+   "fieldname": "predator_legend_color",
+   "fieldtype": "Color",
+   "label": "Predator Legend Color"
+  },
+  {
+   "fieldname": "predator_stages",
+   "fieldtype": "Table",
+   "label": "Predator Stages",
+   "options": "Predator Stages"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-10 22:31:44.664311",
+ "modified": "2025-10-27 02:32:41.577923",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Predator",

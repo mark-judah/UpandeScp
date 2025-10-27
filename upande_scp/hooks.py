@@ -241,6 +241,11 @@ app_license = "mit"
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
+website_route_rules = [
+    {"from_route": "/scouts-map", "to_route": "/observation_map"},
+    {"from_route": "/observation-map", "to_route": "/observation_map"},
+    {"from_route": "/variety-map", "to_route": "/variety_map"}
+]
 
 fixtures = [
     {
@@ -301,8 +306,6 @@ fixtures = [
         "doctype": "Web Page",
         "filters": [
             ["name", "in", [
-                "map",
-                "scouting-analysis",
                 "new-spray-plan"
             ]]
         ]
@@ -335,7 +338,6 @@ fixtures = [
                     "Get Pests Data",
                     "Get Plant Diseases Data",
                     "Zone Atomation Tool",
-                    "Get Panorama Analysis",
                     "Get BOM Stock Balances",
                     "Get Greenhouse Reentry Status",
                     "Create Scouting Entry",

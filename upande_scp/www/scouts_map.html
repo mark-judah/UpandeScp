@@ -2,10 +2,6 @@
 
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-{% endblock %}
-
-
-{% block page_content %}
 <style>
     html,
     body {
@@ -76,45 +72,10 @@
     .leaflet-top.leaflet-right {
         margin-top: 4rem !important;
     }
-
-    #map-loader {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(255, 255, 255, 0.9);
-        z-index: 2000;
-        display: none;
-        justify-content: center;
-        align-items: center;
-        flex-direction: column;
-        color: #555;
-        font-family: sans-serif;
-    }
-
-    .spinner {
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #3498db;
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
-        animation: spin 1s linear infinite;
-        margin-bottom: 10px;
-    }
-
-    @keyframes spin {
-        0% {
-            transform: rotate(0deg);
-        }
-
-        100% {
-            transform: rotate(360deg);
-        }
-    }
 </style>
-</head>
+{% endblock %}
 
+{% block page_content %}
 <div class="tw-bg-white tw-font-sans">
     <div class="main-container">
         <div id="map-loader">
@@ -258,38 +219,35 @@
                     body: JSON.stringify({
                         date: date
                     })
+                }).then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                }).then(r => {
+                    const allData = r.message || r.data;
+                    if (allData) {
+                        window.lastScoutingData = allData;
+                        allData.scouting_entries = (allData.scouting_entries || []).filter(e => e.scouts_name);
+                        const scoutColors = generateScoutColors(allData);
+                        window.scoutedBedOverlay = L.layerGroup().addTo(map);
+
+                        renderZones(allData);
+                        renderScoutFlowLines(allData.scouting_entries || [], allData.all_zones_geojson || [], scoutColors);
+                        renderScoutedBeds(allData.scouting_entries || [], allData.all_zones_geojson || [], scoutColors);
+                        renderScoutLegend(scoutColors);
+
+                        if (window.allLatLngs.length) {
+                            map.fitBounds(L.latLngBounds(window.allLatLngs), { padding: [50, 50] });
+                            map.setZoom(Math.max(18, map.getZoom()));
+                        }
+                    } else {
+                        document.getElementById('scout-legend').innerHTML = '<p>No Scout Data</p>';
+                    }
+                }).catch(error => {
+                    console.error('Error fetching scouting data:', error);
+                    document.getElementById('scout-legend').innerHTML = `<p>Error fetching data: ${error.message}</p>`;
                 })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
-                        return response.json();
-                    })
-                    .then(r => {
-                        const allData = r.message || r.data;
-                        if (allData) {
-                            window.lastScoutingData = allData;
-                            allData.scouting_entries = (allData.scouting_entries || []).filter(e => e.scouts_name);
-                            const scoutColors = generateScoutColors(allData);
-                            window.scoutedBedOverlay = L.layerGroup().addTo(map);
-
-                            renderZones(allData);
-                            renderScoutFlowLines(allData.scouting_entries || [], allData.all_zones_geojson || [], scoutColors);
-                            renderScoutedBeds(allData.scouting_entries || [], allData.all_zones_geojson || [], scoutColors);
-                            renderScoutLegend(scoutColors);
-
-                            if (window.allLatLngs.length) {
-                                map.fitBounds(L.latLngBounds(window.allLatLngs), { padding: [50, 50] });
-                                map.setZoom(Math.max(18, map.getZoom()));
-                            }
-                        } else {
-                            document.getElementById('scout-legend').innerHTML = '<p>No Scout Data</p>';
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching scouting data:', error);
-                        document.getElementById('scout-legend').innerHTML = `<p>Error fetching data: ${error.message}</p>`;
-                    })
                     .finally(() => {
                         hideLoader();
                     });

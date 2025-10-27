@@ -1,123 +1,118 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "upande_scp/www/base.html" %}
 
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Scouting Map</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            prefix: "tw-",
-        };
-    </script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <style>
-        html,
-        body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            overflow-x: hidden;
-        }
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+    html,
+    body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        overflow-x: hidden;
+    }
 
-        .main-container {
-            max-width: 100%;
-        }
+    .main-container {
+        max-width: 100%;
+    }
 
-        #map-page {
-            height: 100vh;
-            width: 100%;
-            position: relative;
-        }
+    #map-page {
+        height: 100vh;
+        width: 100%;
+        position: relative;
+    }
 
-        #map-container,
-        #map {
-            height: 100%;
-            width: 100%;
-        }
+    #map-container,
+    #map {
+        height: 100%;
+        width: 100%;
+    }
 
-        .leaflet-control-layers.leaflet-control-layers-expanded {
-            padding: 6px;
-        }
+    .leaflet-control-layers.leaflet-control-layers-expanded {
+        padding: 6px;
+    }
 
-        .leaflet-control-layers-toggle {
-            display: none;
-        }
+    .leaflet-control-layers-toggle {
+        display: none;
+    }
 
-        /* NEW CSS for Date Picker Container */
-        #date-filter-container {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            z-index: 1001;
-            /* Higher than map controls */
-            background: white;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
-            display: flex;
-            align-items: center;
-        }
+    /* NEW CSS for Date Picker Container */
+    #date-filter-container {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        z-index: 1001;
+        /* Higher than map controls */
+        background: white;
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
+        display: flex;
+        align-items: center;
+    }
 
-        #date-filter-container input[type="date"] {
-            border: 1px solid #ccc;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            font-size: 0.875rem;
-        }
+    #date-filter-container input[type="date"] {
+        border: 1px solid #ccc;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-size: 0.875rem;
+    }
 
-        #pest-legend {
-            position: absolute;
-            bottom: 8rem;
-            left: 1rem;
-            z-index: 1000;
-            background: white;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
-            max-height: 50%;
-            overflow-y: auto;
-        }
+    #pest-legend {
+        position: absolute;
+        bottom: 8rem;
+        left: 1rem;
+        z-index: 1000;
+        background: white;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
+        max-height: 50%;
+        overflow-y: auto;
+    }
 
-        #pest-legend label {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-            margin-bottom: 0.5rem;
-        }
+    #pest-legend label {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        margin-bottom: 0.5rem;
+    }
 
-        .line-id-label {
-            font-family: sans-serif;
-            pointer-events: none;
-        }
+    .line-id-label {
+        font-family: sans-serif;
+        pointer-events: none;
+    }
 
-        .protomaps-legend {
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
-            position: absolute;
-            bottom: 3rem;
-            right: 1rem;
-            z-index: 1000;
-            display: none;
-        }
+    .protomaps-legend {
+        background: white;
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
+        position: absolute;
+        bottom: 3rem;
+        right: 1rem;
+        z-index: 1000;
+        display: none;
+    }
 
-        .protomaps-legend label {
-            display: block;
-            cursor: pointer;
-        }
+    .protomaps-legend label {
+        display: block;
+        cursor: pointer;
+    }
 
-        .leaflet-top.leaflet-right {
-            /* Adjusted to accommodate the date picker */
-            margin-top: 4rem !important;
-        }
-    </style>
-</head>
+    .leaflet-top.leaflet-right {
+        /* Adjusted to accommodate the date picker */
+        margin-top: 4rem !important;
+    }
+</style>
+{% endblock %}
 
-<body class="tw-bg-white tw-font-sans">
+{% block page_content %}
+<div class="tw-bg-white tw-font-sans">
     <div class="main-container">
+        <div id="map-loader">
+            <div class="spinner"></div>
+            <p>Loading observations data...</p>
+        </div>
         <div id="map-page" class="tw-w-full tw-h-full tw-p-0 tw-flex tw-flex-col">
             <div id="date-filter-container" class="tw-flex tw-items-center tw-space-x-2">
                 <label for="scout-date-picker" class="tw-text-sm tw-font-medium">Date:</label>
@@ -153,6 +148,16 @@
             window.selectedPests = []; // **THIS MUST PERSIST ACROSS date changes**
             window.lastScoutingData = null;
             window.lastZonesGeojson = null;
+
+            const showLoader = () => {
+                const loader = document.getElementById('map-loader');
+                if (loader) loader.style.display = 'flex';
+            };
+
+            const hideLoader = () => {
+                const loader = document.getElementById('map-loader');
+                if (loader) loader.style.display = 'none';
+            };
 
             /* ---------------- 2. Init Map ---------------- */
             const initializeMap = () => {
@@ -366,41 +371,45 @@
 
             /* ---------------- 3. Data Fetch (FIXED) ---------------- */
             const fetchAllData = (date) => {
-                // The clearing of pestOverlayLayer is handled inside renderPestOverlay, no need to clear here.
-
-                frappe.call({
-                    method: "getPanoramaAnalysis",
-                    args: {
-                        date: date
+                showLoader();
+                fetch('/api/method/upande_scp.serverscripts.get_scouting_observations.getScoutingObservations', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Frappe-CSRF-Token': "{{csrf_token}}"
                     },
-                    freeze: true,
-                    callback: function (r) {
-                        if (r.data) {
-                            const allData = r.data;
-                            window.lastZoneData = allData;
-                            window.allPests = allData.all_pests_names || [];
-
-                            // FIX: If selectedPests is empty (initial load), select all.
-                            // Otherwise, preserve the current selection state (user filters).
-                            if (window.selectedPests.length === 0) {
-                                window.selectedPests = window.allPests.map(p => p.name);
-                            }
-
-                            // Store data
-                            window.lastScoutingData = allData.scouting_entries;
-                            window.lastZonesGeojson = allData.all_zones_geojson;
-
-                            // Render map elements based on potentially filtered selection
-                            renderZones(allData);
-                            renderPestOverlay(window.map, window.lastScoutingData, window.lastZonesGeojson);
-
-                            // The renderPestOverlay function now calls renderPestLegend with the correct blended colors
-                            // and the checkbox states are handled within renderPestLegend based on window.selectedPests.
-
-                        } else {
-                            console.error('Error fetching all data:', r);
-                        }
+                    body: JSON.stringify({
+                        date: date
+                    })
+                }).then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
                     }
+                    return response.json();
+                }).then(r => {
+                    const allData = r.message || r.data;
+
+                    if (allData) {
+                        window.lastZoneData = allData;
+                        window.allPests = allData.all_pests_names || [];
+
+                        if (window.selectedPests.length === 0) {
+                            window.selectedPests = (window.allPests || []).map(p => p.name);
+                        }
+
+                        window.lastScoutingData = allData.scouting_entries;
+                        window.lastZonesGeojson = allData.all_zones_geojson;
+
+                        renderZones(allData);
+                        renderPestOverlay(window.map, window.lastScoutingData, window.lastZonesGeojson);
+
+                    } else {
+                        console.error('Error fetching all data: Empty response data.', r);
+                    }
+                }).catch(error => {
+                    console.error('Error fetching scouting observations:', error);
+                }).finally(() => {
+                    hideLoader();
                 });
             };
 
@@ -623,6 +632,6 @@
             initializeMap();
         };
     </script>
-</body>
+</div>
 
-</html>
+{% endblock %}

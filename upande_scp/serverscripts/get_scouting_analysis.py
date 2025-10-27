@@ -5,7 +5,6 @@ from frappe.utils import time_diff_in_seconds
 def getScoutingAnalysis():
     try:
         date_str = frappe.form_dict.get("date")
-        frappe.log_error(title="Payload", message=str(date_str))
 
         if not date_str:
             frappe.throw("The date is required.")

@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:name1",
  "creation": "2025-08-08 15:40:58.167176",
@@ -7,8 +8,8 @@
  "engine": "InnoDB",
  "field_order": [
   "name1",
-  "photo",
-  "description"
+  "identification_guideline",
+  "photo"
  ],
  "fields": [
   {
@@ -23,15 +24,15 @@
    "label": "Photo"
   },
   {
-   "fieldname": "description",
-   "fieldtype": "Data",
-   "label": "Description"
+   "fieldname": "identification_guideline",
+   "fieldtype": "Small Text",
+   "label": "Identification Guideline"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-10 22:30:04.880182",
+ "modified": "2025-10-27 02:22:04.500604",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Weed",

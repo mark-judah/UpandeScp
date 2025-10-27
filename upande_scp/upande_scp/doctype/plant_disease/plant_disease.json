@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:common_name",
  "creation": "2025-08-08 15:22:02.534658",
@@ -8,9 +9,12 @@
  "field_order": [
   "common_name",
   "scientific_name",
-  "visual_symptoms",
+  "identification_guideline",
+  "damage_symptoms",
+  "disease_legend_color",
   "section_break_npdf",
-  "stages"
+  "stages",
+  "severity_scale"
  ],
  "fields": [
   {
@@ -25,11 +29,6 @@
    "label": "Scientific Name"
   },
   {
-   "fieldname": "visual_symptoms",
-   "fieldtype": "Data",
-   "label": "Visual Symptoms"
-  },
-  {
    "fieldname": "section_break_npdf",
    "fieldtype": "Section Break"
   },
@@ -38,12 +37,33 @@
    "fieldtype": "Table",
    "label": "Disease Stages",
    "options": "Disease Stages"
+  },
+  {
+   "fieldname": "identification_guideline",
+   "fieldtype": "Small Text",
+   "label": "Identification Guideline"
+  },
+  {
+   "fieldname": "damage_symptoms",
+   "fieldtype": "Attach Image",
+   "label": "Damage Symptoms"
+  },
+  {
+   "fieldname": "disease_legend_color",
+   "fieldtype": "Color",
+   "label": "Disease Legend Color"
+  },
+  {
+   "fieldname": "severity_scale",
+   "fieldtype": "Table",
+   "label": "Severity Scale",
+   "options": "Scouting Severity Scale"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-10 22:22:09.356682",
+ "modified": "2025-10-27 02:00:00.007357",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Plant Disease",

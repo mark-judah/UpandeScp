@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Maps{% endblock %}</title>
+    <link rel="stylesheet" href="/assets/frappe/css/frappe-web.css">
+
+    <script src="/assets/frappe/js/frappe-web.min.js"></script>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            prefix: 'tw-',
+        }
+    </script>
+
+    <style>
+        .navbar.navbar-light {
+            display: none !important;
+        }
+
+        .web-footer {
+            display: none !important;
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            @apply tw-bg-background-light;
+        }
+    </style>
+
+    {% block head %}{% endblock %}
+</head>
+
+<body>
+    <header class="custom-navbar">
+        {% include "upande_scp/templates/navbar.html" %}
+    </header>
+
+    <main class="page-content">
+        {% block page_content %}{% endblock %}
+    </main>
+
+    {% block script %}{% endblock %}
+</body>
+
+</html>

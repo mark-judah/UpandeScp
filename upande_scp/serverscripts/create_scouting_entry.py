@@ -78,7 +78,6 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
                         coords = geometry.get("coordinates", [])
 
                         if len(coords) >= 2:
-                            frappe.log_error("Coords", str(coords))
                             # Create line in WGS84
                             line = LineString(coords)
 
@@ -122,7 +121,7 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
 
             except Exception as e:
                 frappe.log_error(
-                    f"Error processing zone {zone.name}: {str(e)}")
+                    "Error processing zone {zone.name}", str(e))
                 continue
 
         if closest_zone:
@@ -137,7 +136,7 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
 
     except Exception as e:
         error_msg = f"Error in get_zone_from_coordinates: {str(e)}"
-        frappe.log_error(error_msg)
+        frappe.log_error("Error",error_msg)
         return None, 0.0, error_msg
 
 
@@ -145,6 +144,8 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
 def createScoutingEntry():
     try:
         data = frappe.request.get_json()
+        frappe.log_error("Scouting Payload", data)
+
         if not data:
             frappe.response.http_status_code = 400
             frappe.response["data"] = {
@@ -366,7 +367,7 @@ def createScoutingEntry():
             except Exception as e:
                 has_errors = True
                 frappe.db.rollback()
-                frappe.log_error(f"Error creating scouting entry: {str(e)}")
+                frappe.log_error("Error creating scouting entry", str(e))
                 results.append({
                     "status": "error",
                     "message": str(e)
@@ -388,7 +389,7 @@ def createScoutingEntry():
 
     except Exception as e:
         frappe.response.http_status_code = 500
-        frappe.log_error(f"Fatal error in createScoutingEntry: {str(e)}")
+        frappe.log_error("Fatal error in createScoutingEntry",str(e))
         frappe.response["data"] = {
             "status": "error",
             "message": str(e)

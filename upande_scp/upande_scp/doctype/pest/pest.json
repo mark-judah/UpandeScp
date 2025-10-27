@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:common_name",
  "creation": "2025-08-08 15:14:36.616598",
@@ -28,7 +29,7 @@
   },
   {
    "fieldname": "identification_guideline",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Identification Guideline"
   },
   {
@@ -58,7 +59,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-10 21:59:05.669313",
+ "modified": "2025-10-27 01:00:16.965015",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Pest",

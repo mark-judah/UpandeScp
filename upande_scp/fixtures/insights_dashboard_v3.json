@@ -1,0 +1,152 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Insights Dashboard v3",
+  "has_workbook_access": true,
+  "is_public": 0,
+  "is_shared_with_organization": false,
+  "items": "[\n {\n  \"layout\": {\n   \"h\": 1,\n   \"i\": \"l1hwxj4l\",\n   \"moved\": false,\n   \"w\": 10,\n   \"x\": 7,\n   \"y\": 0\n  },\n  \"text\": \"<p><span style=\\\"color: rgb(56, 56, 56)\\\"><strong>Scouting Efficiency </strong></span></p>\",\n  \"type\": \"text\"\n },\n {\n  \"chart\": \"6ksoj8lapd\",\n  \"layout\": {\n   \"h\": 3,\n   \"i\": \"ib4t13aw\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 0,\n   \"y\": 1\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"8at1a59mek\",\n  \"layout\": {\n   \"h\": 3,\n   \"i\": \"bhjm1co9\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 5,\n   \"y\": 1\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"t8mbgbkl85\",\n  \"layout\": {\n   \"h\": 3,\n   \"i\": \"7hfwi0h8\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 11,\n   \"y\": 1\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"79qotg7go2\",\n  \"layout\": {\n   \"h\": 3,\n   \"i\": \"e98odhp9\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 15,\n   \"y\": 1\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"uo2rap99kv\",\n  \"layout\": {\n   \"h\": 8,\n   \"i\": \"e3ay4mu0\",\n   \"moved\": false,\n   \"w\": 10,\n   \"x\": 0,\n   \"y\": 4\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"vdjo3511i5\",\n  \"layout\": {\n   \"h\": 8,\n   \"i\": \"m7sh6uvt\",\n   \"moved\": false,\n   \"w\": 10,\n   \"x\": 10,\n   \"y\": 4\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"11csk85mib\",\n  \"layout\": {\n   \"h\": 8,\n   \"i\": \"3l1pcol3\",\n   \"moved\": false,\n   \"w\": 10,\n   \"x\": 0,\n   \"y\": 12\n  },\n  \"type\": \"chart\"\n },\n {\n  \"filter_name\": \"Date\",\n  \"filter_type\": \"Date\",\n  \"layout\": {\n   \"h\": 1,\n   \"i\": \"7prruvnu\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 0,\n   \"y\": 0\n  },\n  \"links\": {\n   \"11csk85mib\": \"`fd7p95ellq`.`date_of_capture`\",\n   \"79qotg7go2\": \"`m2u773hqlb`.`date_of_capture`\",\n   \"8at1a59mek\": \"`mmdl92g79l`.`scouting_date`\",\n   \"t8mbgbkl85\": \"`ehepu288hf`.`date_of_capture`\",\n   \"uo2rap99kv\": \"`esa2qmn3ut`.`date_of_capture`\",\n   \"vdjo3511i5\": \"`f4tqr6vtvv`.`date_of_capture`\"\n  },\n  \"type\": \"filter\"\n }\n]",
+  "linked_charts": [
+   {
+    "chart": "6ksoj8lapd",
+    "parent": "h4800kq9lg",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "8at1a59mek",
+    "parent": "h4800kq9lg",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "t8mbgbkl85",
+    "parent": "h4800kq9lg",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "79qotg7go2",
+    "parent": "h4800kq9lg",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "uo2rap99kv",
+    "parent": "h4800kq9lg",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "vdjo3511i5",
+    "parent": "h4800kq9lg",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "11csk85mib",
+    "parent": "h4800kq9lg",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   }
+  ],
+  "modified": "2025-10-28 03:03:24.300017",
+  "name": "h4800kq9lg",
+  "old_name": null,
+  "people_with_access": [],
+  "preview_image": null,
+  "read_only": false,
+  "share_link": null,
+  "title": "Scouting Efficiency Dashboard",
+  "vertical_compact_layout": 0,
+  "workbook": "1"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Insights Dashboard v3",
+  "has_workbook_access": true,
+  "is_public": 0,
+  "is_shared_with_organization": false,
+  "items": "[\n {\n  \"chart\": \"9i2ate11h2\",\n  \"layout\": {\n   \"h\": 8,\n   \"i\": \"3px0djlz\",\n   \"moved\": false,\n   \"w\": 20,\n   \"x\": 0,\n   \"y\": 0\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"2n7b6cv5mv\",\n  \"layout\": {\n   \"h\": 8,\n   \"i\": \"fv4ss6ew\",\n   \"moved\": false,\n   \"w\": 10,\n   \"x\": 0,\n   \"y\": 8\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"391jed4q8n\",\n  \"layout\": {\n   \"h\": 8,\n   \"i\": \"mfqnr7ay\",\n   \"moved\": false,\n   \"w\": 10,\n   \"x\": 10,\n   \"y\": 8\n  },\n  \"type\": \"chart\"\n }\n]",
+  "linked_charts": [
+   {
+    "chart": "9i2ate11h2",
+    "parent": "l3amf0lf5i",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "2n7b6cv5mv",
+    "parent": "l3amf0lf5i",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "391jed4q8n",
+    "parent": "l3amf0lf5i",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   }
+  ],
+  "modified": "2025-10-28 03:04:57.937373",
+  "name": "l3amf0lf5i",
+  "old_name": null,
+  "people_with_access": [],
+  "preview_image": null,
+  "read_only": false,
+  "share_link": null,
+  "title": "Chemicals Dashboard",
+  "vertical_compact_layout": 0,
+  "workbook": "1"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Insights Dashboard v3",
+  "has_workbook_access": true,
+  "is_public": 0,
+  "is_shared_with_organization": false,
+  "items": "[\n {\n  \"filter_name\": \"Date\",\n  \"filter_type\": \"Date\",\n  \"layout\": {\n   \"h\": 1,\n   \"i\": \"h81xr484\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 0,\n   \"y\": 0\n  },\n  \"links\": {\n   \"bd92gu6e5s\": \"`g91g2s2c0t`.`observation_date`\",\n   \"csrsie0qcm\": \"`hqb6u8iqom`.`observation_date`\",\n   \"dt7mjolgol\": \"`i62rrvqhgf`.`observation_date`\",\n   \"epmjtac49d\": \"`iusrgcvu1c`.`observation_date`\",\n   \"fh6265bolq\": \"`fngmojd8r5`.`observation_date`\"\n  },\n  \"type\": \"filter\"\n },\n {\n  \"filter_name\": \"Greenhouse\",\n  \"filter_type\": \"String\",\n  \"layout\": {\n   \"h\": 1,\n   \"i\": \"1ko31brs\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 4,\n   \"y\": 0\n  },\n  \"links\": {\n   \"bd92gu6e5s\": \"`g91g2s2c0t`.`greenhouse`\",\n   \"csrsie0qcm\": \"`hqb6u8iqom`.`greenhouse`\",\n   \"dt7mjolgol\": \"`i62rrvqhgf`.`greenhouse`\",\n   \"epmjtac49d\": \"`iusrgcvu1c`.`greenhouse`\",\n   \"fh6265bolq\": \"`fngmojd8r5`.`greenhouse`\"\n  },\n  \"type\": \"filter\"\n },\n {\n  \"chart\": \"csrsie0qcm\",\n  \"layout\": {\n   \"h\": 9,\n   \"i\": \"6hcrcnou\",\n   \"moved\": false,\n   \"w\": 20,\n   \"x\": 0,\n   \"y\": 2\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"bd92gu6e5s\",\n  \"layout\": {\n   \"h\": 9,\n   \"i\": \"ljg5huyl\",\n   \"moved\": false,\n   \"w\": 20,\n   \"x\": 0,\n   \"y\": 12\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"dt7mjolgol\",\n  \"layout\": {\n   \"h\": 10,\n   \"i\": \"79uqvs8g\",\n   \"moved\": false,\n   \"w\": 20,\n   \"x\": 0,\n   \"y\": 22\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"epmjtac49d\",\n  \"layout\": {\n   \"h\": 10,\n   \"i\": \"m86s2rb8\",\n   \"moved\": false,\n   \"w\": 20,\n   \"x\": 0,\n   \"y\": 33\n  },\n  \"type\": \"chart\"\n },\n {\n  \"chart\": \"fh6265bolq\",\n  \"layout\": {\n   \"h\": 10,\n   \"i\": \"gx8k70sw\",\n   \"moved\": false,\n   \"w\": 20,\n   \"x\": 0,\n   \"y\": 44\n  },\n  \"type\": \"chart\"\n },\n {\n  \"filter_name\": \"Pest\",\n  \"filter_type\": \"String\",\n  \"layout\": {\n   \"h\": 1,\n   \"i\": \"bmns7igp\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 0,\n   \"y\": 1\n  },\n  \"links\": {\n   \"csrsie0qcm\": \"`hqb6u8iqom`.`pest_name`\"\n  },\n  \"type\": \"filter\"\n },\n {\n  \"filter_name\": \"Disease\",\n  \"filter_type\": \"String\",\n  \"layout\": {\n   \"h\": 1,\n   \"i\": \"hf0kmen9\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 0,\n   \"y\": 11\n  },\n  \"links\": {\n   \"bd92gu6e5s\": \"`g91g2s2c0t`.`disease_name`\"\n  },\n  \"type\": \"filter\"\n },\n {\n  \"filter_name\": \"Predator\",\n  \"filter_type\": \"String\",\n  \"layout\": {\n   \"h\": 1,\n   \"i\": \"4j9ekxyb\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 0,\n   \"y\": 21\n  },\n  \"links\": {\n   \"dt7mjolgol\": \"`i62rrvqhgf`.`predator_name`\"\n  },\n  \"type\": \"filter\"\n },\n {\n  \"filter_name\": \"Weed\",\n  \"filter_type\": \"String\",\n  \"layout\": {\n   \"h\": 1,\n   \"i\": \"j8uz5qko\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 0,\n   \"y\": 32\n  },\n  \"links\": {\n   \"epmjtac49d\": \"`iusrgcvu1c`.`weed_name`\"\n  },\n  \"type\": \"filter\"\n },\n {\n  \"filter_name\": \"Physiological Disorder\",\n  \"filter_type\": \"String\",\n  \"layout\": {\n   \"h\": 1,\n   \"i\": \"lb1a0r8c\",\n   \"moved\": false,\n   \"w\": 4,\n   \"x\": 0,\n   \"y\": 43\n  },\n  \"links\": {\n   \"fh6265bolq\": \"`fngmojd8r5`.`disorder_name`\"\n  },\n  \"type\": \"filter\"\n }\n]",
+  "linked_charts": [
+   {
+    "chart": "csrsie0qcm",
+    "parent": "lphuum0t6p",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "bd92gu6e5s",
+    "parent": "lphuum0t6p",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "dt7mjolgol",
+    "parent": "lphuum0t6p",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "epmjtac49d",
+    "parent": "lphuum0t6p",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   },
+   {
+    "chart": "fh6265bolq",
+    "parent": "lphuum0t6p",
+    "parentfield": "linked_charts",
+    "parenttype": "Insights Dashboard v3"
+   }
+  ],
+  "modified": "2025-10-28 03:11:45.531164",
+  "name": "lphuum0t6p",
+  "old_name": null,
+  "people_with_access": [],
+  "preview_image": null,
+  "read_only": false,
+  "share_link": null,
+  "title": "Scouting Observation Trends   ",
+  "vertical_compact_layout": 0,
+  "workbook": "1"
+ }
+]

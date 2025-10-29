@@ -9,7 +9,10 @@
  "field_order": [
   "disorder_name",
   "identification_guideline",
-  "photo"
+  "photo",
+  "reading_type",
+  "range_max",
+  "range_min"
  ],
  "fields": [
   {
@@ -27,12 +30,28 @@
    "fieldname": "identification_guideline",
    "fieldtype": "Small Text",
    "label": "Identification Guideline"
+  },
+  {
+   "fieldname": "reading_type",
+   "fieldtype": "Select",
+   "label": "Reading Type",
+   "options": "Count\nCheckbox\nRange"
+  },
+  {
+   "fieldname": "range_max",
+   "fieldtype": "Data",
+   "label": "Range Max"
+  },
+  {
+   "fieldname": "range_min",
+   "fieldtype": "Data",
+   "label": "Range Min"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-27 02:12:40.945811",
+ "modified": "2025-10-29 22:34:10.483016",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Physiological Disorder",

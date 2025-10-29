@@ -7,7 +7,8 @@
  "engine": "InnoDB",
  "field_order": [
   "stage",
-  "immage"
+  "immage",
+  "reading_type"
  ],
  "fields": [
   {
@@ -19,13 +20,19 @@
    "fieldname": "immage",
    "fieldtype": "Attach Image",
    "label": "Image"
+  },
+  {
+   "fieldname": "reading_type",
+   "fieldtype": "Select",
+   "label": "Reading Type",
+   "options": "Count\nCheckbox\nRange"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-10-27 02:32:19.130659",
+ "modified": "2025-10-29 22:30:31.734146",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Predator Stages",

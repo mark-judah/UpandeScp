@@ -245,7 +245,7 @@ def createScoutingEntry():
                 employee_id = frappe.get_all(
                     "Employee",
                     fields=["name"],
-                    filters={"employee_name": entry_data.get('scouts_name')}
+                    filters={"user_id": entry_data.get('scouts_name')}
                 )
 
                 if not employee_id:

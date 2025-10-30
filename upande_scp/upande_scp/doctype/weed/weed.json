@@ -12,7 +12,8 @@
   "photo",
   "reading_type",
   "range_max",
-  "range_min"
+  "range_min",
+  "plant_sections"
  ],
  "fields": [
   {
@@ -34,7 +35,8 @@
   {
    "fieldname": "reading_type",
    "fieldtype": "Select",
-   "label": "Reading Type"
+   "label": "Reading Type",
+   "options": "Count\nCheckbox\nRange"
   },
   {
    "fieldname": "range_max",
@@ -45,12 +47,17 @@
    "fieldname": "range_min",
    "fieldtype": "Data",
    "label": "Range Min"
+  },
+  {
+   "fieldname": "plant_sections",
+   "fieldtype": "Code",
+   "label": "Plant Sections"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-29 22:32:58.129201",
+ "modified": "2025-10-30 02:13:08.021336",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Weed",

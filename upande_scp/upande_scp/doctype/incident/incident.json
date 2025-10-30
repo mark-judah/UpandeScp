@@ -9,8 +9,7 @@
  "field_order": [
   "name1",
   "reading_type",
-  "range_max",
-  "range_min"
+  "plant_sections"
  ],
  "fields": [
   {
@@ -26,20 +25,15 @@
    "options": "Count\nCheckbox\nRange"
   },
   {
-   "fieldname": "range_max",
-   "fieldtype": "Data",
-   "label": "Range Max"
-  },
-  {
-   "fieldname": "range_min",
-   "fieldtype": "Data",
-   "label": "Range Min"
+   "fieldname": "plant_sections",
+   "fieldtype": "Code",
+   "label": "Plant Sections"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-29 22:35:25.333922",
+ "modified": "2025-10-30 10:35:01.011848",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Incident",

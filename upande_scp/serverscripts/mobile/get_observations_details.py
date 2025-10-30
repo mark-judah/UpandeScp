@@ -77,8 +77,8 @@ def getObservationsDetails():
                 "stage": stage.stage,
                 "reading_type": (stage.reading_type or "Count").lower(),
                 "plant_sections": _parse_plant_sections(stage.plant_sections),
-                "range_min": stage.range_min,
-                "range_max": stage.range_max
+                "range_min": _to_float(stage.range_min),
+                "range_max": _to_float(stage.range_max)
             })
 
     # Fetch predator stages with reading_type and plant_sections for EACH stage
@@ -253,3 +253,17 @@ def _parse_plant_sections(plant_sections_str):
     sections = [s for s in sections if s]  # Remove empty strings
     
     return sections if sections else None
+
+
+def _to_float(value):
+    """
+    Convert a value to float, handling None and string inputs.
+    Returns None if the value is None or cannot be converted.
+    """
+    if value is None:
+        return None
+    
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None

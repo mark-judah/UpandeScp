@@ -8,7 +8,8 @@
  "field_order": [
   "stage",
   "immage",
-  "reading_type"
+  "reading_type",
+  "plant_sections"
  ],
  "fields": [
   {
@@ -26,13 +27,18 @@
    "fieldtype": "Select",
    "label": "Reading Type",
    "options": "Count\nCheckbox\nRange"
+  },
+  {
+   "fieldname": "plant_sections",
+   "fieldtype": "Code",
+   "label": "Plant Sections"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-10-29 22:30:31.734146",
+ "modified": "2025-10-30 02:11:37.506763",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Predator Stages",

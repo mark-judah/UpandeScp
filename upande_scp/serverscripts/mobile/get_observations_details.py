@@ -17,19 +17,19 @@ def getObservationsDetails():
 
     disorders = frappe.get_all(
         "Physiological Disorder",
-        fields=["name", "disorder_name", "photo", "description", "reading_type", "range_min", "range_max"],
+        fields=["name", "disorder_name", "photo", "description", "reading_type", "plant_sections"],
         order_by="idx"
     )
 
     weeds = frappe.get_all(
         "Weed",
-        fields=["name", "name1", "reading_type", "range_min", "range_max"],
+        fields=["name", "name1", "reading_type", "plant_sections"],
         order_by="idx"
     )
 
     incidents = frappe.get_all(
         "Incident",
-        fields=["name", "name1", "reading_type", "range_min", "range_max"],
+        fields=["name", "name1", "reading_type", "plant_sections"],
         order_by="idx"
     )
 
@@ -43,71 +43,61 @@ def getObservationsDetails():
     disease_names = [d.name for d in diseases]
     predator_names = [p.name for p in predators]
 
-    # Fetch pest stages with reading_type
+    # Fetch pest stages with reading_type and plant_sections for EACH stage
     pest_stages = {}
-    pest_reading_types = {}
     if pest_names:
         stages_data = frappe.get_all(
             "Pests Stages",
             filters={"parent": ["in", pest_names]},
-            fields=["parent", "stage", "idx"],  # Remove reading_type if field doesn't exist yet
+            fields=["parent", "stage", "reading_type", "plant_sections", "idx"],
             order_by="parent, idx"
         )
         for stage in stages_data:
             if stage.parent not in pest_stages:
                 pest_stages[stage.parent] = []
-                # Default to countable for pests with stages
-                pest_reading_types[stage.parent] = "countable"
-            pest_stages[stage.parent].append(stage.stage)
-    
-    # For pests without stages, default to count
-    for pest in pests:
-        if pest.name not in pest_reading_types:
-            pest_reading_types[pest.name] = "count"
+            pest_stages[stage.parent].append({
+                "stage": stage.stage,
+                "reading_type": (stage.reading_type or "Count").lower(),
+                "plant_sections": _parse_plant_sections(stage.plant_sections)
+            })
 
-    # Fetch disease stages with reading_type
+    # Fetch disease stages with reading_type, plant_sections, range_min, and range_max for EACH stage
     disease_stages = {}
-    disease_reading_types = {}
     if disease_names:
         stages_data = frappe.get_all(
             "Disease Stages",
             filters={"parent": ["in", disease_names]},
-            fields=["parent", "stage", "idx"],  # Remove reading_type if field doesn't exist yet
+            fields=["parent", "stage", "reading_type", "plant_sections", "range_min", "range_max", "idx"],
             order_by="parent, idx"
         )
         for stage in stages_data:
             if stage.parent not in disease_stages:
                 disease_stages[stage.parent] = []
-                # Default to countable for diseases with stages
-                disease_reading_types[stage.parent] = "countable"
-            disease_stages[stage.parent].append(stage.stage)
-    
-    # For diseases without stages, default to count
-    for disease in diseases:
-        if disease.name not in disease_reading_types:
-            disease_reading_types[disease.name] = "count"
+            disease_stages[stage.parent].append({
+                "stage": stage.stage,
+                "reading_type": (stage.reading_type or "Count").lower(),
+                "plant_sections": _parse_plant_sections(stage.plant_sections),
+                "range_min": stage.range_min,
+                "range_max": stage.range_max
+            })
 
-    # Fetch predator stages with reading_type
+    # Fetch predator stages with reading_type and plant_sections for EACH stage
     predator_stages = {}
-    predator_reading_types = {}
     if predator_names:
         stages_data = frappe.get_all(
             "Predator Stages",
             filters={"parent": ["in", predator_names]},
-            fields=["parent", "stage", "idx"],  # Remove reading_type if field doesn't exist yet
+            fields=["parent", "stage", "reading_type", "plant_sections", "idx"],
             order_by="parent, idx"
         )
         for stage in stages_data:
             if stage.parent not in predator_stages:
                 predator_stages[stage.parent] = []
-                # Default to countable for predators with stages
-                predator_reading_types[stage.parent] = "countable"
-            predator_stages[stage.parent].append(stage.stage)
-    
-    # For predators without stages, default to count
-    for predator in predators:
-        if predator.name not in predator_reading_types:
-            predator_reading_types[predator.name] = "count"
+            predator_stages[stage.parent].append({
+                "stage": stage.stage,
+                "reading_type": (stage.reading_type or "Count").lower(),
+                "plant_sections": _parse_plant_sections(stage.plant_sections)
+            })
 
     # Fetch predator targets
     predator_targets = {}
@@ -123,105 +113,143 @@ def getObservationsDetails():
                 predator_targets[target.parent] = []
             predator_targets[target.parent].append(target.pest)
 
-    # Build observation types with reading_type
-    observation_types = [
-        {
+    # Build observation types - each stage is a separate field now
+    observation_types = []
+
+    # PESTS - Create a field for each stage
+    pest_fields = []
+    for pest in pests:
+        stages = pest_stages.get(pest.name, [])
+        for stage_info in stages:
+            pest_fields.append({
+                "pestName": pest.common_name,
+                "stage": stage_info['stage'],
+                "readingType": stage_info['reading_type'],
+                "plantSections": stage_info['plant_sections'],
+                "stages": None
+            })
+    
+    if pest_fields:
+        observation_types.append({
             "category": "Pests",
-            "type": "count",
-            "fields": [
-                {
-                    "name": pest.common_name,
-                    "stages": pest_stages.get(pest.name, []),
-                    "isCountable": True,  # Always true for pests
-                    "isToggable": False,
-                    "readingType": pest_reading_types.get(pest.name, "countable" if pest_stages.get(pest.name) else "count"),
-                }
-                for pest in pests
-            ]
-        },
-        {
+            "type": "mixed",
+            "fields": pest_fields
+        })
+
+    # DISEASES - Create a field for each stage with range_min and range_max
+    disease_fields = []
+    for disease in diseases:
+        stages = disease_stages.get(disease.name, [])
+        for stage_info in stages:
+            disease_fields.append({
+                "diseaseName": disease.common_name,
+                "stage": stage_info['stage'],
+                "readingType": stage_info['reading_type'],
+                "plantSections": stage_info['plant_sections'],
+                "rangeMin": stage_info['range_min'],
+                "rangeMax": stage_info['range_max'],
+                "stages": None
+            })
+    
+    if disease_fields:
+        observation_types.append({
             "category": "Diseases",
-            "type": "count",
-            "fields": [
-                {
-                    "name": disease.common_name,
-                    "stages": disease_stages.get(disease.name, []),
-                    "isCountable": True,  # Always true for diseases
-                    "isToggable": False,
-                    "readingType": disease_reading_types.get(disease.name, "countable" if disease_stages.get(disease.name) else "count"),
-                }
-                for disease in diseases
-            ]
-        },
-        {
+            "type": "mixed",
+            "fields": disease_fields
+        })
+
+    # PHYSIOLOGICAL DISORDERS - Single field per disorder (no range)
+    if disorders:
+        observation_types.append({
             "category": "Physiological Disorders",
             "type": "toggle",
             "fields": [
                 {
                     "name": disorder.disorder_name,
+                    "stage": None,
                     "stages": None,
-                    "isCountable": False,
-                    "isToggable": True,  # Default to checkbox for disorders
                     "photo": disorder.photo,
                     "description": disorder.description,
-                    "readingType": "checkbox",  # Default to checkbox
-                    "rangeMin": None,
-                    "rangeMax": None,
+                    "readingType": (disorder.reading_type or "Checkbox").lower(),
+                    "plantSections": _parse_plant_sections(disorder.plant_sections),
                 }
                 for disorder in disorders
             ]
-        },
-        {
+        })
+
+    # WEEDS - Single field per weed (no range)
+    if weeds:
+        observation_types.append({
             "category": "Weeds",
             "type": "toggle",
             "fields": [
                 {
                     "name": weed.name1,
+                    "stage": None,
                     "stages": None,
-                    "isCountable": False,
-                    "isToggable": True,  # Default to checkbox for weeds
-                    "readingType": "checkbox",  # Default to checkbox
-                    "rangeMin": None,
-                    "rangeMax": None,
+                    "readingType": (weed.reading_type or "Checkbox").lower(),
+                    "plantSections": _parse_plant_sections(weed.plant_sections),
                 }
                 for weed in weeds
             ]
-        },
-        {
+        })
+
+    # INCIDENTS - Single field per incident (no range)
+    if incidents:
+        observation_types.append({
             "category": "Incidents",
             "type": "toggle",
             "fields": [
                 {
                     "name": incident.name1,
+                    "stage": None,
                     "stages": None,
-                    "isCountable": False,
-                    "isToggable": True,  # Default to checkbox for incidents
-                    "readingType": "checkbox",  # Default to checkbox
-                    "rangeMin": None,
-                    "rangeMax": None,
+                    "readingType": (incident.reading_type or "Checkbox").lower(),
+                    "plantSections": _parse_plant_sections(incident.plant_sections),
                 }
                 for incident in incidents
             ]
-        },
-        {
+        })
+
+    # PREDATORS - Create a field for each stage
+    predator_fields = []
+    for predator in predators:
+        stages = predator_stages.get(predator.name, [])
+        for stage_info in stages:
+            predator_fields.append({
+                "predatorName": predator.common_name,
+                "stage": stage_info['stage'],
+                "readingType": stage_info['reading_type'],
+                "plantSections": stage_info['plant_sections'],
+                "stages": None,
+                "targetPests": predator_targets.get(predator.name, [])
+            })
+    
+    if predator_fields:
+        observation_types.append({
             "category": "Predators",
-            "type": "count",
-            "fields": [
-                {
-                    "name": predator.common_name,
-                    "stages": predator_stages.get(predator.name, []),
-                    "isCountable": True,  # Always true for predators
-                    "isToggable": False,
-                    "targetPests": predator_targets.get(predator.name, []),
-                    "readingType": predator_reading_types.get(predator.name, "countable" if predator_stages.get(predator.name) else "count"),
-                }
-                for predator in predators
-            ]
-        }
-    ]
+            "type": "mixed",
+            "fields": predator_fields
+        })
 
     frappe.response["message"] = {
         "data": observation_types
     }
 
     return frappe.response["message"]
+
+
+def _parse_plant_sections(plant_sections_str):
+    """
+    Parse plant_sections string into a list of lowercase plant part names.
+    Handles formats like: "Buds", "Buds, Base", "Buds\nBase", etc.
+    Returns None if empty/null, meaning all plant parts are applicable.
+    """
+    if not plant_sections_str:
+        return None
+    
+    # Split by comma or newline, strip whitespace, convert to lowercase
+    sections = [s.strip().lower() for s in plant_sections_str.replace('\n', ',').split(',')]
+    sections = [s for s in sections if s]  # Remove empty strings
+    
+    return sections if sections else None

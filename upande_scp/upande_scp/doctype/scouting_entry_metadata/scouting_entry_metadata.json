@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "format:SEM-{###}",
  "creation": "2025-10-24 16:16:17.229191",
@@ -82,7 +83,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-24 18:35:44.886378",
+ "modified": "2025-10-31 22:05:03.240185",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting Entry Metadata",

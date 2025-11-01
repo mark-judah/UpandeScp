@@ -364,81 +364,81 @@ fixtures = [
                 ]
             ]
         ]
-    },
-    {
-        "doctype": "Insights Workbook",
-        "filters": [
-            ["title", "=", "Scouting & Crop Protection"]
-        ]
-    },
-    {
-        "doctype": "Insights Query v3",
-        "filters": [
-                ["title", "in", [
-                   "Physiological Disorder Trends",
-                    "Total Greenhouses",
-                    "Application Floor Plan Schedule",
-                    "Application Floor Plans Status",
-                    "Total Greenhouses Scouted",
-                    "Bed Coverage",
-                    "Daily Chemical Cost",
-                    "Monthly Chemical Usage",
-                    "Daily Chemical Usage",
-                    "Weed Trends",
-                    "Predator Trends By Stage",
-                    "Pest Trends By Stage",
-                    "Disease Trends By Stage",
-                    "Scout Movement",
-                    "Scout Performance",
-                    "Greenhouse Coverage Percentage",
-                    "Minutes Per Bed",
-                    "Incident Observations",
-                    "Physiological Observations",
-                    "Predator Observations",
-                    "Weeds Observations",
-                    "Disease Observations",
-                    "Pest Observations"
-                ]]
-            ]
-    },
-    {
-        "doctype": "Insights Chart v3",
-        "filters": [
-                ["title", "in", [
-                    "Physiological Disorder Trends",
-                    "Weed Trends",
-                    "Predator Trends By Stage",
-                    "Pest Trends By Stage",
-                    "Disease Trends By Stage",
-                    "Application Schedule",
-                    "Application Floor Plan Tiles",
-                    "Total Greenhouses Scouted",
-                    "Bed Coverage",
-                    "Total Greenhouses",
-                    "Daily Chemical Cost",
-                    "Monthly Chemical Usage",
-                    "Daily Chemical Usage",
-                    "Scout Movement (Total Zones Covered Every 5 minutes)",
-                    "Scout Performance",
-                    "Greenhouse Coverage Percentage(Beds)",
-                    "Minutes Per Bed",
-                    "Incident Observations Per greenhouse",
-                    "Physiological Observations Per Greenhouse",
-                    "Predator Observations Per Greenhouse",
-                    "Weed Observations Per Greenhouse",
-                    "Disease Observations Per Greenhouse",
-                    "Pest Observations Per Greenhouse"
-                ]]
-            ]
-    },
-    {
-        "doctype": "Insights Dashboard v3",
-        "filters": [
-                ["title", "in", [
-                   "Scouting Observation Trends",
-                   "Chemicals Dashboard",
-                   "Scouting Efficiency Dashboard"
-                ]]
-            ]
     }
+    # {
+    #     "doctype": "Insights Workbook",
+    #     "filters": [
+    #         ["title", "=", "Scouting & Crop Protection"]
+    #     ]
+    # },
+    # {
+    #     "doctype": "Insights Query v3",
+    #     "filters": [
+    #             ["title", "in", [
+    #                "Physiological Disorder Trends",
+    #                 "Total Greenhouses",
+    #                 "Application Floor Plan Schedule",
+    #                 "Application Floor Plans Status",
+    #                 "Total Greenhouses Scouted",
+    #                 "Bed Coverage",
+    #                 "Daily Chemical Cost",
+    #                 "Monthly Chemical Usage",
+    #                 "Daily Chemical Usage",
+    #                 "Weed Trends",
+    #                 "Predator Trends By Stage",
+    #                 "Pest Trends By Stage",
+    #                 "Disease Trends By Stage",
+    #                 "Scout Movement",
+    #                 "Scout Performance",
+    #                 "Greenhouse Coverage Percentage",
+    #                 "Minutes Per Bed",
+    #                 "Incident Observations",
+    #                 "Physiological Observations",
+    #                 "Predator Observations",
+    #                 "Weeds Observations",
+    #                 "Disease Observations",
+    #                 "Pest Observations"
+    #             ]]
+    #         ]
+    # },
+    # {
+    #     "doctype": "Insights Chart v3",
+    #     "filters": [
+    #             ["title", "in", [
+    #                 "Physiological Disorder Trends",
+    #                 "Weed Trends",
+    #                 "Predator Trends By Stage",
+    #                 "Pest Trends By Stage",
+    #                 "Disease Trends By Stage",
+    #                 "Application Schedule",
+    #                 "Application Floor Plan Tiles",
+    #                 "Total Greenhouses Scouted",
+    #                 "Bed Coverage",
+    #                 "Total Greenhouses",
+    #                 "Daily Chemical Cost",
+    #                 "Monthly Chemical Usage",
+    #                 "Daily Chemical Usage",
+    #                 "Scout Movement (Total Zones Covered Every 5 minutes)",
+    #                 "Scout Performance",
+    #                 "Greenhouse Coverage Percentage(Beds)",
+    #                 "Minutes Per Bed",
+    #                 "Incident Observations Per greenhouse",
+    #                 "Physiological Observations Per Greenhouse",
+    #                 "Predator Observations Per Greenhouse",
+    #                 "Weed Observations Per Greenhouse",
+    #                 "Disease Observations Per Greenhouse",
+    #                 "Pest Observations Per Greenhouse"
+    #             ]]
+    #         ]
+    # },
+    # {
+    #     "doctype": "Insights Dashboard v3",
+    #     "filters": [
+    #             ["title", "in", [
+    #                "Scouting Observation Trends",
+    #                "Chemicals Dashboard",
+    #                "Scouting Efficiency Dashboard"
+    #             ]]
+    #         ]
+    # }
 ]

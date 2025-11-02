@@ -13,7 +13,7 @@ def getScoutingAnalysis():
         scouting_entries = frappe.get_all(
             "Scouting Entry",
             fields=["name", "scouts_name", "greenhouse", "bed",
-                    "zone", "time_of_capture", "date_of_capture", "latitude", "longitude"],
+                    "zone", "time_of_capture", "date_of_capture", "latitude", "longitude", "creation"],
             filters=[
                 ["date_of_capture", "=", date_str]
             ],
@@ -42,7 +42,8 @@ def getScoutingAnalysis():
                 "scouting_summary": scouting_summary,
                 "scout_movement_timeline": [],
                 "scout_paths": [],
-                "all_zones_geojson": all_zones
+                "all_zones_geojson": all_zones,
+                "scouting_entries": []
             }
         else:
             # Map scout IDs to names
@@ -59,11 +60,16 @@ def getScoutingAnalysis():
                 employee_map = {emp.get("name"): emp.get(
                     "employee_name") for emp in employees}
 
+            # Apply employee_name mapping to scouting_entries
+            for entry in scouting_entries:
+                scout_id = entry.get("scouts_name")
+                if scout_id in employee_map:
+                    entry["scouts_name"] = employee_map[scout_id]
+
             # Group entries by scout and greenhouse to handle multiple sessions per scout
             scout_greenhouse_sessions = {}
             for record in scouting_entries:
-                scout_id = record.get("scouts_name")
-                scout_name = employee_map.get(scout_id, scout_id)
+                scout_name = record.get("scouts_name")  # Now contains employee_name
                 greenhouse = record.get("greenhouse")
                 time_of_capture = record.get("time_of_capture")
 
@@ -144,8 +150,7 @@ def getScoutingAnalysis():
             # Build scout paths list
             scout_paths = {}
             for record in scouting_entries:
-                scout_id = record.get("scouts_name")
-                scout_name = employee_map.get(scout_id, scout_id)
+                scout_name = record.get("scouts_name")  # Now contains employee_name
                 latitude = record.get("latitude")
                 longitude = record.get("longitude")
                 if latitude is not None and longitude is not None:
@@ -166,7 +171,7 @@ def getScoutingAnalysis():
                 "scout_movement_timeline": scout_movement_timeline,
                 "scout_paths": scout_paths_list,
                 "all_zones_geojson": all_zones,
-                # Explicitly pass the full entries to the client to render beds/zones
+                # Now contains employee_name instead of HR number
                 "scouting_entries": scouting_entries 
             }
 

@@ -1,0 +1,48 @@
+<header
+    class="tw-sticky tw-top-0 tw-header tw-bg-white tw-border-b tw-border-gray-200 tw-px-4 md:tw-px-6 tw-py-3 tw-shadow-soft-bottom tw-z-50 tw-flex tw-items-center tw-justify-between tw-h-18">
+    <div class="tw-flex tw-items-center tw-gap-3 tw-flex-none">
+        <div>
+            <h1 class="tw-text-xl tw-font-extrabold tw-text-gray-900 tw-tracking-tight">Application Floor Plans</h1>
+        </div>
+    </div>
+
+    <nav class="tw-hidden lg:tw-flex tw-gap-8 tw-flex-1 tw-justify-center">
+        <a href="/app/scouting-&amp;-crop-protection"
+            class="tw-text-secondary-gray tw-font-medium tw-text-sm tw-py-2 tw-px-3 tw-rounded-lg hover:tw-bg-gray-100 hover:tw-text-gray-900 tw-transition-colors tw-nav-tree">Home</a>
+        <a href="new-application-floor-plan"
+            class="tw-text-secondary-gray tw-font-medium tw-text-sm tw-py-2 tw-px-3 tw-rounded-lg hover:tw-bg-gray-100 hover:tw-text-gray-900 tw-transition-colors tw-nav-tree">New Application Floor Plan</a>
+        <a href="/app/work-order/view/list?custom_type=Application+Floor+Plan"
+            class="tw-text-secondary-gray tw-font-medium tw-text-sm tw-py-2 tw-px-3 tw-rounded-lg hover:tw-bg-gray-100 hover:tw-text-gray-900 tw-transition-colors">Historical Application Floor Plans</a>
+        <a href="/app/bom/view/list?custom_item_group=Chemical+Mix"
+            class="tw-text-secondary-gray tw-font-medium tw-text-sm tw-py-2 tw-px-3 tw-rounded-lg hover:tw-bg-gray-100 hover:tw-text-gray-900 tw-transition-colors tw-nav-folktales">BOMs</a>
+    </nav>
+
+    <div class="tw-flex tw-items-center tw-gap-3 tw-flex-none tw-justify-end">
+        <button id="mobile-menu-btn"
+            class="lg:tw-hidden tw-ml-4 tw-p-2 tw-text-gray-600 hover:tw-text-primary-blue tw-rounded-lg hover:tw-bg-gray-100 tw-transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                stroke="currentColor" class="tw-w-6 tw-h-6">
+                <path></path>
+            </svg>
+        </button>
+    </div>
+</header>
+
+<div id="mobile-menu"
+    class="tw-hidden lg:tw-hidden tw-mobile-menu tw-absolute tw-top-18 tw-left-0 tw-right-0 tw-bg-white tw-border-t tw-border-gray-200 tw-shadow-lg tw-z-40 tw-flex tw-flex-col tw-gap-2 tw-p-4">
+    <a href="/app/scouting-&amp;-crop-protection"
+        class="tw-text-gray-700 hover:tw-text-primary-blue tw-font-medium tw-p-2 tw-rounded-lg hover:tw-bg-gray-50 tw-nav-tree-mobile">Home</a>
+        <a href="new-application-floor-plan"
+        class="tw-text-gray-700 hover:tw-text-primary-blue tw-font-medium tw-p-2 tw-rounded-lg hover:tw-bg-gray-50">Scouts</a>
+        <a href="/app/work-order/view/list?custom_type=Application+Floor+Plan"
+        class="tw-text-gray-700 hover:tw-text-primary-blue tw-font-medium tw-p-2 tw-rounded-lg hover:tw-bg-gray-50">Observations</a>
+    <a href="/app/bom/view/list?custom_item_group=Chemical+Mix"
+        class="tw-text-gray-700 hover:tw-text-primary-blue tw-font-medium tw-p-2 tw-rounded-lg hover:tw-bg-gray-50 tw-nav-folktales-mobile">Varieties</a>
+    <hr class="tw-border-gray-100 tw-my-2">
+    <button
+        class="tw-btn tw-w-full tw-py-2.5 tw-rounded-lg tw-font-semibold tw-text-sm tw-bg-primary-blue tw-text-white hover:tw-bg-indigo-700 active:tw-scale-98 tw-transition-all">Expand
+        All</button>
+    <button
+        class="tw-btn tw-w-full tw-py-2.5 tw-rounded-lg tw-font-semibold tw-text-sm tw-bg-white tw-text-secondary-gray tw-border tw-border-gray-300 hover:tw-bg-gray-50 active:tw-scale-98 tw-transition-all">Collapse
+        All</button>
+</div>

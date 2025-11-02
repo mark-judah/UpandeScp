@@ -540,7 +540,7 @@
             window.map = L.map('map', { zoomSnap: 0.1, zoomDelta: 0.1, maxZoom: 22.4, zoomControl: true });
             mapInitialized = true;
             renderBaseLayers();
-            map.setView([0.0685, 35.7476], 18);
+            map.setView([0.0685, 35.7476], 16);
 
             const picker = document.getElementById('scout-date-picker');
             const today = new Date().toISOString().slice(0, 10);
@@ -557,9 +557,9 @@
                 flavor: "light",
                 attribution: "© Protomaps © OpenStreetMap"
             });
-            protomapsLayer.addTo(map);
-            layersControl = L.control.layers({ "Satellite": googleSat, "Protomaps": protomapsLayer }, {}, { collapsed: false,position: 'topleft'}).addTo(map);
-            
+            googleSat.addTo(map);
+            layersControl = L.control.layers({ "Satellite": googleSat, "Protomaps": protomapsLayer }, {}, { collapsed: false, position: 'topleft' }).addTo(map);
+
             document.querySelectorAll('input[name="flavor"]').forEach(radio => {
                 radio.addEventListener('change', e => {
                     const newFlavor = e.target.value;
@@ -620,10 +620,7 @@
                     renderScoutedBeds(allData.scouting_entries || [], allData.all_zones_geojson || [], scoutColors);
                     renderScoutLegend(scoutColors);
 
-                    if (window.allLatLngs.length) {
-                        map.fitBounds(L.latLngBounds(window.allLatLngs), { padding: [50, 50] });
-                        map.setZoom(Math.max(18, map.getZoom()));
-                    }
+                    // Removed auto-zoom to keep initial zoom level
                 } else {
                     document.getElementById('scout-legend').innerHTML = '<div class="empty-state"><p>No Scout Data</p></div>';
                 }
@@ -763,7 +760,7 @@
                 } catch { }
             });
 
-            window.lineIdLabels = L.layerGroup().addTo(map);
+            window.lineIdLabels = L.layerGroup();
             Object.keys(lines).forEach(key => {
                 const feats = lines[key];
                 if (feats.length > 0) {
@@ -805,15 +802,17 @@
                 } else {
                     if (window.map.hasLayer(window.zoneLayer)) window.map.removeLayer(window.zoneLayer);
                 }
-                if (z >= 18) {
+                if (z >= 19) {
                     if (!window.map.hasLayer(window.lineIdLabels)) window.lineIdLabels.addTo(window.map);
                 } else {
                     if (window.map.hasLayer(window.lineIdLabels)) window.map.removeLayer(window.lineIdLabels);
                 }
             });
 
-            if (map.getZoom() >= 15) window.zoneLayer.addTo(map);
-            if (map.getZoom() >= 18) window.lineIdLabels.addTo(map);
+            // Only add layers if zoom level is appropriate
+            const currentZoom = map.getZoom();
+            if (currentZoom >= 15) window.zoneLayer.addTo(map);
+            if (currentZoom >= 19) window.lineIdLabels.addTo(map);
         };
 
         initializeMap();

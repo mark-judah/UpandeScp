@@ -514,7 +514,7 @@
             </svg>
         </div>
 
-       
+
         <div class="sidebar-content">
             <div class="section">
                 <label class="section-label">
@@ -661,12 +661,12 @@
 
                 entries.forEach((entry, i) => {
                     const obs = entry[type] || [];
-                    
+
                     const relevant = obs.filter(o => {
                         const name = o.name;
                         return filtered.has(name);
                     });
-                    
+
                     if (!relevant.length) return;
 
                     const colours = relevant.map(o => o.color || '#999');
@@ -674,7 +674,7 @@
 
                     const start = turf.along(line, i * segLen, { units: 'meters' });
                     const end = turf.along(line, (i + 1) * segLen, { units: 'meters' });
-                    
+
                     // Offset application removed - using original coordinates
                     const seg = [
                         [start.geometry.coordinates[1], start.geometry.coordinates[0]],
@@ -684,11 +684,11 @@
                     const tip = relevant.map(o => `${o.name}: ${o.count || 1}`).join('<br>');
                     const meta = window.observationData.observation_metadata?.[type] || {};
                     const typeLabel = meta.label || type.replace(/_/g, ' ');
-                    
-                    const poly = L.polyline(seg, { 
-                        color: col, 
-                        weight: 4, 
-                        opacity: 0.85,
+
+                    const poly = L.polyline(seg, {
+                        color: col,
+                        weight: 2,
+                        opacity: 0.65,
                         className: `overlay-${type}`
                     });
                     poly.bindTooltip(`<div style="font-size:0.8125rem;line-height:1.4;"><strong style="display:block;margin-bottom:0.25rem;">${zone.name}</strong><em style="font-size:0.75rem;opacity:0.8;">${typeLabel}</em><br>${tip}</div>`, { sticky: true });
@@ -734,7 +734,7 @@
                 } catch (e) { console.error('Bad GeoJSON', zone.name, e); }
             });
 
-            window.lineIdLabels = L.layerGroup().addTo(window.map);
+            window.lineIdLabels = L.layerGroup();
             Object.values(lines).forEach(arr => {
                 if (!arr.length) return;
                 arr.sort((a, b) => a.properties.zone_id - b.properties.zone_id);
@@ -773,12 +773,14 @@
                 const z = window.map.getZoom();
                 if (z >= 15) { if (!window.map.hasLayer(window.zoneLayer)) window.zoneLayer.addTo(window.map); }
                 else { if (window.map.hasLayer(window.zoneLayer)) window.map.removeLayer(window.zoneLayer); }
-                if (z >= 18) { if (!window.map.hasLayer(window.lineIdLabels)) window.lineIdLabels.addTo(window.map); }
+                if (z >= 19) { if (!window.map.hasLayer(window.lineIdLabels)) window.lineIdLabels.addTo(window.map); }
                 else { if (window.map.hasLayer(window.lineIdLabels)) window.map.removeLayer(window.lineIdLabels); }
             });
 
-            if (window.map.getZoom() >= 15) window.zoneLayer.addTo(window.map);
-            if (window.map.getZoom() >= 18) window.lineIdLabels.addTo(window.map);
+            // Only add layers if zoom level is appropriate
+            const currentZoom = window.map.getZoom();
+            if (currentZoom >= 15) window.zoneLayer.addTo(window.map);
+            if (currentZoom >= 19) window.lineIdLabels.addTo(window.map);
         };
 
         /* ---------------- Data Fetch ---------------- */
@@ -802,14 +804,14 @@
 
                     // Initialize selection state
                     const types = data.active_observation_types || [];
-                                        
+
                     // Extract actual observation names from scouting entries if all_observation_names is empty
                     types.forEach(t => {
                         if (!window.selectedItems[t]) {
                             // First try to use the provided all_observation_names
                             let items = (data.all_observation_names?.[t] || []).map(i => i.name);
-                            
-                            
+
+
                             // If empty, extract from actual scouting entries
                             if (items.length === 0 && data.scouting_entries) {
                                 const uniqueNames = new Set();
@@ -820,7 +822,7 @@
                                     });
                                 });
                                 items = Array.from(uniqueNames);
-                                                                
+
                                 // Also populate all_observation_names for later use
                                 if (!data.all_observation_names[t]) {
                                     data.all_observation_names[t] = [];
@@ -830,16 +832,16 @@
                                     color: '#999' // Default color, will be overridden by actual data
                                 }));
                             }
-                            
+
                             window.selectedItems[t] = items;
                         }
                     });
-                    
+
                     // Select ALL types by default (not just the first one)
                     if (window.selectedTypes.size === 0) {
                         types.forEach(type => {
                             const hasData = (data.all_observation_names[type] && data.all_observation_names[type].length > 0) ||
-                                            (window.selectedItems[type] && window.selectedItems[type].length > 0);
+                                (window.selectedItems[type] && window.selectedItems[type].length > 0);
                             if (hasData) {
                                 window.selectedTypes.add(type);
                             }
@@ -878,7 +880,7 @@
             });
             mapInitialized = true;
             renderBaseLayers();
-            window.map.setView([0.069507, 35.755801], 18);
+            window.map.setView([0.069507, 35.755801], 16);
 
             const datePicker = document.getElementById('scout-date-picker');
             const today = new Date().toISOString().slice(0, 10);
@@ -898,7 +900,7 @@
                 flavor: "light",
                 attribution: "© Protomaps © OpenStreetMap"
             });
-            protomapsLayer.addTo(window.map);
+            googleSat.addTo(window.map);
 
             const baseMaps = {
                 "Satellite View": googleSat,
@@ -1059,7 +1061,7 @@
                     } else {
                         window.selectedItems[type] = window.selectedItems[type].filter(n => n !== name);
                     }
-                    
+
                     renderAllOverlays();
                 });
             });
@@ -1075,7 +1077,7 @@
                     } else {
                         window.selectedItems[type] = [];
                     }
-                    
+
                     renderObservationsList();
                     renderAllOverlays();
                 });

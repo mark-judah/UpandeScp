@@ -245,6 +245,8 @@ website_route_rules = [
     {"from_route": "/scouts-map", "to_route": "/scouts_map"},
     {"from_route": "/observations-map", "to_route": "/observations_map"},
     {"from_route": "/variety-map", "to_route": "/variety_map"},
+    {"from_route": "/new-application-floor-plan", "to_route": "/new_application_floor_plan"},
+
 ]
 
 fixtures = [

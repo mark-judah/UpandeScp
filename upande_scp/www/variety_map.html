@@ -48,7 +48,7 @@
         padding: 1rem;
         border-radius: 0.5rem;
         box-shadow: 0 1px 5px rgba(0, 0, 0, 0.65);
-        max-height: 50%;
+        max-height: 50%;    
         overflow-y: auto;
     }
 
@@ -84,7 +84,7 @@
     .leaflet-top.leaflet-right {
         margin-top: 4rem !important;
     }
-    
+
     /* LOADER STYLES */
     #map-loader {
         position: absolute;
@@ -113,8 +113,13 @@
     }
 
     @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+        0% {
+            transform: rotate(0deg);
+        }
+
+        100% {
+            transform: rotate(360deg);
+        }
     }
 </style>
 

@@ -1,4 +1,3 @@
-# apps/upande_scp/upande_scp/serverscripts/get_scouting_observations.py
 import frappe
 import hashlib
 

@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:guideline_name",
  "creation": "2025-09-27 01:41:13.304514",
@@ -56,6 +57,7 @@
    "label": "Irac Code Filter Rationale"
   },
   {
+   "description": "If empty, the guideline will apply to all IRAC codes",
    "fieldname": "irac_code_filter",
    "fieldtype": "Table MultiSelect",
    "label": "IRAC Code Filter",
@@ -70,7 +72,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-10 23:52:19.683430",
+ "modified": "2025-11-03 04:16:27.216242",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "IRAC Guideline",

@@ -12,10 +12,48 @@
     min-height: 600px;
     display: flex;
     flex-direction: column;
+    position: relative;
+  }
+
+  .grid-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+    border-radius: 12px;
+    border: 2px dashed #d1d5db;
+    padding: 40px;
+    text-align: center;
+  }
+
+  .grid-placeholder-icon {
+    width: 120px;
+    height: 120px;
+    margin-bottom: 24px;
+    opacity: 0.3;
+  }
+
+  .grid-placeholder-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #374151;
+    margin-bottom: 12px;
+  }
+
+  .grid-placeholder-text {
+    font-size: 1rem;
+    color: #6b7280;
+    max-width: 400px;
+    line-height: 1.6;
+  }
+
+  .is-visible-grid {
+    display: grid !important;
   }
 
   #heatmap-grid-wrapper {
-    display: grid;
     grid-template-columns: 60px 1fr;
     grid-template-rows: 40px 1fr;
     border: 2px solid #e5e7eb;
@@ -581,6 +619,8 @@
     }
   }
 </style>
+<script src="/assets/frappe/js/frappe-web.min.js"></script>
+
 {% endblock %}
 {% block page_content %}
 <div class="tw-bg-gray-50 tw-p-8 tw-min-h-screen">
@@ -610,7 +650,7 @@
           </div>
           <div class="form-group">
             <label class="form-label" for="variety">Variety</label>
-            <select id="variety" class="form-select" required>
+            <select id="variety" class="form-select">
               <option value="">Select variety</option>
             </select>
           </div>
@@ -737,6 +777,18 @@
     <div class="lg:tw-col-span-2 tw-space-y-6">
       <!-- Heatmap Grid -->
       <div class="grid-container-wrapper">
+        <div id="grid-placeholder" class="grid-placeholder">
+          <svg class="grid-placeholder-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+            <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+            <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+            <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+          </svg>
+          <h3 class="grid-placeholder-title">No Greenhouse Selected</h3>
+          <p class="grid-placeholder-text">
+            Select a greenhouse from the form to view the scouting heatmap and begin creating your spray plan.
+          </p>
+        </div>
         <div id="heatmap-grid-wrapper" class="tw-hidden">
           <div id="x-axis-labels"></div>
           <div id="y-axis-labels"></div>
@@ -777,6 +829,9 @@
   </div>
 </div>
 <script>
+  // ==================== CONSTANTS ====================
+  const WATER_VOLUME_RATE = 1000; // liters per hectare (L/ha)
+
   document.addEventListener("DOMContentLoaded", () => {
     // ==================== STATE & CACHE ====================
     const state = {
@@ -793,8 +848,9 @@
       activeObservationTypes: [],
       sourceWarehouseCache: {},
       chemicalUomCache: {},
-      susceptibilityData: [] // NEW: Store susceptibility
+      susceptibilityData: []
     };
+
     // ==================== DOM ELEMENTS ====================
     const els = {
       greenhouse: document.getElementById("greenhouse"),
@@ -834,13 +890,132 @@
       popupSearch: document.getElementById("global-popup-search"),
       popupContent: document.getElementById("global-popup-content")
     };
+
     // ==================== UTILITY FUNCTIONS ====================
     const showLoader = () => document.getElementById('map-loader').style.display = 'flex';
     const hideLoader = () => document.getElementById('map-loader').style.display = 'none';
+
+    // ==================== TOAST NOTIFICATION SYSTEM ====================
+    const showToast = (message, type = 'info') => {
+      const toastContainer = document.getElementById('toast-container') || createToastContainer();
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+
+      const icon = {
+        success: '✓',
+        error: '✕',
+        warning: '⚠',
+        info: 'ℹ'
+      }[type] || 'ℹ';
+
+      toast.innerHTML = `
+        <span class="toast-icon">${icon}</span>
+        <span class="toast-message">${message}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+      `;
+
+      toastContainer.appendChild(toast);
+
+      setTimeout(() => toast.classList.add('toast-show'), 10);
+      setTimeout(() => {
+        toast.classList.remove('toast-show');
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    };
+
+    const createToastContainer = () => {
+      const container = document.createElement('div');
+      container.id = 'toast-container';
+      container.className = 'toast-container';
+      document.body.appendChild(container);
+
+      const style = document.createElement('style');
+      style.textContent = `
+        .toast-container {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          z-index: 10000;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .toast {
+          min-width: 300px;
+          padding: 16px;
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          opacity: 0;
+          transform: translateX(400px);
+          transition: all 0.3s ease;
+          background: white;
+          border-left: 4px solid;
+        }
+        .toast-show {
+          opacity: 1;
+          transform: translateX(0);
+        }
+        .toast-success {
+          border-left-color: #10b981;
+          background: #f0fdf4;
+        }
+        .toast-error {
+          border-left-color: #ef4444;
+          background: #fef2f2;
+        }
+        .toast-warning {
+          border-left-color: #f59e0b;
+          background: #fffbeb;
+        }
+        .toast-info {
+          border-left-color: #3b82f6;
+          background: #eff6ff;
+        }
+        .toast-icon {
+          font-size: 20px;
+          font-weight: bold;
+          flex-shrink: 0;
+        }
+        .toast-success .toast-icon { color: #10b981; }
+        .toast-error .toast-icon { color: #ef4444; }
+        .toast-warning .toast-icon { color: #f59e0b; }
+        .toast-info .toast-icon { color: #3b82f6; }
+        .toast-message {
+          flex: 1;
+          font-size: 14px;
+          color: #1f2937;
+        }
+        .toast-close {
+          background: none;
+          border: none;
+          font-size: 24px;
+          color: #6b7280;
+          cursor: pointer;
+          padding: 0;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .toast-close:hover {
+          color: #1f2937;
+        }
+      `;
+      document.head.appendChild(style);
+
+      return container;
+    };
+
     const parseBedNumber = (bedString) => {
       const match = bedString.match(/Bed (\d+)/);
       return match ? parseInt(match[1]) : null;
     };
+
     const getZoneNumber = (zoneData) => {
       if (typeof zoneData === "number") return zoneData;
       if (typeof zoneData === "string") {
@@ -849,6 +1024,7 @@
       }
       return null;
     };
+
     const findMaxDimensions = (data) => {
       let maxBed = 0, maxZone = 0;
       data.forEach((entry) => {
@@ -859,6 +1035,7 @@
       });
       return { maxBed, maxZone };
     };
+
     // ==================== POPUP FUNCTIONS ====================
     const showPopup = (inputElement, dataCache) => {
       els.popup.dataset.targetInputId = inputElement.id || (inputElement.id = `input-${Date.now()}`);
@@ -891,12 +1068,14 @@
       filterPopup();
       els.popupSearch.focus();
     };
+
     const filterPopup = () => {
       const filterText = els.popupSearch.value.toUpperCase();
       Array.from(els.popupContent.children).forEach(option => {
         option.style.display = option.textContent.toUpperCase().includes(filterText) ? 'block' : 'none';
       });
     };
+
     // ==================== DATA PROCESSING ====================
     const processScoutingData = (scoutingEntries) => {
       const dataMap = new Map();
@@ -904,14 +1083,11 @@
       const stagesInGreenhouse = new Set();
       const sectionsInGreenhouse = new Set();
 
-      // Initialise every possible observation type
-      // Accept both '_scouting_entry' and '_entry' suffixes
       const allPossibleTypes = state.activeObservationTypes.filter(t =>
         t.endsWith('_scouting_entry') || t.endsWith('_entry')
       );
       allPossibleTypes.forEach(t => observationsInGreenhouse[t] = new Set());
 
-      // Always add "N/A" as default stage and section for observations without these fields
       stagesInGreenhouse.add("N/A");
       sectionsInGreenhouse.add("N/A");
 
@@ -927,12 +1103,9 @@
         allPossibleTypes.forEach(obsType => {
           const obsArray = entry[obsType] || [];
 
-        
           obsArray.forEach((obs) => {
-            // Add to greenhouse observations Set
             observationsInGreenhouse[obsType].add(obs.name);
 
-            // Add stage if present, otherwise use "N/A"
             const stage = obs.stage || "N/A";
             const plantSection = obs.plant_section || "N/A";
 
@@ -952,12 +1125,12 @@
         });
       });
 
-      // Sort observations in each zone
       dataMap.forEach((observations, key) => {
         dataMap.set(key, observations.sort((a, b) => a.name.localeCompare(b.name)));
       });
       return { dataMap, observationsInGreenhouse, stagesInGreenhouse, sectionsInGreenhouse };
     };
+
     // ==================== RENDERING FUNCTIONS ====================
     const renderGrid = (numBeds, zonesPerBed, bedNumbering, zoneNumbering) => {
       els.mainGrid.innerHTML = "";
@@ -998,6 +1171,7 @@
         els.yAxisLabels.scrollTop = els.mainGrid.scrollTop;
       });
     };
+
     const updateGrid = () => {
       if (!els.greenhouse.value || state.scoutingData.length === 0) return;
 
@@ -1019,10 +1193,6 @@
         const observationsInZone = state.dataMap.get(key) || [];
         const tooltip = cell.querySelector(".tw-tooltip");
 
-        // Debug incidents
-        const hasIncidents = observationsInZone.some(obs => obs.type === 'incidents_scouting_entry');
-       
-        // Reset cell
         cell.innerHTML = "";
         cell.appendChild(tooltip);
         cell.classList.remove("tw-threshold-high", "tw-threshold-moderate", "tw-threshold-low");
@@ -1032,13 +1202,8 @@
           const obsType = obs.type;
           const activeObsOfType = activeObs[obsType] || [];
 
-          // Check if observation name is in active filters
           const isObservationActive = activeObsOfType.includes(obs.name);
-
-          // For stage: if obs.stage is "N/A", always pass; otherwise check if it's in activeStages
           const isStageActive = obs.stage === "N/A" || activeStages.includes(obs.stage);
-
-          // For plant_section: if obs.plant_section is "N/A", always pass; otherwise check if it's in activeSections
           const isSectionActive = obs.plant_section === "N/A" || activeSections.includes(obs.plant_section);
 
           return isObservationActive && isStageActive && isSectionActive;
@@ -1049,14 +1214,12 @@
 
         if (filteredObs.length > 0) {
           filteredObs.forEach((obs) => {
-            // Create observation indicator (dot)
             const indicator = document.createElement("div");
             indicator.classList.add("observation-indicator");
             indicator.style.backgroundColor = obs.color;
             indicator.title = obs.name;
             cell.appendChild(indicator);
 
-            // Susceptibility logic
             const obsTypeClean = TYPE_MAP[obs.type] || obs.type.replace('_scouting_entry', '');
             const sus = state.susceptibilityData.find(s =>
               s.observation === obs.name && s.type === obsTypeClean
@@ -1123,10 +1286,9 @@
         });
       });
     };
-    // ==================== FIX 1: AUTO-CHECK + NEVER DISABLE ====================
+
     const renderObservationCheckboxes = (observationsInGreenhouse) => {
       els.targetsContainer.innerHTML = '';
-
 
       state.activeObservationTypes.forEach(obsType => {
         const typeLabel = state.observationMetadata.type_labels?.[obsType]
@@ -1135,7 +1297,6 @@
         const observationsOfType = observationsInGreenhouse[obsType] || new Set();
         const metadataList = state.allObservationNames[obsType] || [];
 
-        // ALWAYS show the section, even if no data exists
         const section = document.createElement('div');
         section.className = 'observation-section';
 
@@ -1147,16 +1308,13 @@
         const filterGroup = document.createElement('div');
         filterGroup.className = 'filter-group';
 
-        // Merge metadata and actual observations
         const allObservationNames = new Set();
 
-        // Add metadata observations
         metadataList.forEach(o => {
           const name = o.name || o;
           allObservationNames.add(name);
         });
 
-        // Add actual observations from data
         observationsOfType.forEach(name => {
           allObservationNames.add(name);
         });
@@ -1164,7 +1322,6 @@
         const namesToShow = Array.from(allObservationNames).sort();
 
         if (namesToShow.length === 0) {
-          // Show placeholder if no observations exist
           const placeholder = document.createElement('div');
           placeholder.className = 'tw-text-sm tw-text-gray-500 tw-italic';
           placeholder.textContent = 'No observations available';
@@ -1180,7 +1337,6 @@
             checkbox.value = obsName;
             checkbox.dataset.obsType = obsType;
 
-            // Check if this observation exists in the current greenhouse data
             const isInData = observationsOfType.has(obsName);
             checkbox.checked = isInData;
             checkbox.disabled = false;
@@ -1216,6 +1372,7 @@
         els.stagesContainer.appendChild(pill);
       });
     };
+
     const renderPlantSectionCheckboxes = (sectionsInGreenhouse) => {
       const sections = ['Base', 'Stem', 'Middle', 'Top', 'Buds'];
       els.plantSectionContainer.innerHTML = "";
@@ -1235,6 +1392,7 @@
         els.plantSectionContainer.appendChild(pill);
       });
     };
+
     const renderThresholdCheckboxes = (varietyName) => {
       const thresholds = ['low', 'moderate', 'high'];
       const hasData = state.susceptibilityData.length > 0 && varietyName;
@@ -1261,6 +1419,7 @@
         els.thresholdMessage.classList.remove("tw-hidden");
       }
     };
+
     const renderStockTable = (balances, allWarehouses) => {
       els.stockBalancesContainer.classList.remove("tw-hidden");
       els.warehouseGroupHeader.setAttribute("colspan", allWarehouses.length);
@@ -1298,6 +1457,7 @@
       });
       els.stockBalanceTableBody.innerHTML = bodyHtml || `<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data available</td></tr>`;
     };
+
     const createChemicalRow = (itemName = "", qty = "", uom = "") => {
       const row = document.createElement("div");
       row.className = "chemical-row";
@@ -1336,7 +1496,7 @@
       row.appendChild(removeBtn);
       return row;
     };
-    // ==================== FIX 2: getActiveFilters FROM CHECKBOXES ====================
+
     const getActiveFilters = () => {
       const activeObs = {};
       state.activeObservationTypes.forEach(obsType => {
@@ -1348,9 +1508,11 @@
       const activeRequirements = Array.from(els.thresholdContainer.querySelectorAll('input:checked')).map(cb => cb.value);
       return { activeObs, activeStages, activeSections, activeRequirements };
     };
+
     // ==================== DATA FETCHING ====================
     const fetchScoutingData = async (greenhouse) => {
       els.heatmapGridWrapper.classList.add("tw-hidden");
+      document.getElementById('grid-placeholder').classList.add("tw-hidden");
       els.targetsContainer.innerHTML = '';
       els.stagesContainer.innerHTML = "";
       els.plantSectionContainer.innerHTML = "";
@@ -1373,8 +1535,9 @@
         const r = await response.json();
         const data = r.message || r.data;
         if (data && data.scouting_entries && data.scouting_entries.length > 0) {
+          els.heatmapGridWrapper.classList.remove("tw-hidden");
+          els.heatmapGridWrapper.classList.add("is-visible-grid");
           state.scoutingData = data.scouting_entries;
-          // ---- Discover all observation types present in data ----
           const discoveredTypes = new Set();
           state.scoutingData.forEach(entry => {
             Object.keys(entry).forEach(key => {
@@ -1383,7 +1546,6 @@
               }
             });
           });
-          // ---- Merge metadata types + discovered types ----
           if (data.observation_metadata) {
             state.observationMetadata = data.observation_metadata;
             state.allObservationNames = data.observation_metadata.all_observation_names || {};
@@ -1394,14 +1556,11 @@
             state.allObservationNames = {};
             state.activeObservationTypes = Array.from(discoveredTypes);
           }
-          // ==================== FIX 3: IN SCOPE + PROCESS DATA ====================
           const { dataMap, observationsInGreenhouse, stagesInGreenhouse, sectionsInGreenhouse } = processScoutingData(data.scouting_entries);
           state.dataMap = dataMap;
-          // ==================== RENDER FILTERS ====================
           renderObservationCheckboxes(observationsInGreenhouse);
           renderStageCheckboxes([...stagesInGreenhouse]);
           renderPlantSectionCheckboxes([...sectionsInGreenhouse]);
-          // ==================== RENDER GRID ====================
           if (data.varieties) populateVarieties(data.varieties);
           if (data.susceptibility) {
             state.susceptibilityData = data.susceptibility;
@@ -1414,7 +1573,6 @@
           const bedNumbering = data.custom_bed_numbering || "Top to Bottom";
           const zoneNumbering = data.custom_zone_numbering || "Right to Left";
           renderGrid(maxBed, maxZone, bedNumbering, zoneNumbering);
-          // ==================== FIX 4: INITIAL UPDATE ====================
           updateGrid();
           els.heatmapGridWrapper.classList.remove("tw-hidden");
           if (data.boms) {
@@ -1427,13 +1585,16 @@
           state.bedData = data.bed_data || [];
         } else {
           els.heatmapGridWrapper.classList.add("tw-hidden");
+          document.getElementById('grid-placeholder').classList.remove("tw-hidden");
         }
       } catch (error) {
         els.heatmapGridWrapper.classList.add("tw-hidden");
+        document.getElementById('grid-placeholder').classList.remove("tw-hidden");
       } finally {
         hideLoader();
       }
     };
+
     const updateStockBalances = async () => {
       const chemicals = getFinalChemicals();
       const uniqueChemicals = [...new Set(chemicals.map(c => c.chemical).filter(name => name && name.trim()))];
@@ -1444,7 +1605,7 @@
       els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">Fetching stock balances...</td></tr>';
       showLoader();
       try {
-        const response = await fetch('/api/method/getBomStockBalances', {
+        const response = await fetch('/api/method/upande_scp.serverscripts.get_bom_stock_balances.getBomStockBalances', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1477,6 +1638,7 @@
         hideLoader();
       }
     };
+
     // ==================== HELPER FUNCTIONS ====================
     const populateVarieties = (varieties) => {
       els.variety.innerHTML = '<option value="">Select variety</option>';
@@ -1490,6 +1652,7 @@
         els.varietyMultiSelect.appendChild(multiOption);
       });
     };
+
     const populateTeams = (teams) => {
       els.sprayTeam.innerHTML = "";
       teams.forEach((team) => {
@@ -1499,6 +1662,7 @@
         els.sprayTeam.appendChild(option);
       });
     };
+
     const populateBoms = (boms) => {
       els.bom.innerHTML = '<option value="">Select BOM</option>';
       boms.forEach((b) => {
@@ -1508,6 +1672,7 @@
         els.bom.appendChild(option);
       });
     };
+
     const populateBomDetails = (bomName) => {
       const selectedBom = state.bomsData.find((bom) => bom.name === bomName);
       els.bomChemicalsList.innerHTML = "";
@@ -1524,6 +1689,7 @@
         els.bomDetailsContainer.classList.add("tw-hidden");
       }
     };
+
     const calculateAreaToSpray = () => {
       const scope = els.scope.value;
       let totalAreaSqMeters = 0;
@@ -1563,7 +1729,10 @@
       }
       const totalAreaHectares = totalAreaSqMeters > 0 ? totalAreaSqMeters / 10000 : 0;
       els.areaToSpray.value = totalAreaHectares > 0 ? totalAreaHectares.toFixed(4) : 0;
+      waterVolume = totalAreaHectares * WATER_VOLUME_RATE
+      els.waterVolume.value = waterVolume > 0 ? waterVolume.toFixed(2) : 0;
     };
+
     const getFinalChemicals = () => {
       const chemicalRows = Array.from(els.bomChemicalsList.querySelectorAll(".chemical-row"));
       return chemicalRows.map(row => {
@@ -1580,6 +1749,7 @@
         };
       }).filter(item => item.chemical !== '');
     };
+
     const refreshRowUoms = () => {
       const rows = document.querySelectorAll(".chemical-row");
       rows.forEach(row => {
@@ -1591,6 +1761,7 @@
         }
       });
     };
+
     // ==================== EVENT HANDLERS ====================
     window.handleWarehouseChange = function (element) {
       const itemCode = element.getAttribute("data-item-code");
@@ -1599,6 +1770,7 @@
         state.sourceWarehouseCache[itemCode].source_warehouse = warehouse || null;
       }
     };
+
     els.greenhouse.addEventListener("change", (e) => {
       if (e.target.value) {
         els.variety.value = "";
@@ -1618,10 +1790,12 @@
       }
       fetchScoutingData(e.target.value);
     });
+
     els.variety.addEventListener("change", () => {
       renderThresholdCheckboxes(els.variety.value);
       updateGrid();
     });
+
     els.scope.addEventListener("change", (e) => {
       els.bedNumbersContainer.classList.add("tw-hidden");
       els.varietySelectionContainer.classList.add("tw-hidden");
@@ -1635,6 +1809,7 @@
       }
       calculateAreaToSpray();
     });
+
     els.varietyMultiSelect.addEventListener("change", () => {
       const selectedOptions = Array.from(els.varietyMultiSelect.selectedOptions);
       const selectedVarietyNames = selectedOptions.map(opt => opt.textContent);
@@ -1643,7 +1818,9 @@
         : '<p class="tw-text-gray-500">Selected varieties will appear here...</p>';
       calculateAreaToSpray();
     });
+
     els.bedNumbers.addEventListener("input", calculateAreaToSpray);
+
     els.bom.addEventListener("change", (e) => {
       populateBomDetails(e.target.value);
       const uniqueChemicals = state.bomItems
@@ -1651,19 +1828,23 @@
         .map(item => item.item_name);
       updateStockBalances();
     });
+
     els.addChemicalBtn.addEventListener("click", () => {
       const newRow = createChemicalRow();
       els.bomChemicalsList.appendChild(newRow);
     });
+
     els.targetsContainer.addEventListener("change", updateGrid);
     els.stagesContainer.addEventListener("change", updateGrid);
     els.plantSectionContainer.addEventListener("change", updateGrid);
     els.thresholdContainer.addEventListener("change", updateGrid);
+
     els.popupOverlay.addEventListener("click", (e) => {
       if (e.target.id === "global-popup-overlay") {
         els.popupOverlay.classList.remove("active");
       }
     });
+
     // ==================== FORM SUBMISSION ====================
     document.getElementById("spray-plan-form").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -1684,22 +1865,22 @@
         targets.push(...obsArray);
       });
       const chemicals = getFinalChemicals();
-      if (!greenhouse || !variety || targets.length === 0 || activeStages.length === 0 || activeSections.length === 0 || !sprayType || !kit || !scope || !bom) {
-        frappe.msgprint("Please fill out all required fields.");
+      if (!greenhouse || targets.length === 0 || activeStages.length === 0 || activeSections.length === 0 || !sprayType || !kit || !scope || !bom) {
+        showToast("Please fill out all required fields.", "error");
         return;
       }
       if (chemicals.length === 0) {
-        frappe.msgprint("Please add at least one chemical.");
+        showToast("Please add at least one chemical.", "error");
         return;
       }
       for (const chemical of chemicals) {
         if (!chemical.chemical || !chemical.uom || chemical.quantity <= 0 || !chemical.source_warehouse) {
-          frappe.msgprint("All chemical rows must have valid item name, quantity, UoM, and source warehouse.");
+          showToast("All chemical rows must have valid item name, quantity, UoM, and source warehouse.", "error");
           return;
         }
       }
       if (!waterPh || !waterHardness) {
-        frappe.msgprint("Please provide values for water pH and water hardness.");
+        showToast("Please provide values for water pH and water hardness.", "error");
         return;
       }
       let custom_scope_value = "";
@@ -1729,76 +1910,259 @@
         custom_area: areaToSpray,
         custom_spray_team: sprayTeam
       };
-      frappe.call({
-        method: 'preValidateFracIracGuidelines',
-        args: { raw_data: formData },
-        callback: function (r) {
-          const res = r.message;
-          if (res?.status === "success") {
-            frappe.show_alert({ message: __("Work Order created successfully."), indicator: "green" });
-            frappe.set_route('List', 'Work Order');
-            return;
+
+      showLoader();
+      try {
+        const fullPayload = {
+          payload: {
+            raw_data: formData
           }
-          if (res?.status === "validation_failed") {
-            const dialog = new frappe.ui.Dialog({
-              title: __('FRAC/IRAC Validation Warning'),
-              size: 'large',
-              primary_action_label: __('Bypass and Create'),
-              primary_action: function () {
-                dialog.hide();
-                frappe.show_alert({ message: __('Creating Work Order (Guidelines Bypassed)'), indicator: 'orange' });
-                createWorkOrder(formData);
-              },
-              secondary_action_label: __('Cancel'),
-              secondary_action: function () {
-                dialog.hide();
-                frappe.show_alert({ message: __('Work Order creation cancelled'), indicator: 'red' });
-              }
-            });
-            const html = `
-            <div style="max-height: 400px; overflow-y: auto;">
-              ${res.html || '<div>No validation details provided.</div>'}
-              <div style="margin-top: 20px; padding: 15px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;">
-                <p style="margin: 0; color: #856404; font-weight: bold;">
-                  Warning: Do you want to bypass these guidelines and create the Work Order anyway?
-                </p>
-                <p style="margin: 10px 0 0 0; color: #856404; font-size: 0.9em;">
-                  Bypassing may lead to reduced effectiveness and increased resistance.
-                </p>
-              </div>
-            </div>
-          `;
-            dialog.body.innerHTML = html;
-            dialog.show();
-            dialog.$wrapper.find('.btn-primary').removeClass('btn-primary').addClass('btn-dark');
-            return;
-          }
-          frappe.msgprint({ title: __('Validation Error'), indicator: 'red', message: __('Unexpected response from server.') });
-        },
-        error: function (err) {
-          frappe.msgprint({ title: __('Server Error'), indicator: 'red', message: __('An error occurred. Please try again.') });
+        };
+        const response = await fetch('/api/method/upande_scp.serverscripts.validate_frac_irac_guidelines.validateGuidelines', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Frappe-CSRF-Token': "{{csrf_token}}"
+          },
+          body: JSON.stringify(fullPayload)
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+        const r = await response.json();
+        const validationResult = r.message; // Assuming r.message is the validation result {valid: bool, errors: [...]}
+
+        if (validationResult?.valid === true) {
+          // --- VALID: Proceed to create the Work Order ---
+          hideLoader();
+          createWorkOrder(formData);
+          return;
         }
-      });
+
+        if (validationResult?.valid === false) {
+          // --- INVALID: Show warning dialog ---
+          hideLoader();
+          // Pass the errors array to the dialog for display
+          showValidationDialog(validationResult.errors, formData);
+          return;
+        }
+
+        // Handle unexpected structure from the validation API
+        showToast("Unexpected response structure from validation server.", "error");
+      } catch (error) {
+        showToast("An error occurred during validation. Please try again.", "error");
+        console.error("Validation API Error:", error);
+      } finally {
+        // Only hide the loader if the validation was successful and moved to createWorkOrder, 
+        // or if an error occurred. If the dialog is shown, hideLoader() is called before showValidationDialog.
+        // It's removed from here to prevent hiding the loader if it was already hidden.
+      }
     });
-    const createWorkOrder = (data) => {
-      frappe.call({
-        method: "createChemicalPlanWorkOrder",
-        args: data,
-        callback: function (r) {
-          if (r.message && r.message.status === "success") {
-            frappe.msgprint(`Work Order ${r.message.work_order_name} created successfully!`);
-            location.reload();
-          } else {
-            frappe.msgprint(`Error creating Work Order: ${r.message?.message || "Unknown error"}`);
-          }
-        },
-        error: function () {
-          frappe.msgprint("An unexpected error occurred during creation. Please try again.");
+
+    const showValidationDialog = (errors, formData) => {
+      // Format the errors into HTML for the dialog body
+      const errorHtml = errors.length > 0
+        ? `<ul>${errors.map(err => `<li>${err}</li>`).join('')}</ul>`
+        : '<div>No specific validation details provided.</div>';
+
+      const dialogOverlay = document.createElement('div');
+      dialogOverlay.className = 'validation-dialog-overlay';
+      dialogOverlay.innerHTML = `
+        <div class="validation-dialog">
+          <div class="validation-dialog-header">
+            <h3>FRAC/IRAC Validation Warning</h3>
+            <button class="validation-dialog-close" onclick="this.closest('.validation-dialog-overlay').remove()">×</button>
+          </div>
+          <div class="validation-dialog-body">
+            ${errorHtml} <div class="validation-warning-box">
+              <p class="validation-warning-title">
+                Warning: Do you want to bypass these guidelines and create the Work Order anyway?
+              </p>
+              <p class="validation-warning-text">
+                Bypassing may lead to reduced effectiveness and increased resistance.
+              </p>
+            </div>
+          </div>
+          <div class="validation-dialog-footer">
+            <button class="validation-btn validation-btn-cancel" onclick="this.closest('.validation-dialog-overlay').remove(); showToast('Work Order creation cancelled', 'info');">Cancel</button>
+            <button class="validation-btn validation-btn-bypass" id="bypass-validation-btn">Bypass and Create</button>
+          </div>
+        </div>
+      `;
+
+      const style = document.createElement('style');
+      style.textContent = `
+        .validation-dialog-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 9999;
         }
+        .validation-dialog {
+          background: white;
+          border-radius: 8px;
+          max-width: 800px;
+          width: 90%;
+          max-height: 90vh;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        .validation-dialog-header {
+          padding: 20px;
+          border-bottom: 1px solid #e5e7eb;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .validation-dialog-header h3 {
+          margin: 0;
+          font-size: 20px;
+          color: #1f2937;
+        }
+        .validation-dialog-close {
+          background: none;
+          border: none;
+          font-size: 28px;
+          color: #6b7280;
+          cursor: pointer;
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .validation-dialog-close:hover {
+          color: #1f2937;
+        }
+        .validation-dialog-body {
+          padding: 20px;
+          overflow-y: auto;
+          flex: 1;
+        }
+        .validation-dialog-body ul {
+          list-style-type: none;
+          padding: 0;
+          margin: 0 0 20px 0;
+          border: 1px solid #ffcdd2;
+          background-color: #ffebee;
+          border-radius: 4px;
+        }
+        .validation-dialog-body li {
+          padding: 10px 15px;
+          color: #c62828;
+          font-size: 14px;
+          border-bottom: 1px dashed #ffcdd2;
+        }
+        .validation-dialog-body li:last-child {
+          border-bottom: none;
+        }
+        .validation-warning-box {
+          margin-top: 20px;
+          padding: 15px;
+          background-color: #fff3cd;
+          border: 1px solid #ffc107;
+          border-radius: 4px;
+        }
+        .validation-warning-title {
+          margin: 0;
+          color: #856404;
+          font-weight: bold;
+        }
+        .validation-warning-text {
+          margin: 10px 0 0 0;
+          color: #856404;
+          font-size: 0.9em;
+        }
+        .validation-dialog-footer {
+          padding: 20px;
+          border-top: 1px solid #e5e7eb;
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+        }
+        .validation-btn {
+          padding: 10px 20px;
+          border-radius: 6px;
+          border: none;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .validation-btn-cancel {
+          background: #f3f4f6;
+          color: #374151;
+        }
+        .validation-btn-cancel:hover {
+          background: #e5e7eb;
+        }
+        .validation-btn-bypass {
+          background: #1f2937;
+          color: white;
+        }
+        .validation-btn-bypass:hover {
+          background: #111827;
+        }
+      `;
+      document.head.appendChild(style);
+
+      document.body.appendChild(dialogOverlay);
+
+      document.getElementById('bypass-validation-btn').addEventListener('click', () => {
+        dialogOverlay.remove();
+        showToast('Creating Work Order (Guidelines Bypassed)', 'warning');
+        createWorkOrder(formData);
       });
     };
+
+    const createWorkOrder = async (data) => {
+      showLoader();
+      try {
+        const fullPayload = {
+          payload: {
+            raw_data: data
+          }
+        };
+        const response = await fetch('/api/method/upande_scp.serverscripts.create_application_work_order.createApplicationWorkOrder', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Frappe-CSRF-Token': "{{csrf_token}}"
+          },
+          body: JSON.stringify(fullPayload)
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+        const r = await response.json();
+
+        if (r.message && r.message.status === "success") {
+          const redirectPath = `/app/work-order/${r.message.work_order_name}`;
+          showToast(`Work Order ${r.message.work_order_name} created successfully!`, "success");
+          setTimeout(() => {
+            window.location.href = redirectPath;
+            console.log(redirectPath)
+          }, 1500);
+        } else {
+          showToast(`Error creating Work Order: ${r.message?.message || "Unknown error"}`, "error");
+        }
+      } catch (error) {
+        showToast("An unexpected error occurred during creation. Please try again.", "error");
+      } finally {
+        hideLoader();
+      }
+    };
+
     // ==================== INITIALIZATION ====================
     renderThresholdCheckboxes(null);
+
   });
 </script>
 {% endblock %}

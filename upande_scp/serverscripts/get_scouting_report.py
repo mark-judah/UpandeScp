@@ -193,7 +193,7 @@ def getScoutingData():
         final_scouting_entries = list(processed_entries.values())
 
         # --- 4. Varieties (no thresholds) ---
-        varieties_planted_in_gh = frappe.get_all("Varieties", filters={"parent": greenhouse}, fields=["variety"])
+        varieties_planted_in_gh = frappe.get_all("Items Greenhouses", filters={"parent": greenhouse}, fields=["variety"])
         variety_names = [v.variety for v in varieties_planted_in_gh]
         varieties_data = [{"name": v_name} for v_name in variety_names]
 
@@ -287,8 +287,7 @@ def getScoutingData():
         # --- 7. Final Response ---
         return {
             "scouting_entries": final_scouting_entries,
-            "varieties": varieties_data,  # No thresholds
-            "susceptibility": susceptibility,  # Full requirement logic
+            "susceptibility": susceptibility,
             "boms": chemical_mix_boms,
             "bom_items": bom_items,
             "custom_bed_numbering": bed_zone_numbering[0].get("custom_bed_numbering") if bed_zone_numbering else None,

@@ -25,10 +25,12 @@
             display: none !important;
         }
 
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        /* ✅ Import Poppins font (replacing Inter) */
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
 
+        /* ✅ Apply Poppins globally */
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Poppins', sans-serif;
             @apply tw-bg-background-light;
         }
 
@@ -45,7 +47,7 @@
             align-items: center;
             flex-direction: column;
             color: #555;
-            font-family: sans-serif;
+            font-family: 'Poppins', sans-serif; /* keep consistent */
         }
 
         .spinner {
@@ -68,7 +70,7 @@
             }
         }
     </style>
-
+    
     {% block head %}{% endblock %}
 </head>
 

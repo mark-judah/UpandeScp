@@ -63,6 +63,7 @@
    "label": "Frac Code Filter Rationale"
   },
   {
+   "description": "If empty, the guideline will apply to all FRAC codes",
    "fieldname": "frac_code_filter",
    "fieldtype": "Table MultiSelect",
    "label": "FRAC Code Filter",
@@ -77,7 +78,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-10 23:49:24.384804",
+ "modified": "2025-11-03 04:17:18.349251",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "FRAC Guideline",

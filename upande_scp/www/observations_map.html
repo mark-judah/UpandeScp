@@ -588,274 +588,484 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-providers/1.13.0/leaflet-providers.min.js"></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
 <script src="https://unpkg.com/protomaps-leaflet@5.0.0/dist/protomaps-leaflet.js"></script>
-<script src="/assets/frappe/js/frappe-web.min.js"></script>
 
 <script>
     window.onload = function () {
-        /* ---------------- 1. Globals ---------------- */
-        window.map = null;
-        let mapInitialized = false;
-        window.zoneLayer = null;
-        window.lineIdLabels = null;
-        window.overlayLayers = {};
-        let protomapsLayer = null;
-        let layersControl = null;
-        let darkFlavor = false;
+        const showToast = (message, type = 'info') => {
+            const toastContainer = document.getElementById('toast-container') || createToastContainer();
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
 
-        window.observationData = {};
-        window.selectedTypes = new Set();
-        window.selectedItems = {};
+            const icon = {
+                success: '✓',
+                error: '✕',
+                warning: '⚠',
+                info: 'ℹ'
+            }[type] || 'ℹ';
 
-        const sidebar = document.getElementById('sidebar');
-        const toggleBtn = document.getElementById('toggle-sidebar');
-        const categoryTabs = document.getElementById('category-tabs');
-        const observationsList = document.getElementById('observations-list');
-        const mapStyleSection = document.getElementById('map-style-section');
+            toast.innerHTML = `
+        <span class="toast-icon">${icon}</span>
+        <span class="toast-message">${message}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+      `;
 
-        toggleBtn.addEventListener('click', () => {
-            sidebar.classList.toggle('collapsed');
+            toastContainer.appendChild(toast);
+
+            setTimeout(() => toast.classList.add('toast-show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('toast-show');
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        };
+
+        const createToastContainer = () => {
+            const container = document.createElement('div');
+            container.id = 'toast-container';
+            container.className = 'toast-container';
+            document.body.appendChild(container);
+
+            const style = document.createElement('style');
+            style.textContent = `
+        .toast-container {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          z-index: 10000;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .toast {
+          min-width: 300px;
+          padding: 16px;
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          opacity: 0;
+          transform: translateX(400px);
+          transition: all 0.3s ease;
+          background: white;
+          border-left: 4px solid;
+        }
+        .toast-show {
+          opacity: 1;
+          transform: translateX(0);
+        }
+        .toast-success {
+          border-left-color: #10b981;
+          background: #f0fdf4;
+        }
+        .toast-error {
+          border-left-color: #ef4444;
+          background: #fef2f2;
+        }
+        .toast-warning {
+          border-left-color: #f59e0b;
+          background: #fffbeb;
+        }
+        .toast-info {
+          border-left-color: #3b82f6;
+          background: #eff6ff;
+        }
+        .toast-icon {
+          font-size: 20px;
+          font-weight: bold;
+          flex-shrink: 0;
+        }
+        .toast-success .toast-icon { color: #10b981; }
+        .toast-error .toast-icon { color: #ef4444; }
+        .toast-warning .toast-icon { color: #f59e0b; }
+        .toast-info .toast-icon { color: #3b82f6; }
+        .toast-message {
+          flex: 1;
+          font-size: 14px;
+          color: #1f2937;
+        }
+        .toast-close {
+          background: none;
+          border: none;
+          font-size: 24px;
+          color: #6b7280;
+          cursor: pointer;
+          padding: 0;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .toast-close:hover {
+          color: #1f2937;
+        }
+      `;
+            document.head.appendChild(style);
+
+            return container;
+        };
+
+        window.greenhouses_geojson = {{ greenhouses_geojson | tojson | safe }};
+
+
+    console.log("Greenhouses loaded:", window.greenhouses_geojson);
+    // ================================================================
+    /* ---------------- 1. Globals ---------------- */
+    const OFFSET_LAT = -0.00006; // Negative to shift DOWN
+    const OFFSET_LNG = -0.00002; // Negative to shift LEFT
+
+    let useOffset = true; // Start with true since Google Sat is the default
+
+    const applyOffset = (lat, lng) => {
+        if (!useOffset) {
+            return [lat, lng];
+        }
+        return [lat + OFFSET_LAT, lng + OFFSET_LNG];
+    };
+    window.map = null;
+    let mapInitialized = false;
+    window.zoneLayer = null;
+    window.lineIdLabels = null;
+    window.overlayLayers = {};
+    let protomapsLayer = null;
+    let layersControl = null;
+    let darkFlavor = false;
+
+    window.observationData = {};
+    window.selectedTypes = new Set();
+    window.selectedItems = {};
+
+    const sidebar = document.getElementById('sidebar');
+    const toggleBtn = document.getElementById('toggle-sidebar');
+    const categoryTabs = document.getElementById('category-tabs');
+    const observationsList = document.getElementById('observations-list');
+    const mapStyleSection = document.getElementById('map-style-section');
+
+    toggleBtn.addEventListener('click', () => {
+        sidebar.classList.toggle('collapsed');
+    });
+
+    const showLoader = () => document.getElementById('map-loader').style.display = 'flex';
+    const hideLoader = () => document.getElementById('map-loader').style.display = 'none';
+
+    /* ---------------- Blend Colors ---------------- */
+    const blendColors = colors => {
+        if (!colors.length) return "#999";
+        let r = 0, g = 0, b = 0;
+        colors.forEach(c => {
+            const h = c.replace("#", "");
+            r += parseInt(h.substr(0, 2), 16);
+            g += parseInt(h.substr(2, 2), 16);
+            b += parseInt(h.substr(4, 2), 16);
+        });
+        return `rgb(${Math.round(r / colors.length)},${Math.round(g / colors.length)},${Math.round(b / colors.length)})`;
+    };
+
+    /* ---------------- Render Overlays ---------------- */
+    const renderOverlayForType = (type, scoutingData, zonesGeojson) => {
+        if (window.overlayLayers[type]) window.map.removeLayer(window.overlayLayers[type]);
+        const lg = L.layerGroup();
+        const filtered = new Set(window.selectedItems[type] || []);
+
+        // If no items are selected for this type, don't render anything
+        if (filtered.size === 0) {
+            window.overlayLayers[type] = lg;
+            return;
+        }
+
+        // Offset calculation removed here
+
+        (zonesGeojson || []).forEach(zone => {
+            let gj;
+            try { gj = JSON.parse(zone.raw_geojson); } catch { return; }
+            const coords = gj.features?.[0]?.geometry?.coordinates?.map(c => [c[1], c[0]]) || [];
+            const offsetCoords = applyOffset(coords);
+            if (!coords.length) return;
+
+            const line = turf.lineString(coords.map(c => [c[1], c[0]]));
+            const entries = (scoutingData || []).filter(e => e.zone === zone.name);
+            if (!entries.length) return;
+
+            const totalLen = turf.length(line, { units: 'meters' });
+            const segLen = totalLen / entries.length;
+
+            entries.forEach((entry, i) => {
+                const obs = entry[type] || [];
+
+                const relevant = obs.filter(o => {
+                    const name = o.name;
+                    return filtered.has(name);
+                });
+
+                if (!relevant.length) return;
+
+                const colours = relevant.map(o => o.color || '#999');
+                const col = blendColors(colours);
+
+                const start = turf.along(line, i * segLen, { units: 'meters' });
+                const end = turf.along(line, (i + 1) * segLen, { units: 'meters' });
+
+                // Apply offset to observation segments
+                const [startLat, startLng] = applyOffset(start.geometry.coordinates[1], start.geometry.coordinates[0]);
+                const [endLat, endLng] = applyOffset(end.geometry.coordinates[1], end.geometry.coordinates[0]);
+
+                const seg = [
+                    [startLat, startLng],
+                    [endLat, endLng]
+                ];
+
+                const tip = relevant.map(o => `${o.name}: ${o.count || 1}`).join('<br>');
+                const meta = window.observationData.observation_metadata?.[type] || {};
+                const typeLabel = meta.label || type.replace(/_/g, ' ');
+
+                const poly = L.polyline(seg, {
+                    color: col,
+                    weight: 4,
+                    opacity: 0.65,
+                    className: `overlay-${type}`
+                });
+                poly.bindTooltip(`<div style="font-size:0.8125rem;line-height:1.4;"><strong style="display:block;margin-bottom:0.25rem;">${zone.name}</strong><em style="font-size:0.75rem;opacity:0.8;">${typeLabel}</em><br>${tip}</div>`, { sticky: true });
+                poly.addTo(lg);
+            });
         });
 
-        const showLoader = () => document.getElementById('map-loader').style.display = 'flex';
-        const hideLoader = () => document.getElementById('map-loader').style.display = 'none';
+        lg.addTo(window.map);
+        window.overlayLayers[type] = lg;
+    };
 
-        /* ---------------- Blend Colors ---------------- */
-        const blendColors = colors => {
-            if (!colors.length) return "#999";
-            let r = 0, g = 0, b = 0;
-            colors.forEach(c => {
-                const h = c.replace("#", "");
-                r += parseInt(h.substr(0, 2), 16);
-                g += parseInt(h.substr(2, 2), 16);
-                b += parseInt(h.substr(4, 2), 16);
-            });
-            return `rgb(${Math.round(r / colors.length)},${Math.round(g / colors.length)},${Math.round(b / colors.length)})`;
-        };
-
-        /* ---------------- Render Overlays ---------------- */
-        const renderOverlayForType = (type, scoutingData, zonesGeojson) => {
-            if (window.overlayLayers[type]) window.map.removeLayer(window.overlayLayers[type]);
-            const lg = L.layerGroup();
-            const filtered = new Set(window.selectedItems[type] || []);
-
-            // If no items are selected for this type, don't render anything
-            if (filtered.size === 0) {
-                window.overlayLayers[type] = lg;
-                return;
+    const renderAllOverlays = () => {
+        Object.keys(window.overlayLayers).forEach(t => {
+            if (window.map.hasLayer(window.overlayLayers[t])) {
+                window.map.removeLayer(window.overlayLayers[t]);
             }
+        });
+        window.selectedTypes.forEach(t => renderOverlayForType(t, window.lastScoutingData, window.lastZonesGeojson));
+    };
 
-            // Offset calculation removed here
+    /* ---------------- Render Zones ---------------- */
+    const renderZones = data => {
+        addGreenhouseOverlay();
+        if (window.zoneLayer) window.map.removeLayer(window.zoneLayer);
+        if (window.lineIdLabels) {
+            window.map.removeLayer(window.lineIdLabels);
+            window.lineIdLabels = null;
+        }
 
-            (zonesGeojson || []).forEach(zone => {
-                let gj;
-                try { gj = JSON.parse(zone.raw_geojson); } catch { return; }
-                const coords = gj.features?.[0]?.geometry?.coordinates?.map(c => [c[1], c[0]]) || [];
-                if (!coords.length) return;
-
-                const line = turf.lineString(coords.map(c => [c[1], c[0]]));
-                const entries = (scoutingData || []).filter(e => e.zone === zone.name);
-                if (!entries.length) return;
-
-                const totalLen = turf.length(line, { units: 'meters' });
-                const segLen = totalLen / entries.length;
-
-                entries.forEach((entry, i) => {
-                    const obs = entry[type] || [];
-
-                    const relevant = obs.filter(o => {
-                        const name = o.name;
-                        return filtered.has(name);
-                    });
-
-                    if (!relevant.length) return;
-
-                    const colours = relevant.map(o => o.color || '#999');
-                    const col = blendColors(colours);
-
-                    const start = turf.along(line, i * segLen, { units: 'meters' });
-                    const end = turf.along(line, (i + 1) * segLen, { units: 'meters' });
-
-                    // Offset application removed - using original coordinates
-                    const seg = [
-                        [start.geometry.coordinates[1], start.geometry.coordinates[0]],
-                        [end.geometry.coordinates[1], end.geometry.coordinates[0]]
-                    ];
-
-                    const tip = relevant.map(o => `${o.name}: ${o.count || 1}`).join('<br>');
-                    const meta = window.observationData.observation_metadata?.[type] || {};
-                    const typeLabel = meta.label || type.replace(/_/g, ' ');
-
-                    const poly = L.polyline(seg, {
-                        color: col,
-                        weight: 2,
-                        opacity: 0.65,
-                        className: `overlay-${type}`
-                    });
-                    poly.bindTooltip(`<div style="font-size:0.8125rem;line-height:1.4;"><strong style="display:block;margin-bottom:0.25rem;">${zone.name}</strong><em style="font-size:0.75rem;opacity:0.8;">${typeLabel}</em><br>${tip}</div>`, { sticky: true });
-                    poly.addTo(lg);
-                });
-            });
-
-            lg.addTo(window.map);
-            window.overlayLayers[type] = lg;
-        };
-
-        const renderAllOverlays = () => {
-            Object.keys(window.overlayLayers).forEach(t => {
-                if (window.map.hasLayer(window.overlayLayers[t])) {
-                    window.map.removeLayer(window.overlayLayers[t]);
-                }
-            });
-            window.selectedTypes.forEach(t => renderOverlayForType(t, window.lastScoutingData, window.lastZonesGeojson));
-        };
-
-        /* ---------------- Render Zones ---------------- */
-        const renderZones = data => {
-            if (window.zoneLayer) window.map.removeLayer(window.zoneLayer);
-            if (window.lineIdLabels) {
-                window.map.removeLayer(window.lineIdLabels);
-                window.lineIdLabels = null;
-            }
-
-            const lines = {};
-            (data.all_zones_geojson || []).forEach(zone => {
-                try {
-                    const gj = JSON.parse(zone.raw_geojson);
-                    const gh = zone.name.split(' - ')[0];
-                    if (gj.features) {
-                        gj.features.forEach(f => {
-                            const lineId = f.properties.line_id;
-                            const key = `${gh}_line_${lineId}`;
-                            f.properties.zone_name = zone.name;
-                            if (!lines[key]) lines[key] = [];
-                            lines[key].push(f);
-                        });
-                    }
-                } catch (e) { console.error('Bad GeoJSON', zone.name, e); }
-            });
-
-            window.lineIdLabels = L.layerGroup();
-            Object.values(lines).forEach(arr => {
-                if (!arr.length) return;
-                arr.sort((a, b) => a.properties.zone_id - b.properties.zone_id);
-                const coords = arr.flatMap(f => f.geometry.coordinates);
-                const lineId = arr[0].properties.line_id;
-                const odd = parseInt(lineId) % 2 !== 0;
-                const pt = odd ? coords[0] : coords[coords.length - 1];
-                const lbl = L.marker([pt[1], pt[0]], {
-                    icon: L.divIcon({
-                        className: 'line-id-label',
-                        html: `<div style="font-size:4px;font-weight:200;color:${darkFlavor ? '#fff' : '#000'};transform:rotate(45deg);">${lineId}</div>`,
-                        iconSize: [20, 10], iconAnchor: [0, 0]
-                    })
-                });
-                window.lineIdLabels.addLayer(lbl);
-            });
-
-            const fc = { type: "FeatureCollection", features: Object.values(lines).flat() };
-            window.zoneLayer = L.geoJSON(fc, {
-                style: { color: darkFlavor ? '#fff' : '#1e293b', weight: 0.7, opacity: 0.6 },
-                onEachFeature: (f, l) => {
-                    if (f.properties?.zone_id) {
-                        const zn = f.properties.zone_name || '';
-                        const parts = zn.split(' - ');
-                        let html = zn;
-                        if (parts.length >= 4) {
-                            const [gh, kr, bed, zone] = parts;
-                            html = `<div style="font-size:0.75rem;line-height:1.5;"><strong style="display:block;margin-bottom:0.25rem;">${gh}</strong><div style="opacity:0.9;">${kr}</div><div style="opacity:0.9;">${bed}</div><div style="opacity:0.9;">${zone}</div></div>`;
+        const lines = {};
+        (data.all_zones_geojson || []).forEach(zone => {
+            try {
+                const gj = JSON.parse(zone.raw_geojson);
+                const gh = zone.name.split(' - ')[0];
+                if (gj.features) {
+                    gj.features.forEach(f => {
+                        // Apply offset to coordinates
+                        if (f.geometry.type === 'LineString') {
+                            f.geometry.coordinates = f.geometry.coordinates.map(coord => {
+                                const [lng, lat] = coord;
+                                const [newLat, newLng] = applyOffset(lat, lng);
+                                return [newLng, newLat];
+                            });
                         }
-                        l.bindTooltip(html, { permanent: false, direction: 'top' });
-                    }
+
+                        const lineId = f.properties.line_id;
+                        const key = `${gh}_line_${lineId}`;
+                        f.properties.zone_name = zone.name;
+                        if (!lines[key]) lines[key] = [];
+                        lines[key].push(f);
+                    });
                 }
+            } catch (e) { console.error('Bad GeoJSON', zone.name, e); }
+        });
+
+        window.lineIdLabels = L.layerGroup();
+        Object.values(lines).forEach(arr => {
+            if (!arr.length) return;
+            arr.sort((a, b) => a.properties.zone_id - b.properties.zone_id);
+            const coords = arr.flatMap(f => f.geometry.coordinates);
+            const lineId = arr[0].properties.line_id;
+            const odd = parseInt(lineId) % 2 !== 0;
+            const pt = odd ? coords[0] : coords[coords.length - 1];
+            const lbl = L.marker([pt[1], pt[0]], {
+                icon: L.divIcon({
+                    className: 'line-id-label',
+                    html: `<div style="font-size:4px;font-weight:200;color:${darkFlavor ? '#fff' : '#000'};transform:rotate(45deg);">${lineId}</div>`,
+                    iconSize: [20, 10], iconAnchor: [0, 0]
+                })
             });
+            window.lineIdLabels.addLayer(lbl);
+        });
 
-            window.map.on('zoomend', () => {
-                const z = window.map.getZoom();
-                if (z >= 15) { if (!window.map.hasLayer(window.zoneLayer)) window.zoneLayer.addTo(window.map); }
-                else { if (window.map.hasLayer(window.zoneLayer)) window.map.removeLayer(window.zoneLayer); }
-                if (z >= 19) { if (!window.map.hasLayer(window.lineIdLabels)) window.lineIdLabels.addTo(window.map); }
-                else { if (window.map.hasLayer(window.lineIdLabels)) window.map.removeLayer(window.lineIdLabels); }
+        const fc = { type: "FeatureCollection", features: Object.values(lines).flat() };
+        window.zoneLayer = L.geoJSON(fc, {
+            style: { color: darkFlavor ? '#fff' : '#1e293b', weight: 0.7, opacity: 0.6 },
+            onEachFeature: (f, l) => {
+                if (f.properties?.zone_id) {
+                    const zn = f.properties.zone_name || '';
+                    const parts = zn.split(' - ');
+                    let html = zn;
+                    if (parts.length >= 4) {
+                        const [gh, kr, bed, zone] = parts;
+                        html = `<div style="font-size:0.75rem;line-height:1.5;"><strong style="display:block;margin-bottom:0.25rem;">${gh}</strong><div style="opacity:0.9;">${kr}</div><div style="opacity:0.9;">${bed}</div><div style="opacity:0.9;">${zone}</div></div>`;
+                    }
+                    l.bindTooltip(html, { permanent: false, direction: 'top' });
+                }
+            }
+        });
+
+        window.map.on('zoomend', () => {
+            const z = window.map.getZoom();
+            if (z >= 15) { if (!window.map.hasLayer(window.zoneLayer)) window.zoneLayer.addTo(window.map); }
+            else { if (window.map.hasLayer(window.zoneLayer)) window.map.removeLayer(window.zoneLayer); }
+            if (z >= 19) { if (!window.map.hasLayer(window.lineIdLabels)) window.lineIdLabels.addTo(window.map); }
+            else { if (window.map.hasLayer(window.lineIdLabels)) window.map.removeLayer(window.lineIdLabels); }
+        });
+
+        // Only add layers if zoom level is appropriate
+        const currentZoom = window.map.getZoom();
+        if (currentZoom >= 15) window.zoneLayer.addTo(window.map);
+        if (currentZoom >= 19) window.lineIdLabels.addTo(window.map);
+    };
+
+    let greenhouseOverlay = null;
+
+    const addGreenhouseOverlay = () => {
+        console.log("rendering overlay")
+        if (greenhouseOverlay) {
+            window.map.removeLayer(greenhouseOverlay);
+        }
+
+        if (!window.greenhouses_geojson?.length) {
+            console.warn("No greenhouse GeoJSON to render overlay");
+            return;
+        }
+
+        const features = [];
+        window.greenhouses_geojson.forEach(gh => {
+            if (!gh.geojson?.features) return;
+            gh.geojson.features.forEach(f => {
+                const clone = JSON.parse(JSON.stringify(f));
+
+                // Apply offset to greenhouse coordinates
+                if (clone.geometry.type === 'Polygon') {
+                    clone.geometry.coordinates = clone.geometry.coordinates.map(ring =>
+                        ring.map(coord => {
+                            const [lng, lat] = coord;
+                            const [newLat, newLng] = applyOffset(lat, lng);
+                            return [newLng, newLat];
+                        })
+                    );
+                }
+
+                clone.properties = clone.properties || {};
+                clone.properties.gh_name = gh.short_name || gh.name;
+                features.push(clone);
             });
+        });
 
-            // Only add layers if zoom level is appropriate
-            const currentZoom = window.map.getZoom();
-            if (currentZoom >= 15) window.zoneLayer.addTo(window.map);
-            if (currentZoom >= 19) window.lineIdLabels.addTo(window.map);
-        };
+        if (!features.length) return;
 
-        /* ---------------- Data Fetch ---------------- */
-        const fetchAllData = date => {
-            showLoader();
-            fetch('/api/method/upande_scp.serverscripts.get_scouting_observations.getScoutingObservations', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Frappe-CSRF-Token': "{{csrf_token}}"
+        greenhouseOverlay = L.geoJSON(
+            { type: "FeatureCollection", features },
+            {
+                style: {
+                    fillColor: "#5b684a",
+                    fillOpacity: 0.64,
+                    color: "transparent",
+                    weight: 0,
+                    interactive: false
                 },
-                body: JSON.stringify({ date })
-            })
-                .then(r => r.ok ? r.json() : Promise.reject(r))
-                .then(r => {
-                    const data = r.message;
-                    window.observationData = data;
-                    window.lastZoneData = data;
-                    window.lastScoutingData = data.scouting_entries;
-                    window.lastZonesGeojson = data.all_zones_geojson;
+                onEachFeature: (f, layer) => {
+                    const name = f.properties?.gh_name || "Greenhouse";
+                    layer.bindTooltip(name, {
+                        permanent: false,
+                        direction: "center",
+                        className: "gh-tooltip"
+                    });
+                }
+            }
+        ).addTo(window.map);
 
-                    // Initialize selection state
-                    const types = data.active_observation_types || [];
+        // Ensure zones & labels stay on top
+        if (window.zoneLayer) window.zoneLayer.bringToFront();
+    };
 
+
+
+    /* ---------------- Data Fetch ---------------- */
+    const fetchAllData = date => {
+        showLoader();
+        fetch('/api/method/upande_scp.serverscripts.get_scouting_observations.getScoutingObservations', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Frappe-CSRF-Token': "{{csrf_token}}"
+            },
+            body: JSON.stringify({ date })
+        })
+            .then(r => r.ok ? r.json() : Promise.reject(r))
+            .then(r => {
+                const data = r.message;
+                window.observationData = data;
+                window.lastZoneData = data;
+                window.lastScoutingData = data.scouting_entries;
+                window.lastZonesGeojson = data.all_zones_geojson;
+
+                // Initialize selection state
+                const types = data.active_observation_types || [];
+
+                // Extract actual observation names from scouting entries if all_observation_names is empty
+                types.forEach(t => {
                     // Extract actual observation names from scouting entries if all_observation_names is empty
                     types.forEach(t => {
-                        if (!window.selectedItems[t]) {
-                            // First try to use the provided all_observation_names
-                            let items = (data.all_observation_names?.[t] || []).map(i => i.name);
+                        // First try to use the provided all_observation_names
+                        let items = (data.all_observation_names?.[t] || []).map(i => i.name);
 
-
-                            // If empty, extract from actual scouting entries
-                            if (items.length === 0 && data.scouting_entries) {
-                                const uniqueNames = new Set();
-                                data.scouting_entries.forEach(entry => {
-                                    const observations = entry[t] || [];
-                                    observations.forEach(obs => {
-                                        if (obs.name) uniqueNames.add(obs.name);
-                                    });
+                        // If empty, extract from actual scouting entries
+                        if (items.length === 0 && data.scouting_entries) {
+                            const uniqueNames = new Set();
+                            data.scouting_entries.forEach(entry => {
+                                const observations = entry[t] || [];
+                                observations.forEach(obs => {
+                                    if (obs.name) uniqueNames.add(obs.name);
                                 });
-                                items = Array.from(uniqueNames);
+                            });
+                            items = Array.from(uniqueNames);
 
-                                // Also populate all_observation_names for later use
-                                if (!data.all_observation_names[t]) {
-                                    data.all_observation_names[t] = [];
-                                }
-                                data.all_observation_names[t] = items.map(name => ({
-                                    name: name,
-                                    color: '#999' // Default color, will be overridden by actual data
-                                }));
+                            // Also populate all_observation_names for later use
+                            if (!data.all_observation_names[t]) {
+                                data.all_observation_names[t] = [];
                             }
+                            data.all_observation_names[t] = items.map(name => ({
+                                name: name,
+                                color: '#999' // Default color, will be overridden by actual data
+                            }));
+                        }
 
-                            window.selectedItems[t] = items;
+                        // ALWAYS set selectedItems to include all items (removed the if check)
+                        window.selectedItems[t] = items;
+                    });
+                });
+
+                // Select ALL types by default (not just the first one)
+                if (window.selectedTypes.size === 0) {
+                    types.forEach(type => {
+                        const hasData = (data.all_observation_names[type] && data.all_observation_names[type].length > 0) ||
+                            (window.selectedItems[type] && window.selectedItems[type].length > 0);
+                        if (hasData) {
+                            window.selectedTypes.add(type);
                         }
                     });
+                }
 
-                    // Select ALL types by default (not just the first one)
-                    if (window.selectedTypes.size === 0) {
-                        types.forEach(type => {
-                            const hasData = (data.all_observation_names[type] && data.all_observation_names[type].length > 0) ||
-                                (window.selectedItems[type] && window.selectedItems[type].length > 0);
-                            if (hasData) {
-                                window.selectedTypes.add(type);
-                            }
-                        });
-                    }
-
-                    renderZones(data);
-                    renderCategoryTabs();
-                    renderObservationsList();
-                    renderAllOverlays();
-                })
-                .catch(err => {
-                    frappe.msgprint('Failed to load scouting data');
-                    observationsList.innerHTML = `
+                renderZones(data);
+                renderCategoryTabs();
+                renderObservationsList();
+                renderAllOverlays();
+            })
+            .catch(err => {
+                showToast(err, "error");
+                observationsList.innerHTML = `
                         <div class="empty-state">
                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -864,119 +1074,128 @@
                             <p>Please try again or select a different date</p>
                         </div>
                     `;
-                })
-                .finally(hideLoader);
+            })
+            .finally(hideLoader);
+    };
+
+    /* ---------------- Init Map ---------------- */
+    const initializeMap = () => {
+        if (mapInitialized) return;
+
+        window.map = L.map('map', {
+            zoomSnap: 0.1,
+            zoomDelta: 0.1,
+            maxZoom: 22.4,
+            zoomControl: true
+        });
+        mapInitialized = true;
+        renderBaseLayers();
+        window.map.setView([0.069507, 35.755801], 16);
+
+        const datePicker = document.getElementById('scout-date-picker');
+        const today = new Date().toISOString().slice(0, 10);
+        datePicker.value = today;
+        fetchAllData(today);
+        datePicker.addEventListener('change', e => fetchAllData(e.target.value));
+    };
+
+    const renderBaseLayers = () => {
+        const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 25 });
+        const osmStreet = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 25 });
+        const osmSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 25 });
+
+        const pmtilesUrl = 'https://res.cloudinary.com/dorft5vxy/raw/upload/v1757410567/eldama-ravine_gdtrsv.pmtiles';
+        protomapsLayer = protomapsL.leafletLayer({
+            url: pmtilesUrl,
+            flavor: "light",
+            attribution: "© Protomaps © OpenStreetMap"
+        });
+        googleSat.addTo(window.map);
+
+        const baseMaps = {
+            "Satellite View": googleSat,
+            "Street Map": osmStreet,
+            "OSM Satellite": osmSat,
+            "Protomaps Layer": protomapsLayer
         };
 
-        /* ---------------- Init Map ---------------- */
-        const initializeMap = () => {
-            if (mapInitialized) return;
+        layersControl = L.control.layers(baseMaps, {}, {
+            collapsed: false,
+            position: 'topleft'
+        }).addTo(window.map);
 
-            window.map = L.map('map', {
-                zoomSnap: 0.1,
-                zoomDelta: 0.1,
-                maxZoom: 22.4,
-                zoomControl: true
-            });
-            mapInitialized = true;
-            renderBaseLayers();
-            window.map.setView([0.069507, 35.755801], 16);
-
-            const datePicker = document.getElementById('scout-date-picker');
-            const today = new Date().toISOString().slice(0, 10);
-            datePicker.value = today;
-            fetchAllData(today);
-            datePicker.addEventListener('change', e => fetchAllData(e.target.value));
-        };
-
-        const renderBaseLayers = () => {
-            const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 25 });
-            const osmStreet = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 25 });
-            const osmSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 25 });
-
-            const pmtilesUrl = 'https://res.cloudinary.com/dorft5vxy/raw/upload/v1757410567/eldama-ravine_gdtrsv.pmtiles';
-            protomapsLayer = protomapsL.leafletLayer({
-                url: pmtilesUrl,
-                flavor: "light",
-                attribution: "© Protomaps © OpenStreetMap"
-            });
-            googleSat.addTo(window.map);
-
-            const baseMaps = {
-                "Satellite View": googleSat,
-                "Street Map": osmStreet,
-                "OSM Satellite": osmSat,
-                "Protomaps Layer": protomapsLayer
-            };
-
-            layersControl = L.control.layers(baseMaps, {}, {
-                collapsed: false,
-                position: 'topleft'
-            }).addTo(window.map);
-
-            document.querySelectorAll('input[name="flavor"]').forEach(radio => {
-                radio.addEventListener('change', e => {
-                    const newFlavor = e.target.value;
-                    darkFlavor = ['dark', 'black'].includes(newFlavor);
-                    document.documentElement.setAttribute('data-theme', darkFlavor ? 'dark' : 'light');
-                    if (window.lastZoneData) renderZones(window.lastZoneData);
-                    if (window.map.hasLayer(protomapsLayer)) {
-                        window.map.removeLayer(protomapsLayer);
-                        layersControl.removeLayer(protomapsLayer);
-                    }
-                    protomapsLayer = protomapsL.leafletLayer({
-                        url: pmtilesUrl,
-                        flavor: newFlavor,
-                        attribution: "© Protomaps © OpenStreetMap"
-                    });
-                    protomapsLayer.addTo(window.map);
-                    layersControl.addBaseLayer(protomapsLayer, "Protomaps Layer");
+        document.querySelectorAll('input[name="flavor"]').forEach(radio => {
+            radio.addEventListener('change', e => {
+                const newFlavor = e.target.value;
+                darkFlavor = ['dark', 'black'].includes(newFlavor);
+                document.documentElement.setAttribute('data-theme', darkFlavor ? 'dark' : 'light');
+                if (window.lastZoneData) renderZones(window.lastZoneData);
+                if (window.map.hasLayer(protomapsLayer)) {
+                    window.map.removeLayer(protomapsLayer);
+                    layersControl.removeLayer(protomapsLayer);
+                }
+                protomapsLayer = protomapsL.leafletLayer({
+                    url: pmtilesUrl,
+                    flavor: newFlavor,
+                    attribution: "© Protomaps © OpenStreetMap"
                 });
+                protomapsLayer.addTo(window.map);
+                layersControl.addBaseLayer(protomapsLayer, "Protomaps Layer");
             });
+        });
 
-            window.map.on('baselayerchange', e => {
-                mapStyleSection.style.display = e.name === "Protomaps Layer" ? 'flex' : 'none';
-            });
-        };
+        window.map.on('baselayerchange', e => {
+            mapStyleSection.style.display = e.name === "Protomaps Layer" ? 'flex' : 'none';
 
-        /* ---------------- Category Tabs ---------------- */
-        const renderCategoryTabs = () => {
-            const types = window.observationData.active_observation_types || [];
-            categoryTabs.innerHTML = '';
+            // Enable offset only for Google Satellite & osm
+            useOffset = (e.name === "Satellite View" || e.name === "OSM Satellite");
 
-            if (!types.length) {
-                categoryTabs.innerHTML = '<p style="font-size:.75rem;color:#999;text-align:center;padding:1rem;">No observation types available</p>';
-                return;
+            // Re-render everything with the new offset setting
+            if (window.lastZoneData) {
+                renderZones(window.lastZoneData);
+                renderAllOverlays();
             }
+        });
+    };
 
-            types.forEach(type => {
-                const meta = window.observationData.observation_metadata?.[type] || {};
-                const label = meta.label || type.replace(/_scouting_entry$/, '').replace(/_/g, ' ');
+    /* ---------------- Category Tabs ---------------- */
+    const renderCategoryTabs = () => {
+        const types = window.observationData.active_observation_types || [];
+        categoryTabs.innerHTML = '';
 
-                const btn = document.createElement('button');
-                btn.className = `tab-btn ${window.selectedTypes.has(type) ? 'active' : ''}`;
-                btn.innerHTML = `<span>${label}</span>`;
-                btn.addEventListener('click', () => {
-                    if (window.selectedTypes.has(type)) {
-                        window.selectedTypes.delete(type);
-                    } else {
-                        window.selectedTypes.add(type);
-                    }
-                    renderCategoryTabs();
-                    renderObservationsList();
-                    renderAllOverlays();
-                });
-                categoryTabs.appendChild(btn);
+        if (!types.length) {
+            categoryTabs.innerHTML = '<p style="font-size:.75rem;color:#999;text-align:center;padding:1rem;">No observation types available</p>';
+            return;
+        }
+
+        types.forEach(type => {
+            const meta = window.observationData.observation_metadata?.[type] || {};
+            const label = meta.label || type.replace(/_scouting_entry$/, '').replace(/_/g, ' ');
+
+            const btn = document.createElement('button');
+            btn.className = `tab-btn ${window.selectedTypes.has(type) ? 'active' : ''}`;
+            btn.innerHTML = `<span>${label}</span>`;
+            btn.addEventListener('click', () => {
+                if (window.selectedTypes.has(type)) {
+                    window.selectedTypes.delete(type);
+                } else {
+                    window.selectedTypes.add(type);
+                }
+                renderCategoryTabs();
+                renderObservationsList();
+                renderAllOverlays();
             });
-        };
+            categoryTabs.appendChild(btn);
+        });
+    };
 
-        /* ---------------- Observations List ---------------- */
-        const renderObservationsList = () => {
-            observationsList.innerHTML = '';
+    /* ---------------- Observations List ---------------- */
+    const renderObservationsList = () => {
+        observationsList.innerHTML = '';
 
-            const activeTypes = Array.from(window.selectedTypes);
-            if (!activeTypes.length) {
-                observationsList.innerHTML = `
+        const activeTypes = Array.from(window.selectedTypes);
+        if (!activeTypes.length) {
+            observationsList.innerHTML = `
                     <div class="empty-state">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
@@ -985,107 +1204,107 @@
                         <p>Select one or more categories above</p>
                     </div>
                 `;
-                return;
+            return;
+        }
+
+        activeTypes.forEach(type => {
+            const meta = window.observationData.observation_metadata?.[type] || {};
+            const items = window.observationData.all_observation_names?.[type] || [];
+
+            // Extract colors from actual scouting data for this type
+            const colorMap = new Map();
+            if (window.lastScoutingData) {
+                window.lastScoutingData.forEach(entry => {
+                    const observations = entry[type] || [];
+                    observations.forEach(obs => {
+                        if (obs.name && obs.color && !colorMap.has(obs.name)) {
+                            colorMap.set(obs.name, obs.color);
+                        }
+                    });
+                });
             }
 
-            activeTypes.forEach(type => {
-                const meta = window.observationData.observation_metadata?.[type] || {};
-                const items = window.observationData.all_observation_names?.[type] || [];
+            const section = document.createElement('div');
+            section.className = 'type-section';
 
-                // Extract colors from actual scouting data for this type
-                const colorMap = new Map();
-                if (window.lastScoutingData) {
-                    window.lastScoutingData.forEach(entry => {
-                        const observations = entry[type] || [];
-                        observations.forEach(obs => {
-                            if (obs.name && obs.color && !colorMap.has(obs.name)) {
-                                colorMap.set(obs.name, obs.color);
-                            }
-                        });
-                    });
-                }
-
-                const section = document.createElement('div');
-                section.className = 'type-section';
-
-                const header = document.createElement('div');
-                header.className = 'type-header';
-                header.innerHTML = `
+            const header = document.createElement('div');
+            header.className = 'type-header';
+            header.innerHTML = `
                     <div class="type-title">${meta.label || type.replace(/_/g, ' ')}</div>
                     <div class="selection-controls">
                         <button class="select-btn" data-type="${type}" data-action="all">All</button>
                         <button class="select-btn" data-type="${type}" data-action="none">None</button>
                     </div>
                 `;
-                section.appendChild(header);
+            section.appendChild(header);
 
-                if (!items.length) {
-                    section.innerHTML += '<p style="font-size:0.8125rem;color:#999;padding:0.5rem;text-align:center;">No observations recorded</p>';
-                } else {
-                    const itemsDiv = document.createElement('div');
-                    itemsDiv.className = 'legend-items';
+            if (!items.length) {
+                section.innerHTML += '<p style="font-size:0.8125rem;color:#999;padding:0.5rem;text-align:center;">No observations recorded</p>';
+            } else {
+                const itemsDiv = document.createElement('div');
+                itemsDiv.className = 'legend-items';
 
-                    items.forEach(item => {
-                        const checked = window.selectedItems[type]?.includes(item.name);
-                        // Use color from actual data if available, otherwise use default
-                        const color = colorMap.get(item.name) || item.color || '#999';
-                        const itemDiv = document.createElement('label');
-                        itemDiv.className = 'legend-item';
-                        itemDiv.innerHTML = `
+                items.forEach(item => {
+                    const checked = window.selectedItems[type]?.includes(item.name);
+                    // Use color from actual data if available, otherwise use default
+                    const color = colorMap.get(item.name) || item.color || '#999';
+                    const itemDiv = document.createElement('label');
+                    itemDiv.className = 'legend-item';
+                    itemDiv.innerHTML = `
                             <input type="checkbox" data-type="${type}" value="${item.name}" ${checked ? 'checked' : ''}>
                             <span class="color-swatch" style="background-color:${color}"></span>
                             <span class="legend-label">${item.name}</span>
                         `;
-                        itemsDiv.appendChild(itemDiv);
-                    });
-                    section.appendChild(itemsDiv);
+                    itemsDiv.appendChild(itemDiv);
+                });
+                section.appendChild(itemsDiv);
+            }
+
+            observationsList.appendChild(section);
+        });
+
+        setupObservationsListeners();
+    };
+
+    const setupObservationsListeners = () => {
+        document.querySelectorAll('.legend-item input[type="checkbox"]').forEach(cb => {
+            cb.addEventListener('change', e => {
+                const type = e.target.dataset.type;
+                const name = e.target.value;
+                if (!window.selectedItems[type]) window.selectedItems[type] = [];
+
+                if (e.target.checked) {
+                    if (!window.selectedItems[type].includes(name)) {
+                        window.selectedItems[type].push(name);
+                    }
+                } else {
+                    window.selectedItems[type] = window.selectedItems[type].filter(n => n !== name);
                 }
 
-                observationsList.appendChild(section);
+                renderAllOverlays();
             });
+        });
 
-            setupObservationsListeners();
-        };
+        document.querySelectorAll('.select-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                const type = e.target.dataset.type;
+                const action = e.target.dataset.action;
+                const items = window.observationData.all_observation_names[type];
 
-        const setupObservationsListeners = () => {
-            document.querySelectorAll('.legend-item input[type="checkbox"]').forEach(cb => {
-                cb.addEventListener('change', e => {
-                    const type = e.target.dataset.type;
-                    const name = e.target.value;
-                    if (!window.selectedItems[type]) window.selectedItems[type] = [];
+                if (action === 'all') {
+                    window.selectedItems[type] = items.map(i => i.name);
+                } else {
+                    window.selectedItems[type] = [];
+                }
 
-                    if (e.target.checked) {
-                        if (!window.selectedItems[type].includes(name)) {
-                            window.selectedItems[type].push(name);
-                        }
-                    } else {
-                        window.selectedItems[type] = window.selectedItems[type].filter(n => n !== name);
-                    }
-
-                    renderAllOverlays();
-                });
+                renderObservationsList();
+                renderAllOverlays();
             });
-
-            document.querySelectorAll('.select-btn').forEach(btn => {
-                btn.addEventListener('click', e => {
-                    const type = e.target.dataset.type;
-                    const action = e.target.dataset.action;
-                    const items = window.observationData.all_observation_names[type];
-
-                    if (action === 'all') {
-                        window.selectedItems[type] = items.map(i => i.name);
-                    } else {
-                        window.selectedItems[type] = [];
-                    }
-
-                    renderObservationsList();
-                    renderAllOverlays();
-                });
-            });
-        };
-
-        /* ---------------- Initialize ---------------- */
-        initializeMap();
+        });
     };
+
+    /* ---------------- Initialize ---------------- */
+    initializeMap();
+    }
 </script>
 {% endblock %}

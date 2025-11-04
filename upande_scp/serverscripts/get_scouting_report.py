@@ -288,6 +288,7 @@ def getScoutingData():
         return {
             "scouting_entries": final_scouting_entries,
             "susceptibility": susceptibility,
+            "varieties":varieties_data,
             "boms": chemical_mix_boms,
             "bom_items": bom_items,
             "custom_bed_numbering": bed_zone_numbering[0].get("custom_bed_numbering") if bed_zone_numbering else None,

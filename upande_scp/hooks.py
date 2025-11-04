@@ -305,14 +305,6 @@ fixtures = [
         ]
     },
     {
-        "doctype": "Web Page",
-        "filters": [
-            ["name", "in", [
-                "new-spray-plan"
-            ]]
-        ]
-    },
-    {
         "dt": "Client Script",
         "filters": [
             [
@@ -342,13 +334,8 @@ fixtures = [
                     "Zone Atomation Tool",
                     "Get BOM Stock Balances",
                     "Get Greenhouse Reentry Status",
-                    "Create Scouting Entry",
-                    "Pre-Validate Frac/Irac Guidelines",
                     'Store Updated WO Required Qty',
                     "Restore Updated WO Required Qty",
-                    "Create Chemical Plan Work Order",
-                    "Get Scouting Analysis",
-                    "Get Scouting Data",
                     "Fetch Greenhouse Beds",
                     "Fetch Scheduled Applications"
                 ]

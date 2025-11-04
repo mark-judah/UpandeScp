@@ -3,8 +3,6 @@ import json
 
 def get_context(context):
     context.csrf_token = frappe.sessions.get_csrf_token()
-    context.csrf_token = csrf_token
-
     gh_warehouses = frappe.get_all(
         "Warehouse",
         filters={"warehouse_type": "Greenhouse", "disabled": 0},

@@ -279,7 +279,7 @@ fixtures = [
                         "BOM-custom_water_ph",
                         "BOM-custom_item_group",
                         # BOM Item fields
-                        "BOM Item-custom_application_rateper_ha_",
+                        "BOM Item-custom_application_rate",
                         # Work Order fields
                         "Work Order-custom_spray_team",
                         "Work Order-custom_reentry_time",
@@ -334,8 +334,6 @@ fixtures = [
                     "Zone Atomation Tool",
                     "Get BOM Stock Balances",
                     "Get Greenhouse Reentry Status",
-                    'Store Updated WO Required Qty',
-                    "Restore Updated WO Required Qty",
                     "Fetch Greenhouse Beds",
                     "Fetch Scheduled Applications"
                 ]

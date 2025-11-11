@@ -26,34 +26,39 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
         lon = float(longitude)
         accuracy_m = float(accuracy)
 
-        # Create point from scout's coordinates (WGS84)
-        scout_point = Point(lon, lat)  # GeoJSON uses lon, lat order
+        scout_point = Point(lon, lat)          # GeoJSON: lon, lat
 
-        # Get all zones for the specified bed
+        # --------------------------------------------------------------
+        #  NEW: flexible zone lookup (Already correct in your original code)
+        # --------------------------------------------------------------
+        if bed is None or bed == "":
+            # No bed filter – return **all** zones
+            filters = {}
+            no_bed_msg = " (all beds)"
+        else:
+            filters = {"bed": bed}
+            no_bed_msg = f" for bed: {bed}"
+
         zones = frappe.get_all(
             "Zone",
-            filters={"bed": bed},
+            filters=filters,
             fields=["name", "raw_geojson"]
         )
 
         if not zones:
-            return None, 0.0, f"No zones found for bed: {bed}"
+            return None, 0.0, f"No zones found{no_bed_msg}"
+        # --------------------------------------------------------------
 
-        # Get UTM zone from configuration
         utm_epsg = get_dynamic_utm_epsg(lat, lon)
 
-        # Create transformer for WGS84 to UTM
-        # This converts lat/lon (degrees) to x/y (meters) for accurate distance calculations
         project_to_utm = Transformer.from_crs(
-            "EPSG:4326",  # FROM: GPS coordinates (universal - never changes)
-            utm_epsg,     # TO: Regional meters (changes per region)
+            "EPSG:4326",
+            utm_epsg,
             always_xy=True
         ).transform
 
-        # Transform scout point to UTM (meters)
         scout_point_utm = transform(project_to_utm, scout_point)
 
-        # Set reasonable bounds for buffer (3m minimum, 50m maximum)
         buffer_m = max(3.0, min(accuracy_m, 50.0))
 
         closest_zone = None
@@ -69,7 +74,7 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
                 geojson_data = json.loads(zone.raw_geojson)
 
                 if (geojson_data.get("type") == "FeatureCollection" and
-                        geojson_data.get("features")):
+                            geojson_data.get("features")):
 
                     feature = geojson_data["features"][0]
                     geometry = feature.get("geometry", {})
@@ -121,7 +126,7 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
 
             except Exception as e:
                 frappe.log_error(
-                    "Error processing zone {zone.name}", str(e))
+                    f"Error processing zone {zone.name}", str(e))
                 continue
 
         if closest_zone:
@@ -139,7 +144,65 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
         frappe.log_error("Error",error_msg)
         return None, 0.0, error_msg
 
+@frappe.whitelist()
+def fetchTraps(greenhouse=None):
+    """
+    Fetches all traps, optionally filtered by greenhouse.
+    """
+    try:
+        filters = {}
+        if greenhouse:
+            filters["greenhouse"] = greenhouse
+        
+        traps = frappe.get_all(
+            "Trap",
+            filters=filters,
+            fields=["name", "farm", "greenhouse", "trap_number", "location", "type"],
+            order_by="trap_number asc"
+        )
 
+        frappe.response["data"] = traps
+        frappe.response.http_status_code = 200
+
+    except Exception as e:
+        frappe.log_error("Error fetching traps", str(e))
+        frappe.response.http_status_code = 500
+        frappe.response["data"] = {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+@frappe.whitelist()
+def fetchTrapPests():
+    """
+    Fetches all pests that can be recorded in traps.
+    You can filter this based on which pests are commonly found in traps.
+    """
+    try:
+        pests = frappe.get_all(
+            "Pest",
+            fields=["name"],
+            order_by="name asc"
+        )
+
+        formatted_pests = []
+        for pest in pests:
+            formatted_pests.append({
+                "name": pest.name
+            })
+
+        frappe.response["data"] = formatted_pests
+        frappe.response.http_status_code = 200
+
+    except Exception as e:
+        frappe.log_error("Error fetching trap pests", str(e))
+        frappe.response.http_status_code = 500
+        frappe.response["data"] = {
+            "status": "error",
+            "message": str(e)
+        }
+        
 @frappe.whitelist()
 def createScoutingEntry():
     try:
@@ -175,7 +238,8 @@ def createScoutingEntry():
                 latitude = entry_data.get('latitude')
                 longitude = entry_data.get('longitude')
                 accuracy = entry_data.get('accuracy')
-                bed = entry_data.get('bed')
+                # Bed is now optional (can be None)
+                bed = entry_data.get('bed') 
 
                 # Extract optional metadata from Flutter
                 quality_level = entry_data.get('quality_level', 'unknown')
@@ -191,53 +255,75 @@ def createScoutingEntry():
                     })
                     continue
 
-                if not bed:
+                # --- START OF CHANGE: Conditional logic for Bed and Zone determination ---
+                determined_zone = None
+                confidence = 0.0
+                zone_message = None
+                
+                # We only need to attempt zone determination if we have coordinates
+                if latitude and longitude and accuracy:
+                    # Determine zone with accuracy-aware logic
+                    determined_zone, confidence, zone_message = get_zone_from_coordinates(
+                        latitude,
+                        longitude,
+                        bed, # Pass bed, which can be None or ""
+                        accuracy
+                    )
+
+                # If zone determination was attempted but failed, log it as a non-fatal error 
+                # UNLESS 'bed' was provided, which suggests the client expected a zone.
+                # However, for maximum flexibility, we only halt if bed was provided AND zone failed.
+                # If bed is missing, we allow zone to be None (for non-bed-based scouting)
+                if bed and not determined_zone:
                     has_errors = True
+                    # Use a default message if zone_message isn't set due to an earlier error in get_zone_from_coordinates
+                    msg = zone_message or f"Could not determine zone for provided Bed: {bed}"
                     results.append({
                         "status": "error",
-                        "message": "Bed is required to determine zone."
-                    })
-                    continue
-
-                # Determine zone with accuracy-aware logic
-                determined_zone, confidence, zone_message = get_zone_from_coordinates(
-                    latitude,
-                    longitude,
-                    bed,
-                    accuracy
-                )
-
-                if not determined_zone:
-                    has_errors = True
-                    results.append({
-                        "status": "error",
-                        "message": f"Could not determine zone: {zone_message}",
+                        "message": f"Could not determine zone: {msg}",
                         "coordinates": f"({latitude}, {longitude})",
                         "accuracy": accuracy,
                         "bed": bed
                     })
                     continue
-
-                # Warn if confidence is too low (but still allow submission)
-                requires_review = confidence < 0.5
-
-                # Check for duplicate entry
-                duplicate_entry = frappe.db.exists(
-                    "Scouting Entry", {
-                        "scouts_name": entry_data.get('scouts_name'),
-                        "greenhouse": entry_data.get('greenhouse'),
-                        "bed": bed,
-                        "zone": determined_zone,
-                        "date_of_capture": entry_data.get('date_of_capture'),
-                        "time_of_capture": entry_data.get('time_of_capture')
+                
+                # Set default zone message structure if zone determination was skipped or failed without a detailed message
+                if not zone_message:
+                     zone_message = {
+                        "distance": "0.0",
+                        "buffer": "0.0"
                     }
-                )
+                
+                # The 'bed' field in the document will be the value from the payload (even if None/empty)
+                # The 'zone' field in the document will be the determined_zone (which can be None if not found/needed)
+                
+                # --- END OF CHANGE: Conditional logic for Bed and Zone determination ---
+                
+                # Warn if confidence is too low (but still allow submission)
+                requires_review = confidence < 0.5 and determined_zone is not None
+
+                # Check for duplicate entry - ONLY IF we have a determined_zone
+                duplicate_filters = {
+                    "scouts_name": entry_data.get('scouts_name'),
+                    "greenhouse": entry_data.get('greenhouse'),
+                    "date_of_capture": entry_data.get('date_of_capture'),
+                    "time_of_capture": entry_data.get('time_of_capture')
+                }
+                
+                # Only add bed and zone to duplicate check if they exist
+                if bed:
+                    duplicate_filters["bed"] = bed
+                if determined_zone:
+                    duplicate_filters["zone"] = determined_zone
+
+                duplicate_entry = frappe.db.exists("Scouting Entry", duplicate_filters)
 
                 if duplicate_entry:
+                    # This is still an error even if no bed/zone, as it's a time-based duplicate
                     has_errors = True
                     results.append({
                         "status": "error",
-                        "message": "Duplicate scouting entry found for this scout, greenhouse, bed, zone, and time."
+                        "message": "Duplicate scouting entry found for this scout, greenhouse, and time."
                     })
                     continue
 
@@ -260,8 +346,8 @@ def createScoutingEntry():
                 scout_doc = frappe.new_doc("Scouting Entry")
                 scout_doc.scouts_name = employee_id[0].name
                 scout_doc.greenhouse = entry_data.get('greenhouse')
-                scout_doc.bed = bed
-                scout_doc.zone = determined_zone
+                scout_doc.bed = bed # Stays the provided value (can be None)
+                scout_doc.zone = determined_zone # Stays the determined value (can be None)
                 scout_doc.time_of_capture = entry_data.get('time_of_capture')
                 scout_doc.date_of_capture = entry_data.get('date_of_capture')
                 scout_doc.latitude = latitude
@@ -277,6 +363,7 @@ def createScoutingEntry():
                 scout_metadata_doc.gps_confidence = confidence
                 scout_metadata_doc.gps_samples_used = samples_used
                 scout_metadata_doc.stationary = is_stationary
+                # Use values from the (potentially default) zone_message
                 scout_metadata_doc.zone_buffer = zone_message["buffer"]
                 scout_metadata_doc.distance = zone_message["distance"]
 
@@ -320,6 +407,12 @@ def createScoutingEntry():
 
                             elif parent_field == "incidents_scouting_entry":
                                 child_row.incident = item.get("incident")
+                                
+                            elif parent_field == "trap_scouting_entry":
+                                child_row.trap = item.get("trap")
+                                child_row.pest = item.get("pest")
+                                child_row.location = item.get("location", "Indoor")
+                                child_row.count = item.get("count")
 
                 add_child_items(scout_doc, "predators_scouting_entry",
                                 entry_data.get("predators_scouting_entry"))
@@ -333,7 +426,8 @@ def createScoutingEntry():
                                 entry_data.get("pests_scouting_entry"))
                 add_child_items(scout_doc, "incidents_scouting_entry",
                                 entry_data.get("incidents_scouting_entry"))
-
+                add_child_items(scout_doc, "trap_scouting_entry",
+                                entry_data.get("trap_scouting_entry"))
                 # Insert scout entry first
                 scout_doc.insert()
 
@@ -351,7 +445,7 @@ def createScoutingEntry():
                     "name": scout_doc.name,
                     "metadata_name": scout_metadata_doc.name,
                     "determined_zone": determined_zone,
-                    "zone_confidence": round(confidence * 100, 1),
+                    "zone_confidence": round(confidence * 100, 1) if determined_zone else 0.0,
                     "gps_accuracy": accuracy,
                     "quality_level": quality_level,
                     "zone_detection_details": zone_message

@@ -1,36 +1,57 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:name1",
+ "autoname": "format:{farm} - {trap_number}",
  "creation": "2025-08-08 15:52:43.937495",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "name1",
-  "target_pest"
+  "farm",
+  "greenhouse",
+  "trap_number",
+  "location",
+  "type"
  ],
  "fields": [
   {
-   "fieldname": "name1",
-   "fieldtype": "Data",
-   "label": "Name",
-   "unique": 1
+   "fieldname": "farm",
+   "fieldtype": "Link",
+   "label": "Farm",
+   "options": "Farm"
   },
   {
-   "fieldname": "target_pest",
+   "fieldname": "greenhouse",
    "fieldtype": "Link",
-   "label": "Target Pest",
-   "options": "Pest"
+   "label": "Greenhouse",
+   "link_filters": "[[\"Warehouse\",\"warehouse_type\",\"=\",\"Greenhouse\"],[\"Warehouse\",\"custom_farm\",\"=\",\"eval:doc.farm\"]]",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "trap_number",
+   "fieldtype": "Data",
+   "label": "Trap Number"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Select",
+   "label": "Location",
+   "options": "Indoor\nOutdoor"
+  },
+  {
+   "fieldname": "type",
+   "fieldtype": "Select",
+   "label": "Type",
+   "options": "General\nFCM"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-10 22:28:56.512961",
+ "modified": "2025-11-11 01:20:46.040851",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Trap",
- "naming_rule": "By fieldname",
+ "naming_rule": "Expression",
  "owner": "judah@upande.com",
  "permissions": [
   {

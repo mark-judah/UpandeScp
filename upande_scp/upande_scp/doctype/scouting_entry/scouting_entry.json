@@ -28,7 +28,9 @@
   "section_break_dlwd",
   "incidents_scouting_entry",
   "section_break_betj",
-  "physiological_disorders_entry"
+  "physiological_disorders_entry",
+  "section_break_hidu",
+  "trap_scouting_entry"
  ],
  "fields": [
   {
@@ -64,8 +66,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Bed",
-   "options": "Bed",
-   "reqd": 1
+   "options": "Bed"
   },
   {
    "fieldname": "zone",
@@ -167,12 +168,22 @@
    "fieldtype": "Table",
    "label": "Physiological Disorders",
    "options": "Physiological Disorders Entry"
+  },
+  {
+   "fieldname": "section_break_hidu",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "trap_scouting_entry",
+   "fieldtype": "Table",
+   "label": "Traps",
+   "options": "Trap Scouting Entry"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-11 01:01:06.419010",
+ "modified": "2025-11-11 04:45:56.523372",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting Entry",

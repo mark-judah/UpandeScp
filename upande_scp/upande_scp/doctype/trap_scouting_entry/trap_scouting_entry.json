@@ -1,0 +1,54 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-11-11 01:23:49.568485",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "trap",
+  "pest",
+  "location",
+  "count"
+ ],
+ "fields": [
+  {
+   "fieldname": "trap",
+   "fieldtype": "Link",
+   "label": "Trap",
+   "options": "Trap"
+  },
+  {
+   "fieldname": "pest",
+   "fieldtype": "Link",
+   "label": "Pest",
+   "options": "Pest"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Select",
+   "label": "Location",
+   "options": "Indoor\nOutdoor"
+  },
+  {
+   "fieldname": "count",
+   "fieldtype": "Float",
+   "label": "Count"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-11-11 01:32:50.976912",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Trap Scouting Entry",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

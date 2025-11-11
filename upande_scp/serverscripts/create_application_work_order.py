@@ -51,7 +51,8 @@ def createApplicationWorkOrder():
         production_item = template_bom.item
 
         # -------------------------------------------------- 4. Work Order qty = number of 1000L tanks
-        wo_qty = water_volume_l / 1000.0  # e.g. 567.9 L → 0.5679
+        # FIX: Round to 4 decimal places to avoid floating-point precision issues
+        wo_qty = round(water_volume_l / 1000.0, 4)  # e.g. 567.9 L → 0.5679
 
         # -------------------------------------------------- 5. Dynamic BOM? (only chemicals + rates)
         bom_to_use = bom_name
@@ -131,17 +132,25 @@ def createApplicationWorkOrder():
         for chem in chemicals:
             name = chem["chemical"]
             item = item_map[name]
-            qty_per_1000l = next(i.qty for i in se.items if i.item_code == item.name)
+            
+            # FIX: Use application_rate directly, not SE qty
+            application_rate = float(chem.get("application_rate") or 0)
+            
+            # Get valuation rate from Stock Entry
             val_rate = val_rate_map.get(item.name) or 0.0
+
+            # FIX: Round required_qty to avoid precision mismatches during material transfer
+            required_qty = round(application_rate, 6)  # This is per 1000L
 
             required_items.append({
                 "item_code": item.name,
                 "item_name": name,
-                "required_qty": qty_per_1000l,
+                "required_qty": required_qty,
                 "uom": chem.get("uom") or item.stock_uom,
                 "source_warehouse": chem.get("source_warehouse"),
                 "rate": val_rate,
-                "amount": qty_per_1000l * val_rate
+                "amount": round(required_qty * val_rate, 2),  # Round amount to 2 decimals
+                "include_item_in_manufacturing": 1  # CRITICAL: Enable material transfer
             })
 
         # -------------------------------------------------- 10. Format team
@@ -173,6 +182,15 @@ def createApplicationWorkOrder():
             "required_items": required_items
         })
         wo.insert(ignore_permissions=True)
+
+        # -------------------------------------------------- 11.5 FIX: Set include_item_in_manufacturing
+        # CRITICAL: ERPNext doesn't always copy this flag from BOM, so we must set it manually
+        for item in wo.required_items:
+            item.include_item_in_manufacturing = 1
+
+        # Save again to persist the flag change
+        wo.save(ignore_permissions=True)
+        
         frappe.db.commit()
 
         # -------------------------------------------------- 12. Delete temp SE
@@ -232,15 +250,20 @@ def create_dynamic_bom(template_bom, user_chemicals, area_ha, water_volume_l, gr
         if not item:
             frappe.throw(f"Item not found: {name}")
 
+        # FIX: Round qty to avoid precision issues in BOM
+        qty = round(rate, 6)
+
         items.append({
             "item_code": item.name,
             "item_name": name,
-            "qty": rate,
+            "qty": qty,
             "uom": c.get("uom") or item.stock_uom,
             "stock_uom": item.stock_uom,
             "conversion_factor": 1,
-            "custom_application_rate": str(rate),
-            "custom_rate_unit": "Per 1000L"
+            "custom_application_rate": str(qty),
+            "custom_rate_unit": "Per 1000L",
+            "include_item_in_manufacturing": 1,  # CRITICAL: Enable material transfer
+            "description": name  # Add description for consistency
         })
 
     desc = [

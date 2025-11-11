@@ -1,7 +1,3 @@
-import frappe
-import json
-from frappe import _
-
 @frappe.whitelist()
 def createBOM():
     try:
@@ -33,11 +29,22 @@ def createBOM():
         if not isinstance(chemicals, list) or len(chemicals) == 0:
             return {"status": "error", "message": "At least one chemical item is required"}
 
+        # === CHECK FOR EXISTING IDENTICAL BOM ===
+        existing_bom = check_duplicate_bom(bom_item_name, water_ph, water_hardness, chemicals)
+        if existing_bom:
+            return {
+                "status": "duplicate",
+                "message": f"A BOM with identical rates already exists: {existing_bom}",
+                "bom_name": existing_bom,
+                "action": "Would you like to use the existing BOM instead?"
+            }
+
         # === ENSURE BOM ITEM EXISTS ===
         if not frappe.db.exists("Item", bom_item_name):
             item_doc = frappe.new_doc("Item")
             item_doc.item_code = bom_item_name
             item_doc.item_name = bom_item_name
+            item_doc.item_group = "Chemical Mix"
             item_doc.stock_uom = "Tank Mix (1000L)"
             item_doc.is_stock_item = 1
             item_doc.insert(ignore_permissions=True)
@@ -99,6 +106,7 @@ def createBOM():
             bom_item.uom = item.stock_uom
             bom_item.stock_uom = item.stock_uom
             bom_item.conversion_factor = 1
+            bom_item.include_item_in_manufacturing = 1
 
             # Custom fields
             bom_item.custom_application_rate = rate
@@ -125,50 +133,67 @@ def createBOM():
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "BOM Creation Failed")
         return {"status": "error", "message": f"Failed to create BOM: {str(e)}"}
-    
-@frappe.whitelist()
-def getAllChemicals():
-    # Get both item code (name) and item name (item_name)
-    chemicals = frappe.get_all("Item", 
-        filters={'item_group': 'CHEMICALS'},
-        fields=["name", "item_name", "stock_uom"],
-        order_by="item_name"
-    )
-    
-    # Build lists and maps
-    chemical_names = []
-    item_uom_map = {}
-    item_code_map = {}  # Maps display name to item code
-    
-    for chemical in chemicals:
-        display_name = chemical.item_name or chemical.name
-        chemical_names.append(display_name)
-        item_uom_map[display_name] = chemical.stock_uom
-        item_code_map[display_name] = chemical.name  # Store the actual item code
-    
-    return {
-        "chemicals": sorted(list(set(chemical_names))),  # Remove duplicates and sort
-        "item_uom_map": item_uom_map,
-        "item_code_map": item_code_map  # Frontend can use this if needed for backend calls
-    }
-    
-@frappe.whitelist()
-def getChemicalUom(chemical):
+
+
+def check_duplicate_bom(bom_item_name, water_ph, water_hardness, chemicals):
+    """
+    Check if a BOM with identical composition already exists.
+    Returns BOM name if found, None otherwise.
+    """
     try:
-        # Try to find by item_name first, then by name (item code)
-        item = frappe.db.get_value("Item", 
-            {"item_name": chemical}, 
-            ["name", "stock_uom"]
+        # Get all BOMs for this item
+        existing_boms = frappe.get_all("BOM", 
+            filters={
+                "item": bom_item_name,
+                "docstatus": 1  # Only submitted BOMs
+            },
+            fields=["name", "custom_water_ph", "custom_water_hardness"]
         )
-        
-        if not item:
-            # Try by item code if item_name search failed
-            item = frappe.db.get_value("Item", chemical, ["name", "stock_uom"])
-        
-        if item:
-            return {"uom": item[1] if isinstance(item, tuple) else item.stock_uom}
-        
-        return {"uom": ""}
+
+        for bom in existing_boms:
+            # Check water parameters (with small tolerance for floating point)
+            if abs(bom.custom_water_ph - water_ph) > 0.1:
+                continue
+            if abs(bom.custom_water_hardness - water_hardness) > 0.1:
+                continue
+
+            # Get BOM items
+            bom_items = frappe.get_all("BOM Item",
+                filters={"parent": bom.name},
+                fields=["item_code", "item_name", "qty", "custom_application_rate"]
+            )
+
+            # Check if same number of items
+            if len(bom_items) != len(chemicals):
+                continue
+
+            # Build comparison sets
+            existing_items = {}
+            for item in bom_items:
+                # Resolve item_code from item_name for comparison
+                key = item.item_name or item.item_code
+                rate = item.custom_application_rate or item.qty
+                existing_items[key] = rate
+
+            new_items = {}
+            for chem in chemicals:
+                item_name = str(chem.get("item_name") or "").strip()
+                rate = float(chem.get("custom_application_rate") or 0)
+                new_items[item_name] = rate
+
+            # Compare items and rates
+            if existing_items.keys() == new_items.keys():
+                all_match = True
+                for key in existing_items:
+                    if abs(existing_items[key] - new_items[key]) > 0.001:  # Small tolerance
+                        all_match = False
+                        break
+                
+                if all_match:
+                    return bom.name
+
+        return None
+
     except Exception as e:
-        frappe.log_error(f"Error fetching UOM for {chemical}: {str(e)}")
-        return {"uom": ""}
+        frappe.log_error(f"Error checking duplicate BOM: {str(e)}", "Duplicate BOM Check")
+        return None

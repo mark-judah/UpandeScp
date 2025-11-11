@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "format:{farm} - {trap_number}",
  "creation": "2025-08-08 15:52:43.937495",
@@ -47,7 +48,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-11-11 01:20:46.040851",
+ "modified": "2025-11-11 06:51:59.501547",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Trap",

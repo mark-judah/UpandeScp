@@ -1,3 +1,6 @@
+import frappe 
+import json
+
 @frappe.whitelist()
 def createBOM():
     try:
@@ -197,3 +200,51 @@ def check_duplicate_bom(bom_item_name, water_ph, water_hardness, chemicals):
     except Exception as e:
         frappe.log_error(f"Error checking duplicate BOM: {str(e)}", "Duplicate BOM Check")
         return None
+    
+@frappe.whitelist()
+def getAllChemicals():
+    # Get both item code (name) and item name (item_name)
+    chemicals = frappe.get_all("Item", 
+        filters={'item_group': 'CHEMICALS'},
+        fields=["name", "item_name", "stock_uom"],
+        order_by="item_name"
+    )
+    
+    # Build lists and maps
+    chemical_names = []
+    item_uom_map = {}
+    item_code_map = {}  # Maps display name to item code
+    
+    for chemical in chemicals:
+        display_name = chemical.item_name or chemical.name
+        chemical_names.append(display_name)
+        item_uom_map[display_name] = chemical.stock_uom
+        item_code_map[display_name] = chemical.name  # Store the actual item code
+    
+    return {
+        "chemicals": sorted(list(set(chemical_names))),  # Remove duplicates and sort
+        "item_uom_map": item_uom_map,
+        "item_code_map": item_code_map  # Frontend can use this if needed for backend calls
+    }
+    
+@frappe.whitelist()
+def getChemicalUom(chemical):
+    try:
+        # Try to find by item_name first, then by name (item code)
+        item = frappe.db.get_value("Item", 
+            {"item_name": chemical}, 
+            ["name", "stock_uom"]
+        )
+        
+        if not item:
+            # Try by item code if item_name search failed
+            item = frappe.db.get_value("Item", chemical, ["name", "stock_uom"])
+        
+        if item:
+            return {"uom": item[1] if isinstance(item, tuple) else item.stock_uom}
+        
+        return {"uom": ""}
+    
+    except Exception as e:
+        frappe.log_error(f"Error fetching UOM for chemical '{chemical}': {str(e)}", "Get Chemical UOM Error")
+        return {"uom": ""}

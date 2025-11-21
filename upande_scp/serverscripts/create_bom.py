@@ -4,11 +4,9 @@ import json
 @frappe.whitelist()
 def createBOM():
     try:
-        raw_data = frappe.form_dict.get('data')
-        if isinstance(raw_data, str):
-            data = json.loads(raw_data)
-        else:
-            data = raw_data
+        data = frappe.form_dict
+        if isinstance(data, str):
+            data = json.loads(data)
 
         # === VALIDATE REQUIRED FIELDS ===
         required = ['item', 'custom_water_ph', 'custom_water_hardness', 'items']
@@ -94,25 +92,21 @@ def createBOM():
 
             item = frappe.get_doc("Item", item_code)
 
-            # === VALIDATE UOM MATCH (optional strictness) ===
-            if uom and uom != item.stock_uom:
-                frappe.log_error(
-                    f"UOM mismatch: Frontend sent '{uom}', but item has '{item.stock_uom}'",
-                    "BOM UOM Warning"
-                )
-
             # === ADD BOM ITEM ===
-            bom_item = bom_doc.append("items", {})
-            bom_item.item_code = item_code
-            bom_item.item_name = item_name
-            bom_item.qty = rate
-            bom_item.uom = item.stock_uom
-            bom_item.stock_uom = item.stock_uom
-            bom_item.conversion_factor = 1
-            bom_item.include_item_in_manufacturing = 1
-
-            # Custom fields
-            bom_item.custom_application_rate = rate
+            bom_doc.append("items", {
+                "item_code": item_code,
+                "item_name": item_name,
+                "qty": rate,
+                "stock_qty": rate,
+                "uom": item.stock_uom,
+                "stock_uom": item.stock_uom,
+                "qty_consumed_per_unit": rate,
+                "custom_application_rate": rate,
+                "custom_application_rateper_ha_": rate,  # Add this too
+                "description": item_name,
+                "include_item_in_manufacturing": 1,
+                "conversion_factor": 1
+            })
 
             # Store for response
             bom_items.append({
@@ -121,7 +115,7 @@ def createBOM():
                 "uom": item.stock_uom
             })
 
-        # === SAVE & SUBMIT ===
+        # === SAVE & SUBMIT - Use insert then submit ===
         bom_doc.insert(ignore_permissions=True)
         bom_doc.submit()
         frappe.db.commit()

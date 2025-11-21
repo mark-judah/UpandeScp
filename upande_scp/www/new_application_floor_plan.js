@@ -958,7 +958,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     'Content-Type': 'application/json',
                     'X-Frappe-CSRF-Token': "{{csrf_token}}"
                 },
-                body: JSON.stringify({ data: JSON.stringify(bomData) })
+                body: JSON.stringify(bomData)
             });
 
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);

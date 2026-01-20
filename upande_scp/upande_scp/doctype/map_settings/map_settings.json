@@ -1,0 +1,55 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-01-20 13:47:23.888632",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "lat",
+  "lon",
+  "default_zoom"
+ ],
+ "fields": [
+  {
+   "fieldname": "lat",
+   "fieldtype": "Float",
+   "label": "Lat"
+  },
+  {
+   "fieldname": "lon",
+   "fieldtype": "Float",
+   "label": "Lon"
+  },
+  {
+   "fieldname": "default_zoom",
+   "fieldtype": "Float",
+   "label": "Default Zoom"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-01-20 13:51:45.582075",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Map Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

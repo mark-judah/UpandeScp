@@ -464,7 +464,11 @@
         let darkFlavor = false;
         window.lastScoutingData = null;
         window.allLatLngs = [];
+        let greenhouseOverlay = null;  // ← ADDED
         const palette = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#f43f5e', '#22c55e'];
+
+        // Inject greenhouse GeoJSON from context (must be passed in get_context)
+        window.greenhouses_geojson = {{ greenhouses_geojson | tojson | safe }};
 
         const sidebar = document.getElementById('sidebar');
         const toggleBtn = document.getElementById('toggle-sidebar');
@@ -482,6 +486,66 @@
         const hideLoader = () => {
             const loader = document.getElementById('map-loader');
             if (loader) loader.style.display = 'none';
+        };
+
+        // ← ADDED: Exact same greenhouse overlay function
+        const addGreenhouseOverlay = () => {
+            if (greenhouseOverlay) {
+                window.map.removeLayer(greenhouseOverlay);
+            }
+
+            if (!window.greenhouses_geojson?.length) {
+                return;
+            }
+
+            const features = [];
+            window.greenhouses_geojson.forEach(gh => {
+                if (!gh.geojson?.features) return;
+                gh.geojson.features.forEach(f => {
+                    const clone = JSON.parse(JSON.stringify(f));
+
+                    if (clone.geometry.type === 'Polygon') {
+                        clone.geometry.coordinates = clone.geometry.coordinates.map(ring =>
+                            ring.map(coord => {
+                                const [lng, lat] = coord;
+                                // No offset in this version → direct use
+                                return [lng, lat];
+                            })
+                        );
+                    }
+
+                    clone.properties = clone.properties || {};
+                    clone.properties.gh_name = gh.short_name || gh.name;
+                    features.push(clone);
+                });
+            });
+
+            if (!features.length) return;
+
+            greenhouseOverlay = L.geoJSON(
+                { type: "FeatureCollection", features },
+                {
+                    style: {
+                        fillColor: "#5b684a",
+                        fillOpacity: 0.64,
+                        color: "transparent",
+                        weight: 0,
+                        interactive: false
+                    },
+                    onEachFeature: (f, layer) => {
+                        const name = f.properties?.gh_name || "Greenhouse";
+                        layer.bindTooltip(name, {
+                            permanent: false,
+                            direction: "center",
+                            className: "gh-tooltip"
+                        });
+                    }
+                }
+            ).addTo(window.map);
+
+            // Ensure zones stay on top
+            if (window.zoneLayer) window.zoneLayer.bringToFront();
+            if (window.lineIdLabels) window.lineIdLabels.bringToFront();
         };
 
         const generateScoutColors = (data) => {
@@ -540,8 +604,10 @@
             window.map = L.map('map', { zoomSnap: 0.1, zoomDelta: 0.1, maxZoom: 22.4, zoomControl: true });
             mapInitialized = true;
             renderBaseLayers();
-            map.setView([0.0685, 35.7476], 16);
-
+            const lat = {{ lat | json }};
+            const lon = {{ lon | json }};
+            const zoom = {{ default_zoom | json }};
+            map.setView([lat, lon], zoom);
             const picker = document.getElementById('scout-date-picker');
             const today = new Date().toISOString().slice(0, 10);
             picker.value = today;
@@ -620,7 +686,6 @@
                     renderScoutedBeds(allData.scouting_entries || [], allData.all_zones_geojson || [], scoutColors);
                     renderScoutLegend(scoutColors);
 
-                    // Removed auto-zoom to keep initial zoom level
                 } else {
                     document.getElementById('scout-legend').innerHTML = '<div class="empty-state"><p>No Scout Data</p></div>';
                 }
@@ -741,6 +806,8 @@
         };
 
         const renderZones = (data) => {
+            addGreenhouseOverlay();  // ← ADDED: Renders greenhouse background first
+
             if (window.zoneLayer) map.removeLayer(window.zoneLayer);
             if (window.lineIdLabels) { map.removeLayer(window.lineIdLabels); window.lineIdLabels = null; }
             const lines = {};
@@ -809,7 +876,6 @@
                 }
             });
 
-            // Only add layers if zoom level is appropriate
             const currentZoom = map.getZoom();
             if (currentZoom >= 15) window.zoneLayer.addTo(map);
             if (currentZoom >= 19) window.lineIdLabels.addTo(map);

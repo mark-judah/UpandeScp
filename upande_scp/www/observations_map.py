@@ -3,6 +3,12 @@ import json
 
 def get_context(context):
     context.no_cache = 1
+    map_settings = frappe.get_doc("Map Settings", "Map Settings")
+    
+    # Pass the values to the template
+    context.lat = map_settings.lat
+    context.lon = map_settings.lon
+    context.default_zoom = map_settings.default_zoom
     context.csrf_token = frappe.sessions.get_csrf_token()
     gh_warehouses = frappe.get_all(
         "Warehouse",

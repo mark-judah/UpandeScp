@@ -889,7 +889,7 @@
             const lbl = L.marker([pt[1], pt[0]], {
                 icon: L.divIcon({
                     className: 'line-id-label',
-                    html: `<div style="font-size:4px;font-weight:200;color:${darkFlavor ? '#fff' : '#000'};transform:rotate(45deg);">${lineId}</div>`,
+                    html: `<div style="font-size:6px;font-weight:200;color:${darkFlavor ? '#fff' : '#000'};transform:rotate(45deg);">${lineId}</div>`,
                     iconSize: [20, 10], iconAnchor: [0, 0]
                 })
             });
@@ -1090,8 +1090,11 @@
         });
         mapInitialized = true;
         renderBaseLayers();
-        window.map.setView([0.069507, 35.755801], 16);
-
+        const lat = {{ lat | json }};
+        const lon = {{ lon | json }};
+        const zoom = {{ default_zoom | json }};
+        map.setView([lat, lon], zoom);
+        
         const datePicker = document.getElementById('scout-date-picker');
         const today = new Date().toISOString().slice(0, 10);
         datePicker.value = today;

@@ -17,7 +17,7 @@ def getObservationsDetails():
 
     disorders = frappe.get_all(
         "Physiological Disorder",
-        fields=["name", "disorder_name", "photo", "description", "reading_type", "plant_sections"],
+        fields=["name", "disorder_name", "photo", "reading_type", "plant_sections"],
         order_by="idx"
     )
 
@@ -169,7 +169,6 @@ def getObservationsDetails():
                     "stage": None,
                     "stages": None,
                     "photo": disorder.photo,
-                    "description": disorder.description,
                     "readingType": (disorder.reading_type or "Checkbox").lower(),
                     "plantSections": _parse_plant_sections(disorder.plant_sections),
                 }

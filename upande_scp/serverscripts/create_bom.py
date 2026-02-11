@@ -55,7 +55,7 @@ def createBOM():
         bom_doc = frappe.new_doc("BOM")
         bom_doc.item = bom_item_name
         bom_doc.custom_item_group="Chemical Mix"
-        bom_doc.company = "Karen Roses"
+        bom_doc.company = "Mona Flowers Limited"
         bom_doc.custom_farm = "Chepsito"
         bom_doc.custom_business_unit = "Roses"
         bom_doc.uom = "Tank Mix (1000L)"

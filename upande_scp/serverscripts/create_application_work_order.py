@@ -45,8 +45,8 @@ def createApplicationWorkOrder():
         template_bom = frappe.get_doc("BOM", bom_name)
         if not template_bom.is_active:
             frappe.throw(_("BOM {0} is not active.").format(bom_name))
-        if template_bom.company != "Karen Roses":
-            frappe.throw(_("BOM {0} is not for Karen Roses.").format(bom_name))
+        if template_bom.company != "Mona Flowers Limited":
+            frappe.throw(_("BOM {0} is not for Mona Flowers Limited.").format(bom_name))
 
         production_item = template_bom.item
 
@@ -108,14 +108,14 @@ def createApplicationWorkOrder():
                 "qty": qty_per_1000l,
                 "uom": chem.get("uom") or item.stock_uom,
                 "s_warehouse": source_wh,
-                "t_warehouse": "Work In Progress - KR"
+                "t_warehouse": "Work In Progress - MFL"
             })
 
         # -------------------------------------------------- 7. Temp Stock Entry
         se = frappe.get_doc({
             "doctype": "Stock Entry",
             "stock_entry_type": "Material Transfer for Manufacture",
-            "company": "Karen Roses",
+            "company": "Mona Flowers Limited",
             "purpose": "Material Transfer for Manufacture",
             "custom_farm": greenhouse.split()[0],
             "items": se_items
@@ -163,8 +163,8 @@ def createApplicationWorkOrder():
             "bom_no": bom_to_use,
             "qty": wo_qty,
             "stock_uom": bom_uom,  # ← EXPLICITLY SET UOM FROM BOM
-            "company": "Karen Roses",
-            "wip_warehouse": "Work In Progress - KR",
+            "company": "Mona Flowers Limited",
+            "wip_warehouse": "Work In Progress - MFL",
             "fg_warehouse": greenhouse,
             "custom_type": raw_data.get("custom_type"),
             "custom_greenhouse": greenhouse,

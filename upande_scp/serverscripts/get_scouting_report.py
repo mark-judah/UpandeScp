@@ -193,10 +193,54 @@ def getScoutingData():
         final_scouting_entries = list(processed_entries.values())
 
         # --- 4. Varieties (no thresholds) ---
-        varieties_planted_in_gh = frappe.get_all("Items Greenhouses", filters={"parent": greenhouse}, fields=["variety"])
-        variety_names = [v.variety for v in varieties_planted_in_gh]
-        varieties_data = [{"name": v_name} for v_name in variety_names]
+        # ────────────────────────────────────────────────────────────────
+        # Fetch varieties — prioritize Karen Roses style, fallback to Mona Flowers
+        # ────────────────────────────────────────────────────────────────
 
+        varieties_data = []
+        variety_names = []
+
+        karen_doctype = "Items Greenhouses"
+        mona_doctype   = "Varieties per GH"
+
+        # 1. Karen Roses style first (with area) — only if the DocType exists on this site
+        if frappe.db.exists("DocType", karen_doctype):
+            # Safe: DocType table entry exists → we can query the child table
+            if frappe.db.exists(karen_doctype, {"parent": greenhouse}):
+                rows = frappe.get_all(
+                    karen_doctype,
+                    filters={"parent": greenhouse},
+                    fields=["variety", "area"]
+                )
+                for row in rows:
+                    if not row.variety:
+                        continue
+                    item = {"name": row.variety}
+                    if row.area is not None:
+                        item["area"] = flt(row.area)
+                    varieties_data.append(item)
+                variety_names = [v["name"] for v in varieties_data]
+
+        # 2. Fallback to Mona Flowers style (simple list, no area)
+        if not varieties_data:
+            # We assume "Varieties per GH" exists on Mona sites, but still safe-check
+            if frappe.db.exists("DocType", mona_doctype):
+                if frappe.db.exists(mona_doctype, {"parent": greenhouse}):
+                    rows = frappe.get_all(
+                        mona_doctype,
+                        filters={"parent": greenhouse},
+                        fields=["variety"]
+                    )
+                    varieties_data = [{"name": row.variety} for row in rows if row.variety]
+                    variety_names = [v["name"] for v in varieties_data]
+
+        # Optional: log if nothing found
+        if not varieties_data:
+            frappe.log_error(
+                f"No varieties configured for greenhouse {greenhouse} "
+                f"(checked DocTypes: {karen_doctype!r} and {mona_doctype!r})",
+                "Missing variety data"
+            )
         # --- 5. Compute Susceptibility (uses thresholds from Item) ---
         item_thresholds = frappe.get_all(
             "Chemical Requirements",

@@ -10,9 +10,25 @@ def getScoutingData():
     """
     try:
         greenhouse = frappe.form_dict.get("greenhouse")
-        date_str = frappe.form_dict.get("date")
+        latest = frappe.get_all(
+            "Scouting Entry",
+            filters={"greenhouse": greenhouse},
+            fields=["date_of_capture"],
+            order_by="date_of_capture DESC",
+            limit=1
+        )
+        if not latest:
+            return {
+                "scouting_entries": [],
+                "varieties": [],
+                "susceptibility": [],
+                "boms": [],
+                "observation_metadata": {},
+                "scouting_date": None
+            }
+        date_str = str(latest[0].date_of_capture)
 
-        if not greenhouse or not date_str:
+        if not greenhouse:
             frappe.throw("Greenhouse and date are required.")
 
         # --- CONFIGURATION: Observation types ---
@@ -332,6 +348,7 @@ def getScoutingData():
         return {
             "scouting_entries": final_scouting_entries,
             "susceptibility": susceptibility,
+            "scouting_date": date_str,
             "varieties":varieties_data,
             "boms": chemical_mix_boms,
             "bom_items": bom_items,

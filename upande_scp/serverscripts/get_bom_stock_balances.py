@@ -31,7 +31,11 @@ def getBomStockBalances():
         chemicals = list(item_code_map.values())
 
         source_warehouses = [
-            'Chemical Store - MFL',
+            'Chemical Store Chepsito - KR',
+            'Chemical Store Kapkolia - KR',
+            'Chemical Store Kaptumbo - KR',
+            'Chemical Store Simotwo - KR',
+            'Chemical Store Torongo - KR',
         ]
 
         code_stock_balances = {}

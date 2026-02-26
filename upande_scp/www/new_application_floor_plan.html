@@ -20,10 +20,11 @@
         <div class="form-section">
           <h3 class="form-section-title">Basic Information</h3>
           <div class="form-group">
-            <label class="form-label" for="scouting-date">Date</label>
-            <input type="date" id="scouting-date" class="form-input" required>
+            <label class="form-label">Scouting Date</label>
+            <div id="scouting-date-display" class="form-input tw-bg-gray-100 tw-text-gray-500 tw-cursor-not-allowed">
+              Select a greenhouse to load the latest report...
+            </div>
           </div>
-
           <div class="form-group">
             <label class="form-label" for="greenhouse">Greenhouse</label>
             <select id="greenhouse" class="form-select" required>
@@ -86,8 +87,11 @@
             <label class="form-label" for="kit">Kit</label>
             <select id="kit" class="form-select" required>
               <option value="">Select kit</option>
-              <option value="Kit A">Kit A</option>
-              <option value="Kit B">Kit B</option>
+              {% for equipment in spray_equipment_list %}
+              <option value="{{ equipment.kit }}" data-warehouse="{{ equipment.warehouse or '' }}">
+                {{ equipment.kit }}
+              </option>
+              {% endfor %}
             </select>
           </div>
           <div class="form-group">

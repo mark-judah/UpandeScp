@@ -28,7 +28,8 @@ def createApplicationWorkOrder():
         area_ha = float(raw_data.get("custom_area") or 0)
         water_volume_l = float(raw_data.get("custom_water_volume") or 0)
         chemicals = raw_data.get("chemicals", [])
-
+        kit_warehouse = raw_data.get("custom_kit_warehouse", "").strip()
+        wip_warehouse = kit_warehouse if kit_warehouse else "Work In Progress - KR"
         if not bom_name:
             frappe.throw(_("BOM is required. 'production_item' not found."))
         if not greenhouse:
@@ -45,8 +46,8 @@ def createApplicationWorkOrder():
         template_bom = frappe.get_doc("BOM", bom_name)
         if not template_bom.is_active:
             frappe.throw(_("BOM {0} is not active.").format(bom_name))
-        if template_bom.company != "Mona Flowers Limited":
-            frappe.throw(_("BOM {0} is not for Mona Flowers Limited.").format(bom_name))
+        if template_bom.company != "Karen Roses":
+            frappe.throw(_("BOM {0} is not for Karen Roses.").format(bom_name))
 
         production_item = template_bom.item
 
@@ -105,17 +106,17 @@ def createApplicationWorkOrder():
 
             se_items.append({
                 "item_code": item.name,
-                "qty": qty_per_1000l,
+                "qty": round(rate * wo_qty, 6),
                 "uom": chem.get("uom") or item.stock_uom,
                 "s_warehouse": source_wh,
-                "t_warehouse": "Work In Progress - MFL"
+                "t_warehouse": wip_warehouse
             })
 
         # -------------------------------------------------- 7. Temp Stock Entry
         se = frappe.get_doc({
             "doctype": "Stock Entry",
             "stock_entry_type": "Material Transfer for Manufacture",
-            "company": "Mona Flowers Limited",
+            "company": "Karen Roses",
             "purpose": "Material Transfer for Manufacture",
             "custom_farm": greenhouse.split()[0],
             "items": se_items
@@ -140,7 +141,7 @@ def createApplicationWorkOrder():
             val_rate = val_rate_map.get(item.name) or 0.0
 
             # FIX: Round required_qty to avoid precision mismatches during material transfer
-            required_qty = round(application_rate, 6)  # This is per 1000L
+            required_qty = round(application_rate * wo_qty, 6)
 
             required_items.append({
                 "item_code": item.name,
@@ -163,8 +164,8 @@ def createApplicationWorkOrder():
             "bom_no": bom_to_use,
             "qty": wo_qty,
             "stock_uom": bom_uom,  # ← EXPLICITLY SET UOM FROM BOM
-            "company": "Mona Flowers Limited",
-            "wip_warehouse": "Work In Progress - MFL",
+            "company": "Karen Roses",
+            "wip_warehouse": wip_warehouse,
             "fg_warehouse": greenhouse,
             "custom_type": raw_data.get("custom_type"),
             "custom_greenhouse": greenhouse,
@@ -257,6 +258,8 @@ def create_dynamic_bom(template_bom, user_chemicals, area_ha, water_volume_l, gr
             "item_code": item.name,
             "item_name": name,
             "qty": qty,
+            "stock_qty": qty,           
+            "qty_consumed_per_unit": qty,
             "uom": c.get("uom") or item.stock_uom,
             "stock_uom": item.stock_uom,
             "conversion_factor": 1,

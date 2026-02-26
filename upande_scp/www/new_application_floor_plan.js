@@ -17,7 +17,8 @@ document.addEventListener("DOMContentLoaded", () => {
         activeObservationTypes: [],
         sourceWarehouseCache: {},
         chemicalUomCache: {},
-        susceptibilityData: []
+        susceptibilityData: [],
+        kitWarehouse: ""
     };
 
     // ==================== DOM ELEMENTS ====================
@@ -425,14 +426,13 @@ document.addEventListener("DOMContentLoaded", () => {
         renderGrid(0, 0);
         showLoader();
         try {
-            const dateValue = document.getElementById('scouting-date').value || new Date().toISOString().slice(0, 10);
             const response = await fetch('/api/method/upande_scp.serverscripts.get_scouting_report.getScoutingData', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Frappe-CSRF-Token': "{{csrf_token}}"
                 },
-                body: JSON.stringify({ greenhouse, date: dateValue })
+                body: JSON.stringify({ greenhouse })
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const r = await response.json();
@@ -441,6 +441,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 els.heatmapGridWrapper.classList.remove("tw-hidden");
                 els.heatmapGridWrapper.classList.add("is-visible-grid");
                 state.scoutingData = data.scouting_entries;
+                if (data.scouting_date) {
+                    const dateDisplay = document.getElementById('scouting-date-display');
+                    if (dateDisplay) {
+                        // Format as a readable date e.g. "15 Jan 2025"
+                        const formatted = new Date(data.scouting_date).toLocaleDateString('en-GB', {
+                            day: 'numeric', month: 'short', year: 'numeric'
+                        });
+                        dateDisplay.textContent = `Latest report: ${formatted}`;
+                        dateDisplay.classList.remove('tw-text-gray-500');
+                        dateDisplay.classList.add('tw-text-gray-800');
+                    }
+                }
                 const discoveredTypes = new Set();
                 state.scoutingData.forEach(entry => {
                     Object.keys(entry).forEach(key => {
@@ -499,6 +511,11 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (error) {
             els.heatmapGridWrapper.classList.add("tw-hidden");
             document.getElementById('grid-placeholder').classList.remove("tw-hidden");
+            const dateDisplay = document.getElementById('scouting-date-display');
+            if (dateDisplay) {
+                dateDisplay.textContent = 'No scouting data found for this greenhouse.';
+                dateDisplay.classList.add('tw-text-gray-500');
+            }
         } finally {
             hideLoader();
         }
@@ -1002,6 +1019,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    els.kit.addEventListener("change", (e) => {
+        const selectedOption = e.target.options[e.target.selectedIndex];
+        state.kitWarehouse = selectedOption?.dataset.warehouse || "";
+    });
+
     const getActiveFilters = () => {
         const activeObs = {};
         state.activeObservationTypes.forEach(obsType => {
@@ -1288,6 +1310,7 @@ document.addEventListener("DOMContentLoaded", () => {
             els.variety.value = "";
             els.sprayType.value = "";
             els.kit.value = "";
+            state.kitWarehouse = "";
             els.scope.value = "";
             els.bom.value = "";
             els.waterPh.value = "";
@@ -1423,6 +1446,7 @@ document.addEventListener("DOMContentLoaded", () => {
             custom_targets: targets,
             custom_spray_type: sprayType,
             custom_kit: kit,
+            custom_kit_warehouse: state.kitWarehouse,
             custom_scope: scope,
             custom_scope_details: custom_scope_value,
             production_item: bom,

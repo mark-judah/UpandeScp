@@ -83,7 +83,8 @@ app_license = "mit"
 # ------------
 
 # before_install = "upande_scp.install.before_install"
-# after_install = "upande_scp.install.after_install"
+after_install = "upande_scp.setup.after_install"
+after_migrate = "upande_scp.setup.after_migrate"
 
 # Uninstallation
 # ------------
@@ -349,6 +350,20 @@ fixtures = [
                 "in",
                 [
                     "Spray Plan"
+                ]
+            ]
+        ]
+    },
+    {
+        "dt": "Custom HTML Block",
+        "filters": [
+            [
+                "name",
+                "in",
+                [
+                    "SCP Dashboard",
+                    "SCP Scout Map",
+                    "SCP Navigation"
                 ]
             ]
         ]

@@ -3,48 +3,8 @@
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-    :root {
-        --bg: #ffffff;
-        --text: #1f2937;
-        --border: #d1d5db;
-        --sidebar-bg: #f3f4f6;
-        --sidebar-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-        --accent: #4b5563;
-        --accent-hover: #374151;
-        --hover: #e5e7eb;
-        --success: #059669;
-        --warning: #f59e0b;
-        --danger: #ef4444;
-    }
-
-    [data-theme="dark"] {
-        --bg: #0f172a;
-        --text: #f1f5f9;
-        --border: #334155;
-        --sidebar-bg: rgba(15, 23, 42, 0.98);
-        --sidebar-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5);
-        --hover: #1e293b;
-    }
-
-    * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-    }
-
-    html, body {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background: var(--bg);
-        color: var(--text);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-
     #map-page {
-        height: 100vh;
+        height: 100%;
         width: 100%;
         display: flex;
         position: relative;
@@ -519,6 +479,23 @@ window.onload = function() {
         return [lat + OFFSET_LAT, lng + OFFSET_LNG];
     };
 
+    // Performance: abort controller + debounce
+    let abortCtrl = null;
+    function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+    // Zone GeoJSON parse cache
+    const zoneCache = new Map();
+    const parseZone = zone => {
+        if (!zoneCache.has(zone.name)) {
+            try { zoneCache.set(zone.name, JSON.parse(zone.raw_geojson)); }
+            catch { zoneCache.set(zone.name, null); }
+        }
+        return zoneCache.get(zone.name);
+    };
+
+    // Canvas renderer for zone layer performance
+    const canvasRenderer = L.canvas({ padding: 0.5 });
+
     window.map = null;
     let mapInitialized = false;
     window.zoneLayer = null;
@@ -630,7 +607,8 @@ window.onload = function() {
         weekPicker.value = `${year}-W${weekNum.toString().padStart(2, '0')}`;
         
         fetchTrapData(weekPicker.value);
-        weekPicker.addEventListener('change', e => fetchTrapData(e.target.value));
+        const debouncedFetchTrap = debounce(week => fetchTrapData(week), 300);
+        weekPicker.addEventListener('change', e => debouncedFetchTrap(e.target.value));
     };
 
     // Get week number
@@ -644,17 +622,18 @@ window.onload = function() {
 
     // Fetch trap data
     const fetchTrapData = (week) => {
+        if (abortCtrl) abortCtrl.abort();
+        abortCtrl = new AbortController();
         showLoader();
-        
-        console.log(`Fetching trap data for week: ${week}`);
-        
+
         fetch('/api/method/upande_scp.serverscripts.get_trap_data.getTrapData', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Frappe-CSRF-Token': "{{csrf_token}}"
             },
-            body: JSON.stringify({ week })
+            body: JSON.stringify({ week }),
+            signal: abortCtrl.signal
         })
         .then(r => {
             console.log('Response status:', r.status);
@@ -689,6 +668,7 @@ window.onload = function() {
             renderTrapMarkers();
         })
         .catch(err => {
+            if (err.name === 'AbortError') return;
             console.error('Failed to load trap data:', err);
             const observationsList = document.getElementById('pest-list');
             if (observationsList) {
@@ -720,28 +700,30 @@ window.onload = function() {
         const lines = {};
         (data.all_zones_geojson || []).forEach(zone => {
             try {
-                const gj = JSON.parse(zone.raw_geojson);
+                const gj = parseZone(zone);
+                if (!gj) return;
                 const gh = zone.name.split(' - ')[0];
                 if (gj.features) {
                     gj.features.forEach(f => {
-                        // Apply offset to coordinates
-                        if (f.geometry.type === 'LineString') {
-                            f.geometry.coordinates = f.geometry.coordinates.map(coord => {
+                        // Apply offset to coordinates (clone to avoid mutating cache)
+                        const fClone = JSON.parse(JSON.stringify(f));
+                        if (fClone.geometry.type === 'LineString') {
+                            fClone.geometry.coordinates = fClone.geometry.coordinates.map(coord => {
                                 const [lng, lat] = coord;
                                 const [newLat, newLng] = applyOffset(lat, lng);
                                 return [newLng, newLat];
                             });
                         }
 
-                        const lineId = f.properties.line_id;
+                        const lineId = fClone.properties.line_id;
                         const key = `${gh}_line_${lineId}`;
-                        f.properties.zone_name = zone.name;
+                        fClone.properties.zone_name = zone.name;
                         if (!lines[key]) lines[key] = [];
-                        lines[key].push(f);
+                        lines[key].push(fClone);
                     });
                 }
-            } catch (e) { 
-                console.error('Bad GeoJSON', zone.name, e); 
+            } catch (e) {
+                console.error('Bad GeoJSON', zone.name, e);
             }
         });
 
@@ -767,7 +749,8 @@ window.onload = function() {
 
         const fc = { type: "FeatureCollection", features: Object.values(lines).flat() };
         window.zoneLayer = L.geoJSON(fc, {
-            style: { color: '#1e293b', weight: 0.7, opacity: 0.6 },
+            renderer: canvasRenderer,
+            style: { color: '#1e293b', weight: 0.7, opacity: 0.6, fill: false },
             onEachFeature: (f, l) => {
                 if (f.properties?.zone_name) {
                     const zn = f.properties.zone_name || '';
@@ -1058,6 +1041,7 @@ window.onload = function() {
         document.querySelector('[data-action="select-all-gh"]')?.addEventListener('click', () => {
             window.filters.greenhouses = new Set(window.trapData.greenhouses || []);
             renderGreenhouseList();
+            renderZones(window.trapData);
             renderTrapMarkers();
         });
 

@@ -8,7 +8,8 @@ def getScoutingObservations():
         if not date_str:
             frappe.throw("Date is required.")
 
-  
+        greenhouse = frappe.form_dict.get("greenhouse") or ""
+
         observation_configs = {
             "pests_scouting_entry": {
                 "doctype": "Pest",
@@ -60,13 +61,23 @@ def getScoutingObservations():
             }
         }
 
+        # Build filters for Scouting Entry
+        se_filters = {"date_of_capture": date_str}
+        if greenhouse:
+            se_filters["greenhouse"] = greenhouse
+
         scouting_entries = frappe.get_all(
             "Scouting Entry",
-            filters={"date_of_capture": date_str},
-            fields=["name", "zone"],
+            filters=se_filters,
+            fields=["name", "zone", "scouts_name", "bed", "greenhouse"],
             order_by="time_of_capture ASC"
         )
         entry_names = [e.name for e in scouting_entries]
+
+        # Compute summary stats
+        scouts_count = len({e.scouts_name for e in scouting_entries if e.scouts_name})
+        beds_count = len({e.bed for e in scouting_entries if e.bed})
+        zones_scouted = len({e.zone for e in scouting_entries if e.zone})
 
         if not entry_names:
             frappe.response["message"] = {
@@ -74,7 +85,12 @@ def getScoutingObservations():
                 "all_zones_geojson": [],
                 "active_observation_types": [],
                 "all_observation_names": {},
-                "observation_metadata": {k: {"label": v["type_label"]} for k, v in observation_configs.items()}
+                "observation_metadata": {k: {"label": v["type_label"]} for k, v in observation_configs.items()},
+                "summary": {
+                    "scouts_count": 0,
+                    "beds_count": 0,
+                    "zones_scouted": 0
+                }
             }
             return
 
@@ -84,9 +100,8 @@ def getScoutingObservations():
             for key in observation_configs:
                 processed_entries[entry.name][key] = []
 
-
         all_observation_names = {}
-        
+
         for key, cfg in observation_configs.items():
             fields = ["parent", cfg["item_field"]]
             meta = frappe.get_meta(cfg["child_table"])
@@ -95,7 +110,7 @@ def getScoutingObservations():
                     fields.append(f)
 
             items_in_data = {}
-            
+
             try:
                 child_records = frappe.get_all(
                     cfg["child_table"],
@@ -113,81 +128,61 @@ def getScoutingObservations():
                         continue
 
                     if item_name not in items_in_data:
-                        items_in_data[item_name] = "#999999"  # Default gray
+                        items_in_data[item_name] = "#999999"
 
-                    # Build observation object
                     obs_data = {
                         "name": item_name,
-                        "color": "#999999"  # Will be updated below
+                        "color": "#999999"
                     }
-                    
-                    # Add extra fields if they exist
+
                     for field in cfg["extra_fields"]:
                         if field in rec:
                             obs_data[field] = rec[field]
-                    
-                    # Handle count field appropriately
+
                     if "count" in [f.fieldname for f in meta.fields] and "count" in rec:
                         obs_data["count"] = rec["count"]
                     elif key in ["diseases_scouting_entry", "incidents_scouting_entry", "physiological_disorders_entry", "weeds_scouting_entry"]:
-                        # For boolean observations, default to 1 if no count
                         obs_data["count"] = 1
                     else:
                         obs_data["count"] = rec.get("count", 0)
-                    
+
                     processed_entries[parent][key].append(obs_data)
-                    
+
             except Exception as e:
                 frappe.log_error(f"Failed to load {cfg['child_table']}: {str(e)}")
-                continue  # Continue with next observation type
+                continue
 
-            # Now try to fetch colors for the items we found
             if items_in_data:
                 try:
-                    # Check if the color field exists in the main doctype
                     main_meta = frappe.get_meta(cfg["doctype"])
                     color_field_exists = any(f.fieldname == cfg["legend_color_field"] for f in main_meta.fields)
-                    
+
                     if color_field_exists:
-                        # Color field exists, try to fetch colors
                         color_records = frappe.get_all(
                             cfg["doctype"],
                             filters={"name": ["in", list(items_in_data.keys())]},
                             fields=["name", cfg["legend_color_field"]]
                         )
-                        
-                        # Build color map from actual data
                         for rec in color_records:
                             color = rec.get(cfg["legend_color_field"])
-                            if color:  # Only update if color is not empty
+                            if color:
                                 items_in_data[rec.name] = color
-                                print(f"Found color for {rec.name}: {color}")
-                    else:
-                        # Color field doesn't exist, use generated colors
-                        print(f"Color field '{cfg['legend_color_field']}' not found in {cfg['doctype']}, using generated colors")
-                    
-                    # Generate consistent colors for any items still using default
+
                     for item_name in items_in_data:
                         if items_in_data[item_name] == "#999999":
-                            # Generate consistent color based on item name hash
                             color_hash = hashlib.md5(item_name.encode()).hexdigest()[:6]
                             items_in_data[item_name] = f"#{color_hash}"
-                            print(f"Generated color for {item_name}: #{color_hash}")
-                            
+
                 except Exception as e:
-                    # If any error occurs, use generated colors for all items
-                    print(f"Error fetching colors for {cfg['doctype']}: {e}, using generated colors")
                     for item_name in items_in_data:
                         color_hash = hashlib.md5(item_name.encode()).hexdigest()[:6]
                         items_in_data[item_name] = f"#{color_hash}"
 
-                # Update colors in processed entries
                 for entry_name in processed_entries:
                     for obs in processed_entries[entry_name][key]:
                         if obs["name"] in items_in_data:
                             obs["color"] = items_in_data[obs["name"]]
 
-            # Store for legend
             all_observation_names[key] = [
                 {"name": name, "color": color}
                 for name, color in items_in_data.items()
@@ -201,20 +196,22 @@ def getScoutingObservations():
                 e[key] = proc.get(key, [])
             final_entries.append(e)
 
-      
-        all_zones = frappe.get_all(
-            "Zone",
-            filters={"raw_geojson": ["is", "set"]},
-            fields=["name", "raw_geojson"]
-        )
+        # Fetch only zones referenced by entries in scope (much faster with greenhouse filter)
+        entry_zones = list({e.zone for e in scouting_entries if e.zone})
+        if entry_zones:
+            all_zones = frappe.get_all(
+                "Zone",
+                filters={"name": ["in", entry_zones], "raw_geojson": ["is", "set"]},
+                fields=["name", "raw_geojson"]
+            )
+        else:
+            all_zones = []
 
-     
         active_types = [
             key for key in observation_configs
-            if all_observation_names.get(key)  # Has items
+            if all_observation_names.get(key)
         ]
 
-      
         frappe.response["message"] = {
             "scouting_entries": final_entries,
             "all_zones_geojson": all_zones or [],
@@ -222,6 +219,11 @@ def getScoutingObservations():
             "all_observation_names": all_observation_names,
             "observation_metadata": {
                 k: {"label": v["type_label"]} for k, v in observation_configs.items()
+            },
+            "summary": {
+                "scouts_count": scouts_count,
+                "beds_count": beds_count,
+                "zones_scouted": zones_scouted
             }
         }
 

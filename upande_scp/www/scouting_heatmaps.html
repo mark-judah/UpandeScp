@@ -2,30 +2,8 @@
 
 {% block head %}
 <style>
-    :root {
-        --bg: #ffffff;
-        --text: #1f2937;
-        --border: #d1d5db;
-        --sidebar-bg: #f3f4f6;
-        --sidebar-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-        --accent: #4b5563;
-        --accent-hover: #374151;
-        --hover: #e5e7eb;
-    }
-
-    * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-    }
-
-    body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-        background: #f9fafb;
-    }
-
     #dashboard-page {
-        height: 100vh;
+        height: 100%;
         width: 100%;
         display: flex;
         position: relative;
@@ -373,6 +351,37 @@
         margin: 0 auto 16px;
         opacity: 0.5;
     }
+
+    /* Loading skeleton */
+    .skeleton-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 15px;
+    }
+    .skeleton-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 10px;
+        background: white;
+        animation: skeleton-pulse 1.4s ease-in-out infinite;
+    }
+    .skeleton-line {
+        height: 12px;
+        border-radius: 4px;
+        background: #e5e7eb;
+        margin-bottom: 8px;
+    }
+    .skeleton-line.short { width: 40%; }
+    .skeleton-block {
+        height: 120px;
+        border-radius: 4px;
+        background: #e5e7eb;
+        margin-top: 8px;
+    }
+    @keyframes skeleton-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
 </style>
 {% endblock %}
 
@@ -439,8 +448,20 @@
             document.getElementById('loader').classList.add('hidden');
         }
 
+        function showSkeleton() {
+            const container = document.getElementById('current-gh-heatmaps');
+            const skeletonHTML = Array.from({length: 6}, () => `
+                <div class="skeleton-card">
+                    <div class="skeleton-line"></div>
+                    <div class="skeleton-line short"></div>
+                    <div class="skeleton-block"></div>
+                </div>`).join('');
+            container.innerHTML = `<div class="skeleton-grid">${skeletonHTML}</div>`;
+        }
+
         const fetchGreenhouseData = (date, greenhouse) => {
             showLoader();
+            showSkeleton();
 
             fetch('/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData', {
                 method: 'POST',

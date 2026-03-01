@@ -318,7 +318,10 @@ fixtures = [
                     "Items Toggle Fields",
                     "Greenhouse Map",
                     "Pests Legend Color Toggle",
-                    "Refresh Greenhouse Rentry Time"
+                    "Refresh Greenhouse Rentry Time",
+                    "Hide Start Button On Work Order",
+                    "Spray Plan Approval",
+                    "Spray Plan Chemical Transfers"
                 ]
             ]
         ]
@@ -336,7 +339,9 @@ fixtures = [
                     "Get BOM Stock Balances",
                     "Get Greenhouse Reentry Status",
                     "Fetch Greenhouse Beds",
-                    "Fetch Scheduled Applications"
+                    "Fetch Scheduled Applications",
+                    "Check GM Role",
+                    "Check Store Keeper Role"
                 ]
             ]
         ]

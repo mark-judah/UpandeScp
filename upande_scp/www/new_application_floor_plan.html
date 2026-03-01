@@ -64,6 +64,10 @@
         <div class="form-section">
           <h3 class="form-section-title">Spray Details</h3>
           <div class="form-group">
+            <label class="form-label" for="scheduled-application-time">Scheduled Application Date</label>
+            <input type="date" id="scheduled-application-time" class="form-input" required>
+          </div>
+          <div class="form-group">
             <label class="form-label" for="spray-type">Spray Type</label>
             <select id="spray-type" class="form-select" required>
               <option value="">Select type</option>
@@ -168,9 +172,9 @@
         <button type="submit" class="btn-primary tw-w-full">Create Spray Plan</button>
       </form>
     </div>
-    <!-- RIGHT PANEL: Grid & Table -->
+    <!-- RIGHT PANEL: Heatmap Cards & Stock Table -->
     <div class="lg:tw-col-span-2 tw-space-y-6">
-      <!-- Heatmap Grid -->
+      <!-- Heatmap Cards Area -->
       <div class="grid-container-wrapper">
         <div id="grid-placeholder" class="grid-placeholder">
           <svg class="grid-placeholder-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -181,13 +185,15 @@
           </svg>
           <h3 class="grid-placeholder-title">No Greenhouse Selected</h3>
           <p class="grid-placeholder-text">
-            Select a greenhouse from the form to view the scouting heatmap and begin creating your spray plan.
+            Select a greenhouse from the form to view the scouting heatmaps and begin creating your spray plan.
           </p>
         </div>
+        <!-- Card grid — each observation gets its own mini heatmap card -->
         <div id="heatmap-grid-wrapper" class="tw-hidden">
-          <div id="x-axis-labels"></div>
-          <div id="y-axis-labels"></div>
-          <div id="main-grid"></div>
+          <!-- hidden axis label holders kept for JS compatibility -->
+          <div id="x-axis-labels" style="display:none"></div>
+          <div id="y-axis-labels" style="display:none"></div>
+          <div id="main-grid" class="hm-cards-container"></div>
         </div>
       </div>
       <!-- Stock Balance Table -->

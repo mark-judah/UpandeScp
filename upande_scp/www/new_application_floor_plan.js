@@ -5,8 +5,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // ==================== STATE & CACHE ====================
     const state = {
         scoutingData: [],
+        previousScoutingData: [],
         varietyRequirements: new Map(),
         dataMap: new Map(),
+        dataMapPrevious: new Map(),
+        showBothReports: false,
         bomsData: [],
         bomItems: [],
         allChemicals: [],
@@ -18,7 +21,8 @@ document.addEventListener("DOMContentLoaded", () => {
         sourceWarehouseCache: {},
         chemicalUomCache: {},
         susceptibilityData: [],
-        kitWarehouse: ""
+        kitWarehouse: "",
+        selectedTargets: new Set()
     };
 
     // ==================== DOM ELEMENTS ====================
@@ -36,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
         waterHardness: document.getElementById("custom_water_hardness"),
         waterVolume: document.getElementById("custom_water_volume"),
         sprayTeam: document.getElementById("spray-team-select"),
+        scheduledApplicationTime: document.getElementById("scheduled-application-time"),
         varietyMultiSelect: document.getElementById("variety-multiselect"),
         selectedVarietiesDisplay: document.getElementById("selected-varieties-display"),
         bomChemicalsList: document.getElementById("bom-chemicals-list"),
@@ -75,8 +80,25 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // ==================== UTILITY FUNCTIONS ====================
-    const showLoader = () => document.getElementById('map-loader').style.display = 'flex';
-    const hideLoader = () => document.getElementById('map-loader').style.display = 'none';
+    const getLoaderMsg = () => document.querySelector('#map-loader p');
+
+    const showLoader = (message = 'Loading data...') => {
+        const loader = document.getElementById('map-loader');
+        const msg = getLoaderMsg();
+        if (msg) msg.textContent = message;
+        loader.style.display = 'flex';
+    };
+
+    const hideLoader = () => {
+        document.getElementById('map-loader').style.display = 'none';
+        const msg = getLoaderMsg();
+        if (msg) msg.textContent = 'Loading data...';
+    };
+
+    const setLoaderMessage = (message) => {
+        const msg = getLoaderMsg();
+        if (msg) msg.textContent = message;
+    };
 
     // ==================== TOAST NOTIFICATION SYSTEM ====================
     const showToast = (message, type = 'info') => {
@@ -272,7 +294,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 // 5. UPDATE STOCK BALANCES — ONLY FOR MAIN FORM
                 if (row && row.classList.contains("chemical-row")) {
-                    setTimeout(updateStockBalances, 100); // Wait for UOM fetch
+                    setTimeout(updateStockBalances, 100);
                 }
             });
 
@@ -294,7 +316,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // ==================== DATA PROCESSING ====================
-    const processScoutingData = (scoutingEntries) => {
+    const processScoutingData = (scoutingEntries, reportTag = "latest") => {
         const dataMap = new Map();
         const observationsInGreenhouse = {};
         const stagesInGreenhouse = new Set();
@@ -336,7 +358,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         stage: stage,
                         symbol: obs.symbol || "",
                         color: obs.color || "#cccccc",
-                        plant_section: plantSection
+                        plant_section: plantSection,
+                        reportTag   // ← "latest" or "previous"
                     });
                 });
             });
@@ -371,7 +394,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     .filter((name, idx, arr) => arr.indexOf(name) === idx)
                     .sort();
 
-                // Also cache UOMs if provided
                 if (data.item_uom_map) {
                     state.chemicalUomCache = { ...state.chemicalUomCache, ...data.item_uom_map };
                     refreshRowUoms();
@@ -402,7 +424,6 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = r.message || r.data;
 
             if (data && data.uom) {
-                // Cache it for future use
                 state.chemicalUomCache[chemicalName] = data.uom;
                 return data.uom;
             }
@@ -441,18 +462,67 @@ document.addEventListener("DOMContentLoaded", () => {
                 els.heatmapGridWrapper.classList.remove("tw-hidden");
                 els.heatmapGridWrapper.classList.add("is-visible-grid");
                 state.scoutingData = data.scouting_entries;
-                if (data.scouting_date) {
-                    const dateDisplay = document.getElementById('scouting-date-display');
-                    if (dateDisplay) {
-                        // Format as a readable date e.g. "15 Jan 2025"
-                        const formatted = new Date(data.scouting_date).toLocaleDateString('en-GB', {
-                            day: 'numeric', month: 'short', year: 'numeric'
+                state.previousScoutingData = data.previous_scouting_entries || [];
+                state.showBothReports = false; // always start with latest only
+
+                // ── Date display + toggle button ──
+                const dateDisplay = document.getElementById('scouting-date-display');
+                if (dateDisplay) {
+                    const fmtDate = (s) => s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+                    const latestFmt   = fmtDate(data.scouting_date);
+                    const previousFmt = fmtDate(data.previous_scouting_date);
+
+                    // Store dates on state for toggle label updates
+                    state.scoutingDate         = data.scouting_date;
+                    state.previousScoutingDate = data.previous_scouting_date;
+
+                    dateDisplay.innerHTML = '';
+                    dateDisplay.classList.remove('tw-text-gray-500', 'tw-cursor-not-allowed', 'tw-bg-gray-100');
+                    dateDisplay.style.display = 'flex';
+                    dateDisplay.style.alignItems = 'center';
+                    dateDisplay.style.gap = '10px';
+                    dateDisplay.style.flexWrap = 'wrap';
+                    dateDisplay.style.padding = '8px 12px';
+                    dateDisplay.style.background = '#f9fafb';
+                    dateDisplay.style.borderRadius = '8px';
+                    dateDisplay.style.border = '1.5px solid #e5e7eb';
+
+                    // Date label
+                    const dateLabel = document.createElement('span');
+                    dateLabel.id = 'report-date-label';
+                    dateLabel.style.fontSize = '0.8rem';
+                    dateLabel.style.color = '#374151';
+                    dateLabel.style.fontWeight = '500';
+                    dateLabel.textContent = `Latest: ${latestFmt}`;
+                    dateDisplay.appendChild(dateLabel);
+
+                    // Toggle button — only show if a previous report exists
+                    if (previousFmt && state.previousScoutingData.length > 0) {
+                        const toggleBtn = document.createElement('button');
+                        toggleBtn.type = 'button';
+                        toggleBtn.id = 'report-toggle-btn';
+                        toggleBtn.className = 'report-toggle-btn';
+                        toggleBtn.textContent = `+ Show ${previousFmt}`;
+                        toggleBtn.addEventListener('click', () => {
+                            state.showBothReports = !state.showBothReports;
+                            const label = document.getElementById('report-date-label');
+                            if (state.showBothReports) {
+                                label.innerHTML = `<span class="report-dot report-dot-latest"></span>Latest: ${latestFmt} &nbsp;<span class="report-dot report-dot-previous"></span>Previous: ${previousFmt}`;
+                                toggleBtn.textContent = `− Hide ${previousFmt}`;
+                                toggleBtn.classList.add('report-toggle-btn-active');
+                            } else {
+                                label.textContent = `Latest: ${latestFmt}`;
+                                toggleBtn.textContent = `+ Show ${previousFmt}`;
+                                toggleBtn.classList.remove('report-toggle-btn-active');
+                            }
+                            // Merge or unmerge dataMaps then re-render
+                            rebuildDataMap();
+                            updateGrid();
                         });
-                        dateDisplay.textContent = `Latest report: ${formatted}`;
-                        dateDisplay.classList.remove('tw-text-gray-500');
-                        dateDisplay.classList.add('tw-text-gray-800');
+                        dateDisplay.appendChild(toggleBtn);
                     }
                 }
+
                 const discoveredTypes = new Set();
                 state.scoutingData.forEach(entry => {
                     Object.keys(entry).forEach(key => {
@@ -461,6 +531,15 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                     });
                 });
+                // Also discover from previous
+                state.previousScoutingData.forEach(entry => {
+                    Object.keys(entry).forEach(key => {
+                        if (key.endsWith('_scouting_entry') && Array.isArray(entry[key]) && entry[key].length > 0) {
+                            discoveredTypes.add(key);
+                        }
+                    });
+                });
+
                 if (data.observation_metadata) {
                     state.observationMetadata = data.observation_metadata;
                     state.allObservationNames = data.observation_metadata.all_observation_names || {};
@@ -471,8 +550,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     state.allObservationNames = {};
                     state.activeObservationTypes = Array.from(discoveredTypes);
                 }
-                const { dataMap, observationsInGreenhouse, stagesInGreenhouse, sectionsInGreenhouse } = processScoutingData(data.scouting_entries);
-                state.dataMap = dataMap;
+
+                // Build both data maps
+                const { dataMap: dmLatest, observationsInGreenhouse, stagesInGreenhouse, sectionsInGreenhouse } =
+                    processScoutingData(data.scouting_entries, "latest");
+                state.dataMapLatest = dmLatest;
+
+                const { dataMap: dmPrevious } =
+                    processScoutingData(state.previousScoutingData, "previous");
+                state.dataMapPrevious = dmPrevious;
+
+                // Start with latest only
+                state.dataMap = dmLatest;
+
                 renderObservationCheckboxes(observationsInGreenhouse);
                 populateFinalTargets();
                 renderStageCheckboxes([...stagesInGreenhouse]);
@@ -485,7 +575,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     populateTeams(data.spray_team_team);
                     state.teamData = data.spray_team_team.map(v => v.name);
                 }
-                const { maxBed, maxZone } = findMaxDimensions(state.scoutingData);
+                const allForDimensions = [...data.scouting_entries, ...state.previousScoutingData];
+                const { maxBed, maxZone } = findMaxDimensions(allForDimensions);
                 const bedNumbering = data.custom_bed_numbering || "Top to Bottom";
                 const zoneNumbering = data.custom_zone_numbering || "Right to Left";
                 renderGrid(maxBed, maxZone, bedNumbering, zoneNumbering);
@@ -521,49 +612,288 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    // ── Rebuild the active dataMap based on showBothReports toggle ──
+    const rebuildDataMap = () => {
+        if (!state.showBothReports) {
+            state.dataMap = state.dataMapLatest;
+            return;
+        }
+        // Merge latest + previous into a combined map
+        // Latest always takes visual priority (rendered on top / listed first)
+        const merged = new Map(state.dataMapLatest);
+        state.dataMapPrevious.forEach((obs, key) => {
+            if (merged.has(key)) {
+                // Zone exists in latest too — append previous obs (tagged)
+                merged.set(key, [...merged.get(key), ...obs]);
+            } else {
+                // Zone only in previous report
+                merged.set(key, [...obs]);
+            }
+        });
+        state.dataMap = merged;
+    };
+
     // ==================== RENDERING FUNCTIONS ====================
-    const renderGrid = (numBeds, zonesPerBed, bedNumbering, zoneNumbering) => {
+    // ==================== GRID STATE ====================
+    // Store grid dimensions so updateGrid can rebuild cards without re-fetching
+    let _gridState = { maxBed: 0, maxZone: 0, bedNumbering: "Top to Bottom", zoneNumbering: "Right to Left" };
+
+    // Called once after scouting data loads — just stores dimensions, cards built by updateGrid
+    const renderGrid = (numBeds, zonesPerBed, bedNumbering = "Top to Bottom", zoneNumbering = "Right to Left") => {
+        _gridState = { maxBed: numBeds, maxZone: zonesPerBed, bedNumbering, zoneNumbering };
+        // Clear old cards
         els.mainGrid.innerHTML = "";
         els.xAxisLabels.innerHTML = "";
         els.yAxisLabels.innerHTML = "";
-        document.documentElement.style.setProperty("--num-beds", numBeds);
-        document.documentElement.style.setProperty("--zones-per-bed", zonesPerBed);
-        const zoneRange = zoneNumbering === "Right to Left"
-            ? Array.from({ length: zonesPerBed }, (_, i) => zonesPerBed - i)
-            : Array.from({ length: zonesPerBed }, (_, i) => i + 1);
-        zoneRange.forEach((i) => {
-            const label = document.createElement("div");
-            label.textContent = `Z${i}`;
-            els.xAxisLabels.appendChild(label);
-        });
-        const bedRange = bedNumbering === "Top to Bottom"
-            ? Array.from({ length: numBeds }, (_, i) => numBeds - i)
-            : Array.from({ length: numBeds }, (_, i) => i + 1);
-        bedRange.forEach((i) => {
-            const label = document.createElement("div");
-            label.textContent = `B${i}`;
-            els.yAxisLabels.appendChild(label);
-        });
-        for (let bed = numBeds; bed >= 1; bed--) {
-            for (let zone = zonesPerBed; zone >= 1; zone--) {
-                const cell = document.createElement("div");
-                cell.classList.add("tw-grid-cell");
-                cell.dataset.bed = bed;
-                cell.dataset.zone = zone;
-                const tooltip = document.createElement("div");
-                tooltip.classList.add("tw-tooltip");
-                tooltip.innerHTML = `<strong>Bed ${bed}, Zone ${zone}</strong><br>No observations reported.`;
-                cell.appendChild(tooltip);
-                els.mainGrid.appendChild(cell);
-            }
-        }
-        els.mainGrid.addEventListener('scroll', () => {
-            els.yAxisLabels.scrollTop = els.mainGrid.scrollTop;
-        });
     };
 
+    // ==================== HEATMAP CARD HELPERS ====================
+    const getIntensityClass = (count, max) => {
+        if (!count || count === 0) return 'hm-intensity-0';
+        const r = count / max;
+        if (r <= 0.2) return 'hm-intensity-1';
+        if (r <= 0.4) return 'hm-intensity-2';
+        if (r <= 0.6) return 'hm-intensity-3';
+        if (r <= 0.8) return 'hm-intensity-4';
+        return 'hm-intensity-5';
+    };
+
+    // Build a single observation mini-grid card (mirrors heatmap page card style)
+    const buildObservationCard = (obsName, obsColor, matrix, maxCount, total, alertLevel) => {
+        const { maxBed, maxZone, bedNumbering, zoneNumbering } = _gridState;
+
+        const card = document.createElement('div');
+        card.className = 'hm-card';
+
+        // Card header
+        const header = document.createElement('div');
+        header.className = 'hm-card-header';
+
+        const badgeHtml = alertLevel === 3
+            ? `<span class="hm-threshold-badge hm-badge-high">High</span>`
+            : alertLevel === 2
+            ? `<span class="hm-threshold-badge hm-badge-moderate">Moderate</span>`
+            : alertLevel === 1
+            ? `<span class="hm-threshold-badge hm-badge-low">Low</span>`
+            : '';
+
+        header.innerHTML = `
+            <span class="hm-card-title" style="color:${obsColor}">${obsName}</span>
+            <span style="display:flex;align-items:center;gap:6px;">
+                ${badgeHtml}
+                <span class="hm-card-total">Total: ${total}</span>
+            </span>
+        `;
+        card.appendChild(header);
+
+        // ── Helper: builds the actual grid DOM (reused for card and fullscreen) ──
+        const buildGrid = (cellSize = 18) => {
+            const gridWrap = document.createElement('div');
+            gridWrap.className = 'hm-grid-wrap';
+
+            const grid = document.createElement('div');
+            grid.className = 'hm-grid';
+            grid.style.gridTemplateColumns = `30px repeat(${maxZone}, 1fr)`;
+
+            const zoneRange = zoneNumbering === "Right to Left"
+                ? Array.from({ length: maxZone }, (_, i) => maxZone - i)
+                : Array.from({ length: maxZone }, (_, i) => i + 1);
+
+            const bedRange = bedNumbering === "Top to Bottom"
+                ? Array.from({ length: maxBed }, (_, i) => maxBed - i)
+                : Array.from({ length: maxBed }, (_, i) => i + 1);
+
+            // Corner + zone headers
+            const corner = document.createElement('div');
+            corner.className = 'hm-corner';
+            corner.style.height = `${cellSize}px`;
+            grid.appendChild(corner);
+
+            zoneRange.forEach(z => {
+                const lbl = document.createElement('div');
+                lbl.className = 'hm-zone-lbl';
+                lbl.textContent = z;
+                lbl.style.height = `${cellSize}px`;
+                grid.appendChild(lbl);
+            });
+
+            // Bed rows
+            bedRange.forEach(bed => {
+                const bedLbl = document.createElement('div');
+                bedLbl.className = 'hm-bed-lbl';
+                bedLbl.textContent = bed;
+                bedLbl.style.height = `${cellSize}px`;
+                grid.appendChild(bedLbl);
+
+                zoneRange.forEach(zone => {
+                    const obsData = (matrix[bed] && matrix[bed][zone]) ? matrix[bed][zone] : null;
+                    const cnt      = obsData ? obsData.count : 0;
+                    const zoneAlert = obsData ? (obsData.alertLevel || 0) : 0;
+
+                    const cell = document.createElement('div');
+                    cell.className = `hm-data-cell ${getIntensityClass(cnt, maxCount)}`;
+                    cell.style.height = `${cellSize}px`;
+
+                    if (cnt > 0) cell.style.backgroundColor = obsColor;
+
+                    // Previous-report zones get a diagonal stripe overlay
+                    const isPrevious = obsData && obsData.reportTag === 'previous';
+                    if (isPrevious && cnt > 0) {
+                        cell.style.backgroundImage = `repeating-linear-gradient(
+                            -45deg,
+                            transparent,
+                            transparent 3px,
+                            rgba(0,0,0,0.25) 3px,
+                            rgba(0,0,0,0.25) 4px
+                        ), linear-gradient(${obsColor}, ${obsColor})`;
+                        cell.style.backgroundBlendMode = 'multiply';
+                    }
+
+                    // Threshold ring on individual zones
+                    if (zoneAlert === 3) {
+                        cell.style.outline = '2px solid #dc2626';
+                        cell.style.outlineOffset = '-2px';
+                        cell.style.zIndex = '5';
+                    } else if (zoneAlert === 2) {
+                        cell.style.outline = '2px solid #f59e0b';
+                        cell.style.outlineOffset = '-2px';
+                        cell.style.zIndex = '5';
+                    } else if (zoneAlert === 1) {
+                        cell.style.outline = '2px solid #10b981';
+                        cell.style.outlineOffset = '-2px';
+                        cell.style.zIndex = '5';
+                    }
+
+                    // Tooltip — always pops downward, small font
+                    const thresholdLabel = zoneAlert === 3 ? 'High' : zoneAlert === 2 ? 'Moderate' : zoneAlert === 1 ? 'Low' : null;
+                    const thresholdHtml  = thresholdLabel
+                        ? `<span style="color:${zoneAlert === 3 ? '#f87171' : zoneAlert === 2 ? '#fbbf24' : '#34d399'}">⬤ ${thresholdLabel} requirement</span>`
+                        : '';
+
+                    const tip = document.createElement('div');
+                    tip.className = 'hm-cell-tooltip';
+                    const reportLabel = isPrevious ? ' <span style="color:#fbbf24">(prev)</span>' : '';
+                    tip.innerHTML = obsData
+                        ? `<strong>B${bed} Z${zone}</strong>${reportLabel} — ${obsName}: <strong>${cnt}</strong>${obsData.symbol ? ' ' + obsData.symbol : ''}${thresholdLabel ? '<br>' + thresholdHtml : ''}`
+                        : `<strong>B${bed} Z${zone}</strong> — None`;
+                    cell.appendChild(tip);
+
+                    // Tooltip always below the cell, horizontal clamp only
+                    cell.addEventListener('mouseenter', () => {
+                        const rect = cell.getBoundingClientRect();
+                        tip.style.top    = '100%';
+                        tip.style.bottom = 'auto';
+                        tip.style.marginTop = '4px';
+
+                        // horizontal: keep inside viewport
+                        if (rect.left < window.innerWidth / 3) {
+                            tip.style.left      = '0';
+                            tip.style.right     = 'auto';
+                            tip.style.transform = '';
+                        } else if (rect.right > window.innerWidth * 2 / 3) {
+                            tip.style.right     = '0';
+                            tip.style.left      = 'auto';
+                            tip.style.transform = '';
+                        } else {
+                            tip.style.left      = '50%';
+                            tip.style.right     = 'auto';
+                            tip.style.transform = 'translateX(-50%)';
+                        }
+                    });
+
+                    grid.appendChild(cell);
+                });
+            });
+
+            gridWrap.appendChild(grid);
+            return gridWrap;
+        };
+
+        // Mini grid inside card
+        card.appendChild(buildGrid(18));
+
+        // Intensity legend
+        const legend = document.createElement('div');
+        legend.className = 'hm-legend';
+        legend.innerHTML = `
+            <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-0"></span> None</span>
+            <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-2" style="background:${obsColor}"></span> Low</span>
+            <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-4" style="background:${obsColor}"></span> Med</span>
+            <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-5" style="background:${obsColor}"></span> High</span>
+            ${state.showBothReports ? `<span class="hm-legend-item"><span class="hm-legend-box hm-legend-box-striped" style="background:${obsColor}"></span> Prev. report</span>` : ''}
+            <span class="hm-legend-max">Max: ${maxCount}</span>
+        `;
+        card.appendChild(legend);
+
+        // ── Fullscreen modal on card click ──
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', () => {
+            // Overlay
+            const overlay = document.createElement('div');
+            overlay.className = 'hm-fullscreen-overlay';
+
+            // Modal box
+            const modal = document.createElement('div');
+            modal.className = 'hm-fullscreen-modal';
+
+            // Modal header
+            const mHeader = document.createElement('div');
+            mHeader.className = 'hm-fullscreen-header';
+            mHeader.innerHTML = `
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:1.1rem;font-weight:700;color:${obsColor}">${obsName}</span>
+                    ${badgeHtml}
+                    <span style="font-size:0.8rem;color:#6b7280">Total: ${total} &nbsp;|&nbsp; Max per zone: ${maxCount}</span>
+                </div>
+                <button class="hm-fullscreen-close" title="Close (Esc)">×</button>
+            `;
+            modal.appendChild(mHeader);
+
+            // Full-size grid
+            const mBody = document.createElement('div');
+            mBody.className = 'hm-fullscreen-body';
+            mBody.appendChild(buildGrid(28));   // bigger cells in fullscreen
+            modal.appendChild(mBody);
+
+            // Full legend
+            const mLegend = document.createElement('div');
+            mLegend.className = 'hm-legend';
+            mLegend.style.padding = '12px 16px';
+            mLegend.innerHTML = `
+                <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-0"></span> None</span>
+                <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-2" style="background:${obsColor}"></span> Low</span>
+                <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-4" style="background:${obsColor}"></span> Med</span>
+                <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-5" style="background:${obsColor}"></span> High</span>
+                ${state.showBothReports ? `<span class="hm-legend-item"><span class="hm-legend-box hm-legend-box-striped" style="background:${obsColor}"></span> Prev. report</span>` : ''}
+                ${alertLevel > 0 ? `
+                <span class="hm-legend-item" style="margin-left:16px;">
+                    <span style="display:inline-block;width:14px;height:10px;border:2px solid ${alertLevel===3?'#dc2626':alertLevel===2?'#f59e0b':'#10b981'};border-radius:2px;"></span>
+                    &nbsp;${alertLevel===3?'High':alertLevel===2?'Moderate':'Low'} requirement zone
+                </span>` : ''}
+            `;
+            modal.appendChild(mLegend);
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            // Close handlers
+            const close = () => overlay.remove();
+            mHeader.querySelector('.hm-fullscreen-close').addEventListener('click', close);
+            overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+            document.addEventListener('keydown', function onKey(e) {
+                if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); }
+            });
+        });
+
+        return card;
+    };
+
+    // ==================== UPDATE GRID (rebuilds cards on filter change) ====================
     const updateGrid = () => {
         if (!els.greenhouse.value || state.scoutingData.length === 0) return;
+
+        const { maxBed, maxZone } = _gridState;
+        if (maxBed === 0 || maxZone === 0) return;
 
         const { activeObs, activeStages, activeSections, activeRequirements } = getActiveFilters();
         const selectedVariety = els.variety.value;
@@ -576,104 +906,97 @@ document.addEventListener("DOMContentLoaded", () => {
             'incidents_scouting_entry': 'incident'
         };
 
-        document.querySelectorAll(".tw-grid-cell").forEach((cell) => {
-            const bed = cell.dataset.bed;
-            const zone = cell.dataset.zone;
-            const key = `${bed}-${zone}`;
-            const observationsInZone = state.dataMap.get(key) || [];
-            const tooltip = cell.querySelector(".tw-tooltip");
+        // Collect per-observation matrices across all active types
+        // matrix structure: obsName → { bed → { zone → { count, symbol, plant_section } } }
+        const obsMatrices = {};   // obsName → matrix
+        const obsColors   = {};   // obsName → color
+        const obsSymbols  = {};   // obsName → symbol
+        const obsAlerts   = {};   // obsName → highest alert level (0-3)
 
-            cell.innerHTML = "";
-            cell.appendChild(tooltip);
-            cell.classList.remove("tw-threshold-high", "tw-threshold-moderate", "tw-threshold-low");
-            cell.style.backgroundColor = "";
+        state.dataMap.forEach((observationsInZone, key) => {
+            const [bed, zone] = key.split('-').map(Number);
 
-            const filteredObs = observationsInZone.filter((obs) => {
+            observationsInZone.forEach(obs => {
                 const obsType = obs.type;
                 const activeObsOfType = activeObs[obsType] || [];
 
                 const isObservationActive = activeObsOfType.includes(obs.name);
-                const isStageActive = obs.stage === "N/A" || activeStages.includes(obs.stage);
+                const isStageActive  = obs.stage === "N/A" || activeStages.includes(obs.stage);
                 const isSectionActive = obs.plant_section === "N/A" || activeSections.includes(obs.plant_section);
 
-                return isObservationActive && isStageActive && isSectionActive;
-            });
+                if (!isObservationActive || !isStageActive || !isSectionActive) return;
 
-            let highestAlertLevel = 0;
-            let tooltipContent = `<strong>Bed ${bed}, Zone ${zone}</strong><br><br>`;
+                const name = obs.name;
 
-            if (filteredObs.length > 0) {
-                filteredObs.forEach((obs) => {
-                    const indicator = document.createElement("div");
-                    indicator.classList.add("observation-indicator");
-                    indicator.style.backgroundColor = obs.color;
-                    indicator.title = obs.name;
-                    cell.appendChild(indicator);
-
-                    const obsTypeClean = TYPE_MAP[obs.type] || obs.type.replace('_scouting_entry', '');
-                    const sus = state.susceptibilityData.find(s =>
-                        s.observation === obs.name && s.type === obsTypeClean
-                    );
-
-                    let reqLevel = null;
-                    if (selectedVariety && sus && sus.requirement_by_variety[selectedVariety]) {
-                        const level = sus.requirement_by_variety[selectedVariety];
-                        reqLevel = (level === "unknown") ? null : level;
-                    }
-
-                    if (sus && reqLevel && activeRequirements.includes(reqLevel)) {
-                        if (reqLevel === "high") highestAlertLevel = Math.max(highestAlertLevel, 3);
-                        else if (reqLevel === "moderate") highestAlertLevel = Math.max(highestAlertLevel, 2);
-                        else if (reqLevel === "low") highestAlertLevel = Math.max(highestAlertLevel, 1);
-                    }
-
-                    tooltipContent += `• <strong>${obs.name}</strong>: ${obs.count || 1} ${obs.symbol || ""}<br>`;
-                    tooltipContent += ` <span style="color: #9ca3af;">Section: ${obs.plant_section || "N/A"}</span><br>`;
-                });
-
-                if (highestAlertLevel === 3) cell.classList.add("tw-threshold-high");
-                else if (highestAlertLevel === 2) cell.classList.add("tw-threshold-moderate");
-                else if (highestAlertLevel === 1) cell.classList.add("tw-threshold-low");
-
-            } else if (observationsInZone.length > 0) {
-                cell.style.backgroundColor = "#f8f9fa";
-                tooltipContent += `<span style="color: #9ca3af;">Observations present but not in active filters</span><br><br>`;
-                observationsInZone.forEach((obs) => {
-                    tooltipContent += `• <strong>${obs.name}</strong>: ${obs.count || 1}<br>`;
-                    tooltipContent += ` <span style="color: #9ca3af;">${obs.plant_section || "N/A"}</span><br>`;
-                });
-            } else {
-                cell.style.backgroundColor = "#f8f9fa";
-                tooltipContent += `<span style="color: #9ca3af;">No observations reported</span>`;
-            }
-
-            tooltip.innerHTML = tooltipContent;
-
-            cell.addEventListener('mouseenter', () => {
-                const cellRect = cell.getBoundingClientRect();
-                const tooltipEl = cell.querySelector('.tw-tooltip');
-
-                if (cellRect.top > window.innerHeight / 2) {
-                    tooltipEl.style.bottom = '100%';
-                    tooltipEl.style.top = 'auto';
-                    tooltipEl.style.marginBottom = '8px';
-                } else {
-                    tooltipEl.style.top = '100%';
-                    tooltipEl.style.bottom = 'auto';
-                    tooltipEl.style.marginTop = '8px';
+                if (!obsMatrices[name]) {
+                    obsMatrices[name] = {};
+                    obsColors[name]   = obs.color || '#6b7280';
+                    obsAlerts[name]   = 0;
                 }
 
-                if (cellRect.left < window.innerWidth / 3) {
-                    tooltipEl.style.left = '0';
-                    tooltipEl.style.transform = 'translateX(0)';
-                } else if (cellRect.right > (window.innerWidth * 2 / 3)) {
-                    tooltipEl.style.right = '0';
-                    tooltipEl.style.transform = 'translateX(0)';
-                } else {
-                    tooltipEl.style.left = '50%';
-                    tooltipEl.style.transform = 'translateX(-50%)';
+                if (!obsMatrices[name][bed]) obsMatrices[name][bed] = {};
+
+                // Latest wins for count; previous only fills empty zones
+                const existing = obsMatrices[name][bed][zone];
+                if (!existing) {
+                    obsMatrices[name][bed][zone] = {
+                        count: 0,
+                        symbol: obs.symbol || '',
+                        plant_section: obs.plant_section || 'N/A',
+                        alertLevel: 0,
+                        reportTag: obs.reportTag || 'latest'
+                    };
+                }
+                // If this obs is from latest, it overrides the tag
+                if (obs.reportTag === 'latest') {
+                    obsMatrices[name][bed][zone].reportTag = 'latest';
+                }
+                obsMatrices[name][bed][zone].count += (obs.count || 1);
+
+                // Threshold alert level — stored per zone, not per observation
+                const obsTypeClean = TYPE_MAP[obsType] || obsType.replace('_scouting_entry', '');
+                const sus = state.susceptibilityData.find(s => s.observation === name && s.type === obsTypeClean);
+                if (sus && selectedVariety && sus.requirement_by_variety[selectedVariety]) {
+                    const level = sus.requirement_by_variety[selectedVariety];
+                    if (level !== "unknown" && activeRequirements.includes(level)) {
+                        const lvlNum = level === 'high' ? 3 : level === 'moderate' ? 2 : 1;
+                        obsMatrices[name][bed][zone].alertLevel = Math.max(obsMatrices[name][bed][zone].alertLevel, lvlNum);
+                        obsAlerts[name] = Math.max(obsAlerts[name], lvlNum);
+                    }
                 }
             });
+        });
+
+        // Rebuild card container
+        els.mainGrid.innerHTML = "";
+
+        const obsNames = Object.keys(obsMatrices);
+
+        if (obsNames.length === 0) {
+            els.mainGrid.innerHTML = `
+                <div class="hm-empty">
+                    <p>No observations match the current filters.</p>
+                </div>`;
+            return;
+        }
+
+        obsNames.sort().forEach(name => {
+            const matrix = obsMatrices[name];
+            const color  = obsColors[name];
+            const alert  = obsAlerts[name];
+
+            // Compute max count and total for this observation
+            let maxCount = 0;
+            let total    = 0;
+            Object.values(matrix).forEach(bedRow => {
+                Object.values(bedRow).forEach(cell => {
+                    total    += cell.count;
+                    maxCount  = Math.max(maxCount, cell.count);
+                });
+            });
+
+            const card = buildObservationCard(name, color, matrix, maxCount, total, alert);
+            els.mainGrid.appendChild(card);
         });
     };
 
@@ -852,11 +1175,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const row = document.createElement("div");
         row.className = "bom-chemical-row";
         row.style.display = "grid";
-        row.style.gridTemplateColumns = "2fr 1fr 1fr auto";   // ← 4 columns only
+        row.style.gridTemplateColumns = "2fr 1fr 1fr auto";
         row.style.gap = "12px";
         row.style.alignItems = "center";
 
-        // 1. Chemical Name
         const nameInp = document.createElement("input");
         nameInp.type = "text";
         nameInp.className = "form-input bom-chemical-name-input";
@@ -867,7 +1189,6 @@ document.addEventListener("DOMContentLoaded", () => {
             showPopup(e.target, state.allChemicals);
         });
 
-        // 2. Application Rate (per 1000 L)
         const rateInp = document.createElement("input");
         rateInp.type = "number";
         rateInp.className = "form-input bom-chemical-rate-input";
@@ -876,7 +1197,6 @@ document.addEventListener("DOMContentLoaded", () => {
         rateInp.step = "0.01";
         rateInp.placeholder = "Rate/1000 L";
 
-        // 3. UOM (read-only)
         const uomInp = document.createElement("input");
         uomInp.type = "text";
         uomInp.className = "form-input bom-chemical-uom-input";
@@ -884,7 +1204,6 @@ document.addEventListener("DOMContentLoaded", () => {
         uomInp.readOnly = true;
         uomInp.placeholder = "UOM";
 
-        // 4. Remove button
         const del = document.createElement("button");
         del.type = "button";
         del.className = "btn-remove";
@@ -903,7 +1222,6 @@ document.addEventListener("DOMContentLoaded", () => {
         els.bomModalChemicalsList.innerHTML = '';
         els.bomModalChemicalsList.appendChild(createBomChemicalRow());
 
-        // Fetch chemicals if not already loaded
         if (state.allChemicals.length === 0) {
             await fetchChemicals();
         }
@@ -924,7 +1242,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (!name || rate <= 0) return null;
                 return {
                     item_name: name,
-                    custom_application_rate: rate,   // ← per 1000 L
+                    custom_application_rate: rate,
                     uom
                 };
             })
@@ -1080,7 +1398,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-
     const populateVarieties = (varieties) => {
         els.variety.innerHTML = '<option value="">Select variety</option>';
         els.varietyMultiSelect.innerHTML = "";
@@ -1122,7 +1439,6 @@ document.addEventListener("DOMContentLoaded", () => {
         row.style.gap = "12px";
         row.style.alignItems = "center";
 
-        // 1. Chemical Name
         const nameInput = document.createElement("input");
         nameInput.type = "text";
         nameInput.className = "tw-chemical-name-input form-input";
@@ -1135,7 +1451,6 @@ document.addEventListener("DOMContentLoaded", () => {
             nameInput._debounce = setTimeout(updateStockBalances, 500);
         });
 
-        // 2. Rate (per 1000 L)
         const rateInput = document.createElement("input");
         rateInput.type = "number";
         rateInput.className = "tw-chemical-qty-input form-input";
@@ -1145,7 +1460,6 @@ document.addEventListener("DOMContentLoaded", () => {
         rateInput.placeholder = "Rate/1000 L";
         rateInput.addEventListener("input", updateStockBalances);
 
-        // 3. UOM
         const uomInput = document.createElement("input");
         uomInput.type = "text";
         uomInput.className = "tw-chemical-uom-input form-input";
@@ -1153,7 +1467,6 @@ document.addEventListener("DOMContentLoaded", () => {
         uomInput.readOnly = true;
         uomInput.placeholder = "UoM";
 
-        // 4. Remove
         const removeBtn = document.createElement("button");
         removeBtn.type = "button";
         removeBtn.className = "btn-remove";
@@ -1173,11 +1486,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return active;
     };
 
+    // ==================== FINAL TARGETS (user selects manually) ====================
     const populateFinalTargets = () => {
         const select = els.finalTargets;
-        select.innerHTML = "";
 
-        // Get ALL unique targets from scouting data
+        // Collect ALL unique targets from scouting data
         const allTargets = new Set();
         state.scoutingData.forEach(entry => {
             state.activeObservationTypes.forEach(obsType => {
@@ -1188,22 +1501,29 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         });
 
-        // Sort and populate
+        // Remember previously selected targets so repopulating preserves user choices
+        const previouslySelected = state.selectedTargets && state.selectedTargets.size > 0
+            ? state.selectedTargets
+            : null;
+
+        select.innerHTML = "";
+
         Array.from(allTargets).sort().forEach(target => {
             const opt = document.createElement("option");
             opt.value = target;
             opt.textContent = target;
+            // Only restore a prior selection — nothing selected by default on first load
+            opt.selected = previouslySelected ? previouslySelected.has(target) : false;
             select.appendChild(opt);
         });
-
-        // Optional: Pre-select active filters
-        const activeTargets = getActiveFilterTargets();
-        Array.from(select.options).forEach(opt => {
-            if (activeTargets.includes(opt.value)) {
-                opt.selected = true;
-            }
-        });
     };
+
+    // Persist user selections into state whenever they interact with the dropdown
+    els.finalTargets.addEventListener("change", () => {
+        state.selectedTargets = new Set(
+            Array.from(els.finalTargets.selectedOptions).map(opt => opt.value)
+        );
+    });
 
     const populateBomDetails = (bomName) => {
         const selectedBom = state.bomsData.find(b => b.name === bomName);
@@ -1311,12 +1631,17 @@ document.addEventListener("DOMContentLoaded", () => {
             els.sprayType.value = "";
             els.kit.value = "";
             state.kitWarehouse = "";
+            state.selectedTargets = new Set();
+            state.showBothReports = false;
+            state.dataMapLatest = new Map();
+            state.dataMapPrevious = new Map();
             els.scope.value = "";
             els.bom.value = "";
             els.waterPh.value = "";
             els.waterHardness.value = "";
             els.waterVolume.value = "";
             els.areaToSpray.value = "";
+            if (els.scheduledApplicationTime) els.scheduledApplicationTime.value = "";
             els.bomDetailsContainer.classList.add("tw-hidden");
             els.bomChemicalsList.innerHTML = "";
             els.stockBalancesContainer.classList.add("tw-hidden");
@@ -1378,6 +1703,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // ==================== FORM SUBMISSION ====================
     document.getElementById("spray-plan-form").addEventListener("submit", async (e) => {
         e.preventDefault();
         const greenhouse = els.greenhouse.value;
@@ -1391,6 +1717,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const waterVolume = els.waterVolume.value;
         const areaToSpray = els.areaToSpray.value;
         const sprayTeam = els.sprayTeam.value;
+        const scheduledApplicationTime = els.scheduledApplicationTime.value || null;
         const selectedTargets = Array.from(els.finalTargets.selectedOptions).map(opt => opt.value);
 
         if (selectedTargets.length === 0) {
@@ -1433,7 +1760,6 @@ document.addEventListener("DOMContentLoaded", () => {
             custom_scope_value = els.bedNumbers.value;
         }
 
-        // Build chemicals array with source warehouse
         const chemicalsWithWarehouse = chemicals.map(chem => ({
             ...chem,
             source_warehouse: state.sourceWarehouseCache[chem.chemical]?.source_warehouse || ""
@@ -1456,15 +1782,16 @@ document.addEventListener("DOMContentLoaded", () => {
             chemicals: chemicalsWithWarehouse,
             custom_water_volume: parseFloat(waterVolume) || 0,
             custom_area: parseFloat(areaToSpray) || 0,
-            custom_spray_team: sprayTeam
+            custom_spray_team: sprayTeam,
+            custom_scheduled_application_time: scheduledApplicationTime
         };
 
-        showLoader();
+        // Show loader and keep it up through the entire submission flow
+        showLoader('Validating spray plan...');
+
         try {
             const fullPayload = {
-                payload: {
-                    raw_data: formData
-                }
+                payload: { raw_data: formData }
             };
             const response = await fetch('/api/method/upande_scp.serverscripts.validate_frac_irac_guidelines.validateGuidelines', {
                 method: 'POST',
@@ -1481,22 +1808,24 @@ document.addEventListener("DOMContentLoaded", () => {
             const validationResult = r.message;
 
             if (validationResult?.valid === true) {
-                hideLoader();
+                // Validation passed — keep loader showing, hand off to createWorkOrder
+                setLoaderMessage('Creating spray plan...');
                 createWorkOrder(formData);
                 return;
             }
 
             if (validationResult?.valid === false) {
+                // Hide loader so user can read and interact with the dialog
                 hideLoader();
                 showValidationDialog(validationResult.errors, formData);
                 return;
             }
 
             showToast("Unexpected response structure from validation server.", "error");
+            hideLoader();
         } catch (error) {
             showToast("An error occurred during validation. Please try again.", "error");
             console.error("Validation API Error:", error);
-        } finally {
             hideLoader();
         }
     });
@@ -1593,12 +1922,16 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById('bypass-validation-btn').addEventListener('click', () => {
             dialogOverlay.remove();
             showToast('Creating Work Order (Guidelines Bypassed)', 'warning');
+            // Re-show loader since user dismissed the dialog and we're proceeding
+            showLoader('Creating spray plan...');
             createWorkOrder(formData);
         });
     };
 
     const createWorkOrder = async (data) => {
-        showLoader();
+        // Loader is already showing at this point — just update the message
+        setLoaderMessage('Creating spray plan...');
+
         try {
             const fullPayload = { payload: { raw_data: data } };
             const response = await fetch('/api/method/upande_scp.serverscripts.create_application_work_order.createApplicationWorkOrder', {
@@ -1615,17 +1948,18 @@ document.addEventListener("DOMContentLoaded", () => {
             const r = await response.json();
 
             if (r.message && r.message.status === "success") {
-                const redirectPath = `/app/work-order/${r.message.work_order_name}`;
+                setLoaderMessage('Work Order created! Redirecting...');
                 showToast(`Work Order ${r.message.work_order_name} created successfully!`, "success");
+                // Keep loader visible until redirect completes — no hideLoader()
                 setTimeout(() => {
-                    window.location.href = redirectPath;
+                    window.location.href = `/app/work-order/${r.message.work_order_name}`;
                 }, 1500);
             } else {
                 showToast(`Error creating Work Order: ${r.message?.message || "Unknown error"}`, "error");
+                hideLoader();
             }
         } catch (error) {
             showToast("An unexpected error occurred during creation. Please try again.", "error");
-        } finally {
             hideLoader();
         }
     };

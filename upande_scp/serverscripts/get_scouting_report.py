@@ -6,30 +6,39 @@ from frappe.utils import flt
 def getScoutingData():
     """
     Fetches scouting data + susceptibility per pest/disease.
-    Thresholds are no longer returned in varieties.
+    Returns the last 2 scouting report dates so the UI can overlay them.
     """
     try:
         greenhouse = frappe.form_dict.get("greenhouse")
-        latest = frappe.get_all(
+
+        # ── Get last 2 distinct scouting dates ──────────────────────────
+        latest_dates = frappe.get_all(
             "Scouting Entry",
             filters={"greenhouse": greenhouse},
             fields=["date_of_capture"],
             order_by="date_of_capture DESC",
-            limit=1
+            limit=2,
+            distinct=True,
+            group_by="date_of_capture"
         )
-        if not latest:
+
+        if not latest_dates:
             return {
                 "scouting_entries": [],
+                "previous_scouting_entries": [],
                 "varieties": [],
                 "susceptibility": [],
                 "boms": [],
                 "observation_metadata": {},
-                "scouting_date": None
+                "scouting_date": None,
+                "previous_scouting_date": None
             }
-        date_str = str(latest[0].date_of_capture)
+
+        date_str          = str(latest_dates[0].date_of_capture)
+        prev_date_str     = str(latest_dates[1].date_of_capture) if len(latest_dates) > 1 else None
 
         if not greenhouse:
-            frappe.throw("Greenhouse and date are required.")
+            frappe.throw("Greenhouse is required.")
 
         # --- CONFIGURATION: Observation types ---
         observation_configs = {
@@ -82,146 +91,155 @@ def getScoutingData():
                 "extra_fields": []
             }
         }
-        
-        # --- 1. Fetch Scouting Entries ---
-        scouting_entries = frappe.get_all(
-            "Scouting Entry",
-            fields=["name", "bed", "zone", "time_of_capture", "scouts_name"], 
-            filters=[
-                ["greenhouse", "=", greenhouse],
-                ["date_of_capture", "=", date_str]
-            ],
-            order_by="time_of_capture ASC"
-        )
-        entry_names = [e.name for e in scouting_entries]
 
-        if not entry_names:
-            return { 
-                "scouting_entries": [], 
-                "varieties": [], 
-                "susceptibility": [],
-                "boms": [], 
-                "observation_metadata": {}
-            }
+        # ── Helper: fetch + process entries for a given date ───────────
+        def fetch_entries_for_date(target_date):
+            if not target_date:
+                return []
 
-        processed_entries = {e.name: dict(e) for e in scouting_entries}
+            entries = frappe.get_all(
+                "Scouting Entry",
+                fields=["name", "bed", "zone", "time_of_capture", "scouts_name"],
+                filters=[
+                    ["greenhouse", "=", greenhouse],
+                    ["date_of_capture", "=", target_date]
+                ],
+                order_by="time_of_capture ASC"
+            )
+            entry_names = [e.name for e in entries]
+            if not entry_names:
+                return []
 
-        # --- 2. Pest Config (severity/stage) ---
-        pest_names = frappe.get_all("Pest", fields=["name"])
-        pests_map = {p.name: {"severity": [], "stages": []} for p in pest_names}
+            processed = {e.name: dict(e) for e in entries}
 
-        for severity in frappe.get_all("Scouting Severity Scale", filters={"parent": ["in", [p.name for p in pest_names]]}, fields=["parent", "from", "to", "color"]):
-            pests_map[severity.parent]["severity"].append(severity)
+            # Pest stage/severity config
+            pest_names = frappe.get_all("Pest", fields=["name"])
+            pests_map = {p.name: {"severity": [], "stages": []} for p in pest_names}
+            for severity in frappe.get_all(
+                "Scouting Severity Scale",
+                filters={"parent": ["in", [p.name for p in pest_names]]},
+                fields=["parent", "from", "to", "color"]
+            ):
+                pests_map[severity.parent]["severity"].append(severity)
+            for stage in frappe.get_all(
+                "Pests Stages",
+                filters={"parent": ["in", [p.name for p in pest_names]]},
+                fields=["parent", "stage", "symbol"]
+            ):
+                pests_map[stage.parent]["stages"].append(stage)
 
-        for stage in frappe.get_all("Pests Stages", filters={"parent": ["in", [p.name for p in pest_names]]}, fields=["parent", "stage", "symbol"]):
-            pests_map[stage.parent]["stages"].append(stage)
+            items_in_data_all = {}  # key → {name: color}
 
-        # --- 3. Process All Observation Types ---
+            for key, cfg in observation_configs.items():
+                fields = ["parent", cfg["item_field"]] + cfg["extra_fields"]
+                meta = frappe.get_meta(cfg["child_table"])
+                final_fields = [f for f in fields if meta.has_field(f) or f == "parent"]
+
+                try:
+                    child_records = frappe.get_all(
+                        cfg["child_table"],
+                        filters={"parent": ["in", entry_names]},
+                        fields=final_fields
+                    )
+                except Exception as e:
+                    frappe.log_error(f"Error fetching {cfg['child_table']}: {str(e)}")
+                    continue
+
+                items_in_data = {}
+
+                for rec in child_records:
+                    parent = rec.parent
+                    if parent not in processed:
+                        continue
+                    item_name = rec.get(cfg["item_field"])
+                    if not item_name:
+                        continue
+
+                    if item_name not in items_in_data:
+                        items_in_data[item_name] = "#999999"
+
+                    obs_data = {"name": item_name, "color": "#999999"}
+                    for field in cfg["extra_fields"]:
+                        if field in rec:
+                            obs_data[field] = rec[field]
+
+                    if key == "pests_scouting_entry":
+                        pest_count = flt(rec.get("count"))
+                        pest_info = pests_map.get(item_name)
+                        if pest_info:
+                            if rec.get("stage") and pest_info.get("stages"):
+                                for s in pest_info["stages"]:
+                                    if s.get("stage") == rec.get("stage"):
+                                        obs_data["symbol"] = s.get("symbol")
+                                        break
+                            if pest_info.get("severity"):
+                                for s in pest_info["severity"]:
+                                    if flt(s.get("from")) <= pest_count <= flt(s.get("to")):
+                                        obs_data["color"] = s.get("color")
+                                        break
+
+                    if key not in processed[parent]:
+                        processed[parent][key] = []
+                    processed[parent][key].append(obs_data)
+
+                # Resolve colors from main DocType
+                if items_in_data:
+                    main_doctype = cfg["doctype"]
+                    color_field  = cfg["legend_color_field"]
+                    main_meta    = frappe.get_meta(main_doctype)
+
+                    if main_meta.has_field(color_field):
+                        try:
+                            colors = frappe.get_all(
+                                main_doctype,
+                                filters={"name": ["in", list(items_in_data.keys())]},
+                                fields=["name", color_field]
+                            )
+                            for c in colors:
+                                if c.get(color_field):
+                                    items_in_data[c.name] = c.get(color_field)
+                        except Exception as e:
+                            frappe.log_error(f"Color fetch error {main_doctype}: {str(e)}")
+
+                    for name in items_in_data:
+                        if items_in_data[name] == "#999999":
+                            items_in_data[name] = f"#{hashlib.md5(name.encode()).hexdigest()[:6]}"
+
+                    for entry in processed.values():
+                        for obs in entry.get(key, []):
+                            if obs["name"] in items_in_data:
+                                obs["color"] = items_in_data[obs["name"]]
+
+                    items_in_data_all[key] = items_in_data
+
+            return list(processed.values()), items_in_data_all
+
+        # ── Fetch both reports ─────────────────────────────────────────
+        latest_result   = fetch_entries_for_date(date_str)
+        previous_result = fetch_entries_for_date(prev_date_str)
+
+        latest_entries,   items_latest   = latest_result   if latest_result   else ([], {})
+        previous_entries, items_previous = previous_result if previous_result else ([], {})
+
+        # ── Merge observation name maps (union of both reports) ─────────
         all_observation_names = {}
-        
-        for key, cfg in observation_configs.items():
-            fields = ["parent", cfg["item_field"]] + cfg["extra_fields"]
-            meta = frappe.get_meta(cfg["child_table"])
-            final_fields = [f for f in fields if meta.has_field(f) or f == "parent"]
+        for key in observation_configs:
+            merged = {}
+            for src in [items_latest, items_previous]:
+                for name, color in src.get(key, {}).items():
+                    if name not in merged:
+                        merged[name] = color
+            if merged:
+                all_observation_names[key] = [{"name": n, "color": c} for n, c in merged.items()]
 
-            try:
-                child_records = frappe.get_all(
-                    cfg["child_table"],
-                    filters={"parent": ["in", entry_names]},
-                    fields=final_fields
-                )
-            except Exception as e:
-                frappe.log_error(f"Error fetching {cfg['child_table']}: {str(e)}")
-                continue
-            
-            items_in_data = {}
-
-            for rec in child_records:
-                parent = rec.parent
-                if parent not in processed_entries:
-                    continue
-
-                item_name = rec.get(cfg["item_field"])
-                if not item_name:
-                    continue
-                
-                if item_name not in items_in_data:
-                    items_in_data[item_name] = "#999999"
-
-                obs_data = {"name": item_name, "color": "#999999"} 
-
-                for field in cfg["extra_fields"]:
-                    if field in rec:
-                        obs_data[field] = rec[field]
-                
-                # Pest stage/severity
-                if key == "pests_scouting_entry":
-                    pest_count = flt(rec.get("count"))
-                    pest_info = pests_map.get(item_name)
-                    if pest_info:
-                        if rec.get("stage") and pest_info.get("stages"):
-                            for s in pest_info["stages"]:
-                                if s.get("stage") == rec.get("stage"):
-                                    obs_data["symbol"] = s.get("symbol")
-                                    break
-                        if pest_info.get("severity"):
-                            for s in pest_info["severity"]:
-                                if flt(s.get("from")) <= pest_count <= flt(s.get("to")):
-                                    obs_data["color"] = s.get("color")
-                                    break
-
-                if key not in processed_entries[parent]:
-                    processed_entries[parent][key] = []
-                processed_entries[parent][key].append(obs_data)
-            
-            # Color handling
-            if items_in_data:
-                main_doctype = cfg["doctype"]
-                color_field = cfg["legend_color_field"]
-                main_meta = frappe.get_meta(main_doctype)
-                
-                if main_meta.has_field(color_field):
-                    try:
-                        colors = frappe.get_all(
-                            main_doctype,
-                            filters={"name": ["in", list(items_in_data.keys())]},
-                            fields=["name", color_field]
-                        )
-                        for c in colors:
-                            if c.get(color_field):
-                                items_in_data[c.name] = c.get(color_field)
-                    except Exception as e:
-                        frappe.log_error(f"Color fetch error {main_doctype}: {str(e)}")
-                
-                for name in items_in_data:
-                    if items_in_data[name] == "#999999":
-                        items_in_data[name] = f"#{hashlib.md5(name.encode()).hexdigest()[:6]}"
-                
-                for entry in processed_entries.values():
-                    for obs in entry.get(key, []):
-                        if obs["name"] in items_in_data:
-                            obs["color"] = items_in_data[obs["name"]]
-                            
-                all_observation_names[key] = [
-                    {"name": n, "color": c} for n, c in items_in_data.items()
-                ]
-
-        final_scouting_entries = list(processed_entries.values())
-
-        # --- 4. Varieties (no thresholds) ---
-        # ────────────────────────────────────────────────────────────────
-        # Fetch varieties — prioritize Karen Roses style, fallback to Mona Flowers
-        # ────────────────────────────────────────────────────────────────
-
+        # --- Varieties ---
         varieties_data = []
-        variety_names = []
+        variety_names  = []
 
         karen_doctype = "Items Greenhouses"
-        mona_doctype   = "Varieties per GH"
+        mona_doctype  = "Varieties per GH"
 
-        # 1. Karen Roses style first (with area) — only if the DocType exists on this site
         if frappe.db.exists("DocType", karen_doctype):
-            # Safe: DocType table entry exists → we can query the child table
             if frappe.db.exists(karen_doctype, {"parent": greenhouse}):
                 rows = frappe.get_all(
                     karen_doctype,
@@ -237,9 +255,7 @@ def getScoutingData():
                     varieties_data.append(item)
                 variety_names = [v["name"] for v in varieties_data]
 
-        # 2. Fallback to Mona Flowers style (simple list, no area)
         if not varieties_data:
-            # We assume "Varieties per GH" exists on Mona sites, but still safe-check
             if frappe.db.exists("DocType", mona_doctype):
                 if frappe.db.exists(mona_doctype, {"parent": greenhouse}):
                     rows = frappe.get_all(
@@ -248,22 +264,23 @@ def getScoutingData():
                         fields=["variety"]
                     )
                     varieties_data = [{"name": row.variety} for row in rows if row.variety]
-                    variety_names = [v["name"] for v in varieties_data]
+                    variety_names  = [v["name"] for v in varieties_data]
 
-        # Optional: log if nothing found
-        if not varieties_data:
-            frappe.log_error(
-                f"No varieties configured for greenhouse {greenhouse} "
-                f"(checked DocTypes: {karen_doctype!r} and {mona_doctype!r})",
-                "Missing variety data"
-            )
-        # --- 5. Compute Susceptibility (uses thresholds from Item) ---
+        # --- Susceptibility (based on latest entries only) ---
+        scouting_entries_for_sus = frappe.get_all(
+            "Scouting Entry",
+            fields=["name", "bed", "zone"],
+            filters=[
+                ["greenhouse", "=", greenhouse],
+                ["date_of_capture", "=", date_str]
+            ]
+        )
+
         item_thresholds = frappe.get_all(
             "Chemical Requirements",
             filters={"parent": ["in", variety_names]},
             fields=["parent", "pest", "disease", "low", "moderate", "high"]
         )
-
         thresholds_by_variety = {}
         for t in item_thresholds:
             v = t.parent
@@ -277,12 +294,14 @@ def getScoutingData():
                 "high": t.high
             })
 
-        total_zones = len(set(e.zone for e in scouting_entries if e.zone)) or 1
-
+        total_zones = len(set(e.zone for e in scouting_entries_for_sus if e.zone)) or 1
         affected_by_obs = {}
-        for entry in scouting_entries:
+        latest_by_name  = {e["name"]: e for e in latest_entries}
+
+        for entry in scouting_entries_for_sus:
+            processed_entry = latest_by_name.get(entry.name, {})
             for key in ["pests_scouting_entry", "diseases_scouting_entry"]:
-                for obs in processed_entries.get(entry.name, {}).get(key, []):
+                for obs in processed_entry.get(key, []):
                     name = obs["name"]
                     if name not in affected_by_obs:
                         affected_by_obs[name] = {
@@ -295,7 +314,6 @@ def getScoutingData():
         for obs_name, data in affected_by_obs.items():
             zones_affected = len(data["zones"])
             percentage = round((zones_affected / total_zones) * 100, 2)
-
             req_by_variety = {}
             for v in varieties_data:
                 variety = v["name"]
@@ -308,13 +326,10 @@ def getScoutingData():
                 if not match:
                     req_by_variety[variety] = "unknown"
                     continue
-
                 if percentage <= match["low"]:
                     level = "low"
                 elif percentage <= match["moderate"]:
                     level = "moderate"
-                elif percentage <= match["high"]:
-                    level = "high"
                 else:
                     level = "high"
                 req_by_variety[variety] = level
@@ -328,28 +343,39 @@ def getScoutingData():
                 "requirement_by_variety": req_by_variety
             })
 
-        # --- 6. BOMs, Chemicals, etc. ---
+        # --- BOMs ---
         chemical_mix_boms = frappe.get_all(
-            "BOM", 
-            filters={"custom_item_group": "Chemical Mix", "docstatus": 1, "is_active": 1}, 
+            "BOM",
+            filters={"custom_item_group": "Chemical Mix", "docstatus": 1, "is_active": 1},
             fields=["name", "custom_water_ph", "custom_water_hardness"]
         )
         bom_names = [b["name"] for b in chemical_mix_boms]
-        bom_items = frappe.db.get_all("BOM Item", filters={"parent": ["in", bom_names]}, fields=["parent", "item_name", "qty", "uom"])
+        bom_items = frappe.db.get_all(
+            "BOM Item",
+            filters={"parent": ["in", bom_names]},
+            fields=["parent", "item_name", "qty", "uom"]
+        )
 
-        bed_zone_numbering = frappe.get_all("Warehouse", filters={"name": greenhouse}, fields=["custom_bed_numbering", "custom_zone_numbering"])
-        chemicals = frappe.db.get_list('Item', filters={'item_group': 'CHEMICALS'}, fields=['item_name'])
+        bed_zone_numbering = frappe.get_all(
+            "Warehouse",
+            filters={"name": greenhouse},
+            fields=["custom_bed_numbering", "custom_zone_numbering"]
+        )
+        chemicals    = frappe.db.get_list('Item', filters={'item_group': 'CHEMICALS'}, fields=['item_name'])
         all_chemicals = sorted({c.item_name for c in chemicals})
+        bed_data     = frappe.get_all("Bed", filters={"greenhouse": greenhouse}, fields=["bed", "bed__area", "total_variety_area", "variety"])
+        spray_teams  = frappe.get_all("Spray Team", filters={"enabled": 1}, fields=["name"])
 
-        bed_data = frappe.get_all("Bed", filters={"greenhouse": greenhouse}, fields=["bed", "bed__area", "total_variety_area", "variety"])
-        spray_teams = frappe.get_all("Spray Team", filters={"enabled": 1}, fields=["name"])
-
-        # --- 7. Final Response ---
         return {
-            "scouting_entries": final_scouting_entries,
-            "susceptibility": susceptibility,
+            # Latest report
+            "scouting_entries": latest_entries,
             "scouting_date": date_str,
-            "varieties":varieties_data,
+            # Previous report (may be empty list / None)
+            "previous_scouting_entries": previous_entries,
+            "previous_scouting_date": prev_date_str,
+            # Rest unchanged
+            "susceptibility": susceptibility,
+            "varieties": varieties_data,
             "boms": chemical_mix_boms,
             "bom_items": bom_items,
             "custom_bed_numbering": bed_zone_numbering[0].get("custom_bed_numbering") if bed_zone_numbering else None,

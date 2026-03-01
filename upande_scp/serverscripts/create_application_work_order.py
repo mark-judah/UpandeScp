@@ -30,6 +30,8 @@ def createApplicationWorkOrder():
         chemicals = raw_data.get("chemicals", [])
         kit_warehouse = raw_data.get("custom_kit_warehouse", "").strip()
         wip_warehouse = kit_warehouse if kit_warehouse else "Work In Progress - KR"
+        scheduled_application_time = raw_data.get("custom_scheduled_application_time") or None
+
         if not bom_name:
             frappe.throw(_("BOM is required. 'production_item' not found."))
         if not greenhouse:
@@ -52,8 +54,12 @@ def createApplicationWorkOrder():
         production_item = template_bom.item
 
         # -------------------------------------------------- 4. Work Order qty = number of 1000L tanks
-        # FIX: Round to 4 decimal places to avoid floating-point precision issues
-        wo_qty = round(water_volume_l / 1000.0, 4)  # e.g. 567.9 L → 0.5679
+        # Round to 2 decimal places to match ERPNext's internal quantity precision.
+        # This prevents "Quantity must not be more than X" errors on material transfer,
+        # which occur when wo_qty has more decimals than ERPNext stores internally (e.g.
+        # 0.8665 gets displayed/stored as 0.87 but required_qty stays 0.8665, causing a
+        # mismatch when the operator tries to transfer materials).
+        wo_qty = round(water_volume_l / 1000.0, 2)  # e.g. 866.55 L → 0.87, 620.34 L → 0.62
 
         # -------------------------------------------------- 5. Dynamic BOM? (only chemicals + rates)
         bom_to_use = bom_name
@@ -86,15 +92,14 @@ def createApplicationWorkOrder():
         bom_uom = bom_doc.uom
 
         # -------------------------------------------------- 6. Build SE items (valuation)
+        # Use the same wo_qty (rounded to 2dp) so SE quantities are consistent
+        # with what the Work Order will expect during material transfer.
         se_items = []
         item_map = {}
         for chem in chemicals:
             name = chem["chemical"]
             rate = float(chem.get("application_rate") or 0)
             source_wh = chem.get("source_warehouse")
-
-            # Qty per 1000L → ERPNext scales
-            qty_per_1000l = rate
 
             item = frappe.db.get_value(
                 "Item", {"item_name": name, "disabled": 0},
@@ -106,7 +111,7 @@ def createApplicationWorkOrder():
 
             se_items.append({
                 "item_code": item.name,
-                "qty": round(rate * wo_qty, 6),
+                "qty": round(rate * wo_qty, 2),  # match 2dp rounding
                 "uom": chem.get("uom") or item.stock_uom,
                 "s_warehouse": source_wh,
                 "t_warehouse": wip_warehouse
@@ -129,19 +134,19 @@ def createApplicationWorkOrder():
         val_rate_map = {i.item_code: i.valuation_rate for i in se.items}
 
         # -------------------------------------------------- 9. required_items (per 1000L)
+        # Round required_qty to 2dp to stay consistent with wo_qty precision.
+        # ERPNext recomputes transfer quantities from wo_qty internally, so if
+        # required_qty has more decimal places than wo_qty it will throw a
+        # "Quantity must not be more than X" validation error on WO start.
         required_items = []
         for chem in chemicals:
             name = chem["chemical"]
             item = item_map[name]
-            
-            # FIX: Use application_rate directly, not SE qty
+
             application_rate = float(chem.get("application_rate") or 0)
-            
-            # Get valuation rate from Stock Entry
             val_rate = val_rate_map.get(item.name) or 0.0
 
-            # FIX: Round required_qty to avoid precision mismatches during material transfer
-            required_qty = round(application_rate * wo_qty, 6)
+            required_qty = round(application_rate * wo_qty, 2)  # 2dp to match wo_qty
 
             required_items.append({
                 "item_code": item.name,
@@ -150,7 +155,7 @@ def createApplicationWorkOrder():
                 "uom": chem.get("uom") or item.stock_uom,
                 "source_warehouse": chem.get("source_warehouse"),
                 "rate": val_rate,
-                "amount": round(required_qty * val_rate, 2),  # Round amount to 2 decimals
+                "amount": round(required_qty * val_rate, 2),
                 "include_item_in_manufacturing": 1  # CRITICAL: Enable material transfer
             })
 
@@ -163,7 +168,7 @@ def createApplicationWorkOrder():
             "production_item": production_item,
             "bom_no": bom_to_use,
             "qty": wo_qty,
-            "stock_uom": bom_uom,  # ← EXPLICITLY SET UOM FROM BOM
+            "stock_uom": bom_uom,
             "company": "Karen Roses",
             "wip_warehouse": wip_warehouse,
             "fg_warehouse": greenhouse,
@@ -180,18 +185,17 @@ def createApplicationWorkOrder():
             "custom_water_volume": water_volume_l,
             "custom_area": area_ha,
             "custom_spray_team": team_str,
+            "custom_scheduled_application_time": scheduled_application_time,
             "required_items": required_items
         })
         wo.insert(ignore_permissions=True)
 
-        # -------------------------------------------------- 11.5 FIX: Set include_item_in_manufacturing
-        # CRITICAL: ERPNext doesn't always copy this flag from BOM, so we must set it manually
+        # -------------------------------------------------- 11.5. Set include_item_in_manufacturing
+        # ERPNext doesn't always copy this flag from BOM, so set it manually.
         for item in wo.required_items:
             item.include_item_in_manufacturing = 1
 
-        # Save again to persist the flag change
         wo.save(ignore_permissions=True)
-        
         frappe.db.commit()
 
         # -------------------------------------------------- 12. Delete temp SE
@@ -206,8 +210,8 @@ def createApplicationWorkOrder():
             "status": "success",
             "work_order_name": wo.name,
             "bom_used": bom_to_use,
-            "work_order_qty": round(wo_qty, 4),
-            "message": f"Work Order {wo.name} created for {water_volume_l:.1f} L ({wo_qty:.4f} tanks)"
+            "work_order_qty": wo_qty,
+            "message": f"Work Order {wo.name} created for {water_volume_l:.1f} L ({wo_qty:.2f} tanks)"
         }
 
     except Exception as e:
@@ -251,14 +255,14 @@ def create_dynamic_bom(template_bom, user_chemicals, area_ha, water_volume_l, gr
         if not item:
             frappe.throw(f"Item not found: {name}")
 
-        # FIX: Round qty to avoid precision issues in BOM
-        qty = round(rate, 6)
+        # Round BOM item qty to 2dp to stay consistent with wo_qty precision
+        qty = round(rate, 2)
 
         items.append({
             "item_code": item.name,
             "item_name": name,
             "qty": qty,
-            "stock_qty": qty,           
+            "stock_qty": qty,
             "qty_consumed_per_unit": qty,
             "uom": c.get("uom") or item.stock_uom,
             "stock_uom": item.stock_uom,
@@ -266,7 +270,7 @@ def create_dynamic_bom(template_bom, user_chemicals, area_ha, water_volume_l, gr
             "custom_application_rate": str(qty),
             "custom_rate_unit": "Per 1000L",
             "include_item_in_manufacturing": 1,  # CRITICAL: Enable material transfer
-            "description": name  # Add description for consistency
+            "description": name
         })
 
     desc = [
@@ -314,5 +318,5 @@ def format_spray_team(team_name):
                 name = frappe.db.get_value("Employee", emp, "employee_name") or emp
                 lines.append(f"{name} - {role}")
         return "\n".join(lines)
-    except:
+    except Exception:
         return ""

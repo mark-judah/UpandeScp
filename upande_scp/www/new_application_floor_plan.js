@@ -198,6 +198,64 @@ document.addEventListener("DOMContentLoaded", () => {
         return match ? parseInt(match[1]) : null;
     };
 
+    const populateGreenhouses = (greenhouses) => {
+        const previousValue = els.greenhouse.value;
+        els.greenhouse.innerHTML = '<option value="">Select greenhouse</option>';
+        greenhouses.forEach((gh) => {
+            const option = document.createElement("option");
+            option.value = gh.name;
+            option.textContent = gh.name;
+            els.greenhouse.appendChild(option);
+        });
+        if (previousValue && greenhouses.some(gh => gh.name === previousValue)) {
+            els.greenhouse.value = previousValue;
+        }
+    };
+
+    const fetchGreenhousesByDate = async (dateValue) => {
+        try {
+            const response = await fetch('/api/method/upande_scp.www.new_application_floor_plan.get_scouted_greenhouses_by_date', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Frappe-CSRF-Token': "{{csrf_token}}"
+                },
+                body: JSON.stringify({ date: dateValue || "" })
+            });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const r = await response.json();
+            const payload = r.message || r.data || {};
+            populateGreenhouses(payload.greenhouses || []);
+        } catch (error) {
+            showToast("Failed to load greenhouses for selected date.", "error");
+        }
+    };
+
+    const resetGreenhouseDependentFields = () => {
+        els.variety.value = "";
+        els.sprayType.value = "";
+        els.kit.value = "";
+        els.scope.value = "";
+        els.bom.value = "";
+        els.waterPh.value = "";
+        els.waterHardness.value = "";
+        els.waterVolume.value = "";
+        els.areaToSpray.value = "";
+        els.bomDetailsContainer.classList.add("tw-hidden");
+        els.bomChemicalsList.innerHTML = "";
+        els.stockBalancesContainer.classList.add("tw-hidden");
+        els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-4 tw-text-gray-500">Loading...</td></tr>';
+        els.warehouseHeadersRow.innerHTML = "";
+        els.targetsContainer.innerHTML = '';
+        els.stagesContainer.innerHTML = "";
+        els.plantSectionContainer.innerHTML = "";
+        els.variety.innerHTML = '<option value="">Select variety</option>';
+        els.varietyMultiSelect.innerHTML = "";
+        renderGrid(0, 0);
+        els.heatmapGridWrapper.classList.add("tw-hidden");
+        document.getElementById('grid-placeholder').classList.remove("tw-hidden");
+    };
+
     const getZoneNumber = (zoneData) => {
         if (typeof zoneData === "number") return zoneData;
         if (typeof zoneData === "string") {
@@ -1284,23 +1342,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ==================== EVENT LISTENERS ====================
     els.greenhouse.addEventListener("change", (e) => {
-        if (e.target.value) {
-            els.variety.value = "";
-            els.sprayType.value = "";
-            els.kit.value = "";
-            els.scope.value = "";
-            els.bom.value = "";
-            els.waterPh.value = "";
-            els.waterHardness.value = "";
-            els.waterVolume.value = "";
-            els.areaToSpray.value = "";
-            els.bomDetailsContainer.classList.add("tw-hidden");
-            els.bomChemicalsList.innerHTML = "";
-            els.stockBalancesContainer.classList.add("tw-hidden");
-            els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-4 tw-text-gray-500">Loading...</td></tr>';
-            els.warehouseHeadersRow.innerHTML = "";
+        if (!e.target.value) {
+            resetGreenhouseDependentFields();
+            return;
         }
+        resetGreenhouseDependentFields();
         fetchScoutingData(e.target.value);
+    });
+
+    document.getElementById("scouting-date").addEventListener("change", async (e) => {
+        const currentGreenhouse = els.greenhouse.value;
+        await fetchGreenhousesByDate(e.target.value);
+        const availableGreenhouses = Array.from(els.greenhouse.options).map(option => option.value);
+        if (currentGreenhouse && availableGreenhouses.includes(currentGreenhouse)) {
+            els.greenhouse.value = currentGreenhouse;
+            await fetchScoutingData(currentGreenhouse);
+            return;
+        }
+        resetGreenhouseDependentFields();
+        if (e.target.value && els.greenhouse.options.length <= 1) {
+            showToast("No greenhouses were scouted on the selected date.", "warning");
+        }
     });
 
     els.variety.addEventListener("change", () => {

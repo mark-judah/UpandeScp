@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const state = {
         scoutingData: [],
         varietyRequirements: new Map(),
+        varietyGroups: new Map(),
         dataMap: new Map(),
         bomsData: [],
         bomItems: [],
@@ -196,6 +197,34 @@ document.addEventListener("DOMContentLoaded", () => {
     const parseBedNumber = (bedString) => {
         const match = bedString.match(/Bed (\d+)/);
         return match ? parseInt(match[1]) : null;
+    };
+
+    const normalizeVarietyName = (name) => {
+        if (!name) return "";
+        return String(name).replace(/-\s*\d+(?:\.\d+)?\s*cm$/i, "").trim();
+    };
+
+    const getGroupedVarietyNames = (selectedVariety) => {
+        if (!selectedVariety) return [];
+        const grouped = state.varietyGroups.get(selectedVariety);
+        if (!grouped || grouped.size === 0) return [selectedVariety];
+        return Array.from(grouped);
+    };
+
+    const getRequirementForVarietyGroup = (susceptibilityRow, selectedVariety) => {
+        if (!susceptibilityRow || !selectedVariety || !susceptibilityRow.requirement_by_variety) return null;
+        const levels = getGroupedVarietyNames(selectedVariety)
+            .map(varietyName => susceptibilityRow.requirement_by_variety[varietyName])
+            .filter(level => level && level !== "unknown");
+        if (levels.includes("high")) return "high";
+        if (levels.includes("moderate")) return "moderate";
+        if (levels.includes("low")) return "low";
+        return null;
+    };
+
+    const hasSusceptibilityForVarietyGroup = (selectedVariety) => {
+        if (!selectedVariety || state.susceptibilityData.length === 0) return false;
+        return state.susceptibilityData.some((row) => !!getRequirementForVarietyGroup(row, selectedVariety));
     };
 
     const populateGreenhouses = (greenhouses) => {
@@ -657,10 +686,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     );
 
                     let reqLevel = null;
-                    if (selectedVariety && sus && sus.requirement_by_variety[selectedVariety]) {
-                        const level = sus.requirement_by_variety[selectedVariety];
-                        reqLevel = (level === "unknown") ? null : level;
-                    }
+                    reqLevel = getRequirementForVarietyGroup(sus, selectedVariety);
 
                     if (sus && reqLevel && activeRequirements.includes(reqLevel)) {
                         if (reqLevel === "high") highestAlertLevel = Math.max(highestAlertLevel, 3);
@@ -826,7 +852,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const renderThresholdCheckboxes = (varietyName) => {
         const thresholds = ['low', 'moderate', 'high'];
-        const hasData = state.susceptibilityData.length > 0 && varietyName;
+        const hasData = hasSusceptibilityForVarietyGroup(varietyName);
         els.thresholdContainer.innerHTML = "";
         thresholds.forEach((threshold) => {
             const pill = document.createElement("label");
@@ -1120,10 +1146,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const populateVarieties = (varieties) => {
         els.variety.innerHTML = '<option value="">Select variety</option>';
         els.varietyMultiSelect.innerHTML = "";
+        state.varietyGroups = new Map();
         varieties.forEach((v) => {
+            const fullName = (v.name || "").trim();
+            if (!fullName) return;
+            const baseName = normalizeVarietyName(fullName);
+            if (!state.varietyGroups.has(baseName)) {
+                state.varietyGroups.set(baseName, new Set());
+            }
+            state.varietyGroups.get(baseName).add(fullName);
+        });
+        Array.from(state.varietyGroups.keys()).sort().forEach((baseName) => {
             const option = document.createElement("option");
-            option.value = v.name;
-            option.textContent = v.name;
+            option.value = baseName;
+            option.textContent = baseName;
             els.variety.appendChild(option);
             const multiOption = option.cloneNode(true);
             els.varietyMultiSelect.appendChild(multiOption);
@@ -1264,13 +1300,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const scope = els.scope.value;
         let totalAreaSqMeters = 0;
         if (scope === "Full Greenhouse") {
-            totalAreaSqMeters = state.bedData.reduce((sum, d) => sum + (d.bed__area || 0), 0);
+            totalAreaSqMeters = 10000;
         } else if (scope === "Specific Variety") {
             const selectedVarietyNames = Array.from(els.varietyMultiSelect.selectedOptions).map(opt => opt.value);
             if (selectedVarietyNames.length > 0) {
+                const selectedBaseNames = new Set(selectedVarietyNames);
                 const accountedVarieties = new Set();
                 state.bedData.forEach((d) => {
-                    if (selectedVarietyNames.includes(d.variety) && !accountedVarieties.has(d.variety) && d.total_variety_area > 0) {
+                    const baseName = normalizeVarietyName(d.variety);
+                    if (selectedBaseNames.has(baseName) && !accountedVarieties.has(d.variety) && d.total_variety_area > 0) {
                         totalAreaSqMeters += d.total_variety_area;
                         accountedVarieties.add(d.variety);
                     }

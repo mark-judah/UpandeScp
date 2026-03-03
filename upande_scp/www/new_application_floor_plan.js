@@ -227,6 +227,12 @@ document.addEventListener("DOMContentLoaded", () => {
         return state.susceptibilityData.some((row) => !!getRequirementForVarietyGroup(row, selectedVariety));
     };
 
+    const getSelectedFinalTargets = () => {
+        return Array.from(
+            els.finalTargets.querySelectorAll('input[type="checkbox"]:checked')
+        ).map((input) => input.value);
+    };
+
     const populateGreenhouses = (greenhouses) => {
         const previousValue = els.greenhouse.value;
         els.greenhouse.innerHTML = '<option value="">Select greenhouse</option>';
@@ -276,6 +282,7 @@ document.addEventListener("DOMContentLoaded", () => {
         els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-4 tw-text-gray-500">Loading...</td></tr>';
         els.warehouseHeadersRow.innerHTML = "";
         els.targetsContainer.innerHTML = '';
+        els.finalTargets.innerHTML = "";
         els.stagesContainer.innerHTML = "";
         els.plantSectionContainer.innerHTML = "";
         els.variety.innerHTML = '<option value="">Select variety</option>';
@@ -1246,8 +1253,8 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     const populateFinalTargets = () => {
-        const select = els.finalTargets;
-        select.innerHTML = "";
+        const container = els.finalTargets;
+        container.innerHTML = "";
 
         // Get ALL unique targets from scouting data
         const allTargets = new Set();
@@ -1261,19 +1268,28 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         // Sort and populate
-        Array.from(allTargets).sort().forEach(target => {
-            const opt = document.createElement("option");
-            opt.value = target;
-            opt.textContent = target;
-            select.appendChild(opt);
+        const sortedTargets = Array.from(allTargets).sort();
+        sortedTargets.forEach((target) => {
+            const pill = document.createElement("label");
+            pill.className = "filter-pill";
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.value = target;
+            checkbox.id = `final-target-${target.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+            const label = document.createElement("span");
+            label.textContent = target;
+            pill.appendChild(checkbox);
+            pill.appendChild(label);
+            container.appendChild(pill);
         });
 
         // Optional: Pre-select active filters
         const activeTargets = getActiveFilterTargets();
-        Array.from(select.options).forEach(opt => {
-            if (activeTargets.includes(opt.value)) {
-                opt.selected = true;
-            }
+        const targetCheckboxes = container.querySelectorAll('input[type="checkbox"]');
+        targetCheckboxes.forEach((checkbox) => {
+            checkbox.checked = activeTargets.length > 0
+                ? activeTargets.includes(checkbox.value)
+                : true;
         });
     };
 
@@ -1468,7 +1484,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const waterVolume = els.waterVolume.value;
         const areaToSpray = els.areaToSpray.value;
         const sprayTeam = els.sprayTeam.value;
-        const selectedTargets = Array.from(els.finalTargets.selectedOptions).map(opt => opt.value);
+        const selectedTargets = getSelectedFinalTargets();
 
         if (selectedTargets.length === 0) {
             showToast("Please select at least one target.", "error");

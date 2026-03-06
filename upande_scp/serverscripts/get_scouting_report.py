@@ -11,35 +11,6 @@ def getScoutingData():
     try:
         greenhouse = frappe.form_dict.get("greenhouse")
 
-        # ── Get last 2 distinct scouting dates ──────────────────────────
-        latest_dates = frappe.get_all(
-            "Scouting Entry",
-            filters={"greenhouse": greenhouse},
-            fields=["date_of_capture"],
-            order_by="date_of_capture DESC",
-            limit=2,
-            distinct=True,
-            group_by="date_of_capture"
-        )
-
-        if not latest_dates:
-            return {
-                "scouting_entries": [],
-                "previous_scouting_entries": [],
-                "varieties": [],
-                "susceptibility": [],
-                "boms": [],
-                "observation_metadata": {},
-                "scouting_date": None,
-                "previous_scouting_date": None
-            }
-
-        date_str          = str(latest_dates[0].date_of_capture)
-        prev_date_str     = str(latest_dates[1].date_of_capture) if len(latest_dates) > 1 else None
-
-        if not greenhouse:
-            frappe.throw("Greenhouse is required.")
-
         # --- CONFIGURATION: Observation types ---
         observation_configs = {
             "pests_scouting_entry": {
@@ -91,6 +62,32 @@ def getScoutingData():
                 "extra_fields": []
             }
         }
+
+        all_observation_names_master = {}
+        for key, cfg in observation_configs.items():
+            main_doctype = cfg["doctype"]
+            color_field = cfg["legend_color_field"]
+            names = frappe.get_all(main_doctype, fields=["name", color_field], order_by="name ASC")
+            mapped = []
+            for row in names:
+                color_value = row.get(color_field) if row.get(color_field) else f"#{hashlib.md5(row.name.encode()).hexdigest()[:6]}"
+                mapped.append({"name": row.name, "color": color_value})
+            if mapped:
+                all_observation_names_master[key] = mapped
+
+        # ── Get last 2 distinct scouting dates ──────────────────────────
+        latest_dates = frappe.get_all(
+            "Scouting Entry",
+            filters={"greenhouse": greenhouse},
+            fields=["date_of_capture"],
+            order_by="date_of_capture DESC",
+            limit=2,
+            distinct=True,
+            group_by="date_of_capture"
+        ) if greenhouse else []
+
+        date_str = str(latest_dates[0].date_of_capture) if latest_dates else None
+        prev_date_str = str(latest_dates[1].date_of_capture) if len(latest_dates) > 1 else None
 
         # ── Helper: fetch + process entries for a given date ───────────
         def fetch_entries_for_date(target_date):
@@ -215,8 +212,8 @@ def getScoutingData():
             return list(processed.values()), items_in_data_all
 
         # ── Fetch both reports ─────────────────────────────────────────
-        latest_result   = fetch_entries_for_date(date_str)
-        previous_result = fetch_entries_for_date(prev_date_str)
+        latest_result = fetch_entries_for_date(date_str) if date_str else ([], {})
+        previous_result = fetch_entries_for_date(prev_date_str) if prev_date_str else ([], {})
 
         latest_entries,   items_latest   = latest_result   if latest_result   else ([], {})
         previous_entries, items_previous = previous_result if previous_result else ([], {})
@@ -225,6 +222,8 @@ def getScoutingData():
         all_observation_names = {}
         for key in observation_configs:
             merged = {}
+            for item in all_observation_names_master.get(key, []):
+                merged[item["name"]] = item["color"]
             for src in [items_latest, items_previous]:
                 for name, color in src.get(key, {}).items():
                     if name not in merged:
@@ -274,7 +273,7 @@ def getScoutingData():
                 ["greenhouse", "=", greenhouse],
                 ["date_of_capture", "=", date_str]
             ]
-        )
+        ) if greenhouse and date_str else []
 
         item_thresholds = frappe.get_all(
             "Chemical Requirements",
@@ -360,10 +359,10 @@ def getScoutingData():
             "Warehouse",
             filters={"name": greenhouse},
             fields=["custom_bed_numbering", "custom_zone_numbering"]
-        )
+        ) if greenhouse else []
         chemicals    = frappe.db.get_list('Item', filters={'item_group': 'CHEMICALS'}, fields=['item_name'])
         all_chemicals = sorted({c.item_name for c in chemicals})
-        bed_data     = frappe.get_all("Bed", filters={"greenhouse": greenhouse}, fields=["bed", "bed__area", "total_variety_area", "variety"])
+        bed_data     = frappe.get_all("Bed", filters={"greenhouse": greenhouse}, fields=["bed", "bed__area", "total_variety_area", "variety"]) if greenhouse else []
         spray_teams  = frappe.get_all("Spray Team", filters={"enabled": 1}, fields=["name"])
 
         return {

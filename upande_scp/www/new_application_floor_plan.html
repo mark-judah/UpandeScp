@@ -169,10 +169,35 @@
             </div>
           </div>
         </div>
+        <div class="form-section">
+          <h3 class="form-section-title">Chemical Availability & Source</h3>
+          <div id="stock-balances-container" class="stock-table-container tw-hidden">
+            <div class="tw-overflow-x-auto">
+              <table class="stock-table">
+                <thead>
+                  <tr>
+                    <th rowspan="2">Chemical</th>
+                    <th id="warehouse-group-header" class="tw-text-center">Warehouses</th>
+                    <th rowspan="2" class="tw-text-center">Source</th>
+                    <th rowspan="2" class="tw-text-center">Total</th>
+                  </tr>
+                  <tr id="warehouse-headers-row"></tr>
+                </thead>
+                <tbody id="stock-balance-table-body">
+                  <tr>
+                    <td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">
+                      No chemicals selected or loading data...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
         <button type="submit" class="btn-primary tw-w-full">Create Spray Plan</button>
       </form>
     </div>
-    <!-- RIGHT PANEL: Heatmap Cards & Stock Table -->
+    <!-- RIGHT PANEL: Heatmap Cards -->
     <div class="lg:tw-col-span-2 tw-space-y-6">
       <!-- Heatmap Cards Area -->
       <div class="grid-container-wrapper">
@@ -194,29 +219,6 @@
           <div id="x-axis-labels" style="display:none"></div>
           <div id="y-axis-labels" style="display:none"></div>
           <div id="main-grid" class="hm-cards-container"></div>
-        </div>
-      </div>
-      <!-- Stock Balance Table -->
-      <div id="stock-balances-container" class="stock-table-container tw-hidden">
-        <div class="tw-overflow-x-auto">
-          <table class="stock-table">
-            <thead>
-              <tr>
-                <th rowspan="2">Chemical</th>
-                <th id="warehouse-group-header" class="tw-text-center">Warehouses</th>
-                <th rowspan="2" class="tw-text-center">Source</th>
-                <th rowspan="2" class="tw-text-center">Total</th>
-              </tr>
-              <tr id="warehouse-headers-row"></tr>
-            </thead>
-            <tbody id="stock-balance-table-body">
-              <tr>
-                <td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">
-                  No chemicals selected or loading data...
-                </td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
     </div>

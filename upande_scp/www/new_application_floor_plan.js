@@ -458,144 +458,133 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const r = await response.json();
             const data = r.message || r.data;
-            if (data && data.scouting_entries && data.scouting_entries.length > 0) {
+            if (!data) throw new Error("No response data");
+
+            state.scoutingData = data.scouting_entries || [];
+            state.previousScoutingData = data.previous_scouting_entries || [];
+            state.showBothReports = false;
+
+            const dateDisplay = document.getElementById('scouting-date-display');
+            if (dateDisplay) {
+                const fmtDate = (s) => s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+                const latestFmt = fmtDate(data.scouting_date);
+                const previousFmt = fmtDate(data.previous_scouting_date);
+                state.scoutingDate = data.scouting_date;
+                state.previousScoutingDate = data.previous_scouting_date;
+                dateDisplay.innerHTML = '';
+                dateDisplay.classList.remove('tw-text-gray-500', 'tw-cursor-not-allowed', 'tw-bg-gray-100');
+                dateDisplay.style.display = 'flex';
+                dateDisplay.style.alignItems = 'center';
+                dateDisplay.style.gap = '10px';
+                dateDisplay.style.flexWrap = 'wrap';
+                dateDisplay.style.padding = '8px 12px';
+                dateDisplay.style.background = '#f9fafb';
+                dateDisplay.style.borderRadius = '8px';
+                dateDisplay.style.border = '1.5px solid #e5e7eb';
+                const dateLabel = document.createElement('span');
+                dateLabel.id = 'report-date-label';
+                dateLabel.style.fontSize = '0.8rem';
+                dateLabel.style.color = '#374151';
+                dateLabel.style.fontWeight = '500';
+                dateLabel.textContent = latestFmt ? `Latest: ${latestFmt}` : "No scouting report available for this greenhouse";
+                dateDisplay.appendChild(dateLabel);
+                if (previousFmt && state.previousScoutingData.length > 0 && latestFmt) {
+                    const toggleBtn = document.createElement('button');
+                    toggleBtn.type = 'button';
+                    toggleBtn.id = 'report-toggle-btn';
+                    toggleBtn.className = 'report-toggle-btn';
+                    toggleBtn.textContent = `+ Show ${previousFmt}`;
+                    toggleBtn.addEventListener('click', () => {
+                        state.showBothReports = !state.showBothReports;
+                        const label = document.getElementById('report-date-label');
+                        if (state.showBothReports) {
+                            label.innerHTML = `<span class="report-dot report-dot-latest"></span>Latest: ${latestFmt} &nbsp;<span class="report-dot report-dot-previous"></span>Previous: ${previousFmt}`;
+                            toggleBtn.textContent = `− Hide ${previousFmt}`;
+                            toggleBtn.classList.add('report-toggle-btn-active');
+                        } else {
+                            label.textContent = `Latest: ${latestFmt}`;
+                            toggleBtn.textContent = `+ Show ${previousFmt}`;
+                            toggleBtn.classList.remove('report-toggle-btn-active');
+                        }
+                        rebuildDataMap();
+                        updateGrid();
+                    });
+                    dateDisplay.appendChild(toggleBtn);
+                }
+            }
+
+            const discoveredTypes = new Set();
+            state.scoutingData.forEach(entry => {
+                Object.keys(entry).forEach(key => {
+                    if (key.endsWith('_scouting_entry') && Array.isArray(entry[key]) && entry[key].length > 0) {
+                        discoveredTypes.add(key);
+                    }
+                });
+            });
+            state.previousScoutingData.forEach(entry => {
+                Object.keys(entry).forEach(key => {
+                    if (key.endsWith('_scouting_entry') && Array.isArray(entry[key]) && entry[key].length > 0) {
+                        discoveredTypes.add(key);
+                    }
+                });
+            });
+
+            if (data.observation_metadata) {
+                state.observationMetadata = data.observation_metadata;
+                state.allObservationNames = data.observation_metadata.all_observation_names || {};
+                const metadataTypes = data.observation_metadata.active_observation_types || [];
+                state.activeObservationTypes = [...new Set([...metadataTypes, ...discoveredTypes])];
+            } else {
+                state.observationMetadata = { type_labels: {}, active_observation_types: [], all_observation_names: {} };
+                state.allObservationNames = {};
+                state.activeObservationTypes = Array.from(discoveredTypes);
+            }
+
+            const latestProcessed = processScoutingData(state.scoutingData, "latest");
+            const previousProcessed = processScoutingData(state.previousScoutingData, "previous");
+            state.dataMapLatest = latestProcessed.dataMap;
+            state.dataMapPrevious = previousProcessed.dataMap;
+            state.dataMap = latestProcessed.dataMap;
+
+            renderObservationCheckboxes(latestProcessed.observationsInGreenhouse);
+            populateFinalTargets();
+            const stages = [...latestProcessed.stagesInGreenhouse];
+            const sections = [...latestProcessed.sectionsInGreenhouse];
+            renderStageCheckboxes(stages.length ? stages : ["N/A"]);
+            renderPlantSectionCheckboxes(sections);
+
+            state.susceptibilityData = data.susceptibility || [];
+            renderThresholdCheckboxes(els.variety.value);
+            populateVarieties(data.varieties || []);
+            populateTeams(data.spray_team_team || []);
+            state.teamData = (data.spray_team_team || []).map(v => v.name);
+            state.bomsData = data.boms || [];
+            state.bomItems = data.bom_items || [];
+            state.allChemicals = Array.isArray(data.all_chemicals)
+                ? data.all_chemicals
+                    .filter(name => typeof name === 'string' && name.trim().length > 0)
+                    .filter((name, idx, arr) => arr.indexOf(name) === idx)
+                    .sort()
+                : [];
+            populateBoms(state.bomsData);
+            state.bedData = data.bed_data || [];
+
+            const hasScoutingData = state.scoutingData.length > 0;
+            if (hasScoutingData) {
                 els.heatmapGridWrapper.classList.remove("tw-hidden");
                 els.heatmapGridWrapper.classList.add("is-visible-grid");
-                state.scoutingData = data.scouting_entries;
-                state.previousScoutingData = data.previous_scouting_entries || [];
-                state.showBothReports = false; // always start with latest only
-
-                // ── Date display + toggle button ──
-                const dateDisplay = document.getElementById('scouting-date-display');
-                if (dateDisplay) {
-                    const fmtDate = (s) => s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
-                    const latestFmt   = fmtDate(data.scouting_date);
-                    const previousFmt = fmtDate(data.previous_scouting_date);
-
-                    // Store dates on state for toggle label updates
-                    state.scoutingDate         = data.scouting_date;
-                    state.previousScoutingDate = data.previous_scouting_date;
-
-                    dateDisplay.innerHTML = '';
-                    dateDisplay.classList.remove('tw-text-gray-500', 'tw-cursor-not-allowed', 'tw-bg-gray-100');
-                    dateDisplay.style.display = 'flex';
-                    dateDisplay.style.alignItems = 'center';
-                    dateDisplay.style.gap = '10px';
-                    dateDisplay.style.flexWrap = 'wrap';
-                    dateDisplay.style.padding = '8px 12px';
-                    dateDisplay.style.background = '#f9fafb';
-                    dateDisplay.style.borderRadius = '8px';
-                    dateDisplay.style.border = '1.5px solid #e5e7eb';
-
-                    // Date label
-                    const dateLabel = document.createElement('span');
-                    dateLabel.id = 'report-date-label';
-                    dateLabel.style.fontSize = '0.8rem';
-                    dateLabel.style.color = '#374151';
-                    dateLabel.style.fontWeight = '500';
-                    dateLabel.textContent = `Latest: ${latestFmt}`;
-                    dateDisplay.appendChild(dateLabel);
-
-                    // Toggle button — only show if a previous report exists
-                    if (previousFmt && state.previousScoutingData.length > 0) {
-                        const toggleBtn = document.createElement('button');
-                        toggleBtn.type = 'button';
-                        toggleBtn.id = 'report-toggle-btn';
-                        toggleBtn.className = 'report-toggle-btn';
-                        toggleBtn.textContent = `+ Show ${previousFmt}`;
-                        toggleBtn.addEventListener('click', () => {
-                            state.showBothReports = !state.showBothReports;
-                            const label = document.getElementById('report-date-label');
-                            if (state.showBothReports) {
-                                label.innerHTML = `<span class="report-dot report-dot-latest"></span>Latest: ${latestFmt} &nbsp;<span class="report-dot report-dot-previous"></span>Previous: ${previousFmt}`;
-                                toggleBtn.textContent = `− Hide ${previousFmt}`;
-                                toggleBtn.classList.add('report-toggle-btn-active');
-                            } else {
-                                label.textContent = `Latest: ${latestFmt}`;
-                                toggleBtn.textContent = `+ Show ${previousFmt}`;
-                                toggleBtn.classList.remove('report-toggle-btn-active');
-                            }
-                            // Merge or unmerge dataMaps then re-render
-                            rebuildDataMap();
-                            updateGrid();
-                        });
-                        dateDisplay.appendChild(toggleBtn);
-                    }
-                }
-
-                const discoveredTypes = new Set();
-                state.scoutingData.forEach(entry => {
-                    Object.keys(entry).forEach(key => {
-                        if (key.endsWith('_scouting_entry') && Array.isArray(entry[key]) && entry[key].length > 0) {
-                            discoveredTypes.add(key);
-                        }
-                    });
-                });
-                // Also discover from previous
-                state.previousScoutingData.forEach(entry => {
-                    Object.keys(entry).forEach(key => {
-                        if (key.endsWith('_scouting_entry') && Array.isArray(entry[key]) && entry[key].length > 0) {
-                            discoveredTypes.add(key);
-                        }
-                    });
-                });
-
-                if (data.observation_metadata) {
-                    state.observationMetadata = data.observation_metadata;
-                    state.allObservationNames = data.observation_metadata.all_observation_names || {};
-                    const metadataTypes = data.observation_metadata.active_observation_types || [];
-                    state.activeObservationTypes = [...new Set([...metadataTypes, ...discoveredTypes])];
-                } else {
-                    state.observationMetadata = { type_labels: {}, active_observation_types: [], all_observation_names: {} };
-                    state.allObservationNames = {};
-                    state.activeObservationTypes = Array.from(discoveredTypes);
-                }
-
-                // Build both data maps
-                const { dataMap: dmLatest, observationsInGreenhouse, stagesInGreenhouse, sectionsInGreenhouse } =
-                    processScoutingData(data.scouting_entries, "latest");
-                state.dataMapLatest = dmLatest;
-
-                const { dataMap: dmPrevious } =
-                    processScoutingData(state.previousScoutingData, "previous");
-                state.dataMapPrevious = dmPrevious;
-
-                // Start with latest only
-                state.dataMap = dmLatest;
-
-                renderObservationCheckboxes(observationsInGreenhouse);
-                populateFinalTargets();
-                renderStageCheckboxes([...stagesInGreenhouse]);
-                renderPlantSectionCheckboxes([...sectionsInGreenhouse]);
-                if (data.varieties) populateVarieties(data.varieties);
-                if (data.susceptibility) {
-                    state.susceptibilityData = data.susceptibility;
-                }
-                if (data.spray_team_team) {
-                    populateTeams(data.spray_team_team);
-                    state.teamData = data.spray_team_team.map(v => v.name);
-                }
-                const allForDimensions = [...data.scouting_entries, ...state.previousScoutingData];
+                const allForDimensions = [...state.scoutingData, ...state.previousScoutingData];
                 const { maxBed, maxZone } = findMaxDimensions(allForDimensions);
                 const bedNumbering = data.custom_bed_numbering || "Top to Bottom";
                 const zoneNumbering = data.custom_zone_numbering || "Right to Left";
                 renderGrid(maxBed, maxZone, bedNumbering, zoneNumbering);
                 updateGrid();
                 els.heatmapGridWrapper.classList.remove("tw-hidden");
-                if (data.boms) {
-                    state.bomsData = data.boms;
-                    state.bomItems = data.bom_items;
-                    state.allChemicals = Array.isArray(data.all_chemicals)
-                        ? data.all_chemicals
-                            .filter(name => typeof name === 'string' && name.trim().length > 0)
-                            .filter((name, idx, arr) => arr.indexOf(name) === idx)
-                            .sort()
-                        : [];
-                    populateBoms(state.bomsData);
-                }
-                renderThresholdCheckboxes(els.variety.value);
-                state.bedData = data.bed_data || [];
             } else {
+                state.dataMapLatest = new Map();
+                state.dataMapPrevious = new Map();
+                state.dataMap = new Map();
+                renderGrid(0, 0);
                 els.heatmapGridWrapper.classList.add("tw-hidden");
                 document.getElementById('grid-placeholder').classList.remove("tw-hidden");
             }
@@ -604,7 +593,7 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById('grid-placeholder').classList.remove("tw-hidden");
             const dateDisplay = document.getElementById('scouting-date-display');
             if (dateDisplay) {
-                dateDisplay.textContent = 'No scouting data found for this greenhouse.';
+                dateDisplay.textContent = 'No data found for this greenhouse.';
                 dateDisplay.classList.add('tw-text-gray-500');
             }
         } finally {
@@ -1096,8 +1085,8 @@ document.addEventListener("DOMContentLoaded", () => {
             checkbox.type = "checkbox";
             checkbox.id = `section-${section}`;
             checkbox.value = section;
-            checkbox.checked = sectionsInGreenhouse.includes(section);
-            checkbox.disabled = !sectionsInGreenhouse.includes(section);
+            checkbox.checked = sectionsInGreenhouse.length === 0 || sectionsInGreenhouse.includes(section);
+            checkbox.disabled = false;
             const label = document.createElement("span");
             label.textContent = section;
             pill.appendChild(checkbox);
@@ -1489,10 +1478,27 @@ document.addEventListener("DOMContentLoaded", () => {
     // ==================== FINAL TARGETS (user selects manually) ====================
     const populateFinalTargets = () => {
         const select = els.finalTargets;
-
-        // Collect ALL unique targets from scouting data
         const allTargets = new Set();
+        Object.values(state.allObservationNames || {}).forEach(list => {
+            (list || []).forEach(item => {
+                if (typeof item === "string") {
+                    allTargets.add(item);
+                    return;
+                }
+                if (item && item.name) {
+                    allTargets.add(item.name);
+                }
+            });
+        });
         state.scoutingData.forEach(entry => {
+            state.activeObservationTypes.forEach(obsType => {
+                const obsArray = entry[obsType] || [];
+                obsArray.forEach(obs => {
+                    if (obs.name) allTargets.add(obs.name);
+                });
+            });
+        });
+        state.previousScoutingData.forEach(entry => {
             state.activeObservationTypes.forEach(obsType => {
                 const obsArray = entry[obsType] || [];
                 obsArray.forEach(obs => {
@@ -1726,10 +1732,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const targets = selectedTargets;
-        const { activeStages, activeSections } = getActiveFilters();
         const chemicals = getFinalChemicals();
 
-        if (!greenhouse || targets.length === 0 || activeStages.length === 0 || activeSections.length === 0 || !sprayType || !kit || !scope || !bom) {
+        if (!greenhouse || targets.length === 0 || !sprayType || !kit || !scope || !bom) {
             showToast("Please fill out all required fields.", "error");
             return;
         }

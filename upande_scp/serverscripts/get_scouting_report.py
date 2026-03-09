@@ -64,6 +64,14 @@ def getScoutingData():
                 "type_label": "Physiological Disorders",
                 "legend_color_field": "color",
                 "extra_fields": []
+            },
+            "crop_husbandry_practices_scouting_entry": {
+                "doctype": "Crop Husbandry Practices",
+                "child_table": "Crop Husbandry Practices Entry",
+                "item_field": "crop_husbandry_practices",
+                "type_label": "Crop Husbandry Practices",
+                "legend_color_field": "color",
+                "extra_fields": []
             }
         }
         

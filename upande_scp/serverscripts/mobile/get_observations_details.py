@@ -21,6 +21,12 @@ def getObservationsDetails():
         order_by="idx"
     )
 
+    practices = frappe.get_all(
+        "Crop Husbandry Practices",
+        fields=["name", "disorder_name", "photo", "reading_type", "plant_sections"],
+        order_by="idx"
+    )
+
     weeds = frappe.get_all(
         "Weed",
         fields=["name", "name1", "reading_type", "plant_sections"],
@@ -173,6 +179,24 @@ def getObservationsDetails():
                     "plantSections": _parse_plant_sections(disorder.plant_sections),
                 }
                 for disorder in disorders
+            ]
+        })
+
+    # CROP HUSBANDRY PRACTICES - Single field per practice (no range)
+    if practices:
+        observation_types.append({
+            "category": "Crop Husbandry Practices",
+            "type": "toggle",
+            "fields": [
+                {
+                    "name": practice.disorder_name,
+                    "stage": None,
+                    "stages": None,
+                    "photo": practice.photo,
+                    "readingType": (practice.reading_type or "Checkbox").lower(),
+                    "plantSections": _parse_plant_sections(practice.plant_sections),
+                }
+                for practice in practices
             ]
         })
 

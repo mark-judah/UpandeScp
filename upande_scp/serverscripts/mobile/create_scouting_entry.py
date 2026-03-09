@@ -395,6 +395,12 @@ def createScoutingEntry():
                                 child_row.physiological_disorders = item.get(
                                     "physiological_disorders")
 
+                            elif parent_field == "crop_husbandry_practices_entry":
+                                child_row.plant_section = item.get(
+                                    "plant_section")
+                                child_row.crop_husbandry_practices = item.get(
+                                    "crop_husbandry_practices")
+
                             elif parent_field == "weeds_scouting_entry":
                                 child_row.weed = item.get("weed")
 
@@ -420,6 +426,8 @@ def createScoutingEntry():
                                 entry_data.get("diseases_scouting_entry"))
                 add_child_items(scout_doc, "physiological_disorders_entry", entry_data.get(
                     "physiological_disorders_entry"))
+                add_child_items(scout_doc, "crop_husbandry_practices_entry", entry_data.get(
+                    "crop_husbandry_practices_entry"))
                 add_child_items(scout_doc, "weeds_scouting_entry",
                                 entry_data.get("weeds_scouting_entry"))
                 add_child_items(scout_doc, "pests_scouting_entry",

@@ -67,7 +67,8 @@ def getHeatmapData(date, greenhouse):
                 "predators_scouting_entry": [],
                 "weeds_scouting_entry": [],
                 "incidents_scouting_entry": [],
-                "physiological_disorders_entry": []
+                "physiological_disorders_entry": [],
+                "crop_husbandry_practices_entry": []
             }
             
             # Process pests
@@ -112,6 +113,12 @@ def getHeatmapData(date, greenhouse):
             for disorder_entry in full_entry.physiological_disorders_entry:
                 entry_data["physiological_disorders_entry"].append({
                     "name": disorder_entry.physiological_disorders
+                })
+
+            # Process crop husbandry practices
+            for practice_entry in full_entry.crop_husbandry_practices_entry:
+                entry_data["crop_husbandry_practices_entry"].append({
+                    "name": practice_entry.crop_husbandry_practices
                 })
             
             detailed_entries.append(entry_data)
@@ -191,6 +198,15 @@ def getHeatmapData(date, greenhouse):
         for disorder in disorders:
             observation_types["physiological_disorders"][disorder.name] = {
                 "color": "#ff6b6b",
+                "stages": []
+            }
+
+        # Get all crop husbandry practices
+        practices = frappe.get_all("Crop Husbandry Practices", fields=["name", "name"])
+        observation_types["crop_husbandry_practices"] = {}
+        for practice in practices:
+            observation_types["crop_husbandry_practices"][practice.name] = {
+                "color": "#ffd43b",
                 "stages": []
             }
         

@@ -58,6 +58,14 @@ def getScoutingObservations():
                 "type_label": "Physiological Disorders",
                 "item_field": "physiological_disorders",
                 "extra_fields": []
+            },
+            "crop_husbandry_practices_entry": {
+                "doctype": "Crop Husbandry Practices",
+                "legend_color_field": "color",
+                "child_table": "Crop Husbandry Practices Entry",
+                "type_label": "Crop Husbandry Practices",
+                "item_field": "crop_husbandry_practices",
+                "extra_fields": []
             }
         }
 

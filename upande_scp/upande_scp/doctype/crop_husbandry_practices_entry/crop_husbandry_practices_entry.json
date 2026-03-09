@@ -1,0 +1,30 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "crop_husbandry_practices"
+ ],
+ "fields": [
+  {
+   "fieldname": "crop_husbandry_practices",
+   "fieldtype": "Link",
+   "label": "Crop Husbandry Practices",
+   "options": "Crop Husbandry Practices"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "module": "Upande Scp",
+ "name": "Crop Husbandry Practices Entry",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
+

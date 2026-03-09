@@ -22,13 +22,21 @@ document.addEventListener("DOMContentLoaded", () => {
         chemicalUomCache: {},
         susceptibilityData: [],
         kitWarehouse: "",
-        selectedTargets: new Set()
+        selectedTargets: new Set(),
+        selectedVarieties: new Set(),
+        allTargetOptions: [],
+        allVarieties: []
     };
 
     // ==================== DOM ELEMENTS ====================
     const els = {
         greenhouse: document.getElementById("greenhouse"),
         variety: document.getElementById("variety"),
+        varietyDropdownWrapper: document.getElementById("variety-dropdown-wrapper"),
+        varietySelectedDisplay: document.getElementById("variety-selected-display"),
+        varietyDropdownMenu: document.getElementById("variety-dropdown-menu"),
+        varietySearchInput: document.getElementById("variety-search-input"),
+        varietyCheckboxesList: document.getElementById("variety-checkboxes-list"),
         sprayType: document.getElementById("spray-type"),
         finalTargets: document.getElementById("final-targets"),
         kit: document.getElementById("kit"),
@@ -65,7 +73,6 @@ document.addEventListener("DOMContentLoaded", () => {
         popup: document.getElementById("global-popup"),
         popupSearch: document.getElementById("global-popup-search"),
         popupContent: document.getElementById("global-popup-content"),
-        // BOM Modal elements
         bomModalOverlay: document.getElementById("bom-modal-overlay"),
         bomModal: document.getElementById("bom-modal"),
         createNewBomBtn: document.getElementById("create-new-bom-btn"),
@@ -262,14 +269,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
             option.addEventListener("click", (e) => {
                 e.preventDefault();
-
-                // 1. Fill input
                 inputElement.value = item;
-
-                // 2. Find row (main form OR BOM modal)
                 const row = inputElement.closest(".chemical-row, .bom-chemical-row");
-
-                // 3. Fill UOM
                 if (row) {
                     const uomSelector = row.classList.contains("bom-chemical-row")
                         ? ".bom-chemical-uom-input"
@@ -287,12 +288,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                     }
                 }
-
-                // 4. Close popup
                 els.popupOverlay.classList.remove('active');
                 els.popupSearch.value = '';
-
-                // 5. UPDATE STOCK BALANCES — ONLY FOR MAIN FORM
                 if (row && row.classList.contains("chemical-row")) {
                     setTimeout(updateStockBalances, 100);
                 }
@@ -341,16 +338,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
             allPossibleTypes.forEach(obsType => {
                 const obsArray = entry[obsType] || [];
-
                 obsArray.forEach((obs) => {
                     observationsInGreenhouse[obsType].add(obs.name);
-
                     const stage = obs.stage || "N/A";
                     const plantSection = obs.plant_section || "N/A";
-
                     stagesInGreenhouse.add(stage);
                     sectionsInGreenhouse.add(plantSection);
-
                     observations.push({
                         type: obsType,
                         name: obs.name,
@@ -359,7 +352,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         symbol: obs.symbol || "",
                         color: obs.color || "#cccccc",
                         plant_section: plantSection,
-                        reportTag   // ← "latest" or "previous"
+                        reportTag
                     });
                 });
             });
@@ -382,18 +375,14 @@ document.addEventListener("DOMContentLoaded", () => {
                     'X-Frappe-CSRF-Token': "{{csrf_token}}"
                 }
             });
-
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
             const r = await response.json();
             const data = r.message || r.data;
-
             if (data && Array.isArray(data.chemicals)) {
                 state.allChemicals = data.chemicals
                     .filter(name => typeof name === 'string' && name.trim().length > 0)
                     .filter((name, idx, arr) => arr.indexOf(name) === idx)
                     .sort();
-
                 if (data.item_uom_map) {
                     state.chemicalUomCache = { ...state.chemicalUomCache, ...data.item_uom_map };
                     refreshRowUoms();
@@ -407,6 +396,38 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    const fetchAllTargets = async () => {
+        try {
+            const [pestsRes, diseasesRes] = await Promise.all([
+                fetch('/api/resource/Pest?fields=["common_name"]&limit_page_length=0', {
+                    headers: { 'X-Frappe-CSRF-Token': "{{csrf_token}}" }
+                }),
+                fetch('/api/resource/Plant Disease?fields=["common_name"]&limit_page_length=0', {
+                    headers: { 'X-Frappe-CSRF-Token': "{{csrf_token}}" }
+                })
+            ]);
+
+            const pestsData = await pestsRes.json();
+            const diseasesData = await diseasesRes.json();
+
+            const pests = (pestsData.data || [])
+                .map(p => ({ name: p.common_name, type: 'Pest' }))
+                .filter(p => p.name && p.name.trim());
+                
+            const diseases = (diseasesData.data || [])
+                .map(d => ({ name: d.common_name, type: 'Disease' }))
+                .filter(d => d.name && d.name.trim());
+
+            state.allTargetOptions = [...pests, ...diseases]
+                .sort((a, b) => a.name.localeCompare(b.name));
+                
+            console.log(`Loaded ${pests.length} pests and ${diseases.length} diseases`);
+        } catch (error) {
+            console.error("Error fetching targets:", error);
+            showToast("Failed to load pests/diseases list", "error");
+        }
+    };
+
     const fetchChemicalUom = async (chemicalName) => {
         try {
             const response = await fetch('/api/method/upande_scp.serverscripts.create_bom.getChemicalUom', {
@@ -417,17 +438,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 },
                 body: JSON.stringify({ chemical: chemicalName })
             });
-
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
             const r = await response.json();
             const data = r.message || r.data;
-
             if (data && data.uom) {
                 state.chemicalUomCache[chemicalName] = data.uom;
                 return data.uom;
             }
-
             return "";
         } catch (error) {
             console.error(`Error fetching UOM for ${chemicalName}:`, error);
@@ -441,7 +458,12 @@ document.addEventListener("DOMContentLoaded", () => {
         els.targetsContainer.innerHTML = '';
         els.stagesContainer.innerHTML = "";
         els.plantSectionContainer.innerHTML = "";
-        els.variety.innerHTML = '<option value="">Select variety</option>';
+        
+        // Reset variety selection
+        state.selectedVarieties.clear();
+        els.varietyCheckboxesList.innerHTML = "";
+        updateVarietyDisplay();
+        
         els.bom.innerHTML = '<option value="">Select BOM</option>';
         els.bomDetailsContainer.classList.add("tw-hidden");
         renderGrid(0, 0);
@@ -458,12 +480,46 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const r = await response.json();
             const data = r.message || r.data;
-            if (data && data.scouting_entries && data.scouting_entries.length > 0) {
+
+            if (!data) {
+                els.heatmapGridWrapper.classList.add("tw-hidden");
+                document.getElementById('grid-placeholder').classList.remove("tw-hidden");
+                return;
+            }
+
+            // ── Always process non-scouting data (varieties, BOMs, chemicals, etc.) ──
+            if (data.varieties && data.varieties.length > 0) {
+                populateVarieties(data.varieties);
+            }
+            if (data.spray_team_team) {
+                populateTeams(data.spray_team_team);
+                state.teamData = data.spray_team_team.map(v => v.name);
+            }
+            if (data.boms) {
+                state.bomsData = data.boms;
+                state.bomItems = data.bom_items || [];
+                state.allChemicals = Array.isArray(data.all_chemicals)
+                    ? data.all_chemicals
+                        .filter(name => typeof name === 'string' && name.trim().length > 0)
+                        .filter((name, idx, arr) => arr.indexOf(name) === idx)
+                        .sort()
+                    : [];
+                populateBoms(state.bomsData);
+            }
+            state.bedData = data.bed_data || [];
+            if (data.susceptibility) {
+                state.susceptibilityData = data.susceptibility;
+            }
+
+            // ── Scouting-specific processing (only when entries exist) ──
+            const hasScoutingData = data.scouting_entries && data.scouting_entries.length > 0;
+
+            if (hasScoutingData) {
                 els.heatmapGridWrapper.classList.remove("tw-hidden");
                 els.heatmapGridWrapper.classList.add("is-visible-grid");
                 state.scoutingData = data.scouting_entries;
                 state.previousScoutingData = data.previous_scouting_entries || [];
-                state.showBothReports = false; // always start with latest only
+                state.showBothReports = false;
 
                 // ── Date display + toggle button ──
                 const dateDisplay = document.getElementById('scouting-date-display');
@@ -472,7 +528,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     const latestFmt   = fmtDate(data.scouting_date);
                     const previousFmt = fmtDate(data.previous_scouting_date);
 
-                    // Store dates on state for toggle label updates
                     state.scoutingDate         = data.scouting_date;
                     state.previousScoutingDate = data.previous_scouting_date;
 
@@ -487,7 +542,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     dateDisplay.style.borderRadius = '8px';
                     dateDisplay.style.border = '1.5px solid #e5e7eb';
 
-                    // Date label
                     const dateLabel = document.createElement('span');
                     dateLabel.id = 'report-date-label';
                     dateLabel.style.fontSize = '0.8rem';
@@ -496,7 +550,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     dateLabel.textContent = `Latest: ${latestFmt}`;
                     dateDisplay.appendChild(dateLabel);
 
-                    // Toggle button — only show if a previous report exists
                     if (previousFmt && state.previousScoutingData.length > 0) {
                         const toggleBtn = document.createElement('button');
                         toggleBtn.type = 'button';
@@ -515,7 +568,6 @@ document.addEventListener("DOMContentLoaded", () => {
                                 toggleBtn.textContent = `+ Show ${previousFmt}`;
                                 toggleBtn.classList.remove('report-toggle-btn-active');
                             }
-                            // Merge or unmerge dataMaps then re-render
                             rebuildDataMap();
                             updateGrid();
                         });
@@ -531,7 +583,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                     });
                 });
-                // Also discover from previous
                 state.previousScoutingData.forEach(entry => {
                     Object.keys(entry).forEach(key => {
                         if (key.endsWith('_scouting_entry') && Array.isArray(entry[key]) && entry[key].length > 0) {
@@ -551,7 +602,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     state.activeObservationTypes = Array.from(discoveredTypes);
                 }
 
-                // Build both data maps
                 const { dataMap: dmLatest, observationsInGreenhouse, stagesInGreenhouse, sectionsInGreenhouse } =
                     processScoutingData(data.scouting_entries, "latest");
                 state.dataMapLatest = dmLatest;
@@ -560,21 +610,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     processScoutingData(state.previousScoutingData, "previous");
                 state.dataMapPrevious = dmPrevious;
 
-                // Start with latest only
                 state.dataMap = dmLatest;
 
                 renderObservationCheckboxes(observationsInGreenhouse);
                 populateFinalTargets();
                 renderStageCheckboxes([...stagesInGreenhouse]);
                 renderPlantSectionCheckboxes([...sectionsInGreenhouse]);
-                if (data.varieties) populateVarieties(data.varieties);
-                if (data.susceptibility) {
-                    state.susceptibilityData = data.susceptibility;
-                }
-                if (data.spray_team_team) {
-                    populateTeams(data.spray_team_team);
-                    state.teamData = data.spray_team_team.map(v => v.name);
-                }
+
                 const allForDimensions = [...data.scouting_entries, ...state.previousScoutingData];
                 const { maxBed, maxZone } = findMaxDimensions(allForDimensions);
                 const bedNumbering = data.custom_bed_numbering || "Top to Bottom";
@@ -582,23 +624,28 @@ document.addEventListener("DOMContentLoaded", () => {
                 renderGrid(maxBed, maxZone, bedNumbering, zoneNumbering);
                 updateGrid();
                 els.heatmapGridWrapper.classList.remove("tw-hidden");
-                if (data.boms) {
-                    state.bomsData = data.boms;
-                    state.bomItems = data.bom_items;
-                    state.allChemicals = Array.isArray(data.all_chemicals)
-                        ? data.all_chemicals
-                            .filter(name => typeof name === 'string' && name.trim().length > 0)
-                            .filter((name, idx, arr) => arr.indexOf(name) === idx)
-                            .sort()
-                        : [];
-                    populateBoms(state.bomsData);
-                }
-                renderThresholdCheckboxes(els.variety.value);
-                state.bedData = data.bed_data || [];
             } else {
+                // No scouting data — show placeholder for the heatmap, but form fields are already populated above
+                state.scoutingData = [];
+                state.previousScoutingData = [];
+                state.dataMap = new Map();
+                state.dataMapLatest = new Map();
+                state.dataMapPrevious = new Map();
+
                 els.heatmapGridWrapper.classList.add("tw-hidden");
                 document.getElementById('grid-placeholder').classList.remove("tw-hidden");
+
+                const dateDisplay = document.getElementById('scouting-date-display');
+                if (dateDisplay) {
+                    dateDisplay.innerHTML = '';
+                    dateDisplay.textContent = 'No scouting reports found for this greenhouse.';
+                    dateDisplay.classList.add('tw-text-gray-500');
+                }
             }
+
+            // ── Always render threshold checkboxes ──
+            renderThresholdCheckboxes(els.variety.value);
+
         } catch (error) {
             els.heatmapGridWrapper.classList.add("tw-hidden");
             document.getElementById('grid-placeholder').classList.remove("tw-hidden");
@@ -612,21 +659,16 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    // ── Rebuild the active dataMap based on showBothReports toggle ──
     const rebuildDataMap = () => {
         if (!state.showBothReports) {
             state.dataMap = state.dataMapLatest;
             return;
         }
-        // Merge latest + previous into a combined map
-        // Latest always takes visual priority (rendered on top / listed first)
         const merged = new Map(state.dataMapLatest);
         state.dataMapPrevious.forEach((obs, key) => {
             if (merged.has(key)) {
-                // Zone exists in latest too — append previous obs (tagged)
                 merged.set(key, [...merged.get(key), ...obs]);
             } else {
-                // Zone only in previous report
                 merged.set(key, [...obs]);
             }
         });
@@ -634,14 +676,10 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // ==================== RENDERING FUNCTIONS ====================
-    // ==================== GRID STATE ====================
-    // Store grid dimensions so updateGrid can rebuild cards without re-fetching
     let _gridState = { maxBed: 0, maxZone: 0, bedNumbering: "Top to Bottom", zoneNumbering: "Right to Left" };
 
-    // Called once after scouting data loads — just stores dimensions, cards built by updateGrid
     const renderGrid = (numBeds, zonesPerBed, bedNumbering = "Top to Bottom", zoneNumbering = "Right to Left") => {
         _gridState = { maxBed: numBeds, maxZone: zonesPerBed, bedNumbering, zoneNumbering };
-        // Clear old cards
         els.mainGrid.innerHTML = "";
         els.xAxisLabels.innerHTML = "";
         els.yAxisLabels.innerHTML = "";
@@ -658,14 +696,12 @@ document.addEventListener("DOMContentLoaded", () => {
         return 'hm-intensity-5';
     };
 
-    // Build a single observation mini-grid card (mirrors heatmap page card style)
     const buildObservationCard = (obsName, obsColor, matrix, maxCount, total, alertLevel) => {
         const { maxBed, maxZone, bedNumbering, zoneNumbering } = _gridState;
 
         const card = document.createElement('div');
         card.className = 'hm-card';
 
-        // Card header
         const header = document.createElement('div');
         header.className = 'hm-card-header';
 
@@ -686,7 +722,6 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
         card.appendChild(header);
 
-        // ── Helper: builds the actual grid DOM (reused for card and fullscreen) ──
         const buildGrid = (cellSize = 18) => {
             const gridWrap = document.createElement('div');
             gridWrap.className = 'hm-grid-wrap';
@@ -703,7 +738,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? Array.from({ length: maxBed }, (_, i) => maxBed - i)
                 : Array.from({ length: maxBed }, (_, i) => i + 1);
 
-            // Corner + zone headers
             const corner = document.createElement('div');
             corner.className = 'hm-corner';
             corner.style.height = `${cellSize}px`;
@@ -717,7 +751,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 grid.appendChild(lbl);
             });
 
-            // Bed rows
             bedRange.forEach(bed => {
                 const bedLbl = document.createElement('div');
                 bedLbl.className = 'hm-bed-lbl';
@@ -736,7 +769,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
                     if (cnt > 0) cell.style.backgroundColor = obsColor;
 
-                    // Previous-report zones get a diagonal stripe overlay
                     const isPrevious = obsData && obsData.reportTag === 'previous';
                     if (isPrevious && cnt > 0) {
                         cell.style.backgroundImage = `repeating-linear-gradient(
@@ -749,7 +781,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         cell.style.backgroundBlendMode = 'multiply';
                     }
 
-                    // Threshold ring on individual zones
                     if (zoneAlert === 3) {
                         cell.style.outline = '2px solid #dc2626';
                         cell.style.outlineOffset = '-2px';
@@ -764,7 +795,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         cell.style.zIndex = '5';
                     }
 
-                    // Tooltip — always pops downward, small font
                     const thresholdLabel = zoneAlert === 3 ? 'High' : zoneAlert === 2 ? 'Moderate' : zoneAlert === 1 ? 'Low' : null;
                     const thresholdHtml  = thresholdLabel
                         ? `<span style="color:${zoneAlert === 3 ? '#f87171' : zoneAlert === 2 ? '#fbbf24' : '#34d399'}">⬤ ${thresholdLabel} requirement</span>`
@@ -778,14 +808,11 @@ document.addEventListener("DOMContentLoaded", () => {
                         : `<strong>B${bed} Z${zone}</strong> — None`;
                     cell.appendChild(tip);
 
-                    // Tooltip always below the cell, horizontal clamp only
                     cell.addEventListener('mouseenter', () => {
                         const rect = cell.getBoundingClientRect();
                         tip.style.top    = '100%';
                         tip.style.bottom = 'auto';
                         tip.style.marginTop = '4px';
-
-                        // horizontal: keep inside viewport
                         if (rect.left < window.innerWidth / 3) {
                             tip.style.left      = '0';
                             tip.style.right     = 'auto';
@@ -809,10 +836,8 @@ document.addEventListener("DOMContentLoaded", () => {
             return gridWrap;
         };
 
-        // Mini grid inside card
         card.appendChild(buildGrid(18));
 
-        // Intensity legend
         const legend = document.createElement('div');
         legend.className = 'hm-legend';
         legend.innerHTML = `
@@ -825,18 +850,12 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
         card.appendChild(legend);
 
-        // ── Fullscreen modal on card click ──
         card.style.cursor = 'pointer';
         card.addEventListener('click', () => {
-            // Overlay
             const overlay = document.createElement('div');
             overlay.className = 'hm-fullscreen-overlay';
-
-            // Modal box
             const modal = document.createElement('div');
             modal.className = 'hm-fullscreen-modal';
-
-            // Modal header
             const mHeader = document.createElement('div');
             mHeader.className = 'hm-fullscreen-header';
             mHeader.innerHTML = `
@@ -848,14 +867,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 <button class="hm-fullscreen-close" title="Close (Esc)">×</button>
             `;
             modal.appendChild(mHeader);
-
-            // Full-size grid
             const mBody = document.createElement('div');
             mBody.className = 'hm-fullscreen-body';
-            mBody.appendChild(buildGrid(28));   // bigger cells in fullscreen
+            mBody.appendChild(buildGrid(28));
             modal.appendChild(mBody);
-
-            // Full legend
             const mLegend = document.createElement('div');
             mLegend.className = 'hm-legend';
             mLegend.style.padding = '12px 16px';
@@ -872,11 +887,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 </span>` : ''}
             `;
             modal.appendChild(mLegend);
-
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
-
-            // Close handlers
             const close = () => overlay.remove();
             mHeader.querySelector('.hm-fullscreen-close').addEventListener('click', close);
             overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
@@ -888,7 +900,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return card;
     };
 
-    // ==================== UPDATE GRID (rebuilds cards on filter change) ====================
+    // ==================== UPDATE GRID ====================
     const updateGrid = () => {
         if (!els.greenhouse.value || state.scoutingData.length === 0) return;
 
@@ -896,7 +908,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (maxBed === 0 || maxZone === 0) return;
 
         const { activeObs, activeStages, activeSections, activeRequirements } = getActiveFilters();
-        const selectedVariety = els.variety.value;
+        
+        // Get selected varieties for threshold calculation
+        const selectedVarieties = Array.from(state.selectedVarieties);
+        const hasAllVarieties = selectedVarieties.includes('__all__');
 
         const TYPE_MAP = {
             'diseases_scouting_entry': 'disease',
@@ -906,12 +921,10 @@ document.addEventListener("DOMContentLoaded", () => {
             'incidents_scouting_entry': 'incident'
         };
 
-        // Collect per-observation matrices across all active types
-        // matrix structure: obsName → { bed → { zone → { count, symbol, plant_section } } }
-        const obsMatrices = {};   // obsName → matrix
-        const obsColors   = {};   // obsName → color
-        const obsSymbols  = {};   // obsName → symbol
-        const obsAlerts   = {};   // obsName → highest alert level (0-3)
+        const obsMatrices = {};
+        const obsColors   = {};
+        const obsSymbols  = {};
+        const obsAlerts   = {};
 
         state.dataMap.forEach((observationsInZone, key) => {
             const [bed, zone] = key.split('-').map(Number);
@@ -936,7 +949,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 if (!obsMatrices[name][bed]) obsMatrices[name][bed] = {};
 
-                // Latest wins for count; previous only fills empty zones
                 const existing = obsMatrices[name][bed][zone];
                 if (!existing) {
                     obsMatrices[name][bed][zone] = {
@@ -947,27 +959,31 @@ document.addEventListener("DOMContentLoaded", () => {
                         reportTag: obs.reportTag || 'latest'
                     };
                 }
-                // If this obs is from latest, it overrides the tag
                 if (obs.reportTag === 'latest') {
                     obsMatrices[name][bed][zone].reportTag = 'latest';
                 }
                 obsMatrices[name][bed][zone].count += (obs.count || 1);
 
-                // Threshold alert level — stored per zone, not per observation
-                const obsTypeClean = TYPE_MAP[obsType] || obsType.replace('_scouting_entry', '');
-                const sus = state.susceptibilityData.find(s => s.observation === name && s.type === obsTypeClean);
-                if (sus && selectedVariety && sus.requirement_by_variety[selectedVariety]) {
-                    const level = sus.requirement_by_variety[selectedVariety];
-                    if (level !== "unknown" && activeRequirements.includes(level)) {
-                        const lvlNum = level === 'high' ? 3 : level === 'moderate' ? 2 : 1;
-                        obsMatrices[name][bed][zone].alertLevel = Math.max(obsMatrices[name][bed][zone].alertLevel, lvlNum);
-                        obsAlerts[name] = Math.max(obsAlerts[name], lvlNum);
-                    }
+                // Threshold — skip when "All Varieties" is selected or no varieties selected
+                if (!hasAllVarieties && selectedVarieties.length > 0) {
+                    const obsTypeClean = TYPE_MAP[obsType] || obsType.replace('_scouting_entry', '');
+                    
+                    // Check threshold for each selected variety
+                    selectedVarieties.forEach(selectedVariety => {
+                        const sus = state.susceptibilityData.find(s => s.observation === name && s.type === obsTypeClean);
+                        if (sus && sus.requirement_by_variety[selectedVariety]) {
+                            const level = sus.requirement_by_variety[selectedVariety];
+                            if (level !== "unknown" && activeRequirements.includes(level)) {
+                                const lvlNum = level === 'high' ? 3 : level === 'moderate' ? 2 : 1;
+                                obsMatrices[name][bed][zone].alertLevel = Math.max(obsMatrices[name][bed][zone].alertLevel, lvlNum);
+                                obsAlerts[name] = Math.max(obsAlerts[name], lvlNum);
+                            }
+                        }
+                    });
                 }
             });
         });
 
-        // Rebuild card container
         els.mainGrid.innerHTML = "";
 
         const obsNames = Object.keys(obsMatrices);
@@ -985,7 +1001,6 @@ document.addEventListener("DOMContentLoaded", () => {
             const color  = obsColors[name];
             const alert  = obsAlerts[name];
 
-            // Compute max count and total for this observation
             let maxCount = 0;
             let total    = 0;
             Object.values(matrix).forEach(bedRow => {
@@ -1022,15 +1037,8 @@ document.addEventListener("DOMContentLoaded", () => {
             filterGroup.className = 'filter-group';
 
             const allObservationNames = new Set();
-
-            metadataList.forEach(o => {
-                const name = o.name || o;
-                allObservationNames.add(name);
-            });
-
-            observationsOfType.forEach(name => {
-                allObservationNames.add(name);
-            });
+            metadataList.forEach(o => { allObservationNames.add(o.name || o); });
+            observationsOfType.forEach(name => { allObservationNames.add(name); });
 
             const namesToShow = Array.from(allObservationNames).sort();
 
@@ -1043,20 +1051,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 namesToShow.forEach(obsName => {
                     const pill = document.createElement('label');
                     pill.className = 'filter-pill';
-
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';
                     checkbox.id = `obs-${obsType}-${obsName}`;
                     checkbox.value = obsName;
                     checkbox.dataset.obsType = obsType;
-
                     const isInData = observationsOfType.has(obsName);
                     checkbox.checked = isInData;
                     checkbox.disabled = false;
-
                     const label = document.createElement('span');
                     label.textContent = obsName;
-
                     pill.appendChild(checkbox);
                     pill.appendChild(label);
                     filterGroup.appendChild(pill);
@@ -1108,7 +1112,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const renderThresholdCheckboxes = (varietyName) => {
         const thresholds = ['low', 'moderate', 'high'];
-        const hasData = state.susceptibilityData.length > 0 && varietyName;
+        const selectedVarieties = Array.from(state.selectedVarieties);
+        const hasAllVarieties = selectedVarieties.includes('__all__');
+        const hasData = state.susceptibilityData.length > 0 && selectedVarieties.length > 0 && !hasAllVarieties;
+        
         els.thresholdContainer.innerHTML = "";
         thresholds.forEach((threshold) => {
             const pill = document.createElement("label");
@@ -1125,10 +1132,17 @@ document.addEventListener("DOMContentLoaded", () => {
             pill.appendChild(label);
             els.thresholdContainer.appendChild(pill);
         });
+        
         if (hasData) {
             els.thresholdMessage.classList.add("tw-hidden");
+        } else if (hasAllVarieties) {
+            els.thresholdMessage.innerHTML = `<strong>Threshold filtering not available when "All Varieties" is selected.</strong>`;
+            els.thresholdMessage.classList.remove("tw-hidden");
+        } else if (selectedVarieties.length === 0) {
+            els.thresholdMessage.innerHTML = `<strong>Please select at least one variety to enable threshold filtering.</strong>`;
+            els.thresholdMessage.classList.remove("tw-hidden");
         } else {
-            els.thresholdMessage.innerHTML = `<strong>No susceptibility data for this variety.</strong>`;
+            els.thresholdMessage.innerHTML = `<strong>No susceptibility data for selected varieties.</strong>`;
             els.thresholdMessage.classList.remove("tw-hidden");
         }
     };
@@ -1221,17 +1235,11 @@ document.addEventListener("DOMContentLoaded", () => {
         els.bomWaterHardness.value = '';
         els.bomModalChemicalsList.innerHTML = '';
         els.bomModalChemicalsList.appendChild(createBomChemicalRow());
-
-        if (state.allChemicals.length === 0) {
-            await fetchChemicals();
-        }
-
+        if (state.allChemicals.length === 0) { await fetchChemicals(); }
         updateStockBalances();
     };
 
-    const closeBomModal = () => {
-        els.bomModalOverlay.classList.remove('active');
-    };
+    const closeBomModal = () => { els.bomModalOverlay.classList.remove('active'); };
 
     const getBomChemicals = () => {
         return Array.from(els.bomModalChemicalsList.querySelectorAll(".bom-chemical-row"))
@@ -1240,11 +1248,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const rate = parseFloat(row.querySelector(".bom-chemical-rate-input")?.value) || 0;
                 const uom = row.querySelector(".bom-chemical-uom-input")?.value || "";
                 if (!name || rate <= 0) return null;
-                return {
-                    item_name: name,
-                    custom_application_rate: rate,
-                    uom
-                };
+                return { item_name: name, custom_application_rate: rate, uom };
             })
             .filter(Boolean);
     };
@@ -1254,61 +1258,28 @@ document.addEventListener("DOMContentLoaded", () => {
         const waterPh = parseFloat(els.bomWaterPh.value);
         const waterHardness = parseFloat(els.bomWaterHardness.value);
         const chemicals = getBomChemicals();
-
-        if (!itemName) {
-            showToast("Please enter a BOM name", "error");
-            return;
-        }
-        if (!waterPh || waterPh <= 0) {
-            showToast("Please enter a valid water pH", "error");
-            return;
-        }
-        if (!waterHardness || waterHardness <= 0) {
-            showToast("Please enter a valid water hardness", "error");
-            return;
-        }
-        if (chemicals.length === 0) {
-            showToast("Please add at least one chemical", "error");
-            return;
-        }
-
+        if (!itemName) { showToast("Please enter a BOM name", "error"); return; }
+        if (!waterPh || waterPh <= 0) { showToast("Please enter a valid water pH", "error"); return; }
+        if (!waterHardness || waterHardness <= 0) { showToast("Please enter a valid water hardness", "error"); return; }
+        if (chemicals.length === 0) { showToast("Please add at least one chemical", "error"); return; }
         const invalidChemicals = chemicals.filter(c => !c.custom_application_rate || c.custom_application_rate <= 0);
-        if (invalidChemicals.length > 0) {
-            showToast("All chemicals must have a valid rate", "error");
-            return;
-        }
+        if (invalidChemicals.length > 0) { showToast("All chemicals must have a valid rate", "error"); return; }
 
-        const bomData = {
-            item: itemName,
-            custom_water_ph: waterPh,
-            custom_water_hardness: waterHardness,
-            items: chemicals
-        };
-
+        const bomData = { item: itemName, custom_water_ph: waterPh, custom_water_hardness: waterHardness, items: chemicals };
         showLoader();
         try {
             const response = await fetch('/api/method/upande_scp.serverscripts.create_bom.createBOM', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Frappe-CSRF-Token': "{{csrf_token}}"
-                },
+                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': "{{csrf_token}}" },
                 body: JSON.stringify(bomData)
             });
-
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
             const r = await response.json();
             const result = r.message || r.data;
-
             if (result && result.status === "success") {
                 showToast(`BOM "${result.bom_name}" created successfully!`, "success");
                 closeBomModal();
-
-                if (els.greenhouse.value) {
-                    await fetchScoutingData(els.greenhouse.value);
-                }
-
+                if (els.greenhouse.value) { await fetchScoutingData(els.greenhouse.value); }
                 els.bom.value = result.bom_name;
                 populateBomDetails(result.bom_name);
             } else {
@@ -1317,25 +1288,15 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (error) {
             console.error("BOM Creation Error:", error);
             showToast("An error occurred while creating the BOM. Please try again.", "error");
-        } finally {
-            hideLoader();
-        }
+        } finally { hideLoader(); }
     };
 
     els.createNewBomBtn.addEventListener("click", openBomModal);
     els.closeBomModalBtn.addEventListener("click", closeBomModal);
     els.cancelBomBtn.addEventListener("click", closeBomModal);
     els.saveBomBtn.addEventListener("click", createBOM);
-
-    els.addBomChemicalBtn.addEventListener("click", () => {
-        els.bomModalChemicalsList.appendChild(createBomChemicalRow());
-    });
-
-    els.bomModalOverlay.addEventListener("click", (e) => {
-        if (e.target === els.bomModalOverlay) {
-            closeBomModal();
-        }
-    });
+    els.addBomChemicalBtn.addEventListener("click", () => { els.bomModalChemicalsList.appendChild(createBomChemicalRow()); });
+    els.bomModalOverlay.addEventListener("click", (e) => { if (e.target === els.bomModalOverlay) closeBomModal(); });
 
     els.kit.addEventListener("change", (e) => {
         const selectedOption = e.target.options[e.target.selectedIndex];
@@ -1366,10 +1327,7 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const response = await fetch('/api/method/upande_scp.serverscripts.get_bom_stock_balances.getBomStockBalances', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Frappe-CSRF-Token': "{{csrf_token}}"
-                },
+                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': "{{csrf_token}}" },
                 body: JSON.stringify({ data: JSON.stringify({ chemicals: uniqueChemicals }) })
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -1377,38 +1335,188 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = r.message || r.data;
             if (data) {
                 const stockData = data.stock_balances;
-                if (data.item_uom_map) {
-                    state.chemicalUomCache = { ...state.chemicalUomCache, ...data.item_uom_map };
-                    refreshRowUoms();
-                }
+                if (data.item_uom_map) { state.chemicalUomCache = { ...state.chemicalUomCache, ...data.item_uom_map }; refreshRowUoms(); }
                 if (stockData) {
                     const firstItem = Object.keys(stockData)[0];
                     const allWarehouses = firstItem ? Object.keys(stockData[firstItem]) : [];
                     renderStockTable(stockData, allWarehouses);
-                } else {
-                    els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data found</td></tr>';
-                }
-            } else {
-                els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data found</td></tr>';
-            }
+                } else { els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data found</td></tr>'; }
+            } else { els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data found</td></tr>'; }
         } catch (error) {
             els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-red-500">Error fetching stock balances</td></tr>';
-        } finally {
-            hideLoader();
-        }
+        } finally { hideLoader(); }
     };
 
+    // ==================== POPULATE VARIETIES (with multi-select checkboxes) ====================
     const populateVarieties = (varieties) => {
+        state.allVarieties = varieties;
+
+        // Hidden select for backward compatibility
         els.variety.innerHTML = '<option value="">Select variety</option>';
+        
+        // Clear checkboxes list
+        els.varietyCheckboxesList.innerHTML = "";
+        
+        varieties.forEach((v) => {
+            // Add to hidden select
+            const option = document.createElement("option");
+            option.value = v.name;
+            option.textContent = v.name;
+            els.variety.appendChild(option);
+            
+            // Add checkbox item
+            const label = document.createElement("label");
+            label.className = "variety-checkbox-item";
+            label.innerHTML = `
+                <input type="checkbox" value="${v.name}" class="variety-checkbox" style="margin-right: 8px;">
+                <span>${v.name}</span>
+            `;
+            els.varietyCheckboxesList.appendChild(label);
+        });
+        
+        // Setup event listeners for checkboxes
+        setupVarietyCheckboxes();
+
+        // Multi-select for scope "Specific Variety"
         els.varietyMultiSelect.innerHTML = "";
         varieties.forEach((v) => {
             const option = document.createElement("option");
             option.value = v.name;
             option.textContent = v.name;
-            els.variety.appendChild(option);
-            const multiOption = option.cloneNode(true);
-            els.varietyMultiSelect.appendChild(multiOption);
+            els.varietyMultiSelect.appendChild(option);
         });
+
+        // Add "Select All / Deselect All" toggle button
+        renderVarietySelectAllToggle();
+    };
+
+    const setupVarietyCheckboxes = () => {
+        const allCheckbox = els.varietyDropdownMenu.querySelector('input[value="__all__"]');
+        const varietyCheckboxes = els.varietyCheckboxesList.querySelectorAll('.variety-checkbox');
+        
+        // Handle "All Varieties" checkbox
+        if (allCheckbox) {
+            allCheckbox.addEventListener('change', (e) => {
+                const isChecked = e.target.checked;
+                varietyCheckboxes.forEach(cb => cb.checked = isChecked);
+                
+                if (isChecked) {
+                    state.selectedVarieties = new Set(['__all__']);
+                } else {
+                    state.selectedVarieties.clear();
+                }
+                updateVarietyDisplay();
+            });
+        }
+        
+        // Handle individual variety checkboxes
+        varietyCheckboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                if (cb.checked) {
+                    state.selectedVarieties.add(cb.value);
+                    // Uncheck "All Varieties" if an individual is selected
+                    if (allCheckbox) allCheckbox.checked = false;
+                    state.selectedVarieties.delete('__all__');
+                } else {
+                    state.selectedVarieties.delete(cb.value);
+                }
+                updateVarietyDisplay();
+            });
+        });
+        
+        // Search functionality
+        if (els.varietySearchInput) {
+            els.varietySearchInput.addEventListener('input', (e) => {
+                const searchTerm = e.target.value.toLowerCase();
+                varietyCheckboxes.forEach(cb => {
+                    const label = cb.closest('.variety-checkbox-item');
+                    const text = label.textContent.toLowerCase();
+                    label.style.display = text.includes(searchTerm) ? 'flex' : 'none';
+                });
+            });
+        }
+    };
+
+    const updateVarietyDisplay = () => {
+        const selectedArray = Array.from(state.selectedVarieties);
+        
+        if (selectedArray.length === 0) {
+            els.varietySelectedDisplay.innerHTML = '<span class="tw-text-gray-500">Select varieties...</span>';
+            els.variety.value = "";
+        } else if (selectedArray.includes('__all__')) {
+            els.varietySelectedDisplay.innerHTML = '<span class="variety-pill">All Varieties</span>';
+            els.variety.value = "__all__";
+        } else {
+            const pillsHtml = selectedArray.map(v => 
+                `<span class="variety-pill">${v}<button type="button" class="variety-pill-remove" data-variety="${v}">×</button></span>`
+            ).join('');
+            els.varietySelectedDisplay.innerHTML = pillsHtml;
+            
+            // Set first selected variety in hidden select for threshold logic
+            els.variety.value = selectedArray[0];
+            
+            // Add remove handlers
+            els.varietySelectedDisplay.querySelectorAll('.variety-pill-remove').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const variety = btn.dataset.variety;
+                    state.selectedVarieties.delete(variety);
+                    const checkbox = els.varietyCheckboxesList.querySelector(`input[value="${variety}"]`);
+                    if (checkbox) checkbox.checked = false;
+                    updateVarietyDisplay();
+                });
+            });
+        }
+        
+        // Trigger threshold and grid updates
+        renderThresholdCheckboxes(els.variety.value);
+        updateGrid();
+    };
+
+    // Toggle dropdown on click
+    if (els.varietySelectedDisplay) {
+        els.varietySelectedDisplay.addEventListener('click', () => {
+            const isVisible = els.varietyDropdownMenu.style.display === 'block';
+            els.varietyDropdownMenu.style.display = isVisible ? 'none' : 'block';
+        });
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (els.varietyDropdownWrapper && !els.varietyDropdownWrapper.contains(e.target)) {
+            if (els.varietyDropdownMenu) {
+                els.varietyDropdownMenu.style.display = 'none';
+            }
+        }
+    });
+
+    // ==================== "Select All / Deselect All" toggle for multi-select ====================
+    const renderVarietySelectAllToggle = () => {
+        const existingToggle = document.getElementById('variety-select-all-toggle');
+        if (existingToggle) existingToggle.remove();
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.id = 'variety-select-all-toggle';
+        toggleBtn.className = 'farm-btn';
+        toggleBtn.style.marginTop = '6px';
+        toggleBtn.style.fontSize = '0.75rem';
+        toggleBtn.style.padding = '4px 10px';
+        toggleBtn.textContent = 'Select All Varieties';
+
+        let allSelected = false;
+
+        toggleBtn.addEventListener('click', () => {
+            allSelected = !allSelected;
+            const options = els.varietyMultiSelect.options;
+            for (let i = 0; i < options.length; i++) {
+                options[i].selected = allSelected;
+            }
+            toggleBtn.textContent = allSelected ? 'Deselect All Varieties' : 'Select All Varieties';
+            els.varietyMultiSelect.dispatchEvent(new Event('change'));
+        });
+
+        els.varietyMultiSelect.parentNode.insertBefore(toggleBtn, els.varietyMultiSelect.nextSibling);
     };
 
     const populateTeams = (teams) => {
@@ -1438,7 +1546,6 @@ document.addEventListener("DOMContentLoaded", () => {
         row.style.gridTemplateColumns = "2fr 1fr 1fr auto";
         row.style.gap = "12px";
         row.style.alignItems = "center";
-
         const nameInput = document.createElement("input");
         nameInput.type = "text";
         nameInput.className = "tw-chemical-name-input form-input";
@@ -1446,11 +1553,7 @@ document.addEventListener("DOMContentLoaded", () => {
         nameInput.placeholder = "Chemical";
         nameInput.readOnly = !!itemName;
         nameInput.addEventListener("focus", e => showPopup(e.target, state.allChemicals));
-        nameInput.addEventListener("input", () => {
-            clearTimeout(nameInput._debounce);
-            nameInput._debounce = setTimeout(updateStockBalances, 500);
-        });
-
+        nameInput.addEventListener("input", () => { clearTimeout(nameInput._debounce); nameInput._debounce = setTimeout(updateStockBalances, 500); });
         const rateInput = document.createElement("input");
         rateInput.type = "number";
         rateInput.className = "tw-chemical-qty-input form-input";
@@ -1459,20 +1562,17 @@ document.addEventListener("DOMContentLoaded", () => {
         rateInput.step = "0.01";
         rateInput.placeholder = "Rate/1000 L";
         rateInput.addEventListener("input", updateStockBalances);
-
         const uomInput = document.createElement("input");
         uomInput.type = "text";
         uomInput.className = "tw-chemical-uom-input form-input";
         uomInput.value = uom;
         uomInput.readOnly = true;
         uomInput.placeholder = "UoM";
-
         const removeBtn = document.createElement("button");
         removeBtn.type = "button";
         removeBtn.className = "btn-remove";
         removeBtn.innerHTML = "×";
         removeBtn.onclick = () => { row.remove(); updateStockBalances(); };
-
         row.append(nameInput, rateInput, uomInput, removeBtn);
         return row;
     };
@@ -1486,43 +1586,86 @@ document.addEventListener("DOMContentLoaded", () => {
         return active;
     };
 
-    // ==================== FINAL TARGETS (user selects manually) ====================
     const populateFinalTargets = () => {
-        const select = els.finalTargets;
-
-        // Collect ALL unique targets from scouting data
-        const allTargets = new Set();
+        const scoutingTargets = new Set();
         state.scoutingData.forEach(entry => {
             state.activeObservationTypes.forEach(obsType => {
-                const obsArray = entry[obsType] || [];
-                obsArray.forEach(obs => {
-                    if (obs.name) allTargets.add(obs.name);
-                });
+                (entry[obsType] || []).forEach(obs => { if (obs.name) scoutingTargets.add(obs.name); });
             });
         });
+        scoutingTargets.forEach(name => {
+            if (!state.allTargetOptions.find(t => t.name === name)) {
+                state.allTargetOptions.push({ name, type: 'Scouting' });
+            }
+        });
+        state.allTargetOptions.sort((a, b) => a.name.localeCompare(b.name));
+    };
 
-        // Remember previously selected targets so repopulating preserves user choices
-        const previouslySelected = state.selectedTargets && state.selectedTargets.size > 0
-            ? state.selectedTargets
-            : null;
+    // ==================== TARGET AUTOCOMPLETE + PILLS ====================
+    const targetInput = document.getElementById("target-autocomplete-input");
+    const targetDropdown = document.getElementById("target-autocomplete-dropdown");
+    const targetPillsContainer = document.getElementById("target-pills-container");
 
-        select.innerHTML = "";
-
-        Array.from(allTargets).sort().forEach(target => {
-            const opt = document.createElement("option");
-            opt.value = target;
-            opt.textContent = target;
-            // Only restore a prior selection — nothing selected by default on first load
-            opt.selected = previouslySelected ? previouslySelected.has(target) : false;
-            select.appendChild(opt);
+    const renderTargetPills = () => {
+        targetPillsContainer.innerHTML = "";
+        state.selectedTargets.forEach(target => {
+            const pill = document.createElement("span");
+            pill.className = "target-pill";
+            pill.innerHTML = `${target} <button type="button" class="target-pill-remove" data-target="${target}">×</button>`;
+            targetPillsContainer.appendChild(pill);
+        });
+        targetPillsContainer.querySelectorAll(".target-pill-remove").forEach(btn => {
+            btn.addEventListener("click", () => { state.selectedTargets.delete(btn.dataset.target); renderTargetPills(); });
         });
     };
 
-    // Persist user selections into state whenever they interact with the dropdown
-    els.finalTargets.addEventListener("change", () => {
-        state.selectedTargets = new Set(
-            Array.from(els.finalTargets.selectedOptions).map(opt => opt.value)
+    const showTargetDropdown = (filter = "") => {
+        const filterUpper = filter.toUpperCase();
+        const matches = state.allTargetOptions.filter(t =>
+            !state.selectedTargets.has(t.name) && t.name.toUpperCase().includes(filterUpper)
         );
+        if (matches.length === 0 && filter.trim()) {
+            targetDropdown.innerHTML = `<div class="target-dropdown-item target-dropdown-custom" data-value="${filter.trim()}">+ Add "${filter.trim()}"</div>`;
+        } else if (matches.length === 0) {
+            targetDropdown.innerHTML = `<div class="target-dropdown-empty">Type to search pests & diseases...</div>`;
+        } else {
+            targetDropdown.innerHTML = matches.slice(0, 20).map(t =>
+                `<div class="target-dropdown-item" data-value="${t.name}">
+                    <span>${t.name}</span>
+                    <span class="target-type-badge target-type-${t.type.toLowerCase()}">${t.type}</span>
+                </div>`
+            ).join("");
+            if (filter.trim() && !matches.find(m => m.name.toUpperCase() === filterUpper)) {
+                targetDropdown.innerHTML += `<div class="target-dropdown-item target-dropdown-custom" data-value="${filter.trim()}">+ Add "${filter.trim()}"</div>`;
+            }
+        }
+        targetDropdown.classList.add("active");
+        targetDropdown.querySelectorAll(".target-dropdown-item").forEach(item => {
+            item.addEventListener("click", () => {
+                state.selectedTargets.add(item.dataset.value);
+                renderTargetPills();
+                targetInput.value = "";
+                targetDropdown.classList.remove("active");
+                targetInput.focus();
+            });
+        });
+    };
+
+    targetInput.addEventListener("focus", async () => {
+        if (state.allTargetOptions.length === 0) await fetchAllTargets();
+        showTargetDropdown(targetInput.value);
+    });
+    targetInput.addEventListener("input", () => { showTargetDropdown(targetInput.value); });
+    targetInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            const val = targetInput.value.trim();
+            if (val) { state.selectedTargets.add(val); renderTargetPills(); targetInput.value = ""; targetDropdown.classList.remove("active"); }
+        }
+        if (e.key === "Escape") { targetDropdown.classList.remove("active"); }
+    });
+    document.addEventListener("click", (e) => {
+        if (!e.target.closest("#target-autocomplete-wrapper")) { targetDropdown.classList.remove("active"); }
     });
 
     const populateBomDetails = (bomName) => {
@@ -1539,9 +1682,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 els.bomChemicalsList.appendChild(row);
             });
             updateStockBalances();
-        } else {
-            els.bomDetailsContainer.classList.add("tw-hidden");
-        }
+        } else { els.bomDetailsContainer.classList.add("tw-hidden"); }
     };
 
     const calculateAreaToSpray = () => {
@@ -1601,17 +1742,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const refreshRowUoms = () => {
         document.querySelectorAll(".chemical-row, .bom-chemical-row").forEach(row => {
             const isBomRow = row.classList.contains("bom-chemical-row");
-            const nameInput = row.querySelector(
-                isBomRow ? ".bom-chemical-name-input" : ".tw-chemical-name-input"
-            );
-            const uomInput = row.querySelector(
-                isBomRow ? ".bom-chemical-uom-input" : ".tw-chemical-uom-input"
-            );
+            const nameInput = row.querySelector(isBomRow ? ".bom-chemical-name-input" : ".tw-chemical-name-input");
+            const uomInput = row.querySelector(isBomRow ? ".bom-chemical-uom-input" : ".tw-chemical-uom-input");
             if (nameInput && uomInput) {
                 const name = nameInput.value.trim();
-                if (name && state.chemicalUomCache[name]) {
-                    uomInput.value = state.chemicalUomCache[name];
-                }
+                if (name && state.chemicalUomCache[name]) { uomInput.value = state.chemicalUomCache[name]; }
             }
         });
     };
@@ -1619,19 +1754,17 @@ document.addEventListener("DOMContentLoaded", () => {
     window.handleWarehouseChange = function (element) {
         const itemCode = element.getAttribute("data-item-code");
         const warehouse = element.value;
-        if (state.sourceWarehouseCache[itemCode]) {
-            state.sourceWarehouseCache[itemCode].source_warehouse = warehouse || null;
-        }
+        if (state.sourceWarehouseCache[itemCode]) { state.sourceWarehouseCache[itemCode].source_warehouse = warehouse || null; }
     };
 
     // ==================== EVENT LISTENERS ====================
-    els.greenhouse.addEventListener("change", (e) => {
+    els.greenhouse.addEventListener("change", async (e) => {
         if (e.target.value) {
-            els.variety.value = "";
             els.sprayType.value = "";
             els.kit.value = "";
             state.kitWarehouse = "";
             state.selectedTargets = new Set();
+            state.selectedVarieties = new Set();
             state.showBothReports = false;
             state.dataMapLatest = new Map();
             state.dataMapPrevious = new Map();
@@ -1647,13 +1780,13 @@ document.addEventListener("DOMContentLoaded", () => {
             els.stockBalancesContainer.classList.add("tw-hidden");
             els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-4 tw-text-gray-500">Loading...</td></tr>';
             els.warehouseHeadersRow.innerHTML = "";
+            
+            // Fetch scouting data and all targets in parallel
+            await Promise.all([
+                fetchScoutingData(e.target.value),
+                fetchAllTargets()
+            ]);
         }
-        fetchScoutingData(e.target.value);
-    });
-
-    els.variety.addEventListener("change", () => {
-        renderThresholdCheckboxes(els.variety.value);
-        updateGrid();
     });
 
     els.scope.addEventListener("change", (e) => {
@@ -1673,24 +1806,25 @@ document.addEventListener("DOMContentLoaded", () => {
     els.varietyMultiSelect.addEventListener("change", () => {
         const selectedOptions = Array.from(els.varietyMultiSelect.selectedOptions);
         const selectedVarietyNames = selectedOptions.map(opt => opt.textContent);
+
+        // Update the "Select All" toggle button label
+        const toggleBtn = document.getElementById('variety-select-all-toggle');
+        if (toggleBtn) {
+            const allSelected = selectedOptions.length === els.varietyMultiSelect.options.length;
+            toggleBtn.textContent = allSelected ? 'Deselect All Varieties' : 'Select All Varieties';
+        }
+
         els.selectedVarietiesDisplay.innerHTML = selectedVarietyNames.length > 0
-            ? `<p class="tw-font-semibold">Selected:</p> ${selectedVarietyNames.join(", ")}`
+            ? `<p class="tw-font-semibold">Selected (${selectedVarietyNames.length}):</p> ${selectedVarietyNames.join(", ")}`
             : '<p class="tw-text-gray-500">Selected varieties will appear here...</p>';
         calculateAreaToSpray();
     });
 
     els.bedNumbers.addEventListener("input", calculateAreaToSpray);
 
-    els.bom.addEventListener("change", (e) => {
-        populateBomDetails(e.target.value);
-        updateStockBalances();
-    });
+    els.bom.addEventListener("change", (e) => { populateBomDetails(e.target.value); updateStockBalances(); });
 
-    els.addChemicalBtn.addEventListener("click", () => {
-        const newRow = createChemicalRow();
-        els.bomChemicalsList.appendChild(newRow);
-        updateStockBalances();
-    });
+    els.addChemicalBtn.addEventListener("click", () => { const newRow = createChemicalRow(); els.bomChemicalsList.appendChild(newRow); updateStockBalances(); });
 
     els.targetsContainer.addEventListener("change", updateGrid);
     els.stagesContainer.addEventListener("change", updateGrid);
@@ -1698,16 +1832,13 @@ document.addEventListener("DOMContentLoaded", () => {
     els.thresholdContainer.addEventListener("change", updateGrid);
 
     els.popupOverlay.addEventListener("click", (e) => {
-        if (e.target.id === "global-popup-overlay") {
-            els.popupOverlay.classList.remove("active");
-        }
+        if (e.target.id === "global-popup-overlay") { els.popupOverlay.classList.remove("active"); }
     });
 
     // ==================== FORM SUBMISSION ====================
     document.getElementById("spray-plan-form").addEventListener("submit", async (e) => {
         e.preventDefault();
         const greenhouse = els.greenhouse.value;
-        const variety = els.variety.value;
         const sprayType = els.sprayType.value;
         const kit = els.kit.value;
         const scope = els.scope.value;
@@ -1718,39 +1849,25 @@ document.addEventListener("DOMContentLoaded", () => {
         const areaToSpray = els.areaToSpray.value;
         const sprayTeam = els.sprayTeam.value;
         const scheduledApplicationTime = els.scheduledApplicationTime.value || null;
-        const selectedTargets = Array.from(els.finalTargets.selectedOptions).map(opt => opt.value);
+        const selectedTargets = Array.from(state.selectedTargets);
 
-        if (selectedTargets.length === 0) {
-            showToast("Please select at least one target.", "error");
-            return;
-        }
+        if (selectedTargets.length === 0) { showToast("Please select at least one target.", "error"); return; }
 
         const targets = selectedTargets;
         const { activeStages, activeSections } = getActiveFilters();
         const chemicals = getFinalChemicals();
 
-        if (!greenhouse || targets.length === 0 || activeStages.length === 0 || activeSections.length === 0 || !sprayType || !kit || !scope || !bom) {
-            showToast("Please fill out all required fields.", "error");
-            return;
+        if (!greenhouse || targets.length === 0 || !sprayType || !kit || !scope || !bom) {
+            showToast("Please fill out all required fields.", "error"); return;
         }
-
-        if (chemicals.length === 0) {
-            showToast("Please add at least one chemical.", "error");
-            return;
-        }
-
+        if (chemicals.length === 0) { showToast("Please add at least one chemical.", "error"); return; }
         for (const chemical of chemicals) {
             const sourceWarehouse = state.sourceWarehouseCache[chemical.chemical]?.source_warehouse;
             if (!chemical.chemical || !chemical.uom || chemical.application_rate <= 0 || !sourceWarehouse) {
-                showToast("All chemical rows must have valid item name, quantity, UoM, and source warehouse.", "error");
-                return;
+                showToast("All chemical rows must have valid item name, quantity, UoM, and source warehouse.", "error"); return;
             }
         }
-
-        if (!waterPh || !waterHardness) {
-            showToast("Please provide values for water pH and water hardness.", "error");
-            return;
-        }
+        if (!waterPh || !waterHardness) { showToast("Please provide values for water pH and water hardness.", "error"); return; }
 
         let custom_scope_value = "";
         if (scope === "Specific Variety") {
@@ -1765,10 +1882,14 @@ document.addEventListener("DOMContentLoaded", () => {
             source_warehouse: state.sourceWarehouseCache[chem.chemical]?.source_warehouse || ""
         }));
 
+        // Get selected varieties for the form submission
+        const selectedVarietiesArray = Array.from(state.selectedVarieties);
+        const varietyToSend = selectedVarietiesArray.includes('__all__') ? '' : selectedVarietiesArray.join(',');
+
         const formData = {
             custom_type: "Application Floor Plan",
             custom_greenhouse: greenhouse,
-            custom_variety: variety,
+            custom_variety: varietyToSend,
             custom_targets: targets,
             custom_spray_type: sprayType,
             custom_kit: kit,
@@ -1786,41 +1907,21 @@ document.addEventListener("DOMContentLoaded", () => {
             custom_scheduled_application_time: scheduledApplicationTime
         };
 
-        // Show loader and keep it up through the entire submission flow
         showLoader('Validating spray plan...');
 
         try {
-            const fullPayload = {
-                payload: { raw_data: formData }
-            };
+            const fullPayload = { payload: { raw_data: formData } };
             const response = await fetch('/api/method/upande_scp.serverscripts.validate_frac_irac_guidelines.validateGuidelines', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Frappe-CSRF-Token': "{{csrf_token}}"
-                },
+                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': "{{csrf_token}}" },
                 body: JSON.stringify(fullPayload)
             });
-
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
             const r = await response.json();
             const validationResult = r.message;
 
-            if (validationResult?.valid === true) {
-                // Validation passed — keep loader showing, hand off to createWorkOrder
-                setLoaderMessage('Creating spray plan...');
-                createWorkOrder(formData);
-                return;
-            }
-
-            if (validationResult?.valid === false) {
-                // Hide loader so user can read and interact with the dialog
-                hideLoader();
-                showValidationDialog(validationResult.errors, formData);
-                return;
-            }
-
+            if (validationResult?.valid === true) { setLoaderMessage('Creating spray plan...'); createWorkOrder(formData); return; }
+            if (validationResult?.valid === false) { hideLoader(); showValidationDialog(validationResult.errors, formData); return; }
             showToast("Unexpected response structure from validation server.", "error");
             hideLoader();
         } catch (error) {
@@ -1846,114 +1947,63 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="validation-dialog-body">
             ${errorHtml}
             <div class="validation-warning-box">
-              <p class="validation-warning-title">
-                Warning: Do you want to bypass these guidelines and create the Work Order anyway?
-              </p>
-              <p class="validation-warning-text">
-                Bypassing may lead to reduced effectiveness and increased resistance.
-              </p>
+              <p class="validation-warning-title">Warning: Do you want to bypass these guidelines and create the Work Order anyway?</p>
+              <p class="validation-warning-text">Bypassing may lead to reduced effectiveness and increased resistance.</p>
             </div>
           </div>
           <div class="validation-dialog-footer">
             <button class="validation-btn validation-btn-cancel" onclick="this.closest('.validation-dialog-overlay').remove(); showToast('Work Order creation cancelled', 'info');">Cancel</button>
             <button class="validation-btn validation-btn-bypass" id="bypass-validation-btn">Bypass and Create</button>
           </div>
-        </div>
-      `;
+        </div>`;
 
         const style = document.createElement('style');
         style.textContent = `
-        .validation-dialog-overlay {
-          position: fixed;
-          top: 0; left: 0; right: 0; bottom: 0;
-          background: rgba(0,0,0,0.5);
-          display: flex; align-items: center; justify-content: center;
-          z-index: 9999;
-        }
-        .validation-dialog {
-          background: white; border-radius: 8px;
-          max-width: 800px; width: 90%; max-height: 90vh;
-          display: flex; flex-direction: column;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-        }
-        .validation-dialog-header {
-          padding: 20px; border-bottom: 1px solid #e5e7eb;
-          display: flex; justify-content: space-between; align-items: center;
-        }
+        .validation-dialog-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+        .validation-dialog { background: white; border-radius: 8px; max-width: 800px; width: 90%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+        .validation-dialog-header { padding: 20px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
         .validation-dialog-header h3 { margin: 0; font-size: 20px; color: #1f2937; }
-        .validation-dialog-close {
-          background: none; border: none; font-size: 28px; color: #6b7280;
-          cursor: pointer; width: 32px; height: 32px;
-          display: flex; align-items: center; justify-content: center;
-        }
+        .validation-dialog-close { background: none; border: none; font-size: 28px; color: #6b7280; cursor: pointer; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; }
         .validation-dialog-close:hover { color: #1f2937; }
         .validation-dialog-body { padding: 20px; overflow-y: auto; flex: 1; }
-        .validation-dialog-body ul {
-          list-style-type: none; padding: 0; margin: 0 0 20px 0;
-          border: 1px solid #ffcdd2; background-color: #ffebee; border-radius: 4px;
-        }
-        .validation-dialog-body li {
-          padding: 10px 15px; color: #c62828; font-size: 14px;
-          border-bottom: 1px dashed #ffcdd2;
-        }
+        .validation-dialog-body ul { list-style-type: none; padding: 0; margin: 0 0 20px 0; border: 1px solid #ffcdd2; background-color: #ffebee; border-radius: 4px; }
+        .validation-dialog-body li { padding: 10px 15px; color: #c62828; font-size: 14px; border-bottom: 1px dashed #ffcdd2; }
         .validation-dialog-body li:last-child { border-bottom: none; }
-        .validation-warning-box {
-          margin-top: 20px; padding: 15px;
-          background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;
-        }
+        .validation-warning-box { margin-top: 20px; padding: 15px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; }
         .validation-warning-title { margin: 0; color: #856404; font-weight: bold; }
         .validation-warning-text { margin: 10px 0 0 0; color: #856404; font-size: 0.9em; }
-        .validation-dialog-footer {
-          padding: 20px; border-top: 1px solid #e5e7eb;
-          display: flex; justify-content: flex-end; gap: 10px;
-        }
-        .validation-btn {
-          padding: 10px 20px; border-radius: 6px; border: none;
-          font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s;
-        }
+        .validation-dialog-footer { padding: 20px; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: 10px; }
+        .validation-btn { padding: 10px 20px; border-radius: 6px; border: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
         .validation-btn-cancel { background: #f3f4f6; color: #374151; }
         .validation-btn-cancel:hover { background: #e5e7eb; }
         .validation-btn-bypass { background: #1f2937; color: white; }
-        .validation-btn-bypass:hover { background: #111827; }
-      `;
+        .validation-btn-bypass:hover { background: #111827; }`;
         document.head.appendChild(style);
         document.body.appendChild(dialogOverlay);
 
         document.getElementById('bypass-validation-btn').addEventListener('click', () => {
             dialogOverlay.remove();
             showToast('Creating Work Order (Guidelines Bypassed)', 'warning');
-            // Re-show loader since user dismissed the dialog and we're proceeding
             showLoader('Creating spray plan...');
             createWorkOrder(formData);
         });
     };
 
     const createWorkOrder = async (data) => {
-        // Loader is already showing at this point — just update the message
         setLoaderMessage('Creating spray plan...');
-
         try {
             const fullPayload = { payload: { raw_data: data } };
             const response = await fetch('/api/method/upande_scp.serverscripts.create_application_work_order.createApplicationWorkOrder', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Frappe-CSRF-Token': "{{csrf_token}}"
-                },
+                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': "{{csrf_token}}" },
                 body: JSON.stringify(fullPayload)
             });
-
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
             const r = await response.json();
-
             if (r.message && r.message.status === "success") {
                 setLoaderMessage('Work Order created! Redirecting...');
                 showToast(`Work Order ${r.message.work_order_name} created successfully!`, "success");
-                // Keep loader visible until redirect completes — no hideLoader()
-                setTimeout(() => {
-                    window.location.href = `/app/work-order/${r.message.work_order_name}`;
-                }, 1500);
+                setTimeout(() => { window.location.href = `/app/work-order/${r.message.work_order_name}`; }, 1500);
             } else {
                 showToast(`Error creating Work Order: ${r.message?.message || "Unknown error"}`, "error");
                 hideLoader();

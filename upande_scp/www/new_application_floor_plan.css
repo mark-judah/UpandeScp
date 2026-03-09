@@ -257,6 +257,109 @@
     position: relative;
   }
 
+  /* Target pills */
+.target-pills-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+    min-height: 8px;
+}
+
+.target-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: #e0e7ff;
+    color: #3730a3;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.target-pill-remove {
+    background: none;
+    border: none;
+    color: #6366f1;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 2px;
+    line-height: 1;
+}
+
+.target-pill-remove:hover {
+    color: #dc2626;
+}
+
+/* Autocomplete dropdown */
+.target-autocomplete-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 100;
+    display: none;
+}
+
+.target-autocomplete-dropdown.active {
+    display: block;
+}
+
+.target-dropdown-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+}
+
+.target-dropdown-item:hover {
+    background: #f3f4f6;
+}
+
+.target-dropdown-custom {
+    color: #6366f1;
+    font-weight: 500;
+    border-top: 1px solid #e5e7eb;
+}
+
+.target-dropdown-empty {
+    padding: 12px;
+    color: #9ca3af;
+    font-size: 13px;
+    text-align: center;
+}
+
+.target-type-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 500;
+}
+
+.target-type-badge.target-type-pest {
+    background: #fef2f2;
+    color: #dc2626;
+}
+
+.target-type-badge.target-type-disease {
+    background: #fefce8;
+    color: #ca8a04;
+}
+
+.target-type-badge.target-type-scouting {
+    background: #f0fdf4;
+    color: #16a34a;
+}
+
   .hm-data-cell:hover {
     transform: scale(1.25);
     z-index: 20;
@@ -838,4 +941,65 @@
     .hm-cards-container {
       grid-template-columns: 1fr;
     }
+
+    .variety-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  margin-top: 4px;
+}
+
+.variety-checkbox-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.variety-checkbox-item:hover {
+  background: #f3f4f6;
+}
+
+.variety-selected-display {
+  cursor: pointer;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.variety-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: #e0f2fe;
+  color: #0c4a6e;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.variety-pill-remove {
+  background: none;
+  border: none;
+  color: #0c4a6e;
+  cursor: pointer;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 0;
+  margin-left: 4px;
+}
+
+.variety-pill-remove:hover {
+  color: #dc2626;
+}
   }

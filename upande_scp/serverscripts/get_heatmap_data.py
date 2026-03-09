@@ -266,3 +266,25 @@ def getFarmsAndGreenhouses():
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Farms and Greenhouses Error")
         frappe.throw(_("Error fetching farms and greenhouses: {0}").format(str(e)))
+
+
+@frappe.whitelist()
+def getAllScoutedGreenhouses(date):
+    """
+    Fetch all greenhouses that have scouting data for a given date.
+    Returns a list of greenhouse names that were scouted.
+    """
+    try:
+        scouted = frappe.db.sql("""
+            SELECT DISTINCT greenhouse
+            FROM `tabScouting Entry`
+            WHERE date_of_capture = %s
+            ORDER BY greenhouse
+        """, (date,), as_dict=True)
+        
+        return {
+            "greenhouses": [row.greenhouse for row in scouted]
+        }
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Get All Scouted Greenhouses Error")
+        frappe.throw(_("Error fetching scouted greenhouses: {0}").format(str(e)))

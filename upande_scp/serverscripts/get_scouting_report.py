@@ -7,9 +7,14 @@ def getScoutingData():
     """
     Fetches scouting data + susceptibility per pest/disease.
     Returns the last 2 scouting report dates so the UI can overlay them.
+    Now also returns varieties, BOMs, chemicals, bed data, and spray teams
+    even when no scouting reports exist for the greenhouse.
     """
     try:
         greenhouse = frappe.form_dict.get("greenhouse")
+
+        if not greenhouse:
+            frappe.throw("Greenhouse is required.")
 
         # ── Get last 2 distinct scouting dates ──────────────────────────
         latest_dates = frappe.get_all(
@@ -22,23 +27,8 @@ def getScoutingData():
             group_by="date_of_capture"
         )
 
-        if not latest_dates:
-            return {
-                "scouting_entries": [],
-                "previous_scouting_entries": [],
-                "varieties": [],
-                "susceptibility": [],
-                "boms": [],
-                "observation_metadata": {},
-                "scouting_date": None,
-                "previous_scouting_date": None
-            }
-
-        date_str          = str(latest_dates[0].date_of_capture)
-        prev_date_str     = str(latest_dates[1].date_of_capture) if len(latest_dates) > 1 else None
-
-        if not greenhouse:
-            frappe.throw("Greenhouse is required.")
+        date_str      = str(latest_dates[0].date_of_capture) if latest_dates else None
+        prev_date_str = str(latest_dates[1].date_of_capture) if len(latest_dates) > 1 else None
 
         # --- CONFIGURATION: Observation types ---
         observation_configs = {
@@ -95,7 +85,7 @@ def getScoutingData():
         # ── Helper: fetch + process entries for a given date ───────────
         def fetch_entries_for_date(target_date):
             if not target_date:
-                return []
+                return [], {}
 
             entries = frappe.get_all(
                 "Scouting Entry",
@@ -108,7 +98,7 @@ def getScoutingData():
             )
             entry_names = [e.name for e in entries]
             if not entry_names:
-                return []
+                return [], {}
 
             processed = {e.name: dict(e) for e in entries}
 
@@ -214,12 +204,9 @@ def getScoutingData():
 
             return list(processed.values()), items_in_data_all
 
-        # ── Fetch both reports ─────────────────────────────────────────
-        latest_result   = fetch_entries_for_date(date_str)
-        previous_result = fetch_entries_for_date(prev_date_str)
-
-        latest_entries,   items_latest   = latest_result   if latest_result   else ([], {})
-        previous_entries, items_previous = previous_result if previous_result else ([], {})
+        # ── Fetch both reports (safe even when dates are None) ─────────
+        latest_entries, items_latest     = fetch_entries_for_date(date_str)
+        previous_entries, items_previous = fetch_entries_for_date(prev_date_str)
 
         # ── Merge observation name maps (union of both reports) ─────────
         all_observation_names = {}
@@ -232,7 +219,7 @@ def getScoutingData():
             if merged:
                 all_observation_names[key] = [{"name": n, "color": c} for n, c in merged.items()]
 
-        # --- Varieties ---
+        # --- Varieties (always fetched, independent of scouting data) ---
         varieties_data = []
         variety_names  = []
 
@@ -266,84 +253,85 @@ def getScoutingData():
                     varieties_data = [{"name": row.variety} for row in rows if row.variety]
                     variety_names  = [v["name"] for v in varieties_data]
 
-        # --- Susceptibility (based on latest entries only) ---
-        scouting_entries_for_sus = frappe.get_all(
-            "Scouting Entry",
-            fields=["name", "bed", "zone"],
-            filters=[
-                ["greenhouse", "=", greenhouse],
-                ["date_of_capture", "=", date_str]
-            ]
-        )
-
-        item_thresholds = frappe.get_all(
-            "Chemical Requirements",
-            filters={"parent": ["in", variety_names]},
-            fields=["parent", "pest", "disease", "low", "moderate", "high"]
-        )
-        thresholds_by_variety = {}
-        for t in item_thresholds:
-            v = t.parent
-            if v not in thresholds_by_variety:
-                thresholds_by_variety[v] = []
-            thresholds_by_variety[v].append({
-                "pest": t.pest,
-                "disease": t.disease,
-                "low": t.low,
-                "moderate": t.moderate,
-                "high": t.high
-            })
-
-        total_zones = len(set(e.zone for e in scouting_entries_for_sus if e.zone)) or 1
-        affected_by_obs = {}
-        latest_by_name  = {e["name"]: e for e in latest_entries}
-
-        for entry in scouting_entries_for_sus:
-            processed_entry = latest_by_name.get(entry.name, {})
-            for key in ["pests_scouting_entry", "diseases_scouting_entry"]:
-                for obs in processed_entry.get(key, []):
-                    name = obs["name"]
-                    if name not in affected_by_obs:
-                        affected_by_obs[name] = {
-                            "zones": set(),
-                            "type": "pest" if key.startswith("pests") else "disease"
-                        }
-                    affected_by_obs[name]["zones"].add(entry.zone)
-
+        # --- Susceptibility (only computed when scouting data exists) ---
         susceptibility = []
-        for obs_name, data in affected_by_obs.items():
-            zones_affected = len(data["zones"])
-            percentage = round((zones_affected / total_zones) * 100, 2)
-            req_by_variety = {}
-            for v in varieties_data:
-                variety = v["name"]
-                thresh_list = thresholds_by_variety.get(variety, [])
-                match = next(
-                    (t for t in thresh_list
-                     if (t["pest"] == obs_name if data["type"] == "pest" else t["disease"] == obs_name)),
-                    None
-                )
-                if not match:
-                    req_by_variety[variety] = "unknown"
-                    continue
-                if percentage <= match["low"]:
-                    level = "low"
-                elif percentage <= match["moderate"]:
-                    level = "moderate"
-                else:
-                    level = "high"
-                req_by_variety[variety] = level
+        if date_str:
+            scouting_entries_for_sus = frappe.get_all(
+                "Scouting Entry",
+                fields=["name", "bed", "zone"],
+                filters=[
+                    ["greenhouse", "=", greenhouse],
+                    ["date_of_capture", "=", date_str]
+                ]
+            )
 
-            susceptibility.append({
-                "observation": obs_name,
-                "type": data["type"],
-                "zones_affected": zones_affected,
-                "total_zones": total_zones,
-                "percentage": percentage,
-                "requirement_by_variety": req_by_variety
-            })
+            item_thresholds = frappe.get_all(
+                "Chemical Requirements",
+                filters={"parent": ["in", variety_names]} if variety_names else {"parent": ""},
+                fields=["parent", "pest", "disease", "low", "moderate", "high"]
+            )
+            thresholds_by_variety = {}
+            for t in item_thresholds:
+                v = t.parent
+                if v not in thresholds_by_variety:
+                    thresholds_by_variety[v] = []
+                thresholds_by_variety[v].append({
+                    "pest": t.pest,
+                    "disease": t.disease,
+                    "low": t.low,
+                    "moderate": t.moderate,
+                    "high": t.high
+                })
 
-        # --- BOMs ---
+            total_zones = len(set(e.zone for e in scouting_entries_for_sus if e.zone)) or 1
+            affected_by_obs = {}
+            latest_by_name  = {e["name"]: e for e in latest_entries}
+
+            for entry in scouting_entries_for_sus:
+                processed_entry = latest_by_name.get(entry.name, {})
+                for key in ["pests_scouting_entry", "diseases_scouting_entry"]:
+                    for obs in processed_entry.get(key, []):
+                        name = obs["name"]
+                        if name not in affected_by_obs:
+                            affected_by_obs[name] = {
+                                "zones": set(),
+                                "type": "pest" if key.startswith("pests") else "disease"
+                            }
+                        affected_by_obs[name]["zones"].add(entry.zone)
+
+            for obs_name, data in affected_by_obs.items():
+                zones_affected = len(data["zones"])
+                percentage = round((zones_affected / total_zones) * 100, 2)
+                req_by_variety = {}
+                for v in varieties_data:
+                    variety = v["name"]
+                    thresh_list = thresholds_by_variety.get(variety, [])
+                    match = next(
+                        (t for t in thresh_list
+                         if (t["pest"] == obs_name if data["type"] == "pest" else t["disease"] == obs_name)),
+                        None
+                    )
+                    if not match:
+                        req_by_variety[variety] = "unknown"
+                        continue
+                    if percentage <= match["low"]:
+                        level = "low"
+                    elif percentage <= match["moderate"]:
+                        level = "moderate"
+                    else:
+                        level = "high"
+                    req_by_variety[variety] = level
+
+                susceptibility.append({
+                    "observation": obs_name,
+                    "type": data["type"],
+                    "zones_affected": zones_affected,
+                    "total_zones": total_zones,
+                    "percentage": percentage,
+                    "requirement_by_variety": req_by_variety
+                })
+
+        # --- BOMs (always fetched) ---
         chemical_mix_boms = frappe.get_all(
             "BOM",
             filters={"custom_item_group": "Chemical Mix", "docstatus": 1, "is_active": 1},
@@ -352,7 +340,7 @@ def getScoutingData():
         bom_names = [b["name"] for b in chemical_mix_boms]
         bom_items = frappe.db.get_all(
             "BOM Item",
-            filters={"parent": ["in", bom_names]},
+            filters={"parent": ["in", bom_names]} if bom_names else {"parent": ""},
             fields=["parent", "item_name", "qty", "uom"]
         )
 
@@ -373,7 +361,7 @@ def getScoutingData():
             # Previous report (may be empty list / None)
             "previous_scouting_entries": previous_entries,
             "previous_scouting_date": prev_date_str,
-            # Rest unchanged
+            # Always returned regardless of scouting data
             "susceptibility": susceptibility,
             "varieties": varieties_data,
             "boms": chemical_mix_boms,

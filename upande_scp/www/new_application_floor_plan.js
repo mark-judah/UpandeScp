@@ -1314,25 +1314,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const calculateAreaToSpray = () => {
         const scope = els.scope.value;
-        let totalAreaSqMeters = 0;
+        const allBedsSet = new Set(
+            (state.bedData || [])
+                .map(d => String(d?.bed || "").trim())
+                .filter(b => b.length > 0)
+        );
+        let totalBeds = allBedsSet.size;
+        if (!totalBeds) {
+            const dims = findMaxDimensions(state.scoutingData || []);
+            totalBeds = dims.maxBed || 0;
+        }
+        let selectedBedsCount = 0;
+        let totalAreaHectares = 0;
         if (scope === "Full Greenhouse") {
-            totalAreaSqMeters = 10000;
+            totalAreaHectares = 1;
         } else if (scope === "Specific Variety") {
             const selectedVarietyNames = Array.from(els.varietyMultiSelect.selectedOptions).map(opt => opt.value);
-            if (selectedVarietyNames.length > 0) {
+            if (selectedVarietyNames.length > 0 && totalBeds > 0) {
                 const selectedBaseNames = new Set(selectedVarietyNames);
-                const accountedVarieties = new Set();
-                state.bedData.forEach((d) => {
+                const targetBeds = new Set();
+                (state.bedData || []).forEach((d) => {
                     const baseName = normalizeVarietyName(d.variety);
-                    if (selectedBaseNames.has(baseName) && !accountedVarieties.has(d.variety) && d.total_variety_area > 0) {
-                        totalAreaSqMeters += d.total_variety_area;
-                        accountedVarieties.add(d.variety);
+                    if (selectedBaseNames.has(baseName) && d.bed) {
+                        targetBeds.add(String(d.bed));
                     }
                 });
+                selectedBedsCount = targetBeds.size;
+                totalAreaHectares = selectedBedsCount > 0 ? (selectedBedsCount / totalBeds) : 0;
             }
         } else if (scope === "Specific Bed(s)") {
             const bedString = els.bedNumbers.value.trim();
-            if (bedString) {
+            if (bedString && totalBeds > 0) {
                 const targetBeds = new Set();
                 const segments = bedString.split(",").map(s => s.trim()).filter(s => s.length > 0);
                 segments.forEach((segment) => {
@@ -1346,12 +1358,10 @@ document.addEventListener("DOMContentLoaded", () => {
                         if (singleBed) targetBeds.add(singleBed[1]);
                     }
                 });
-                state.bedData.forEach((d) => {
-                    if (targetBeds.has(d.bed)) totalAreaSqMeters += d.bed__area || 0;
-                });
+                selectedBedsCount = targetBeds.size;
+                totalAreaHectares = selectedBedsCount > 0 ? (selectedBedsCount / totalBeds) : 0;
             }
         }
-        const totalAreaHectares = totalAreaSqMeters > 0 ? totalAreaSqMeters / 10000 : 0;
         els.areaToSpray.value = totalAreaHectares > 0 ? totalAreaHectares.toFixed(4) : 0;
         const waterVolume = totalAreaHectares * WATER_VOLUME_RATE;
         els.waterVolume.value = waterVolume > 0 ? waterVolume.toFixed(2) : 0;

@@ -190,10 +190,12 @@ def createApplicationWorkOrder():
         })
         wo.insert(ignore_permissions=True)
 
-        # -------------------------------------------------- 11.5. Set include_item_in_manufacturing
-        # ERPNext doesn't always copy this flag from BOM, so set it manually.
-        for item in wo.required_items:
-            item.include_item_in_manufacturing = 1
+        # -------------------------------------------------- 11.5. Replace auto-generated items with ours
+        # ERPNext auto-populated required_items from BOM during insert.
+        # Clear them and set our custom ones instead.
+        wo.set("required_items", [])
+        for ri in required_items:
+            wo.append("required_items", ri)
 
         wo.save(ignore_permissions=True)
         frappe.db.commit()

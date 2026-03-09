@@ -35,11 +35,29 @@
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label" for="variety">Variety</label>
-            <select id="variety" class="form-select">
-              <option value="">Select variety</option>
-            </select>
-          </div>
+  <label class="form-label" for="variety">Variety</label>
+  <div id="variety-dropdown-wrapper" style="position:relative;">
+    <div id="variety-selected-display" class="form-input variety-selected-display" style="cursor:pointer; min-height: 42px; display: flex; align-items: center;">
+      <span class="tw-text-gray-500">Select varieties...</span>
+    </div>
+    <div id="variety-dropdown-menu" class="variety-dropdown-menu" style="display:none;">
+      <div class="variety-search-wrapper" style="padding: 8px; border-bottom: 1px solid #e5e7eb;">
+        <input type="text" id="variety-search-input" class="form-input" placeholder="Search varieties..." style="margin: 0;">
+      </div>
+      <div class="variety-options-container" style="max-height: 250px; overflow-y: auto;">
+        <label class="variety-checkbox-item" style="display: flex; align-items: center; padding: 8px 12px; cursor: pointer;">
+          <input type="checkbox" value="__all__" class="variety-checkbox" style="margin-right: 8px;">
+          <span style="font-weight: 600;">All Varieties</span>
+        </label>
+        <div id="variety-checkboxes-list"></div>
+      </div>
+    </div>
+  </div>
+  <!-- Hidden select for backward compatibility -->
+  <select id="variety" class="form-select" style="display:none;">
+    <option value="">Select variety</option>
+  </select>
+</div>
         </div>
         <!-- Filters Section -->
         <div class="form-section">
@@ -81,12 +99,16 @@
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label" for="final-targets">Targets *</label>
-            <select id="final-targets" multiple class="form-select" style="min-height: 120px;" required>
-            </select>
-            <small class="tw-text-gray-500 tw-text-xs">Hold Ctrl/Cmd to select multiple. These are the final targets for
-              the spray plan.</small>
-          </div>
+    <label class="form-label">Targets *</label>
+    <div id="target-autocomplete-wrapper" style="position:relative;">
+        <div id="target-pills-container" class="target-pills-container"></div>
+        <input type="text" id="target-autocomplete-input" class="form-input" placeholder="Search pests & diseases or type a custom target..." autocomplete="off">
+        <div id="target-autocomplete-dropdown" class="target-autocomplete-dropdown"></div>
+    </div>
+    <small class="tw-text-gray-500 tw-text-xs">Search from all pests & diseases, or type a custom name and press Enter.</small>
+    <!-- Keep hidden select for backward compat if needed -->
+    <select id="final-targets" multiple class="form-select" style="display:none;"></select>
+</div>
           <div class="form-group">
             <label class="form-label" for="kit">Kit</label>
             <select id="kit" class="form-select" required>

@@ -1399,18 +1399,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		const container = els.finalTargets;
 		container.innerHTML = "";
 
-		// Get ALL unique targets from scouting data
+		// Get ALL unique targets (Pests and Diseases only)
 		const allTargets = new Set();
-		state.scoutingData.forEach((entry) => {
-			state.activeObservationTypes.forEach((obsType) => {
-				const obsArray = entry[obsType] || [];
-				obsArray.forEach((obs) => {
-					if (obs.name) allTargets.add(obs.name);
-				});
-			});
-		});
-
-		// Add configured Pests and Diseases (even if not scouted)
 		if (state.allPests) state.allPests.forEach((p) => allTargets.add(p));
 		if (state.allDiseases) state.allDiseases.forEach((d) => allTargets.add(d));
 

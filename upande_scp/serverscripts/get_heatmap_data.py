@@ -280,3 +280,20 @@ def getFarmsAndGreenhouses():
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Farms and Greenhouses Error")
         frappe.throw(_("Error fetching farms and greenhouses: {0}").format(str(e)))
+
+
+@frappe.whitelist()
+def getAllScoutedGreenhouses(date):
+    try:
+        if not date:
+            frappe.throw(_("Date is required"))
+        entries = frappe.get_all(
+            "Scouting Entry",
+            filters={"date_of_capture": date},
+            fields=["greenhouse"]
+        )
+        names = sorted({e.get("greenhouse") for e in entries if e.get("greenhouse")})
+        return {"greenhouses": names}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Get All Scouted Greenhouses Error")
+        frappe.throw(_("Error fetching scouted greenhouses: {0}").format(str(e)))

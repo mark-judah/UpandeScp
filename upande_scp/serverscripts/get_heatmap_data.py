@@ -224,59 +224,30 @@ def getHeatmapData(date, greenhouse):
 
 @frappe.whitelist()
 def getFarmsAndGreenhouses():
-    """
-    Fetch all farms and their associated greenhouses
-    """
     try:
-        # Get all farms
-        farms = frappe.get_all(
-            "Farm",
-            fields=["name", "farm"],
-            order_by="farm asc"
-        )
-        
-        # Get all greenhouses (warehouses of type Greenhouse)
-        greenhouses = frappe.get_all(
-            "Warehouse",
-            filters={
-                "warehouse_type": "Greenhouse"
-            },
-            fields=["name", "warehouse_name", "custom_farm"],
-            order_by="name asc"
-        )
-        
-        # Group greenhouses by farm
+        meta = frappe.get_meta("Warehouse")
+        has_custom_farm = any(df.fieldname == "custom_farm" for df in meta.fields)
+        fields = ["name", "warehouse_name"] + (["custom_farm"] if has_custom_farm else [])
+        greenhouses = frappe.get_all("Warehouse",
+                                     filters={"warehouse_type": "Greenhouse"},
+                                     fields=fields,
+                                     order_by="warehouse_name asc")
         farms_data = {}
-        for farm in farms:
-            farm_name = farm.farm
-            farms_data[farm_name] = {
-                "name": farm_name,
-                "greenhouses": []
-            }
-        
-        # Add greenhouses to their respective farms
         for gh in greenhouses:
-            farm_name = gh.custom_farm
-            if farm_name and farm_name in farms_data:
-                farms_data[farm_name]["greenhouses"].append({
-                    "name": gh.name,
-                    "warehouse_name": gh.warehouse_name
-                })
-        
-        # Convert to list and filter out farms with no greenhouses
+            farm_name = gh.get("custom_farm") if has_custom_farm else "All"
+            if not farm_name:
+                farm_name = "Unassigned"
+            if farm_name not in farms_data:
+                farms_data[farm_name] = {"name": farm_name, "greenhouses": []}
+            farms_data[farm_name]["greenhouses"].append(
+                {"name": gh.get("name"), "warehouse_name": gh.get("warehouse_name")}
+            )
         result = [
-            {
-                "name": farm_name,
-                "greenhouses": data["greenhouses"]
-            }
-            for farm_name, data in farms_data.items()
-            if len(data["greenhouses"]) > 0
+            {"name": name, "greenhouses": data["greenhouses"]}
+            for name, data in sorted(farms_data.items(), key=lambda x: x[0])
+            if data["greenhouses"]
         ]
-        
-        return {
-            "farms": result
-        }
-        
+        return {"farms": result}
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Farms and Greenhouses Error")
         frappe.throw(_("Error fetching farms and greenhouses: {0}").format(str(e)))

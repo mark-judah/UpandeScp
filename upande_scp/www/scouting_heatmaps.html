@@ -194,13 +194,13 @@
 		background: #fff;
 		min-width: 140px;
 		cursor: pointer;
-		transition: box-shadow 0.2s ease;
+		transition: none;
 		vertical-align: top;
 		overflow: hidden;
 	}
 
 	.mini-card:hover {
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		box-shadow: none;
 	}
 
 	.mini-card-head {
@@ -317,6 +317,40 @@
 		opacity: 1;
 	}
 
+	/* --- Single Greenhouse Horizontal Columns --- */
+	.optimized-grid {
+		display: flex;
+		flex-direction: row;
+		gap: 12px;
+		padding: 12px;
+		overflow-x: auto;
+		overflow-y: hidden;
+		align-items: flex-start;
+		height: 100%;
+	}
+	.heatmap-card {
+		flex: 0 0 auto;
+		border: 1px solid #e5e7eb;
+		border-radius: 8px;
+		background: #fff;
+		padding: 10px;
+		box-shadow: none;
+		display: flex;
+		flex-direction: column;
+		height: auto;
+		width: fit-content;
+	}
+	.mini-heatmap-wrapper {
+		min-width: 0;
+		flex: 1 1 auto;
+		overflow: visible;
+		width: fit-content;
+	}
+	.mini-heatmap-grid {
+		min-width: 0;
+		width: fit-content;
+	}
+
 	/* --- Modal (same as original) --- */
 
 	.modal {
@@ -399,8 +433,8 @@
 		background: var(--sidebar-bg);
 		color: var(--text);
 		font-weight: 600;
-		font-size: 10px;
-		padding: 2px 5px;
+		font-size: 7px;
+		padding: 0 2px;
 		border-radius: 0;
 		box-shadow: none;
 	}
@@ -423,9 +457,9 @@
 	}
 
 	.data-cell:hover {
-		transform: scale(1.1);
-		z-index: 10;
-		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+		transform: none;
+		z-index: auto;
+		box-shadow: none;
 	}
 
 	.legend {
@@ -547,6 +581,21 @@
 				</div>
 
 				<div class="section">
+					<label class="section-label">Mode</label>
+					<div class="gh-filter-tabs" id="mode-filter">
+						<button class="farm-btn active" id="mode-single-btn">
+							Single Greenhouse
+						</button>
+						<button class="farm-btn" id="mode-all-btn">View All</button>
+					</div>
+				</div>
+
+				<div class="section" id="single-gh-filter-section">
+					<label class="section-label">Select Greenhouse</label>
+					<div class="gh-filter-tabs" id="greenhouse-filter"></div>
+				</div>
+
+				<div class="section">
 					<div class="load-progress" id="load-progress"></div>
 				</div>
 
@@ -608,6 +657,13 @@
 		let allGreenhouseResults = {};
 		let currentDate = new Date().toISOString().split("T")[0];
 		let currentFarmFilter = "__all__";
+		let currentGreenhouse = "";
+		let viewMode = "single";
+		let observationData = [];
+		let observationTypes = {};
+		let maxBedCount = 0;
+		let maxZoneCount = 0;
+		const cacheSingle = new Map();
 
 		const CATEGORIES = [
 			{ key: "pests_scouting_entry", type: "pests" },
@@ -752,13 +808,69 @@
 					});
 
 					setupFarmFilter();
-					loadAllScoutedGreenhouses();
+					setupModeFilter();
+					setupGreenhouseFilter();
+					const fg =
+						farmsData[0] && farmsData[0].greenhouses && farmsData[0].greenhouses[0];
+					if (fg) {
+						currentGreenhouse = fg.name;
+						if (viewMode === "single") {
+							fetchSingleGreenhouse();
+						} else {
+							loadAllScoutedGreenhouses();
+						}
+					} else {
+						showEmptyState();
+					}
 				})
 				.catch((err) => {
 					console.error("Error fetching farms:", err);
 					hideLoader();
 					showEmptyState();
 				});
+		}
+
+		function setupModeFilter() {
+			const singleBtn = document.getElementById("mode-single-btn");
+			const allBtn = document.getElementById("mode-all-btn");
+			const singleSec = document.getElementById("single-gh-filter-section");
+			singleBtn.addEventListener("click", () => {
+				singleBtn.classList.add("active");
+				allBtn.classList.remove("active");
+				viewMode = "single";
+				singleSec.style.display = "";
+				fetchSingleGreenhouse();
+			});
+			allBtn.addEventListener("click", () => {
+				allBtn.classList.add("active");
+				singleBtn.classList.remove("active");
+				viewMode = "all";
+				singleSec.style.display = "none";
+				loadAllScoutedGreenhouses();
+			});
+		}
+
+		function setupGreenhouseFilter() {
+			const filterContainer = document.getElementById("greenhouse-filter");
+			filterContainer.innerHTML = "";
+			const all = [];
+			farmsData.forEach((f) => {
+				(f.greenhouses || []).forEach((gh) => all.push(gh.name));
+			});
+			all.forEach((name) => {
+				const btn = document.createElement("button");
+				btn.className = "gh-btn" + (name === currentGreenhouse ? " active" : "");
+				btn.textContent = name;
+				btn.addEventListener("click", () => {
+					document
+						.querySelectorAll("#greenhouse-filter .gh-btn")
+						.forEach((b) => b.classList.remove("active"));
+					btn.classList.add("active");
+					currentGreenhouse = name;
+					if (viewMode === "single") fetchSingleGreenhouse();
+				});
+				filterContainer.appendChild(btn);
+			});
 		}
 
 		// ── Fetch only scouted greenhouses for the date ──
@@ -1048,6 +1160,226 @@
 			wrapper.appendChild(table);
 		}
 
+		function fetchSingleGreenhouse() {
+			showLoader();
+			setProgress("Loading " + currentGreenhouse + "...");
+			const key = currentDate + "|" + currentGreenhouse;
+			const cached = cacheSingle.get(key);
+			const doRender = (data) => {
+				observationData = data.scouting_entries || [];
+				observationTypes = data.observation_types || {};
+				maxBedCount = data.bed_count || 0;
+				maxZoneCount = data.zone_count || 0;
+				renderSingleHeatmaps(currentGreenhouse);
+			};
+			if (cached) {
+				doRender(cached);
+				hideLoader();
+				setProgress("");
+				return;
+			}
+			(DEBUG
+				? debugFetch(
+						"getHeatmapData " + currentGreenhouse,
+						"/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData",
+						{
+							method: "POST",
+							headers: {
+								"Content-Type": "application/json",
+								"X-Frappe-CSRF-Token": "{{ csrf_token }}",
+							},
+							body: JSON.stringify({
+								date: currentDate,
+								greenhouse: currentGreenhouse,
+							}),
+						}
+				  )
+				: fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData", {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							"X-Frappe-CSRF-Token": "{{ csrf_token }}",
+						},
+						body: JSON.stringify({
+							date: currentDate,
+							greenhouse: currentGreenhouse,
+						}),
+				  })
+			)
+				.then((r) => (r.ok ? r.json() : Promise.reject(r)))
+				.then((response) => {
+					const data = response.message || response.data || {};
+					cacheSingle.set(key, data);
+					doRender(data);
+				})
+				.catch(() => {
+					showEmptyState();
+				})
+				.finally(() => {
+					hideLoader();
+					setProgress("");
+				});
+		}
+
+		function renderSingleHeatmaps(gh) {
+			const wrapper = document.getElementById("all-gh-table-wrapper");
+			wrapper.innerHTML = "";
+			const container = document.createElement("div");
+			container.className = "optimized-grid";
+			const TYPES_ORDER = [
+				"pests",
+				"diseases",
+				"predators",
+				"weeds",
+				"incidents",
+				"physiological_disorders",
+				"crop_husbandry_practices",
+			];
+			const types = TYPES_ORDER.filter((t) => observationTypes && observationTypes[t]);
+			let has = false;
+			types.forEach((t) => {
+				const obs = observationTypes[t] || {};
+				Object.keys(obs)
+					.sort((a, b) => a.localeCompare(b))
+					.forEach((name) => {
+						const card = buildSingleCard(gh, name, t);
+						if (card) {
+							container.appendChild(card);
+							has = true;
+						}
+					});
+			});
+			if (!has) {
+				showEmptyState();
+				return;
+			}
+			wrapper.appendChild(container);
+		}
+
+		function buildSingleCard(gh, observationName, observationType) {
+			const metadata =
+				observationTypes[observationType] &&
+				observationTypes[observationType][observationName];
+			if (!metadata) return null;
+			const r = calculateMatrixSingle(gh, observationName, observationType);
+			if (r.total === 0) return null;
+			const card = document.createElement("div");
+			card.className = "heatmap-card";
+			const header = document.createElement("div");
+			header.style.marginBottom = "6px";
+			header.innerHTML =
+				'<p style="font-weight:600;color:' +
+				(metadata.color || "#999") +
+				';font-size:12px;margin-bottom:2px;">' +
+				observationName +
+				'</p><p style="font-size:10px;color:#6b7280;">Total: ' +
+				r.total +
+				"</p>";
+			card.appendChild(header);
+			const wrapper = document.createElement("div");
+			wrapper.className = "mini-heatmap-wrapper";
+			const mini = renderGridSingle(r.matrix, r.maxCount, metadata.color || "#999");
+			wrapper.appendChild(mini);
+			card.appendChild(wrapper);
+			card.addEventListener("click", () =>
+				openModal(
+					gh,
+					observationName,
+					observationType,
+					metadata.color || "#999",
+					r.matrix,
+					r.maxCount,
+					r.total,
+					r.stageBreakdown,
+					maxBedCount,
+					maxZoneCount,
+					observationTypes
+				)
+			);
+			return card;
+		}
+
+		function renderGridSingle(matrix, maxCount, color) {
+			const grid = document.createElement("div");
+			grid.className = "mini-heatmap-grid";
+			const outer = document.createElement("div");
+			outer.className = "heatmap-grid";
+			const vh = window.innerHeight || 400;
+			const availH = Math.max(120, Math.floor((vh * 6) / 8) - 48);
+			const rows = maxBedCount + 1;
+			const compactFactor = 0.75;
+			const cellHeight = Math.max(4, Math.floor((availH / rows) * compactFactor));
+			const cellWidth = Math.max(6, Math.floor(cellHeight * 2.5));
+			const labelColWidth = 24;
+			outer.style.gridTemplateColumns =
+				labelColWidth + "px repeat(" + maxZoneCount + ", " + cellWidth + "px)";
+			const corner = document.createElement("div");
+			corner.className = "grid-cell";
+			corner.style.height = cellHeight + "px";
+			outer.appendChild(corner);
+			for (let z = maxZoneCount; z >= 1; z--) {
+				const h = document.createElement("div");
+				h.className = "grid-cell zone-header-cell";
+				h.textContent = z % 2 === 0 ? z : "";
+				h.style.height = cellHeight + "px";
+				outer.appendChild(h);
+			}
+			for (let bed = maxBedCount; bed >= 1; bed--) {
+				const bl = document.createElement("div");
+				bl.className = "grid-cell bed-label-cell";
+				bl.textContent = bed % 2 === 0 ? bed : "";
+				bl.style.height = cellHeight + "px";
+				outer.appendChild(bl);
+				for (let zone = maxZoneCount; zone >= 1; zone--) {
+					const cnt = (matrix[bed] && matrix[bed][zone]) || 0;
+					const d = document.createElement("div");
+					d.className = "grid-cell data-cell " + getIntensityClass(cnt, maxCount);
+					d.style.height = cellHeight + "px";
+					if (cnt > 0 && maxCount > 0) d.style.backgroundColor = color;
+					d.title = "Bed " + bed + " – Zone " + zone + ": " + (cnt || "None");
+					outer.appendChild(d);
+				}
+			}
+			grid.appendChild(outer);
+			return grid;
+		}
+
+		function calculateMatrixSingle(gh, observationName, observationType) {
+			const matrix = {};
+			let maxCount = 0;
+			let total = 0;
+			const stageBreakdown = {};
+			const catMap = {
+				pests: "pests_scouting_entry",
+				diseases: "diseases_scouting_entry",
+				predators: "predators_scouting_entry",
+				weeds: "weeds_scouting_entry",
+				incidents: "incidents_scouting_entry",
+				physiological_disorders: "physiological_disorders_entry",
+				crop_husbandry_practices: "crop_husbandry_practices_entry",
+			};
+			const key = catMap[observationType] || observationType;
+			(observationData || []).forEach((entry) => {
+				const items = entry[key] || [];
+				const parsed = parseZone(entry.zone);
+				if (!parsed || parsed.gh !== gh) return;
+				items.forEach((item) => {
+					if (item.name !== observationName) return;
+					const bed = parsed.bed;
+					const zone = parsed.zone;
+					const cnt = item.count || 1;
+					if (!matrix[bed]) matrix[bed] = {};
+					matrix[bed][zone] = (matrix[bed][zone] || 0) + cnt;
+					if (cnt > 0) {
+						maxCount = Math.max(maxCount, cnt);
+						total += cnt;
+					}
+					const st = item.stage || "Present";
+					stageBreakdown[st] = (stageBreakdown[st] || 0) + cnt;
+				});
+			});
+			return { matrix, maxCount, total, stageBreakdown };
+		}
 		// ── Build a mini heatmap card for one greenhouse + one observation ──
 		function buildMiniCard(
 			ghData,
@@ -1406,7 +1738,12 @@
 		// ── Date change ──
 		document.getElementById("scout-date-picker").addEventListener("change", (e) => {
 			currentDate = e.target.value;
-			loadAllScoutedGreenhouses();
+			if (viewMode === "single") {
+				cacheSingle.clear();
+				fetchSingleGreenhouse();
+			} else {
+				loadAllScoutedGreenhouses();
+			}
 		});
 
 		// ── Empty state ──

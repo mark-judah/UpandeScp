@@ -664,6 +664,7 @@
 		let maxBedCount = 0;
 		let maxZoneCount = 0;
 		const cacheSingle = new Map();
+		const cacheScouted = new Map();
 
 		const CATEGORIES = [
 			{ key: "pests_scouting_entry", type: "pests" },
@@ -809,19 +810,9 @@
 
 					setupFarmFilter();
 					setupModeFilter();
-					setupGreenhouseFilter();
-					const fg =
-						farmsData[0] && farmsData[0].greenhouses && farmsData[0].greenhouses[0];
-					if (fg) {
-						currentGreenhouse = fg.name;
-						if (viewMode === "single") {
-							fetchSingleGreenhouse();
-						} else {
-							loadAllScoutedGreenhouses();
-						}
-					} else {
-						showEmptyState();
-					}
+					refreshDateScopedGreenhouses().finally(() => {
+						hideLoader();
+					});
 				})
 				.catch((err) => {
 					console.error("Error fetching farms:", err);
@@ -839,7 +830,7 @@
 				allBtn.classList.remove("active");
 				viewMode = "single";
 				singleSec.style.display = "";
-				fetchSingleGreenhouse();
+				refreshDateScopedGreenhouses();
 			});
 			allBtn.addEventListener("click", () => {
 				allBtn.classList.add("active");
@@ -850,14 +841,37 @@
 			});
 		}
 
-		function setupGreenhouseFilter() {
+		function setupGreenhouseFilter(allowedNames) {
 			const filterContainer = document.getElementById("greenhouse-filter");
 			filterContainer.innerHTML = "";
+			const allowedSet =
+				Array.isArray(allowedNames) && allowedNames.length > 0
+					? new Set(allowedNames)
+					: null;
 			const all = [];
 			farmsData.forEach((f) => {
 				(f.greenhouses || []).forEach((gh) => all.push(gh.name));
 			});
-			all.forEach((name) => {
+			const filtered = allowedSet ? all.filter((n) => allowedSet.has(n)) : all;
+
+			if (filtered.length === 0) {
+				filterContainer.innerHTML =
+					'<div style="font-size:12px;color:#6b7280;">No greenhouses scouted on ' +
+					escapeHtml(currentDate) +
+					"</div>";
+				currentGreenhouse = "";
+				showEmptyState(
+					"No Greenhouses Scouted",
+					"No greenhouses scouted on " + currentDate
+				);
+				return;
+			}
+
+			if (!currentGreenhouse || (allowedSet && !allowedSet.has(currentGreenhouse))) {
+				currentGreenhouse = filtered[0];
+			}
+
+			filtered.forEach((name) => {
 				const btn = document.createElement("button");
 				btn.className = "gh-btn" + (name === currentGreenhouse ? " active" : "");
 				btn.textContent = name;
@@ -871,6 +885,68 @@
 				});
 				filterContainer.appendChild(btn);
 			});
+		}
+
+		function fetchScoutedGreenhouses(date) {
+			if (cacheScouted.has(date)) return Promise.resolve(cacheScouted.get(date));
+			return (
+				DEBUG
+					? debugFetch(
+							"getAllScoutedGreenhouses",
+							"/api/method/upande_scp.serverscripts.get_heatmap_data.getAllScoutedGreenhouses",
+							{
+								method: "POST",
+								headers: {
+									"Content-Type": "application/json",
+									"X-Frappe-CSRF-Token": "{{ csrf_token }}",
+								},
+								body: JSON.stringify({ date }),
+							}
+					  )
+					: fetch(
+							"/api/method/upande_scp.serverscripts.get_heatmap_data.getAllScoutedGreenhouses",
+							{
+								method: "POST",
+								headers: {
+									"Content-Type": "application/json",
+									"X-Frappe-CSRF-Token": "{{ csrf_token }}",
+								},
+								body: JSON.stringify({ date }),
+							}
+					  )
+			)
+				.then((r) => (r.ok ? r.json() : Promise.reject(r)))
+				.then((response) => {
+					const list =
+						(response && response.message && response.message.greenhouses) || [];
+					cacheScouted.set(date, list);
+					return list;
+				});
+		}
+
+		function refreshDateScopedGreenhouses() {
+			setProgress("Checking scouted greenhouses...");
+			return fetchScoutedGreenhouses(currentDate)
+				.then((scouted) => {
+					setupGreenhouseFilter(scouted);
+					if (viewMode === "single") {
+						if (currentGreenhouse) {
+							cacheSingle.clear();
+							fetchSingleGreenhouse();
+						} else {
+							setProgress("");
+						}
+					} else {
+						loadAllScoutedGreenhouses();
+					}
+				})
+				.catch((err) => {
+					console.error("Error fetching scouted greenhouses:", err);
+					showEmptyState("No Data Available", "Failed to load scouted greenhouses.");
+				})
+				.finally(() => {
+					setProgress("");
+				});
 		}
 
 		// ── Fetch only scouted greenhouses for the date ──
@@ -1740,23 +1816,26 @@
 			currentDate = e.target.value;
 			if (viewMode === "single") {
 				cacheSingle.clear();
-				fetchSingleGreenhouse();
+				cacheScouted.delete(currentDate);
+				refreshDateScopedGreenhouses();
 			} else {
 				loadAllScoutedGreenhouses();
 			}
 		});
 
 		// ── Empty state ──
-		function showEmptyState() {
+		function showEmptyState(title, description) {
 			const wrapper = document.getElementById("all-gh-table-wrapper");
+			const t = title || "No Data Available";
+			const d = description || "No scouting entries found for this date.";
 			wrapper.innerHTML = `
                 <div class="empty-state">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
                     </svg>
-                    <p style="font-weight: 600; margin-bottom: 8px;">No Data Available</p>
-                    <p>No scouting entries found for this date.</p>
+                    <p style="font-weight: 600; margin-bottom: 8px;">${escapeHtml(t)}</p>
+                    <p>${escapeHtml(d)}</p>
                 </div>
             `;
 		}

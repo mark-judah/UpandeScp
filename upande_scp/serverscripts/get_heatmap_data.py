@@ -20,16 +20,14 @@ def getHeatmapData(date, greenhouse):
         
         # Get bed count and zone count for the greenhouse
         bed_count = frappe.db.count("Bed", filters={
-            "greenhouse": greenhouse,
-            "custom_active": 1
+            "greenhouse": greenhouse
         })
         
         # Get all beds for this greenhouse to find max zone count
         beds = frappe.get_all(
             "Bed",
             filters={
-                "greenhouse": greenhouse,
-                "custom_active": 1
+                "greenhouse": greenhouse
             },
             fields=["name"]
         )

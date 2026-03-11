@@ -22,12 +22,10 @@ def get_context(context):
         raw = wh.get("custom_raw_geojson") or "{}"
         try:
             geojson = json.loads(raw)
-            if not isinstance(geojson, dict) or not geojson.get("features"):
-                continue
             greenhouses.append({
                 "name": wh["name"],
                 "short_name": wh["warehouse_name"],
-                "geojson": geojson
+                "geojson": geojson if isinstance(geojson, dict) else {}
             })
         except json.JSONDecodeError as e:
             
@@ -35,13 +33,21 @@ def get_context(context):
                 title=f"Invalid GeoJSON in {wh['name']}",
                 message=f"{e}\nRaw: {raw[:200]}..."
             )
-            continue
+            greenhouses.append({
+                "name": wh["name"],
+                "short_name": wh["warehouse_name"],
+                "geojson": {}
+            })
         except Exception as e:
             frappe.log_error(
                 title=f"Error processing warehouse {wh['name']}",
                 message=str(e)
             )
-            continue
+            greenhouses.append({
+                "name": wh["name"],
+                "short_name": wh["warehouse_name"],
+                "geojson": {}
+            })
 
     context.greenhouses_geojson = greenhouses
     return context

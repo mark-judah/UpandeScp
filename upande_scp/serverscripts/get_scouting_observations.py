@@ -238,3 +238,151 @@ def getScoutingObservations():
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Scouting Observations Error")
         frappe.throw(f"Error fetching scouting data: {str(e)}")
+
+
+def _pick_first_existing_field(doctype, fieldnames):
+    meta = frappe.get_meta(doctype)
+    for fieldname in fieldnames:
+        if meta.has_field(fieldname):
+            return fieldname
+    return None
+
+
+def _resolve_colors(doctype, candidate_fields, names):
+    names = {n for n in (names or []) if n}
+    if not names:
+        return {}
+
+    color_field = _pick_first_existing_field(doctype, candidate_fields)
+    colors = {}
+
+    if color_field:
+        for rec in frappe.get_all(
+            doctype, filters={"name": ["in", list(names)]}, fields=["name", color_field]
+        ):
+            color = rec.get(color_field)
+            if color:
+                colors[rec["name"]] = color
+
+    for name in names:
+        if name not in colors:
+            color_hash = hashlib.md5(name.encode()).hexdigest()[:6]
+            colors[name] = f"#{color_hash}"
+
+    return colors
+
+
+@frappe.whitelist()
+def getTopPestDiseaseByGreenhouse():
+    try:
+        date_str = frappe.form_dict.get("date")
+        if not date_str:
+            frappe.throw("Date is required.")
+
+        greenhouse_filter = frappe.form_dict.get("greenhouse") or ""
+        se_filters = {"date_of_capture": date_str}
+        if greenhouse_filter:
+            se_filters["greenhouse"] = greenhouse_filter
+
+        entries = frappe.get_all(
+            "Scouting Entry",
+            filters=se_filters,
+            fields=["name", "greenhouse"],
+            order_by="greenhouse ASC",
+        )
+
+        if not entries:
+            frappe.response["message"] = {"greenhouses": [], "max_pest": 0, "max_disease": 0}
+            return
+
+        entry_to_gh = {e["name"]: e.get("greenhouse") for e in entries if e.get("greenhouse")}
+        entry_names = list(entry_to_gh.keys())
+        gh_names = sorted(set(entry_to_gh.values()))
+
+        warehouse_rows = frappe.get_all(
+            "Warehouse",
+            filters={"name": ["in", gh_names]},
+            fields=["name", "warehouse_name"],
+        )
+        gh_labels = {w["name"]: w.get("warehouse_name") or w["name"] for w in warehouse_rows}
+
+        pest_counts = {gh: {} for gh in gh_names}
+        for rec in frappe.get_all(
+            "Pests Scouting Entry",
+            filters={"parent": ["in", entry_names]},
+            fields=["parent", "pest", "count"],
+        ):
+            gh = entry_to_gh.get(rec.get("parent"))
+            pest = rec.get("pest")
+            if not gh or not pest:
+                continue
+            count = rec.get("count")
+            try:
+                count = int(count) if count is not None else 1
+            except Exception:
+                count = 1
+            pest_counts[gh][pest] = pest_counts[gh].get(pest, 0) + max(count, 1)
+
+        disease_counts = {gh: {} for gh in gh_names}
+        for rec in frappe.get_all(
+            "Diseases Scouting Entry",
+            filters={"parent": ["in", entry_names]},
+            fields=["parent", "disease"],
+        ):
+            gh = entry_to_gh.get(rec.get("parent"))
+            disease = rec.get("disease")
+            if not gh or not disease:
+                continue
+            disease_counts[gh][disease] = disease_counts[gh].get(disease, 0) + 1
+
+        pest_names = {name for by_pest in pest_counts.values() for name in by_pest.keys()}
+        disease_names = {name for by_dis in disease_counts.values() for name in by_dis.keys()}
+
+        pest_colors = _resolve_colors("Pest", ["pests_legend_color", "color"], pest_names)
+        disease_colors = _resolve_colors(
+            "Plant Disease", ["disease_legend_color", "color"], disease_names
+        )
+
+        max_pest = 0
+        max_disease = 0
+        rows = []
+
+        for gh in gh_names:
+            pest = {"name": "", "count": 0, "color": "#e5e7eb"}
+            disease = {"name": "", "count": 0, "color": "#e5e7eb"}
+
+            if pest_counts.get(gh):
+                pest_name, pest_count = max(pest_counts[gh].items(), key=lambda kv: kv[1])
+                pest = {
+                    "name": pest_name,
+                    "count": pest_count,
+                    "color": pest_colors.get(pest_name) or "#e5e7eb",
+                }
+                max_pest = max(max_pest, pest_count)
+
+            if disease_counts.get(gh):
+                dis_name, dis_count = max(disease_counts[gh].items(), key=lambda kv: kv[1])
+                disease = {
+                    "name": dis_name,
+                    "count": dis_count,
+                    "color": disease_colors.get(dis_name) or "#e5e7eb",
+                }
+                max_disease = max(max_disease, dis_count)
+
+            rows.append(
+                {
+                    "name": gh,
+                    "label": gh_labels.get(gh) or gh,
+                    "pest": pest,
+                    "disease": disease,
+                }
+            )
+
+        frappe.response["message"] = {
+            "greenhouses": rows,
+            "max_pest": max_pest,
+            "max_disease": max_disease,
+        }
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Top Pest/Disease By Greenhouse Error")
+        frappe.throw(f"Error fetching top observations: {str(e)}")

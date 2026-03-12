@@ -12,8 +12,41 @@ def getScoutingData():
         greenhouse = frappe.form_dict.get("greenhouse")
         date_str = frappe.form_dict.get("date")
 
-        if not greenhouse or not date_str:
-            frappe.throw("Greenhouse and date are required.")
+        if not greenhouse:
+            frappe.throw("Greenhouse is required.")
+
+        previous_date = None
+        if not date_str:
+            recent_dates = frappe.get_all(
+                "Scouting Entry",
+                filters={"greenhouse": greenhouse},
+                fields=["date_of_capture"],
+                order_by="date_of_capture desc",
+                limit=2
+            )
+            if not recent_dates:
+                return {
+                    "scouting_entries": [],
+                    "varieties": [],
+                    "susceptibility": [],
+                    "boms": [],
+                    "observation_metadata": {},
+                    "scouting_date": None,
+                    "previous_scouting_date": None
+                }
+            date_str = recent_dates[0].date_of_capture
+            if len(recent_dates) > 1:
+                previous_date = recent_dates[1].date_of_capture
+        else:
+            previous_row = frappe.get_all(
+                "Scouting Entry",
+                filters={"greenhouse": greenhouse, "date_of_capture": ["<", date_str]},
+                fields=["date_of_capture"],
+                order_by="date_of_capture desc",
+                limit=1
+            )
+            if previous_row:
+                previous_date = previous_row[0].date_of_capture
 
         # --- CONFIGURATION: Observation types ---
         observation_configs = {
@@ -88,12 +121,14 @@ def getScoutingData():
         entry_names = [e.name for e in scouting_entries]
 
         if not entry_names:
-            return { 
-                "scouting_entries": [], 
-                "varieties": [], 
+            return {
+                "scouting_entries": [],
+                "varieties": [],
                 "susceptibility": [],
-                "boms": [], 
-                "observation_metadata": {}
+                "boms": [],
+                "observation_metadata": {},
+                "scouting_date": date_str,
+                "previous_scouting_date": previous_date
             }
 
         processed_entries = {e.name: dict(e) for e in scouting_entries}
@@ -348,6 +383,8 @@ def getScoutingData():
             "all_chemicals": all_chemicals,
             "bed_data": bed_data,
             "spray_team_team": spray_teams,
+            "scouting_date": date_str,
+            "previous_scouting_date": previous_date,
             "observation_metadata": {
                 "active_observation_types": [k for k in observation_configs if all_observation_names.get(k)],
                 "all_observation_names": all_observation_names,

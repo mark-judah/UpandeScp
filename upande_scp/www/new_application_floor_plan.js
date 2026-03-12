@@ -5,6 +5,9 @@ document.addEventListener("DOMContentLoaded", () => {
 	// ==================== STATE & CACHE ====================
 	const state = {
 		scoutingData: [],
+		previousScoutingData: [],
+		scoutingDate: null,
+		previousScoutingDate: null,
 		varietyRequirements: new Map(),
 		varietyGroups: new Map(),
 		dataMap: new Map(),
@@ -19,8 +22,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		sourceWarehouseCache: {},
 		chemicalUomCache: {},
 		susceptibilityData: [],
-		allPests: [],
-		allDiseases: [],
+		allTargetOptions: [],
+		selectedTargets: new Set(),
 	};
 
 	// ==================== DOM ELEMENTS ====================
@@ -38,6 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		waterHardness: document.getElementById("custom_water_hardness"),
 		waterVolume: document.getElementById("custom_water_volume"),
 		sprayTeam: document.getElementById("spray-team-select"),
+		scheduledApplicationTime: document.getElementById("scheduled-application-time"),
 		varietyMultiSelect: document.getElementById("variety-multiselect"),
 		selectedVarietiesDisplay: document.getElementById("selected-varieties-display"),
 		bomChemicalsList: document.getElementById("bom-chemicals-list"),
@@ -237,9 +241,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	};
 
 	const getSelectedFinalTargets = () => {
-		return Array.from(els.finalTargets.querySelectorAll('input[type="checkbox"]:checked')).map(
-			(input) => input.value
-		);
+		return Array.from(state.selectedTargets);
 	};
 
 	const populateGreenhouses = (greenhouses) => {
@@ -251,30 +253,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			option.textContent = gh.name;
 			els.greenhouse.appendChild(option);
 		});
+		console.log("Greenhouses populated:", greenhouses);
 		if (previousValue && greenhouses.some((gh) => gh.name === previousValue)) {
 			els.greenhouse.value = previousValue;
-		}
-	};
-
-	const fetchGreenhousesByDate = async (dateValue) => {
-		try {
-			const response = await fetch(
-				"/api/method/upande_scp.www.new_application_floor_plan.get_scouted_greenhouses_by_date",
-				{
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-						"X-Frappe-CSRF-Token": "{{csrf_token}}",
-					},
-					body: JSON.stringify({ date: dateValue || "" }),
-				}
-			);
-			if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-			const r = await response.json();
-			const payload = r.message || r.data || {};
-			populateGreenhouses(payload.greenhouses || []);
-		} catch (error) {
-			showToast("Failed to load greenhouses for selected date.", "error");
 		}
 	};
 
@@ -300,6 +281,16 @@ document.addEventListener("DOMContentLoaded", () => {
 		els.plantSectionContainer.innerHTML = "";
 		els.variety.innerHTML = '<option value="">Select variety</option>';
 		els.varietyMultiSelect.innerHTML = "";
+		state.selectedTargets.clear();
+		const dateDisplay = document.getElementById("scouting-date-display");
+		if (dateDisplay) {
+			dateDisplay.classList.add(
+				"tw-bg-gray-100",
+				"tw-text-gray-500",
+				"tw-cursor-not-allowed"
+			);
+			dateDisplay.textContent = "Select a greenhouse to load the latest report...";
+		}
 		renderGrid(0, 0);
 		els.heatmapGridWrapper.classList.add("tw-hidden");
 		document.getElementById("grid-placeholder").classList.remove("tw-hidden");
@@ -533,43 +524,32 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	};
 
-	const fetchObservationDetails = async () => {
+	const fetchAllTargets = async () => {
 		try {
 			const response = await fetch(
-				"/api/method/upande_scp.serverscripts.mobile.get_observations_details.getObservationsDetails"
+				"/api/method/upande_scp.www.new_application_floor_plan.get_targets_for_autocomplete"
 			);
 			if (!response.ok) return;
 			const r = await response.json();
-			const data = r.message?.data || [];
-
-			state.allPests = [];
-			state.allDiseases = [];
-
-			data.forEach((group) => {
-				if (group.category === "Pests" && group.fields) {
-					group.fields.forEach((f) => {
-						if (f.pestName) state.allPests.push(f.pestName);
-					});
-				} else if (group.category === "Diseases" && group.fields) {
-					group.fields.forEach((f) => {
-						if (f.diseaseName) state.allDiseases.push(f.diseaseName);
-					});
-				}
-			});
-			// Deduplicate
-			state.allPests = [...new Set(state.allPests)];
-			state.allDiseases = [...new Set(state.allDiseases)];
-
-			// If we already have scouting data displayed, refresh targets
+			const payload = r.message || r.data || {};
+			const targets = Array.isArray(payload.targets) ? payload.targets : [];
+			state.allTargetOptions = targets
+				.filter((t) => t && t.name)
+				.map((t) => ({ name: t.name, type: t.type || "Scouting" }))
+				.filter(
+					(item, idx, arr) => arr.findIndex((other) => other.name === item.name) === idx
+				)
+				.sort((a, b) => a.name.localeCompare(b.name));
 			if (state.scoutingData && state.scoutingData.length > 0) {
 				populateFinalTargets();
 			}
 		} catch (e) {
-			console.error("Error fetching observation details", e);
+			console.error("Error fetching target options", e);
 		}
 	};
 
 	const fetchScoutingData = async (greenhouse) => {
+		console.log("Fetching scouting data for greenhouse:", greenhouse);
 		els.heatmapGridWrapper.classList.add("tw-hidden");
 		document.getElementById("grid-placeholder").classList.add("tw-hidden");
 		els.targetsContainer.innerHTML = "";
@@ -581,9 +561,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		renderGrid(0, 0);
 		showLoader();
 		try {
-			const dateValue =
-				document.getElementById("scouting-date").value ||
-				new Date().toISOString().slice(0, 10);
 			const response = await fetch(
 				"/api/method/upande_scp.serverscripts.get_scouting_report.getScoutingData",
 				{
@@ -592,16 +569,41 @@ document.addEventListener("DOMContentLoaded", () => {
 						"Content-Type": "application/json",
 						"X-Frappe-CSRF-Token": "{{csrf_token}}",
 					},
-					body: JSON.stringify({ greenhouse, date: dateValue }),
+					body: JSON.stringify({ greenhouse }),
 				}
 			);
 			if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 			const r = await response.json();
+			console.log("Scouting response payload:", r);
 			const data = r.message || r.data;
 			if (data && data.scouting_entries && data.scouting_entries.length > 0) {
 				els.heatmapGridWrapper.classList.remove("tw-hidden");
 				els.heatmapGridWrapper.classList.add("is-visible-grid");
 				state.scoutingData = data.scouting_entries;
+				state.previousScoutingData = data.previous_scouting_entries || [];
+				state.scoutingDate = data.scouting_date || null;
+				state.previousScoutingDate = data.previous_scouting_date || null;
+				const dateDisplay = document.getElementById("scouting-date-display");
+				if (dateDisplay) {
+					const fmtDate = (s) =>
+						s
+							? new Date(s).toLocaleDateString("en-GB", {
+									day: "numeric",
+									month: "short",
+									year: "numeric",
+							  })
+							: null;
+					const latestFmt = fmtDate(state.scoutingDate);
+					const previousFmt = fmtDate(state.previousScoutingDate);
+					dateDisplay.classList.remove(
+						"tw-text-gray-500",
+						"tw-cursor-not-allowed",
+						"tw-bg-gray-100"
+					);
+					dateDisplay.textContent = latestFmt
+						? `Latest: ${latestFmt}${previousFmt ? ` | Previous: ${previousFmt}` : ""}`
+						: "No scouting date found for this greenhouse.";
+				}
 				const discoveredTypes = new Set();
 				state.scoutingData.forEach((entry) => {
 					Object.keys(entry).forEach((key) => {
@@ -674,10 +676,28 @@ document.addEventListener("DOMContentLoaded", () => {
 			} else {
 				els.heatmapGridWrapper.classList.add("tw-hidden");
 				document.getElementById("grid-placeholder").classList.remove("tw-hidden");
+				const dateDisplay = document.getElementById("scouting-date-display");
+				if (dateDisplay) {
+					dateDisplay.classList.remove(
+						"tw-text-gray-500",
+						"tw-cursor-not-allowed",
+						"tw-bg-gray-100"
+					);
+					dateDisplay.textContent = "No scouting data found for this greenhouse.";
+				}
 			}
 		} catch (error) {
 			els.heatmapGridWrapper.classList.add("tw-hidden");
 			document.getElementById("grid-placeholder").classList.remove("tw-hidden");
+			const dateDisplay = document.getElementById("scouting-date-display");
+			if (dateDisplay) {
+				dateDisplay.classList.remove(
+					"tw-text-gray-500",
+					"tw-cursor-not-allowed",
+					"tw-bg-gray-100"
+				);
+				dateDisplay.textContent = "Failed to load scouting data.";
+			}
 		} finally {
 			hideLoader();
 		}
@@ -1396,38 +1416,124 @@ document.addEventListener("DOMContentLoaded", () => {
 	};
 
 	const populateFinalTargets = () => {
-		const container = els.finalTargets;
-		container.innerHTML = "";
-
-		// Get ALL unique targets (Pests and Diseases only)
-		const allTargets = new Set();
-		if (state.allPests) state.allPests.forEach((p) => allTargets.add(p));
-		if (state.allDiseases) state.allDiseases.forEach((d) => allTargets.add(d));
-
-		// Sort and populate
-		const sortedTargets = Array.from(allTargets).sort();
-		sortedTargets.forEach((target) => {
-			const pill = document.createElement("label");
-			pill.className = "filter-pill";
-			const checkbox = document.createElement("input");
-			checkbox.type = "checkbox";
-			checkbox.value = target;
-			checkbox.id = `final-target-${target.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-			const label = document.createElement("span");
-			label.textContent = target;
-			pill.appendChild(checkbox);
-			pill.appendChild(label);
-			container.appendChild(pill);
+		const scoutingTargets = new Set();
+		state.scoutingData.forEach((entry) => {
+			state.activeObservationTypes.forEach((obsType) => {
+				(entry[obsType] || []).forEach((obs) => {
+					if (obs.name) scoutingTargets.add(obs.name);
+				});
+			});
 		});
 
-		// Optional: Pre-select active filters
+		const byName = new Map(state.allTargetOptions.map((t) => [t.name, t.type]));
+		scoutingTargets.forEach((name) => {
+			if (!byName.has(name)) byName.set(name, "Scouting");
+		});
+
+		state.allTargetOptions = Array.from(byName.entries())
+			.map(([name, type]) => ({ name, type }))
+			.sort((a, b) => a.name.localeCompare(b.name));
+
 		const activeTargets = getActiveFilterTargets();
-		const targetCheckboxes = container.querySelectorAll('input[type="checkbox"]');
-		targetCheckboxes.forEach((checkbox) => {
-			checkbox.checked =
-				activeTargets.length > 0 ? activeTargets.includes(checkbox.value) : true;
+		if (activeTargets.length > 0) {
+			state.selectedTargets = new Set(activeTargets);
+		} else if (state.selectedTargets.size === 0) {
+			state.allTargetOptions.forEach((t) => state.selectedTargets.add(t.name));
+		}
+		renderTargetPills();
+	};
+
+	// ==================== TARGET AUTOCOMPLETE + PILLS ====================
+	const targetInput = document.getElementById("target-autocomplete-input");
+	const targetDropdown = document.getElementById("target-autocomplete-dropdown");
+	const targetPillsContainer = document.getElementById("target-pills-container");
+
+	const renderTargetPills = () => {
+		if (!targetPillsContainer) return;
+		targetPillsContainer.innerHTML = "";
+		state.selectedTargets.forEach((target) => {
+			const pill = document.createElement("span");
+			pill.className = "target-pill";
+			pill.innerHTML = `${target} <button type="button" class="target-pill-remove" data-target="${target}">×</button>`;
+			targetPillsContainer.appendChild(pill);
+		});
+		targetPillsContainer.querySelectorAll(".target-pill-remove").forEach((btn) => {
+			btn.addEventListener("click", () => {
+				state.selectedTargets.delete(btn.dataset.target);
+				renderTargetPills();
+			});
 		});
 	};
+
+	const showTargetDropdown = (filter = "") => {
+		if (!targetDropdown) return;
+		const filterUpper = filter.toUpperCase();
+		const matches = state.allTargetOptions.filter(
+			(t) => !state.selectedTargets.has(t.name) && t.name.toUpperCase().includes(filterUpper)
+		);
+		if (matches.length === 0 && filter.trim()) {
+			targetDropdown.innerHTML = `<div class="target-dropdown-item target-dropdown-custom" data-value="${filter.trim()}">+ Add "${filter.trim()}"</div>`;
+		} else if (matches.length === 0) {
+			targetDropdown.innerHTML = `<div class="target-dropdown-empty">Type to search pests & diseases...</div>`;
+		} else {
+			targetDropdown.innerHTML = matches
+				.slice(0, 20)
+				.map(
+					(t) => `<div class="target-dropdown-item" data-value="${t.name}">
+                    <span>${t.name}</span>
+                    <span class="target-type-badge target-type-${String(
+						t.type || "scouting"
+					).toLowerCase()}">${t.type}</span>
+                </div>`
+				)
+				.join("");
+			if (filter.trim() && !matches.find((m) => m.name.toUpperCase() === filterUpper)) {
+				targetDropdown.innerHTML += `<div class="target-dropdown-item target-dropdown-custom" data-value="${filter.trim()}">+ Add "${filter.trim()}"</div>`;
+			}
+		}
+		targetDropdown.classList.add("active");
+		targetDropdown.querySelectorAll(".target-dropdown-item").forEach((item) => {
+			item.addEventListener("click", () => {
+				state.selectedTargets.add(item.dataset.value);
+				renderTargetPills();
+				if (targetInput) {
+					targetInput.value = "";
+					targetInput.focus();
+				}
+				targetDropdown.classList.remove("active");
+			});
+		});
+	};
+
+	if (targetInput) {
+		targetInput.addEventListener("focus", async () => {
+			if (state.allTargetOptions.length === 0) await fetchAllTargets();
+			showTargetDropdown(targetInput.value);
+		});
+		targetInput.addEventListener("input", () => {
+			showTargetDropdown(targetInput.value);
+		});
+		targetInput.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				const val = targetInput.value.trim();
+				if (val) {
+					state.selectedTargets.add(val);
+					renderTargetPills();
+					targetInput.value = "";
+					if (targetDropdown) targetDropdown.classList.remove("active");
+				}
+			}
+			if (e.key === "Escape" && targetDropdown) {
+				targetDropdown.classList.remove("active");
+			}
+		});
+	}
+	document.addEventListener("click", (e) => {
+		if (!e.target.closest("#target-autocomplete-wrapper") && targetDropdown) {
+			targetDropdown.classList.remove("active");
+		}
+	});
 
 	const populateBomDetails = (bomName) => {
 		const selectedBom = state.bomsData.find((b) => b.name === bomName);
@@ -1560,29 +1666,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	// ==================== EVENT LISTENERS ====================
 	els.greenhouse.addEventListener("change", (e) => {
+		console.log("Greenhouse changed:", e.target.value);
 		if (!e.target.value) {
 			resetGreenhouseDependentFields();
 			return;
 		}
 		resetGreenhouseDependentFields();
 		fetchScoutingData(e.target.value);
-	});
-
-	document.getElementById("scouting-date").addEventListener("change", async (e) => {
-		const currentGreenhouse = els.greenhouse.value;
-		await fetchGreenhousesByDate(e.target.value);
-		const availableGreenhouses = Array.from(els.greenhouse.options).map(
-			(option) => option.value
-		);
-		if (currentGreenhouse && availableGreenhouses.includes(currentGreenhouse)) {
-			els.greenhouse.value = currentGreenhouse;
-			await fetchScoutingData(currentGreenhouse);
-			return;
-		}
-		resetGreenhouseDependentFields();
-		if (e.target.value && els.greenhouse.options.length <= 1) {
-			showToast("No greenhouses were scouted on the selected date.", "warning");
-		}
 	});
 
 	els.variety.addEventListener("change", () => {
@@ -1652,6 +1742,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		const waterVolume = els.waterVolume.value;
 		const areaToSpray = els.areaToSpray.value;
 		const sprayTeam = els.sprayTeam.value;
+		const scheduledApplicationTime = els.scheduledApplicationTime
+			? els.scheduledApplicationTime.value || null
+			: null;
 		const selectedTargets = getSelectedFinalTargets();
 
 		if (selectedTargets.length === 0) {
@@ -1737,6 +1830,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			custom_water_volume: parseFloat(waterVolume) || 0,
 			custom_area: parseFloat(areaToSpray) || 0,
 			custom_spray_team: sprayTeam,
+			custom_scheduled_application_time: scheduledApplicationTime,
 		};
 
 		showLoader();
@@ -1923,6 +2017,10 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	};
 
+	console.log(
+		"Initial greenhouse options:",
+		els.greenhouse ? els.greenhouse.options.length : "missing"
+	);
 	renderThresholdCheckboxes(null);
-	fetchObservationDetails();
+	fetchAllTargets();
 });

@@ -1,0 +1,296 @@
+{% extends "upande_scp/www/chemical_base.html" %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="./new_application_floor_plan.css" />
+<script src="./new_application_floor_plan.js"></script>
+<script src="/assets/frappe/js/frappe-web.min.js"></script>
+
+{% endblock %}
+{% block page_content %}
+<div class="tw-bg-gray-50 tw-p-8 tw-min-h-screen">
+  <div id="map-loader">
+    <div class="spinner"></div>
+    <p class="tw-mt-4 tw-text-gray-700 tw-font-medium">Loading data...</p>
+  </div>
+  <div class="tw-grid tw-grid-cols-1 lg:tw-grid-cols-3 tw-gap-6">
+    <!-- LEFT PANEL: Form -->
+    <div class="lg:tw-col-span-1">
+      <form id="spray-plan-form" class="tw-space-y-6">
+        <!-- Basic Info Section -->
+        <div class="form-section">
+          <h3 class="form-section-title">Basic Information</h3>
+          <div class="form-group">
+            <label class="form-label">Scouting Date</label>
+            <div id="scouting-date-display" class="form-input tw-bg-gray-100 tw-text-gray-500 tw-cursor-not-allowed">
+              Select a greenhouse to load the latest report...
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="greenhouse">Greenhouse</label>
+            <select id="greenhouse" class="form-select" required>
+              <option value="">Select greenhouse</option>
+              {% for warehouse in warehouses_list %}
+              <option value="{{ warehouse.name }}">{{ warehouse.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+  <label class="form-label" for="variety">Variety</label>
+  <div id="variety-dropdown-wrapper" style="position:relative;">
+    <div id="variety-selected-display" class="form-input variety-selected-display" style="cursor:pointer; min-height: 42px; display: flex; align-items: center;">
+      <span class="tw-text-gray-500">Select varieties...</span>
+    </div>
+    <div id="variety-dropdown-menu" class="variety-dropdown-menu" style="display:none;">
+      <div class="variety-search-wrapper" style="padding: 8px; border-bottom: 1px solid #e5e7eb;">
+        <input type="text" id="variety-search-input" class="form-input" placeholder="Search varieties..." style="margin: 0;">
+      </div>
+      <div class="variety-options-container" style="max-height: 250px; overflow-y: auto;">
+        <label class="variety-checkbox-item" style="display: flex; align-items: center; padding: 8px 12px; cursor: pointer;">
+          <input type="checkbox" value="__all__" class="variety-checkbox" style="margin-right: 8px;">
+          <span style="font-weight: 600;">All Varieties</span>
+        </label>
+        <div id="variety-checkboxes-list"></div>
+      </div>
+    </div>
+  </div>
+  <!-- Hidden select for backward compatibility -->
+  <select id="variety" class="form-select" style="display:none;">
+    <option value="">Select variety</option>
+  </select>
+</div>
+        </div>
+        <!-- Filters Section -->
+        <div class="form-section">
+          <h3 class="form-section-title">Filters</h3>
+          <div id="targets-container"></div>
+          <div class="form-group">
+            <label class="form-label">Stages</label>
+            <div id="stages-container" class="filter-group"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Plant Sections</label>
+            <div id="plant-section-container" class="filter-group"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Chemical Requirements</label>
+            <p id="threshold-message" class="tw-text-sm tw-text-amber-600 tw-mb-2 tw-hidden"></p>
+            <div class="tw-text-xs tw-text-gray-500 tw-mb-2">Based on zones covered vs total zones</div>
+            <div id="threshold-container" class="filter-group"></div>
+          </div>
+        </div>
+        <!-- Spray Details Section -->
+        <div class="form-section">
+          <h3 class="form-section-title">Spray Details</h3>
+          <div class="form-group">
+            <label class="form-label" for="scheduled-application-time">Scheduled Application Date</label>
+            <input type="date" id="scheduled-application-time" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="spray-type">Spray Type</label>
+            <select id="spray-type" class="form-select" required>
+              <option value="">Select type</option>
+              <option value="Full">Full</option>
+              <option value="Under">Under</option>
+              <option value="Top">Top</option>
+              <option value="Full + Top">Full + Top</option>
+              <option value="Full + Under">Full + Under</option>
+              <option value="Outside">Outside</option>
+              <option value="Drench">Drench</option>
+            </select>
+          </div>
+          <div class="form-group">
+    <label class="form-label">Targets *</label>
+    <div id="target-autocomplete-wrapper" style="position:relative;">
+        <div id="target-pills-container" class="target-pills-container"></div>
+        <input type="text" id="target-autocomplete-input" class="form-input" placeholder="Search pests & diseases or type a custom target..." autocomplete="off">
+        <div id="target-autocomplete-dropdown" class="target-autocomplete-dropdown"></div>
+    </div>
+    <small class="tw-text-gray-500 tw-text-xs">Search from all pests & diseases, or type a custom name and press Enter.</small>
+    <!-- Keep hidden select for backward compat if needed -->
+    <select id="final-targets" multiple class="form-select" style="display:none;"></select>
+</div>
+          <div class="form-group">
+            <label class="form-label" for="kit">Kit</label>
+            <select id="kit" class="form-select" required>
+              <option value="">Select kit</option>
+              {% for equipment in spray_equipment_list %}
+              <option value="{{ equipment.kit }}" data-warehouse="{{ equipment.warehouse or '' }}">
+                {{ equipment.kit }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="scope">Scope</label>
+            <select id="scope" class="form-select" required>
+              <option value="">Select scope</option>
+              <option value="Full Greenhouse">Full Greenhouse</option>
+              <option value="Specific Variety">Specific Variety</option>
+              <option value="Specific Bed(s)">Specific Bed(s)</option>
+            </select>
+          </div>
+          <div id="bed-numbers-container" class="form-group tw-hidden">
+            <label class="form-label" for="bed-numbers">Bed Numbers</label>
+            <input type="text" id="bed-numbers" class="form-input" placeholder="e.g., 1, 3, 5-8, 12">
+            <small class="tw-text-gray-500 tw-text-xs">Enter bed numbers or ranges, separated by commas</small>
+          </div>
+          <div id="variety-selection-container" class="form-group tw-hidden">
+            <label class="form-label" for="variety-multiselect">Select Varieties</label>
+            <select id="variety-multiselect" multiple class="form-select" style="min-height: 100px;"></select>
+            <div id="selected-varieties-display" class="tw-mt-2 tw-p-3 tw-bg-gray-50 tw-rounded-lg tw-text-sm">
+              <p class="tw-text-gray-500">Selected varieties will appear here...</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="area_to_spray">Area to Spray (Ha)</label>
+            <input type="number" id="area_to_spray" class="form-input" step="any" readonly>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="spray-team-select">Spray Team</label>
+            <select id="spray-team-select" class="form-select" required></select>
+          </div>
+        </div>
+        <!-- BOM Section -->
+        <div class="form-section">
+          <h3 class="form-section-title">Bill of Materials</h3>
+          <div class="form-group">
+            <label class="form-label" for="bom">BOM</label>
+            <div class="tw-flex tw-gap-2">
+              <select id="bom" class="form-select" required style="flex: 1;">
+                <option value="">Select BOM</option>
+              </select>
+              <button type="button" id="create-new-bom-btn" class="btn-primary btn-secondary"
+                style="white-space: nowrap;">
+                + New BOM
+              </button>
+            </div>
+          </div>
+          <div id="bom-details-container" class="tw-hidden tw-space-y-4">
+            <div class="tw-grid tw-grid-cols-2 tw-gap-4">
+              <div class="form-group">
+                <label class="form-label" for="custom_water_ph">Water PH</label>
+                <input type="text" id="custom_water_ph" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="custom_water_hardness">Water Hardness</label>
+                <input type="text" id="custom_water_hardness" class="form-input">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Chemicals(Per 1000L)</label>
+              <div class="chemical-list">
+                <div id="bom-chemicals-list"></div>
+              </div>
+              <button type="button" id="add-chemical-btn" class="btn-primary btn-secondary tw-w-full tw-mt-3">
+                + Add Chemical
+              </button>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="custom_water_volume">Volume (Litres/Ha)</label>
+              <input type="text" id="custom_water_volume" class="form-input">
+            </div>
+          </div>
+        </div>
+        <button type="submit" class="btn-primary tw-w-full">Create Spray Plan</button>
+      </form>
+    </div>
+    <!-- RIGHT PANEL: Heatmap Cards & Stock Table -->
+    <div class="lg:tw-col-span-2 tw-space-y-6">
+      <!-- Heatmap Cards Area -->
+      <div class="grid-container-wrapper">
+        <div id="grid-placeholder" class="grid-placeholder">
+          <svg class="grid-placeholder-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+            <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+            <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+            <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2" />
+          </svg>
+          <h3 class="grid-placeholder-title">No Greenhouse Selected</h3>
+          <p class="grid-placeholder-text">
+            Select a greenhouse from the form to view the scouting heatmaps and begin creating your spray plan.
+          </p>
+        </div>
+        <!-- Card grid — each observation gets its own mini heatmap card -->
+        <div id="heatmap-grid-wrapper" class="tw-hidden">
+          <!-- hidden axis label holders kept for JS compatibility -->
+          <div id="x-axis-labels" style="display:none"></div>
+          <div id="y-axis-labels" style="display:none"></div>
+          <div id="main-grid" class="hm-cards-container"></div>
+        </div>
+      </div>
+      <!-- Stock Balance Table -->
+      <div id="stock-balances-container" class="stock-table-container tw-hidden">
+        <div class="tw-overflow-x-auto">
+          <table class="stock-table">
+            <thead>
+              <tr>
+                <th rowspan="2">Chemical</th>
+                <th id="warehouse-group-header" class="tw-text-center">Warehouses</th>
+                <th rowspan="2" class="tw-text-center">Source</th>
+                <th rowspan="2" class="tw-text-center">Total</th>
+              </tr>
+              <tr id="warehouse-headers-row"></tr>
+            </thead>
+            <tbody id="stock-balance-table-body">
+              <tr>
+                <td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">
+                  No chemicals selected or loading data...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Global Popup -->
+  <div id="global-popup-overlay" class="popup-overlay">
+    <div id="global-popup" class="popup">
+      <input type="text" id="global-popup-search" class="popup-search" placeholder="Search...">
+      <div id="global-popup-content" class="popup-content"></div>
+    </div>
+  </div>
+
+  <!-- BOM Creation Modal -->
+  <div id="bom-modal-overlay" class="bom-modal-overlay">
+    <div id="bom-modal" class="bom-modal">
+      <div class="bom-modal-header">
+        <h3>Create New BOM</h3>
+        <button type="button" class="bom-modal-close" id="close-bom-modal">×</button>
+      </div>
+      <form id="create-bom-form" class="bom-modal-body">
+        <div class="form-group">
+          <label class="form-label" for="bom-item-name">BOM Name *</label>
+          <input type="text" id="bom-item-name" class="form-input" required placeholder="e.g., bot/rsm">
+        </div>
+
+        <div class="tw-grid tw-grid-cols-2 tw-gap-4">
+          <div class="form-group">
+            <label class="form-label" for="bom-water-ph">Water PH *</label>
+            <input type="number" id="bom-water-ph" class="form-input" step="0.1" required placeholder="e.g., 6.5">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="bom-water-hardness">Water Hardness *</label>
+            <input type="number" id="bom-water-hardness" class="form-input" step="0.1" required placeholder="e.g., 150">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Chemicals</label>
+          <div class="bom-chemicals-list">
+            <div id="bom-modal-chemicals-list"></div>
+          </div>
+
+          <button type="button" id="add-bom-chemical-btn" class="btn-primary btn-secondary tw-w-full tw-mt-3">
+            + Add Chemical
+          </button>
+        </div>
+      </form>
+      <div class="bom-modal-footer">
+        <button type="button" class="btn-primary btn-secondary" id="cancel-bom-btn">Cancel</button>
+        <button type="button" class="btn-primary" id="save-bom-btn">Create BOM</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

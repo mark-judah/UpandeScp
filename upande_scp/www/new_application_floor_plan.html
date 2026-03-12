@@ -18,8 +18,13 @@
 				<div class="form-section">
 					<h3 class="form-section-title">Basic Information</h3>
 					<div class="form-group">
-						<label class="form-label" for="scouting-date">Date</label>
-						<input type="date" id="scouting-date" class="form-input" required />
+						<label class="form-label">Scouting Date</label>
+						<div
+							id="scouting-date-display"
+							class="form-input tw-bg-gray-100 tw-text-gray-500 tw-cursor-not-allowed"
+						>
+							Select a greenhouse to load the latest report...
+						</div>
 					</div>
 
 					<div class="form-group">
@@ -66,6 +71,17 @@
 				<div class="form-section">
 					<h3 class="form-section-title">Spray Details</h3>
 					<div class="form-group">
+						<label class="form-label" for="scheduled-application-time"
+							>Scheduled Application Date</label
+						>
+						<input
+							type="date"
+							id="scheduled-application-time"
+							class="form-input"
+							required
+						/>
+					</div>
+					<div class="form-group">
 						<label class="form-label" for="spray-type">Spray Type</label>
 						<select id="spray-type" class="form-select" required>
 							<option value="">Select type</option>
@@ -79,26 +95,39 @@
 						</select>
 					</div>
 					<div class="form-group">
-						<label class="form-label" for="final-targets">Targets *</label>
-						<div id="final-targets" class="filter-group"></div>
+						<label class="form-label">Targets *</label>
+						<div id="target-autocomplete-wrapper" style="position: relative">
+							<div id="target-pills-container" class="target-pills-container"></div>
+							<input
+								type="text"
+								id="target-autocomplete-input"
+								class="form-input"
+								placeholder="Search pests & diseases or type a custom target..."
+								autocomplete="off"
+							/>
+							<div
+								id="target-autocomplete-dropdown"
+								class="target-autocomplete-dropdown"
+							></div>
+						</div>
 						<small class="tw-text-gray-500 tw-text-xs"
-							>Select one or more final targets for the spray plan.</small
+							>Search from all pests & diseases, or type a custom name and press
+							Enter.</small
 						>
+						<select
+							id="final-targets"
+							multiple
+							class="form-select"
+							style="display: none"
+						></select>
 					</div>
 					<div class="form-group">
 						<label class="form-label" for="kit">Kit</label>
 						<select id="kit" class="form-select" required>
 							<option value="">Select kit</option>
-							<option value="Napsacks 1">Napsacks 1</option>
-							<option value="Napsacks 2">Napsacks 2</option>
-							<option value="Napsacks 3">Napsacks 3</option>
-							<option value="Napsacks 4">Napsacks 4</option>
-							<option value="Napsacks 5">Napsacks 5</option>
-							<option value="Boom Sprayer A">Boom Sprayer A</option>
-							<option value="Boom Sprayer B">Boom Sprayer B</option>
-							<option value="Central Station U 1">Central Station U 1</option>
-							<option value="Central Station U 2">Central Station U 2</option>
-							<option value="Central Station U 3">Central Station U 3</option>
+							{% for equipment in spray_equipment_list %}
+							<option value="{{ equipment.kit }}">{{ equipment.kit }}</option>
+							{% endfor %}
 						</select>
 					</div>
 					<div class="form-group">

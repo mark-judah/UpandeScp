@@ -1,6 +1,8 @@
-import frappe
 import hashlib
+
+import frappe
 from frappe.utils import flt
+
 
 @frappe.whitelist()
 def getScoutingData():
@@ -107,11 +109,11 @@ def getScoutingData():
                 "extra_fields": []
             }
         }
-        
+
         # --- 1. Fetch Scouting Entries ---
         scouting_entries = frappe.get_all(
             "Scouting Entry",
-            fields=["name", "bed", "zone", "time_of_capture", "scouts_name"], 
+            fields=["name", "bed", "zone", "time_of_capture", "scouts_name"],
             filters=[
                 ["greenhouse", "=", greenhouse],
                 ["date_of_capture", "=", date_str]
@@ -145,7 +147,7 @@ def getScoutingData():
 
         # --- 3. Process All Observation Types ---
         all_observation_names = {}
-        
+
         for key, cfg in observation_configs.items():
             fields = ["parent", cfg["item_field"]] + cfg["extra_fields"]
             meta = frappe.get_meta(cfg["child_table"])
@@ -158,9 +160,9 @@ def getScoutingData():
                     fields=final_fields
                 )
             except Exception as e:
-                frappe.log_error(f"Error fetching {cfg['child_table']}: {str(e)}")
+                frappe.log_error(f"Error fetching {cfg['child_table']}: {e!s}")
                 continue
-            
+
             items_in_data = {}
 
             for rec in child_records:
@@ -171,16 +173,16 @@ def getScoutingData():
                 item_name = rec.get(cfg["item_field"])
                 if not item_name:
                     continue
-                
+
                 if item_name not in items_in_data:
                     items_in_data[item_name] = "#999999"
 
-                obs_data = {"name": item_name, "color": "#999999"} 
+                obs_data = {"name": item_name, "color": "#999999"}
 
                 for field in cfg["extra_fields"]:
                     if field in rec:
                         obs_data[field] = rec[field]
-                
+
                 # Pest stage/severity
                 if key == "pests_scouting_entry":
                     pest_count = flt(rec.get("count"))
@@ -200,13 +202,13 @@ def getScoutingData():
                 if key not in processed_entries[parent]:
                     processed_entries[parent][key] = []
                 processed_entries[parent][key].append(obs_data)
-            
+
             # Color handling
             if items_in_data:
                 main_doctype = cfg["doctype"]
                 color_field = cfg["legend_color_field"]
                 main_meta = frappe.get_meta(main_doctype)
-                
+
                 if main_meta.has_field(color_field):
                     try:
                         colors = frappe.get_all(
@@ -218,17 +220,17 @@ def getScoutingData():
                             if c.get(color_field):
                                 items_in_data[c.name] = c.get(color_field)
                     except Exception as e:
-                        frappe.log_error(f"Color fetch error {main_doctype}: {str(e)}")
-                
+                        frappe.log_error(f"Color fetch error {main_doctype}: {e!s}")
+
                 for name in items_in_data:
                     if items_in_data[name] == "#999999":
                         items_in_data[name] = f"#{hashlib.md5(name.encode()).hexdigest()[:6]}"
-                
+
                 for entry in processed_entries.values():
                     for obs in entry.get(key, []):
                         if obs["name"] in items_in_data:
                             obs["color"] = items_in_data[obs["name"]]
-                            
+
                 all_observation_names[key] = [
                     {"name": n, "color": c} for n, c in items_in_data.items()
                 ]
@@ -357,8 +359,8 @@ def getScoutingData():
 
         # --- 6. BOMs, Chemicals, etc. ---
         chemical_mix_boms = frappe.get_all(
-            "BOM", 
-            filters={"custom_item_group": "Chemical Mix", "docstatus": 1, "is_active": 1}, 
+            "BOM",
+            filters={"custom_item_group": "Chemical Mix", "docstatus": 1, "is_active": 1},
             fields=["name", "custom_water_ph", "custom_water_hardness"]
         )
         bom_names = [b["name"] for b in chemical_mix_boms]
@@ -394,4 +396,4 @@ def getScoutingData():
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "getScoutingData Error")
-        frappe.throw(f"Error: {str(e)}")
+        frappe.throw(f"Error: {e!s}")

@@ -18,6 +18,7 @@ let greenhouseFilter = "";
 let activeTab = "pests";
 let scoutingAnalysis = null;
 let observationColors = { pests: {}, diseases: {} };
+var SCOUTING_DASHBOARD_DEBUG = true;
 
 function initScoutingDashboard() {
 	var today = new Date().toISOString().split("T")[0];
@@ -105,6 +106,13 @@ function fetchScoutingData() {
 	var loading = root_element.querySelector("#scout-loading");
 
 	loading.classList.add("active");
+	if (SCOUTING_DASHBOARD_DEBUG) {
+		console.log("Scouting dashboard: fetching", {
+			fromDate,
+			toDate,
+			greenhouseFilter,
+		});
+	}
 
 	Promise.all([
 		fetchCompleteScoutingEntries(fromDate, toDate, greenhouseFilter),
@@ -112,12 +120,23 @@ function fetchScoutingData() {
 		fetchScoutingReport(greenhouseFilter),
 	])
 		.then(function ([entries, analysis, report]) {
+			if (SCOUTING_DASHBOARD_DEBUG) {
+				console.log("Scouting dashboard: fetched payloads", {
+					entriesCount: Array.isArray(entries) ? entries.length : null,
+					analysis,
+					report,
+					entries,
+				});
+			}
 			scoutingAnalysis = analysis;
 			observationColors = extractObservationColors(report);
 			processScoutingData(entries);
 			loading.classList.remove("active");
 		})
-		.catch(function () {
+		.catch(function (err) {
+			if (SCOUTING_DASHBOARD_DEBUG) {
+				console.error("Scouting dashboard: failed to load", err);
+			}
 			loading.classList.remove("active");
 			frappe.msgprint("Failed to load scouting data");
 		});
@@ -524,9 +543,15 @@ function callFrappe(method, args) {
 			method: method,
 			args: args,
 			callback: function (r) {
+				if (SCOUTING_DASHBOARD_DEBUG) {
+					console.log("Scouting dashboard: frappe.call response", { method, args, r });
+				}
 				resolve(r || {});
 			},
 			error: function (err) {
+				if (SCOUTING_DASHBOARD_DEBUG) {
+					console.error("Scouting dashboard: frappe.call error", { method, args, err });
+				}
 				reject(err);
 			},
 		});

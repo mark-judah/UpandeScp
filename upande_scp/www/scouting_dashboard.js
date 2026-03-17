@@ -19,6 +19,17 @@ let activeTab = "pests";
 let scoutingAnalysis = null;
 let observationColors = { pests: {}, diseases: {} };
 var SCOUTING_DASHBOARD_DEBUG = true;
+if (SCOUTING_DASHBOARD_DEBUG) {
+	console.log("Scouting dashboard: script loaded", { root_element: root_element });
+}
+
+function notifyUser(message) {
+	if (window.frappe && typeof window.frappe.msgprint === "function") {
+		window.frappe.msgprint(message);
+		return;
+	}
+	alert(message);
+}
 
 function initScoutingDashboard() {
 	var today = new Date().toISOString().split("T")[0];
@@ -30,6 +41,19 @@ function initScoutingDashboard() {
 	var toDateInput = root_element.querySelector("#scout-to-date");
 	var refreshBtn = root_element.querySelector("#scout-refresh-btn");
 	var greenhouseSelect = root_element.querySelector("#scout-greenhouse-filter");
+	var debugFetchBtn = root_element.querySelector("#scout-debug-fetch-btn");
+
+	if (!fromDateInput || !toDateInput || !refreshBtn || !greenhouseSelect) {
+		if (SCOUTING_DASHBOARD_DEBUG) {
+			console.error("Scouting dashboard: missing required DOM elements", {
+				fromDateInput: !!fromDateInput,
+				toDateInput: !!toDateInput,
+				refreshBtn: !!refreshBtn,
+				greenhouseSelect: !!greenhouseSelect,
+			});
+		}
+		return;
+	}
 
 	fromDateInput.value = thirtyDaysAgo;
 	toDateInput.value = today;
@@ -37,6 +61,11 @@ function initScoutingDashboard() {
 	loadGreenhouseOptions();
 
 	refreshBtn.addEventListener("click", refreshAllData);
+	if (debugFetchBtn) {
+		debugFetchBtn.addEventListener("click", debugFetchAndLog);
+	} else if (SCOUTING_DASHBOARD_DEBUG) {
+		console.warn("Scouting dashboard: debug fetch button not found");
+	}
 	fromDateInput.addEventListener("change", refreshAllData);
 	toDateInput.addEventListener("change", refreshAllData);
 	greenhouseSelect.addEventListener("change", function (e) {
@@ -59,15 +88,87 @@ function initScoutingDashboard() {
 	fetchScoutingData();
 }
 
-function loadGreenhouseOptions() {
-	frappe.call({
-		method: "frappe.client.get_list",
-		args: {
-			doctype: "Scouting Entry",
-			fields: ["distinct greenhouse"],
-			limit_page_length: 1000,
+function debugFetchAndLog() {
+	var fromDate = root_element.querySelector("#scout-from-date")?.value;
+	var toDate = root_element.querySelector("#scout-to-date")?.value;
+
+	console.group("Scouting dashboard: debug fetch");
+	console.log("Inputs", { fromDate, toDate, greenhouseFilter });
+
+	var entriesPromise = callFrappe(
+		"upande_scp.serverscripts.get_complete_scouting_entries.getCompleteScoutingEntries",
+		{
+			from_date: fromDate,
+			to_date: toDate,
+			greenhouse: greenhouseFilter,
 		},
-		callback: function (r) {
+	);
+
+	var analysisPromise = callFrappe(
+		"upande_scp.serverscripts.get_scouting_analysis.getScoutingAnalysis",
+		{
+			date: toDate,
+		},
+	);
+
+	var workspaceStatsPromise = callFrappe(
+		"upande_scp.serverscripts.get_workspace_stats.getWorkspaceStats",
+		{
+			date: toDate,
+		},
+	);
+
+	var trapPromise = fetchTrapDataRange(fromDate, toDate);
+
+	return Promise.allSettled([
+		entriesPromise,
+		analysisPromise,
+		workspaceStatsPromise,
+		trapPromise,
+	])
+		.then(function ([entriesRes, analysisRes, workspaceRes, trapRes]) {
+			console.log(
+				"Complete scouting entries",
+				entriesRes.status,
+				entriesRes.value || entriesRes.reason,
+			);
+			console.log(
+				"Scouting analysis",
+				analysisRes.status,
+				analysisRes.value || analysisRes.reason,
+			);
+			console.log(
+				"Workspace stats",
+				workspaceRes.status,
+				workspaceRes.value || workspaceRes.reason,
+			);
+			console.log("Trap data (range)", trapRes.status, trapRes.value || trapRes.reason);
+
+			var entriesMessage =
+				entriesRes.status === "fulfilled" ? entriesRes.value?.message : null;
+			var entries = entriesMessage?.entries;
+			console.log("Entries only", {
+				entriesCount: Array.isArray(entries) ? entries.length : null,
+				entries,
+				filters_applied: entriesMessage?.filters_applied,
+				total_entries: entriesMessage?.total_entries,
+			});
+
+			console.groupEnd();
+		})
+		.catch(function (err) {
+			console.error("Scouting dashboard: debug fetch unexpected error", err);
+			console.groupEnd();
+		});
+}
+
+function loadGreenhouseOptions() {
+	return callFrappe("frappe.client.get_list", {
+		doctype: "Scouting Entry",
+		fields: ["distinct greenhouse"],
+		limit_page_length: 1000,
+	})
+		.then(function (r) {
 			if (r.message) {
 				var greenhouses = [...new Set(r.message.map((d) => d.greenhouse).filter(Boolean))];
 				var select = root_element.querySelector("#scout-greenhouse-filter");
@@ -78,8 +179,12 @@ function loadGreenhouseOptions() {
 					select.appendChild(option);
 				});
 			}
-		},
-	});
+		})
+		.catch(function (err) {
+			if (SCOUTING_DASHBOARD_DEBUG) {
+				console.error("Scouting dashboard: failed to load greenhouse options", err);
+			}
+		});
 }
 
 function switchTab(tab) {
@@ -138,7 +243,7 @@ function fetchScoutingData() {
 				console.error("Scouting dashboard: failed to load", err);
 			}
 			loading.classList.remove("active");
-			frappe.msgprint("Failed to load scouting data");
+			notifyUser("Failed to load scouting data");
 		});
 }
 
@@ -365,11 +470,14 @@ function processScoutingData(entries, trapEntries) {
 }
 
 function fetchCompleteScoutingEntries(fromDate, toDate, greenhouse) {
-	return callFrappe("upande_scp.serverscripts.get_complete_scouting_entries.getCompleteScoutingEntries", {
-		from_date: fromDate,
-		to_date: toDate,
-		greenhouse: greenhouse,
-	}).then(function (r) {
+	return callFrappe(
+		"upande_scp.serverscripts.get_complete_scouting_entries.getCompleteScoutingEntries",
+		{
+			from_date: fromDate,
+			to_date: toDate,
+			greenhouse: greenhouse,
+		},
+	).then(function (r) {
 		return r.message?.entries || [];
 	});
 }
@@ -538,23 +646,79 @@ function extractObservationColors(report) {
 }
 
 function callFrappe(method, args) {
-	return new Promise(function (resolve, reject) {
-		frappe.call({
-			method: method,
-			args: args,
-			callback: function (r) {
-				if (SCOUTING_DASHBOARD_DEBUG) {
-					console.log("Scouting dashboard: frappe.call response", { method, args, r });
-				}
-				resolve(r || {});
-			},
-			error: function (err) {
-				if (SCOUTING_DASHBOARD_DEBUG) {
-					console.error("Scouting dashboard: frappe.call error", { method, args, err });
-				}
-				reject(err);
-			},
+	if (window.frappe && typeof window.frappe.call === "function") {
+		return new Promise(function (resolve, reject) {
+			window.frappe.call({
+				method: method,
+				args: args,
+				callback: function (r) {
+					if (SCOUTING_DASHBOARD_DEBUG) {
+						console.log("Scouting dashboard: frappe.call response", {
+							method,
+							args,
+							r,
+						});
+					}
+					resolve(r || {});
+				},
+				error: function (err) {
+					if (SCOUTING_DASHBOARD_DEBUG) {
+						console.error("Scouting dashboard: frappe.call error", {
+							method,
+							args,
+							err,
+						});
+					}
+					reject(err);
+				},
+			});
 		});
+	}
+
+	var params = new URLSearchParams();
+	Object.keys(args || {}).forEach(function (key) {
+		var value = args[key];
+		if (value === undefined || value === null) return;
+		params.set(key, typeof value === "string" ? value : JSON.stringify(value));
+	});
+
+	var url = "/api/method/" + method;
+	var qs = params.toString();
+	if (qs) url = url + "?" + qs;
+
+	if (SCOUTING_DASHBOARD_DEBUG) {
+		console.log("Scouting dashboard: fetch call", { method, args, url });
+	}
+
+	return fetch(url, {
+		method: "GET",
+		credentials: "same-origin",
+		headers: { Accept: "application/json" },
+	}).then(function (res) {
+		return res
+			.json()
+			.catch(function () {
+				return null;
+			})
+			.then(function (data) {
+				if (SCOUTING_DASHBOARD_DEBUG) {
+					console.log("Scouting dashboard: fetch response", {
+						method,
+						status: res.status,
+						ok: res.ok,
+						data,
+					});
+				}
+
+				if (!res.ok) {
+					var errorMessage = data?.exc || data?.message || "Request failed";
+					var err = new Error(errorMessage);
+					err.response = data;
+					throw err;
+				}
+
+				return data || {};
+			});
 	});
 }
 
@@ -590,7 +754,7 @@ function updatePestTab() {
 
 	var totalEntries = scoutingData.entries.reduce(
 		(sum, e) => sum + (e.pests_scouting_entry?.length || 0),
-		0
+		0,
 	);
 	var activePests = pestNames.length;
 	var highSeverity = pestNames.reduce((sum, p) => sum + pests[p].severity.high, 0);
@@ -677,7 +841,7 @@ function updatePestDistributionChart() {
 		"#06b6d4",
 	];
 	var colors = labels.map(
-		(label, idx) => observationColors.pests[label] || palette[idx % palette.length]
+		(label, idx) => observationColors.pests[label] || palette[idx % palette.length],
 	);
 
 	pestDistChart = new Chart(ctx, {
@@ -723,18 +887,18 @@ function updatePestSeverityMatrix() {
 				highPct > 50
 					? "critical"
 					: highPct > 20
-					? "high"
-					: modPct > 30
-					? "moderate"
-					: "low";
+						? "high"
+						: modPct > 30
+							? "moderate"
+							: "low";
 
 			return `
             <div class="severity-item">
                 <div class="severity-name">${pest}</div>
                 <div class="severity-bar">
                     <div class="severity-fill ${severityClass}" style="width: ${
-				highPct + modPct + lowPct
-			}%"></div>
+						highPct + modPct + lowPct
+					}%"></div>
                 </div>
                 <div class="severity-stats">
                     <span>High: ${p.severity.high}</span>
@@ -823,7 +987,7 @@ function updatePestStagesTable() {
             <td>${s.date}</td>
             <td>${s.greenhouse || "-"}</td>
         </tr>
-    `
+    `,
 		)
 		.join("");
 }
@@ -836,7 +1000,7 @@ function updateDiseaseTab() {
 
 	var totalEntries = scoutingData.entries.reduce(
 		(sum, e) => sum + (e.diseases_scouting_entry?.length || 0),
-		0
+		0,
 	);
 	var activeDiseases = diseaseNames.length;
 	var severeCases = diseaseNames.reduce((sum, d) => sum + diseases[d].severity.high, 0);
@@ -844,8 +1008,8 @@ function updateDiseaseTab() {
 	var topDisease =
 		diseaseNames.length > 0
 			? diseaseNames.reduce((a, b) =>
-					diseases[a].counts.length > diseases[b].counts.length ? a : b
-			  )
+					diseases[a].counts.length > diseases[b].counts.length ? a : b,
+				)
 			: "None";
 
 	root_element.querySelector("#disease-total-entries").textContent = formatNumber(totalEntries);
@@ -925,7 +1089,7 @@ function updateDiseaseDistributionChart() {
 		"#06b6d4",
 	];
 	var colors = labels.map(
-		(label, idx) => observationColors.diseases[label] || palette[idx % palette.length]
+		(label, idx) => observationColors.diseases[label] || palette[idx % palette.length],
 	);
 
 	diseaseDistChart = new Chart(ctx, {
@@ -970,8 +1134,8 @@ function updateDiseaseSeverityBubbles() {
 			return `
             <div class="bubble-item">
                 <div class="bubble" style="width: ${size}px; height: ${size}px; background: ${
-				highPct > 0.5 ? "#ef4444" : highPct > 0.2 ? "#f59e0b" : "#10b981"
-			}">
+					highPct > 0.5 ? "#ef4444" : highPct > 0.2 ? "#f59e0b" : "#10b981"
+				}">
                     <span>${Math.round(highPct * 100)}%</span>
                 </div>
                 <div class="bubble-label">${disease}</div>
@@ -1057,7 +1221,7 @@ function updateDiseaseIncidentsTable() {
             <td>${i.date}</td>
             <td>${i.greenhouse || "-"}</td>
         </tr>
-    `
+    `,
 		)
 		.join("");
 }
@@ -1072,7 +1236,7 @@ function updateTrapTab() {
 	var activeTraps = new Set(trapKeys.map((t) => traps[t].trap)).size;
 	var fcmCount = trapKeys.reduce(
 		(sum, t) => sum + (traps[t].pest === "FCM" ? traps[t].total : 0),
-		0
+		0,
 	);
 	var avgPerTrap = activeTraps > 0 ? (totalCount / activeTraps).toFixed(1) : 0;
 
@@ -1287,7 +1451,7 @@ function updateTrapDetailsTable() {
             <td>${d.date}</td>
             <td>${d.greenhouse || "-"}</td>
         </tr>
-    `
+    `,
 		)
 		.join("");
 }
@@ -1302,7 +1466,7 @@ function updateOverviewTab() {
 	var greenhouseCount = Object.keys(scoutingData.greenhouses).length;
 	var alerts = Object.keys(scoutingData.greenhouses).reduce(
 		(sum, gh) => sum + scoutingData.greenhouses[gh].alerts,
-		0
+		0,
 	);
 
 	root_element.querySelector("#overview-total-scouts").textContent = totalScouts;
@@ -1380,11 +1544,11 @@ function updateOverviewDonutChart() {
 
 	var totalPests = Object.values(scoutingData.pests).reduce(
 		(sum, p) => sum + p.counts.length,
-		0
+		0,
 	);
 	var totalDiseases = Object.values(scoutingData.diseases).reduce(
 		(sum, d) => sum + d.counts.length,
-		0
+		0,
 	);
 	var totalTraps = Object.values(scoutingData.traps).reduce((sum, t) => sum + t.total, 0);
 	var total = totalPests + totalDiseases + totalTraps;
@@ -1495,7 +1659,7 @@ function updateAlertsList() {
                 </div>
             </div>
         </div>
-    `
+    `,
 		)
 		.join("");
 }
@@ -1543,8 +1707,8 @@ function updateRecentEntries() {
 			var type = e.pests_scouting_entry?.length
 				? "pest"
 				: e.diseases_scouting_entry?.length
-				? "disease"
-				: "trap";
+					? "disease"
+					: "trap";
 			var typeLabel = type === "pest" ? "Pest" : type === "disease" ? "Disease" : "Trap";
 
 			return `
@@ -1594,7 +1758,7 @@ function showGreenhouseDetails(greenhouse) {
             <div class="gh-var-name">${pest}</div>
             <div class="gh-var-count">${pestCounts[pest]}</div>
         </div>
-    `
+    `,
 		)
 		.join("");
 
@@ -1604,7 +1768,7 @@ function showGreenhouseDetails(greenhouse) {
 	var diseaseCounts = {};
 	Object.keys(scoutingData.diseases).forEach((disease) => {
 		var counts = scoutingData.diseases[disease].counts.filter(
-			(c) => c.greenhouse === greenhouse
+			(c) => c.greenhouse === greenhouse,
 		);
 		if (counts.length) diseaseCounts[disease] = counts.length;
 	});
@@ -1617,7 +1781,7 @@ function showGreenhouseDetails(greenhouse) {
             <div class="gh-disease-name">${disease}</div>
             <div class="gh-disease-count">${diseaseCounts[disease]}</div>
         </div>
-    `
+    `,
 		)
 		.join("");
 
@@ -1642,7 +1806,7 @@ function showGreenhouseDetails(greenhouse) {
             <div class="gh-len-val">${trapCounts[trap]}</div>
             <div class="gh-len-lbl">${trap}</div>
         </div>
-    `
+    `,
 		)
 		.join("");
 

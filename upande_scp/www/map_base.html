@@ -13,17 +13,19 @@
         .navbar.navbar-light { display: none !important; }
         .web-footer { display: none !important; }
 
-        /* ── Bridge local map vars → Frappe theme vars ──
-           Map pages use --bg, --text, --border, --accent etc.
-           These resolve to Frappe's live theme so dark/light mode works. */
         :root {
-            --bg:         var(--bg-color,      #ffffff);
-            --text:       var(--text-color,    #111827);
-            --border:     var(--border-color,  #e2e8f0);
+            --scp-bw-bg: #ffffff;
+            --scp-bw-text: #111111;
+            --scp-bw-border: #000000;
+            --scp-bw-muted: rgba(0, 0, 0, 0.7);
+
+            --bg:         var(--scp-bw-bg);
+            --text:       var(--scp-bw-text);
+            --border:     var(--scp-bw-border);
             --accent:     var(--primary,       #2563eb);
-            --panel-bg:   var(--fg-color,      #f8fafc);
-            --sidebar-bg: var(--fg-color,      #f8fafc);
-            --hover:      var(--control-bg,    #f1f5f9);
+            --panel-bg:   var(--scp-bw-bg);
+            --sidebar-bg: var(--scp-bw-bg);
+            --hover:      transparent;
             --success: #10b981;
             --warning: #f59e0b;
             --danger:  #ef4444;
@@ -39,11 +41,12 @@
             background: var(--bg); color: var(--text);
         }
 
-        .custom-navbar { flex-shrink: 0; }
+        .custom-navbar { flex-shrink: 0; position: sticky; top: 0; z-index: 3000; background: var(--bg); }
 
         .page-content {
             height: calc(100vh - 52px);
-            overflow: hidden;
+            overflow: auto;
+            position: relative;
             display: flex;
             flex-direction: column;
         }
@@ -51,8 +54,7 @@
         /* ── Shared loader (overridden per-page if needed) ── */
         #map-loader {
             position: absolute; inset: 0;
-            background: color-mix(in srgb, var(--bg) 88%, transparent);
-            backdrop-filter: blur(4px);
+            background: rgba(255, 255, 255, 0.92);
             display: none; flex-direction: column;
             align-items: center; justify-content: center;
             z-index: 2000; gap: 1rem;

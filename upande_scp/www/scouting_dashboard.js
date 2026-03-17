@@ -107,15 +107,14 @@ function fetchScoutingData() {
 	loading.classList.add("active");
 
 	Promise.all([
-		fetchScoutingEntries(fromDate, toDate, greenhouseFilter),
-		fetchTrapDataRange(fromDate, toDate),
+		fetchCompleteScoutingEntries(fromDate, toDate, greenhouseFilter),
 		fetchScoutingAnalysis(toDate),
 		fetchScoutingReport(greenhouseFilter),
 	])
-		.then(function ([entries, trapEntries, analysis, report]) {
+		.then(function ([entries, analysis, report]) {
 			scoutingAnalysis = analysis;
 			observationColors = extractObservationColors(report);
-			processScoutingData(entries, trapEntries);
+			processScoutingData(entries);
 			loading.classList.remove("active");
 		})
 		.catch(function () {
@@ -141,6 +140,9 @@ function processScoutingData(entries, trapEntries) {
 		var date = entry.date_of_capture;
 		var greenhouse = entry.greenhouse;
 		var scout = entry.scouts_name;
+		var pests = entry.pests_scouting_entry || entry.pests || [];
+		var diseases = entry.diseases_scouting_entry || entry.diseases || [];
+		var traps = entry.trap_scouting_entry || entry.traps || [];
 
 		if (!data.daily[date]) {
 			data.daily[date] = { pests: 0, diseases: 0, traps: 0, total: 0 };
@@ -158,12 +160,13 @@ function processScoutingData(entries, trapEntries) {
 			};
 		}
 
-		if (entry.pests_scouting_entry && entry.pests_scouting_entry.length > 0) {
-			data.daily[date].pests += entry.pests_scouting_entry.length;
-			data.greenhouses[greenhouse].pests += entry.pests_scouting_entry.length;
+		if (pests.length > 0) {
+			data.daily[date].pests += pests.length;
+			data.greenhouses[greenhouse].pests += pests.length;
 
-			entry.pests_scouting_entry.forEach((pest) => {
-				var pestName = pest.pest;
+			pests.forEach((pest) => {
+				var pestName = pest.pest || "Unknown";
+				var pestStage = pest.stage || "Unknown";
 				if (!data.pests[pestName]) {
 					data.pests[pestName] = {
 						name: pestName,
@@ -176,15 +179,15 @@ function processScoutingData(entries, trapEntries) {
 				data.pests[pestName].counts.push({
 					date: date,
 					count: pest.count || 1,
-					stage: pest.stage,
+					stage: pestStage,
 					section: pest.plant_section,
 					greenhouse: greenhouse,
 				});
 
-				if (!data.pests[pestName].stages[pest.stage]) {
-					data.pests[pestName].stages[pest.stage] = 0;
+				if (!data.pests[pestName].stages[pestStage]) {
+					data.pests[pestName].stages[pestStage] = 0;
 				}
-				data.pests[pestName].stages[pest.stage] += pest.count || 1;
+				data.pests[pestName].stages[pestStage] += pest.count || 1;
 
 				if (pest.plant_section) {
 					if (!data.pests[pestName].sections[pest.plant_section]) {
@@ -199,12 +202,14 @@ function processScoutingData(entries, trapEntries) {
 			});
 		}
 
-		if (entry.diseases_scouting_entry && entry.diseases_scouting_entry.length > 0) {
-			data.daily[date].diseases += entry.diseases_scouting_entry.length;
-			data.greenhouses[greenhouse].diseases += entry.diseases_scouting_entry.length;
+		if (diseases.length > 0) {
+			data.daily[date].diseases += diseases.length;
+			data.greenhouses[greenhouse].diseases += diseases.length;
 
-			entry.diseases_scouting_entry.forEach((disease) => {
-				var diseaseName = disease.disease;
+			diseases.forEach((disease) => {
+				var diseaseName = disease.disease || "Unknown";
+				var diseaseStage = disease.stage || disease.severity_level || "";
+				var severityKey = (disease.severity_level || disease.stage || "").toLowerCase();
 				if (!data.diseases[diseaseName]) {
 					data.diseases[diseaseName] = {
 						name: diseaseName,
@@ -215,40 +220,47 @@ function processScoutingData(entries, trapEntries) {
 				}
 				data.diseases[diseaseName].counts.push({
 					date: date,
-					stage: disease.stage,
+					stage: diseaseStage,
 					section: disease.plant_section,
 					greenhouse: greenhouse,
 				});
 
-				if (disease.stage) {
-					if (!data.diseases[diseaseName].stages[disease.stage]) {
-						data.diseases[diseaseName].stages[disease.stage] = 0;
+				if (diseaseStage) {
+					if (!data.diseases[diseaseName].stages[diseaseStage]) {
+						data.diseases[diseaseName].stages[diseaseStage] = 0;
 					}
-					data.diseases[diseaseName].stages[disease.stage]++;
+					data.diseases[diseaseName].stages[diseaseStage]++;
 				}
 
-				if (disease.stage && disease.stage.includes("Active")) {
+				if (
+					severityKey.includes("high") ||
+					severityKey.includes("severe") ||
+					severityKey.includes("active")
+				) {
 					data.diseases[diseaseName].severity.high++;
+				} else if (severityKey.includes("moderate") || severityKey.includes("medium")) {
+					data.diseases[diseaseName].severity.moderate++;
 				} else {
 					data.diseases[diseaseName].severity.low++;
 				}
 			});
 		}
 
-		if (!useTrapEntries && entry.trap_scouting_entry && entry.trap_scouting_entry.length > 0) {
-			data.daily[date].traps += entry.trap_scouting_entry.length;
-			data.greenhouses[greenhouse].traps += entry.trap_scouting_entry.length;
+		if (!useTrapEntries && traps.length > 0) {
+			data.daily[date].traps += traps.length;
+			data.greenhouses[greenhouse].traps += traps.length;
 
-			entry.trap_scouting_entry.forEach((trap) => {
-				var trapId = trap.trap;
+			traps.forEach((trap) => {
+				var trapId = trap.trap || trap.trap_name || "Unknown";
 				var pest = trap.pest || "Unknown";
 				var key = trapId + "-" + pest;
+				var location = trap.location || trap.plant_section;
 
 				if (!data.traps[key]) {
 					data.traps[key] = {
 						trap: trapId,
 						pest: pest,
-						location: trap.location,
+						location: location,
 						counts: [],
 						total: 0,
 					};
@@ -256,7 +268,7 @@ function processScoutingData(entries, trapEntries) {
 				data.traps[key].counts.push({
 					date: date,
 					count: trap.count || 0,
-					location: trap.location,
+					location: location,
 					greenhouse: greenhouse,
 				});
 				data.traps[key].total += trap.count || 0;
@@ -331,6 +343,16 @@ function processScoutingData(entries, trapEntries) {
 
 	scoutingData = data;
 	updateAllTabs();
+}
+
+function fetchCompleteScoutingEntries(fromDate, toDate, greenhouse) {
+	return callFrappe("upande_scp.serverscripts.get_complete_scouting_entries.getCompleteScoutingEntries", {
+		from_date: fromDate,
+		to_date: toDate,
+		greenhouse: greenhouse,
+	}).then(function (r) {
+		return r.message?.entries || [];
+	});
 }
 
 function fetchScoutingEntries(fromDate, toDate, greenhouse) {

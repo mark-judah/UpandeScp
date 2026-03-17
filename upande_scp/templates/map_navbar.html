@@ -1,107 +1,100 @@
-<header
-	class="tw-sticky tw-top-0 tw-header tw-bg-white tw-border-b tw-border-gray-200 tw-px-4 md:tw-px-6 tw-py-3 tw-shadow-soft-bottom tw-z-50 tw-flex tw-items-center tw-justify-between tw-h-18"
->
-	<div class="tw-flex tw-items-center tw-gap-3 tw-flex-none">
-		<div>
-			<h1 class="tw-text-xl tw-font-extrabold tw-text-gray-900 tw-tracking-tight">Maps</h1>
-		</div>
-	</div>
+<style>
+.scp-nav {
+    height: 52px;
+    background: var(--fg-color, #ffffff);
+    border-bottom: 1px solid var(--border-color, #e2e8f0);
+    display: flex; align-items: center;
+    padding: 0 1.25rem; gap: 1rem;
+    font-family: var(--font-stack, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    position: relative; z-index: 900;
+}
+.scp-nav-brand {
+    display: flex; align-items: center; gap: 0.5rem;
+    text-decoration: none; color: var(--text-color, #111827);
+    font-weight: 700; font-size: 0.9375rem; flex-shrink: 0;
+}
+.scp-nav-brand-icon {
+    width: 28px; height: 28px;
+    background: rgba(16,185,129,0.12); color: #10b981;
+    border-radius: 7px; display: flex; align-items: center; justify-content: center;
+}
+.scp-nav-divider { width: 1px; height: 20px; background: var(--border-color, #e2e8f0); flex-shrink: 0; }
+.scp-nav-links { display: flex; gap: 0.25rem; flex: 1; overflow-x: auto; scrollbar-width: none; }
+.scp-nav-links::-webkit-scrollbar { display: none; }
+.scp-nav-link {
+    display: flex; align-items: center; gap: 0.375rem;
+    padding: 0.375rem 0.75rem; border-radius: 7px;
+    text-decoration: none; font-size: 0.8125rem; font-weight: 500;
+    color: var(--text-muted, #64748b);
+    transition: background 0.15s, color 0.15s; white-space: nowrap;
+}
+.scp-nav-link:hover { background: var(--control-bg, #f1f5f9); color: var(--text-color, #111827); }
+.scp-nav-link.active {
+    background: var(--primary-tint, rgba(37,99,235,0.08));
+    color: var(--primary, #2563eb); font-weight: 600;
+}
+.scp-nav-link svg { flex-shrink: 0; }
+.scp-nav-back {
+    display: flex; align-items: center; gap: 0.375rem;
+    padding: 0.375rem 0.875rem; border-radius: 7px;
+    text-decoration: none; font-size: 0.8125rem; font-weight: 500;
+    color: var(--text-muted, #64748b);
+    border: 1px solid var(--border-color, #e2e8f0);
+    transition: all 0.15s; flex-shrink: 0;
+}
+.scp-nav-back:hover { background: var(--control-bg, #f1f5f9); color: var(--text-color, #111827); border-color: var(--primary, #2563eb); }
+@media (max-width: 768px) {
+    .scp-nav-links { display: none; }
+    .scp-nav-brand span { display: none; }
+}
+</style>
 
-	<nav class="tw-hidden lg:tw-flex tw-gap-8 tw-flex-1 tw-justify-center">
-		<a
-			href="/app/scouting-&amp;-crop-protection"
-			class="tw-text-secondary-gray tw-font-medium tw-text-sm tw-py-2 tw-px-3 tw-rounded-lg hover:tw-bg-gray-100 hover:tw-text-gray-900 tw-transition-colors tw-nav-tree"
-			>Home</a
-		>
-		<a
-			href="scouts-map"
-			class="tw-text-secondary-gray tw-font-medium tw-text-sm tw-py-2 tw-px-3 tw-rounded-lg hover:tw-bg-gray-100 hover:tw-text-gray-900 tw-transition-colors tw-nav-tree"
-			>Scouts</a
-		>
-		<a
-			href="observations-map"
-			class="tw-text-secondary-gray tw-font-medium tw-text-sm tw-py-2 tw-px-3 tw-rounded-lg hover:tw-bg-gray-100 hover:tw-text-gray-900 tw-transition-colors"
-			>Observations</a
-		>
-		<a
-			href="scouting-heatmaps"
-			class="tw-text-secondary-gray tw-font-medium tw-text-sm tw-py-2 tw-px-3 tw-rounded-lg hover:tw-bg-gray-100 hover:tw-text-gray-900 tw-transition-colors"
-			>Heatmaps</a
-		>
-		<a
-			href="traps-map"
-			class="tw-text-secondary-gray tw-font-medium tw-text-sm tw-py-2 tw-px-3 tw-rounded-lg hover:tw-bg-gray-100 hover:tw-text-gray-900 tw-transition-colors"
-			>Traps</a
-		>
-		<a
-			href="variety-map"
-			class="tw-text-secondary-gray tw-font-medium tw-text-sm tw-py-2 tw-px-3 tw-rounded-lg hover:tw-bg-gray-100 hover:tw-text-gray-900 tw-transition-colors tw-nav-folktales"
-			>Varieties</a
-		>
-		<a
-			href="scouting_dashboard"
-			class="tw-text-secondary-gray tw-font-medium tw-text-sm tw-py-2 tw-px-3 tw-rounded-lg hover:tw-bg-gray-100 hover:tw-text-gray-900 tw-transition-colors"
-			>Dashboards</a
-		>
-	</nav>
+<nav class="scp-nav">
+    <a href="/app/scouting-&-crop-protection" class="scp-nav-brand">
+        <div class="scp-nav-brand-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M12 22V12M12 12C12 7 7 4 3 6M12 12C12 7 17 4 21 6"/>
+                <path d="M3 6c2 4 5 6 9 6M21 6c-2 4-5 6-9 6"/>
+            </svg>
+        </div>
+        <span>Scouting & CP</span>
+    </a>
+    <div class="scp-nav-divider"></div>
+    <div class="scp-nav-links">
+        <a href="/scouts-map" class="scp-nav-link" data-page="scouts-map">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            Scouts
+        </a>
+        <a href="/observations-map" class="scp-nav-link" data-page="observations-map">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Observations
+        </a>
+        <a href="/scouting-heatmaps" class="scp-nav-link" data-page="scouting-heatmaps">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 2c0 6-8 8-8 14a8 8 0 0 0 16 0c0-6-8-8-8-14z"/></svg>
+            Heatmaps
+        </a>
+        <a href="/traps-map" class="scp-nav-link" data-page="traps-map">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+            Traps
+        </a>
+        <a href="/new-application-floor-plan" class="scp-nav-link" data-page="new-application-floor-plan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            Floor Plans
+        </a>
+    </div>
+    <a href="/app/scouting-&-crop-protection" class="scp-nav-back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="15 18 9 12 15 6"/></svg>
+        Workspace
+    </a>
+</nav>
 
-	<div class="tw-flex tw-items-center tw-gap-3 tw-flex-none tw-justify-end">
-		<button
-			id="mobile-menu-btn"
-			class="lg:tw-hidden tw-ml-4 tw-p-2 tw-text-gray-600 hover:tw-text-primary-blue tw-rounded-lg hover:tw-bg-gray-100 tw-transition-colors"
-		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				fill="none"
-				viewBox="0 0 24 24"
-				stroke-width="1.5"
-				stroke="currentColor"
-				class="tw-w-6 tw-h-6"
-			>
-				<path></path>
-			</svg>
-		</button>
-	</div>
-</header>
-
-<div
-	id="mobile-menu"
-	class="tw-hidden lg:tw-hidden tw-mobile-menu tw-absolute tw-top-18 tw-left-0 tw-right-0 tw-bg-white tw-border-t tw-border-gray-200 tw-shadow-lg tw-z-40 tw-flex tw-flex-col tw-gap-2 tw-p-4"
->
-	<a
-		href="/app/scouting-&amp;-crop-protection"
-		class="tw-text-gray-700 hover:tw-text-primary-blue tw-font-medium tw-p-2 tw-rounded-lg hover:tw-bg-gray-50 tw-nav-tree-mobile"
-		>Home</a
-	>
-	<a
-		href="scouts-map"
-		class="tw-text-gray-700 hover:tw-text-primary-blue tw-font-medium tw-p-2 tw-rounded-lg hover:tw-bg-gray-50"
-		>Scouts</a
-	>
-	<a
-		href="observations-map"
-		class="tw-text-gray-700 hover:tw-text-primary-blue tw-font-medium tw-p-2 tw-rounded-lg hover:tw-bg-gray-50"
-		>Observations</a
-	>
-	<a
-		href="variety-map"
-		class="tw-text-gray-700 hover:tw-text-primary-blue tw-font-medium tw-p-2 tw-rounded-lg hover:tw-bg-gray-50 tw-nav-folktales-mobile"
-		>Varieties</a
-	>
-	<a
-		href="scouting_dashboard"
-		class="tw-text-gray-700 hover:tw-text-primary-blue tw-font-medium tw-p-2 tw-rounded-lg hover:tw-bg-gray-50"
-		>Dashboards</a
-	>
-	<hr class="tw-border-gray-100 tw-my-2" />
-	<button
-		class="tw-btn tw-w-full tw-py-2.5 tw-rounded-lg tw-font-semibold tw-text-sm tw-bg-primary-blue tw-text-white hover:tw-bg-indigo-700 active:tw-scale-98 tw-transition-all"
-	>
-		Expand All
-	</button>
-	<button
-		class="tw-btn tw-w-full tw-py-2.5 tw-rounded-lg tw-font-semibold tw-text-sm tw-bg-white tw-text-secondary-gray tw-border tw-border-gray-300 hover:tw-bg-gray-50 active:tw-scale-98 tw-transition-all"
-	>
-		Collapse All
-	</button>
-</div>
+<script>
+(function () {
+    var path = window.location.pathname.replace(/^\//, '');
+    document.querySelectorAll('.scp-nav-link[data-page]').forEach(function (a) {
+        if (path === a.dataset.page || path.startsWith(a.dataset.page)) {
+            a.classList.add('active');
+        }
+    });
+})();
+</script>

@@ -12,7 +12,7 @@ if (typeof Chart === "undefined") {
 let pestTrendChart, pestDistChart, pestSectionChart;
 let diseaseTrendChart, diseaseDistChart, diseaseStageChart;
 let trapTrendChart, trapPerfChart, trapPestChart;
-let overviewTimelineChart, overviewDonutChart;
+let overviewTimelineChart, overviewDonutChart, overviewAreaRadarChart;
 let scoutingData = null;
 let greenhouseFilter = "";
 let activeTab = "pests";
@@ -1478,6 +1478,8 @@ function updateOverviewTab() {
 
 	updateOverviewDonutChart();
 
+	updateOverviewAreaRadarChart();
+
 	updateGreenhouseHealth();
 
 	updateAlertsList();
@@ -1573,6 +1575,79 @@ function updateOverviewDonutChart() {
 			cutout: "70%",
 			plugins: {
 				legend: { position: "bottom" },
+			},
+		},
+	});
+}
+
+function updateOverviewAreaRadarChart() {
+	var ctx = root_element.querySelector("#overview-area-radar-chart");
+	if (!ctx) return;
+	if (overviewAreaRadarChart) overviewAreaRadarChart.destroy();
+
+	var pestTotals = {};
+	Object.values(scoutingData.pests).forEach((p) => {
+		Object.keys(p.sections || {}).forEach((section) => {
+			pestTotals[section] = (pestTotals[section] || 0) + (p.sections[section] || 0);
+		});
+	});
+
+	var diseaseTotals = {};
+	Object.values(scoutingData.diseases).forEach((d) => {
+		(d.counts || []).forEach((c) => {
+			var section = c.section || "Unknown";
+			diseaseTotals[section] = (diseaseTotals[section] || 0) + 1;
+		});
+	});
+
+	var allSections = Array.from(
+		new Set([...Object.keys(pestTotals), ...Object.keys(diseaseTotals)]),
+	).map((section) => ({
+		section,
+		total: (pestTotals[section] || 0) + (diseaseTotals[section] || 0),
+	}));
+
+	allSections.sort((a, b) => b.total - a.total);
+	var topSections = allSections.slice(0, 8);
+	var labels = topSections.map((s) => s.section);
+	var pestData = labels.map((s) => pestTotals[s] || 0);
+	var diseaseData = labels.map((s) => diseaseTotals[s] || 0);
+
+	overviewAreaRadarChart = new Chart(ctx, {
+		type: "radar",
+		data: {
+			labels: labels,
+			datasets: [
+				{
+					label: "Pests",
+					data: pestData,
+					borderColor: "#10b981",
+					backgroundColor: "rgba(16, 185, 129, 0.12)",
+					pointBackgroundColor: "#10b981",
+					borderWidth: 2,
+				},
+				{
+					label: "Diseases",
+					data: diseaseData,
+					borderColor: "#f59e0b",
+					backgroundColor: "rgba(245, 158, 11, 0.12)",
+					pointBackgroundColor: "#f59e0b",
+					borderWidth: 2,
+				},
+			],
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			plugins: { legend: { position: "bottom" } },
+			scales: {
+				r: {
+					beginAtZero: true,
+					grid: { color: "rgba(0,0,0,0.12)" },
+					angleLines: { color: "rgba(0,0,0,0.12)" },
+					pointLabels: { color: "#111111", font: { size: 11 } },
+					ticks: { color: "rgba(0,0,0,0.7)", backdropColor: "transparent" },
+				},
 			},
 		},
 	});

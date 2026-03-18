@@ -34,22 +34,15 @@ function notifyUser(message) {
 }
 
 function initScoutingDashboard() {
-	var today = new Date().toISOString().split("T")[0];
-	var thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-		.toISOString()
-		.split("T")[0];
-
-	var fromDateInput = root_element.querySelector("#scout-from-date");
-	var toDateInput = root_element.querySelector("#scout-to-date");
+	var weekInput = root_element.querySelector("#scout-week");
 	var refreshBtn = root_element.querySelector("#scout-refresh-btn");
 	var greenhouseSelect = root_element.querySelector("#scout-greenhouse-filter");
 	var debugFetchBtn = root_element.querySelector("#scout-debug-fetch-btn");
 
-	if (!fromDateInput || !toDateInput || !refreshBtn || !greenhouseSelect) {
+	if (!weekInput || !refreshBtn || !greenhouseSelect) {
 		if (SCOUTING_DASHBOARD_DEBUG) {
 			console.error("Scouting dashboard: missing required DOM elements", {
-				fromDateInput: !!fromDateInput,
-				toDateInput: !!toDateInput,
+				weekInput: !!weekInput,
 				refreshBtn: !!refreshBtn,
 				greenhouseSelect: !!greenhouseSelect,
 			});
@@ -57,19 +50,17 @@ function initScoutingDashboard() {
 		return;
 	}
 
-	fromDateInput.value = thirtyDaysAgo;
-	toDateInput.value = today;
+	weekInput.value = getIsoWeekString(new Date());
 
 	loadGreenhouseOptions();
 
 	refreshBtn.addEventListener("click", refreshAllData);
 	if (debugFetchBtn) {
-		debugFetchBtn.addEventListener("click", debugFetchAndLog);
+		debugFetchBtn.addEventListener("click", exportFcmCsv);
 	} else if (SCOUTING_DASHBOARD_DEBUG) {
 		console.warn("Scouting dashboard: debug fetch button not found");
 	}
-	fromDateInput.addEventListener("change", refreshAllData);
-	toDateInput.addEventListener("change", refreshAllData);
+	weekInput.addEventListener("change", refreshAllData);
 	greenhouseSelect.addEventListener("change", function (e) {
 		greenhouseFilter = e.target.value;
 		refreshAllData();
@@ -125,77 +116,100 @@ function setupWeeklyTrendFilterListeners() {
 	});
 }
 
-function debugFetchAndLog() {
-	var fromDate = root_element.querySelector("#scout-from-date")?.value;
-	var toDate = root_element.querySelector("#scout-to-date")?.value;
+function parseWeekValue(weekValue) {
+	if (!weekValue || typeof weekValue !== "string") return null;
+	var match = weekValue.match(/^(\d{4})-W(\d{2})$/);
+	if (!match) return null;
+	var year = Number(match[1]);
+	var week = Number(match[2]);
+	if (!Number.isFinite(year) || !Number.isFinite(week)) return null;
+	if (week < 1) week = 1;
+	if (week > 52) week = 52;
+	return { year: year, week: week, value: weekValue };
+}
 
-	console.group("Scouting dashboard: debug fetch");
-	console.log("Inputs", { fromDate, toDate, greenhouseFilter });
+function formatDateYmd(dateObj) {
+	var y = dateObj.getUTCFullYear();
+	var m = String(dateObj.getUTCMonth() + 1).padStart(2, "0");
+	var d = String(dateObj.getUTCDate()).padStart(2, "0");
+	return y + "-" + m + "-" + d;
+}
 
-	var entriesPromise = callFrappe(
-		"upande_scp.serverscripts.get_complete_scouting_entries.getCompleteScoutingEntries",
-		{
-			from_date: fromDate,
-			to_date: toDate,
-			greenhouse: greenhouseFilter,
-		},
-	);
+function getIsoWeekDateRange(year, week) {
+	var simple = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
+	var dow = simple.getUTCDay();
+	var isoWeekStart = new Date(simple);
+	if (dow <= 4) {
+		isoWeekStart.setUTCDate(simple.getUTCDate() - (dow || 7) + 1);
+	} else {
+		isoWeekStart.setUTCDate(simple.getUTCDate() + 8 - dow);
+	}
+	var isoWeekEnd = new Date(isoWeekStart);
+	isoWeekEnd.setUTCDate(isoWeekStart.getUTCDate() + 6);
+	return { fromDate: formatDateYmd(isoWeekStart), toDate: formatDateYmd(isoWeekEnd) };
+}
 
-	var analysisPromise = callFrappe(
-		"upande_scp.serverscripts.get_scouting_analysis.getScoutingAnalysis",
-		{
-			date: toDate,
-		},
-	);
+function getSelectedWeekInfo() {
+	var weekValue = root_element.querySelector("#scout-week")?.value;
+	var parsed = parseWeekValue(weekValue);
+	if (parsed) return parsed;
+	var fallback = getIsoWeekString(new Date());
+	return parseWeekValue(fallback);
+}
 
-	var workspaceStatsPromise = callFrappe(
-		"upande_scp.serverscripts.get_workspace_stats.getWorkspaceStats",
-		{
-			date: toDate,
-		},
-	);
+function getWeekWindow(selectedWeek) {
+	var center = Number(selectedWeek) || 1;
+	if (center < 1) center = 1;
+	if (center > 52) center = 52;
+	var start = Math.max(1, center - 2);
+	var end = Math.min(52, center + 2);
+	var labels = [];
+	for (var w = start; w <= end; w++) labels.push(String(w));
+	return { start: start, end: end, labels: labels };
+}
 
-	var trapPromise = fetchTrapDataRange(fromDate, toDate);
+function csvEscape(value) {
+	if (value === null || value === undefined) return "";
+	var str = String(value);
+	if (/[",\n]/.test(str)) return '"' + str.replace(/"/g, '""') + '"';
+	return str;
+}
 
-	return Promise.allSettled([
-		entriesPromise,
-		analysisPromise,
-		workspaceStatsPromise,
-		trapPromise,
-	])
-		.then(function ([entriesRes, analysisRes, workspaceRes, trapRes]) {
-			console.log(
-				"Complete scouting entries",
-				entriesRes.status,
-				entriesRes.value || entriesRes.reason,
-			);
-			console.log(
-				"Scouting analysis",
-				analysisRes.status,
-				analysisRes.value || analysisRes.reason,
-			);
-			console.log(
-				"Workspace stats",
-				workspaceRes.status,
-				workspaceRes.value || workspaceRes.reason,
-			);
-			console.log("Trap data (range)", trapRes.status, trapRes.value || trapRes.reason);
+function exportFcmCsv() {
+	var weekInfo = getSelectedWeekInfo();
+	var weekValue = weekInfo?.value || getIsoWeekString(new Date());
 
-			var entriesMessage =
-				entriesRes.status === "fulfilled" ? entriesRes.value?.message : null;
-			var entries = entriesMessage?.entries;
-			console.log("Entries only", {
-				entriesCount: Array.isArray(entries) ? entries.length : null,
-				entries,
-				filters_applied: entriesMessage?.filters_applied,
-				total_entries: entriesMessage?.total_entries,
-			});
+	return callFrappe("upande_scp.serverscripts.get_trap_data.exportFcmCsv", {
+		week: weekValue,
+		greenhouse: greenhouseFilter,
+	})
+		.then(function (r) {
+			var payload = r?.message || r || {};
+			var csvText = payload.csv;
+			if (!csvText) {
+				notifyUser("No FCM data for selected week");
+				return;
+			}
 
-			console.groupEnd();
+			var blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
+			var url = URL.createObjectURL(blob);
+			var a = document.createElement("a");
+			a.href = url;
+			a.download = "FCM_export_" + weekValue + ".csv";
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
+
+			if (payload.file_path) {
+				notifyUser("Exported FCM CSV (" + (payload.row_count || 0) + " rows)");
+			}
 		})
 		.catch(function (err) {
-			console.error("Scouting dashboard: debug fetch unexpected error", err);
-			console.groupEnd();
+			if (SCOUTING_DASHBOARD_DEBUG) {
+				console.error("Scouting dashboard: failed to export FCM CSV", err);
+			}
+			notifyUser("Failed to export FCM CSV");
 		});
 }
 
@@ -243,10 +257,12 @@ function refreshAllData() {
 }
 
 function fetchScoutingData() {
-	var fromDate = root_element.querySelector("#scout-from-date").value;
-	var toDate = root_element.querySelector("#scout-to-date").value;
+	var weekInfo = getSelectedWeekInfo();
+	var range = getIsoWeekDateRange(weekInfo.year, weekInfo.week);
+	var fromDate = range.fromDate;
+	var toDate = range.toDate;
 	var loading = root_element.querySelector("#scout-loading");
-	var currentYear = getYearFromDateString(toDate) || new Date().getFullYear();
+	var currentYear = weekInfo.year || getYearFromDateString(toDate) || new Date().getFullYear();
 	var yearFrom = currentYear + "-01-01";
 	var yearTo = currentYear + "-12-31";
 
@@ -976,13 +992,14 @@ function updatePestWeeklyTrendChart() {
 	if (pestWeeklyTrendChart) pestWeeklyTrendChart.destroy();
 	if (!scoutingYearData) return;
 
-	var toDate = root_element.querySelector("#scout-to-date")?.value;
-	var year = getYearFromDateString(toDate) || new Date().getFullYear();
+	var weekInfo = getSelectedWeekInfo();
+	var year = weekInfo.year || new Date().getFullYear();
+	var window = getWeekWindow(weekInfo.week);
 
 	var pestName = root_element.querySelector("#pest-weekly-pest-filter")?.value || "";
 	var section = root_element.querySelector("#pest-weekly-section-filter")?.value || "";
 
-	var weekLabels = getWeekLabels1to52();
+	var weekLabels = window.labels;
 	var datasets = [];
 
 	if (pestName) {
@@ -1041,6 +1058,10 @@ function updatePestWeeklyTrendChart() {
 		});
 	}
 
+	datasets.forEach(function (ds) {
+		ds.data = (ds.data || []).slice(window.start - 1, window.end);
+	});
+
 	pestWeeklyTrendChart = new Chart(ctx, {
 		type: "line",
 		data: {
@@ -1063,7 +1084,7 @@ function updatePestWeeklyTrendChart() {
 						title: function (items) {
 							var idx = items?.[0]?.dataIndex;
 							if (idx === undefined) return "";
-							return "Week " + (idx + 1) + " (" + year + ")";
+							return "Week " + (window.start + idx) + " (" + year + ")";
 						},
 					},
 				},
@@ -1369,13 +1390,14 @@ function updateDiseaseWeeklyTrendChart() {
 	if (diseaseWeeklyTrendChart) diseaseWeeklyTrendChart.destroy();
 	if (!scoutingYearData) return;
 
-	var toDate = root_element.querySelector("#scout-to-date")?.value;
-	var year = getYearFromDateString(toDate) || new Date().getFullYear();
+	var weekInfo = getSelectedWeekInfo();
+	var year = weekInfo.year || new Date().getFullYear();
+	var window = getWeekWindow(weekInfo.week);
 
 	var diseaseName = root_element.querySelector("#disease-weekly-disease-filter")?.value || "";
 	var section = root_element.querySelector("#disease-weekly-section-filter")?.value || "";
 
-	var weekLabels = getWeekLabels1to52();
+	var weekLabels = window.labels;
 	var datasets = [];
 
 	if (diseaseName) {
@@ -1433,6 +1455,10 @@ function updateDiseaseWeeklyTrendChart() {
 		});
 	}
 
+	datasets.forEach(function (ds) {
+		ds.data = (ds.data || []).slice(window.start - 1, window.end);
+	});
+
 	diseaseWeeklyTrendChart = new Chart(ctx, {
 		type: "line",
 		data: {
@@ -1455,7 +1481,7 @@ function updateDiseaseWeeklyTrendChart() {
 						title: function (items) {
 							var idx = items?.[0]?.dataIndex;
 							if (idx === undefined) return "";
-							return "Week " + (idx + 1) + " (" + year + ")";
+							return "Week " + (window.start + idx) + " (" + year + ")";
 						},
 					},
 				},
@@ -1741,13 +1767,14 @@ function updateTrapWeeklyTrendChart() {
 	if (trapWeeklyTrendChart) trapWeeklyTrendChart.destroy();
 	if (!scoutingYearData) return;
 
-	var toDate = root_element.querySelector("#scout-to-date")?.value;
-	var year = getYearFromDateString(toDate) || new Date().getFullYear();
+	var weekInfo = getSelectedWeekInfo();
+	var year = weekInfo.year || new Date().getFullYear();
+	var window = getWeekWindow(weekInfo.week);
 
 	var trapName = root_element.querySelector("#trap-weekly-trap-filter")?.value || "";
 	var pestName = root_element.querySelector("#trap-weekly-pest-filter")?.value || "";
 
-	var weekLabels = getWeekLabels1to52();
+	var weekLabels = window.labels;
 	var datasets = [];
 
 	if (pestName) {
@@ -1821,6 +1848,10 @@ function updateTrapWeeklyTrendChart() {
 			});
 	}
 
+	datasets.forEach(function (ds) {
+		ds.data = (ds.data || []).slice(window.start - 1, window.end);
+	});
+
 	trapWeeklyTrendChart = new Chart(ctx, {
 		type: "line",
 		data: {
@@ -1843,7 +1874,7 @@ function updateTrapWeeklyTrendChart() {
 						title: function (items) {
 							var idx = items?.[0]?.dataIndex;
 							if (idx === undefined) return "";
-							return "Week " + (idx + 1) + " (" + year + ")";
+							return "Week " + (window.start + idx) + " (" + year + ")";
 						},
 					},
 				},
@@ -2399,9 +2430,10 @@ function showGreenhouseDetails(greenhouse) {
 
 	root_element.querySelector("#scout-gh-modal-title").textContent = greenhouse;
 
-	var fromDate = root_element.querySelector("#scout-from-date").value;
-	var toDate = root_element.querySelector("#scout-to-date").value;
-	root_element.querySelector("#scout-gh-modal-period").textContent = fromDate + " to " + toDate;
+	var weekInfo = getSelectedWeekInfo();
+	var range = getIsoWeekDateRange(weekInfo.year, weekInfo.week);
+	root_element.querySelector("#scout-gh-modal-period").textContent =
+		weekInfo.value + " (" + range.fromDate + " to " + range.toDate + ")";
 
 	root_element.querySelector("#ghk-pests").textContent = ghData.pests;
 	root_element.querySelector("#ghk-diseases").textContent = ghData.diseases;

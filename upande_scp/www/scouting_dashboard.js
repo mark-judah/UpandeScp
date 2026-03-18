@@ -34,15 +34,17 @@ function notifyUser(message) {
 }
 
 function initScoutingDashboard() {
-	var weekInput = root_element.querySelector("#scout-week");
+	var weekFromInput = root_element.querySelector("#scout-week-from");
+	var weekToInput = root_element.querySelector("#scout-week-to");
 	var refreshBtn = root_element.querySelector("#scout-refresh-btn");
 	var greenhouseSelect = root_element.querySelector("#scout-greenhouse-filter");
 	var debugFetchBtn = root_element.querySelector("#scout-debug-fetch-btn");
 
-	if (!weekInput || !refreshBtn || !greenhouseSelect) {
+	if (!weekFromInput || !weekToInput || !refreshBtn || !greenhouseSelect) {
 		if (SCOUTING_DASHBOARD_DEBUG) {
 			console.error("Scouting dashboard: missing required DOM elements", {
-				weekInput: !!weekInput,
+				weekFromInput: !!weekFromInput,
+				weekToInput: !!weekToInput,
 				refreshBtn: !!refreshBtn,
 				greenhouseSelect: !!greenhouseSelect,
 			});
@@ -50,7 +52,9 @@ function initScoutingDashboard() {
 		return;
 	}
 
-	weekInput.value = getIsoWeekString(new Date());
+	var currentWeek = getIsoWeekString(new Date());
+	weekFromInput.value = currentWeek;
+	weekToInput.value = currentWeek;
 
 	loadGreenhouseOptions();
 
@@ -60,7 +64,8 @@ function initScoutingDashboard() {
 	} else if (SCOUTING_DASHBOARD_DEBUG) {
 		console.warn("Scouting dashboard: debug fetch button not found");
 	}
-	weekInput.addEventListener("change", refreshAllData);
+	weekFromInput.addEventListener("change", refreshAllData);
+	weekToInput.addEventListener("change", refreshAllData);
 	greenhouseSelect.addEventListener("change", function (e) {
 		greenhouseFilter = e.target.value;
 		refreshAllData();
@@ -149,23 +154,62 @@ function getIsoWeekDateRange(year, week) {
 	return { fromDate: formatDateYmd(isoWeekStart), toDate: formatDateYmd(isoWeekEnd) };
 }
 
-function getSelectedWeekInfo() {
-	var weekValue = root_element.querySelector("#scout-week")?.value;
-	var parsed = parseWeekValue(weekValue);
-	if (parsed) return parsed;
-	var fallback = getIsoWeekString(new Date());
-	return parseWeekValue(fallback);
+function compareIsoWeeks(a, b) {
+	var ay = Number(a?.year) || 0;
+	var by = Number(b?.year) || 0;
+	if (ay !== by) return ay - by;
+	return (Number(a?.week) || 0) - (Number(b?.week) || 0);
 }
 
-function getWeekWindow(selectedWeek) {
-	var center = Number(selectedWeek) || 1;
-	if (center < 1) center = 1;
-	if (center > 52) center = 52;
-	var start = Math.max(1, center - 2);
-	var end = Math.min(52, center + 2);
+function getSelectedWeekRangeInfo() {
+	var fromValue = root_element.querySelector("#scout-week-from")?.value;
+	var toValue = root_element.querySelector("#scout-week-to")?.value;
+
+	var fallback = getIsoWeekString(new Date());
+	var fromParsed = parseWeekValue(fromValue) || parseWeekValue(fallback);
+	var toParsed = parseWeekValue(toValue) || parseWeekValue(fallback);
+
+	if (!fromParsed || !toParsed) return null;
+	if (compareIsoWeeks(fromParsed, toParsed) > 0) {
+		var tmp = fromParsed;
+		fromParsed = toParsed;
+		toParsed = tmp;
+	}
+
+	var fromRange = getIsoWeekDateRange(fromParsed.year, fromParsed.week);
+	var toRange = getIsoWeekDateRange(toParsed.year, toParsed.week);
+
+	return {
+		from: fromParsed,
+		to: toParsed,
+		fromDate: fromRange.fromDate,
+		toDate: toRange.toDate,
+	};
+}
+
+function getWeekRangeAxis(rangeInfo) {
+	if (!rangeInfo?.from || !rangeInfo?.to) return null;
+
+	var sameYear = rangeInfo.from.year === rangeInfo.to.year;
 	var labels = [];
-	for (var w = start; w <= end; w++) labels.push(String(w));
-	return { start: start, end: end, labels: labels };
+	var keys = [];
+
+	if (sameYear) {
+		for (var w = rangeInfo.from.week; w <= rangeInfo.to.week; w++) {
+			keys.push(rangeInfo.from.year + "-W" + String(w).padStart(2, "0"));
+			labels.push(String(w));
+		}
+		return { sameYear: true, year: rangeInfo.from.year, keys: keys, labels: labels };
+	}
+
+	var start = new Date(rangeInfo.fromDate + "T00:00:00Z");
+	var end = new Date(rangeInfo.toDate + "T00:00:00Z");
+	for (var d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
+		var key = getIsoWeekString(d);
+		keys.push(key);
+		labels.push(key);
+	}
+	return { sameYear: false, keys: keys, labels: labels };
 }
 
 function csvEscape(value) {
@@ -176,18 +220,20 @@ function csvEscape(value) {
 }
 
 function exportFcmCsv() {
-	var weekInfo = getSelectedWeekInfo();
-	var weekValue = weekInfo?.value || getIsoWeekString(new Date());
+	var rangeInfo = getSelectedWeekRangeInfo();
+	var fromWeek = rangeInfo?.from?.value || getIsoWeekString(new Date());
+	var toWeek = rangeInfo?.to?.value || getIsoWeekString(new Date());
 
 	return callFrappe("upande_scp.serverscripts.get_trap_data.exportFcmCsv", {
-		week: weekValue,
+		week_from: fromWeek,
+		week_to: toWeek,
 		greenhouse: greenhouseFilter,
 	})
 		.then(function (r) {
 			var payload = r?.message || r || {};
 			var csvText = payload.csv;
 			if (!csvText) {
-				notifyUser("No FCM data for selected week");
+				notifyUser("No FCM data for selected range");
 				return;
 			}
 
@@ -195,15 +241,13 @@ function exportFcmCsv() {
 			var url = URL.createObjectURL(blob);
 			var a = document.createElement("a");
 			a.href = url;
-			a.download = "FCM_export_" + weekValue + ".csv";
+			a.download = "FCM_export_" + fromWeek + "_to_" + toWeek + ".csv";
 			document.body.appendChild(a);
 			a.click();
 			a.remove();
 			URL.revokeObjectURL(url);
 
-			if (payload.file_path) {
-				notifyUser("Exported FCM CSV (" + (payload.row_count || 0) + " rows)");
-			}
+			notifyUser("Exported FCM CSV (" + (payload.row_count || 0) + " rows)");
 		})
 		.catch(function (err) {
 			if (SCOUTING_DASHBOARD_DEBUG) {
@@ -257,14 +301,13 @@ function refreshAllData() {
 }
 
 function fetchScoutingData() {
-	var weekInfo = getSelectedWeekInfo();
-	var range = getIsoWeekDateRange(weekInfo.year, weekInfo.week);
-	var fromDate = range.fromDate;
-	var toDate = range.toDate;
+	var rangeInfo = getSelectedWeekRangeInfo();
+	if (!rangeInfo) return;
+	var fromDate = rangeInfo.fromDate;
+	var toDate = rangeInfo.toDate;
 	var loading = root_element.querySelector("#scout-loading");
-	var currentYear = weekInfo.year || getYearFromDateString(toDate) || new Date().getFullYear();
-	var yearFrom = currentYear + "-01-01";
-	var yearTo = currentYear + "-12-31";
+	var yearFrom = rangeInfo.from.year + "-01-01";
+	var yearTo = rangeInfo.to.year + "-12-31";
 
 	loading.classList.add("active");
 	if (SCOUTING_DASHBOARD_DEBUG) {
@@ -990,25 +1033,31 @@ function updatePestWeeklyTrendChart() {
 	var ctx = root_element.querySelector("#pest-weekly-trend-chart");
 	if (!ctx) return;
 	if (pestWeeklyTrendChart) pestWeeklyTrendChart.destroy();
-	if (!scoutingYearData) return;
+	if (!scoutingData) return;
 
-	var weekInfo = getSelectedWeekInfo();
-	var year = weekInfo.year || new Date().getFullYear();
-	var window = getWeekWindow(weekInfo.week);
+	var rangeInfo = getSelectedWeekRangeInfo();
+	if (!rangeInfo) return;
+	var axis = getWeekRangeAxis(rangeInfo);
+	if (!axis) return;
+	var weekIndex = {};
+	axis.keys.forEach(function (k, idx) {
+		weekIndex[k] = idx;
+	});
 
 	var pestName = root_element.querySelector("#pest-weekly-pest-filter")?.value || "";
 	var section = root_element.querySelector("#pest-weekly-section-filter")?.value || "";
 
-	var weekLabels = window.labels;
+	var weekLabels = axis.labels;
 	var datasets = [];
 
 	if (pestName) {
-		var weeklyCounts = new Array(52).fill(0);
-		(scoutingYearData.pests?.[pestName]?.counts || []).forEach(function (c) {
+		var weeklyCounts = new Array(axis.labels.length).fill(0);
+		(scoutingData.pests?.[pestName]?.counts || []).forEach(function (c) {
 			if (section && c.section !== section) return;
-			var weekNo = getWeekNumber1to52(c.date, year);
-			if (!weekNo) return;
-			weeklyCounts[weekNo - 1] += Number(c.count || 1);
+			var k = getIsoWeekString(new Date(c.date + "T00:00:00Z"));
+			var i = weekIndex[k];
+			if (i === undefined) return;
+			weeklyCounts[i] += Number(c.count || 1);
 		});
 
 		var accent = observationColors.pests[pestName] || "#10b981";
@@ -1027,14 +1076,15 @@ function updatePestWeeklyTrendChart() {
 			order: 0,
 		});
 	} else {
-		var pestNames = Object.keys(scoutingYearData.pests || {}).sort();
+		var pestNames = Object.keys(scoutingData.pests || {}).sort();
 		pestNames.forEach(function (p, idx) {
-			var weeklyCounts = new Array(52).fill(0);
-			(scoutingYearData.pests[p].counts || []).forEach(function (c) {
+			var weeklyCounts = new Array(axis.labels.length).fill(0);
+			(scoutingData.pests[p].counts || []).forEach(function (c) {
 				if (section && c.section !== section) return;
-				var weekNo = getWeekNumber1to52(c.date, year);
-				if (!weekNo) return;
-				weeklyCounts[weekNo - 1] += Number(c.count || 1);
+				var k = getIsoWeekString(new Date(c.date + "T00:00:00Z"));
+				var i = weekIndex[k];
+				if (i === undefined) return;
+				weeklyCounts[i] += Number(c.count || 1);
 			});
 
 			var total = weeklyCounts.reduce(function (a, b) {
@@ -1058,10 +1108,6 @@ function updatePestWeeklyTrendChart() {
 		});
 	}
 
-	datasets.forEach(function (ds) {
-		ds.data = (ds.data || []).slice(window.start - 1, window.end);
-	});
-
 	pestWeeklyTrendChart = new Chart(ctx, {
 		type: "line",
 		data: {
@@ -1084,7 +1130,9 @@ function updatePestWeeklyTrendChart() {
 						title: function (items) {
 							var idx = items?.[0]?.dataIndex;
 							if (idx === undefined) return "";
-							return "Week " + (window.start + idx) + " (" + year + ")";
+							if (axis.sameYear)
+								return "Week " + axis.labels[idx] + " (" + axis.year + ")";
+							return axis.keys[idx];
 						},
 					},
 				},
@@ -1388,25 +1436,31 @@ function updateDiseaseWeeklyTrendChart() {
 	var ctx = root_element.querySelector("#disease-weekly-trend-chart");
 	if (!ctx) return;
 	if (diseaseWeeklyTrendChart) diseaseWeeklyTrendChart.destroy();
-	if (!scoutingYearData) return;
+	if (!scoutingData) return;
 
-	var weekInfo = getSelectedWeekInfo();
-	var year = weekInfo.year || new Date().getFullYear();
-	var window = getWeekWindow(weekInfo.week);
+	var rangeInfo = getSelectedWeekRangeInfo();
+	if (!rangeInfo) return;
+	var axis = getWeekRangeAxis(rangeInfo);
+	if (!axis) return;
+	var weekIndex = {};
+	axis.keys.forEach(function (k, idx) {
+		weekIndex[k] = idx;
+	});
 
 	var diseaseName = root_element.querySelector("#disease-weekly-disease-filter")?.value || "";
 	var section = root_element.querySelector("#disease-weekly-section-filter")?.value || "";
 
-	var weekLabels = window.labels;
+	var weekLabels = axis.labels;
 	var datasets = [];
 
 	if (diseaseName) {
-		var weeklyCounts = new Array(52).fill(0);
-		(scoutingYearData.diseases?.[diseaseName]?.counts || []).forEach(function (c) {
+		var weeklyCounts = new Array(axis.labels.length).fill(0);
+		(scoutingData.diseases?.[diseaseName]?.counts || []).forEach(function (c) {
 			if (section && c.section !== section) return;
-			var weekNo = getWeekNumber1to52(c.date, year);
-			if (!weekNo) return;
-			weeklyCounts[weekNo - 1] += 1;
+			var k = getIsoWeekString(new Date(c.date + "T00:00:00Z"));
+			var i = weekIndex[k];
+			if (i === undefined) return;
+			weeklyCounts[i] += 1;
 		});
 
 		var accent = observationColors.diseases[diseaseName] || "#f59e0b";
@@ -1424,14 +1478,15 @@ function updateDiseaseWeeklyTrendChart() {
 			order: 0,
 		});
 	} else {
-		var diseaseNames = Object.keys(scoutingYearData.diseases || {}).sort();
+		var diseaseNames = Object.keys(scoutingData.diseases || {}).sort();
 		diseaseNames.forEach(function (d, idx) {
-			var weeklyCounts = new Array(52).fill(0);
-			(scoutingYearData.diseases[d].counts || []).forEach(function (c) {
+			var weeklyCounts = new Array(axis.labels.length).fill(0);
+			(scoutingData.diseases[d].counts || []).forEach(function (c) {
 				if (section && c.section !== section) return;
-				var weekNo = getWeekNumber1to52(c.date, year);
-				if (!weekNo) return;
-				weeklyCounts[weekNo - 1] += 1;
+				var k = getIsoWeekString(new Date(c.date + "T00:00:00Z"));
+				var i = weekIndex[k];
+				if (i === undefined) return;
+				weeklyCounts[i] += 1;
 			});
 
 			var total = weeklyCounts.reduce(function (a, b) {
@@ -1455,10 +1510,6 @@ function updateDiseaseWeeklyTrendChart() {
 		});
 	}
 
-	datasets.forEach(function (ds) {
-		ds.data = (ds.data || []).slice(window.start - 1, window.end);
-	});
-
 	diseaseWeeklyTrendChart = new Chart(ctx, {
 		type: "line",
 		data: {
@@ -1481,7 +1532,9 @@ function updateDiseaseWeeklyTrendChart() {
 						title: function (items) {
 							var idx = items?.[0]?.dataIndex;
 							if (idx === undefined) return "";
-							return "Week " + (window.start + idx) + " (" + year + ")";
+							if (axis.sameYear)
+								return "Week " + axis.labels[idx] + " (" + axis.year + ")";
+							return axis.keys[idx];
 						},
 					},
 				},
@@ -1765,30 +1818,36 @@ function updateTrapWeeklyTrendChart() {
 	var ctx = root_element.querySelector("#trap-weekly-trend-chart");
 	if (!ctx) return;
 	if (trapWeeklyTrendChart) trapWeeklyTrendChart.destroy();
-	if (!scoutingYearData) return;
+	if (!scoutingData) return;
 
-	var weekInfo = getSelectedWeekInfo();
-	var year = weekInfo.year || new Date().getFullYear();
-	var window = getWeekWindow(weekInfo.week);
+	var rangeInfo = getSelectedWeekRangeInfo();
+	if (!rangeInfo) return;
+	var axis = getWeekRangeAxis(rangeInfo);
+	if (!axis) return;
+	var weekIndex = {};
+	axis.keys.forEach(function (k, idx) {
+		weekIndex[k] = idx;
+	});
 
 	var trapName = root_element.querySelector("#trap-weekly-trap-filter")?.value || "";
 	var pestName = root_element.querySelector("#trap-weekly-pest-filter")?.value || "";
 
-	var weekLabels = window.labels;
+	var weekLabels = axis.labels;
 	var datasets = [];
 
 	if (pestName) {
-		var weeklyCounts = new Array(52).fill(0);
-		Object.keys(scoutingYearData.traps || {}).forEach(function (k) {
-			var t = scoutingYearData.traps[k];
+		var weeklyCounts = new Array(axis.labels.length).fill(0);
+		Object.keys(scoutingData.traps || {}).forEach(function (k) {
+			var t = scoutingData.traps[k];
 			if (!t) return;
 			if (trapName && t.trap !== trapName) return;
 			if (t.pest !== pestName) return;
 
 			(t.counts || []).forEach(function (c) {
-				var weekNo = getWeekNumber1to52(c.date, year);
-				if (!weekNo) return;
-				weeklyCounts[weekNo - 1] += Number(c.count || 0);
+				var wk = getIsoWeekString(new Date(c.date + "T00:00:00Z"));
+				var i = weekIndex[wk];
+				if (i === undefined) return;
+				weeklyCounts[i] += Number(c.count || 0);
 			});
 		});
 
@@ -1809,17 +1868,18 @@ function updateTrapWeeklyTrendChart() {
 		});
 	} else {
 		var weeklyByPest = {};
-		Object.keys(scoutingYearData.traps || {}).forEach(function (k) {
-			var t = scoutingYearData.traps[k];
+		Object.keys(scoutingData.traps || {}).forEach(function (k) {
+			var t = scoutingData.traps[k];
 			if (!t) return;
 			if (trapName && t.trap !== trapName) return;
 			var pest = t.pest || "Unknown";
-			if (!weeklyByPest[pest]) weeklyByPest[pest] = new Array(52).fill(0);
+			if (!weeklyByPest[pest]) weeklyByPest[pest] = new Array(axis.labels.length).fill(0);
 
 			(t.counts || []).forEach(function (c) {
-				var weekNo = getWeekNumber1to52(c.date, year);
-				if (!weekNo) return;
-				weeklyByPest[pest][weekNo - 1] += Number(c.count || 0);
+				var wk = getIsoWeekString(new Date(c.date + "T00:00:00Z"));
+				var i = weekIndex[wk];
+				if (i === undefined) return;
+				weeklyByPest[pest][i] += Number(c.count || 0);
 			});
 		});
 
@@ -1848,10 +1908,6 @@ function updateTrapWeeklyTrendChart() {
 			});
 	}
 
-	datasets.forEach(function (ds) {
-		ds.data = (ds.data || []).slice(window.start - 1, window.end);
-	});
-
 	trapWeeklyTrendChart = new Chart(ctx, {
 		type: "line",
 		data: {
@@ -1874,7 +1930,9 @@ function updateTrapWeeklyTrendChart() {
 						title: function (items) {
 							var idx = items?.[0]?.dataIndex;
 							if (idx === undefined) return "";
-							return "Week " + (window.start + idx) + " (" + year + ")";
+							if (axis.sameYear)
+								return "Week " + axis.labels[idx] + " (" + axis.year + ")";
+							return axis.keys[idx];
 						},
 					},
 				},
@@ -2430,10 +2488,11 @@ function showGreenhouseDetails(greenhouse) {
 
 	root_element.querySelector("#scout-gh-modal-title").textContent = greenhouse;
 
-	var weekInfo = getSelectedWeekInfo();
-	var range = getIsoWeekDateRange(weekInfo.year, weekInfo.week);
+	var rangeInfo = getSelectedWeekRangeInfo();
+	var fromWeek = rangeInfo?.from?.value || getIsoWeekString(new Date());
+	var toWeek = rangeInfo?.to?.value || getIsoWeekString(new Date());
 	root_element.querySelector("#scout-gh-modal-period").textContent =
-		weekInfo.value + " (" + range.fromDate + " to " + range.toDate + ")";
+		fromWeek + " to " + toWeek + " (" + rangeInfo.fromDate + " to " + rangeInfo.toDate + ")";
 
 	root_element.querySelector("#ghk-pests").textContent = ghData.pests;
 	root_element.querySelector("#ghk-diseases").textContent = ghData.diseases;

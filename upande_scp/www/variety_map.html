@@ -39,10 +39,11 @@
 		bottom: 1rem;
 		left: 1rem;
 		z-index: 1000;
-		background: var(--bg);
+		background: var(--panel-bg);
 		padding: 1rem;
-		border-radius: 0;
+		border-radius: var(--radius-card);
 		border: 1px solid var(--border);
+		box-shadow: var(--shadow-sm);
 		max-height: 50%;
 		overflow-y: auto;
 	}
@@ -60,10 +61,11 @@
 	}
 
 	.protomaps-legend {
-		background: var(--bg);
+		background: var(--panel-bg);
 		padding: 10px;
-		border-radius: 0;
+		border-radius: var(--radius-card);
 		border: 1px solid var(--border);
+		box-shadow: var(--shadow-sm);
 		position: absolute;
 		bottom: 3rem;
 		right: 1rem;
@@ -93,13 +95,17 @@
 		justify-content: center;
 		align-items: center;
 		flex-direction: column;
-		color: var(--scp-bw-muted);
+		color: var(--text-muted);
 		font-family: sans-serif;
+	}
+
+	[data-theme="dark"] #map-loader {
+		background-color: rgba(22, 26, 31, 0.92);
 	}
 
 	.spinner {
 		border: 3px solid var(--border);
-		border-top: 3px solid var(--border);
+		border-top: 3px solid var(--accent);
 		border-radius: 50%;
 		width: 40px;
 		height: 40px;
@@ -109,26 +115,26 @@
 
 	.leaflet-control-zoom {
 		border: 1px solid var(--border) !important;
-		box-shadow: none !important;
-		border-radius: 0 !important;
+		box-shadow: var(--shadow-sm) !important;
+		border-radius: var(--radius-card) !important;
 		overflow: hidden;
 	}
 	.leaflet-control-zoom a {
 		border: none !important;
 		border-bottom: 1px solid var(--border) !important;
 		color: var(--text) !important;
-		background: var(--bg) !important;
+		background: var(--panel-bg) !important;
 	}
 	.leaflet-control-layers {
 		border: 1px solid var(--border) !important;
-		box-shadow: none !important;
-		border-radius: 0 !important;
+		box-shadow: var(--shadow-sm) !important;
+		border-radius: var(--radius-card) !important;
 		overflow: hidden;
-		background: var(--bg) !important;
+		background: var(--panel-bg) !important;
 	}
 	.leaflet-popup-content-wrapper {
-		border-radius: 0 !important;
-		box-shadow: none !important;
+		border-radius: var(--radius-card) !important;
+		box-shadow: var(--shadow-md) !important;
 		border: 1px solid var(--border) !important;
 	}
 
@@ -143,7 +149,7 @@
 	}
 </style>
 
-<div class="tw-bg-white tw-font-sans">
+<div class="tw-font-sans">
 	<div class="main-container">
 		<div id="map-loader">
 			<div class="spinner"></div>

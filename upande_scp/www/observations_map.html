@@ -16,8 +16,9 @@
 	/* ── Top Bar ── */
 	#topbar {
 		height: var(--topbar-height);
-		background: var(--bg);
+		background: var(--panel-bg);
 		border-bottom: 1px solid var(--border);
+		box-shadow: var(--shadow-sm);
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
@@ -44,8 +45,8 @@
 	#gh-select {
 		padding: 0.4rem 0.75rem;
 		border: 1px solid var(--border);
-		border-radius: 0;
-		background: var(--bg);
+		border-radius: var(--radius-input);
+		background: var(--panel-bg);
 		color: var(--text);
 		font-size: 0.8125rem;
 		font-weight: 500;
@@ -53,23 +54,31 @@
 		min-width: 160px;
 		max-width: 220px;
 	}
+	#gh-select:hover {
+		filter: brightness(0.98);
+	}
 	#gh-select:focus {
-		outline: 2px solid var(--border);
-		outline-offset: 1px;
+		outline: none;
+		border-color: var(--accent);
+		box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 	}
 
 	#date-picker {
 		padding: 0.4rem 0.75rem;
 		border: 1px solid var(--border);
-		border-radius: 0;
-		background: var(--bg);
+		border-radius: var(--radius-input);
+		background: var(--panel-bg);
 		color: var(--text);
 		font-size: 0.8125rem;
 		cursor: pointer;
 	}
+	#date-picker:hover {
+		filter: brightness(0.98);
+	}
 	#date-picker:focus {
-		outline: 2px solid var(--border);
-		outline-offset: 1px;
+		outline: none;
+		border-color: var(--accent);
+		box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 	}
 
 	/* Type pills in topbar */
@@ -91,8 +100,8 @@
 		gap: 0.3rem;
 		padding: 0.3rem 0.7rem;
 		border: 1.5px solid var(--border);
-		border-radius: 0;
-		background: var(--bg);
+		border-radius: 20px;
+		background: var(--panel-bg);
 		color: var(--text);
 		font-size: 0.75rem;
 		font-weight: 600;
@@ -100,16 +109,20 @@
 		white-space: nowrap;
 		user-select: none;
 	}
+	.type-pill:hover:not(.active) {
+		filter: brightness(0.98);
+	}
 	.type-pill.active {
-		background: var(--text);
-		border-color: var(--border);
+		background: var(--accent);
+		border-color: var(--accent);
 		color: #fff;
+		box-shadow: var(--shadow-sm);
 	}
 	.type-pill .badge {
 		font-size: 0.6875rem;
 		font-weight: 700;
 		background: rgba(255, 255, 255, 0.25);
-		border-radius: 0;
+		border-radius: 10px;
 		padding: 0 0.35rem;
 		line-height: 1.4;
 	}
@@ -167,7 +180,7 @@
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
-		color: var(--scp-bw-muted);
+		color: var(--text-muted);
 		padding: 0 0.125rem;
 	}
 
@@ -178,9 +191,10 @@
 		gap: 0.5rem;
 	}
 	.stat-card {
-		background: var(--bg);
+		background: var(--panel-bg);
 		border: 1px solid var(--border);
-		border-radius: 0;
+		border-radius: var(--radius-card);
+		box-shadow: var(--shadow-sm);
 		padding: 0.6rem 0.75rem;
 		text-align: center;
 	}
@@ -192,7 +206,7 @@
 	}
 	.stat-card .stat-label {
 		font-size: 0.6875rem;
-		color: var(--scp-bw-muted);
+		color: var(--text-muted);
 		font-weight: 500;
 		margin-top: 0.125rem;
 	}
@@ -209,10 +223,13 @@
 		align-items: center;
 		gap: 0.6rem;
 		padding: 0.45rem 0.6rem;
-		border-radius: 0;
+		border-radius: var(--radius-input);
 		border: 1px solid var(--border);
-		background: var(--bg);
+		background: var(--panel-bg);
 		cursor: pointer;
+	}
+	.legend-item:hover {
+		background: var(--hover);
 	}
 	.legend-item.dimmed {
 		opacity: 0.35;
@@ -245,9 +262,9 @@
 		font-size: 0.6875rem;
 		font-weight: 700;
 		padding: 0.1rem 0.4rem;
-		border-radius: 0;
-		background: var(--bg);
-		color: var(--scp-bw-muted);
+		border-radius: 10px;
+		background: var(--hover);
+		color: var(--text-muted);
 		flex-shrink: 0;
 		border: 1px solid var(--border);
 	}
@@ -261,17 +278,20 @@
 		font-size: 0.6875rem;
 		padding: 0.25rem 0.6rem;
 		border: 1px solid var(--border);
-		background: var(--bg);
-		border-radius: 0;
+		background: var(--panel-bg);
+		border-radius: var(--radius-input);
 		cursor: pointer;
 		color: var(--text);
 		font-weight: 500;
+	}
+	.toggle-btn:hover {
+		filter: brightness(0.98);
 	}
 
 	/* Zones affected stat */
 	.zones-stat {
 		font-size: 0.75rem;
-		color: var(--scp-bw-muted);
+		color: var(--text-muted);
 		padding: 0.25rem 0;
 		display: flex;
 		align-items: center;
@@ -285,7 +305,7 @@
 	.empty-panel {
 		text-align: center;
 		padding: 2rem 1rem;
-		color: var(--scp-bw-muted);
+		color: var(--text-muted);
 		font-size: 0.8125rem;
 	}
 	.empty-panel svg {
@@ -319,6 +339,9 @@
 		z-index: 2000;
 		gap: 0.875rem;
 	}
+	[data-theme="dark"] #map-loader {
+		background: rgba(22, 26, 31, 0.92);
+	}
 
 	.spinner {
 		width: 36px;
@@ -347,7 +370,8 @@
 		z-index: 1000;
 		background: var(--panel-bg);
 		border: 1px solid var(--border);
-		border-radius: 0;
+		border-radius: var(--radius-card);
+		box-shadow: var(--shadow-sm);
 		padding: 0.5rem;
 		display: none;
 		flex-direction: column;
@@ -362,7 +386,10 @@
 		gap: 0.5rem;
 		padding: 0.25rem 0.5rem;
 		cursor: pointer;
-		border-radius: 0;
+		border-radius: var(--radius-input);
+	}
+	.style-option:hover {
+		background: var(--hover);
 	}
 	.style-option label {
 		font-size: 0.8125rem;
@@ -406,21 +433,21 @@
 	}
 	.obs-popup .obs-meta {
 		font-size: 0.6875rem;
-		color: var(--scp-bw-muted);
+		color: var(--text-muted);
 	}
 	.obs-popup .obs-type-header {
 		font-size: 0.6875rem;
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: var(--scp-bw-muted);
+		color: var(--text-muted);
 		margin: 0.4rem 0 0.2rem;
 	}
 
 	.leaflet-control-zoom {
 		border: 1px solid var(--border) !important;
-		box-shadow: none !important;
-		border-radius: 0 !important;
+		box-shadow: var(--shadow-sm) !important;
+		border-radius: var(--radius-card) !important;
 		overflow: hidden;
 	}
 	.leaflet-control-zoom a {
@@ -431,13 +458,13 @@
 	}
 	.leaflet-control-layers {
 		border: 1px solid var(--border) !important;
-		box-shadow: none !important;
-		border-radius: 0 !important;
+		box-shadow: var(--shadow-sm) !important;
+		border-radius: var(--radius-card) !important;
 		overflow: hidden;
 	}
 	.leaflet-popup-content-wrapper {
-		border-radius: 0 !important;
-		box-shadow: none !important;
+		border-radius: var(--radius-card) !important;
+		box-shadow: var(--shadow-md) !important;
 		border: 1px solid var(--border) !important;
 	}
 

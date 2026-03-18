@@ -1544,6 +1544,13 @@ function updateOverviewDonutChart() {
 	var ctx = root_element.querySelector("#overview-donut-chart");
 	if (overviewDonutChart) overviewDonutChart.destroy();
 
+	var accent = getComputedStyle(document.documentElement).getPropertyValue("--primary").trim();
+	if (!accent) accent = "#4f46e5";
+	var gray600 = getComputedStyle(document.documentElement).getPropertyValue("--gray-600").trim();
+	if (!gray600) gray600 = "#4b5563";
+	var gray400 = getComputedStyle(document.documentElement).getPropertyValue("--gray-400").trim();
+	if (!gray400) gray400 = "#9ca3af";
+
 	var totalPests = Object.values(scoutingData.pests).reduce(
 		(sum, p) => sum + p.counts.length,
 		0,
@@ -1564,7 +1571,7 @@ function updateOverviewDonutChart() {
 			datasets: [
 				{
 					data: [totalPests, totalDiseases, totalTraps],
-					backgroundColor: ["#10b981", "#f59e0b", "#3b82f6"],
+					backgroundColor: [accent, gray600, gray400],
 					borderWidth: 0,
 				},
 			],
@@ -1584,6 +1591,11 @@ function updateOverviewAreaRadarChart() {
 	var ctx = root_element.querySelector("#overview-area-radar-chart");
 	if (!ctx) return;
 	if (overviewAreaRadarChart) overviewAreaRadarChart.destroy();
+
+	var accent = getComputedStyle(document.documentElement).getPropertyValue("--primary").trim();
+	if (!accent) accent = "#4f46e5";
+	var gray600 = getComputedStyle(document.documentElement).getPropertyValue("--gray-600").trim();
+	if (!gray600) gray600 = "#4b5563";
 
 	var pestTotals = {};
 	Object.values(scoutingData.pests).forEach((p) => {
@@ -1621,17 +1633,17 @@ function updateOverviewAreaRadarChart() {
 				{
 					label: "Pests",
 					data: pestData,
-					borderColor: "#10b981",
-					backgroundColor: "rgba(16, 185, 129, 0.12)",
-					pointBackgroundColor: "#10b981",
+					borderColor: accent,
+					backgroundColor: "rgba(79, 70, 229, 0.12)",
+					pointBackgroundColor: accent,
 					borderWidth: 2,
 				},
 				{
 					label: "Diseases",
 					data: diseaseData,
-					borderColor: "#f59e0b",
-					backgroundColor: "rgba(245, 158, 11, 0.12)",
-					pointBackgroundColor: "#f59e0b",
+					borderColor: gray600,
+					backgroundColor: "rgba(75, 85, 99, 0.12)",
+					pointBackgroundColor: gray600,
 					borderWidth: 2,
 				},
 			],

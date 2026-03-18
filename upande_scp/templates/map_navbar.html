@@ -1,20 +1,13 @@
 <style>
 	.scp-nav {
 		height: 52px;
-		background: var(--scp-bw-bg, #ffffff);
-		border-bottom: 1px solid var(--scp-bw-border, #000000);
+		background: var(--fg-color, #ffffff);
+		border-bottom: 1px solid var(--border-color, #e5e7eb);
 		display: flex;
 		align-items: center;
 		padding: 0 1.25rem;
 		gap: 1rem;
-		font-family: var(
-			--font-stack,
-			-apple-system,
-			BlinkMacSystemFont,
-			"Segoe UI",
-			Roboto,
-			sans-serif
-		);
+		font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
 		position: relative;
 		z-index: 900;
 	}
@@ -23,7 +16,7 @@
 		align-items: center;
 		gap: 0.5rem;
 		text-decoration: none;
-		color: var(--scp-bw-text, #111827);
+		color: var(--heading-color, #111827);
 		font-weight: 700;
 		font-size: 0.9375rem;
 		flex-shrink: 0;
@@ -32,8 +25,8 @@
 		width: 28px;
 		height: 28px;
 		background: transparent;
-		color: var(--scp-bw-text, #111827);
-		border: 1px solid var(--scp-bw-border, #000000);
+		color: var(--heading-color, #111827);
+		border: 1px solid var(--border-color, #e5e7eb);
 		border-radius: 6px;
 		display: flex;
 		align-items: center;
@@ -42,7 +35,7 @@
 	.scp-nav-divider {
 		width: 1px;
 		height: 20px;
-		background: var(--scp-bw-border, #000000);
+		background: var(--border-color, #e5e7eb);
 		flex-shrink: 0;
 	}
 	.scp-nav-links {
@@ -60,17 +53,23 @@
 		align-items: center;
 		gap: 0.375rem;
 		padding: 0.375rem 0.75rem;
-		border-radius: 0;
+		border-radius: 6px;
 		text-decoration: none;
 		font-size: 0.8125rem;
 		font-weight: 500;
-		color: var(--scp-bw-muted, rgba(0, 0, 0, 0.7));
+		color: var(--text-color, #6b7280);
 		white-space: nowrap;
+		transition: all 0.15s ease;
+	}
+	.scp-nav-link:hover {
+		background: var(--gray-100, #f3f4f6);
+		color: var(--heading-color, #111827);
 	}
 	.scp-nav-link.active {
-		color: var(--scp-bw-text, #111827);
-		border-bottom: 2px solid var(--scp-bw-border, #000000);
-		font-weight: 700;
+		background: var(--primary, #4f46e5);
+		color: white;
+		border-bottom: none;
+		font-weight: 500;
 	}
 	.scp-nav-link svg {
 		flex-shrink: 0;
@@ -80,13 +79,18 @@
 		align-items: center;
 		gap: 0.375rem;
 		padding: 0.375rem 0.875rem;
-		border-radius: 0;
+		border-radius: 6px;
 		text-decoration: none;
 		font-size: 0.8125rem;
 		font-weight: 500;
-		color: var(--scp-bw-text, #111827);
-		border: 1px solid var(--scp-bw-border, #000000);
+		color: var(--heading-color, #111827);
+		border: 1px solid var(--border-color, #e5e7eb);
 		flex-shrink: 0;
+		transition: all 0.15s ease;
+	}
+	.scp-nav-back:hover {
+		background: var(--gray-100, #f3f4f6);
+		border-color: var(--gray-300, #d1d5db);
 	}
 	@media (max-width: 768px) {
 		.scp-nav-links {

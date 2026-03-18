@@ -21,18 +21,21 @@
 			}
 
 			:root {
-				--scp-bw-bg: #ffffff;
-				--scp-bw-text: #111111;
-				--scp-bw-border: #000000;
-				--scp-bw-muted: rgba(0, 0, 0, 0.7);
+				--bg: var(--bg-color, #f5f7fa);
+				--panel-bg: var(--fg-color, #ffffff);
+				--sidebar-bg: var(--fg-color, #ffffff);
 
-				--bg: var(--scp-bw-bg);
-				--text: var(--scp-bw-text);
-				--border: var(--scp-bw-border);
-				--accent: var(--scp-bw-border);
-				--panel-bg: var(--scp-bw-bg);
-				--sidebar-bg: var(--scp-bw-bg);
-				--hover: transparent;
+				--text: var(--heading-color, #111827);
+				--text-muted: var(--text-color, #6b7280);
+				--border: var(--border-color, #e5e7eb);
+				--accent: var(--primary, #4f46e5);
+
+				--radius-card: 8px;
+				--radius-input: 6px;
+				--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+				--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+				--hover: var(--gray-100, #f3f4f6);
+
 				--success: #10b981;
 				--warning: #f59e0b;
 				--danger: #ef4444;
@@ -52,14 +55,7 @@
 				height: 100%;
 				width: 100%;
 				overflow: hidden;
-				font-family: var(
-					--font-stack,
-					-apple-system,
-					BlinkMacSystemFont,
-					"Segoe UI",
-					Roboto,
-					sans-serif
-				);
+				font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
 				background: var(--bg);
 				color: var(--text);
 			}
@@ -94,6 +90,9 @@
 			}
 			#map-loader.visible {
 				display: flex;
+			}
+			[data-theme="dark"] #map-loader {
+				background: rgba(22, 26, 31, 0.92);
 			}
 			.spinner {
 				width: 36px;

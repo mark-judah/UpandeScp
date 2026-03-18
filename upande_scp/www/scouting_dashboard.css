@@ -238,7 +238,8 @@
 }
 
 .chart-card-wide .chart-body {
-	min-height: 280px;
+	flex: none;
+	height: 50vh;
 }
 
 .chart-header {

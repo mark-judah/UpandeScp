@@ -12,8 +12,10 @@ if (typeof Chart === "undefined") {
 let pestTrendChart, pestDistChart, pestSectionChart;
 let diseaseTrendChart, diseaseDistChart, diseaseStageChart;
 let trapTrendChart, trapPerfChart, trapPestChart;
+let pestWeeklyTrendChart, diseaseWeeklyTrendChart, trapWeeklyTrendChart;
 let overviewTimelineChart, overviewDonutChart, overviewAreaRadarChart;
 let scoutingData = null;
+let scoutingYearData = null;
 let greenhouseFilter = "";
 let activeTab = "pests";
 let scoutingAnalysis = null;
@@ -85,7 +87,42 @@ function initScoutingDashboard() {
 		if (e.target === this) closeScoutModal();
 	});
 
+	setupWeeklyTrendFilterListeners();
 	fetchScoutingData();
+}
+
+function setupWeeklyTrendFilterListeners() {
+	var handlers = [
+		{
+			ids: ["#pest-weekly-pest-filter", "#pest-weekly-section-filter"],
+			fn: function () {
+				if (!scoutingYearData) return;
+				updatePestWeeklyTrendChart();
+			},
+		},
+		{
+			ids: ["#disease-weekly-disease-filter", "#disease-weekly-section-filter"],
+			fn: function () {
+				if (!scoutingYearData) return;
+				updateDiseaseWeeklyTrendChart();
+			},
+		},
+		{
+			ids: ["#trap-weekly-trap-filter", "#trap-weekly-pest-filter"],
+			fn: function () {
+				if (!scoutingYearData) return;
+				updateTrapWeeklyTrendChart();
+			},
+		},
+	];
+
+	handlers.forEach(function (h) {
+		h.ids.forEach(function (selector) {
+			var el = root_element.querySelector(selector);
+			if (!el) return;
+			el.addEventListener("change", h.fn);
+		});
+	});
 }
 
 function debugFetchAndLog() {
@@ -209,6 +246,9 @@ function fetchScoutingData() {
 	var fromDate = root_element.querySelector("#scout-from-date").value;
 	var toDate = root_element.querySelector("#scout-to-date").value;
 	var loading = root_element.querySelector("#scout-loading");
+	var currentYear = getYearFromDateString(toDate) || new Date().getFullYear();
+	var yearFrom = currentYear + "-01-01";
+	var yearTo = currentYear + "-12-31";
 
 	loading.classList.add("active");
 	if (SCOUTING_DASHBOARD_DEBUG) {
@@ -216,25 +256,31 @@ function fetchScoutingData() {
 			fromDate,
 			toDate,
 			greenhouseFilter,
+			yearFrom,
+			yearTo,
 		});
 	}
 
 	Promise.all([
 		fetchCompleteScoutingEntries(fromDate, toDate, greenhouseFilter),
+		fetchCompleteScoutingEntries(yearFrom, yearTo, greenhouseFilter),
 		fetchScoutingAnalysis(toDate),
 		fetchScoutingReport(greenhouseFilter),
 	])
-		.then(function ([entries, analysis, report]) {
+		.then(function ([entries, yearEntries, analysis, report]) {
 			if (SCOUTING_DASHBOARD_DEBUG) {
 				console.log("Scouting dashboard: fetched payloads", {
 					entriesCount: Array.isArray(entries) ? entries.length : null,
+					yearEntriesCount: Array.isArray(yearEntries) ? yearEntries.length : null,
 					analysis,
 					report,
 					entries,
+					yearEntries,
 				});
 			}
 			scoutingAnalysis = analysis;
 			observationColors = extractObservationColors(report);
+			scoutingYearData = buildScoutingData(yearEntries);
 			processScoutingData(entries);
 			loading.classList.remove("active");
 		})
@@ -247,7 +293,7 @@ function fetchScoutingData() {
 		});
 }
 
-function processScoutingData(entries, trapEntries) {
+function buildScoutingData(entries, trapEntries) {
 	var data = {
 		entries: entries,
 		pests: {},
@@ -465,7 +511,11 @@ function processScoutingData(entries, trapEntries) {
 		data.greenhouses[gh].scoutCount = data.greenhouses[gh].scouts.size;
 	});
 
-	scoutingData = data;
+	return data;
+}
+
+function processScoutingData(entries, trapEntries) {
+	scoutingData = buildScoutingData(entries, trapEntries);
 	updateAllTabs();
 }
 
@@ -631,6 +681,32 @@ function getIsoWeekString(dateInput) {
 	return date.getUTCFullYear() + "-W" + String(weekNo).padStart(2, "0");
 }
 
+function getYearFromDateString(dateString) {
+	if (!dateString) return null;
+	var date = new Date(dateString + "T00:00:00Z");
+	if (Number.isNaN(date.getTime())) return null;
+	return date.getUTCFullYear();
+}
+
+function getWeekNumber1to52(dateString, year) {
+	if (!dateString) return null;
+	var date = new Date(dateString + "T00:00:00Z");
+	if (Number.isNaN(date.getTime())) return null;
+	if (typeof year === "number" && date.getUTCFullYear() !== year) return null;
+	var yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+	var dayOfYear = Math.floor((date - yearStart) / 86400000) + 1;
+	var weekNo = Math.ceil(dayOfYear / 7);
+	if (weekNo < 1) weekNo = 1;
+	if (weekNo > 52) weekNo = 52;
+	return weekNo;
+}
+
+function getWeekLabels1to52() {
+	return Array.from({ length: 52 }, function (_, idx) {
+		return String(idx + 1);
+	});
+}
+
 function extractObservationColors(report) {
 	var colors = { pests: {}, diseases: {} };
 	if (!report?.observation_metadata?.all_observation_names) return colors;
@@ -772,6 +848,7 @@ function updatePestTab() {
 		(pests[topPest]?.counts.length || 0) + " observations";
 
 	updatePestTrendChart();
+	updatePestWeeklyTrend();
 
 	updatePestDistributionChart();
 
@@ -815,6 +892,176 @@ function updatePestTrendChart() {
 			},
 			scales: {
 				x: { grid: { display: false } },
+				y: { beginAtZero: true, grid: { color: "rgba(0,0,0,0.04)" } },
+			},
+		},
+	});
+}
+
+function setSelectOptions(selectEl, options, preferredValue) {
+	if (!selectEl) return;
+	var current = preferredValue !== undefined ? preferredValue : selectEl.value;
+	selectEl.innerHTML = "";
+
+	options.forEach(function (opt) {
+		var option = document.createElement("option");
+		option.value = opt.value;
+		option.textContent = opt.label;
+		selectEl.appendChild(option);
+	});
+
+	var allowed = options.some(function (o) {
+		return o.value === current;
+	});
+	selectEl.value = allowed ? current : options[0]?.value || "";
+}
+
+function getPaletteColor(index) {
+	var hue = (index * 37) % 360;
+	return {
+		border: "hsl(" + hue + ", 70%, 45%)",
+		background: "hsla(" + hue + ", 70%, 45%, 0.12)",
+	};
+}
+
+function updatePestWeeklyTrend() {
+	var pestSelect = root_element.querySelector("#pest-weekly-pest-filter");
+	var sectionSelect = root_element.querySelector("#pest-weekly-section-filter");
+	if (!pestSelect || !sectionSelect) return;
+	if (!scoutingYearData) return;
+
+	var pestNames = Object.keys(scoutingYearData.pests || {}).sort();
+	setSelectOptions(
+		pestSelect,
+		[{ value: "", label: "All Pests" }].concat(
+			pestNames.map(function (p) {
+				return { value: p, label: p };
+			}),
+		),
+	);
+
+	var sectionsSet = new Set();
+	Object.values(scoutingYearData.pests || {}).forEach(function (p) {
+		(p.counts || []).forEach(function (c) {
+			if (c.section) sectionsSet.add(c.section);
+		});
+	});
+	var sections = Array.from(sectionsSet).sort();
+	setSelectOptions(
+		sectionSelect,
+		[{ value: "", label: "All Sections" }].concat(
+			sections.map(function (s) {
+				return { value: s, label: s };
+			}),
+		),
+	);
+
+	updatePestWeeklyTrendChart();
+}
+
+function updatePestWeeklyTrendChart() {
+	var ctx = root_element.querySelector("#pest-weekly-trend-chart");
+	if (!ctx) return;
+	if (pestWeeklyTrendChart) pestWeeklyTrendChart.destroy();
+	if (!scoutingYearData) return;
+
+	var toDate = root_element.querySelector("#scout-to-date")?.value;
+	var year = getYearFromDateString(toDate) || new Date().getFullYear();
+
+	var pestName = root_element.querySelector("#pest-weekly-pest-filter")?.value || "";
+	var section = root_element.querySelector("#pest-weekly-section-filter")?.value || "";
+
+	var weekLabels = getWeekLabels1to52();
+	var datasets = [];
+
+	if (pestName) {
+		var weeklyCounts = new Array(52).fill(0);
+		(scoutingYearData.pests?.[pestName]?.counts || []).forEach(function (c) {
+			if (section && c.section !== section) return;
+			var weekNo = getWeekNumber1to52(c.date, year);
+			if (!weekNo) return;
+			weeklyCounts[weekNo - 1] += Number(c.count || 1);
+		});
+
+		var accent = observationColors.pests[pestName] || "#10b981";
+		var label = pestName;
+		if (section) label += " (" + section + ")";
+
+		datasets.push({
+			label: label,
+			data: weeklyCounts,
+			borderColor: accent,
+			backgroundColor: "rgba(16, 185, 129, 0.1)",
+			borderWidth: 2,
+			fill: false,
+			tension: 0.35,
+			pointRadius: 0,
+			order: 0,
+		});
+	} else {
+		var pestNames = Object.keys(scoutingYearData.pests || {}).sort();
+		pestNames.forEach(function (p, idx) {
+			var weeklyCounts = new Array(52).fill(0);
+			(scoutingYearData.pests[p].counts || []).forEach(function (c) {
+				if (section && c.section !== section) return;
+				var weekNo = getWeekNumber1to52(c.date, year);
+				if (!weekNo) return;
+				weeklyCounts[weekNo - 1] += Number(c.count || 1);
+			});
+
+			var total = weeklyCounts.reduce(function (a, b) {
+				return a + b;
+			}, 0);
+			if (total <= 0) return;
+
+			var palette = getPaletteColor(idx);
+			var accent = observationColors.pests[p] || palette.border;
+			datasets.push({
+				label: p,
+				data: weeklyCounts,
+				borderColor: accent,
+				backgroundColor: palette.background,
+				borderWidth: 2,
+				fill: false,
+				tension: 0.35,
+				pointRadius: 0,
+				order: idx,
+			});
+		});
+	}
+
+	pestWeeklyTrendChart = new Chart(ctx, {
+		type: "line",
+		data: {
+			labels: weekLabels,
+			datasets: datasets,
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			plugins: {
+				legend: {
+					display: datasets.length > 1,
+					position: "bottom",
+					labels: { boxWidth: 10, boxHeight: 10, padding: 10, font: { size: 10 } },
+				},
+				tooltip: {
+					mode: "index",
+					intersect: false,
+					callbacks: {
+						title: function (items) {
+							var idx = items?.[0]?.dataIndex;
+							if (idx === undefined) return "";
+							return "Week " + (idx + 1) + " (" + year + ")";
+						},
+					},
+				},
+			},
+			scales: {
+				x: {
+					grid: { display: false },
+					ticks: { autoSkip: true, maxTicksLimit: 13 },
+				},
 				y: { beginAtZero: true, grid: { color: "rgba(0,0,0,0.04)" } },
 			},
 		},
@@ -1020,6 +1267,7 @@ function updateDiseaseTab() {
 		(diseases[topDisease]?.counts.length || 0) + " cases";
 
 	updateDiseaseTrendChart();
+	updateDiseaseWeeklyTrend();
 
 	updateDiseaseDistributionChart();
 
@@ -1063,6 +1311,149 @@ function updateDiseaseTrendChart() {
 			},
 			scales: {
 				x: { grid: { display: false } },
+				y: { beginAtZero: true, grid: { color: "rgba(0,0,0,0.04)" } },
+			},
+		},
+	});
+}
+
+function updateDiseaseWeeklyTrend() {
+	var diseaseSelect = root_element.querySelector("#disease-weekly-disease-filter");
+	var sectionSelect = root_element.querySelector("#disease-weekly-section-filter");
+	if (!diseaseSelect || !sectionSelect) return;
+	if (!scoutingYearData) return;
+
+	var diseaseNames = Object.keys(scoutingYearData.diseases || {}).sort();
+	setSelectOptions(
+		diseaseSelect,
+		[{ value: "", label: "All Diseases" }].concat(
+			diseaseNames.map(function (d) {
+				return { value: d, label: d };
+			}),
+		),
+	);
+
+	var sectionsSet = new Set();
+	Object.values(scoutingYearData.diseases || {}).forEach(function (d) {
+		(d.counts || []).forEach(function (c) {
+			if (c.section) sectionsSet.add(c.section);
+		});
+	});
+	var sections = Array.from(sectionsSet).sort();
+	setSelectOptions(
+		sectionSelect,
+		[{ value: "", label: "All Sections" }].concat(
+			sections.map(function (s) {
+				return { value: s, label: s };
+			}),
+		),
+	);
+
+	updateDiseaseWeeklyTrendChart();
+}
+
+function updateDiseaseWeeklyTrendChart() {
+	var ctx = root_element.querySelector("#disease-weekly-trend-chart");
+	if (!ctx) return;
+	if (diseaseWeeklyTrendChart) diseaseWeeklyTrendChart.destroy();
+	if (!scoutingYearData) return;
+
+	var toDate = root_element.querySelector("#scout-to-date")?.value;
+	var year = getYearFromDateString(toDate) || new Date().getFullYear();
+
+	var diseaseName = root_element.querySelector("#disease-weekly-disease-filter")?.value || "";
+	var section = root_element.querySelector("#disease-weekly-section-filter")?.value || "";
+
+	var weekLabels = getWeekLabels1to52();
+	var datasets = [];
+
+	if (diseaseName) {
+		var weeklyCounts = new Array(52).fill(0);
+		(scoutingYearData.diseases?.[diseaseName]?.counts || []).forEach(function (c) {
+			if (section && c.section !== section) return;
+			var weekNo = getWeekNumber1to52(c.date, year);
+			if (!weekNo) return;
+			weeklyCounts[weekNo - 1] += 1;
+		});
+
+		var accent = observationColors.diseases[diseaseName] || "#f59e0b";
+		var label = diseaseName;
+		if (section) label += " (" + section + ")";
+		datasets.push({
+			label: label,
+			data: weeklyCounts,
+			borderColor: accent,
+			backgroundColor: "rgba(245, 158, 11, 0.1)",
+			borderWidth: 2,
+			fill: false,
+			tension: 0.35,
+			pointRadius: 0,
+			order: 0,
+		});
+	} else {
+		var diseaseNames = Object.keys(scoutingYearData.diseases || {}).sort();
+		diseaseNames.forEach(function (d, idx) {
+			var weeklyCounts = new Array(52).fill(0);
+			(scoutingYearData.diseases[d].counts || []).forEach(function (c) {
+				if (section && c.section !== section) return;
+				var weekNo = getWeekNumber1to52(c.date, year);
+				if (!weekNo) return;
+				weeklyCounts[weekNo - 1] += 1;
+			});
+
+			var total = weeklyCounts.reduce(function (a, b) {
+				return a + b;
+			}, 0);
+			if (total <= 0) return;
+
+			var palette = getPaletteColor(idx);
+			var accent = observationColors.diseases[d] || palette.border;
+			datasets.push({
+				label: d,
+				data: weeklyCounts,
+				borderColor: accent,
+				backgroundColor: palette.background,
+				borderWidth: 2,
+				fill: false,
+				tension: 0.35,
+				pointRadius: 0,
+				order: idx,
+			});
+		});
+	}
+
+	diseaseWeeklyTrendChart = new Chart(ctx, {
+		type: "line",
+		data: {
+			labels: weekLabels,
+			datasets: datasets,
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			plugins: {
+				legend: {
+					display: datasets.length > 1,
+					position: "bottom",
+					labels: { boxWidth: 10, boxHeight: 10, padding: 10, font: { size: 10 } },
+				},
+				tooltip: {
+					mode: "index",
+					intersect: false,
+					callbacks: {
+						title: function (items) {
+							var idx = items?.[0]?.dataIndex;
+							if (idx === undefined) return "";
+							return "Week " + (idx + 1) + " (" + year + ")";
+						},
+					},
+				},
+			},
+			scales: {
+				x: {
+					grid: { display: false },
+					ticks: { autoSkip: true, maxTicksLimit: 13 },
+				},
 				y: { beginAtZero: true, grid: { color: "rgba(0,0,0,0.04)" } },
 			},
 		},
@@ -1246,6 +1637,7 @@ function updateTrapTab() {
 	root_element.querySelector("#trap-avg-count").textContent = avgPerTrap;
 
 	updateTrapTrendChart();
+	updateTrapWeeklyTrend();
 
 	updateTrapPerformanceChart();
 
@@ -1289,6 +1681,166 @@ function updateTrapTrendChart() {
 			},
 			scales: {
 				x: { grid: { display: false } },
+				y: { beginAtZero: true, grid: { color: "rgba(0,0,0,0.04)" } },
+			},
+		},
+	});
+}
+
+function updateTrapWeeklyTrend() {
+	var trapSelect = root_element.querySelector("#trap-weekly-trap-filter");
+	var pestSelect = root_element.querySelector("#trap-weekly-pest-filter");
+	if (!trapSelect || !pestSelect) return;
+	if (!scoutingYearData) return;
+
+	var trapsSet = new Set();
+	var pestsSet = new Set();
+	Object.values(scoutingYearData.traps || {}).forEach(function (t) {
+		if (t.trap) trapsSet.add(t.trap);
+		if (t.pest) pestsSet.add(t.pest);
+	});
+
+	var traps = Array.from(trapsSet).sort();
+	var pests = Array.from(pestsSet).sort();
+
+	setSelectOptions(
+		trapSelect,
+		[{ value: "", label: "All Traps" }].concat(
+			traps.map(function (t) {
+				return { value: t, label: t };
+			}),
+		),
+	);
+	setSelectOptions(
+		pestSelect,
+		[{ value: "", label: "All Pests" }].concat(
+			pests.map(function (p) {
+				return { value: p, label: p };
+			}),
+		),
+	);
+
+	updateTrapWeeklyTrendChart();
+}
+
+function updateTrapWeeklyTrendChart() {
+	var ctx = root_element.querySelector("#trap-weekly-trend-chart");
+	if (!ctx) return;
+	if (trapWeeklyTrendChart) trapWeeklyTrendChart.destroy();
+	if (!scoutingYearData) return;
+
+	var toDate = root_element.querySelector("#scout-to-date")?.value;
+	var year = getYearFromDateString(toDate) || new Date().getFullYear();
+
+	var trapName = root_element.querySelector("#trap-weekly-trap-filter")?.value || "";
+	var pestName = root_element.querySelector("#trap-weekly-pest-filter")?.value || "";
+
+	var weekLabels = getWeekLabels1to52();
+	var datasets = [];
+
+	if (pestName) {
+		var weeklyCounts = new Array(52).fill(0);
+		Object.keys(scoutingYearData.traps || {}).forEach(function (k) {
+			var t = scoutingYearData.traps[k];
+			if (!t) return;
+			if (trapName && t.trap !== trapName) return;
+			if (t.pest !== pestName) return;
+
+			(t.counts || []).forEach(function (c) {
+				var weekNo = getWeekNumber1to52(c.date, year);
+				if (!weekNo) return;
+				weeklyCounts[weekNo - 1] += Number(c.count || 0);
+			});
+		});
+
+		var accent = observationColors.pests[pestName] || "#3b82f6";
+		var label = trapName ? trapName : "All Traps";
+		label += " (" + pestName + ")";
+
+		datasets.push({
+			label: label,
+			data: weeklyCounts,
+			borderColor: accent,
+			backgroundColor: "rgba(59, 130, 246, 0.1)",
+			borderWidth: 2,
+			fill: false,
+			tension: 0.35,
+			pointRadius: 0,
+			order: 0,
+		});
+	} else {
+		var weeklyByPest = {};
+		Object.keys(scoutingYearData.traps || {}).forEach(function (k) {
+			var t = scoutingYearData.traps[k];
+			if (!t) return;
+			if (trapName && t.trap !== trapName) return;
+			var pest = t.pest || "Unknown";
+			if (!weeklyByPest[pest]) weeklyByPest[pest] = new Array(52).fill(0);
+
+			(t.counts || []).forEach(function (c) {
+				var weekNo = getWeekNumber1to52(c.date, year);
+				if (!weekNo) return;
+				weeklyByPest[pest][weekNo - 1] += Number(c.count || 0);
+			});
+		});
+
+		Object.keys(weeklyByPest)
+			.sort()
+			.forEach(function (p, idx) {
+				var weeklyCounts = weeklyByPest[p];
+				var total = weeklyCounts.reduce(function (a, b) {
+					return a + b;
+				}, 0);
+				if (total <= 0) return;
+
+				var palette = getPaletteColor(idx);
+				var accent = observationColors.pests[p] || palette.border;
+				datasets.push({
+					label: p,
+					data: weeklyCounts,
+					borderColor: accent,
+					backgroundColor: palette.background,
+					borderWidth: 2,
+					fill: false,
+					tension: 0.35,
+					pointRadius: 0,
+					order: idx,
+				});
+			});
+	}
+
+	trapWeeklyTrendChart = new Chart(ctx, {
+		type: "line",
+		data: {
+			labels: weekLabels,
+			datasets: datasets,
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			plugins: {
+				legend: {
+					display: datasets.length > 1,
+					position: "bottom",
+					labels: { boxWidth: 10, boxHeight: 10, padding: 10, font: { size: 10 } },
+				},
+				tooltip: {
+					mode: "index",
+					intersect: false,
+					callbacks: {
+						title: function (items) {
+							var idx = items?.[0]?.dataIndex;
+							if (idx === undefined) return "";
+							return "Week " + (idx + 1) + " (" + year + ")";
+						},
+					},
+				},
+			},
+			scales: {
+				x: {
+					grid: { display: false },
+					ticks: { autoSkip: true, maxTicksLimit: 13 },
+				},
 				y: { beginAtZero: true, grid: { color: "rgba(0,0,0,0.04)" } },
 			},
 		},

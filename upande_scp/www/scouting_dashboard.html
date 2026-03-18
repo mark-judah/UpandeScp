@@ -74,7 +74,9 @@
 						</svg>
 						Refresh
 					</button>
-					<button id="scout-debug-fetch-btn" class="refresh-btn" type="button">Debug Fetch</button>
+					<button id="scout-debug-fetch-btn" class="refresh-btn" type="button">
+						Debug Fetch
+					</button>
 				</div>
 			</div>
 		</div>
@@ -151,6 +153,28 @@
 						<div class="stat-value" id="pest-top-name">Thrips</div>
 						<div class="stat-unit" id="pest-top-count">0 counts</div>
 					</div>
+				</div>
+			</div>
+
+			<div class="chart-card chart-card-wide">
+				<div class="chart-header">
+					<div>
+						<h4>Weekly Pest Trends</h4>
+						<span class="chart-subtitle">Weeks 1–52 (current year)</span>
+					</div>
+					<div class="chart-controls">
+						<div class="filter-field">
+							<label>Pest</label>
+							<select id="pest-weekly-pest-filter" class="filter-select"></select>
+						</div>
+						<div class="filter-field">
+							<label>Plant Section</label>
+							<select id="pest-weekly-section-filter" class="filter-select"></select>
+						</div>
+					</div>
+				</div>
+				<div class="chart-body">
+					<canvas id="pest-weekly-trend-chart"></canvas>
 				</div>
 			</div>
 
@@ -300,6 +324,34 @@
 				</div>
 			</div>
 
+			<div class="chart-card chart-card-wide">
+				<div class="chart-header">
+					<div>
+						<h4>Weekly Disease Trends</h4>
+						<span class="chart-subtitle">Weeks 1–52 (current year)</span>
+					</div>
+					<div class="chart-controls">
+						<div class="filter-field">
+							<label>Disease</label>
+							<select
+								id="disease-weekly-disease-filter"
+								class="filter-select"
+							></select>
+						</div>
+						<div class="filter-field">
+							<label>Plant Section</label>
+							<select
+								id="disease-weekly-section-filter"
+								class="filter-select"
+							></select>
+						</div>
+					</div>
+				</div>
+				<div class="chart-body">
+					<canvas id="disease-weekly-trend-chart"></canvas>
+				</div>
+			</div>
+
 			<div class="charts-grid">
 				<div class="chart-card">
 					<div class="chart-header">
@@ -446,6 +498,28 @@
 						<div class="stat-value" id="trap-avg-count">0</div>
 						<div class="stat-unit">pests/trap</div>
 					</div>
+				</div>
+			</div>
+
+			<div class="chart-card chart-card-wide">
+				<div class="chart-header">
+					<div>
+						<h4>Weekly Trap Trends</h4>
+						<span class="chart-subtitle">Weeks 1–52 (current year)</span>
+					</div>
+					<div class="chart-controls">
+						<div class="filter-field">
+							<label>Trap</label>
+							<select id="trap-weekly-trap-filter" class="filter-select"></select>
+						</div>
+						<div class="filter-field">
+							<label>Pest</label>
+							<select id="trap-weekly-pest-filter" class="filter-select"></select>
+						</div>
+					</div>
+				</div>
+				<div class="chart-body">
+					<canvas id="trap-weekly-trend-chart"></canvas>
 				</div>
 			</div>
 

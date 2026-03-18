@@ -233,6 +233,14 @@
 	box-shadow: var(--dashboard-shadow);
 }
 
+.chart-card-wide {
+	margin-bottom: 24px;
+}
+
+.chart-card-wide .chart-body {
+	min-height: 280px;
+}
+
 .chart-header {
 	display: flex;
 	justify-content: space-between;
@@ -240,6 +248,21 @@
 	margin-bottom: 12px;
 	border-bottom: 1px solid var(--dashboard-border);
 	padding-bottom: 8px;
+}
+
+.chart-controls {
+	display: flex;
+	gap: 10px;
+	align-items: flex-end;
+	flex-wrap: wrap;
+}
+
+.chart-controls .filter-select {
+	min-width: 160px;
+}
+
+.chart-controls .filter-field label {
+	font-size: 0.7rem;
 }
 
 .chart-header h4 {

@@ -306,10 +306,21 @@ function buildScoutingData(entries, trapEntries) {
 
 	var useTrapEntries = Array.isArray(trapEntries) && trapEntries.length > 0;
 
+	function getScoutName(entry) {
+		return (
+			entry?.scouts_name ||
+			entry?.scout_name ||
+			entry?.scout ||
+			entry?.owner ||
+			entry?.modified_by ||
+			""
+		);
+	}
+
 	entries.forEach((entry) => {
 		var date = entry.date_of_capture;
 		var greenhouse = entry.greenhouse;
-		var scout = entry.scouts_name;
+		var scout = getScoutName(entry);
 		var pests = entry.pests_scouting_entry || entry.pests || [];
 		var diseases = entry.diseases_scouting_entry || entry.diseases || [];
 		var traps = entry.trap_scouting_entry || entry.traps || [];
@@ -828,10 +839,10 @@ function updatePestTab() {
 	var pests = scoutingData.pests;
 	var pestNames = Object.keys(pests);
 
-	var totalEntries = scoutingData.entries.reduce(
-		(sum, e) => sum + (e.pests_scouting_entry?.length || 0),
-		0,
-	);
+	var totalEntries = scoutingData.entries.reduce((sum, e) => {
+		var pests = e.pests_scouting_entry || e.pests || [];
+		return sum + pests.length;
+	}, 0);
 	var activePests = pestNames.length;
 	var highSeverity = pestNames.reduce((sum, p) => sum + pests[p].severity.high, 0);
 
@@ -1245,10 +1256,10 @@ function updateDiseaseTab() {
 	var diseases = scoutingData.diseases;
 	var diseaseNames = Object.keys(diseases);
 
-	var totalEntries = scoutingData.entries.reduce(
-		(sum, e) => sum + (e.diseases_scouting_entry?.length || 0),
-		0,
-	);
+	var totalEntries = scoutingData.entries.reduce((sum, e) => {
+		var diseases = e.diseases_scouting_entry || e.diseases || [];
+		return sum + diseases.length;
+	}, 0);
 	var activeDiseases = diseaseNames.length;
 	var severeCases = diseaseNames.reduce((sum, d) => sum + diseases[d].severity.high, 0);
 
@@ -1623,6 +1634,7 @@ function updateTrapTab() {
 	var traps = scoutingData.traps;
 	var trapKeys = Object.keys(traps);
 
+	var totalEntries = trapKeys.reduce((sum, t) => sum + (traps[t].counts?.length || 0), 0);
 	var totalCount = trapKeys.reduce((sum, t) => sum + traps[t].total, 0);
 	var activeTraps = new Set(trapKeys.map((t) => traps[t].trap)).size;
 	var fcmCount = trapKeys.reduce(
@@ -1631,7 +1643,7 @@ function updateTrapTab() {
 	);
 	var avgPerTrap = activeTraps > 0 ? (totalCount / activeTraps).toFixed(1) : 0;
 
-	root_element.querySelector("#trap-total-count").textContent = formatNumber(totalCount);
+	root_element.querySelector("#trap-total-count").textContent = formatNumber(totalEntries);
 	root_element.querySelector("#trap-active-count").textContent = activeTraps;
 	root_element.querySelector("#trap-fcm-count").textContent = formatNumber(fcmCount);
 	root_element.querySelector("#trap-avg-count").textContent = avgPerTrap;
@@ -2011,9 +2023,14 @@ function updateTrapDetailsTable() {
 function updateOverviewTab() {
 	if (!scoutingData) return;
 
-	var totalScouts =
-		scoutingAnalysis?.scouting_summary?.total_unique_scouts ??
-		Object.keys(scoutingData.scouts).length;
+	var scoutNamesSet = new Set();
+	scoutingData.entries.forEach(function (e) {
+		var scout =
+			e?.scouts_name || e?.scout_name || e?.scout || e?.owner || e?.modified_by || "";
+		if (scout) scoutNamesSet.add(scout);
+	});
+	var scoutNames = Array.from(scoutNamesSet).sort();
+	var totalScouts = scoutNames.length;
 	var totalEntries = scoutingData.entries.length;
 	var greenhouseCount = Object.keys(scoutingData.greenhouses).length;
 	var alerts = Object.keys(scoutingData.greenhouses).reduce(
@@ -2022,6 +2039,15 @@ function updateOverviewTab() {
 	);
 
 	root_element.querySelector("#overview-total-scouts").textContent = totalScouts;
+	var scoutNamesEl = root_element.querySelector("#overview-scout-names");
+	if (scoutNamesEl) {
+		if (scoutNames.length <= 8) {
+			scoutNamesEl.textContent = scoutNames.join(", ") || "—";
+		} else {
+			scoutNamesEl.textContent =
+				scoutNames.slice(0, 8).join(", ") + " +" + (scoutNames.length - 8) + " more";
+		}
+	}
 	root_element.querySelector("#overview-total-entries").textContent = formatNumber(totalEntries);
 	root_element.querySelector("#overview-greenhouses").textContent = greenhouseCount;
 	root_element.querySelector("#overview-alerts").textContent = alerts;

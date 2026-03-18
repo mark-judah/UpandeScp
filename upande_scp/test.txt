@@ -19,7 +19,7 @@ Primary palette
 Typical default colors in Frappe v16:
 
 Variable	Typical Color	Usage
---primary	#4F46E5	buttons, highlights
+--primary	#030303	buttons, highlights
 --primary-hover	darker shade	button hover
 --bg-color	#f5f7fa	page background
 --fg-color	#ffffff	cards/forms

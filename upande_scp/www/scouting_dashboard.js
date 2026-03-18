@@ -1545,7 +1545,7 @@ function updateOverviewDonutChart() {
 	if (overviewDonutChart) overviewDonutChart.destroy();
 
 	var accent = getComputedStyle(document.documentElement).getPropertyValue("--primary").trim();
-	if (!accent) accent = "#4f46e5";
+	if (!accent) accent = "#030303";
 	var gray600 = getComputedStyle(document.documentElement).getPropertyValue("--gray-600").trim();
 	if (!gray600) gray600 = "#4b5563";
 	var gray400 = getComputedStyle(document.documentElement).getPropertyValue("--gray-400").trim();
@@ -1593,7 +1593,7 @@ function updateOverviewAreaRadarChart() {
 	if (overviewAreaRadarChart) overviewAreaRadarChart.destroy();
 
 	var accent = getComputedStyle(document.documentElement).getPropertyValue("--primary").trim();
-	if (!accent) accent = "#4f46e5";
+	if (!accent) accent = "#030303";
 	var gray600 = getComputedStyle(document.documentElement).getPropertyValue("--gray-600").trim();
 	if (!gray600) gray600 = "#4b5563";
 

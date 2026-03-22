@@ -23,7 +23,7 @@ def get_context(context):
             return False
         
         # Must contain "gh"
-        if " gh " not in name and not re.search(r'\bgh\b', name):
+        if not re.search(r"\bgh(?:\s*\d+)?\b", name):
             return False
         
         # Must not contain any excluded keywords

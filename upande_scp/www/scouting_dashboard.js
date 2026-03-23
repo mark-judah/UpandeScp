@@ -17,6 +17,8 @@ let overviewTimelineChart, overviewDonutChart, overviewAreaRadarChart;
 let scoutingData = null;
 let scoutingYearData = null;
 let greenhouseFilter = "";
+let farmFilter = "";
+let allGreenhouses = [];
 let activeTab = "pests";
 let scoutingAnalysis = null;
 let observationColors = { pests: {}, diseases: {} };
@@ -31,6 +33,87 @@ function notifyUser(message) {
 		return;
 	}
 	alert(message);
+}
+
+function getFarmFromGreenhouseName(greenhouseName) {
+	var gh = (greenhouseName || "").toString().trim();
+	if (!gh) return "";
+	var match = gh.match(/^(.+?)\s+GH\s*\d+/i);
+	if (match && match[1]) return match[1].trim();
+	var parts = gh.split(/\s+GH\s+/i);
+	if (parts.length > 1) return parts[0].trim();
+	return "";
+}
+
+function applyFarmFilterToEntries(entries) {
+	if (!farmFilter) return entries;
+	return (Array.isArray(entries) ? entries : []).filter(function (e) {
+		var farm = getFarmFromGreenhouseName(e?.greenhouse);
+		return farm === farmFilter;
+	});
+}
+
+function clearSelectOptions(selectEl, keepFirstOption) {
+	if (!selectEl) return;
+	var startIdx = keepFirstOption ? 1 : 0;
+	while (selectEl.options.length > startIdx) {
+		selectEl.remove(startIdx);
+	}
+}
+
+function renderFarmOptions() {
+	var select = root_element.querySelector("#scout-farm-filter");
+	if (!select) return;
+	var existingValue = select.value || "";
+	clearSelectOptions(select, true);
+	var farms = Array.from(
+		new Set(
+			(allGreenhouses || [])
+				.map(function (gh) {
+					return getFarmFromGreenhouseName(gh);
+				})
+				.filter(Boolean),
+		),
+	).sort();
+
+	farms.forEach(function (farm) {
+		var option = document.createElement("option");
+		option.value = farm;
+		option.textContent = farm;
+		select.appendChild(option);
+	});
+
+	if (existingValue && farms.includes(existingValue)) {
+		select.value = existingValue;
+	} else if (farmFilter && farms.includes(farmFilter)) {
+		select.value = farmFilter;
+	} else {
+		select.value = "";
+	}
+}
+
+function renderGreenhouseOptionsForFarm() {
+	var select = root_element.querySelector("#scout-greenhouse-filter");
+	if (!select) return;
+	var existingValue = select.value || "";
+	clearSelectOptions(select, true);
+	var filtered = (allGreenhouses || []).filter(function (gh) {
+		if (!farmFilter) return true;
+		return getFarmFromGreenhouseName(gh) === farmFilter;
+	});
+	filtered.sort().forEach(function (gh) {
+		var option = document.createElement("option");
+		option.value = gh;
+		option.textContent = gh;
+		select.appendChild(option);
+	});
+
+	if (existingValue && filtered.includes(existingValue)) {
+		select.value = existingValue;
+	} else {
+		select.value = "";
+		greenhouseFilter = "";
+	}
 }
 
 function isNumericId(value) {
@@ -269,15 +352,17 @@ function initScoutingDashboard() {
 	var weekToInput = root_element.querySelector("#scout-week-to");
 	var refreshBtn = root_element.querySelector("#scout-refresh-btn");
 	var greenhouseSelect = root_element.querySelector("#scout-greenhouse-filter");
+	var farmSelect = root_element.querySelector("#scout-farm-filter");
 	var debugFetchBtn = root_element.querySelector("#scout-debug-fetch-btn");
 
-	if (!weekFromInput || !weekToInput || !refreshBtn || !greenhouseSelect) {
+	if (!weekFromInput || !weekToInput || !refreshBtn || !greenhouseSelect || !farmSelect) {
 		if (SCOUTING_DASHBOARD_DEBUG) {
 			console.error("Scouting dashboard: missing required DOM elements", {
 				weekFromInput: !!weekFromInput,
 				weekToInput: !!weekToInput,
 				refreshBtn: !!refreshBtn,
 				greenhouseSelect: !!greenhouseSelect,
+				farmSelect: !!farmSelect,
 			});
 		}
 		return;
@@ -297,6 +382,11 @@ function initScoutingDashboard() {
 	}
 	weekFromInput.addEventListener("change", refreshAllData);
 	weekToInput.addEventListener("change", refreshAllData);
+	farmSelect.addEventListener("change", function (e) {
+		farmFilter = e.target.value || "";
+		renderGreenhouseOptionsForFarm();
+		refreshAllData();
+	});
 	greenhouseSelect.addEventListener("change", function (e) {
 		greenhouseFilter = e.target.value;
 		refreshAllData();
@@ -455,6 +545,11 @@ function exportFcmCsv() {
 	var fromWeek = rangeInfo?.from?.value || getIsoWeekString(new Date());
 	var toWeek = rangeInfo?.to?.value || getIsoWeekString(new Date());
 
+	if (farmFilter && !greenhouseFilter) {
+		notifyUser("Select a greenhouse to export FCM CSV for a specific farm");
+		return Promise.resolve();
+	}
+
 	return callFrappe("upande_scp.serverscripts.get_trap_data.exportFcmCsv", {
 		week_from: fromWeek,
 		week_to: toWeek,
@@ -496,14 +591,9 @@ function loadGreenhouseOptions() {
 	})
 		.then(function (r) {
 			if (r.message) {
-				var greenhouses = [...new Set(r.message.map((d) => d.greenhouse).filter(Boolean))];
-				var select = root_element.querySelector("#scout-greenhouse-filter");
-				greenhouses.sort().forEach((gh) => {
-					var option = document.createElement("option");
-					option.value = gh;
-					option.textContent = gh;
-					select.appendChild(option);
-				});
+				allGreenhouses = [...new Set(r.message.map((d) => d.greenhouse).filter(Boolean))];
+				renderFarmOptions();
+				renderGreenhouseOptionsForFarm();
 			}
 		})
 		.catch(function (err) {
@@ -570,8 +660,10 @@ function fetchScoutingData() {
 			}
 			scoutingAnalysis = analysis;
 			observationColors = extractObservationColors(report);
-			scoutingYearData = buildScoutingData(yearEntries);
-			processScoutingData(entries);
+			var farmEntries = applyFarmFilterToEntries(entries);
+			var farmYearEntries = applyFarmFilterToEntries(yearEntries);
+			scoutingYearData = buildScoutingData(farmYearEntries);
+			processScoutingData(farmEntries);
 			loading.classList.remove("active");
 		})
 		.catch(function (err) {
@@ -1097,6 +1189,7 @@ function updateAllTabs() {
 	updatePestTab();
 	updateDiseaseTab();
 	updateTrapTab();
+	updateFcmTab();
 	updateOverviewTab();
 }
 
@@ -1110,6 +1203,9 @@ function updateTabData(tab) {
 			break;
 		case "traps":
 			updateTrapTab();
+			break;
+		case "fcm":
+			updateFcmTab();
 			break;
 		case "overview":
 			updateOverviewTab();
@@ -1962,6 +2058,230 @@ function updateTrapTab() {
 	updateTrapPestChart();
 
 	updateTrapDetailsTable();
+}
+
+function updateFcmTab() {
+	if (!scoutingData) return;
+
+	var focus = [
+		{
+			key: "fcm",
+			label: "FCM",
+			matches: function (name) {
+				var s = (name || "").toString().toLowerCase();
+				return s === "fcm" || s.includes("fcm") || s.includes("false codling");
+			},
+		},
+		{
+			key: "helicoverpa",
+			label: "Helicoverpa",
+			matches: function (name) {
+				var s = (name || "").toString().toLowerCase();
+				return s.includes("helicoverpa");
+			},
+		},
+		{
+			key: "duponchelia",
+			label: "Duponchelia",
+			matches: function (name) {
+				var s = (name || "").toString().toLowerCase();
+				return s.includes("duponchelia");
+			},
+		},
+		{
+			key: "spodoptera",
+			label: "Spodoptera",
+			matches: function (name) {
+				var s = (name || "").toString().toLowerCase();
+				return s.includes("spodoptera");
+			},
+		},
+		{
+			key: "unidentified_moth",
+			label: "Unidentified moth",
+			matches: function (name) {
+				var s = (name || "").toString().toLowerCase();
+				return (s.includes("unidentified") && s.includes("moth")) || s === "unidentified moth";
+			},
+		},
+	];
+
+	function getFocusKey(name) {
+		for (var i = 0; i < focus.length; i++) {
+			if (focus[i].matches(name)) return focus[i].key;
+		}
+		return null;
+	}
+
+	function getFocusLabel(key) {
+		var f = focus.find(function (x) {
+			return x.key === key;
+		});
+		return f ? f.label : key;
+	}
+
+	var trapTotals = {};
+	Object.values(scoutingData.traps || {}).forEach(function (t) {
+		if (!t) return;
+		var pestName = t.pest || "";
+		var key = getFocusKey(pestName);
+		if (!key) return;
+		trapTotals[key] = (trapTotals[key] || 0) + toNumber(t.total || 0);
+	});
+
+	var pestTotals = {};
+	Object.keys(scoutingData.pests || {}).forEach(function (pestName) {
+		var key = getFocusKey(pestName);
+		if (!key) return;
+		var p = scoutingData.pests[pestName];
+		(p?.counts || []).forEach(function (c) {
+			pestTotals[key] = (pestTotals[key] || 0) + toNumber(c.count || 0);
+		});
+	});
+
+	var trapTotalSum = Object.values(trapTotals).reduce(function (a, b) {
+		return a + b;
+	}, 0);
+	var pestTotalSum = Object.values(pestTotals).reduce(function (a, b) {
+		return a + b;
+	}, 0);
+
+	var impactedEntries = [];
+	var impactedGreenhouses = new Set();
+	(scoutingData.entries || []).forEach(function (e) {
+		var traps = e.trap_scouting_entry || [];
+		var pests = e.pests_scouting_entry || [];
+		var has = false;
+
+		traps.forEach(function (t) {
+			if (has) return;
+			if (getFocusKey(t?.pest || "")) has = true;
+		});
+		pests.forEach(function (p) {
+			if (has) return;
+			if (getFocusKey(p?.pest || "")) has = true;
+		});
+
+		if (has) {
+			impactedEntries.push(e);
+			if (e?.greenhouse) impactedGreenhouses.add(e.greenhouse);
+		}
+	});
+
+	var trapTotalEl = root_element.querySelector("#fcm-trap-total");
+	if (trapTotalEl) trapTotalEl.textContent = formatNumber(trapTotalSum);
+	var pestTotalEl = root_element.querySelector("#fcm-pest-total");
+	if (pestTotalEl) pestTotalEl.textContent = formatNumber(pestTotalSum);
+	var entryCountEl = root_element.querySelector("#fcm-entry-count");
+	if (entryCountEl) entryCountEl.textContent = formatNumber(impactedEntries.length);
+	var greenhouseCountEl = root_element.querySelector("#fcm-greenhouse-count");
+	if (greenhouseCountEl) greenhouseCountEl.textContent = impactedGreenhouses.size;
+
+	var trapRows = focus
+		.map(function (f) {
+			return {
+				key: f.key,
+				label: f.label,
+				total: toNumber(trapTotals[f.key] || 0),
+			};
+		})
+		.filter(function (r) {
+			return r.total > 0;
+		})
+		.sort(function (a, b) {
+			return b.total - a.total;
+		});
+
+	var pestRows = focus
+		.map(function (f) {
+			return {
+				key: f.key,
+				label: f.label,
+				total: toNumber(pestTotals[f.key] || 0),
+			};
+		})
+		.filter(function (r) {
+			return r.total > 0;
+		})
+		.sort(function (a, b) {
+			return b.total - a.total;
+		});
+
+	var trapBody = root_element.querySelector("#fcm-trap-body");
+	if (trapBody) {
+		if (!trapRows.length) {
+			trapBody.innerHTML = '<tr><td colspan="2" class="empty-state">No focus pests in traps</td></tr>';
+		} else {
+			trapBody.innerHTML = trapRows
+				.map(function (r) {
+					return `
+                    <tr>
+                        <td><span class="pest-badge">${r.label}</span></td>
+                        <td><strong>${formatNumber(r.total)}</strong></td>
+                    </tr>
+                `;
+				})
+				.join("");
+		}
+	}
+
+	var pestBody = root_element.querySelector("#fcm-pest-body");
+	if (pestBody) {
+		if (!pestRows.length) {
+			pestBody.innerHTML =
+				'<tr><td colspan="2" class="empty-state">No focus pests in pest scouting</td></tr>';
+		} else {
+			pestBody.innerHTML = pestRows
+				.map(function (r) {
+					return `
+                    <tr>
+                        <td><span class="pest-badge">${r.label}</span></td>
+                        <td><strong>${formatNumber(r.total)}</strong></td>
+                    </tr>
+                `;
+				})
+				.join("");
+		}
+	}
+
+	var recentEl = root_element.querySelector("#fcm-recent-entries");
+	if (recentEl) {
+		var recent = impactedEntries.slice(0, 10);
+		if (!recent.length) {
+			recentEl.innerHTML = '<div class="empty-state">No recent focus entries</div>';
+		} else {
+			recentEl.innerHTML = recent
+				.map(function (e) {
+					var scoutLabel = getScoutIdentity(e)?.label || "Unknown scout";
+					var focusNames = [];
+					(e.trap_scouting_entry || []).forEach(function (t) {
+						var key = getFocusKey(t?.pest || "");
+						if (key) focusNames.push(getFocusLabel(key));
+					});
+					(e.pests_scouting_entry || []).forEach(function (p) {
+						var key = getFocusKey(p?.pest || "");
+						if (key) focusNames.push(getFocusLabel(key));
+					});
+					focusNames = Array.from(new Set(focusNames)).slice(0, 3);
+					var subtitle = focusNames.length ? focusNames.join(", ") : "—";
+
+					return `
+                    <div class="recent-entry">
+                        <div class="entry-type trap"></div>
+                        <div class="entry-info">
+                            <div class="entry-title">${e.greenhouse || "Unknown"}</div>
+                            <div class="entry-details">
+                                <span>${subtitle}</span>
+                                <span>${scoutLabel}</span>
+                            </div>
+                        </div>
+                        <div class="entry-time">${e.date_of_capture}</div>
+                    </div>
+                `;
+				})
+				.join("");
+		}
+	}
 }
 
 function updateTrapTrendChart() {

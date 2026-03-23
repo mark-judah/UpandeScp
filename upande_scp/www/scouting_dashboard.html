@@ -27,6 +27,13 @@
 				</svg>
 				Traps
 			</button>
+			<button class="tab-btn" data-tab="fcm">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M12 2C8 2 5 5 5 9c0 6 7 13 7 13s7-7 7-13c0-4-3-7-7-7z" />
+					<path d="M9 9h6M10 12h4" />
+				</svg>
+				FCM & Moths
+			</button>
 			<button class="tab-btn" data-tab="overview">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<rect x="3" y="3" width="7" height="7" />
@@ -45,6 +52,12 @@
 			</div>
 			<div class="header-right">
 				<div class="filter-group">
+					<div class="filter-field">
+						<label>Farm</label>
+						<select id="scout-farm-filter" class="filter-select">
+							<option value="">All Farms</option>
+						</select>
+					</div>
 					<div class="filter-field">
 						<label>Greenhouse</label>
 						<select id="scout-greenhouse-filter" class="filter-select">
@@ -590,6 +603,125 @@
 							</tbody>
 						</table>
 					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="tab-content" id="tab-fcm">
+			<div class="stats-grid">
+				<div class="stat-card trap-fcm">
+					<div class="stat-icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<circle cx="12" cy="12" r="10" />
+							<path d="M12 6v6l4 2" />
+						</svg>
+					</div>
+					<div class="stat-content">
+						<div class="stat-label">Trap Counts (FCM & Moths)</div>
+						<div class="stat-value" id="fcm-trap-total">0</div>
+						<div class="stat-unit">counts</div>
+					</div>
+				</div>
+				<div class="stat-card pest-total">
+					<div class="stat-icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<circle cx="12" cy="12" r="10" />
+							<path d="M12 6v4M12 14v4M8 10h8M6 16h12" />
+						</svg>
+					</div>
+					<div class="stat-content">
+						<div class="stat-label">Non-Trap Pest Counts (FCM & Moths)</div>
+						<div class="stat-value" id="fcm-pest-total">0</div>
+						<div class="stat-unit">counts</div>
+					</div>
+				</div>
+				<div class="stat-card overview-entries">
+					<div class="stat-icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+							<line x1="16" y1="2" x2="16" y2="6" />
+							<line x1="8" y1="2" x2="8" y2="6" />
+							<line x1="3" y1="10" x2="21" y2="10" />
+						</svg>
+					</div>
+					<div class="stat-content">
+						<div class="stat-label">Entries With Focus Pests</div>
+						<div class="stat-value" id="fcm-entry-count">0</div>
+						<div class="stat-unit">scouting records</div>
+					</div>
+				</div>
+				<div class="stat-card overview-greenhouses">
+					<div class="stat-icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+							<path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+						</svg>
+					</div>
+					<div class="stat-content">
+						<div class="stat-label">Greenhouses Impacted</div>
+						<div class="stat-value" id="fcm-greenhouse-count">0</div>
+						<div class="stat-unit">with observations</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="charts-grid">
+				<div class="chart-card">
+					<div class="chart-header">
+						<h4>Trap Breakdown</h4>
+						<span class="chart-subtitle">FCM, Helicoverpa, Duponchelia, Spodoptera, Unidentified moth</span>
+					</div>
+					<div class="chart-body">
+						<div class="stages-table-wrap">
+							<table class="stages-table" id="fcm-trap-table">
+								<thead>
+									<tr>
+										<th>Pest</th>
+										<th>Total Count</th>
+									</tr>
+								</thead>
+								<tbody id="fcm-trap-body">
+									<tr>
+										<td colspan="2" class="empty-state">Loading...</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+
+				<div class="chart-card">
+					<div class="chart-header">
+						<h4>Non-Trap Pest Breakdown</h4>
+						<span class="chart-subtitle">Pest scouting observations (not traps)</span>
+					</div>
+					<div class="chart-body">
+						<div class="stages-table-wrap">
+							<table class="stages-table" id="fcm-pest-table">
+								<thead>
+									<tr>
+										<th>Pest</th>
+										<th>Total Count</th>
+									</tr>
+								</thead>
+								<tbody id="fcm-pest-body">
+									<tr>
+										<td colspan="2" class="empty-state">Loading...</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="chart-card">
+				<div class="chart-header">
+					<h4>Recent Focus Entries</h4>
+					<span class="chart-subtitle">Latest entries containing the focus pests</span>
+				</div>
+				<div class="chart-body">
+					<div class="recent-entries" id="fcm-recent-entries"></div>
 				</div>
 			</div>
 		</div>

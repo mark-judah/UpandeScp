@@ -368,11 +368,11 @@ function initScoutingDashboard() {
 		return;
 	}
 
-	var currentWeek = getIsoWeekString(new Date());
-	weekFromInput.value = currentWeek;
-	weekToInput.value = currentWeek;
-
-	loadGreenhouseOptions();
+	Promise.all([loadGreenhouseOptions(), setDefaultWeekInputsToLatestScouting(weekFromInput, weekToInput)]).then(
+		function () {
+			fetchScoutingData();
+		},
+	);
 
 	refreshBtn.addEventListener("click", refreshAllData);
 	if (debugFetchBtn) {
@@ -405,7 +405,31 @@ function initScoutingDashboard() {
 	});
 
 	setupWeeklyTrendFilterListeners();
-	fetchScoutingData();
+}
+
+function setDefaultWeekInputsToLatestScouting(weekFromInput, weekToInput) {
+	var currentWeek = getIsoWeekString(new Date());
+	weekFromInput.value = currentWeek;
+	weekToInput.value = currentWeek;
+
+	return callFrappe("frappe.client.get_list", {
+		doctype: "Scouting Entry",
+		fields: ["date_of_capture"],
+		order_by: "date_of_capture desc",
+		limit_page_length: 1,
+	})
+		.then(function (r) {
+			var latest = r?.message && r.message[0] ? r.message[0].date_of_capture : "";
+			if (!latest) return;
+			var dt = new Date(String(latest) + "T00:00:00Z");
+			if (!Number.isFinite(dt.getTime())) return;
+			var week = getIsoWeekString(dt);
+			weekFromInput.value = week;
+			weekToInput.value = week;
+		})
+		.catch(function () {
+			return;
+		});
 }
 
 function setupWeeklyTrendFilterListeners() {
@@ -586,8 +610,10 @@ function exportFcmCsv() {
 function loadGreenhouseOptions() {
 	return callFrappe("frappe.client.get_list", {
 		doctype: "Scouting Entry",
-		fields: ["distinct greenhouse"],
-		limit_page_length: 1000,
+		fields: ["greenhouse"],
+		group_by: "greenhouse",
+		order_by: "greenhouse asc",
+		limit_page_length: 5000,
 	})
 		.then(function (r) {
 			if (r.message) {
@@ -600,6 +626,22 @@ function loadGreenhouseOptions() {
 			if (SCOUTING_DASHBOARD_DEBUG) {
 				console.error("Scouting dashboard: failed to load greenhouse options", err);
 			}
+			return callFrappe("frappe.client.get_list", {
+				doctype: "Scouting Entry",
+				fields: ["greenhouse"],
+				order_by: "greenhouse asc",
+				limit_page_length: 5000,
+			})
+				.then(function (r) {
+					if (r.message) {
+						allGreenhouses = [...new Set(r.message.map((d) => d.greenhouse).filter(Boolean))];
+						renderFarmOptions();
+						renderGreenhouseOptionsForFarm();
+					}
+				})
+				.catch(function () {
+					return;
+				});
 		});
 }
 
@@ -644,22 +686,18 @@ function fetchScoutingData() {
 	Promise.all([
 		fetchCompleteScoutingEntries(fromDate, toDate, greenhouseFilter),
 		fetchCompleteScoutingEntries(yearFrom, yearTo, greenhouseFilter),
-		fetchScoutingAnalysis(toDate),
-		fetchScoutingReport(greenhouseFilter),
 	])
-		.then(function ([entries, yearEntries, analysis, report]) {
+		.then(function ([entries, yearEntries]) {
 			if (SCOUTING_DASHBOARD_DEBUG) {
 				console.log("Scouting dashboard: fetched payloads", {
 					entriesCount: Array.isArray(entries) ? entries.length : null,
 					yearEntriesCount: Array.isArray(yearEntries) ? yearEntries.length : null,
-					analysis,
-					report,
 					entries,
 					yearEntries,
 				});
 			}
-			scoutingAnalysis = analysis;
-			observationColors = extractObservationColors(report);
+			scoutingAnalysis = null;
+			observationColors = { pests: {}, diseases: {} };
 			var farmEntries = applyFarmFilterToEntries(entries);
 			var farmYearEntries = applyFarmFilterToEntries(yearEntries);
 			scoutingYearData = buildScoutingData(farmYearEntries);

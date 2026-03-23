@@ -6,3 +6,6 @@ tags
 node_modules
 __pycache__
 data.csv
+pest data.txt
+disease data.txt
+trap data.txt

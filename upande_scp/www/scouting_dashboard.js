@@ -33,6 +33,237 @@ function notifyUser(message) {
 	alert(message);
 }
 
+function isNumericId(value) {
+	if (value === null || value === undefined) return false;
+	return /^[0-9]+$/.test(String(value).trim());
+}
+
+function toNumber(value) {
+	if (value === null || value === undefined || value === "") return 0;
+	var n = Number(value);
+	return Number.isFinite(n) ? n : 0;
+}
+
+function titleCaseWords(str) {
+	return String(str)
+		.split(/\s+/)
+		.filter(Boolean)
+		.map(function (w) {
+			return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+		})
+		.join(" ");
+}
+
+function scoutLabelFromEmail(email) {
+	if (!email) return "";
+	var raw = String(email).trim();
+	var local = raw.includes("@") ? raw.split("@")[0] : raw;
+	var cleaned = local.replace(/[._-]+/g, " ").trim();
+	var label = titleCaseWords(cleaned);
+	return label || raw;
+}
+
+function getScoutIdentity(entry) {
+	var owner = entry?.owner ? String(entry.owner).trim() : "";
+	var modifiedBy = entry?.modified_by ? String(entry.modified_by).trim() : "";
+	var explicitName =
+		(entry?.scout_name ? String(entry.scout_name).trim() : "") ||
+		(entry?.scout ? String(entry.scout).trim() : "");
+	var named = explicitName || (entry?.scouts_name ? String(entry.scouts_name).trim() : "");
+
+	var emailCandidate = "";
+	if (owner.includes("@")) emailCandidate = owner;
+	else if (modifiedBy.includes("@")) emailCandidate = modifiedBy;
+
+	if (explicitName && !isNumericId(explicitName)) {
+		return { key: explicitName, label: explicitName };
+	}
+
+	if (named) {
+		if (!isNumericId(named)) return { key: named, label: named };
+	}
+
+	if (emailCandidate) {
+		return { key: emailCandidate.toLowerCase(), label: scoutLabelFromEmail(emailCandidate) };
+	}
+
+	if (named && isNumericId(named)) return { key: named, label: named };
+
+	if (modifiedBy) return { key: modifiedBy, label: modifiedBy };
+	if (owner) return { key: owner, label: owner };
+	return { key: "", label: "" };
+}
+
+function normalizeScoutingEntries(rawEntries) {
+	var entries = Array.isArray(rawEntries) ? rawEntries : [];
+	var byName = {};
+	var unnamed = [];
+
+	function ensureEntry(row) {
+		var key = row?.name ? String(row.name) : "";
+		if (!key) return null;
+		if (!byName[key]) {
+			byName[key] = {
+				name: key,
+				date_of_capture: row?.date_of_capture || "",
+				time_of_capture: row?.time_of_capture || "",
+				greenhouse: row?.greenhouse || "",
+				bed: row?.bed || "",
+				zone: row?.zone || "",
+				owner: row?.owner || "",
+				modified_by: row?.modified_by || "",
+				scouts_name: row?.scouts_name || row?.scout_name || row?.scout || "",
+				pests_scouting_entry: [],
+				diseases_scouting_entry: [],
+				trap_scouting_entry: [],
+			};
+		} else {
+			var existing = byName[key];
+			if (!existing.date_of_capture && row?.date_of_capture) existing.date_of_capture = row.date_of_capture;
+			if (!existing.time_of_capture && row?.time_of_capture) existing.time_of_capture = row.time_of_capture;
+			if (!existing.greenhouse && row?.greenhouse) existing.greenhouse = row.greenhouse;
+			if (!existing.bed && row?.bed) existing.bed = row.bed;
+			if (!existing.zone && row?.zone) existing.zone = row.zone;
+			if (!existing.owner && row?.owner) existing.owner = row.owner;
+			if (!existing.modified_by && row?.modified_by) existing.modified_by = row.modified_by;
+			if (!existing.scouts_name && (row?.scouts_name || row?.scout_name || row?.scout)) {
+				existing.scouts_name = row.scouts_name || row.scout_name || row.scout;
+			}
+		}
+		return byName[key];
+	}
+
+	function appendObservations(target, row) {
+		var pests = Array.isArray(row?.pests_scouting_entry)
+			? row.pests_scouting_entry
+			: Array.isArray(row?.pests)
+				? row.pests
+				: [];
+		var diseases = Array.isArray(row?.diseases_scouting_entry)
+			? row.diseases_scouting_entry
+			: Array.isArray(row?.diseases)
+				? row.diseases
+				: [];
+		var traps = Array.isArray(row?.trap_scouting_entry)
+			? row.trap_scouting_entry
+			: Array.isArray(row?.traps)
+				? row.traps
+				: [];
+
+		pests.forEach(function (p) {
+			if (!p || !(p.pest || p.pest_name)) return;
+			target.pests_scouting_entry.push({
+				pest: p.pest || p.pest_name,
+				plant_section: p.plant_section || p.section || p.pest_plant_section,
+				stage: p.stage || p.pest_stage || "",
+				count: toNumber(p.count ?? p.pest_count ?? 1),
+			});
+		});
+
+		diseases.forEach(function (d) {
+			if (!d || !(d.disease || d.disease_name)) return;
+			target.diseases_scouting_entry.push({
+				disease: d.disease || d.disease_name,
+				plant_section: d.plant_section || d.section || d.disease_plant_section,
+				stage: d.stage || d.severity_level || d.disease_stage || "",
+				severity_level: d.severity_level || d.stage || "",
+			});
+		});
+
+		traps.forEach(function (t) {
+			if (!t || !(t.trap || t.trap_name)) return;
+			target.trap_scouting_entry.push({
+				trap: t.trap || t.trap_name,
+				pest: t.pest || t.trap_pest,
+				location: t.location || t.plant_section || t.trap_location,
+				count: toNumber(t.count ?? t.trap_count ?? 0),
+			});
+		});
+
+		var flatPestName = row?.pest_pest || row?.pest;
+		if (flatPestName) {
+			target.pests_scouting_entry.push({
+				pest: flatPestName,
+				plant_section: row?.pest_plant_section || row?.plant_section || row?.predator_plant_section || "",
+				stage: row?.pest_stage || row?.stage || "",
+				count: toNumber(row?.pest_count ?? row?.count ?? 1),
+			});
+		}
+
+		var flatDiseaseName = row?.disease_disease || row?.disease;
+		if (flatDiseaseName) {
+			target.diseases_scouting_entry.push({
+				disease: flatDiseaseName,
+				plant_section: row?.disease_plant_section || row?.plant_section || "",
+				stage: row?.disease_stage || row?.stage || row?.severity_level || "",
+				severity_level: row?.disease_stage || row?.severity_level || row?.stage || "",
+			});
+		}
+
+		var flatTrapId = row?.trap_trap || row?.trap || row?.trap_name;
+		if (flatTrapId) {
+			target.trap_scouting_entry.push({
+				trap: flatTrapId,
+				pest: row?.trap_pest || row?.pest || "",
+				location: row?.trap_location || row?.location || row?.plant_section || "",
+				count: toNumber(row?.trap_count ?? row?.count ?? 0),
+			});
+		}
+	}
+
+	entries.forEach(function (row) {
+		var target = ensureEntry(row);
+		if (!target) {
+			unnamed.push(row);
+			return;
+		}
+		appendObservations(target, row);
+	});
+
+	var merged = Object.values(byName)
+		.filter(function (e) {
+			var hasPests = Array.isArray(e.pests_scouting_entry) && e.pests_scouting_entry.length > 0;
+			var hasDiseases =
+				Array.isArray(e.diseases_scouting_entry) && e.diseases_scouting_entry.length > 0;
+			var hasTraps = Array.isArray(e.trap_scouting_entry) && e.trap_scouting_entry.length > 0;
+			return hasPests || hasDiseases || hasTraps;
+		})
+		.sort(function (a, b) {
+			var da = a?.date_of_capture || "";
+			var db = b?.date_of_capture || "";
+			if (da !== db) return db.localeCompare(da);
+			var ta = a?.time_of_capture || "";
+			var tb = b?.time_of_capture || "";
+			return tb.localeCompare(ta);
+		});
+
+	if (unnamed.length) {
+		unnamed.forEach(function (row) {
+			var hasObs =
+				!!(row?.pest_pest || row?.pest || row?.disease_disease || row?.disease || row?.trap_trap || row?.trap);
+			if (!hasObs) return;
+			var synthetic = {
+				name: row?.name || row?.id || "",
+				date_of_capture: row?.date_of_capture || "",
+				time_of_capture: row?.time_of_capture || "",
+				greenhouse: row?.greenhouse || "",
+				bed: row?.bed || "",
+				zone: row?.zone || "",
+				owner: row?.owner || "",
+				modified_by: row?.modified_by || "",
+				scouts_name: row?.scouts_name || row?.scout_name || row?.scout || "",
+				pests_scouting_entry: [],
+				diseases_scouting_entry: [],
+				trap_scouting_entry: [],
+			};
+			appendObservations(synthetic, row);
+			merged.push(synthetic);
+		});
+	}
+
+	return merged;
+}
+
 function initScoutingDashboard() {
 	var weekFromInput = root_element.querySelector("#scout-week-from");
 	var weekToInput = root_element.querySelector("#scout-week-to");
@@ -353,6 +584,7 @@ function fetchScoutingData() {
 }
 
 function buildScoutingData(entries, trapEntries) {
+	entries = normalizeScoutingEntries(entries);
 	var data = {
 		entries: entries,
 		pests: {},
@@ -365,21 +597,12 @@ function buildScoutingData(entries, trapEntries) {
 
 	var useTrapEntries = Array.isArray(trapEntries) && trapEntries.length > 0;
 
-	function getScoutName(entry) {
-		return (
-			entry?.scouts_name ||
-			entry?.scout_name ||
-			entry?.scout ||
-			entry?.owner ||
-			entry?.modified_by ||
-			""
-		);
-	}
-
 	entries.forEach((entry) => {
 		var date = entry.date_of_capture;
 		var greenhouse = entry.greenhouse;
-		var scout = getScoutName(entry);
+		var scoutInfo = getScoutIdentity(entry);
+		var scoutKey = scoutInfo.key;
+		var scoutLabel = scoutInfo.label;
 		var pests = entry.pests_scouting_entry || entry.pests || [];
 		var diseases = entry.diseases_scouting_entry || entry.diseases || [];
 		var traps = entry.trap_scouting_entry || entry.traps || [];
@@ -418,7 +641,7 @@ function buildScoutingData(entries, trapEntries) {
 				}
 				data.pests[pestName].counts.push({
 					date: date,
-					count: pest.count || 1,
+					count: toNumber(pest.count || 1),
 					stage: pestStage,
 					section: pest.plant_section,
 					greenhouse: greenhouse,
@@ -427,17 +650,18 @@ function buildScoutingData(entries, trapEntries) {
 				if (!data.pests[pestName].stages[pestStage]) {
 					data.pests[pestName].stages[pestStage] = 0;
 				}
-				data.pests[pestName].stages[pestStage] += pest.count || 1;
+				data.pests[pestName].stages[pestStage] += toNumber(pest.count || 1);
 
 				if (pest.plant_section) {
 					if (!data.pests[pestName].sections[pest.plant_section]) {
 						data.pests[pestName].sections[pest.plant_section] = 0;
 					}
-					data.pests[pestName].sections[pest.plant_section] += pest.count || 1;
+					data.pests[pestName].sections[pest.plant_section] += toNumber(pest.count || 1);
 				}
 
-				if (pest.count > 15) data.pests[pestName].severity.high++;
-				else if (pest.count > 5) data.pests[pestName].severity.moderate++;
+				var pestCount = toNumber(pest.count || 0);
+				if (pestCount > 15) data.pests[pestName].severity.high++;
+				else if (pestCount > 5) data.pests[pestName].severity.moderate++;
 				else data.pests[pestName].severity.low++;
 			});
 		}
@@ -495,6 +719,7 @@ function buildScoutingData(entries, trapEntries) {
 				var pest = trap.pest || "Unknown";
 				var key = trapId + "-" + pest;
 				var location = trap.location || trap.plant_section;
+				var trapCount = toNumber(trap.count || 0);
 
 				if (!data.traps[key]) {
 					data.traps[key] = {
@@ -507,24 +732,24 @@ function buildScoutingData(entries, trapEntries) {
 				}
 				data.traps[key].counts.push({
 					date: date,
-					count: trap.count || 0,
+					count: trapCount,
 					location: location,
 					greenhouse: greenhouse,
 				});
-				data.traps[key].total += trap.count || 0;
+				data.traps[key].total += trapCount;
 
-				if (trap.count > 10) {
+				if (trapCount > 10) {
 					data.greenhouses[greenhouse].alerts++;
 				}
 			});
 		}
 
-		if (scout) {
-			data.greenhouses[greenhouse].scouts.add(scout);
-			if (!data.scouts[scout]) {
-				data.scouts[scout] = { entries: 0, name: scout };
+		if (scoutKey) {
+			data.greenhouses[greenhouse].scouts.add(scoutKey);
+			if (!data.scouts[scoutKey]) {
+				data.scouts[scoutKey] = { entries: 0, name: scoutLabel || scoutKey };
 			}
-			data.scouts[scout].entries++;
+			data.scouts[scoutKey].entries++;
 		}
 	});
 
@@ -2114,9 +2339,8 @@ function updateOverviewTab() {
 
 	var scoutNamesSet = new Set();
 	scoutingData.entries.forEach(function (e) {
-		var scout =
-			e?.scouts_name || e?.scout_name || e?.scout || e?.owner || e?.modified_by || "";
-		if (scout) scoutNamesSet.add(scout);
+		var scoutInfo = getScoutIdentity(e);
+		if (scoutInfo?.label) scoutNamesSet.add(scoutInfo.label);
 	});
 	var scoutNames = Array.from(scoutNamesSet).sort();
 	var totalScouts = scoutNames.length;
@@ -2464,6 +2688,7 @@ function updateRecentEntries() {
 					? "disease"
 					: "trap";
 			var typeLabel = type === "pest" ? "Pest" : type === "disease" ? "Disease" : "Trap";
+			var scoutLabel = getScoutIdentity(e)?.label || "Unknown scout";
 
 			return `
             <div class="recent-entry">
@@ -2472,7 +2697,7 @@ function updateRecentEntries() {
                     <div class="entry-title">${e.greenhouse || "Unknown"}</div>
                     <div class="entry-details">
                         <span>${typeLabel}</span>
-                        <span>${e.scouts_name || "Unknown scout"}</span>
+                        <span>${scoutLabel}</span>
                     </div>
                 </div>
                 <div class="entry-time">${e.date_of_capture}</div>

@@ -54,12 +54,7 @@ def createApplicationWorkOrder():
         production_item = template_bom.item
 
         # -------------------------------------------------- 4. Work Order qty = number of 1000L tanks
-        # Round to 2 decimal places to match ERPNext's internal quantity precision.
-        # This prevents "Quantity must not be more than X" errors on material transfer,
-        # which occur when wo_qty has more decimals than ERPNext stores internally (e.g.
-        # 0.8665 gets displayed/stored as 0.87 but required_qty stays 0.8665, causing a
-        # mismatch when the operator tries to transfer materials).
-        wo_qty = round(water_volume_l / 1000.0, 2)  # e.g. 866.55 L → 0.87, 620.34 L → 0.62
+        wo_qty = round(water_volume_l / 1000.0, 2)
 
         # -------------------------------------------------- 5. Dynamic BOM? (only chemicals + rates)
         bom_to_use = bom_name
@@ -91,78 +86,43 @@ def createApplicationWorkOrder():
         bom_doc = frappe.get_doc("BOM", bom_to_use)
         bom_uom = bom_doc.uom
 
-        # -------------------------------------------------- 6. Build SE items (valuation)
-        # Use the same wo_qty (rounded to 2dp) so SE quantities are consistent
-        # with what the Work Order will expect during material transfer.
-        se_items = []
-        item_map = {}
-        for chem in chemicals:
-            name = chem["chemical"]
-            rate = float(chem.get("application_rate") or 0)
-            source_wh = chem.get("source_warehouse")
-
-            item = frappe.db.get_value(
-                "Item", {"item_name": name, "disabled": 0},
-                ["name", "item_name", "stock_uom"], as_dict=1
-            )
-            if not item:
-                frappe.throw(f"Item not found: {name}")
-            item_map[name] = item
-
-            se_items.append({
-                "item_code": item.name,
-                "qty": round(rate * wo_qty, 2),  # match 2dp rounding
-                "uom": chem.get("uom") or item.stock_uom,
-                "s_warehouse": source_wh,
-                "t_warehouse": wip_warehouse
-            })
-
-        # -------------------------------------------------- 7. Temp Stock Entry
-        se = frappe.get_doc({
-            "doctype": "Stock Entry",
-            "stock_entry_type": "Material Transfer for Manufacture",
-            "company": "Karen Roses",
-            "purpose": "Material Transfer for Manufacture",
-            "custom_farm": greenhouse.split()[0],
-            "items": se_items
-        })
-        se.insert(ignore_permissions=True)
-        se.submit()
-        frappe.db.commit()
-
-        # -------------------------------------------------- 8. Extract rates
-        val_rate_map = {i.item_code: i.valuation_rate for i in se.items}
-
-        # -------------------------------------------------- 9. required_items (per 1000L)
-        # Round required_qty to 2dp to stay consistent with wo_qty precision.
-        # ERPNext recomputes transfer quantities from wo_qty internally, so if
-        # required_qty has more decimal places than wo_qty it will throw a
-        # "Quantity must not be more than X" validation error on WO start.
+        # -------------------------------------------------- 6. Build required_items with valuation rates
+        # Get valuation rates directly from Item master
         required_items = []
         for chem in chemicals:
             name = chem["chemical"]
-            item = item_map[name]
-
             application_rate = float(chem.get("application_rate") or 0)
-            val_rate = val_rate_map.get(item.name) or 0.0
+            source_wh = chem.get("source_warehouse")
 
-            required_qty = round(application_rate * wo_qty, 2)  # 2dp to match wo_qty
+            # Get item details
+            item = frappe.db.get_value(
+                "Item", {"item_name": name, "disabled": 0},
+                ["name", "item_name", "stock_uom", "valuation_rate"], as_dict=1
+            )
+            if not item:
+                frappe.throw(f"Item not found: {name}")
+
+            # Calculate required quantity (rounded to 2dp to match wo_qty)
+            required_qty = round(application_rate * wo_qty, 2)
+            
+            # Get valuation rate (use item's standard valuation rate)
+            val_rate = item.valuation_rate or 0.0
 
             required_items.append({
                 "item_code": item.name,
                 "item_name": name,
                 "required_qty": required_qty,
                 "uom": chem.get("uom") or item.stock_uom,
-                "source_warehouse": chem.get("source_warehouse"),
+                "source_warehouse": source_wh,
                 "rate": val_rate,
                 "amount": round(required_qty * val_rate, 2),
                 "include_item_in_manufacturing": 1  # CRITICAL: Enable material transfer
             })
 
-        # -------------------------------------------------- 10. Format team
+        # -------------------------------------------------- 7. Format team
         team_str = format_spray_team(raw_data.get("custom_spray_team"))
 
-        # -------------------------------------------------- 11. Create Work Order
+        # -------------------------------------------------- 8. Create Work Order
         wo = frappe.get_doc({
             "doctype": "Work Order",
             "production_item": production_item,
@@ -190,7 +150,7 @@ def createApplicationWorkOrder():
         })
         wo.insert(ignore_permissions=True)
 
-        # -------------------------------------------------- 11.5. Replace auto-generated items with ours
+        # -------------------------------------------------- 8.5. Replace auto-generated items with ours
         # ERPNext auto-populated required_items from BOM during insert.
         # Clear them and set our custom ones instead.
         wo.set("required_items", [])
@@ -199,14 +159,6 @@ def createApplicationWorkOrder():
 
         wo.save(ignore_permissions=True)
         frappe.db.commit()
-
-        # -------------------------------------------------- 12. Delete temp SE
-        try:
-            se.cancel()
-            se.delete()
-            frappe.db.commit()
-        except Exception as e:
-            frappe.log_error(f"Failed to delete temp SE {se.name}: {str(e)}")
 
         return {
             "status": "success",

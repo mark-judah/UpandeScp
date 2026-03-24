@@ -1833,25 +1833,52 @@ function closeScoutModal() {
 
 /* ================================================================
  *  REPORTS MODULE
- *  Replaces the old single exportFcmCsv debug button with a
- *  "Reports ▾" dropdown generating 5 CSV report types.
+ *  "Reports ▾" dropdown with CSV + PDF export options.
+ *  PDF reports include embedded Chart.js graphs and color-coded tables.
  * ================================================================ */
 
-var SCOUTING_REPORTS = [
-	{ key: "weekly_summary",       label: "Weekly Summary (Trap Counts)",  desc: "Light & pheromone trap moth counts per week",                      fn: reportWeeklySummary },
-	{ key: "scouting_summary",     label: "Scouting Summary",             desc: "Pest scouting (eggs/larvae/damages) per GH per week",              fn: reportScoutingSummary },
-	{ key: "intake_qc",            label: "Intake QC Report",             desc: "Intake quality-control observations per GH per week",               fn: reportIntakeQc },
-	{ key: "fcm_daily_monitoring", label: "FCM Daily Monitoring",         desc: "Trap-level FCM counts per greenhouse per week",                     fn: reportFcmDailyMonitoring },
-	{ key: "fcm_risk_profiling",   label: "FCM Risk Profiling",           desc: "Greenhouse-level FCM risk scores and categories",                   fn: reportFcmRiskProfiling },
+var SCOUTING_REPORTS_CSV = [
+	{ key: "weekly_summary",       label: "Weekly Summary (Trap Counts)",  desc: "Light & pheromone trap moth counts per week",      fn: reportWeeklySummary },
+	{ key: "scouting_summary",     label: "Scouting Summary",             desc: "Pest scouting (eggs/larvae/damages) per GH/week",  fn: reportScoutingSummary },
+	{ key: "intake_qc",            label: "Intake QC Report",             desc: "Intake QC observations per GH per week",            fn: reportIntakeQc },
+	{ key: "fcm_daily_monitoring", label: "FCM Daily Monitoring",         desc: "Trap-level FCM counts per GH per week",             fn: reportFcmDailyMonitoring },
+	{ key: "fcm_risk_profiling",   label: "FCM Risk Profiling",           desc: "Greenhouse-level FCM risk scores",                  fn: reportFcmRiskProfiling },
 ];
 
-/* ── UI: inject the dropdown ── */
+var SCOUTING_REPORTS_PDF = [
+	{ key: "pdf_full_report",      label: "Full Scouting Report",         desc: "Charts + tables for pests, diseases, traps",        fn: pdfFullReport },
+	{ key: "pdf_pest_report",      label: "Pest Report",                  desc: "Pest trends, distribution & severity tables",       fn: pdfPestReport },
+	{ key: "pdf_disease_report",   label: "Disease Report",               desc: "Disease trends, severity & incidents",              fn: pdfDiseaseReport },
+	{ key: "pdf_trap_report",      label: "Trap & FCM Report",            desc: "Trap trends, FCM risk profiling table",             fn: pdfTrapReport },
+];
 
+/* jsPDF + autoTable lazy loader */
+var _jsPdfLoaded = false;
+var _jsPdfLoadPromise = null;
+
+function ensureJsPdf() {
+	if (_jsPdfLoaded && window.jspdf && window.jspdf.jsPDF) return Promise.resolve();
+	if (_jsPdfLoadPromise) return _jsPdfLoadPromise;
+	_jsPdfLoadPromise = new Promise(function (resolve, reject) {
+		var s1 = document.createElement("script");
+		s1.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js";
+		s1.onload = function () {
+			var s2 = document.createElement("script");
+			s2.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js";
+			s2.onload = function () { _jsPdfLoaded = true; resolve(); };
+			s2.onerror = function () { reject(new Error("Failed to load jspdf-autotable")); };
+			document.head.appendChild(s2);
+		};
+		s1.onerror = function () { reject(new Error("Failed to load jsPDF")); };
+		document.head.appendChild(s1);
+	});
+	return _jsPdfLoadPromise;
+}
+
+/* ── UI: dropdown with CSV + PDF sections ── */
 function initReportsDropdown() {
-	/* hide old debug button if present */
 	var oldBtn = root_element.querySelector("#scout-debug-fetch-btn");
 	if (oldBtn) oldBtn.style.display = "none";
-
 	var refreshBtn = root_element.querySelector("#scout-refresh-btn");
 	if (!refreshBtn) return;
 	var parent = refreshBtn.parentElement;
@@ -1862,76 +1889,368 @@ function initReportsDropdown() {
 
 	var trigger = document.createElement("button");
 	trigger.className = "btn btn-default btn-sm";
-	trigger.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>Reports &#9662;';
-	trigger.style.cssText = "padding:6px 14px;font-size:13px;border:1px solid var(--border-color,#d1d5db);border-radius:6px;cursor:pointer;background:var(--card-bg,#fff);color:var(--text-color,#111);font-weight:500;display:inline-flex;align-items:center;gap:4px;transition:box-shadow .15s,border-color .15s;";
-	trigger.addEventListener("mouseenter", function () { this.style.borderColor = "var(--primary,#3b82f6)"; this.style.boxShadow = "0 0 0 3px rgba(59,130,246,.12)"; });
-	trigger.addEventListener("mouseleave", function () { this.style.borderColor = "var(--border-color,#d1d5db)"; this.style.boxShadow = "none"; });
+	trigger.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Reports &#9662;';
+	trigger.style.cssText = "padding:6px 14px;font-size:13px;border:1px solid var(--sd-border,#e4e4e7);border-radius:6px;cursor:pointer;background:var(--sd-card,#fff);color:var(--sd-text,#09090b);font-weight:500;display:inline-flex;align-items:center;gap:4px;transition:box-shadow .15s,border-color .15s;font-family:var(--sd-font,sans-serif);";
+	trigger.addEventListener("mouseenter", function () { this.style.borderColor = "var(--sd-accent,#18181b)"; this.style.boxShadow = "0 0 0 2px rgba(24,24,27,.12)"; });
+	trigger.addEventListener("mouseleave", function () { this.style.borderColor = "var(--sd-border,#e4e4e7)"; this.style.boxShadow = "none"; });
 
 	var menu = document.createElement("div");
-	menu.style.cssText = "display:none;position:absolute;right:0;top:calc(100% + 6px);min-width:300px;background:var(--card-bg,#fff);border:1px solid var(--border-color,#d1d5db);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.14);z-index:9999;padding:6px 0;overflow:hidden;";
+	menu.style.cssText = "display:none;position:absolute;right:0;top:calc(100% + 6px);min-width:320px;background:var(--sd-card,#fff);border:1px solid var(--sd-border,#e4e4e7);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.14);z-index:9999;padding:0;overflow:hidden;";
 
-	/* header inside menu */
-	var header = document.createElement("div");
-	header.style.cssText = "padding:10px 16px 8px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted,#6b7280);border-bottom:1px solid var(--border-color,#f3f4f6);";
-	header.textContent = "Export Reports";
-	menu.appendChild(header);
+	function addSection(text) {
+		var h = document.createElement("div");
+		h.style.cssText = "padding:10px 16px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--sd-muted,#71717a);border-top:1px solid var(--sd-border,#e4e4e7);";
+		h.textContent = text;
+		menu.appendChild(h);
+	}
 
-	SCOUTING_REPORTS.forEach(function (report) {
+	function addItem(report, format) {
 		var item = document.createElement("div");
-		item.style.cssText = "padding:10px 16px;cursor:pointer;transition:background .12s;";
-		item.innerHTML = '<div style="font-weight:500;font-size:13px;color:var(--text-color,#111)">' + report.label + '</div><div style="font-size:11px;color:var(--text-muted,#6b7280);margin-top:2px">' + report.desc + '</div>';
-		item.addEventListener("mouseenter", function () { this.style.background = "var(--hover-bg,#f3f4f6)"; });
+		item.style.cssText = "padding:9px 16px;cursor:pointer;transition:background .1s;display:flex;align-items:center;gap:10px;";
+		var badge = document.createElement("span");
+		badge.textContent = format.toUpperCase();
+		badge.style.cssText = format === "pdf"
+			? "font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;background:#18181b;color:#fff;letter-spacing:.3px;flex-shrink:0;"
+			: "font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;background:#e4e4e7;color:#3f3f46;letter-spacing:.3px;flex-shrink:0;";
+		var tw = document.createElement("div");
+		tw.style.cssText = "flex:1;min-width:0;";
+		tw.innerHTML = '<div style="font-weight:500;font-size:12px;color:var(--sd-text,#09090b)">' + report.label + '</div><div style="font-size:10px;color:var(--sd-muted,#71717a);margin-top:1px">' + report.desc + '</div>';
+		item.appendChild(badge);
+		item.appendChild(tw);
+		item.addEventListener("mouseenter", function () { this.style.background = "var(--sd-bg,#fafafa)"; });
 		item.addEventListener("mouseleave", function () { this.style.background = "transparent"; });
-		item.addEventListener("click", function () { menu.style.display = "none"; handleReportExport(report.key); });
+		item.addEventListener("click", function () {
+			menu.style.display = "none";
+			if (format === "csv") handleReportExport(report.key);
+			else handlePdfExport(report.key);
+		});
 		menu.appendChild(item);
-	});
+	}
 
-	trigger.addEventListener("click", function (e) {
-		e.stopPropagation();
-		menu.style.display = menu.style.display === "none" ? "block" : "none";
-	});
+	addSection("CSV Exports");
+	SCOUTING_REPORTS_CSV.forEach(function (r) { addItem(r, "csv"); });
+	addSection("PDF Reports (with charts)");
+	SCOUTING_REPORTS_PDF.forEach(function (r) { addItem(r, "pdf"); });
+
+	trigger.addEventListener("click", function (e) { e.stopPropagation(); menu.style.display = menu.style.display === "none" ? "block" : "none"; });
 	document.addEventListener("click", function () { menu.style.display = "none"; });
-
 	wrapper.appendChild(trigger);
 	wrapper.appendChild(menu);
 	parent.appendChild(wrapper);
 }
 
-/* ── Dispatch ── */
-
+/* ── CSV Dispatch ── */
 function handleReportExport(reportKey) {
-	if (!scoutingData || !scoutingData.entries?.length) {
-		notifyUser("No scouting data loaded — select a week range and refresh first.");
-		return;
-	}
-	var report = SCOUTING_REPORTS.find(function (r) { return r.key === reportKey; });
+	if (!scoutingData || !scoutingData.entries?.length) { notifyUser("No scouting data loaded."); return; }
+	var report = SCOUTING_REPORTS_CSV.find(function (r) { return r.key === reportKey; });
 	if (!report) return;
 	try {
 		var csv = report.fn(scoutingData, scoutingYearData);
-		if (!csv) { notifyUser("No data available for " + report.label); return; }
+		if (!csv) { notifyUser("No data for " + report.label); return; }
 		downloadCsvBlob(csv, report.key);
-	} catch (err) {
-		console.error("Report generation error:", err);
-		notifyUser("Failed to generate " + report.label + ": " + err.message);
-	}
+	} catch (err) { console.error("CSV error:", err); notifyUser("Failed: " + err.message); }
 }
 
 function downloadCsvBlob(csvText, reportKey) {
 	var ri = getSelectedWeekRangeInfo();
-	var from = ri?.from?.value || "unknown";
-	var to = ri?.to?.value || "unknown";
-	var farm = farmFilter || "ALL";
-	var filename = farm + "_" + reportKey + "_" + from + "_to_" + to + ".csv";
+	var fname = (farmFilter || "ALL") + "_" + reportKey + "_" + (ri?.from?.value || "x") + "_to_" + (ri?.to?.value || "x") + ".csv";
 	var blob = new Blob(["\uFEFF" + csvText], { type: "text/csv;charset=utf-8" });
 	var url = URL.createObjectURL(blob);
-	var a = document.createElement("a");
-	a.href = url;
-	a.download = filename;
-	document.body.appendChild(a);
-	a.click();
-	a.remove();
+	var a = document.createElement("a"); a.href = url; a.download = fname;
+	document.body.appendChild(a); a.click(); a.remove();
 	URL.revokeObjectURL(url);
-	notifyUser("Downloaded: " + filename);
+	notifyUser("Downloaded: " + fname);
+}
+
+/* ── PDF Dispatch ── */
+function handlePdfExport(reportKey) {
+	if (!scoutingData || !scoutingData.entries?.length) { notifyUser("No scouting data loaded."); return; }
+	var report = SCOUTING_REPORTS_PDF.find(function (r) { return r.key === reportKey; });
+	if (!report) return;
+	notifyUser("Generating PDF — please wait…");
+	ensureJsPdf().then(function () {
+		try { report.fn(scoutingData, scoutingYearData); }
+		catch (err) { console.error("PDF error:", err); notifyUser("Failed: " + err.message); }
+	}).catch(function (err) { notifyUser("Could not load PDF library. Check connection."); });
+}
+
+/* ════════════════════════════════════════
+   PDF HELPERS
+   ════════════════════════════════════════ */
+var PDF_C = {
+	black: [24,24,27], dark: [63,63,70], mid: [113,113,122], light: [228,228,231],
+	bg: [250,250,250], white: [255,255,255],
+	redBg: [254,226,226], redTx: [185,28,28],
+	amberBg: [254,243,199], amberTx: [146,64,14],
+	greenBg: [220,252,231], greenTx: [22,101,52],
+};
+
+function pdfNew() { return new (window.jspdf.jsPDF)({ orientation: "landscape", unit: "mm", format: "a4" }); }
+
+function pdfHeader(doc, title, sub) {
+	var ri = getSelectedWeekRangeInfo();
+	var farm = farmFilter || "All Farms";
+	var period = ri ? ri.from.value + " → " + ri.to.value : "";
+	doc.setFontSize(16); doc.setTextColor.apply(doc, PDF_C.black); doc.text(title, 14, 15);
+	doc.setFontSize(8); doc.setTextColor.apply(doc, PDF_C.mid);
+	doc.text(farm + "  ·  " + period + (sub ? "  ·  " + sub : ""), 14, 21);
+	doc.setDrawColor.apply(doc, PDF_C.light); doc.line(14, 24, doc.internal.pageSize.getWidth() - 14, 24);
+	return 30;
+}
+
+function pdfSection(doc, y, text) {
+	doc.setFontSize(11); doc.setTextColor.apply(doc, PDF_C.black); doc.text(text, 14, y); return y + 6;
+}
+
+function pdfChart(doc, canvasId, y, maxH) {
+	var c = root_element.querySelector("#" + canvasId);
+	if (!c) return y;
+	try {
+		var img = c.toDataURL("image/png", 1.0);
+		var pw = doc.internal.pageSize.getWidth() - 28;
+		var r = c.height / c.width;
+		var iw = pw, ih = iw * r;
+		if (maxH && ih > maxH) { ih = maxH; iw = ih / r; }
+		if (y + ih + 8 > doc.internal.pageSize.getHeight() - 10) { doc.addPage(); y = 14; }
+		doc.addImage(img, "PNG", 14, y, iw, ih);
+		return y + ih + 5;
+	} catch (e) { return y; }
+}
+
+function pdfTwoCharts(doc, y, id1, id2, maxH) {
+	var pw = doc.internal.pageSize.getWidth() - 28;
+	var half = (pw - 6) / 2;
+	var mh = maxH || 58;
+	if (y + mh + 8 > doc.internal.pageSize.getHeight() - 10) { doc.addPage(); y = 14; }
+	[{ id: id1, x: 14 }, { id: id2, x: 14 + half + 6 }].forEach(function (o) {
+		var c = root_element.querySelector("#" + o.id);
+		if (!c) return;
+		try {
+			var img = c.toDataURL("image/png", 1.0);
+			var r = c.height / c.width;
+			var ih = Math.min(half * r, mh);
+			doc.addImage(img, "PNG", o.x, y, ih / r, ih);
+		} catch (e) { /* skip */ }
+	});
+	return y + mh + 5;
+}
+
+function pdfPageCheck(doc, y, need) {
+	if (y + need > doc.internal.pageSize.getHeight() - 12) { doc.addPage(); return 14; }
+	return y;
+}
+
+function pdfFilename(key) {
+	var ri = getSelectedWeekRangeInfo();
+	return (farmFilter || "ALL") + "_" + key + "_" + (ri?.from?.value || "x") + "_to_" + (ri?.to?.value || "x") + ".pdf";
+}
+
+function pdfRiskColors(cat) {
+	var c = (cat || "").toUpperCase();
+	if (c.includes("HIGH")) return { f: PDF_C.redBg, t: PDF_C.redTx };
+	if (c.includes("MEDIUM")) return { f: PDF_C.amberBg, t: PDF_C.amberTx };
+	return { f: PDF_C.greenBg, t: PDF_C.greenTx };
+}
+
+/* color-coded severity cell hook */
+function pdfSevHook(hookData, colIdx) {
+	if (hookData.section !== "body") return;
+	if (hookData.column.index === colIdx) {
+		var v = (hookData.cell.raw || "").toLowerCase();
+		if (v.includes("high") || v === "alert" || v.includes("critical")) { hookData.cell.styles.fillColor = PDF_C.redBg; hookData.cell.styles.textColor = PDF_C.redTx; }
+		else if (v.includes("moderate") || v === "watch" || v.includes("medium")) { hookData.cell.styles.fillColor = PDF_C.amberBg; hookData.cell.styles.textColor = PDF_C.amberTx; }
+		else { hookData.cell.styles.fillColor = PDF_C.greenBg; hookData.cell.styles.textColor = PDF_C.greenTx; }
+	}
+	if (hookData.column.index !== colIdx && hookData.row.index % 2 === 0) {
+		hookData.cell.styles.fillColor = PDF_C.bg;
+	}
+}
+
+var AT_BASE = { theme: "grid", styles: { fontSize: 7, cellPadding: 2, font: "helvetica" }, headStyles: { fillColor: PDF_C.black, textColor: PDF_C.white, fontStyle: "bold", fontSize: 7 }, margin: { left: 14, right: 14 } };
+
+/* ════════════════════════════════════════
+   PDF TABLE BUILDERS
+   ════════════════════════════════════════ */
+function _pdfPestTable(doc, y, data) {
+	var rows = [];
+	Object.keys(data.pests).forEach(function (p) {
+		data.pests[p].counts.slice(0, 30).forEach(function (c) {
+			var cnt = c.count || 1;
+			rows.push([p, c.stage || "N/A", String(cnt), c.section || "N/A", c.date || "", c.greenhouse || "", cnt > 15 ? "High" : cnt > 5 ? "Moderate" : "Low"]);
+		});
+	});
+	rows.sort(function (a, b) { return Number(b[2]) - Number(a[2]); });
+	rows = rows.slice(0, 60);
+	doc.autoTable(Object.assign({}, AT_BASE, {
+		startY: y,
+		head: [["Pest", "Stage", "Count", "Section", "Date", "Greenhouse", "Severity"]],
+		body: rows,
+		columnStyles: { 2: { halign: "center", fontStyle: "bold" }, 6: { halign: "center", fontStyle: "bold" } },
+		didParseCell: function (h) { pdfSevHook(h, 6); },
+	}));
+	return doc.lastAutoTable.finalY + 4;
+}
+
+function _pdfDiseaseTable(doc, y, data) {
+	var rows = [];
+	Object.keys(data.diseases).forEach(function (d) {
+		data.diseases[d].counts.slice(0, 30).forEach(function (c) {
+			var sev = (c.stage || "").toLowerCase().includes("active") ? "High" : "Low";
+			rows.push([d, c.stage || "N/A", sev, c.section || "N/A", c.date || "", c.greenhouse || ""]);
+		});
+	});
+	rows.sort(function (a, b) { return b[4].localeCompare(a[4]); });
+	rows = rows.slice(0, 60);
+	doc.autoTable(Object.assign({}, AT_BASE, {
+		startY: y,
+		head: [["Disease", "Stage", "Severity", "Section", "Date", "Greenhouse"]],
+		body: rows,
+		columnStyles: { 2: { halign: "center", fontStyle: "bold" } },
+		didParseCell: function (h) { pdfSevHook(h, 2); },
+	}));
+	return doc.lastAutoTable.finalY + 4;
+}
+
+function _pdfTrapTable(doc, y, data) {
+	var rows = [];
+	Object.keys(data.traps).forEach(function (k) {
+		var t = data.traps[k];
+		t.counts.slice(0, 20).forEach(function (c) {
+			var cnt = c.count || 0;
+			rows.push([t.trap, t.pest, String(cnt), c.location || "N/A", c.date || "", c.greenhouse || "", cnt > 10 ? "Alert" : cnt > 3 ? "Watch" : "Normal"]);
+		});
+	});
+	rows.sort(function (a, b) { return Number(b[2]) - Number(a[2]); });
+	rows = rows.slice(0, 60);
+	doc.autoTable(Object.assign({}, AT_BASE, {
+		startY: y,
+		head: [["Trap ID", "Pest", "Count", "Location", "Date", "Greenhouse", "Status"]],
+		body: rows,
+		columnStyles: { 2: { halign: "center", fontStyle: "bold" }, 6: { halign: "center", fontStyle: "bold" } },
+		didParseCell: function (h) { pdfSevHook(h, 6); },
+	}));
+	return doc.lastAutoTable.finalY + 4;
+}
+
+function _pdfRiskTable(doc, y, data, yearData) {
+	var src = yearData || data;
+	var ghNums = _rGetAllGhNumbers(src);
+	var scores = {};
+	ghNums.forEach(function (n) { scores[n] = { ghNum: n, variety: "", score: 0 }; });
+	(src.entries || []).forEach(function (e) {
+		var n = _rGetGhNumber(e.greenhouse);
+		if (!n || !scores[n]) return;
+		var vm = (e.greenhouse || "").match(/[-\u2013]\s*(.+)$/);
+		if (vm && !scores[n].variety) scores[n].variety = vm[1].trim().toUpperCase();
+		(e.pests_scouting_entry || []).forEach(function (p) { if (_rClassifyPest(p.pest || "") === "fcm") scores[n].score += toNumber(p.count || 1); });
+		(e.trap_scouting_entry || []).forEach(function (t) { if (_rClassifyPest(t.pest || "") === "fcm") scores[n].score += toNumber(t.count || 0); });
+	});
+	var sorted = Object.values(scores).sort(function (a, b) { return b.score - a.score; });
+	var rows = sorted.map(function (g) {
+		var cat = g.score >= 8 ? "HIGH RISK" : g.score >= 4 ? "MEDIUM RISK" : "LOW RISK";
+		return [String(g.ghNum), "GH " + g.ghNum + (g.variety ? " - " + g.variety : ""), String(g.score), cat, cat === "HIGH RISK" ? "Immediate spray + monitoring" : cat === "MEDIUM RISK" ? "Planned spray + egg crushing" : "Routine monitoring"];
+	});
+	doc.autoTable(Object.assign({}, AT_BASE, {
+		startY: y, styles: { fontSize: 7.5, cellPadding: 2.5, font: "helvetica" },
+		head: [["No.", "Greenhouse / Variety", "Score", "Category", "Corrective Action"]],
+		body: rows,
+		columnStyles: { 0: { halign: "center", cellWidth: 12 }, 2: { halign: "center", fontStyle: "bold", cellWidth: 16 }, 3: { halign: "center", fontStyle: "bold", cellWidth: 30 } },
+		didParseCell: function (h) {
+			if (h.section !== "body") return;
+			if (h.column.index === 3) { var rc = pdfRiskColors(h.cell.raw); h.cell.styles.fillColor = rc.f; h.cell.styles.textColor = rc.t; }
+			if (h.column.index === 2) {
+				var s = Number(h.cell.raw) || 0;
+				if (s >= 8) { h.cell.styles.fillColor = PDF_C.redBg; h.cell.styles.textColor = PDF_C.redTx; }
+				else if (s >= 4) { h.cell.styles.fillColor = PDF_C.amberBg; h.cell.styles.textColor = PDF_C.amberTx; }
+				else { h.cell.styles.fillColor = PDF_C.greenBg; h.cell.styles.textColor = PDF_C.greenTx; }
+			}
+			if (h.column.index !== 2 && h.column.index !== 3 && h.row.index % 2 === 0) h.cell.styles.fillColor = PDF_C.bg;
+		},
+	}));
+	return doc.lastAutoTable.finalY + 4;
+}
+
+/* ════════════════════════════════════════
+   PDF REPORT GENERATORS
+   ════════════════════════════════════════ */
+function pdfFullReport(data, yearData) {
+	var doc = pdfNew();
+	var y = pdfHeader(doc, "Scouting Report — Full Overview", "All categories");
+	y = pdfSection(doc, y, "Activity Timeline");
+	y = pdfChart(doc, "overview-timeline-chart", y, 55);
+	y = pdfPageCheck(doc, y, 70);
+	y = pdfSection(doc, y, "Pest Trends (Weekly)");
+	y = pdfChart(doc, "pest-weekly-trend-chart", y, 55);
+	y = pdfPageCheck(doc, y, 70);
+	y = pdfSection(doc, y, "Disease Trends (Weekly)");
+	y = pdfChart(doc, "disease-weekly-trend-chart", y, 55);
+	y = pdfPageCheck(doc, y, 70);
+	y = pdfSection(doc, y, "Trap Trends (Weekly)");
+	y = pdfChart(doc, "trap-weekly-trend-chart", y, 55);
+	doc.addPage(); y = 14;
+	y = pdfSection(doc, y, "Pest Summary"); y = _pdfPestTable(doc, y, data);
+	y = pdfPageCheck(doc, y + 6, 40);
+	y = pdfSection(doc, y, "Disease Incidents"); y = _pdfDiseaseTable(doc, y, data);
+	y = pdfPageCheck(doc, y + 6, 40);
+	y = pdfSection(doc, y, "Trap Details"); y = _pdfTrapTable(doc, y, data);
+	doc.addPage(); y = 14;
+	y = pdfSection(doc, y, "FCM Risk Profiling"); y = _pdfRiskTable(doc, y, data, yearData);
+	doc.save(pdfFilename("full_report"));
+	notifyUser("PDF Full Report downloaded.");
+}
+
+function pdfPestReport(data, yearData) {
+	var doc = pdfNew();
+	var y = pdfHeader(doc, "Pest Scouting Report", null);
+	y = pdfSection(doc, y, "Weekly Pest Trends");
+	y = pdfChart(doc, "pest-weekly-trend-chart", y, 60);
+	y = pdfPageCheck(doc, y, 70);
+	y = pdfSection(doc, y, "Incidence & Distribution");
+	y = pdfTwoCharts(doc, y, "pest-trend-chart", "pest-distribution-chart", 55);
+	y = pdfPageCheck(doc, y, 65);
+	y = pdfSection(doc, y, "Plant Section Split");
+	y = pdfChart(doc, "pest-section-chart", y, 55);
+	doc.addPage(); y = 14;
+	y = pdfSection(doc, y, "Pest Stage Breakdown");
+	y = _pdfPestTable(doc, y, data);
+	doc.save(pdfFilename("pest_report"));
+	notifyUser("PDF Pest Report downloaded.");
+}
+
+function pdfDiseaseReport(data, yearData) {
+	var doc = pdfNew();
+	var y = pdfHeader(doc, "Disease Scouting Report", null);
+	y = pdfSection(doc, y, "Weekly Disease Trends");
+	y = pdfChart(doc, "disease-weekly-trend-chart", y, 60);
+	y = pdfPageCheck(doc, y, 70);
+	y = pdfSection(doc, y, "Incidence & Distribution");
+	y = pdfTwoCharts(doc, y, "disease-trend-chart", "disease-distribution-chart", 55);
+	y = pdfPageCheck(doc, y, 65);
+	y = pdfSection(doc, y, "Stage Distribution");
+	y = pdfChart(doc, "disease-stage-chart", y, 55);
+	doc.addPage(); y = 14;
+	y = pdfSection(doc, y, "Disease Incidents");
+	y = _pdfDiseaseTable(doc, y, data);
+	doc.save(pdfFilename("disease_report"));
+	notifyUser("PDF Disease Report downloaded.");
+}
+
+function pdfTrapReport(data, yearData) {
+	var doc = pdfNew();
+	var y = pdfHeader(doc, "Trap & FCM Report", null);
+	y = pdfSection(doc, y, "Weekly Trap Trends");
+	y = pdfChart(doc, "trap-weekly-trend-chart", y, 60);
+	y = pdfPageCheck(doc, y, 70);
+	y = pdfSection(doc, y, "Performance & Pest Breakdown");
+	y = pdfTwoCharts(doc, y, "trap-performance-chart", "trap-pest-breakdown", 55);
+	doc.addPage(); y = 14;
+	y = pdfSection(doc, y, "Trap Details");
+	y = _pdfTrapTable(doc, y, data);
+	y = pdfPageCheck(doc, y + 8, 40);
+	y = pdfSection(doc, y, "FCM Risk Profiling");
+	y = _pdfRiskTable(doc, y, data, yearData);
+	doc.save(pdfFilename("trap_fcm_report"));
+	notifyUser("PDF Trap & FCM Report downloaded.");
 }
 
 /* ── Shared report helpers ── */

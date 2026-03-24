@@ -2101,45 +2101,62 @@ function updateTrapTab() {
 function updateFcmTab() {
 	if (!scoutingData) return;
 
+	function normalizeFocusName(name) {
+		return (name || "")
+			.toString()
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, " ")
+			trim();
+	}
+
+	function matchesAny(normalizedName, terms) {
+		return terms.some(function (term) {
+			return normalizedName.includes(term);
+		});
+	}
+
 	var focus = [
 		{
 			key: "fcm",
 			label: "FCM",
 			matches: function (name) {
-				var s = (name || "").toString().toLowerCase();
-				return s === "fcm" || s.includes("fcm") || s.includes("false codling");
+				var s = normalizeFocusName(name);
+				return matchesAny(s, ["fcm", "false codling", "false codling moth"]);
 			},
 		},
 		{
 			key: "helicoverpa",
 			label: "Helicoverpa",
 			matches: function (name) {
-				var s = (name || "").toString().toLowerCase();
-				return s.includes("helicoverpa");
+				var s = normalizeFocusName(name);
+				return matchesAny(s, ["helicoverpa", "helioverpa"]);
 			},
 		},
 		{
-			key: "duponchelia",
-			label: "Duponchelia",
+			key: "duponchella",
+			label: "Duponchella",
 			matches: function (name) {
-				var s = (name || "").toString().toLowerCase();
-				return s.includes("duponchelia");
+				var s = normalizeFocusName(name);
+				return matchesAny(s, ["duponchella", "duponchelia", "duponchel"]);
 			},
 		},
 		{
 			key: "spodoptera",
 			label: "Spodoptera",
 			matches: function (name) {
-				var s = (name || "").toString().toLowerCase();
-				return s.includes("spodoptera");
+				var s = normalizeFocusName(name);
+				return matchesAny(s, ["spodoptera", "armyworm", "fall armyworm"]);
 			},
 		},
 		{
 			key: "unidentified_moth",
 			label: "Unidentified moth",
 			matches: function (name) {
-				var s = (name || "").toString().toLowerCase();
-				return (s.includes("unidentified") && s.includes("moth")) || s === "unidentified moth";
+				var s = normalizeFocusName(name);
+				return (
+					matchesAny(s, ["unidentified moth", "unknown moth"]) ||
+					(s.includes("unidentified") && s.includes("moth"))
+				);
 			},
 		},
 	];

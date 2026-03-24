@@ -141,51 +141,46 @@ def getScoutingObservations():
                 frappe.log_error(f"Failed to load {cfg['child_table']}: {str(e)}")
                 continue  # Continue with next observation type
 
-            # Now try to fetch colors for the items we found
-            if items_in_data:
-                try:
-                    # Check if the color field exists in the main doctype
-                    main_meta = frappe.get_meta(cfg["doctype"])
-                    color_field_exists = any(f.fieldname == cfg["legend_color_field"] for f in main_meta.fields)
-                    
+            try:
+                main_meta = frappe.get_meta(cfg["doctype"])
+                color_field_exists = any(f.fieldname == cfg["legend_color_field"] for f in main_meta.fields)
+
+                doctype_fields = ["name"]
+                if color_field_exists:
+                    doctype_fields.append(cfg["legend_color_field"])
+
+                all_items = frappe.get_all(
+                    cfg["doctype"],
+                    fields=doctype_fields,
+                    order_by="idx asc",
+                    limit_page_length=10000
+                )
+
+                for rec in all_items:
+                    item_name = rec.get("name")
+                    if not item_name:
+                        continue
+                    if item_name not in items_in_data:
+                        items_in_data[item_name] = "#999999"
                     if color_field_exists:
-                        # Color field exists, try to fetch colors
-                        color_records = frappe.get_all(
-                            cfg["doctype"],
-                            filters={"name": ["in", list(items_in_data.keys())]},
-                            fields=["name", cfg["legend_color_field"]]
-                        )
-                        
-                        # Build color map from actual data
-                        for rec in color_records:
-                            color = rec.get(cfg["legend_color_field"])
-                            if color:  # Only update if color is not empty
-                                items_in_data[rec.name] = color
-                                print(f"Found color for {rec.name}: {color}")
-                    else:
-                        # Color field doesn't exist, use generated colors
-                        print(f"Color field '{cfg['legend_color_field']}' not found in {cfg['doctype']}, using generated colors")
-                    
-                    # Generate consistent colors for any items still using default
-                    for item_name in items_in_data:
-                        if items_in_data[item_name] == "#999999":
-                            # Generate consistent color based on item name hash
-                            color_hash = hashlib.md5(item_name.encode()).hexdigest()[:6]
-                            items_in_data[item_name] = f"#{color_hash}"
-                            print(f"Generated color for {item_name}: #{color_hash}")
-                            
-                except Exception as e:
-                    # If any error occurs, use generated colors for all items
-                    print(f"Error fetching colors for {cfg['doctype']}: {e}, using generated colors")
-                    for item_name in items_in_data:
+                        color = rec.get(cfg["legend_color_field"])
+                        if color:
+                            items_in_data[item_name] = color
+
+                for item_name in items_in_data:
+                    if items_in_data[item_name] == "#999999":
                         color_hash = hashlib.md5(item_name.encode()).hexdigest()[:6]
                         items_in_data[item_name] = f"#{color_hash}"
 
-                # Update colors in processed entries
-                for entry_name in processed_entries:
-                    for obs in processed_entries[entry_name][key]:
-                        if obs["name"] in items_in_data:
-                            obs["color"] = items_in_data[obs["name"]]
+            except Exception:
+                for item_name in items_in_data:
+                    color_hash = hashlib.md5(item_name.encode()).hexdigest()[:6]
+                    items_in_data[item_name] = f"#{color_hash}"
+
+            for entry_name in processed_entries:
+                for obs in processed_entries[entry_name][key]:
+                    if obs["name"] in items_in_data:
+                        obs["color"] = items_in_data[obs["name"]]
 
             # Store for legend
             all_observation_names[key] = [

@@ -235,7 +235,7 @@ function parseWeekValue(weekValue) {
 	var match = weekValue.match(/^(\d{4})-W(\d{2})$/);
 	if (!match) return null;
 	var year = Number(match[1]);
-	var week = Math.max(1, Math.min(52, Number(match[2])));
+	var week = Math.max(1, Math.min(53, Number(match[2])));
 	if (!Number.isFinite(year) || !Number.isFinite(week)) return null;
 	return { year: year, week: week, value: weekValue };
 }
@@ -2328,7 +2328,7 @@ function reportWeeklySummary(data, yearData) {
 	var src = yearData || data;
 	var ri = getSelectedWeekRangeInfo();
 	var year = ri?.from?.year || new Date().getFullYear();
-	var farm = farmFilter || "CHEPSITO";
+	var farm = farmFilter || "All Farms";
 	var weeks = _rGetWeekKeys(src);
 	var rows = [];
 	rows.push(csvRow(["Production Site Name", "", "", "", "Year", year, "", "", "", "", "", "", ""]));
@@ -2370,7 +2370,7 @@ function reportIntakeQc(data, yearData) { return _rGhWeeklyGrid(yearData || data
 function _rGhWeeklyGrid(src) {
 	var ri = getSelectedWeekRangeInfo();
 	var year = ri?.from?.year || new Date().getFullYear();
-	var farm = farmFilter || "CHEPSITO";
+	var farm = farmFilter || "All Farms";
 	var ghNums = _rGetAllGhNumbers(src);
 	if (!ghNums.length) ghNums = Array.from({ length: 19 }, function (_, i) { return i + 1; });
 	var weeks = _rGetWeekKeys(src);
@@ -2399,7 +2399,7 @@ function _rGhWeeklyGrid(src) {
 				var bucket = cls === "fcm" ? g.fcm : cls === "helicoverpa" ? g.heli : g.others;
 				if (st === "eggs") bucket.e += cnt; else if (st === "larvae") bucket.l += cnt; else bucket.d += cnt;
 			});
-			(e.diseases_scouting_entry || []).forEach(function () { g.others.d += 1; });
+			/* diseases are not counted in pest stage columns */
 		});
 
 		ghNums.forEach(function (ghNum, idx) {
@@ -2477,7 +2477,7 @@ function reportFcmDailyMonitoring(data, yearData) {
 
 function reportFcmRiskProfiling(data, yearData) {
 	var src = yearData || data;
-	var farm = farmFilter || "CHEPSITO";
+	var farm = farmFilter || "All Farms";
 	var latestDate = "";
 	(src.entries || []).forEach(function (e) { if (e.date_of_capture > latestDate) latestDate = e.date_of_capture; });
 	var monthName = latestDate ? _rMonthName(latestDate) : "UNKNOWN";

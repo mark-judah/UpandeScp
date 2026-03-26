@@ -45,6 +45,26 @@ def getCompleteScoutingEntries(from_date=None, to_date=None, greenhouse=None):
 
         entry_names = [e.name for e in scouting_entries]
 
+        pest_colors = frappe.get_all(
+            "Pest",
+            fields=["name", "pests_legend_color"],
+        )
+
+        disease_colors = frappe.get_all(
+            "Plant Disease",
+            fields=["name", "disease_legend_color"],
+        )
+
+        all_zones = frappe.get_all(
+            "Zone",
+            fields=["greenhouse"],
+            limit_page_length=10000,
+        )
+        zones_by_greenhouse = {}
+        for z in all_zones:
+            if z.greenhouse:
+                zones_by_greenhouse[z.greenhouse] = zones_by_greenhouse.get(z.greenhouse, 0) + 1
+
         if not entry_names:
             return {
                 "entries": [],
@@ -55,6 +75,9 @@ def getCompleteScoutingEntries(from_date=None, to_date=None, greenhouse=None):
                 "predators": [],
                 "traps": [],
                 "incidents": [],
+                "pest_colors": pest_colors,
+                "disease_colors": disease_colors,
+                "zones_by_greenhouse": zones_by_greenhouse,
             }
 
         pests = frappe.get_all(
@@ -180,6 +203,9 @@ def getCompleteScoutingEntries(from_date=None, to_date=None, greenhouse=None):
             "traps_flat": traps,
             "incidents_flat": incidents,
             "total_entries": len(scouting_entries),
+            "pest_colors": pest_colors,
+            "disease_colors": disease_colors,
+            "zones_by_greenhouse": zones_by_greenhouse,
             "filters_applied": {
                 "from_date": from_date,
                 "to_date": to_date,

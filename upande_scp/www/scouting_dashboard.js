@@ -44,6 +44,7 @@ var allGreenhouses = [];
 var activeTab = "overview";          // default to overview on load
 var scoutingAnalysis = null;
 var observationColors = { pests: {}, diseases: {} };
+var zonesPerGreenhouse = {};
 
 var SCOUTING_DASHBOARD_DEBUG = true;
 
@@ -344,6 +345,13 @@ function getTotalBedsForDistribution(entries) {
 	return s.size;
 }
 
+function getTotalZonesForGreenhouses(entries) {
+	var greenhouses = Array.from(new Set((entries || []).map(function (e) { return e.greenhouse; }).filter(Boolean)));
+	var total = 0;
+	greenhouses.forEach(function (gh) { total += (zonesPerGreenhouse[gh] || 0); });
+	return total || getTotalBedsForDistribution(entries);
+}
+
 function toBedInfectionPercent(infectedCount, total) {
 	if (!total) return 0;
 	return Number(((infectedCount / total) * 100).toFixed(2));
@@ -407,15 +415,16 @@ function setSelectOptions(selectEl, options, preferredValue) {
 	selectEl.value = allowed ? current : options[0]?.value || "";
 }
 
-/* ---------- Color extraction from scouting report ---------- */
+/* ---------- Color extraction from pest/disease doctype lists ---------- */
 
-function extractObservationColors(report) {
+function extractObservationColors(pestColors, diseaseColors) {
 	var colors = { pests: {}, diseases: {} };
-	if (!report?.observation_metadata?.all_observation_names) return colors;
-	var pests = report.observation_metadata.all_observation_names.pests_scouting_entry || [];
-	var diseases = report.observation_metadata.all_observation_names.diseases_scouting_entry || [];
-	pests.forEach(function (p) { if (p.name && p.color) colors.pests[p.name] = p.color; });
-	diseases.forEach(function (d) { if (d.name && d.color) colors.diseases[d.name] = d.color; });
+	(pestColors || []).forEach(function (p) {
+		if (p.name && p.pests_legend_color) colors.pests[p.name] = p.pests_legend_color;
+	});
+	(diseaseColors || []).forEach(function (d) {
+		if (d.name && d.disease_legend_color) colors.diseases[d.name] = d.disease_legend_color;
+	});
 	return colors;
 }
 
@@ -458,6 +467,19 @@ function normalizeScoutingEntries(rawEntries) {
 				ex.scouts_name = row.scouts_name || row.scout_name || row.scout;
 		}
 		return byName[key];
+	}
+
+	function _rawEntryHasAnyObservation(row) {
+		var keys = [
+			"pests_scouting_entry", "pests",
+			"diseases_scouting_entry", "diseases",
+			"trap_scouting_entry", "traps",
+			"predators_scouting_entry", "predators",
+			"weeds_scouting_entry", "weeds",
+			"incidents_scouting_entry", "incidents",
+			"physiological_disorders_entry", "physiological_disorders",
+		];
+		return keys.some(function (k) { return Array.isArray(row[k]) && row[k].length > 0; });
 	}
 
 	function appendObservations(target, row) {
@@ -530,16 +552,11 @@ function normalizeScoutingEntries(rawEntries) {
 		var target = ensureEntry(row);
 		if (!target) { unnamed.push(row); return; }
 		appendObservations(target, row);
+		if (_rawEntryHasAnyObservation(row)) target._hasAnyObs = true;
 	});
 
 	var merged = Object.values(byName)
-		.filter(function (e) {
-			return (
-				(e.pests_scouting_entry && e.pests_scouting_entry.length > 0) ||
-				(e.diseases_scouting_entry && e.diseases_scouting_entry.length > 0) ||
-				(e.trap_scouting_entry && e.trap_scouting_entry.length > 0)
-			);
-		})
+		.filter(function (e) { return e._hasAnyObs === true; })
 		.sort(function (a, b) {
 			var da = a?.date_of_capture || "";
 			var db = b?.date_of_capture || "";
@@ -623,7 +640,7 @@ function fetchCompleteScoutingEntries(fromDate, toDate, greenhouse) {
 	return callFrappe(
 		"upande_scp.serverscripts.get_complete_scouting_entries.getCompleteScoutingEntries",
 		{ from_date: fromDate, to_date: toDate, greenhouse: greenhouse }
-	).then(function (r) { return r.message?.entries || []; });
+	).then(function (r) { return r.message || {}; });
 }
 
 function loadGreenhouseOptions() {
@@ -923,10 +940,13 @@ function fetchScoutingData() {
 		fetchCompleteScoutingEntries(fromDate, toDate, greenhouseFilter),
 		fetchCompleteScoutingEntries(yearFrom, yearTo, greenhouseFilter),
 	]).then(function (results) {
-		var entries = results[0];
-		var yearEntries = results[1];
+		var periodResult = results[0];
+		var yearResult = results[1];
+		var entries = periodResult.entries || [];
+		var yearEntries = yearResult.entries || [];
 		scoutingAnalysis = null;
-		observationColors = { pests: {}, diseases: {} };
+		observationColors = extractObservationColors(periodResult.pest_colors, periodResult.disease_colors);
+		zonesPerGreenhouse = periodResult.zones_by_greenhouse || {};
 		var farmEntries = applyFarmFilterToEntries(entries);
 		var farmYearEntries = applyFarmFilterToEntries(yearEntries);
 		logSelectedPeriodObservations(farmEntries, fromDate, toDate);
@@ -1166,7 +1186,7 @@ function updatePestTrendChart() {
 	if (!ctx) return;
 	if (pestTrendChart) pestTrendChart.destroy();
 	var dates = Object.keys(scoutingData.daily).sort();
-	var totalBeds = getTotalBedsForDistribution(scoutingData.entries);
+	var totalBeds = getTotalZonesForGreenhouses(scoutingData.entries);
 	var map = buildDailyBedInfectionMap(scoutingData.entries, "pests");
 	pestTrendChart = new Chart(ctx, {
 		type: "line",
@@ -1210,7 +1230,7 @@ function updatePestWeeklyTrendChart() {
 	var pestName = root_element.querySelector("#pest-weekly-pest-filter")?.value || "";
 	var section = root_element.querySelector("#pest-weekly-section-filter")?.value || "";
 	var datasets = [];
-	var totalBeds = getTotalBedsForDistribution(scoutingData.entries);
+	var totalBeds = getTotalZonesForGreenhouses(scoutingData.entries);
 	var includeFn = function (c) { return !(section && c.section !== section); };
 
 	if (pestName) {
@@ -1244,7 +1264,7 @@ function updatePestDistributionChart() {
 	if (pestDistChart) pestDistChart.destroy();
 	var pests = scoutingData.pests;
 	var labels = Object.keys(pests).slice(0, 10);
-	var totalBeds = getTotalBedsForDistribution(scoutingData.entries);
+	var totalBeds = getTotalZonesForGreenhouses(scoutingData.entries);
 	var palette = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ef4444", "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#06b6d4"];
 	var data = labels.map(function (p) {
 		var beds = new Set();
@@ -1336,7 +1356,7 @@ function updateDiseaseTrendChart() {
 	if (!ctx) return;
 	if (diseaseTrendChart) diseaseTrendChart.destroy();
 	var dates = Object.keys(scoutingData.daily).sort();
-	var totalBeds = getTotalBedsForDistribution(scoutingData.entries);
+	var totalBeds = getTotalZonesForGreenhouses(scoutingData.entries);
 	var map = buildDailyBedInfectionMap(scoutingData.entries, "diseases");
 	diseaseTrendChart = new Chart(ctx, {
 		type: "line",
@@ -1373,7 +1393,7 @@ function updateDiseaseWeeklyTrendChart() {
 	var diseaseName = root_element.querySelector("#disease-weekly-disease-filter")?.value || "";
 	var section = root_element.querySelector("#disease-weekly-section-filter")?.value || "";
 	var datasets = [];
-	var totalBeds = getTotalBedsForDistribution(scoutingData.entries);
+	var totalBeds = getTotalZonesForGreenhouses(scoutingData.entries);
 	var includeFn = function (c) { return !(section && c.section !== section); };
 
 	if (diseaseName) {
@@ -1407,7 +1427,7 @@ function updateDiseaseDistributionChart() {
 	if (diseaseDistChart) diseaseDistChart.destroy();
 	var diseases = scoutingData.diseases;
 	var labels = Object.keys(diseases).slice(0, 10);
-	var totalBeds = getTotalBedsForDistribution(scoutingData.entries);
+	var totalBeds = getTotalZonesForGreenhouses(scoutingData.entries);
 	var palette = ["#f59e0b", "#ef4444", "#8b5cf6", "#10b981", "#3b82f6", "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#06b6d4"];
 	var data = labels.map(function (d) {
 		var beds = new Set();
@@ -2424,8 +2444,16 @@ function reportFcmDailyMonitoring(data, yearData) {
 	var rows = [];
 	rows.push(csvRow(["Production Site Name", "", "", "", "Year", year]));
 	rows.push(csvRow([]));
+	rows.push(csvRow(["Share the FCM data via email rosafcmdata@kephis.org"]));
+	rows.push(csvRow(["Instructions: "]));
+	rows.push(csvRow(["(a) The number of traps depends on the size of the farm at a density of 4 traps per Ha."]));
+	rows.push(csvRow(["(b) Traps to be placed strategically outside greenhouse at an interval of 50 m"]));
+	rows.push(csvRow(["(c) data to be collected daily and the cummulative counts reported to KEPHIS every Monday"]));
+	rows.push(csvRow(["(d) Ensure instructions are followed when placing/servicing of the FCM pheromone lures and sticky cards in delta traps"]));
+	rows.push(csvRow(["Filla ll the other sheets accordingly"]));
+	rows.push(csvRow([]));
 	rows.push(csvRow(["", "", "FCM COUNTS"]));
-	rows.push(csvRow(["Week of the year", "Greenhouse No./Identity", "Trap No.", "Source (supplier) of pheromone lure", "Pheromone placement date", "Date of count", "No. of FCM adults inside greenhouse", "Cumulative No. of eggs/larvae observed", "No. of FCM adults outside greenhouse"]));
+	rows.push(csvRow(["Week of the year", "Greenhouse No./Identity and size (Ha)", "Trap No.", "Source (supplier)  of  pheromone lure", "Pheromone placement date", "Date of count", "No. of FCM adults inside greenhouse", "Cummulative No. of eggs/larvea observed in the greenhouse", "No. of FCM adults outside greenhouse"]));
 
 	weeks.forEach(function (wk) {
 		var wn = _rWeekNum(wk);
@@ -2449,22 +2477,29 @@ function reportFcmDailyMonitoring(data, yearData) {
 		});
 
 		var ghNums = Object.keys(ghMap).map(Number).sort(function (a, b) { return a - b; });
-		var isFirst = true;
+		/* Week-label cycle repeats: Week XX, FROM: date, TO: date, Week XX, "", "", ... */
+		var weekLabelCycle = [
+			"Week " + String(wn).padStart(2, "0"),
+			"FROM: " + _rFormatDateHuman(dr.from),
+			"TO: " + _rFormatDateHuman(dr.to),
+			"Week " + String(wn).padStart(2, "0"),
+		];
+		var globalTrapIdx = 0;
 		var totIn = 0, totOut = 0;
 
-		ghNums.forEach(function (ghNum, gi) {
+		ghNums.forEach(function (ghNum) {
 			var gd = ghMap[ghNum];
 			var trapList = gd.traps.length ? gd.traps : [{ trapNo: "", count: 0, inside: true }];
 			trapList.forEach(function (trap, ti) {
-				var weekCol = "", dateCol = "";
-				if (isFirst) { weekCol = "Week " + String(wn).padStart(2, "0"); dateCol = "FROM: " + _rFormatDateHuman(dr.from); isFirst = false; }
-				else if (gi === 1 && ti === 0) { weekCol = "FROM: " + _rFormatDateHuman(dr.from); dateCol = "TO: " + _rFormatDateHuman(dr.to); }
-				else if (gi === 2 && ti === 0) { weekCol = "TO: " + _rFormatDateHuman(dr.to); }
+				var weekCol = globalTrapIdx < weekLabelCycle.length ? weekLabelCycle[globalTrapIdx] : "";
+				var dateCol = globalTrapIdx === 0 ? "FROM: " + _rFormatDateHuman(dr.from)
+					: globalTrapIdx === 1 ? "TO: " + _rFormatDateHuman(dr.to) : "";
 				var ghLabel = ti === 0 ? "House " + String(ghNum).padStart(2, "0") : "";
 				var inVal = trap.inside ? trap.count : "";
 				var outVal = !trap.inside ? trap.count : "";
 				if (trap.inside) totIn += trap.count; else totOut += trap.count;
 				rows.push(csvRow([weekCol, ghLabel, trap.trapNo, "KOPPERT", "", dateCol, inVal, ti === 0 ? gd.cumEggs : "", outVal]));
+				globalTrapIdx++;
 			});
 		});
 		if (ghNums.length) rows.push(csvRow(["", "", "", "", "", "", totIn, "", totOut]));
@@ -2502,17 +2537,16 @@ function reportFcmRiskProfiling(data, yearData) {
 	var rows = [];
 	rows.push(csvRow(["Production Site Name", "", farm, "Month/Year", monthName]));
 	rows.push(csvRow([]));
-	rows.push(csvRow(["", "FCM RISK PROFILE PER GREENHOUSE/VARIETY"]));
-	rows.push(csvRow(["NO.", "GREENHOUSE / VARIETY", "LEVEL OF SUSCEPTIBILITY (SCORES)", "CATEGORY", "CORRECTIVE ACTION"]));
+	rows.push(csvRow(["", "FCM RISK PROFILE PER VARIETY"]));
+	rows.push(csvRow(["NO.", "VARIETY", "LEVEL OF SUSCEPTIBILITY (SCORES)", "CATEGORY", "CORRECTIVE ACTION"]));
 
 	sorted.forEach(function (g) {
-		var label = "GH " + g.ghNum + (g.variety ? " - " + g.variety : "");
 		var action = g.category === "HIGH RISK" ? "Immediate spray and enhanced monitoring" : g.category === "MEDIUM RISK" ? "Planned spray and egg crushing" : "";
-		rows.push(csvRow([g.ghNum, label, g.score, g.category, action]));
+		rows.push(csvRow([g.ghNum, g.variety || "", g.score, g.category, action]));
 	});
 	rows.push(csvRow([]));
-	rows.push(csvRow(["", "Score 1-3: Low risk"]));
-	rows.push(csvRow(["", "Score 4-7: Medium risk"]));
-	rows.push(csvRow(["", "Score 8+: High risk"]));
+	rows.push(csvRow(["", "1 - Low susceptible variety"]));
+	rows.push(csvRow(["", "2 - Medium susceptible variety"]));
+	rows.push(csvRow(["", "3- Highly susceptible variety"]));
 	return rows.join("\r\n");
 }

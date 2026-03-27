@@ -35,6 +35,11 @@ var pestWeeklyTrendChart,
 var overviewTimelineChart,
 	overviewDonutChart,
 	overviewAreaRadarChart;
+var overviewPestRadarChart, overviewDiseaseRadarChart;
+var scoutPerfTrendChart, scoutPerfBarChart, scoutPerfRadarChart, scoutPerfRadialChart;
+var pestGhChart, pestBedChart;
+var diseaseGhChart, diseaseBedChart;
+var trapGhChart, trapIndoorOutdoorChart;
 
 var scoutingData = null;
 var scoutingYearData = null;
@@ -1124,11 +1129,13 @@ function updateOverviewTab() {
 
 	updateOverviewTimelineChart();
 	updateOverviewDonutChart();
-	updateOverviewAreaRadarChart();
+	updateOverviewPestRadarChart();
+	updateOverviewDiseaseRadarChart();
 	updateGreenhouseHealth();
 	updateAlertsList();
 	updateTopScouts();
 	updateRecentEntries();
+	updateScoutPerfCharts();
 }
 
 function _setText(selector, value) {
@@ -1206,6 +1213,228 @@ function updateOverviewAreaRadarChart() {
 			responsive: true, maintainAspectRatio: false,
 			plugins: { legend: { position: "bottom" } },
 			scales: { r: { beginAtZero: true, grid: { color: "rgba(0,0,0,.12)" }, angleLines: { color: "rgba(0,0,0,.12)" }, pointLabels: { font: { size: 11 } } } },
+		},
+	});
+}
+
+function updateOverviewPestRadarChart() {
+	var ctx = root_element.querySelector("#overview-pest-radar-chart");
+	if (!ctx) return;
+	if (overviewPestRadarChart) overviewPestRadarChart.destroy();
+	var pestTotals = {};
+	Object.values(scoutingData.pests).forEach(function (p) {
+		Object.keys(p.sections || {}).forEach(function (sec) {
+			pestTotals[sec] = (pestTotals[sec] || 0) + p.sections[sec];
+		});
+	});
+	var sections = Object.keys(pestTotals)
+		.map(function (s) { return { section: s, total: pestTotals[s] }; })
+		.sort(function (a, b) { return b.total - a.total; })
+		.slice(0, 8);
+	var labels = sections.map(function (s) { return s.section; });
+	if (!labels.length) return;
+	overviewPestRadarChart = new Chart(ctx, {
+		type: "radar",
+		data: {
+			labels: labels,
+			datasets: [{
+				label: "Pests",
+				data: labels.map(function (l) { return pestTotals[l] || 0; }),
+				borderColor: "#10b981",
+				backgroundColor: "rgba(16,185,129,.15)",
+				pointBackgroundColor: "#10b981",
+				borderWidth: 2,
+			}],
+		},
+		options: {
+			responsive: true, maintainAspectRatio: false,
+			plugins: { legend: { position: "bottom" } },
+			scales: { r: { beginAtZero: true, grid: { color: "rgba(0,0,0,.12)" }, angleLines: { color: "rgba(0,0,0,.12)" }, pointLabels: { font: { size: 11 } } } },
+		},
+	});
+}
+
+function updateOverviewDiseaseRadarChart() {
+	var ctx = root_element.querySelector("#overview-disease-radar-chart");
+	if (!ctx) return;
+	if (overviewDiseaseRadarChart) overviewDiseaseRadarChart.destroy();
+	var diseaseTotals = {};
+	Object.values(scoutingData.diseases).forEach(function (d) {
+		(d.counts || []).forEach(function (c) {
+			var s = c.section || "Unknown";
+			diseaseTotals[s] = (diseaseTotals[s] || 0) + 1;
+		});
+	});
+	var sections = Object.keys(diseaseTotals)
+		.map(function (s) { return { section: s, total: diseaseTotals[s] }; })
+		.sort(function (a, b) { return b.total - a.total; })
+		.slice(0, 8);
+	var labels = sections.map(function (s) { return s.section; });
+	if (!labels.length) return;
+	overviewDiseaseRadarChart = new Chart(ctx, {
+		type: "radar",
+		data: {
+			labels: labels,
+			datasets: [{
+				label: "Diseases",
+				data: labels.map(function (l) { return diseaseTotals[l] || 0; }),
+				borderColor: "#f59e0b",
+				backgroundColor: "rgba(245,158,11,.15)",
+				pointBackgroundColor: "#f59e0b",
+				borderWidth: 2,
+			}],
+		},
+		options: {
+			responsive: true, maintainAspectRatio: false,
+			plugins: { legend: { position: "bottom" } },
+			scales: { r: { beginAtZero: true, grid: { color: "rgba(0,0,0,.12)" }, angleLines: { color: "rgba(0,0,0,.12)" }, pointLabels: { font: { size: 11 } } } },
+		},
+	});
+}
+
+function updateScoutPerfCharts() {
+	if (!scoutingData) return;
+	var scoutStats = {};
+	var allDates = new Set();
+	scoutingData.entries.forEach(function (e) {
+		var si = getScoutIdentity(e);
+		if (!si.key) return;
+		var key = si.key;
+		var d = e.date_of_capture;
+		if (!scoutStats[key]) {
+			scoutStats[key] = { name: si.label || key, entries: 0, pests: 0, diseases: 0, traps: 0, daily: {} };
+		}
+		var s = scoutStats[key];
+		s.entries++;
+		s.pests += (e.pests_scouting_entry || []).length;
+		s.diseases += (e.diseases_scouting_entry || []).length;
+		s.traps += (e.trap_scouting_entry || []).length;
+		if (d) { s.daily[d] = (s.daily[d] || 0) + 1; allDates.add(d); }
+	});
+	var sortedScouts = Object.values(scoutStats).sort(function (a, b) { return b.entries - a.entries; }).slice(0, 8);
+	var dates = Array.from(allDates).sort();
+	_updateScoutPerfTrend(sortedScouts, dates);
+	_updateScoutPerfBar(sortedScouts);
+	_updateScoutPerfRadar(sortedScouts);
+	_updateScoutPerfRadial(sortedScouts);
+}
+
+function _updateScoutPerfTrend(scouts, dates) {
+	var ctx = root_element.querySelector("#scout-perf-trend-chart");
+	if (!ctx) return;
+	if (scoutPerfTrendChart) scoutPerfTrendChart.destroy();
+	var top5 = scouts.slice(0, 5);
+	scoutPerfTrendChart = new Chart(ctx, {
+		type: "line",
+		data: {
+			labels: dates.map(function (d) { return d.slice(5); }),
+			datasets: top5.map(function (s, i) {
+				var c = getPaletteColor(i);
+				return {
+					label: s.name,
+					data: dates.map(function (d) { return s.daily[d] || 0; }),
+					borderColor: c.border,
+					backgroundColor: c.background,
+					tension: 0.4,
+					pointRadius: 3,
+					fill: false,
+				};
+			}),
+		},
+		options: {
+			responsive: true, maintainAspectRatio: false,
+			plugins: { legend: { position: "bottom" } },
+			scales: {
+				x: { grid: { display: false } },
+				y: { beginAtZero: true, title: { display: true, text: "Entries" }, grid: { color: "rgba(0,0,0,.04)" } },
+			},
+		},
+	});
+}
+
+function _updateScoutPerfBar(scouts) {
+	var ctx = root_element.querySelector("#scout-perf-bar-chart");
+	if (!ctx) return;
+	if (scoutPerfBarChart) scoutPerfBarChart.destroy();
+	var labels = scouts.map(function (s) { return s.name; });
+	scoutPerfBarChart = new Chart(ctx, {
+		type: "bar",
+		data: {
+			labels: labels,
+			datasets: [
+				{ label: "Entries", data: scouts.map(function (s) { return s.entries; }), backgroundColor: "rgba(59,130,246,.75)", borderColor: "#3b82f6", borderWidth: 1 },
+				{ label: "Pest Obs", data: scouts.map(function (s) { return s.pests; }), backgroundColor: "rgba(16,185,129,.75)", borderColor: "#10b981", borderWidth: 1 },
+				{ label: "Disease Obs", data: scouts.map(function (s) { return s.diseases; }), backgroundColor: "rgba(245,158,11,.75)", borderColor: "#f59e0b", borderWidth: 1 },
+			],
+		},
+		options: {
+			responsive: true, maintainAspectRatio: false,
+			plugins: { legend: { position: "bottom" } },
+			scales: { x: { grid: { display: false } }, y: { beginAtZero: true } },
+		},
+	});
+}
+
+function _updateScoutPerfRadar(scouts) {
+	var ctx = root_element.querySelector("#scout-perf-radar-chart");
+	if (!ctx) return;
+	if (scoutPerfRadarChart) scoutPerfRadarChart.destroy();
+	var top6 = scouts.slice(0, 6);
+	var maxEntries = Math.max.apply(null, top6.map(function (s) { return s.entries; })) || 1;
+	var maxPests   = Math.max.apply(null, top6.map(function (s) { return s.pests; })) || 1;
+	var maxDis     = Math.max.apply(null, top6.map(function (s) { return s.diseases; })) || 1;
+	var maxTraps   = Math.max.apply(null, top6.map(function (s) { return s.traps; })) || 1;
+	var maxAvgDay  = Math.max.apply(null, top6.map(function (s) {
+		return s.entries / (Object.keys(s.daily).length || 1);
+	})) || 1;
+	scoutPerfRadarChart = new Chart(ctx, {
+		type: "radar",
+		data: {
+			labels: ["Entries", "Pest Obs", "Disease Obs", "Trap Obs", "Avg/Day"],
+			datasets: top6.map(function (s, i) {
+				var c = getPaletteColor(i);
+				var days = Object.keys(s.daily).length || 1;
+				return {
+					label: s.name,
+					data: [
+						Math.round((s.entries / maxEntries) * 100),
+						Math.round((s.pests   / maxPests)   * 100),
+						Math.round((s.diseases / maxDis)    * 100),
+						Math.round((s.traps   / maxTraps)   * 100),
+						Math.round(((s.entries / days) / maxAvgDay) * 100),
+					],
+					borderColor: c.border,
+					backgroundColor: c.background,
+					pointBackgroundColor: c.border,
+					borderWidth: 2,
+				};
+			}),
+		},
+		options: {
+			responsive: true, maintainAspectRatio: false,
+			plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 } } } },
+			scales: { r: { beginAtZero: true, max: 100, ticks: { display: false }, grid: { color: "rgba(0,0,0,.1)" }, angleLines: { color: "rgba(0,0,0,.1)" }, pointLabels: { font: { size: 11 } } } },
+		},
+	});
+}
+
+function _updateScoutPerfRadial(scouts) {
+	var ctx = root_element.querySelector("#scout-perf-radial-chart");
+	if (!ctx) return;
+	if (scoutPerfRadialChart) scoutPerfRadialChart.destroy();
+	var labels = scouts.map(function (s) { return s.name; });
+	var data   = scouts.map(function (s) { return s.entries; });
+	var colors = scouts.map(function (_, i) { return getPaletteColor(i).border; });
+	scoutPerfRadialChart = new Chart(ctx, {
+		type: "doughnut",
+		data: {
+			labels: labels,
+			datasets: [{ data: data, backgroundColor: colors.map(function (c) { return c.replace("hsl(", "hsla(").replace(")", ", 0.75)"); }), borderColor: colors, borderWidth: 2 }],
+		},
+		options: {
+			responsive: true, maintainAspectRatio: false,
+			cutout: "55%",
+			plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } },
 		},
 	});
 }
@@ -1721,15 +1950,16 @@ function updatePestStagesTable() {
 				section:    c.section    || "N/A",
 				date:       c.date,
 				greenhouse: c.greenhouse,
+				bed:        c.bed        || "",
 			});
 		});
 	});
- 
+
 	stages.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
 	stages = stages.slice(0, 50);
- 
+
 	tbody.innerHTML = stages.length === 0
-		? '<tr><td colspan="6" class="empty-state">No pest stages found</td></tr>'
+		? '<tr><td colspan="7" class="empty-state">No pest stages found</td></tr>'
 		: stages.map(function (s) {
 			return (
 				'<tr>'
@@ -1739,6 +1969,7 @@ function updatePestStagesTable() {
 				+ '<td>'                           + s.section           + '</td>'
 				+ '<td>'                           + s.date              + '</td>'
 				+ '<td>'                           + (s.greenhouse || "-") + '</td>'
+				+ '<td style="color:var(--text-muted,#888);font-size:0.85em">' + (s.bed || "-") + '</td>'
 				+ '</tr>'
 			);
 		}).join("");
@@ -2492,7 +2723,12 @@ function showGreenhouseDetails(greenhouse) {
 	_setText("#scout-gh-modal-period", fromWeek + " to " + toWeek + " (" + rangeInfo.fromDate + " to " + rangeInfo.toDate + ")");
 	_setText("#ghk-pests", ghData.pests);
 	_setText("#ghk-diseases", ghData.diseases);
-	_setText("#ghk-traps", ghData.traps);
+	var _ghTrapTotal = Object.keys(scoutingData.traps).reduce(function (sum, k) {
+		return sum + scoutingData.traps[k].counts
+			.filter(function (c) { return c.greenhouse === greenhouse; })
+			.reduce(function (s, c) { return s + c.count; }, 0);
+	}, 0);
+	_setText("#ghk-traps", formatNumber(_ghTrapTotal));
 	_setText("#ghk-scouts", ghData.scoutCount);
 	_setText("#ghk-alerts", ghData.alerts);
 
@@ -2524,7 +2760,13 @@ function showGreenhouseDetails(greenhouse) {
 	var trapCounts = {};
 	Object.keys(scoutingData.traps).forEach(function (k) {
 		var cnt = scoutingData.traps[k].counts.filter(function (c) { return c.greenhouse === greenhouse; }).length;
-		if (cnt) { var name = scoutingData.traps[k].trap; trapCounts[name] = (trapCounts[name] || 0) + scoutingData.traps[k].total; }
+		if (cnt) {
+			var name = scoutingData.traps[k].trap;
+			var ghTot = scoutingData.traps[k].counts
+				.filter(function (c) { return c.greenhouse === greenhouse; })
+				.reduce(function (s, c) { return s + c.count; }, 0);
+			trapCounts[name] = (trapCounts[name] || 0) + ghTot;
+		}
 	});
 	var trapEl = root_element.querySelector("#scout-gh-traps");
 	if (trapEl)
@@ -2541,27 +2783,72 @@ function updateGreenhouseTrendChart(greenhouse) {
 	var ctx = root_element.querySelector("#scout-gh-trend-chart");
 	if (!ctx) return;
 	if (window.ghTrendChart) window.ghTrendChart.destroy();
-	var daily = {};
-	scoutingData.entries.forEach(function (e) {
-		if (e.greenhouse !== greenhouse) return;
+
+	/* use selected week range so the modal reflects the same period */
+	var rangeInfo = getSelectedWeekRangeInfo();
+	var dayAxis   = rangeInfo ? getDayRangeAxis(rangeInfo) : null;
+
+	var ghEntries = scoutingData.entries.filter(function (e) { return e.greenhouse === greenhouse; });
+	var totalBeds = getTotalZonesForGreenhouses(ghEntries) || 1;
+
+	/* per-day bed infection sets + trap counts */
+	var pestBeds = {}, disBeds = {}, trapCounts = {};
+	ghEntries.forEach(function (e) {
 		var d = e.date_of_capture;
-		if (!daily[d]) daily[d] = { pests: 0, diseases: 0, traps: 0 };
-		daily[d].pests += (e.pests_scouting_entry || []).length;
-		daily[d].diseases += (e.diseases_scouting_entry || []).length;
-		daily[d].traps += (e.trap_scouting_entry || []).length;
+		var bedKey = getDistributionBedKey(e);
+		if ((e.pests_scouting_entry || []).length && bedKey) {
+			if (!pestBeds[d]) pestBeds[d] = new Set();
+			pestBeds[d].add(bedKey);
+		}
+		if ((e.diseases_scouting_entry || []).length && bedKey) {
+			if (!disBeds[d]) disBeds[d] = new Set();
+			disBeds[d].add(bedKey);
+		}
+		trapCounts[d] = (trapCounts[d] || 0) + (e.trap_scouting_entry || []).reduce(function (s, t) { return s + toNumber(t.count || 0); }, 0);
 	});
-	var dates = Object.keys(daily).sort().slice(-14);
+
+	var dates, labels;
+	if (dayAxis) {
+		dates  = dayAxis.keys;
+		labels = dayAxis.labels;
+	} else {
+		var seen = new Set(ghEntries.map(function (e) { return e.date_of_capture; }));
+		dates  = Array.from(seen).sort().slice(-21);
+		labels = dates.map(function (d) { return d.slice(5); });
+	}
+
 	window.ghTrendChart = new Chart(ctx, {
 		type: "line",
 		data: {
-			labels: dates.map(function (d) { return d.slice(5); }),
+			labels: labels,
 			datasets: [
-				{ label: "Pests", data: dates.map(function (d) { return daily[d].pests; }), borderColor: "#10b981", tension: 0.4 },
-				{ label: "Diseases", data: dates.map(function (d) { return daily[d].diseases; }), borderColor: "#f59e0b", tension: 0.4 },
-				{ label: "Traps", data: dates.map(function (d) { return daily[d].traps; }), borderColor: "#3b82f6", tension: 0.4 },
+				{
+					label: "Pests Infected (%)",
+					data: dates.map(function (d) { return toBedInfectionPercent((pestBeds[d] || { size: 0 }).size, totalBeds); }),
+					borderColor: "#10b981", backgroundColor: "rgba(16,185,129,.1)", tension: 0.4, pointRadius: 4, fill: true,
+				},
+				{
+					label: "Diseases Infected (%)",
+					data: dates.map(function (d) { return toBedInfectionPercent((disBeds[d] || { size: 0 }).size, totalBeds); }),
+					borderColor: "#f59e0b", backgroundColor: "rgba(245,158,11,.1)", tension: 0.4, pointRadius: 4, fill: true,
+				},
+				{
+					label: "Trap Catch Count",
+					data: dates.map(function (d) { return trapCounts[d] || 0; }),
+					borderColor: "#3b82f6", backgroundColor: "rgba(59,130,246,.08)", tension: 0.4, pointRadius: 4, fill: false,
+					yAxisID: "y2",
+				},
 			],
 		},
-		options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: "rgba(0,0,0,.04)" } } } },
+		options: {
+			responsive: true, maintainAspectRatio: false,
+			plugins: { legend: { position: "bottom" } },
+			scales: {
+				x: { grid: { display: false } },
+				y:  { beginAtZero: true, title: { display: true, text: "Infection %" }, grid: { color: "rgba(0,0,0,.04)" } },
+				y2: { beginAtZero: true, position: "right", title: { display: true, text: "Trap Count" }, grid: { display: false } },
+			},
+		},
 	});
 }
 
@@ -2596,22 +2883,37 @@ var SCOUTING_REPORTS_PDF = [
 var _jsPdfLoaded = false;
 var _jsPdfLoadPromise = null;
 
+function _loadScript(src) {
+	return new Promise(function (resolve, reject) {
+		var s = document.createElement("script");
+		s.src = src;
+		s.onload = resolve;
+		s.onerror = function () { reject(new Error("Failed to load: " + src)); };
+		document.head.appendChild(s);
+	});
+}
+
 function ensureJsPdf() {
 	if (_jsPdfLoaded && window.jspdf && window.jspdf.jsPDF) return Promise.resolve();
+	/* reset cached promise if previously rejected so retry is possible */
 	if (_jsPdfLoadPromise) return _jsPdfLoadPromise;
-	_jsPdfLoadPromise = new Promise(function (resolve, reject) {
-		var s1 = document.createElement("script");
-		s1.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js";
-		s1.onload = function () {
-			var s2 = document.createElement("script");
-			s2.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js";
-			s2.onload = function () { _jsPdfLoaded = true; resolve(); };
-			s2.onerror = function () { reject(new Error("Failed to load jspdf-autotable")); };
-			document.head.appendChild(s2);
-		};
-		s1.onerror = function () { reject(new Error("Failed to load jsPDF")); };
-		document.head.appendChild(s1);
-	});
+
+	/* Prefer locally-hosted copies (no CDN / CSP issues).
+	   Frappe serves /public/js/* at /assets/<app>/js/* after bench build,
+	   but the www-served path works directly as /assets/upande_scp/js/... */
+	var LOCAL_JSPDF    = "/assets/upande_scp/js/jspdf.umd.min.js";
+	var LOCAL_AUTOTABLE = "/assets/upande_scp/js/jspdf.plugin.autotable.min.js";
+
+	_jsPdfLoadPromise = _loadScript(LOCAL_JSPDF)
+		.then(function () { return _loadScript(LOCAL_AUTOTABLE); })
+		.then(function () { _jsPdfLoaded = true; })
+		.catch(function () {
+			/* local copy not yet built — fall back to CDN */
+			_jsPdfLoadPromise = null;
+			return _loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js")
+				.then(function () { return _loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js"); })
+				.then(function () { _jsPdfLoaded = true; });
+		});
 	return _jsPdfLoadPromise;
 }
 
@@ -2816,17 +3118,17 @@ function _pdfPestTable(doc, y, data) {
 	Object.keys(data.pests).forEach(function (p) {
 		data.pests[p].counts.slice(0, 30).forEach(function (c) {
 			var cnt = c.count || 1;
-			rows.push([p, c.stage || "N/A", String(cnt), c.section || "N/A", c.date || "", c.greenhouse || "", cnt > 15 ? "High" : cnt > 5 ? "Moderate" : "Low"]);
+			rows.push([p, c.stage || "N/A", String(cnt), c.section || "N/A", c.date || "", c.greenhouse || "", c.bed || "-", cnt > 15 ? "High" : cnt > 5 ? "Moderate" : "Low"]);
 		});
 	});
 	rows.sort(function (a, b) { return Number(b[2]) - Number(a[2]); });
 	rows = rows.slice(0, 60);
 	doc.autoTable(Object.assign({}, AT_BASE, {
 		startY: y,
-		head: [["Pest", "Stage", "Count", "Section", "Date", "Greenhouse", "Severity"]],
+		head: [["Pest", "Stage", "Count", "Section", "Date", "Greenhouse", "Bed", "Severity"]],
 		body: rows,
-		columnStyles: { 2: { halign: "center", fontStyle: "bold" }, 6: { halign: "center", fontStyle: "bold" } },
-		didParseCell: function (h) { pdfSevHook(h, 6); },
+		columnStyles: { 2: { halign: "center", fontStyle: "bold" }, 7: { halign: "center", fontStyle: "bold" } },
+		didParseCell: function (h) { pdfSevHook(h, 7); },
 	}));
 	return doc.lastAutoTable.finalY + 4;
 }

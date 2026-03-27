@@ -169,10 +169,12 @@
 				<div class="chart-controls">
 					<div class="filter-field"><label>Pest</label><select id="pest-weekly-pest-filter" class="filter-select"></select></div>
 					<div class="filter-field"><label>Section</label><select id="pest-weekly-section-filter" class="filter-select"></select></div>
+					<div class="filter-field"><label>Stage</label><select id="pest-weekly-stage-filter" class="filter-select"></select></div>
 				</div>
 			</div>
 			<div class="chart-body"><canvas id="pest-weekly-trend-chart"></canvas></div>
 		</div>
+
 
 		<div class="charts-grid">
 			<div class="chart-card"><div class="chart-header"><h4>Pest Incidence Trend</h4></div><div class="chart-body"><canvas id="pest-trend-chart"></canvas></div></div>
@@ -181,7 +183,31 @@
 
 		<div class="charts-grid">
 			<div class="chart-card"><div class="chart-header"><h4>Severity Matrix</h4><span class="chart-subtitle">Current infestation levels</span></div><div class="chart-body"><div class="severity-matrix" id="pest-severity-matrix"></div></div></div>
-			<div class="chart-card"><div class="chart-header"><h4>Plant Section Split</h4><span class="chart-subtitle">Where pests are found</span></div><div class="chart-body"><canvas id="pest-section-chart"></canvas></div></div>
+			 <div class="charts-grid">
+ 
+			<div class="chart-card">
+			<div class="chart-header">
+				<h4>Plant Section Split</h4>
+				<span class="chart-subtitle">Where pests are found</span>
+			</div>
+			<div class="chart-body" style="height:220px">
+				<canvas id="pest-section-chart"></canvas>
+			</div>
+			</div>
+	
+			<div class="chart-card">
+			<div class="chart-header">
+				<h4>Entries by Stage</h4>
+				<span class="chart-subtitle">Radial view · filtered to selected pest</span>
+			</div>
+			<div class="chart-body" style="height:280px">
+				<canvas id="pest-stage-radial-chart"></canvas>
+			</div>
+			</div>
+	
+		</div>
+				
+	
 		</div>
 
 		<div class="chart-card">
@@ -214,6 +240,10 @@
 				<div class="chart-controls">
 					<div class="filter-field"><label>Disease</label><select id="disease-weekly-disease-filter" class="filter-select"></select></div>
 					<div class="filter-field"><label>Section</label><select id="disease-weekly-section-filter" class="filter-select"></select></div>
+					<div class="filter-field">
+        <label>Stage</label>
+        <select id="disease-weekly-stage-filter" class="filter-select"></select>
+      </div>
 				</div>
 			</div>
 			<div class="chart-body"><canvas id="disease-weekly-trend-chart"></canvas></div>
@@ -226,7 +256,29 @@
 
 		<div class="charts-grid">
 			<div class="chart-card"><div class="chart-header"><h4>Severity Levels</h4><span class="chart-subtitle">Infection intensity</span></div><div class="chart-body"><div class="severity-bubbles" id="disease-severity-bubbles"></div></div></div>
-			<div class="chart-card"><div class="chart-header"><h4>Stage Distribution</h4><span class="chart-subtitle">Active vs Latent</span></div><div class="chart-body"><canvas id="disease-stage-chart"></canvas></div></div>
+			<div class="charts-grid">
+ 
+        <div class="chart-card">
+          <div class="chart-header">
+            <h4>Stage Split</h4>
+            <span class="chart-subtitle">Selected or all diseases</span>
+          </div>
+          <div class="chart-body" style="height:220px">
+            <canvas id="disease-stage-chart"></canvas>
+          </div>
+        </div>
+ 
+        <div class="chart-card">
+          <div class="chart-header">
+            <h4>Entries by Stage</h4>
+            <span class="chart-subtitle">Radial view · filtered to selected disease</span>
+          </div>
+          <div class="chart-body" style="height:280px">
+            <canvas id="disease-stage-radial-chart"></canvas>
+          </div>
+        </div>
+ 
+      </div>
 		</div>
 
 		<div class="chart-card">

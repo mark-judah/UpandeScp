@@ -1,3 +1,4 @@
+import json
 import re
 
 import frappe
@@ -43,6 +44,10 @@ def get_context(context):
 
         filtered = [wh for wh in all_warehouses if is_allowed(wh)]
         warehouses = sorted(filtered, key=sort_key)
+        frappe.logger().info(f"[floor_plan] get_context: loaded {len(warehouses)} greenhouses: {[wh.get('name') for wh in warehouses]}")
+        context.all_warehouses_before_filter_json = json.dumps([wh.get("name") for wh in all_warehouses])
+    else:
+        context.all_warehouses_before_filter_json = "[]"
 
     context.warehouses_list = warehouses
 
@@ -76,6 +81,7 @@ def get_scouted_greenhouses_by_date(date):
         group_by="greenhouse"
     )
     scouted_names = [row.greenhouse for row in scouting_rows if row.greenhouse]
+    frappe.logger().info(f"[floor_plan] get_scouted_greenhouses_by_date({date}): scouted_names={scouted_names}")
 
     if not scouted_names:
         return {"greenhouses": []}
@@ -89,6 +95,7 @@ def get_scouted_greenhouses_by_date(date):
         fields=["name"],
         order_by="name asc"
     )
+    frappe.logger().info(f"[floor_plan] get_scouted_greenhouses_by_date({date}): returning {len(warehouses)} warehouses: {[wh.get('name') for wh in warehouses]}")
     return {"greenhouses": warehouses}
 
 @frappe.whitelist()

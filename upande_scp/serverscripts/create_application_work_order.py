@@ -117,7 +117,6 @@ def createApplicationWorkOrder():
             "stock_entry_type": "Material Transfer for Manufacture",
             "company": "Mona Flowers Limited",
             "purpose": "Material Transfer for Manufacture",
-            "custom_farm": greenhouse.split()[0],
             "items": se_items
         })
         se.insert(ignore_permissions=True)

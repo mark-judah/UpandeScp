@@ -1,0 +1,32 @@
+{
+    "workbench.colorCustomizations": {
+        "statusBarItem.warningBackground": "#7915f4",
+        "statusBarItem.warningForeground": "#ffffff",
+        "statusBarItem.warningHoverBackground": "#7915f4",
+        "statusBarItem.warningHoverForeground": "#ffffff90",
+        "statusBarItem.remoteBackground": "#8622ff",
+        "statusBarItem.remoteForeground": "#ffffff",
+        "statusBarItem.remoteHoverBackground": "#932fff",
+        "statusBarItem.remoteHoverForeground": "#ffffff90",
+        "statusBar.background": "#7915f4",
+        "statusBar.foreground": "#ffffff",
+        "statusBar.border": "#7915f4",
+        "statusBar.debuggingBackground": "#7915f4",
+        "statusBar.debuggingForeground": "#ffffff",
+        "statusBar.debuggingBorder": "#7915f4",
+        "statusBar.noFolderBackground": "#7915f4",
+        "statusBar.noFolderForeground": "#ffffff",
+        "statusBar.noFolderBorder": "#7915f4",
+        "statusBar.prominentBackground": "#7915f4",
+        "statusBar.prominentForeground": "#ffffff",
+        "statusBar.prominentHoverBackground": "#7915f4",
+        "statusBar.prominentHoverForeground": "#ffffff90",
+        "activityBar.background": "#7915f4",
+        "activityBar.foreground": "#ffffff",
+        "activityBar.activeBorder": "#ffffff",
+        "activityBar.inactiveForeground": "#ffffff90",
+        "activityBarBadge.foreground": "#000000",
+        "activityBarBadge.background": "#ffd4ff"
+    },
+    "window.title": "Kaitet"
+}

@@ -65,6 +65,20 @@ def getCompleteScoutingEntries(from_date=None, to_date=None, greenhouse=None):
             if z.greenhouse:
                 zones_by_greenhouse[z.greenhouse] = zones_by_greenhouse.get(z.greenhouse, 0) + 1
 
+        # Fallback: if Zone records have no greenhouse data, count leaf Warehouse
+        # children per greenhouse (beds = zones proxy)
+        if not zones_by_greenhouse:
+            all_beds = frappe.get_all(
+                "Warehouse",
+                filters=[["is_group", "=", 0]],
+                fields=["parent_warehouse"],
+                limit_page_length=50000,
+            )
+            for bed in all_beds:
+                parent = (bed.get("parent_warehouse") or "").strip()
+                if parent:
+                    zones_by_greenhouse[parent] = zones_by_greenhouse.get(parent, 0) + 1
+
         if not entry_names:
             return {
                 "entries": [],

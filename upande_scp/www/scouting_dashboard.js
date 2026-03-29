@@ -28,7 +28,8 @@ var diseaseTrendChart,
 	diseaseStageChart;
 var trapTrendChart,
 	trapPerfChart,
-	trapPestChart;
+	trapPestChart,
+	fcmMothTrendChart;
 var pestWeeklyTrendChart,
 	diseaseWeeklyTrendChart,
 	trapWeeklyTrendChart;
@@ -814,7 +815,7 @@ function buildScoutingData(entries, trapEntries) {
 				var cnt = toNumber(t.count || 0);
 				if (!data.traps[key])
 					data.traps[key] = { trap: trapId, pest: pest, location: loc, counts: [], total: 0 };
-				data.traps[key].counts.push({ date: date, count: cnt, location: loc, greenhouse: greenhouse });
+				data.traps[key].counts.push({ date: date, count: cnt, location: loc, greenhouse: greenhouse, bed: entry.bed || "" });
 				data.traps[key].total += cnt;
 				if (cnt > 10) data.greenhouses[greenhouse].alerts++;
 			});
@@ -1534,6 +1535,8 @@ function updatePestTab() {
 	updatePestSeverityMatrix();
 	updatePestSectionChart();
 	updatePestStageRadialChart();
+	updatePestGhChart();
+	updatePestBedChart();
 	updatePestStagesTable();
 }
 
@@ -2008,6 +2011,8 @@ function updateDiseaseTab() {
 	updateDiseaseSeverityBubbles();
 	updateDiseaseStageChart();
 	updateDiseaseStageRadialChart();
+	updateDiseaseGhChart();
+	updateDiseaseBedChart();
 	updateDiseaseIncidentsTable();
 }
 
@@ -2405,26 +2410,29 @@ function updateDiseaseStageRadialChart() {
 function updateDiseaseIncidentsTable() {
 	var tbody = root_element.querySelector("#disease-incidents-body");
 	if (!tbody) return;
- 
+
 	var incidents = [];
 	Object.keys(scoutingData.diseases).forEach(function (dis) {
 		scoutingData.diseases[dis].counts.slice(0, 20).forEach(function (c) {
+			var sev = (c.stage || "").toLowerCase();
 			incidents.push({
 				disease:    dis,
 				stage:      c.stage || "N/A",
-				severity:   c.stage && c.stage.includes("Active") ? "High" : "Low",
+				severity:   sev.includes("active") || sev.includes("high") ? "High"
+				            : sev.includes("moderate") ? "Moderate" : "Low",
 				section:    c.section    || "N/A",
 				date:       c.date,
 				greenhouse: c.greenhouse,
+				bed:        c.bed        || "",
 			});
 		});
 	});
- 
+
 	incidents.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
 	incidents = incidents.slice(0, 50);
- 
+
 	tbody.innerHTML = incidents.length === 0
-		? '<tr><td colspan="6" class="empty-state">No disease incidents found</td></tr>'
+		? '<tr><td colspan="7" class="empty-state">No disease incidents found</td></tr>'
 		: incidents.map(function (i) {
 			return (
 				'<tr>'
@@ -2435,6 +2443,7 @@ function updateDiseaseIncidentsTable() {
 				+ '<td>'  + i.section             + '</td>'
 				+ '<td>'  + i.date                + '</td>'
 				+ '<td>'  + (i.greenhouse || "-") + '</td>'
+				+ '<td style="color:var(--text-muted,#888);font-size:0.85em">' + (i.bed || "-") + '</td>'
 				+ '</tr>'
 			);
 		}).join("");
@@ -2462,6 +2471,8 @@ function updateTrapTab() {
 	updateTrapPerformanceChart();
 	updateTrapHeatmap();
 	updateTrapPestChart();
+	updateTrapGhChart();
+	updateTrapIndoorOutdoorChart();
 	updateTrapDetailsTable();
 }
 
@@ -2599,18 +2610,291 @@ function updateTrapDetailsTable() {
 	var details = [];
 	Object.keys(scoutingData.traps).forEach(function (k) {
 		scoutingData.traps[k].counts.slice(0, 20).forEach(function (c) {
-			details.push({ trap: scoutingData.traps[k].trap, pest: scoutingData.traps[k].pest, count: c.count || 0, location: c.location || "N/A", date: c.date, greenhouse: c.greenhouse });
+			details.push({
+				trap: scoutingData.traps[k].trap,
+				pest: scoutingData.traps[k].pest,
+				count: c.count || 0,
+				location: c.location || "N/A",
+				date: c.date,
+				greenhouse: c.greenhouse,
+				bed: c.bed || "",
+			});
 		});
 	});
 	details.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
 	details = details.slice(0, 50);
 	tbody.innerHTML = details.length === 0
-		? '<tr><td colspan="6" class="empty-state">No trap data found</td></tr>'
+		? '<tr><td colspan="7" class="empty-state">No trap data found</td></tr>'
 		: details.map(function (d) {
-			return '<tr><td>' + d.trap + '</td><td>' + d.pest + '</td><td><strong>' + d.count + '</strong></td><td>' + d.location + '</td><td>' + d.date + '</td><td>' + (d.greenhouse || "-") + '</td></tr>';
+			return (
+				'<tr>'
+				+ '<td>' + d.trap + '</td>'
+				+ '<td>' + d.pest + '</td>'
+				+ '<td><strong>' + d.count + '</strong></td>'
+				+ '<td>' + d.location + '</td>'
+				+ '<td>' + d.date + '</td>'
+				+ '<td>' + (d.greenhouse || "-") + '</td>'
+				+ '<td style="color:var(--text-muted,#888);font-size:0.85em">' + (d.bed || "-") + '</td>'
+				+ '</tr>'
+			);
 		}).join("");
 }
 
+
+/* ==========  GREENHOUSE / BED / INDOOR-OUTDOOR BAR CHARTS  ========== */
+
+/* ── helpers ── */
+function _ghBarBaseOpts(labelText) {
+	return {
+		responsive: true, maintainAspectRatio: false,
+		indexAxis: "y",
+		plugins: {
+			legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 10 } } },
+			tooltip: { mode: "index", intersect: false },
+		},
+		scales: {
+			x: { stacked: true, beginAtZero: true, title: { display: !!labelText, text: labelText || "", font: { size: 10 } }, ticks: { font: { size: 10 } } },
+			y: { stacked: true, ticks: { font: { size: 10 } } },
+		},
+	};
+}
+
+function _ghBarDualOpts(countLabel, zonePctLabel) {
+	/* dual X axes: bottom = observation count, top = zone coverage % */
+	return {
+		responsive: true, maintainAspectRatio: false,
+		indexAxis: "y",
+		plugins: {
+			legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 10 } } },
+			tooltip: { mode: "index", intersect: false },
+		},
+		scales: {
+			x:  { position: "bottom", beginAtZero: true, title: { display: true, text: countLabel,   font: { size: 10 } }, ticks: { font: { size: 10 } } },
+			x2: { position: "top",    beginAtZero: true, min: 0, max: 100,
+			      title: { display: true, text: zonePctLabel, font: { size: 10 } },
+			      ticks: { font: { size: 10 }, callback: function (v) { return v + "%"; } } },
+			y:  { ticks: { font: { size: 10 } } },
+		},
+	};
+}
+
+/* ── shared: unique scouting entries per greenhouse ── */
+function _buildGhEntryVisits(data) {
+	var visits = {};
+	(data.entries || []).forEach(function (e) {
+		var gh = (e.greenhouse || "Unknown").trim();
+		visits[gh] = (visits[gh] || 0) + 1;
+	});
+	return visits;
+}
+
+/* ── shared: zone coverage % with bed-count fallback ── */
+function _ghZonePct(gh, visits, zonesMap) {
+	var normalGh = (gh || "").trim();
+	var zones = zonesMap[normalGh] || zonesMap[gh] || 0;
+	var v = visits[normalGh] || visits[gh] || 0;
+	if (zones > 0) return Math.min(100, Math.round((v / zones) * 100));
+	/* fallback: fraction of year-total visits (relative activity) */
+	if (scoutingYearData) {
+		var yearVisits = _buildGhEntryVisits(scoutingYearData);
+		var yearTotal = yearVisits[normalGh] || yearVisits[gh] || 0;
+		if (yearTotal > 0) return Math.min(100, Math.round((v / yearTotal) * 100));
+	}
+	return 0;
+}
+
+/* ── Pest GH bar ── */
+function updatePestGhChart() {
+	var ctx = root_element.querySelector("#pest-gh-bar-chart");
+	if (!ctx) return;
+	if (pestGhChart) pestGhChart.destroy();
+
+	/* count observation records and unique entry visits per greenhouse */
+	var ghObs = {}, ghCnt = {};
+	Object.values(scoutingData.pests).forEach(function (p) {
+		p.counts.forEach(function (c) {
+			var gh = (c.greenhouse || "Unknown").trim();
+			ghObs[gh] = (ghObs[gh] || 0) + 1;
+			ghCnt[gh] = (ghCnt[gh] || 0) + (c.count || 1);
+		});
+	});
+	var ghVisits = _buildGhEntryVisits(scoutingData);
+	var labels = Object.keys(ghObs).sort(function (a, b) { return ghObs[b] - ghObs[a]; }).slice(0, 12);
+	var obsCounts = labels.map(function (g) { return ghObs[g]; });
+	var zonePct   = labels.map(function (g) { return _ghZonePct(g, ghVisits, zonesPerGreenhouse); });
+
+	pestGhChart = new Chart(ctx, {
+		type: "bar",
+		data: {
+			labels: labels,
+			datasets: [
+				{ label: "Observations", data: obsCounts, xAxisID: "x",
+				  backgroundColor: "rgba(239,68,68,0.7)", borderColor: "rgba(239,68,68,1)", borderWidth: 1 },
+				{ label: "Zone Coverage %", data: zonePct, xAxisID: "x2",
+				  backgroundColor: "rgba(59,130,246,0.35)", borderColor: "rgba(59,130,246,0.8)", borderWidth: 1 },
+			],
+		},
+		options: _ghBarDualOpts("Observations", "Zone Coverage %"),
+	});
+}
+
+/* ── Pest Bed bar ── */
+function updatePestBedChart() {
+	var ctx = root_element.querySelector("#pest-bed-bar-chart");
+	if (!ctx) return;
+	if (pestBedChart) pestBedChart.destroy();
+
+	var bedTotals = {};
+	Object.values(scoutingData.pests).forEach(function (p) {
+		p.counts.forEach(function (c) {
+			var key = (c.bed || "No bed") + " · " + (c.greenhouse || "");
+			bedTotals[key] = (bedTotals[key] || 0) + (c.count || 1);
+		});
+	});
+	var labels = Object.keys(bedTotals).sort(function (a, b) { return bedTotals[b] - bedTotals[a]; }).slice(0, 12);
+
+	pestBedChart = new Chart(ctx, {
+		type: "bar",
+		data: {
+			labels: labels,
+			datasets: [{ label: "Total Pest Count", data: labels.map(function (l) { return bedTotals[l]; }),
+			  backgroundColor: "rgba(239,68,68,0.7)", borderColor: "rgba(239,68,68,1)", borderWidth: 1 }],
+		},
+		options: _ghBarBaseOpts("Total Pest Count"),
+	});
+}
+
+/* ── Disease GH bar ── */
+function updateDiseaseGhChart() {
+	var ctx = root_element.querySelector("#disease-gh-bar-chart");
+	if (!ctx) return;
+	if (diseaseGhChart) diseaseGhChart.destroy();
+
+	var ghObs = {};
+	Object.values(scoutingData.diseases).forEach(function (d) {
+		d.counts.forEach(function (c) {
+			var gh = (c.greenhouse || "Unknown").trim();
+			ghObs[gh] = (ghObs[gh] || 0) + 1;
+		});
+	});
+	var ghVisits = _buildGhEntryVisits(scoutingData);
+	var labels = Object.keys(ghObs).sort(function (a, b) { return ghObs[b] - ghObs[a]; }).slice(0, 12);
+	var obsCounts = labels.map(function (g) { return ghObs[g]; });
+	var zonePct   = labels.map(function (g) { return _ghZonePct(g, ghVisits, zonesPerGreenhouse); });
+
+	diseaseGhChart = new Chart(ctx, {
+		type: "bar",
+		data: {
+			labels: labels,
+			datasets: [
+				{ label: "Incidents", data: obsCounts, xAxisID: "x",
+				  backgroundColor: "rgba(245,158,11,0.7)", borderColor: "rgba(245,158,11,1)", borderWidth: 1 },
+				{ label: "Zone Coverage %", data: zonePct, xAxisID: "x2",
+				  backgroundColor: "rgba(16,185,129,0.35)", borderColor: "rgba(16,185,129,0.8)", borderWidth: 1 },
+			],
+		},
+		options: _ghBarDualOpts("Incidents", "Zone Coverage %"),
+	});
+}
+
+/* ── Disease Bed bar ── */
+function updateDiseaseBedChart() {
+	var ctx = root_element.querySelector("#disease-bed-bar-chart");
+	if (!ctx) return;
+	if (diseaseBedChart) diseaseBedChart.destroy();
+
+	var bedTotals = {};
+	Object.values(scoutingData.diseases).forEach(function (d) {
+		d.counts.forEach(function (c) {
+			var key = (c.bed || "No bed") + " · " + (c.greenhouse || "");
+			bedTotals[key] = (bedTotals[key] || 0) + 1;
+		});
+	});
+	var labels = Object.keys(bedTotals).sort(function (a, b) { return bedTotals[b] - bedTotals[a]; }).slice(0, 12);
+
+	diseaseBedChart = new Chart(ctx, {
+		type: "bar",
+		data: {
+			labels: labels,
+			datasets: [{ label: "Disease Incidents", data: labels.map(function (l) { return bedTotals[l]; }),
+			  backgroundColor: "rgba(245,158,11,0.7)", borderColor: "rgba(245,158,11,1)", borderWidth: 1 }],
+		},
+		options: _ghBarBaseOpts("Disease Incidents"),
+	});
+}
+
+/* ── Trap GH bar: FCM vs General stacked ── */
+function updateTrapGhChart() {
+	var ctx = root_element.querySelector("#trap-gh-bar-chart");
+	if (!ctx) return;
+	if (trapGhChart) trapGhChart.destroy();
+
+	var fcmGh = {}, genGh = {};
+	Object.values(scoutingData.traps).forEach(function (t) {
+		var isFcm = getFocusKey ? !!getFocusKey(t.pest) : false;
+		t.counts.forEach(function (c) {
+			var gh = c.greenhouse || "Unknown";
+			if (isFcm) fcmGh[gh] = (fcmGh[gh] || 0) + (c.count || 0);
+			else        genGh[gh] = (genGh[gh] || 0) + (c.count || 0);
+		});
+	});
+	var allGh = Array.from(new Set(Object.keys(fcmGh).concat(Object.keys(genGh))));
+	allGh.sort(function (a, b) {
+		return ((fcmGh[b] || 0) + (genGh[b] || 0)) - ((fcmGh[a] || 0) + (genGh[a] || 0));
+	});
+	var labels = allGh.slice(0, 12);
+
+	trapGhChart = new Chart(ctx, {
+		type: "bar",
+		data: {
+			labels: labels,
+			datasets: [
+				{ label: "FCM / Focus Traps", data: labels.map(function (g) { return fcmGh[g] || 0; }),
+				  backgroundColor: "rgba(239,68,68,0.75)", borderColor: "rgba(239,68,68,1)", borderWidth: 1 },
+				{ label: "General Traps", data: labels.map(function (g) { return genGh[g] || 0; }),
+				  backgroundColor: "rgba(99,102,241,0.65)", borderColor: "rgba(99,102,241,1)", borderWidth: 1 },
+			],
+		},
+		options: _ghBarBaseOpts("Catch Count"),
+	});
+}
+
+/* ── Indoor vs Outdoor bar ── */
+function updateTrapIndoorOutdoorChart() {
+	var ctx = root_element.querySelector("#trap-indoor-outdoor-chart");
+	if (!ctx) return;
+	if (trapIndoorOutdoorChart) trapIndoorOutdoorChart.destroy();
+
+	var indoorGh = {}, outdoorGh = {};
+	Object.values(scoutingData.traps).forEach(function (t) {
+		t.counts.forEach(function (c) {
+			var gh  = c.greenhouse || "Unknown";
+			var loc = (c.location || "").toLowerCase();
+			var isOut = loc.includes("outdoor") || loc.includes("field") || loc.includes("outside");
+			if (isOut) outdoorGh[gh] = (outdoorGh[gh] || 0) + 1;
+			else       indoorGh[gh]  = (indoorGh[gh]  || 0) + 1;
+		});
+	});
+	var allGh = Array.from(new Set(Object.keys(indoorGh).concat(Object.keys(outdoorGh))));
+	allGh.sort(function (a, b) {
+		return ((indoorGh[b] || 0) + (outdoorGh[b] || 0)) - ((indoorGh[a] || 0) + (outdoorGh[a] || 0));
+	});
+	var labels = allGh.slice(0, 12);
+
+	trapIndoorOutdoorChart = new Chart(ctx, {
+		type: "bar",
+		data: {
+			labels: labels,
+			datasets: [
+				{ label: "Indoor", data: labels.map(function (g) { return indoorGh[g] || 0; }),
+				  backgroundColor: "rgba(16,185,129,0.7)", borderColor: "rgba(16,185,129,1)", borderWidth: 1 },
+				{ label: "Outdoor / Field", data: labels.map(function (g) { return outdoorGh[g] || 0; }),
+				  backgroundColor: "rgba(245,158,11,0.65)", borderColor: "rgba(245,158,11,1)", borderWidth: 1 },
+			],
+		},
+		options: _ghBarBaseOpts("Entries"),
+	});
+}
 
 /* ==========  FCM / FOCUS PESTS TAB  ========== */
 
@@ -2642,8 +2926,92 @@ function getFocusLabel(key) {
 	return f ? f.label : key;
 }
 
+/* colour palette for focus pests – stable colours per key */
+var FCM_MOTH_COLORS = {
+	fcm:              { border: "rgba(220,38,38,1)",   bg: "rgba(220,38,38,0.12)"  },
+	helicoverpa:      { border: "rgba(234,88,12,1)",   bg: "rgba(234,88,12,0.12)"  },
+	duponchella:      { border: "rgba(161,161,170,1)", bg: "rgba(161,161,170,0.12)" },
+	spodoptera:       { border: "rgba(99,102,241,1)",  bg: "rgba(99,102,241,0.12)" },
+	unidentified_moth:{ border: "rgba(20,184,166,1)",  bg: "rgba(20,184,166,0.12)" },
+};
+
+function updateFcmTrendChart() {
+	var ctx = root_element.querySelector("#fcm-moth-trend-chart");
+	if (!ctx || !scoutingData) return;
+	if (fcmMothTrendChart) fcmMothTrendChart.destroy();
+
+	var rangeInfo = getSelectedWeekRangeInfo();
+	if (!rangeInfo) return;
+	var axis = getDayRangeAxis(rangeInfo);
+	if (!axis) return;
+	var dayIndex = {};
+	axis.keys.forEach(function (k, i) { dayIndex[k] = i; });
+
+	/* build one accumulator per focus-pest key */
+	var totals = {};
+	FOCUS_PESTS.forEach(function (f) { totals[f.key] = new Array(axis.keys.length).fill(0); });
+
+	/* trap catches */
+	Object.values(scoutingData.traps || {}).forEach(function (t) {
+		var key = getFocusKey(t.pest || "");
+		if (!key) return;
+		(t.counts || []).forEach(function (c) {
+			var i = dayIndex[c.date];
+			if (i !== undefined) totals[key][i] += Number(c.count || 0);
+		});
+	});
+
+	/* pest scouting observations */
+	Object.keys(scoutingData.pests || {}).forEach(function (pn) {
+		var key = getFocusKey(pn);
+		if (!key) return;
+		(scoutingData.pests[pn].counts || []).forEach(function (c) {
+			var i = dayIndex[c.date];
+			if (i !== undefined) totals[key][i] += Number(c.count || 1);
+		});
+	});
+
+	var datasets = FOCUS_PESTS
+		.filter(function (f) { return totals[f.key].some(function (v) { return v > 0; }); })
+		.map(function (f) {
+			var col = FCM_MOTH_COLORS[f.key] || { border: "#94a3b8", bg: "rgba(148,163,184,0.12)" };
+			return {
+				label: f.label,
+				data: totals[f.key],
+				borderColor: col.border,
+				backgroundColor: col.bg,
+				borderWidth: 2,
+				fill: false,
+				tension: 0.35,
+				pointRadius: 0,
+				pointHoverRadius: 4,
+			};
+		});
+
+	fcmMothTrendChart = new Chart(ctx, {
+		type: "line",
+		data: { labels: axis.labels, datasets: datasets },
+		options: {
+			responsive: true, maintainAspectRatio: false,
+			plugins: {
+				legend: { display: true, position: "bottom", labels: { boxWidth: 10, boxHeight: 10, padding: 12, font: { size: 10 } } },
+				tooltip: {
+					mode: "index", intersect: false,
+					callbacks: { title: function (items) { var i = items?.[0]?.dataIndex; return i !== undefined ? axis.keys[i] : ""; } },
+				},
+			},
+			scales: {
+				x: { grid: { display: false }, ticks: { autoSkip: true, maxTicksLimit: 14, font: { size: 9 } } },
+				y: { beginAtZero: true, grid: { color: "rgba(0,0,0,.04)" }, ticks: { font: { size: 10 } } },
+			},
+		},
+	});
+}
+
 function updateFcmTab() {
 	if (!scoutingData) return;
+
+	updateFcmTrendChart();
 
 	var trapTotals = {}, pestTotals = {};
 	Object.values(scoutingData.traps || {}).forEach(function (t) {
@@ -3011,9 +3379,23 @@ function handlePdfExport(reportKey) {
 	if (!report) return;
 	notifyUser("Generating PDF — please wait…");
 	ensureJsPdf().then(function () {
-		try { report.fn(scoutingData, scoutingYearData); }
-		catch (err) { console.error("PDF error:", err); notifyUser("Failed: " + err.message); }
-	}).catch(function (err) { notifyUser("Could not load PDF library. Check connection."); });
+		/* Chart.js cannot render into display:none containers (0-px canvas).
+		   Temporarily force all tab panels visible so every canvas gets a real
+		   size, re-run all chart updates, then wait 3 rAF ticks for drawing to
+		   complete before capturing canvases. */
+		var tabs = root_element.querySelectorAll(".tab-content");
+		tabs.forEach(function (t) { t.style.setProperty("display", "block", "important"); });
+		updateAllTabs();
+		requestAnimationFrame(function () {
+			requestAnimationFrame(function () {
+				requestAnimationFrame(function () {
+					try { report.fn(scoutingData, scoutingYearData); }
+					catch (err) { console.error("PDF error:", err); notifyUser("Failed: " + err.message); }
+					finally { tabs.forEach(function (t) { t.style.removeProperty("display"); }); }
+				});
+			});
+		});
+	}).catch(function () { notifyUser("Could not load PDF library. Check connection."); });
 }
 
 /* ════════════════════════════════════════
@@ -3046,17 +3428,18 @@ function pdfSection(doc, y, text) {
 
 function pdfChart(doc, canvasId, y, maxH) {
 	var c = root_element.querySelector("#" + canvasId);
-	if (!c) return y;
+	if (!c || c.width <= 0 || c.height <= 0) return y;
 	try {
 		var img = c.toDataURL("image/png", 1.0);
 		var pw = doc.internal.pageSize.getWidth() - 28;
 		var r = c.height / c.width;
+		if (!isFinite(r) || r <= 0) return y;
 		var iw = pw, ih = iw * r;
 		if (maxH && ih > maxH) { ih = maxH; iw = ih / r; }
 		if (y + ih + 8 > doc.internal.pageSize.getHeight() - 10) { doc.addPage(); y = 14; }
 		doc.addImage(img, "PNG", 14, y, iw, ih);
 		return y + ih + 5;
-	} catch (e) { return y; }
+	} catch (e) { console.warn("pdfChart skipped:", canvasId, e.message); return y; }
 }
 
 function pdfTwoCharts(doc, y, id1, id2, maxH) {
@@ -3064,14 +3447,23 @@ function pdfTwoCharts(doc, y, id1, id2, maxH) {
 	var half = (pw - 6) / 2;
 	var mh = maxH || 58;
 	if (y + mh + 8 > doc.internal.pageSize.getHeight() - 10) { doc.addPage(); y = 14; }
+	/* Draw a light border for each fixed cell so the grid is visible even if
+	   a chart is empty */
 	[{ id: id1, x: 14 }, { id: id2, x: 14 + half + 6 }].forEach(function (o) {
+		doc.setDrawColor(228, 228, 231); doc.setLineWidth(0.2);
+		doc.rect(o.x, y, half, mh);
 		var c = root_element.querySelector("#" + o.id);
-		if (!c) return;
+		if (!c || c.width <= 0 || c.height <= 0) return;
 		try {
 			var img = c.toDataURL("image/png", 1.0);
 			var r = c.height / c.width;
-			var ih = Math.min(half * r, mh);
-			doc.addImage(img, "PNG", o.x, y, ih / r, ih);
+			if (!isFinite(r) || r <= 0) return;
+			/* Fit inside the fixed cell (half × mh), preserve aspect ratio, centre */
+			var iw = half, ih = half * r;
+			if (ih > mh) { ih = mh; iw = mh / r; }
+			var dx = o.x + (half - iw) / 2;
+			var dy = y  + (mh  - ih) / 2;
+			doc.addImage(img, "PNG", dx, dy, iw, ih);
 		} catch (e) { /* skip */ }
 	});
 	return y + mh + 5;
@@ -3213,84 +3605,499 @@ function _pdfRiskTable(doc, y, data, yearData) {
 }
 
 /* ════════════════════════════════════════
-   PDF REPORT GENERATORS
+   PDF REPORT GENERATORS  –  sectioned layout
    ════════════════════════════════════════ */
+
+/* ── shared PDF section divider with colored rule ── */
+function pdfSectionDiv(doc, y, text, color) {
+	var c = color || PDF_C.black;
+	doc.setFontSize(10); doc.setTextColor.apply(doc, c);
+	doc.setFont("helvetica", "bold");
+	doc.text(text.toUpperCase(), 14, y);
+	doc.setDrawColor.apply(doc, c);
+	doc.setLineWidth(0.5);
+	doc.line(14, y + 1.5, doc.internal.pageSize.getWidth() - 14, y + 1.5);
+	doc.setLineWidth(0.2);
+	doc.setFont("helvetica", "normal");
+	return y + 8;
+}
+
+/* ── small italic explanation / observation text ── */
+function pdfExplain(doc, y, lines) {
+	var pageW = doc.internal.pageSize.getWidth();
+	var maxW = pageW - 28;
+	doc.setFontSize(7.5);
+	doc.setFont("helvetica", "italic");
+	doc.setTextColor.apply(doc, PDF_C.mid);
+	lines.forEach(function (line) {
+		var parts = doc.splitTextToSize(line, maxW);
+		parts.forEach(function (l) { doc.text(l, 14, y); y += 4; });
+	});
+	doc.setFont("helvetica", "normal");
+	doc.setTextColor.apply(doc, PDF_C.black);
+	return y + 2;
+}
+
+/* ── dynamic observations for pest bed breakdown ── */
+function _pdfPestBedObs(topBeds, bedPestMap, bedTotals, pests) {
+	var lines = [];
+	if (!topBeds.length) return lines;
+
+	lines.push(
+		"HOW TO READ THIS TABLE: Each row is a bed/greenhouse ranked by total pest count. " +
+		"Columns show per-pest observation counts, so you can identify which pest is driving pressure " +
+		"on a specific bed. \u2013 marks zero detections. Highlighted totals indicate high-pressure beds."
+	);
+
+	/* obs 1 – top bed overall */
+	var top = topBeds[0];
+	lines.push("\u2022 Highest-pressure location: " + top + " with " + bedTotals[top] + " total pest observations.");
+
+	/* obs 2 – dominant pest on top bed */
+	var topBedPests = Object.keys(bedPestMap[top] || {})
+		.sort(function (a, b) { return (bedPestMap[top][b] || 0) - (bedPestMap[top][a] || 0); });
+	if (topBedPests.length) {
+		var dom = topBedPests[0];
+		var domCnt = bedPestMap[top][dom] || 0;
+		var domPct = bedTotals[top] > 0 ? Math.round((domCnt / bedTotals[top]) * 100) : 0;
+		lines.push("\u2022 On " + top + ", " + dom + " accounts for " + domCnt + " observation" + (domCnt !== 1 ? "s" : "") + " (" + domPct + "% of that bed\u2019s total).");
+	}
+
+	/* obs 3 – most widespread pest */
+	if (pests.length) {
+		var wide = pests[0];
+		var bedCnt = topBeds.filter(function (b) { return (bedPestMap[b][wide] || 0) > 0; }).length;
+		lines.push("\u2022 " + wide + " is the most recorded pest overall, detected on " + bedCnt + " of the top " + topBeds.length + " beds.");
+	}
+
+	/* obs 4 – beds where one pest dominates ≥80% */
+	topBeds.slice(1).forEach(function (bed) {
+		var bp = Object.keys(bedPestMap[bed] || {}).sort(function (a, b) { return (bedPestMap[bed][b] || 0) - (bedPestMap[bed][a] || 0); });
+		if (!bp.length) return;
+		var cnt = bedPestMap[bed][bp[0]] || 0;
+		var pct = bedTotals[bed] > 0 ? Math.round((cnt / bedTotals[bed]) * 100) : 0;
+		if (pct >= 80 && cnt >= 5) {
+			lines.push("\u2022 Single-pest concentration detected: " + bp[0] + " makes up " + pct + "% of all observations on " + bed + " — targeted intervention recommended.");
+		}
+	});
+
+	/* obs 5 – avg pressure and hot-spot count */
+	if (topBeds.length > 1) {
+		var avg = Math.round(topBeds.reduce(function (s, b) { return s + bedTotals[b]; }, 0) / topBeds.length);
+		var hotspots = topBeds.filter(function (b) { return bedTotals[b] > avg; }).length;
+		lines.push("\u2022 Average total pest count across the top " + topBeds.length + " beds is " + avg + ". " + hotspots + " bed" + (hotspots !== 1 ? "s are" : " is") + " above this average — prioritise scouting resources accordingly.");
+	}
+
+	return lines;
+}
+
+/* ── pest bed breakdown table (per-pest columns) ── */
+function _pdfPestBedBreakdownTable(doc, y, data) {
+	var bedPestMap = {}, bedTotals = {}, pestTotals = {};
+
+	Object.keys(data.pests).forEach(function (pestName) {
+		data.pests[pestName].counts.forEach(function (c) {
+			var key = (c.bed || "No bed") + " \u00b7 " + (c.greenhouse || "");
+			if (!bedPestMap[key]) bedPestMap[key] = {};
+			var n = c.count || 1;
+			bedPestMap[key][pestName] = (bedPestMap[key][pestName] || 0) + n;
+			bedTotals[key] = (bedTotals[key] || 0) + n;
+			pestTotals[pestName] = (pestTotals[pestName] || 0) + n;
+		});
+	});
+
+	var topBeds = Object.keys(bedTotals).sort(function (a, b) { return bedTotals[b] - bedTotals[a]; }).slice(0, 12);
+	if (!topBeds.length) return y;
+
+	/* top pests by total count, capped so table fits landscape A4 */
+	var topPests = Object.keys(pestTotals).sort(function (a, b) { return pestTotals[b] - pestTotals[a]; }).slice(0, 7);
+
+	/* write explanation + observations */
+	var obs = _pdfPestBedObs(topBeds, bedPestMap, bedTotals, topPests);
+	y = pdfExplain(doc, y, obs);
+	y = pdfPageCheck(doc, y, 35);
+
+	/* column widths */
+	var pageW = doc.internal.pageSize.getWidth();
+	var tableW = pageW - 28;
+	var bedColW = 50;
+	var totColW = 16;
+	var pestColW = Math.min(22, Math.floor((tableW - bedColW - totColW) / Math.max(topPests.length, 1)));
+	var colStyles = { 0: { cellWidth: bedColW, fontStyle: "bold" } };
+	topPests.forEach(function (_, i) { colStyles[i + 1] = { halign: "center", cellWidth: pestColW }; });
+	colStyles[topPests.length + 1] = { halign: "center", fontStyle: "bold", cellWidth: totColW };
+
+	var head = [["Bed \u00b7 Greenhouse"].concat(topPests).concat(["Total"])];
+	var rows = topBeds.map(function (bed) {
+		return [bed]
+			.concat(topPests.map(function (p) { return bedPestMap[bed][p] ? String(bedPestMap[bed][p]) : "\u2013"; }))
+			.concat([String(bedTotals[bed])]);
+	});
+
+	doc.autoTable(Object.assign({}, AT_BASE, {
+		startY: y,
+		head: head,
+		body: rows,
+		styles: { fontSize: 6.5, cellPadding: 1.8 },
+		headStyles: Object.assign({}, AT_BASE.headStyles, { fillColor: [185, 28, 28], fontSize: 6.5 }),
+		columnStyles: colStyles,
+		didParseCell: function (h) {
+			if (h.section !== "body") return;
+			var lastIdx = topPests.length + 1;
+			if (h.column.index === lastIdx) {
+				var v = Number(h.cell.raw) || 0;
+				if (v > 20) { h.cell.styles.fillColor = PDF_C.redBg; h.cell.styles.textColor = PDF_C.redTx; }
+				else if (v > 10) { h.cell.styles.fillColor = PDF_C.amberBg; h.cell.styles.textColor = PDF_C.amberTx; }
+				else { h.cell.styles.fillColor = PDF_C.greenBg; h.cell.styles.textColor = PDF_C.greenTx; }
+			} else if (h.row.index % 2 === 0) {
+				h.cell.styles.fillColor = PDF_C.bg;
+			}
+		},
+	}));
+	return doc.lastAutoTable.finalY + 4;
+}
+
+/* ── dynamic observations for disease stage breakdown ── */
+function _pdfDiseaseBedObs(topRows, stageMap, stageTotals, diseases) {
+	var lines = [];
+	if (!topRows.length) return lines;
+
+	lines.push(
+		"HOW TO READ THIS TABLE: Each row groups disease incidents by stage/severity and greenhouse. " +
+		"Columns show how many incidents of each disease were recorded at that stage in that location. " +
+		"Use this to distinguish active (Fresh) from chronic (Dry) infections across greenhouses. " +
+		"\u2013 marks zero detections. Highlighted totals indicate high-incidence combinations."
+	);
+
+	var top = topRows[0];
+	lines.push("\u2022 Highest-incidence combination: " + top + " with " + stageTotals[top] + " incident" + (stageTotals[top] !== 1 ? "s" : "") + " recorded.");
+
+	var topRowDiseases = Object.keys(stageMap[top] || {})
+		.sort(function (a, b) { return (stageMap[top][b] || 0) - (stageMap[top][a] || 0); });
+	if (topRowDiseases.length) {
+		var dom = topRowDiseases[0];
+		var domCnt = stageMap[top][dom] || 0;
+		var domPct = stageTotals[top] > 0 ? Math.round((domCnt / stageTotals[top]) * 100) : 0;
+		lines.push("\u2022 " + dom + " is the leading disease in " + top + " with " + domCnt + " incident" + (domCnt !== 1 ? "s" : "") + " (" + domPct + "% of that row\u2019s total).");
+	}
+
+	if (diseases.length) {
+		var wide = diseases[0];
+		var rowCnt = topRows.filter(function (r) { return (stageMap[r][wide] || 0) > 0; }).length;
+		lines.push("\u2022 " + wide + " is the most reported disease overall, appearing in " + rowCnt + " of the top " + topRows.length + " stage/greenhouse combinations.");
+	}
+
+	/* flag any row where one disease ≥80% */
+	topRows.slice(1).forEach(function (row) {
+		var rd = Object.keys(stageMap[row] || {}).sort(function (a, b) { return (stageMap[row][b] || 0) - (stageMap[row][a] || 0); });
+		if (!rd.length) return;
+		var cnt = stageMap[row][rd[0]] || 0;
+		var pct = stageTotals[row] > 0 ? Math.round((cnt / stageTotals[row]) * 100) : 0;
+		if (pct >= 80 && cnt >= 3) {
+			lines.push("\u2022 " + row + " shows a single-disease pattern: " + rd[0] + " accounts for " + pct + "% — review crop hygiene and spray programme for this pathogen.");
+		}
+	});
+
+	if (topRows.length > 1) {
+		var avg = Math.round(topRows.reduce(function (s, r) { return s + stageTotals[r]; }, 0) / topRows.length);
+		var critical = topRows.filter(function (r) { return stageTotals[r] > avg; }).length;
+		lines.push("\u2022 Average incident count across the top " + topRows.length + " rows is " + avg + ". " + critical + " row" + (critical !== 1 ? "s exceed" : " exceeds") + " this average — ensure corrective measures are in place.");
+	}
+
+	return lines;
+}
+
+/* ── disease stage breakdown table (stage · greenhouse rows, per-disease columns) ── */
+function _pdfDiseaseBedBreakdownTable(doc, y, data) {
+	var stageMap = {}, stageTotals = {}, diseaseTotals = {};
+
+	Object.keys(data.diseases).forEach(function (diseaseName) {
+		data.diseases[diseaseName].counts.forEach(function (c) {
+			var key = (c.stage || "N/A") + " \u00b7 " + (c.greenhouse || "");
+			if (!stageMap[key]) stageMap[key] = {};
+			stageMap[key][diseaseName] = (stageMap[key][diseaseName] || 0) + 1;
+			stageTotals[key] = (stageTotals[key] || 0) + 1;
+			diseaseTotals[diseaseName] = (diseaseTotals[diseaseName] || 0) + 1;
+		});
+	});
+
+	var topRows = Object.keys(stageTotals).sort(function (a, b) { return stageTotals[b] - stageTotals[a]; }).slice(0, 15);
+	if (!topRows.length) return y;
+
+	var topDiseases = Object.keys(diseaseTotals).sort(function (a, b) { return diseaseTotals[b] - diseaseTotals[a]; }).slice(0, 7);
+
+	var obs = _pdfDiseaseBedObs(topRows, stageMap, stageTotals, topDiseases);
+	y = pdfExplain(doc, y, obs);
+	y = pdfPageCheck(doc, y, 35);
+
+	var pageW = doc.internal.pageSize.getWidth();
+	var tableW = pageW - 28;
+	var stageColW = 55;
+	var totColW = 16;
+	var disColW = Math.min(24, Math.floor((tableW - stageColW - totColW) / Math.max(topDiseases.length, 1)));
+	var colStyles = { 0: { cellWidth: stageColW, fontStyle: "bold" } };
+	topDiseases.forEach(function (_, i) { colStyles[i + 1] = { halign: "center", cellWidth: disColW }; });
+	colStyles[topDiseases.length + 1] = { halign: "center", fontStyle: "bold", cellWidth: totColW };
+
+	var head = [["Stage \u00b7 Greenhouse"].concat(topDiseases).concat(["Total"])];
+	var rows = topRows.map(function (row) {
+		return [row]
+			.concat(topDiseases.map(function (d) { return stageMap[row][d] ? String(stageMap[row][d]) : "\u2013"; }))
+			.concat([String(stageTotals[row])]);
+	});
+
+	doc.autoTable(Object.assign({}, AT_BASE, {
+		startY: y,
+		head: head,
+		body: rows,
+		styles: { fontSize: 6.5, cellPadding: 1.8 },
+		headStyles: Object.assign({}, AT_BASE.headStyles, { fillColor: [146, 64, 14], fontSize: 6.5 }),
+		columnStyles: colStyles,
+		didParseCell: function (h) {
+			if (h.section !== "body") return;
+			var lastIdx = topDiseases.length + 1;
+			if (h.column.index === lastIdx) {
+				var v = Number(h.cell.raw) || 0;
+				if (v > 10) { h.cell.styles.fillColor = PDF_C.redBg; h.cell.styles.textColor = PDF_C.redTx; }
+				else if (v > 5) { h.cell.styles.fillColor = PDF_C.amberBg; h.cell.styles.textColor = PDF_C.amberTx; }
+				else { h.cell.styles.fillColor = PDF_C.greenBg; h.cell.styles.textColor = PDF_C.greenTx; }
+			} else if (h.row.index % 2 === 0) {
+				h.cell.styles.fillColor = PDF_C.bg;
+			}
+		},
+	}));
+	return doc.lastAutoTable.finalY + 4;
+}
+
+/* ── PDF disease table (now includes bed) ── */
+function _pdfDiseaseTableExt(doc, y, data) {
+	var rows = [];
+	Object.keys(data.diseases).forEach(function (d) {
+		data.diseases[d].counts.slice(0, 30).forEach(function (c) {
+			rows.push([d, c.stage || "N/A", c.section || "N/A", c.date || "", c.greenhouse || "", c.bed || "-"]);
+		});
+	});
+	rows.sort(function (a, b) { return (b[3] || "").localeCompare(a[3] || ""); });
+	rows = rows.slice(0, 60);
+	doc.autoTable(Object.assign({}, AT_BASE, {
+		startY: y,
+		head: [["Disease", "Stage/Severity", "Section", "Date", "Greenhouse", "Bed"]],
+		body: rows,
+		columnStyles: { 1: { halign: "center", fontStyle: "bold" } },
+		didParseCell: function (h) {
+			if (h.section !== "body") return;
+			if (h.column.index === 1) {
+				var v = (h.cell.raw || "").toLowerCase();
+				if (v.includes("active") || v.includes("high") || v.includes("severe"))
+					{ h.cell.styles.fillColor = PDF_C.redBg; h.cell.styles.textColor = PDF_C.redTx; }
+				else if (v.includes("moderate"))
+					{ h.cell.styles.fillColor = PDF_C.amberBg; h.cell.styles.textColor = PDF_C.amberTx; }
+			}
+			if (h.column.index !== 1 && h.row.index % 2 === 0) h.cell.styles.fillColor = PDF_C.bg;
+		},
+	}));
+	return doc.lastAutoTable.finalY + 4;
+}
+
+/* ── PDF trap table — aggregated by greenhouse (no bed column) ── */
+function _pdfTrapTableExt(doc, y, data) {
+	/* aggregate: greenhouse + pest + type → summed count, latest date */
+	var agg = {};
+	Object.keys(data.traps).forEach(function (k) {
+		var t = data.traps[k];
+		var isFcm = getFocusKey ? !!getFocusKey(t.pest) : false;
+		var type = isFcm ? "Focus" : "General";
+		t.counts.forEach(function (c) {
+			var gh = c.greenhouse || "Unknown";
+			var key = gh + "\u0000" + t.pest + "\u0000" + type;
+			if (!agg[key]) agg[key] = { greenhouse: gh, pest: t.pest, type: type, count: 0, date: "" };
+			agg[key].count += (c.count || 0);
+			if (!agg[key].date || (c.date || "") > agg[key].date) agg[key].date = c.date || "";
+		});
+	});
+
+	var rows = Object.values(agg)
+		.sort(function (a, b) { return b.count - a.count; })
+		.slice(0, 60)
+		.map(function (r) { return [r.greenhouse, r.pest, String(r.count), r.date, r.type]; });
+
+	doc.autoTable(Object.assign({}, AT_BASE, {
+		startY: y,
+		head: [["Greenhouse", "Pest", "Total Count", "Latest Date", "Type"]],
+		body: rows,
+		columnStyles: {
+			2: { halign: "center", fontStyle: "bold" },
+			4: { halign: "center", fontStyle: "bold" },
+		},
+		didParseCell: function (h) {
+			if (h.section !== "body") return;
+			if (h.column.index === 4) {
+				if ((h.cell.raw || "") === "Focus") { h.cell.styles.fillColor = PDF_C.redBg; h.cell.styles.textColor = PDF_C.redTx; }
+			}
+			if (h.column.index !== 4 && h.row.index % 2 === 0) h.cell.styles.fillColor = PDF_C.bg;
+		},
+	}));
+	return doc.lastAutoTable.finalY + 4;
+}
+
+/* ── FULL REPORT: Overview → Pests → Diseases → Traps → Scouts ── */
 function pdfFullReport(data, yearData) {
 	var doc = pdfNew();
-	var y = pdfHeader(doc, "Scouting Report — Full Overview", "All categories");
-	y = pdfSection(doc, y, "Activity Timeline");
-	y = pdfChart(doc, "overview-timeline-chart", y, 55);
-	y = pdfPageCheck(doc, y, 70);
-	y = pdfSection(doc, y, "Pest Trends (Weekly)");
-	y = pdfChart(doc, "pest-weekly-trend-chart", y, 55);
-	y = pdfPageCheck(doc, y, 70);
-	y = pdfSection(doc, y, "Disease Trends (Weekly)");
-	y = pdfChart(doc, "disease-weekly-trend-chart", y, 55);
-	y = pdfPageCheck(doc, y, 70);
-	y = pdfSection(doc, y, "Trap Trends (Weekly)");
-	y = pdfChart(doc, "trap-weekly-trend-chart", y, 55);
+	var W = doc.internal.pageSize.getWidth();
+	var y;
+
+	/* ── PAGE 1: Overview ── */
+	y = pdfHeader(doc, "Scouting Report — Full Overview", "All categories · " + (farmFilter || "All Farms"));
+	y = pdfSectionDiv(doc, y, "Overall Activity", PDF_C.black);
+	y = pdfChart(doc, "overview-timeline-chart", y, 52);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfTwoCharts(doc, y, "overview-donut-chart", "overview-pest-radar-chart", 52);
+
+	/* ── PAGE 2: Pests ── */
 	doc.addPage(); y = 14;
-	y = pdfSection(doc, y, "Pest Summary"); y = _pdfPestTable(doc, y, data);
-	y = pdfPageCheck(doc, y + 6, 40);
-	y = pdfSection(doc, y, "Disease Incidents"); y = _pdfDiseaseTable(doc, y, data);
-	y = pdfPageCheck(doc, y + 6, 40);
-	y = pdfSection(doc, y, "Trap Details"); y = _pdfTrapTable(doc, y, data);
+	y = pdfHeader(doc, "Pest Scouting Report", "Period detail");
+	y = pdfSectionDiv(doc, y, "Pest Trends", [220,38,38]);
+	y = pdfChart(doc, "pest-weekly-trend-chart", y, 52);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfSectionDiv(doc, y, "Greenhouse Pressure & Zone Coverage", [220,38,38]);
+	y = pdfChart(doc, "pest-gh-bar-chart", y, 58);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfSectionDiv(doc, y, "Top Beds by Pest Count", [220,38,38]);
+	y = pdfChart(doc, "pest-bed-bar-chart", y, 55);
+	y = pdfPageCheck(doc, y, 60);
+	y = _pdfPestBedBreakdownTable(doc, y, data);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfTwoCharts(doc, y, "pest-trend-chart", "pest-distribution-chart", 50);
+	y = pdfPageCheck(doc, y, 45);
+	y = pdfSectionDiv(doc, y, "Pest Stage Breakdown (top 60 observations)", [220,38,38]);
+	y = _pdfPestTable(doc, y, data);
+
+	/* ── PAGE 3: Diseases ── */
 	doc.addPage(); y = 14;
-	y = pdfSection(doc, y, "FCM Risk Profiling"); y = _pdfRiskTable(doc, y, data, yearData);
+	y = pdfHeader(doc, "Disease Scouting Report", "Period detail");
+	y = pdfSectionDiv(doc, y, "Disease Trends", [180,83,9]);
+	y = pdfChart(doc, "disease-weekly-trend-chart", y, 52);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfSectionDiv(doc, y, "Greenhouse Pressure & Zone Coverage", [180,83,9]);
+	y = pdfChart(doc, "disease-gh-bar-chart", y, 58);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfSectionDiv(doc, y, "Top Beds by Disease Incidence", [180,83,9]);
+	y = pdfChart(doc, "disease-bed-bar-chart", y, 55);
+	y = pdfPageCheck(doc, y, 60);
+	y = _pdfDiseaseBedBreakdownTable(doc, y, data);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfTwoCharts(doc, y, "disease-trend-chart", "disease-stage-chart", 50);
+	y = pdfPageCheck(doc, y, 45);
+	y = pdfSectionDiv(doc, y, "Disease Incidents (top 60)", [180,83,9]);
+	y = _pdfDiseaseTableExt(doc, y, data);
+
+	/* ── PAGE 4: Traps ── */
+	doc.addPage(); y = 14;
+	y = pdfHeader(doc, "Trap & FCM Report", "Period detail");
+	y = pdfSectionDiv(doc, y, "Trap Trends (Weekly)", [99,102,241]);
+	y = pdfChart(doc, "trap-weekly-trend-chart", y, 52);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfSectionDiv(doc, y, "FCM vs General Traps by Greenhouse", [99,102,241]);
+	y = pdfChart(doc, "trap-gh-bar-chart", y, 58);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfSectionDiv(doc, y, "Indoor vs Outdoor Scouting", [99,102,241]);
+	y = pdfChart(doc, "trap-indoor-outdoor-chart", y, 55);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfTwoCharts(doc, y, "trap-performance-chart", "trap-pest-breakdown", 50);
+	y = pdfPageCheck(doc, y, 45);
+	y = pdfSectionDiv(doc, y, "Trap Details (top 60)", [99,102,241]);
+	y = _pdfTrapTableExt(doc, y, data);
+
+	/* ── PAGE 5: FCM Risk + Scouts ── */
+	doc.addPage(); y = 14;
+	y = pdfHeader(doc, "FCM Risk & Scout Performance", null);
+	y = pdfSectionDiv(doc, y, "FCM Risk Profiling (year-to-date)", [220,38,38]);
+	y = _pdfRiskTable(doc, y, data, yearData);
+	y = pdfPageCheck(doc, y + 8, 55);
+	y = pdfSectionDiv(doc, y, "Scout Activity", PDF_C.black);
+	y = pdfChart(doc, "scout-perf-trend-chart", y, 52);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfTwoCharts(doc, y, "scout-perf-bar-chart", "scout-perf-radar-chart", 52);
+
 	doc.save(pdfFilename("full_report"));
 	notifyUser("PDF Full Report downloaded.");
 }
 
-function pdfPestReport(data, yearData) {
+/* ── PEST REPORT ── */
+function pdfPestReport(data) {
 	var doc = pdfNew();
-	var y = pdfHeader(doc, "Pest Scouting Report", null);
-	y = pdfSection(doc, y, "Weekly Pest Trends");
+	var y;
+	y = pdfHeader(doc, "Pest Scouting Report", farmFilter || "All Farms");
+	y = pdfSectionDiv(doc, y, "Weekly Pest Trends", [220,38,38]);
 	y = pdfChart(doc, "pest-weekly-trend-chart", y, 60);
-	y = pdfPageCheck(doc, y, 70);
-	y = pdfSection(doc, y, "Incidence & Distribution");
-	y = pdfTwoCharts(doc, y, "pest-trend-chart", "pest-distribution-chart", 55);
-	y = pdfPageCheck(doc, y, 65);
-	y = pdfSection(doc, y, "Plant Section Split");
-	y = pdfChart(doc, "pest-section-chart", y, 55);
+	y = pdfPageCheck(doc, y, 60);
+	y = pdfSectionDiv(doc, y, "Greenhouse Pressure · Observations & Zone Coverage %", [220,38,38]);
+	y = pdfChart(doc, "pest-gh-bar-chart", y, 62);
+	y = pdfPageCheck(doc, y, 60);
+	y = pdfSectionDiv(doc, y, "Top Beds by Pest Count", [220,38,38]);
+	y = pdfChart(doc, "pest-bed-bar-chart", y, 58);
+	y = pdfPageCheck(doc, y, 60);
+	y = _pdfPestBedBreakdownTable(doc, y, data);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfTwoCharts(doc, y, "pest-trend-chart", "pest-distribution-chart", 52);
+	y = pdfPageCheck(doc, y, 52);
+	y = pdfSectionDiv(doc, y, "Plant Section & Stage Breakdown", [220,38,38]);
+	y = pdfTwoCharts(doc, y, "pest-section-chart", "pest-stage-radial-chart", 52);
 	doc.addPage(); y = 14;
-	y = pdfSection(doc, y, "Pest Stage Breakdown");
+	y = pdfSectionDiv(doc, y, "Pest Observations (top 60 · sorted by count)", [220,38,38]);
 	y = _pdfPestTable(doc, y, data);
 	doc.save(pdfFilename("pest_report"));
 	notifyUser("PDF Pest Report downloaded.");
 }
 
-function pdfDiseaseReport(data, yearData) {
+/* ── DISEASE REPORT ── */
+function pdfDiseaseReport(data) {
 	var doc = pdfNew();
-	var y = pdfHeader(doc, "Disease Scouting Report", null);
-	y = pdfSection(doc, y, "Weekly Disease Trends");
+	var y;
+	y = pdfHeader(doc, "Disease Scouting Report", farmFilter || "All Farms");
+	y = pdfSectionDiv(doc, y, "Weekly Disease Trends", [180,83,9]);
 	y = pdfChart(doc, "disease-weekly-trend-chart", y, 60);
-	y = pdfPageCheck(doc, y, 70);
-	y = pdfSection(doc, y, "Incidence & Distribution");
-	y = pdfTwoCharts(doc, y, "disease-trend-chart", "disease-distribution-chart", 55);
-	y = pdfPageCheck(doc, y, 65);
-	y = pdfSection(doc, y, "Stage Distribution");
-	y = pdfChart(doc, "disease-stage-chart", y, 55);
+	y = pdfPageCheck(doc, y, 60);
+	y = pdfSectionDiv(doc, y, "Greenhouse Pressure · Incidents & Zone Coverage %", [180,83,9]);
+	y = pdfChart(doc, "disease-gh-bar-chart", y, 62);
+	y = pdfPageCheck(doc, y, 60);
+	y = pdfSectionDiv(doc, y, "Top Beds by Disease Incidence", [180,83,9]);
+	y = pdfChart(doc, "disease-bed-bar-chart", y, 58);
+	y = pdfPageCheck(doc, y, 60);
+	y = _pdfDiseaseBedBreakdownTable(doc, y, data);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfTwoCharts(doc, y, "disease-trend-chart", "disease-distribution-chart", 52);
+	y = pdfPageCheck(doc, y, 52);
+	y = pdfSectionDiv(doc, y, "Stage & Distribution", [180,83,9]);
+	y = pdfTwoCharts(doc, y, "disease-stage-chart", "disease-stage-radial-chart", 52);
 	doc.addPage(); y = 14;
-	y = pdfSection(doc, y, "Disease Incidents");
-	y = _pdfDiseaseTable(doc, y, data);
+	y = pdfSectionDiv(doc, y, "Disease Incidents (top 60 · sorted by date)", [180,83,9]);
+	y = _pdfDiseaseTableExt(doc, y, data);
 	doc.save(pdfFilename("disease_report"));
 	notifyUser("PDF Disease Report downloaded.");
 }
 
+/* ── TRAP / FCM REPORT ── */
 function pdfTrapReport(data, yearData) {
 	var doc = pdfNew();
-	var y = pdfHeader(doc, "Trap & FCM Report", null);
-	y = pdfSection(doc, y, "Weekly Trap Trends");
+	var y;
+	y = pdfHeader(doc, "Trap & FCM Report", farmFilter || "All Farms");
+	y = pdfSectionDiv(doc, y, "Weekly Trap Trends", [99,102,241]);
 	y = pdfChart(doc, "trap-weekly-trend-chart", y, 60);
-	y = pdfPageCheck(doc, y, 70);
-	y = pdfSection(doc, y, "Performance & Pest Breakdown");
-	y = pdfTwoCharts(doc, y, "trap-performance-chart", "trap-pest-breakdown", 55);
-	doc.addPage(); y = 14;
-	y = pdfSection(doc, y, "Trap Details");
-	y = _pdfTrapTable(doc, y, data);
-	y = pdfPageCheck(doc, y + 8, 40);
-	y = pdfSection(doc, y, "FCM Risk Profiling");
+	y = pdfPageCheck(doc, y, 60);
+	y = pdfSectionDiv(doc, y, "FCM vs General Traps by Greenhouse", [99,102,241]);
+	y = pdfChart(doc, "trap-gh-bar-chart", y, 62);
+	y = pdfPageCheck(doc, y, 60);
+	y = pdfSectionDiv(doc, y, "Indoor vs Outdoor Scouting per Greenhouse", [99,102,241]);
+	y = pdfChart(doc, "trap-indoor-outdoor-chart", y, 58);
+	y = pdfPageCheck(doc, y, 55);
+	y = pdfTwoCharts(doc, y, "trap-performance-chart", "trap-pest-breakdown", 52);
+	y = pdfPageCheck(doc, y, 45);
+	y = pdfSectionDiv(doc, y, "FCM Risk Profiling (year-to-date)", [220,38,38]);
 	y = _pdfRiskTable(doc, y, data, yearData);
+	doc.addPage(); y = 14;
+	y = pdfSectionDiv(doc, y, "Trap Details (top 60 · sorted by count)", [99,102,241]);
+	y = _pdfTrapTableExt(doc, y, data);
 	doc.save(pdfFilename("trap_fcm_report"));
 	notifyUser("PDF Trap & FCM Report downloaded.");
 }

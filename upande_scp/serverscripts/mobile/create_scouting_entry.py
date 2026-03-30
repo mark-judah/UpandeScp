@@ -443,9 +443,6 @@ def createScoutingEntry():
                 scout_metadata_doc.scouting_entry = scout_doc.name
                 scout_metadata_doc.insert()
 
-                # Commit both documents
-                frappe.db.commit()
-
                 # Build success response with detailed info
                 result = {
                     "status": "success",
@@ -468,12 +465,17 @@ def createScoutingEntry():
 
             except Exception as e:
                 has_errors = True
-                frappe.db.rollback()
                 frappe.log_error("Error creating scouting entry", str(e))
                 results.append({
                     "status": "error",
                     "message": str(e)
                 })
+
+        # Commit once for the entire batch (or rollback if all failed)
+        if any(r.get("status") == "success" for r in results):
+            frappe.db.commit()
+        else:
+            frappe.db.rollback()
 
         # Set appropriate HTTP status code based on results
         if has_errors:

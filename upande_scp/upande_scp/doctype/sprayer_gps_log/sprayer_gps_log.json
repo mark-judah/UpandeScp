@@ -2,8 +2,9 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "naming_series:",
- "creation": "2026-03-31 00:00:00.000000",
+ "creation": "2026-04-01 09:26:46.547273",
  "doctype": "DocType",
+ "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
@@ -33,9 +34,7 @@
    "fieldtype": "Select",
    "hidden": 1,
    "label": "Series",
-   "no_copy": 1,
    "options": "SGL-.YYYY.-",
-   "print_hide": 1,
    "read_only": 1,
    "reqd": 1
   },
@@ -45,16 +44,14 @@
    "in_list_view": 1,
    "label": "Session",
    "options": "Sprayer Movement Session",
-   "reqd": 1,
-   "search_index": 1
+   "reqd": 1
   },
   {
    "fieldname": "work_order",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Work Order",
-   "options": "Work Order",
-   "search_index": 1
+   "options": "Work Order"
   },
   {
    "fieldname": "employee",
@@ -71,14 +68,14 @@
   },
   {
    "fieldname": "column_break_sgl1",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "label": "Time & Location"
   },
   {
    "fieldname": "captured_at",
    "fieldtype": "Datetime",
    "label": "Captured At",
-   "reqd": 1,
-   "search_index": 1
+   "reqd": 1
   },
   {
    "fieldname": "latitude",
@@ -93,7 +90,6 @@
    "reqd": 1
   },
   {
-   "description": "Auto-determined zone from GPS coordinates",
    "fieldname": "zone",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -106,48 +102,42 @@
    "label": "GPS Metadata"
   },
   {
-   "description": "GPS accuracy radius in metres reported by the mobile device",
    "fieldname": "gps_accuracy",
    "fieldtype": "Data",
    "label": "GPS Accuracy"
   },
   {
-   "description": "GPS signal quality assessment from the mobile app",
    "fieldname": "gps_quality",
    "fieldtype": "Data",
    "label": "GPS Quality"
   },
   {
-   "description": "1.0: Excellent - On zone line\n0.9: Very Good - High precision\n0.8: Good - Within accuracy range\n0.7: Acceptable - Within buffer\n0.5: Fair - Near buffer edge\n0.3: Poor - May need verification\n0.1: Very Poor - Manual review required",
    "fieldname": "gps_confidence",
    "fieldtype": "Float",
    "label": "GPS Confidence"
   },
   {
-   "description": "Number of GPS samples averaged for this reading",
    "fieldname": "gps_samples_used",
    "fieldtype": "Int",
    "label": "GPS Samples Used"
   },
   {
    "default": "0",
-   "description": "Whether the device was stationary at capture time (should be 0 for movement logs)",
    "fieldname": "stationary",
    "fieldtype": "Check",
    "label": "Stationary"
   },
   {
    "fieldname": "column_break_sgl3",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "label": "Zone Analysis"
   },
   {
-   "description": "Adaptive buffer radius (m) created around the zone based on GPS accuracy",
    "fieldname": "zone_buffer",
    "fieldtype": "Float",
    "label": "Zone Buffer (m)"
   },
   {
-   "description": "Distance from sprayer position to nearest zone boundary (metres)",
    "fieldname": "zone_distance",
    "fieldtype": "Float",
    "label": "Zone Distance (m)"
@@ -156,12 +146,12 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-31 00:00:00.000000",
+ "modified": "2026-04-01 09:31:23.526535",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Sprayer GPS Log",
  "naming_rule": "By \"Naming Series\" field",
- "owner": "Administrator",
+ "owner": "stephene@upande.com",
  "permissions": [
   {
    "create": 1,
@@ -177,7 +167,9 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "captured_at",
  "sort_order": "ASC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

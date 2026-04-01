@@ -83,21 +83,58 @@ def startSprayerSession():
 
         work_order_name = data.get("work_order")
         user_id         = data.get("user_id")
+        bypass          = bool(data.get("bypass", False))
+        greenhouse_hint = str(data.get("greenhouse") or "")
 
-        if not work_order_name or not user_id:
+        if not user_id:
             frappe.response.http_status_code = 400
             frappe.response["data"] = {
                 "status": "error",
-                "message": "work_order and user_id are required.",
+                "message": "user_id is required.",
+            }
+            return
+
+        if not bypass and not work_order_name:
+            frappe.response.http_status_code = 400
+            frappe.response["data"] = {
+                "status": "error",
+                "message": "work_order is required for non-bypass sessions.",
             }
             return
 
         employee = _resolve_employee(user_id)
-        if not employee:
+        if not employee and not bypass:
             frappe.response.http_status_code = 404
             frappe.response["data"] = {
                 "status": "error",
                 "message": f"No Employee record found for user: {user_id}",
+            }
+            return
+
+        # ------------------------------------------------------------------
+        # Bypass path — no Work Order required, session created directly
+        # ------------------------------------------------------------------
+        if bypass:
+            now = frappe.utils.now_datetime()
+            session_doc              = frappe.new_doc("Sprayer Movement Session")
+            session_doc.work_order   = None
+            session_doc.employee     = employee or ""
+            session_doc.greenhouse   = greenhouse_hint
+            session_doc.status       = "Active"
+            session_doc.is_bypass    = 1
+            session_doc.started_at   = now
+            session_doc.insert(ignore_permissions=True)
+            frappe.db.commit()
+
+            frappe.response.http_status_code = 201
+            frappe.response["data"] = {
+                "status":            "started",
+                "message":           "Bypass Sprayer Movement Session created.",
+                "session":           session_doc.name,
+                "started_at":        str(now),
+                "actual_start_date": str(now),
+                "work_order":        None,
+                "employee":          employee or "",
             }
             return
 

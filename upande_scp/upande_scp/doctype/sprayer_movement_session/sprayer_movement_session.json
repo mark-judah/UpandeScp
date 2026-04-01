@@ -11,6 +11,7 @@
   "employee",
   "greenhouse",
   "status",
+  "is_bypass",
   "column_break_sms1",
   "started_at",
   "ended_at",
@@ -37,7 +38,6 @@
    "in_list_view": 1,
    "label": "Work Order",
    "options": "Work Order",
-   "reqd": 1,
    "search_index": 1
   },
   {
@@ -45,8 +45,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Sprayer (Employee)",
-   "options": "Employee",
-   "reqd": 1
+   "options": "Employee"
   },
   {
    "fieldname": "greenhouse",
@@ -63,6 +62,14 @@
    "label": "Status",
    "options": "Active\nCompleted\nAborted",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Session was started without a Work Order (greenhouse bypass mode)",
+   "fieldname": "is_bypass",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Bypass Session"
   },
   {
    "fieldname": "column_break_sms1",
@@ -123,6 +130,7 @@
    "write": 1
   }
  ],
+ "document_type": "Document",
  "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",

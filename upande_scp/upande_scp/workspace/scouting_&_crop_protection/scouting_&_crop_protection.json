@@ -310,6 +310,22 @@
    "link_to": "Employee",
    "stats_filter": "[[\"Employee\",\"designation\",\"=\",\"Sprayer\",false]]",
    "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Sprayer Movement Sessions",
+   "link_to": "Sprayer Movement Session",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Sprayer GPS Logs",
+   "link_to": "Sprayer GPS Log",
+   "stats_filter": "[]",
+   "type": "DocType"
   }
  ],
  "title": "Scouting & Crop Protection",

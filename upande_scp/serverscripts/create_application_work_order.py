@@ -29,6 +29,19 @@ def createApplicationWorkOrder():
         water_volume_l = float(raw_data.get("custom_water_volume") or 0)
         chemicals = raw_data.get("chemicals", [])
         kit_warehouse = raw_data.get("custom_kit_warehouse", "").strip()
+
+        # Log warehouse values for traceability
+        frappe.log_error(
+            title="Work Order Warehouse Debug",
+            message=frappe.as_json({
+                "greenhouse": raw_data.get("custom_greenhouse"),
+                "kit_warehouse": kit_warehouse,
+                "chemical_warehouses": [
+                    {"chemical": c.get("chemical"), "source_warehouse": c.get("source_warehouse")}
+                    for c in raw_data.get("chemicals", [])
+                ]
+            })
+        )
         wip_warehouse = kit_warehouse if kit_warehouse else "Work In Progress - KR"
         scheduled_application_time = raw_data.get("custom_scheduled_application_time") or None
 
@@ -92,7 +105,12 @@ def createApplicationWorkOrder():
         for chem in chemicals:
             name = chem["chemical"]
             application_rate = float(chem.get("application_rate") or 0)
-            source_wh = chem.get("source_warehouse")
+            source_wh = (chem.get("source_warehouse") or "").strip()
+            if not source_wh:
+                frappe.throw(_(
+                    "Source warehouse not selected for chemical <b>{0}</b>. "
+                    "Please select a source warehouse in the floor plan before submitting."
+                ).format(name))
 
             # Get item details
             item = frappe.db.get_value(

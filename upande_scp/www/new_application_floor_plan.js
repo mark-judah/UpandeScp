@@ -62,9 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
         varietySelectionContainer: document.getElementById("variety-selection-container"),
         bomDetailsContainer: document.getElementById("bom-details-container"),
         stockBalancesContainer: document.getElementById("stock-balances-container"),
-        stockBalanceTableBody: document.getElementById("stock-balance-table-body"),
-        warehouseGroupHeader: document.getElementById("warehouse-group-header"),
-        warehouseHeadersRow: document.getElementById("warehouse-headers-row"),
+        stockTableWrapper: document.getElementById("stock-table-wrapper"),
         targetsContainer: document.getElementById("targets-container"),
         stagesContainer: document.getElementById("stages-container"),
         plantSectionContainer: document.getElementById("plant-section-container"),
@@ -1147,42 +1145,70 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    const renderStockTable = (balances, allWarehouses) => {
-        els.stockBalancesContainer.classList.remove("tw-hidden");
-        els.warehouseGroupHeader.setAttribute("colspan", allWarehouses.length);
-        let headerHtml = "";
-        allWarehouses.forEach(wh => {
-            headerHtml += `<th class="tw-text-center">${wh.split(" ")[2]}</th>`;
+    // Render a status message into the stock table wrapper
+    const setStockMessage = (msg, colorClass = "tw-text-gray-500") => {
+        els.stockTableWrapper.innerHTML =
+            `<table class="stock-table"><tbody><tr><td colspan="10" class="tw-text-center tw-py-6 ${colorClass}">${msg}</td></tr></tbody></table>`;
+    };
+
+    // Build one table section (chemicals OR fertilizers) and return its HTML
+    const buildStockSection = (balances, warehouses, itemLabel) => {
+        const itemNames = Object.keys(balances).sort();
+        if (itemNames.length === 0) return "";
+
+        // Header row: item | warehouse columns... | source | total
+        let thead = `<thead>
+            <tr>
+                <th rowspan="2">${itemLabel}</th>
+                <th colspan="${warehouses.length}" class="tw-text-center">${itemLabel} Warehouses</th>
+                <th rowspan="2" class="tw-text-center">Source</th>
+                <th rowspan="2" class="tw-text-center">Total</th>
+            </tr><tr>`;
+        warehouses.forEach(wh => {
+            thead += `<th class="tw-text-center">${wh.split(" ")[2]}</th>`;
         });
-        els.warehouseHeadersRow.innerHTML = headerHtml;
-        let bodyHtml = "";
-        const sortedItems = Object.keys(balances).sort();
-        sortedItems.forEach(itemName => {
+        thead += `</tr></thead>`;
+
+        let tbody = "<tbody>";
+        itemNames.forEach(itemName => {
             const itemBalances = balances[itemName];
             let totalStock = 0;
             state.sourceWarehouseCache[itemName] = state.sourceWarehouseCache[itemName] || { source_warehouse: null };
-            let warehouseBalanceHtml = "";
-            let selectOptionsHtml = '<option value="">-- Select Source --</option>';
-            allWarehouses.forEach(wh => {
+            const cachedWh = state.sourceWarehouseCache[itemName].source_warehouse;
+            let whCells = "";
+            let selectOpts = '<option value="">-- Select Source --</option>';
+            warehouses.forEach(wh => {
                 const qty = itemBalances[wh] || 0.0;
                 totalStock += qty;
-                const qtyFormatted = qty.toFixed(2);
+                const qtyFmt = qty.toFixed(2);
                 const qtyClass = qty === 0.0 ? "stock-qty-zero" : "stock-qty-available";
-                warehouseBalanceHtml += `<td class="tw-text-center ${qtyClass}">${qtyFormatted}</td>`;
+                whCells += `<td class="tw-text-center ${qtyClass}">${qtyFmt}</td>`;
                 if (qty > 0) {
-                    const shortWhName = wh.split(" - ")[0];
-                    selectOptionsHtml += `<option value="${wh}">${shortWhName} (${qtyFormatted})</option>`;
+                    const label = wh.split(" - ")[0];
+                    const sel = cachedWh === wh ? " selected" : "";
+                    selectOpts += `<option value="${wh}"${sel}>${label} (${qtyFmt})</option>`;
                 }
             });
             const totalClass = totalStock === 0.0 ? "stock-total stock-total-insufficient" : "stock-total";
-            bodyHtml += `<tr>`;
-            bodyHtml += `<td>${itemName}</td>`;
-            bodyHtml += warehouseBalanceHtml;
-            bodyHtml += `<td><select id="select-wh-${itemName}" class="form-select" data-item-code="${itemName}" onchange="handleWarehouseChange(this)">${selectOptionsHtml}</select></td>`;
-            bodyHtml += `<td class="tw-text-center ${totalClass}">${totalStock.toFixed(2)}</td>`;
-            bodyHtml += "</tr>";
+            // Escape item name for use in id attribute (spaces → underscores)
+            const safeId = itemName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+            tbody += `<tr>
+                <td>${itemName}</td>
+                ${whCells}
+                <td><select id="select-wh-${safeId}" class="form-select" data-item-code="${itemName}" onchange="handleWarehouseChange(this)">${selectOpts}</select></td>
+                <td class="tw-text-center ${totalClass}">${totalStock.toFixed(2)}</td>
+            </tr>`;
         });
-        els.stockBalanceTableBody.innerHTML = bodyHtml || `<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data available</td></tr>`;
+        tbody += "</tbody>";
+
+        return `<table class="stock-table">${thead}${tbody}</table>`;
+    };
+
+    const renderStockTable = (balances, allWarehouses) => {
+        els.stockBalancesContainer.classList.remove("tw-hidden");
+        const html = buildStockSection(balances, allWarehouses, "Chemical");
+        els.stockTableWrapper.innerHTML = html ||
+            `<table class="stock-table"><tbody><tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data available</td></tr></tbody></table>`;
     };
 
     const createBomChemicalRow = (itemName = "", rate = "", uom = "") => {
@@ -1317,18 +1343,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const updateStockBalances = async () => {
         const chemicals = getFinalChemicals();
-        const uniqueChemicals = [...new Set(chemicals.map(c => c.chemical).filter(name => name && name.trim()))];
-        if (uniqueChemicals.length === 0) {
-            els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-red-500">No chemicals to check</td></tr>';
+        const uniqueItems = [...new Set(chemicals.map(c => c.chemical).filter(name => name && name.trim()))];
+        if (uniqueItems.length === 0) {
+            setStockMessage("No items to check", "tw-text-red-500");
             return;
         }
-        els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">Fetching stock balances...</td></tr>';
+        setStockMessage("Fetching stock balances...");
         showLoader();
         try {
             const response = await fetch('/api/method/upande_scp.serverscripts.get_bom_stock_balances.getBomStockBalances', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': "{{csrf_token}}" },
-                body: JSON.stringify({ data: JSON.stringify({ chemicals: uniqueChemicals }) })
+                body: JSON.stringify({ data: JSON.stringify({ chemicals: uniqueItems }) })
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const r = await response.json();
@@ -1336,14 +1362,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (data) {
                 const stockData = data.stock_balances;
                 if (data.item_uom_map) { state.chemicalUomCache = { ...state.chemicalUomCache, ...data.item_uom_map }; refreshRowUoms(); }
-                if (stockData) {
+                if (stockData && Object.keys(stockData).length > 0) {
                     const firstItem = Object.keys(stockData)[0];
-                    const allWarehouses = firstItem ? Object.keys(stockData[firstItem]) : [];
+                    const allWarehouses = Object.keys(stockData[firstItem]);
                     renderStockTable(stockData, allWarehouses);
-                } else { els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data found</td></tr>'; }
-            } else { els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data found</td></tr>'; }
+                } else { setStockMessage("No stock data found"); }
+            } else { setStockMessage("No stock data found"); }
         } catch (error) {
-            els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-red-500">Error fetching stock balances</td></tr>';
+            setStockMessage("Error fetching stock balances", "tw-text-red-500");
         } finally { hideLoader(); }
     };
 
@@ -1778,8 +1804,7 @@ document.addEventListener("DOMContentLoaded", () => {
             els.bomDetailsContainer.classList.add("tw-hidden");
             els.bomChemicalsList.innerHTML = "";
             els.stockBalancesContainer.classList.add("tw-hidden");
-            els.stockBalanceTableBody.innerHTML = '<tr><td colspan="10" class="tw-text-center tw-py-4 tw-text-gray-500">Loading...</td></tr>';
-            els.warehouseHeadersRow.innerHTML = "";
+            els.stockTableWrapper.innerHTML = "";
             
             // Fetch scouting data and all targets in parallel
             await Promise.all([
@@ -1920,7 +1945,14 @@ document.addEventListener("DOMContentLoaded", () => {
             const r = await response.json();
             const validationResult = r.message;
 
-            if (validationResult?.valid === true) { setLoaderMessage('Creating spray plan...'); createWorkOrder(formData); return; }
+            if (validationResult?.valid === true) {
+                hideLoader();
+                showWarehouseConfirmationModal(chemicalsWithWarehouse, greenhouse, () => {
+                    showLoader('Creating spray plan...');
+                    createWorkOrder(formData);
+                });
+                return;
+            }
             if (validationResult?.valid === false) { hideLoader(); showValidationDialog(validationResult.errors, formData); return; }
             showToast("Unexpected response structure from validation server.", "error");
             hideLoader();
@@ -1984,9 +2016,63 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById('bypass-validation-btn').addEventListener('click', () => {
             dialogOverlay.remove();
             showToast('Creating Work Order (Guidelines Bypassed)', 'warning');
-            showLoader('Creating spray plan...');
-            createWorkOrder(formData);
+            showWarehouseConfirmationModal(formData.chemicals, formData.custom_greenhouse, () => {
+                showLoader('Creating spray plan...');
+                createWorkOrder(formData);
+            });
         });
+    };
+
+    // ==================== WAREHOUSE CONFIRMATION MODAL ====================
+    // Shows a summary of item → source warehouse mappings so the user can
+    // verify everything is correct before the work order is created.
+    const showWarehouseConfirmationModal = (chemicals, greenhouse, onConfirm) => {
+        const allMapped = chemicals.every(c => c.source_warehouse);
+        const rows = chemicals.map(c => {
+            const color = c.source_warehouse ? "#059669" : "#dc2626";
+            const label = c.source_warehouse || "<em>Not selected</em>";
+            return `<tr>
+                <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${c.chemical}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:${color};">${label}</td>
+            </tr>`;
+        }).join("");
+
+        const overlay = document.createElement("div");
+        overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;";
+        overlay.innerHTML = `
+            <div style="background:white;border-radius:8px;max-width:600px;width:90%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 10px 25px rgba(0,0,0,0.3);">
+                <div style="padding:20px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;">
+                    <h3 style="margin:0;font-size:18px;color:#1f2937;">Confirm Warehouse Mapping</h3>
+                    <button id="wh-modal-close" style="background:none;border:none;font-size:24px;color:#6b7280;cursor:pointer;">×</button>
+                </div>
+                <div style="padding:20px;overflow-y:auto;flex:1;">
+                    <p style="margin:0 0 4px 0;font-size:14px;color:#6b7280;">Target Greenhouse</p>
+                    <p style="margin:0 0 16px 0;font-weight:600;color:#1f2937;">${greenhouse}</p>
+                    <p style="margin:0 0 8px 0;font-size:14px;color:#6b7280;">Verify each item will be drawn from the correct warehouse before creating the work order.</p>
+                    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                        <thead>
+                            <tr style="background:#f9fafb;">
+                                <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;">Item</th>
+                                <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;">Source Warehouse</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                    ${!allMapped ? '<p style="margin:16px 0 0 0;color:#dc2626;font-weight:500;">Some items have no source warehouse selected. Go back and select warehouses before proceeding.</p>' : ""}
+                </div>
+                <div style="padding:20px;border-top:1px solid #e5e7eb;display:flex;justify-content:flex-end;gap:10px;">
+                    <button id="wh-modal-cancel" style="padding:10px 20px;border-radius:6px;border:none;background:#f3f4f6;color:#374151;font-size:14px;cursor:pointer;">Cancel</button>
+                    <button id="wh-modal-confirm" style="padding:10px 20px;border-radius:6px;border:none;background:#059669;color:white;font-size:14px;font-weight:500;cursor:pointer;">Confirm & Create Work Order</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        const confirmBtn = document.getElementById("wh-modal-confirm");
+        if (!allMapped) { confirmBtn.disabled = true; confirmBtn.style.opacity = "0.5"; confirmBtn.style.cursor = "not-allowed"; }
+
+        document.getElementById("wh-modal-close").onclick = () => overlay.remove();
+        document.getElementById("wh-modal-cancel").onclick = () => overlay.remove();
+        confirmBtn.onclick = () => { if (!allMapped) return; overlay.remove(); onConfirm(); };
     };
 
     const createWorkOrder = async (data) => {

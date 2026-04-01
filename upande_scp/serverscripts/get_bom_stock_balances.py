@@ -17,12 +17,12 @@ def getBomStockBalances():
             items = frappe.get_list(
                 "Item",
                 filters={"item_name": ("in", item_names)},
-                fields=["item_name", "item_code", "stock_uom"],
+                fields=["item_name", "name", "stock_uom"],
                 as_list=False
             )
             for item in items:
                 name = item.get("item_name")
-                code = item.get("item_code")
+                code = item.get("name")
                 stock_uom = item.get("stock_uom")
                 item_code_map[name] = code
                 code_item_map[code] = name

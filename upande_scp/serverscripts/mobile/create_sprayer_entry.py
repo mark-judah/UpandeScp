@@ -47,6 +47,26 @@ def _resolve_employee(user_id):
     return rows[0].name if rows else None
 
 
+def _is_duplicate_gps_log(session_name, captured_at):
+    """
+    Duplicate check: returns the name of an existing Sprayer GPS Log if a log
+    for the same session and captured_at timestamp already exists.
+
+    Mobile drain mode may retry the same batch multiple times when the upload
+    is interrupted mid-batch. This prevents double-inserting those points.
+    """
+    if not session_name or not captured_at:
+        return None
+    try:
+        return frappe.db.get_value(
+            "Sprayer GPS Log",
+            {"session": session_name, "captured_at": captured_at},
+            "name",
+        ) or None
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # startSprayerSession
 # ---------------------------------------------------------------------------
@@ -318,7 +338,22 @@ def createSprayerEntry():
                     })
                     continue
 
-                # Verify session exists and is Active
+                # Duplicate check — drain mode may retry the same batch
+                existing_log = _is_duplicate_gps_log(session_name, captured_at)
+                if existing_log:
+                    results.append({
+                        "status": "success",
+                        "message": f"Duplicate GPS log — already synced as {existing_log}.",
+                        "name": existing_log,
+                        "session": session_name,
+                        "duplicate": True,
+                    })
+                    continue
+
+                # Verify session exists.  Accept both Active and Completed so
+                # that GPS points queued while offline can still upload after the
+                # sprayer has stopped (drain mode).  The captured_at timestamp
+                # proves the points were collected during the session.
                 session_doc = frappe.db.get_value(
                     "Sprayer Movement Session",
                     session_name,
@@ -334,12 +369,12 @@ def createSprayerEntry():
                     })
                     continue
 
-                if session_doc.status != "Active":
+                if session_doc.status not in ("Active", "Completed"):
                     has_errors = True
                     results.append({
                         "status": "error",
                         "message": (
-                            f"Session {session_name} is not Active "
+                            f"Session {session_name} cannot accept GPS points "
                             f"(current status: {session_doc.status})."
                         ),
                     })

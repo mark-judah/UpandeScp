@@ -21,6 +21,35 @@ from .geo_utils import get_zone_from_coordinates
 
 
 # ---------------------------------------------------------------------------
+# Lazy index creation — runs once per gunicorn worker process
+# ---------------------------------------------------------------------------
+
+_indexes_ensured = False
+
+
+def _ensure_indexes():
+    """
+    Create indexes on tabSprayer GPS Log if they do not already exist.
+
+    Called once per worker at the start of createSprayerEntry so repeated
+    batch uploads never pay the cost of an unindexed lookup.  The try/except
+    swallows "Duplicate key name" from MySQL when the index already exists.
+    """
+    global _indexes_ensured
+    if _indexes_ensured:
+        return
+    for ddl in (
+        "ALTER TABLE `tabSprayer GPS Log` ADD INDEX `idx_sgl_session_captured_at` (session(64), captured_at)",
+        "ALTER TABLE `tabSprayer GPS Log` ADD INDEX `idx_sgl_session` (session(64))",
+    ):
+        try:
+            frappe.db.sql(ddl)
+        except Exception:
+            pass  # Index already exists — ignore
+    _indexes_ensured = True
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -250,28 +279,33 @@ def startSprayerSession():
 @frappe.whitelist()
 def createSprayerEntry():
     """
-    Receives one or more GPS movement points for an active Sprayer Movement
-    Session and saves them as Sprayer GPS Log documents.
+    Receives one or more GPS movement points and saves them as Sprayer GPS Log
+    documents.  GPS entries are independent of any server-side session document
+    — the caller supplies a plain session_tag string (e.g. "GH17-02042026-W14")
+    that groups points together for reporting without requiring a FK lookup.
 
     Each ping is rounded to the nearest zone using the shared UTM-projection
-    geometry. Session distance/point counters are updated once per batch per
-    session (single SQL UPDATE) rather than on every row insert.
+    geometry cache.  Distance counters are accumulated per session_tag and
+    flushed in a single SQL UPDATE per batch if a matching Sprayer Movement
+    Session document happens to exist (non-bypass WO flow).
 
     Expected JSON body (single entry or list):
         {
-            "session":       "SMS-2026-00001",
+            "session_tag":   "GH17-02042026-W14",   // client-generated tag
+            "work_order":    "WO-2026-00001",        // optional
             "latitude":      "-0.1234",
             "longitude":     "36.5678",
             "accuracy":      "4.2",
-            "captured_at":   "2026-03-31 08:15:00",  // UTC datetime of the ping
+            "captured_at":   "2026-03-31 08:15:00",
             "quality_level": "good",
             "samples_used":  5,
             "is_stationary": false
         }
     """
+    _ensure_indexes()
+
     try:
         data = frappe.request.get_json()
-        frappe.log_error("Sprayer GPS Payload", data)
 
         if not data:
             frappe.response.http_status_code = 400
@@ -295,28 +329,37 @@ def createSprayerEntry():
 
         results      = []
         has_errors   = False
-        # Per-session delta accumulators so session totals are updated once at
-        # commit time, not on every individual row insert.
-        # { session_name: {"points": int, "distance_m": float,
-        #                   "prev_lat": float|None, "prev_lon": float|None} }
+        # Per-session-tag accumulators so distance totals are computed once per
+        # batch, not on every individual row.
+        # { tag: {"points": int, "distance_m": float,
+        #         "prev_lat": float|None, "prev_lon": float|None} }
         session_deltas = {}
+
+        # Resolve the logged-in employee once for the whole batch
+        current_user = frappe.session.user
+        current_employee = _resolve_employee(current_user)
 
         for entry_data in data_list:
             try:
-                session_name   = entry_data.get("session")
-                latitude       = entry_data.get("latitude")
-                longitude      = entry_data.get("longitude")
-                accuracy       = entry_data.get("accuracy")
-                captured_at    = entry_data.get("captured_at")
-                quality_level  = entry_data.get("quality_level", "unknown")
-                samples_used   = entry_data.get("samples_used", 0)
-                is_stationary  = entry_data.get("is_stationary", False)
+                # Accept "session_tag" (new) or "session" (legacy) — the value
+                # is always stored as a plain text label; no FK validation.
+                session_tag   = (
+                    entry_data.get("session_tag") or entry_data.get("session") or ""
+                )
+                work_order    = entry_data.get("work_order") or ""
+                latitude      = entry_data.get("latitude")
+                longitude     = entry_data.get("longitude")
+                accuracy      = entry_data.get("accuracy")
+                captured_at   = entry_data.get("captured_at")
+                quality_level = entry_data.get("quality_level", "unknown")
+                samples_used  = entry_data.get("samples_used", 0)
+                is_stationary = entry_data.get("is_stationary", False)
 
-                if not session_name:
+                if not session_tag:
                     has_errors = True
                     results.append({
                         "status": "error",
-                        "message": "session is required for every GPS entry.",
+                        "message": "session_tag (or session) is required for every GPS entry.",
                     })
                     continue
 
@@ -325,7 +368,7 @@ def createSprayerEntry():
                     results.append({
                         "status": "error",
                         "message": "latitude and longitude are required.",
-                        "session": session_name,
+                        "session_tag": session_tag,
                     })
                     continue
 
@@ -334,54 +377,30 @@ def createSprayerEntry():
                     results.append({
                         "status": "error",
                         "message": "captured_at is required.",
-                        "session": session_name,
+                        "session_tag": session_tag,
                     })
                     continue
 
-                # Duplicate check — drain mode may retry the same batch
-                existing_log = _is_duplicate_gps_log(session_name, captured_at)
+                # Duplicate check — retry batches may re-send the same points
+                existing_log = _is_duplicate_gps_log(session_tag, captured_at)
                 if existing_log:
                     results.append({
                         "status": "success",
                         "message": f"Duplicate GPS log — already synced as {existing_log}.",
                         "name": existing_log,
-                        "session": session_name,
+                        "session_tag": session_tag,
                         "duplicate": True,
                     })
                     continue
 
-                # Verify session exists.  Accept both Active and Completed so
-                # that GPS points queued while offline can still upload after the
-                # sprayer has stopped (drain mode).  The captured_at timestamp
-                # proves the points were collected during the session.
-                session_doc = frappe.db.get_value(
-                    "Sprayer Movement Session",
-                    session_name,
-                    ["name", "work_order", "employee", "greenhouse", "status"],
-                    as_dict=True,
-                )
+                # Optionally resolve greenhouse from work order
+                greenhouse = ""
+                if work_order and frappe.db.exists("Work Order", work_order):
+                    greenhouse = frappe.db.get_value(
+                        "Work Order", work_order, "custom_greenhouse"
+                    ) or ""
 
-                if not session_doc:
-                    has_errors = True
-                    results.append({
-                        "status": "error",
-                        "message": f"Session not found: {session_name}",
-                    })
-                    continue
-
-                if session_doc.status not in ("Active", "Completed"):
-                    has_errors = True
-                    results.append({
-                        "status": "error",
-                        "message": (
-                            f"Session {session_name} cannot accept GPS points "
-                            f"(current status: {session_doc.status})."
-                        ),
-                    })
-                    continue
-
-                # Zone determination — sprayer moves across the whole greenhouse,
-                # so bed is None. The zone is rounded to the nearest geometry match.
+                # Zone determination — no bed filter (sprayer traverses whole GH)
                 determined_zone = None
                 confidence      = 0.0
                 zone_message    = {"distance": "0.0", "buffer": "0.0"}
@@ -396,12 +415,14 @@ def createSprayerEntry():
 
                 requires_review = confidence < 0.5 and determined_zone is not None
 
-                # Persist the GPS log
+                # Persist the GPS log.  ignore_links=True lets us store the
+                # plain session_tag string in the Link field without Frappe
+                # raising a "Document not found" validation error.
                 log_doc                  = frappe.new_doc("Sprayer GPS Log")
-                log_doc.session          = session_name
-                log_doc.work_order       = session_doc.work_order
-                log_doc.employee         = session_doc.employee
-                log_doc.greenhouse       = session_doc.greenhouse
+                log_doc.session          = session_tag
+                log_doc.work_order       = work_order or None
+                log_doc.employee         = current_employee or ""
+                log_doc.greenhouse       = greenhouse
                 log_doc.captured_at      = captured_at
                 log_doc.latitude         = str(latitude)
                 log_doc.longitude        = str(longitude)
@@ -413,29 +434,29 @@ def createSprayerEntry():
                 log_doc.stationary       = 1 if is_stationary else 0
                 log_doc.zone_buffer      = float(zone_message.get("buffer", 0.0))
                 log_doc.zone_distance    = float(zone_message.get("distance", 0.0))
+                log_doc.flags.ignore_links = True
                 log_doc.insert(ignore_permissions=True)
 
-                # Accumulate per-session distance delta
-                if session_name not in session_deltas:
-                    # Seed previous coordinates from the last persisted log so
-                    # distance is continuous across separate batch calls.
+                # Accumulate per-tag distance delta
+                if session_tag not in session_deltas:
+                    # Seed from the last persisted point for this tag so distance
+                    # is continuous across separate batch requests.
                     last_log = frappe.db.get_value(
                         "Sprayer GPS Log",
-                        {"session": session_name},
+                        {"session": session_tag},
                         ["latitude", "longitude"],
                         order_by="captured_at desc",
                         as_dict=True,
                     )
-                    session_deltas[session_name] = {
-                        "points":    0,
+                    session_deltas[session_tag] = {
+                        "points":     0,
                         "distance_m": 0.0,
-                        "prev_lat":  float(last_log.latitude)  if last_log else None,
-                        "prev_lon":  float(last_log.longitude) if last_log else None,
+                        "prev_lat":   float(last_log.latitude)  if last_log else None,
+                        "prev_lon":   float(last_log.longitude) if last_log else None,
                     }
 
-                delta = session_deltas[session_name]
+                delta = session_deltas[session_tag]
                 delta["points"] += 1
-
                 cur_lat = float(latitude)
                 cur_lon = float(longitude)
                 if delta["prev_lat"] is not None:
@@ -449,7 +470,7 @@ def createSprayerEntry():
                     "status":             "success",
                     "message":            "GPS log created successfully.",
                     "name":               log_doc.name,
-                    "session":            session_name,
+                    "session_tag":        session_tag,
                     "determined_zone":    determined_zone,
                     "zone_confidence":    round(confidence * 100, 1) if determined_zone else 0.0,
                     "gps_accuracy":       accuracy,
@@ -471,9 +492,10 @@ def createSprayerEntry():
                 frappe.log_error("Error creating sprayer GPS log", str(e))
                 results.append({"status": "error", "message": str(e)})
 
-        # Flush session summary counters — one UPDATE per session, not per row
+        # If a real Sprayer Movement Session document shares this session_tag
+        # (WO-based non-bypass flow) update its running totals in one shot.
         if any(r.get("status") == "success" for r in results):
-            for sname, delta in session_deltas.items():
+            for tag, delta in session_deltas.items():
                 if delta["points"] == 0:
                     continue
                 try:
@@ -489,12 +511,12 @@ def createSprayerEntry():
                         {
                             "pts":  delta["points"],
                             "dist": round(delta["distance_m"], 2),
-                            "name": sname,
+                            "name": tag,
                         },
                     )
                 except Exception as e:
                     frappe.log_error(
-                        f"Error updating session totals for {sname}", str(e)
+                        f"Error updating session totals for {tag}", str(e)
                     )
             frappe.db.commit()
         else:

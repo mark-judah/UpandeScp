@@ -1,4 +1,4 @@
-import frappe 
+import frappe
 import json
 
 @frappe.whitelist()
@@ -68,29 +68,24 @@ def createBOM():
         bom_items = []
 
         for idx, chem in enumerate(chemicals, start=1):
-            item_name = str(chem.get("item_name") or "").strip()
-            if not item_name:
-                return {"status": "error", "message": f"Chemical name missing in row #{idx}"}
+            item_code = str(chem.get("item_code") or "").strip()
+            if not item_code:
+                return {"status": "error", "message": f"Chemical code missing in row #{idx}"}
 
             rate = float(chem.get("custom_application_rate") or 0)
             if rate <= 0:
-                return {"status": "error", "message": f"Rate must be > 0 for '{item_name}' (row #{idx})"}
+                return {"status": "error", "message": f"Rate must be > 0 for '{item_code}' (row #{idx})"}
 
             uom = str(chem.get("uom") or "").strip()
 
-            # === RESOLVE ITEM CODE FROM ITEM NAME ===
-            item_code = frappe.db.get_value(
-                "Item",
-                {"item_name": item_name, "disabled": 0},
-                "name"
-            )
-            if not item_code:
+            item = frappe.get_doc("Item", item_code)
+            if not item:
                 return {
                     "status": "error",
-                    "message": f"Chemical '{item_name}' not found. Check spelling or create the item."
+                    "message": f"Chemical '{item_code}' not found."
                 }
 
-            item = frappe.get_doc("Item", item_code)
+            item_name = item.item_name
 
             # === ADD BOM ITEM ===
             bom_doc.append("items", {
@@ -102,7 +97,7 @@ def createBOM():
                 "stock_uom": item.stock_uom,
                 "qty_consumed_per_unit": rate,
                 "custom_application_rate": rate,
-                "custom_application_rateper_ha_": rate,  # Add this too
+                "custom_application_rateper_ha_": rate,
                 "description": item_name,
                 "include_item_in_manufacturing": 1,
                 "conversion_factor": 1
@@ -110,12 +105,13 @@ def createBOM():
 
             # Store for response
             bom_items.append({
+                "item_code": item_code,
                 "item_name": item_name,
                 "custom_application_rate": rate,
                 "uom": item.stock_uom
             })
 
-        # === SAVE & SUBMIT - Use insert then submit ===
+        # === SAVE & SUBMIT ===
         bom_doc.insert(ignore_permissions=True)
         bom_doc.submit()
         frappe.db.commit()
@@ -138,55 +134,39 @@ def check_duplicate_bom(bom_item_name, water_ph, water_hardness, chemicals):
     Returns BOM name if found, None otherwise.
     """
     try:
-        # Get all BOMs for this item
-        existing_boms = frappe.get_all("BOM", 
+        existing_boms = frappe.get_all("BOM",
             filters={
                 "item": bom_item_name,
-                "docstatus": 1  # Only submitted BOMs
+                "docstatus": 1
             },
             fields=["name", "custom_water_ph", "custom_water_hardness"]
         )
 
         for bom in existing_boms:
-            # Check water parameters (with small tolerance for floating point)
             if abs(bom.custom_water_ph - water_ph) > 0.1:
                 continue
             if abs(bom.custom_water_hardness - water_hardness) > 0.1:
                 continue
 
-            # Get BOM items
             bom_items = frappe.get_all("BOM Item",
                 filters={"parent": bom.name},
-                fields=["item_code", "item_name", "qty", "custom_application_rate"]
+                fields=["item_code", "qty", "custom_application_rate"]
             )
 
-            # Check if same number of items
             if len(bom_items) != len(chemicals):
                 continue
 
-            # Build comparison sets
-            existing_items = {}
-            for item in bom_items:
-                # Resolve item_code from item_name for comparison
-                key = item.item_name or item.item_code
-                rate = item.custom_application_rate or item.qty
-                existing_items[key] = rate
+            existing_items = {
+                item.item_code: (item.custom_application_rate or item.qty)
+                for item in bom_items
+            }
+            new_items = {
+                str(chem.get("item_code") or "").strip(): float(chem.get("custom_application_rate") or 0)
+                for chem in chemicals
+            }
 
-            new_items = {}
-            for chem in chemicals:
-                item_name = str(chem.get("item_name") or "").strip()
-                rate = float(chem.get("custom_application_rate") or 0)
-                new_items[item_name] = rate
-
-            # Compare items and rates
             if existing_items.keys() == new_items.keys():
-                all_match = True
-                for key in existing_items:
-                    if abs(existing_items[key] - new_items[key]) > 0.001:  # Small tolerance
-                        all_match = False
-                        break
-                
-                if all_match:
+                if all(abs(existing_items[k] - new_items[k]) <= 0.001 for k in existing_items):
                     return bom.name
 
         return None
@@ -194,51 +174,40 @@ def check_duplicate_bom(bom_item_name, water_ph, water_hardness, chemicals):
     except Exception as e:
         frappe.log_error(f"Error checking duplicate BOM: {str(e)}", "Duplicate BOM Check")
         return None
-    
+
+
 @frappe.whitelist()
 def getAllChemicals():
-    # Get both item code (name) and item name (item_name)
-    chemicals = frappe.get_all("Item", 
+    chemicals = frappe.get_all("Item",
         filters={'item_group': 'CHEMICALS'},
         fields=["name", "item_name", "stock_uom"],
         order_by="item_name"
     )
-    
-    # Build lists and maps
-    chemical_names = []
+
+    seen_codes = set()
+    chemical_list = []
     item_uom_map = {}
-    item_code_map = {}  # Maps display name to item code
-    
+
     for chemical in chemicals:
-        display_name = chemical.item_name or chemical.name
-        chemical_names.append(display_name)
-        item_uom_map[display_name] = chemical.stock_uom
-        item_code_map[display_name] = chemical.name  # Store the actual item code
-    
+        code = chemical.name
+        if code in seen_codes:
+            continue
+        seen_codes.add(code)
+        name = chemical.item_name or code
+        chemical_list.append({"item_code": code, "item_name": name})
+        item_uom_map[code] = chemical.stock_uom
+
     return {
-        "chemicals": sorted(list(set(chemical_names))),  # Remove duplicates and sort
+        "chemicals": chemical_list,
         "item_uom_map": item_uom_map,
-        "item_code_map": item_code_map  # Frontend can use this if needed for backend calls
     }
-    
+
+
 @frappe.whitelist()
-def getChemicalUom(chemical):
+def getChemicalUom(item_code):
     try:
-        # Try to find by item_name first, then by name (item code)
-        item = frappe.db.get_value("Item", 
-            {"item_name": chemical}, 
-            ["name", "stock_uom"]
-        )
-        
-        if not item:
-            # Try by item code if item_name search failed
-            item = frappe.db.get_value("Item", chemical, ["name", "stock_uom"])
-        
-        if item:
-            return {"uom": item[1] if isinstance(item, tuple) else item.stock_uom}
-        
-        return {"uom": ""}
-    
+        uom = frappe.db.get_value("Item", item_code, "stock_uom")
+        return {"uom": uom or ""}
     except Exception as e:
-        frappe.log_error(f"Error fetching UOM for chemical '{chemical}': {str(e)}", "Get Chemical UOM Error")
+        frappe.log_error(f"Error fetching UOM for '{item_code}': {str(e)}", "Get Chemical UOM Error")
         return {"uom": ""}

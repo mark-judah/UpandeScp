@@ -5,68 +5,53 @@ import json
 def getBomStockBalances():
     try:
         data = frappe.form_dict.get("data")
-        item_names = []
+        item_codes = []
         if data:
-            item_names = json.loads(data).get("chemicals", [])
-
-        item_code_map = {}
-        code_item_map = {}
-        item_uom_map = {}
-
-        if item_names:
-            items = frappe.get_list(
-                "Item",
-                filters={"item_name": ("in", item_names)},
-                fields=["item_name", "item_code", "stock_uom"],
-                as_list=False
-            )
-            for item in items:
-                name = item.get("item_name")
-                code = item.get("item_code")
-                stock_uom = item.get("stock_uom")
-                item_code_map[name] = code
-                code_item_map[code] = name
-                item_uom_map[name] = stock_uom
-
-        chemicals = list(item_code_map.values())
+            item_codes = json.loads(data).get("item_codes", [])
 
         source_warehouses = [
             'Chemical Store - MFL',
         ]
 
-        code_stock_balances = {}
-        if chemicals:
+        item_name_map = {}
+        item_uom_map = {}
+
+        if item_codes:
+            items = frappe.get_list(
+                "Item",
+                filters={"name": ("in", item_codes)},
+                fields=["name", "item_name", "stock_uom"],
+                as_list=False
+            )
+            for item in items:
+                item_name_map[item.name] = item.item_name
+                item_uom_map[item.name] = item.stock_uom
+
+        stock_balances = {}
+        if item_codes:
+            for code in item_codes:
+                stock_balances[code] = {wh: 0.0 for wh in source_warehouses}
+
             bins = frappe.get_list(
                 "Bin",
                 filters={
-                    "item_code": ("in", chemicals),
+                    "item_code": ("in", item_codes),
                     "warehouse": ("in", source_warehouses)
                 },
                 fields=["item_code", "warehouse", "actual_qty"],
                 as_list=False
             )
-
-            for chemical_code in chemicals:
-                code_stock_balances[chemical_code] = {}
-                for warehouse in source_warehouses:
-                    code_stock_balances[chemical_code][warehouse] = 0.0
-
             for bin_record in bins:
-                item_code = bin_record.get('item_code')
+                code = bin_record.get('item_code')
                 wh = bin_record.get('warehouse')
                 qty = bin_record.get('actual_qty')
-                if item_code in code_stock_balances and wh in code_stock_balances[item_code]:
-                    code_stock_balances[item_code][wh] = qty
-
-        final_stock_balances = {}
-        for code, balances in code_stock_balances.items():
-            item_name = code_item_map.get(code)
-            if item_name:
-                final_stock_balances[item_name] = balances
+                if code in stock_balances and wh in stock_balances[code]:
+                    stock_balances[code][wh] = qty
 
         frappe.response["data"] = {
-            "stock_balances": final_stock_balances,
-            "item_uom_map": item_uom_map
+            "stock_balances": stock_balances,
+            "item_uom_map": item_uom_map,
+            "item_name_map": item_name_map,
         }
 
     except Exception as e:

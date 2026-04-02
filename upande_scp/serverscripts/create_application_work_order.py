@@ -88,7 +88,7 @@ def createApplicationWorkOrder():
         se_items = []
         item_map = {}
         for chem in chemicals:
-            name = chem["chemical"]
+            item_code = chem["chemical"]
             rate = float(chem.get("application_rate") or 0)
             source_wh = chem.get("source_warehouse")
 
@@ -96,12 +96,12 @@ def createApplicationWorkOrder():
             qty_per_1000l = rate
 
             item = frappe.db.get_value(
-                "Item", {"item_name": name, "disabled": 0},
+                "Item", item_code,
                 ["name", "item_name", "stock_uom"], as_dict=1
             )
             if not item:
-                frappe.throw(f"Item not found: {name}")
-            item_map[name] = item
+                frappe.throw(f"Item not found: {item_code}")
+            item_map[item_code] = item  # key by item_code
 
             se_items.append({
                 "item_code": item.name,
@@ -129,12 +129,12 @@ def createApplicationWorkOrder():
         # -------------------------------------------------- 9. required_items (per 1000L)
         required_items = []
         for chem in chemicals:
-            name = chem["chemical"]
-            item = item_map[name]
-            
+            item_code = chem["chemical"]
+            item = item_map[item_code]  # look up by item_code
+
             # FIX: Use application_rate directly, not SE qty
             application_rate = float(chem.get("application_rate") or 0)
-            
+
             # Get valuation rate from Stock Entry
             val_rate = val_rate_map.get(item.name) or 0.0
 
@@ -143,7 +143,7 @@ def createApplicationWorkOrder():
 
             required_items.append({
                 "item_code": item.name,
-                "item_name": name,
+                "item_name": item.item_name,  # actual display name e.g. "TECAMIN MAX"
                 "required_qty": required_qty,
                 "uom": chem.get("uom") or item.stock_uom,
                 "source_warehouse": chem.get("source_warehouse"),
@@ -218,7 +218,7 @@ def createApplicationWorkOrder():
 # ----------------------------------------------------------------------
 def should_create_dynamic_bom(template_bom, user_chemicals):
     template_items = {
-        i.item_name: float(i.custom_application_rate or 0)
+        i.item_code: float(i.custom_application_rate or 0)
         for i in template_bom.get("items", [])
     }
     user_items = {
@@ -229,8 +229,8 @@ def should_create_dynamic_bom(template_bom, user_chemicals):
     if set(template_items.keys()) != set(user_items.keys()):
         return True
 
-    for name, t_rate in template_items.items():
-        u_rate = user_items[name]
+    for item_code, t_rate in template_items.items():
+        u_rate = user_items[item_code]
         if abs(t_rate - u_rate) > 0.001:
             return True
 
@@ -243,18 +243,18 @@ def should_create_dynamic_bom(template_bom, user_chemicals):
 def create_dynamic_bom(template_bom, user_chemicals, area_ha, water_volume_l, greenhouse, raw_data):
     items = []
     for c in user_chemicals:
-        name = c["chemical"]
+        item_code = c["chemical"]
         rate = float(c.get("application_rate") or 0)
-        item = frappe.db.get_value("Item", {"item_name": name}, ["name", "stock_uom"], as_dict=1)
+        item = frappe.db.get_value("Item", item_code, ["name", "item_name", "stock_uom"], as_dict=1)
         if not item:
-            frappe.throw(f"Item not found: {name}")
+            frappe.throw(f"Item not found: {item_code}")
 
         # FIX: Round qty to avoid precision issues in BOM
         qty = round(rate, 6)
 
         items.append({
             "item_code": item.name,
-            "item_name": name,
+            "item_name": item.item_name,  # actual display name e.g. "TECAMIN MAX"
             "qty": qty,
             "uom": c.get("uom") or item.stock_uom,
             "stock_uom": item.stock_uom,
@@ -262,7 +262,7 @@ def create_dynamic_bom(template_bom, user_chemicals, area_ha, water_volume_l, gr
             "custom_application_rate": str(qty),
             "custom_rate_unit": "Per 1000L",
             "include_item_in_manufacturing": 1,  # CRITICAL: Enable material transfer
-            "description": name  # Add description for consistency
+            "description": item.item_name
         })
 
     desc = [

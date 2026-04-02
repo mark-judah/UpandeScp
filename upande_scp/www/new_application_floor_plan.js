@@ -334,29 +334,33 @@ document.addEventListener("DOMContentLoaded", () => {
 		dataCache.forEach((item) => {
 			const option = document.createElement("a");
 			option.href = "#";
-			option.textContent = item;
+			option.textContent = item.item_name;
 			option.className = "popup-item";
 
 			option.addEventListener("click", (e) => {
 				e.preventDefault();
 
-				// 1. Fill input
-				inputElement.value = item;
+				// 1. Fill visible name input
+				inputElement.value = item.item_name;
 
 				// 2. Find row (main form OR BOM modal)
 				const row = inputElement.closest(".chemical-row, .bom-chemical-row");
 
-				// 3. Fill UOM
 				if (row) {
-					const uomSelector = row.classList.contains("bom-chemical-row")
-						? ".bom-chemical-uom-input"
-						: ".tw-chemical-uom-input";
+					// 3. Fill hidden item_code input
+					const isBomRow = row.classList.contains("bom-chemical-row");
+					const codeInput = row.querySelector(
+						isBomRow ? ".bom-chemical-code-input" : ".tw-chemical-code-input"
+					);
+					if (codeInput) codeInput.value = item.item_code;
+
+					// 4. Fill UOM
+					const uomSelector = isBomRow ? ".bom-chemical-uom-input" : ".tw-chemical-uom-input";
 					const uomInput = row.querySelector(uomSelector);
 					if (uomInput) {
-						let uom = state.chemicalUomCache[item];
+						const uom = state.chemicalUomCache[item.item_code];
 						if (!uom) {
-							fetchChemicalUom(item).then((cached) => {
-								state.chemicalUomCache[item] = cached;
+							fetchChemicalUom(item.item_code).then((cached) => {
 								uomInput.value = cached || "";
 							});
 						} else {
@@ -365,13 +369,15 @@ document.addEventListener("DOMContentLoaded", () => {
 					}
 				}
 
-				// 4. Close popup
+				// 5. Close popup
 				els.popupOverlay.classList.remove("active");
 				els.popupSearch.value = "";
 
-				// 5. UPDATE STOCK BALANCES — ONLY FOR MAIN FORM
+				// 6. UPDATE STOCK BALANCES — ONLY FOR MAIN FORM
 				if (row && row.classList.contains("chemical-row")) {
-					setTimeout(updateStockBalances, 100); // Wait for UOM fetch
+					// Clear stale cache so auto-select always picks the best warehouse
+					delete state.sourceWarehouseCache[item.item_code];
+					setTimeout(updateStockBalances, 100);
 				}
 			});
 
@@ -473,12 +479,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			const data = r.message || r.data;
 
 			if (data && Array.isArray(data.chemicals)) {
-				state.allChemicals = data.chemicals
-					.filter((name) => typeof name === "string" && name.trim().length > 0)
-					.filter((name, idx, arr) => arr.indexOf(name) === idx)
-					.sort();
-
-				// Also cache UOMs if provided
+				state.allChemicals = data.chemicals.filter((c) => c && c.item_code && c.item_name);
 				if (data.item_uom_map) {
 					state.chemicalUomCache = { ...state.chemicalUomCache, ...data.item_uom_map };
 					refreshRowUoms();
@@ -492,7 +493,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	};
 
-	const fetchChemicalUom = async (chemicalName) => {
+	const fetchChemicalUom = async (itemCode) => {
 		try {
 			const response = await fetch(
 				"/api/method/upande_scp.serverscripts.create_bom.getChemicalUom",
@@ -502,7 +503,7 @@ document.addEventListener("DOMContentLoaded", () => {
 						"Content-Type": "application/json",
 						"X-Frappe-CSRF-Token": "{{csrf_token}}",
 					},
-					body: JSON.stringify({ chemical: chemicalName }),
+					body: JSON.stringify({ item_code: itemCode }),
 				}
 			);
 
@@ -512,14 +513,13 @@ document.addEventListener("DOMContentLoaded", () => {
 			const data = r.message || r.data;
 
 			if (data && data.uom) {
-				// Cache it for future use
-				state.chemicalUomCache[chemicalName] = data.uom;
+				state.chemicalUomCache[itemCode] = data.uom;
 				return data.uom;
 			}
 
 			return "";
 		} catch (error) {
-			console.error(`Error fetching UOM for ${chemicalName}:`, error);
+			console.error(`Error fetching UOM for ${itemCode}:`, error);
 			return "";
 		}
 	};
@@ -662,12 +662,7 @@ document.addEventListener("DOMContentLoaded", () => {
 					state.bomsData = data.boms;
 					state.bomItems = data.bom_items;
 					state.allChemicals = Array.isArray(data.all_chemicals)
-						? data.all_chemicals
-								.filter(
-									(name) => typeof name === "string" && name.trim().length > 0
-								)
-								.filter((name, idx, arr) => arr.indexOf(name) === idx)
-								.sort()
+						? data.all_chemicals.filter((c) => c && c.item_code && c.item_name)
 						: [];
 					populateBoms(state.bomsData);
 				}
@@ -1010,7 +1005,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	};
 
-	const renderStockTable = (balances, allWarehouses) => {
+	const renderStockTable = (balances, allWarehouses, itemNameMap = {}) => {
 		els.stockBalancesContainer.classList.remove("tw-hidden");
 		els.warehouseGroupHeader.setAttribute("colspan", allWarehouses.length);
 		let headerHtml = "";
@@ -1034,15 +1029,13 @@ document.addEventListener("DOMContentLoaded", () => {
 				const qtyFormatted = qty.toFixed(2);
 				const qtyClass = qty === 0.0 ? "stock-qty-zero" : "stock-qty-available";
 				warehouseBalanceHtml += `<td class="tw-text-center ${qtyClass}">${qtyFormatted}</td>`;
-				if (qty > 0) {
-					const shortWhName = wh.split(" - ")[0];
-					selectOptionsHtml += `<option value="${wh}">${shortWhName} (${qtyFormatted})</option>`;
-				}
+				const shortWhName = wh.split(" - ")[0];
+				selectOptionsHtml += `<option value="${wh}">${shortWhName} (${qtyFormatted})</option>`;
 			});
 			const totalClass =
 				totalStock === 0.0 ? "stock-total stock-total-insufficient" : "stock-total";
 			bodyHtml += `<tr>`;
-			bodyHtml += `<td>${itemName}</td>`;
+			bodyHtml += `<td>${itemNameMap[itemName] || itemName}</td>`;
 			bodyHtml += warehouseBalanceHtml;
 			bodyHtml += `<td><select id="select-wh-${itemName}" class="form-select" data-item-code="${itemName}" onchange="handleWarehouseChange(this)">${selectOptionsHtml}</select></td>`;
 			bodyHtml += `<td class="tw-text-center ${totalClass}">${totalStock.toFixed(2)}</td>`;
@@ -1053,15 +1046,21 @@ document.addEventListener("DOMContentLoaded", () => {
 			`<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data available</td></tr>`;
 	};
 
-	const createBomChemicalRow = (itemName = "", rate = "", uom = "") => {
+	const createBomChemicalRow = (itemCode = "", itemName = "", rate = "", uom = "") => {
 		const row = document.createElement("div");
 		row.className = "bom-chemical-row";
 		row.style.display = "grid";
-		row.style.gridTemplateColumns = "2fr 1fr 1fr auto"; // ← 4 columns only
+		row.style.gridTemplateColumns = "2fr 1fr 1fr auto";
 		row.style.gap = "12px";
 		row.style.alignItems = "center";
 
-		// 1. Chemical Name
+		// Hidden item code
+		const codeInp = document.createElement("input");
+		codeInp.type = "hidden";
+		codeInp.className = "bom-chemical-code-input";
+		codeInp.value = itemCode;
+
+		// 1. Chemical Name (display)
 		const nameInp = document.createElement("input");
 		nameInp.type = "text";
 		nameInp.className = "form-input bom-chemical-name-input";
@@ -1099,7 +1098,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			updateStockBalances();
 		};
 
-		row.append(nameInp, rateInp, uomInp, del);
+		row.append(codeInp, nameInp, rateInp, uomInp, del);
 		return row;
 	};
 
@@ -1126,13 +1125,15 @@ document.addEventListener("DOMContentLoaded", () => {
 	const getBomChemicals = () => {
 		return Array.from(els.bomModalChemicalsList.querySelectorAll(".bom-chemical-row"))
 			.map((row) => {
-				const name = row.querySelector(".bom-chemical-name-input")?.value.trim();
+				const item_code = row.querySelector(".bom-chemical-code-input")?.value.trim();
+				const item_name = row.querySelector(".bom-chemical-name-input")?.value.trim();
 				const rate = parseFloat(row.querySelector(".bom-chemical-rate-input")?.value) || 0;
 				const uom = row.querySelector(".bom-chemical-uom-input")?.value || "";
-				if (!name || rate <= 0) return null;
+				if (!item_code || rate <= 0) return null;
 				return {
-					item_name: name,
-					custom_application_rate: rate, // ← per 1000 L
+					item_code,
+					item_name,
+					custom_application_rate: rate,
 					uom,
 				};
 			})
@@ -1163,10 +1164,10 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 
 		const invalidChemicals = chemicals.filter(
-			(c) => !c.custom_application_rate || c.custom_application_rate <= 0
+			(c) => !c.item_code || !c.custom_application_rate || c.custom_application_rate <= 0
 		);
 		if (invalidChemicals.length > 0) {
-			showToast("All chemicals must have a valid rate", "error");
+			showToast("All chemicals must have a valid item and rate", "error");
 			return;
 		}
 
@@ -1254,14 +1255,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	const updateStockBalances = async () => {
 		const chemicals = getFinalChemicals();
-		const uniqueChemicals = [
-			...new Set(chemicals.map((c) => c.chemical).filter((name) => name && name.trim())),
+		const uniqueCodes = [
+			...new Set(chemicals.map((c) => c.chemical).filter((code) => code && code.trim())),
 		];
-		if (uniqueChemicals.length === 0) {
+		if (uniqueCodes.length === 0) {
 			els.stockBalanceTableBody.innerHTML =
 				'<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-red-500">No chemicals to check</td></tr>';
 			return;
 		}
+
+		// Build item_code → item_name map from the current rows
+		const itemNameMap = Object.fromEntries(
+			state.allChemicals.map((c) => [c.item_code, c.item_name])
+		);
+		chemicals.forEach((c) => {
+			if (c.chemical && c.item_name) itemNameMap[c.chemical] = c.item_name;
+		});
+
 		els.stockBalanceTableBody.innerHTML =
 			'<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">Fetching stock balances...</td></tr>';
 		showLoader();
@@ -1274,7 +1284,7 @@ document.addEventListener("DOMContentLoaded", () => {
 						"Content-Type": "application/json",
 						"X-Frappe-CSRF-Token": "{{csrf_token}}",
 					},
-					body: JSON.stringify({ data: JSON.stringify({ chemicals: uniqueChemicals }) }),
+					body: JSON.stringify({ data: JSON.stringify({ item_codes: uniqueCodes }) }),
 				}
 			);
 			if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -1286,10 +1296,59 @@ document.addEventListener("DOMContentLoaded", () => {
 					state.chemicalUomCache = { ...state.chemicalUomCache, ...data.item_uom_map };
 					refreshRowUoms();
 				}
+				if (data.item_name_map) {
+					Object.assign(itemNameMap, data.item_name_map);
+				}
 				if (stockData) {
 					const firstItem = Object.keys(stockData)[0];
 					const allWarehouses = firstItem ? Object.keys(stockData[firstItem]) : [];
-					renderStockTable(stockData, allWarehouses);
+					renderStockTable(stockData, allWarehouses, itemNameMap);
+
+					// Auto-select warehouse with highest stock for each chemical
+					Object.entries(stockData).forEach(([itemCode, warehouses]) => {
+						const currentSelection = state.sourceWarehouseCache[itemCode]?.source_warehouse;
+						if (!currentSelection) {
+							const [bestWh, bestQty] = Object.entries(warehouses).reduce(
+								([bWh, bQty], [wh, qty]) => (qty > bQty ? [wh, qty] : [bWh, bQty]),
+								[null, -1]
+							);
+							if (bestWh && bestQty > 0) {
+								state.sourceWarehouseCache[itemCode].source_warehouse = bestWh;
+								const select = document.getElementById(`select-wh-${itemCode}`);
+								if (select) select.value = bestWh;
+								console.log(
+									`[Auto-select] "${itemNameMap[itemCode] || itemCode}" → "${bestWh}" (stock: ${bestQty})`
+								);
+							}
+						}
+					});
+
+					// Status check after render
+					const currentChemicals = getFinalChemicals();
+					console.group("[Chemical Status Check]");
+					currentChemicals.forEach((chem) => {
+						const sourceWh = state.sourceWarehouseCache[chem.chemical]?.source_warehouse;
+						const stockEntry = stockData[chem.chemical];
+						const totalQty = stockEntry
+							? Object.values(stockEntry).reduce((a, b) => a + b, 0)
+							: null;
+						const perWarehouse = stockEntry
+							? Object.entries(stockEntry).map(([wh, qty]) => `${wh}: ${qty}`).join(" | ")
+							: "not found in stock data";
+						const ok = chem.chemical && chem.item_name && chem.application_rate > 0 && chem.uom && sourceWh;
+						console.log(
+							`${ok ? "✅" : "⚠️"} "${chem.item_name || chem.chemical}"`,
+							{
+								item_code: chem.chemical || "❌ missing",
+								item_name: chem.item_name || "❌ missing",
+								rate: chem.application_rate > 0 ? chem.application_rate : "❌ missing (must be > 0)",
+								uom: chem.uom || "❌ missing",
+								source_warehouse: sourceWh || "❌ not selected",
+								stock: totalQty !== null ? `${totalQty} total (${perWarehouse})` : "❌ not found",
+							}
+						);
+					});
+					console.groupEnd();
 				} else {
 					els.stockBalanceTableBody.innerHTML =
 						'<tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data found</td></tr>';
@@ -1351,7 +1410,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	};
 
-	const createChemicalRow = (itemName = "", rate = "", uom = "") => {
+	const createChemicalRow = (itemCode = "", itemName = "", rate = "", uom = "") => {
 		const row = document.createElement("div");
 		row.className = "chemical-row";
 		row.style.display = "grid";
@@ -1359,13 +1418,19 @@ document.addEventListener("DOMContentLoaded", () => {
 		row.style.gap = "12px";
 		row.style.alignItems = "center";
 
-		// 1. Chemical Name
+		// Hidden item code
+		const codeInput = document.createElement("input");
+		codeInput.type = "hidden";
+		codeInput.className = "tw-chemical-code-input";
+		codeInput.value = itemCode;
+
+		// 1. Chemical Name (display)
 		const nameInput = document.createElement("input");
 		nameInput.type = "text";
 		nameInput.className = "tw-chemical-name-input form-input";
 		nameInput.value = itemName;
 		nameInput.placeholder = "Chemical";
-		nameInput.readOnly = !!itemName;
+		nameInput.readOnly = !!itemCode;
 		nameInput.addEventListener("focus", (e) => showPopup(e.target, state.allChemicals));
 		nameInput.addEventListener("input", () => {
 			clearTimeout(nameInput._debounce);
@@ -1400,7 +1465,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			updateStockBalances();
 		};
 
-		row.append(nameInput, rateInput, uomInput, removeBtn);
+		row.append(codeInput, nameInput, rateInput, uomInput, removeBtn);
 		return row;
 	};
 
@@ -1543,11 +1608,23 @@ document.addEventListener("DOMContentLoaded", () => {
 			els.waterPh.value = selectedBom.custom_water_ph || "";
 			els.waterHardness.value = selectedBom.custom_water_hardness || "";
 			const chemicals = state.bomItems.filter((i) => i.parent === bomName);
+			// Clear cache for all chemicals in this BOM so warehouse auto-select runs fresh
+			chemicals.forEach((item) => {
+				if (item.item_code) delete state.sourceWarehouseCache[item.item_code];
+			});
+			console.group(`[BOM Load] "${bomName}"`);
+			console.log("Water pH:", selectedBom.custom_water_ph, "| Hardness:", selectedBom.custom_water_hardness);
+			console.log(`Chemicals (${chemicals.length}):`);
 			chemicals.forEach((item) => {
 				const rate = parseFloat(item.qty) || 0;
-				const row = createChemicalRow(item.item_name, rate, item.uom);
+				console.log(
+					`  item_code: "${item.item_code}" | item_name: "${item.item_name}" | qty: ${rate} | uom: "${item.uom}"`,
+					{ missing: [...(!item.item_code ? ["item_code"] : []), ...(!item.item_name ? ["item_name"] : []), ...(rate <= 0 ? ["qty"] : []), ...(!item.uom ? ["uom"] : [])] }
+				);
+				const row = createChemicalRow(item.item_code, item.item_name, rate, item.uom);
 				els.bomChemicalsList.appendChild(row);
 			});
+			console.groupEnd();
 			updateStockBalances();
 		} else {
 			els.bomDetailsContainer.classList.add("tw-hidden");
@@ -1615,25 +1692,14 @@ document.addEventListener("DOMContentLoaded", () => {
 	};
 
 	const getFinalChemicals = () => {
-		const rows = [
-			...els.bomChemicalsList.querySelectorAll(".chemical-row"),
-			...els.bomModalChemicalsList.querySelectorAll(".bom-chemical-row"),
-		];
+		const rows = [...els.bomChemicalsList.querySelectorAll(".chemical-row")];
 		return rows
 			.map((row) => {
-				const name =
-					row
-						.querySelector(".tw-chemical-name-input, .bom-chemical-name-input")
-						?.value.trim() || "";
-				const rate =
-					parseFloat(
-						row.querySelector(".tw-chemical-qty-input, .bom-chemical-rate-input")
-							?.value
-					) || 0;
-				const uom =
-					row.querySelector(".tw-chemical-uom-input, .bom-chemical-uom-input")?.value ||
-					"";
-				return { chemical: name, application_rate: rate, uom };
+				const item_code = row.querySelector(".tw-chemical-code-input")?.value.trim() || "";
+				const item_name = row.querySelector(".tw-chemical-name-input")?.value.trim() || "";
+				const rate = parseFloat(row.querySelector(".tw-chemical-qty-input")?.value) || 0;
+				const uom = row.querySelector(".tw-chemical-uom-input")?.value || "";
+				return { chemical: item_code, item_name, application_rate: rate, uom };
 			})
 			.filter((c) => c.chemical && c.application_rate > 0);
 	};
@@ -1641,16 +1707,16 @@ document.addEventListener("DOMContentLoaded", () => {
 	const refreshRowUoms = () => {
 		document.querySelectorAll(".chemical-row, .bom-chemical-row").forEach((row) => {
 			const isBomRow = row.classList.contains("bom-chemical-row");
-			const nameInput = row.querySelector(
-				isBomRow ? ".bom-chemical-name-input" : ".tw-chemical-name-input"
+			const codeInput = row.querySelector(
+				isBomRow ? ".bom-chemical-code-input" : ".tw-chemical-code-input"
 			);
 			const uomInput = row.querySelector(
 				isBomRow ? ".bom-chemical-uom-input" : ".tw-chemical-uom-input"
 			);
-			if (nameInput && uomInput) {
-				const name = nameInput.value.trim();
-				if (name && state.chemicalUomCache[name]) {
-					uomInput.value = state.chemicalUomCache[name];
+			if (codeInput && uomInput) {
+				const code = codeInput.value.trim();
+				if (code && state.chemicalUomCache[code]) {
+					uomInput.value = state.chemicalUomCache[code];
 				}
 			}
 		});
@@ -1661,6 +1727,10 @@ document.addEventListener("DOMContentLoaded", () => {
 		const warehouse = element.value;
 		if (state.sourceWarehouseCache[itemCode]) {
 			state.sourceWarehouseCache[itemCode].source_warehouse = warehouse || null;
+			const nameMap = Object.fromEntries(state.allChemicals.map((c) => [c.item_code, c.item_name]));
+			console.log(
+				`[Warehouse select] User picked "${warehouse || "(none)"}" for "${nameMap[itemCode] || itemCode}"`
+			);
 		}
 	};
 
@@ -1747,26 +1817,50 @@ document.addEventListener("DOMContentLoaded", () => {
 			: null;
 		const selectedTargets = getSelectedFinalTargets();
 
-		if (selectedTargets.length === 0) {
-			showToast("Please select at least one target.", "error");
-			return;
-		}
-
 		const targets = selectedTargets;
 		const { activeStages, activeSections } = getActiveFilters();
 		const chemicals = getFinalChemicals();
 
-		if (
-			!greenhouse ||
-			targets.length === 0 ||
-			activeStages.length === 0 ||
-			activeSections.length === 0 ||
-			!sprayType ||
-			!kit ||
-			!scope ||
-			!bom
-		) {
-			showToast("Please fill out all required fields.", "error");
+		// Log full submission state for debugging
+		console.group("[Submit] Spray Plan Submission Check");
+		console.log("Greenhouse:", greenhouse || "❌ missing");
+		console.log("Spray Type:", sprayType || "❌ missing");
+		console.log("Kit:", kit || "❌ missing");
+		console.log("Scope:", scope || "❌ missing");
+		console.log("BOM:", bom || "❌ missing");
+		console.log("Targets:", targets.length > 0 ? targets : "❌ none selected");
+		console.log("Scheduled Date:", scheduledApplicationTime || "❌ missing");
+		console.log("Spray Team:", sprayTeam || "❌ missing");
+		console.log("Water pH:", waterPh || "❌ missing", "| Hardness:", waterHardness || "❌ missing");
+		console.log(`Chemicals (${chemicals.length}):`);
+		chemicals.forEach((chem) => {
+			const sourceWh = state.sourceWarehouseCache[chem.chemical]?.source_warehouse;
+			const issues = [
+				...(!chem.chemical ? ["item_code"] : []),
+				...(!chem.uom ? ["uom"] : []),
+				...(chem.application_rate <= 0 ? ["rate"] : []),
+				...(!sourceWh ? ["source_warehouse"] : []),
+			];
+			console.log(
+				`  ${issues.length === 0 ? "✅" : "⚠️"} "${chem.item_name || chem.chemical}"`,
+				{ item_code: chem.chemical, uom: chem.uom, rate: chem.application_rate, source_warehouse: sourceWh || "❌ not selected" },
+				issues.length ? `ISSUES: ${issues.join(", ")}` : ""
+			);
+		});
+		console.groupEnd();
+
+		const missingFields = [];
+		if (!greenhouse) missingFields.push("Greenhouse");
+		if (targets.length === 0) missingFields.push("Targets");
+		if (!scheduledApplicationTime) missingFields.push("Scheduled Application Date");
+		if (!sprayType) missingFields.push("Spray Type");
+		if (!kit) missingFields.push("Kit");
+		if (!scope) missingFields.push("Scope");
+		if (!sprayTeam) missingFields.push("Spray Team");
+		if (!bom) missingFields.push("BOM");
+
+		if (missingFields.length > 0) {
+			showToast(`Missing required fields: ${missingFields.join(", ")}`, "error");
 			return;
 		}
 
@@ -1778,16 +1872,21 @@ document.addEventListener("DOMContentLoaded", () => {
 		for (const chemical of chemicals) {
 			const sourceWarehouse =
 				state.sourceWarehouseCache[chemical.chemical]?.source_warehouse;
-			if (
-				!chemical.chemical ||
-				!chemical.uom ||
-				chemical.application_rate <= 0 ||
-				!sourceWarehouse
-			) {
-				showToast(
-					"All chemical rows must have valid item name, quantity, UoM, and source warehouse.",
-					"error"
-				);
+			const issues = [];
+			if (!chemical.chemical) issues.push("item code");
+			if (!chemical.uom) issues.push("UoM");
+			if (chemical.application_rate <= 0) issues.push("rate > 0");
+			if (!sourceWarehouse) issues.push("source warehouse");
+
+			if (issues.length > 0) {
+				const label = chemical.item_name || chemical.chemical || "Unknown";
+				showToast(`Chemical "${label}" is missing: ${issues.join(", ")}`, "error");
+				return;
+			}
+
+			if (chemical.application_rate > 10) {
+				const label = chemical.item_name || chemical.chemical || "Unknown";
+				showToast(`Chemical "${label}" rate (${chemical.application_rate}) exceeds the maximum of 10 per 1000L`, "error");
 				return;
 			}
 		}

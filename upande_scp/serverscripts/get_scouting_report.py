@@ -364,11 +364,14 @@ def getScoutingData():
             fields=["name", "custom_water_ph", "custom_water_hardness"]
         )
         bom_names = [b["name"] for b in chemical_mix_boms]
-        bom_items = frappe.db.get_all("BOM Item", filters={"parent": ["in", bom_names]}, fields=["parent", "item_name", "qty", "uom"])
+        bom_items = frappe.db.get_all("BOM Item", filters={"parent": ["in", bom_names]}, fields=["parent", "item_code", "item_name", "qty", "uom"])
 
         bed_zone_numbering = frappe.get_all("Warehouse", filters={"name": greenhouse}, fields=["custom_bed_numbering", "custom_zone_numbering"])
-        chemicals = frappe.db.get_list('Item', filters={'item_group': 'CHEMICALS'}, fields=['item_name'])
-        all_chemicals = sorted({c.item_name for c in chemicals})
+        chemicals = frappe.db.get_list('Item', filters={'item_group': 'CHEMICALS'}, fields=['name', 'item_name'])
+        all_chemicals = sorted(
+            [{"item_code": c.name, "item_name": c.item_name or c.name} for c in chemicals],
+            key=lambda x: x["item_name"]
+        )
 
         bed_data = frappe.get_all("Bed", filters={"greenhouse": greenhouse}, fields=["bed", "bed__area", "total_variety_area", "variety"])
         spray_teams = frappe.get_all("Spray Team", filters={"enabled": 1}, fields=["name"])

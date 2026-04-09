@@ -568,17 +568,17 @@
 				</div>
 
 				<!-- Map style section (shown when Protomaps active) -->
-				<div class="panel-section" id="map-flavor-section" style="display: none">
+				<div class="panel-section" id="map-flavor-section" style="display: block">
 					<div class="panel-section-label">Map Style</div>
 					<div class="legend-list">
 						<label class="style-option"
-							><input type="radio" name="flavor" value="light" checked /><span
+							><input type="radio" name="flavor" value="light" /><span
 								style="font-size: 0.8125rem"
 								>Light</span
 							></label
 						>
 						<label class="style-option"
-							><input type="radio" name="flavor" value="dark" /><span
+							><input type="radio" name="flavor" value="dark" checked /><span
 								style="font-size: 0.8125rem"
 								>Dark</span
 							></label
@@ -648,7 +648,7 @@
 	    let mapInitialized = false;
 	    let protomapsLayer = null;
 	    let layersControl = null;
-	    let darkFlavor = false;
+	    let darkFlavor = true;
 	    let ghOverlay = null;
 	    let zoneLayer = null;
 	    let lineLabels = null;
@@ -829,7 +829,7 @@
 	                    fill_color: hasObs ? dominantColor : 'transparent',
 	                    fill_opacity: hasObs ? opacity : 0,
 	                    stroke_color: hasObs ? dominantColor : '#94a3b8',
-	                    stroke_weight: hasObs ? 1.5 : 0.5,
+	                    stroke_weight: hasObs ? 4 : 0.5,
 	                    has_obs: hasObs
 	                }
 	            });
@@ -1052,8 +1052,9 @@
 
 	        const pmtilesUrl = 'https://res.cloudinary.com/dorft5vxy/raw/upload/v1757410567/eldama-ravine_gdtrsv.pmtiles';
 	        const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 25 });
-	        protomapsLayer = protomapsL.leafletLayer({ url: pmtilesUrl, flavor: 'light', attribution: '© Protomaps © OpenStreetMap' });
-	        googleSat.addTo(window.map);
+	        protomapsLayer = protomapsL.leafletLayer({ url: pmtilesUrl, flavor: 'dark', attribution: '© Protomaps © OpenStreetMap' });
+	        protomapsLayer.addTo(window.map);
+	        document.documentElement.setAttribute('data-theme', 'dark');
 	        layersControl = L.control.layers(
 	            { 'Satellite': googleSat, 'Protomaps': protomapsLayer },
 	            {}, { collapsed: false, position: 'topleft' }

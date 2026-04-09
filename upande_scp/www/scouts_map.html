@@ -472,7 +472,7 @@
 			</div>
 
 			<!-- Map Style -->
-			<div class="section" id="map-style-section" style="display: none">
+			<div class="section" id="map-style-section" style="display: flex">
 				<label class="section-label">
 					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path
@@ -486,12 +486,12 @@
 				</label>
 				<div class="style-selector">
 					<label class="style-option"
-						><input type="radio" name="flavor" value="light" checked /><label
+						><input type="radio" name="flavor" value="light" /><label
 							>Light</label
 						></label
 					>
 					<label class="style-option"
-						><input type="radio" name="flavor" value="dark" /><label
+						><input type="radio" name="flavor" value="dark" checked /><label
 							>Dark</label
 						></label
 					>
@@ -534,7 +534,7 @@
 	    let mapInitialized = false;
 	    let protomapsLayer = null;
 	    let layersControl  = null;
-	    let darkFlavor     = false;
+	    let darkFlavor     = true;
 	    let abortCtrl      = null;
 
 	    window.zoneLayer      = null;
@@ -874,8 +874,9 @@
 
 	        const pmtilesUrl = 'https://res.cloudinary.com/dorft5vxy/raw/upload/v1757410567/eldama-ravine_gdtrsv.pmtiles';
 	        const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom:25 });
-	        protomapsLayer = protomapsL.leafletLayer({ url:pmtilesUrl, flavor:'light', attribution:'© Protomaps © OpenStreetMap' });
-	        googleSat.addTo(window.map);
+	        protomapsLayer = protomapsL.leafletLayer({ url:pmtilesUrl, flavor:'dark', attribution:'© Protomaps © OpenStreetMap' });
+	        protomapsLayer.addTo(window.map);
+	        document.documentElement.setAttribute('data-theme', 'dark');
 	        layersControl = L.control.layers({ 'Satellite':googleSat, 'Protomaps':protomapsLayer }, {}, { collapsed:false, position:'topleft' }).addTo(window.map);
 
 	        window.map.on('baselayerchange', e => {

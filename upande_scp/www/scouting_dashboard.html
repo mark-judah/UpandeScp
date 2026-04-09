@@ -201,38 +201,24 @@
 		</div>
 
 
-		<div class="charts-grid">
-			<div class="chart-card"><div class="chart-header"><h4>Pest Incidence Trend</h4></div><div class="chart-body"><canvas id="pest-trend-chart"></canvas></div></div>
-			<div class="chart-card"><div class="chart-header"><h4>Pest Distribution</h4><span class="chart-subtitle">Beds infected by pest type</span></div><div class="chart-body"><canvas id="pest-distribution-chart"></canvas></div></div>
+		<div class="charts-grid-3">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Plant Section Split</h4><span class="chart-subtitle">Where pests are found</span></div>
+				<div class="chart-body"><canvas id="pest-section-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Entries by Stage</h4><span class="chart-subtitle">Filtered to selected pest</span></div>
+				<div class="chart-body"><canvas id="pest-stage-radial-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Pest Distribution</h4><span class="chart-subtitle">Beds infected by pest type</span></div>
+				<div class="chart-body"><canvas id="pest-distribution-chart"></canvas></div>
+			</div>
 		</div>
 
 		<div class="charts-grid">
 			<div class="chart-card"><div class="chart-header"><h4>Severity Matrix</h4><span class="chart-subtitle">Current infestation levels</span></div><div class="chart-body"><div class="severity-matrix" id="pest-severity-matrix"></div></div></div>
-			 <div class="charts-grid">
- 
-			<div class="chart-card">
-			<div class="chart-header">
-				<h4>Plant Section Split</h4>
-				<span class="chart-subtitle">Where pests are found</span>
-			</div>
-			<div class="chart-body" style="height:220px">
-				<canvas id="pest-section-chart"></canvas>
-			</div>
-			</div>
-	
-			<div class="chart-card">
-			<div class="chart-header">
-				<h4>Entries by Stage</h4>
-				<span class="chart-subtitle">Radial view · filtered to selected pest</span>
-			</div>
-			<div class="chart-body" style="height:280px">
-				<canvas id="pest-stage-radial-chart"></canvas>
-			</div>
-			</div>
-	
-		</div>
-				
-	
+			<div class="chart-card"><div class="chart-header"><h4>Pest Incidence Trend</h4></div><div class="chart-body"><canvas id="pest-trend-chart"></canvas></div></div>
 		</div>
 
 		<!-- Greenhouse & Bed bar charts -->
@@ -247,17 +233,6 @@
 			</div>
 		</div>
 
-		<div class="chart-card">
-			<div class="chart-header"><h4>Life Stage Breakdown</h4><span class="chart-subtitle">Detailed stage analysis</span></div>
-			<div class="chart-body">
-				<div class="stages-table-wrap">
-					<table class="stages-table">
-						<thead><tr><th>Pest</th><th>Stage</th><th>Count</th><th>Section</th><th>Date</th><th>Greenhouse</th><th>Bed</th></tr></thead>
-						<tbody id="pest-stages-body"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
-					</table>
-				</div>
-			</div>
-		</div>
 	</div>
 
 	<!-- ════════════════════════════════════════════════ -->
@@ -286,36 +261,24 @@
 			<div class="chart-body"><canvas id="disease-weekly-trend-chart"></canvas></div>
 		</div>
 
-		<div class="charts-grid">
-			<div class="chart-card"><div class="chart-header"><h4>Disease Incidence Trend</h4></div><div class="chart-body"><canvas id="disease-trend-chart"></canvas></div></div>
-			<div class="chart-card"><div class="chart-header"><h4>Disease Distribution</h4><span class="chart-subtitle">Beds infected by disease type</span></div><div class="chart-body"><canvas id="disease-distribution-chart"></canvas></div></div>
+		<div class="charts-grid-3">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Stage Split</h4><span class="chart-subtitle">Selected or all diseases</span></div>
+				<div class="chart-body"><canvas id="disease-stage-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Entries by Stage</h4><span class="chart-subtitle">Filtered to selected disease</span></div>
+				<div class="chart-body"><canvas id="disease-stage-radial-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Disease Distribution</h4><span class="chart-subtitle">Beds infected by disease type</span></div>
+				<div class="chart-body"><canvas id="disease-distribution-chart"></canvas></div>
+			</div>
 		</div>
 
 		<div class="charts-grid">
 			<div class="chart-card"><div class="chart-header"><h4>Severity Levels</h4><span class="chart-subtitle">Infection intensity</span></div><div class="chart-body"><div class="severity-bubbles" id="disease-severity-bubbles"></div></div></div>
-			<div class="charts-grid">
- 
-        <div class="chart-card">
-          <div class="chart-header">
-            <h4>Stage Split</h4>
-            <span class="chart-subtitle">Selected or all diseases</span>
-          </div>
-          <div class="chart-body" style="height:220px">
-            <canvas id="disease-stage-chart"></canvas>
-          </div>
-        </div>
- 
-        <div class="chart-card">
-          <div class="chart-header">
-            <h4>Entries by Stage</h4>
-            <span class="chart-subtitle">Radial view · filtered to selected disease</span>
-          </div>
-          <div class="chart-body" style="height:280px">
-            <canvas id="disease-stage-radial-chart"></canvas>
-          </div>
-        </div>
- 
-      </div>
+			<div class="chart-card"><div class="chart-header"><h4>Disease Incidence Trend</h4></div><div class="chart-body"><canvas id="disease-trend-chart"></canvas></div></div>
 		</div>
 
 		<!-- Greenhouse & Bed bar charts -->
@@ -330,17 +293,6 @@
 			</div>
 		</div>
 
-		<div class="chart-card">
-			<div class="chart-header"><h4>Disease Incidents</h4><span class="chart-subtitle">Recent observations</span></div>
-			<div class="chart-body">
-				<div class="stages-table-wrap">
-					<table class="stages-table">
-						<thead><tr><th>Disease</th><th>Stage</th><th>Severity</th><th>Section</th><th>Date</th><th>Greenhouse</th><th>Bed</th></tr></thead>
-						<tbody id="disease-incidents-body"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
-					</table>
-				</div>
-			</div>
-		</div>
 	</div>
 
 	<!-- ════════════════════════════════════════════════ -->

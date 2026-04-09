@@ -7,6 +7,8 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "scouting_entry",
+  "client_id",
   "latitude",
   "longitude",
   "zone_buffer",
@@ -19,6 +21,22 @@
   "stationary"
  ],
  "fields": [
+  {
+   "fieldname": "scouting_entry",
+   "fieldtype": "Link",
+   "label": "Scouting Entry",
+   "options": "Scouting Entry",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Client-generated UUID used for fast-path duplicate detection on re-sync",
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "Client ID",
+   "unique": 1,
+   "search_index": 1
+  },
   {
    "fieldname": "latitude",
    "fieldtype": "Data",

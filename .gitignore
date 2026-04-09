@@ -10,3 +10,4 @@ pest data.txt
 disease data.txt
 trap data.txt
 report temps
+test_scouting_load.py

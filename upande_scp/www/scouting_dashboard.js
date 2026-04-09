@@ -1537,7 +1537,6 @@ function updatePestTab() {
 	updatePestStageRadialChart();
 	updatePestGhChart();
 	updatePestBedChart();
-	updatePestStagesTable();
 }
 
 function updatePestTrendChart() {
@@ -1665,15 +1664,70 @@ function updatePestWeeklyTrendChart() {
 
 	var datasets = [];
 
-	if (pestName) {
+	if (!section) {
+		/* All Sections: stratify – one line per section */
+		var allCounts = pestName
+			? (scoutingData.pests?.[pestName]?.counts || [])
+			: Object.values(scoutingData.pests || {}).reduce(function (acc, p) {
+				return acc.concat(p.counts || []);
+			}, []);
+		var sections = Array.from(new Set(
+			allCounts.map(function (c) { return c.section || ""; }).filter(Boolean)
+		)).sort();
+		if (sections.length === 0) {
+			/* No section data: one line per pest */
+			(pestName ? [pestName] : Object.keys(scoutingData.pests || {}).sort()).forEach(function (p, idx) {
+				var d = buildDailyBedInfectionSeries(
+					scoutingData.pests[p]?.counts || [],
+					axis, dayIndex, totalBeds, function (c) {
+						return !stage || (c.stage || "") === stage;
+					}
+				);
+				if (!d.some(function (v) { return v > 0; })) return;
+				var pal = getPaletteColor(idx);
+				datasets.push({
+					label:           p,
+					data:            d,
+					borderColor:     observationColors.pests[p] || pal.border,
+					backgroundColor: pal.background,
+					borderWidth:     2,
+					fill:            false,
+					tension:         0.4,
+					pointRadius:     0,
+					order:           idx,
+				});
+			});
+		} else {
+			sections.forEach(function (sec, idx) {
+				var sectionIncludeFn = function (c) {
+					if (c.section !== sec) return false;
+					if (stage && (c.stage || "") !== stage) return false;
+					return true;
+				};
+				var d = buildDailyBedInfectionSeries(allCounts, axis, dayIndex, totalBeds, sectionIncludeFn);
+				if (!d.some(function (v) { return v > 0; })) return;
+				var pal = getPaletteColor(idx);
+				datasets.push({
+					label:           pestName ? pestName + " – " + sec : sec,
+					data:            d,
+					borderColor:     pal.border,
+					backgroundColor: pal.background,
+					borderWidth:     2,
+					fill:            false,
+					tension:         0.4,
+					pointRadius:     0,
+					order:           idx,
+				});
+			});
+		}
+	} else if (pestName) {
+		/* Specific pest + specific section: single line */
 		var d = buildDailyBedInfectionSeries(
 			scoutingData.pests?.[pestName]?.counts || [],
 			axis, dayIndex, totalBeds, includeFn
 		);
 		datasets.push({
-			label:           pestName
-			                 + (section ? " (" + section + ")" : "")
-			                 + (stage   ? " [" + stage   + "]" : ""),
+			label:           pestName + " (" + section + ")" + (stage ? " [" + stage + "]" : ""),
 			data:            d,
 			borderColor:     observationColors.pests[pestName] || "#10b981",
 			backgroundColor: "rgba(16,185,129,.1)",
@@ -1683,6 +1737,7 @@ function updatePestWeeklyTrendChart() {
 			pointRadius:     2,
 		});
 	} else {
+		/* All pests + specific section: one line per pest */
 		Object.keys(scoutingData.pests || {}).sort().forEach(function (p, idx) {
 			var d = buildDailyBedInfectionSeries(
 				scoutingData.pests[p].counts || [],
@@ -1691,7 +1746,7 @@ function updatePestWeeklyTrendChart() {
 			if (!d.some(function (v) { return v > 0; })) return;
 			var pal = getPaletteColor(idx);
 			datasets.push({
-				label:           p,
+				label:           p + " (" + section + ")",
 				data:            d,
 				borderColor:     observationColors.pests[p] || pal.border,
 				backgroundColor: pal.background,
@@ -1895,10 +1950,11 @@ function updatePestStageRadialChart() {
 	];
  
 	window._pestStageRadialChart = new Chart(ctx, {
-		type: "polarArea",
+		type: "bar",
 		data: {
 			labels: labels,
 			datasets: [{
+				label:           pestName ? "Entries by Stage – " + pestName : "Entries by Stage (all pests)",
 				data:            values,
 				backgroundColor: labels.map(function (_, i) {
 					return palette[i % palette.length] + "cc";
@@ -1906,32 +1962,31 @@ function updatePestStageRadialChart() {
 				borderColor: labels.map(function (_, i) {
 					return palette[i % palette.length];
 				}),
-				borderWidth: 1,
+				borderWidth:  1,
+				borderRadius: 4,
 			}],
 		},
 		options: {
 			responsive:          true,
 			maintainAspectRatio: false,
 			plugins: {
-				legend: {
-					position: "bottom",
-					labels:   { boxWidth: 10, boxHeight: 10, padding: 8, font: { size: 10 } },
-				},
+				legend: { display: false },
 				tooltip: {
 					callbacks: {
 						label: function (item) {
 							var total = values.reduce(function (a, b) { return a + b; }, 0);
 							var pct   = total ? ((item.raw / total) * 100).toFixed(1) : 0;
-							return " " + item.label + ": " + item.raw + " (" + pct + "%)";
+							return " " + item.raw + " (" + pct + "%)";
 						},
 					},
 				},
 			},
 			scales: {
-				r: {
+				x: { grid: { display: false } },
+				y: {
 					beginAtZero: true,
-					ticks: { font: { size: 9 }, backdropColor: "transparent" },
-					grid:  { color: "rgba(0,0,0,.08)" },
+					grid:  { color: "rgba(0,0,0,.04)" },
+					ticks: { stepSize: 1 },
 				},
 			},
 		},
@@ -2013,7 +2068,6 @@ function updateDiseaseTab() {
 	updateDiseaseStageRadialChart();
 	updateDiseaseGhChart();
 	updateDiseaseBedChart();
-	updateDiseaseIncidentsTable();
 }
 
 function updateDiseaseTrendChart() {
@@ -2141,15 +2195,70 @@ function updateDiseaseWeeklyTrendChart() {
 
 	var datasets = [];
 
-	if (diseaseName) {
+	if (!section) {
+		/* All Sections: stratify – one line per section */
+		var allCounts = diseaseName
+			? (scoutingData.diseases?.[diseaseName]?.counts || [])
+			: Object.values(scoutingData.diseases || {}).reduce(function (acc, d) {
+				return acc.concat(d.counts || []);
+			}, []);
+		var sections = Array.from(new Set(
+			allCounts.map(function (c) { return c.section || ""; }).filter(Boolean)
+		)).sort();
+		if (sections.length === 0) {
+			/* No section data: one line per disease */
+			(diseaseName ? [diseaseName] : Object.keys(scoutingData.diseases || {}).sort()).forEach(function (dn, idx) {
+				var d = buildDailyBedInfectionSeries(
+					scoutingData.diseases[dn]?.counts || [],
+					axis, dayIndex, totalBeds, function (c) {
+						return !stage || (c.stage || "") === stage;
+					}
+				);
+				if (!d.some(function (v) { return v > 0; })) return;
+				var pal = getPaletteColor(idx);
+				datasets.push({
+					label:           dn,
+					data:            d,
+					borderColor:     observationColors.diseases[dn] || pal.border,
+					backgroundColor: pal.background,
+					borderWidth:     2,
+					fill:            false,
+					tension:         0.4,
+					pointRadius:     0,
+					order:           idx,
+				});
+			});
+		} else {
+			sections.forEach(function (sec, idx) {
+				var sectionIncludeFn = function (c) {
+					if (c.section !== sec) return false;
+					if (stage && (c.stage || "") !== stage) return false;
+					return true;
+				};
+				var d = buildDailyBedInfectionSeries(allCounts, axis, dayIndex, totalBeds, sectionIncludeFn);
+				if (!d.some(function (v) { return v > 0; })) return;
+				var pal = getPaletteColor(idx);
+				datasets.push({
+					label:           diseaseName ? diseaseName + " – " + sec : sec,
+					data:            d,
+					borderColor:     pal.border,
+					backgroundColor: pal.background,
+					borderWidth:     2,
+					fill:            false,
+					tension:         0.4,
+					pointRadius:     0,
+					order:           idx,
+				});
+			});
+		}
+	} else if (diseaseName) {
+		/* Specific disease + specific section: single line */
 		var d = buildDailyBedInfectionSeries(
 			scoutingData.diseases?.[diseaseName]?.counts || [],
 			axis, dayIndex, totalBeds, includeFn
 		);
 		datasets.push({
-			label:           diseaseName
-			                 + (section ? " (" + section + ")" : "")
-			                 + (stage   ? " [" + stage   + "]" : ""),
+			label:           diseaseName + " (" + section + ")" + (stage ? " [" + stage + "]" : ""),
 			data:            d,
 			borderColor:     observationColors.diseases[diseaseName] || "#f59e0b",
 			backgroundColor: "rgba(245,158,11,.1)",
@@ -2159,6 +2268,7 @@ function updateDiseaseWeeklyTrendChart() {
 			pointRadius:     2,
 		});
 	} else {
+		/* All diseases + specific section: one line per disease */
 		Object.keys(scoutingData.diseases || {}).sort().forEach(function (dn, idx) {
 			var d = buildDailyBedInfectionSeries(
 				scoutingData.diseases[dn].counts || [],
@@ -2167,7 +2277,7 @@ function updateDiseaseWeeklyTrendChart() {
 			if (!d.some(function (v) { return v > 0; })) return;
 			var pal = getPaletteColor(idx);
 			datasets.push({
-				label:           dn,
+				label:           dn + " (" + section + ")",
 				data:            d,
 				borderColor:     observationColors.diseases[dn] || pal.border,
 				backgroundColor: pal.background,
@@ -2364,10 +2474,11 @@ function updateDiseaseStageRadialChart() {
 	];
  
 	window._diseaseStageRadialChart = new Chart(ctx, {
-		type: "polarArea",
+		type: "bar",
 		data: {
 			labels: labels,
 			datasets: [{
+				label:           diseaseName ? "Entries by Stage – " + diseaseName : "Entries by Stage (all diseases)",
 				data:            values,
 				backgroundColor: labels.map(function (_, i) {
 					return palette[i % palette.length] + "cc";
@@ -2375,32 +2486,31 @@ function updateDiseaseStageRadialChart() {
 				borderColor: labels.map(function (_, i) {
 					return palette[i % palette.length];
 				}),
-				borderWidth: 1,
+				borderWidth:  1,
+				borderRadius: 4,
 			}],
 		},
 		options: {
 			responsive:          true,
 			maintainAspectRatio: false,
 			plugins: {
-				legend: {
-					position: "bottom",
-					labels:   { boxWidth: 10, boxHeight: 10, padding: 8, font: { size: 10 } },
-				},
+				legend: { display: false },
 				tooltip: {
 					callbacks: {
 						label: function (item) {
 							var total = values.reduce(function (a, b) { return a + b; }, 0);
 							var pct   = total ? ((item.raw / total) * 100).toFixed(1) : 0;
-							return " " + item.label + ": " + item.raw + " (" + pct + "%)";
+							return " " + item.raw + " (" + pct + "%)";
 						},
 					},
 				},
 			},
 			scales: {
-				r: {
+				x: { grid: { display: false } },
+				y: {
 					beginAtZero: true,
-					ticks: { font: { size: 9 }, backdropColor: "transparent" },
-					grid:  { color: "rgba(0,0,0,.08)" },
+					grid:  { color: "rgba(0,0,0,.04)" },
+					ticks: { stepSize: 1 },
 				},
 			},
 		},

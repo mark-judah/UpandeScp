@@ -274,7 +274,10 @@
 }
 
 .charts-grid-3 {
-	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 16px;
+	margin-bottom: 20px;
 }
 
 .chart-card {
@@ -296,6 +299,7 @@
 	height: 44vh;
 	min-height: 280px;
 }
+
 
 .chart-header {
 	display: flex;
@@ -1030,7 +1034,7 @@
 	.stat-value { font-size: 1.2rem; }
 
 	.charts-grid,
-	.charts-grid-3 { grid-template-columns: 1fr; }
+	.charts-grid-3 { grid-template-columns: 1fr; gap: 10px; }
 
 	.chart-card-wide .chart-body { height: 36vh; min-height: 220px; }
 

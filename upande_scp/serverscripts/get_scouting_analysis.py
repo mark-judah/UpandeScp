@@ -9,22 +9,20 @@ def getScoutingAnalysis():
         if not date_str:
             frappe.throw("The date is required.")
 
-        # Fetch all scouting entries for the given date
+        greenhouse = frappe.form_dict.get("greenhouse") or ""
+
+        # Build filters
+        se_filters = [["date_of_capture", "=", date_str]]
+        if greenhouse:
+            se_filters.append(["greenhouse", "=", greenhouse])
+
+        # Fetch scouting entries for the given date (and optional greenhouse)
         scouting_entries = frappe.get_all(
             "Scouting Entry",
             fields=["name", "scouts_name", "greenhouse", "bed",
                     "zone", "time_of_capture", "date_of_capture", "latitude", "longitude", "creation"],
-            filters=[
-                ["date_of_capture", "=", date_str]
-            ],
+            filters=se_filters,
             order_by="time_of_capture asc"
-        )
-        
-        # Fetch all zones and their raw_geojson data
-        all_zones = frappe.get_all(
-            "Zone",
-            filters={"raw_geojson": ["is", "set"]},
-            fields=["name", "raw_geojson"]
         )
 
         scouting_summary = {
@@ -42,7 +40,7 @@ def getScoutingAnalysis():
                 "scouting_summary": scouting_summary,
                 "scout_movement_timeline": [],
                 "scout_paths": [],
-                "all_zones_geojson": all_zones,
+                "all_zones_geojson": [],
                 "scouting_entries": []
             }
         else:
@@ -165,6 +163,21 @@ def getScoutingAnalysis():
                     "path": path_data
                 })
 
+            # Zone GeoJSON cached in Redis — geometry doesn't change between requests
+            zone_cache_key = "scp_zone_geojson"
+            all_zones_raw = frappe.cache().get_value(zone_cache_key)
+            if all_zones_raw is None:
+                all_zones_raw = frappe.get_all(
+                    "Zone",
+                    filters={"raw_geojson": ["is", "set"]},
+                    fields=["name", "raw_geojson"]
+                )
+                frappe.cache().set_value(zone_cache_key, all_zones_raw, expires_in_sec=3600)
+
+            # Filter to referenced zones in Python — no DB round trip
+            entry_zones_set = {e.zone for e in scouting_entries if e.zone}
+            all_zones = [z for z in all_zones_raw if z.get("name") in entry_zones_set]
+
             # Return the final processed data
             return {
                 "scouting_summary": scouting_summary,
@@ -172,7 +185,7 @@ def getScoutingAnalysis():
                 "scout_paths": scout_paths_list,
                 "all_zones_geojson": all_zones,
                 # Now contains employee_name instead of HR number
-                "scouting_entries": scouting_entries 
+                "scouting_entries": scouting_entries
             }
 
     except Exception as e:

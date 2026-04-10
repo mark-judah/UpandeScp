@@ -8,7 +8,6 @@ def getScoutingObservations():
         if not date_str:
             frappe.throw("Date is required.")
 
-  
         observation_configs = {
             "pests_scouting_entry": {
                 "doctype": "Pest",
@@ -60,9 +59,31 @@ def getScoutingObservations():
             }
         }
 
+        # Pre-compute meta fields once — avoids 12 get_meta() calls inside the loop
+        boolean_types = {
+            "diseases_scouting_entry", "incidents_scouting_entry",
+            "physiological_disorders_entry", "weeds_scouting_entry"
+        }
+        for key, cfg in observation_configs.items():
+            meta = frappe.get_meta(cfg["child_table"])
+            cfg["_fetch_fields"] = ["parent", cfg["item_field"]] + [
+                f for f in cfg["extra_fields"] if meta.has_field(f)
+            ]
+            cfg["_has_count"] = "count" in [f.fieldname for f in meta.fields]
+            main_meta = frappe.get_meta(cfg["doctype"])
+            cfg["_color_field_exists"] = any(
+                f.fieldname == cfg["legend_color_field"] for f in main_meta.fields
+            )
+
+        greenhouse = frappe.form_dict.get("greenhouse") or ""
+
+        se_filters = {"date_of_capture": date_str}
+        if greenhouse:
+            se_filters["greenhouse"] = greenhouse
+
         scouting_entries = frappe.get_all(
             "Scouting Entry",
-            filters={"date_of_capture": date_str},
+            filters=se_filters,
             fields=["name", "zone"],
             order_by="time_of_capture ASC"
         )
@@ -84,23 +105,16 @@ def getScoutingObservations():
             for key in observation_configs:
                 processed_entries[entry.name][key] = []
 
-
         all_observation_names = {}
-        
-        for key, cfg in observation_configs.items():
-            fields = ["parent", cfg["item_field"]]
-            meta = frappe.get_meta(cfg["child_table"])
-            for f in cfg["extra_fields"]:
-                if meta.has_field(f):
-                    fields.append(f)
 
+        for key, cfg in observation_configs.items():
             items_in_data = {}
-            
+
             try:
                 child_records = frappe.get_all(
                     cfg["child_table"],
                     filters={"parent": ["in", entry_names]},
-                    fields=fields
+                    fields=cfg["_fetch_fields"]
                 )
 
                 for rec in child_records:
@@ -113,76 +127,64 @@ def getScoutingObservations():
                         continue
 
                     if item_name not in items_in_data:
-                        items_in_data[item_name] = "#999999"  # Default gray
+                        items_in_data[item_name] = "#999999"
 
-                    # Build observation object
-                    obs_data = {
-                        "name": item_name,
-                        "color": "#999999"  # Will be updated below
-                    }
-                    
-                    # Add extra fields if they exist
+                    obs_data = {"name": item_name, "color": "#999999"}
+
                     for field in cfg["extra_fields"]:
                         if field in rec:
                             obs_data[field] = rec[field]
-                    
-                    # Handle count field appropriately
-                    if "count" in [f.fieldname for f in meta.fields] and "count" in rec:
+
+                    if cfg["_has_count"] and "count" in rec:
                         obs_data["count"] = rec["count"]
-                    elif key in ["diseases_scouting_entry", "incidents_scouting_entry", "physiological_disorders_entry", "weeds_scouting_entry"]:
-                        # For boolean observations, default to 1 if no count
+                    elif key in boolean_types:
                         obs_data["count"] = 1
                     else:
                         obs_data["count"] = rec.get("count", 0)
-                    
+
                     processed_entries[parent][key].append(obs_data)
-                    
+
             except Exception as e:
                 frappe.log_error(f"Failed to load {cfg['child_table']}: {str(e)}")
-                continue  # Continue with next observation type
+                continue
 
-            try:
-                main_meta = frappe.get_meta(cfg["doctype"])
-                color_field_exists = any(f.fieldname == cfg["legend_color_field"] for f in main_meta.fields)
+            if items_in_data:
+                # Colors are cached in Redis — they almost never change day-to-day
+                color_cache_key = f"scp_obs_colors_{key}"
+                full_color_map = frappe.cache().get_value(color_cache_key)
 
-                doctype_fields = ["name"]
-                if color_field_exists:
-                    doctype_fields.append(cfg["legend_color_field"])
+                if full_color_map is None:
+                    full_color_map = {}
+                    try:
+                        if cfg["_color_field_exists"]:
+                            for rec in frappe.get_all(
+                                cfg["doctype"],
+                                fields=["name", cfg["legend_color_field"]]
+                            ):
+                                name = rec.get("name")
+                                color = rec.get(cfg["legend_color_field"])
+                                if name:
+                                    if color:
+                                        full_color_map[name] = color
+                                    else:
+                                        color_hash = hashlib.md5(name.encode()).hexdigest()[:6]
+                                        full_color_map[name] = f"#{color_hash}"
+                    except Exception:
+                        pass
+                    frappe.cache().set_value(color_cache_key, full_color_map, expires_in_sec=86400)
 
-                all_items = frappe.get_all(
-                    cfg["doctype"],
-                    fields=doctype_fields,
-                    order_by="idx asc",
-                    limit_page_length=10000
-                )
-
-                for rec in all_items:
-                    item_name = rec.get("name")
-                    if not item_name:
-                        continue
-                    if item_name not in items_in_data:
-                        items_in_data[item_name] = "#999999"
-                    if color_field_exists:
-                        color = rec.get(cfg["legend_color_field"])
-                        if color:
-                            items_in_data[item_name] = color
-
-                for item_name in items_in_data:
-                    if items_in_data[item_name] == "#999999":
+                for item_name in list(items_in_data.keys()):
+                    if item_name in full_color_map:
+                        items_in_data[item_name] = full_color_map[item_name]
+                    else:
                         color_hash = hashlib.md5(item_name.encode()).hexdigest()[:6]
                         items_in_data[item_name] = f"#{color_hash}"
 
-            except Exception:
-                for item_name in items_in_data:
-                    color_hash = hashlib.md5(item_name.encode()).hexdigest()[:6]
-                    items_in_data[item_name] = f"#{color_hash}"
+                for entry_name in processed_entries:
+                    for obs in processed_entries[entry_name][key]:
+                        if obs["name"] in items_in_data:
+                            obs["color"] = items_in_data[obs["name"]]
 
-            for entry_name in processed_entries:
-                for obs in processed_entries[entry_name][key]:
-                    if obs["name"] in items_in_data:
-                        obs["color"] = items_in_data[obs["name"]]
-
-            # Store for legend
             all_observation_names[key] = [
                 {"name": name, "color": color}
                 for name, color in items_in_data.items()
@@ -196,23 +198,29 @@ def getScoutingObservations():
                 e[key] = proc.get(key, [])
             final_entries.append(e)
 
-      
-        all_zones = frappe.get_all(
-            "Zone",
-            filters={"raw_geojson": ["is", "set"]},
-            fields=["name", "raw_geojson"]
-        )
+        # Zone GeoJSON is cached in Redis — geometry doesn't change between requests
+        zone_cache_key = "scp_zone_geojson"
+        all_zones_raw = frappe.cache().get_value(zone_cache_key)
+        if all_zones_raw is None:
+            all_zones_raw = frappe.get_all(
+                "Zone",
+                filters={"raw_geojson": ["is", "set"]},
+                fields=["name", "raw_geojson"]
+            )
+            frappe.cache().set_value(zone_cache_key, all_zones_raw, expires_in_sec=3600)
 
-     
+        # Filter to only zones referenced by today's entries — done in Python, no DB round trip
+        entry_zones_set = {e.zone for e in scouting_entries if e.zone}
+        all_zones = [z for z in all_zones_raw if z.get("name") in entry_zones_set]
+
         active_types = [
             key for key in observation_configs
-            if all_observation_names.get(key)  # Has items
+            if all_observation_names.get(key)
         ]
 
-      
         frappe.response["message"] = {
             "scouting_entries": final_entries,
-            "all_zones_geojson": all_zones or [],
+            "all_zones_geojson": all_zones,
             "active_observation_types": active_types,
             "all_observation_names": all_observation_names,
             "observation_metadata": {

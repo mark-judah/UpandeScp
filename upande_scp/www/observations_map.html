@@ -327,39 +327,13 @@
 		width: 100%;
 	}
 
-	/* Loader */
-	#map-loader {
-		position: absolute;
-		inset: 0;
-		background: rgba(255, 255, 255, 0.92);
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		z-index: 2000;
-		gap: 0.875rem;
-	}
-	[data-theme="dark"] #map-loader {
-		background: rgba(22, 26, 31, 0.92);
-	}
-
-	.spinner {
-		width: 36px;
-		height: 36px;
-		border: 3px solid var(--border);
-		border-top: 3px solid var(--accent);
-		border-radius: 50%;
-		animation: spin 0.7s linear infinite;
-	}
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-	.loader-text {
-		font-size: 0.875rem;
-		font-weight: 500;
-		color: var(--text);
+	/* ── Progress bar ── */
+	#progress-bar {
+		position: fixed; top: 0; left: 0;
+		height: 3px; width: 0%;
+		background: var(--accent, #2563eb);
+		z-index: 9999; pointer-events: none;
+		opacity: 0; border-radius: 0 2px 2px 0;
 	}
 
 	/* Map Style Panel toggle */
@@ -608,10 +582,7 @@
 
 		<!-- Map -->
 		<div id="map-container">
-			<div id="map-loader">
-				<div class="spinner"></div>
-				<p class="loader-text">Loading observations…</p>
-			</div>
+			<div id="progress-bar"></div>
 			<div id="map"></div>
 		</div>
 	</div>
@@ -655,6 +626,8 @@
 
 	    // Zone GeoJSON parse cache: zone.name → parsed object
 	    const zoneCache = new Map();
+	    // Client-side data cache: "date_greenhouse" → API response
+	    const dataCache = new Map();
 
 	    // Canvas renderer for performance
 	    const canvasRenderer = L.canvas({ padding: 0.5 });
@@ -668,9 +641,30 @@
 	    const zonesStat  = document.getElementById('zones-stat');
 	    const zonesStatText = document.getElementById('zones-stat-text');
 
-	    // ── Helpers ──
-	    const showLoader = () => { document.getElementById('map-loader').style.display = 'flex'; };
-	    const hideLoader = () => { document.getElementById('map-loader').style.display = 'none'; };
+	    // ── Progress bar ──
+	    let _progTimer = null;
+	    const startProgress = () => {
+	        const bar = document.getElementById('progress-bar');
+	        clearTimeout(_progTimer);
+	        bar.style.transition = 'none';
+	        bar.style.width = '0%';
+	        bar.style.opacity = '0';
+	        requestAnimationFrame(() => requestAnimationFrame(() => {
+	            bar.style.transition = 'opacity 0.1s ease, width 1.8s ease-out';
+	            bar.style.opacity = '1';
+	            bar.style.width = '75%';
+	        }));
+	    };
+	    const finishProgress = () => {
+	        const bar = document.getElementById('progress-bar');
+	        bar.style.transition = 'width 0.15s ease';
+	        bar.style.width = '100%';
+	        _progTimer = setTimeout(() => {
+	            bar.style.transition = 'opacity 0.3s ease';
+	            bar.style.opacity = '0';
+	            setTimeout(() => { bar.style.transition = 'none'; bar.style.width = '0%'; }, 320);
+	        }, 150);
+	    };
 
 	    function debounce(fn, ms) {
 	        let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
@@ -1009,11 +1003,31 @@
 	        document.getElementById('stat-entries').textContent = entries;
 	    }
 
-	    // ── Fetch observations ──
-	    function fetchObservations(date, greenhouse) {
-	        if (abortCtrl) abortCtrl.abort();
-	        abortCtrl = new AbortController();
-	        showLoader();
+	    // ── Render from cached data ──
+	    const _renderObsData = (data) => {
+	        activeData = data;
+	        renderGhOverlay();
+	        renderZoneFills(data);
+	        renderSummary(data);
+	        renderTypePills(data);
+	        renderLegend(data);
+	    };
+
+	    // ── Fetch observations (background=true silently pre-populates cache) ──
+	    function fetchObservations(date, greenhouse, background = false) {
+	        const cacheKey = `${date}_${greenhouse || ''}`;
+
+	        // Cache hit — render immediately, no network request
+	        if (dataCache.has(cacheKey)) {
+	            if (!background) _renderObsData(dataCache.get(cacheKey));
+	            return;
+	        }
+
+	        const ctrl = background
+	            ? new AbortController()
+	            : (abortCtrl && abortCtrl.abort(), abortCtrl = new AbortController(), abortCtrl);
+
+	        if (!background) startProgress();
 
 	        const body = { date };
 	        if (greenhouse) body.greenhouse = greenhouse;
@@ -1022,25 +1036,37 @@
 	            method: 'POST',
 	            headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': CSRF },
 	            body: JSON.stringify(body),
-	            signal: abortCtrl.signal
+	            signal: ctrl.signal
 	        })
 	        .then(r => r.ok ? r.json() : Promise.reject(r))
 	        .then(r => {
 	            const data = r.message || r.data || {};
-	            activeData = data;
-	            renderGhOverlay();
-	            renderZoneFills(data);
-	            renderSummary(data);
-	            renderTypePills(data);
-	            renderLegend(data);
+	            dataCache.set(cacheKey, data);
+	            if (!background) {
+	                _renderObsData(data);
+	                prefetchPastDays(date, greenhouse);
+	            }
 	        })
 	        .catch(err => {
 	            if (err.name === 'AbortError') return;
-	            console.error('Observations fetch error:', err);
-	            legendList.innerHTML = '<div class="empty-panel">Failed to load data</div>';
+	            if (!background) {
+	                console.error('Observations fetch error:', err);
+	                legendList.innerHTML = '<div class="empty-panel">Failed to load data</div>';
+	            }
 	        })
-	        .finally(() => hideLoader());
+	        .finally(() => { if (!background) finishProgress(); });
 	    }
+
+	    const prefetchPastDays = (fromDate, greenhouse) => {
+	        const d = new Date(fromDate + 'T00:00:00');
+	        for (let i = 1; i <= 3; i++) {
+	            d.setDate(d.getDate() - 1);
+	            const day = d.toISOString().slice(0, 10);
+	            if (!dataCache.has(`${day}_${greenhouse || ''}`)) {
+	                fetchObservations(day, greenhouse, true);
+	            }
+	        }
+	    };
 
 	    const debouncedFetch = debounce((date, gh) => fetchObservations(date, gh), 300);
 

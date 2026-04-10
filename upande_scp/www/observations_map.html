@@ -327,34 +327,32 @@
 		width: 100%;
 	}
 
-	/* ── Progress bar ── */
-	#progress-bar {
-		position: fixed; top: 0; left: 0;
-		height: 3px; width: 0%;
-		background: var(--accent, #2563eb);
-		z-index: 9999; pointer-events: none;
-		opacity: 0; border-radius: 0 2px 2px 0;
+	/* ── Map overlay / empty state ── */
+	#map-loader {
+		position: absolute; inset: 0;
+		background: rgba(255,255,255,0.9);
+		display: flex; flex-direction: column;
+		align-items: center; justify-content: center;
+		z-index: 2000; gap: 0.75rem;
+	}
+	.map-spinner {
+		width: 36px; height: 36px;
+		border: 3px solid #e2e8f0;
+		border-top: 3px solid #2563eb;
+		border-radius: 50%;
+		animation: mapspin 0.7s linear infinite;
+	}
+	@keyframes mapspin { to { transform: rotate(360deg); } }
+	.map-loader-text { font-size: 0.875rem; font-weight: 500; color: #475569; }
+	#map-empty {
+		position: absolute; inset: 0;
+		display: none; flex-direction: column;
+		align-items: center; justify-content: center;
+		gap: 0.75rem; z-index: 1999; color: #94a3b8;
+		font-size: 0.875rem; pointer-events: none;
 	}
 
-	/* Map Style Panel toggle */
-	#map-style-section {
-		position: absolute;
-		top: 8px;
-		right: 8px;
-		z-index: 1000;
-		background: var(--panel-bg);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		box-shadow: var(--shadow-sm);
-		padding: 0.5rem;
-		display: none;
-		flex-direction: column;
-		gap: 0.3rem;
-	}
-	#map-style-section.visible {
-		display: flex;
-	}
-	.style-option {
+.style-option {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -541,48 +539,19 @@
 					</div>
 				</div>
 
-				<!-- Map style section (shown when Protomaps active) -->
-				<div class="panel-section" id="map-flavor-section" style="display: block">
-					<div class="panel-section-label">Map Style</div>
-					<div class="legend-list">
-						<label class="style-option"
-							><input type="radio" name="flavor" value="light" /><span
-								style="font-size: 0.8125rem"
-								>Light</span
-							></label
-						>
-						<label class="style-option"
-							><input type="radio" name="flavor" value="dark" checked /><span
-								style="font-size: 0.8125rem"
-								>Dark</span
-							></label
-						>
-						<label class="style-option"
-							><input type="radio" name="flavor" value="white" /><span
-								style="font-size: 0.8125rem"
-								>White</span
-							></label
-						>
-						<label class="style-option"
-							><input type="radio" name="flavor" value="grayscale" /><span
-								style="font-size: 0.8125rem"
-								>Grayscale</span
-							></label
-						>
-						<label class="style-option"
-							><input type="radio" name="flavor" value="black" /><span
-								style="font-size: 0.8125rem"
-								>Black</span
-							></label
-						>
-					</div>
-				</div>
 			</div>
 		</div>
 
 		<!-- Map -->
 		<div id="map-container">
-			<div id="progress-bar"></div>
+			<div id="map-loader">
+				<div class="map-spinner"></div>
+				<span class="map-loader-text">Loading observations…</span>
+			</div>
+			<div id="map-empty">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40" style="opacity:0.3"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
+				<span>No observations on this date</span>
+			</div>
 			<div id="map"></div>
 		</div>
 	</div>
@@ -590,8 +559,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-providers/1.13.0/leaflet-providers.min.js"></script>
-<script src="https://unpkg.com/protomaps-leaflet@5.0.0/dist/protomaps-leaflet.js"></script>
-
 <script>
 	window.onload = function () {
 	    // ── Context from Python ──
@@ -617,9 +584,6 @@
 	    let hiddenItems = new Set();     // unchecked observation names
 	    let abortCtrl = null;
 	    let mapInitialized = false;
-	    let protomapsLayer = null;
-	    let layersControl = null;
-	    let darkFlavor = true;
 	    let ghOverlay = null;
 	    let zoneLayer = null;
 	    let lineLabels = null;
@@ -641,29 +605,13 @@
 	    const zonesStat  = document.getElementById('zones-stat');
 	    const zonesStatText = document.getElementById('zones-stat-text');
 
-	    // ── Progress bar ──
-	    let _progTimer = null;
-	    const startProgress = () => {
-	        const bar = document.getElementById('progress-bar');
-	        clearTimeout(_progTimer);
-	        bar.style.transition = 'none';
-	        bar.style.width = '0%';
-	        bar.style.opacity = '0';
-	        requestAnimationFrame(() => requestAnimationFrame(() => {
-	            bar.style.transition = 'opacity 0.1s ease, width 1.8s ease-out';
-	            bar.style.opacity = '1';
-	            bar.style.width = '75%';
-	        }));
+	    const showOverlay = () => {
+	        document.getElementById('map-loader').style.display = 'flex';
+	        document.getElementById('map-empty').style.display = 'none';
 	    };
-	    const finishProgress = () => {
-	        const bar = document.getElementById('progress-bar');
-	        bar.style.transition = 'width 0.15s ease';
-	        bar.style.width = '100%';
-	        _progTimer = setTimeout(() => {
-	            bar.style.transition = 'opacity 0.3s ease';
-	            bar.style.opacity = '0';
-	            setTimeout(() => { bar.style.transition = 'none'; bar.style.width = '0%'; }, 320);
-	        }, 150);
+	    const hideOverlay = (empty = false) => {
+	        document.getElementById('map-loader').style.display = 'none';
+	        document.getElementById('map-empty').style.display = empty ? 'flex' : 'none';
 	    };
 
 	    function debounce(fn, ms) {
@@ -1027,7 +975,7 @@
 	            ? new AbortController()
 	            : (abortCtrl && abortCtrl.abort(), abortCtrl = new AbortController(), abortCtrl);
 
-	        if (!background) startProgress();
+	        if (!background) showOverlay();
 
 	        const body = { date };
 	        if (greenhouse) body.greenhouse = greenhouse;
@@ -1041,20 +989,23 @@
 	        .then(r => r.ok ? r.json() : Promise.reject(r))
 	        .then(r => {
 	            const data = r.message || r.data || {};
+	            const hasEntries = (data.scouting_entries || []).length > 0;
 	            dataCache.set(cacheKey, data);
 	            if (!background) {
-	                _renderObsData(data);
-	                prefetchPastDays(date, greenhouse);
+	                hideOverlay(!hasEntries);
+	                if (hasEntries) {
+	                    _renderObsData(data);
+	                    prefetchPastDays(date, greenhouse);
+	                }
 	            }
 	        })
 	        .catch(err => {
 	            if (err.name === 'AbortError') return;
 	            if (!background) {
 	                console.error('Observations fetch error:', err);
-	                legendList.innerHTML = '<div class="empty-panel">Failed to load data</div>';
+	                hideOverlay(true);
 	            }
-	        })
-	        .finally(() => { if (!background) finishProgress(); });
+	        });
 	    }
 
 	    const prefetchPastDays = (fromDate, greenhouse) => {
@@ -1076,34 +1027,9 @@
 	        window.map = L.map('map', { zoomSnap: 0.1, zoomDelta: 0.1, maxZoom: 22.4, zoomControl: true });
 	        mapInitialized = true;
 
-	        const pmtilesUrl = 'https://res.cloudinary.com/dorft5vxy/raw/upload/v1757410567/eldama-ravine_gdtrsv.pmtiles';
-	        const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 25 });
-	        protomapsLayer = protomapsL.leafletLayer({ url: pmtilesUrl, flavor: 'dark', attribution: '© Protomaps © OpenStreetMap' });
-	        protomapsLayer.addTo(window.map);
-	        document.documentElement.setAttribute('data-theme', 'dark');
-	        layersControl = L.control.layers(
-	            { 'Satellite': googleSat, 'Protomaps': protomapsLayer },
-	            {}, { collapsed: false, position: 'topleft' }
-	        ).addTo(window.map);
-
-	        window.map.on('baselayerchange', e => {
-	            const isProto = e.name === 'Protomaps';
-	            document.getElementById('map-flavor-section').style.display = isProto ? 'block' : 'none';
-	        });
-
-	        document.querySelectorAll('input[name="flavor"]').forEach(r => {
-	            r.addEventListener('change', e => {
-	                darkFlavor = ['dark', 'black'].includes(e.target.value);
-	                document.documentElement.setAttribute('data-theme', darkFlavor ? 'dark' : 'light');
-	                if (window.map.hasLayer(protomapsLayer)) {
-	                    window.map.removeLayer(protomapsLayer);
-	                    layersControl.removeLayer(protomapsLayer);
-	                }
-	                protomapsLayer = protomapsL.leafletLayer({ url: pmtilesUrl, flavor: e.target.value, attribution: '© Protomaps © OpenStreetMap' });
-	                protomapsLayer.addTo(window.map);
-	                layersControl.addBaseLayer(protomapsLayer, 'Protomaps');
-	            });
-	        });
+	        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+	            maxZoom: 19, attribution: '© OpenStreetMap contributors'
+	        }).addTo(window.map);
 
 	        window.map.setView([LAT, LON], ZOOM);
 

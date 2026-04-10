@@ -294,21 +294,23 @@
 	/* ── Map overlay / empty state ── */
 	#map-loader {
 		position: absolute; inset: 0;
-		background: rgba(255,255,255,0.9);
+		background: rgba(255,255,255,0.93);
 		display: flex; flex-direction: column;
 		align-items: center; justify-content: center;
-		z-index: 2000; gap: 0.75rem;
+		z-index: 2000; gap: 0.5rem;
 		border-radius: inherit;
 	}
-	.map-spinner {
-		width: 36px; height: 36px;
-		border: 3px solid #e2e8f0;
-		border-top: 3px solid #2563eb;
-		border-radius: 50%;
-		animation: mapspin 0.7s linear infinite;
+	.map-load-title { font-size: 0.875rem; font-weight: 600; color: #1e293b; margin-bottom: 0.15rem; }
+	.map-load-track {
+		width: 220px; height: 5px;
+		background: #e2e8f0; border-radius: 3px; overflow: hidden;
 	}
-	@keyframes mapspin { to { transform: rotate(360deg); } }
-	.map-loader-text { font-size: 0.875rem; font-weight: 500; color: #475569; }
+	.map-load-fill {
+		height: 100%; width: 0%;
+		background: #2563eb; border-radius: 3px;
+		transition: width 0.25s ease;
+	}
+	.map-load-status { font-size: 0.72rem; color: #64748b; min-width: 220px; text-align: center; }
 	#map-empty {
 		position: absolute; inset: 0;
 		display: none; flex-direction: column;
@@ -352,8 +354,9 @@
 <div id="map-page">
 	<div id="map-container">
 		<div id="map-loader">
-			<div class="map-spinner"></div>
-			<span class="map-loader-text">Loading scout data…</span>
+			<span class="map-load-title">Loading scout data</span>
+			<div class="map-load-track"><div class="map-load-fill" id="map-load-fill"></div></div>
+			<span class="map-load-status" id="map-load-status">Initialising…</span>
 		</div>
 		<div id="map-empty">
 			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40" style="opacity:0.3"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
@@ -505,13 +508,48 @@
 	    const toggleBtn = document.getElementById('toggle-sidebar');
 	    toggleBtn.addEventListener('click', () => sidebar.classList.toggle('collapsed'));
 
+	    const setProgress = (pct, msg) => {
+	        const fill = document.getElementById('map-load-fill');
+	        const status = document.getElementById('map-load-status');
+	        if (fill) fill.style.width = Math.min(100, pct) + '%';
+	        if (status && msg) status.textContent = msg;
+	    };
 	    const showOverlay = () => {
+	        setProgress(0, 'Initialising…');
 	        document.getElementById('map-loader').style.display = 'flex';
 	        document.getElementById('map-empty').style.display = 'none';
 	    };
 	    const hideOverlay = (empty = false) => {
 	        document.getElementById('map-loader').style.display = 'none';
 	        document.getElementById('map-empty').style.display = empty ? 'flex' : 'none';
+	    };
+
+	    // Streams the response body so we can report real download KB
+	    const streamResponse = (response, onProgress) => {
+	        const contentLength = response.headers.get('content-length');
+	        const reader = response.body.getReader();
+	        const chunks = [];
+	        let received = 0;
+	        const ESTIMATE = 600 * 1024;
+	        const read = () => reader.read().then(({ done, value }) => {
+	            if (done) {
+	                const buf = new Uint8Array(received);
+	                let pos = 0;
+	                for (const c of chunks) { buf.set(c, pos); pos += c.length; }
+	                if (onProgress) onProgress(83, 'Parsing response…');
+	                return JSON.parse(new TextDecoder().decode(buf));
+	            }
+	            chunks.push(value);
+	            received += value.length;
+	            if (onProgress) {
+	                const pct = contentLength
+	                    ? 48 + (received / +contentLength) * 33
+	                    : 48 + Math.min(received / ESTIMATE, 1) * 33;
+	                onProgress(pct, `Downloading… ${(received / 1024).toFixed(0)} KB`);
+	            }
+	            return read();
+	        });
+	        return read();
 	    };
 
 	    function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
@@ -777,7 +815,7 @@
 	        document.getElementById('kpi-min-bed').textContent  = mpb ? mpb.toFixed(1) : '—';
 	    };
 
-	    const _renderScoutData = (allData) => {
+	    const _renderScoutData = (allData, onProgress = () => {}) => {
 	        window.lastScoutingData = allData;
 	        if (window.scoutedBedOverlay) window.map.removeLayer(window.scoutedBedOverlay);
 	        window.scoutLayers = {};
@@ -785,26 +823,45 @@
 	        document.getElementById('scout-legend').innerHTML = '';
 	        const scoutColors = generateScoutColors(allData);
 	        window.scoutedBedOverlay = L.layerGroup().addTo(window.map);
+	        onProgress(86, 'Drawing zones…');
 	        renderZones(allData);
+	        onProgress(92, 'Drawing scout paths…');
 	        renderScoutFlowLines(allData.scouting_entries, allData.all_zones_geojson || [], scoutColors);
+	        onProgress(95, 'Mapping scouted beds…');
 	        renderScoutedBeds(allData.scouting_entries, allData.all_zones_geojson || [], scoutColors);
+	        onProgress(98, 'Updating stats…');
 	        renderScoutLegend(scoutColors);
 	        renderTimeline(allData);
 	        updateKPIs(allData);
+	        onProgress(100, 'Complete');
+	        setTimeout(() => hideOverlay(false), 350);
 	    };
 
 	    const fetchAllData = (date, greenhouse, background = false) => {
 	        const cacheKey = `${date}_${greenhouse || ''}`;
 
-	        // Cache hit — render immediately, no network request
+	        // Cache hit — render immediately with progress through render stages
 	        if (dataCache.has(cacheKey)) {
-	            if (!background) _renderScoutData(dataCache.get(cacheKey));
+	            if (!background) {
+	                showOverlay();
+	                _renderScoutData(dataCache.get(cacheKey), setProgress);
+	            }
 	            return;
 	        }
 
 	        const ctrl = background ? new AbortController() : (abortCtrl && abortCtrl.abort(), abortCtrl = new AbortController(), abortCtrl);
 
 	        if (!background) showOverlay();
+
+	        // Simulate server-side progress until first byte arrives
+	        let serverPct = 5, serverTimer = null;
+	        if (!background) {
+	            setProgress(serverPct, 'Sending request…');
+	            serverTimer = setInterval(() => {
+	                serverPct = Math.min(serverPct + 1.2, 45);
+	                setProgress(serverPct, 'Server processing…');
+	            }, 150);
+	        }
 
 	        const body = { date };
 	        if (greenhouse) body.greenhouse = greenhouse;
@@ -815,7 +872,12 @@
 	            body: JSON.stringify(body),
 	            signal: ctrl.signal
 	        })
-	        .then(r => r.ok ? r.json() : Promise.reject(r))
+	        .then(r => {
+	            if (serverTimer) { clearInterval(serverTimer); serverTimer = null; }
+	            if (!r.ok) throw new Error('HTTP ' + r.status);
+	            if (!background) setProgress(48, 'Downloading…');
+	            return streamResponse(r, background ? null : setProgress);
+	        })
 	        .then(r => {
 	            const allData = r.message || r.data;
 	            const entries = (allData?.scouting_entries || []).filter(e => e.scouts_name);
@@ -826,17 +888,14 @@
 	            allData.scouting_entries = entries;
 	            dataCache.set(cacheKey, allData);
 	            if (!background) {
-	                hideOverlay(false);
-	                _renderScoutData(allData);
+	                _renderScoutData(allData, setProgress);
 	                prefetchPastDays(date, greenhouse);
 	            }
 	        })
 	        .catch(err => {
+	            if (serverTimer) clearInterval(serverTimer);
 	            if (err.name === 'AbortError') return;
-	            if (!background) {
-	                console.error('Scout data error:', err);
-	                hideOverlay(true);
-	            }
+	            if (!background) { console.error('Scout data error:', err); hideOverlay(true); }
 	        });
 	    };
 

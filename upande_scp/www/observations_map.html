@@ -330,20 +330,22 @@
 	/* ── Map overlay / empty state ── */
 	#map-loader {
 		position: absolute; inset: 0;
-		background: rgba(255,255,255,0.9);
+		background: rgba(255,255,255,0.93);
 		display: flex; flex-direction: column;
 		align-items: center; justify-content: center;
-		z-index: 2000; gap: 0.75rem;
+		z-index: 2000; gap: 0.5rem;
 	}
-	.map-spinner {
-		width: 36px; height: 36px;
-		border: 3px solid #e2e8f0;
-		border-top: 3px solid #2563eb;
-		border-radius: 50%;
-		animation: mapspin 0.7s linear infinite;
+	.map-load-title { font-size: 0.875rem; font-weight: 600; color: #1e293b; margin-bottom: 0.15rem; }
+	.map-load-track {
+		width: 220px; height: 5px;
+		background: #e2e8f0; border-radius: 3px; overflow: hidden;
 	}
-	@keyframes mapspin { to { transform: rotate(360deg); } }
-	.map-loader-text { font-size: 0.875rem; font-weight: 500; color: #475569; }
+	.map-load-fill {
+		height: 100%; width: 0%;
+		background: #2563eb; border-radius: 3px;
+		transition: width 0.25s ease;
+	}
+	.map-load-status { font-size: 0.72rem; color: #64748b; min-width: 220px; text-align: center; }
 	#map-empty {
 		position: absolute; inset: 0;
 		display: none; flex-direction: column;
@@ -952,13 +954,18 @@
 	    }
 
 	    // ── Render from cached data ──
-	    const _renderObsData = (data) => {
+	    const _renderObsData = (data, onProgress = () => {}) => {
 	        activeData = data;
+	        onProgress(86, 'Drawing zones…');
 	        renderGhOverlay();
 	        renderZoneFills(data);
+	        onProgress(93, 'Updating legend…');
 	        renderSummary(data);
 	        renderTypePills(data);
 	        renderLegend(data);
+	        onProgress(98, 'Updating summary…');
+	        onProgress(100, 'Complete');
+	        setTimeout(() => hideOverlay(false), 350);
 	    };
 
 	    // ── Fetch observations (background=true silently pre-populates cache) ──
@@ -967,7 +974,10 @@
 
 	        // Cache hit — render immediately, no network request
 	        if (dataCache.has(cacheKey)) {
-	            if (!background) _renderObsData(dataCache.get(cacheKey));
+	            if (!background) {
+	                showOverlay();
+	                _renderObsData(dataCache.get(cacheKey), setProgress);
+	            }
 	            return;
 	        }
 
@@ -980,26 +990,42 @@
 	        const body = { date };
 	        if (greenhouse) body.greenhouse = greenhouse;
 
+	        let serverPct = 5, serverTimer = null;
+	        if (!background) {
+	            setProgress(serverPct, 'Sending request…');
+	            serverTimer = setInterval(() => {
+	                serverPct = Math.min(serverPct + 1.2, 45);
+	                setProgress(serverPct, 'Server processing…');
+	            }, 150);
+	        }
+
 	        fetch('/api/method/upande_scp.serverscripts.get_scouting_observations.getScoutingObservations', {
 	            method: 'POST',
 	            headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': CSRF },
 	            body: JSON.stringify(body),
 	            signal: ctrl.signal
 	        })
-	        .then(r => r.ok ? r.json() : Promise.reject(r))
+	        .then(r => {
+	            clearInterval(serverTimer);
+	            if (!r.ok) throw new Error('HTTP ' + r.status);
+	            if (!background) setProgress(48, 'Downloading…');
+	            return streamResponse(r, background ? null : setProgress);
+	        })
 	        .then(r => {
 	            const data = r.message || r.data || {};
 	            const hasEntries = (data.scouting_entries || []).length > 0;
 	            dataCache.set(cacheKey, data);
 	            if (!background) {
-	                hideOverlay(!hasEntries);
 	                if (hasEntries) {
-	                    _renderObsData(data);
+	                    _renderObsData(data, setProgress);
 	                    prefetchPastDays(date, greenhouse);
+	                } else {
+	                    hideOverlay(true);
 	                }
 	            }
 	        })
 	        .catch(err => {
+	            clearInterval(serverTimer);
 	            if (err.name === 'AbortError') return;
 	            if (!background) {
 	                console.error('Observations fetch error:', err);

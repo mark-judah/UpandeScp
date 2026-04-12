@@ -1,0 +1,174 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2026-04-01 09:26:46.547273",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "session",
+  "work_order",
+  "employee",
+  "greenhouse",
+  "column_break_sgl1",
+  "captured_at",
+  "latitude",
+  "longitude",
+  "zone",
+  "section_break_sgl2",
+  "gps_accuracy",
+  "gps_quality",
+  "gps_confidence",
+  "gps_samples_used",
+  "stationary",
+  "column_break_sgl3",
+  "zone_buffer",
+  "zone_distance"
+ ],
+ "fields": [
+  {
+   "default": "SGL-.YYYY.-",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "SGL-.YYYY.-",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "session",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Session",
+   "reqd": 1
+  },
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Work Order",
+   "options": "Work Order"
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sprayer (Employee)",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "greenhouse",
+   "fieldtype": "Link",
+   "label": "Greenhouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "column_break_sgl1",
+   "fieldtype": "Column Break",
+   "label": "Time & Location"
+  },
+  {
+   "fieldname": "captured_at",
+   "fieldtype": "Datetime",
+   "label": "Captured At",
+   "reqd": 1
+  },
+  {
+   "fieldname": "latitude",
+   "fieldtype": "Data",
+   "label": "Latitude",
+   "reqd": 1
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Data",
+   "label": "Longitude",
+   "reqd": 1
+  },
+  {
+   "fieldname": "zone",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Zone",
+   "options": "Zone"
+  },
+  {
+   "fieldname": "section_break_sgl2",
+   "fieldtype": "Section Break",
+   "label": "GPS Metadata"
+  },
+  {
+   "fieldname": "gps_accuracy",
+   "fieldtype": "Data",
+   "label": "GPS Accuracy"
+  },
+  {
+   "fieldname": "gps_quality",
+   "fieldtype": "Data",
+   "label": "GPS Quality"
+  },
+  {
+   "fieldname": "gps_confidence",
+   "fieldtype": "Float",
+   "label": "GPS Confidence"
+  },
+  {
+   "fieldname": "gps_samples_used",
+   "fieldtype": "Int",
+   "label": "GPS Samples Used"
+  },
+  {
+   "default": "0",
+   "fieldname": "stationary",
+   "fieldtype": "Check",
+   "label": "Stationary"
+  },
+  {
+   "fieldname": "column_break_sgl3",
+   "fieldtype": "Column Break",
+   "label": "Zone Analysis"
+  },
+  {
+   "fieldname": "zone_buffer",
+   "fieldtype": "Float",
+   "label": "Zone Buffer (m)"
+  },
+  {
+   "fieldname": "zone_distance",
+   "fieldtype": "Float",
+   "label": "Zone Distance (m)"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-04-01 09:31:23.526535",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Sprayer GPS Log",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "stephene@upande.com",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "captured_at",
+ "sort_order": "ASC",
+ "states": [],
+ "track_changes": 1
+}

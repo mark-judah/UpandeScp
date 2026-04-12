@@ -1,0 +1,75 @@
+{
+ "actions": [],
+ "creation": "2026-04-11 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "weekly_html_section",
+  "weekly_report_recipients",
+  "section_break_fcm",
+  "fcm_excel_report_recipients",
+  "section_break_info",
+  "info_note"
+ ],
+ "fields": [
+  {
+   "fieldname": "weekly_html_section",
+   "fieldtype": "Section Break",
+   "label": "Trap Scouting — Weekly HTML Report"
+  },
+  {
+   "description": "Comma-separated list of email addresses that receive the weekly trap scouting HTML summary.",
+   "fieldname": "weekly_report_recipients",
+   "fieldtype": "Small Text",
+   "label": "Weekly Report Recipients"
+  },
+  {
+   "fieldname": "section_break_fcm",
+   "fieldtype": "Section Break",
+   "label": "FCM KEPHIS — Weekly Excel Report"
+  },
+  {
+   "description": "Comma-separated list of email addresses that receive the FCM KEPHIS weekly Excel report (CHEPSITO KE0300809046). Leave blank to use the same list as above.",
+   "fieldname": "fcm_excel_report_recipients",
+   "fieldtype": "Small Text",
+   "label": "FCM Excel Report Recipients"
+  },
+  {
+   "fieldname": "section_break_info",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "Both reports run automatically every Monday morning via the Frappe scheduler.",
+   "fieldname": "info_note",
+   "fieldtype": "Small Text",
+   "label": "Note",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-04-11 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Trap Report Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 0,
+   "role": "System Manager",
+   "share": 0,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

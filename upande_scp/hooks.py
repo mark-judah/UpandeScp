@@ -148,6 +148,13 @@ app_license = "mit"
 # Scheduled Tasks
 # ---------------
 
+scheduler_events = {
+    # FCM KEPHIS weekly Excel report — runs every Monday
+    "weekly": [
+        "upande_scp.serverscripts.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
+    ],
+}
+
 # scheduler_events = {
 # 	"all": [
 # 		"upande_scp.tasks.all"
@@ -341,7 +348,8 @@ fixtures = [
                     "Fetch Greenhouse Beds",
                     "Fetch Scheduled Applications",
                     "Check GM Role",
-                    "Check Store Keeper Role"
+                    "Check Store Keeper Role",
+                    "Delete Duplicate Scouting Entries"
                 ]
             ]
         ]
@@ -357,6 +365,9 @@ fixtures = [
                 ]
             ]
         ]
+    },
+    {
+        "dt": "Trap Report Settings"
     }
     # {
     #     "doctype": "Insights Workbook",

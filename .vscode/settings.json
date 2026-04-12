@@ -12,15 +12,7 @@
         "statusBar.prominentBackground": "#02b647",
         "statusBar.prominentForeground": "#ffffff",
         "statusBar.prominentHoverBackground": "#02b647",
-        "statusBar.prominentHoverForeground": "#ffffff90",
-        "statusBarItem.remoteBackground": "#0fc354",
-        "statusBarItem.remoteForeground": "#ffffff",
-        "statusBar.background": "#02b647",
-        "statusBar.foreground": "#ffffff",
-        "statusBar.border": "#02b647",
-        "statusBar.debuggingBackground": "#02b647",
-        "statusBar.debuggingForeground": "#ffffff",
-        "statusBar.debuggingBorder": "#02b647"
+        "statusBar.prominentHoverForeground": "#ffffff90"
     },
     "window.title": "Mona"
 }

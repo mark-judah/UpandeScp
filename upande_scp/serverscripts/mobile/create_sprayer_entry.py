@@ -346,7 +346,7 @@ def createSprayerEntry():
                 session_tag   = (
                     entry_data.get("session_tag") or entry_data.get("session") or ""
                 )
-                work_order    = entry_data.get("work_order") or ""
+                work_order    = (entry_data.get("work_order") or "").strip()
                 latitude      = entry_data.get("latitude")
                 longitude     = entry_data.get("longitude")
                 accuracy      = entry_data.get("accuracy")

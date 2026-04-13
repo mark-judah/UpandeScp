@@ -148,11 +148,13 @@ app_license = "mit"
 # Scheduled Tasks
 # ---------------
 
+
 scheduler_events = {
-    # FCM KEPHIS weekly Excel report — runs every Monday
-    "weekly": [
-        "upande_scp.serverscripts.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
-    ],
+    "cron": {
+        "0 8 * * 2": [
+            "upande_scp.serverscripts.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
+        ]
+    }
 }
 
 # scheduler_events = {

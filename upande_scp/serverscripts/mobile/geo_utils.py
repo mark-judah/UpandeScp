@@ -43,7 +43,7 @@ def _build_zone_cache(utm_epsg: str, project_to_utm):
 
     This runs once per UTM zone per CACHE_TTL_SECONDS window.
     """
-    raw_zones = frappe.get_all("Zone", fields=["name", "bed", "raw_geojson"])
+    raw_zones = frappe.get_all("Zone", fields=["name", "bed", "greenhouse", "raw_geojson"])
 
     built = []
     for zone in raw_zones:
@@ -65,6 +65,7 @@ def _build_zone_cache(utm_epsg: str, project_to_utm):
                         built.append({
                             "name": zone.name,
                             "bed": zone.bed or "",
+                            "greenhouse": zone.greenhouse or "",
                             "line_utm": line_utm,
                         })
         except Exception as e:
@@ -86,7 +87,7 @@ def _get_cached_zones(utm_epsg: str, project_to_utm):
 # Public API
 # ---------------------------------------------------------------------------
 
-def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
+def get_zone_from_coordinates(latitude, longitude, bed, accuracy, greenhouse=None):
     try:
         lat = float(latitude)
         lon = float(longitude)
@@ -106,16 +107,19 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
         # per-point LineString construction.
         all_zones = _get_cached_zones(utm_epsg, project_to_utm)
 
-        # If a bed filter is requested, match on the Zone's bed field exactly
-        # (mirrors the original DB filter={"bed": bed}).  Fall back to all
-        # zones only when no zones are configured for that bed.
+        zones = all_zones
+        used_fallback = False
+
+        if greenhouse and greenhouse != "":
+            gh_zones = [z for z in zones if z.get("greenhouse") == greenhouse]
+            if not gh_zones:
+                return None, 0.0, f"No zones configured for greenhouse: {greenhouse}"
+            zones = gh_zones
+
         if bed and bed != "":
-            bed_zones = [z for z in all_zones if z["bed"] == bed]
-            zones = bed_zones if bed_zones else all_zones
-            used_fallback = not bool(bed_zones)
-        else:
-            zones = all_zones
-            used_fallback = False
+            bed_zones = [z for z in zones if z.get("bed") == bed]
+            used_fallback = used_fallback or not bool(bed_zones)
+            zones = bed_zones if bed_zones else zones
 
         if not zones:
             return None, 0.0, "No zones configured in the system"

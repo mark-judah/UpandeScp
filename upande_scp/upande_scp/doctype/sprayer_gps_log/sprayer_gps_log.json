@@ -8,6 +8,8 @@
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
+  "client_id",
+  "session_tag",
   "session",
   "work_order",
   "employee",
@@ -37,6 +39,19 @@
    "options": "SGL-.YYYY.-",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Client ID",
+   "unique": 1
+  },
+  {
+   "fieldname": "session_tag",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Session Tag"
   },
   {
    "fieldname": "session",

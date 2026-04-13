@@ -41,6 +41,7 @@ def _ensure_indexes():
     for ddl in (
         "ALTER TABLE `tabSprayer GPS Log` ADD INDEX `idx_sgl_session_captured_at` (session(64), captured_at)",
         "ALTER TABLE `tabSprayer GPS Log` ADD INDEX `idx_sgl_session` (session(64))",
+        "ALTER TABLE `tabSprayer GPS Log` ADD INDEX `idx_sgl_client_id` (client_id(140))",
     ):
         try:
             frappe.db.sql(ddl)
@@ -76,14 +77,42 @@ def _resolve_employee(user_id):
     return rows[0].name if rows else None
 
 
-def _is_duplicate_gps_log(session_name, captured_at):
-    """
-    Duplicate check: returns the name of an existing Sprayer GPS Log if a log
-    for the same session and captured_at timestamp already exists.
+def _normalize_bool(value):
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(int(value))
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in {"1", "true", "yes", "y", "on"}:
+            return True
+        if v in {"0", "false", "no", "n", "off", ""}:
+            return False
+    return bool(value)
 
-    Mobile drain mode may retry the same batch multiple times when the upload
-    is interrupted mid-batch. This prevents double-inserting those points.
-    """
+
+def _safe_int(value, default=0):
+    if value in (None, ""):
+        return default
+    try:
+        return int(float(value))
+    except Exception:
+        return default
+
+
+def _is_duplicate_gps_log(*, client_id=None, session_name=None, captured_at=None):
+    if client_id:
+        try:
+            return frappe.db.get_value(
+                "Sprayer GPS Log",
+                {"client_id": client_id},
+                "name",
+            ) or None
+        except Exception:
+            return None
+
     if not session_name or not captured_at:
         return None
     try:
@@ -341,19 +370,21 @@ def createSprayerEntry():
 
         for entry_data in data_list:
             try:
+                client_id = (entry_data.get("client_id") or "").strip()
                 # Accept "session_tag" (new) or "session" (legacy) — the value
                 # is always stored as a plain text label; no FK validation.
                 session_tag   = (
                     entry_data.get("session_tag") or entry_data.get("session") or ""
                 )
                 work_order    = (entry_data.get("work_order") or "").strip()
+                greenhouse    = (entry_data.get("greenhouse") or "").strip()
                 latitude      = entry_data.get("latitude")
                 longitude     = entry_data.get("longitude")
                 accuracy      = entry_data.get("accuracy")
                 captured_at   = entry_data.get("captured_at")
                 quality_level = entry_data.get("quality_level", "unknown")
                 samples_used  = entry_data.get("samples_used", 0)
-                is_stationary = entry_data.get("is_stationary", False)
+                is_stationary = _normalize_bool(entry_data.get("is_stationary", False))
 
                 if not session_tag:
                     has_errors = True
@@ -382,19 +413,23 @@ def createSprayerEntry():
                     continue
 
                 # Duplicate check — retry batches may re-send the same points
-                existing_log = _is_duplicate_gps_log(session_tag, captured_at)
+                existing_log = _is_duplicate_gps_log(
+                    client_id=client_id,
+                    session_name=session_tag,
+                    captured_at=captured_at,
+                )
                 if existing_log:
                     results.append({
                         "status": "success",
                         "message": f"Duplicate GPS log — already synced as {existing_log}.",
                         "name": existing_log,
                         "session_tag": session_tag,
+                        "client_id": client_id,
                         "duplicate": True,
                     })
                     continue
 
                 # Optionally resolve greenhouse from work order
-                greenhouse = ""
                 if work_order and frappe.db.exists("Work Order", work_order):
                     greenhouse = frappe.db.get_value(
                         "Work Order", work_order, "custom_greenhouse"
@@ -407,7 +442,7 @@ def createSprayerEntry():
 
                 if accuracy:
                     determined_zone, confidence, zone_message = get_zone_from_coordinates(
-                        latitude, longitude, None, accuracy
+                        latitude, longitude, None, accuracy, greenhouse=greenhouse or None
                     )
 
                 if not isinstance(zone_message, dict):
@@ -419,10 +454,12 @@ def createSprayerEntry():
                 # plain session_tag string in the Link field without Frappe
                 # raising a "Document not found" validation error.
                 log_doc                  = frappe.new_doc("Sprayer GPS Log")
+                log_doc.client_id        = client_id or None
+                log_doc.session_tag      = session_tag
                 log_doc.session          = session_tag
                 log_doc.work_order       = work_order or None
                 log_doc.employee         = current_employee or ""
-                log_doc.greenhouse       = greenhouse
+                log_doc.greenhouse       = greenhouse or None
                 log_doc.captured_at      = captured_at
                 log_doc.latitude         = str(latitude)
                 log_doc.longitude        = str(longitude)
@@ -430,7 +467,7 @@ def createSprayerEntry():
                 log_doc.gps_accuracy     = str(accuracy) if accuracy else None
                 log_doc.gps_quality      = quality_level
                 log_doc.gps_confidence   = round(confidence, 4)
-                log_doc.gps_samples_used = int(samples_used) if samples_used else 0
+                log_doc.gps_samples_used = _safe_int(samples_used, default=0)
                 log_doc.stationary       = 1 if is_stationary else 0
                 log_doc.zone_buffer      = float(zone_message.get("buffer", 0.0))
                 log_doc.zone_distance    = float(zone_message.get("distance", 0.0))
@@ -471,6 +508,7 @@ def createSprayerEntry():
                     "message":            "GPS log created successfully.",
                     "name":               log_doc.name,
                     "session_tag":        session_tag,
+                    "client_id":          client_id,
                     "determined_zone":    determined_zone,
                     "zone_confidence":    round(confidence * 100, 1) if determined_zone else 0.0,
                     "gps_accuracy":       accuracy,

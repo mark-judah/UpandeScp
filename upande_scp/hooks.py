@@ -330,7 +330,8 @@ fixtures = [
                     "Refresh Greenhouse Rentry Time",
                     "Hide Start Button On Work Order",
                     "Spray Plan Approval v7",
-                    "Spray Plan Chemical Transfers"
+                    "Spray Plan Chemical Transfers",
+                    "Combined Script"  # to deactivate the script on deployment
                 ]
             ]
         ]

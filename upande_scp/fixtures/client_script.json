@@ -2,6 +2,17 @@
  {
   "docstatus": 0,
   "doctype": "Client Script",
+  "dt": "Work Order",
+  "enabled": 0,
+  "modified": "2026-04-01 17:04:29.827381",
+  "module": "Upande Kaitet",
+  "name": "Combined Script",
+  "script": "frappe.ui.form.on('Work Order', {\n    bom_no: async function (frm) {\n        if (!frm.doc.bom_no) return;\n\n        // Step 1: Fetch BOM details\n        const bom_doc = await frappe.db.get_doc('BOM', frm.doc.bom_no);\n        if (!bom_doc || !bom_doc.item) return;\n\n        const item_name = bom_doc.item.toLowerCase();\n\n        // Step 2: If BOM has a different company, set it first\n        if (bom_doc.company && frm.doc.company !== bom_doc.company) {\n            await frm.set_value('company', bom_doc.company);\n        }\n\n        // Step 3: Set WIP and Target warehouses based on item\n        frm.set_value('wip_warehouse', 'Pasteurization Unit - KR');\n\n        if (item_name.includes('maziwa lala (kg)')) {\n            frm.set_value('fg_warehouse', 'Yoghurt/Lala Packing - KR');\n        } else if (item_name.includes('yoghurt vanilla (kg)') || item_name.includes('yoghurt strawberry (kg)')) {\n            frm.set_value('fg_warehouse', 'Yoghurt/Lala Packing - KR');\n        } else {\n            frm.set_value('fg_warehouse', '');\n        }\n    },\n\n    item_to_manufacture: async function (frm) {\n        if (!frm.doc.item_to_manufacture) return;\n\n        // Fetch the item name\n        const item_name = frm.doc.item_to_manufacture.toLowerCase();\n\n        // Set Target Warehouse based on item\n        if (item_name.includes('maziwa lala (kg)')) {\n            frm.set_value('fg_warehouse', 'Yoghurt/Lala Packing - KR');\n        } else if (item_name.includes('yoghurt vanilla (kg)') || item_name.includes('yoghurt strawberry (kg)')) {\n            frm.set_value('fg_warehouse', 'Yoghurt/Lala Packing - KR');\n        } else {\n            frm.set_value('fg_warehouse', '');\n        }\n    },\n\n    onload: function (frm) {\n        if (frm.doc.bom_no) {\n            frappe.ui.form.trigger('Work Order', 'bom_no', frm);\n        }\n    }\n});\n",
+  "view": "Form"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Client Script",
   "dt": "BOM",
   "enabled": 1,
   "modified": "2025-10-11 18:12:48.785278",

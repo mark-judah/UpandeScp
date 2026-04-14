@@ -329,7 +329,7 @@ fixtures = [
                     "Pests Legend Color Toggle",
                     "Refresh Greenhouse Rentry Time",
                     "Hide Start Button On Work Order",
-                    "Spray Plan Approval",
+                    "Spray Plan Approval v7",
                     "Spray Plan Chemical Transfers"
                 ]
             ]

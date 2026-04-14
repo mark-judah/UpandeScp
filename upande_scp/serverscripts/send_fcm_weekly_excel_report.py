@@ -32,12 +32,13 @@ import frappe
 # Public entry point
 # ---------------------------------------------------------------------------
 
+@frappe.whitelist()
 def send_fcm_weekly_excel_report():
     """Generate and email the KEPHIS FCM weekly Excel report (runs every Monday)."""
     try:
         import openpyxl
         from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-        from openpyxl.utils import get_column_letter
+        from openpyxl.utils import get_column_letter 
     except ImportError:
         frappe.log_error("openpyxl not installed – run: pip install openpyxl", "FCM Weekly Report")
         return

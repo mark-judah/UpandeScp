@@ -129,6 +129,7 @@ def createScoutingEntry():
         for entry_data in data_list:
             try:
                 client_id       = entry_data.get('client_id')
+                app             = entry_data.get('app')
                 latitude        = entry_data.get('latitude')
                 longitude       = entry_data.get('longitude')
                 accuracy        = entry_data.get('accuracy')
@@ -316,6 +317,17 @@ def createScoutingEntry():
                         )
                     except Exception:
                         pass  # field not yet in schema — degrade to time-window check only
+                if app:
+                    try:
+                        frappe.db.set_value(
+                            "Scouting Entry Metadata",
+                            scout_metadata_doc.name,
+                            "app",
+                            app,
+                            update_modified=False,
+                        )
+                    except Exception:
+                        pass
 
                 result = {
                     "status": "success",

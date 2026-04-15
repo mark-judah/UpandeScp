@@ -88,6 +88,19 @@ def _is_duplicate_gps_log(session_tag, captured_at):
         return None
 
 
+def _is_duplicate_by_client_id(client_id):
+    if not client_id:
+        return None
+    try:
+        return frappe.db.get_value(
+            "Sprayer GPS Log",
+            {"client_id": client_id},
+            "name",
+        ) or None
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # startSprayerSession
 # ---------------------------------------------------------------------------
@@ -346,6 +359,8 @@ def createSprayerEntry():
                     entry_data.get("session_tag") or entry_data.get("session") or ""
                 )
                 work_order    = (entry_data.get("work_order") or "").strip()
+                client_id     = (entry_data.get("client_id") or "").strip()
+                app           = (entry_data.get("app") or "").strip()
                 latitude      = entry_data.get("latitude")
                 longitude     = entry_data.get("longitude")
                 accuracy      = entry_data.get("accuracy")
@@ -390,6 +405,16 @@ def createSprayerEntry():
                         "duplicate": True,
                     })
                     continue
+                existing_by_client_id = _is_duplicate_by_client_id(client_id)
+                if existing_by_client_id:
+                    results.append({
+                        "status": "success",
+                        "message": f"Duplicate GPS log — already synced as {existing_by_client_id}.",
+                        "name": existing_by_client_id,
+                        "session_tag": session_tag,
+                        "duplicate": True,
+                    })
+                    continue
 
                 work_order_exists = bool(work_order) and frappe.db.exists("Work Order", work_order)
                 work_order_link = work_order if work_order_exists else None
@@ -419,6 +444,8 @@ def createSprayerEntry():
 
                 log_doc                  = frappe.new_doc("Sprayer GPS Log")
                 log_doc.session          = session_tag
+                log_doc.client_id        = client_id or None
+                log_doc.app              = app or None
                 log_doc.work_order       = work_order_link
                 log_doc.employee         = current_employee or ""
                 log_doc.greenhouse       = greenhouse

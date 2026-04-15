@@ -9,6 +9,7 @@
  "field_order": [
   "scouting_entry",
   "client_id",
+  "app",
   "latitude",
   "longitude",
   "zone_buffer",
@@ -36,6 +37,12 @@
    "label": "Client ID",
    "unique": 1,
    "search_index": 1
+  },
+  {
+   "description": "Mobile app version/build string that sent this entry",
+   "fieldname": "app",
+   "fieldtype": "Data",
+   "label": "App"
   },
   {
    "fieldname": "latitude",

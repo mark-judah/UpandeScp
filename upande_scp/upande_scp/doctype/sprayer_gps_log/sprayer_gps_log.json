@@ -9,6 +9,8 @@
  "field_order": [
   "naming_series",
   "session",
+  "client_id",
+  "app",
   "work_order",
   "employee",
   "greenhouse",
@@ -44,6 +46,20 @@
    "in_list_view": 1,
    "label": "Session",
    "reqd": 1
+  },
+  {
+   "description": "Client-generated ID used for idempotency on re-sync",
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "Client ID",
+   "unique": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Mobile app version/build string that sent this entry",
+   "fieldname": "app",
+   "fieldtype": "Data",
+   "label": "App"
   },
   {
    "fieldname": "work_order",

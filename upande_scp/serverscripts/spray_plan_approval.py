@@ -1,0 +1,339 @@
+"""
+Server-side API for the Spray Plan Approval page.
+
+Whitelisted endpoints:
+  get_pending_work_orders(from_date, to_date, farm, greenhouse)
+  get_farms_and_greenhouses()
+  approve_single_work_order(wo_name)
+  stop_single_work_order(wo_name)
+"""
+
+import re
+
+import frappe
+from frappe.utils import add_days, cstr, flt, now_datetime, today
+
+AFP_TYPE = "Application Floor Plan"
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+
+@frappe.whitelist()
+def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=None):
+    """
+    Return AFP Work Orders (Not Started, submitted) with child items
+    and forwarding status (draft SE exists?).
+    """
+    filters = [
+        ["custom_type", "=", AFP_TYPE],
+        ["status",      "=", "Not Started"],
+        ["docstatus",   "=", 1],
+    ]
+
+    if from_date:
+        filters.append(["custom_scheduled_application_time", ">=", from_date + " 00:00:00"])
+    if to_date:
+        next_day = add_days(to_date, 1)
+        filters.append(["custom_scheduled_application_time", "<", str(next_day) + " 00:00:00"])
+
+    if greenhouse:
+        filters.append(["custom_greenhouse", "=", greenhouse])
+    elif farm:
+        filters.append(["custom_greenhouse", "like", farm + " GH%"])
+
+    wos = frappe.get_all(
+        "Work Order",
+        filters=filters,
+        fields=[
+            "name", "custom_greenhouse", "creation",
+            "custom_scheduled_application_time",
+            "custom_spray_type", "custom_scope", "custom_scope_details",
+            "custom_area", "custom_water_volume", "custom_water_ph",
+            "custom_water_hardness", "custom_kit", "wip_warehouse",
+            "custom_targets",
+        ],
+        order_by="custom_scheduled_application_time desc, creation desc",
+        limit=0,
+    )
+
+    if not wos:
+        return {"work_orders": [], "farms": []}
+
+    wo_names = [w.name for w in wos]
+
+    # ── Child items ──
+    item_rows = frappe.get_all(
+        "Work Order Item",
+        filters={"parent": ["in", wo_names]},
+        fields=["parent", "item_code", "item_name", "required_qty", "stock_uom"],
+        order_by="idx asc",
+        limit=0,
+    )
+    items_by_wo = {}
+    for r in item_rows:
+        items_by_wo.setdefault(r.parent, []).append(r)
+
+    # ── Already forwarded? (draft Material Transfer SE exists) ──
+    se_rows = frappe.get_all(
+        "Stock Entry",
+        filters=[
+            ["work_order", "in", wo_names],
+            ["purpose",    "=", "Material Transfer for Manufacture"],
+            ["docstatus",  "=", 0],
+        ],
+        fields=["work_order"],
+        limit=0,
+    )
+    forwarded = {r.work_order for r in se_rows}
+
+    farms = set()
+    result = []
+    for wo in wos:
+        farm_name = _derive_farm(wo.custom_greenhouse)
+        if farm_name:
+            farms.add(farm_name)
+        result.append(
+            {
+                **wo,
+                "required_items": items_by_wo.get(wo.name, []),
+                "is_forwarded":   wo.name in forwarded,
+                "farm":           farm_name,
+            }
+        )
+
+    return {"work_orders": result, "farms": sorted(farms)}
+
+
+@frappe.whitelist()
+def get_farms_and_greenhouses():
+    """Return distinct farms and their greenhouse lists (from open WOs)."""
+    wos = frappe.get_all(
+        "Work Order",
+        filters=[
+            ["custom_type", "=", AFP_TYPE],
+            ["status",      "=", "Not Started"],
+            ["docstatus",   "=", 1],
+        ],
+        fields=["custom_greenhouse"],
+        group_by="custom_greenhouse",
+        limit=0,
+    )
+
+    farms_map = {}
+    for wo in wos:
+        gh = wo.custom_greenhouse
+        if not gh:
+            continue
+        farm = _derive_farm(gh)
+        if farm:
+            farms_map.setdefault(farm, []).append(gh)
+
+    return {
+        "farms": sorted(farms_map.keys()),
+        "greenhouses_by_farm": {f: sorted(ghs) for f, ghs in farms_map.items()},
+    }
+
+
+@frappe.whitelist()
+def approve_single_work_order(wo_name):
+    """
+    Create a draft Material Transfer for Manufacture SE for one Work Order.
+    Fixes zero valuation rates via FIFO.
+    Generates and attaches QR labels for each chemical.
+
+    Returns a dict with keys: wo, status, se, warehouse, qr_labels, message.
+    """
+    from upande_scp.serverscripts.qr_generator import (
+        attach_qr_to_document,
+        build_chemical_qr_payload,
+        generate_qr_base64,
+        safe_filename,
+    )
+
+    try:
+        wo_doc = frappe.get_doc("Work Order", wo_name)
+    except frappe.DoesNotExistError:
+        return {"wo": wo_name, "status": "error", "message": "Work order not found."}
+
+    if wo_doc.status != "Not Started":
+        return {
+            "wo":      wo_name,
+            "status":  "skipped",
+            "message": f"Skipped — status is '{wo_doc.status}'.",
+        }
+
+    # Guard: draft SE already exists?
+    existing = frappe.get_all(
+        "Stock Entry",
+        filters=[
+            ["work_order", "=", wo_name],
+            ["purpose",    "=", "Material Transfer for Manufacture"],
+            ["docstatus",  "=", 0],
+        ],
+        fields=["name"],
+        limit=1,
+    )
+    if existing:
+        return {
+            "wo":      wo_name,
+            "status":  "already_forwarded",
+            "se":      existing[0].name,
+            "message": f"Already forwarded as {existing[0].name}.",
+        }
+
+    try:
+        from erpnext.manufacturing.doctype.work_order.work_order import (
+            make_stock_entry as _make_se,
+        )
+        se_data = _make_se(work_order_id=wo_name, purpose="Material Transfer for Manufacture")
+        if not se_data:
+            return {"wo": wo_name, "status": "error", "message": "Could not generate stock entry data."}
+
+        se_doc = frappe.get_doc(se_data) if isinstance(se_data, dict) else se_data
+        se_doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"Spray Approval – create SE: {wo_name}")
+        return {"wo": wo_name, "status": "error", "message": _friendly_error(frappe.get_traceback())}
+
+    # ── Fix zero valuation rates ──
+    try:
+        changed = _patch_zero_rates(se_doc)
+        if changed:
+            se_doc.save(ignore_permissions=True)
+            frappe.db.commit()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"Rate patch – {se_doc.name}")
+
+    # ── Generate & attach QR labels ──
+    qr_labels = []
+    greenhouse = wo_doc.custom_greenhouse or ""
+    for item in se_doc.items or []:
+        try:
+            payload = build_chemical_qr_payload(
+                wo_name, se_doc.name,
+                item.item_name or item.item_code,
+                item.qty, item.stock_uom, greenhouse,
+            )
+            png_b64 = generate_qr_base64(payload)
+            if png_b64:
+                fname = f"QR_{se_doc.name}_{safe_filename(item.item_code)}.png"
+                attach_qr_to_document("Stock Entry", se_doc.name, fname, png_b64)
+                qr_labels.append(
+                    {
+                        "chemical":   item.item_name or item.item_code,
+                        "item_code":  item.item_code,
+                        "qty":        _fmt_qty(item.qty),
+                        "uom":        item.stock_uom,
+                        "src_wh":     item.s_warehouse or "",
+                        "png_base64": png_b64,
+                    }
+                )
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), f"QR gen – {se_doc.name} / {item.item_code}")
+
+    return {
+        "wo":        wo_name,
+        "se":        se_doc.name,
+        "warehouse": wo_doc.wip_warehouse or "",
+        "status":    "approved",
+        "qr_labels": qr_labels,
+    }
+
+
+@frappe.whitelist()
+def stop_single_work_order(wo_name):
+    """Stop (cancel) a single Work Order. Returns {wo, status, message}."""
+    try:
+        from erpnext.manufacturing.doctype.work_order.work_order import stop_unstop
+        stop_unstop(wo_name, "Stopped")
+        return {"wo": wo_name, "status": "stopped"}
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"Spray Stop – {wo_name}")
+        return {
+            "wo":      wo_name,
+            "status":  "error",
+            "message": _friendly_error(frappe.get_traceback()),
+        }
+
+
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+
+def _derive_farm(greenhouse):
+    if not greenhouse:
+        return None
+    m = re.match(r"^(.+?)\s+GH\b", str(greenhouse), re.IGNORECASE)
+    return m.group(1).strip() if m else str(greenhouse).split(" ")[0]
+
+
+def _fmt_qty(val):
+    if val is None:
+        return "—"
+    try:
+        n = float(val)
+        return str(int(n)) if n % 1 == 0 else f"{n:.3f}".rstrip("0").rstrip(".")
+    except (TypeError, ValueError):
+        return str(val)
+
+
+def _friendly_error(raw):
+    """Map raw exception text to a user-readable sentence."""
+    lower = cstr(raw).lower()
+    rules = [
+        ("not enough stock",        "Insufficient stock in the source warehouse. Check inventory."),
+        ("negative stock",          "This transfer would create negative stock. Verify warehouse balances."),
+        ("does not exist",          "The work order or a referenced document could not be found."),
+        ("docstatus",               "The work order is not in a valid state for processing."),
+        ("already a stock entry",   "A stock transfer already exists for this work order."),
+        ("permission",              "You do not have permission to perform this action."),
+        ("mandatory",               "Required fields are missing. Check the work order setup."),
+        ("valuation",               "Item valuation rate is missing. Run a stock reconciliation first."),
+        ("bom",                     "No Bill of Materials found for this work order."),
+        ("qty",                     "Quantity mismatch. Verify the work order quantities."),
+    ]
+    for pattern, friendly in rules:
+        if pattern in lower:
+            return friendly
+    return "Could not process this work order. Your administrator has been notified."
+
+
+def _patch_zero_rates(se_doc):
+    """
+    Fill any zero basic_rate on SE items from FIFO ledger.
+    Returns True if any rate was updated.
+    """
+    try:
+        from erpnext.stock.utils import get_incoming_rate
+    except ImportError:
+        return False
+
+    post_date = today()
+    post_time = now_datetime().strftime("%H:%M:%S")
+    changed = False
+
+    for item in se_doc.items or []:
+        if flt(item.basic_rate) or not item.s_warehouse:
+            continue
+        try:
+            rate = get_incoming_rate(
+                {
+                    "item_code":    item.item_code,
+                    "warehouse":    item.s_warehouse,
+                    "posting_date": post_date,
+                    "posting_time": post_time,
+                    "qty":          item.qty,
+                    "voucher_type": "Stock Entry",
+                    "company":      se_doc.company,
+                }
+            )
+            if flt(rate) > 0:
+                item.basic_rate     = rate
+                item.valuation_rate = rate
+                item.amount         = flt(rate) * flt(item.qty)
+                changed = True
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), f"FIFO rate – {item.item_code}")
+
+    return changed

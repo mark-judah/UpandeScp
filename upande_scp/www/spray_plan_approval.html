@@ -170,5 +170,6 @@
 {% endblock %}
 
 {% block script %}
+<script>window._spaCSRF = "{{ csrf_token }}";</script>
 <script src="/spray_plan_approval.js"></script>
 {% endblock %}

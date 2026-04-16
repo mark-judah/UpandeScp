@@ -2,6 +2,22 @@
    Spray Plan Approval — Page JS
    ================================================================ */
 
+// ── API helper (www pages don't guarantee frappe global) ──────────────────────
+function _call(method, args) {
+  var token = (window.frappe && window.frappe.csrf_token) || window._spaCSRF || "";
+  return fetch("/api/method/" + method, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Frappe-CSRF-Token": token },
+    body: JSON.stringify(args || {})
+  }).then(function (res) {
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.json();
+  }).then(function (data) {
+    if (data.exc) throw new Error(data.exc);
+    return data;
+  });
+}
+
 // ── API paths ─────────────────────────────────────────────────────────────────
 var API = {
   GET_WO:    "upande_scp.serverscripts.spray_plan_approval.get_pending_work_orders",
@@ -93,7 +109,7 @@ function _clearFilters() {
 var _ghByFarm = {};
 
 function _loadFarmsAndGreenhouses() {
-  frappe.call({ method: API.GET_FARMS })
+  _call(API.GET_FARMS)
     .then(function (r) {
       var data = r.message || {};
       _ghByFarm = data.greenhouses_by_farm || {};
@@ -142,7 +158,7 @@ function loadWorkOrders() {
     greenhouse: document.getElementById("f-gh").value    || null,
   };
 
-  frappe.call({ method: API.GET_WO, args: args })
+  _call(API.GET_WO, args)
     .then(function (r) {
       var data = r.message || {};
       _allWos = data.work_orders || [];
@@ -490,7 +506,7 @@ function _runApproval(woNames) {
     }
 
     var woName = woNames[i];
-    frappe.call({ method: API.APPROVE, args: { wo_name: woName } })
+    _call(API.APPROVE, { wo_name: woName })
       .then(function (r) {
         var res = r.message || {};
         done++;
@@ -548,7 +564,7 @@ function _runStop(woNames) {
     }
 
     var woName = woNames[i];
-    frappe.call({ method: API.STOP, args: { wo_name: woName } })
+    _call(API.STOP, { wo_name: woName })
       .then(function (r) {
         var res = r.message || {};
         done++;
@@ -666,7 +682,7 @@ function _showQrSection(labels) {
 function _openQrPrintWindow(labels) {
   var win = window.open("", "_blank", "width=980,height=740");
   if (!win) {
-    frappe.msgprint("Pop-ups are blocked. Allow pop-ups for this site to print labels.");
+    alert("Pop-ups are blocked. Allow pop-ups for this site to print labels.");
     return;
   }
 
@@ -747,7 +763,7 @@ function _openHeatmap(greenhouse, targetName) {
 
   var fetchPromise = _scoutCache[greenhouse]
     ? Promise.resolve(_scoutCache[greenhouse])
-    : frappe.call({ method: API.SCOUTING, args: { greenhouse: greenhouse } })
+    : _call(API.SCOUTING, { greenhouse: greenhouse })
         .then(function (r) {
           var data = r.message || r.data;
           if (data && data.scouting_entries && data.scouting_entries.length) {

@@ -547,8 +547,9 @@
 		<!-- Map -->
 		<div id="map-container">
 			<div id="map-loader">
-				<div class="map-spinner"></div>
-				<span class="map-loader-text">Loading observations…</span>
+				<span class="map-load-title">Loading observations</span>
+				<div class="map-load-track"><div class="map-load-fill" id="map-load-fill"></div></div>
+				<span class="map-load-status" id="map-load-status">Initialising…</span>
 			</div>
 			<div id="map-empty">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40" style="opacity:0.3"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
@@ -563,8 +564,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-providers/1.13.0/leaflet-providers.min.js"></script>
 <script>
 	window.onload = function () {
-	    // ── Context from Python ──
-	    window.greenhouses_geojson = {{ greenhouses_geojson | tojson | safe }};
 	    const LAT = {{ lat | tojson }};
 	    const LON = {{ lon | tojson }};
 	    const ZOOM = {{ default_zoom | tojson }};
@@ -586,7 +585,6 @@
 	    let hiddenItems = new Set();     // unchecked observation names
 	    let abortCtrl = null;
 	    let mapInitialized = false;
-	    let ghOverlay = null;
 	    let zoneLayer = null;
 	    let lineLabels = null;
 
@@ -607,7 +605,42 @@
 	    const zonesStat  = document.getElementById('zones-stat');
 	    const zonesStatText = document.getElementById('zones-stat-text');
 
+	    const setProgress = (pct) => {
+	        const fill = document.getElementById('map-load-fill');
+	        const status = document.getElementById('map-load-status');
+	        if (fill) fill.style.width = Math.min(100, pct) + '%';
+	        if (status) status.textContent = Math.round(Math.min(100, pct)) + '%';
+	    };
+
+	    const streamResponse = (response, onProgress) => {
+	        const contentLength = response.headers.get('content-length');
+	        const reader = response.body.getReader();
+	        const chunks = [];
+	        let received = 0;
+	        const ESTIMATE = 600 * 1024;
+	        const read = () => reader.read().then(({ done, value }) => {
+	            if (done) {
+	                const buf = new Uint8Array(received);
+	                let pos = 0;
+	                for (const c of chunks) { buf.set(c, pos); pos += c.length; }
+	                if (onProgress) onProgress(83, 'Parsing response…');
+	                return JSON.parse(new TextDecoder().decode(buf));
+	            }
+	            chunks.push(value);
+	            received += value.length;
+	            if (onProgress) {
+	                const pct = contentLength
+	                    ? 48 + (received / +contentLength) * 33
+	                    : 48 + Math.min(received / ESTIMATE, 1) * 33;
+	                onProgress(pct);
+	            }
+	            return read();
+	        });
+	        return read();
+	    };
+
 	    const showOverlay = () => {
+	        setProgress(0, 'Initialising…');
 	        document.getElementById('map-loader').style.display = 'flex';
 	        document.getElementById('map-empty').style.display = 'none';
 	    };
@@ -831,27 +864,6 @@
 	        }
 	    }
 
-	    // ── Greenhouse overlay ──
-	    function renderGhOverlay() {
-	        if (ghOverlay) { window.map.removeLayer(ghOverlay); ghOverlay = null; }
-	        if (!window.greenhouses_geojson?.length) return;
-
-	        const features = [];
-	        window.greenhouses_geojson.forEach(gh => {
-	            if (!gh.geojson?.features) return;
-	            gh.geojson.features.forEach(f => {
-	                const clone = JSON.parse(JSON.stringify(f));
-	                clone.properties = { gh_name: gh.short_name || gh.name };
-	                features.push(clone);
-	            });
-	        });
-	        if (!features.length) return;
-
-	        ghOverlay = L.geoJSON({ type: 'FeatureCollection', features }, {
-	            style: { fillColor: '#5b684a', fillOpacity: 0.55, color: 'transparent', weight: 0, interactive: false }
-	        }).addTo(window.map);
-	    }
-
 	    // ── Type pills ──
 	    function renderTypePills(data) {
 	        typePills.innerHTML = '';
@@ -957,7 +969,6 @@
 	    const _renderObsData = (data, onProgress = () => {}) => {
 	        activeData = data;
 	        onProgress(86, 'Drawing zones…');
-	        renderGhOverlay();
 	        renderZoneFills(data);
 	        onProgress(93, 'Updating legend…');
 	        renderSummary(data);

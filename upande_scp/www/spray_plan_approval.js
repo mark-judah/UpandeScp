@@ -678,62 +678,61 @@ function _showQrSection(labels) {
   qrDiv.appendChild(strip);
 }
 
-// ── QR Print Window ───────────────────────────────────────────────────────────
+// ── QR Print Window (30 × 40 mm label printer) ────────────────────────────────
 function _openQrPrintWindow(labels) {
-  var win = window.open("", "_blank", "width=980,height=740");
+  var win = window.open("", "_blank", "width=560,height=740");
   if (!win) {
     alert("Pop-ups are blocked. Allow pop-ups for this site to print labels.");
     return;
   }
 
+  var today = new Date().toLocaleDateString("en-GB");
+
   var rows = labels.map(function (lbl) {
+    var farmGh = [lbl.farm, lbl.greenhouse].filter(Boolean).map(_esc).join(" · ");
     return "<div class='label'>" +
-      "<div class='lhd'><div class='ltitle'>" + _esc(lbl.chemical) + "</div>" +
-      "<div class='lsub'>" + _esc(lbl.wo || "") + "</div></div>" +
-      "<div class='lbody'>" +
-      "<img src='data:image/png;base64," + lbl.png_base64 + "' class='qrimg'>" +
-      "<div class='lmeta'>" +
-      _metaRow("Stock Entry", lbl.se || "—") +
-      _metaRow("Quantity",    lbl.qty + " " + lbl.uom) +
-      _metaRow("Warehouse",   lbl.src_wh || "—") +
-      _metaRow("Date",        new Date().toLocaleDateString("en-GB")) +
-      "</div></div>" +
-      "<div class='lfooter'>Scan to verify at transfer checkpoint</div>" +
+      "<img class='qrimg' src='data:image/png;base64," + lbl.png_base64 + "'>" +
+      "<div class='chem'>" + _esc(lbl.chemical) + "</div>" +
+      (farmGh ? "<div class='row'>" + farmGh + "</div>" : "") +
+      "<div class='row'><span class='k'>QTY</span><span class='v'>" +
+        _esc(lbl.qty + " " + (lbl.uom || "")) + "</span></div>" +
+      "<div class='row'><span class='k'>TGT</span><span class='v'>" +
+        _esc(lbl.tgt_wh || lbl.src_wh || "—") + "</span></div>" +
+      "<div class='row foot'>" + _esc(lbl.wo || "") + " · " + today + "</div>" +
       "</div>";
   }).join("");
 
   win.document.write(
     "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Chemical QR Labels</title><style>" +
-    "*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;padding:20px}" +
-    "@media print{body{background:#fff;padding:0}.no-print{display:none!important}.label{break-inside:avoid;box-shadow:none;border:1.5px solid #000}}" +
-    ".toolbar{display:flex;gap:10px;align-items:center;margin-bottom:20px;padding:12px 16px;background:#1f2937;border-radius:8px;color:#fff}" +
-    ".toolbar h2{flex:1;font-size:.95rem;font-weight:700}" +
-    ".toolbar button{padding:8px 18px;border:none;border-radius:6px;font-weight:600;font-size:.8rem;cursor:pointer}" +
+    "@page{size:30mm 40mm;margin:0}" +
+    "*{box-sizing:border-box;margin:0;padding:0}" +
+    "body{font-family:Arial,Helvetica,sans-serif;background:#e5e7eb;padding:16px}" +
+    ".toolbar{display:flex;gap:8px;align-items:center;margin-bottom:14px;padding:10px 14px;background:#1f2937;border-radius:6px;color:#fff}" +
+    ".toolbar h2{flex:1;font-size:.85rem;font-weight:700}" +
+    ".toolbar button{padding:6px 14px;border:none;border-radius:5px;font-weight:600;font-size:.72rem;cursor:pointer}" +
     ".btn-print{background:#059669;color:#fff}.btn-close{background:#374151;color:#fff}" +
-    ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}" +
-    ".label{background:#fff;border:2px solid #1f2937;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1)}" +
-    ".lhd{background:#1f2937;padding:10px 14px;color:#fff}" +
-    ".ltitle{font-size:1rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-    ".lsub{font-size:.82rem;color:#9ca3af;margin-top:3px}" +
-    ".lbody{display:flex;gap:12px;padding:12px 14px;align-items:flex-start}" +
-    ".qrimg{width:200px;height:200px;flex-shrink:0;border:1px solid #e5e7eb;border-radius:6px;image-rendering:pixelated}" +
-    ".lmeta{flex:1;display:flex;flex-direction:column;gap:6px}" +
-    ".mrow{display:flex;flex-direction:column;border-bottom:1px solid #f3f4f6;padding-bottom:4px}" +
-    ".mrow:last-child{border-bottom:none}" +
-    ".mkey{font-size:.6rem;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.4px}" +
-    ".mval{font-size:.78rem;font-weight:600;color:#111827;word-break:break-all}" +
-    ".lfooter{text-align:center;font-size:.65rem;color:#6b7280;padding:6px 10px;border-top:1px dashed #e5e7eb;background:#f9fafb;font-style:italic}" +
+    ".sheet{display:flex;flex-direction:column;align-items:center;gap:6px}" +
+    ".label{width:30mm;height:40mm;padding:1mm;background:#fff;border:1px solid #000;" +
+           "display:flex;flex-direction:column;align-items:center;overflow:hidden;page-break-after:always}" +
+    ".label:last-child{page-break-after:auto}" +
+    ".qrimg{width:20mm;height:20mm;image-rendering:pixelated;display:block}" +
+    ".chem{font-size:6pt;font-weight:700;text-align:center;line-height:1.1;margin-top:0.8mm;" +
+          "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:28mm}" +
+    ".row{font-size:5pt;line-height:1.2;width:100%;display:flex;justify-content:space-between;" +
+         "gap:1mm;margin-top:0.4mm;white-space:nowrap;overflow:hidden}" +
+    ".row .k{font-weight:700;color:#555;flex:0 0 auto}" +
+    ".row .v{font-weight:600;text-align:right;overflow:hidden;text-overflow:ellipsis}" +
+    ".row.foot{justify-content:center;color:#444;font-size:4.5pt;margin-top:auto}" +
+    "@media print{body{background:#fff;padding:0}.no-print{display:none!important}" +
+    ".sheet{gap:0}.label{border:none}}" +
     "</style></head><body>" +
-    "<div class='toolbar no-print'><h2>Chemical QR Labels — " + labels.length + " label" + (labels.length !== 1 ? "s" : "") + "</h2>" +
+    "<div class='toolbar no-print'><h2>Chemical QR Labels — 30×40 mm (" + labels.length +
+    " label" + (labels.length !== 1 ? "s" : "") + ")</h2>" +
     "<button class='btn-print' onclick='window.print()'>Print</button>" +
     "<button class='btn-close' onclick='window.close()'>Close</button></div>" +
-    "<div class='grid'>" + rows + "</div></body></html>"
+    "<div class='sheet'>" + rows + "</div></body></html>"
   );
   win.document.close();
-}
-
-function _metaRow(key, val) {
-  return "<div class='mrow'><span class='mkey'>" + _esc(key) + "</span><span class='mval'>" + _esc(val) + "</span></div>";
 }
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────

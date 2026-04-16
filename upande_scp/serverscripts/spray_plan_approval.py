@@ -209,12 +209,16 @@ def approve_single_work_order(wo_name):
     # ── Generate & attach QR labels ──
     qr_labels = []
     greenhouse = wo_doc.custom_greenhouse or ""
+    farm = _derive_farm(greenhouse) or ""
+    wip_warehouse = wo_doc.wip_warehouse or ""
     for item in se_doc.items or []:
         try:
+            tgt_wh = item.t_warehouse or wip_warehouse
             payload = build_chemical_qr_payload(
                 wo_name, se_doc.name,
                 item.item_name or item.item_code,
                 item.qty, item.stock_uom, greenhouse,
+                farm=farm, target_warehouse=tgt_wh,
             )
             png_b64 = generate_qr_base64(payload)
             if png_b64:
@@ -227,6 +231,11 @@ def approve_single_work_order(wo_name):
                         "qty":        _fmt_qty(item.qty),
                         "uom":        item.stock_uom,
                         "src_wh":     item.s_warehouse or "",
+                        "tgt_wh":     tgt_wh,
+                        "farm":       farm,
+                        "greenhouse": greenhouse,
+                        "wo":         wo_name,
+                        "se":         se_doc.name,
                         "png_base64": png_b64,
                     }
                 )

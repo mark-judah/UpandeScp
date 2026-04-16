@@ -508,11 +508,11 @@
 	    const toggleBtn = document.getElementById('toggle-sidebar');
 	    toggleBtn.addEventListener('click', () => sidebar.classList.toggle('collapsed'));
 
-	    const setProgress = (pct, msg) => {
+	    const setProgress = (pct) => {
 	        const fill = document.getElementById('map-load-fill');
 	        const status = document.getElementById('map-load-status');
 	        if (fill) fill.style.width = Math.min(100, pct) + '%';
-	        if (status && msg) status.textContent = msg;
+	        if (status) status.textContent = Math.round(Math.min(100, pct)) + '%';
 	    };
 	    const showOverlay = () => {
 	        setProgress(0, 'Initialising…');
@@ -545,7 +545,7 @@
 	                const pct = contentLength
 	                    ? 48 + (received / +contentLength) * 33
 	                    : 48 + Math.min(received / ESTIMATE, 1) * 33;
-	                onProgress(pct, `Downloading… ${(received / 1024).toFixed(0)} KB`);
+	                onProgress(pct);
 	            }
 	            return read();
 	        });

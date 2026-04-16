@@ -13,8 +13,14 @@ import re
 import frappe
 
 
-def generate_qr_base64(payload_text, box_size=10, border=2):
-    """Return a base64-encoded PNG QR code image, or None on failure."""
+def generate_qr_base64(payload_text, box_size=4, border=2):
+    """
+    Return a base64-encoded PNG QR code image, or None on failure.
+
+    Defaults are tuned for a 30x40 mm label printer: a box_size of 4 with a
+    2-module quiet zone yields a QR that stays readable when scaled to roughly
+    18-22 mm square — small enough to leave room for label text.
+    """
     try:
         import qrcode
         from io import BytesIO
@@ -59,7 +65,7 @@ def attach_qr_to_document(doctype, docname, filename, png_base64):
                 "file_name": filename,
                 "attached_to_doctype": doctype,
                 "attached_to_name": docname,
-                "is_private": 1,
+                "is_private": 0,
                 "content": png_bytes,
             }
         )
@@ -75,18 +81,37 @@ def attach_qr_to_document(doctype, docname, filename, png_base64):
         return None
 
 
-def build_chemical_qr_payload(wo_name, se_name, chemical_name, qty, uom, greenhouse):
-    """Build the human-readable text encoded into the QR image."""
+def build_chemical_qr_payload(
+    wo_name,
+    se_name,
+    chemical_name,
+    qty,
+    uom,
+    greenhouse,
+    farm="",
+    target_warehouse="",
+):
+    """
+    Build the text encoded into the QR image.
+
+    Uses short keys and skips empty fields to keep the payload compact — a
+    smaller payload produces a lower-version QR (fewer modules), which scans
+    more reliably at 30x40 mm label sizes.
+    """
     from frappe.utils import today
 
-    lines = [
-        f"CHEM: {chemical_name}",
-        f"QTY:  {_fmt_qty(qty)} {uom}",
-        f"WO:   {wo_name}",
-        f"SE:   {se_name}",
-        f"GH:   {greenhouse}",
-        f"DATE: {today()}",
-    ]
+    lines = []
+    if farm:
+        lines.append(f"FARM: {farm}")
+    if greenhouse:
+        lines.append(f"GH:   {greenhouse}")
+    lines.append(f"CHEM: {chemical_name}")
+    lines.append(f"QTY:  {_fmt_qty(qty)} {uom}")
+    if target_warehouse:
+        lines.append(f"TGT:  {target_warehouse}")
+    lines.append(f"WO:   {wo_name}")
+    lines.append(f"SE:   {se_name}")
+    lines.append(f"DATE: {today()}")
     return "\n".join(lines)
 
 

@@ -455,35 +455,24 @@
 
 	/* --- Loader --- */
 
-	.loader {
-		position: fixed;
-		top: 50%;
-		left: 50%;
-		transform: translate(-50%, -50%);
-		z-index: 9999;
+	#map-loader {
+		position: absolute; inset: 0;
+		background: rgba(255,255,255,0.93);
+		display: flex; flex-direction: column;
+		align-items: center; justify-content: center;
+		z-index: 2000; gap: 0.5rem;
 	}
-
-	.loader.hidden {
-		display: none;
+	.map-load-title { font-size: 0.875rem; font-weight: 600; color: #1e293b; margin-bottom: 0.15rem; }
+	.map-load-track {
+		width: 220px; height: 5px;
+		background: #e2e8f0; border-radius: 3px; overflow: hidden;
 	}
-
-	.loader-spinner {
-		border: 4px solid var(--border);
-		border-top: 4px solid var(--accent);
-		border-radius: 50%;
-		width: 50px;
-		height: 50px;
-		animation: spin 1s linear infinite;
+	.map-load-fill {
+		height: 100%; width: 0%;
+		background: #2563eb; border-radius: 3px;
+		transition: width 0.25s ease;
 	}
-
-	@keyframes spin {
-		0% {
-			transform: rotate(0deg);
-		}
-		100% {
-			transform: rotate(360deg);
-		}
-	}
+	.map-load-status { font-size: 0.72rem; color: #64748b; min-width: 220px; text-align: center; }
 
 	.empty-state {
 		text-align: center;
@@ -497,17 +486,16 @@
 		margin: 0 auto 16px;
 		opacity: 0.5;
 	}
-
-	.load-progress {
-		font-size: 11px;
-		color: var(--text-muted);
-		margin-top: 4px;
-	}
 </style>
 {% endblock %} {% block page_content %}
 <div>
 	<div id="dashboard-page">
-		<div id="content-container">
+		<div id="content-container" style="position:relative">
+			<div id="map-loader" style="display:none">
+				<span class="map-load-title">Loading heatmap data</span>
+				<div class="map-load-track"><div class="map-load-fill" id="map-load-fill"></div></div>
+				<span class="map-load-status" id="map-load-status">0%</span>
+			</div>
 			<div class="all-gh-table-wrapper" id="all-gh-table-wrapper">
 				<!-- Table rendered here -->
 			</div>
@@ -527,9 +515,6 @@
 					<div class="gh-filter-tabs" id="farm-filter"></div>
 				</div>
 
-				<div class="section">
-					<div class="load-progress" id="load-progress"></div>
-				</div>
 			</div>
 		</div>
 	</div>
@@ -541,9 +526,6 @@
 		</div>
 	</div>
 
-	<div id="loader" class="loader hidden">
-		<div class="loader-spinner"></div>
-	</div>
 
 	<script>
 		// ── State ──
@@ -552,6 +534,15 @@
 		let allGreenhouseResults = {};
 		let currentDate = new Date().toISOString().split("T")[0];
 		let currentFarmFilter = "__all__";
+
+		// ── Abort + cache ──
+		const dateCache = new Map();
+		let activeAbortControllers = [];
+
+		const abortAllRequests = () => {
+			activeAbortControllers.forEach(ctrl => { try { ctrl.abort(); } catch (_) {} });
+			activeAbortControllers = [];
+		};
 
 		const CATEGORIES = [
 			{ key: "pests_scouting_entry", type: "pests" },
@@ -562,16 +553,20 @@
 			{ key: "physiological_disorders_entry", type: "physiological_disorders" },
 		];
 
+		function setProgress(pct) {
+			const fill = document.getElementById("map-load-fill");
+			const status = document.getElementById("map-load-status");
+			if (fill) fill.style.width = Math.min(100, pct) + "%";
+			if (status) status.textContent = Math.round(Math.min(100, pct)) + "%";
+		}
+
 		function showLoader() {
-			document.getElementById("loader").classList.remove("hidden");
+			setProgress(0);
+			document.getElementById("map-loader").style.display = "flex";
 		}
 
 		function hideLoader() {
-			document.getElementById("loader").classList.add("hidden");
-		}
-
-		function setProgress(text) {
-			document.getElementById("load-progress").textContent = text;
+			document.getElementById("map-loader").style.display = "none";
 		}
 
 		// ── Fetch farms ──
@@ -611,9 +606,20 @@
 
 		// ── Fetch only scouted greenhouses for the date ──
 		function loadAllScoutedGreenhouses() {
+			if (dateCache.has(currentDate)) {
+				allGreenhouseResults = dateCache.get(currentDate);
+				renderAllGreenhousesTable();
+				return;
+			}
+
+			abortAllRequests();
 			showLoader();
 			allGreenhouseResults = {};
-			setProgress("Finding scouted greenhouses...");
+			setProgress(5);
+
+			const listCtrl = new AbortController();
+			activeAbortControllers.push(listCtrl);
+			const fetchDate = currentDate;
 
 			fetch(
 				"/api/method/upande_scp.serverscripts.get_heatmap_data.getAllScoutedGreenhouses",
@@ -623,7 +629,8 @@
 						"Content-Type": "application/json",
 						"X-Frappe-CSRF-Token": "{{ csrf_token }}",
 					},
-					body: JSON.stringify({ date: currentDate }),
+					body: JSON.stringify({ date: fetchDate }),
+					signal: listCtrl.signal,
 				},
 			)
 				.then((r) => r.json())
@@ -632,16 +639,18 @@
 
 					if (scoutedList.length === 0) {
 						hideLoader();
-						setProgress("");
 						showEmptyState();
 						return;
 					}
 
-					setProgress("Loading 0 / " + scoutedList.length + " greenhouses...");
+					setProgress(15);
 					let completed = 0;
 					const total = scoutedList.length;
 
 					scoutedList.forEach((ghName) => {
+						const ghCtrl = new AbortController();
+						activeAbortControllers.push(ghCtrl);
+
 						fetch(
 							"/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData",
 							{
@@ -650,11 +659,13 @@
 									"Content-Type": "application/json",
 									"X-Frappe-CSRF-Token": "{{ csrf_token }}",
 								},
-								body: JSON.stringify({ date: currentDate, greenhouse: ghName }),
+								body: JSON.stringify({ date: fetchDate, greenhouse: ghName }),
+								signal: ghCtrl.signal,
 							},
 						)
 							.then((r) => (r.ok ? r.json() : Promise.reject(r)))
 							.then((response) => {
+								if (fetchDate !== currentDate) return;
 								const data = response.message;
 								if (
 									data &&
@@ -669,22 +680,24 @@
 								}
 							})
 							.catch((err) => {
+								if (err.name === "AbortError") return;
 								console.error("Error fetching " + ghName + ":", err);
 							})
 							.finally(() => {
+								if (fetchDate !== currentDate) return;
 								completed++;
-								setProgress(
-									"Loading " + completed + " / " + total + " greenhouses...",
-								);
+								setProgress(15 + (completed / total) * 85);
 								if (completed >= total) {
-									hideLoader();
-									setProgress(total + " greenhouses loaded");
+									dateCache.set(fetchDate, { ...allGreenhouseResults });
+									setProgress(100);
+									setTimeout(hideLoader, 350);
 									renderAllGreenhousesTable();
 								}
 							});
 					});
 				})
 				.catch((err) => {
+					if (err.name === "AbortError") return;
 					console.error("Error fetching scouted list:", err);
 					hideLoader();
 					showEmptyState();
@@ -1196,6 +1209,7 @@
 		// ── Date change ──
 		document.getElementById("scout-date-picker").addEventListener("change", (e) => {
 			currentDate = e.target.value;
+			abortAllRequests();
 			loadAllScoutedGreenhouses();
 		});
 

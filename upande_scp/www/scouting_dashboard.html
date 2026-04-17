@@ -365,7 +365,7 @@
 
 		<div class="chart-card" style="margin-bottom:16px;">
 			<div class="chart-header"><h4>FCM &amp; Moth Trends</h4><span class="chart-subtitle">Daily catches (traps) + scouting counts — FCM vs other moths</span></div>
-			<div class="chart-body" style="height:220px;"><canvas id="fcm-moth-trend-chart"></canvas></div>
+			<div class="chart-body" style="height:160px;"><canvas id="fcm-moth-trend-chart"></canvas></div>
 		</div>
 
 		<div class="charts-grid">
@@ -391,8 +391,14 @@
 
 	<!-- ─── LOADING OVERLAY ─── -->
 	<div class="loading-overlay" id="scout-loading">
-		<div class="loading-spinner"></div>
-		<div class="loading-text">Loading scouting data…</div>
+		<div class="loading-card">
+			<div class="loading-title">Loading scouting data</div>
+			<div class="loading-text">Starting…</div>
+			<div class="loading-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+				<div class="loading-bar-fill"></div>
+			</div>
+			<div class="loading-bar-pct">0%</div>
+		</div>
 	</div>
 
 	<!-- ─── GREENHOUSE DETAIL MODAL ─── -->

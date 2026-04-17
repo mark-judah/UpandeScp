@@ -1,6 +1,154 @@
 import frappe
 
 
+CACHE_TTL = 300  # seconds; legend colors + zone counts rarely change
+
+
+def _cached_pest_colors():
+    cache = frappe.cache()
+    key = "scouting_dashboard:pest_colors"
+    value = cache.get_value(key)
+    if value is None:
+        value = frappe.get_all(
+            "Pest",
+            fields=["name", "pests_legend_color"],
+            limit_page_length=0,
+        )
+        cache.set_value(key, value, expires_in_sec=CACHE_TTL)
+    return value
+
+
+def _cached_disease_colors():
+    cache = frappe.cache()
+    key = "scouting_dashboard:disease_colors"
+    value = cache.get_value(key)
+    if value is None:
+        value = frappe.get_all(
+            "Plant Disease",
+            fields=["name", "disease_legend_color"],
+            limit_page_length=0,
+        )
+        cache.set_value(key, value, expires_in_sec=CACHE_TTL)
+    return value
+
+
+def _cached_zones_by_greenhouse():
+    cache = frappe.cache()
+    key = "scouting_dashboard:zones_by_greenhouse"
+    value = cache.get_value(key)
+    if value is not None:
+        return value
+
+    all_zones = frappe.get_all(
+        "Zone",
+        fields=["greenhouse"],
+        limit_page_length=0,
+    )
+    zones_by_greenhouse = {}
+    for z in all_zones:
+        if z.greenhouse:
+            zones_by_greenhouse[z.greenhouse] = zones_by_greenhouse.get(z.greenhouse, 0) + 1
+
+    if not zones_by_greenhouse:
+        all_beds = frappe.get_all(
+            "Warehouse",
+            filters=[["is_group", "=", 0]],
+            fields=["parent_warehouse"],
+            limit_page_length=0,
+        )
+        for bed in all_beds:
+            parent = (bed.get("parent_warehouse") or "").strip()
+            if parent:
+                zones_by_greenhouse[parent] = zones_by_greenhouse.get(parent, 0) + 1
+
+    cache.set_value(key, zones_by_greenhouse, expires_in_sec=CACHE_TTL)
+    return zones_by_greenhouse
+
+
+def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True):
+    entry_filters = [["date_of_capture", "between", [from_date, to_date]]]
+    if greenhouse_filter:
+        entry_filters.append(["greenhouse", "=", greenhouse_filter])
+
+    scouting_entries = frappe.get_all(
+        "Scouting Entry",
+        filters=entry_filters,
+        fields=[
+            "name",
+            "scouts_name",
+            "greenhouse",
+            "bed",
+            "zone",
+            "time_of_capture",
+            "date_of_capture",
+            "owner",
+            "modified_by",
+        ],
+        order_by="date_of_capture desc, time_of_capture desc",
+        limit_page_length=0,
+    )
+
+    payload = {
+        "entries": [],
+        "total_entries": len(scouting_entries),
+        "filters_applied": {
+            "from_date": from_date,
+            "to_date": to_date,
+            "greenhouse": greenhouse_filter,
+        },
+    }
+
+    if include_meta:
+        payload["pest_colors"] = _cached_pest_colors()
+        payload["disease_colors"] = _cached_disease_colors()
+        payload["zones_by_greenhouse"] = _cached_zones_by_greenhouse()
+
+    entry_names = [e.name for e in scouting_entries]
+    if not entry_names:
+        return payload
+
+    pests = frappe.get_all(
+        "Pests Scouting Entry",
+        filters=[["parent", "in", entry_names]],
+        fields=["parent", "plant_section", "pest", "stage", "count"],
+        limit_page_length=0,
+    )
+
+    diseases = frappe.get_all(
+        "Diseases Scouting Entry",
+        filters=[["parent", "in", entry_names]],
+        fields=["parent", "disease", "plant_section", "stage"],
+        limit_page_length=0,
+    )
+
+    traps = frappe.get_all(
+        "Trap Scouting Entry",
+        filters=[["parent", "in", entry_names]],
+        fields=["parent", "trap", "pest", "location", "count"],
+        limit_page_length=0,
+    )
+
+    entries_dict = {entry.name: entry for entry in scouting_entries}
+
+    for pest in pests:
+        parent = pest.pop("parent", None)
+        if parent in entries_dict:
+            entries_dict[parent].setdefault("pests", []).append(pest)
+
+    for disease in diseases:
+        parent = disease.pop("parent", None)
+        if parent in entries_dict:
+            entries_dict[parent].setdefault("diseases", []).append(disease)
+
+    for trap in traps:
+        parent = trap.pop("parent", None)
+        if parent in entries_dict:
+            entries_dict[parent].setdefault("traps", []).append(trap)
+
+    payload["entries"] = list(entries_dict.values())
+    return payload
+
+
 @frappe.whitelist()
 def getCompleteScoutingEntries(from_date=None, to_date=None, greenhouse=None):
     try:
@@ -11,221 +159,34 @@ def getCompleteScoutingEntries(from_date=None, to_date=None, greenhouse=None):
         if not from_date or not to_date:
             frappe.throw("from_date and to_date are required")
 
-        entry_filters = [
-            ["date_of_capture", "between", [from_date, to_date]]
-        ]
-
-        if greenhouse_filter:
-            entry_filters.append(["greenhouse", "=", greenhouse_filter])
-
-        scouting_entries = frappe.get_all(
-            "Scouting Entry",
-            filters=entry_filters,
-            fields=[
-                "name",
-                "scouts_name",
-                "greenhouse",
-                "bed",
-                "zone",
-                "time_of_capture",
-                "date_of_capture",
-                "latitude",
-                "longitude",
-                "naming_series",
-                "owner",
-                "creation",
-                "modified",
-                "modified_by",
-                "docstatus",
-                "idx",
-            ],
-            order_by="date_of_capture desc, time_of_capture desc",
-            limit_page_length=10000,
-        )
-
-        entry_names = [e.name for e in scouting_entries]
-
-        pest_colors = frappe.get_all(
-            "Pest",
-            fields=["name", "pests_legend_color"],
-        )
-
-        disease_colors = frappe.get_all(
-            "Plant Disease",
-            fields=["name", "disease_legend_color"],
-        )
-
-        all_zones = frappe.get_all(
-            "Zone",
-            fields=["greenhouse"],
-            limit_page_length=10000,
-        )
-        zones_by_greenhouse = {}
-        for z in all_zones:
-            if z.greenhouse:
-                zones_by_greenhouse[z.greenhouse] = zones_by_greenhouse.get(z.greenhouse, 0) + 1
-
-        # Fallback: if Zone records have no greenhouse data, count leaf Warehouse
-        # children per greenhouse (beds = zones proxy)
-        if not zones_by_greenhouse:
-            all_beds = frappe.get_all(
-                "Warehouse",
-                filters=[["is_group", "=", 0]],
-                fields=["parent_warehouse"],
-                limit_page_length=50000,
-            )
-            for bed in all_beds:
-                parent = (bed.get("parent_warehouse") or "").strip()
-                if parent:
-                    zones_by_greenhouse[parent] = zones_by_greenhouse.get(parent, 0) + 1
-
-        if not entry_names:
-            return {
-                "entries": [],
-                "pests": [],
-                "diseases": [],
-                "physiological_disorders": [],
-                "weeds": [],
-                "predators": [],
-                "traps": [],
-                "incidents": [],
-                "pest_colors": pest_colors,
-                "disease_colors": disease_colors,
-                "zones_by_greenhouse": zones_by_greenhouse,
-            }
-
-        pests = frappe.get_all(
-            "Pests Scouting Entry",
-            filters=[["parent", "in", entry_names]],
-            fields=[
-                "parent",
-                "plant_section",
-                "pest",
-                "stage",
-                "count",
-            ],
-        )
-
-        diseases = frappe.get_all(
-            "Diseases Scouting Entry",
-            filters=[["parent", "in", entry_names]],
-            fields=[
-                "parent",
-                "disease",
-                "plant_section",
-                "stage",
-            ],
-        )
-
-        physiological_disorders = frappe.get_all(
-            "Physiological Disorders Entry",
-            filters=[["parent", "in", entry_names]],
-            fields=[
-                "parent",
-                "physiological_disorders",
-            ],
-        )
-
-        weeds = frappe.get_all(
-            "Weeds Scouting Entry",
-            filters=[["parent", "in", entry_names]],
-            fields=[
-                "parent",
-                "weed",
-            ],
-        )
-
-        predators = frappe.get_all(
-            "Predators Scouting Entry",
-            filters=[["parent", "in", entry_names]],
-            fields=[
-                "parent",
-                "plant_section",
-                "predator",
-                "stage",
-                "count",
-            ],
-        )
-
-        traps = frappe.get_all(
-            "Trap Scouting Entry",
-            filters=[["parent", "in", entry_names]],
-            fields=[
-                "parent",
-                "trap",
-                "pest",
-                "location",
-                "count",
-            ],
-        )
-
-        incidents = frappe.get_all(
-            "Incidents Scouting Entry",
-            filters=[["parent", "in", entry_names]],
-            fields=[
-                "parent",
-                "incident",
-            ],
-        )
-
-        entries_dict = {entry.name: entry for entry in scouting_entries}
-
-        for pest in pests:
-            parent = pest.pop("parent", None)
-            if parent in entries_dict:
-                entries_dict[parent].setdefault("pests", []).append(pest)
-
-        for disease in diseases:
-            parent = disease.pop("parent", None)
-            if parent in entries_dict:
-                entries_dict[parent].setdefault("diseases", []).append(disease)
-
-        for disorder in physiological_disorders:
-            parent = disorder.pop("parent", None)
-            if parent in entries_dict:
-                entries_dict[parent].setdefault("physiological_disorders", []).append(disorder)
-
-        for weed in weeds:
-            parent = weed.pop("parent", None)
-            if parent in entries_dict:
-                entries_dict[parent].setdefault("weeds", []).append(weed)
-
-        for predator in predators:
-            parent = predator.pop("parent", None)
-            if parent in entries_dict:
-                entries_dict[parent].setdefault("predators", []).append(predator)
-
-        for trap in traps:
-            parent = trap.pop("parent", None)
-            if parent in entries_dict:
-                entries_dict[parent].setdefault("traps", []).append(trap)
-
-        for incident in incidents:
-            parent = incident.pop("parent", None)
-            if parent in entries_dict:
-                entries_dict[parent].setdefault("incidents", []).append(incident)
-
-        enhanced_entries = list(entries_dict.values())
-
-        return {
-            "entries": enhanced_entries,
-            "pests_flat": pests,
-            "diseases_flat": diseases,
-            "physiological_disorders_flat": physiological_disorders,
-            "weeds_flat": weeds,
-            "predators_flat": predators,
-            "traps_flat": traps,
-            "incidents_flat": incidents,
-            "total_entries": len(scouting_entries),
-            "pest_colors": pest_colors,
-            "disease_colors": disease_colors,
-            "zones_by_greenhouse": zones_by_greenhouse,
-            "filters_applied": {
-                "from_date": from_date,
-                "to_date": to_date,
-                "greenhouse": greenhouse_filter,
-            },
-        }
+        return _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True)
     except Exception as e:
         frappe.log_error(f"Error in scouting data extraction: {str(e)}", "Scouting Entry API")
+        frappe.throw(str(e))
+
+
+@frappe.whitelist()
+def getScoutingEntriesChunk(from_date=None, to_date=None, greenhouse=None, include_meta=0):
+    """Lean monthly-chunk endpoint for the scouting dashboard.
+
+    When include_meta is falsy, skips pest_colors/disease_colors/zones_by_greenhouse
+    so background chunks don't re-ship shared metadata that the client fetched once.
+    """
+    try:
+        from_date = from_date or frappe.form_dict.get("from_date")
+        to_date = to_date or frappe.form_dict.get("to_date")
+        greenhouse_filter = greenhouse or frappe.form_dict.get("greenhouse")
+        include_meta_flag = str(include_meta).lower() in ("1", "true", "yes")
+
+        if not from_date or not to_date:
+            frappe.throw("from_date and to_date are required")
+
+        return _fetch_scouting_payload(
+            from_date,
+            to_date,
+            greenhouse_filter,
+            include_meta=include_meta_flag,
+        )
+    except Exception as e:
+        frappe.log_error(f"Error in scouting chunk extraction: {str(e)}", "Scouting Entry API")
         frappe.throw(str(e))

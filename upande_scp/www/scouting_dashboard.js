@@ -52,6 +52,13 @@ var scoutingAnalysis = null;
 var observationColors = { pests: {}, diseases: {} };
 var zonesPerGreenhouse = {};
 
+/* Monthly-chunk cache. Invalidated whenever greenhouse or ISO-week year changes.
+   Period data (selected range) renders as soon as its months land; the rest of
+   the year is prefetched silently afterwards for instant range-switches. */
+var monthCache = { key: null, months: {} };
+var metaCache = null;
+var prefetchToken = 0;
+
 var SCOUTING_DASHBOARD_DEBUG = true;
 
 if (SCOUTING_DASHBOARD_DEBUG)
@@ -207,6 +214,14 @@ function getScoutIdentity(entry) {
 function formatNumber(num) {
 	if (num == null) return "0";
 	num = Number(num);
+	if (!isFinite(num)) return "0";
+	return num.toLocaleString("en-US");
+}
+
+function formatCompactNumber(num) {
+	if (num == null) return "0";
+	num = Number(num);
+	if (!isFinite(num)) return "0";
 	if (num >= 1e6) return (num / 1e6).toFixed(1) + "M";
 	if (num >= 1e3) return (num / 1e3).toFixed(1) + "K";
 	return num.toString();
@@ -270,6 +285,45 @@ function compareIsoWeeks(a, b) {
 	var by = Number(b?.year) || 0;
 	if (ay !== by) return ay - by;
 	return (Number(a?.week) || 0) - (Number(b?.week) || 0);
+}
+
+function monthKeyFromDate(dateStr) {
+	return (dateStr || "").slice(0, 7);
+}
+
+function monthBounds(monthKey) {
+	var parts = monthKey.split("-");
+	var y = Number(parts[0]);
+	var m = Number(parts[1]);
+	var lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+	return {
+		fromDate: monthKey + "-01",
+		toDate: monthKey + "-" + String(lastDay).padStart(2, "0"),
+	};
+}
+
+function getMonthKeysBetween(fromDate, toDate) {
+	var fParts = fromDate.split("-");
+	var tParts = toDate.split("-");
+	var y = Number(fParts[0]), m = Number(fParts[1]);
+	var ty = Number(tParts[0]), tm = Number(tParts[1]);
+	var keys = [];
+	while (y < ty || (y === ty && m <= tm)) {
+		keys.push(y + "-" + String(m).padStart(2, "0"));
+		m++;
+		if (m > 12) { m = 1; y++; }
+	}
+	return keys;
+}
+
+function getYearMonthKeys(fromYear, toYear) {
+	var keys = [];
+	for (var y = fromYear; y <= toYear; y++) {
+		for (var m = 1; m <= 12; m++) {
+			keys.push(y + "-" + String(m).padStart(2, "0"));
+		}
+	}
+	return keys;
 }
 
 function getSelectedWeekRangeInfo() {
@@ -1048,37 +1102,164 @@ function switchTab(tab) {
 
 function refreshAllData() { fetchScoutingData(); }
 
+function setLoadingProgress(percent, label) {
+	var overlay = root_element.querySelector("#scout-loading");
+	if (!overlay) return;
+	var bar = overlay.querySelector(".loading-bar-fill");
+	var pct = overlay.querySelector(".loading-bar-pct");
+	var text = overlay.querySelector(".loading-text");
+	var clamped = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+	if (bar) bar.style.width = clamped + "%";
+	if (pct) pct.textContent = clamped + "%";
+	if (text && label != null) text.textContent = label;
+}
+
+function showLoading(label) {
+	var overlay = root_element.querySelector("#scout-loading");
+	if (!overlay) return;
+	overlay.classList.add("active");
+	setLoadingProgress(0, label || "Starting…");
+}
+
+function hideLoading() {
+	var overlay = root_element.querySelector("#scout-loading");
+	if (!overlay) return;
+	setLoadingProgress(100, "Done");
+	setTimeout(function () { overlay.classList.remove("active"); }, 180);
+}
+
+function fetchScoutingChunk(fromDate, toDate, greenhouse, includeMeta) {
+	return callFrappe(
+		"upande_scp.serverscripts.get_complete_scouting_entries.getScoutingEntriesChunk",
+		{ from_date: fromDate, to_date: toDate, greenhouse: greenhouse, include_meta: includeMeta ? 1 : 0 }
+	).then(function (r) { return r.message || {}; });
+}
+
+function collectCachedEntries(fromDate, toDate) {
+	var out = [];
+	Object.keys(monthCache.months).forEach(function (mk) {
+		(monthCache.months[mk] || []).forEach(function (e) {
+			var d = (e?.date_of_capture || "").slice(0, 10);
+			if (d >= fromDate && d <= toDate) out.push(e);
+		});
+	});
+	return out;
+}
+
+function renderFromCache(rangeInfo) {
+	if (!metaCache) return;
+	var fromDate = rangeInfo.fromDate;
+	var toDate = rangeInfo.toDate;
+	var yearFrom = rangeInfo.from.year + "-01-01";
+	var yearTo = rangeInfo.to.year + "-12-31";
+
+	var periodEntries = collectCachedEntries(fromDate, toDate);
+	var yearEntries = collectCachedEntries(yearFrom, yearTo);
+
+	scoutingAnalysis = null;
+	observationColors = extractObservationColors(metaCache.pest_colors, metaCache.disease_colors);
+	zonesPerGreenhouse = metaCache.zones_by_greenhouse || {};
+
+	var farmPeriod = applyFarmFilterToEntries(periodEntries);
+	var farmYear = applyFarmFilterToEntries(yearEntries);
+	logSelectedPeriodObservations(farmPeriod, fromDate, toDate);
+	scoutingYearData = buildScoutingData(farmYear);
+	processScoutingData(farmPeriod);
+}
+
+function startBackgroundPrefetch(allYearMonths, rangeInfo) {
+	var token = ++prefetchToken;
+	var missing = allYearMonths.filter(function (mk) { return !monthCache.months[mk]; });
+	if (missing.length === 0) return;
+
+	var chain = Promise.resolve();
+	missing.forEach(function (monthKey) {
+		chain = chain.then(function () {
+			if (token !== prefetchToken) return;
+			var bounds = monthBounds(monthKey);
+			return fetchScoutingChunk(bounds.fromDate, bounds.toDate, greenhouseFilter, false)
+				.then(function (res) {
+					if (token !== prefetchToken) return;
+					monthCache.months[monthKey] = res.entries || [];
+				})
+				.catch(function () { /* silent — background */ });
+		});
+	});
+
+	chain.then(function () {
+		if (token !== prefetchToken || !metaCache) return;
+		var yearFrom = rangeInfo.from.year + "-01-01";
+		var yearTo = rangeInfo.to.year + "-12-31";
+		var yearEntries = collectCachedEntries(yearFrom, yearTo);
+		var farmYear = applyFarmFilterToEntries(yearEntries);
+		scoutingYearData = buildScoutingData(farmYear);
+		updateTabData(activeTab);
+	});
+}
+
 function fetchScoutingData() {
 	var rangeInfo = getSelectedWeekRangeInfo();
 	if (!rangeInfo) return;
 	var fromDate = rangeInfo.fromDate;
 	var toDate = rangeInfo.toDate;
-	var loading = root_element.querySelector("#scout-loading");
-	var yearFrom = rangeInfo.from.year + "-01-01";
-	var yearTo = rangeInfo.to.year + "-12-31";
+	var fromYear = rangeInfo.from.year;
+	var toYear = rangeInfo.to.year;
 
-	if (loading) loading.classList.add("active");
+	var cacheKey = (greenhouseFilter || "*") + "|" + fromYear + "|" + toYear;
+	if (monthCache.key !== cacheKey) {
+		monthCache = { key: cacheKey, months: {} };
+		prefetchToken++; /* cancel any in-flight background work from prior key */
+	}
 
-	Promise.all([
-		fetchCompleteScoutingEntries(fromDate, toDate, greenhouseFilter),
-		fetchCompleteScoutingEntries(yearFrom, yearTo, greenhouseFilter),
-	]).then(function (results) {
-		var periodResult = results[0];
-		var yearResult = results[1];
-		var entries = periodResult.entries || [];
-		var yearEntries = yearResult.entries || [];
-		scoutingAnalysis = null;
-		observationColors = extractObservationColors(periodResult.pest_colors, periodResult.disease_colors);
-		zonesPerGreenhouse = periodResult.zones_by_greenhouse || {};
-		var farmEntries = applyFarmFilterToEntries(entries);
-		var farmYearEntries = applyFarmFilterToEntries(yearEntries);
-		logSelectedPeriodObservations(farmEntries, fromDate, toDate);
-		scoutingYearData = buildScoutingData(farmYearEntries);
-		processScoutingData(farmEntries);
-		if (loading) loading.classList.remove("active");
+	var periodMonths = getMonthKeysBetween(fromDate, toDate);
+	var allYearMonths = getYearMonthKeys(fromYear, toYear);
+	var missingPeriod = periodMonths.filter(function (mk) { return !monthCache.months[mk]; });
+
+	if (missingPeriod.length === 0 && metaCache) {
+		renderFromCache(rangeInfo);
+		startBackgroundPrefetch(allYearMonths, rangeInfo);
+		return;
+	}
+
+	showLoading("Fetching data…");
+	setLoadingProgress(0, "Fetching data… (0/" + missingPeriod.length + ")");
+
+	var total = missingPeriod.length;
+	var done = 0;
+	var needMeta = !metaCache;
+	var chain = Promise.resolve();
+
+	missingPeriod.forEach(function (monthKey, idx) {
+		chain = chain.then(function () {
+			var bounds = monthBounds(monthKey);
+			var includeMeta = needMeta && idx === 0;
+			return fetchScoutingChunk(bounds.fromDate, bounds.toDate, greenhouseFilter, includeMeta)
+				.then(function (res) {
+					monthCache.months[monthKey] = res.entries || [];
+					if (includeMeta) {
+						metaCache = {
+							pest_colors: res.pest_colors || [],
+							disease_colors: res.disease_colors || [],
+							zones_by_greenhouse: res.zones_by_greenhouse || {},
+						};
+					}
+					done++;
+					setLoadingProgress(
+						Math.round(done / total * 90),
+						"Fetching data… (" + done + "/" + total + ")"
+					);
+				});
+		});
+	});
+
+	chain.then(function () {
+		setLoadingProgress(95, "Building charts…");
+		renderFromCache(rangeInfo);
+		hideLoading();
+		startBackgroundPrefetch(allYearMonths, rangeInfo);
 	}).catch(function (err) {
 		if (SCOUTING_DASHBOARD_DEBUG) console.error("Failed to load scouting data", err);
-		if (loading) loading.classList.remove("active");
+		hideLoading();
 		notifyUser("Failed to load scouting data");
 	});
 }

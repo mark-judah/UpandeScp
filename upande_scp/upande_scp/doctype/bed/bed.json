@@ -2,15 +2,17 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "format:{greenhouse} - Bed {bed}",
+ "autoname": "format:{greenhouse} - {unit_type} {bed}",
  "creation": "2025-09-02 20:09:36.282475",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "greenhouse",
+  "unit_type",
   "bed",
   "bed_length",
   "bed_width",
+  "number_of_trees",
   "variety",
   "bed__area",
   "total_variety_area"
@@ -21,6 +23,15 @@
    "fieldtype": "Link",
    "label": "Greenhouse",
    "options": "Warehouse"
+  },
+  {
+   "default": "Bed",
+   "fieldname": "unit_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Unit Type",
+   "options": "Bed\nRow",
+   "reqd": 1
   },
   {
    "fieldname": "bed",
@@ -36,6 +47,11 @@
    "fieldname": "bed_width",
    "fieldtype": "Data",
    "label": "Bed Width"
+  },
+  {
+   "fieldname": "number_of_trees",
+   "fieldtype": "Int",
+   "label": "Number Of Trees"
   },
   {
    "fieldname": "variety",
@@ -58,7 +74,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-10 23:16:55.185682",
+ "modified": "2026-04-19 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Bed",

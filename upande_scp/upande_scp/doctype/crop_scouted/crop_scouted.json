@@ -10,6 +10,7 @@
   "crop_name",
   "variety",
   "image",
+  "farms",
   "section_break_pests",
   "pests",
   "section_break_diseases",
@@ -43,6 +44,13 @@
    "fieldname": "image",
    "fieldtype": "Attach Image",
    "label": "Image"
+  },
+  {
+   "description": "If empty, this crop applies to all farms",
+   "fieldname": "farms",
+   "fieldtype": "Table MultiSelect",
+   "label": "Farms",
+   "options": "Farm Filter"
   },
   {
    "fieldname": "section_break_pests",

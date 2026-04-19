@@ -230,6 +230,7 @@ def createScoutingEntry():
                 scout_doc.date_of_capture = entry_data.get('date_of_capture')
                 scout_doc.latitude        = latitude
                 scout_doc.longitude       = longitude
+                scout_doc.crop_scouted    = entry_data.get('crop_scouted')
 
                 scout_metadata_doc = frappe.new_doc("Scouting Entry Metadata")
                 scout_metadata_doc.latitude         = latitude

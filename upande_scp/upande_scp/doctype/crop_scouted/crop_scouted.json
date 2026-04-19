@@ -1,0 +1,161 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "allow_rename": 1,
+ "autoname": "field:crop_name",
+ "creation": "2026-04-19 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "crop_name",
+  "variety",
+  "image",
+  "section_break_pests",
+  "pests",
+  "section_break_diseases",
+  "diseases",
+  "section_break_predators",
+  "predators",
+  "section_break_weeds",
+  "weeds",
+  "section_break_incidents",
+  "incidents",
+  "section_break_physiological_disorders",
+  "physiological_disorders",
+  "section_break_traps",
+  "traps"
+ ],
+ "fields": [
+  {
+   "fieldname": "crop_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Crop Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "variety",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Variety",
+   "options": "Item"
+  },
+  {
+   "fieldname": "image",
+   "fieldtype": "Attach Image",
+   "label": "Image"
+  },
+  {
+   "fieldname": "section_break_pests",
+   "fieldtype": "Section Break",
+   "label": "Pests"
+  },
+  {
+   "description": "If empty, Pests will be hidden on Scouting Entry for this crop",
+   "fieldname": "pests",
+   "fieldtype": "Table MultiSelect",
+   "label": "Pests",
+   "options": "Pest Filter"
+  },
+  {
+   "fieldname": "section_break_diseases",
+   "fieldtype": "Section Break",
+   "label": "Diseases"
+  },
+  {
+   "description": "If empty, Diseases will be hidden on Scouting Entry for this crop",
+   "fieldname": "diseases",
+   "fieldtype": "Table MultiSelect",
+   "label": "Diseases",
+   "options": "Disease Filter"
+  },
+  {
+   "fieldname": "section_break_predators",
+   "fieldtype": "Section Break",
+   "label": "Predators"
+  },
+  {
+   "description": "If empty, Predators will be hidden on Scouting Entry for this crop",
+   "fieldname": "predators",
+   "fieldtype": "Table MultiSelect",
+   "label": "Predators",
+   "options": "Predator Filter"
+  },
+  {
+   "fieldname": "section_break_weeds",
+   "fieldtype": "Section Break",
+   "label": "Weeds"
+  },
+  {
+   "description": "If empty, Weeds will be hidden on Scouting Entry for this crop",
+   "fieldname": "weeds",
+   "fieldtype": "Table MultiSelect",
+   "label": "Weeds",
+   "options": "Weed Filter"
+  },
+  {
+   "fieldname": "section_break_incidents",
+   "fieldtype": "Section Break",
+   "label": "Incidents"
+  },
+  {
+   "description": "If empty, Incidents will be hidden on Scouting Entry for this crop",
+   "fieldname": "incidents",
+   "fieldtype": "Table MultiSelect",
+   "label": "Incidents",
+   "options": "Incident Filter"
+  },
+  {
+   "fieldname": "section_break_physiological_disorders",
+   "fieldtype": "Section Break",
+   "label": "Physiological Disorders"
+  },
+  {
+   "description": "If empty, Physiological Disorders will be hidden on Scouting Entry for this crop",
+   "fieldname": "physiological_disorders",
+   "fieldtype": "Table MultiSelect",
+   "label": "Physiological Disorders",
+   "options": "Physiological Disorder Filter"
+  },
+  {
+   "fieldname": "section_break_traps",
+   "fieldtype": "Section Break",
+   "label": "Traps"
+  },
+  {
+   "description": "If empty, Traps will be hidden on Scouting Entry for this crop",
+   "fieldname": "traps",
+   "fieldtype": "Table MultiSelect",
+   "label": "Traps",
+   "options": "Trap Filter"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-04-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Crop Scouted",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

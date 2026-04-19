@@ -8,6 +8,7 @@
  "field_order": [
   "naming_series",
   "scouts_name",
+  "crop_scouted",
   "greenhouse",
   "bed",
   "zone",
@@ -52,6 +53,13 @@
    "label": "Scouts Name",
    "options": "Employee",
    "reqd": 1
+  },
+  {
+   "fieldname": "crop_scouted",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Crop Scouted",
+   "options": "Crop Scouted"
   },
   {
    "fieldname": "greenhouse",

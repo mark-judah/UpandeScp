@@ -371,6 +371,9 @@ fixtures = [
     },
     {
         "dt": "Trap Report Settings"
+    },
+    {
+        "dt": "Crop Scouted"
     }
     # {
     #     "doctype": "Insights Workbook",

@@ -1,42 +1,91 @@
 import frappe
 
+# Maps a category key -> (filter child doctype, link field on that child)
+_CROP_FILTER_MAP = {
+    "pests":                   ("Pest Filter",                   "pest"),
+    "diseases":                ("Disease Filter",                "disease"),
+    "predators":               ("Predator Filter",               "predator"),
+    "weeds":                   ("Weed Filter",                   "weed"),
+    "incidents":               ("Incident Filter",               "incident"),
+    "physiological_disorders": ("Physiological Disorder Filter", "physiological_disorder"),
+}
+
+
+def _allowed_names(crop, category):
+    """Return the list of allowed master names for a category under the given crop.
+
+    None  => no crop supplied; caller should not filter.
+    []    => crop supplied but category is empty for this crop; caller should skip.
+    [..]  => crop supplied and category is populated; caller should filter.
+    """
+    if not crop:
+        return None
+    filter_doctype, link_field = _CROP_FILTER_MAP[category]
+    return frappe.get_all(
+        filter_doctype,
+        filters={"parent": crop},
+        pluck=link_field,
+    )
+
+
+def _in_filter(allowed):
+    """Build a name-in filter dict, or empty dict when allowed is None."""
+    return {"name": ["in", allowed]} if allowed is not None else {}
+
+
 @frappe.whitelist()
-def getObservationsDetails():
-    # Fetch all entities
-    pests = frappe.get_all(
+def getObservationsDetails(crop=None):
+    # Validate crop exists; otherwise fall back to unfiltered for backwards compat.
+    if crop and not frappe.db.exists("Crop Scouted", crop):
+        frappe.log_error(
+            message=f"Unknown Crop Scouted '{crop}', serving unfiltered observations",
+            title="getObservationsDetails",
+        )
+        crop = None
+
+    allowed = {cat: _allowed_names(crop, cat) for cat in _CROP_FILTER_MAP}
+
+    # Fetch masters, skipping categories the crop has explicitly emptied.
+    pests = [] if allowed["pests"] == [] else frappe.get_all(
         "Pest",
+        filters=_in_filter(allowed["pests"]),
         fields=["name", "common_name"],
-        order_by="idx"
+        order_by="idx",
     )
 
-    diseases = frappe.get_all(
+    diseases = [] if allowed["diseases"] == [] else frappe.get_all(
         "Plant Disease",
+        filters=_in_filter(allowed["diseases"]),
         fields=["name", "common_name"],
-        order_by="idx"
+        order_by="idx",
     )
 
-    disorders = frappe.get_all(
+    disorders = [] if allowed["physiological_disorders"] == [] else frappe.get_all(
         "Physiological Disorder",
+        filters=_in_filter(allowed["physiological_disorders"]),
         fields=["name", "disorder_name", "photo", "reading_type", "plant_sections"],
-        order_by="idx"
+        order_by="idx",
     )
 
-    weeds = frappe.get_all(
+    weeds = [] if allowed["weeds"] == [] else frappe.get_all(
         "Weed",
+        filters=_in_filter(allowed["weeds"]),
         fields=["name", "name1", "reading_type", "plant_sections"],
-        order_by="idx"
+        order_by="idx",
     )
 
-    incidents = frappe.get_all(
+    incidents = [] if allowed["incidents"] == [] else frappe.get_all(
         "Incident",
+        filters=_in_filter(allowed["incidents"]),
         fields=["name", "name1", "reading_type", "plant_sections"],
-        order_by="idx"
+        order_by="idx",
     )
 
-    predators = frappe.get_all(
+    predators = [] if allowed["predators"] == [] else frappe.get_all(
         "Predator",
+        filters=_in_filter(allowed["predators"]),
         fields=["name", "common_name"],
-        order_by="idx"
+        order_by="idx",
     )
 
     pest_names = [p.name for p in pests]

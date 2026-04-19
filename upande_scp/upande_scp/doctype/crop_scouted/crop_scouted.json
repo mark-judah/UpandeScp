@@ -11,6 +11,7 @@
   "variety",
   "image",
   "farms",
+  "plant_sections_scouted",
   "section_break_pests",
   "pests",
   "section_break_diseases",
@@ -51,6 +52,13 @@
    "fieldtype": "Table MultiSelect",
    "label": "Farms",
    "options": "Farm Filter"
+  },
+  {
+   "description": "If empty, all plant sections are available",
+   "fieldname": "plant_sections_scouted",
+   "fieldtype": "Table MultiSelect",
+   "label": "Plant Sections Scouted",
+   "options": "Plant Section Filter"
   },
   {
    "fieldname": "section_break_pests",

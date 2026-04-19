@@ -280,8 +280,20 @@ def getObservationsDetails(crop=None):
             "fields": predator_fields
         })
 
+    # Plant sections allowed for this crop (empty on the crop → no filter → None).
+    allowed_plant_sections = None
+    if crop:
+        tagged = frappe.get_all(
+            "Plant Section Filter",
+            filters={"parent": crop},
+            pluck="plant_section",
+        )
+        if tagged:
+            allowed_plant_sections = [s.lower() for s in tagged]
+
     frappe.response["message"] = {
-        "data": observation_types
+        "data": observation_types,
+        "allowed_plant_sections": allowed_plant_sections,
     }
 
     return frappe.response["message"]

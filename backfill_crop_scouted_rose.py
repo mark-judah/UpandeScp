@@ -15,10 +15,10 @@ exec(open('/home/ubuntu/stive/code/frappe15/apps/upande_scp/backfill_crop_scoute
 
 import frappe
 
-EXECUTE = True
-CROP_NAME = "Rose"
+_EXECUTE = True
+_CROP_NAME = "Rose"
 
-CATEGORY_TABLES = [
+_CATEGORY_TABLES = [
 	("pests", "pest", "Pest"),
 	("diseases", "disease", "Plant Disease"),
 	("predators", "predator", "Predator"),
@@ -28,60 +28,57 @@ CATEGORY_TABLES = [
 	("traps", "trap", "Trap"),
 ]
 
-
-def _ensure_rose():
-	if frappe.db.exists("Crop Scouted", CROP_NAME):
-		crop = frappe.get_doc("Crop Scouted", CROP_NAME)
-		print("Found existing Crop Scouted: %s" % CROP_NAME)
+if not _EXECUTE:
+	print("[DRY RUN] Set _EXECUTE = True to commit.")
+else:
+	# --- Ensure Rose Crop Scouted exists and is fully populated --------------
+	if frappe.db.exists("Crop Scouted", _CROP_NAME):
+		_crop = frappe.get_doc("Crop Scouted", _CROP_NAME)
+		print("Found existing Crop Scouted: %s" % _CROP_NAME)
 	else:
-		crop = frappe.get_doc({"doctype": "Crop Scouted", "crop_name": CROP_NAME})
-		crop.insert(ignore_permissions=True)
-		print("Created Crop Scouted: %s" % CROP_NAME)
+		_crop = frappe.get_doc({"doctype": "Crop Scouted", "crop_name": _CROP_NAME})
+		_crop.insert(ignore_permissions=True)
+		print("Created Crop Scouted: %s" % _CROP_NAME)
 
-	for crop_field, link_field, master_doctype in CATEGORY_TABLES:
-		existing = {row.get(link_field) for row in (crop.get(crop_field) or [])}
-		masters = frappe.get_all(master_doctype, pluck="name")
-		added = 0
-		for m in masters:
-			if m in existing:
+	for _cf, _lf, _md in _CATEGORY_TABLES:
+		_existing = {row.get(_lf) for row in (_crop.get(_cf) or [])}
+		_masters = frappe.get_all(_md, pluck="name")
+		_added = 0
+		for _m in _masters:
+			if _m in _existing:
 				continue
-			crop.append(crop_field, {link_field: m})
-			added += 1
+			_crop.append(_cf, {_lf: _m})
+			_added += 1
 		print("  %-28s existing=%d  added=%d  total_masters=%d" % (
-			crop_field, len(existing), added, len(masters),
+			_cf, len(_existing), _added, len(_masters),
 		))
 
-	crop.save(ignore_permissions=True)
-	return crop.name
+	_crop.save(ignore_permissions=True)
+	_crop_name = _crop.name
 
-
-def _backfill_entries(crop_name):
-	count = frappe.db.count("Scouting Entry", {"crop_scouted": ["is", "not set"]})
-	print("\nScouting Entry rows with empty crop_scouted: %d" % count)
-	if not count:
-		return 0
-
-	frappe.db.sql(
-		"""
-		UPDATE `tabScouting Entry`
-		SET crop_scouted = %s
-		WHERE crop_scouted IS NULL OR crop_scouted = ''
-		""",
-		(crop_name,),
+	# --- Backfill Scouting Entry rows ----------------------------------------
+	_pending = frappe.db.count(
+		"Scouting Entry",
+		{"crop_scouted": ["is", "not set"]},
 	)
-	return count
+	print("\nScouting Entry rows with empty crop_scouted: %d" % _pending)
 
+	if _pending:
+		frappe.db.sql(
+			"""
+			UPDATE `tabScouting Entry`
+			SET crop_scouted = %s
+			WHERE crop_scouted IS NULL OR crop_scouted = ''
+			""",
+			(_crop_name,),
+		)
+	_updated = _pending
 
-if not EXECUTE:
-	print("[DRY RUN] Set EXECUTE = True to commit.")
-else:
-	_crop = _ensure_rose()
-	_updated = _backfill_entries(_crop)
 	frappe.db.commit()
 
 	print("")
 	print("=" * 60)
 	print("DONE")
-	print("  Crop Scouted    : %s" % _crop)
+	print("  Crop Scouted    : %s" % _crop_name)
 	print("  Entries updated : %d" % _updated)
 	print("=" * 60)

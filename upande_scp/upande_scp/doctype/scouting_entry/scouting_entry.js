@@ -44,13 +44,6 @@ const CATEGORY_MAP = [
 		crop_field: "physiological_disorders",
 		crop_row_link: "physiological_disorder",
 	},
-	{
-		section: "section_break_hidu",
-		table: "trap_scouting_entry",
-		link_field: "trap",
-		crop_field: "traps",
-		crop_row_link: "trap",
-	},
 ];
 
 frappe.ui.form.on("Scouting Entry", {

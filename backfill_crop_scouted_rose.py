@@ -25,7 +25,6 @@ _CATEGORY_TABLES = [
 	("weeds", "weed", "Weed"),
 	("incidents", "incident", "Incident"),
 	("physiological_disorders", "physiological_disorder", "Physiological Disorder"),
-	("traps", "trap", "Trap"),
 ]
 
 if not _EXECUTE:

@@ -21,9 +21,7 @@
   "section_break_incidents",
   "incidents",
   "section_break_physiological_disorders",
-  "physiological_disorders",
-  "section_break_traps",
-  "traps"
+  "physiological_disorders"
  ],
  "fields": [
   {
@@ -117,18 +115,6 @@
    "fieldtype": "Table MultiSelect",
    "label": "Physiological Disorders",
    "options": "Physiological Disorder Filter"
-  },
-  {
-   "fieldname": "section_break_traps",
-   "fieldtype": "Section Break",
-   "label": "Traps"
-  },
-  {
-   "description": "If empty, Traps will be hidden on Scouting Entry for this crop",
-   "fieldname": "traps",
-   "fieldtype": "Table MultiSelect",
-   "label": "Traps",
-   "options": "Trap Filter"
   }
  ],
  "grid_page_length": 50,

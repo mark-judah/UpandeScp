@@ -59,41 +59,53 @@ def _is_duplicate_by_client_id(client_id):
         return None
 
 
-def _is_duplicate_by_time_window(employee_name, greenhouse, date_of_capture, time_of_capture, bed, zone):
+def _is_duplicate_by_time_window(
+    employee_name,
+    date_of_capture,
+    time_of_capture,
+    greenhouse=None,
+    bed=None,
+    zone=None,
+    block=None,
+    row=None,
+    tree=None,
+):
     """
     Fallback duplicate check: returns True if an entry exists within a 3-second
-    window of time_of_capture for the same scout, greenhouse, date, bed, and zone.
+    window of time_of_capture for the same scout, date, and location. The
+    location fields are passed per-flow — only the ones that are set are added
+    to the filter.
     """
+    base_filters = {
+        "scouts_name": employee_name,
+        "date_of_capture": date_of_capture,
+    }
+    if greenhouse:
+        base_filters["greenhouse"] = greenhouse
+    if bed:
+        base_filters["bed"] = bed
+    if zone:
+        base_filters["zone"] = zone
+    if block:
+        base_filters["block"] = block
+    if row:
+        base_filters["row"] = row
+    if tree:
+        base_filters["tree"] = tree
+
     try:
         time_obj = datetime.strptime(time_of_capture, "%H:%M:%S")
     except (ValueError, TypeError):
-        # Cannot parse time — fall back to exact match
-        filters = {
-            "scouts_name": employee_name,
-            "greenhouse": greenhouse,
-            "date_of_capture": date_of_capture,
-            "time_of_capture": time_of_capture,
-        }
-        if bed:
-            filters["bed"] = bed
-        if zone:
-            filters["zone"] = zone
+        filters = dict(base_filters, time_of_capture=time_of_capture)
         return bool(frappe.db.exists("Scouting Entry", filters))
 
     time_minus = (time_obj - timedelta(seconds=3)).strftime("%H:%M:%S")
     time_plus  = (time_obj + timedelta(seconds=3)).strftime("%H:%M:%S")
 
-    filters = {
-        "scouts_name": employee_name,
-        "greenhouse": greenhouse,
-        "date_of_capture": date_of_capture,
-        "time_of_capture": ["between", [time_minus, time_plus]],
-    }
-    if bed:
-        filters["bed"] = bed
-    if zone:
-        filters["zone"] = zone
-
+    filters = dict(
+        base_filters,
+        time_of_capture=["between", [time_minus, time_plus]],
+    )
     return bool(frappe.db.get_value("Scouting Entry", filters, "name"))
 
 
@@ -133,10 +145,21 @@ def createScoutingEntry():
                 latitude        = entry_data.get('latitude')
                 longitude       = entry_data.get('longitude')
                 accuracy        = entry_data.get('accuracy')
+                greenhouse      = entry_data.get('greenhouse')
                 bed             = entry_data.get('bed')
+                block           = entry_data.get('block')
+                row             = entry_data.get('row')
+                tree            = entry_data.get('tree')
                 quality_level   = entry_data.get('quality_level', 'unknown')
                 samples_used    = entry_data.get('samples_used', 0)
                 is_stationary   = entry_data.get('is_stationary', False)
+
+                is_block_flow = bool(block or row or tree)
+                # Server-side zone detection only runs for the Greenhouse/Bed
+                # flow. For the Block/Row/Tree flow, the mobile selects the
+                # tree explicitly (same as it already does for bed+zone today
+                # but without a geo polygon per row).
+                bed_for_zone = bed if not is_block_flow else None
 
                 # --- Fast-path duplicate check by client_id ---
                 # If this exact observation was already saved (e.g. the phone
@@ -164,24 +187,24 @@ def createScoutingEntry():
                 confidence      = 0.0
                 zone_message    = None
 
-                if latitude and longitude and accuracy:
+                if latitude and longitude and accuracy and bed_for_zone:
                     determined_zone, confidence, zone_message = get_zone_from_coordinates(
-                        latitude, longitude, bed, accuracy
+                        latitude, longitude, bed_for_zone, accuracy
                     )
 
                 # Normalize zone_message to a dict
                 if not isinstance(zone_message, dict):
                     zone_message = {"distance": "0.0", "buffer": "0.0", "fallback": False}
 
-                # Zone is required when a bed is provided
-                if bed and not determined_zone:
+                # Zone is required when a bed is provided (Greenhouse flow).
+                if bed_for_zone and not determined_zone:
                     has_errors = True
                     results.append({
                         "status": "error",
-                        "message": f"Could not determine zone for bed: {bed}. No zone geometry found.",
+                        "message": f"Could not determine zone for bed: {bed_for_zone}. No zone geometry found.",
                         "coordinates": f"({latitude}, {longitude})",
                         "accuracy": accuracy,
-                        "bed": bed
+                        "bed": bed_for_zone
                     })
                     continue
 
@@ -207,11 +230,14 @@ def createScoutingEntry():
                 # --- Time-window duplicate check (fallback when no client_id) ---
                 if not client_id and _is_duplicate_by_time_window(
                     employee_name,
-                    entry_data.get('greenhouse'),
                     entry_data.get('date_of_capture'),
                     entry_data.get('time_of_capture'),
-                    bed,
-                    determined_zone,
+                    greenhouse=greenhouse,
+                    bed=bed,
+                    zone=determined_zone,
+                    block=block,
+                    row=row,
+                    tree=tree,
                 ):
                     has_errors = True
                     results.append({
@@ -223,9 +249,14 @@ def createScoutingEntry():
                 # --- Create Scouting Entry ---
                 scout_doc = frappe.new_doc("Scouting Entry")
                 scout_doc.scouts_name     = employee_name
-                scout_doc.greenhouse      = entry_data.get('greenhouse')
-                scout_doc.bed             = bed
-                scout_doc.zone            = determined_zone
+                if is_block_flow:
+                    scout_doc.block = block
+                    scout_doc.row   = row
+                    scout_doc.tree  = tree
+                else:
+                    scout_doc.greenhouse = greenhouse
+                    scout_doc.bed        = bed
+                    scout_doc.zone       = determined_zone
                 scout_doc.time_of_capture = entry_data.get('time_of_capture')
                 scout_doc.date_of_capture = entry_data.get('date_of_capture')
                 scout_doc.latitude        = latitude

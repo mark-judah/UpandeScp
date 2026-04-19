@@ -12,6 +12,9 @@
   "greenhouse",
   "bed",
   "zone",
+  "block",
+  "row",
+  "tree",
   "column_break_frpc",
   "time_of_capture",
   "date_of_capture",
@@ -62,14 +65,16 @@
    "options": "Crop Scouted"
   },
   {
+   "depends_on": "eval:!doc.block",
    "fieldname": "greenhouse",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Greenhouse",
-   "options": "Warehouse",
-   "reqd": 1
+   "mandatory_depends_on": "eval:!doc.block",
+   "options": "Warehouse"
   },
   {
+   "depends_on": "eval:doc.greenhouse",
    "fieldname": "bed",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -77,12 +82,36 @@
    "options": "Bed"
   },
   {
+   "depends_on": "eval:doc.bed",
    "fieldname": "zone",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Zone",
-   "options": "Zone",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.bed",
+   "options": "Zone"
+  },
+  {
+   "depends_on": "eval:!doc.greenhouse",
+   "fieldname": "block",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Block",
+   "mandatory_depends_on": "eval:!doc.greenhouse",
+   "options": "Warehouse"
+  },
+  {
+   "depends_on": "eval:doc.block",
+   "fieldname": "row",
+   "fieldtype": "Link",
+   "label": "Row",
+   "options": "Bed"
+  },
+  {
+   "depends_on": "eval:doc.row",
+   "fieldname": "tree",
+   "fieldtype": "Link",
+   "label": "Tree",
+   "options": "Zone"
   },
   {
    "fieldname": "column_break_frpc",
@@ -191,7 +220,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-11-11 04:45:56.523372",
+ "modified": "2026-04-19 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting Entry",

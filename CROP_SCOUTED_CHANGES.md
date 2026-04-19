@@ -42,7 +42,21 @@ new Section/Block/Row hierarchy (used by avocado farms such as Lokitela).
 
 ### 2.2 Modified doctypes
 
-- **`Scouting Entry`** — new optional `crop_scouted` Link field (→ Crop Scouted) in the header.
+- **`Scouting Entry`** — new optional `crop_scouted` Link field (→ Crop Scouted)
+  in the header. The single location pair `(greenhouse, bed, zone)` has been
+  split into **six** fields so the two hierarchies no longer overload each
+  other:
+  - `greenhouse` / `bed` / `zone` — used by the Greenhouse flow (Rose).
+  - `block` (Link Warehouse, new) / `row` (Link Bed, new) / `tree` (Link Zone,
+    new) — used by the Block flow (Avocado).
+  - Each field has a `depends_on` eval so the inactive half is hidden in the
+    form: e.g. `block` uses `eval:!doc.greenhouse`, `row` uses
+    `eval:doc.block`, `tree` uses `eval:doc.row`.
+  - `greenhouse` and `zone` use `mandatory_depends_on` instead of `reqd: 1` so
+    they're only required in the Greenhouse flow. `block` is
+    `mandatory_depends_on: eval:!doc.greenhouse`.
+  - `scouting_entry.py` rejects mixed flows (any of greenhouse/bed/zone +
+    any of block/row/tree) and requires one of the two flows to be present.
 - **`Bed`**
   - `unit_type` (Select: `Bed` / `Row`, default `Bed`) — disambiguator.
   - `number_of_trees` (Int) — used for rows under blocks.
@@ -70,7 +84,7 @@ this filter logic** by design.
 | `get_crops_scouted.py → getCropsScouted(farm=None)` | Returns `[{name, crop_name, variety, image}]`. When `farm` is supplied, filters by `Farm Filter`; crops with an empty `farms` list are treated as applies-to-all. |
 | `get_farm_hierarchy_info.py → getFarmHierarchyInfo(farm)` | Returns `{farm_warehouse, station_type: "Greenhouse" \| "Block", has_sections, sections[]}` — used by the mobile to decide whether to insert a Section picker. |
 | `get_observations_details.py → getObservationsDetails(crop=None)` | **Existing endpoint, updated.** Filters each category by its `<X> Filter` child rows. Categories with an empty filter are omitted. Response now also carries `allowed_plant_sections`. Trap is out of scope here. |
-| `create_scouting_entry.py → createScoutingEntry` | **Updated** to persist `crop_scouted` on the new Scouting Entry. Trap fields unchanged. |
+| `create_scouting_entry.py → createScoutingEntry` | **Updated** to persist `crop_scouted` on the new Scouting Entry, and (later) to accept `block`/`row`/`tree` for the Block flow. Server-side zone detection only runs when `bed` is provided — Block flow relies on the mobile selecting `tree` explicitly. Duplicate checks use whichever location tuple was sent. Trap fields unchanged. |
 
 ---
 
@@ -80,12 +94,18 @@ this filter logic** by design.
 - `fetchScoutingObservations(crop?)` — passes crop in body.
 - `fetchCrops(farm?)` — hits `getCropsScouted`.
 - `fetchFarmHierarchy(farm)` — hits `getFarmHierarchyInfo`.
+- `fetchBlockRows(block)` — alias over `fetchGreenhouseBeds` for the Block
+  flow. Same underlying server script because rows are `Bed` records whose
+  `greenhouse` field points at the block warehouse.
 
 ### 4.2 `src/services/scoutingCacheDb.ts`
-- `station_info` table — new `crop` column.
+- `station_info` table — new `crop`, `station_type`, `row_wh`, `tree` columns.
 - `observations` table — new `crop` and `plant_sections` columns.
 - Setter / getter signatures updated:
-  - `setStationInfo({farm, greenhouse, crop?})`
+  - `setStationInfo({farm, greenhouse, crop?, stationType?, row?, tree?})` —
+    `greenhouse` holds the selected warehouse (greenhouse name or block name).
+    `stationType` is `"Greenhouse"` or `"Block"` and tells downstream screens
+    which flow to render.
   - `setCachedObservations(payload, crop?, plantSections?)`
   - `hasCachedObservations(crop?)` — matches only when cached crop equals query.
   - `getCachedPlantSections()` — new.
@@ -96,8 +116,12 @@ this filter logic** by design.
 - New `parseAllowedPlantSections(res)` helper.
 
 ### 4.4 `hooks/tabs/use-scouting-utils.ts`
-- `buildScoutingSubmissionEntry({…, crop})` now includes `crop_scouted` in the
-  submission payload.
+- `buildScoutingSubmissionEntry({…, crop, stationType, tree})` now includes
+  `crop_scouted` in the submission payload, and sends the correct location
+  tuple per flow:
+  - `Greenhouse` flow → `{greenhouse, bed, zone: ""}` (server derives `zone`).
+  - `Block` flow → `{block, row, tree}`.
+- `extractBedNumberFromName` now also matches `"... Row N"` names.
 
 ### 4.5 `app/(auth)/configure.tsx`
 - Added Crop, Section picker states and dialogs.
@@ -107,12 +131,19 @@ this filter logic** by design.
 - `filterWarehousesForFarm` now enforces `is_group=0` and accepts only
   `warehouse_type IN (Greenhouse, Block)`; supports filtering by a parent
   warehouse (used when a Section is picked).
-- Submit now stores `userCrop`, `userSection` in `USER_STATION` and in SQLite.
+- Submit now stores `userCrop`, `userSection`, `userStationType` in
+  `USER_STATION` and in SQLite. `userStationType` drives terminology on the
+  scouting screen ("Row" vs "Bed").
 - Removes observations from the pre-batch download (observations need the crop
   which isn't known yet at that point).
 
 ### 4.6 `app/(tabs)/index.tsx` (scouting screen)
-- Reads `userCrop` from `USER_STATION` on mount.
+- Reads `userCrop` and `userStationType` from `USER_STATION` on mount.
+- `stationType` state drives labels: "Enter Row Number" / "Row Number" dialog
+  copy when the user is on the Block flow, "Bed Number" otherwise.
+- `buildScoutingSubmissionEntry` is now called with `stationType` so the
+  submission payload uses the right location keys (`{block,row,tree}` or
+  `{greenhouse,bed,zone}`).
 - Observations cache now keyed by crop; stale caches refresh automatically.
 - New state `allowedPlantSections`. Plant-part tabs are built from this list;
   falls back to the old hardcoded `BASE_PLANT_PARTS` only when the list is
@@ -122,8 +153,8 @@ this filter logic** by design.
 ### 4.7 `app/(tabs)/profile/index.tsx`
 - **Bug fix**: `handleSaveStation` previously dropped `userCrop` on save,
   causing stale observations to be used after reconfigure.
-  It now preserves `userCrop` and `userSection`, and uses the crop when
-  checking / fetching observations.
+  It now preserves `userCrop`, `userSection`, and `userStationType`, and uses
+  the crop when checking / fetching observations.
 
 ---
 
@@ -169,6 +200,7 @@ this filter logic** by design.
 | `create_avocado_crop.py` | Creates the four missing Avocado pest masters (with Adult stage), ensures Scale Insects has an Adult stage, creates the Avocado Crop Scouted record, and tags all five pests. |
 | `seed_lokitela_hierarchy.py` | Ensures the `Bed` / `Farm Filter` / `Crop Scouted` schemas, creates Section and Block warehouse types, builds the Lokitela hierarchy (2 sections, 2 blocks, 6 rows, 2 trees, 1 trap), and tags Avocado → Lokitela. |
 | `seed_plant_sections.py` | Re-syncs Plant Section Filter + Crop Scouted, adds Leaf and Fruit Plant Section records, and tags Rose + Avocado with their sections. |
+| `migrate_block_row_fields.py` | Migrates existing Lokitela Scouting Entry rows onto the new `block`/`row`/`tree` fields and clears the legacy `greenhouse`/`bed`/`zone` columns. Idempotent. |
 | `delete_duplicate_scouting_entries.py` | Pre-existing utility (not part of this change set). |
 
 All scripts are run via `bench --site <site> console`:
@@ -207,6 +239,13 @@ If starting from a site without any of this work:
 
    ```bash
    exec(open('/home/ubuntu/stive/code/frappe15/apps/upande_scp/seed_plant_sections.py').read())
+   ```
+
+   Then migrate any Lokitela Scouting Entry rows that were previously saved
+   under the overloaded `greenhouse`/`bed`/`zone` columns:
+
+   ```bash
+   exec(open('/home/ubuntu/stive/code/frappe15/apps/upande_scp/migrate_block_row_fields.py').read())
    ```
 
 5. Tag Rose with the correct farms (strict per-farm filtering):

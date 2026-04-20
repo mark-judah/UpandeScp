@@ -23,10 +23,20 @@ CACHE_TTL_SECONDS = 300  # 5 minutes — refresh if zones are edited
 # { utm_epsg: { "built_at": float, "zones": [ { "name", "bed", "line_utm" } ] } }
 _zone_cache: dict = {}
 
+# { utm_epsg: { "built_at": float, "trees": [ { "name", "row", "block", "radius_m", "point_utm" } ] } }
+_tree_cache: dict = {}
+
+DEFAULT_TREE_RADIUS_M = 0.5
+
 
 def clear_zone_cache():
     """Call this from a Zone doctype hook to invalidate immediately on save."""
     _zone_cache.clear()
+
+
+def clear_tree_cache():
+    """Call this from a Tree doctype hook to invalidate immediately on save."""
+    _tree_cache.clear()
 
 
 def get_dynamic_utm_epsg(latitude, longitude):
@@ -80,6 +90,71 @@ def _get_cached_zones(utm_epsg: str, project_to_utm):
     if entry and (time.monotonic() - entry["built_at"]) < CACHE_TTL_SECONDS:
         return entry["zones"]
     return _build_zone_cache(utm_epsg, project_to_utm)
+
+
+def _build_tree_cache(utm_epsg: str, project_to_utm):
+    """
+    Load all trees from the database, parse each Tree's Point GeoJSON, transform
+    to UTM, and store in _tree_cache[utm_epsg]. Mirrors _build_zone_cache.
+    """
+    raw_trees = frappe.get_all(
+        "Tree",
+        fields=["name", "row", "block", "raw_geojson"],
+    )
+
+    built = []
+    for tree in raw_trees:
+        try:
+            if not tree.raw_geojson:
+                continue
+            geojson_data = json.loads(tree.raw_geojson)
+            geometry = None
+            radius = DEFAULT_TREE_RADIUS_M
+            if (
+                geojson_data.get("type") == "FeatureCollection"
+                and geojson_data.get("features")
+            ):
+                feature = geojson_data["features"][0]
+                geometry = feature.get("geometry", {})
+                props = feature.get("properties", {}) or {}
+                if props.get("radius") is not None:
+                    try:
+                        radius = float(props["radius"])
+                    except (TypeError, ValueError):
+                        pass
+            elif geojson_data.get("type") == "Point":
+                geometry = geojson_data
+
+            if not geometry or geometry.get("type") != "Point":
+                continue
+
+            coords = geometry.get("coordinates") or []
+            if len(coords) < 2:
+                continue
+
+            point_wgs84 = Point(coords[0], coords[1])
+            point_utm = transform(project_to_utm, point_wgs84)
+            built.append({
+                "name": tree.name,
+                "row": tree.row or "",
+                "block": tree.block or "",
+                "radius_m": radius,
+                "point_utm": point_utm,
+            })
+        except Exception as e:
+            frappe.log_error(
+                f"geo_utils: skipping tree {tree.name} during cache build", str(e)
+            )
+
+    _tree_cache[utm_epsg] = {"built_at": time.monotonic(), "trees": built}
+    return built
+
+
+def _get_cached_trees(utm_epsg: str, project_to_utm):
+    entry = _tree_cache.get(utm_epsg)
+    if entry and (time.monotonic() - entry["built_at"]) < CACHE_TTL_SECONDS:
+        return entry["trees"]
+    return _build_tree_cache(utm_epsg, project_to_utm)
 
 
 # ---------------------------------------------------------------------------
@@ -170,5 +245,104 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
 
     except Exception as e:
         error_msg = f"Error in get_zone_from_coordinates: {str(e)}"
+        frappe.log_error("Error", error_msg)
+        return None, 0.0, error_msg
+
+
+def get_tree_from_coordinates(latitude, longitude, row, accuracy, block=None):
+    """
+    Parallel to get_zone_from_coordinates for the Block/Row/Tree flow.
+
+    Given a GPS point + a Row link (and optionally a Block), return the nearest
+    Tree whose row matches. Falls back to trees in the same block when no trees
+    are registered on that row, and to all trees as a last resort.
+
+    Returns (tree_name, confidence, detail_dict) — same shape as the zone
+    matcher so callers can share formatting/logging code.
+    """
+    try:
+        lat = float(latitude)
+        lon = float(longitude)
+        accuracy_m = float(accuracy)
+
+        utm_epsg = get_dynamic_utm_epsg(lat, lon)
+        project_to_utm = Transformer.from_crs(
+            "EPSG:4326", utm_epsg, always_xy=True
+        ).transform
+
+        scout_point_utm = transform(project_to_utm, Point(lon, lat))
+
+        all_trees = _get_cached_trees(utm_epsg, project_to_utm)
+
+        # Row filter first, then block fallback, then all trees. Mirrors the
+        # bed→any fallback in the zone matcher so a misattributed row doesn't
+        # silently drop the point.
+        used_fallback = False
+        if row:
+            candidates = [t for t in all_trees if t["row"] == row]
+            if not candidates and block:
+                candidates = [t for t in all_trees if t["block"] == block]
+                used_fallback = bool(candidates)
+            elif not candidates:
+                candidates = all_trees
+                used_fallback = True
+        elif block:
+            candidates = [t for t in all_trees if t["block"] == block]
+            used_fallback = False
+            if not candidates:
+                candidates = all_trees
+                used_fallback = True
+        else:
+            candidates = all_trees
+
+        if not candidates:
+            return None, 0.0, "No trees configured in the system"
+
+        closest_tree = None
+        min_distance = float("inf")
+        confidence = 0.0
+        closest_radius = DEFAULT_TREE_RADIUS_M
+
+        for tree in candidates:
+            try:
+                distance_m = scout_point_utm.distance(tree["point_utm"])
+                if distance_m < min_distance:
+                    min_distance = distance_m
+                    closest_tree = tree["name"]
+                    closest_radius = tree["radius_m"]
+            except Exception as e:
+                frappe.log_error(
+                    f"geo_utils: error processing tree {tree['name']}", str(e)
+                )
+                continue
+
+        if closest_tree is None:
+            return None, 0.0, f"No tree geometry found within range (accuracy: {accuracy_m}m)"
+
+        # Tolerance = max(tree radius, GPS accuracy). Inside tolerance = high
+        # confidence; beyond that, confidence falls off with distance.
+        tolerance = max(closest_radius, accuracy_m)
+        if min_distance <= closest_radius:
+            confidence = 1.0
+        elif min_distance <= tolerance * 0.6:
+            confidence = 0.9
+        elif min_distance <= tolerance:
+            confidence = 0.8
+        elif min_distance <= tolerance * 1.5:
+            confidence = 0.5
+        elif min_distance <= tolerance * 2.0:
+            confidence = 0.3
+        else:
+            confidence = 0.1
+
+        return closest_tree, confidence, {
+            "distance": f"{min_distance:.2f}",
+            "buffer": f"{tolerance:.2f}",
+            "radius": f"{closest_radius:.2f}",
+            "fallback": used_fallback,
+        }
+
+    except Exception as e:
+        error_msg = f"Error in get_tree_from_coordinates: {str(e)}"
         frappe.log_error("Error", error_msg)
         return None, 0.0, error_msg

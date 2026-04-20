@@ -60,8 +60,8 @@ def _sector_short_code(warehouse_name):
 	if not warehouse_name:
 		return ""
 	name = _strip_farm_suffix(warehouse_name)
-	tokens = name.split()
-	return tokens[0] if tokens else name
+	head = name.split()[0] if name.split() else name
+	return head.split("_")[0] if head else ""
 
 
 def _block_short_code(warehouse_name):

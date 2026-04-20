@@ -48,7 +48,7 @@
    "label": "Is Model"
   },
   {
-   "description": "Mirror of the tree name (e.g. 23HA_WESA1_ROW1_T1). Auto-computed from sector, block, row, and tree number.",
+   "description": "Mirror of the tree name (e.g. 23HA_WESABL1_ROW1_T1). Auto-computed from sector, block, row, and tree number.",
    "fieldname": "tree_code",
    "fieldtype": "Data",
    "label": "Tree Code",

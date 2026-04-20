@@ -1,6 +1,6 @@
 import frappe
 from datetime import datetime, timedelta
-from .geo_utils import get_zone_from_coordinates
+from .geo_utils import get_zone_from_coordinates, get_tree_from_coordinates
 
 
 @frappe.whitelist()
@@ -155,11 +155,10 @@ def createScoutingEntry():
                 is_stationary   = entry_data.get('is_stationary', False)
 
                 is_block_flow = bool(block or row or tree)
-                # Server-side zone detection only runs for the Greenhouse/Bed
-                # flow. For the Block/Row/Tree flow, the mobile selects the
-                # tree explicitly (same as it already does for bed+zone today
-                # but without a geo polygon per row).
+                # Greenhouse/Bed flow: GPS rounds to nearest Zone (filtered by bed).
+                # Block/Row flow:      GPS rounds to nearest Tree (filtered by row).
                 bed_for_zone = bed if not is_block_flow else None
+                row_for_tree = row if is_block_flow else None
 
                 # --- Fast-path duplicate check by client_id ---
                 # If this exact observation was already saved (e.g. the phone
@@ -182,14 +181,19 @@ def createScoutingEntry():
                     })
                     continue
 
-                # --- Zone determination ---
+                # --- Zone / Tree determination ---
                 determined_zone = None
+                determined_tree = None
                 confidence      = 0.0
                 zone_message    = None
 
                 if latitude and longitude and accuracy and bed_for_zone:
                     determined_zone, confidence, zone_message = get_zone_from_coordinates(
                         latitude, longitude, bed_for_zone, accuracy
+                    )
+                elif latitude and longitude and accuracy and row_for_tree:
+                    determined_tree, confidence, zone_message = get_tree_from_coordinates(
+                        latitude, longitude, row_for_tree, accuracy, block=block
                     )
 
                 # Normalize zone_message to a dict
@@ -208,7 +212,19 @@ def createScoutingEntry():
                     })
                     continue
 
-                requires_review = confidence < 0.5 and determined_zone is not None
+                # Tree is required when a row is provided (Block flow).
+                if row_for_tree and not determined_tree:
+                    has_errors = True
+                    results.append({
+                        "status": "error",
+                        "message": f"Could not determine tree for row: {row_for_tree}. No tree geometry found.",
+                        "coordinates": f"({latitude}, {longitude})",
+                        "accuracy": accuracy,
+                        "row": row_for_tree,
+                    })
+                    continue
+
+                requires_review = confidence < 0.5 and (determined_zone or determined_tree) is not None
 
                 # --- Employee lookup ---
                 employee_rows = frappe.get_all(
@@ -252,7 +268,7 @@ def createScoutingEntry():
                 if is_block_flow:
                     scout_doc.block = block
                     scout_doc.row   = row
-                    scout_doc.tree  = tree
+                    scout_doc.tree  = determined_tree or tree
                 else:
                     scout_doc.greenhouse = greenhouse
                     scout_doc.bed        = bed

@@ -10,7 +10,8 @@
   "block",
   "tree_number",
   "is_model",
-  "tree_code"
+  "tree_code",
+  "raw_geojson"
  ],
  "fields": [
   {
@@ -53,6 +54,11 @@
    "fieldtype": "Data",
    "label": "Tree Code",
    "read_only": 1
+  },
+  {
+   "fieldname": "raw_geojson",
+   "fieldtype": "Small Text",
+   "label": "Raw Geojson"
   }
  ],
  "grid_page_length": 50,

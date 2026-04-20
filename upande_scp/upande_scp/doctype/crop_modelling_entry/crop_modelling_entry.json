@@ -1,0 +1,85 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-04-19 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "tree",
+  "section_leaves",
+  "leaf_size",
+  "leaf_color",
+  "section_fruits",
+  "fruit_stage",
+  "section_roots",
+  "root_flush"
+ ],
+ "fields": [
+  {
+   "fieldname": "tree",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Tree",
+   "options": "Tree",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_leaves",
+   "fieldtype": "Section Break",
+   "label": "Leaves"
+  },
+  {
+   "fieldname": "leaf_size",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Leaf Size",
+   "options": "\n<6 inches\n>6 inches\nHardened off"
+  },
+  {
+   "fieldname": "leaf_color",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Leaf Color",
+   "options": "\nPurple\nLight green\nJungle Green"
+  },
+  {
+   "fieldname": "section_fruits",
+   "fieldtype": "Section Break",
+   "label": "Fruits"
+  },
+  {
+   "fieldname": "fruit_stage",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Fruit Stage",
+   "options": "\nCauliflower\nPea size\nGolf ball\nNatural fruit"
+  },
+  {
+   "fieldname": "section_roots",
+   "fieldtype": "Section Break",
+   "label": "Roots"
+  },
+  {
+   "default": "0",
+   "fieldname": "root_flush",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Root Flush"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-04-19 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Crop Modelling Entry",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

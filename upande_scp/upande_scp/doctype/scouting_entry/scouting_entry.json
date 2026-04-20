@@ -34,7 +34,9 @@
   "section_break_betj",
   "physiological_disorders_entry",
   "section_break_hidu",
-  "trap_scouting_entry"
+  "trap_scouting_entry",
+  "section_break_crop_modelling",
+  "crop_modelling_entry"
  ],
  "fields": [
   {
@@ -111,7 +113,7 @@
    "fieldname": "tree",
    "fieldtype": "Link",
    "label": "Tree",
-   "options": "Zone"
+   "options": "Tree"
   },
   {
    "fieldname": "column_break_frpc",
@@ -215,6 +217,19 @@
    "fieldtype": "Table",
    "label": "Traps",
    "options": "Trap Scouting Entry"
+  },
+  {
+   "depends_on": "eval:doc.block",
+   "fieldname": "section_break_crop_modelling",
+   "fieldtype": "Section Break",
+   "label": "Crop Modelling"
+  },
+  {
+   "depends_on": "eval:doc.block",
+   "fieldname": "crop_modelling_entry",
+   "fieldtype": "Table",
+   "label": "Crop Modelling",
+   "options": "Crop Modelling Entry"
   }
  ],
  "grid_page_length": 50,

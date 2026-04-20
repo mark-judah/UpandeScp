@@ -286,3 +286,56 @@ If starting from a site without any of this work:
 - Fixtures hook (`hooks.py`) registers `Crop Scouted` so its records ship
   between environments. Related child-doctype schemas are shipped by the app
   code itself (not fixtures).
+
+---
+
+## 9. Crop Modelling (sample-tree observations)
+
+Introduced a lightweight sample-tree observation flow on top of the Block/Row
+flow. Trees are now a **dedicated doctype** (previously they were Zone records
+overloaded via `unit_type`). A *model tree* is a Tree flagged `is_model=1`;
+scouts pick one per block per visit to record leaf size/color, fruit stage,
+and a root-flush check.
+
+### 9.1 Schema
+
+- **`Tree`** — new standalone doctype. Fields: `row` (Link Bed), `block`
+  (Link Warehouse, fetched from row), `tree_number` (Data), `is_model`
+  (Check), `tree_code` (Data, read-only). `autoname` is `Prompt` with Python
+  logic in `tree.py`: prefers a manually set `tree_code`, otherwise computes
+  `{section}_{block}_ROW{n}_T{n}` via `build_tree_code(row, tree_number)`.
+- **`Crop Modelling Entry`** — new child (`istable=1`) attached to Scouting
+  Entry. Fields: `tree` (Link Tree, reqd), `leaf_size`, `leaf_color`,
+  `fruit_stage`, `root_flush` (Check).
+- **`Scouting Entry`** — new child table field `crop_modelling_entry` plus a
+  section break, both `depends_on: eval:doc.block` so they only surface on the
+  Block flow. The existing `tree` header field now links to **Tree** (was
+  Zone).
+- **`Zone`** — unchanged. The "zone-as-tree" overload is retired.
+
+### 9.2 Backend endpoints
+
+| Endpoint | Purpose |
+| --- | --- |
+| `get_model_trees.py → getModelTrees(block)` | Returns `[{name, tree_code, row, tree_number, label}]` for Tree rows under the block flagged `is_model=1`. |
+| `create_scouting_entry.py → createScoutingEntry` | Now also persists `crop_modelling_entry` child rows when the mobile sends them. `tree` on the header is a Tree reference. |
+
+### 9.3 Mobile app
+
+- `api.ts` — new `fetchModelTrees(block)`.
+- `submissionQueue.ts` — `SubmissionType` gains `"crop_model"`; the new type is
+  whitelisted in `submissionSync.ts` and flows through the same
+  `createKaitetScoutingEntry` batch path.
+- `(tabs)/traps/index.tsx` — when `userStationType === "Block"`, a **Crop
+  Models** section renders above the trap list. Each card shows the tree code
+  and a leaf icon; tapping it opens a modal with chip-style toggles for leaf
+  size, leaf color, fruit stage, and root flush (Yes/No). Submitting the modal
+  enqueues one Scouting Entry payload per model tree with a single
+  `crop_modelling_entry` child row.
+
+### 9.4 Scripts
+
+| Script | Purpose |
+| --- | --- |
+| `sync_crop_modelling.py` | Per-app sync for `Tree`, `Crop Modelling Entry`, and the updated `Scouting Entry`. |
+| `backfill_tree_codes.py` | Migrates legacy tree-Zones to the new Tree doctype: for each Zone under a Row-type Bed, creates a matching Tree (name=`{section}_{block}_ROW{n}_T{n}`) and re-points `Scouting Entry.tree` from the old Zone name to the new Tree name. |

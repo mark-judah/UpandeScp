@@ -321,6 +321,13 @@ def createScoutingEntry():
                             child_row.location = item.get("location", "Indoor")
                             child_row.count    = item.get("count")
 
+                        elif parent_field == "crop_modelling_entry":
+                            child_row.tree        = item.get("tree")
+                            child_row.leaf_size   = item.get("leaf_size")
+                            child_row.leaf_color  = item.get("leaf_color")
+                            child_row.fruit_stage = item.get("fruit_stage")
+                            child_row.root_flush  = 1 if item.get("root_flush") else 0
+
                 add_child_items(scout_doc, "predators_scouting_entry",       entry_data.get("predators_scouting_entry"))
                 add_child_items(scout_doc, "diseases_scouting_entry",        entry_data.get("diseases_scouting_entry"))
                 add_child_items(scout_doc, "physiological_disorders_entry",  entry_data.get("physiological_disorders_entry"))
@@ -329,6 +336,7 @@ def createScoutingEntry():
                 add_child_items(scout_doc, "pests_scouting_entry",           entry_data.get("pests_scouting_entry"))
                 add_child_items(scout_doc, "incidents_scouting_entry",       entry_data.get("incidents_scouting_entry"))
                 add_child_items(scout_doc, "trap_scouting_entry",            entry_data.get("trap_scouting_entry"))
+                add_child_items(scout_doc, "crop_modelling_entry",           entry_data.get("crop_modelling_entry"))
 
                 scout_doc.insert()
 

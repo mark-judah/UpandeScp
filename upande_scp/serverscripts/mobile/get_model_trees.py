@@ -3,7 +3,7 @@ import frappe
 
 @frappe.whitelist()
 def getModelTrees(block=None):
-	"""Return Tree records flagged `is_model=1` that live under the given block.
+	"""Return Orchard Tree records flagged `is_model=1` that live under the given block.
 
 	Trees live on Rows (Beds with unit_type=Row), and a Row's `greenhouse`
 	field points at the block warehouse.
@@ -15,7 +15,7 @@ def getModelTrees(block=None):
 		return frappe.response["message"]
 
 	trees = frappe.get_all(
-		"Tree",
+		"Orchard Tree",
 		filters={"block": block, "is_model": 1},
 		fields=["name", "tree_code", "row", "tree_number"],
 		order_by="row asc, tree_number asc",

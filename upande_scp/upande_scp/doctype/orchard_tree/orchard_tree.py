@@ -5,7 +5,7 @@ import frappe
 from frappe.model.document import Document
 
 
-class Tree(Document):
+class OrchardTree(Document):
 	def autoname(self):
 		code = build_tree_code(self.row, self.tree_number)
 		self.tree_code = code

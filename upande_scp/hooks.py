@@ -145,6 +145,30 @@ app_license = "mit"
 # 	}
 # }
 
+# Invalidate cached dashboard/map payloads when underlying master data changes.
+_SCP_CACHE_INVALIDATOR = "upande_scp.serverscripts.cache_utils.invalidate_on_change"
+_SCP_CACHE_EVENTS = {
+    "on_update": _SCP_CACHE_INVALIDATOR,
+    "on_trash": _SCP_CACHE_INVALIDATOR,
+}
+doc_events = {
+    "Pest": _SCP_CACHE_EVENTS,
+    "Plant Disease": _SCP_CACHE_EVENTS,
+    "Predator": _SCP_CACHE_EVENTS,
+    "Weed": _SCP_CACHE_EVENTS,
+    "Incident": _SCP_CACHE_EVENTS,
+    "Physiological Disorder": _SCP_CACHE_EVENTS,
+    "Pests Stages": _SCP_CACHE_EVENTS,
+    "Disease Stages": _SCP_CACHE_EVENTS,
+    "Predator Stages": _SCP_CACHE_EVENTS,
+    "Zone": _SCP_CACHE_EVENTS,
+    "Bed": _SCP_CACHE_EVENTS,
+    "Warehouse": _SCP_CACHE_EVENTS,
+    "Farm": _SCP_CACHE_EVENTS,
+    "Spray Equipment Details": _SCP_CACHE_EVENTS,
+    "Item": _SCP_CACHE_EVENTS,
+}
+
 # Scheduled Tasks
 # ---------------
 

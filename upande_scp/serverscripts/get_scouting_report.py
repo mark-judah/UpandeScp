@@ -2,6 +2,29 @@ import frappe
 import hashlib
 from frappe.utils import flt
 
+from upande_scp.serverscripts.cache_utils import (
+    K_CHEMICALS_LIST,
+    TTL_MEDIUM,
+    get_or_set,
+)
+
+
+def _cached_chemicals():
+    def _build():
+        return sorted({
+            c.item_name
+            for c in frappe.db.get_list(
+                "Item",
+                filters={"item_group": "CHEMICALS"},
+                fields=["item_name"],
+                limit_page_length=0,
+            )
+            if c.item_name
+        })
+
+    return get_or_set(K_CHEMICALS_LIST, _build, ttl=TTL_MEDIUM)
+
+
 @frappe.whitelist()
 def getScoutingData():
     """
@@ -120,9 +143,19 @@ def getScoutingData():
 
             items_in_data_all = {}  # key → {name: color}
 
+            # Hoist meta lookups out of the loop — 12 get_meta calls → 12 once, cached
+            child_meta_cache = {
+                cfg["child_table"]: frappe.get_meta(cfg["child_table"])
+                for cfg in observation_configs.values()
+            }
+            main_meta_cache = {
+                cfg["doctype"]: frappe.get_meta(cfg["doctype"])
+                for cfg in observation_configs.values()
+            }
+
             for key, cfg in observation_configs.items():
                 fields = ["parent", cfg["item_field"]] + cfg["extra_fields"]
-                meta = frappe.get_meta(cfg["child_table"])
+                meta = child_meta_cache[cfg["child_table"]]
                 final_fields = [f for f in fields if meta.has_field(f) or f == "parent"]
 
                 try:
@@ -176,7 +209,7 @@ def getScoutingData():
                 if items_in_data:
                     main_doctype = cfg["doctype"]
                     color_field  = cfg["legend_color_field"]
-                    main_meta    = frappe.get_meta(main_doctype)
+                    main_meta    = main_meta_cache[main_doctype]
 
                     if main_meta.has_field(color_field):
                         try:
@@ -349,8 +382,7 @@ def getScoutingData():
             filters={"name": greenhouse},
             fields=["custom_bed_numbering", "custom_zone_numbering"]
         )
-        chemicals    = frappe.db.get_list('Item', filters={'item_group': 'CHEMICALS'}, fields=['item_name'])
-        all_chemicals = sorted({c.item_name for c in chemicals})
+        all_chemicals = _cached_chemicals()
         bed_data     = frappe.get_all("Bed", filters={"greenhouse": greenhouse}, fields=["bed", "bed__area", "total_variety_area", "variety"])
         spray_teams  = frappe.get_all("Spray Team", filters={"enabled": 1}, fields=["name"])
 

@@ -76,7 +76,7 @@ class TreeAndRowAutomation(Document):
 				# --- Tree ---
 				existing_tree = frappe.db.exists(
 					{
-						"doctype": "Tree",
+						"doctype": "Orchard Tree",
 						"row": row_doc.name,
 						"tree_number": tree_number,
 					}
@@ -88,7 +88,7 @@ class TreeAndRowAutomation(Document):
 					try:
 						tree_doc = frappe.get_doc(
 							{
-								"doctype": "Tree",
+								"doctype": "Orchard Tree",
 								"row": row_doc.name,
 								"block": block,
 								"tree_number": tree_number,

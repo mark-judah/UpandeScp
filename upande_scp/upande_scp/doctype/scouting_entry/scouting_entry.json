@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "naming_series:",
- "creation": "2025-08-08 15:07:40.257444",
+ "creation": "2026-04-20 06:38:28.859746",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -113,7 +113,7 @@
    "fieldname": "tree",
    "fieldtype": "Link",
    "label": "Tree",
-   "options": "Tree"
+   "options": "Orchard Tree"
   },
   {
    "fieldname": "column_break_frpc",
@@ -235,12 +235,12 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-19 00:00:00.000000",
+ "modified": "2026-04-20 08:07:11.925347",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting Entry",
  "naming_rule": "By \"Naming Series\" field",
- "owner": "judah@upande.com",
+ "owner": "Administrator",
  "permissions": [
   {
    "create": 1,

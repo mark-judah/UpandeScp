@@ -98,7 +98,7 @@ def _build_tree_cache(utm_epsg: str, project_to_utm):
     to UTM, and store in _tree_cache[utm_epsg]. Mirrors _build_zone_cache.
     """
     raw_trees = frappe.get_all(
-        "Tree",
+        "Orchard Tree",
         fields=["name", "row", "block", "raw_geojson"],
     )
 

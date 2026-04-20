@@ -7,30 +7,23 @@ from frappe.model.document import Document
 
 class Tree(Document):
 	def autoname(self):
-		# Prefer a manually set tree_code; otherwise compute the canonical
-		# {section}_{block}_ROW{n}_T{n} pattern from the linked row.
-		code = self.tree_code or build_tree_code(self.row, self.tree_number)
+		code = build_tree_code(self.row, self.tree_number)
 		self.tree_code = code
 		self.name = code
 
 	def before_save(self):
-		# Keep tree_code in sync with the computed name when the row or
-		# tree_number changes. Users can still override by editing tree_code
-		# explicitly.
-		if not self.tree_code:
-			self.tree_code = build_tree_code(self.row, self.tree_number)
 		if not self.block and self.row:
 			self.block = frappe.db.get_value("Bed", self.row, "greenhouse")
+		self.tree_code = build_tree_code(self.row, self.tree_number)
 
 
 def build_tree_code(row_name, tree_number):
-	"""Build `{section}_{block}_ROW{n}_T{n}` from a Bed (Row) and tree number.
+	"""Build `{sector}_{block}_ROW{n}_T{n}`, e.g. `23HA_WESA1_ROW1_T1`.
 
-	Derives the section and block short codes from the warehouse hierarchy:
-	  - Block (Bed.greenhouse) → short code with the farm suffix stripped
-	    and whitespace collapsed.
-	  - Section (Block.parent_warehouse) → short code with the farm suffix
-	    stripped, taking the leading underscore-separated token.
+	  - Sector = first whitespace-separated token of the block's
+	    parent_warehouse name (e.g. `23HA Avocado - UF` → `23HA`).
+	  - Block  = block warehouse name with the farm suffix stripped and the
+	    leading `Block` prefix removed (e.g. `Block WESA1 - UF` → `WESA1`).
 	"""
 	if not row_name:
 		return f"Tree {tree_number}"
@@ -45,18 +38,39 @@ def build_tree_code(row_name, tree_number):
 	row_token = _row_token(row_doc.bed)
 	tree_token = f"T{tree_number}" if tree_number else "T"
 
-	section_code = ""
+	sector_code = ""
 	block_code = ""
 	if block_name:
-		section_name = frappe.db.get_value(
-			"Warehouse", block_name, "parent_warehouse"
-		)
-		block_code = _warehouse_short_code(block_name, short=True)
-		if section_name:
-			section_code = _warehouse_short_code(section_name, short=False)
+		sector_name = frappe.db.get_value("Warehouse", block_name, "parent_warehouse")
+		block_code = _block_short_code(block_name)
+		if sector_name:
+			sector_code = _sector_short_code(sector_name)
 
-	parts = [p for p in [section_code, block_code, row_token, tree_token] if p]
+	parts = [p for p in [sector_code, block_code, row_token, tree_token] if p]
 	return "_".join(parts)
+
+
+def _strip_farm_suffix(name):
+	if " - " in name:
+		return name.rsplit(" - ", 1)[0].strip()
+	return name.strip()
+
+
+def _sector_short_code(warehouse_name):
+	if not warehouse_name:
+		return ""
+	name = _strip_farm_suffix(warehouse_name)
+	tokens = name.split()
+	return tokens[0] if tokens else name
+
+
+def _block_short_code(warehouse_name):
+	if not warehouse_name:
+		return ""
+	name = _strip_farm_suffix(warehouse_name)
+	if name.lower().startswith("block"):
+		name = name[5:].lstrip(" _-")
+	return "".join(name.split())
 
 
 def _row_token(bed_value):
@@ -64,17 +78,3 @@ def _row_token(bed_value):
 		return "ROW"
 	digits = "".join(ch for ch in str(bed_value) if ch.isdigit())
 	return f"ROW{digits}" if digits else f"ROW{bed_value}"
-
-
-def _warehouse_short_code(warehouse_name, short):
-	if not warehouse_name:
-		return ""
-	name = warehouse_name
-	if " - " in name:
-		name = name.rsplit(" - ", 1)[0]
-	if not short:
-		head = name.split("_", 1)[0]
-		return head.strip()
-	compact = "".join(name.split())
-	compact = compact.replace("BL", "")
-	return compact

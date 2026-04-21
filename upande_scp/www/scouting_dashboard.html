@@ -1,0 +1,443 @@
+{% extends "upande_scp/www/map_base.html" %}
+
+{% block head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/scouting_dashboard.css">
+{% endblock %}
+
+{% block page_content %}
+<div id="scouting-dashboard-root">
+<div class="scouting-dashboard">
+
+	<!-- ─── HEADER ─── -->
+	<div class="dashboard-header">
+		<div class="header-left">
+			<h3 class="dashboard-title">Scouting Dashboard</h3>
+			<span class="dashboard-subtitle">Pest · Disease · Trap Monitoring</span>
+		</div>
+		<div class="header-right">
+			<div class="filter-group">
+				<div class="filter-field">
+					<label for="scout-farm-filter">Farm</label>
+					<select id="scout-farm-filter" class="filter-select">
+						<option value="">All Farms</option>
+					</select>
+				</div>
+				<div class="filter-field">
+					<label for="scout-greenhouse-filter">Greenhouse</label>
+					<select id="scout-greenhouse-filter" class="filter-select" disabled>
+						<option value="">Select farm first</option>
+					</select>
+				</div>
+				<div class="filter-field">
+					<label for="scout-week-from">From</label>
+					<input type="week" id="scout-week-from" class="filter-input">
+				</div>
+				<div class="filter-field">
+					<label for="scout-week-to">To</label>
+					<input type="week" id="scout-week-to" class="filter-input">
+				</div>
+				<button id="scout-refresh-btn" class="refresh-btn" type="button">
+					<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+					Refresh
+				</button>
+				<!-- Reports dropdown injected here by JS -->
+			</div>
+		</div>
+	</div>
+
+	<!-- ─── TABS ─── -->
+	<div class="dashboard-tabs">
+		<button class="tab-btn active" data-tab="overview">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+			Overview
+		</button>
+		<button class="tab-btn" data-tab="pests">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v4M12 14v4M8 10h8"/></svg>
+			Pests
+		</button>
+		<button class="tab-btn" data-tab="diseases">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+			Diseases
+		</button>
+		<button class="tab-btn" data-tab="traps">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+			Traps
+		</button>
+		<button class="tab-btn" data-tab="fcm">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C8 2 5 5 5 9c0 6 7 13 7 13s7-7 7-13c0-4-3-7-7-7z"/><circle cx="12" cy="9" r="2"/></svg>
+			FCM &amp; Moths
+		</button>
+	</div>
+
+	<!-- ════════════════════════════════════════════════ -->
+	<!-- OVERVIEW TAB -->
+	<!-- ════════════════════════════════════════════════ -->
+	<div class="tab-content active" id="tab-overview">
+		<div class="stats-grid">
+			<div class="stat-card">
+				<div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+				<div class="stat-content">
+					<div class="stat-label">Total Scouts</div>
+					<div class="stat-value" id="overview-total-scouts">0</div>
+					<div class="stat-unit" id="overview-scout-names">—</div>
+				</div>
+			</div>
+			<div class="stat-card">
+				<div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+				<div class="stat-content">
+					<div class="stat-label">Total Entries</div>
+					<div class="stat-value" id="overview-total-entries">0</div>
+					<div class="stat-unit">scouting records</div>
+				</div>
+			</div>
+			<div class="stat-card">
+				<div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg></div>
+				<div class="stat-content">
+					<div class="stat-label">Greenhouses</div>
+					<div class="stat-value" id="overview-greenhouses">0</div>
+					<div class="stat-unit">monitored</div>
+				</div>
+			</div>
+			<div class="stat-card">
+				<div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+				<div class="stat-content">
+					<div class="stat-label">High Alerts</div>
+					<div class="stat-value" id="overview-alerts">0</div>
+					<div class="stat-unit">critical levels</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="chart-card chart-card-wide">
+			<div class="chart-header"><h4>Activity Timeline</h4><span class="chart-subtitle">Pests · Diseases · Traps · daily counts</span></div>
+			<div class="chart-body"><canvas id="overview-timeline-chart"></canvas></div>
+		</div>
+
+		<div class="charts-grid charts-grid-3">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Category Split</h4><span class="chart-subtitle">Observation breakdown</span></div>
+				<div class="chart-body donut-container">
+					<canvas id="overview-donut-chart"></canvas>
+					<div class="donut-center"><div class="donut-total" id="overview-donut-total">0</div><div class="donut-label">Total</div></div>
+				</div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Pest Section Radar</h4><span class="chart-subtitle">Pest pressure by plant area</span></div>
+				<div class="chart-body"><canvas id="overview-pest-radar-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Disease Section Radar</h4><span class="chart-subtitle">Disease spread by plant area</span></div>
+				<div class="chart-body"><canvas id="overview-disease-radar-chart"></canvas></div>
+			</div>
+		</div>
+
+		<!-- ── Scout Performance ── -->
+		<div class="chart-card chart-card-wide">
+			<div class="chart-header"><h4>Scout Activity Trend</h4><span class="chart-subtitle">Daily entries per scout (top 5)</span></div>
+			<div class="chart-body"><canvas id="scout-perf-trend-chart"></canvas></div>
+		</div>
+		<div class="charts-grid charts-grid-3">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Entries &amp; Observations</h4><span class="chart-subtitle">Per scout · entries, pests, diseases</span></div>
+				<div class="chart-body"><canvas id="scout-perf-bar-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Scout Performance Radar</h4><span class="chart-subtitle">Normalized metrics (top 6 scouts)</span></div>
+				<div class="chart-body"><canvas id="scout-perf-radar-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Activity Distribution</h4><span class="chart-subtitle">Share of total scouting by scout</span></div>
+				<div class="chart-body donut-container"><canvas id="scout-perf-radial-chart"></canvas></div>
+			</div>
+		</div>
+
+		<div class="charts-grid">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Greenhouse Health</h4><span class="chart-subtitle">Click any row for details</span></div>
+				<div class="chart-body"><div class="gh-health-list" id="overview-gh-health"></div></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Active Alerts</h4><span class="chart-subtitle">High severity observations</span></div>
+				<div class="chart-body"><div class="alerts-list" id="overview-alerts-list"></div></div>
+			</div>
+		</div>
+
+		<div class="charts-grid">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Top Scouts</h4><span class="chart-subtitle">By entries recorded</span></div>
+				<div class="chart-body"><div class="items-list" id="overview-top-scouts"></div></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Recent Entries</h4><span class="chart-subtitle">Latest observations</span></div>
+				<div class="chart-body"><div class="recent-entries" id="overview-recent-entries"></div></div>
+			</div>
+		</div>
+	</div>
+
+	<!-- ════════════════════════════════════════════════ -->
+	<!-- PESTS TAB -->
+	<!-- ════════════════════════════════════════════════ -->
+	<div class="tab-content" id="tab-pests">
+		<div class="stats-grid">
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v4M12 14v4M8 10h8"/></svg></div><div class="stat-content"><div class="stat-label">Total Pest Entries</div><div class="stat-value" id="pest-total-entries">0</div><div class="stat-unit">scouting records</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M5.5 16c2.5-2 5.5-2 6.5-2s4 0 6.5 2"/></svg></div><div class="stat-content"><div class="stat-label">Active Pests</div><div class="stat-value" id="pest-active-count">0</div><div class="stat-unit">pest types</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div><div class="stat-content"><div class="stat-label">High Severity</div><div class="stat-value" id="pest-high-severity">0</div><div class="stat-unit">observations</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="stat-content"><div class="stat-label">Top Pest</div><div class="stat-value" id="pest-top-name">—</div><div class="stat-unit" id="pest-top-count">0 observations</div></div></div>
+		</div>
+
+		<div class="chart-card chart-card-wide">
+			<div class="chart-header">
+				<div><h4>Pest Trends</h4><span class="chart-subtitle">Beds infected (%) · daily data points</span></div>
+				<div class="chart-controls">
+					<div class="filter-field"><label>Pest</label><select id="pest-weekly-pest-filter" class="filter-select"></select></div>
+					<div class="filter-field"><label>Section</label><select id="pest-weekly-section-filter" class="filter-select"></select></div>
+					<div class="filter-field"><label>Stage</label><select id="pest-weekly-stage-filter" class="filter-select"></select></div>
+				</div>
+			</div>
+			<div class="chart-body"><canvas id="pest-weekly-trend-chart"></canvas></div>
+		</div>
+
+
+		<div class="charts-grid-3">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Plant Section Split</h4><span class="chart-subtitle">Where pests are found</span></div>
+				<div class="chart-body"><canvas id="pest-section-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Entries by Stage</h4><span class="chart-subtitle">Filtered to selected pest</span></div>
+				<div class="chart-body"><canvas id="pest-stage-radial-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Pest Distribution</h4><span class="chart-subtitle">Beds infected by pest type</span></div>
+				<div class="chart-body"><canvas id="pest-distribution-chart"></canvas></div>
+			</div>
+		</div>
+
+		<div class="charts-grid">
+			<div class="chart-card"><div class="chart-header"><h4>Severity Matrix</h4><span class="chart-subtitle">Current infestation levels</span></div><div class="chart-body"><div class="severity-matrix" id="pest-severity-matrix"></div></div></div>
+			<div class="chart-card"><div class="chart-header"><h4>Pest Incidence Trend</h4></div><div class="chart-body"><canvas id="pest-trend-chart"></canvas></div></div>
+		</div>
+
+		<!-- Greenhouse & Bed bar charts -->
+		<div class="charts-grid">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Pest Pressure by Greenhouse</h4><span class="chart-subtitle">Total observations · zone coverage %</span></div>
+				<div class="chart-body" style="height:260px"><canvas id="pest-gh-bar-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Top Beds by Pest Count</h4><span class="chart-subtitle">Highest cumulative pest counts</span></div>
+				<div class="chart-body" style="height:260px"><canvas id="pest-bed-bar-chart"></canvas></div>
+			</div>
+		</div>
+
+	</div>
+
+	<!-- ════════════════════════════════════════════════ -->
+	<!-- DISEASES TAB -->
+	<!-- ════════════════════════════════════════════════ -->
+	<div class="tab-content" id="tab-diseases">
+		<div class="stats-grid">
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div><div class="stat-content"><div class="stat-label">Total Disease Entries</div><div class="stat-value" id="disease-total-entries">0</div><div class="stat-unit">scouting records</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></div><div class="stat-content"><div class="stat-label">Active Diseases</div><div class="stat-value" id="disease-active-count">0</div><div class="stat-unit">disease types</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div><div class="stat-content"><div class="stat-label">Severe Cases</div><div class="stat-value" id="disease-severe-count">0</div><div class="stat-unit">high severity</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="stat-content"><div class="stat-label">Top Disease</div><div class="stat-value" id="disease-top-name">—</div><div class="stat-unit" id="disease-top-count">0 cases</div></div></div>
+		</div>
+
+		<div class="chart-card chart-card-wide">
+			<div class="chart-header">
+				<div><h4>Disease Trends</h4><span class="chart-subtitle">Beds infected (%) · daily data points</span></div>
+				<div class="chart-controls">
+					<div class="filter-field"><label>Disease</label><select id="disease-weekly-disease-filter" class="filter-select"></select></div>
+					<div class="filter-field"><label>Section</label><select id="disease-weekly-section-filter" class="filter-select"></select></div>
+					<div class="filter-field">
+        <label>Stage</label>
+        <select id="disease-weekly-stage-filter" class="filter-select"></select>
+      </div>
+				</div>
+			</div>
+			<div class="chart-body"><canvas id="disease-weekly-trend-chart"></canvas></div>
+		</div>
+
+		<div class="charts-grid-3">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Stage Split</h4><span class="chart-subtitle">Selected or all diseases</span></div>
+				<div class="chart-body"><canvas id="disease-stage-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Entries by Stage</h4><span class="chart-subtitle">Filtered to selected disease</span></div>
+				<div class="chart-body"><canvas id="disease-stage-radial-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Disease Distribution</h4><span class="chart-subtitle">Beds infected by disease type</span></div>
+				<div class="chart-body"><canvas id="disease-distribution-chart"></canvas></div>
+			</div>
+		</div>
+
+		<div class="charts-grid">
+			<div class="chart-card"><div class="chart-header"><h4>Severity Levels</h4><span class="chart-subtitle">Infection intensity</span></div><div class="chart-body"><div class="severity-bubbles" id="disease-severity-bubbles"></div></div></div>
+			<div class="chart-card"><div class="chart-header"><h4>Disease Incidence Trend</h4></div><div class="chart-body"><canvas id="disease-trend-chart"></canvas></div></div>
+		</div>
+
+		<!-- Greenhouse & Bed bar charts -->
+		<div class="charts-grid">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Disease Pressure by Greenhouse</h4><span class="chart-subtitle">Total incidents · zone coverage %</span></div>
+				<div class="chart-body" style="height:260px"><canvas id="disease-gh-bar-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Top Beds by Disease Incidence</h4><span class="chart-subtitle">Highest disease observation counts</span></div>
+				<div class="chart-body" style="height:260px"><canvas id="disease-bed-bar-chart"></canvas></div>
+			</div>
+		</div>
+
+	</div>
+
+	<!-- ════════════════════════════════════════════════ -->
+	<!-- TRAPS TAB -->
+	<!-- ════════════════════════════════════════════════ -->
+	<div class="tab-content" id="tab-traps">
+		<div class="stats-grid">
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="stat-content"><div class="stat-label">Total Trap Entries</div><div class="stat-value" id="trap-total-count">0</div><div class="stat-unit">scouting records</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M5.5 16c2.5-2 5.5-2 6.5-2s4 0 6.5 2"/></svg></div><div class="stat-content"><div class="stat-label">Active Traps</div><div class="stat-value" id="trap-active-count">0</div><div class="stat-unit">monitoring points</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div><div class="stat-content"><div class="stat-label">FCM Count</div><div class="stat-value" id="trap-fcm-count">0</div><div class="stat-unit">this period</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div><div class="stat-content"><div class="stat-label">Avg per Trap</div><div class="stat-value" id="trap-avg-count">0</div><div class="stat-unit">pests / trap</div></div></div>
+		</div>
+
+		<div class="chart-card chart-card-wide">
+			<div class="chart-header">
+				<div><h4>Trap Trends</h4><span class="chart-subtitle">Counts · daily data points</span></div>
+				<div class="chart-controls">
+					<div class="filter-field"><label>Trap</label><select id="trap-weekly-trap-filter" class="filter-select"></select></div>
+					<div class="filter-field"><label>Pest</label><select id="trap-weekly-pest-filter" class="filter-select"></select></div>
+				</div>
+			</div>
+			<div class="chart-body"><canvas id="trap-weekly-trend-chart"></canvas></div>
+		</div>
+
+		<div class="charts-grid">
+			<div class="chart-card"><div class="chart-header"><h4>Trap Count Trends</h4></div><div class="chart-body"><canvas id="trap-trend-chart"></canvas></div></div>
+			<div class="chart-card"><div class="chart-header"><h4>Trap Performance</h4><span class="chart-subtitle">By location</span></div><div class="chart-body"><canvas id="trap-performance-chart"></canvas></div></div>
+		</div>
+
+		<div class="charts-grid">
+			<div class="chart-card"><div class="chart-header"><h4>Location Heatmap</h4><span class="chart-subtitle">Count intensity</span></div><div class="chart-body"><div class="trap-heatmap" id="trap-heatmap"></div></div></div>
+			<div class="chart-card"><div class="chart-header"><h4>Pest Breakdown</h4><span class="chart-subtitle">By pest type in traps</span></div><div class="chart-body"><canvas id="trap-pest-breakdown"></canvas></div></div>
+		</div>
+
+		<!-- FCM vs General & Indoor/Outdoor bar charts -->
+		<div class="charts-grid">
+			<div class="chart-card">
+				<div class="chart-header"><h4>FCM vs General Traps by Greenhouse</h4><span class="chart-subtitle">Stacked catch counts · focus vs other pests</span></div>
+				<div class="chart-body" style="height:260px"><canvas id="trap-gh-bar-chart"></canvas></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Indoor vs Outdoor Scouting</h4><span class="chart-subtitle">Trap entries by location type per greenhouse</span></div>
+				<div class="chart-body" style="height:260px"><canvas id="trap-indoor-outdoor-chart"></canvas></div>
+			</div>
+		</div>
+
+		<div class="chart-card">
+			<div class="chart-header"><h4>Trap Details</h4><span class="chart-subtitle">Individual trap counts</span></div>
+			<div class="chart-body">
+				<div class="stages-table-wrap">
+					<table class="stages-table">
+						<thead><tr><th>Trap ID</th><th>Pest</th><th>Count</th><th>Location</th><th>Date</th><th>Greenhouse</th><th>Bed</th></tr></thead>
+						<tbody id="trap-details-body"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- ════════════════════════════════════════════════ -->
+	<!-- FCM & MOTHS TAB -->
+	<!-- ════════════════════════════════════════════════ -->
+	<div class="tab-content" id="tab-fcm">
+		<div class="stats-grid">
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div class="stat-content"><div class="stat-label">Trap Counts (Focus Pests)</div><div class="stat-value" id="fcm-trap-total">0</div><div class="stat-unit">total catches</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v4M12 14v4M8 10h8"/></svg></div><div class="stat-content"><div class="stat-label">Non-Trap Pest Counts</div><div class="stat-value" id="fcm-pest-total">0</div><div class="stat-unit">scouting observations</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><div class="stat-content"><div class="stat-label">Entries With Focus Pests</div><div class="stat-value" id="fcm-entry-count">0</div><div class="stat-unit">scouting records</div></div></div>
+			<div class="stat-card"><div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg></div><div class="stat-content"><div class="stat-label">Greenhouses Impacted</div><div class="stat-value" id="fcm-greenhouse-count">0</div><div class="stat-unit">with observations</div></div></div>
+		</div>
+
+		<div class="chart-card" style="margin-bottom:16px;">
+			<div class="chart-header"><h4>FCM &amp; Moth Trends</h4><span class="chart-subtitle">Daily catches (traps) + scouting counts — FCM vs other moths</span></div>
+			<div class="chart-body" style="height:160px;"><canvas id="fcm-moth-trend-chart"></canvas></div>
+		</div>
+
+		<div class="charts-grid">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Trap Breakdown</h4><span class="chart-subtitle">FCM · Helicoverpa · Duponchella · Spodoptera</span></div>
+				<div class="chart-body"><div class="stages-table-wrap">
+					<table class="stages-table"><thead><tr><th>Pest</th><th>Total Count</th></tr></thead><tbody id="fcm-trap-body"><tr><td colspan="2" class="empty-state">Loading…</td></tr></tbody></table>
+				</div></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Non-Trap Pest Breakdown</h4><span class="chart-subtitle">Pest scouting observations</span></div>
+				<div class="chart-body"><div class="stages-table-wrap">
+					<table class="stages-table"><thead><tr><th>Pest</th><th>Total Count</th></tr></thead><tbody id="fcm-pest-body"><tr><td colspan="2" class="empty-state">Loading…</td></tr></tbody></table>
+				</div></div>
+			</div>
+		</div>
+
+		<div class="chart-card">
+			<div class="chart-header"><h4>Recent Focus Entries</h4><span class="chart-subtitle">Latest entries containing focus pests</span></div>
+			<div class="chart-body"><div class="recent-entries" id="fcm-recent-entries"></div></div>
+		</div>
+	</div>
+
+	<!-- ─── LOADING OVERLAY ─── -->
+	<div class="loading-overlay" id="scout-loading">
+		<div class="loading-card">
+			<div class="loading-title">Loading scouting data</div>
+			<div class="loading-text">Starting…</div>
+			<div class="loading-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+				<div class="loading-bar-fill"></div>
+			</div>
+			<div class="loading-bar-pct">0%</div>
+		</div>
+	</div>
+
+	<!-- ─── GREENHOUSE DETAIL MODAL ─── -->
+	<div class="gh-modal" id="scout-gh-modal">
+		<div class="gh-panel">
+			<div class="gh-panel-topbar">
+				<div class="gh-panel-gh-info">
+					<div class="gh-panel-badge">🌿</div>
+					<div>
+						<div class="gh-panel-name" id="scout-gh-modal-title">Greenhouse</div>
+						<div class="gh-panel-period" id="scout-gh-modal-period"></div>
+					</div>
+				</div>
+				<button class="gh-panel-close" id="scout-gh-modal-close">✕</button>
+			</div>
+			<div class="gh-panel-scroll">
+				<div class="gh-kpi-band">
+					<div class="gh-kpi-card"><div class="gh-kpi-num" id="ghk-pests">—</div><div class="gh-kpi-tag">Pests</div></div>
+					<div class="gh-kpi-card"><div class="gh-kpi-num" id="ghk-diseases">—</div><div class="gh-kpi-tag">Diseases</div></div>
+					<div class="gh-kpi-card"><div class="gh-kpi-num" id="ghk-traps">—</div><div class="gh-kpi-tag">Trap Counts</div></div>
+					<div class="gh-kpi-card"><div class="gh-kpi-num" id="ghk-scouts">—</div><div class="gh-kpi-tag">Scouts</div></div>
+					<div class="gh-kpi-card gh-kpi-card-alert"><div class="gh-kpi-num" id="ghk-alerts">—</div><div class="gh-kpi-tag">Alerts</div></div>
+				</div>
+				<div class="gh-dual-col">
+					<div><div class="gh-sec-label">Top Pests</div><div id="scout-gh-pests"></div></div>
+					<div><div class="gh-sec-label">Top Diseases</div><div id="scout-gh-diseases"></div></div>
+				</div>
+				<div class="gh-sec-label" style="margin-top:20px">Trap Summary</div>
+				<div class="gh-len-grid" id="scout-gh-traps"></div>
+				<div class="gh-sec-label" style="margin-top:20px">Daily Trend</div>
+				<div class="gh-trend-wrap"><canvas id="scout-gh-trend-chart"></canvas></div>
+			</div>
+		</div>
+	</div>
+
+</div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script src="/scouting_dashboard.js"></script>
+{% endblock %}

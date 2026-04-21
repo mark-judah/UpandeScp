@@ -1,650 +1,944 @@
-{% extends "upande_scp/www/map_base.html" %}
-
-{% block head %}
+{% extends "upande_scp/www/map_base.html" %} {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-    #map-page { height: 100%; width: 100%; display: flex; position: relative; }
-    #map-container { flex: 1; position: relative; z-index: 1; }
-    #map { height: 100%; width: 100%; }
+	#map-page {
+		height: 100%;
+		width: 100%;
+		display: flex;
+		position: relative;
+	}
+	#map-container {
+		flex: 1;
+		position: relative;
+		z-index: 1;
+	}
+	#map {
+		height: 100%;
+		width: 100%;
+	}
 
-    /* ── Sidebar ── */
-    #sidebar {
-        position: absolute; right: 0; top: 0;
-        width: 380px; height: 100%;
-        background: var(--sidebar-bg); backdrop-filter: blur(16px);
-        border-left: 1px solid var(--border);
-        box-shadow: var(--sidebar-shadow);
-        z-index: 1000; display: flex; flex-direction: column;
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        overflow: hidden;
-    }
-    #sidebar.collapsed { transform: translateX(100%); }
+	/* ── Sidebar ── */
+	#sidebar {
+		position: absolute;
+		right: 0;
+		top: 0;
+		width: 380px;
+		height: 100%;
+		background: var(--fg-color, #ffffff);
+		border-left: 1px solid var(--border-color, #e5e7eb);
+		box-shadow: var(--shadow-md);
+		z-index: 1000;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	#sidebar.collapsed {
+		transform: translateX(100%);
+	}
 
-    .sidebar-toggle {
-        position: absolute; left: -48px; top: 50%; transform: translateY(-50%);
-        width: 48px; height: 96px;
-        background: var(--sidebar-bg); border: 1px solid var(--border);
-        border-right: none; border-radius: 8px 0 0 8px;
-        display: flex; align-items: center; justify-content: center;
-        cursor: pointer; transition: all 0.3s ease;
-        box-shadow: -2px 0 8px rgba(0,0,0,0.05);
-    }
-    .sidebar-toggle:hover { background: var(--hover); left: -52px; }
-    .sidebar-toggle svg { width: 24px; height: 24px; color: var(--text); opacity: 0.7; transition: transform 0.3s; }
-    #sidebar.collapsed .sidebar-toggle svg { transform: rotate(180deg); }
+	.sidebar-toggle {
+		position: absolute;
+		left: -48px;
+		top: 50%;
+		transform: translateY(-50%);
+		width: 48px;
+		height: 96px;
+		background: var(--fg-color, #ffffff);
+		border: 1px solid var(--border-color, #e5e7eb);
+		border-right: none;
+		border-radius: var(--radius-card, 8px) 0 0 var(--radius-card, 8px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+	}
 
-    /* ── KPI Bar ── */
-    #kpi-bar {
-        display: grid; grid-template-columns: repeat(4, 1fr);
-        gap: 0; border-bottom: 1px solid var(--border);
-        flex-shrink: 0;
-    }
-    .kpi-card {
-        padding: 0.75rem 0.5rem; text-align: center;
-        border-right: 1px solid var(--border);
-        background: var(--bg);
-    }
-    .kpi-card:last-child { border-right: none; }
-    .kpi-value {
-        font-size: 1.375rem; font-weight: 700; line-height: 1.1;
-        color: var(--accent);
-    }
-    .kpi-label {
-        font-size: 0.625rem; font-weight: 600; text-transform: uppercase;
-        letter-spacing: 0.05em; color: #64748b; margin-top: 0.2rem;
-    }
+	.sidebar-toggle:hover {
+		background: var(--hover);
+	}
+	.sidebar-toggle svg {
+		width: 24px;
+		height: 24px;
+		color: var(--text);
+		opacity: 0.7;
+	}
+	#sidebar.collapsed .sidebar-toggle svg {
+		transform: rotate(180deg);
+	}
 
-    /* ── Sidebar Content ── */
-    .sidebar-content {
-        flex: 1; overflow-y: auto; padding: 1rem;
-        display: flex; flex-direction: column; gap: 1.25rem;
-    }
-    .sidebar-content::-webkit-scrollbar { width: 4px; }
-    .sidebar-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+	/* ── KPI Bar ── */
+	#kpi-bar {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 0;
+		border-bottom: 1px solid var(--border);
+		flex-shrink: 0;
+	}
+	.kpi-card {
+		padding: 0.75rem 0.5rem;
+		text-align: center;
+		border-right: 1px solid var(--border);
+		background: var(--panel-bg);
+	}
+	.kpi-card:last-child {
+		border-right: none;
+	}
+	.kpi-value {
+		font-size: 1.375rem;
+		font-weight: 700;
+		line-height: 1.1;
+		color: var(--text);
+	}
+	.kpi-label {
+		font-size: 0.625rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-muted);
+		margin-top: 0.2rem;
+	}
 
-    .section { display: flex; flex-direction: column; gap: 0.625rem; }
+	/* ── Sidebar Content ── */
+	.sidebar-content {
+		flex: 1;
+		overflow-y: auto;
+		padding: 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+	}
+	.sidebar-content::-webkit-scrollbar {
+		width: 4px;
+	}
+	.sidebar-content::-webkit-scrollbar-thumb {
+		background: var(--border);
+		border-radius: 2px;
+	}
 
-    .section-label {
-        font-size: 0.8125rem; font-weight: 600; color: var(--text);
-        display: flex; align-items: center; gap: 0.4rem;
-    }
-    .section-label svg { width: 14px; height: 14px; opacity: 0.6; }
+	.section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.625rem;
+	}
 
-    .date-input, .gh-select {
-        padding: 0.625rem 0.875rem; border: 1px solid var(--border);
-        border-radius: 7px; background: var(--bg); color: var(--text);
-        font-size: 0.875rem; transition: border-color 0.15s; cursor: pointer;
-        width: 100%;
-    }
-    .date-input:hover, .gh-select:hover { border-color: var(--accent); }
-    .date-input:focus, .gh-select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+	.section-label {
+		font-size: 0.8125rem;
+		font-weight: 600;
+		color: var(--text);
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+	.section-label svg {
+		width: 14px;
+		height: 14px;
+		opacity: 0.6;
+	}
 
-    .legend-items { display: flex; flex-direction: column; gap: 0.375rem; }
+	.date-input,
+	.gh-select {
+		padding: 0.625rem 0.875rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-input);
+		background: var(--panel-bg);
+		color: var(--text);
+		font-size: 0.875rem;
+		cursor: pointer;
+		width: 100%;
+	}
 
-    .legend-item {
-        display: flex; align-items: center; gap: 0.75rem;
-        padding: 0.625rem 0.75rem;
-        border-radius: 7px; border: 1px solid var(--border);
-        background: var(--bg); transition: all 0.15s; cursor: pointer;
-    }
-    .legend-item:hover { background: var(--hover); border-color: var(--accent); transform: translateX(-2px); }
-    .legend-item input[type="checkbox"] { width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: var(--accent); }
-    .color-swatch { width: 18px; height: 18px; border-radius: 5px; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,0.1); }
-    .legend-label { flex: 1; font-size: 0.8125rem; font-weight: 500; color: var(--text); }
+	.date-input:hover,
+	.gh-select:hover {
+		filter: brightness(0.98);
+	}
 
-    .empty-state { text-align: center; padding: 1.5rem 1rem; color: #94a3b8; }
-    .empty-state svg { width: 40px; height: 40px; margin: 0 auto 0.75rem; opacity: 0.4; display: block; }
-    .empty-state p { font-size: 0.8125rem; }
+	.date-input:focus,
+	.gh-select:focus {
+		outline: none;
+		border-color: var(--accent);
+		box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+	}
 
-    /* ── Timeline section ── */
-    #timeline-section { border-top: 1px solid var(--border); padding-top: 0.875rem; }
-    .timeline-item {
-        display: flex; flex-direction: column; gap: 0.2rem;
-        padding: 0.5rem 0.625rem; border-radius: 6px;
-        border: 1px solid var(--border); background: var(--bg);
-        font-size: 0.75rem; margin-bottom: 0.375rem;
-    }
-    .timeline-top { display: flex; justify-content: space-between; align-items: center; }
-    .timeline-name { font-weight: 600; color: var(--text); }
-    .timeline-gh { font-size: 0.6875rem; color: #64748b; }
-    .timeline-time { font-size: 0.6875rem; color: #94a3b8; }
-    .timeline-bar { height: 4px; border-radius: 2px; background: var(--border); margin-top: 0.25rem; position: relative; overflow: hidden; }
-    .timeline-bar-fill { height: 100%; border-radius: 2px; background: var(--accent); }
+	.legend-items {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
 
-    /* ── Map style ── */
-    .style-selector { display: flex; flex-direction: column; gap: 0.375rem; }
-    .style-option { display: flex; align-items: center; gap: 0.625rem; padding: 0.4rem 0.625rem; border-radius: 5px; cursor: pointer; transition: background 0.15s; }
-    .style-option:hover { background: var(--hover); }
-    .style-option input { width: 14px; height: 14px; accent-color: var(--accent); }
-    .style-option label { font-size: 0.8125rem; cursor: pointer; }
+	.legend-item {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.625rem 0.75rem;
+		border-radius: var(--radius-input);
+		border: 1px solid var(--border);
+		background: var(--panel-bg);
+		cursor: pointer;
+	}
 
-    /* ── Loader ── */
-    #map-loader {
-        position: absolute; inset: 0;
-        background: rgba(255,255,255,0.85); backdrop-filter: blur(4px);
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        z-index: 2000; gap: 1rem;
-    }
-    [data-theme="dark"] #map-loader { background: rgba(15,23,42,0.85); }
-    .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top: 3px solid var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .loader-text { font-size: 0.875rem; font-weight: 500; color: var(--text); }
+	.legend-item:hover {
+		background: var(--hover);
+	}
+	.legend-item input[type="checkbox"] {
+		width: 16px;
+		height: 16px;
+		margin: 0;
+		cursor: pointer;
+		accent-color: var(--text);
+	}
+	.color-swatch {
+		width: 18px;
+		height: 18px;
+		border-radius: var(--radius-input);
+		flex-shrink: 0;
+		border: 1px solid var(--border);
+	}
+	.legend-label {
+		flex: 1;
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--text);
+	}
 
-    .leaflet-control-zoom { border: none !important; box-shadow: 0 2px 12px rgba(0,0,0,0.1) !important; }
-    .leaflet-control-zoom a { border: none !important; border-bottom: 1px solid var(--border) !important; color: var(--text) !important; background: var(--sidebar-bg) !important; }
-    .leaflet-control-zoom a:hover { background: var(--hover) !important; }
-    .leaflet-control-layers { border: none !important; box-shadow: 0 2px 12px rgba(0,0,0,0.08) !important; border-radius: 8px !important; overflow: hidden; }
-    .line-id-label { background: none !important; border: none !important; pointer-events: none; }
+	.empty-state {
+		text-align: center;
+		padding: 1.5rem 1rem;
+		color: var(--text-muted);
+	}
+	.empty-state svg {
+		width: 40px;
+		height: 40px;
+		margin: 0 auto 0.75rem;
+		opacity: 0.4;
+		display: block;
+	}
+	.empty-state p {
+		font-size: 0.8125rem;
+	}
 
-    @media (max-width: 768px) { #sidebar { width: 100%; max-width: 380px; } }
+	/* ── Timeline section ── */
+	#timeline-section {
+		border-top: 1px solid var(--border);
+		padding-top: 0.875rem;
+	}
+	.timeline-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		padding: 0.5rem 0.625rem;
+		border-radius: var(--radius-input);
+		border: 1px solid var(--border);
+		background: var(--panel-bg);
+		font-size: 0.75rem;
+		margin-bottom: 0.375rem;
+	}
+	.timeline-top {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.timeline-name {
+		font-weight: 600;
+		color: var(--text);
+	}
+	.timeline-gh {
+		font-size: 0.6875rem;
+		color: var(--text-muted);
+	}
+	.timeline-time {
+		font-size: 0.6875rem;
+		color: var(--text-muted);
+	}
+	.timeline-bar {
+		height: 4px;
+		border-radius: var(--radius-input);
+		background: rgba(0, 0, 0, 0.15);
+		margin-top: 0.25rem;
+		position: relative;
+		overflow: hidden;
+	}
+	.timeline-bar-fill {
+		height: 100%;
+		border-radius: var(--radius-input);
+		background: var(--text);
+	}
+
+	/* ── Map style ── */
+	.style-selector {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+	.style-option {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		padding: 0.4rem 0.625rem;
+		border-radius: var(--radius-input);
+		cursor: pointer;
+	}
+
+	.style-option:hover {
+		background: var(--hover);
+	}
+	.style-option input {
+		width: 14px;
+		height: 14px;
+		accent-color: var(--text);
+	}
+	.style-option label {
+		font-size: 0.8125rem;
+		cursor: pointer;
+	}
+
+	/* ── Map overlay / empty state ── */
+	#map-loader {
+		position: absolute; inset: 0;
+		background: rgba(255,255,255,0.93);
+		display: flex; flex-direction: column;
+		align-items: center; justify-content: center;
+		z-index: 2000; gap: 0.5rem;
+		border-radius: inherit;
+	}
+	.map-load-title { font-size: 0.875rem; font-weight: 600; color: #1e293b; margin-bottom: 0.15rem; }
+	.map-load-track {
+		width: 220px; height: 5px;
+		background: #e2e8f0; border-radius: 3px; overflow: hidden;
+	}
+	.map-load-fill {
+		height: 100%; width: 0%;
+		background: #2563eb; border-radius: 3px;
+		transition: width 0.25s ease;
+	}
+	.map-load-status { font-size: 0.72rem; color: #64748b; min-width: 220px; text-align: center; }
+	#map-empty {
+		position: absolute; inset: 0;
+		display: none; flex-direction: column;
+		align-items: center; justify-content: center;
+		gap: 0.75rem; z-index: 1999; color: #94a3b8;
+		font-size: 0.875rem; pointer-events: none;
+	}
+
+	.leaflet-control-zoom {
+		border: 1px solid var(--border) !important;
+		box-shadow: var(--shadow-sm) !important;
+		border-radius: var(--radius-card) !important;
+		overflow: hidden;
+	}
+	.leaflet-control-zoom a {
+		border: none !important;
+		border-bottom: 1px solid var(--border) !important;
+		color: var(--text) !important;
+		background: var(--panel-bg) !important;
+	}
+	.leaflet-control-layers {
+		border: 1px solid var(--border) !important;
+		box-shadow: var(--shadow-sm) !important;
+		border-radius: var(--radius-card) !important;
+		overflow: hidden;
+	}
+	.line-id-label {
+		background: none !important;
+		border: none !important;
+		pointer-events: none;
+	}
+
+	@media (max-width: 768px) {
+		#sidebar {
+			width: 100%;
+			max-width: 380px;
+		}
+	}
 </style>
-{% endblock %}
-
-{% block page_content %}
+{% endblock %} {% block page_content %}
 <div id="map-page">
-    <div id="map-container">
-        <div id="map-loader">
-            <div class="spinner"></div>
-            <p class="loader-text">Loading scout data…</p>
-        </div>
-        <div id="map"></div>
-    </div>
+	<div id="map-container">
+		<div id="map-loader">
+			<span class="map-load-title">Loading scout data</span>
+			<div class="map-load-track"><div class="map-load-fill" id="map-load-fill"></div></div>
+			<span class="map-load-status" id="map-load-status">Initialising…</span>
+		</div>
+		<div id="map-empty">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40" style="opacity:0.3"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
+			<span>No scouting activity on this date</span>
+		</div>
+		<div id="map"></div>
+	</div>
 
-    <div id="sidebar">
-        <div class="sidebar-toggle" id="toggle-sidebar">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-            </svg>
-        </div>
+	<div id="sidebar">
+		<div class="sidebar-toggle" id="toggle-sidebar">
+			<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M9 5l7 7-7 7"
+				/>
+			</svg>
+		</div>
 
-        <!-- KPI Bar -->
-        <div id="kpi-bar">
-            <div class="kpi-card">
-                <div class="kpi-value" id="kpi-scouts">—</div>
-                <div class="kpi-label">Scouts</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-value" id="kpi-beds">—</div>
-                <div class="kpi-label">Beds</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-value" id="kpi-zones">—</div>
-                <div class="kpi-label">Zones</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-value" id="kpi-min-bed">—</div>
-                <div class="kpi-label">Min/Bed</div>
-            </div>
-        </div>
+		<!-- KPI Bar -->
+		<div id="kpi-bar">
+			<div class="kpi-card">
+				<div class="kpi-value" id="kpi-scouts">—</div>
+				<div class="kpi-label">Scouts</div>
+			</div>
+			<div class="kpi-card">
+				<div class="kpi-value" id="kpi-beds">—</div>
+				<div class="kpi-label">Beds</div>
+			</div>
+			<div class="kpi-card">
+				<div class="kpi-value" id="kpi-zones">—</div>
+				<div class="kpi-label">Zones</div>
+			</div>
+			<div class="kpi-card">
+				<div class="kpi-value" id="kpi-min-bed">—</div>
+				<div class="kpi-label">Min/Bed</div>
+			</div>
+		</div>
 
-        <div class="sidebar-content">
-            <!-- Greenhouse Filter -->
-            <div class="section">
-                <label class="section-label">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"/>
-                    </svg>
-                    Greenhouse
-                </label>
-                <select id="gh-select" class="gh-select">
-                    <option value="">All Greenhouses</option>
-                    {% for gh in greenhouses_geojson %}
-                    <option value="{{ gh.name }}">{{ gh.short_name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
+		<div class="sidebar-content">
+			<!-- Greenhouse Filter -->
+			<div class="section">
+				<label class="section-label">
+					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"
+						/>
+					</svg>
+					Greenhouse
+				</label>
+				<select id="gh-select" class="gh-select">
+					<option value="">All Greenhouses</option>
+					{% for gh in greenhouses_geojson %}
+					<option value="{{ gh.name }}">{{ gh.short_name }}</option>
+					{% endfor %}
+				</select>
+			</div>
 
-            <!-- Date Picker -->
-            <div class="section">
-                <label class="section-label">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    Scouting Date
-                </label>
-                <input type="date" id="scout-date-picker" class="date-input" />
-            </div>
+			<!-- Date Picker -->
+			<div class="section">
+				<label class="section-label">
+					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+						/>
+					</svg>
+					Scouting Date
+				</label>
+				<input type="date" id="scout-date-picker" class="date-input" />
+			</div>
 
-            <!-- Scout Coverage Legend -->
-            <div class="section">
-                <label class="section-label">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Scout Coverage
-                </label>
-                <div class="legend-items" id="scout-legend">
-                    <div class="empty-state"><p>Select a date to load scouts</p></div>
-                </div>
-            </div>
+			<!-- Scout Coverage Legend -->
+			<div class="section">
+				<label class="section-label">
+					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
+						/>
+					</svg>
+					Scout Coverage
+				</label>
+				<div class="legend-items" id="scout-legend">
+					<div class="empty-state"><p>Select a date to load scouts</p></div>
+				</div>
+			</div>
 
-            <!-- Timeline -->
-            <div class="section" id="timeline-section" style="display:none">
-                <label class="section-label">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    Scout Timeline
-                </label>
-                <div id="scout-timeline"></div>
-            </div>
+			<!-- Timeline -->
+			<div class="section" id="timeline-section" style="display: none">
+				<label class="section-label">
+					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+						/>
+					</svg>
+					Scout Timeline
+				</label>
+				<div id="scout-timeline"></div>
+			</div>
 
-            <!-- Map Style -->
-            <div class="section" id="map-style-section" style="display:none">
-                <label class="section-label">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                    </svg>
-                    Map Style
-                </label>
-                <div class="style-selector">
-                    <label class="style-option"><input type="radio" name="flavor" value="light" checked><label>Light</label></label>
-                    <label class="style-option"><input type="radio" name="flavor" value="dark"><label>Dark</label></label>
-                    <label class="style-option"><input type="radio" name="flavor" value="white"><label>White</label></label>
-                    <label class="style-option"><input type="radio" name="flavor" value="grayscale"><label>Grayscale</label></label>
-                    <label class="style-option"><input type="radio" name="flavor" value="black"><label>Black</label></label>
-                </div>
-            </div>
-        </div>
-    </div>
+		</div>
+	</div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-providers/1.13.0/leaflet-providers.min.js"></script>
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
-<script src="https://unpkg.com/protomaps-leaflet@5.0.0/dist/protomaps-leaflet.js"></script>
-
 <script>
-window.onload = function () {
-    window.greenhouses_geojson = {{ greenhouses_geojson | tojson | safe }};
-    const LAT  = {{ lat | json }};
-    const LON  = {{ lon | json }};
-    const ZOOM = {{ default_zoom | json }};
-    const CSRF = "{{csrf_token}}";
+	window.onload = function () {
+	    window.greenhouses_geojson = {{ greenhouses_geojson | tojson | safe }};
+	    const LAT  = {{ lat | json }};
+	    const LON  = {{ lon | json }};
+	    const ZOOM = {{ default_zoom | json }};
+	    const CSRF = "{{csrf_token}}";
 
-    const palette = ['#ef4444','#3b82f6','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f43f5e','#22c55e','#a78bfa','#fb923c'];
+	    const palette = ['#ef4444','#3b82f6','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f43f5e','#22c55e','#a78bfa','#fb923c'];
 
-    let mapInitialized = false;
-    let protomapsLayer = null;
-    let layersControl  = null;
-    let darkFlavor     = false;
-    let abortCtrl      = null;
+	    let mapInitialized = false;
+	    let abortCtrl      = null;
 
-    window.zoneLayer      = null;
-    window.lineIdLabels   = null;
-    window.scoutLayers    = {};
-    window.scoutedBedOverlay = null;
-    window.lastScoutingData  = null;
-    window.allLatLngs = [];
-    let ghOverlay = null;
+	    window.zoneLayer      = null;
+	    window.lineIdLabels   = null;
+	    window.scoutLayers    = {};
+	    window.scoutedBedOverlay = null;
+	    window.lastScoutingData  = null;
+	    window.allLatLngs = [];
+	    let ghOverlay = null;
 
-    // Zone GeoJSON parse cache
-    const zoneCache = new Map();
+	    // Zone GeoJSON parse cache
+	    const zoneCache = new Map();
+	    // Client-side data cache: "date_greenhouse" → API response
+	    const dataCache = new Map();
 
-    const canvasRenderer = L.canvas({ padding: 0.5 });
+	    const canvasRenderer = L.canvas({ padding: 0.5 });
 
-    const sidebar   = document.getElementById('sidebar');
-    const toggleBtn = document.getElementById('toggle-sidebar');
-    toggleBtn.addEventListener('click', () => sidebar.classList.toggle('collapsed'));
+	    const sidebar   = document.getElementById('sidebar');
+	    const toggleBtn = document.getElementById('toggle-sidebar');
+	    toggleBtn.addEventListener('click', () => sidebar.classList.toggle('collapsed'));
 
-    const showLoader = () => { document.getElementById('map-loader').style.display = 'flex'; };
-    const hideLoader = () => { document.getElementById('map-loader').style.display = 'none'; };
+	    const setProgress = (pct) => {
+	        const fill = document.getElementById('map-load-fill');
+	        const status = document.getElementById('map-load-status');
+	        if (fill) fill.style.width = Math.min(100, pct) + '%';
+	        if (status) status.textContent = Math.round(Math.min(100, pct)) + '%';
+	    };
+	    const showOverlay = () => {
+	        setProgress(0, 'Initialising…');
+	        document.getElementById('map-loader').style.display = 'flex';
+	        document.getElementById('map-empty').style.display = 'none';
+	    };
+	    const hideOverlay = (empty = false) => {
+	        document.getElementById('map-loader').style.display = 'none';
+	        document.getElementById('map-empty').style.display = empty ? 'flex' : 'none';
+	    };
 
-    function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+	    // Streams the response body so we can report real download KB
+	    const streamResponse = (response, onProgress) => {
+	        const contentLength = response.headers.get('content-length');
+	        const reader = response.body.getReader();
+	        const chunks = [];
+	        let received = 0;
+	        const ESTIMATE = 600 * 1024;
+	        const read = () => reader.read().then(({ done, value }) => {
+	            if (done) {
+	                const buf = new Uint8Array(received);
+	                let pos = 0;
+	                for (const c of chunks) { buf.set(c, pos); pos += c.length; }
+	                if (onProgress) onProgress(83, 'Parsing response…');
+	                return JSON.parse(new TextDecoder().decode(buf));
+	            }
+	            chunks.push(value);
+	            received += value.length;
+	            if (onProgress) {
+	                const pct = contentLength
+	                    ? 48 + (received / +contentLength) * 33
+	                    : 48 + Math.min(received / ESTIMATE, 1) * 33;
+	                onProgress(pct);
+	            }
+	            return read();
+	        });
+	        return read();
+	    };
 
-    function parseZone(zone) {
-        if (!zoneCache.has(zone.name)) {
-            try { zoneCache.set(zone.name, JSON.parse(zone.raw_geojson)); }
-            catch { zoneCache.set(zone.name, null); }
-        }
-        return zoneCache.get(zone.name);
-    }
+	    function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
-    const generateScoutColors = data => {
-        const scouts = (data.scouting_entries || []).map(i => i.scouts_name).filter(Boolean);
-        const colors = {};
-        let idx = 0;
-        [...new Set(scouts)].forEach(n => { colors[n] = palette[idx++ % palette.length]; });
-        return colors;
-    };
+	    function parseZone(zone) {
+	        if (!zoneCache.has(zone.name)) {
+	            try { zoneCache.set(zone.name, JSON.parse(zone.raw_geojson)); }
+	            catch { zoneCache.set(zone.name, null); }
+	        }
+	        return zoneCache.get(zone.name);
+	    }
 
-    const getGeoJsonCentroid = geo => {
-        try {
-            const f = geo.features[0];
-            if (f?.geometry?.coordinates) {
-                const c = turf.centroid(f);
-                return [c.geometry.coordinates[1], c.geometry.coordinates[0]];
-            }
-        } catch {}
-        return null;
-    };
+	    const generateScoutColors = data => {
+	        const scouts = (data.scouting_entries || []).map(i => i.scouts_name).filter(Boolean);
+	        const colors = {};
+	        let idx = 0;
+	        [...new Set(scouts)].forEach(n => { colors[n] = palette[idx++ % palette.length]; });
+	        return colors;
+	    };
 
-    function getEdgeMidpoint(coords) {
-        try {
-            const pts = coords.map(c => [c[1], c[0]]);
-            let maxDist = 0, pair = [];
-            for (let i = 0; i < pts.length; i++) {
-                const p1 = pts[i], p2 = pts[(i+1) % pts.length];
-                const dist = turf.distance(turf.point([p1[1],p1[0]]), turf.point([p2[1],p2[0]]));
-                if (dist > maxDist) { maxDist = dist; pair = [p1, p2]; }
-            }
-            return [(pair[0][0]+pair[1][0])/2, (pair[0][1]+pair[1][1])/2];
-        } catch { return coords[0] ? [coords[0][1],coords[0][0]] : null; }
-    }
+	    const getGeoJsonCentroid = geo => {
+	        try {
+	            const f = geo.features[0];
+	            if (f?.geometry?.coordinates) {
+	                const c = turf.centroid(f);
+	                return [c.geometry.coordinates[1], c.geometry.coordinates[0]];
+	            }
+	        } catch {}
+	        return null;
+	    };
 
-    const addGreenhouseOverlay = () => {
-        if (ghOverlay) { window.map.removeLayer(ghOverlay); ghOverlay = null; }
-        if (!window.greenhouses_geojson?.length) return;
-        const features = [];
-        window.greenhouses_geojson.forEach(gh => {
-            if (!gh.geojson?.features) return;
-            gh.geojson.features.forEach(f => {
-                const c = JSON.parse(JSON.stringify(f));
-                c.properties = { gh_name: gh.short_name || gh.name };
-                features.push(c);
-            });
-        });
-        if (!features.length) return;
-        ghOverlay = L.geoJSON({ type:'FeatureCollection', features }, {
-            style: { fillColor:'#5b684a', fillOpacity:0.64, color:'transparent', weight:0, interactive:false }
-        }).addTo(window.map);
-        if (window.zoneLayer) window.zoneLayer.bringToFront();
-    };
+	    function getEdgeMidpoint(coords) {
+	        try {
+	            const pts = coords.map(c => [c[1], c[0]]);
+	            let maxDist = 0, pair = [];
+	            for (let i = 0; i < pts.length; i++) {
+	                const p1 = pts[i], p2 = pts[(i+1) % pts.length];
+	                const dist = turf.distance(turf.point([p1[1],p1[0]]), turf.point([p2[1],p2[0]]));
+	                if (dist > maxDist) { maxDist = dist; pair = [p1, p2]; }
+	            }
+	            return [(pair[0][0]+pair[1][0])/2, (pair[0][1]+pair[1][1])/2];
+	        } catch { return coords[0] ? [coords[0][1],coords[0][0]] : null; }
+	    }
 
-    const renderZones = data => {
-        addGreenhouseOverlay();
-        if (window.zoneLayer) { window.map.removeLayer(window.zoneLayer); window.zoneLayer = null; }
-        if (window.lineIdLabels) { window.map.removeLayer(window.lineIdLabels); window.lineIdLabels = null; }
+	    const addGreenhouseOverlay = () => {
+	        if (ghOverlay) { window.map.removeLayer(ghOverlay); ghOverlay = null; }
+	        if (!window.greenhouses_geojson?.length) return;
+	        const features = [];
+	        window.greenhouses_geojson.forEach(gh => {
+	            if (!gh.geojson?.features) return;
+	            gh.geojson.features.forEach(f => {
+	                const c = JSON.parse(JSON.stringify(f));
+	                c.properties = { gh_name: gh.short_name || gh.name };
+	                features.push(c);
+	            });
+	        });
+	        if (!features.length) return;
+	        ghOverlay = L.geoJSON({ type:'FeatureCollection', features }, {
+	            style: { fillColor:'#5b684a', fillOpacity:0.64, color:'transparent', weight:0, interactive:false }
+	        }).addTo(window.map);
+	        if (window.zoneLayer) window.zoneLayer.bringToFront();
+	    };
 
-        const lines = {};
-        (data.all_zones_geojson || []).forEach(zone => {
-            const geo = parseZone(zone);
-            if (!geo?.features) return;
-            const ghName = zone.name.split(' - ')[0];
-            geo.features.forEach(f => {
-                const lid = f.properties?.line_id;
-                const key = `${ghName}_line_${lid}`;
-                f.properties.zone_name = zone.name;
-                if (!lines[key]) lines[key] = [];
-                lines[key].push(f);
-            });
-        });
+	    const renderZones = data => {
+	        addGreenhouseOverlay();
+	        if (window.zoneLayer) { window.map.removeLayer(window.zoneLayer); window.zoneLayer = null; }
+	        if (window.lineIdLabels) { window.map.removeLayer(window.lineIdLabels); window.lineIdLabels = null; }
 
-        window.lineIdLabels = L.layerGroup();
-        Object.keys(lines).forEach(key => {
-            const feats = lines[key];
-            if (!feats.length) return;
-            feats.sort((a,b) => a.properties.zone_id - b.properties.zone_id);
-            const coords = feats.flatMap(f => f.geometry.coordinates);
-            const lid = feats[0].properties.line_id;
-            const isOdd = parseInt(lid) % 2 !== 0;
-            const pt = isOdd ? coords[0] : coords[coords.length-1];
-            const lbl = L.marker([pt[1],pt[0]], { icon: L.divIcon({
-                className:'line-id-label',
-                html:`<div style="font-size:6px;font-weight:200;color:${darkFlavor?'#fff':'#000'};transform:rotate(45deg)">${lid}</div>`,
-                iconSize:[20,10], iconAnchor:[0,0]
-            })});
-            window.lineIdLabels.addLayer(lbl);
-        });
+	        const lines = {};
+	        (data.all_zones_geojson || []).forEach(zone => {
+	            const geo = parseZone(zone);
+	            if (!geo?.features) return;
+	            const ghName = zone.name.split(' - ')[0];
+	            geo.features.forEach(f => {
+	                const lid = f.properties?.line_id;
+	                const key = `${ghName}_line_${lid}`;
+	                f.properties.zone_name = zone.name;
+	                if (!lines[key]) lines[key] = [];
+	                lines[key].push(f);
+	            });
+	        });
 
-        const allFeats = { type:'FeatureCollection', features: Object.values(lines).flat() };
-        window.zoneLayer = L.geoJSON(allFeats, {
-            renderer: canvasRenderer,
-            style: { color: darkFlavor?'#fff':'#1e293b', weight:0.7, opacity:0.6, fill:false },
-            onEachFeature: (f, layer) => {
-                if (f.properties?.zone_name) {
-                    const parts = f.properties.zone_name.split(' - ');
-                    const html = parts.length >= 4
-                        ? `<div style='font-size:0.75rem;line-height:1.5;'><strong>${parts[0]}</strong><br>${parts.slice(1).join(' – ')}</div>`
-                        : f.properties.zone_name;
-                    layer.bindTooltip(html);
-                }
-            }
-        });
+	        window.lineIdLabels = L.layerGroup();
+	        Object.keys(lines).forEach(key => {
+	            const feats = lines[key];
+	            if (!feats.length) return;
+	            feats.sort((a,b) => a.properties.zone_id - b.properties.zone_id);
+	            const coords = feats.flatMap(f => f.geometry.coordinates);
+	            const lid = feats[0].properties.line_id;
+	            const isOdd = parseInt(lid) % 2 !== 0;
+	            const pt = isOdd ? coords[0] : coords[coords.length-1];
+	            const lbl = L.marker([pt[1],pt[0]], { icon: L.divIcon({
+	                className:'line-id-label',
+	                html:`<div style="font-size:6px;font-weight:200;color:#334155;transform:rotate(45deg)">${lid}</div>`,
+	                iconSize:[20,10], iconAnchor:[0,0]
+	            })});
+	            window.lineIdLabels.addLayer(lbl);
+	        });
 
-        window.map.on('zoomend', () => {
-            const z = window.map.getZoom();
-            if (z >= 15) { if (!window.map.hasLayer(window.zoneLayer)) window.zoneLayer.addTo(window.map); }
-            else { if (window.zoneLayer && window.map.hasLayer(window.zoneLayer)) window.map.removeLayer(window.zoneLayer); }
-            if (z >= 19) { if (!window.map.hasLayer(window.lineIdLabels)) window.lineIdLabels.addTo(window.map); }
-            else { if (window.lineIdLabels && window.map.hasLayer(window.lineIdLabels)) window.map.removeLayer(window.lineIdLabels); }
-        });
+	        const allFeats = { type:'FeatureCollection', features: Object.values(lines).flat() };
+	        window.zoneLayer = L.geoJSON(allFeats, {
+	            renderer: canvasRenderer,
+	            style: { color: '#1e293b', weight:0.7, opacity:0.6, fill:false },
+	            onEachFeature: (f, layer) => {
+	                if (f.properties?.zone_name) {
+	                    const parts = f.properties.zone_name.split(' - ');
+	                    const html = parts.length >= 4
+	                        ? `<div style='font-size:0.75rem;line-height:1.5;'><strong>${parts[0]}</strong><br>${parts.slice(1).join(' – ')}</div>`
+	                        : f.properties.zone_name;
+	                    layer.bindTooltip(html);
+	                }
+	            }
+	        });
 
-        const z = window.map.getZoom();
-        if (z >= 15) window.zoneLayer.addTo(window.map);
-        if (z >= 19) window.lineIdLabels.addTo(window.map);
-    };
+	        window.map.on('zoomend', () => {
+	            const z = window.map.getZoom();
+	            if (z >= 15) { if (!window.map.hasLayer(window.zoneLayer)) window.zoneLayer.addTo(window.map); }
+	            else { if (window.zoneLayer && window.map.hasLayer(window.zoneLayer)) window.map.removeLayer(window.zoneLayer); }
+	            if (z >= 19) { if (!window.map.hasLayer(window.lineIdLabels)) window.lineIdLabels.addTo(window.map); }
+	            else { if (window.lineIdLabels && window.map.hasLayer(window.lineIdLabels)) window.map.removeLayer(window.lineIdLabels); }
+	        });
 
-    const renderScoutedBeds = (scoutingData, zonesGeojson, scoutColors) => {
-        const zoneScoutMap = {};
-        scoutingData.forEach(entry => {
-            if (!zoneScoutMap[entry.zone]) zoneScoutMap[entry.zone] = { scout: entry.scouts_name, count: 0, latestEntry: null };
-            zoneScoutMap[entry.zone].count++;
-            if (!zoneScoutMap[entry.zone].latestEntry || entry.creation > zoneScoutMap[entry.zone].latestEntry) zoneScoutMap[entry.zone].latestEntry = entry.creation;
-            if (!window.scoutLayers[entry.scouts_name]) window.scoutLayers[entry.scouts_name] = L.layerGroup();
-        });
+	        const z = window.map.getZoom();
+	        if (z >= 15) window.zoneLayer.addTo(window.map);
+	        if (z >= 19) window.lineIdLabels.addTo(window.map);
+	    };
 
-        const zoneMap = new Map((zonesGeojson || []).map(z => [z.name, z]));
-        Object.entries(zoneScoutMap).forEach(([zoneName, info]) => {
-            const zone = zoneMap.get(zoneName);
-            if (!zone) return;
-            const geo = parseZone(zone);
-            if (!geo?.features) return;
-            try {
-                const coords = geo.features[0].geometry.coordinates.map(c => [c[1],c[0]]);
-                const color = scoutColors[info.scout];
-                const line = L.polyline(coords, { color, weight:0, opacity:1, pane:'overlayPane' });
-                line.bindTooltip(`<div style='font-size:0.8125rem;line-height:1.4;'><strong>${zone.name}</strong><br>${info.scout}<br>${info.count} entries</div>`);
-                window.scoutLayers[info.scout].addLayer(line);
-                window.allLatLngs.push(...coords);
-                if (!window.scoutedBedOverlay.hasLayer(window.scoutLayers[info.scout])) window.scoutedBedOverlay.addLayer(window.scoutLayers[info.scout]);
-            } catch {}
-        });
-    };
+	    const renderScoutedBeds = (scoutingData, zonesGeojson, scoutColors) => {
+	        const zoneScoutMap = {};
+	        scoutingData.forEach(entry => {
+	            if (!zoneScoutMap[entry.zone]) zoneScoutMap[entry.zone] = { scout: entry.scouts_name, count: 0, latestEntry: null };
+	            zoneScoutMap[entry.zone].count++;
+	            if (!zoneScoutMap[entry.zone].latestEntry || entry.creation > zoneScoutMap[entry.zone].latestEntry) zoneScoutMap[entry.zone].latestEntry = entry.creation;
+	            if (!window.scoutLayers[entry.scouts_name]) window.scoutLayers[entry.scouts_name] = L.layerGroup();
+	        });
 
-    const renderScoutFlowLines = (scoutingEntries, zonesGeojson, scoutColors) => {
-        const zoneMap = new Map((zonesGeojson || []).map(z => [z.name, z]));
-        const movement = new Map();
+	        const zoneMap = new Map((zonesGeojson || []).map(z => [z.name, z]));
+	        Object.entries(zoneScoutMap).forEach(([zoneName, info]) => {
+	            const zone = zoneMap.get(zoneName);
+	            if (!zone) return;
+	            const geo = parseZone(zone);
+	            if (!geo?.features) return;
+	            try {
+	                const coords = geo.features[0].geometry.coordinates.map(c => [c[1],c[0]]);
+	                const color = scoutColors[info.scout];
+	                const line = L.polyline(coords, { color, weight:0, opacity:1, pane:'overlayPane' });
+	                line.bindTooltip(`<div style='font-size:0.8125rem;line-height:1.4;'><strong>${zone.name}</strong><br>${info.scout}<br>${info.count} entries</div>`);
+	                window.scoutLayers[info.scout].addLayer(line);
+	                window.allLatLngs.push(...coords);
+	                if (!window.scoutedBedOverlay.hasLayer(window.scoutLayers[info.scout])) window.scoutedBedOverlay.addLayer(window.scoutLayers[info.scout]);
+	            } catch {}
+	        });
+	    };
 
-        [...scoutingEntries].sort((a,b) => new Date(a.creation) - new Date(b.creation)).forEach(entry => {
-            const zone = zoneMap.get(entry.zone);
-            if (!zone) return;
-            const geo = parseZone(zone);
-            if (!geo) return;
-            try {
-                const centroid = getGeoJsonCentroid(geo);
-                if (centroid) {
-                    if (!movement.has(entry.scouts_name)) movement.set(entry.scouts_name, []);
-                    const path = movement.get(entry.scouts_name);
-                    const last = path.slice(-1)[0];
-                    if (!last || last.zoneName !== entry.zone) {
-                        path.push({ zoneName: entry.zone, coords: geo.features[0].geometry.coordinates, centroid });
-                    }
-                }
-            } catch (e) { console.warn('flow error', e); }
-        });
+	    const renderScoutFlowLines = (scoutingEntries, zonesGeojson, scoutColors) => {
+	        const zoneMap = new Map((zonesGeojson || []).map(z => [z.name, z]));
+	        const movement = new Map();
 
-        movement.forEach((visits, scoutName) => {
-            const color = scoutColors[scoutName] || palette[0];
-            if (!window.scoutLayers[scoutName]) window.scoutLayers[scoutName] = L.layerGroup();
-            const group = window.scoutLayers[scoutName];
-            for (let i = 0; i < visits.length - 1; i++) {
-                const start = getEdgeMidpoint(visits[i].coords);
-                const end   = getEdgeMidpoint(visits[i+1].coords);
-                if (!start || !end) continue;
-                const line = L.polyline([start, end], { color, weight:2.5, opacity:0.8, smoothFactor:1.2, lineJoin:'round' });
-                line.bindTooltip(`<div style='font-size:0.8125rem;'><strong>${scoutName}</strong><br>${visits[i].zoneName} → ${visits[i+1].zoneName}</div>`);
-                group.addLayer(line);
-            }
-        });
-    };
+	        [...scoutingEntries].sort((a,b) => new Date(a.creation) - new Date(b.creation)).forEach(entry => {
+	            const zone = zoneMap.get(entry.zone);
+	            if (!zone) return;
+	            const geo = parseZone(zone);
+	            if (!geo) return;
+	            try {
+	                const centroid = getGeoJsonCentroid(geo);
+	                if (centroid) {
+	                    if (!movement.has(entry.scouts_name)) movement.set(entry.scouts_name, []);
+	                    const path = movement.get(entry.scouts_name);
+	                    const last = path.slice(-1)[0];
+	                    if (!last || last.zoneName !== entry.zone) {
+	                        path.push({ zoneName: entry.zone, coords: geo.features[0].geometry.coordinates, centroid });
+	                    }
+	                }
+	            } catch (e) { console.warn('flow error', e); }
+	        });
 
-    const renderScoutLegend = scoutColors => {
-        const legend = document.getElementById('scout-legend');
-        legend.innerHTML = '';
-        if (!Object.keys(window.scoutLayers).length) {
-            legend.innerHTML = '<div class="empty-state"><p>No scouts found for this date</p></div>';
-            return;
-        }
-        Object.keys(window.scoutLayers).forEach(name => {
-            const color = scoutColors[name];
-            const item = document.createElement('label');
-            item.className = 'legend-item';
-            item.innerHTML = `<input type="checkbox" data-scout="${name}" checked>
-                <span class="color-swatch" style="background:${color}"></span>
-                <span class="legend-label">${name}</span>`;
-            item.querySelector('input').addEventListener('change', e => {
-                const layer = window.scoutLayers[e.target.dataset.scout];
-                if (layer) {
-                    if (e.target.checked) window.scoutedBedOverlay.addLayer(layer);
-                    else window.scoutedBedOverlay.removeLayer(layer);
-                }
-            });
-            legend.appendChild(item);
-        });
-    };
+	        movement.forEach((visits, scoutName) => {
+	            const color = scoutColors[scoutName] || palette[0];
+	            if (!window.scoutLayers[scoutName]) window.scoutLayers[scoutName] = L.layerGroup();
+	            const group = window.scoutLayers[scoutName];
+	            for (let i = 0; i < visits.length - 1; i++) {
+	                const start = getEdgeMidpoint(visits[i].coords);
+	                const end   = getEdgeMidpoint(visits[i+1].coords);
+	                if (!start || !end) continue;
+	                const line = L.polyline([start, end], { color, weight:2.5, opacity:0.8, smoothFactor:1.2, lineJoin:'round' });
+	                line.bindTooltip(`<div style='font-size:0.8125rem;'><strong>${scoutName}</strong><br>${visits[i].zoneName} → ${visits[i+1].zoneName}</div>`);
+	                group.addLayer(line);
+	            }
+	        });
+	    };
 
-    const renderTimeline = data => {
-        const timeline = data.scout_movement_timeline || [];
-        const section  = document.getElementById('timeline-section');
-        const container = document.getElementById('scout-timeline');
+	    const renderScoutLegend = scoutColors => {
+	        const legend = document.getElementById('scout-legend');
+	        legend.innerHTML = '';
+	        if (!Object.keys(window.scoutLayers).length) {
+	            legend.innerHTML = '<div class="empty-state"><p>No scouts found for this date</p></div>';
+	            return;
+	        }
+	        Object.keys(window.scoutLayers).forEach(name => {
+	            const color = scoutColors[name];
+	            const item = document.createElement('label');
+	            item.className = 'legend-item';
+	            item.innerHTML = `<input type="checkbox" data-scout="${name}" checked>
+	                <span class="color-swatch" style="background:${color}"></span>
+	                <span class="legend-label">${name}</span>`;
+	            item.querySelector('input').addEventListener('change', e => {
+	                const layer = window.scoutLayers[e.target.dataset.scout];
+	                if (layer) {
+	                    if (e.target.checked) window.scoutedBedOverlay.addLayer(layer);
+	                    else window.scoutedBedOverlay.removeLayer(layer);
+	                }
+	            });
+	            legend.appendChild(item);
+	        });
+	    };
 
-        if (!timeline.length) { section.style.display = 'none'; return; }
-        section.style.display = 'block';
-        container.innerHTML = '';
+	    const renderTimeline = data => {
+	        const timeline = data.scout_movement_timeline || [];
+	        const section  = document.getElementById('timeline-section');
+	        const container = document.getElementById('scout-timeline');
 
-        const allStarts = timeline.map(t => t.start).sort();
-        const allEnds   = timeline.map(t => t.end).sort();
-        const dayStart  = allStarts[0] || '00:00:00';
-        const dayEnd    = allEnds[allEnds.length-1] || '23:59:59';
+	        if (!timeline.length) { section.style.display = 'none'; return; }
+	        section.style.display = 'block';
+	        container.innerHTML = '';
 
-        const toSeconds = s => { const [h,m,sec] = String(s).split(':').map(Number); return h*3600+m*60+(sec||0); };
-        const dayStartS = toSeconds(dayStart);
-        const dayRange  = Math.max(toSeconds(dayEnd) - dayStartS, 1);
+	        const allStarts = timeline.map(t => t.start).sort();
+	        const allEnds   = timeline.map(t => t.end).sort();
+	        const dayStart  = allStarts[0] || '00:00:00';
+	        const dayEnd    = allEnds[allEnds.length-1] || '23:59:59';
 
-        timeline.forEach(t => {
-            const startS  = Math.max(toSeconds(t.start) - dayStartS, 0);
-            const endS    = Math.max(toSeconds(t.end)   - dayStartS, 0);
-            const leftPct  = (startS / dayRange) * 100;
-            const widthPct = Math.max(((endS - startS) / dayRange) * 100, 2);
-            const formatT  = s => String(s).slice(0,5);
+	        const toSeconds = s => { const [h,m,sec] = String(s).split(':').map(Number); return h*3600+m*60+(sec||0); };
+	        const dayStartS = toSeconds(dayStart);
+	        const dayRange  = Math.max(toSeconds(dayEnd) - dayStartS, 1);
 
-            const el = document.createElement('div');
-            el.className = 'timeline-item';
-            el.innerHTML = `
-                <div class="timeline-top">
-                    <span class="timeline-name">${t.name}</span>
-                    <span class="timeline-gh">${(t.greenhouse||'').split(' - ')[0]}</span>
-                </div>
-                <div class="timeline-time">${formatT(t.start)} – ${formatT(t.end)} · ${t.beds} beds · ${(t.minutesPerBed||0).toFixed(1)} min/bed</div>
-                <div class="timeline-bar">
-                    <div class="timeline-bar-fill" style="margin-left:${leftPct.toFixed(1)}%;width:${widthPct.toFixed(1)}%"></div>
-                </div>`;
-            container.appendChild(el);
-        });
-    };
+	        timeline.forEach(t => {
+	            const startS  = Math.max(toSeconds(t.start) - dayStartS, 0);
+	            const endS    = Math.max(toSeconds(t.end)   - dayStartS, 0);
+	            const leftPct  = (startS / dayRange) * 100;
+	            const widthPct = Math.max(((endS - startS) / dayRange) * 100, 2);
+	            const formatT  = s => String(s).slice(0,5);
 
-    const updateKPIs = data => {
-        const s = data.scouting_summary || {};
-        document.getElementById('kpi-scouts').textContent   = s.total_unique_scouts ?? '—';
-        document.getElementById('kpi-beds').textContent     = s.total_beds_covered ?? '—';
-        document.getElementById('kpi-zones').textContent    = (data.scouting_entries || []).length;
-        const mpb = s.average_minutes_per_bed;
-        document.getElementById('kpi-min-bed').textContent  = mpb ? mpb.toFixed(1) : '—';
-    };
+	            const el = document.createElement('div');
+	            el.className = 'timeline-item';
+	            el.innerHTML = `
+	                <div class="timeline-top">
+	                    <span class="timeline-name">${t.name}</span>
+	                    <span class="timeline-gh">${(t.greenhouse||'').split(' - ')[0]}</span>
+	                </div>
+	                <div class="timeline-time">${formatT(t.start)} – ${formatT(t.end)} · ${t.beds} beds · ${(t.minutesPerBed||0).toFixed(1)} min/bed</div>
+	                <div class="timeline-bar">
+	                    <div class="timeline-bar-fill" style="margin-left:${leftPct.toFixed(1)}%;width:${widthPct.toFixed(1)}%"></div>
+	                </div>`;
+	            container.appendChild(el);
+	        });
+	    };
 
-    const fetchAllData = (date, greenhouse) => {
-        if (abortCtrl) abortCtrl.abort();
-        abortCtrl = new AbortController();
+	    const updateKPIs = data => {
+	        const s = data.scouting_summary || {};
+	        document.getElementById('kpi-scouts').textContent   = s.total_unique_scouts ?? '—';
+	        document.getElementById('kpi-beds').textContent     = s.total_beds_covered ?? '—';
+	        document.getElementById('kpi-zones').textContent    = (data.scouting_entries || []).length;
+	        const mpb = s.average_minutes_per_bed;
+	        document.getElementById('kpi-min-bed').textContent  = mpb ? mpb.toFixed(1) : '—';
+	    };
 
-        if (window.scoutedBedOverlay) window.map.removeLayer(window.scoutedBedOverlay);
-        window.scoutLayers = {};
-        window.allLatLngs  = [];
-        document.getElementById('scout-legend').innerHTML = '';
+	    const _renderScoutData = (allData, onProgress = () => {}) => {
+	        window.lastScoutingData = allData;
+	        if (window.scoutedBedOverlay) window.map.removeLayer(window.scoutedBedOverlay);
+	        window.scoutLayers = {};
+	        window.allLatLngs  = [];
+	        document.getElementById('scout-legend').innerHTML = '';
+	        const scoutColors = generateScoutColors(allData);
+	        window.scoutedBedOverlay = L.layerGroup().addTo(window.map);
+	        onProgress(86, 'Drawing zones…');
+	        renderZones(allData);
+	        onProgress(92, 'Drawing scout paths…');
+	        renderScoutFlowLines(allData.scouting_entries, allData.all_zones_geojson || [], scoutColors);
+	        onProgress(95, 'Mapping scouted beds…');
+	        renderScoutedBeds(allData.scouting_entries, allData.all_zones_geojson || [], scoutColors);
+	        onProgress(98, 'Updating stats…');
+	        renderScoutLegend(scoutColors);
+	        renderTimeline(allData);
+	        updateKPIs(allData);
+	        onProgress(100, 'Complete');
+	        setTimeout(() => hideOverlay(false), 350);
+	    };
 
-        showLoader();
+	    const fetchAllData = (date, greenhouse, background = false) => {
+	        const cacheKey = `${date}_${greenhouse || ''}`;
 
-        const body = { date };
-        if (greenhouse) body.greenhouse = greenhouse;
+	        // Cache hit — render immediately with progress through render stages
+	        if (dataCache.has(cacheKey)) {
+	            if (!background) {
+	                showOverlay();
+	                _renderScoutData(dataCache.get(cacheKey), setProgress);
+	            }
+	            return;
+	        }
 
-        fetch('/api/method/upande_scp.serverscripts.get_scouting_analysis.getScoutingAnalysis', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': CSRF },
-            body: JSON.stringify(body),
-            signal: abortCtrl.signal
-        })
-        .then(r => r.ok ? r.json() : Promise.reject(r))
-        .then(r => {
-            const allData = r.message || r.data;
-            if (!allData) { document.getElementById('scout-legend').innerHTML = '<div class="empty-state"><p>No data</p></div>'; return; }
-            window.lastScoutingData = allData;
-            allData.scouting_entries = (allData.scouting_entries || []).filter(e => e.scouts_name);
+	        const ctrl = background ? new AbortController() : (abortCtrl && abortCtrl.abort(), abortCtrl = new AbortController(), abortCtrl);
 
-            const scoutColors = generateScoutColors(allData);
-            window.scoutedBedOverlay = L.layerGroup().addTo(window.map);
+	        if (!background) showOverlay();
 
-            renderZones(allData);
-            renderScoutFlowLines(allData.scouting_entries, allData.all_zones_geojson || [], scoutColors);
-            renderScoutedBeds(allData.scouting_entries, allData.all_zones_geojson || [], scoutColors);
-            renderScoutLegend(scoutColors);
-            renderTimeline(allData);
-            updateKPIs(allData);
-        })
-        .catch(err => {
-            if (err.name === 'AbortError') return;
-            console.error('Scout data error:', err);
-            document.getElementById('scout-legend').innerHTML = `<div class="empty-state"><p>Error loading data</p></div>`;
-        })
-        .finally(hideLoader);
-    };
+	        // Simulate server-side progress until first byte arrives
+	        let serverPct = 5, serverTimer = null;
+	        if (!background) {
+	            setProgress(serverPct, 'Sending request…');
+	            serverTimer = setInterval(() => {
+	                serverPct = Math.min(serverPct + 1.2, 45);
+	                setProgress(serverPct, 'Server processing…');
+	            }, 150);
+	        }
 
-    const debouncedFetch = debounce((date, gh) => fetchAllData(date, gh), 300);
+	        const body = { date };
+	        if (greenhouse) body.greenhouse = greenhouse;
 
-    const initializeMap = () => {
-        if (mapInitialized) return;
-        window.map = L.map('map', { zoomSnap:0.1, zoomDelta:0.1, maxZoom:22.4, zoomControl:true });
-        mapInitialized = true;
+	        fetch('/api/method/upande_scp.serverscripts.get_scouting_analysis.getScoutingAnalysis', {
+	            method: 'POST',
+	            headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': CSRF },
+	            body: JSON.stringify(body),
+	            signal: ctrl.signal
+	        })
+	        .then(r => {
+	            if (serverTimer) { clearInterval(serverTimer); serverTimer = null; }
+	            if (!r.ok) throw new Error('HTTP ' + r.status);
+	            if (!background) setProgress(48, 'Downloading…');
+	            return streamResponse(r, background ? null : setProgress);
+	        })
+	        .then(r => {
+	            const allData = r.message || r.data;
+	            const entries = (allData?.scouting_entries || []).filter(e => e.scouts_name);
+	            if (!entries.length) {
+	                if (!background) hideOverlay(true);
+	                return;
+	            }
+	            allData.scouting_entries = entries;
+	            dataCache.set(cacheKey, allData);
+	            if (!background) {
+	                _renderScoutData(allData, setProgress);
+	                prefetchPastDays(date, greenhouse);
+	            }
+	        })
+	        .catch(err => {
+	            if (serverTimer) clearInterval(serverTimer);
+	            if (err.name === 'AbortError') return;
+	            if (!background) { console.error('Scout data error:', err); hideOverlay(true); }
+	        });
+	    };
 
-        const pmtilesUrl = 'https://res.cloudinary.com/dorft5vxy/raw/upload/v1757410567/eldama-ravine_gdtrsv.pmtiles';
-        const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom:25 });
-        protomapsLayer = protomapsL.leafletLayer({ url:pmtilesUrl, flavor:'light', attribution:'© Protomaps © OpenStreetMap' });
-        googleSat.addTo(window.map);
-        layersControl = L.control.layers({ 'Satellite':googleSat, 'Protomaps':protomapsLayer }, {}, { collapsed:false, position:'topleft' }).addTo(window.map);
+	    const prefetchPastDays = (fromDate, greenhouse) => {
+	        const d = new Date(fromDate + 'T00:00:00');
+	        for (let i = 1; i <= 3; i++) {
+	            d.setDate(d.getDate() - 1);
+	            const day = d.toISOString().slice(0, 10);
+	            if (!dataCache.has(`${day}_${greenhouse || ''}`)) {
+	                fetchAllData(day, greenhouse, true);
+	            }
+	        }
+	    };
 
-        window.map.on('baselayerchange', e => {
-            document.getElementById('map-style-section').style.display = e.name === 'Protomaps' ? 'flex' : 'none';
-        });
+	    const debouncedFetch = debounce((date, gh) => fetchAllData(date, gh), 300);
 
-        document.querySelectorAll('input[name="flavor"]').forEach(r => {
-            r.addEventListener('change', e => {
-                darkFlavor = ['dark','black'].includes(e.target.value);
-                document.documentElement.setAttribute('data-theme', darkFlavor ? 'dark' : 'light');
-                if (window.map.hasLayer(protomapsLayer)) { window.map.removeLayer(protomapsLayer); layersControl.removeLayer(protomapsLayer); }
-                protomapsLayer = protomapsL.leafletLayer({ url:pmtilesUrl, flavor:e.target.value, attribution:'© Protomaps © OpenStreetMap' });
-                protomapsLayer.addTo(window.map);
-                layersControl.addBaseLayer(protomapsLayer, 'Protomaps');
-                if (window.lastScoutingData) renderZones(window.lastScoutingData);
-            });
-        });
+	    const initializeMap = () => {
+	        if (mapInitialized) return;
+	        window.map = L.map('map', { zoomSnap:0.1, zoomDelta:0.1, maxZoom:22.4, zoomControl:true });
+	        mapInitialized = true;
 
-        window.map.setView([LAT, LON], ZOOM);
+	        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+	            maxZoom: 19, attribution: '© OpenStreetMap contributors'
+	        }).addTo(window.map);
 
-        const today = new Date().toISOString().slice(0, 10);
-        document.getElementById('scout-date-picker').value = today;
+	        window.map.setView([LAT, LON], ZOOM);
 
-        fetchAllData(today, '');
-    };
+	        const today = new Date().toISOString().slice(0, 10);
+	        document.getElementById('scout-date-picker').value = today;
 
-    // Event listeners
-    document.getElementById('scout-date-picker').addEventListener('change', e => {
-        debouncedFetch(e.target.value, document.getElementById('gh-select').value);
-    });
-    document.getElementById('gh-select').addEventListener('change', e => {
-        zoneCache.clear();
-        debouncedFetch(document.getElementById('scout-date-picker').value, e.target.value);
-    });
+	        fetchAllData(today, '');
+	    };
 
-    initializeMap();
-};
+	    // Event listeners
+	    document.getElementById('scout-date-picker').addEventListener('change', e => {
+	        debouncedFetch(e.target.value, document.getElementById('gh-select').value);
+	    });
+	    document.getElementById('gh-select').addEventListener('change', e => {
+	        zoneCache.clear();
+	        debouncedFetch(document.getElementById('scout-date-picker').value, e.target.value);
+	    });
+
+	    initializeMap();
+	};
 </script>
 {% endblock %}

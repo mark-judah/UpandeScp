@@ -1,1113 +1,917 @@
-{% extends "upande_scp/www/map_base.html" %}
-
-{% block head %}
+{% extends "upande_scp/www/map_base.html" %} {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-    #map-page {
-        height: 100%;
-        width: 100%;
-        display: flex;
-        position: relative;
-    }
+	#map-page {
+		height: 100%;
+		width: 100%;
+		display: flex;
+		position: relative;
+	}
 
-    #map-container {
-        flex: 1;
-        position: relative;
-        z-index: 1;
-    }
+	#map-container {
+		flex: 1;
+		position: relative;
+		z-index: 1;
+	}
 
-    #map {
-        height: 100%;
-        width: 100%;
-    }
+	#map {
+		height: 100%;
+		width: 100%;
+	}
 
-    #sidebar {
-        position: absolute;
-        right: 0;
-        top: 0;
-        width: 380px;
-        height: 100%;
-        background: var(--sidebar-bg);
-        backdrop-filter: blur(16px);
-        border-left: 1px solid var(--border);
-        box-shadow: var(--sidebar-shadow);
-        z-index: 1000;
-        display: flex;
-        flex-direction: column;
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        overflow: hidden;
-    }
+	#sidebar {
+		position: absolute;
+		right: 0;
+		top: 0;
+		width: 380px;
+		height: 100%;
+		background: var(--fg-color, #ffffff);
+		border-left: 1px solid var(--border-color, #e5e7eb);
+		box-shadow: var(--shadow-md);
+		z-index: 1000;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
 
-    #sidebar.collapsed {
-        transform: translateX(100%);
-    }
+	#sidebar.collapsed {
+		transform: translateX(100%);
+	}
 
-    .sidebar-toggle {
-        position: absolute;
-        left: -48px;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 48px;
-        height: 96px;
-        background: var(--sidebar-bg);
-        border: 1px solid var(--border);
-        border-right: none;
-        border-radius: 8px 0 0 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        box-shadow: -2px 0 8px rgba(0, 0, 0, 0.05);
-    }
+	.sidebar-toggle {
+		position: absolute;
+		left: -48px;
+		top: 50%;
+		transform: translateY(-50%);
+		width: 48px;
+		height: 96px;
+		background: var(--fg-color, #ffffff);
+		border: 1px solid var(--border-color, #e5e7eb);
+		border-right: none;
+		border-radius: var(--radius-card) 0 0 var(--radius-card);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+	}
 
-    .sidebar-toggle:hover {
-        background: var(--hover);
-        left: -52px;
-    }
+	.sidebar-toggle:hover {
+		background: var(--hover);
+	}
 
-    .sidebar-toggle svg {
-        width: 24px;
-        height: 24px;
-        color: var(--text);
-        opacity: 0.7;
-        transition: transform 0.3s ease;
-    }
+	.sidebar-toggle svg {
+		width: 24px;
+		height: 24px;
+		color: var(--text);
+		opacity: 0.7;
+	}
 
-    #sidebar.collapsed .sidebar-toggle svg {
-        transform: rotate(180deg);
-    }
+	#sidebar.collapsed .sidebar-toggle svg {
+		transform: rotate(180deg);
+	}
 
-    .sidebar-content {
-        flex: 1;
-        overflow-y: auto;
-        padding: 1.25rem;
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
+	.sidebar-content {
+		flex: 1;
+		overflow-y: auto;
+		padding: 1.25rem;
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
 
-    .sidebar-content::-webkit-scrollbar {
-        width: 6px;
-    }
+	.sidebar-content::-webkit-scrollbar {
+		width: 6px;
+	}
 
-    .sidebar-content::-webkit-scrollbar-track {
-        background: transparent;
-    }
+	.sidebar-content::-webkit-scrollbar-track {
+		background: transparent;
+	}
 
-    .sidebar-content::-webkit-scrollbar-thumb {
-        background: var(--border);
-        border-radius: 3px;
-    }
+	.sidebar-content::-webkit-scrollbar-thumb {
+		background: var(--border);
+		border-radius: 3px;
+	}
 
-    .section {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-    }
+	.section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
 
-    .section-label {
-        font-size: 0.875rem;
-        font-weight: 600;
-        color: var(--text);
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
+	.section-label {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--text);
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
 
-    .section-label svg {
-        width: 16px;
-        height: 16px;
-        opacity: 0.7;
-    }
+	.section-label svg {
+		width: 16px;
+		height: 16px;
+		opacity: 0.7;
+	}
 
-    .week-picker {
-        padding: 0.75rem 1rem;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--bg);
-        color: var(--text);
-        font-size: 0.9375rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
+	.week-picker {
+		padding: 0.75rem 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-input);
+		background: var(--panel-bg);
+		color: var(--text);
+		font-size: 0.9375rem;
+		cursor: pointer;
+	}
 
-    .week-picker:hover {
-        border-color: var(--accent);
-    }
+	.week-picker:hover {
+		filter: brightness(0.98);
+	}
 
-    .week-picker:focus {
-        outline: none;
-        border-color: var(--accent);
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    }
+	.week-picker:focus {
+		outline: none;
+		border-color: var(--accent);
+		box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+	}
 
-    .filter-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
+	.filter-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
 
-    .filter-tabs {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        padding: 0.5rem;
-        background: var(--bg);
-        border-radius: 8px;
-    }
+	.filter-tabs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		padding: 0.5rem;
+		background: var(--panel-bg);
+		border-radius: var(--radius-card);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow-sm);
+	}
 
-    .filter-btn {
-        flex: 1;
-        min-width: calc(50% - 0.25rem);
-        padding: 0.625rem 0.875rem;
-        border: 1.5px solid var(--border);
-        background: var(--sidebar-bg);
-        color: var(--text);
-        font-size: 0.8125rem;
-        font-weight: 600;
-        border-radius: 6px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        text-align: center;
-    }
+	.filter-btn {
+		flex: 1;
+		min-width: calc(50% - 0.25rem);
+		padding: 0.625rem 0.875rem;
+		border: 1.5px solid var(--border);
+		background: var(--panel-bg);
+		color: var(--text);
+		font-size: 0.8125rem;
+		font-weight: 600;
+		border-radius: var(--radius-input);
+		cursor: pointer;
+		text-align: center;
+	}
 
-    .filter-btn:hover:not(.active) {
-        border-color: var(--accent);
-        transform: translateY(-1px);
-    }
+	.filter-btn:hover:not(.active) {
+		filter: brightness(0.98);
+	}
 
-    .filter-btn.active {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: white;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-    }
+	.filter-btn.active {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: white;
+		box-shadow: var(--shadow-sm);
+	}
 
-    .legend-items {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
+	.legend-items {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
 
-    .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 0.875rem;
-        padding: 0.75rem;
-        border-radius: 8px;
-        border: 1px solid var(--border);
-        background: var(--bg);
-        transition: all 0.2s ease;
-        cursor: pointer;
-    }
+	.legend-item {
+		display: flex;
+		align-items: center;
+		gap: 0.875rem;
+		padding: 0.75rem;
+		border-radius: var(--radius-input);
+		border: 1px solid var(--border);
+		background: var(--panel-bg);
+		cursor: pointer;
+	}
 
-    .legend-item:hover {
-        background: var(--hover);
-        border-color: var(--accent);
-        transform: translateX(-2px);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-    }
+	.legend-item:hover {
+		background: var(--hover);
+	}
 
-    .legend-item input[type="checkbox"] {
-        width: 18px;
-        height: 18px;
-        margin: 0;
-        cursor: pointer;
-        accent-color: var(--accent);
-    }
+	.legend-item input[type="checkbox"] {
+		width: 18px;
+		height: 18px;
+		margin: 0;
+		cursor: pointer;
+		accent-color: var(--text);
+	}
 
-    .color-swatch {
-        width: 20px;
-        height: 20px;
-        border-radius: 6px;
-        flex-shrink: 0;
-        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
+	.color-swatch {
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		flex-shrink: 0;
+		border: 1px solid var(--border);
+	}
 
-    .legend-label {
-        flex: 1;
-        font-size: 0.875rem;
-        font-weight: 500;
-        color: var(--text);
-    }
+	.legend-label {
+		flex: 1;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--text);
+	}
 
-    .pest-count {
-        font-size: 0.75rem;
-        font-weight: 600;
-        padding: 0.25rem 0.5rem;
-        border-radius: 4px;
-        background: var(--hover);
-        color: var(--accent);
-    }
+	.pest-count {
+		font-size: 0.75rem;
+		font-weight: 600;
+		padding: 0.25rem 0.5rem;
+		border-radius: var(--radius-input);
+		background: var(--hover);
+		color: var(--accent);
+		border: 1px solid var(--border);
+	}
 
-    .empty-state {
-        text-align: center;
-        padding: 2rem 1rem;
-        color: #94a3b8;
-    }
+	.empty-state {
+		text-align: center;
+		padding: 2rem 1rem;
+		color: var(--text-muted);
+	}
 
-    .empty-state svg {
-        width: 48px;
-        height: 48px;
-        margin: 0 auto 1rem;
-        opacity: 0.5;
-    }
+	.empty-state svg {
+		width: 48px;
+		height: 48px;
+		margin: 0 auto 1rem;
+		opacity: 0.5;
+	}
 
-    .empty-state p {
-        font-size: 0.875rem;
-        margin-top: 0.5rem;
-    }
+	.empty-state p {
+		font-size: 0.875rem;
+		margin-top: 0.5rem;
+	}
 
-    #map-loader {
-        position: absolute;
-        inset: 0;
-        background: var(--bg);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 2000;
-        gap: 1.5rem;
-    }
+	#map-loader {
+		position: absolute;
+		inset: 0;
+		background: rgba(255, 255, 255, 0.92);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		z-index: 2000;
+		gap: 0.75rem;
+	}
 
-    .spinner {
-        width: 48px;
-        height: 48px;
-        border: 3px solid var(--border);
-        border-top: 3px solid var(--accent);
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
+	[data-theme="dark"] #map-loader {
+		background: rgba(22, 26, 31, 0.92);
+	}
 
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
+	.selection-controls {
+		display: flex;
+		gap: 0.375rem;
+	}
 
-    .loader-text {
-        font-size: 0.9375rem;
-        color: var(--text);
-        font-weight: 500;
-    }
+	.select-btn {
+		padding: 0.375rem 0.75rem;
+		border: 1px solid var(--border);
+		background: var(--panel-bg);
+		color: var(--text);
+		font-size: 0.75rem;
+		font-weight: 500;
+		border-radius: var(--radius-input);
+		cursor: pointer;
+	}
+	.select-btn:hover {
+		filter: brightness(0.98);
+	}
 
-    .selection-controls {
-        display: flex;
-        gap: 0.375rem;
-    }
+	.map-load-title { font-size: 0.875rem; font-weight: 600; color: #1e293b; margin-bottom: 0.15rem; }
+	.map-load-track {
+		width: 220px; height: 5px;
+		background: #e2e8f0; border-radius: 3px; overflow: hidden;
+	}
+	.map-load-fill {
+		height: 100%; width: 0%;
+		background: #2563eb; border-radius: 3px;
+		transition: width 0.25s ease;
+	}
+	.map-load-status { font-size: 0.72rem; color: #64748b; min-width: 220px; text-align: center; }
 
-    .select-btn {
-        padding: 0.375rem 0.75rem;
-        border: 1px solid var(--border);
-        background: var(--bg);
-        color: var(--text);
-        font-size: 0.75rem;
-        font-weight: 500;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
+	.trap-marker {
+		background: transparent !important;
+		border: none !important;
+	}
+	.trap-circle {
+		width: 34px;
+		height: 34px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 12px;
+		font-weight: 700;
+		box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+	}
 
-    .select-btn:hover {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: white;
-    }
-
-    .greenhouse-item {
-        padding: 0.5rem;
-        border-radius: 6px;
-        transition: background 0.2s ease;
-    }
-
-    .greenhouse-item:hover {
-        background: var(--hover);
-    }
-
-    @media (max-width: 768px) {
-        #sidebar {
-            width: 100%;
-            max-width: 380px;
-        }
-    }
+	@media (max-width: 768px) {
+		#sidebar {
+			width: 100%;
+			max-width: 380px;
+		}
+	}
 </style>
-{% endblock %}
-
-{% block page_content %}
+{% endblock %} {% block page_content %}
 <div id="map-page">
-    <div id="map-container">
-        <div id="map-loader">
-            <div class="spinner"></div>
-            <p class="loader-text">Loading trap data...</p>
-        </div>
-        <div id="map"></div>
-    </div>
+	<div id="map-container">
+		<div id="map-loader">
+			<span class="map-load-title">Loading trap data</span>
+			<div class="map-load-track"><div class="map-load-fill" id="map-load-fill"></div></div>
+			<span class="map-load-status" id="map-load-status">Initialising…</span>
+		</div>
+		<div id="map"></div>
+	</div>
 
-    <div id="sidebar">
-        <div class="sidebar-toggle" id="toggle-sidebar">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-            </svg>
-        </div>
+	<div id="sidebar">
+		<div class="sidebar-toggle" id="toggle-sidebar">
+			<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M9 5l7 7-7 7"
+				/>
+			</svg>
+		</div>
 
-        <div class="sidebar-content">
-            <!-- Week Picker -->
-            <div class="section">
-                <label class="section-label">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    Select Week
-                </label>
-                <input type="week" id="week-picker" class="week-picker" />
-            </div>
+		<div class="sidebar-content">
+			<!-- Week Picker -->
+			<div class="section">
+				<label class="section-label">
+					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+						/>
+					</svg>
+					Select Week
+				</label>
+				<input type="week" id="week-picker" class="week-picker" />
+			</div>
 
-            <!-- Location Filter -->
-            <div class="section">
-                <label class="section-label">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Location
-                </label>
-                <div class="filter-tabs">
-                    <button class="filter-btn active" data-filter="location" data-value="all">All</button>
-                    <button class="filter-btn" data-filter="location" data-value="Indoor">Indoor</button>
-                    <button class="filter-btn" data-filter="location" data-value="Outdoor">Outdoor</button>
-                </div>
-            </div>
+			<!-- Location Filter -->
+			<div class="section">
+				<label class="section-label">
+					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+						/>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+						/>
+					</svg>
+					Location
+				</label>
+				<div class="filter-tabs">
+					<button class="filter-btn active" data-filter="location" data-value="all">
+						All
+					</button>
+					<button class="filter-btn" data-filter="location" data-value="Indoor">
+						Indoor
+					</button>
+					<button class="filter-btn" data-filter="location" data-value="Outdoor">
+						Outdoor
+					</button>
+				</div>
+			</div>
 
-            <!-- Greenhouse Filter -->
-            <div class="section">
-                <label class="section-label">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                    </svg>
-                    Greenhouses
-                </label>
-                <div class="selection-controls">
-                    <button class="select-btn" data-action="select-all-gh">All</button>
-                    <button class="select-btn" data-action="select-none-gh">None</button>
-                </div>
-                <div class="legend-items" id="greenhouse-list"></div>
-            </div>
+			<!-- Greenhouse Filter -->
+			<div class="section">
+				<label class="section-label">
+					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+						/>
+					</svg>
+					Greenhouses
+				</label>
+				<div class="selection-controls">
+					<button class="select-btn" data-action="select-all-gh">All</button>
+					<button class="select-btn" data-action="select-none-gh">None</button>
+				</div>
+				<div class="legend-items" id="greenhouse-list"></div>
+			</div>
 
-            <!-- Pest Filter -->
-            <div class="section">
-                <label class="section-label">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    Pests
-                </label>
-                <div class="selection-controls">
-                    <button class="select-btn" data-action="select-all-pests">All</button>
-                    <button class="select-btn" data-action="select-none-pests">None</button>
-                </div>
-                <div class="legend-items" id="pest-list"></div>
-            </div>
+			<!-- Pest Filter -->
+			<div class="section">
+				<label class="section-label">
+					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+						/>
+					</svg>
+					Pests
+				</label>
+				<div class="selection-controls">
+					<button class="select-btn" data-action="select-all-pests">All</button>
+					<button class="select-btn" data-action="select-none-pests">None</button>
+				</div>
+				<div class="legend-items" id="pest-list"></div>
+			</div>
 
-            <!-- Weekly Average Color Key -->
-            <div class="section">
-                <label class="section-label">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                    </svg>
-                    Weekly Average Key
-                </label>
-                <div class="legend-items">
-                    <div class="legend-item" style="cursor: default;">
-                        <span class="color-swatch" style="background-color: #ffffff; border: 2px solid #d1d5db;"></span>
-                        <span class="legend-label">0 - No catches</span>
-                    </div>
-                    <div class="legend-item" style="cursor: default;">
-                        <span class="color-swatch" style="background-color: #fef3c7;"></span>
-                        <span class="legend-label">1 - Very low</span>
-                    </div>
-                    <div class="legend-item" style="cursor: default;">
-                        <span class="color-swatch" style="background-color: #fde047;"></span>
-                        <span class="legend-label">2 - Low</span>
-                    </div>
-                    <div class="legend-item" style="cursor: default;">
-                        <span class="color-swatch" style="background-color: #facc15;"></span>
-                        <span class="legend-label">3 - Moderate</span>
-                    </div>
-                    <div class="legend-item" style="cursor: default;">
-                        <span class="color-swatch" style="background-color: #fb923c;"></span>
-                        <span class="legend-label">4-5 - Elevated</span>
-                    </div>
-                    <div class="legend-item" style="cursor: default;">
-                        <span class="color-swatch" style="background-color: #f97316;"></span>
-                        <span class="legend-label">6-7 - High</span>
-                    </div>
-                    <div class="legend-item" style="cursor: default;">
-                        <span class="color-swatch" style="background-color: #dc2626;"></span>
-                        <span class="legend-label">8-9 - Very high</span>
-                    </div>
-                    <div class="legend-item" style="cursor: default;">
-                        <span class="color-swatch" style="background-color: #7c2d12;"></span>
-                        <span class="legend-label">9+ - Critical</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+			<!-- Total Catches Color Key -->
+			<div class="section">
+				<label class="section-label">
+					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+						/>
+					</svg>
+					Total Catches Key
+				</label>
+				<div class="legend-items">
+					<div class="legend-item" style="cursor: default">
+						<span class="color-swatch" style="background-color: #ffffff; border: 2px solid #d1d5db"></span>
+						<span class="legend-label">0 — No catches</span>
+					</div>
+					<div class="legend-item" style="cursor: default">
+						<span class="color-swatch" style="background-color: #fef3c7"></span>
+						<span class="legend-label">1–5 — Very low</span>
+					</div>
+					<div class="legend-item" style="cursor: default">
+						<span class="color-swatch" style="background-color: #fde047"></span>
+						<span class="legend-label">6–15 — Low</span>
+					</div>
+					<div class="legend-item" style="cursor: default">
+						<span class="color-swatch" style="background-color: #facc15"></span>
+						<span class="legend-label">16–30 — Moderate</span>
+					</div>
+					<div class="legend-item" style="cursor: default">
+						<span class="color-swatch" style="background-color: #fb923c"></span>
+						<span class="legend-label">31–50 — Elevated</span>
+					</div>
+					<div class="legend-item" style="cursor: default">
+						<span class="color-swatch" style="background-color: #f97316"></span>
+						<span class="legend-label">51–75 — High</span>
+					</div>
+					<div class="legend-item" style="cursor: default">
+						<span class="color-swatch" style="background-color: #dc2626"></span>
+						<span class="legend-label">76–100 — Very high</span>
+					</div>
+					<div class="legend-item" style="cursor: default">
+						<span class="color-swatch" style="background-color: #7c2d12"></span>
+						<span class="legend-label">100+ — Critical</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-providers/1.13.0/leaflet-providers.min.js"></script>
-<script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
-<script src="https://unpkg.com/protomaps-leaflet@5.0.0/dist/protomaps-leaflet.js"></script>
 
 <script>
-window.onload = function() {
-    window.greenhouses_geojson = {{ greenhouses_geojson | tojson | safe }};
+	window.onload = function () {
+	    const LAT = {{ lat | tojson }};
+	    const LON = {{ lon | tojson }};
+	    const ZOOM = {{ default_zoom | tojson }};
+	    const CSRF = "{{csrf_token}}";
 
-    // Globals
-    const OFFSET_LAT = -0.00006;
-    const OFFSET_LNG = -0.00002;
-    let useOffset = true;
+	    // Performance: abort controller + debounce + data cache
+	    let abortCtrl = null;
+	    const dataCache = new Map();
+	    function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
-    const applyOffset = (lat, lng) => {
-        if (!useOffset) return [lat, lng];
-        return [lat + OFFSET_LAT, lng + OFFSET_LNG];
-    };
+	    window.map = null;
+	    let mapInitialized = false;
+	    window.trapMarkers = L.layerGroup();
 
-    // Performance: abort controller + debounce
-    let abortCtrl = null;
-    function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+	    window.trapData = {};
+	    window.filters = {
+	        location: 'all',
+	        greenhouses: new Set(),
+	        pests: new Set()
+	    };
 
-    // Zone GeoJSON parse cache
-    const zoneCache = new Map();
-    const parseZone = zone => {
-        if (!zoneCache.has(zone.name)) {
-            try { zoneCache.set(zone.name, JSON.parse(zone.raw_geojson)); }
-            catch { zoneCache.set(zone.name, null); }
-        }
-        return zoneCache.get(zone.name);
-    };
+	    const sidebar = document.getElementById('sidebar');
+	    const toggleBtn = document.getElementById('toggle-sidebar');
+	    toggleBtn.addEventListener('click', () => sidebar.classList.toggle('collapsed'));
 
-    // Canvas renderer for zone layer performance
-    const canvasRenderer = L.canvas({ padding: 0.5 });
+	    const setProgress = (pct) => {
+	        const fill = document.getElementById('map-load-fill');
+	        const status = document.getElementById('map-load-status');
+	        if (fill) fill.style.width = Math.min(100, pct) + '%';
+	        if (status) status.textContent = Math.round(Math.min(100, pct)) + '%';
+	    };
 
-    window.map = null;
-    let mapInitialized = false;
-    window.zoneLayer = null;
-    window.trapMarkers = L.layerGroup();
-    let greenhouseOverlay = null;
+	    const streamResponse = (response, onProgress) => {
+	        const contentLength = response.headers.get('content-length');
+	        const reader = response.body.getReader();
+	        const chunks = [];
+	        let received = 0;
+	        const ESTIMATE = 300 * 1024;
+	        const read = () => reader.read().then(({ done, value }) => {
+	            if (done) {
+	                const buf = new Uint8Array(received);
+	                let pos = 0;
+	                for (const c of chunks) { buf.set(c, pos); pos += c.length; }
+	                if (onProgress) onProgress(83);
+	                return JSON.parse(new TextDecoder().decode(buf));
+	            }
+	            chunks.push(value);
+	            received += value.length;
+	            if (onProgress) {
+	                const pct = contentLength
+	                    ? 48 + (received / +contentLength) * 33
+	                    : 48 + Math.min(received / ESTIMATE, 1) * 33;
+	                onProgress(pct);
+	            }
+	            return read();
+	        });
+	        return read();
+	    };
 
-    // State
-    window.trapData = {};
-    window.filters = {
-        location: 'all',
-        greenhouses: new Set(),
-        pests: new Set()
-    };
+	    const showLoader = () => {
+	        setProgress(0);
+	        document.getElementById('map-loader').style.display = 'flex';
+	    };
+	    const hideLoader = () => document.getElementById('map-loader').style.display = 'none';
 
-    const sidebar = document.getElementById('sidebar');
-    const toggleBtn = document.getElementById('toggle-sidebar');
+	    // Total-catches color scale
+	    const getCountColor = (total) => {
+	        if (!total || total <= 0) return '#ffffff';
+	        if (total <= 5) return '#fef3c7';
+	        if (total <= 15) return '#fde047';
+	        if (total <= 30) return '#facc15';
+	        if (total <= 50) return '#fb923c';
+	        if (total <= 75) return '#f97316';
+	        if (total <= 100) return '#dc2626';
+	        return '#7c2d12';
+	    };
 
-    toggleBtn.addEventListener('click', () => {
-        sidebar.classList.toggle('collapsed');
-    });
+	    // Aggregate entries → one record per trap with totals + averaged position
+	    const aggregateTraps = (entries) => {
+	        const map = new Map();
+	        entries.forEach(e => {
+	            const lat = parseFloat(e.latitude);
+	            const lng = parseFloat(e.longitude);
+	            if (!map.has(e.trap)) {
+	                map.set(e.trap, {
+	                    trap: e.trap,
+	                    totalCount: 0,
+	                    entryCount: 0,
+	                    days: new Set(),
+	                    pest: e.pest,
+	                    location: e.location,
+	                    greenhouse: e.greenhouse,
+	                    zone: e.zone,
+	                    latSum: 0,
+	                    lngSum: 0,
+	                    latN: 0,
+	                    lngN: 0
+	                });
+	            }
+	            const t = map.get(e.trap);
+	            t.totalCount += (e.count || 0);
+	            t.entryCount += 1;
+	            t.days.add(e.date_of_capture);
+	            if (!isNaN(lat) && !isNaN(lng)) {
+	                t.latSum += lat; t.lngSum += lng;
+	                t.latN += 1; t.lngN += 1;
+	            }
+	        });
+	        const result = new Map();
+	        map.forEach((t, k) => {
+	            if (!t.latN || !t.lngN) return; // drop traps with no valid coords
+	            result.set(k, {
+	                ...t,
+	                latitude: t.latSum / t.latN,
+	                longitude: t.lngSum / t.lngN,
+	                color: getCountColor(t.totalCount)
+	            });
+	        });
+	        return result;
+	    };
 
-    const showLoader = () => document.getElementById('map-loader').style.display = 'flex';
-    const hideLoader = () => document.getElementById('map-loader').style.display = 'none';
+	    // Pest colors for legend swatch only
+	    const pestColors = {
+	        'FCM': '#ef4444',
+	        'Thrips': '#f59e0b',
+	        'Whitefly': '#eab308',
+	        'Spider Mite': '#84cc16',
+	        'Aphids': '#22c55e',
+	        'default': '#6b7280'
+	    };
+	    const getPestColor = (pest) => pestColors[pest] || pestColors['default'];
 
-    // Get color based on weekly average count
-    const getAverageColor = (weeklyAverage) => {
-        if (weeklyAverage === 0) return '#ffffff'; // White
-        if (weeklyAverage === 1) return '#fef3c7'; // Very light yellow
-        if (weeklyAverage === 2) return '#fde047'; // Light yellow
-        if (weeklyAverage === 3) return '#facc15'; // Yellow
-        if (weeklyAverage >= 4 && weeklyAverage <= 5) return '#fb923c'; // Orange
-        if (weeklyAverage >= 6 && weeklyAverage <= 7) return '#f97316'; // Dark orange
-        if (weeklyAverage >= 8 && weeklyAverage <= 9) return '#dc2626'; // Red
-        return '#7c2d12'; // Brown (9+)
-    };
+	    // Initialize map
+	    const initializeMap = () => {
+	        if (mapInitialized) return;
 
-    // Calculate weekly average for each trap
-    const calculateWeeklyAverages = (entries) => {
-        const trapTotals = new Map();
-        
-        entries.forEach(entry => {
-            const trapKey = entry.trap;
-            if (!trapTotals.has(trapKey)) {
-                trapTotals.set(trapKey, {
-                    totalCount: 0,
-                    days: new Set(),
-                    pest: entry.pest,
-                    location: entry.location,
-                    greenhouse: entry.greenhouse,
-                    zone: entry.zone,
-                    latitude: entry.latitude,
-                    longitude: entry.longitude,
-                    lastEntry: entry
-                });
-            }
-            
-            const trapData = trapTotals.get(trapKey);
-            trapData.totalCount += entry.count;
-            trapData.days.add(entry.date_of_capture);
-        });
-        
-        // Calculate average (total / 7 days for weekly average)
-        const trapAverages = new Map();
-        trapTotals.forEach((data, trapKey) => {
-            const weeklyAverage = Math.round(data.totalCount / 7);
-            trapAverages.set(trapKey, {
-                ...data,
-                weeklyAverage,
-                color: getAverageColor(weeklyAverage)
-            });
-        });
-        
-        console.log('Calculated weekly averages for', trapAverages.size, 'traps');
-        return trapAverages;
-    };
+	        window.map = L.map('map', {
+	            zoomSnap: 0.1,
+	            zoomDelta: 0.1,
+	            maxZoom: 22.4,
+	            zoomControl: true
+	        });
+	        mapInitialized = true;
 
-    // Pest colors mapping (for pest filter legend only)
-    const pestColors = {
-        'FCM': '#ef4444',
-        'Thrips': '#f59e0b',
-        'Whitefly': '#eab308',
-        'Spider Mite': '#84cc16',
-        'Aphids': '#22c55e',
-        'default': '#6b7280'
-    };
+	        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+	            maxZoom: 19,
+	            attribution: '© OpenStreetMap contributors'
+	        }).addTo(window.map);
 
-    const getPestColor = (pest) => pestColors[pest] || pestColors['default'];
+	        window.map.setView([LAT, LON], ZOOM);
 
-    // Initialize map
-    const initializeMap = () => {
-        if (mapInitialized) return;
+	        // Set current week
+	        const weekPicker = document.getElementById('week-picker');
+	        const today = new Date();
+	        const year = today.getFullYear();
+	        const weekNum = getWeekNumber(today);
+	        weekPicker.value = `${year}-W${weekNum.toString().padStart(2, '0')}`;
 
-        window.map = L.map('map', {
-            zoomSnap: 0.1,
-            zoomDelta: 0.1,
-            maxZoom: 22.4,
-            zoomControl: true
-        });
-        mapInitialized = true;
-        
-        renderBaseLayers();
-        window.map.setView([0.069507, 35.755801], 16);
+	        fetchTrapData(weekPicker.value);
 
-        // Set current week
-        const weekPicker = document.getElementById('week-picker');
-        const today = new Date();
-        const year = today.getFullYear();
-        const weekNum = getWeekNumber(today);
-        weekPicker.value = `${year}-W${weekNum.toString().padStart(2, '0')}`;
-        
-        fetchTrapData(weekPicker.value);
-        const debouncedFetchTrap = debounce(week => fetchTrapData(week), 300);
-        weekPicker.addEventListener('change', e => debouncedFetchTrap(e.target.value));
-    };
+	        const debouncedFetchTrap = debounce(week => fetchTrapData(week), 300);
+	        weekPicker.addEventListener('change', e => debouncedFetchTrap(e.target.value));
+	    };
 
-    // Get week number
-    const getWeekNumber = (date) => {
-        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-        const dayNum = d.getUTCDay() || 7;
-        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-    };
+	    const getWeekNumber = (date) => {
+	        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+	        const dayNum = d.getUTCDay() || 7;
+	        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+	        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+	        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+	    };
 
-    // Fetch trap data
-    const fetchTrapData = (week) => {
-        if (abortCtrl) abortCtrl.abort();
-        abortCtrl = new AbortController();
-        showLoader();
+	    const prefetchWeeks = (currentWeek) => {
+	        // Pre-cache the prior 2 weeks silently so picker scrubbing is snappy
+	        const [yStr, wStr] = currentWeek.split('-W');
+	        let y = parseInt(yStr, 10);
+	        let w = parseInt(wStr, 10);
+	        for (let i = 0; i < 2; i++) {
+	            w -= 1;
+	            if (w < 1) { y -= 1; w = 52; }
+	            const key = `${y}-W${w.toString().padStart(2, '0')}`;
+	            if (dataCache.has(key)) continue;
+	            fetch('/api/method/upande_scp.serverscripts.get_trap_data.getTrapData', {
+	                method: 'POST',
+	                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': CSRF },
+	                body: JSON.stringify({ week: key })
+	            })
+	            .then(r => r.ok ? r.json() : null)
+	            .then(r => { if (r?.message) dataCache.set(key, r.message); })
+	            .catch(() => {});
+	        }
+	    };
 
-        fetch('/api/method/upande_scp.serverscripts.get_trap_data.getTrapData', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Frappe-CSRF-Token': "{{csrf_token}}"
-            },
-            body: JSON.stringify({ week }),
-            signal: abortCtrl.signal
-        })
-        .then(r => {
-            console.log('Response status:', r.status);
-            return r.ok ? r.json() : Promise.reject(r);
-        })
-        .then(r => {
-            console.log('Raw API response:', r);
-            window.trapData = r.message;
-            console.log('Trap data loaded:', window.trapData);
-            console.log('Trap entries count:', window.trapData.trap_entries?.length || 0);
-            console.log('Greenhouses:', window.trapData.greenhouses);
-            console.log('Pests:', window.trapData.pests);
-            
-            // Initialize filters
-            if (window.filters.greenhouses.size === 0) {
-                window.trapData.greenhouses?.forEach(gh => {
-                    window.filters.greenhouses.add(gh);
-                });
-                console.log('Initialized greenhouse filters:', Array.from(window.filters.greenhouses));
-            }
-            
-            if (window.filters.pests.size === 0) {
-                window.trapData.pests?.forEach(pest => {
-                    window.filters.pests.add(pest);
-                });
-                console.log('Initialized pest filters:', Array.from(window.filters.pests));
-            }
-            
-            renderZones(window.trapData);
-            renderGreenhouseList();
-            renderPestList();
-            renderTrapMarkers();
-        })
-        .catch(err => {
-            if (err.name === 'AbortError') return;
-            console.error('Failed to load trap data:', err);
-            const observationsList = document.getElementById('pest-list');
-            if (observationsList) {
-                observationsList.innerHTML = `
-                    <div class="empty-state">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        <p><strong>Failed to load trap data</strong></p>
-                        <p>Please try again or select a different week</p>
-                    </div>
-                `;
-            }
-        })
-        .finally(hideLoader);
-    };
+	    const fetchTrapData = (week) => {
+	        if (dataCache.has(week)) {
+	            window.trapData = dataCache.get(week);
+	            window.filters.greenhouses = new Set(window.trapData.greenhouses || []);
+	            window.filters.pests = new Set(window.trapData.pests || []);
+	            renderGreenhouseList();
+	            renderPestList();
+	            renderTrapMarkers();
+	            return;
+	        }
 
-    // Render zones with bed numbering
-    const renderZones = (data) => {
-        addGreenhouseOverlay();
-        
-        if (window.zoneLayer) window.map.removeLayer(window.zoneLayer);
-        if (window.lineIdLabels) {
-            window.map.removeLayer(window.lineIdLabels);
-            window.lineIdLabels = null;
-        }
+	        if (abortCtrl) abortCtrl.abort();
+	        abortCtrl = new AbortController();
+	        showLoader();
 
-        const lines = {};
-        (data.all_zones_geojson || []).forEach(zone => {
-            try {
-                const gj = parseZone(zone);
-                if (!gj) return;
-                const gh = zone.name.split(' - ')[0];
-                if (gj.features) {
-                    gj.features.forEach(f => {
-                        // Apply offset to coordinates (clone to avoid mutating cache)
-                        const fClone = JSON.parse(JSON.stringify(f));
-                        if (fClone.geometry.type === 'LineString') {
-                            fClone.geometry.coordinates = fClone.geometry.coordinates.map(coord => {
-                                const [lng, lat] = coord;
-                                const [newLat, newLng] = applyOffset(lat, lng);
-                                return [newLng, newLat];
-                            });
-                        }
+	        let serverPct = 5, serverTimer = null;
+	        setProgress(serverPct);
+	        serverTimer = setInterval(() => {
+	            serverPct = Math.min(serverPct + 1.2, 45);
+	            setProgress(serverPct);
+	        }, 150);
 
-                        const lineId = fClone.properties.line_id;
-                        const key = `${gh}_line_${lineId}`;
-                        fClone.properties.zone_name = zone.name;
-                        if (!lines[key]) lines[key] = [];
-                        lines[key].push(fClone);
-                    });
-                }
-            } catch (e) {
-                console.error('Bad GeoJSON', zone.name, e);
-            }
-        });
+	        fetch('/api/method/upande_scp.serverscripts.get_trap_data.getTrapData', {
+	            method: 'POST',
+	            headers: {
+	                'Content-Type': 'application/json',
+	                'X-Frappe-CSRF-Token': CSRF
+	            },
+	            body: JSON.stringify({ week }),
+	            signal: abortCtrl.signal
+	        })
+	        .then(r => {
+	            clearInterval(serverTimer);
+	            if (!r.ok) throw new Error('HTTP ' + r.status);
+	            setProgress(48);
+	            return streamResponse(r, setProgress);
+	        })
+	        .then(r => {
+	            window.trapData = r.message;
+	            dataCache.set(week, window.trapData);
+	            window.filters.greenhouses = new Set(window.trapData.greenhouses || []);
+	            window.filters.pests = new Set(window.trapData.pests || []);
+	            setProgress(90);
+	            renderGreenhouseList();
+	            renderPestList();
+	            renderTrapMarkers();
+	            setProgress(100);
+	            setTimeout(hideLoader, 350);
+	            prefetchWeeks(week);
+	        })
+	        .catch(err => {
+	            if (serverTimer) clearInterval(serverTimer);
+	            if (err.name === 'AbortError') return;
+	            console.error('Failed to load trap data:', err);
+	            hideLoader();
+	            const pestList = document.getElementById('pest-list');
+	            if (pestList) {
+	                pestList.innerHTML = `
+	                    <div class="empty-state">
+	                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+	                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+	                                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+	                        </svg>
+	                        <p><strong>Failed to load trap data</strong></p>
+	                        <p>Please try again or select a different week</p>
+	                    </div>
+	                `;
+	            }
+	        });
+	    };
 
-        // Create line ID labels
-        window.lineIdLabels = L.layerGroup();
-        Object.values(lines).forEach(arr => {
-            if (!arr.length) return;
-            arr.sort((a, b) => a.properties.zone_id - b.properties.zone_id);
-            const coords = arr.flatMap(f => f.geometry.coordinates);
-            const lineId = arr[0].properties.line_id;
-            const odd = parseInt(lineId) % 2 !== 0;
-            const pt = odd ? coords[0] : coords[coords.length - 1];
-            const lbl = L.marker([pt[1], pt[0]], {
-                icon: L.divIcon({
-                    className: 'line-id-label',
-                    html: `<div style="font-size:4px;font-weight:200;color:#000;transform:rotate(45deg);">${lineId}</div>`,
-                    iconSize: [20, 10], 
-                    iconAnchor: [0, 0]
-                })
-            });
-            window.lineIdLabels.addLayer(lbl);
-        });
+	    const renderTrapMarkers = () => {
+	        window.trapMarkers.clearLayers();
 
-        const fc = { type: "FeatureCollection", features: Object.values(lines).flat() };
-        window.zoneLayer = L.geoJSON(fc, {
-            renderer: canvasRenderer,
-            style: { color: '#1e293b', weight: 0.7, opacity: 0.6, fill: false },
-            onEachFeature: (f, l) => {
-                if (f.properties?.zone_name) {
-                    const zn = f.properties.zone_name || '';
-                    const parts = zn.split(' - ');
-                    let html = zn;
-                    if (parts.length >= 4) {
-                        const [gh, kr, bed, zone] = parts;
-                        html = `<div style="font-size:0.75rem;line-height:1.5;"><strong style="display:block;margin-bottom:0.25rem;">${gh}</strong><div style="opacity:0.9;">${kr}</div><div style="opacity:0.9;">${bed}</div><div style="opacity:0.9;">${zone}</div></div>`;
-                    }
-                    l.bindTooltip(html, { permanent: false, direction: 'top' });
-                }
-            }
-        });
+	        const entries = window.trapData.trap_entries || [];
+	        const traps = aggregateTraps(entries);
 
-        window.map.on('zoomend', () => {
-            const z = window.map.getZoom();
-            if (z >= 15) { 
-                if (!window.map.hasLayer(window.zoneLayer)) window.zoneLayer.addTo(window.map); 
-            } else { 
-                if (window.map.hasLayer(window.zoneLayer)) window.map.removeLayer(window.zoneLayer); 
-            }
-            if (z >= 19) { 
-                if (!window.map.hasLayer(window.lineIdLabels)) window.lineIdLabels.addTo(window.map); 
-            } else { 
-                if (window.map.hasLayer(window.lineIdLabels)) window.map.removeLayer(window.lineIdLabels); 
-            }
-        });
+	        traps.forEach((t, trapName) => {
+	            if (window.filters.location !== 'all' && t.location !== window.filters.location) return;
 
-        const currentZoom = window.map.getZoom();
-        if (currentZoom >= 15) window.zoneLayer.addTo(window.map);
-        if (currentZoom >= 19) window.lineIdLabels.addTo(window.map);
-    };
+	            const gh = t.greenhouse?.split(' - ')[0];
+	            if (!window.filters.greenhouses.has(gh)) return;
+	            if (!window.filters.pests.has(t.pest)) return;
 
-    // Add greenhouse overlay
-    const addGreenhouseOverlay = () => {
-        if (greenhouseOverlay) window.map.removeLayer(greenhouseOverlay);
-        if (!window.greenhouses_geojson?.length) return;
+	            const color = t.color;
+	            const borderColor = t.totalCount === 0 ? '#d1d5db' : '#ffffff';
+	            const textColor = t.totalCount <= 15 ? '#1f2937' : '#ffffff';
 
-        const features = [];
-        window.greenhouses_geojson.forEach(gh => {
-            if (!gh.geojson?.features) return;
-            gh.geojson.features.forEach(f => {
-                const clone = JSON.parse(JSON.stringify(f));
-                if (clone.geometry.type === 'Polygon') {
-                    clone.geometry.coordinates = clone.geometry.coordinates.map(ring =>
-                        ring.map(coord => {
-                            const [lng, lat] = coord;
-                            const [newLat, newLng] = applyOffset(lat, lng);
-                            return [newLng, newLat];
-                        })
-                    );
-                }
-                clone.properties = clone.properties || {};
-                clone.properties.gh_name = gh.short_name || gh.name;
-                features.push(clone);
-            });
-        });
+	            const icon = L.divIcon({
+	                className: 'trap-marker',
+	                html: `<div class="trap-circle" style="background:${color};border:3px solid ${borderColor};color:${textColor};">${t.totalCount}</div>`,
+	                iconSize: [34, 34],
+	                iconAnchor: [17, 17]
+	            });
 
-        if (!features.length) return;
+	            const marker = L.marker([t.latitude, t.longitude], { icon });
 
-        greenhouseOverlay = L.geoJSON(
-            { type: "FeatureCollection", features },
-            {
-                style: {
-                    fillColor: "#5b684a",
-                    fillOpacity: 0.64,
-                    color: "transparent",
-                    weight: 0,
-                    interactive: false
-                }
-            }
-        ).addTo(window.map);
+	            marker.bindPopup(`
+	                <div style="font-size: 0.875rem; line-height: 1.6; min-width: 220px;">
+	                    <strong style="display:block;font-size:1rem;margin-bottom:0.5rem;">
+	                        ${trapName}
+	                    </strong>
+	                    <div style="display:grid;gap:0.25rem;">
+	                        <div><strong>Pest:</strong> ${t.pest || '—'}</div>
+	                        <div><strong>Total Catches:</strong> ${t.totalCount}</div>
+	                        <div><strong>Entries:</strong> ${t.entryCount}</div>
+	                        <div><strong>Days Recorded:</strong> ${t.days.size}</div>
+	                        <div><strong>Location:</strong> ${t.location || '—'}</div>
+	                        <div style="opacity:0.8;margin-top:0.25rem;">
+	                            <div><strong>Zone:</strong> ${t.zone || '—'}</div>
+	                            <div><strong>Greenhouse:</strong> ${gh || '—'}</div>
+	                        </div>
+	                    </div>
+	                </div>
+	            `);
 
-        if (window.zoneLayer) window.zoneLayer.bringToFront();
-    };
+	            window.trapMarkers.addLayer(marker);
+	        });
 
-    // Render trap markers
-    const renderTrapMarkers = () => {
-        window.trapMarkers.clearLayers();
+	        window.trapMarkers.addTo(window.map);
+	    };
 
-        const entries = window.trapData.trap_entries || [];
-        
-        console.log(`Rendering ${entries.length} trap entries`);
-        
-        // Calculate weekly averages for all traps
-        const trapAverages = calculateWeeklyAverages(entries);
-        console.log('Trap averages:', trapAverages);
-        
-        trapAverages.forEach((trapData, trapName) => {
-            // Apply filters
-            if (window.filters.location !== 'all' && 
-                trapData.location !== window.filters.location) {
-                console.log(`Filtered out by location: ${trapName}`);
-                return;
-            }
-            
-            const greenhouse = trapData.greenhouse?.split(' - ')[0];
-            if (!window.filters.greenhouses.has(greenhouse)) {
-                console.log(`Filtered out by greenhouse: ${trapName} (${greenhouse})`);
-                return;
-            }
-            if (!window.filters.pests.has(trapData.pest)) {
-                console.log(`Filtered out by pest: ${trapName} (${trapData.pest})`);
-                return;
-            }
+	    const renderGreenhouseList = () => {
+	        const container = document.getElementById('greenhouse-list');
+	        container.innerHTML = '';
 
-            // Validate coordinates
-            const lat = parseFloat(trapData.latitude);
-            const lng = parseFloat(trapData.longitude);
-            
-            if (isNaN(lat) || isNaN(lng)) {
-                console.error(`Invalid coordinates for trap ${trapName}: lat=${trapData.latitude}, lng=${trapData.longitude}`);
-                return;
-            }
+	        const greenhouses = window.trapData.greenhouses || [];
+	        if (!greenhouses.length) {
+	            container.innerHTML = '<p style="font-size:0.8125rem;color:#999;padding:0.5rem;">No greenhouses</p>';
+	            return;
+	        }
 
-            const [offsetLat, offsetLng] = applyOffset(lat, lng);
-            console.log(`Plotting trap ${trapName} at: ${offsetLat}, ${offsetLng} with weekly avg: ${trapData.weeklyAverage}`);
+	        greenhouses.forEach(gh => {
+	            const checked = window.filters.greenhouses.has(gh);
+	            const item = document.createElement('label');
+	            item.className = 'legend-item';
+	            item.innerHTML = `
+	                <input type="checkbox" data-type="greenhouse" value="${gh}" ${checked ? 'checked' : ''}>
+	                <span class="legend-label">${gh}</span>
+	            `;
+	            container.appendChild(item);
+	        });
 
-            const color = trapData.color;
-            const borderColor = trapData.weeklyAverage === 0 ? '#d1d5db' : 'white';
-            const textColor = trapData.weeklyAverage <= 2 ? '#1f2937' : 'white';
-            
-            const icon = L.divIcon({
-                className: 'trap-marker',
-                html: `<div style="
-                    width: 32px;
-                    height: 32px;
-                    background: ${color};
-                    border: 3px solid ${borderColor};
-                    border-radius: 50%;
-                    box-shadow: 0 3px 8px rgba(0,0,0,0.4);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: ${textColor};
-                    font-size: 12px;
-                    font-weight: bold;
-                    cursor: pointer;
-                ">${trapData.weeklyAverage}</div>`,
-                iconSize: [32, 32],
-                iconAnchor: [16, 16]
-            });
+	        setupFilterListeners();
+	    };
 
-            const marker = L.marker([offsetLat, offsetLng], { icon });
-            
-            // Bind tooltip (hover)
-            marker.bindTooltip(`
-                <div style="font-size: 0.8125rem; line-height: 1.5;">
-                    <strong style="display: block; margin-bottom: 0.25rem;">${trapName}</strong>
-                    <div style="display: flex; justify-content: space-between; gap: 1rem;">
-                        <span style="opacity: 0.9;">${trapData.pest}</span>
-                        <span style="font-weight: 600;">Avg: ${trapData.weeklyAverage}/week</span>
-                    </div>
-                </div>
-            `, {
-                direction: 'top',
-                offset: [0, -12]
-            });
-            
-            // Bind popup (click)
-            marker.bindPopup(`
-                <div style="font-size: 0.875rem; line-height: 1.6; min-width: 220px;">
-                    <strong style="display: block; font-size: 1rem; margin-bottom: 0.5rem; color: ${color === '#ffffff' ? '#1f2937' : color};">
-                        ${trapName}
-                    </strong>
-                    <div style="display: grid; gap: 0.25rem;">
-                        <div><strong>Pest:</strong> ${trapData.pest}</div>
-                        <div><strong>Weekly Average:</strong> ${trapData.weeklyAverage} catches</div>
-                        <div><strong>Total This Week:</strong> ${trapData.totalCount} catches</div>
-                        <div><strong>Days Recorded:</strong> ${trapData.days.size} days</div>
-                        <div><strong>Location:</strong> ${trapData.location}</div>
-                        <div style="opacity: 0.8; margin-top: 0.25rem;">
-                            <div><strong>Zone:</strong> ${trapData.zone}</div>
-                            <div><strong>Greenhouse:</strong> ${greenhouse}</div>
-                        </div>
-                    </div>
-                </div>
-            `);
-            
-            window.trapMarkers.addLayer(marker);
-        });
+	    const renderPestList = () => {
+	        const container = document.getElementById('pest-list');
+	        container.innerHTML = '';
 
-        window.trapMarkers.addTo(window.map);
-        console.log(`Added ${window.trapMarkers.getLayers().length} markers to map`);
-    };
+	        const pests = window.trapData.pests || [];
+	        if (!pests.length) {
+	            container.innerHTML = '<p style="font-size:0.8125rem;color:#999;padding:0.5rem;">No pests recorded</p>';
+	            return;
+	        }
 
-    // Render greenhouse list
-    const renderGreenhouseList = () => {
-        const container = document.getElementById('greenhouse-list');
-        container.innerHTML = '';
+	        const pestCounts = {};
+	        (window.trapData.trap_entries || []).forEach(entry => {
+	            pestCounts[entry.pest] = (pestCounts[entry.pest] || 0) + (entry.count || 0);
+	        });
 
-        const greenhouses = window.trapData.greenhouses || [];
-        if (!greenhouses.length) {
-            container.innerHTML = '<p style="font-size:0.8125rem;color:#999;padding:0.5rem;">No greenhouses</p>';
-            return;
-        }
+	        pests.forEach(pest => {
+	            const checked = window.filters.pests.has(pest);
+	            const color = getPestColor(pest);
+	            const count = pestCounts[pest] || 0;
 
-        greenhouses.forEach(gh => {
-            const checked = window.filters.greenhouses.has(gh);
-            const item = document.createElement('label');
-            item.className = 'legend-item';
-            item.innerHTML = `
-                <input type="checkbox" data-type="greenhouse" value="${gh}" ${checked ? 'checked' : ''}>
-                <span class="legend-label">${gh}</span>
-            `;
-            container.appendChild(item);
-        });
+	            const item = document.createElement('label');
+	            item.className = 'legend-item';
+	            item.innerHTML = `
+	                <input type="checkbox" data-type="pest" value="${pest}" ${checked ? 'checked' : ''}>
+	                <span class="color-swatch" style="background-color:${color}"></span>
+	                <span class="legend-label">${pest}</span>
+	                <span class="pest-count">${count}</span>
+	            `;
+	            container.appendChild(item);
+	        });
 
-        setupFilterListeners();
-    };
+	        setupFilterListeners();
+	    };
 
-    // Render pest list
-    const renderPestList = () => {
-        const container = document.getElementById('pest-list');
-        container.innerHTML = '';
+	    const setupFilterListeners = () => {
+	        document.querySelectorAll('[data-filter="location"]').forEach(btn => {
+	            btn.addEventListener('click', e => {
+	                document.querySelectorAll('[data-filter="location"]').forEach(b => b.classList.remove('active'));
+	                e.target.classList.add('active');
+	                window.filters.location = e.target.dataset.value;
+	                renderTrapMarkers();
+	            });
+	        });
 
-        const pests = window.trapData.pests || [];
-        if (!pests.length) {
-            container.innerHTML = '<p style="font-size:0.8125rem;color:#999;padding:0.5rem;">No pests recorded</p>';
-            return;
-        }
+	        document.querySelectorAll('[data-type="greenhouse"]').forEach(cb => {
+	            cb.addEventListener('change', e => {
+	                const gh = e.target.value;
+	                if (e.target.checked) window.filters.greenhouses.add(gh);
+	                else window.filters.greenhouses.delete(gh);
+	                renderTrapMarkers();
+	            });
+	        });
 
-        // Count pests
-        const pestCounts = {};
-        (window.trapData.trap_entries || []).forEach(entry => {
-            pestCounts[entry.pest] = (pestCounts[entry.pest] || 0) + entry.count;
-        });
+	        document.querySelectorAll('[data-type="pest"]').forEach(cb => {
+	            cb.addEventListener('change', e => {
+	                const pest = e.target.value;
+	                if (e.target.checked) window.filters.pests.add(pest);
+	                else window.filters.pests.delete(pest);
+	                renderTrapMarkers();
+	            });
+	        });
 
-        pests.forEach(pest => {
-            const checked = window.filters.pests.has(pest);
-            const color = getPestColor(pest);
-            const count = pestCounts[pest] || 0;
-            
-            const item = document.createElement('label');
-            item.className = 'legend-item';
-            item.innerHTML = `
-                <input type="checkbox" data-type="pest" value="${pest}" ${checked ? 'checked' : ''}>
-                <span class="color-swatch" style="background-color:${color}"></span>
-                <span class="legend-label">${pest}</span>
-                <span class="pest-count">${count}</span>
-            `;
-            container.appendChild(item);
-        });
+	        document.querySelector('[data-action="select-all-gh"]')?.addEventListener('click', () => {
+	            window.filters.greenhouses = new Set(window.trapData.greenhouses || []);
+	            renderGreenhouseList();
+	            renderTrapMarkers();
+	        });
 
-        setupFilterListeners();
-    };
+	        document.querySelector('[data-action="select-none-gh"]')?.addEventListener('click', () => {
+	            window.filters.greenhouses.clear();
+	            renderGreenhouseList();
+	            renderTrapMarkers();
+	        });
 
-    // Setup filter listeners
-    const setupFilterListeners = () => {
-        // Location filters
-        document.querySelectorAll('[data-filter="location"]').forEach(btn => {
-            btn.addEventListener('click', e => {
-                document.querySelectorAll('[data-filter="location"]').forEach(b => 
-                    b.classList.remove('active'));
-                e.target.classList.add('active');
-                window.filters.location = e.target.dataset.value;
-                renderTrapMarkers();
-            });
-        });
+	        document.querySelector('[data-action="select-all-pests"]')?.addEventListener('click', () => {
+	            window.filters.pests = new Set(window.trapData.pests || []);
+	            renderPestList();
+	            renderTrapMarkers();
+	        });
 
-        // Greenhouse checkboxes
-        document.querySelectorAll('[data-type="greenhouse"]').forEach(cb => {
-            cb.addEventListener('change', e => {
-                const gh = e.target.value;
-                if (e.target.checked) {
-                    window.filters.greenhouses.add(gh);
-                } else {
-                    window.filters.greenhouses.delete(gh);
-                }
-                renderTrapMarkers();
-            });
-        });
+	        document.querySelector('[data-action="select-none-pests"]')?.addEventListener('click', () => {
+	            window.filters.pests.clear();
+	            renderPestList();
+	            renderTrapMarkers();
+	        });
+	    };
 
-        // Pest checkboxes
-        document.querySelectorAll('[data-type="pest"]').forEach(cb => {
-            cb.addEventListener('change', e => {
-                const pest = e.target.value;
-                if (e.target.checked) {
-                    window.filters.pests.add(pest);
-                } else {
-                    window.filters.pests.delete(pest);
-                }
-                renderTrapMarkers();
-            });
-        });
-
-        // Select all/none buttons
-        document.querySelector('[data-action="select-all-gh"]')?.addEventListener('click', () => {
-            window.filters.greenhouses = new Set(window.trapData.greenhouses || []);
-            renderGreenhouseList();
-            renderZones(window.trapData);
-            renderTrapMarkers();
-        });
-
-        document.querySelector('[data-action="select-none-gh"]')?.addEventListener('click', () => {
-            window.filters.greenhouses.clear();
-            renderGreenhouseList();
-            renderTrapMarkers();
-        });
-
-        document.querySelector('[data-action="select-all-pests"]')?.addEventListener('click', () => {
-            window.filters.pests = new Set(window.trapData.pests || []);
-            renderPestList();
-            renderTrapMarkers();
-        });
-
-        document.querySelector('[data-action="select-none-pests"]')?.addEventListener('click', () => {
-            window.filters.pests.clear();
-            renderPestList();
-            renderTrapMarkers();
-        });
-    };
-
-    // Render base layers
-    const renderBaseLayers = () => {
-        const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { 
-            maxZoom: 25,
-            attribution: '© Google'
-        });
-        
-        const osmStreet = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
-            maxZoom: 25,
-            attribution: '© OpenStreetMap contributors'
-        });
-        
-        const osmSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { 
-            maxZoom: 25,
-            attribution: '© Esri'
-        });
-
-        googleSat.addTo(window.map);
-
-        const baseMaps = {
-            "Satellite View": googleSat,
-            "Street Map": osmStreet,
-            "OSM Satellite": osmSat
-        };
-
-        L.control.layers(baseMaps, {}, {
-            collapsed: false,
-            position: 'topleft'
-        }).addTo(window.map);
-
-        window.map.on('baselayerchange', e => {
-            // Enable offset for Google Satellite & OSM Satellite
-            useOffset = (e.name === "Satellite View" || e.name === "OSM Satellite");
-
-            // Re-render everything with new offset
-            if (window.trapData.all_zones_geojson) {
-                renderZones(window.trapData);
-                renderTrapMarkers();
-            }
-        });
-    };
-
-    // Initialize
-    initializeMap();
-};
+	    initializeMap();
+	};
 </script>
 {% endblock %}

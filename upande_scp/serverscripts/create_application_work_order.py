@@ -203,6 +203,11 @@ def createApplicationWorkOrder():
         })
         wo.insert(ignore_permissions=True)
 
+        # Mirror planned_start_date into custom_scheduled_application_time so the
+        # Spray Plan Approval page can filter/sort by it.
+        if not wo.get("custom_scheduled_application_time") and wo.planned_start_date:
+            wo.custom_scheduled_application_time = wo.planned_start_date
+
         # -------------------------------------------------- 11.5 FIX: Set include_item_in_manufacturing
         # CRITICAL: ERPNext doesn't always copy this flag from BOM, so we must set it manually
         for item in wo.required_items:

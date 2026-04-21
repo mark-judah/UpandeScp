@@ -1,222 +1,121 @@
 import frappe
 from frappe import _
-import json
+
+from upande_scp.serverscripts.cache_utils import (
+    K_BED_COUNT_BY_GH,
+    K_FARMS_AND_GREENHOUSES,
+    K_OBSERVATION_TYPES,
+    K_ZONE_COUNT_BY_BED,
+    TTL_MEDIUM,
+    TTL_SHORT,
+    build_bed_count_by_gh,
+    build_observation_types,
+    build_zone_count_by_bed,
+    get_or_set,
+)
+
+
+# Maps Scouting Entry child-table → (doctype, item-field on row, extra fields, output key)
+_CHILD_TABLE_CONFIG = (
+    ("Pests Scouting Entry",        "pest",                     ("stage", "count", "plant_section"), "pests_scouting_entry"),
+    ("Diseases Scouting Entry",     "disease",                  ("stage", "plant_section"),          "diseases_scouting_entry"),
+    ("Predators Scouting Entry",    "predator",                 ("stage", "count", "plant_section"), "predators_scouting_entry"),
+    ("Weeds Scouting Entry",        "weed",                     (),                                   "weeds_scouting_entry"),
+    ("Incidents Scouting Entry",    "incident",                 (),                                   "incidents_scouting_entry"),
+    ("Physiological Disorders Entry", "physiological_disorders", (),                                  "physiological_disorders_entry"),
+)
+
 
 @frappe.whitelist()
 def getHeatmapData(date, greenhouse):
-    """
-    Fetch scouting entries for a specific date and greenhouse with observation type details
+    """Heatmap payload for a single (date, greenhouse).
+
+    Hot path is three queries + Redis hits:
+      1) Scouting entries for the day
+      2) Parent-IN batched fetch of each child table
+      3) Cached observation-type metadata + cached zone-count-by-bed / bed-count-by-gh
     """
     try:
-        # Get scouting entries for the specified date and greenhouse
         scouting_entries = frappe.get_all(
             "Scouting Entry",
-            filters={
-                "date_of_capture": date,
-                "greenhouse": greenhouse
-            },
-            fields=["name", "zone", "bed", "greenhouse"]
+            filters={"date_of_capture": date, "greenhouse": greenhouse},
+            fields=["name", "zone", "bed", "greenhouse"],
+            limit_page_length=0,
         )
-        
-        # Get bed count and zone count for the greenhouse
-        bed_count = frappe.db.count("Bed", filters={
-            "greenhouse": greenhouse
-        })
-        
-        # Get all beds for this greenhouse to find max zone count
-        beds = frappe.get_all(
+
+        bed_count_map = get_or_set(K_BED_COUNT_BY_GH, build_bed_count_by_gh, ttl=TTL_SHORT)
+        zone_count_by_bed = get_or_set(K_ZONE_COUNT_BY_BED, build_zone_count_by_bed, ttl=TTL_SHORT)
+
+        bed_count = bed_count_map.get(greenhouse, 0)
+
+        # Max zone-count across beds of this greenhouse — derived from cached map
+        gh_beds = frappe.get_all(
             "Bed",
-            filters={
-                "greenhouse": greenhouse
-            },
-            fields=["name"]
+            filters={"greenhouse": greenhouse, "custom_active": 1},
+            fields=["name"],
+            limit_page_length=0,
         )
-        
-        # Find maximum zone count across all beds
-        max_zone_count = 0
-        for bed in beds:
-            zone_count = frappe.db.count("Zone", filters={
-                "greenhouse": greenhouse,
-                "bed": bed.name
-            })
-            max_zone_count = max(max_zone_count, zone_count)
-        
+        max_zone_count = max(
+            (zone_count_by_bed.get(b.name, 0) for b in gh_beds),
+            default=0,
+        )
+
+        observation_types = get_or_set(K_OBSERVATION_TYPES, build_observation_types, ttl=TTL_MEDIUM)
+
         if not scouting_entries:
             return {
                 "scouting_entries": [],
-                "observation_types": {},
+                "observation_types": observation_types,
                 "bed_count": bed_count,
                 "zone_count": max_zone_count,
-                "message": "No scouting entries found for this date and greenhouse"
+                "message": "No scouting entries found for this date and greenhouse",
             }
-        
-        # Fetch complete details for each entry
-        detailed_entries = []
-        for entry in scouting_entries:
-            full_entry = frappe.get_doc("Scouting Entry", entry.name)
-            
-            entry_data = {
-                "name": full_entry.name,
-                "zone": full_entry.zone,
-                "bed": full_entry.bed,
-                "greenhouse": full_entry.greenhouse,
+
+        entry_names = [e.name for e in scouting_entries]
+
+        # Seed per-entry buckets in a single pass
+        entries_by_name = {}
+        for e in scouting_entries:
+            entries_by_name[e.name] = {
+                "name": e.name,
+                "zone": e.zone,
+                "bed": e.bed,
+                "greenhouse": e.greenhouse,
                 "pests_scouting_entry": [],
                 "diseases_scouting_entry": [],
                 "predators_scouting_entry": [],
                 "weeds_scouting_entry": [],
                 "incidents_scouting_entry": [],
                 "physiological_disorders_entry": [],
-                "crop_husbandry_practices_entry": []
-            }
-            
-            # Process pests
-            for pest_entry in full_entry.pests_scouting_entry:
-                entry_data["pests_scouting_entry"].append({
-                    "name": pest_entry.pest,
-                    "stage": pest_entry.stage,
-                    "count": pest_entry.count or 0,
-                    "plant_section": pest_entry.plant_section
-                })
-            
-            # Process diseases
-            for disease_entry in full_entry.diseases_scouting_entry:
-                entry_data["diseases_scouting_entry"].append({
-                    "name": disease_entry.disease,
-                    "stage": disease_entry.stage,
-                    "plant_section": disease_entry.plant_section
-                })
-            
-            # Process predators
-            for predator_entry in full_entry.predators_scouting_entry:
-                entry_data["predators_scouting_entry"].append({
-                    "name": predator_entry.predator,
-                    "stage": predator_entry.stage,
-                    "count": predator_entry.count or 0,
-                    "plant_section": predator_entry.plant_section
-                })
-            
-            # Process weeds
-            for weed_entry in full_entry.weeds_scouting_entry:
-                entry_data["weeds_scouting_entry"].append({
-                    "name": weed_entry.weed
-                })
-            
-            # Process incidents
-            for incident_entry in full_entry.incidents_scouting_entry:
-                entry_data["incidents_scouting_entry"].append({
-                    "name": incident_entry.incident
-                })
-            
-            # Process physiological disorders
-            for disorder_entry in full_entry.physiological_disorders_entry:
-                entry_data["physiological_disorders_entry"].append({
-                    "name": disorder_entry.physiological_disorders
-                })
-
-            # Process crop husbandry practices
-            for practice_entry in full_entry.crop_husbandry_practices_entry:
-                entry_data["crop_husbandry_practices_entry"].append({
-                    "name": practice_entry.crop_husbandry_practices
-                })
-            
-            detailed_entries.append(entry_data)
-        
-        # Fetch observation type metadata
-        observation_types = {}
-        
-        # Get all pests with their stages and colors
-        pests = frappe.get_all("Pest", fields=["name", "common_name", "pests_legend_color"])
-        observation_types["pests"] = {}
-        for pest in pests:
-            pest_doc = frappe.get_doc("Pest", pest.name)
-            observation_types["pests"][pest.common_name] = {
-                "color": pest.pests_legend_color or "#999999",
-                "stages": []
-            }
-            for stage in pest_doc.stages:
-                observation_types["pests"][pest.common_name]["stages"].append({
-                    "stage": stage.stage,
-                    "symbol": stage.get("symbol", ""),
-                    "reading_type": stage.reading_type
-                })
-        
-        # Get all diseases with their stages and colors
-        diseases = frappe.get_all("Plant Disease", fields=["name", "common_name", "disease_legend_color"])
-        observation_types["diseases"] = {}
-        for disease in diseases:
-            disease_doc = frappe.get_doc("Plant Disease", disease.name)
-            observation_types["diseases"][disease.common_name] = {
-                "color": disease.disease_legend_color or "#999999",
-                "stages": []
-            }
-            for stage in disease_doc.stages:
-                observation_types["diseases"][disease.common_name]["stages"].append({
-                    "stage": stage.stage,
-                    "symbol": stage.get("symbol", ""),
-                    "reading_type": stage.reading_type
-                })
-        
-        # Get all predators with their stages
-        predators = frappe.get_all("Predator", fields=["name", "common_name"])
-        observation_types["predators"] = {}
-        for predator in predators:
-            predator_doc = frappe.get_doc("Predator", predator.name)
-            observation_types["predators"][predator.common_name] = {
-                "color": "#4c6ef5",
-                "stages": []
-            }
-            for stage in predator_doc.predator_stages:
-                observation_types["predators"][predator.common_name]["stages"].append({
-                    "stage": stage.stage,
-                    "symbol": "",
-                    "reading_type": stage.reading_type
-                })
-        
-        # Get all weeds
-        weeds = frappe.get_all("Weed", fields=["name"])
-        observation_types["weeds"] = {}
-        for weed in weeds:
-            observation_types["weeds"][weed.name] = {
-                "color": "#51cf66",
-                "stages": []
-            }
-        
-        # Get all incidents
-        incidents = frappe.get_all("Incident", fields=["name", "name"])
-        observation_types["incidents"] = {}
-        for incident in incidents:
-            observation_types["incidents"][incident.name] = {
-                "color": "#868e96",
-                "stages": []
-            }
-        
-        # Get all physiological disorders
-        disorders = frappe.get_all("Physiological Disorder", fields=["name", "name"])
-        observation_types["physiological_disorders"] = {}
-        for disorder in disorders:
-            observation_types["physiological_disorders"][disorder.name] = {
-                "color": "#ff6b6b",
-                "stages": []
             }
 
-        # Get all crop husbandry practices
-        practices = frappe.get_all("Crop Husbandry Practices", fields=["name", "name"])
-        observation_types["crop_husbandry_practices"] = {}
-        for practice in practices:
-            observation_types["crop_husbandry_practices"][practice.name] = {
-                "color": "#ffd43b",
-                "stages": []
-            }
-        
+        # One batched fetch per child table — no per-entry get_doc
+        for child_doctype, item_field, extra_fields, out_key in _CHILD_TABLE_CONFIG:
+            fields = ["parent", item_field] + list(extra_fields)
+            rows = frappe.get_all(
+                child_doctype,
+                filters={"parent": ["in", entry_names]},
+                fields=fields,
+                limit_page_length=0,
+            )
+            for row in rows:
+                bucket = entries_by_name.get(row.parent)
+                if not bucket:
+                    continue
+                obs = {"name": row.get(item_field)}
+                for f in extra_fields:
+                    obs[f] = row.get(f) if f != "count" else (row.get(f) or 0)
+                bucket[out_key].append(obs)
+
         return {
-            "scouting_entries": detailed_entries,
+            "scouting_entries": list(entries_by_name.values()),
             "observation_types": observation_types,
             "bed_count": bed_count,
             "zone_count": max_zone_count,
             "date": date,
-            "greenhouse": greenhouse
+            "greenhouse": greenhouse,
         }
-        
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Heatmap Data Error")
         frappe.throw(_("Error fetching heatmap data: {0}").format(str(e)))
@@ -224,30 +123,35 @@ def getHeatmapData(date, greenhouse):
 
 @frappe.whitelist()
 def getFarmsAndGreenhouses():
+    """Farms grouped by greenhouse — cached, single pass."""
     try:
-        meta = frappe.get_meta("Warehouse")
-        has_custom_farm = any(df.fieldname == "custom_farm" for df in meta.fields)
-        fields = ["name", "warehouse_name"] + (["custom_farm"] if has_custom_farm else [])
-        greenhouses = frappe.get_all("Warehouse",
-                                     filters={"warehouse_type": "Greenhouse"},
-                                     fields=fields,
-                                     order_by="warehouse_name asc")
-        farms_data = {}
-        for gh in greenhouses:
-            farm_name = gh.get("custom_farm") if has_custom_farm else "All"
-            if not farm_name:
-                farm_name = "Unassigned"
-            if farm_name not in farms_data:
-                farms_data[farm_name] = {"name": farm_name, "greenhouses": []}
-            farms_data[farm_name]["greenhouses"].append(
-                {"name": gh.get("name"), "warehouse_name": gh.get("warehouse_name")}
+        def _build():
+            farms = frappe.get_all("Farm", fields=["name", "farm"], order_by="farm asc")
+            greenhouses = frappe.get_all(
+                "Warehouse",
+                filters={"warehouse_type": "Greenhouse"},
+                fields=["name", "warehouse_name", "custom_farm"],
+                order_by="name asc",
+                limit_page_length=0,
             )
-        result = [
-            {"name": name, "greenhouses": data["greenhouses"]}
-            for name, data in sorted(farms_data.items(), key=lambda x: x[0])
-            if data["greenhouses"]
-        ]
-        return {"farms": result}
+            farms_data = {f.farm: {"name": f.farm, "greenhouses": []} for f in farms}
+            for gh in greenhouses:
+                fname = gh.custom_farm
+                if fname and fname in farms_data:
+                    farms_data[fname]["greenhouses"].append({
+                        "name": gh.name,
+                        "warehouse_name": gh.warehouse_name,
+                    })
+            return {
+                "farms": [
+                    {"name": fname, "greenhouses": data["greenhouses"]}
+                    for fname, data in farms_data.items()
+                    if data["greenhouses"]
+                ]
+            }
+
+        return get_or_set(K_FARMS_AND_GREENHOUSES, _build, ttl=TTL_MEDIUM)
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Farms and Greenhouses Error")
         frappe.throw(_("Error fetching farms and greenhouses: {0}").format(str(e)))
@@ -255,16 +159,19 @@ def getFarmsAndGreenhouses():
 
 @frappe.whitelist()
 def getAllScoutedGreenhouses(date):
+    """Greenhouses that have scouting data for a given date."""
     try:
-        if not date:
-            frappe.throw(_("Date is required"))
-        entries = frappe.get_all(
-            "Scouting Entry",
-            filters={"date_of_capture": date},
-            fields=["greenhouse"]
+        scouted = frappe.db.sql(
+            """
+            SELECT DISTINCT greenhouse
+            FROM `tabScouting Entry`
+            WHERE date_of_capture = %s
+            ORDER BY greenhouse
+            """,
+            (date,),
+            as_dict=True,
         )
-        names = sorted({e.get("greenhouse") for e in entries if e.get("greenhouse")})
-        return {"greenhouses": names}
+        return {"greenhouses": [row.greenhouse for row in scouted]}
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get All Scouted Greenhouses Error")
         frappe.throw(_("Error fetching scouted greenhouses: {0}").format(str(e)))

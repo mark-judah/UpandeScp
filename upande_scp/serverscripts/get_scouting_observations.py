@@ -8,8 +8,6 @@ def getScoutingObservations():
         if not date_str:
             frappe.throw("Date is required.")
 
-        greenhouse = frappe.form_dict.get("greenhouse") or ""
-
         observation_configs = {
             "pests_scouting_entry": {
                 "doctype": "Pest",
@@ -58,18 +56,27 @@ def getScoutingObservations():
                 "type_label": "Physiological Disorders",
                 "item_field": "physiological_disorders",
                 "extra_fields": []
-            },
-            "crop_husbandry_practices_entry": {
-                "doctype": "Crop Husbandry Practices",
-                "legend_color_field": "color",
-                "child_table": "Crop Husbandry Practices Entry",
-                "type_label": "Crop Husbandry Practices",
-                "item_field": "crop_husbandry_practices",
-                "extra_fields": []
             }
         }
 
-        # Build filters for Scouting Entry
+        # Pre-compute meta fields once — avoids 12 get_meta() calls inside the loop
+        boolean_types = {
+            "diseases_scouting_entry", "incidents_scouting_entry",
+            "physiological_disorders_entry", "weeds_scouting_entry"
+        }
+        for key, cfg in observation_configs.items():
+            meta = frappe.get_meta(cfg["child_table"])
+            cfg["_fetch_fields"] = ["parent", cfg["item_field"]] + [
+                f for f in cfg["extra_fields"] if meta.has_field(f)
+            ]
+            cfg["_has_count"] = "count" in [f.fieldname for f in meta.fields]
+            main_meta = frappe.get_meta(cfg["doctype"])
+            cfg["_color_field_exists"] = any(
+                f.fieldname == cfg["legend_color_field"] for f in main_meta.fields
+            )
+
+        greenhouse = frappe.form_dict.get("greenhouse") or ""
+
         se_filters = {"date_of_capture": date_str}
         if greenhouse:
             se_filters["greenhouse"] = greenhouse
@@ -77,15 +84,10 @@ def getScoutingObservations():
         scouting_entries = frappe.get_all(
             "Scouting Entry",
             filters=se_filters,
-            fields=["name", "zone", "scouts_name", "bed", "greenhouse"],
+            fields=["name", "zone"],
             order_by="time_of_capture ASC"
         )
         entry_names = [e.name for e in scouting_entries]
-
-        # Compute summary stats
-        scouts_count = len({e.scouts_name for e in scouting_entries if e.scouts_name})
-        beds_count = len({e.bed for e in scouting_entries if e.bed})
-        zones_scouted = len({e.zone for e in scouting_entries if e.zone})
 
         if not entry_names:
             frappe.response["message"] = {
@@ -93,12 +95,7 @@ def getScoutingObservations():
                 "all_zones_geojson": [],
                 "active_observation_types": [],
                 "all_observation_names": {},
-                "observation_metadata": {k: {"label": v["type_label"]} for k, v in observation_configs.items()},
-                "summary": {
-                    "scouts_count": 0,
-                    "beds_count": 0,
-                    "zones_scouted": 0
-                }
+                "observation_metadata": {k: {"label": v["type_label"]} for k, v in observation_configs.items()}
             }
             return
 
@@ -111,19 +108,13 @@ def getScoutingObservations():
         all_observation_names = {}
 
         for key, cfg in observation_configs.items():
-            fields = ["parent", cfg["item_field"]]
-            meta = frappe.get_meta(cfg["child_table"])
-            for f in cfg["extra_fields"]:
-                if meta.has_field(f):
-                    fields.append(f)
-
             items_in_data = {}
 
             try:
                 child_records = frappe.get_all(
                     cfg["child_table"],
                     filters={"parent": ["in", entry_names]},
-                    fields=fields
+                    fields=cfg["_fetch_fields"]
                 )
 
                 for rec in child_records:
@@ -138,18 +129,15 @@ def getScoutingObservations():
                     if item_name not in items_in_data:
                         items_in_data[item_name] = "#999999"
 
-                    obs_data = {
-                        "name": item_name,
-                        "color": "#999999"
-                    }
+                    obs_data = {"name": item_name, "color": "#999999"}
 
                     for field in cfg["extra_fields"]:
                         if field in rec:
                             obs_data[field] = rec[field]
 
-                    if "count" in [f.fieldname for f in meta.fields] and "count" in rec:
+                    if cfg["_has_count"] and "count" in rec:
                         obs_data["count"] = rec["count"]
-                    elif key in ["diseases_scouting_entry", "incidents_scouting_entry", "physiological_disorders_entry", "weeds_scouting_entry"]:
+                    elif key in boolean_types:
                         obs_data["count"] = 1
                     else:
                         obs_data["count"] = rec.get("count", 0)
@@ -161,28 +149,34 @@ def getScoutingObservations():
                 continue
 
             if items_in_data:
-                try:
-                    main_meta = frappe.get_meta(cfg["doctype"])
-                    color_field_exists = any(f.fieldname == cfg["legend_color_field"] for f in main_meta.fields)
+                # Colors are cached in Redis — they almost never change day-to-day
+                color_cache_key = f"scp_obs_colors_{key}"
+                full_color_map = frappe.cache().get_value(color_cache_key)
 
-                    if color_field_exists:
-                        color_records = frappe.get_all(
-                            cfg["doctype"],
-                            filters={"name": ["in", list(items_in_data.keys())]},
-                            fields=["name", cfg["legend_color_field"]]
-                        )
-                        for rec in color_records:
-                            color = rec.get(cfg["legend_color_field"])
-                            if color:
-                                items_in_data[rec.name] = color
+                if full_color_map is None:
+                    full_color_map = {}
+                    try:
+                        if cfg["_color_field_exists"]:
+                            for rec in frappe.get_all(
+                                cfg["doctype"],
+                                fields=["name", cfg["legend_color_field"]]
+                            ):
+                                name = rec.get("name")
+                                color = rec.get(cfg["legend_color_field"])
+                                if name:
+                                    if color:
+                                        full_color_map[name] = color
+                                    else:
+                                        color_hash = hashlib.md5(name.encode()).hexdigest()[:6]
+                                        full_color_map[name] = f"#{color_hash}"
+                    except Exception:
+                        pass
+                    frappe.cache().set_value(color_cache_key, full_color_map, expires_in_sec=86400)
 
-                    for item_name in items_in_data:
-                        if items_in_data[item_name] == "#999999":
-                            color_hash = hashlib.md5(item_name.encode()).hexdigest()[:6]
-                            items_in_data[item_name] = f"#{color_hash}"
-
-                except Exception as e:
-                    for item_name in items_in_data:
+                for item_name in list(items_in_data.keys()):
+                    if item_name in full_color_map:
+                        items_in_data[item_name] = full_color_map[item_name]
+                    else:
                         color_hash = hashlib.md5(item_name.encode()).hexdigest()[:6]
                         items_in_data[item_name] = f"#{color_hash}"
 
@@ -204,16 +198,20 @@ def getScoutingObservations():
                 e[key] = proc.get(key, [])
             final_entries.append(e)
 
-        # Fetch only zones referenced by entries in scope (much faster with greenhouse filter)
-        entry_zones = list({e.zone for e in scouting_entries if e.zone})
-        if entry_zones:
-            all_zones = frappe.get_all(
+        # Zone GeoJSON is cached in Redis — geometry doesn't change between requests
+        zone_cache_key = "scp_zone_geojson"
+        all_zones_raw = frappe.cache().get_value(zone_cache_key)
+        if all_zones_raw is None:
+            all_zones_raw = frappe.get_all(
                 "Zone",
-                filters={"name": ["in", entry_zones], "raw_geojson": ["is", "set"]},
+                filters={"raw_geojson": ["is", "set"]},
                 fields=["name", "raw_geojson"]
             )
-        else:
-            all_zones = []
+            frappe.cache().set_value(zone_cache_key, all_zones_raw, expires_in_sec=3600)
+
+        # Filter to only zones referenced by today's entries — done in Python, no DB round trip
+        entry_zones_set = {e.zone for e in scouting_entries if e.zone}
+        all_zones = [z for z in all_zones_raw if z.get("name") in entry_zones_set]
 
         active_types = [
             key for key in observation_configs
@@ -222,167 +220,14 @@ def getScoutingObservations():
 
         frappe.response["message"] = {
             "scouting_entries": final_entries,
-            "all_zones_geojson": all_zones or [],
+            "all_zones_geojson": all_zones,
             "active_observation_types": active_types,
             "all_observation_names": all_observation_names,
             "observation_metadata": {
                 k: {"label": v["type_label"]} for k, v in observation_configs.items()
-            },
-            "summary": {
-                "scouts_count": scouts_count,
-                "beds_count": beds_count,
-                "zones_scouted": zones_scouted
             }
         }
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Scouting Observations Error")
         frappe.throw(f"Error fetching scouting data: {str(e)}")
-
-
-def _pick_first_existing_field(doctype, fieldnames):
-    meta = frappe.get_meta(doctype)
-    for fieldname in fieldnames:
-        if meta.has_field(fieldname):
-            return fieldname
-    return None
-
-
-def _resolve_colors(doctype, candidate_fields, names):
-    names = {n for n in (names or []) if n}
-    if not names:
-        return {}
-
-    color_field = _pick_first_existing_field(doctype, candidate_fields)
-    colors = {}
-
-    if color_field:
-        for rec in frappe.get_all(
-            doctype, filters={"name": ["in", list(names)]}, fields=["name", color_field]
-        ):
-            color = rec.get(color_field)
-            if color:
-                colors[rec["name"]] = color
-
-    for name in names:
-        if name not in colors:
-            color_hash = hashlib.md5(name.encode()).hexdigest()[:6]
-            colors[name] = f"#{color_hash}"
-
-    return colors
-
-
-@frappe.whitelist()
-def getTopPestDiseaseByGreenhouse():
-    try:
-        date_str = frappe.form_dict.get("date")
-        if not date_str:
-            frappe.throw("Date is required.")
-
-        greenhouse_filter = frappe.form_dict.get("greenhouse") or ""
-        se_filters = {"date_of_capture": date_str}
-        if greenhouse_filter:
-            se_filters["greenhouse"] = greenhouse_filter
-
-        entries = frappe.get_all(
-            "Scouting Entry",
-            filters=se_filters,
-            fields=["name", "greenhouse"],
-            order_by="greenhouse ASC",
-        )
-
-        if not entries:
-            frappe.response["message"] = {"greenhouses": [], "max_pest": 0, "max_disease": 0}
-            return
-
-        entry_to_gh = {e["name"]: e.get("greenhouse") for e in entries if e.get("greenhouse")}
-        entry_names = list(entry_to_gh.keys())
-        gh_names = sorted(set(entry_to_gh.values()))
-
-        warehouse_rows = frappe.get_all(
-            "Warehouse",
-            filters={"name": ["in", gh_names]},
-            fields=["name", "warehouse_name"],
-        )
-        gh_labels = {w["name"]: w.get("warehouse_name") or w["name"] for w in warehouse_rows}
-
-        pest_counts = {gh: {} for gh in gh_names}
-        for rec in frappe.get_all(
-            "Pests Scouting Entry",
-            filters={"parent": ["in", entry_names]},
-            fields=["parent", "pest", "count"],
-        ):
-            gh = entry_to_gh.get(rec.get("parent"))
-            pest = rec.get("pest")
-            if not gh or not pest:
-                continue
-            count = rec.get("count")
-            try:
-                count = int(count) if count is not None else 1
-            except Exception:
-                count = 1
-            pest_counts[gh][pest] = pest_counts[gh].get(pest, 0) + max(count, 1)
-
-        disease_counts = {gh: {} for gh in gh_names}
-        for rec in frappe.get_all(
-            "Diseases Scouting Entry",
-            filters={"parent": ["in", entry_names]},
-            fields=["parent", "disease"],
-        ):
-            gh = entry_to_gh.get(rec.get("parent"))
-            disease = rec.get("disease")
-            if not gh or not disease:
-                continue
-            disease_counts[gh][disease] = disease_counts[gh].get(disease, 0) + 1
-
-        pest_names = {name for by_pest in pest_counts.values() for name in by_pest.keys()}
-        disease_names = {name for by_dis in disease_counts.values() for name in by_dis.keys()}
-
-        pest_colors = _resolve_colors("Pest", ["pests_legend_color", "color"], pest_names)
-        disease_colors = _resolve_colors(
-            "Plant Disease", ["disease_legend_color", "color"], disease_names
-        )
-
-        max_pest = 0
-        max_disease = 0
-        rows = []
-
-        for gh in gh_names:
-            pest = {"name": "", "count": 0, "color": "#e5e7eb"}
-            disease = {"name": "", "count": 0, "color": "#e5e7eb"}
-
-            if pest_counts.get(gh):
-                pest_name, pest_count = max(pest_counts[gh].items(), key=lambda kv: kv[1])
-                pest = {
-                    "name": pest_name,
-                    "count": pest_count,
-                    "color": pest_colors.get(pest_name) or "#e5e7eb",
-                }
-                max_pest = max(max_pest, pest_count)
-
-            if disease_counts.get(gh):
-                dis_name, dis_count = max(disease_counts[gh].items(), key=lambda kv: kv[1])
-                disease = {
-                    "name": dis_name,
-                    "count": dis_count,
-                    "color": disease_colors.get(dis_name) or "#e5e7eb",
-                }
-                max_disease = max(max_disease, dis_count)
-
-            rows.append(
-                {
-                    "name": gh,
-                    "label": gh_labels.get(gh) or gh,
-                    "pest": pest,
-                    "disease": disease,
-                }
-            )
-
-        frappe.response["message"] = {
-            "greenhouses": rows,
-            "max_pest": max_pest,
-            "max_disease": max_disease,
-        }
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Top Pest/Disease By Greenhouse Error")
-        frappe.throw(f"Error fetching top observations: {str(e)}")

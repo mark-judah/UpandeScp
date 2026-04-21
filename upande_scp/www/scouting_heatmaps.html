@@ -1,16 +1,5 @@
 {% extends "upande_scp/www/map_base.html" %} {% block head %}
 <style>
-	:root {
-		--bg: #ffffff;
-		--text: #1f2937;
-		--border: #d1d5db;
-		--sidebar-bg: #f3f4f6;
-		--sidebar-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-		--accent: #4b5563;
-		--accent-hover: #374151;
-		--hover: #e5e7eb;
-	}
-
 	* {
 		box-sizing: border-box;
 		margin: 0;
@@ -18,9 +7,8 @@
 	}
 
 	body {
-		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
-			Cantarell, sans-serif;
-		background: #f9fafb;
+		font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+		background: var(--bg-color, #f5f7fa);
 	}
 
 	#dashboard-page {
@@ -43,13 +31,12 @@
 		position: relative;
 		width: 280px;
 		height: 100%;
-		background: var(--sidebar-bg);
-		border-left: 1px solid var(--border);
-		box-shadow: var(--sidebar-shadow);
+		background: var(--fg-color, #ffffff);
+		border-left: 1px solid var(--border-color, #e5e7eb);
+		box-shadow: var(--shadow-md);
 		z-index: 1000;
 		display: flex;
 		flex-direction: column;
-		transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 		overflow: hidden;
 		flex-shrink: 0;
 	}
@@ -72,7 +59,7 @@
 	.section-label {
 		font-size: 0.875rem;
 		font-weight: 600;
-		color: var(--text);
+		color: var(--heading-color, #111827);
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -83,8 +70,10 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		padding: 0.5rem;
-		background: var(--bg);
-		border-radius: 8px;
+		background: var(--fg-color, #ffffff);
+		border-radius: var(--radius-card, 8px);
+		border: 1px solid var(--border-color, #e5e7eb);
+		box-shadow: var(--shadow-sm);
 		max-height: 300px;
 		overflow-y: auto;
 	}
@@ -93,21 +82,19 @@
 	.farm-btn {
 		padding: 0.625rem 0.875rem;
 		border: 1.5px solid var(--border);
-		background: var(--sidebar-bg);
+		background: var(--panel-bg);
 		color: var(--text);
 		font-size: 0.875rem;
 		font-weight: 600;
-		border-radius: 6px;
+		border-radius: var(--radius-input);
 		cursor: pointer;
-		transition: all 0.2s ease;
 		text-align: left;
 		position: relative;
 	}
 
 	.gh-btn:hover:not(.active),
 	.farm-btn:hover:not(.active) {
-		border-color: var(--accent);
-		transform: translateY(-1px);
+		filter: brightness(0.98);
 	}
 
 	.gh-btn.active,
@@ -115,7 +102,7 @@
 		background: var(--accent);
 		border-color: var(--accent);
 		color: white;
-		box-shadow: 0 4px 12px rgba(75, 85, 99, 0.3);
+		box-shadow: var(--shadow-sm);
 	}
 
 	/* --- All-Greenhouses Table Layout --- */
@@ -136,7 +123,7 @@
 		position: sticky;
 		top: 0;
 		z-index: 20;
-		background: #fff;
+		background: var(--panel-bg);
 		padding: 10px 14px;
 		font-size: 13px;
 		font-weight: 600;
@@ -151,7 +138,7 @@
 		position: sticky;
 		left: 0;
 		z-index: 30;
-		background: #fff;
+		background: var(--panel-bg);
 		min-width: 100px;
 		padding-left: 12px;
 	}
@@ -166,7 +153,7 @@
 		position: sticky;
 		left: 0;
 		z-index: 10;
-		background: #fff;
+		background: var(--panel-bg);
 		padding: 10px 14px 10px 12px;
 		white-space: nowrap;
 		border-right: 1px solid #e5e7eb;
@@ -174,7 +161,7 @@
 
 	.td-gh-date {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--text-muted);
 		line-height: 1.2;
 	}
 
@@ -189,18 +176,18 @@
 
 	.mini-card {
 		display: inline-block;
-		border: 1px solid #e5e7eb;
-		border-radius: 6px;
-		background: #fff;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-input);
+		background: var(--panel-bg);
+		box-shadow: var(--shadow-sm);
 		min-width: 140px;
 		cursor: pointer;
-		transition: none;
 		vertical-align: top;
 		overflow: hidden;
 	}
 
 	.mini-card:hover {
-		box-shadow: none;
+		box-shadow: var(--shadow-md);
 	}
 
 	.mini-card-head {
@@ -208,8 +195,8 @@
 		justify-content: space-between;
 		align-items: baseline;
 		padding: 4px 6px 3px;
-		border-bottom: 1px solid #f0f0f0;
-		background: #fafafa;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg);
 	}
 
 	.mini-card-gh {
@@ -224,7 +211,7 @@
 
 	.mini-card-date {
 		font-size: 8px;
-		color: #9ca3af;
+		color: var(--text-muted);
 	}
 
 	.mini-card-obs {
@@ -257,7 +244,7 @@
 		align-items: center;
 		justify-content: center;
 		font-size: 6px;
-		color: #9ca3af;
+		color: var(--gray-400, #9ca3af);
 	}
 
 	.mini-grid .mg-bed-lbl {
@@ -268,18 +255,18 @@
 		justify-content: flex-end;
 		padding-right: 2px;
 		font-size: 6px;
-		color: #9ca3af;
+		color: var(--gray-400, #9ca3af);
 	}
 
 	.mini-grid .mg-data {
 		height: 7px;
 		border-radius: 1px;
-		box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+		border: 1px solid rgba(0, 0, 0, 0.12);
 	}
 
 	.mini-grid .mg-data.mg-empty {
 		background: transparent;
-		border: 0.5px solid #f0f0f0;
+		border: 0.5px solid var(--border);
 	}
 
 	.mini-grid .mg-corner {
@@ -297,7 +284,7 @@
 
 	.intensity-0 {
 		opacity: 1;
-		background: #e5e7eb !important;
+		background: var(--border) !important;
 		cursor: default;
 	}
 
@@ -317,40 +304,6 @@
 		opacity: 1;
 	}
 
-	/* --- Single Greenhouse Horizontal Columns --- */
-	.optimized-grid {
-		display: flex;
-		flex-direction: row;
-		gap: 12px;
-		padding: 12px;
-		overflow-x: auto;
-		overflow-y: hidden;
-		align-items: flex-start;
-		height: 100%;
-	}
-	.heatmap-card {
-		flex: 0 0 auto;
-		border: 1px solid #e5e7eb;
-		border-radius: 8px;
-		background: #fff;
-		padding: 10px;
-		box-shadow: none;
-		display: flex;
-		flex-direction: column;
-		height: auto;
-		width: fit-content;
-	}
-	.mini-heatmap-wrapper {
-		min-width: 0;
-		flex: 1 1 auto;
-		overflow: visible;
-		width: fit-content;
-	}
-	.mini-heatmap-grid {
-		min-width: 0;
-		width: fit-content;
-	}
-
 	/* --- Modal (same as original) --- */
 
 	.modal {
@@ -368,9 +321,10 @@
 	}
 
 	.modal-content {
-		background: white;
-		border-radius: 8px;
-		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+		background: var(--panel-bg);
+		border-radius: var(--radius-card);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow-md);
 		max-width: 90vw;
 		max-height: 90vh;
 		width: 1200px;
@@ -384,7 +338,7 @@
 		top: 15px;
 		right: 20px;
 		font-size: 32px;
-		color: #6b7280;
+		color: var(--text-muted);
 		background: none;
 		border: none;
 		cursor: pointer;
@@ -396,9 +350,8 @@
 		align-items: center;
 		justify-content: center;
 	}
-
 	.modal-close:hover {
-		color: #1f2937;
+		filter: brightness(0.9);
 	}
 
 	/* --- Full-size heatmap grid (for modal) --- */
@@ -406,8 +359,8 @@
 	.heatmap-container {
 		padding: 10px;
 		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg);
+		border-radius: var(--radius-card);
+		background: var(--panel-bg);
 		overflow: hidden;
 	}
 
@@ -424,8 +377,7 @@
 		font-size: 10px;
 		font-weight: 500;
 		color: #fff;
-		transition: all 0.15s ease-out;
-		box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+		border: 1px solid rgba(0, 0, 0, 0.12);
 	}
 
 	.zone-header-cell,
@@ -433,10 +385,9 @@
 		background: var(--sidebar-bg);
 		color: var(--text);
 		font-weight: 600;
-		font-size: 7px;
-		padding: 0 2px;
-		border-radius: 0;
-		box-shadow: none;
+		font-size: 10px;
+		padding: 2px 5px;
+		border-radius: var(--radius-input);
 	}
 
 	.bed-label-cell {
@@ -456,19 +407,13 @@
 		position: relative;
 	}
 
-	.data-cell:hover {
-		transform: none;
-		z-index: auto;
-		box-shadow: none;
-	}
-
 	.legend {
 		display: flex;
 		align-items: center;
 		gap: 8px;
 		margin-top: 10px;
 		padding-top: 10px;
-		border-top: 1px solid #e5e7eb;
+		border-top: 1px solid var(--border);
 		font-size: 11px;
 		flex-wrap: wrap;
 	}
@@ -483,6 +428,7 @@
 		width: 15px;
 		height: 10px;
 		border-radius: 2px;
+		border: 1px solid var(--border);
 	}
 
 	.stage-legend {
@@ -491,8 +437,9 @@
 		flex-wrap: wrap;
 		margin-top: 5px;
 		padding: 5px;
-		background: #f9fafb;
-		border-radius: 6px;
+		background: var(--panel-bg);
+		border-radius: var(--radius-card);
+		border: 1px solid var(--border);
 	}
 
 	.stage-item {
@@ -501,47 +448,36 @@
 		gap: 5px;
 		font-size: 11px;
 		padding: 2px 6px;
-		background: white;
-		border-radius: 4px;
-		border: 1px solid #e5e7eb;
+		background: var(--panel-bg);
+		border-radius: var(--radius-input);
+		border: 1px solid var(--border);
 	}
 
 	/* --- Loader --- */
 
-	.loader {
-		position: fixed;
-		top: 50%;
-		left: 50%;
-		transform: translate(-50%, -50%);
-		z-index: 9999;
+	#map-loader {
+		position: absolute; inset: 0;
+		background: rgba(255,255,255,0.93);
+		display: flex; flex-direction: column;
+		align-items: center; justify-content: center;
+		z-index: 2000; gap: 0.5rem;
 	}
-
-	.loader.hidden {
-		display: none;
+	.map-load-title { font-size: 0.875rem; font-weight: 600; color: #1e293b; margin-bottom: 0.15rem; }
+	.map-load-track {
+		width: 220px; height: 5px;
+		background: #e2e8f0; border-radius: 3px; overflow: hidden;
 	}
-
-	.loader-spinner {
-		border: 4px solid #f3f4f6;
-		border-top: 4px solid #4b5563;
-		border-radius: 50%;
-		width: 50px;
-		height: 50px;
-		animation: spin 1s linear infinite;
+	.map-load-fill {
+		height: 100%; width: 0%;
+		background: #2563eb; border-radius: 3px;
+		transition: width 0.25s ease;
 	}
-
-	@keyframes spin {
-		0% {
-			transform: rotate(0deg);
-		}
-		100% {
-			transform: rotate(360deg);
-		}
-	}
+	.map-load-status { font-size: 0.72rem; color: #64748b; min-width: 220px; text-align: center; }
 
 	.empty-state {
 		text-align: center;
 		padding: 60px 20px;
-		color: #6b7280;
+		color: var(--text-muted);
 	}
 
 	.empty-state svg {
@@ -550,17 +486,16 @@
 		margin: 0 auto 16px;
 		opacity: 0.5;
 	}
-
-	.load-progress {
-		font-size: 11px;
-		color: #6b7280;
-		margin-top: 4px;
-	}
 </style>
 {% endblock %} {% block page_content %}
 <div>
 	<div id="dashboard-page">
-		<div id="content-container">
+		<div id="content-container" style="position:relative">
+			<div id="map-loader" style="display:none">
+				<span class="map-load-title">Loading heatmap data</span>
+				<div class="map-load-track"><div class="map-load-fill" id="map-load-fill"></div></div>
+				<span class="map-load-status" id="map-load-status">0%</span>
+			</div>
 			<div class="all-gh-table-wrapper" id="all-gh-table-wrapper">
 				<!-- Table rendered here -->
 			</div>
@@ -580,61 +515,6 @@
 					<div class="gh-filter-tabs" id="farm-filter"></div>
 				</div>
 
-				<div class="section">
-					<label class="section-label">Mode</label>
-					<div class="gh-filter-tabs" id="mode-filter">
-						<button class="farm-btn active" id="mode-single-btn">
-							Single Greenhouse
-						</button>
-						<button class="farm-btn" id="mode-all-btn">View All</button>
-					</div>
-				</div>
-
-				<div class="section" id="single-gh-filter-section">
-					<label class="section-label">Select Greenhouse</label>
-					<div class="gh-filter-tabs" id="greenhouse-filter"></div>
-				</div>
-
-				<div class="section">
-					<div class="load-progress" id="load-progress"></div>
-				</div>
-
-				<div class="section" id="debug-section" style="display: none">
-					<label class="section-label">Debug</label>
-					<div style="display: flex; gap: 8px">
-						<button
-							type="button"
-							class="farm-btn"
-							id="debug-copy-btn"
-							style="flex: 1; text-align: center"
-						>
-							Copy Log
-						</button>
-						<button
-							type="button"
-							class="farm-btn"
-							id="debug-clear-btn"
-							style="flex: 1; text-align: center"
-						>
-							Clear
-						</button>
-					</div>
-					<pre
-						id="debug-log"
-						style="
-							margin-top: 8px;
-							background: #fff;
-							border: 1px solid var(--border);
-							border-radius: 8px;
-							padding: 10px;
-							max-height: 260px;
-							overflow: auto;
-							font-size: 11px;
-							color: #111827;
-							white-space: pre-wrap;
-						"
-					></pre>
-				</div>
 			</div>
 		</div>
 	</div>
@@ -646,9 +526,6 @@
 		</div>
 	</div>
 
-	<div id="loader" class="loader hidden">
-		<div class="loader-spinner"></div>
-	</div>
 
 	<script>
 		// ── State ──
@@ -657,14 +534,15 @@
 		let allGreenhouseResults = {};
 		let currentDate = new Date().toISOString().split("T")[0];
 		let currentFarmFilter = "__all__";
-		let currentGreenhouse = "";
-		let viewMode = "single";
-		let observationData = [];
-		let observationTypes = {};
-		let maxBedCount = 0;
-		let maxZoneCount = 0;
-		const cacheSingle = new Map();
-		const cacheScouted = new Map();
+
+		// ── Abort + cache ──
+		const dateCache = new Map();
+		let activeAbortControllers = [];
+
+		const abortAllRequests = () => {
+			activeAbortControllers.forEach(ctrl => { try { ctrl.abort(); } catch (_) {} });
+			activeAbortControllers = [];
+		};
 
 		const CATEGORIES = [
 			{ key: "pests_scouting_entry", type: "pests" },
@@ -675,95 +553,20 @@
 			{ key: "physiological_disorders_entry", type: "physiological_disorders" },
 		];
 
+		function setProgress(pct) {
+			const fill = document.getElementById("map-load-fill");
+			const status = document.getElementById("map-load-status");
+			if (fill) fill.style.width = Math.min(100, pct) + "%";
+			if (status) status.textContent = Math.round(Math.min(100, pct)) + "%";
+		}
+
 		function showLoader() {
-			document.getElementById("loader").classList.remove("hidden");
+			setProgress(0);
+			document.getElementById("map-loader").style.display = "flex";
 		}
 
 		function hideLoader() {
-			document.getElementById("loader").classList.add("hidden");
-		}
-
-		function setProgress(text) {
-			document.getElementById("load-progress").textContent = text;
-		}
-
-		const DEBUG = new URLSearchParams(window.location.search).get("debug") === "1";
-		const debugSection = document.getElementById("debug-section");
-		const debugLogEl = document.getElementById("debug-log");
-
-		function debugAppend(line) {
-			if (!DEBUG) return;
-			const ts = new Date().toISOString();
-			const msg = `[${ts}] ${line}`;
-			if (debugLogEl) {
-				debugLogEl.textContent =
-					(debugLogEl.textContent ? debugLogEl.textContent + "\n" : "") + msg;
-				debugLogEl.scrollTop = debugLogEl.scrollHeight;
-			}
-			console.log(msg);
-		}
-
-		function debugObject(label, obj) {
-			if (!DEBUG) return;
-			try {
-				debugAppend(label + ": " + JSON.stringify(obj, null, 2));
-			} catch (e) {
-				debugAppend(label + ": [unserializable]");
-			}
-		}
-
-		async function debugFetch(label, url, options) {
-			debugAppend(`FETCH ${label} → ${url}`);
-			if (options && options.body) debugAppend(`REQUEST ${label} body → ${options.body}`);
-			let res;
-			try {
-				res = await fetch(url, options);
-			} catch (e) {
-				debugAppend(`FETCH ${label} network error → ${String(e)}`);
-				throw e;
-			}
-
-			debugAppend(`FETCH ${label} status → ${res.status} ${res.statusText}`);
-			let json = null;
-			try {
-				json = await res.clone().json();
-			} catch (e) {
-				let txt = "";
-				try {
-					txt = await res.clone().text();
-				} catch (e2) {
-					txt = "";
-				}
-				debugAppend(
-					`FETCH ${label} non-json response → ${txt ? txt.slice(0, 500) : "[empty]"}`
-				);
-			}
-			if (json) debugObject(`FETCH ${label} json`, json);
-			return res;
-		}
-
-		if (DEBUG && debugSection) {
-			debugSection.style.display = "";
-			const copyBtn = document.getElementById("debug-copy-btn");
-			const clearBtn = document.getElementById("debug-clear-btn");
-			if (copyBtn) {
-				copyBtn.addEventListener("click", async () => {
-					const text = (debugLogEl && debugLogEl.textContent) || "";
-					try {
-						await navigator.clipboard.writeText(text);
-						debugAppend("Copied debug log to clipboard");
-					} catch (e) {
-						debugAppend("Copy failed: " + String(e));
-					}
-				});
-			}
-			if (clearBtn) {
-				clearBtn.addEventListener("click", () => {
-					if (debugLogEl) debugLogEl.textContent = "";
-					debugAppend("Cleared debug log");
-				});
-			}
-			debugAppend("Debug enabled (?debug=1)");
+			document.getElementById("map-loader").style.display = "none";
 		}
 
 		// ── Fetch farms ──
@@ -771,32 +574,15 @@
 			showLoader();
 			document.getElementById("scout-date-picker").value = currentDate;
 
-			(DEBUG
-				? debugFetch(
-						"getFarmsAndGreenhouses",
-						"/api/method/upande_scp.serverscripts.get_heatmap_data.getFarmsAndGreenhouses",
-						{
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json",
-								"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-							},
-						}
-				  )
-				: fetch(
-						"/api/method/upande_scp.serverscripts.get_heatmap_data.getFarmsAndGreenhouses",
-						{
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json",
-								"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-							},
-						}
-				  )
-			)
+			fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getFarmsAndGreenhouses", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-Frappe-CSRF-Token": "{{ csrf_token }}",
+				},
+			})
 				.then((r) => r.json())
 				.then((response) => {
-					debugObject("Farms response.message", response && response.message);
 					farmsData = response.message.farms || [];
 
 					farmsData.forEach((farm) => {
@@ -809,10 +595,7 @@
 					});
 
 					setupFarmFilter();
-					setupModeFilter();
-					refreshDateScopedGreenhouses().finally(() => {
-						hideLoader();
-					});
+					loadAllScoutedGreenhouses();
 				})
 				.catch((err) => {
 					console.error("Error fetching farms:", err);
@@ -821,216 +604,68 @@
 				});
 		}
 
-		function setupModeFilter() {
-			const singleBtn = document.getElementById("mode-single-btn");
-			const allBtn = document.getElementById("mode-all-btn");
-			const singleSec = document.getElementById("single-gh-filter-section");
-			singleBtn.addEventListener("click", () => {
-				singleBtn.classList.add("active");
-				allBtn.classList.remove("active");
-				viewMode = "single";
-				singleSec.style.display = "";
-				refreshDateScopedGreenhouses();
-			});
-			allBtn.addEventListener("click", () => {
-				allBtn.classList.add("active");
-				singleBtn.classList.remove("active");
-				viewMode = "all";
-				singleSec.style.display = "none";
-				loadAllScoutedGreenhouses();
-			});
-		}
-
-		function setupGreenhouseFilter(allowedNames) {
-			const filterContainer = document.getElementById("greenhouse-filter");
-			filterContainer.innerHTML = "";
-			const allowedSet =
-				Array.isArray(allowedNames) && allowedNames.length > 0
-					? new Set(allowedNames)
-					: null;
-			const all = [];
-			farmsData.forEach((f) => {
-				(f.greenhouses || []).forEach((gh) => all.push(gh.name));
-			});
-			const filtered = allowedSet ? all.filter((n) => allowedSet.has(n)) : all;
-
-			if (filtered.length === 0) {
-				filterContainer.innerHTML =
-					'<div style="font-size:12px;color:#6b7280;">No greenhouses scouted on ' +
-					escapeHtml(currentDate) +
-					"</div>";
-				currentGreenhouse = "";
-				showEmptyState(
-					"No Greenhouses Scouted",
-					"No greenhouses scouted on " + currentDate
-				);
+		// ── Fetch only scouted greenhouses for the date ──
+		function loadAllScoutedGreenhouses() {
+			if (dateCache.has(currentDate)) {
+				allGreenhouseResults = dateCache.get(currentDate);
+				renderAllGreenhousesTable();
 				return;
 			}
 
-			if (!currentGreenhouse || (allowedSet && !allowedSet.has(currentGreenhouse))) {
-				currentGreenhouse = filtered[0];
-			}
-
-			filtered.forEach((name) => {
-				const btn = document.createElement("button");
-				btn.className = "gh-btn" + (name === currentGreenhouse ? " active" : "");
-				btn.textContent = name;
-				btn.addEventListener("click", () => {
-					document
-						.querySelectorAll("#greenhouse-filter .gh-btn")
-						.forEach((b) => b.classList.remove("active"));
-					btn.classList.add("active");
-					currentGreenhouse = name;
-					if (viewMode === "single") fetchSingleGreenhouse();
-				});
-				filterContainer.appendChild(btn);
-			});
-		}
-
-		function fetchScoutedGreenhouses(date) {
-			if (cacheScouted.has(date)) return Promise.resolve(cacheScouted.get(date));
-			return (
-				DEBUG
-					? debugFetch(
-							"getAllScoutedGreenhouses",
-							"/api/method/upande_scp.serverscripts.get_heatmap_data.getAllScoutedGreenhouses",
-							{
-								method: "POST",
-								headers: {
-									"Content-Type": "application/json",
-									"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-								},
-								body: JSON.stringify({ date }),
-							}
-					  )
-					: fetch(
-							"/api/method/upande_scp.serverscripts.get_heatmap_data.getAllScoutedGreenhouses",
-							{
-								method: "POST",
-								headers: {
-									"Content-Type": "application/json",
-									"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-								},
-								body: JSON.stringify({ date }),
-							}
-					  )
-			)
-				.then((r) => (r.ok ? r.json() : Promise.reject(r)))
-				.then((response) => {
-					const list =
-						(response && response.message && response.message.greenhouses) || [];
-					cacheScouted.set(date, list);
-					return list;
-				});
-		}
-
-		function refreshDateScopedGreenhouses() {
-			setProgress("Checking scouted greenhouses...");
-			return fetchScoutedGreenhouses(currentDate)
-				.then((scouted) => {
-					setupGreenhouseFilter(scouted);
-					if (viewMode === "single") {
-						if (currentGreenhouse) {
-							cacheSingle.clear();
-							fetchSingleGreenhouse();
-						} else {
-							setProgress("");
-						}
-					} else {
-						loadAllScoutedGreenhouses();
-					}
-				})
-				.catch((err) => {
-					console.error("Error fetching scouted greenhouses:", err);
-					showEmptyState("No Data Available", "Failed to load scouted greenhouses.");
-				})
-				.finally(() => {
-					setProgress("");
-				});
-		}
-
-		// ── Fetch only scouted greenhouses for the date ──
-		function loadAllScoutedGreenhouses() {
+			abortAllRequests();
 			showLoader();
 			allGreenhouseResults = {};
-			setProgress("Finding scouted greenhouses...");
+			setProgress(5);
 
-			(DEBUG
-				? debugFetch(
-						"getAllScoutedGreenhouses",
-						"/api/method/upande_scp.serverscripts.get_heatmap_data.getAllScoutedGreenhouses",
-						{
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json",
-								"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-							},
-							body: JSON.stringify({ date: currentDate }),
-						}
-				  )
-				: fetch(
-						"/api/method/upande_scp.serverscripts.get_heatmap_data.getAllScoutedGreenhouses",
-						{
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json",
-								"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-							},
-							body: JSON.stringify({ date: currentDate }),
-						}
-				  )
+			const listCtrl = new AbortController();
+			activeAbortControllers.push(listCtrl);
+			const fetchDate = currentDate;
+
+			fetch(
+				"/api/method/upande_scp.serverscripts.get_heatmap_data.getAllScoutedGreenhouses",
+				{
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"X-Frappe-CSRF-Token": "{{ csrf_token }}",
+					},
+					body: JSON.stringify({ date: fetchDate }),
+					signal: listCtrl.signal,
+				},
 			)
 				.then((r) => r.json())
 				.then((response) => {
-					debugObject("Scouted list response.message", response && response.message);
 					const scoutedList = (response.message && response.message.greenhouses) || [];
-					debugAppend("Scouted greenhouses count → " + scoutedList.length);
 
 					if (scoutedList.length === 0) {
 						hideLoader();
-						setProgress("");
 						showEmptyState();
 						return;
 					}
 
-					setProgress("Loading 0 / " + scoutedList.length + " greenhouses...");
+					setProgress(15);
 					let completed = 0;
 					const total = scoutedList.length;
 
 					scoutedList.forEach((ghName) => {
-						(DEBUG
-							? debugFetch(
-									"getHeatmapData " + ghName,
-									"/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData",
-									{
-										method: "POST",
-										headers: {
-											"Content-Type": "application/json",
-											"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-										},
-										body: JSON.stringify({
-											date: currentDate,
-											greenhouse: ghName,
-										}),
-									}
-							  )
-							: fetch(
-									"/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData",
-									{
-										method: "POST",
-										headers: {
-											"Content-Type": "application/json",
-											"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-										},
-										body: JSON.stringify({
-											date: currentDate,
-											greenhouse: ghName,
-										}),
-									}
-							  )
+						const ghCtrl = new AbortController();
+						activeAbortControllers.push(ghCtrl);
+
+						fetch(
+							"/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData",
+							{
+								method: "POST",
+								headers: {
+									"Content-Type": "application/json",
+									"X-Frappe-CSRF-Token": "{{ csrf_token }}",
+								},
+								body: JSON.stringify({ date: fetchDate, greenhouse: ghName }),
+								signal: ghCtrl.signal,
+							},
 						)
 							.then((r) => (r.ok ? r.json() : Promise.reject(r)))
 							.then((response) => {
+								if (fetchDate !== currentDate) return;
 								const data = response.message;
 								if (
 									data &&
@@ -1042,48 +677,30 @@
 									data._warehouseName = info.warehouse_name || ghName;
 									data._ghName = ghName;
 									allGreenhouseResults[ghName] = data;
-									debugAppend(
-										`Loaded ${ghName} entries → ${data.scouting_entries.length}`
-									);
-								} else {
-									debugAppend(`Loaded ${ghName} entries → 0 (skipped)`);
 								}
 							})
 							.catch((err) => {
+								if (err.name === "AbortError") return;
 								console.error("Error fetching " + ghName + ":", err);
-								debugAppend(
-									"Error fetching " +
-										ghName +
-										" → " +
-										String(
-											err && err.status
-												? err.status + " " + err.statusText
-												: err
-										)
-								);
 							})
 							.finally(() => {
+								if (fetchDate !== currentDate) return;
 								completed++;
-								setProgress(
-									"Loading " + completed + " / " + total + " greenhouses..."
-								);
+								setProgress(15 + (completed / total) * 85);
 								if (completed >= total) {
-									hideLoader();
-									setProgress(total + " greenhouses loaded");
-									debugAppend(
-										"All greenhouse fetches completed. Result keys → " +
-											Object.keys(allGreenhouseResults).length
-									);
+									dateCache.set(fetchDate, { ...allGreenhouseResults });
+									setProgress(100);
+									setTimeout(hideLoader, 350);
 									renderAllGreenhousesTable();
 								}
 							});
 					});
 				})
 				.catch((err) => {
+					if (err.name === "AbortError") return;
 					console.error("Error fetching scouted list:", err);
 					hideLoader();
 					showEmptyState();
-					debugAppend("Error fetching scouted list → " + String(err));
 				});
 		}
 
@@ -1103,7 +720,6 @@
 			greenhouses.sort((a, b) => (a._ghName || "").localeCompare(b._ghName || ""));
 
 			if (greenhouses.length === 0) {
-				debugAppend("Render table: no greenhouses after filtering");
 				showEmptyState();
 				return;
 			}
@@ -1135,11 +751,10 @@
 			});
 
 			const observations = Object.values(obsMap).sort((a, b) =>
-				a.name.localeCompare(b.name)
+				a.name.localeCompare(b.name),
 			);
 
 			if (observations.length === 0) {
-				debugAppend("Render table: no observations detected across scouting_entries");
 				showEmptyState();
 				return;
 			}
@@ -1216,7 +831,7 @@
 						bedCount,
 						zoneCount,
 						activeBeds,
-						activeZones
+						activeZones,
 					);
 					if (cardEl) {
 						td.appendChild(cardEl);
@@ -1236,226 +851,6 @@
 			wrapper.appendChild(table);
 		}
 
-		function fetchSingleGreenhouse() {
-			showLoader();
-			setProgress("Loading " + currentGreenhouse + "...");
-			const key = currentDate + "|" + currentGreenhouse;
-			const cached = cacheSingle.get(key);
-			const doRender = (data) => {
-				observationData = data.scouting_entries || [];
-				observationTypes = data.observation_types || {};
-				maxBedCount = data.bed_count || 0;
-				maxZoneCount = data.zone_count || 0;
-				renderSingleHeatmaps(currentGreenhouse);
-			};
-			if (cached) {
-				doRender(cached);
-				hideLoader();
-				setProgress("");
-				return;
-			}
-			(DEBUG
-				? debugFetch(
-						"getHeatmapData " + currentGreenhouse,
-						"/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData",
-						{
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json",
-								"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-							},
-							body: JSON.stringify({
-								date: currentDate,
-								greenhouse: currentGreenhouse,
-							}),
-						}
-				  )
-				: fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData", {
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json",
-							"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-						},
-						body: JSON.stringify({
-							date: currentDate,
-							greenhouse: currentGreenhouse,
-						}),
-				  })
-			)
-				.then((r) => (r.ok ? r.json() : Promise.reject(r)))
-				.then((response) => {
-					const data = response.message || response.data || {};
-					cacheSingle.set(key, data);
-					doRender(data);
-				})
-				.catch(() => {
-					showEmptyState();
-				})
-				.finally(() => {
-					hideLoader();
-					setProgress("");
-				});
-		}
-
-		function renderSingleHeatmaps(gh) {
-			const wrapper = document.getElementById("all-gh-table-wrapper");
-			wrapper.innerHTML = "";
-			const container = document.createElement("div");
-			container.className = "optimized-grid";
-			const TYPES_ORDER = [
-				"pests",
-				"diseases",
-				"predators",
-				"weeds",
-				"incidents",
-				"physiological_disorders",
-				"crop_husbandry_practices",
-			];
-			const types = TYPES_ORDER.filter((t) => observationTypes && observationTypes[t]);
-			let has = false;
-			types.forEach((t) => {
-				const obs = observationTypes[t] || {};
-				Object.keys(obs)
-					.sort((a, b) => a.localeCompare(b))
-					.forEach((name) => {
-						const card = buildSingleCard(gh, name, t);
-						if (card) {
-							container.appendChild(card);
-							has = true;
-						}
-					});
-			});
-			if (!has) {
-				showEmptyState();
-				return;
-			}
-			wrapper.appendChild(container);
-		}
-
-		function buildSingleCard(gh, observationName, observationType) {
-			const metadata =
-				observationTypes[observationType] &&
-				observationTypes[observationType][observationName];
-			if (!metadata) return null;
-			const r = calculateMatrixSingle(gh, observationName, observationType);
-			if (r.total === 0) return null;
-			const card = document.createElement("div");
-			card.className = "heatmap-card";
-			const header = document.createElement("div");
-			header.style.marginBottom = "6px";
-			header.innerHTML =
-				'<p style="font-weight:600;color:' +
-				(metadata.color || "#999") +
-				';font-size:12px;margin-bottom:2px;">' +
-				observationName +
-				'</p><p style="font-size:10px;color:#6b7280;">Total: ' +
-				r.total +
-				"</p>";
-			card.appendChild(header);
-			const wrapper = document.createElement("div");
-			wrapper.className = "mini-heatmap-wrapper";
-			const mini = renderGridSingle(r.matrix, r.maxCount, metadata.color || "#999");
-			wrapper.appendChild(mini);
-			card.appendChild(wrapper);
-			card.addEventListener("click", () =>
-				openModal(
-					gh,
-					observationName,
-					observationType,
-					metadata.color || "#999",
-					r.matrix,
-					r.maxCount,
-					r.total,
-					r.stageBreakdown,
-					maxBedCount,
-					maxZoneCount,
-					observationTypes
-				)
-			);
-			return card;
-		}
-
-		function renderGridSingle(matrix, maxCount, color) {
-			const grid = document.createElement("div");
-			grid.className = "mini-heatmap-grid";
-			const outer = document.createElement("div");
-			outer.className = "heatmap-grid";
-			const vh = window.innerHeight || 400;
-			const availH = Math.max(120, Math.floor((vh * 6) / 8) - 48);
-			const rows = maxBedCount + 1;
-			const compactFactor = 0.75;
-			const cellHeight = Math.max(4, Math.floor((availH / rows) * compactFactor));
-			const cellWidth = Math.max(6, Math.floor(cellHeight * 2.5));
-			const labelColWidth = 24;
-			outer.style.gridTemplateColumns =
-				labelColWidth + "px repeat(" + maxZoneCount + ", " + cellWidth + "px)";
-			const corner = document.createElement("div");
-			corner.className = "grid-cell";
-			corner.style.height = cellHeight + "px";
-			outer.appendChild(corner);
-			for (let z = maxZoneCount; z >= 1; z--) {
-				const h = document.createElement("div");
-				h.className = "grid-cell zone-header-cell";
-				h.textContent = z % 2 === 0 ? z : "";
-				h.style.height = cellHeight + "px";
-				outer.appendChild(h);
-			}
-			for (let bed = maxBedCount; bed >= 1; bed--) {
-				const bl = document.createElement("div");
-				bl.className = "grid-cell bed-label-cell";
-				bl.textContent = bed % 2 === 0 ? bed : "";
-				bl.style.height = cellHeight + "px";
-				outer.appendChild(bl);
-				for (let zone = maxZoneCount; zone >= 1; zone--) {
-					const cnt = (matrix[bed] && matrix[bed][zone]) || 0;
-					const d = document.createElement("div");
-					d.className = "grid-cell data-cell " + getIntensityClass(cnt, maxCount);
-					d.style.height = cellHeight + "px";
-					if (cnt > 0 && maxCount > 0) d.style.backgroundColor = color;
-					d.title = "Bed " + bed + " – Zone " + zone + ": " + (cnt || "None");
-					outer.appendChild(d);
-				}
-			}
-			grid.appendChild(outer);
-			return grid;
-		}
-
-		function calculateMatrixSingle(gh, observationName, observationType) {
-			const matrix = {};
-			let maxCount = 0;
-			let total = 0;
-			const stageBreakdown = {};
-			const catMap = {
-				pests: "pests_scouting_entry",
-				diseases: "diseases_scouting_entry",
-				predators: "predators_scouting_entry",
-				weeds: "weeds_scouting_entry",
-				incidents: "incidents_scouting_entry",
-				physiological_disorders: "physiological_disorders_entry",
-				crop_husbandry_practices: "crop_husbandry_practices_entry",
-			};
-			const key = catMap[observationType] || observationType;
-			(observationData || []).forEach((entry) => {
-				const items = entry[key] || [];
-				const parsed = parseZone(entry.zone);
-				if (!parsed || parsed.gh !== gh) return;
-				items.forEach((item) => {
-					if (item.name !== observationName) return;
-					const bed = parsed.bed;
-					const zone = parsed.zone;
-					const cnt = item.count || 1;
-					if (!matrix[bed]) matrix[bed] = {};
-					matrix[bed][zone] = (matrix[bed][zone] || 0) + cnt;
-					if (cnt > 0) {
-						maxCount = Math.max(maxCount, cnt);
-						total += cnt;
-					}
-					const st = item.stage || "Present";
-					stageBreakdown[st] = (stageBreakdown[st] || 0) + cnt;
-				});
-			});
-			return { matrix, maxCount, total, stageBreakdown };
-		}
 		// ── Build a mini heatmap card for one greenhouse + one observation ──
 		function buildMiniCard(
 			ghData,
@@ -1464,7 +859,7 @@
 			bedCount,
 			zoneCount,
 			activeBeds,
-			activeZones
+			activeZones,
 		) {
 			const entries = ghData.scouting_entries || [];
 			const matrix = {};
@@ -1515,7 +910,7 @@
 					stageBreakdown,
 					bedCount,
 					zoneCount,
-					ghData.observation_types
+					ghData.observation_types,
 				);
 			});
 
@@ -1685,7 +1080,7 @@
 			stageBreakdown,
 			bedCount,
 			zoneCount,
-			obsTypes
+			obsTypes,
 		) {
 			modalBody.innerHTML = "";
 
@@ -1703,7 +1098,7 @@
 				';margin-bottom:8px;">' +
 				escapeHtml(observationName) +
 				"</h2>" +
-				'<p style="font-size:14px;color:#6b7280;">' +
+				'<p style="font-size:14px;color:var(--text-muted);">' +
 				escapeHtml(ghLabel) +
 				" | Date: " +
 				escapeHtml(currentDate) +
@@ -1736,7 +1131,7 @@
 						"<span>" +
 						escapeHtml(stage.stage) +
 						"</span>" +
-						'<span style="font-size:11px;color:#9ca3af;">(' +
+						'<span style="font-size:11px;color:var(--gray-400, #9ca3af);">(' +
 						stageCount +
 						")</span>";
 					stageLegendDiv.appendChild(stageItem);
@@ -1814,28 +1209,21 @@
 		// ── Date change ──
 		document.getElementById("scout-date-picker").addEventListener("change", (e) => {
 			currentDate = e.target.value;
-			if (viewMode === "single") {
-				cacheSingle.clear();
-				cacheScouted.delete(currentDate);
-				refreshDateScopedGreenhouses();
-			} else {
-				loadAllScoutedGreenhouses();
-			}
+			abortAllRequests();
+			loadAllScoutedGreenhouses();
 		});
 
 		// ── Empty state ──
-		function showEmptyState(title, description) {
+		function showEmptyState() {
 			const wrapper = document.getElementById("all-gh-table-wrapper");
-			const t = title || "No Data Available";
-			const d = description || "No scouting entries found for this date.";
 			wrapper.innerHTML = `
                 <div class="empty-state">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
                     </svg>
-                    <p style="font-weight: 600; margin-bottom: 8px;">${escapeHtml(t)}</p>
-                    <p>${escapeHtml(d)}</p>
+                    <p style="font-weight: 600; margin-bottom: 8px;">No Data Available</p>
+                    <p>No scouting entries found for this date.</p>
                 </div>
             `;
 		}

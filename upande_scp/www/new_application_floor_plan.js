@@ -1010,7 +1010,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		els.warehouseGroupHeader.setAttribute("colspan", allWarehouses.length);
 		let headerHtml = "";
 		allWarehouses.forEach((wh) => {
-			headerHtml += `<th class="tw-text-center">${wh.split(" ")[2]}</th>`;
+			const shortWh = wh.split(" - ")[0];
+			headerHtml += `<th class="tw-text-center" title="${wh}">${shortWh}</th>`;
 		});
 		els.warehouseHeadersRow.innerHTML = headerHtml;
 		let bodyHtml = "";

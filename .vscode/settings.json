@@ -1,18 +1,1 @@
-{
-    "workbench.colorCustomizations": {
-        "statusBarItem.warningBackground": "#02b647",
-        "statusBarItem.warningForeground": "#ffffff",
-        "statusBarItem.warningHoverBackground": "#02b647",
-        "statusBarItem.warningHoverForeground": "#ffffff90",
-        "statusBarItem.remoteHoverBackground": "#1cd061",
-        "statusBarItem.remoteHoverForeground": "#ffffff90",
-        "statusBar.noFolderBackground": "#02b647",
-        "statusBar.noFolderForeground": "#ffffff",
-        "statusBar.noFolderBorder": "#02b647",
-        "statusBar.prominentBackground": "#02b647",
-        "statusBar.prominentForeground": "#ffffff",
-        "statusBar.prominentHoverBackground": "#02b647",
-        "statusBar.prominentHoverForeground": "#ffffff90"
-    },
-    "window.title": "Mona"
-}
+{}

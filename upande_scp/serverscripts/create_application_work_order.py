@@ -38,6 +38,27 @@ def createApplicationWorkOrder():
         if water_volume_l <= 0:
             frappe.throw(_("Water volume must be > 0."))
 
+        # -------------------------------------------------- 2.5 Resolve company + WIP warehouse from greenhouse
+        if not frappe.db.exists("Warehouse", greenhouse):
+            frappe.throw(_("Greenhouse {0} not found.").format(greenhouse))
+        company = frappe.db.get_value("Warehouse", greenhouse, "company")
+        if not company:
+            frappe.throw(_("Greenhouse {0} has no company set.").format(greenhouse))
+
+        wip_warehouse = frappe.db.get_value(
+            "Warehouse",
+            {"company": company, "warehouse_type": "Work In Progress", "is_group": 0, "disabled": 0},
+            "name"
+        )
+        if not wip_warehouse:
+            wip_warehouse = frappe.db.get_value(
+                "Warehouse",
+                {"company": company, "name": ["like", "Work In Progress%"], "is_group": 0, "disabled": 0},
+                "name"
+            )
+        if not wip_warehouse:
+            frappe.throw(_("No Work In Progress warehouse found for company {0}.").format(company))
+
         # -------------------------------------------------- 3. Load BOM (safe)
         if not frappe.db.exists("BOM", bom_name):
             frappe.throw(_("BOM {0} does not exist.").format(bom_name))
@@ -45,8 +66,8 @@ def createApplicationWorkOrder():
         template_bom = frappe.get_doc("BOM", bom_name)
         if not template_bom.is_active:
             frappe.throw(_("BOM {0} is not active.").format(bom_name))
-        if template_bom.company != "Mona Flowers Limited":
-            frappe.throw(_("BOM {0} is not for Mona Flowers Limited.").format(bom_name))
+        if template_bom.company != company:
+            frappe.throw(_("BOM {0} is not for company {1}.").format(bom_name, company))
 
         production_item = template_bom.item
 
@@ -108,14 +129,14 @@ def createApplicationWorkOrder():
                 "qty": qty_per_1000l,
                 "uom": chem.get("uom") or item.stock_uom,
                 "s_warehouse": source_wh,
-                "t_warehouse": "Work In Progress - MFL"
+                "t_warehouse": wip_warehouse
             })
 
         # -------------------------------------------------- 7. Temp Stock Entry
         se = frappe.get_doc({
             "doctype": "Stock Entry",
             "stock_entry_type": "Material Transfer for Manufacture",
-            "company": "Mona Flowers Limited",
+            "company": company,
             "purpose": "Material Transfer for Manufacture",
             "items": se_items
         })
@@ -162,8 +183,8 @@ def createApplicationWorkOrder():
             "bom_no": bom_to_use,
             "qty": wo_qty,
             "stock_uom": bom_uom,  # ← EXPLICITLY SET UOM FROM BOM
-            "company": "Mona Flowers Limited",
-            "wip_warehouse": "Work In Progress - MFL",
+            "company": company,
+            "wip_warehouse": wip_warehouse,
             "fg_warehouse": greenhouse,
             "custom_type": raw_data.get("custom_type"),
             "custom_greenhouse": greenhouse,
@@ -281,8 +302,6 @@ def create_dynamic_bom(template_bom, user_chemicals, area_ha, water_volume_l, gr
         "company": template_bom.company,
         "is_active": 1,
         "is_default": 0,
-        "custom_farm": template_bom.custom_farm,
-        "custom_business_unit": template_bom.custom_business_unit,
         "custom_water_ph": raw_data.get("custom_water_ph"),
         "custom_water_hardness": raw_data.get("custom_water_hardness"),
         "items": items,

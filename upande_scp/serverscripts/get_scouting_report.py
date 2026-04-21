@@ -358,9 +358,13 @@ def getScoutingData():
             })
 
         # --- 6. BOMs, Chemicals, etc. ---
+        gh_company = frappe.db.get_value("Warehouse", greenhouse, "company")
+        bom_filters = {"custom_item_group": "Chemical Mix", "docstatus": 1, "is_active": 1}
+        if gh_company:
+            bom_filters["company"] = gh_company
         chemical_mix_boms = frappe.get_all(
             "BOM",
-            filters={"custom_item_group": "Chemical Mix", "docstatus": 1, "is_active": 1},
+            filters=bom_filters,
             fields=["name", "custom_water_ph", "custom_water_hardness"]
         )
         bom_names = [b["name"] for b in chemical_mix_boms]

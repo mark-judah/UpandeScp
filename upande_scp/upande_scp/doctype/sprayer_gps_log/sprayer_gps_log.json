@@ -9,6 +9,7 @@
  "field_order": [
   "naming_series",
   "client_id",
+  "app",
   "session_tag",
   "session",
   "work_order",
@@ -46,6 +47,12 @@
    "in_list_view": 1,
    "label": "Client ID",
    "unique": 1
+  },
+  {
+   "fieldname": "app",
+   "fieldtype": "Data",
+   "label": "App",
+   "read_only": 1
   },
   {
    "fieldname": "session_tag",

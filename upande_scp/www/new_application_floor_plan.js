@@ -1171,8 +1171,15 @@ document.addEventListener("DOMContentLoaded", () => {
 			return;
 		}
 
+		const greenhouse = els.greenhouse.value;
+		if (!greenhouse) {
+			showToast("Please select a greenhouse before creating a BOM", "error");
+			return;
+		}
+
 		const bomData = {
 			item: itemName,
+			greenhouse,
 			custom_water_ph: waterPh,
 			custom_water_hardness: waterHardness,
 			items: chemicals,

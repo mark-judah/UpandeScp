@@ -376,6 +376,7 @@ def createSprayerEntry():
                 session_tag   = (
                     entry_data.get("session_tag") or entry_data.get("session") or ""
                 )
+                app          = (entry_data.get("app") or "").strip()
                 work_order    = (entry_data.get("work_order") or "").strip()
                 greenhouse    = (entry_data.get("greenhouse") or "").strip()
                 latitude      = entry_data.get("latitude")
@@ -455,6 +456,7 @@ def createSprayerEntry():
                 # raising a "Document not found" validation error.
                 log_doc                  = frappe.new_doc("Sprayer GPS Log")
                 log_doc.client_id        = client_id or None
+                log_doc.app              = app or None
                 log_doc.session_tag      = session_tag
                 log_doc.session          = session_tag
                 log_doc.work_order       = work_order or None

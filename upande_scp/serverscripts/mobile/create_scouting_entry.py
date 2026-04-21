@@ -129,6 +129,7 @@ def createScoutingEntry():
         for entry_data in data_list:
             try:
                 client_id       = entry_data.get('client_id')
+                app             = (entry_data.get("app") or "").strip()
                 latitude        = entry_data.get('latitude')
                 longitude       = entry_data.get('longitude')
                 accuracy        = entry_data.get('accuracy')
@@ -231,6 +232,7 @@ def createScoutingEntry():
                 scout_doc.longitude       = longitude
 
                 scout_metadata_doc = frappe.new_doc("Scouting Entry Metadata")
+                scout_metadata_doc.app              = app or None
                 scout_metadata_doc.latitude         = latitude
                 scout_metadata_doc.longitude        = longitude
                 scout_metadata_doc.calculated_zone  = determined_zone

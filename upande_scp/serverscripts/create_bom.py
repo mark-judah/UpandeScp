@@ -30,6 +30,16 @@ def createBOM():
         if not isinstance(chemicals, list) or len(chemicals) == 0:
             return {"status": "error", "message": "At least one chemical item is required"}
 
+        # === RESOLVE COMPANY FROM GREENHOUSE ===
+        greenhouse = str(data.get('greenhouse') or '').strip()
+        if not greenhouse:
+            return {"status": "error", "message": "Greenhouse is required to determine company"}
+        if not frappe.db.exists("Warehouse", greenhouse):
+            return {"status": "error", "message": f"Greenhouse '{greenhouse}' not found"}
+        company = frappe.db.get_value("Warehouse", greenhouse, "company")
+        if not company:
+            return {"status": "error", "message": f"Greenhouse '{greenhouse}' has no company set"}
+
         # === CHECK FOR EXISTING IDENTICAL BOM ===
         existing_bom = check_duplicate_bom(bom_item_name, water_ph, water_hardness, chemicals)
         if existing_bom:
@@ -55,9 +65,7 @@ def createBOM():
         bom_doc = frappe.new_doc("BOM")
         bom_doc.item = bom_item_name
         bom_doc.custom_item_group="Chemical Mix"
-        bom_doc.company = "Mona Flowers Limited"
-        bom_doc.custom_farm = "Chepsito"
-        bom_doc.custom_business_unit = "Roses"
+        bom_doc.company = company
         bom_doc.uom = "Tank Mix (1000L)"
         bom_doc.quantity = 1
         bom_doc.custom_water_ph = water_ph

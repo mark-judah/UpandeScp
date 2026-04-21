@@ -1694,7 +1694,8 @@ document.addEventListener("DOMContentLoaded", () => {
 				totalAreaHectares = selectedBedsCount > 0 ? selectedBedsCount / totalBeds : 0;
 			}
 		}
-		els.areaToSpray.value = totalAreaHectares > 0 ? totalAreaHectares.toFixed(4) : 0;
+		const totalAreaSqm = totalAreaHectares * 10000;
+		els.areaToSpray.value = totalAreaSqm > 0 ? totalAreaSqm.toFixed(0) : 0;
 		const waterVolume = totalAreaHectares * WATER_VOLUME_RATE;
 		els.waterVolume.value = waterVolume > 0 ? waterVolume.toFixed(2) : 0;
 	};
@@ -1935,7 +1936,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			custom_water_hardness: parseFloat(waterHardness) || 0,
 			chemicals: chemicalsWithWarehouse,
 			custom_water_volume: parseFloat(waterVolume) || 0,
-			custom_area: parseFloat(areaToSpray) || 0,
+			custom_area: (parseFloat(areaToSpray) || 0) / 10000,
 			custom_spray_team: sprayTeam,
 			custom_scheduled_application_time: scheduledApplicationTime,
 		};

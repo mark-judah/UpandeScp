@@ -65,9 +65,11 @@ function _bindEvents() {
 
   document.getElementById("f-farm").addEventListener("change", _onFarmChange);
 
-  // Enter key on date inputs
+  // Auto-reload when a date changes (Enter key or date picker change)
   ["f-from", "f-to"].forEach(function (id) {
-    document.getElementById(id).addEventListener("keydown", function (e) {
+    var el = document.getElementById(id);
+    el.addEventListener("change", loadWorkOrders);
+    el.addEventListener("keydown", function (e) {
       if (e.key === "Enter") loadWorkOrders();
     });
   });

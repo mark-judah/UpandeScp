@@ -29,19 +29,22 @@ import frappe
 
 
 # ---------------------------------------------------------------------------
-# Public entry point
+# Internal: workbook builder (shared by email and download)
 # ---------------------------------------------------------------------------
 
-@frappe.whitelist()
-def send_fcm_weekly_excel_report():
-    """Generate and email the KEPHIS FCM weekly Excel report (runs every Monday)."""
+def _build_workbook_bytes():
+    """Build the KEPHIS FCM Excel workbook.
+
+    Returns (excel_bytes, fname, current_year, week_range_str, last_week_num).
+    When there's no data for the year, excel_bytes is None.
+    """
     try:
         import openpyxl
         from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-        from openpyxl.utils import get_column_letter 
+        from openpyxl.utils import get_column_letter
     except ImportError:
         frappe.log_error("openpyxl not installed – run: pip install openpyxl", "FCM Weekly Report")
-        return
+        return None, None, None, None, None
 
     today = date.today()
     current_year = today.year
@@ -241,8 +244,7 @@ def send_fcm_weekly_excel_report():
     all_weeks = sorted(w for w in all_wk_nums if 1 <= w <= current_week_num)
 
     if not all_weeks:
-        _send_no_data_email(current_year, week_range_str)
-        return
+        return None, None, current_year, week_range_str, last_week_num
 
     # Sorted trap list
     sorted_traps = sorted(fcm_traps, key=lambda t: parse_trap_num(t.get("trap_number") or "0"))
@@ -637,10 +639,18 @@ def send_fcm_weekly_excel_report():
     buf.seek(0)
     excel_bytes = buf.read()
 
-    # ===================================================================
-    # Email
-    # ===================================================================
-    recipients = [
+    fname = f"CHEPSITO_FCM_Weekly_Report_{current_year}_W{last_week_num:02d}.xlsx"
+
+    return excel_bytes, fname, current_year, week_range_str, last_week_num
+
+
+# ---------------------------------------------------------------------------
+# Email helpers
+# ---------------------------------------------------------------------------
+
+def _recipients():
+    """Resolve recipients list from Trap Report Settings with sensible default."""
+    default = [
         "stephenechikoi@gmail.com",
         "echikoistephene@gmail.com",
         "vlabat@karenroses.com",
@@ -648,16 +658,16 @@ def send_fcm_weekly_excel_report():
     ]
     try:
         s = frappe.get_single("Trap Report Settings")
-        # Prefer the FCM-specific field; fall back to the shared weekly field
         raw = (s.fcm_excel_report_recipients or "").strip() or (s.weekly_report_recipients or "").strip()
         if raw:
-            recipients = [r.strip() for r in raw.split(",") if r.strip()]
+            return [r.strip() for r in raw.split(",") if r.strip()]
     except Exception:
         pass
+    return default
 
-    fname = f"CHEPSITO_FCM_Weekly_Report_{current_year}_W{last_week_num:02d}.xlsx"
 
-    html_body = f"""
+def _build_email_html(week_range_str, current_year):
+    return f"""
     <div style="font-family:Arial,sans-serif;font-size:14px;color:#333;max-width:640px;">
       <div style="background:#0D2B5E;padding:22px 28px;margin-bottom:20px;border-radius:4px;">
         <div style="font-size:20px;font-weight:700;color:#fff;">FCM Weekly Monitoring Report</div>
@@ -711,16 +721,46 @@ def send_fcm_weekly_excel_report():
     </div>
     """
 
+
+# ---------------------------------------------------------------------------
+# Public entry points
+# ---------------------------------------------------------------------------
+
+def send_fcm_weekly_excel_report():
+    """Scheduler entry point — builds the workbook, emails it with attachment."""
+    excel_bytes, fname, current_year, week_range_str, _ = _build_workbook_bytes()
+    if excel_bytes is None:
+        _send_no_data_email(current_year, week_range_str)
+        return
+
+    recipients = _recipients()
     frappe.sendmail(
         recipients=recipients,
         subject=f"FCM Weekly Monitoring Report — {week_range_str} ({current_year})",
-        message=html_body,
+        message=_build_email_html(week_range_str, current_year),
         attachments=[{"fname": fname, "fcontent": excel_bytes}],
     )
-
     frappe.logger().info(
         f"FCM Weekly Excel Report sent for {week_range_str} → {recipients}"
     )
+
+
+@frappe.whitelist()
+def trigger_fcm_email():
+    """On-demand 'Send now' trigger from the Scouting Reports page."""
+    send_fcm_weekly_excel_report()
+    return {"ok": True, "recipients": _recipients()}
+
+
+@frappe.whitelist()
+def download_fcm_xlsx():
+    """Stream the freshly-built xlsx back as a browser download."""
+    excel_bytes, fname, current_year, _, _ = _build_workbook_bytes()
+    if excel_bytes is None:
+        frappe.throw(f"No trap scouting data found for {current_year}. Report not generated.")
+    frappe.local.response.filename = fname
+    frappe.local.response.filecontent = excel_bytes
+    frappe.local.response.type = "download"
 
 
 # ---------------------------------------------------------------------------

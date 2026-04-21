@@ -24,37 +24,50 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
     """
     Return AFP Work Orders (Not Started, submitted) with child items
     and forwarding status (draft SE exists?).
+    Date range applies to COALESCE(custom_scheduled_application_time, planned_start_date)
+    so WOs without an explicit scheduled time still match against their planning time.
     """
-    filters = [
-        ["custom_type", "=", AFP_TYPE],
-        ["status",      "=", "Not Started"],
-        ["docstatus",   "=", 1],
+    params = {"type": AFP_TYPE}
+    where = [
+        "custom_type = %(type)s",
+        "status = 'Not Started'",
+        "docstatus = 1",
     ]
 
     if from_date:
-        filters.append(["custom_scheduled_application_time", ">=", from_date + " 00:00:00"])
+        where.append(
+            "COALESCE(custom_scheduled_application_time, planned_start_date) >= %(from_date)s"
+        )
+        params["from_date"] = from_date + " 00:00:00"
     if to_date:
-        next_day = add_days(to_date, 1)
-        filters.append(["custom_scheduled_application_time", "<", str(next_day) + " 00:00:00"])
+        where.append(
+            "COALESCE(custom_scheduled_application_time, planned_start_date) < %(to_date)s"
+        )
+        params["to_date"] = str(add_days(to_date, 1)) + " 00:00:00"
 
     if greenhouse:
-        filters.append(["custom_greenhouse", "=", greenhouse])
+        where.append("custom_greenhouse = %(greenhouse)s")
+        params["greenhouse"] = greenhouse
     elif farm:
-        filters.append(["custom_greenhouse", "like", farm + " GH%"])
+        where.append("custom_greenhouse LIKE %(farm_prefix)s")
+        params["farm_prefix"] = farm + " GH%"
 
-    wos = frappe.get_all(
-        "Work Order",
-        filters=filters,
-        fields=[
-            "name", "custom_greenhouse", "creation",
-            "custom_scheduled_application_time",
-            "custom_spray_type", "custom_scope", "custom_scope_details",
-            "custom_area", "custom_water_volume", "custom_water_ph",
-            "custom_water_hardness", "custom_kit", "wip_warehouse",
-            "custom_targets",
-        ],
-        order_by="custom_scheduled_application_time desc, creation desc",
-        limit=0,
+    wos = frappe.db.sql(
+        """
+        SELECT
+            name, custom_greenhouse, creation,
+            custom_scheduled_application_time,
+            custom_spray_type, custom_scope, custom_scope_details,
+            custom_area, custom_water_volume, custom_water_ph,
+            custom_water_hardness, custom_kit, wip_warehouse,
+            custom_targets
+        FROM `tabWork Order`
+        WHERE {where}
+        ORDER BY COALESCE(custom_scheduled_application_time, planned_start_date) DESC,
+                 creation DESC
+        """.format(where=" AND ".join(where)),
+        params,
+        as_dict=1,
     )
 
     if not wos:

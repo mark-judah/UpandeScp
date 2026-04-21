@@ -175,9 +175,18 @@ doc_events = {
 
 scheduler_events = {
     "cron": {
+        # Daily Scouting & Crop Protection Summary — 17:00 EAT (14:00 UTC)
+        "0 14 * * *": [
+            "upande_scp.serverscripts.send_daily_scouting_report.send_daily_scouting_report"
+        ],
+        # Weekly Trap Scouting Report — Mondays 08:00 EAT (05:00 UTC)
+        "0 5 * * 1": [
+            "upande_scp.serverscripts.send_weekly_trap_report.send_weekly_trap_report"
+        ],
+        # KEPHIS FCM Weekly Excel — Tuesdays 08:00
         "0 8 * * 2": [
             "upande_scp.serverscripts.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
-        ]
+        ],
     }
 }
 

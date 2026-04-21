@@ -168,6 +168,11 @@ def createApplicationWorkOrder():
         })
         wo.insert(ignore_permissions=True)
 
+        # Fallback-mirror planned_start_date into custom_scheduled_application_time
+        # when the payload didn't provide one, so Spray Plan Approval can filter/sort.
+        if not wo.get("custom_scheduled_application_time") and wo.planned_start_date:
+            wo.custom_scheduled_application_time = wo.planned_start_date
+
         # -------------------------------------------------- 8.5. Replace auto-generated items with ours
         # ERPNext auto-populated required_items from BOM during insert.
         # Clear them and set our custom ones instead.

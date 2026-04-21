@@ -1031,12 +1031,6 @@
 }
 
 /* ════════════════════════════════════════
-   REPORTS DROPDOWN (injected by JS)
-   ════════════════════════════════════════ */
-
-.scout-reports-dropdown { position: relative; display: inline-block; margin-left: 6px; }
-
-/* ════════════════════════════════════════
    RESPONSIVE
    ════════════════════════════════════════ */
 

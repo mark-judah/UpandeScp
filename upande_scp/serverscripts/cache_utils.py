@@ -51,6 +51,10 @@ K_SM_TRAPS_BY_GH = "scp:sm_traps_by_gh_v1"
 # beds + traps + sections for a farm so the mobile app can populate its
 # offline cache in a single request instead of per-block round-trips.
 K_SM_FARM_BUNDLE_PREFIX = "scp:sm_farm_bundle_v1"
+# Per-block Orchard Tree FeatureCollection used by the avocado view of the
+# scouts map. Key suffix is the block (Warehouse) name.
+K_ORCHARD_TREES_PREFIX = "scp:orchard_trees_v1"
+K_CROPS_SCOUTED = "scp:crops_scouted_v1"
 
 
 def invalidate_farm_bundle(farm):
@@ -58,6 +62,26 @@ def invalidate_farm_bundle(farm):
     if not farm:
         return
     invalidate(f"{K_SM_FARM_BUNDLE_PREFIX}:{farm}")
+
+
+def invalidate_orchard_trees_for_block(block):
+    if not block:
+        return
+    invalidate(f"{K_ORCHARD_TREES_PREFIX}:{block}")
+
+
+def invalidate_orchard_trees_for_doc(doc):
+    """Invalidate the cached tree FeatureCollection for the doc's block.
+
+    Resolves the block from `doc.block` first, then via the row's greenhouse
+    when block is missing (e.g. on insert before before_save fires).
+    """
+    block = getattr(doc, "block", None)
+    if not block:
+        row = getattr(doc, "row", None)
+        if row:
+            block = frappe.db.get_value("Bed", row, "greenhouse")
+    invalidate_orchard_trees_for_block(block)
 
 
 def invalidate_farm_bundle_for_doc(doc):
@@ -191,6 +215,7 @@ _DOC_INVALIDATIONS = {
     "Trap": (K_SM_TRAPS_BY_GH,),
     "Spray Equipment Details": (K_AFP_SPRAY_EQUIPMENT,),
     "Item": (K_CHEMICALS_LIST,),
+    "Crop Scouted": (K_CROPS_SCOUTED,),
 }
 
 
@@ -202,3 +227,6 @@ def invalidate_on_change(doc, method=None):
     # the mobile bundle endpoint rebuilds on next request.
     if doc.doctype in ("Bed", "Trap", "Warehouse", "Farm"):
         invalidate_farm_bundle_for_doc(doc)
+    # Drop the per-block Orchard Tree FeatureCollection when trees move.
+    if doc.doctype == "Orchard Tree":
+        invalidate_orchard_trees_for_doc(doc)

@@ -20,7 +20,8 @@ def getScoutingAnalysis():
         scouting_entries = frappe.get_all(
             "Scouting Entry",
             fields=["name", "scouts_name", "greenhouse", "bed",
-                    "zone", "time_of_capture", "date_of_capture", "latitude", "longitude", "creation"],
+                    "zone", "time_of_capture", "date_of_capture", "latitude", "longitude", "creation",
+                    "crop_scouted", "tree", "block", "row"],
             filters=se_filters,
             order_by="time_of_capture asc"
         )

@@ -41,6 +41,9 @@ CROP_NAME = "Avocado"
 
 # Pests scouted on Avocado, modelled with stages where the field sheet
 # distinguishes them (e.g. Mosquito Bug Adults vs Nymphs).
+# Pests scouted on Avocado. Every pest carries an "Adult" stage to match
+# the existing house style (see Caterpillars / Leaf Rollers / Mosquito
+# Bugs / Thrips on this site). Multi-stage pests append extra stages.
 AVOCADO_PESTS: list[dict[str, Any]] = [
     {
         "common_name": "Fruit fly (Ceratitis)",
@@ -57,32 +60,48 @@ AVOCADO_PESTS: list[dict[str, Any]] = [
         "scientific_name": "Thaumatotibia leucotreta",
         "stages": [{"stage": "Adult", "reading_type": "Count"}],
     },
+    # Each scouted separately; existing site already has "Caterpillars" and
+    # "Leaf Rollers" so we reuse those names and only add "Loopers".
     {
-        "common_name": "Loopers/Caterpillars/Leafrollers",
+        "common_name": "Loopers",
         "scientific_name": "",
-        "stages": [{"stage": "Damage", "reading_type": "Count"}],
+        "stages": [{"stage": "Adult", "reading_type": "Count"}],
     },
     {
-        "common_name": "Mosquito Bug",
+        "common_name": "Caterpillars",
+        "scientific_name": "",
+        "stages": [{"stage": "Adult", "reading_type": "Count"}],
+    },
+    {
+        "common_name": "Leaf Rollers",
+        "scientific_name": "",
+        "stages": [{"stage": "Adult", "reading_type": "Count"}],
+    },
+    # Existing site already has these — reuse rather than create dupes.
+    {
+        "common_name": "Mosquito Bugs",
         "scientific_name": "Helopeltis spp.",
         "stages": [
-            {"stage": "Adults", "reading_type": "Count"},
-            {"stage": "Nymphs", "reading_type": "Count"},
+            {"stage": "Adult", "reading_type": "Count"},
+            {"stage": "Nymph", "reading_type": "Count"},
         ],
     },
     {
-        "common_name": "Scale",
+        "common_name": "Scale Insects",
         "scientific_name": "Coccoidea",
         "stages": [
-            {"stage": "Adults", "reading_type": "Count", "plant_sections": "Fruit"},
-            {"stage": "Adults", "reading_type": "Count", "plant_sections": "Leaves & Stems"},
-            {"stage": "Crawlers", "reading_type": "Count"},
+            {
+                "stage": "Adult",
+                "reading_type": "Count",
+                "plant_sections": "Fruit\nLeaves & Stems",
+            },
+            {"stage": "Crawler", "reading_type": "Count"},
         ],
     },
     {
         "common_name": "CSR",
         "scientific_name": "",
-        "stages": [{"stage": "Males", "reading_type": "Count"}],
+        "stages": [{"stage": "Adult", "reading_type": "Count"}],
     },
 ]
 
@@ -98,13 +117,14 @@ TRAP_TYPES: list[str] = [
 ]
 
 # When seeding Trap records under a block, place one of each pest-relevant
-# trap. Test runs / production can edit these freely afterwards.
+# trap. trap_number gets the block name appended at insert time so
+# autoname (`{farm} - {trap_number}`) stays unique. Edit freely later.
 TRAPS_PER_BLOCK: list[dict[str, str]] = [
-    {"trap_number": "MCP-1", "type": "McPhail", "location": "Outdoor"},
-    {"trap_number": "DLT-1", "type": "Delta", "location": "Outdoor"},
-    {"trap_number": "FEM-1", "type": "Femtrack Lure", "location": "Outdoor"},
-    {"trap_number": "CRY-1", "type": "Crytrack Lure", "location": "Outdoor"},
-    {"trap_number": "CSR-1", "type": "CSR Trap", "location": "Outdoor"},
+    {"suffix": "MCP", "type": "McPhail", "location": "Outdoor"},
+    {"suffix": "DLT", "type": "Delta", "location": "Outdoor"},
+    {"suffix": "FEM", "type": "Femtrack Lure", "location": "Outdoor"},
+    {"suffix": "CRY", "type": "Crytrack Lure", "location": "Outdoor"},
+    {"suffix": "CSR", "type": "CSR Trap", "location": "Outdoor"},
 ]
 
 
@@ -214,10 +234,10 @@ def _ensure_traps_for_blocks(
 
     for block in blocks:
         for spec in TRAPS_PER_BLOCK:
-            trap_name = f"{farm} - {spec['trap_number']}-{block.warehouse_name}"
-            # Trap autoname format: {farm} - {trap_number}. We embed the block
-            # name into trap_number to keep names unique per block.
-            trap_number = f"{spec['trap_number']}-{block.warehouse_name}"
+            # Autoname format on Trap: `{farm} - {trap_number}`. Embed the
+            # block name + type suffix into trap_number so names stay
+            # readable and unique per (block, type).
+            trap_number = f"{block.warehouse_name} {spec['suffix']}"
             full_name = f"{farm} - {trap_number}"
             if frappe.db.exists("Trap", full_name):
                 continue

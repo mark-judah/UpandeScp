@@ -2,10 +2,22 @@ import json
 import frappe
 
 from upande_scp.serverscripts.cache_utils import (
+    K_CROPS_SCOUTED,
     K_GREENHOUSES_GEOJSON,
     TTL_LONG,
+    TTL_MEDIUM,
     get_or_set,
 )
+
+
+def _build_crops_scouted():
+    rows = frappe.get_all(
+        "Crop Scouted",
+        fields=["name", "crop_name"],
+        order_by="crop_name",
+        limit_page_length=0,
+    )
+    return [{"name": r["name"], "label": r.get("crop_name") or r["name"]} for r in rows]
 
 
 def _build_greenhouses_geojson():
@@ -51,5 +63,8 @@ def get_context(context):
 
     context.greenhouses_geojson = get_or_set(
         K_GREENHOUSES_GEOJSON, _build_greenhouses_geojson, ttl=TTL_LONG
+    )
+    context.crops_scouted = get_or_set(
+        K_CROPS_SCOUTED, _build_crops_scouted, ttl=TTL_MEDIUM
     )
     return context

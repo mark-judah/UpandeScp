@@ -168,6 +168,8 @@ doc_events = {
     "Farm": _SCP_CACHE_EVENTS,
     "Spray Equipment Details": _SCP_CACHE_EVENTS,
     "Item": _SCP_CACHE_EVENTS,
+    "Orchard Tree": _SCP_CACHE_EVENTS,
+    "Crop Scouted": _SCP_CACHE_EVENTS,
 }
 
 # Scheduled Tasks

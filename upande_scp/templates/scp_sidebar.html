@@ -1,0 +1,530 @@
+<style>
+	:root {
+		--scp-sb-w: 232px;
+		--scp-sb-w-collapsed: 60px;
+
+		/* Softer slate palette (reduced black intensity) */
+		--scp-sb-bg: #ffffff;
+		--scp-sb-fg: #374151;
+		--scp-sb-body: #4b5563;
+		--scp-sb-muted: #6b7280;
+		--scp-sb-border: #e5e7eb;
+		--scp-sb-hover: #f4f5f6;
+		--scp-sb-subtle: #fafbfc;
+		--scp-sb-active-bg: #4b5563;
+		--scp-sb-active-fg: #ffffff;
+		--scp-sb-link: #2563eb;
+	}
+
+	.scp-sb {
+		width: var(--scp-sb-w);
+		flex: 0 0 var(--scp-sb-w);
+		height: 100vh;
+		background: var(--scp-sb-bg);
+		border-right: 1px solid var(--scp-sb-border);
+		display: flex;
+		flex-direction: column;
+		font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+		transition: width 0.18s ease, flex-basis 0.18s ease;
+		position: relative;
+		z-index: 1000;
+	}
+
+	.scp-sb.collapsed {
+		width: var(--scp-sb-w-collapsed);
+		flex-basis: var(--scp-sb-w-collapsed);
+	}
+
+	/* ── Header (brand + actions) ── */
+	.scp-sb-header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 10px 12px;
+		border-bottom: 1px solid var(--scp-sb-border);
+		min-height: 52px;
+		background: var(--scp-sb-bg);
+	}
+
+	.scp-sb-brand-wrap {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+	}
+
+	.scp-sb-logo {
+		width: 30px;
+		height: 30px;
+		flex-shrink: 0;
+		border-radius: 6px;
+		background: var(--scp-sb-active-bg);
+		color: var(--scp-sb-active-fg);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.scp-sb-brand {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--scp-sb-fg);
+		letter-spacing: -0.01em;
+		white-space: nowrap;
+		overflow: hidden;
+		opacity: 1;
+		transition: opacity 0.15s ease;
+	}
+	.scp-sb.collapsed .scp-sb-brand {
+		opacity: 0;
+		width: 0;
+	}
+
+	.scp-sb-actions {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		flex-shrink: 0;
+		opacity: 1;
+		transition: opacity 0.15s ease;
+	}
+	.scp-sb.collapsed .scp-sb-actions {
+		display: none;
+	}
+
+	.scp-sb-iconbtn {
+		width: 28px;
+		height: 28px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		border: 1px solid transparent;
+		border-radius: 6px;
+		cursor: pointer;
+		color: var(--scp-sb-muted);
+	}
+	.scp-sb-iconbtn svg {
+		width: 14px;
+		height: 14px;
+	}
+
+	/* When collapsed, the toggle floats by itself, centered in the header */
+	.scp-sb-toggle-collapsed {
+		display: none;
+		width: 100%;
+		height: 30px;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		border: 1px solid var(--scp-sb-border);
+		border-radius: 6px;
+		cursor: pointer;
+		color: var(--scp-sb-muted);
+	}
+	.scp-sb-toggle-collapsed svg {
+		width: 14px;
+		height: 14px;
+	}
+	.scp-sb.collapsed .scp-sb-toggle-collapsed {
+		display: flex;
+	}
+
+	/* Chevron rotation */
+	.scp-sb-chevron {
+		transition: transform 0.18s ease;
+	}
+	.scp-sb.collapsed .scp-sb-chevron {
+		transform: rotate(180deg);
+	}
+
+	/* ── Body / nav ── */
+	.scp-sb-body {
+		flex: 1;
+		overflow-y: auto;
+		overflow-x: hidden;
+		padding: 8px;
+		scrollbar-width: thin;
+	}
+
+	/* ── Footer (exit) ── */
+	.scp-sb-footer {
+		flex-shrink: 0;
+		padding: 8px;
+		border-top: 1px solid var(--scp-sb-border);
+		background: var(--scp-sb-bg);
+	}
+	.scp-sb-footer .scp-sb-exit {
+		color: var(--scp-sb-muted);
+	}
+	.scp-sb-body::-webkit-scrollbar {
+		width: 5px;
+	}
+	.scp-sb-body::-webkit-scrollbar-thumb {
+		background: var(--scp-sb-border);
+		border-radius: 999px;
+	}
+
+	.scp-sb-section {
+		padding: 10px 10px 6px;
+		font-size: 0.68rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--scp-sb-muted);
+		white-space: nowrap;
+		overflow: hidden;
+	}
+	.scp-sb-section:first-child {
+		padding-top: 4px;
+	}
+	.scp-sb.collapsed .scp-sb-section {
+		opacity: 0;
+		height: 0;
+		padding: 0;
+	}
+
+	.scp-sb-link {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 7px 10px;
+		margin: 1px 0;
+		border-radius: 6px;
+		color: var(--scp-sb-body);
+		text-decoration: none;
+		font-size: 0.8rem;
+		font-weight: 500;
+		white-space: nowrap;
+		position: relative;
+	}
+	.scp-sb-link.active {
+		background: var(--scp-sb-active-bg);
+		color: var(--scp-sb-active-fg);
+	}
+	.scp-sb-link svg {
+		flex-shrink: 0;
+		width: 16px;
+		height: 16px;
+	}
+	.scp-sb-link-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		opacity: 1;
+		transition: opacity 0.12s ease;
+	}
+	.scp-sb.collapsed .scp-sb-link {
+		justify-content: center;
+		padding: 8px;
+	}
+	.scp-sb.collapsed .scp-sb-link-label {
+		opacity: 0;
+		width: 0;
+	}
+
+	/* Tooltip on collapsed hover */
+	.scp-sb.collapsed .scp-sb-link[data-tip]:hover::after,
+	.scp-sb.collapsed .scp-sb-iconbtn[data-tip]:hover::after {
+		content: attr(data-tip);
+		position: absolute;
+		left: calc(100% + 8px);
+		top: 50%;
+		background: var(--scp-sb-active-bg);
+		color: var(--scp-sb-active-fg);
+		padding: 4px 8px;
+		border-radius: 4px;
+		font-size: 0.72rem;
+		font-weight: 500;
+		white-space: nowrap;
+		z-index: 2000;
+		pointer-events: none;
+	}
+
+	/* ── Mobile hamburger trigger ── */
+	.scp-sb-mobile-trigger {
+		display: none;
+		position: fixed;
+		top: 12px;
+		left: 12px;
+		width: 36px;
+		height: 36px;
+		align-items: center;
+		justify-content: center;
+		background: var(--scp-sb-bg);
+		border: 1px solid var(--scp-sb-border);
+		border-radius: 6px;
+		color: var(--scp-sb-fg);
+		z-index: 1500;
+		cursor: pointer;
+	}
+	.scp-sb-backdrop {
+		display: none;
+		position: fixed;
+		inset: 0;
+		background: rgba(17, 24, 39, 0.45);
+		backdrop-filter: blur(2px);
+		z-index: 999;
+	}
+
+	@media (max-width: 768px) {
+		.scp-sb {
+			position: fixed;
+			top: 0;
+			left: 0;
+			transform: translateX(-100%);
+			transition: transform 0.2s ease;
+			width: var(--scp-sb-w) !important;
+			flex: 0 0 0 !important;
+			flex-basis: 0 !important;
+		}
+		.scp-sb.mobile-open {
+			transform: translateX(0);
+		}
+		.scp-sb-backdrop.visible {
+			display: block;
+		}
+		.scp-sb-mobile-trigger {
+			display: flex;
+		}
+		.scp-sb .scp-sb-brand,
+		.scp-sb .scp-sb-section,
+		.scp-sb .scp-sb-link-label {
+			opacity: 1 !important;
+			width: auto !important;
+		}
+		.scp-sb .scp-sb-actions {
+			display: flex !important;
+		}
+		.scp-sb .scp-sb-toggle-collapsed {
+			display: none !important;
+		}
+	}
+</style>
+
+<button
+	class="scp-sb-mobile-trigger"
+	id="scpSbMobileTrigger"
+	aria-label="Open navigation"
+	type="button"
+>
+	<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+		<line x1="3" y1="6" x2="21" y2="6" />
+		<line x1="3" y1="12" x2="21" y2="12" />
+		<line x1="3" y1="18" x2="21" y2="18" />
+	</svg>
+</button>
+
+<aside class="scp-sb" id="scpSidebar" aria-label="Primary navigation">
+	<div class="scp-sb-header">
+		<div class="scp-sb-brand-wrap">
+			<div class="scp-sb-logo">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+					<path d="M12 22V12M12 12C12 7 7 4 3 6M12 12C12 7 17 4 21 6" />
+					<path d="M3 6c2 4 5 6 9 6M21 6c-2 4-5 6-9 6" />
+				</svg>
+			</div>
+			<span class="scp-sb-brand">Scouting &amp; CP</span>
+		</div>
+
+		<div class="scp-sb-actions">
+			<button
+				class="scp-sb-iconbtn"
+				id="scpSbToggle"
+				aria-label="Collapse sidebar"
+				type="button"
+			>
+				<svg class="scp-sb-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<polyline points="15 18 9 12 15 6" />
+				</svg>
+			</button>
+		</div>
+
+		<button
+			class="scp-sb-toggle-collapsed"
+			id="scpSbToggleCollapsed"
+			aria-label="Expand sidebar"
+			type="button"
+		>
+			<svg class="scp-sb-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<polyline points="15 18 9 12 15 6" />
+			</svg>
+		</button>
+	</div>
+
+	<nav class="scp-sb-body">
+		<div class="scp-sb-section">Overview</div>
+
+		<a href="/scouting_dashboard" class="scp-sb-link" data-page="scouting_dashboard" data-tip="Dashboards">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<rect x="3" y="3" width="7" height="7" />
+				<rect x="14" y="3" width="7" height="7" />
+				<rect x="3" y="14" width="7" height="7" />
+				<rect x="14" y="14" width="7" height="7" />
+			</svg>
+			<span class="scp-sb-link-label">Dashboards</span>
+		</a>
+
+		<div class="scp-sb-section">Scouting</div>
+
+		<a href="/scouts-map" class="scp-sb-link" data-page="scouts-map" data-tip="Scouts">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+				<circle cx="9" cy="7" r="4" />
+			</svg>
+			<span class="scp-sb-link-label">Scouts</span>
+		</a>
+
+		<a href="/observations-map" class="scp-sb-link" data-page="observations-map" data-tip="Observations">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<circle cx="11" cy="11" r="8" />
+				<line x1="21" y1="21" x2="16.65" y2="16.65" />
+			</svg>
+			<span class="scp-sb-link-label">Observations</span>
+		</a>
+
+		<a href="/scouting-heatmaps" class="scp-sb-link" data-page="scouting-heatmaps" data-tip="Heatmaps">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M12 2c0 6-8 8-8 14a8 8 0 0 0 16 0c0-6-8-8-8-14z" />
+			</svg>
+			<span class="scp-sb-link-label">Heatmaps</span>
+		</a>
+
+		<a href="/traps-map" class="scp-sb-link" data-page="traps-map" data-tip="Traps">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<circle cx="12" cy="12" r="3" />
+				<path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" />
+			</svg>
+			<span class="scp-sb-link-label">Traps</span>
+		</a>
+
+		<div class="scp-sb-section">Crop Protection</div>
+
+		<a href="/new-application-floor-plan" class="scp-sb-link" data-page="new-application-floor-plan" data-tip="Application Plan">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<rect x="3" y="3" width="18" height="18" rx="2" />
+				<line x1="3" y1="9" x2="21" y2="9" />
+				<line x1="9" y1="21" x2="9" y2="9" />
+			</svg>
+			<span class="scp-sb-link-label">Application Plan</span>
+		</a>
+
+		<a href="/spray_plan_approval" class="scp-sb-link" data-page="spray_plan_approval" data-tip="Approvals">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M9 11l3 3L22 4" />
+				<path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+			</svg>
+			<span class="scp-sb-link-label">Approvals</span>
+		</a>
+
+		<a href="/application_work_order_history" class="scp-sb-link" data-page="application_work_order_history" data-tip="Historical Plans">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+				<polyline points="3 3 3 8 8 8" />
+				<line x1="12" y1="7" x2="12" y2="12" />
+				<line x1="12" y1="12" x2="15" y2="14" />
+			</svg>
+			<span class="scp-sb-link-label">Historical</span>
+		</a>
+
+		<a href="/tank_mix_list" class="scp-sb-link" data-page="tank_mix_list" data-tip="Tank Mixes">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+				<polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+				<line x1="12" y1="22.08" x2="12" y2="12" />
+			</svg>
+			<span class="scp-sb-link-label">Tank Mixes</span>
+		</a>
+
+		<div class="scp-sb-section">Reports</div>
+
+		<a href="/scouting_reports" class="scp-sb-link" data-page="scouting_reports" data-tip="Reports">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+				<polyline points="14 2 14 8 20 8" />
+				<line x1="8" y1="13" x2="16" y2="13" />
+				<line x1="8" y1="17" x2="16" y2="17" />
+			</svg>
+			<span class="scp-sb-link-label">Reports</span>
+		</a>
+
+		<a href="/variety-map" class="scp-sb-link" data-page="variety-map" data-tip="Varieties">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M12 2 L12 22" />
+				<path d="M12 8 C 6 8, 4 4, 4 2 C 8 2, 12 4, 12 8 Z" />
+				<path d="M12 12 C 18 12, 20 8, 20 6 C 16 6, 12 8, 12 12 Z" />
+			</svg>
+			<span class="scp-sb-link-label">Varieties</span>
+		</a>
+	</nav>
+
+	<div class="scp-sb-footer">
+		<a
+			href="/app/scouting-&-crop-protection"
+			class="scp-sb-link scp-sb-exit"
+			aria-label="Exit to workspace"
+			data-tip="Exit"
+		>
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+				<polyline points="16 17 21 12 16 7" />
+				<line x1="21" y1="12" x2="9" y2="12" />
+			</svg>
+			<span class="scp-sb-link-label">Exit</span>
+		</a>
+	</div>
+</aside>
+
+<div class="scp-sb-backdrop" id="scpSbBackdrop"></div>
+
+<script>
+	(function () {
+		var sb = document.getElementById("scpSidebar");
+		var toggle = document.getElementById("scpSbToggle");
+		var toggleCollapsed = document.getElementById("scpSbToggleCollapsed");
+		var trigger = document.getElementById("scpSbMobileTrigger");
+		var backdrop = document.getElementById("scpSbBackdrop");
+		var STORAGE_KEY = "scp-sidebar-collapsed";
+
+		try {
+			if (localStorage.getItem(STORAGE_KEY) === "1") {
+				sb.classList.add("collapsed");
+			}
+		} catch (e) {}
+
+		function flip() {
+			sb.classList.toggle("collapsed");
+			try {
+				localStorage.setItem(
+					STORAGE_KEY,
+					sb.classList.contains("collapsed") ? "1" : "0"
+				);
+			} catch (e) {}
+		}
+		if (toggle) toggle.addEventListener("click", flip);
+		if (toggleCollapsed) toggleCollapsed.addEventListener("click", flip);
+
+		function closeMobile() {
+			sb.classList.remove("mobile-open");
+			backdrop.classList.remove("visible");
+		}
+		if (trigger) {
+			trigger.addEventListener("click", function () {
+				sb.classList.add("mobile-open");
+				backdrop.classList.add("visible");
+			});
+		}
+		if (backdrop) backdrop.addEventListener("click", closeMobile);
+		document.addEventListener("keydown", function (e) {
+			if (e.key === "Escape") closeMobile();
+		});
+
+		var path = window.location.pathname.replace(/^\//, "");
+		document.querySelectorAll(".scp-sb-link[data-page]").forEach(function (a) {
+			if (path === a.dataset.page || path.startsWith(a.dataset.page)) {
+				a.classList.add("active");
+			}
+		});
+	})();
+</script>

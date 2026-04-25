@@ -1,0 +1,156 @@
+{% extends "upande_scp/www/map_base.html" %}
+
+{% block title %}Tank Mixes{% endblock %}
+
+{% block head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tank_mix_list.css">
+{% endblock %}
+
+{% block page_content %}
+<div id="tml-root">
+<div class="tml-page">
+
+	<div class="tml-header">
+		<div class="tml-header-left">
+			<h3 class="tml-title">Tank Mixes</h3>
+			<span class="tml-subtitle">BOMs registered as Chemical Mix · select one to view its full BOM in the ERP.</span>
+		</div>
+	</div>
+
+	<form class="tml-filters" method="get" id="tml-filter-form">
+		<div class="filter-group">
+			<div class="filter-field">
+				<label for="tml-q">Search</label>
+				<input type="text" id="tml-q" name="q" class="filter-input" placeholder="Tank mix name…" value="{{ filters['q'] }}">
+			</div>
+			<div class="filter-field">
+				<label for="tml-farm">Farm</label>
+				<select id="tml-farm" name="farm" class="filter-select">
+					<option value="">All farms</option>
+					{% for f in farms %}
+					<option value="{{ f }}" {% if filters['farm'] == f %}selected{% endif %}>{{ f }}</option>
+					{% endfor %}
+				</select>
+			</div>
+			<div class="filter-field">
+				<label for="tml-active">Status</label>
+				<select id="tml-active" name="active" class="filter-select">
+					<option value="1" {% if filters['active'] == '1' %}selected{% endif %}>Active only</option>
+					<option value="0" {% if filters['active'] == '0' %}selected{% endif %}>All</option>
+				</select>
+			</div>
+			<div class="filter-field tml-filter-actions">
+				<label>&nbsp;</label>
+				<div class="tml-action-row">
+					<button type="submit" class="tml-btn tml-btn-primary">Apply</button>
+					<a href="/tank_mix_list" class="tml-btn tml-btn-ghost">Reset</a>
+				</div>
+			</div>
+		</div>
+	</form>
+
+	<div class="tml-results-meta">
+		<span><strong>{{ tank_mixes|length }}</strong> tank mix{% if tank_mixes|length != 1 %}es{% endif %}</span>
+		{% if tank_mixes|length == 200 %}
+		<span class="tml-results-cap">Showing the most recent 200 — narrow the filters to see older mixes.</span>
+		{% endif %}
+	</div>
+
+	{% if tank_mixes %}
+	<div class="tml-grid">
+		{% for tm in tank_mixes %}
+		<article class="tml-card">
+			<header class="tml-card-head">
+				<div class="tml-card-title-wrap">
+					<h4 class="tml-card-title">{{ tm.item_name or tm.item }}</h4>
+					<div class="tml-card-meta">
+						<a href="/app/bom/{{ tm.name }}" target="_blank" rel="noopener" class="tml-bom-name">{{ tm.name }}</a>
+						{% if tm.custom_farm %}<span class="tml-meta-pill">{{ tm.custom_farm }}</span>{% endif %}
+						{% if tm.custom_business_unit %}<span class="tml-meta-pill">{{ tm.custom_business_unit }}</span>{% endif %}
+					</div>
+				</div>
+				<div class="tml-card-status">
+					{% if tm.is_active %}
+					<span class="tml-status tml-status-active"><span class="tml-status-dot"></span>Active</span>
+					{% else %}
+					<span class="tml-status tml-status-inactive"><span class="tml-status-dot"></span>Inactive</span>
+					{% endif %}
+					{% if tm.is_default %}
+					<span class="tml-status tml-status-default"><span class="tml-status-dot"></span>Default</span>
+					{% endif %}
+				</div>
+			</header>
+
+			<div class="tml-card-stats">
+				<div class="tml-stat">
+					<div class="tml-stat-label">Mix size</div>
+					<div class="tml-stat-value">{{ "%g"|format(tm.quantity) if tm.quantity is not none else "—" }}</div>
+					<div class="tml-stat-meta">{{ tm.uom or "" }}</div>
+				</div>
+				<div class="tml-stat">
+					<div class="tml-stat-label">Chemicals</div>
+					<div class="tml-stat-value">{{ tm.item_count }}</div>
+					<div class="tml-stat-meta">items</div>
+				</div>
+				<div class="tml-stat">
+					<div class="tml-stat-label">Water pH</div>
+					<div class="tml-stat-value">{{ tm.custom_water_ph or "—" }}</div>
+					<div class="tml-stat-meta">pH</div>
+				</div>
+				<div class="tml-stat">
+					<div class="tml-stat-label">Water hardness</div>
+					<div class="tml-stat-value">{{ tm.custom_water_hardness or "—" }}</div>
+					<div class="tml-stat-meta">mg/L</div>
+				</div>
+			</div>
+
+			{% if tm.chemicals %}
+			<div class="tml-table-wrap">
+				<table class="tml-table">
+					<thead>
+						<tr>
+							<th>Chemical</th>
+							<th class="tml-num">Qty</th>
+							<th>UOM</th>
+							<th class="tml-num">Rate</th>
+						</tr>
+					</thead>
+					<tbody>
+						{% for it in tm.chemicals %}
+						<tr>
+							<td>
+								<div class="tml-chem-name">{{ it.item_name or it.item_code }}</div>
+								<div class="tml-chem-code">{{ it.item_code }}</div>
+							</td>
+							<td class="tml-num">{{ "%g"|format(it.stock_qty) if it.stock_qty is not none else "—" }}</td>
+							<td>{{ it.stock_uom or "—" }}</td>
+							<td class="tml-num">{{ "{:,.2f}".format(it.rate) if it.rate else "—" }}</td>
+						</tr>
+						{% endfor %}
+					</tbody>
+				</table>
+			</div>
+			{% else %}
+			<p class="tml-empty-inline">No exploded items recorded on this BOM.</p>
+			{% endif %}
+
+			<footer class="tml-card-foot">
+				<span>Last updated {{ frappe.utils.format_datetime(tm.modified, "d MMM yyyy HH:mm") if tm.modified else "—" }}</span>
+				<a href="/app/bom/{{ tm.name }}" target="_blank" rel="noopener" class="tml-card-link">Open BOM →</a>
+			</footer>
+		</article>
+		{% endfor %}
+	</div>
+	{% else %}
+	<div class="tml-empty">
+		<p>No tank mixes found for these filters.</p>
+		<a href="/tank_mix_list" class="tml-btn tml-btn-ghost">Reset filters</a>
+	</div>
+	{% endif %}
+
+</div>
+</div>
+{% endblock %}

@@ -101,15 +101,14 @@
 	background: var(--sd-card);
 	color: var(--sd-text);
 	min-width: 130px;
-	transition: border-color .15s, box-shadow .15s;
+	transition: border-color .15s;
 }
 
 .filter-input:focus,
 .filter-select:focus {
 	outline: none;
 	border-color: var(--sd-accent);
-	box-shadow: var(--sd-ring);
-}
+	}
 
 .filter-select:disabled {
 	opacity: .5;
@@ -131,10 +130,7 @@
 	font-family: var(--sd-font);
 	cursor: pointer;
 	transition: opacity .15s;
-}
-
-.refresh-btn:hover { opacity: .88; }
-.refresh-btn svg { width: 14px; height: 14px; }
+}.refresh-btn svg { width: 14px; height: 14px; }
 
 /* ════════════════════════════════════════
    TABS
@@ -166,12 +162,6 @@
 	border-radius: var(--sd-radius);
 	transition: all .15s;
 }
-
-.dashboard-tabs .tab-btn:hover:not(.active) {
-	color: var(--sd-text);
-	background: var(--sd-bg);
-}
-
 .dashboard-tabs .tab-btn.active {
 	background: var(--sd-accent);
 	color: var(--sd-accent-fg);
@@ -211,14 +201,8 @@
 	display: flex;
 	align-items: center;
 	gap: 12px;
-	box-shadow: var(--sd-shadow);
-	transition: border-color .15s;
+		transition: border-color .15s;
 }
-
-.stat-card:hover {
-	border-color: var(--sd-border-hover);
-}
-
 .stat-icon {
 	width: 38px;
 	height: 38px;
@@ -287,8 +271,7 @@
 	padding: 16px;
 	display: flex;
 	flex-direction: column;
-	box-shadow: var(--sd-shadow);
-}
+	}
 
 .chart-card-wide {
 	margin-bottom: 20px;
@@ -476,11 +459,6 @@
 }
 
 .stages-table tr:last-child td { border-bottom: none; }
-
-.stages-table tr:hover td {
-	background: var(--sd-bg);
-}
-
 .pest-badge {
 	display: inline-block;
 	background: var(--sd-bg);
@@ -562,14 +540,8 @@
 	border-radius: var(--sd-radius);
 	background: var(--sd-card);
 	cursor: pointer;
-	transition: border-color .15s, box-shadow .15s;
+	transition: border-color .15s;
 }
-
-.gh-health-item:hover {
-	border-color: var(--sd-accent);
-	box-shadow: var(--sd-ring);
-}
-
 .gh-health-status {
 	width: 8px;
 	height: 8px;
@@ -692,9 +664,6 @@
 	background: var(--sd-card);
 	transition: border-color .15s;
 }
-
-.recent-entry:hover { border-color: var(--sd-border-hover); }
-
 .entry-type {
 	width: 4px;
 	align-self: stretch;
@@ -787,8 +756,7 @@
 	display: flex;
 	flex-direction: column;
 	border: 1px solid var(--sd-border);
-	box-shadow: 0 16px 48px rgba(0,0,0,.14);
-}
+	}
 
 .gh-panel-topbar {
 	padding: 16px 20px;
@@ -841,9 +809,6 @@
 	color: var(--sd-text);
 	transition: background .15s;
 }
-
-.gh-panel-close:hover { background: var(--sd-border); }
-
 .gh-panel-scroll {
 	padding: 20px;
 	overflow-y: auto;

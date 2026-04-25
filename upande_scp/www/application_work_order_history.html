@@ -1,0 +1,149 @@
+{% extends "upande_scp/www/map_base.html" %}
+
+{% block title %}Application Floor Plans{% endblock %}
+
+{% block head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/application_work_order_history.css">
+{% endblock %}
+
+{% block page_content %}
+<div id="awh-root">
+<div class="awh-page">
+
+	{# ─── HEADER ─── #}
+	<div class="awh-header">
+		<div class="awh-header-left">
+			<h3 class="awh-title">Application Floor Plans</h3>
+			<span class="awh-subtitle">Historical work orders · select one to view its full plan and chemical mix.</span>
+		</div>
+		<div class="awh-header-right">
+			<a href="/new_application_floor_plan" class="awh-btn awh-btn-primary">+ New floor plan</a>
+		</div>
+	</div>
+
+	{# ─── FILTERS (server-side; values round-trip through GET) ─── #}
+	<form class="awh-filters" method="get" id="awh-filter-form">
+		<div class="filter-group">
+			<div class="filter-field">
+				<label for="awh-from">From</label>
+				<input type="date" id="awh-from" name="from" class="filter-input" value="{{ filters['from'] }}">
+			</div>
+			<div class="filter-field">
+				<label for="awh-to">To</label>
+				<input type="date" id="awh-to" name="to" class="filter-input" value="{{ filters['to'] }}">
+			</div>
+			<div class="filter-field">
+				<label for="awh-farm">Farm</label>
+				<select id="awh-farm" name="farm" class="filter-select">
+					<option value="">All farms</option>
+					{% for f in farms %}
+					<option value="{{ f }}" {% if filters['farm'] == f %}selected{% endif %}>{{ f }}</option>
+					{% endfor %}
+				</select>
+			</div>
+			<div class="filter-field">
+				<label for="awh-greenhouse">Greenhouse</label>
+				<select id="awh-greenhouse" name="greenhouse" class="filter-select">
+					<option value="">All greenhouses</option>
+					{% for gh in greenhouses %}
+					<option value="{{ gh }}" {% if filters['greenhouse'] == gh %}selected{% endif %}>{{ gh }}</option>
+					{% endfor %}
+				</select>
+			</div>
+			<div class="filter-field">
+				<label for="awh-status">Status</label>
+				<select id="awh-status" name="status" class="filter-select">
+					<option value="" {% if not filters['status'] %}selected{% endif %}>All</option>
+					<option value="pending" {% if filters['status'] == 'pending' %}selected{% endif %}>Awaiting approval</option>
+					<option value="approved" {% if filters['status'] == 'approved' %}selected{% endif %}>Approved</option>
+					<option value="cancelled" {% if filters['status'] == 'cancelled' %}selected{% endif %}>Cancelled</option>
+				</select>
+			</div>
+			<div class="filter-field awh-filter-actions">
+				<label>&nbsp;</label>
+				<div class="awh-action-row">
+					<button type="submit" class="awh-btn awh-btn-primary">Apply</button>
+					<a href="/application_work_order_history" class="awh-btn awh-btn-ghost">Reset</a>
+				</div>
+			</div>
+		</div>
+	</form>
+
+	{# ─── RESULTS ─── #}
+	<div class="awh-results-meta">
+		<span><strong>{{ work_orders|length }}</strong> work order{% if work_orders|length != 1 %}s{% endif %}</span>
+		{% if work_orders|length == 200 %}
+		<span class="awh-results-cap">Showing the most recent 200 — narrow the filters to see older plans.</span>
+		{% endif %}
+	</div>
+
+	{% if work_orders %}
+	<div class="awh-table-wrap">
+		<table class="awh-table">
+			<thead>
+				<tr>
+					<th>Work order</th>
+					<th>Greenhouse</th>
+					<th>Variety</th>
+					<th>Scope · Spray</th>
+					<th class="awh-num">Area (Ha)</th>
+					<th>Scheduled</th>
+					<th>Status</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for w in work_orders %}
+				<tr class="awh-row" data-href="/application_work_order?name={{ w.name | urlencode }}" tabindex="0">
+					<td>
+						<div class="awh-wo-name">{{ w.name }}</div>
+						<div class="awh-wo-item">{{ w.item_name or w.production_item }}</div>
+					</td>
+					<td>{{ w.custom_greenhouse or "—" }}</td>
+					<td>{{ w.custom_variety or "—" }}</td>
+					<td>
+						<div>{{ w.custom_scope or "—" }}</div>
+						<div class="awh-wo-meta">{{ w.custom_spray_type or "" }}{% if w.custom_kit %} · {{ w.custom_kit }}{% endif %}</div>
+					</td>
+					<td class="awh-num">{{ "%.4f"|format(w.custom_area) if w.custom_area is not none else "—" }}</td>
+					<td>
+						<div>{{ frappe.utils.format_datetime(w.custom_scheduled_application_time, "d MMM yyyy") if w.custom_scheduled_application_time else "—" }}</div>
+						<div class="awh-wo-meta">{{ frappe.utils.format_datetime(w.custom_scheduled_application_time, "HH:mm") if w.custom_scheduled_application_time else "" }}</div>
+					</td>
+					<td>
+						<span class="awh-status awh-status-{{ w.status_state }}">
+							<span class="awh-status-dot"></span>{{ w.status_label }}
+						</span>
+					</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+	{% else %}
+	<div class="awh-empty">
+		<p>No work orders match these filters.</p>
+		<a href="/application_work_order_history" class="awh-btn awh-btn-ghost">Reset filters</a>
+	</div>
+	{% endif %}
+
+</div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+	(function () {
+		// Whole-row click → open detail page. Keyboard ↵ also opens.
+		document.querySelectorAll(".awh-row[data-href]").forEach(function (row) {
+			var go = function () { window.location.href = row.dataset.href; };
+			row.addEventListener("click", go);
+			row.addEventListener("keydown", function (e) {
+				if (e.key === "Enter") { e.preventDefault(); go(); }
+			});
+		});
+	})();
+</script>
+{% endblock %}

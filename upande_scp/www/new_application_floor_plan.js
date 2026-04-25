@@ -2089,7 +2089,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (r.message && r.message.status === "success") {
                 setLoaderMessage('Work Order created! Redirecting...');
                 showToast(`Work Order ${r.message.work_order_name} created successfully!`, "success");
-                setTimeout(() => { window.location.href = `/app/work-order/${r.message.work_order_name}`; }, 1500);
+                setTimeout(() => { window.location.href = `/application_work_order?name=${encodeURIComponent(r.message.work_order_name)}`; }, 1500);
             } else {
                 showToast(`Error creating Work Order: ${r.message?.message || "Unknown error"}`, "error");
                 hideLoader();

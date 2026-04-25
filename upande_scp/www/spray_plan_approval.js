@@ -57,20 +57,31 @@ function _todayISO() {
 }
 
 // ── Event bindings ────────────────────────────────────────────────────────────
+// Debounce auto-load so cascading filter changes (farm → greenhouse repopulate
+// → user picks greenhouse) don't fire several requests in a row.
+var _autoLoadTimer = null;
+function _scheduleLoad() {
+  clearTimeout(_autoLoadTimer);
+  _autoLoadTimer = setTimeout(loadWorkOrders, 150);
+}
+
 function _bindEvents() {
-  document.getElementById("btn-load").addEventListener("click", loadWorkOrders);
   document.getElementById("btn-clear").addEventListener("click", _clearFilters);
   document.getElementById("btn-show-all").addEventListener("click", function () { _clearFilters(); loadWorkOrders(); });
   document.getElementById("btn-retry").addEventListener("click", loadWorkOrders);
 
-  document.getElementById("f-farm").addEventListener("change", _onFarmChange);
+  document.getElementById("f-farm").addEventListener("change", function () {
+    _onFarmChange();
+    _scheduleLoad();
+  });
+  document.getElementById("f-gh").addEventListener("change", _scheduleLoad);
 
   // Auto-reload when a date changes (Enter key or date picker change)
   ["f-from", "f-to"].forEach(function (id) {
     var el = document.getElementById(id);
-    el.addEventListener("change", loadWorkOrders);
+    el.addEventListener("change", _scheduleLoad);
     el.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") loadWorkOrders();
+      if (e.key === "Enter") _scheduleLoad();
     });
   });
 
@@ -105,6 +116,7 @@ function _clearFilters() {
   document.getElementById("f-to").value   = "";
   document.getElementById("f-farm").value = "";
   _onFarmChange();
+  _scheduleLoad();
 }
 
 // ── Farms & Greenhouses ───────────────────────────────────────────────────────

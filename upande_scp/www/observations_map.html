@@ -1,320 +1,173 @@
 {% extends "upande_scp/www/map_base.html" %} {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-	:root {
-		--panel-width: 300px;
-		--topbar-height: 52px;
-	}
-
 	#map-page {
 		height: 100%;
 		width: 100%;
 		display: flex;
-		flex-direction: column;
+		position: relative;
 	}
 
-	/* ── Top Bar ── */
-	#topbar {
-		height: var(--topbar-height);
-		background: var(--panel-bg);
-		border-bottom: 1px solid var(--border);
-		box-shadow: var(--shadow-sm);
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		padding: 0 1rem;
-		flex-shrink: 0;
-		z-index: 500;
-	}
-
-	#topbar .page-title {
-		font-size: 0.9375rem;
-		font-weight: 700;
-		letter-spacing: -0.01em;
-		white-space: nowrap;
-		margin-right: 0.25rem;
-	}
-
-	#topbar .divider {
-		width: 1px;
-		height: 24px;
-		background: var(--border);
-		flex-shrink: 0;
-	}
-
-	#gh-select {
-		padding: 0.4rem 0.75rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-input);
-		background: var(--panel-bg);
-		color: var(--text);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		cursor: pointer;
-		min-width: 160px;
-		max-width: 220px;
-	}
-	#gh-select:hover {
-		filter: brightness(0.98);
-	}
-	#gh-select:focus {
-		outline: none;
-		border-color: var(--accent);
-		box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
-	}
-
-	#date-picker {
-		padding: 0.4rem 0.75rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-input);
-		background: var(--panel-bg);
-		color: var(--text);
-		font-size: 0.8125rem;
-		cursor: pointer;
-	}
-	#date-picker:hover {
-		filter: brightness(0.98);
-	}
-	#date-picker:focus {
-		outline: none;
-		border-color: var(--accent);
-		box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
-	}
-
-	/* Type pills in topbar */
+	/* Type pills in floating filter bar */
 	#type-pills {
 		display: flex;
-		gap: 0.375rem;
-		flex-wrap: nowrap;
-		overflow-x: auto;
-		flex: 1;
-		scrollbar-width: none;
-	}
-	#type-pills::-webkit-scrollbar {
-		display: none;
+		gap: 0.3rem;
+		flex-wrap: wrap;
+		align-items: center;
 	}
 
 	.type-pill {
 		display: flex;
 		align-items: center;
 		gap: 0.3rem;
-		padding: 0.3rem 0.7rem;
-		border: 1.5px solid var(--border);
+		padding: 0.25rem 0.6rem;
+		border: 1px solid #e5e7eb;
 		border-radius: 20px;
-		background: var(--panel-bg);
-		color: var(--text);
-		font-size: 0.75rem;
-		font-weight: 600;
+		background: #ffffff;
+		color: #374151;
+		font-size: 0.72rem;
+		font-weight: 500;
 		cursor: pointer;
 		white-space: nowrap;
 		user-select: none;
 	}
-	.type-pill:hover:not(.active) {
-		filter: brightness(0.98);
-	}
 	.type-pill.active {
-		background: var(--accent);
-		border-color: var(--accent);
-		color: #fff;
-		box-shadow: var(--shadow-sm);
+		background: #4b5563;
+		border-color: #4b5563;
+		color: #ffffff;
 	}
 	.type-pill .badge {
-		font-size: 0.6875rem;
-		font-weight: 700;
+		font-size: 0.65rem;
+		font-weight: 600;
 		background: rgba(255, 255, 255, 0.25);
 		border-radius: 10px;
 		padding: 0 0.35rem;
 		line-height: 1.4;
 	}
 	.type-pill:not(.active) .badge {
-		background: var(--hover);
-		color: var(--text);
+		background: #f4f5f6;
+		color: #6b7280;
 	}
 	.type-pill.inactive {
 		opacity: 0.4;
 	}
 
-	/* ── Body ── */
-	#body {
-		flex: 1;
-		display: flex;
-		overflow: hidden;
+	/* ── Summary collapsible details ── */
+	.scout-summary-details {
+		border-top: 1px solid #e5e7eb;
+		padding-top: 8px;
+		margin-top: 4px;
 	}
-
-	/* ── Left Panel ── */
-	#panel {
-		width: var(--panel-width);
-		flex-shrink: 0;
-		background: var(--panel-bg);
-		border-right: 1px solid var(--border);
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
-		z-index: 400;
-	}
-
-	#panel-content {
-		flex: 1;
-		overflow-y: auto;
-		padding: 0.875rem;
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-	#panel-content::-webkit-scrollbar {
-		width: 4px;
-	}
-	#panel-content::-webkit-scrollbar-thumb {
-		background: var(--border);
-		border-radius: 2px;
-	}
-
-	.panel-section {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.panel-section-label {
-		font-size: 0.6875rem;
-		font-weight: 700;
+	.scout-summary-details summary {
+		cursor: pointer;
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: #6b7280;
 		text-transform: uppercase;
-		letter-spacing: 0.07em;
-		color: var(--text-muted);
-		padding: 0 0.125rem;
+		letter-spacing: 0.04em;
+		list-style: none;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 4px 0;
+	}
+	.scout-summary-details summary::-webkit-details-marker { display: none; }
+	.scout-summary-details summary::after {
+		content: "▾";
+		font-size: 0.6rem;
+		color: #9ca3af;
+	}
+	.scout-summary-details[open] summary::after { content: "▴"; }
+	.scout-summary-details > div {
+		padding-top: 6px;
+		max-height: 220px;
+		overflow-y: auto;
 	}
 
-	/* Summary cards */
-	.summary-row {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.5rem;
-	}
-	.stat-card {
-		background: var(--panel-bg);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		box-shadow: var(--shadow-sm);
-		padding: 0.6rem 0.75rem;
-		text-align: center;
-	}
-	.stat-card .stat-value {
-		font-size: 1.25rem;
-		font-weight: 700;
-		color: var(--text);
-		line-height: 1.2;
-	}
-	.stat-card .stat-label {
-		font-size: 0.6875rem;
-		color: var(--text-muted);
-		font-weight: 500;
-		margin-top: 0.125rem;
-	}
-
-	/* Legend items */
+	/* Legend items inside summary */
 	.legend-list {
 		display: flex;
 		flex-direction: column;
 		gap: 0.3rem;
 	}
-
 	.legend-item {
 		display: flex;
 		align-items: center;
-		gap: 0.6rem;
-		padding: 0.45rem 0.6rem;
-		border-radius: var(--radius-input);
-		border: 1px solid var(--border);
-		background: var(--panel-bg);
+		gap: 0.5rem;
+		padding: 0.35rem 0.5rem;
+		border-radius: 6px;
+		border: 1px solid #e5e7eb;
+		background: #ffffff;
 		cursor: pointer;
 	}
-	.legend-item:hover {
-		background: var(--hover);
-	}
-	.legend-item.dimmed {
-		opacity: 0.35;
-	}
-
+	.legend-item.dimmed { opacity: 0.35; }
 	.legend-item input[type="checkbox"] {
-		width: 14px;
-		height: 14px;
+		width: 13px;
+		height: 13px;
 		margin: 0;
 		cursor: pointer;
-		accent-color: var(--accent);
+		accent-color: #4b5563;
 		flex-shrink: 0;
 	}
 	.color-dot {
-		width: 12px;
-		height: 12px;
+		width: 10px;
+		height: 10px;
 		border-radius: 50%;
 		flex-shrink: 0;
-		border: 1px solid var(--border);
+		border: 1px solid #e5e7eb;
 	}
 	.legend-name {
 		flex: 1;
-		font-size: 0.8125rem;
+		font-size: 0.75rem;
 		font-weight: 500;
+		color: #374151;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 	.legend-count {
-		font-size: 0.6875rem;
-		font-weight: 700;
-		padding: 0.1rem 0.4rem;
+		font-size: 0.65rem;
+		font-weight: 600;
+		padding: 0.05rem 0.35rem;
 		border-radius: 10px;
-		background: var(--hover);
-		color: var(--text-muted);
+		background: #f4f5f6;
+		color: #6b7280;
 		flex-shrink: 0;
-		border: 1px solid var(--border);
 	}
 
-	/* Quick toggles */
 	.toggle-row {
 		display: flex;
-		gap: 0.4rem;
+		gap: 0.3rem;
+		margin-bottom: 0.4rem;
 	}
 	.toggle-btn {
-		font-size: 0.6875rem;
-		padding: 0.25rem 0.6rem;
-		border: 1px solid var(--border);
-		background: var(--panel-bg);
-		border-radius: var(--radius-input);
+		font-size: 0.7rem;
+		padding: 0.2rem 0.55rem;
+		border: 1px solid #e5e7eb;
+		background: #ffffff;
+		border-radius: 6px;
 		cursor: pointer;
-		color: var(--text);
+		color: #374151;
 		font-weight: 500;
 	}
-	.toggle-btn:hover {
-		filter: brightness(0.98);
-	}
 
-	/* Zones affected stat */
 	.zones-stat {
-		font-size: 0.75rem;
-		color: var(--text-muted);
-		padding: 0.25rem 0;
+		font-size: 0.7rem;
+		color: #6b7280;
+		padding: 0.15rem 0;
 		display: flex;
 		align-items: center;
 		gap: 0.35rem;
 	}
-	.zones-stat strong {
-		color: var(--text);
-	}
+	.zones-stat strong { color: #374151; }
 
-	/* Empty state */
 	.empty-panel {
 		text-align: center;
-		padding: 2rem 1rem;
-		color: var(--text-muted);
-		font-size: 0.8125rem;
+		padding: 0.75rem 0.5rem;
+		color: #6b7280;
+		font-size: 0.72rem;
 	}
-	.empty-panel svg {
-		width: 36px;
-		height: 36px;
-		margin: 0 auto 0.75rem;
-		opacity: 0.4;
-		display: block;
-	}
+	.empty-panel svg { display: none; }
 
 	/* ── Map ── */
 	#map-container {
@@ -361,11 +214,7 @@
 		padding: 0.25rem 0.5rem;
 		cursor: pointer;
 		border-radius: var(--radius-input);
-	}
-	.style-option:hover {
-		background: var(--hover);
-	}
-	.style-option label {
+	}	.style-option label {
 		font-size: 0.8125rem;
 		cursor: pointer;
 	}
@@ -420,8 +269,7 @@
 
 	.leaflet-control-zoom {
 		border: 1px solid var(--border) !important;
-		box-shadow: var(--shadow-sm) !important;
-		border-radius: var(--radius-card) !important;
+				border-radius: var(--radius-card) !important;
 		overflow: hidden;
 	}
 	.leaflet-control-zoom a {
@@ -432,27 +280,15 @@
 	}
 	.leaflet-control-layers {
 		border: 1px solid var(--border) !important;
-		box-shadow: var(--shadow-sm) !important;
-		border-radius: var(--radius-card) !important;
+				border-radius: var(--radius-card) !important;
 		overflow: hidden;
 	}
 	.leaflet-popup-content-wrapper {
 		border-radius: var(--radius-card) !important;
-		box-shadow: var(--shadow-md) !important;
-		border: 1px solid var(--border) !important;
+				border: 1px solid var(--border) !important;
 	}
 
 	@media (max-width: 640px) {
-		#panel {
-			width: 100%;
-			position: absolute;
-			bottom: 0;
-			left: 0;
-			height: 45vh;
-			border-right: none;
-			border-top: 1px solid var(--border);
-			z-index: 1000;
-		}
 		#type-pills .type-pill span:not(.badge) {
 			display: none;
 		}
@@ -460,108 +296,82 @@
 </style>
 {% endblock %} {% block page_content %}
 <div id="map-page">
-	<!-- Top Bar -->
-	<div id="topbar">
-		<span class="page-title">Observations</span>
-		<div class="divider"></div>
-		<select id="gh-select">
-			<option value="">All Greenhouses</option>
-			{% for gh in greenhouses_geojson %}
-			<option value="{{ gh.name }}">{{ gh.short_name }}</option>
-			{% endfor %}
-		</select>
-		<input type="date" id="date-picker" />
-		<div class="divider"></div>
-		<div id="type-pills"></div>
+	<!-- Map -->
+	<div id="map-container">
+		<div id="map-loader">
+			<span class="map-load-title">Loading observations</span>
+			<div class="map-load-track"><div class="map-load-fill" id="map-load-fill"></div></div>
+			<span class="map-load-status" id="map-load-status">Initialising…</span>
+		</div>
+		<div id="map-empty">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40" style="opacity:0.3"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
+			<span>No observations on this date</span>
+		</div>
+		<div id="map"></div>
 	</div>
 
-	<!-- Body: Panel + Map -->
-	<div id="body">
-		<!-- Left Control Panel -->
-		<div id="panel">
-			<div id="panel-content">
-				<!-- Summary stats -->
-				<div class="panel-section">
-					<div class="panel-section-label">Today's Summary</div>
-					<div class="summary-row">
-						<div class="stat-card">
-							<div class="stat-value" id="stat-zones">—</div>
-							<div class="stat-label">Zones Scouted</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value" id="stat-beds">—</div>
-							<div class="stat-label">Beds Covered</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value" id="stat-scouts">—</div>
-							<div class="stat-label">Scouts Active</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value" id="stat-entries">—</div>
-							<div class="stat-label">Total Entries</div>
-						</div>
-					</div>
-				</div>
+	<!-- Floating filter bar (top) -->
+	<div class="scout-filters">
+		<div class="scout-filter-item">
+			<label for="gh-select">Greenhouse</label>
+			<select id="gh-select">
+				<option value="">All Greenhouses</option>
+				{% for gh in greenhouses_geojson %}
+				<option value="{{ gh.name }}">{{ gh.short_name }}</option>
+				{% endfor %}
+			</select>
+		</div>
+		<div class="scout-filter-item">
+			<label for="date-picker">Date</label>
+			<input type="date" id="date-picker" />
+		</div>
+		<div class="scout-filter-spacer"></div>
+		<div class="scout-filter-pills" id="type-pills"></div>
+	</div>
 
-				<!-- Legend for active type -->
-				<div class="panel-section" id="legend-section">
-					<div class="panel-section-label" id="legend-title">Legend</div>
-					<div class="toggle-row">
-						<button class="toggle-btn" id="select-all-btn">All</button>
-						<button class="toggle-btn" id="select-none-btn">None</button>
-					</div>
-					<div class="zones-stat" id="zones-stat" style="display: none">
-						<svg
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-							style="width: 12px; height: 12px"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-							/>
-						</svg>
-						<span id="zones-stat-text"></span>
-					</div>
-					<div class="legend-list" id="legend-list">
-						<div class="empty-panel">
-							<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-								/>
-							</svg>
-							Select a date to load data
-						</div>
-					</div>
-				</div>
-
+	<!-- Floating summary (bottom-right) -->
+	<div class="scout-summary" id="panel">
+		<div class="panel-title">Today's Summary</div>
+		<div class="scout-summary-grid">
+			<div class="scout-stat">
+				<div class="scout-stat-label">Zones</div>
+				<div class="scout-stat-value" id="stat-zones">—</div>
+			</div>
+			<div class="scout-stat">
+				<div class="scout-stat-label">Beds</div>
+				<div class="scout-stat-value" id="stat-beds">—</div>
+			</div>
+			<div class="scout-stat">
+				<div class="scout-stat-label">Scouts</div>
+				<div class="scout-stat-value" id="stat-scouts">—</div>
+			</div>
+			<div class="scout-stat">
+				<div class="scout-stat-label">Entries</div>
+				<div class="scout-stat-value" id="stat-entries">—</div>
 			</div>
 		</div>
 
-		<!-- Map -->
-		<div id="map-container">
-			<div id="map-loader">
-				<span class="map-load-title">Loading observations</span>
-				<div class="map-load-track"><div class="map-load-fill" id="map-load-fill"></div></div>
-				<span class="map-load-status" id="map-load-status">Initialising…</span>
+		<details class="scout-summary-details" id="legend-section" open>
+			<summary id="legend-title">Legend</summary>
+			<div>
+				<div class="toggle-row">
+					<button class="toggle-btn" id="select-all-btn">All</button>
+					<button class="toggle-btn" id="select-none-btn">None</button>
+				</div>
+				<div class="zones-stat" id="zones-stat" style="display: none">
+					<span id="zones-stat-text"></span>
+				</div>
+				<div class="legend-list" id="legend-list">
+					<div class="empty-panel">Select a date to load data</div>
+				</div>
 			</div>
-			<div id="map-empty">
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40" style="opacity:0.3"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
-				<span>No observations on this date</span>
-			</div>
-			<div id="map"></div>
-		</div>
+		</details>
 	</div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-providers/1.13.0/leaflet-providers.min.js"></script>
+
 <script>
 	window.onload = function () {
 	    const LAT = {{ lat | tojson }};

@@ -20,8 +20,7 @@
     max-height: 90vh;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
-  }
+      }
 
   .bom-modal-header {
     padding: 20px 24px;
@@ -29,7 +28,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
     border-radius: 12px 12px 0 0;
   }
 
@@ -53,12 +52,6 @@
     justify-content: center;
     transition: all 0.2s;
   }
-
-  .bom-modal-close:hover {
-    color: #f3f4f6;
-    transform: scale(1.1);
-  }
-
   .bom-modal-body {
     padding: 24px;
     overflow-y: auto;
@@ -90,18 +83,12 @@
     background: #ffffff;
     border-bottom: 1px solid #e5e7eb;
   }
-
-  .bom-chemical-row:hover {
-    background: #f9fafb;
-  }
-
   /* ==================== GRID CONTAINER ==================== */
   .grid-container-wrapper {
     background: #ffffff;
     border-radius: 12px;
     padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    min-height: 600px;
+        min-height: 600px;
     display: flex;
     flex-direction: column;
     position: relative;
@@ -165,15 +152,8 @@
     border-radius: 10px;
     padding: 14px;
     background: #ffffff;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
-    transition: box-shadow 0.2s;
     overflow: hidden;
   }
-
-  .hm-card:hover {
-    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-  }
-
   .hm-card-header {
     display: flex;
     justify-content: space-between;
@@ -213,14 +193,14 @@
 
   /* Corner cell (top-left) */
   .hm-corner {
-    background: #1f2937;
+    background: #4b5563;
     height: 20px;
     width: 30px;
   }
 
   /* Zone header labels */
   .hm-zone-lbl {
-    background: #1f2937;
+    background: #4b5563;
     color: #ffffff;
     font-size: 9px;
     font-weight: 700;
@@ -234,7 +214,7 @@
 
   /* Bed label column */
   .hm-bed-lbl {
-    background: #1f2937;
+    background: #4b5563;
     color: #ffffff;
     font-size: 9px;
     font-weight: 700;
@@ -253,7 +233,7 @@
     min-width: 20px;
     background: #f3f4f6;
     cursor: pointer;
-    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    transition: transform 0.1s ease;
     position: relative;
   }
 
@@ -287,11 +267,6 @@
     padding: 0 2px;
     line-height: 1;
 }
-
-.target-pill-remove:hover {
-    color: #dc2626;
-}
-
 /* Autocomplete dropdown */
 .target-autocomplete-dropdown {
     position: absolute;
@@ -301,8 +276,7 @@
     background: white;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    max-height: 240px;
+        max-height: 240px;
     overflow-y: auto;
     z-index: 100;
     display: none;
@@ -320,11 +294,6 @@
     align-items: center;
     font-size: 13px;
 }
-
-.target-dropdown-item:hover {
-    background: #f3f4f6;
-}
-
 .target-dropdown-custom {
     color: #6366f1;
     font-weight: 500;
@@ -359,13 +328,6 @@
     background: #f0fdf4;
     color: #16a34a;
 }
-
-  .hm-data-cell:hover {
-    transform: scale(1.25);
-    z-index: 20;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-  }
-
   /* ==================== INTENSITY CLASSES ==================== */
   .hm-intensity-0 {
     background: #e5e7eb !important;
@@ -395,14 +357,8 @@
     pointer-events: none;
     transition: opacity 0.15s ease;
     z-index: 9999;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    white-space: nowrap;
+        white-space: nowrap;
   }
-
-  .hm-data-cell:hover .hm-cell-tooltip {
-    opacity: 1;
-  }
-
   /* ==================== FULLSCREEN MODAL ==================== */
   .hm-fullscreen-overlay {
     position: fixed;
@@ -423,8 +379,7 @@
     max-height: 92vh;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-    overflow: hidden;
+        overflow: hidden;
   }
 
   .hm-fullscreen-header {
@@ -452,12 +407,6 @@
     border-radius: 6px;
     transition: all 0.15s;
   }
-
-  .hm-fullscreen-close:hover {
-    background: #e5e7eb;
-    color: #1f2937;
-  }
-
   .hm-fullscreen-body {
     flex: 1;
     overflow: auto;
@@ -515,12 +464,6 @@
     transition: all 0.2s;
     white-space: nowrap;
   }
-
-  .report-toggle-btn:hover {
-    border-color: #3b82f6;
-    color: #1d4ed8;
-  }
-
   .report-toggle-btn-active {
     background: #eff6ff;
     border-color: #3b82f6;
@@ -583,14 +526,13 @@
     background: #ffffff;
     border-radius: 12px;
     padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    margin-bottom: 20px;
+        margin-bottom: 20px;
   }
 
   .form-section-title {
     font-size: 1rem;
     font-weight: 700;
-    color: #111827;
+    color: #374151;
     margin-bottom: 16px;
     padding-bottom: 8px;
     border-bottom: 2px solid #e5e7eb;
@@ -622,8 +564,7 @@
   .form-input:focus,
   .form-select:focus {
     border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    outline: none;
+        outline: none;
   }
 
   .form-input:disabled {
@@ -681,7 +622,7 @@
   .observation-title {
     font-size: 0.8rem;
     font-weight: 700;
-    color: #1f2937;
+    color: #4b5563;
     margin-bottom: 8px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -692,8 +633,7 @@
     background: #ffffff;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    margin-top: 24px;
+        margin-top: 24px;
   }
 
   .stock-table {
@@ -704,7 +644,7 @@
   }
 
   .stock-table thead {
-    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
     color: #ffffff;
     position: sticky;
     top: 0;
@@ -725,11 +665,6 @@
     transition: background 0.15s ease;
     border-bottom: 1px solid #e5e7eb;
   }
-
-  .stock-table tbody tr:hover {
-    background: #f9fafb;
-  }
-
   .stock-table td {
     padding: 12px;
     border-right: 1px solid #e5e7eb;
@@ -737,7 +672,7 @@
 
   .stock-table td:first-child {
     font-weight: 600;
-    color: #1f2937;
+    color: #4b5563;
     background: #f9fafb;
   }
 
@@ -780,11 +715,6 @@
     border-bottom: 1px solid #e5e7eb;
     transition: background 0.15s ease;
   }
-
-  .chemical-row:hover {
-    background: #f9fafb;
-  }
-
   .chemical-row input {
     padding: 8px 10px;
     border: 1.5px solid #d1d5db;
@@ -803,14 +733,8 @@
     line-height: 1;
     transition: all 0.2s ease;
   }
-
-  .btn-remove:hover {
-    background: #dc2626;
-    transform: scale(1.05);
-  }
-
   .btn-primary {
-    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
     color: white;
     padding: 12px 24px;
     border: none;
@@ -819,24 +743,12 @@
     font-size: 0.9rem;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  }
-
+      }
   .btn-secondary {
     background: #ffffff;
-    color: #1f2937;
+    color: #4b5563;
     border: 2px solid #e5e7eb;
   }
-
-  .btn-secondary:hover {
-    background: #f9fafb;
-  }
-
   /* Popup Styles */
   .popup-overlay {
     position: fixed;
@@ -855,8 +767,7 @@
     width: 280px;
     background: white;
     border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-    overflow: hidden;
+        overflow: hidden;
     z-index: 71;
   }
 
@@ -881,11 +792,6 @@
     transition: background 0.15s ease;
     border-bottom: 1px solid #f3f4f6;
   }
-
-  .popup-item:hover {
-    background: #f9fafb;
-  }
-
   /* Status Message */
   .status-message {
     text-align: center;
@@ -911,8 +817,7 @@
     background: rgba(255,255,255,0.92);
     padding: 32px 40px;
     border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-  }
+      }
 
   .spinner {
     width: 50px;
@@ -950,8 +855,7 @@
   background: white;
   border: 1px solid #d1d5db;
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  z-index: 1000;
+    z-index: 1000;
   margin-top: 4px;
 }
 
@@ -961,10 +865,6 @@
   padding: 8px 12px;
   cursor: pointer;
   transition: background 0.2s;
-}
-
-.variety-checkbox-item:hover {
-  background: #f3f4f6;
 }
 
 .variety-selected-display {
@@ -999,7 +899,4 @@
   margin-left: 4px;
 }
 
-.variety-pill-remove:hover {
-  color: #dc2626;
-}
   }

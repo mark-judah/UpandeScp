@@ -6,7 +6,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/application_work_order.css">
+{# Inline the page's CSS to avoid Frappe's website-page cache returning a stale
+   404 for /application_work_order.css on first visit (CSS files are routed via
+   TemplatePage and the path is cached in Redis). #}
+<style>
+{% include "upande_scp/www/application_work_order.css" %}
+</style>
 {% endblock %}
 
 {% block page_content %}

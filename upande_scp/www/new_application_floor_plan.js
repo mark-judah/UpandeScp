@@ -25,7 +25,8 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedTargets: new Set(),
         selectedVarieties: new Set(),
         allTargetOptions: [],
-        allVarieties: []
+        allVarieties: [],
+        zoneCountByBed: {}
     };
 
     // ==================== DOM ELEMENTS ====================
@@ -616,9 +617,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 renderPlantSectionCheckboxes([...sectionsInGreenhouse]);
 
                 const allForDimensions = [...data.scouting_entries, ...state.previousScoutingData];
-                const { maxBed, maxZone } = findMaxDimensions(allForDimensions);
+                const { maxBed: scoutedMaxBed, maxZone: scoutedMaxZone } = findMaxDimensions(allForDimensions);
                 const bedNumbering = data.custom_bed_numbering || "Top to Bottom";
                 const zoneNumbering = data.custom_zone_numbering || "Right to Left";
+
+                // Use the full greenhouse footprint when available (so we draw
+                // every bed even if it has no observations) and fall back to
+                // the scouted-data bounds otherwise.
+                state.zoneCountByBed = data.zone_count_by_bed || {};
+                const bedKeys = Object.keys(state.zoneCountByBed).map(Number).filter(n => !isNaN(n));
+                const fullMaxBed = bedKeys.length ? Math.max(...bedKeys) : 0;
+                const fullMaxZone = bedKeys.length
+                    ? Math.max(...bedKeys.map(b => state.zoneCountByBed[b] || 0))
+                    : 0;
+                const maxBed  = Math.max(fullMaxBed,  scoutedMaxBed);
+                const maxZone = Math.max(fullMaxZone, scoutedMaxZone);
+
                 renderGrid(maxBed, maxZone, bedNumbering, zoneNumbering);
                 updateGrid();
                 els.heatmapGridWrapper.classList.remove("tw-hidden");
@@ -694,6 +708,111 @@ document.addEventListener("DOMContentLoaded", () => {
         return 'hm-intensity-5';
     };
 
+    // ── Stage glyph helpers (landscape view) ──
+    // Five canonical glyph kinds. The user spec is: X, O, triangle, tilted
+    // square (diamond), pentagon — each encodes a different stage of the
+    // pest/disease.
+    const _GLYPH_KINDS = ['x', 'o', 'triangle', 'diamond', 'pentagon'];
+
+    // Map known unicode/text symbols (as configured in Pests Stages) to a
+    // canonical glyph kind. Anything unrecognised falls through to the
+    // index-based fallback below.
+    const _SYMBOL_TO_GLYPH = {
+        'x': 'x', 'X': 'x', '✕': 'x', '✖': 'x', '×': 'x',
+        'o': 'o', 'O': 'o', '○': 'o', '◯': 'o', '●': 'o', '⬤': 'o',
+        '△': 'triangle', '▲': 'triangle', '▵': 'triangle', '▴': 'triangle', 'T': 'triangle', 't': 'triangle',
+        '◇': 'diamond', '◆': 'diamond', '◈': 'diamond', 'D': 'diamond', 'd': 'diamond',
+        '⬠': 'pentagon', '⬟': 'pentagon', 'P': 'pentagon', 'p': 'pentagon'
+    };
+
+    // Stable per-stage-name fallback so the same stage label always renders
+    // as the same glyph across the dashboard, even when no symbol is set on
+    // the master record. Hash → 0..4 → _GLYPH_KINDS[i].
+    const _hashStageToGlyph = (stageName) => {
+        const s = String(stageName || '');
+        let h = 0;
+        for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+        return _GLYPH_KINDS[Math.abs(h) % _GLYPH_KINDS.length];
+    };
+
+    const pickGlyph = (symbol, stage) => {
+        if (symbol && _SYMBOL_TO_GLYPH[symbol]) return _SYMBOL_TO_GLYPH[symbol];
+        if (!stage || stage === 'N/A') return 'o';
+        return _hashStageToGlyph(stage);
+    };
+
+    // Build an SVG <g> for one glyph kind, centred on (0,0), inscribed in a
+    // square of side `size`. Returns an SVGGElement.
+    const _SVG_NS = 'http://www.w3.org/2000/svg';
+    const buildGlyphNode = (kind, size, color, opacity, strokeColor) => {
+        const g = document.createElementNS(_SVG_NS, 'g');
+        const r = size / 2;
+        const stroke = strokeColor || color;
+        const baseStrokeWidth = Math.max(1.2, size * 0.14);
+
+        const setShared = (el, { fill = color, fillOp = opacity, sw = baseStrokeWidth } = {}) => {
+            el.setAttribute('fill', fill);
+            el.setAttribute('fill-opacity', fillOp);
+            el.setAttribute('stroke', stroke);
+            el.setAttribute('stroke-width', sw);
+            el.setAttribute('stroke-linejoin', 'round');
+            el.setAttribute('stroke-linecap', 'round');
+            return el;
+        };
+
+        if (kind === 'x') {
+            // Two crossed strokes. Use no fill — the X is the stroke colour.
+            const l1 = document.createElementNS(_SVG_NS, 'line');
+            l1.setAttribute('x1', -r); l1.setAttribute('y1', -r);
+            l1.setAttribute('x2',  r); l1.setAttribute('y2',  r);
+            const l2 = document.createElementNS(_SVG_NS, 'line');
+            l2.setAttribute('x1', -r); l2.setAttribute('y1',  r);
+            l2.setAttribute('x2',  r); l2.setAttribute('y2', -r);
+            [l1, l2].forEach(el => {
+                el.setAttribute('stroke', color);
+                el.setAttribute('stroke-opacity', Math.max(0.55, opacity));
+                el.setAttribute('stroke-width', baseStrokeWidth * 1.4);
+                el.setAttribute('stroke-linecap', 'round');
+                g.appendChild(el);
+            });
+        } else if (kind === 'o') {
+            const c = document.createElementNS(_SVG_NS, 'circle');
+            c.setAttribute('cx', 0); c.setAttribute('cy', 0);
+            c.setAttribute('r', r * 0.85);
+            g.appendChild(setShared(c));
+        } else if (kind === 'triangle') {
+            const t = document.createElementNS(_SVG_NS, 'polygon');
+            const h = r * 0.95;
+            t.setAttribute('points', `0,${-h} ${h * 0.95},${h * 0.7} ${-h * 0.95},${h * 0.7}`);
+            g.appendChild(setShared(t));
+        } else if (kind === 'diamond') {
+            const d = document.createElementNS(_SVG_NS, 'polygon');
+            const a = r * 0.95;
+            d.setAttribute('points', `0,${-a} ${a},0 0,${a} ${-a},0`);
+            g.appendChild(setShared(d));
+        } else if (kind === 'pentagon') {
+            const p = document.createElementNS(_SVG_NS, 'polygon');
+            const a = r * 0.95;
+            const pts = [];
+            for (let i = 0; i < 5; i++) {
+                const angle = -Math.PI / 2 + i * (2 * Math.PI / 5);
+                pts.push(`${(a * Math.cos(angle)).toFixed(2)},${(a * Math.sin(angle)).toFixed(2)}`);
+            }
+            p.setAttribute('points', pts.join(' '));
+            g.appendChild(setShared(p));
+        }
+        return g;
+    };
+
+    // Map intensity (count / maxCount) to fill opacity. 0 → invisible,
+    // ramp gives a clear visual difference between low and high.
+    const intensityOpacity = (cnt, max) => {
+        if (!cnt || cnt <= 0 || !max) return 0;
+        const r = Math.min(1, cnt / max);
+        // Floor at 0.35 so even one observation is visible against the bed line.
+        return 0.35 + r * 0.6;
+    };
+
     const buildObservationCard = (obsName, obsColor, matrix, maxCount, total, alertLevel) => {
         const { maxBed, maxZone, bedNumbering, zoneNumbering } = _gridState;
 
@@ -720,132 +839,280 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
         card.appendChild(header);
 
-        const buildGrid = (cellSize = 18) => {
-            const gridWrap = document.createElement('div');
-            gridWrap.className = 'hm-grid-wrap';
+        // ── SVG landscape builder ──
+        // orientation:
+        //   'horizontal-beds' — beds stacked top→bottom, each bed is a
+        //                        horizontal line; zones run along the line.
+        //   'vertical-beds'   — beds stacked left→right, each bed is a
+        //                        vertical line; zones run along the line.
+        // unit       — pixel size of one zone slot in SVG userspace.
+        // bedGap     — perpendicular spacing between beds.
+        // Defaults are intentionally compact for the in-card view.
+        const buildLandscape = (opts = {}) => {
+            const orientation = opts.orientation || 'horizontal-beds';
+            const unit        = opts.unit || 9;
+            const bedGap      = opts.bedGap || Math.max(unit * 1.05, 11);
+            const glyphSize   = Math.min(unit * (opts.glyphScale || 0.85), opts.maxGlyph || 12);
+            const isHoriz     = orientation === 'horizontal-beds';
+            // When false, the SVG renders at its natural pixel size (1
+            // viewBox unit = 1 px). Use this for fullscreen so glyphs/lines
+            // don't shrink-to-fit the container.
+            const fitContainer = opts.fitContainer !== false;
 
-            const grid = document.createElement('div');
-            grid.className = 'hm-grid';
-            grid.style.gridTemplateColumns = `30px repeat(${maxZone}, 1fr)`;
+            const wrap = document.createElement('div');
+            wrap.className = 'hm-landscape-wrap';
 
-            const zoneRange = zoneNumbering === "Right to Left"
-                ? Array.from({ length: maxZone }, (_, i) => maxZone - i)
-                : Array.from({ length: maxZone }, (_, i) => i + 1);
+            const PAD_LABEL = unit * 1.9;  // room for bed labels (start of bed line)
+            const PAD_AXIS  = unit * 1.4;  // room for zone-axis numbers
+            const PAD_END   = unit * 0.7;
 
-            const bedRange = bedNumbering === "Top to Bottom"
-                ? Array.from({ length: maxBed }, (_, i) => maxBed - i)
-                : Array.from({ length: maxBed }, (_, i) => i + 1);
+            const bedRange = bedNumbering === 'Top to Bottom'
+                ? Array.from({ length: maxBed }, (_, i) => i + 1)
+                : Array.from({ length: maxBed }, (_, i) => maxBed - i);
 
-            const corner = document.createElement('div');
-            corner.className = 'hm-corner';
-            corner.style.height = `${cellSize}px`;
-            grid.appendChild(corner);
+            const zoneSpan = maxZone * unit;
+            const bedSpan  = maxBed  * bedGap;
+            const svgWidth  = isHoriz ? (PAD_LABEL + zoneSpan + PAD_END) : (PAD_AXIS + bedSpan + PAD_END);
+            const svgHeight = isHoriz ? (PAD_AXIS  + bedSpan  + PAD_END) : (PAD_LABEL + zoneSpan + PAD_END);
 
-            zoneRange.forEach(z => {
-                const lbl = document.createElement('div');
-                lbl.className = 'hm-zone-lbl';
-                lbl.textContent = z;
-                lbl.style.height = `${cellSize}px`;
-                grid.appendChild(lbl);
+            // Project (zoneOffset, bedOffset) — distances measured along the
+            // zone-axis and bed-axis respectively — into SVG (x, y).
+            const project = (zoneOffset, bedOffset) => isHoriz
+                ? { x: PAD_LABEL + zoneOffset, y: PAD_AXIS  + bedOffset }
+                : { x: PAD_AXIS  + bedOffset,  y: PAD_LABEL + zoneOffset };
+
+            const svg = document.createElementNS(_SVG_NS, 'svg');
+            svg.setAttribute('class', 'hm-landscape-svg');
+            svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            if (fitContainer) {
+                svg.setAttribute('width', '100%');
+            } else {
+                // Lock to natural pixel size so configured sizes stick.
+                svg.setAttribute('width',  svgWidth);
+                svg.setAttribute('height', svgHeight);
+            }
+
+            // ── Beds: band, line, label, zone ticks ──
+            bedRange.forEach((bed, idx) => {
+                const bedZoneCount = state.zoneCountByBed[bed] || 0;
+                if (!bedZoneCount) return;
+
+                const bedCenter = idx * bedGap + bedGap / 2;
+                const lineLength = bedZoneCount * unit;
+                const zoneOffsetStart = zoneNumbering === 'Right to Left'
+                    ? (maxZone - bedZoneCount) * unit
+                    : 0;
+                const zoneOffsetEnd = zoneOffsetStart + lineLength;
+
+                const a = project(zoneOffsetStart, bedCenter);
+                const b = project(zoneOffsetEnd,   bedCenter);
+
+                // Band — soft rectangle behind the bed line.
+                const band = document.createElementNS(_SVG_NS, 'rect');
+                band.setAttribute('class', 'hm-bed-band');
+                if (isHoriz) {
+                    band.setAttribute('x', a.x);
+                    band.setAttribute('y', a.y - bedGap * 0.42);
+                    band.setAttribute('width',  lineLength);
+                    band.setAttribute('height', bedGap * 0.84);
+                } else {
+                    band.setAttribute('x', a.x - bedGap * 0.42);
+                    band.setAttribute('y', a.y);
+                    band.setAttribute('width',  bedGap * 0.84);
+                    band.setAttribute('height', lineLength);
+                }
+                band.setAttribute('rx', bedGap * 0.18);
+                svg.appendChild(band);
+
+                // Bed line.
+                const line = document.createElementNS(_SVG_NS, 'line');
+                line.setAttribute('class', 'hm-bed-line');
+                line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+                line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+                svg.appendChild(line);
+
+                // Bed label at the start of the line.
+                const lblPos = isHoriz
+                    ? { x: PAD_LABEL - 5, y: a.y, anchor: 'end',    baseline: 'middle' }
+                    : { x: a.x,           y: PAD_LABEL - 5, anchor: 'middle', baseline: 'baseline' };
+                const lbl = document.createElementNS(_SVG_NS, 'text');
+                lbl.setAttribute('class', 'hm-bed-num');
+                lbl.setAttribute('x', lblPos.x);
+                lbl.setAttribute('y', lblPos.y);
+                lbl.setAttribute('text-anchor', lblPos.anchor);
+                lbl.setAttribute('dominant-baseline', lblPos.baseline);
+                lbl.textContent = `B${bed}`;
+                svg.appendChild(lbl);
+
+                // Zone tick markers along the bed.
+                for (let z = 1; z <= bedZoneCount; z++) {
+                    const p = project(zoneOffsetStart + (z - 0.5) * unit, bedCenter);
+                    const tick = document.createElementNS(_SVG_NS, 'circle');
+                    tick.setAttribute('class', 'hm-zone-tick');
+                    tick.setAttribute('cx', p.x);
+                    tick.setAttribute('cy', p.y);
+                    tick.setAttribute('r', 1.0);
+                    svg.appendChild(tick);
+                }
             });
 
-            bedRange.forEach(bed => {
-                const bedLbl = document.createElement('div');
-                bedLbl.className = 'hm-bed-lbl';
-                bedLbl.textContent = bed;
-                bedLbl.style.height = `${cellSize}px`;
-                grid.appendChild(bedLbl);
+            // ── Zone-axis numbers (perpendicular to beds) ──
+            // Skip-step automatically when there are many zones.
+            const zoneStep = maxZone > 20 ? Math.ceil(maxZone / 12) : 1;
+            for (let z = 1; z <= maxZone; z++) {
+                if (z !== 1 && z !== maxZone && z % zoneStep !== 0) continue;
+                const visualZone = zoneNumbering === 'Right to Left' ? (maxZone - z + 1) : z;
+                const p = project((z - 0.5) * unit, 0);
+                const t = document.createElementNS(_SVG_NS, 'text');
+                t.setAttribute('class', 'hm-zone-num');
+                if (isHoriz) {
+                    t.setAttribute('x', p.x);
+                    t.setAttribute('y', PAD_AXIS - 4);
+                    t.setAttribute('text-anchor', 'middle');
+                } else {
+                    t.setAttribute('x', PAD_AXIS - 5);
+                    t.setAttribute('y', p.y);
+                    t.setAttribute('text-anchor', 'end');
+                    t.setAttribute('dominant-baseline', 'middle');
+                }
+                t.textContent = `Z${visualZone}`;
+                svg.appendChild(t);
+            }
 
-                zoneRange.forEach(zone => {
-                    const obsData = (matrix[bed] && matrix[bed][zone]) ? matrix[bed][zone] : null;
-                    const cnt      = obsData ? obsData.count : 0;
-                    const zoneAlert = obsData ? (obsData.alertLevel || 0) : 0;
+            // ── Glyphs for each (bed, zone) observation ──
+            bedRange.forEach((bed, idx) => {
+                const bedZoneCount = state.zoneCountByBed[bed] || 0;
+                if (!bedZoneCount) return;
+                const bedCenter = idx * bedGap + bedGap / 2;
+                const zoneOffsetStart = zoneNumbering === 'Right to Left'
+                    ? (maxZone - bedZoneCount) * unit
+                    : 0;
 
-                    const cell = document.createElement('div');
-                    cell.className = `hm-data-cell ${getIntensityClass(cnt, maxCount)}`;
-                    cell.style.height = `${cellSize}px`;
+                if (!matrix[bed]) return;
+                Object.keys(matrix[bed]).forEach(zoneKey => {
+                    const zone = parseInt(zoneKey, 10);
+                    if (!zone || zone < 1 || zone > bedZoneCount) return;
+                    const obsData = matrix[bed][zone];
+                    const cnt = obsData.count || 0;
+                    if (cnt <= 0) return;
 
-                    if (cnt > 0) cell.style.backgroundColor = obsColor;
+                    const visualSlot = zoneNumbering === 'Right to Left'
+                        ? (bedZoneCount - zone + 1)
+                        : zone;
+                    const p = project(zoneOffsetStart + (visualSlot - 0.5) * unit, bedCenter);
 
-                    const isPrevious = obsData && obsData.reportTag === 'previous';
-                    if (isPrevious && cnt > 0) {
-                        cell.style.backgroundImage = `repeating-linear-gradient(
-                            -45deg,
-                            transparent,
-                            transparent 3px,
-                            rgba(0,0,0,0.25) 3px,
-                            rgba(0,0,0,0.25) 4px
-                        ), linear-gradient(${obsColor}, ${obsColor})`;
-                        cell.style.backgroundBlendMode = 'multiply';
+                    const opacity = intensityOpacity(cnt, maxCount);
+                    const glyphKind = pickGlyph(obsData.symbol, obsData.stage);
+                    const sizeBoost = 1 + 0.15 * Math.min(1, cnt / Math.max(1, maxCount));
+
+                    const glyph = buildGlyphNode(
+                        glyphKind,
+                        glyphSize * sizeBoost,
+                        obsColor,
+                        opacity,
+                        obsColor
+                    );
+                    glyph.setAttribute('transform', `translate(${p.x},${p.y})`);
+                    glyph.setAttribute('class', 'hm-glyph');
+
+                    // Alert ring for high/moderate/low requirement zones.
+                    const zoneAlert = obsData.alertLevel || 0;
+                    if (zoneAlert > 0) {
+                        const ring = document.createElementNS(_SVG_NS, 'circle');
+                        ring.setAttribute('cx', 0);
+                        ring.setAttribute('cy', 0);
+                        ring.setAttribute('r', glyphSize * 0.78);
+                        ring.setAttribute('fill', 'none');
+                        ring.setAttribute('stroke',
+                            zoneAlert === 3 ? '#dc2626'
+                            : zoneAlert === 2 ? '#f59e0b'
+                            : '#10b981');
+                        ring.setAttribute('stroke-width', 1.3);
+                        glyph.insertBefore(ring, glyph.firstChild);
                     }
 
-                    if (zoneAlert === 3) {
-                        cell.style.outline = '2px solid #dc2626';
-                        cell.style.outlineOffset = '-2px';
-                        cell.style.zIndex = '5';
-                    } else if (zoneAlert === 2) {
-                        cell.style.outline = '2px solid #f59e0b';
-                        cell.style.outlineOffset = '-2px';
-                        cell.style.zIndex = '5';
-                    } else if (zoneAlert === 1) {
-                        cell.style.outline = '2px solid #10b981';
-                        cell.style.outlineOffset = '-2px';
-                        cell.style.zIndex = '5';
+                    if (obsData.reportTag === 'previous') {
+                        glyph.setAttribute('stroke-dasharray', '2 2');
                     }
 
-                    const thresholdLabel = zoneAlert === 3 ? 'High' : zoneAlert === 2 ? 'Moderate' : zoneAlert === 1 ? 'Low' : null;
-                    const thresholdHtml  = thresholdLabel
-                        ? `<span style="color:${zoneAlert === 3 ? '#f87171' : zoneAlert === 2 ? '#fbbf24' : '#34d399'}">⬤ ${thresholdLabel} requirement</span>`
-                        : '';
+                    const title = document.createElementNS(_SVG_NS, 'title');
+                    const stageLabel = obsData.stage && obsData.stage !== 'N/A'
+                        ? ` · ${obsData.stage}` : '';
+                    const reportLabel = obsData.reportTag === 'previous' ? ' (prev)' : '';
+                    const alertLabel = zoneAlert === 3 ? ' · High requirement'
+                        : zoneAlert === 2 ? ' · Moderate requirement'
+                        : zoneAlert === 1 ? ' · Low requirement' : '';
+                    title.textContent = `B${bed} Z${zone}${reportLabel} — ${obsName}: ${cnt}${stageLabel}${alertLabel}`;
+                    glyph.appendChild(title);
 
-                    const tip = document.createElement('div');
-                    tip.className = 'hm-cell-tooltip';
-                    const reportLabel = isPrevious ? ' <span style="color:#fbbf24">(prev)</span>' : '';
-                    tip.innerHTML = obsData
-                        ? `<strong>B${bed} Z${zone}</strong>${reportLabel} — ${obsName}: <strong>${cnt}</strong>${obsData.symbol ? ' ' + obsData.symbol : ''}${thresholdLabel ? '<br>' + thresholdHtml : ''}`
-                        : `<strong>B${bed} Z${zone}</strong> — None`;
-                    cell.appendChild(tip);
-
-                    cell.addEventListener('mouseenter', () => {
-                        const rect = cell.getBoundingClientRect();
-                        tip.style.top    = '100%';
-                        tip.style.bottom = 'auto';
-                        tip.style.marginTop = '4px';
-                        if (rect.left < window.innerWidth / 3) {
-                            tip.style.left      = '0';
-                            tip.style.right     = 'auto';
-                            tip.style.transform = '';
-                        } else if (rect.right > window.innerWidth * 2 / 3) {
-                            tip.style.right     = '0';
-                            tip.style.left      = 'auto';
-                            tip.style.transform = '';
-                        } else {
-                            tip.style.left      = '50%';
-                            tip.style.right     = 'auto';
-                            tip.style.transform = 'translateX(-50%)';
-                        }
-                    });
-
-                    grid.appendChild(cell);
+                    svg.appendChild(glyph);
                 });
             });
 
-            gridWrap.appendChild(grid);
-            return gridWrap;
+            wrap.appendChild(svg);
+            return wrap;
         };
 
-        card.appendChild(buildGrid(18));
+        // Compact in-card view: beds run top→bottom, kept short via small
+        // unit + bedGap. CSS caps overall height so the card stays readable.
+        card.appendChild(buildLandscape({
+            orientation: 'horizontal-beds',
+            unit: 9,
+            bedGap: 11,
+            glyphScale: 0.85,
+            maxGlyph: 11,
+        }));
+
+        // Stage-shape legend: only show kinds actually used in this card.
+        const usedGlyphs = new Set();
+        Object.values(matrix).forEach(bedRow => {
+            Object.values(bedRow).forEach(cell => {
+                if (cell && cell.count > 0) {
+                    usedGlyphs.add(`${pickGlyph(cell.symbol, cell.stage)}|${cell.stage || 'N/A'}`);
+                }
+            });
+        });
 
         const legend = document.createElement('div');
         legend.className = 'hm-legend';
-        legend.innerHTML = `
-            <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-0"></span> None</span>
-            <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-2" style="background:${obsColor}"></span> Low</span>
-            <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-4" style="background:${obsColor}"></span> Med</span>
-            <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-5" style="background:${obsColor}"></span> High</span>
-            ${state.showBothReports ? `<span class="hm-legend-item"><span class="hm-legend-box hm-legend-box-striped" style="background:${obsColor}"></span> Prev. report</span>` : ''}
-            <span class="hm-legend-max">Max: ${maxCount}</span>
-        `;
+        const glyphSwatch = (kind) => {
+            const s = document.createElementNS(_SVG_NS, 'svg');
+            s.setAttribute('viewBox', '-9 -9 18 18');
+            s.setAttribute('width', 14); s.setAttribute('height', 14);
+            s.appendChild(buildGlyphNode(kind, 14, obsColor, 0.85, obsColor));
+            return s;
+        };
+        const stageLegendItems = [...usedGlyphs].slice(0, 6).map(g => {
+            const [kind, stage] = g.split('|');
+            const item = document.createElement('span');
+            item.className = 'hm-legend-item';
+            item.appendChild(glyphSwatch(kind));
+            const lbl = document.createElement('span');
+            lbl.style.marginLeft = '4px';
+            lbl.textContent = stage === 'N/A' ? '—' : stage;
+            item.appendChild(lbl);
+            return item;
+        });
+        stageLegendItems.forEach(it => legend.appendChild(it));
+
+        const intensityHint = document.createElement('span');
+        intensityHint.className = 'hm-legend-item';
+        intensityHint.style.marginLeft = '4px';
+        intensityHint.innerHTML = `<span style="font-size:10px;color:#9ca3af">opacity ∝ count</span>`;
+        legend.appendChild(intensityHint);
+
+        const maxLbl = document.createElement('span');
+        maxLbl.className = 'hm-legend-max';
+        maxLbl.textContent = `Max: ${maxCount}`;
+        legend.appendChild(maxLbl);
+
+        if (state.showBothReports) {
+            const prev = document.createElement('span');
+            prev.className = 'hm-legend-item';
+            prev.innerHTML = `<svg viewBox="-9 -9 18 18" width="14" height="14"><circle cx="0" cy="0" r="6" fill="${obsColor}" fill-opacity="0.7" stroke="${obsColor}" stroke-width="1.6" stroke-dasharray="2 2"/></svg> <span style="margin-left:4px">Prev. report</span>`;
+            legend.appendChild(prev);
+        }
         card.appendChild(legend);
 
         card.style.cursor = 'pointer';
@@ -867,24 +1134,19 @@ document.addEventListener("DOMContentLoaded", () => {
             modal.appendChild(mHeader);
             const mBody = document.createElement('div');
             mBody.className = 'hm-fullscreen-body';
-            mBody.appendChild(buildGrid(28));
+            // Fullscreen: flip orientation so beds run left→right across the
+            // wider modal (each bed becomes a vertical line). Larger units
+            // for legibility; max-height in CSS keeps the SVG inside the
+            // modal viewport.
+            mBody.appendChild(buildLandscape({
+                orientation: 'vertical-beds',
+                unit: 22,
+                bedGap: 32,
+                glyphScale: 0.9,
+                maxGlyph: 26,
+            }));
             modal.appendChild(mBody);
-            const mLegend = document.createElement('div');
-            mLegend.className = 'hm-legend';
-            mLegend.style.padding = '12px 16px';
-            mLegend.innerHTML = `
-                <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-0"></span> None</span>
-                <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-2" style="background:${obsColor}"></span> Low</span>
-                <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-4" style="background:${obsColor}"></span> Med</span>
-                <span class="hm-legend-item"><span class="hm-legend-box hm-intensity-5" style="background:${obsColor}"></span> High</span>
-                ${state.showBothReports ? `<span class="hm-legend-item"><span class="hm-legend-box hm-legend-box-striped" style="background:${obsColor}"></span> Prev. report</span>` : ''}
-                ${alertLevel > 0 ? `
-                <span class="hm-legend-item" style="margin-left:16px;">
-                    <span style="display:inline-block;width:14px;height:10px;border:2px solid ${alertLevel===3?'#dc2626':alertLevel===2?'#f59e0b':'#10b981'};border-radius:2px;"></span>
-                    &nbsp;${alertLevel===3?'High':alertLevel===2?'Moderate':'Low'} requirement zone
-                </span>` : ''}
-            `;
-            modal.appendChild(mLegend);
+            modal.appendChild(legend.cloneNode(true));
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
             const close = () => overlay.remove();

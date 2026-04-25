@@ -1,12 +1,20 @@
+import re
+
 import frappe
 import hashlib
 from frappe.utils import flt
 
 from upande_scp.serverscripts.cache_utils import (
     K_CHEMICALS_LIST,
+    K_ZONE_COUNT_BY_BED,
     TTL_MEDIUM,
+    TTL_SHORT,
+    build_zone_count_by_bed,
     get_or_set,
 )
+
+
+_BED_NUM_RE = re.compile(r"Bed\s+(\d+)", re.IGNORECASE)
 
 
 def _cached_chemicals():
@@ -411,6 +419,25 @@ def getScoutingData():
         bed_data     = frappe.get_all("Bed", filters={"greenhouse": greenhouse}, fields=["bed", "bed__area", "total_variety_area", "variety"])
         spray_teams  = frappe.get_all("Spray Team", filters={"enabled": 1}, fields=["name"])
 
+        # Per-bed zone count for the landscape view: lets the renderer draw
+        # each bed as a line of its own length, producing a stepped silhouette
+        # for non-rectangular greenhouses without needing GeoJSON.
+        gh_beds = frappe.get_all(
+            "Bed",
+            filters={"greenhouse": greenhouse, "custom_active": 1},
+            fields=["name"],
+            limit_page_length=0,
+        )
+        zone_count_by_bed_global = get_or_set(
+            K_ZONE_COUNT_BY_BED, build_zone_count_by_bed, ttl=TTL_SHORT
+        )
+        zone_count_by_bed_num = {}
+        for b in gh_beds:
+            m = _BED_NUM_RE.search(b.name or "")
+            if not m:
+                continue
+            zone_count_by_bed_num[int(m.group(1))] = zone_count_by_bed_global.get(b.name, 0)
+
         return {
             # Latest report
             "scouting_entries": latest_entries,
@@ -427,6 +454,7 @@ def getScoutingData():
             "custom_zone_numbering": bed_zone_numbering[0].get("custom_zone_numbering") if bed_zone_numbering else None,
             "all_chemicals": all_chemicals,
             "bed_data": bed_data,
+            "zone_count_by_bed": zone_count_by_bed_num,
             "spray_team_team": spray_teams,
             "observation_metadata": {
                 "active_observation_types": [k for k in observation_configs if all_observation_names.get(k)],

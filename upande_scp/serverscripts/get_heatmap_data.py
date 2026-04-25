@@ -1,3 +1,5 @@
+import re
+
 import frappe
 from frappe import _
 
@@ -13,6 +15,9 @@ from upande_scp.serverscripts.cache_utils import (
     build_zone_count_by_bed,
     get_or_set,
 )
+
+
+_BED_NUM_RE = re.compile(r"Bed\s+(\d+)", re.IGNORECASE)
 
 
 # Maps Scouting Entry child-table → (doctype, item-field on row, extra fields, output key)
@@ -60,6 +65,16 @@ def getHeatmapData(date, greenhouse):
             default=0,
         )
 
+        # {bed_number: zone_count} — drives per-bed line lengths in the
+        # landscape view, so non-rectangular greenhouses render with their
+        # natural stepped silhouette instead of a forced rectangle.
+        zone_count_by_bed_num = {}
+        for b in gh_beds:
+            m = _BED_NUM_RE.search(b.name or "")
+            if not m:
+                continue
+            zone_count_by_bed_num[int(m.group(1))] = zone_count_by_bed.get(b.name, 0)
+
         observation_types = get_or_set(K_OBSERVATION_TYPES, build_observation_types, ttl=TTL_MEDIUM)
 
         if not scouting_entries:
@@ -68,6 +83,7 @@ def getHeatmapData(date, greenhouse):
                 "observation_types": observation_types,
                 "bed_count": bed_count,
                 "zone_count": max_zone_count,
+                "zone_count_by_bed": zone_count_by_bed_num,
                 "message": "No scouting entries found for this date and greenhouse",
             }
 
@@ -112,6 +128,7 @@ def getHeatmapData(date, greenhouse):
             "observation_types": observation_types,
             "bed_count": bed_count,
             "zone_count": max_zone_count,
+            "zone_count_by_bed": zone_count_by_bed_num,
             "date": date,
             "greenhouse": greenhouse,
         }

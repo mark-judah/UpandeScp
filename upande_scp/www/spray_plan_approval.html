@@ -6,16 +6,15 @@
 
 {% block page_content %}
 <div id="spa-root">
+<div class="spa-page">
 
   <!-- ── Page header ─────────────────────────────────────────── -->
   <div class="spa-page-header">
-    <div class="spa-page-title">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-        <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-      </svg>
-      <h2>Spray Plan Approval</h2>
+    <div class="spa-page-header-left">
+      <h3 class="spa-title">Spray Plan Approval</h3>
+      <span class="spa-subtitle">Pending application work orders · review the chemical mix and approve or stop them in bulk.</span>
     </div>
-    <div id="spa-header-stats" class="spa-header-stats"></div>
+    <div class="spa-page-header-right" id="spa-header-stats"></div>
   </div>
 
   <!-- ── Filters ─────────────────────────────────────────────── -->
@@ -120,6 +119,8 @@
     </div>
 
   </div><!-- /spa-content -->
+
+</div><!-- /spa-page -->
 
   <!-- ── Action bar ──────────────────────────────────────────── -->
   <div class="spa-action-bar" id="spa-action-bar">

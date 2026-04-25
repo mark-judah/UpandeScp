@@ -7,43 +7,58 @@
 #spa-root {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
   font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
   font-size: 0.875rem;
   color: #374151;
   background: #f5f7fa;
 }
 
+/* Centered page container — same rhythm as Application Floor Plans history. */
+.spa-page {
+  flex: 1;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px 24px 96px;
+}
+
 /* ── Utilities ──────────────────────────────────────────────── */
 .hidden { display: none !important; }
 
-/* ── Page header ────────────────────────────────────────────── */
+/* ── Page header (detached, no card chrome) ─────────────────── */
 .spa-page-header {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 24px 12px;
-  background: #ffffff;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding-bottom: 20px;
   border-bottom: 1px solid #e5e7eb;
-  flex-shrink: 0;
 }
-
-.spa-page-title {
+.spa-page-header-left {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
-.spa-page-title h2 {
+.spa-title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.125rem;
   font-weight: 700;
   color: #374151;
+  letter-spacing: 0.01em;
 }
-.spa-page-title svg {
+.spa-subtitle {
+  font-size: 0.85rem;
   color: #6b7280;
-  flex-shrink: 0;
+}
+.spa-page-header-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .spa-header-stats {
@@ -73,12 +88,13 @@
 .spa-stat-chip.pending .dot   { background: #b45309; }
 .spa-stat-chip.forwarded .dot { background: #047857; }
 
-/* ── Filters ────────────────────────────────────────────────── */
+/* ── Filters (detached card) ────────────────────────────────── */
 .spa-filters {
   background: #ffffff;
-  border-bottom: 1px solid #e5e7eb;
-  padding: 10px 24px;
-  flex-shrink: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 14px;
 }
 
 .spa-filter-row {
@@ -124,14 +140,13 @@
   align-items: flex-end;
 }
 
-/* ── Status tabs ────────────────────────────────────────────── */
+/* ── Status tabs (inline within page, no card chrome) ───────── */
 .spa-tabs {
   display: flex;
   gap: 0;
-  padding: 6px 24px 0;
-  background: #ffffff;
+  padding: 0 4px;
+  margin-bottom: 0;
   border-bottom: 1px solid #e5e7eb;
-  flex-shrink: 0;
 }
 
 .spa-tab {
@@ -186,11 +201,8 @@
 
 /* ── Content area ───────────────────────────────────────────── */
 .spa-content {
-  flex: 1;
-  overflow-y: auto;
   position: relative;
-  min-height: 0;
-  padding: 0 24px 24px;
+  margin-top: 14px;
 }
 
 /* ── State views ────────────────────────────────────────────── */
@@ -564,7 +576,7 @@
 }
 .spa-btn-ghost-sm:hover { background: #f9fafb; }
 
-/* ── Action bar ──────────────────────────────────────────────── */
+/* ── Action bar (sticks to viewport bottom) ──────────────────── */
 .spa-action-bar {
   display: flex;
   align-items: center;
@@ -573,7 +585,10 @@
   padding: 10px 24px;
   background: #ffffff;
   border-top: 1px solid #e5e7eb;
-  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  margin-top: auto;
 }
 
 .spa-action-info {

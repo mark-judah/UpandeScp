@@ -1,3 +1,54 @@
+/* ── Page header (matches Application Work Order History) ── */
+.nafp-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e5e7eb;
+  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+.nafp-page-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.nafp-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #374151;
+  letter-spacing: 0.01em;
+}
+.nafp-subtitle {
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+.nafp-page-header-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.nafp-header-link {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #374151;
+  text-decoration: none;
+  padding: 7px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  transition: background 0.15s, color 0.15s;
+}
+.nafp-header-link:hover {
+  background: #f9fafb;
+  color: #111827;
+}
+
 .bom-modal-overlay {
     position: fixed;
     inset: 0;
@@ -237,6 +288,86 @@
     position: relative;
   }
 
+  /* ==================== LANDSCAPE (SVG) VIEW ==================== */
+  .hm-landscape-wrap {
+    width: 100%;
+    max-height: 320px;
+    overflow: auto;
+    background: linear-gradient(180deg, #fafafa 0%, #f3f4f6 100%);
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 4px 6px;
+  }
+
+  .hm-fullscreen-body .hm-landscape-wrap {
+    max-height: none;
+    overflow: visible;
+    padding: 12px;
+  }
+
+  .hm-landscape-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  .hm-fullscreen-body .hm-landscape-svg {
+    /* Use as much of the modal viewport as possible while leaving room for
+       the header (~60px) and the legend strip (~50px). */
+    max-height: calc(97vh - 150px);
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .hm-bed-band {
+    fill: #ffffff;
+    stroke: #e5e7eb;
+    stroke-width: 0.5;
+  }
+
+  .hm-bed-line {
+    stroke: #6b7280;
+    stroke-width: 0.9;
+    stroke-linecap: round;
+  }
+
+  .hm-zone-tick {
+    fill: #9ca3af;
+  }
+
+  .hm-bed-num {
+    font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+    font-size: 6.5px;
+    font-weight: 700;
+    fill: #4b5563;
+  }
+
+  .hm-zone-num {
+    font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+    font-size: 6px;
+    font-weight: 600;
+    fill: #6b7280;
+  }
+
+  /* Fullscreen: bigger, more legible labels. */
+  .hm-fullscreen-body .hm-bed-num  { font-size: 12px; }
+  .hm-fullscreen-body .hm-zone-num { font-size: 11px; }
+  .hm-fullscreen-body .hm-bed-line { stroke-width: 1.6; }
+  .hm-fullscreen-body .hm-bed-band { stroke-width: 0.8; }
+
+  /* Glyph hover: avoid CSS transform scale on SVG <g> elements (it ignores
+     the per-glyph translate() and pushes the symbol off-axis). Use a soft
+     drop-shadow for the hover affordance instead. */
+  .hm-glyph {
+    cursor: pointer;
+    transition: filter 0.12s ease;
+  }
+
+  .hm-glyph:hover {
+    filter: drop-shadow(0 0 1.6px rgba(0, 0, 0, 0.45));
+  }
+
   /* Target pills */
 .target-pills-container {
     display: flex;
@@ -368,15 +499,15 @@
     align-items: center;
     justify-content: center;
     z-index: 10000;
-    padding: 24px;
+    padding: 12px;
   }
 
   .hm-fullscreen-modal {
     background: #ffffff;
     border-radius: 12px;
-    width: 95vw;
-    max-width: 1400px;
-    max-height: 92vh;
+    width: 97vw;
+    max-width: 1700px;
+    max-height: 97vh;
     display: flex;
     flex-direction: column;
         overflow: hidden;

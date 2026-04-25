@@ -163,6 +163,7 @@ doc_events = {
     "Predator Stages": _SCP_CACHE_EVENTS,
     "Zone": _SCP_CACHE_EVENTS,
     "Bed": _SCP_CACHE_EVENTS,
+    "Trap": _SCP_CACHE_EVENTS,
     "Warehouse": _SCP_CACHE_EVENTS,
     "Farm": _SCP_CACHE_EVENTS,
     "Spray Equipment Details": _SCP_CACHE_EVENTS,

@@ -46,6 +46,40 @@ K_SM_BEDS_BY_GH = "scp:sm_beds_by_gh_v1"
 K_SM_ZONES_BY_GH = "scp:sm_zones_by_gh_v1"
 K_SM_ZONE_COUNTS_BY_GH = "scp:sm_zone_counts_by_gh_v1"
 K_SM_TRAPS_BY_GH = "scp:sm_traps_by_gh_v1"
+# Per-farm bulk bundle for the mobile configure flow. Key is suffixed with
+# the farm name: "scp:sm_farm_bundle_v1:{farm}". Holds all warehouses +
+# beds + traps + sections for a farm so the mobile app can populate its
+# offline cache in a single request instead of per-block round-trips.
+K_SM_FARM_BUNDLE_PREFIX = "scp:sm_farm_bundle_v1"
+
+
+def invalidate_farm_bundle(farm):
+    """Clear the cached farm bundle for one farm."""
+    if not farm:
+        return
+    invalidate(f"{K_SM_FARM_BUNDLE_PREFIX}:{farm}")
+
+
+def invalidate_farm_bundle_for_doc(doc):
+    """Resolve the farm from a doc and invalidate that farm's bundle.
+
+    Used by the doc_event hook when Bed / Trap / Warehouse / Farm records
+    change. Falls back to a no-op when the farm cannot be resolved (rather
+    than nuking every farm's cache).
+    """
+    farm = None
+    dt = getattr(doc, "doctype", None)
+    if dt == "Farm":
+        farm = doc.name
+    elif dt == "Warehouse":
+        farm = getattr(doc, "custom_farm", None)
+    elif dt == "Trap":
+        farm = getattr(doc, "farm", None)
+    elif dt == "Bed":
+        gh = getattr(doc, "greenhouse", None)
+        if gh:
+            farm = frappe.db.get_value("Warehouse", gh, "custom_farm")
+    invalidate_farm_bundle(farm)
 
 
 # ── Builders (canonical queries used across endpoints) ─────────────────────
@@ -164,3 +198,7 @@ def invalidate_on_change(doc, method=None):
     keys = _DOC_INVALIDATIONS.get(doc.doctype)
     if keys:
         invalidate(*keys)
+    # Also drop the per-farm bundle when the underlying records change so
+    # the mobile bundle endpoint rebuilds on next request.
+    if doc.doctype in ("Bed", "Trap", "Warehouse", "Farm"):
+        invalidate_farm_bundle_for_doc(doc)

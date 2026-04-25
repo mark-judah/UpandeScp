@@ -350,10 +350,10 @@
     fill: #6b7280;
   }
 
-  /* Fullscreen: bigger, more legible labels. */
-  .hm-fullscreen-body .hm-bed-num  { font-size: 12px; }
-  .hm-fullscreen-body .hm-zone-num { font-size: 11px; }
-  .hm-fullscreen-body .hm-bed-line { stroke-width: 1.6; }
+  /* Fullscreen: tighter labels. */
+  .hm-fullscreen-body .hm-bed-num  { font-size: 6px; }
+  .hm-fullscreen-body .hm-zone-num { font-size: 8px; }
+  .hm-fullscreen-body .hm-bed-line { stroke-width: 1.4; }
   .hm-fullscreen-body .hm-bed-band { stroke-width: 0.8; }
 
   /* Glyph hover: avoid CSS transform scale on SVG <g> elements (it ignores
@@ -366,6 +366,24 @@
 
   .hm-glyph:hover {
     filter: drop-shadow(0 0 1.6px rgba(0, 0, 0, 0.45));
+  }
+
+  /* Live "Bed N · Zone M" readout that follows the cursor over the
+     landscape SVG. Fixed positioning so it isn't clipped by the wrap's
+     overflow or the modal scroll. */
+  .hm-bed-hover-tooltip {
+    position: fixed;
+    display: none;
+    z-index: 10001;
+    background: rgba(17, 24, 39, 0.95);
+    color: #ffffff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    pointer-events: none;
+    white-space: nowrap;
+    font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
   }
 
   /* Target pills */

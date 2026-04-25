@@ -888,9 +888,15 @@ document.addEventListener("DOMContentLoaded", () => {
             if (fitContainer) {
                 svg.setAttribute('width', '100%');
             } else {
-                // Lock to natural pixel size so configured sizes stick.
+                // Lock to natural pixel size — inline styles also override
+                // any CSS width:100% / max-height rules so the SVG keeps
+                // its real footprint and the parent scrolls instead.
                 svg.setAttribute('width',  svgWidth);
                 svg.setAttribute('height', svgHeight);
+                svg.style.width     = svgWidth + 'px';
+                svg.style.height    = svgHeight + 'px';
+                svg.style.maxWidth  = 'none';
+                svg.style.maxHeight = 'none';
             }
 
             // ── Beds: band, line, label, zone ticks ──
@@ -942,7 +948,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 lbl.setAttribute('y', lblPos.y);
                 lbl.setAttribute('text-anchor', lblPos.anchor);
                 lbl.setAttribute('dominant-baseline', lblPos.baseline);
-                lbl.textContent = `B${bed}`;
+                lbl.textContent = `${bed}`;
                 svg.appendChild(lbl);
 
                 // Zone tick markers along the bed.
@@ -1002,13 +1008,15 @@ document.addEventListener("DOMContentLoaded", () => {
                         : zone;
                     const p = project(zoneOffsetStart + (visualSlot - 0.5) * unit, bedCenter);
 
+                    // Uniform glyph size (no per-count scaling) so a row of
+                    // adjacent observations stays visually aligned. Count is
+                    // already encoded via fill opacity.
                     const opacity = intensityOpacity(cnt, maxCount);
                     const glyphKind = pickGlyph(obsData.symbol, obsData.stage);
-                    const sizeBoost = 1 + 0.15 * Math.min(1, cnt / Math.max(1, maxCount));
 
                     const glyph = buildGlyphNode(
                         glyphKind,
-                        glyphSize * sizeBoost,
+                        glyphSize,
                         obsColor,
                         opacity,
                         obsColor
@@ -1051,6 +1059,49 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             wrap.appendChild(svg);
+
+            // ── Live "Bed N · Zone M" readout that follows the cursor ──
+            // We listen at the SVG level so hover still works when the mouse
+            // is directly over a glyph (glyphs sit above the bed band).
+            const tooltip = document.createElement('div');
+            tooltip.className = 'hm-bed-hover-tooltip';
+            wrap.appendChild(tooltip);
+
+            const hideTip = () => { tooltip.style.display = 'none'; };
+
+            svg.addEventListener('mousemove', (e) => {
+                const ctm = svg.getScreenCTM();
+                if (!ctm) return;
+                const pt = svg.createSVGPoint();
+                pt.x = e.clientX;
+                pt.y = e.clientY;
+                const sp = pt.matrixTransform(ctm.inverse());
+
+                const bedAxisVal  = isHoriz ? (sp.y - PAD_AXIS)  : (sp.x - PAD_AXIS);
+                const zoneAxisVal = isHoriz ? (sp.x - PAD_LABEL) : (sp.y - PAD_LABEL);
+
+                const bedIdx = Math.floor(bedAxisVal / bedGap);
+                if (bedIdx < 0 || bedIdx >= maxBed) { hideTip(); return; }
+                const bed = bedRange[bedIdx];
+                const bedZoneCount = state.zoneCountByBed[bed] || 0;
+                if (!bedZoneCount) { hideTip(); return; }
+
+                const zoneOffsetStart = zoneNumbering === 'Right to Left'
+                    ? (maxZone - bedZoneCount) * unit
+                    : 0;
+                const slot = Math.floor((zoneAxisVal - zoneOffsetStart) / unit) + 1;
+                if (slot < 1 || slot > bedZoneCount) { hideTip(); return; }
+                const zone = zoneNumbering === 'Right to Left'
+                    ? (bedZoneCount - slot + 1)
+                    : slot;
+
+                tooltip.textContent = `Bed ${bed} · Zone ${zone}`;
+                tooltip.style.display = 'block';
+                tooltip.style.left = (e.clientX + 12) + 'px';
+                tooltip.style.top  = (e.clientY + 12) + 'px';
+            });
+            svg.addEventListener('mouseleave', hideTip);
+
             return wrap;
         };
 
@@ -1135,15 +1186,23 @@ document.addEventListener("DOMContentLoaded", () => {
             const mBody = document.createElement('div');
             mBody.className = 'hm-fullscreen-body';
             // Fullscreen: flip orientation so beds run left→right across the
-            // wider modal (each bed becomes a vertical line). Larger units
-            // for legibility; max-height in CSS keeps the SVG inside the
-            // modal viewport.
+            // wider modal (each bed becomes a vertical line).
+            //
+            // Greenhouses can have hundreds of beds. Up to 100 beds we
+            // stretch the SVG to fill the modal width (compact bed gap is
+            // fine because beds are visually scaled). Past 100 beds we
+            // switch to natural pixel size with a slightly larger bed gap
+            // so each bed stays readable, and the modal body scrolls
+            // horizontally for the rest.
+            const MAX_BEDS_FILL = 100;
+            const overflowBeds = maxBed > MAX_BEDS_FILL;
             mBody.appendChild(buildLandscape({
                 orientation: 'vertical-beds',
                 unit: 22,
-                bedGap: 32,
-                glyphScale: 0.9,
-                maxGlyph: 26,
+                bedGap: overflowBeds ? 14 : 11,
+                glyphScale: 0.7,
+                maxGlyph: 16,
+                fitContainer: !overflowBeds,
             }));
             modal.appendChild(mBody);
             modal.appendChild(legend.cloneNode(true));

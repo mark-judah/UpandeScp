@@ -66,9 +66,9 @@
    "label": "Pests"
   },
   {
-   "description": "If empty, Pests will be hidden on Scouting Entry for this crop",
+   "description": "If empty, Pests will be hidden on Scouting Entry for this crop. Expand a row to set per-crop stages.",
    "fieldname": "pests",
-   "fieldtype": "Table MultiSelect",
+   "fieldtype": "Table",
    "label": "Pests",
    "options": "Pest Filter"
   },

@@ -12,7 +12,6 @@
   "identification_guideline",
   "damage_symptoms",
   "pests_legend_color",
-  "stages",
   "severity"
  ],
  "fields": [
@@ -42,12 +41,6 @@
    "fieldtype": "Color",
    "label": "Pests Legend Color",
    "read_only": 1
-  },
-  {
-   "fieldname": "stages",
-   "fieldtype": "Table",
-   "label": "Stages",
-   "options": "Pests Stages"
   },
   {
    "fieldname": "severity",

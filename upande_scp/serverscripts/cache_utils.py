@@ -116,12 +116,77 @@ def invalidate_farm_bundle_for_doc(doc):
 # ── Builders (canonical queries used across endpoints) ─────────────────────
 
 
+def _build_pests_group():
+    """Pests with stages aggregated from every Crop Scouted's Pest Filter rows.
+
+    Stages now live per-crop on Pest Filter. For the global cache view we
+    de-duplicate by stage name across crops so the heatmap legend keeps
+    showing every stage a pest may carry on any crop.
+    """
+    pests = frappe.get_all(
+        "Pest",
+        fields=["name", "common_name", "pests_legend_color"],
+    )
+    if not pests:
+        return {}
+
+    filter_rows = frappe.get_all(
+        "Pest Filter",
+        fields=["name", "pest"],
+        limit_page_length=0,
+    )
+    if not filter_rows:
+        return {
+            (p.common_name or p.name): {
+                "color": p.pests_legend_color or "#999999",
+                "stages": [],
+            }
+            for p in pests
+        }
+
+    row_to_pest = {r.name: r.pest for r in filter_rows}
+
+    stage_rows = frappe.get_all(
+        "Pests Stages",
+        filters={
+            "parent": ["in", list(row_to_pest.keys())],
+            "parenttype": "Pest Filter",
+        },
+        fields=["parent", "stage", "symbol", "reading_type"],
+        limit_page_length=0,
+    )
+
+    stages_by_pest = {}
+    seen = set()  # (pest_name, stage_name) — dedupe across crops
+    for s in stage_rows:
+        pest_name = row_to_pest.get(s.parent)
+        if not pest_name or not s.stage:
+            continue
+        key = (pest_name, s.stage)
+        if key in seen:
+            continue
+        seen.add(key)
+        stages_by_pest.setdefault(pest_name, []).append({
+            "stage": s.stage,
+            "reading_type": s.reading_type,
+            "symbol": s.get("symbol", "") or "",
+        })
+
+    return {
+        (p.common_name or p.name): {
+            "color": p.pests_legend_color or "#999999",
+            "stages": stages_by_pest.get(p.name, []),
+        }
+        for p in pests
+    }
+
+
 def build_observation_types():
     """Return color + stages for every observation doctype.
 
     Flat single query per stages child table — no per-master get_doc.
     """
-    def _build_group(master_doctype, color_field, stage_table, stage_parent_field, has_symbol):
+    def _build_group(master_doctype, color_field, stage_table, has_symbol):
         masters = frappe.get_all(
             master_doctype,
             fields=["name", "common_name", color_field] if color_field else ["name", "common_name"],
@@ -152,9 +217,9 @@ def build_observation_types():
         return out
 
     observation_types = {
-        "pests": _build_group("Pest", "pests_legend_color", "Pests Stages", "parent", True),
-        "diseases": _build_group("Plant Disease", "disease_legend_color", "Disease Stages", "parent", True),
-        "predators": _build_group("Predator", None, "Predator Stages", "parent", False),
+        "pests": _build_pests_group(),
+        "diseases": _build_group("Plant Disease", "disease_legend_color", "Disease Stages", True),
+        "predators": _build_group("Predator", None, "Predator Stages", False),
         "weeds": {},
         "incidents": {},
         "physiological_disorders": {},
@@ -213,6 +278,7 @@ _DOC_INVALIDATIONS = {
     "Incident": (K_OBSERVATION_TYPES,),
     "Physiological Disorder": (K_OBSERVATION_TYPES,),
     "Pests Stages": (K_OBSERVATION_TYPES,),
+    "Pest Filter": (K_OBSERVATION_TYPES,),
     "Disease Stages": (K_OBSERVATION_TYPES,),
     "Predator Stages": (K_OBSERVATION_TYPES,),
     "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH),

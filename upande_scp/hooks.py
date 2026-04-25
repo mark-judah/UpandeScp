@@ -159,6 +159,7 @@ doc_events = {
     "Incident": _SCP_CACHE_EVENTS,
     "Physiological Disorder": _SCP_CACHE_EVENTS,
     "Pests Stages": _SCP_CACHE_EVENTS,
+    "Pest Filter": _SCP_CACHE_EVENTS,
     "Disease Stages": _SCP_CACHE_EVENTS,
     "Predator Stages": _SCP_CACHE_EVENTS,
     "Zone": _SCP_CACHE_EVENTS,

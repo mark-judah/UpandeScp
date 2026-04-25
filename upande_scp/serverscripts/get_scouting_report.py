@@ -125,7 +125,8 @@ def getScoutingData():
 
             processed = {e.name: dict(e) for e in entries}
 
-            # Pest stage/severity config
+            # Pest stage/severity config — stages now live on Pest Filter
+            # rows (per-crop). Aggregate across crops, dedup by stage name.
             pest_names = frappe.get_all("Pest", fields=["name"])
             pests_map = {p.name: {"severity": [], "stages": []} for p in pest_names}
             for severity in frappe.get_all(
@@ -134,12 +135,36 @@ def getScoutingData():
                 fields=["parent", "from", "to", "color"]
             ):
                 pests_map[severity.parent]["severity"].append(severity)
-            for stage in frappe.get_all(
-                "Pests Stages",
-                filters={"parent": ["in", [p.name for p in pest_names]]},
-                fields=["parent", "stage", "symbol"]
-            ):
-                pests_map[stage.parent]["stages"].append(stage)
+
+            pest_filter_rows = frappe.get_all(
+                "Pest Filter",
+                fields=["name", "pest"],
+                limit_page_length=0,
+            )
+            row_to_pest = {r.name: r.pest for r in pest_filter_rows}
+            if row_to_pest:
+                seen_pest_stage = set()
+                for stage in frappe.get_all(
+                    "Pests Stages",
+                    filters={
+                        "parent": ["in", list(row_to_pest.keys())],
+                        "parenttype": "Pest Filter",
+                    },
+                    fields=["parent", "stage", "symbol"],
+                    limit_page_length=0,
+                ):
+                    pest_name = row_to_pest.get(stage.parent)
+                    if not pest_name or pest_name not in pests_map:
+                        continue
+                    key = (pest_name, stage.stage)
+                    if key in seen_pest_stage:
+                        continue
+                    seen_pest_stage.add(key)
+                    pests_map[pest_name]["stages"].append({
+                        "parent": pest_name,
+                        "stage": stage.stage,
+                        "symbol": stage.symbol,
+                    })
 
             items_in_data_all = {}  # key → {name: color}
 

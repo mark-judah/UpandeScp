@@ -92,23 +92,50 @@ def getObservationsDetails(crop=None):
     disease_names = [d.name for d in diseases]
     predator_names = [p.name for p in predators]
 
-    # Fetch pest stages with reading_type and plant_sections for EACH stage
+    # Fetch pest stages with reading_type and plant_sections for EACH stage.
+    # Stages now live on Pest Filter rows per crop. When `crop` is supplied
+    # we pull stages from that crop's filter rows only; otherwise we
+    # aggregate across all crops, deduplicated by (pest, stage).
     pest_stages = {}
     if pest_names:
-        stages_data = frappe.get_all(
-            "Pests Stages",
-            filters={"parent": ["in", pest_names]},
-            fields=["parent", "stage", "reading_type", "plant_sections", "idx"],
-            order_by="parent, idx"
+        filter_row_filters = {
+            "pest": ["in", pest_names],
+        }
+        if crop:
+            filter_row_filters["parent"] = crop
+            filter_row_filters["parenttype"] = "Crop Scouted"
+        filter_rows = frappe.get_all(
+            "Pest Filter",
+            filters=filter_row_filters,
+            fields=["name", "pest"],
+            limit_page_length=0,
         )
-        for stage in stages_data:
-            if stage.parent not in pest_stages:
-                pest_stages[stage.parent] = []
-            pest_stages[stage.parent].append({
-                "stage": stage.stage,
-                "reading_type": (stage.reading_type or "Count").lower(),
-                "plant_sections": _parse_plant_sections(stage.plant_sections)
-            })
+        row_to_pest = {r.name: r.pest for r in filter_rows}
+        if row_to_pest:
+            stages_data = frappe.get_all(
+                "Pests Stages",
+                filters={
+                    "parent": ["in", list(row_to_pest.keys())],
+                    "parenttype": "Pest Filter",
+                },
+                fields=["parent", "stage", "reading_type", "plant_sections", "idx"],
+                order_by="parent, idx",
+                limit_page_length=0,
+            )
+            seen_pest_stage = set()
+            for stage in stages_data:
+                pest_name = row_to_pest.get(stage.parent)
+                if not pest_name:
+                    continue
+                key = (pest_name, stage.stage)
+                if key in seen_pest_stage:
+                    continue
+                seen_pest_stage.add(key)
+                pest_stages.setdefault(pest_name, []).append({
+                    "stage": stage.stage,
+                    "reading_type": (stage.reading_type or "Count").lower(),
+                    "plant_sections": _parse_plant_sections(stage.plant_sections)
+                })
 
     # Fetch disease stages with reading_type, plant_sections, range_min, and range_max for EACH stage
     disease_stages = {}

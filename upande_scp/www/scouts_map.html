@@ -941,6 +941,14 @@
 	            if (e.scouts_name) treeToScout.set(e.tree, e.scouts_name);
 	        });
 
+	        // For very large tree sets, skip per-feature tooltips to keep mount
+	        // time and memory in check. ~5k seems to be the comfortable upper
+	        // bound for `bindTooltip` × N on canvas; above that, hovers can
+	        // still surface the tree code via `layer.feature.properties` if we
+	        // ever wire a delegated tooltip.
+	        const TOOLTIP_THRESHOLD = 5000;
+	        const bindTooltips = fc.features.length <= TOOLTIP_THRESHOLD;
+
 	        treeLayer = L.geoJSON(fc, {
 	            renderer: canvasRenderer,
 	            pointToLayer: (feat, latlng) => {
@@ -953,13 +961,13 @@
 	                    fillOpacity: isScouted ? 0.95 : 0.6,
 	                });
 	            },
-	            onEachFeature: (feat, layer) => {
+	            onEachFeature: bindTooltips ? (feat, layer) => {
 	                const p = feat.properties || {};
 	                const scout = p.tree_name ? treeToScout.get(p.tree_name) : null;
 	                const html = `<strong>${p.tree_code || p.tree_name || 'Tree'}</strong>` +
 	                    (scout ? `<br>${scout}` : '');
 	                layer.bindTooltip(html);
-	            }
+	            } : undefined
 	        }).addTo(window.map);
 
 	        // Zoom-fit to the avocado block on entry.

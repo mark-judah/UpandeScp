@@ -1,5 +1,12 @@
 import frappe
 
+from upande_scp.serverscripts import scouting_metrics
+from upande_scp.serverscripts.cache_utils import (
+    K_SM_ZONE_COUNTS_BY_GH,
+    TTL_LONG,
+    get_or_set,
+)
+
 
 CACHE_TTL = 300  # seconds; legend colors + zone counts rarely change
 
@@ -33,36 +40,14 @@ def _cached_disease_colors():
 
 
 def _cached_zones_by_greenhouse():
-    cache = frappe.cache()
-    key = "scouting_dashboard:zones_by_greenhouse"
-    value = cache.get_value(key)
-    if value is not None:
-        return value
-
-    all_zones = frappe.get_all(
-        "Zone",
-        fields=["greenhouse"],
-        limit_page_length=0,
+    """{greenhouse: zone_count} — shares the Zone-invalidated cache with
+    scouting_metrics_api so an edit flushes both this meta payload and any
+    other consumer in a single hook."""
+    return get_or_set(
+        K_SM_ZONE_COUNTS_BY_GH,
+        scouting_metrics.get_zone_counts_by_greenhouse,
+        ttl=TTL_LONG,
     )
-    zones_by_greenhouse = {}
-    for z in all_zones:
-        if z.greenhouse:
-            zones_by_greenhouse[z.greenhouse] = zones_by_greenhouse.get(z.greenhouse, 0) + 1
-
-    if not zones_by_greenhouse:
-        all_beds = frappe.get_all(
-            "Warehouse",
-            filters=[["is_group", "=", 0]],
-            fields=["parent_warehouse"],
-            limit_page_length=0,
-        )
-        for bed in all_beds:
-            parent = (bed.get("parent_warehouse") or "").strip()
-            if parent:
-                zones_by_greenhouse[parent] = zones_by_greenhouse.get(parent, 0) + 1
-
-    cache.set_value(key, zones_by_greenhouse, expires_in_sec=CACHE_TTL)
-    return zones_by_greenhouse
 
 
 def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True):

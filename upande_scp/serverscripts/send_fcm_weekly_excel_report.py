@@ -2,16 +2,22 @@
 send_fcm_weekly_excel_report.py
 ================================
 Generate and email the KEPHIS FCM Weekly Monitoring Excel report.
-Mirrors the format of the official CHEPSITO (KE0300809046) template.
+Mirrors the format of the official KEPHIS template (originally CHEPSITO).
+
+One workbook is produced **per farm**. Farm identity (display name,
+KEPHIS site id, abbreviation) is sourced from the Farm doctype — nothing
+is hard-coded here. Scheduler loops over every farm that has scouting
+data for the year.
 
 Sheets generated
 ----------------
 1. FCM Daily monitoring   – per-trap FCM counts (indoor / outdoor) by week
 2. Weekly summary         – all moth species totals by week
 3. Scouting Summary       – plant-level pests per GH per week
-4. Intake QC Report       – same structure as Scouting Summary
-5. Variety List           – static GH-variety assignments
-6. FCM Risk profiling     – static risk scores per variety
+4. Intake QC Report       – (empty — pending AI integration)
+5. Variety List           – (empty — pending integration with live variety data)
+6. FCM Risk profiling     – (empty — pending AI integration)
+7. Scouting Records       – per-entry audit trail (who scouted what, when)
 
 Hook in hooks.py:
     scheduler_events = {
@@ -27,16 +33,79 @@ from datetime import date, timedelta
 
 import frappe
 
+from upande_scp.serverscripts.scouting_metrics import (
+    MOTH_OTHERS,
+    get_fcm_larvae_weekly,
+    get_fcm_trap_counts_weekly,
+    get_fcm_traps_ordered,
+    get_plant_pests_weekly,
+    get_scouting_records_weekly,
+    get_weekly_trap_pest_totals_indoor,
+)
+
+
+# ---------------------------------------------------------------------------
+# Farm resolution
+# ---------------------------------------------------------------------------
+
+def _resolve_farm(farm_name):
+    """Return (display_name, kephis_id, abbreviation) for a farm.
+
+    Falls back gracefully when the Farm doctype is absent or the row is
+    missing — the report should never crash just because metadata is
+    incomplete.
+    """
+    display = farm_name or ""
+    kephis  = ""
+    abbrev  = ""
+    try:
+        if farm_name and frappe.db.exists("Farm", farm_name):
+            row = frappe.db.get_value(
+                "Farm", farm_name,
+                ["farm", "kephis_farm_id", "abbreviation"],
+                as_dict=True,
+            ) or {}
+            display = row.get("farm") or farm_name
+            kephis  = row.get("kephis_farm_id") or ""
+            abbrev  = row.get("abbreviation") or ""
+    except Exception:
+        # Farm doctype not installed or query failed — keep defaults.
+        pass
+    return display, kephis, abbrev
+
+
+def _farms_with_data(year):
+    """Farms that have at least one scouting entry in ``year``.
+
+    Uses ``Warehouse.custom_farm`` as the authoritative link from a
+    scouting entry's greenhouse to a farm.
+    """
+    rows = frappe.db.sql(
+        """
+        SELECT DISTINCT gh.custom_farm AS farm
+        FROM  `tabScouting Entry` se
+        JOIN  `tabWarehouse` gh ON gh.name = se.greenhouse
+        WHERE YEAR(se.date_of_capture) = %s
+          AND gh.custom_farm IS NOT NULL
+          AND gh.custom_farm != ''
+        ORDER BY gh.custom_farm
+        """,
+        (year,),
+        as_dict=True,
+    )
+    return [r.farm for r in rows]
+
 
 # ---------------------------------------------------------------------------
 # Internal: workbook builder (shared by email and download)
 # ---------------------------------------------------------------------------
 
-def _build_workbook_bytes():
-    """Build the KEPHIS FCM Excel workbook.
+def _build_workbook_bytes(farm):
+    """Build the KEPHIS FCM Excel workbook for a single farm.
 
-    Returns (excel_bytes, fname, current_year, week_range_str, last_week_num).
-    When there's no data for the year, excel_bytes is None.
+    Returns (excel_bytes, fname, current_year, week_range_str, last_week_num,
+             farm_display).
+    When there's no data for the year/farm, excel_bytes is None.
     """
     try:
         import openpyxl
@@ -44,7 +113,9 @@ def _build_workbook_bytes():
         from openpyxl.utils import get_column_letter
     except ImportError:
         frappe.log_error("openpyxl not installed – run: pip install openpyxl", "FCM Weekly Report")
-        return None, None, None, None, None
+        return None, None, None, None, None, None
+
+    farm_display, kephis_id, abbrev = _resolve_farm(farm)
 
     today = date.today()
     current_year = today.year
@@ -110,93 +181,15 @@ def _build_workbook_bytes():
         return "other"
 
     # -----------------------------------------------------------------------
-    # SQL queries
+    # Data (sourced from scouting_metrics, scoped to this farm)
     # -----------------------------------------------------------------------
 
-    # All FCM-type traps ordered by trap number
-    fcm_traps = frappe.db.sql(
-        """
-        SELECT name, greenhouse, trap_number, location
-        FROM   `tabTrap`
-        WHERE  type = 'FCM'
-        ORDER  BY CAST(trap_number AS UNSIGNED)
-        """,
-        as_dict=True,
-    )
-
-    # FCM observations per (week, trap, location)
-    fcm_raw = frappe.db.sql(
-        """
-        SELECT
-            tse.trap,
-            COALESCE(tse.location, t.location, 'Indoor')  AS location,
-            SUM(tse.count)                                 AS cnt,
-            WEEK(se.date_of_capture, 1)                   AS wk
-        FROM  `tabTrap Scouting Entry` tse
-        JOIN  `tabScouting Entry` se ON se.name = tse.parent
-        LEFT JOIN `tabTrap` t ON t.name = tse.trap
-        WHERE YEAR(se.date_of_capture) = %s
-          AND tse.pest = 'FCM'
-        GROUP BY tse.trap, location, WEEK(se.date_of_capture, 1)
-        """,
-        (current_year,),
-        as_dict=True,
-    )
-
-    # All trap pest totals per week (weekly summary)
-    trap_pest_wk = frappe.db.sql(
-        """
-        SELECT
-            tse.pest,
-            SUM(tse.count)              AS cnt,
-            WEEK(se.date_of_capture, 1) AS wk
-        FROM  `tabTrap Scouting Entry` tse
-        JOIN  `tabScouting Entry` se ON se.name = tse.parent
-        WHERE YEAR(se.date_of_capture) = %s
-          AND tse.count > 0
-          AND tse.pest IS NOT NULL AND tse.pest != ''
-        GROUP BY tse.pest, WEEK(se.date_of_capture, 1)
-        """,
-        (current_year,),
-        as_dict=True,
-    )
-
-    # Plant-level pests per GH per week (scouting summary)
-    plant_pests = frappe.db.sql(
-        """
-        SELECT
-            pse.pest,
-            pse.stage,
-            SUM(pse.count)              AS cnt,
-            se.greenhouse,
-            WEEK(se.date_of_capture, 1) AS wk
-        FROM  `tabPests Scouting Entry` pse
-        JOIN  `tabScouting Entry` se ON se.name = pse.parent
-        WHERE YEAR(se.date_of_capture) = %s
-          AND pse.count > 0
-        GROUP BY pse.pest, pse.stage, se.greenhouse, WEEK(se.date_of_capture, 1)
-        """,
-        (current_year,),
-        as_dict=True,
-    )
-
-    # FCM cumulative larvae/eggs per GH per week (column H in Sheet 1)
-    fcm_larvae_raw = frappe.db.sql(
-        """
-        SELECT
-            SUM(pse.count)              AS cnt,
-            se.greenhouse,
-            WEEK(se.date_of_capture, 1) AS wk
-        FROM  `tabPests Scouting Entry` pse
-        JOIN  `tabScouting Entry` se ON se.name = pse.parent
-        WHERE YEAR(se.date_of_capture) = %s
-          AND pse.pest = 'FCM'
-          AND LOWER(pse.stage) REGEXP 'egg|larva|larvae|nymph'
-        GROUP BY se.greenhouse, WEEK(se.date_of_capture, 1)
-        """,
-        (current_year,),
-        as_dict=True,
-    )
+    fcm_traps      = get_fcm_traps_ordered(farm=farm)
+    fcm_raw        = get_fcm_trap_counts_weekly(current_year, farm=farm)
+    trap_pest_wk   = get_weekly_trap_pest_totals_indoor(current_year, farm=farm)
+    plant_pests    = get_plant_pests_weekly(current_year, farm=farm)
+    fcm_larvae_raw = get_fcm_larvae_weekly(current_year, farm=farm)
+    records        = get_scouting_records_weekly(current_year, farm=farm)
 
     # -----------------------------------------------------------------------
     # Build lookup maps
@@ -223,11 +216,20 @@ def _build_workbook_bytes():
         fcm_larvae_map[key] = fcm_larvae_map.get(key, 0) + safe_int(r.cnt)
 
     # {(wk, gh_num, pest_cat, stage_cat): count}   pest_cat ∈ {FCM, Helicoverpa, Others}
+    # "Others" is restricted to moth species only (MOTH_OTHERS) — non-moth pests
+    # like aphids/thrips/mites are excluded from this sheet entirely.
     scouting_map = {}
     for r in plant_pests:
-        gh = gh_from_warehouse(r.greenhouse)
         pest = (r.pest or "").strip()
-        p_cat = pest if pest in ("FCM", "Helicoverpa") else "Others"
+        if pest == "FCM":
+            p_cat = "FCM"
+        elif pest == "Helicoverpa":
+            p_cat = "Helicoverpa"
+        elif pest in MOTH_OTHERS:
+            p_cat = "Others"
+        else:
+            continue
+        gh = gh_from_warehouse(r.greenhouse)
         s_cat = map_stage(r.stage)
         key = (r.wk, gh, p_cat, s_cat)
         scouting_map[key] = scouting_map.get(key, 0) + safe_int(r.cnt)
@@ -244,11 +246,28 @@ def _build_workbook_bytes():
     all_weeks = sorted(w for w in all_wk_nums if 1 <= w <= current_week_num)
 
     if not all_weeks:
-        return None, None, current_year, week_range_str, last_week_num
+        return None, None, current_year, week_range_str, last_week_num, farm_display
 
     # Sorted trap list
     sorted_traps = sorted(fcm_traps, key=lambda t: parse_trap_num(t.get("trap_number") or "0"))
-    GHS = list(range(1, 20))  # GH 01 – GH 19
+
+    # Dynamic greenhouse range — derived from the traps actually configured for
+    # this farm, not hard-coded. Fallback to union of GHs that appear in
+    # scouting data for the Scouting Summary sheet.
+    gh_nums = set()
+    for t in sorted_traps:
+        n = gh_from_trap(t.get("trap_number") or "0")
+        if n:
+            gh_nums.add(n)
+    for r in plant_pests:
+        n = gh_from_warehouse(r.greenhouse)
+        if n:
+            gh_nums.add(n)
+    for r in fcm_larvae_raw:
+        n = gh_from_warehouse(r.greenhouse)
+        if n:
+            gh_nums.add(n)
+    GHS = sorted(gh_nums) if gh_nums else []
 
     # -----------------------------------------------------------------------
     # Style factories
@@ -277,11 +296,14 @@ def _build_workbook_bytes():
     hdr_fnt  = mk_font(bold=True, color="FFFFFF")
     bold_fnt = mk_font(bold=True)
     data_fnt = mk_font()
+    italic_note_fnt = Font(name="Calibri", italic=True, color="666666", size=11)
 
     thin_brd   = mk_border()
     c_align    = Alignment(horizontal="center", vertical="center", wrap_text=True)
     l_align    = Alignment(horizontal="left",   vertical="center")
     r_align    = Alignment(horizontal="right",  vertical="center")
+
+    farm_title = (farm_display or "").upper() or "-"
 
     # -----------------------------------------------------------------------
     # Create workbook
@@ -300,7 +322,10 @@ def _build_workbook_bytes():
     ws1["A1"] = "Production Site Name"; ws1["A1"].font = bold_fnt
     ws1["E1"] = "Year";                 ws1["E1"].font = bold_fnt
     ws1["F1"] = current_year
-    ws1["A2"] = "CHEPSITO";            ws1["A2"].font = mk_font(bold=True, size=14)
+    ws1["A2"] = farm_title;             ws1["A2"].font = mk_font(bold=True, size=14)
+    if kephis_id:
+        ws1["C2"] = f"KEPHIS ID: {kephis_id}"
+        ws1["C2"].font = bold_fnt
     ws1["A3"] = "Share the FCM data via email rosafcmdata@kephis.org"
     ws1["A4"] = "Instructions: "
     ws1["A5"] = "(a) The number of traps depends on the size of the farm at a density of 4 traps per Ha."
@@ -400,9 +425,10 @@ def _build_workbook_bytes():
             c.alignment = r_align
         ws1.cell(row=cur1, column=1).value = "WEEK TOTAL"
         ws1.cell(row=cur1, column=1).alignment = l_align
-        ws1.cell(row=cur1, column=7).value = f"=SUM(G{wk_start}:G{wk_end})"
-        ws1.cell(row=cur1, column=8).value = f"=SUM(H{wk_start}:H{wk_end})"
-        ws1.cell(row=cur1, column=9).value = f"=SUM(I{wk_start}:I{wk_end})"
+        if wk_end >= wk_start:
+            ws1.cell(row=cur1, column=7).value = f"=SUM(G{wk_start}:G{wk_end})"
+            ws1.cell(row=cur1, column=8).value = f"=SUM(H{wk_start}:H{wk_end})"
+            ws1.cell(row=cur1, column=9).value = f"=SUM(I{wk_start}:I{wk_end})"
         cur1 += 2  # blank separator row between weeks
 
     # ===================================================================
@@ -415,7 +441,7 @@ def _build_workbook_bytes():
     ws2["A1"] = "Production Site Name"; ws2["A1"].font = bold_fnt
     ws2["E1"] = "Year";                 ws2["E1"].font = bold_fnt
     ws2["F1"] = current_year
-    ws2["A2"] = "CHEPSITO";            ws2["A2"].font = mk_font(bold=True, size=14)
+    ws2["A2"] = farm_title;             ws2["A2"].font = mk_font(bold=True, size=14)
 
     ws2.merge_cells("A3:M3")
     ws2["A3"] = f"LIGHT AND PHEROMONE TRAPS INSECT/MOTH TOTAL COUNTS SUMMARY/ANALYSIS {current_year}"
@@ -481,155 +507,202 @@ def _build_workbook_bytes():
         cur2 += 1
 
     # ===================================================================
-    # SHEETS 3 & 4 – Scouting Summary / Intake QC Report
+    # SHEET 3 – Scouting Summary  (plant-level pests)
     # ===================================================================
-    for sheet_name in ("Scouting Summary", "Intake QC Report"):
-        ws = wb.create_sheet(sheet_name)
-        for i, w in enumerate([22, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 32], 1):
-            ws.column_dimensions[get_column_letter(i)].width = w
+    ws3 = wb.create_sheet("Scouting Summary")
+    for i, w in enumerate([22, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 32], 1):
+        ws3.column_dimensions[get_column_letter(i)].width = w
 
-        ws["A1"] = "Production Site Name"; ws["A1"].font = bold_fnt
-        ws["E1"] = "Year";                 ws["E1"].font = bold_fnt
-        ws["F1"] = current_year
-        ws["A2"] = "CHEPSITO";            ws["A2"].font = mk_font(bold=True, size=14)
+    ws3["A1"] = "Production Site Name"; ws3["A1"].font = bold_fnt
+    ws3["E1"] = "Year";                 ws3["E1"].font = bold_fnt
+    ws3["F1"] = current_year
+    ws3["A2"] = farm_title;             ws3["A2"].font = mk_font(bold=True, size=14)
 
-        # Pest group headers (row 3)
-        for rng, label, hex_c in [("C3:E3", "FCM", DARK_BLUE), ("F3:H3", "Helicoverpa", MID_BLUE), ("I3:K3", "Others", DARK_GREEN)]:
-            ws.merge_cells(rng)
-            cell_ref = rng.split(":")[0]
-            ws[cell_ref] = label
-            ws[cell_ref].font    = hdr_fnt
-            ws[cell_ref].fill    = mk_fill(hex_c)
-            ws[cell_ref].alignment = c_align
+    # Pest group headers (row 3)
+    for rng, label, hex_c in [("C3:E3", "FCM", DARK_BLUE), ("F3:H3", "Helicoverpa", MID_BLUE), ("I3:K3", "Others", DARK_GREEN)]:
+        ws3.merge_cells(rng)
+        cell_ref = rng.split(":")[0]
+        ws3[cell_ref] = label
+        ws3[cell_ref].font    = hdr_fnt
+        ws3[cell_ref].fill    = mk_fill(hex_c)
+        ws3[cell_ref].alignment = c_align
 
-        # Column headers (row 4)
-        _h3 = [
-            "Period", "GH No.",
-            "Eggs", "Larvae", "Damages",
-            "Eggs", "Larvae", "Damages",
-            "Eggs", "Larvae", "Damages",
-            "Remarks (Corrective action)",
-        ]
-        ws.row_dimensions[3].height = 20
-        ws.row_dimensions[4].height = 20
-        for col, hdr in enumerate(_h3, 1):
-            c = ws.cell(row=4, column=col, value=hdr)
-            c.font = hdr_fnt; c.fill = dark_fill; c.border = thin_brd; c.alignment = c_align
-
-        cur3 = 5
-        for week_num in all_weeks:
-            try:
-                wk_mon, wk_sun = iso_week_range(current_year, week_num)
-            except Exception:
-                continue
-
-            is_last = (week_num == last_week_num)
-            w_fill3  = green_fill if is_last else None
-
-            from_s = f"FROM: {human_date(wk_mon)}"
-            to_s   = f"TO: {human_date(wk_sun)}"
-            wk_lbl = f"Week {week_num:02d}"
-
-            for idx, gh in enumerate(GHS):
-                period = wk_lbl if idx == 0 else (from_s if idx == 1 else (to_s if idx == 2 else None))
-
-                row_d = [
-                    period, gh,
-                    scouting_map.get((week_num, gh, "FCM",        "eggs"),    0),
-                    scouting_map.get((week_num, gh, "FCM",        "larvae"),  0),
-                    scouting_map.get((week_num, gh, "FCM",        "damages"), 0),
-                    scouting_map.get((week_num, gh, "Helicoverpa","eggs"),    0),
-                    scouting_map.get((week_num, gh, "Helicoverpa","larvae"),  0),
-                    scouting_map.get((week_num, gh, "Helicoverpa","damages"), 0),
-                    scouting_map.get((week_num, gh, "Others",     "eggs"),    0),
-                    scouting_map.get((week_num, gh, "Others",     "larvae"),  0),
-                    scouting_map.get((week_num, gh, "Others",     "damages"), 0),
-                    None,
-                ]
-                for col, val in enumerate(row_d, 1):
-                    c = ws.cell(row=cur3, column=col, value=val)
-                    c.font  = data_fnt; c.border = thin_brd
-                    if w_fill3:
-                        c.fill = w_fill3
-                    c.alignment = r_align if 3 <= col <= 11 else l_align
-                cur3 += 1
-
-    # ===================================================================
-    # SHEET 5 – Variety List  (static)
-    # ===================================================================
-    ws5 = wb.create_sheet("Variety List")
-    ws5["A1"] = "Production Site Name"; ws5["A1"].font = bold_fnt
-    ws5["A3"] = "Greenhouse #";         ws5["A3"].font = bold_fnt
-    ws5["B3"] = "Varieties per greenhouse"; ws5["B3"].font = bold_fnt
-
-    _varieties = [
-        (1, "ATHENA"), (1, "SNOW STORM"),
-        (2, "MADAM RED"), (3, "MADAM RED"),
-        (4, "ATHENA"), (5, "SMOOTHIE"),
-        (6, "TAPDANCE"), (7, "MADAM RED"),
-        (8, "TROPICAL AMAZONE"), (9, "ATHENA"),
-        (10, "ATHENA"), (11, "TROPICAL AMAZONE"),
-        (12, "AQUA"), (13, "ATHENA"),
-        (14, "MOONWALK"), (15, "MOONWALK"),
-        (16, "ATHENA"), (17, "FURIOSA"),
-        (18, "AQUA"), (18, "COPACABANA"), (18, "MADAM RED"),
-        (19, "MOONWALK"),
+    _h3 = [
+        "Period", "GH No.",
+        "Eggs", "Larvae", "Damages",
+        "Eggs", "Larvae", "Damages",
+        "Eggs", "Larvae", "Damages",
+        "Remarks (Corrective action)",
     ]
-    _prev_gh = None
-    for r5, (gh, variety) in enumerate(_varieties, 4):
-        ws5.cell(row=r5, column=1, value=gh if gh != _prev_gh else None)
-        ws5.cell(row=r5, column=2, value=variety)
-        _prev_gh = gh
-
-    # ===================================================================
-    # SHEET 6 – FCM Risk profiling  (static)
-    # ===================================================================
-    ws6 = wb.create_sheet("FCM Risk profiling")
-    ws6["A1"] = "Production Site Name"; ws6["A1"].font = bold_fnt
-    ws6["C1"] = "CHEPSITO"
-    ws6["D1"] = "Month/Year";           ws6["D1"].font = bold_fnt
-    ws6["E1"] = today.strftime("%B").upper()
-
-    ws6.merge_cells("B3:E3")
-    ws6["B3"] = "FCM RISK PROFILE PER VARIETY"
-    ws6["B3"].font = bold_fnt
-
-    _rh = ["NO.", "VARIETY", "LEVEL OF SUSCEPTIBILITY (SCORES)", "CATEGORY", "CORRECTIVE ACTION"]
-    for col, hdr in enumerate(_rh, 1):
-        c = ws6.cell(row=4, column=col, value=hdr)
+    ws3.row_dimensions[3].height = 20
+    ws3.row_dimensions[4].height = 20
+    for col, hdr in enumerate(_h3, 1):
+        c = ws3.cell(row=4, column=col, value=hdr)
         c.font = hdr_fnt; c.fill = dark_fill; c.border = thin_brd; c.alignment = c_align
 
-    _risk = [
-        (15, "MOONWALK", 10, "HIGH RISK"),
-        (5,  "SMOOTHIE", 8,  "HIGH RISK"),
-        (9,  "ATHENA",   8,  "HIGH RISK"),
-        (3,  "MADAM RED", 3, "LOW RISK"),
-        (19, "MOONWALK", 3,  "LOW RISK"),
-        (1,  "ATHENA, SNOWSTORM", 2, "LOW RISK"),
-        (6,  "TAP DANCE", 2,  "LOW RISK"),
-        (8,  "TROPICAL AMAZONE", 2, "LOW RISK"),
-        (10, "ATHENA",   2,  "LOW RISK"),
-        (11, "TROPICAL AMAZONE", 2, "LOW RISK"),
-        (2,  "MADAM RED", 1, "LOW RISK"),
-        (4,  "ATHENA",   1,  "LOW RISK"),
-        (7,  "UPPER CLASS", 1,"LOW RISK"),
-        (12, "AQUA",     1,  "LOW RISK"),
-        (13, "ATHENA",   1,  "LOW RISK"),
-        (14, "MOONWALK", 1,  "LOW RISK"),
-        (16, "ATHENA",   1,  "LOW RISK"),
-        (17, "FURIOSA",  1,  "LOW RISK"),
-        (18, "COPACABANA, AQUA, MADAM RED", 1, "LOW RISK"),
-    ]
-    for i, (gh, variety, score, category) in enumerate(_risk, 5):
-        ws6.cell(row=i, column=1, value=gh)
-        ws6.cell(row=i, column=2, value=variety)
-        ws6.cell(row=i, column=3, value=score)
-        ws6.cell(row=i, column=4, value=category)
+    cur3 = 5
+    for week_num in all_weeks:
+        try:
+            wk_mon, wk_sun = iso_week_range(current_year, week_num)
+        except Exception:
+            continue
 
-    note_row = len(_risk) + 6
-    ws6.cell(row=note_row,     column=2, value="1 - Low susceptible variety")
-    ws6.cell(row=note_row + 1, column=2, value="2 - Medium susceptible variety")
-    ws6.cell(row=note_row + 2, column=2, value="3 - Highly susceptible variety")
+        is_last = (week_num == last_week_num)
+        w_fill3  = green_fill if is_last else None
+
+        from_s = f"FROM: {human_date(wk_mon)}"
+        to_s   = f"TO: {human_date(wk_sun)}"
+        wk_lbl = f"Week {week_num:02d}"
+
+        for idx, gh in enumerate(GHS):
+            period = wk_lbl if idx == 0 else (from_s if idx == 1 else (to_s if idx == 2 else None))
+
+            row_d = [
+                period, gh,
+                scouting_map.get((week_num, gh, "FCM",        "eggs"),    0),
+                scouting_map.get((week_num, gh, "FCM",        "larvae"),  0),
+                scouting_map.get((week_num, gh, "FCM",        "damages"), 0),
+                scouting_map.get((week_num, gh, "Helicoverpa","eggs"),    0),
+                scouting_map.get((week_num, gh, "Helicoverpa","larvae"),  0),
+                scouting_map.get((week_num, gh, "Helicoverpa","damages"), 0),
+                scouting_map.get((week_num, gh, "Others",     "eggs"),    0),
+                scouting_map.get((week_num, gh, "Others",     "larvae"),  0),
+                scouting_map.get((week_num, gh, "Others",     "damages"), 0),
+                None,
+            ]
+            for col, val in enumerate(row_d, 1):
+                c = ws3.cell(row=cur3, column=col, value=val)
+                c.font  = data_fnt; c.border = thin_brd
+                if w_fill3:
+                    c.fill = w_fill3
+                c.alignment = r_align if 3 <= col <= 11 else l_align
+            cur3 += 1
+
+    # ===================================================================
+    # SHEET 4 – Intake QC Report  (intentionally empty — AI not integrated)
+    # ===================================================================
+    ws4 = wb.create_sheet("Intake QC Report")
+    ws4.column_dimensions["A"].width = 22
+    ws4["A1"] = "Production Site Name"; ws4["A1"].font = bold_fnt
+    ws4["E1"] = "Year";                 ws4["E1"].font = bold_fnt
+    ws4["F1"] = current_year
+    ws4["A2"] = farm_title;             ws4["A2"].font = mk_font(bold=True, size=14)
+    ws4["A4"] = "Intake QC data will appear here once AI-based intake inspection is integrated."
+    ws4["A4"].font = italic_note_fnt
+
+    # ===================================================================
+    # SHEET 5 – Variety List  (intentionally empty — pending live integration)
+    # ===================================================================
+    ws5 = wb.create_sheet("Variety List")
+    ws5.column_dimensions["A"].width = 22
+    ws5.column_dimensions["B"].width = 36
+    ws5["A1"] = "Production Site Name"; ws5["A1"].font = bold_fnt
+    ws5["E1"] = "Year";                 ws5["E1"].font = bold_fnt
+    ws5["F1"] = current_year
+    ws5["A2"] = farm_title;             ws5["A2"].font = mk_font(bold=True, size=14)
+    ws5["A4"] = "Variety-per-greenhouse data will appear here once integrated with the live farm records."
+    ws5["A4"].font = italic_note_fnt
+
+    # ===================================================================
+    # SHEET 6 – FCM Risk profiling  (intentionally empty — AI not integrated)
+    # ===================================================================
+    ws6 = wb.create_sheet("FCM Risk profiling")
+    ws6.column_dimensions["A"].width = 22
+    ws6.column_dimensions["B"].width = 36
+    ws6["A1"] = "Production Site Name"; ws6["A1"].font = bold_fnt
+    ws6["C1"] = farm_title
+    ws6["D1"] = "Month/Year";           ws6["D1"].font = bold_fnt
+    ws6["E1"] = today.strftime("%B").upper()
+    ws6["A4"] = "FCM risk profiling will appear here once AI-based risk scoring is integrated."
+    ws6["A4"].font = italic_note_fnt
+
+    # ===================================================================
+    # SHEET 7 – Scouting Records  (audit trail — who/what/when per entry)
+    # ===================================================================
+    ws7 = wb.create_sheet("Scouting Records")
+    _widths7 = [8, 13, 10, 26, 30, 16, 16, 12, 12, 16, 12, 14, 18, 10, 26]
+    for i, w in enumerate(_widths7, 1):
+        ws7.column_dimensions[get_column_letter(i)].width = w
+
+    ws7["A1"] = "Production Site Name"; ws7["A1"].font = bold_fnt
+    ws7["E1"] = "Year";                 ws7["E1"].font = bold_fnt
+    ws7["F1"] = current_year
+    ws7["A2"] = farm_title;             ws7["A2"].font = mk_font(bold=True, size=14)
+    ws7["A3"] = (
+        "Audit trail: every pest and trap observation that feeds the summary "
+        "sheets above. Use the 'Scouting Entry' column to open the source document."
+    )
+    ws7["A3"].font = italic_note_fnt
+    ws7.merge_cells("A3:O3")
+
+    _h7 = [
+        "Week", "Date", "Time", "Scout",
+        "Greenhouse", "Bed", "Zone", "Block", "Row", "Tree",
+        "Type", "Trap / Location", "Pest", "Count", "Scouting Entry",
+    ]
+    ws7.row_dimensions[5].height = 32
+    for col, hdr in enumerate(_h7, 1):
+        c = ws7.cell(row=5, column=col, value=hdr)
+        c.font = hdr_fnt; c.fill = dark_fill; c.border = thin_brd; c.alignment = c_align
+
+    week_set = set(all_weeks)
+    cur7 = 6
+    for rec in records:
+        wk = rec.get("wk")
+        if wk is None or wk not in week_set:
+            # Skip weeks outside the reporting range (e.g. future weeks).
+            continue
+
+        is_last = (wk == last_week_num)
+        w_fill7 = green_fill if is_last else None
+
+        entry_type = rec.get("entry_type") or ""
+        if entry_type == "Trap":
+            # For trap entries, show "TrapNo — Location" so readers can
+            # reconcile with the FCM Daily sheet at a glance.
+            trap_label = rec.get("trap") or ""
+            loc_label  = rec.get("stage_or_location") or ""
+            trap_loc = " — ".join(x for x in (trap_label, loc_label) if x)
+            stage_lbl = ""
+        else:
+            trap_loc  = ""
+            stage_lbl = rec.get("stage_or_location") or ""
+
+        pest_lbl = rec.get("pest") or ""
+        if entry_type == "Plant" and stage_lbl:
+            pest_lbl = f"{pest_lbl} ({stage_lbl})" if pest_lbl else stage_lbl
+
+        vals = [
+            f"WK {wk:02d}",
+            rec.get("date_of_capture"),
+            str(rec.get("time_of_capture") or ""),
+            rec.get("scout") or "",
+            rec.get("greenhouse") or "",
+            rec.get("bed") or "",
+            rec.get("zone") or "",
+            rec.get("block") or "",
+            rec.get("row") or "",
+            rec.get("tree") or "",
+            entry_type,
+            trap_loc,
+            pest_lbl,
+            safe_int(rec.get("count")),
+            rec.get("scouting_entry") or "",
+        ]
+        for col, val in enumerate(vals, 1):
+            c = ws7.cell(row=cur7, column=col, value=val)
+            c.font  = data_fnt; c.border = thin_brd
+            if w_fill7:
+                c.fill = w_fill7
+            c.alignment = r_align if col == 14 else l_align
+        cur7 += 1
+
+    if cur7 == 6:
+        # No records at all — leave a friendly note so the sheet isn't blank.
+        ws7.cell(row=6, column=1, value="No scouting entries recorded for this farm in the reporting period.")
+        ws7.cell(row=6, column=1).font = italic_note_fnt
+
+    ws7.freeze_panes = "A6"
 
     # ===================================================================
     # Save workbook → bytes buffer
@@ -639,9 +712,10 @@ def _build_workbook_bytes():
     buf.seek(0)
     excel_bytes = buf.read()
 
-    fname = f"CHEPSITO_FCM_Weekly_Report_{current_year}_W{last_week_num:02d}.xlsx"
+    fname_prefix = (abbrev or farm_display or "FCM").replace(" ", "_").upper()
+    fname = f"{fname_prefix}_FCM_Weekly_Report_{current_year}_W{last_week_num:02d}.xlsx"
 
-    return excel_bytes, fname, current_year, week_range_str, last_week_num
+    return excel_bytes, fname, current_year, week_range_str, last_week_num, farm_display
 
 
 # ---------------------------------------------------------------------------
@@ -666,18 +740,21 @@ def _recipients():
     return default
 
 
-def _build_email_html(week_range_str, current_year):
+def _build_email_html(week_range_str, current_year, farm_display, kephis_id):
+    site_line = farm_display or "-"
+    if kephis_id:
+        site_line = f"{farm_display} ({kephis_id})"
     return f"""
     <div style="font-family:Arial,sans-serif;font-size:14px;color:#333;max-width:640px;">
       <div style="background:#0D2B5E;padding:22px 28px;margin-bottom:20px;border-radius:4px;">
         <div style="font-size:20px;font-weight:700;color:#fff;">FCM Weekly Monitoring Report</div>
         <div style="font-size:13px;color:#c8d8f0;margin-top:4px;">
-          KEPHIS Site: CHEPSITO (KE0300809046) &mdash; {week_range_str} &mdash; {current_year}
+          KEPHIS Site: {site_line} &mdash; {week_range_str} &mdash; {current_year}
         </div>
       </div>
       <p>Hi Team,</p>
       <p>Please find attached the <strong>KEPHIS FCM Weekly Monitoring Report</strong>
-         for <strong>{week_range_str}</strong>.</p>
+         for <strong>{farm_display}</strong>, covering <strong>{week_range_str}</strong>.</p>
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;">
         <tr style="background:#0D2B5E;color:#fff;">
           <th style="padding:8px 12px;text-align:left;">Sheet</th>
@@ -697,25 +774,31 @@ def _build_email_html(week_range_str, current_year):
         </tr>
         <tr>
           <td style="padding:7px 12px;border-bottom:1px solid #dde;">Intake QC Report</td>
-          <td style="padding:7px 12px;border-bottom:1px solid #dde;">Same data for QC reference</td>
+          <td style="padding:7px 12px;border-bottom:1px solid #dde;"><em>Empty — pending AI integration</em></td>
         </tr>
         <tr style="background:#f4f6fb;">
           <td style="padding:7px 12px;border-bottom:1px solid #dde;">Variety List</td>
-          <td style="padding:7px 12px;border-bottom:1px solid #dde;">Greenhouse &rarr; variety assignments</td>
+          <td style="padding:7px 12px;border-bottom:1px solid #dde;"><em>Empty — pending live variety integration</em></td>
         </tr>
         <tr>
-          <td style="padding:7px 12px;">FCM Risk profiling</td>
-          <td style="padding:7px 12px;">Risk scores per variety</td>
+          <td style="padding:7px 12px;border-bottom:1px solid #dde;">FCM Risk profiling</td>
+          <td style="padding:7px 12px;border-bottom:1px solid #dde;"><em>Empty — pending AI integration</em></td>
+        </tr>
+        <tr style="background:#f4f6fb;">
+          <td style="padding:7px 12px;">Scouting Records</td>
+          <td style="padding:7px 12px;">Per-entry audit trail — who scouted, when, what was recorded</td>
         </tr>
       </table>
       <p style="font-size:13px;color:#555;">
         <strong>Last week&rsquo;s rows are highlighted in green</strong> throughout all data sheets.
+        Use the <strong>Scouting Records</strong> sheet to trace any summary number back to
+        the scout and scouting entry that produced it.
       </p>
       <p>Regards,<br>Upande Crop-Protection System</p>
       <hr style="border:none;border-top:1px solid #ddd;margin:20px 0;">
       <p style="font-size:11px;color:#999;">
         Report generated: {frappe.utils.now()}<br>
-        KEPHIS Site ID: KE0300809046 &mdash; CHEPSITO<br>
+        Site: {site_line}<br>
         Data covers all scouting entries for {current_year}.
       </p>
     </div>
@@ -727,48 +810,133 @@ def _build_email_html(week_range_str, current_year):
 # ---------------------------------------------------------------------------
 
 def send_fcm_weekly_excel_report():
-    """Scheduler entry point — builds the workbook, emails it with attachment."""
-    excel_bytes, fname, current_year, week_range_str, _ = _build_workbook_bytes()
-    if excel_bytes is None:
-        _send_no_data_email(current_year, week_range_str)
+    """Scheduler entry point — one workbook emailed per farm with data."""
+    current_year = date.today().year
+    farms = _farms_with_data(current_year)
+
+    if not farms:
+        _send_no_data_email(current_year, _week_range_str_now(), farm_display=None)
         return
 
     recipients = _recipients()
-    frappe.sendmail(
-        recipients=recipients,
-        subject=f"FCM Weekly Monitoring Report — {week_range_str} ({current_year})",
-        message=_build_email_html(week_range_str, current_year),
-        attachments=[{"fname": fname, "fcontent": excel_bytes}],
-    )
-    frappe.logger().info(
-        f"FCM Weekly Excel Report sent for {week_range_str} → {recipients}"
-    )
+    sent = 0
+    for farm in farms:
+        excel_bytes, fname, _, week_range_str, _, farm_display = _build_workbook_bytes(farm)
+        if excel_bytes is None:
+            continue
+        _, kephis_id, _ = _resolve_farm(farm)
+        frappe.sendmail(
+            recipients=recipients,
+            subject=f"FCM Weekly Monitoring Report — {farm_display} — {week_range_str} ({current_year})",
+            message=_build_email_html(week_range_str, current_year, farm_display, kephis_id),
+            attachments=[{"fname": fname, "fcontent": excel_bytes}],
+        )
+        sent += 1
+        frappe.logger().info(
+            f"FCM Weekly Excel Report sent for {farm_display} ({week_range_str}) → {recipients}"
+        )
+
+    if sent == 0:
+        _send_no_data_email(current_year, _week_range_str_now(), farm_display=None)
 
 
 @frappe.whitelist()
-def trigger_fcm_email():
-    """On-demand 'Send now' trigger from the Scouting Reports page."""
+def trigger_fcm_email(farm=None):
+    """On-demand 'Send now' trigger from the Scouting Reports page.
+
+    When ``farm`` is provided the email is limited to that farm; otherwise
+    every farm with data is sent (same behaviour as the scheduler).
+    """
+    if farm:
+        current_year = date.today().year
+        excel_bytes, fname, _, week_range_str, _, farm_display = _build_workbook_bytes(farm)
+        if excel_bytes is None:
+            _send_no_data_email(current_year, week_range_str, farm_display=farm_display)
+            return {"ok": False, "farm": farm_display, "reason": "no data"}
+        _, kephis_id, _ = _resolve_farm(farm)
+        frappe.sendmail(
+            recipients=_recipients(),
+            subject=f"FCM Weekly Monitoring Report — {farm_display} — {week_range_str} ({current_year})",
+            message=_build_email_html(week_range_str, current_year, farm_display, kephis_id),
+            attachments=[{"fname": fname, "fcontent": excel_bytes}],
+        )
+        return {"ok": True, "farm": farm_display, "recipients": _recipients()}
+
     send_fcm_weekly_excel_report()
     return {"ok": True, "recipients": _recipients()}
 
 
-@frappe.whitelist()
-def download_fcm_xlsx():
-    """Stream the freshly-built xlsx back as a browser download."""
-    excel_bytes, fname, current_year, _, _ = _build_workbook_bytes()
+def save_fcm_xlsx_to_path(path, farm):
+    """Build the report for ``farm`` and write it to ``path`` on disk.
+
+    Intended for ad-hoc use (e.g. ``bench execute`` to generate a sample for
+    doc references). Returns the filename written, or raises if no data.
+    """
+    import os
+
+    excel_bytes, fname, current_year, _, _, farm_display = _build_workbook_bytes(farm)
     if excel_bytes is None:
-        frappe.throw(f"No trap scouting data found for {current_year}. Report not generated.")
+        frappe.throw(
+            f"No scouting data found for {farm_display or farm} in {current_year}. "
+            f"Report not generated."
+        )
+
+    target = os.path.join(path, fname) if os.path.isdir(path) else path
+    with open(target, "wb") as f:
+        f.write(excel_bytes)
+    return target
+
+
+@frappe.whitelist()
+def download_fcm_xlsx(farm):
+    """Stream the freshly-built xlsx back as a browser download."""
+    if not farm:
+        frappe.throw("A farm must be supplied to download the FCM weekly report.")
+    excel_bytes, fname, current_year, _, _, farm_display = _build_workbook_bytes(farm)
+    if excel_bytes is None:
+        frappe.throw(
+            f"No scouting data found for {farm_display or farm} in {current_year}. "
+            f"Report not generated."
+        )
     frappe.local.response.filename = fname
     frappe.local.response.filecontent = excel_bytes
     frappe.local.response.type = "download"
+
+
+@frappe.whitelist()
+def list_farms_with_data(year=None):
+    """Return farms that have scouting data for the given (or current) year.
+
+    Used by the Scouting Reports page to populate a farm selector before
+    triggering a send/download.
+    """
+    current_year = int(year) if year else date.today().year
+    farms = _farms_with_data(current_year)
+    out = []
+    for f in farms:
+        display, kephis, abbrev = _resolve_farm(f)
+        out.append({
+            "farm": f,
+            "display": display,
+            "kephis_farm_id": kephis,
+            "abbreviation": abbrev,
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _send_no_data_email(current_year, week_range_str):
-    """Send a brief notice when no trap data exists for the year."""
+def _week_range_str_now():
+    today = date.today()
+    last_week_mon = today - timedelta(days=today.weekday() + 7)
+    last_week_sun = last_week_mon + timedelta(days=6)
+    return last_week_mon.strftime("%d %b") + " - " + last_week_sun.strftime("%d %b %Y")
+
+
+def _send_no_data_email(current_year, week_range_str, farm_display=None):
+    """Send a brief notice when no scouting data exists."""
     recipients = ["stephenechikoi@gmail.com"]
     try:
         report_settings = frappe.get_single("Trap Report Settings")
@@ -782,12 +950,13 @@ def _send_no_data_email(current_year, week_range_str):
     except Exception:
         pass
 
+    who = f" for {farm_display}" if farm_display else ""
     frappe.sendmail(
         recipients=recipients,
-        subject=f"FCM Weekly Report — No Data ({week_range_str})",
+        subject=f"FCM Weekly Report — No Data{who} ({week_range_str})",
         message=(
             f"<p>Hi Team,</p>"
-            f"<p>No trap scouting data found for {current_year}. "
+            f"<p>No scouting data found{who} for {current_year}. "
             f"The FCM weekly Excel report was not generated.</p>"
             f"<p>Regards,<br>Upande System</p>"
         ),

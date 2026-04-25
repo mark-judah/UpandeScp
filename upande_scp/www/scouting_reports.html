@@ -70,7 +70,13 @@
 				</div>
 				<div class="sr-card-body">
 					<div class="sr-card-title">KEPHIS FCM Weekly Report</div>
-					<div class="sr-card-sub">Official 6-sheet KEPHIS Excel (FCM daily monitoring, weekly summary, scouting/intake QC, variety list, risk profile). Emailed with .xlsx attachment.</div>
+					<div class="sr-card-sub">Per-farm 7-sheet KEPHIS Excel (FCM daily monitoring, weekly summary, scouting summary, scouting records audit trail, plus placeholders for intake QC, variety list, risk profile). Emailed with .xlsx attachment.</div>
+					<label class="sr-field">
+						<span class="sr-field-lbl">Farm</span>
+						<select class="sr-select" data-farm-select="email-fcm">
+							<option value="">All farms with data</option>
+						</select>
+					</label>
 				</div>
 				<button class="sr-btn sr-btn-primary" data-action="email-fcm">Send email now</button>
 			</div>
@@ -112,7 +118,13 @@
 				</div>
 				<div class="sr-card-body">
 					<div class="sr-card-title">KEPHIS FCM Weekly Report <span class="sr-fmt sr-fmt-xlsx">XLSX</span></div>
-					<div class="sr-card-sub">Same 6-sheet Excel file that's emailed weekly — download it any time.</div>
+					<div class="sr-card-sub">Same per-farm 7-sheet Excel that's emailed weekly — pick a farm and download.</div>
+					<label class="sr-field">
+						<span class="sr-field-lbl">Farm</span>
+						<select class="sr-select" data-farm-select="dl-fcm">
+							<option value="">Select a farm…</option>
+						</select>
+					</label>
 				</div>
 				<button class="sr-btn sr-btn-secondary" data-action="dl-fcm">Download XLSX</button>
 			</div>

@@ -41,6 +41,11 @@ K_FARMS_AND_GREENHOUSES = "scp:farms_and_greenhouses_v1"
 K_AFP_WAREHOUSES = "scp:afp_warehouses_v1"
 K_AFP_SPRAY_EQUIPMENT = "scp:afp_spray_equipment_v1"
 K_CHEMICALS_LIST = "scp:chemicals_list_v1"
+K_SM_FARMS_AND_GHS = "scp:sm_farms_and_ghs_v1"
+K_SM_BEDS_BY_GH = "scp:sm_beds_by_gh_v1"
+K_SM_ZONES_BY_GH = "scp:sm_zones_by_gh_v1"
+K_SM_ZONE_COUNTS_BY_GH = "scp:sm_zone_counts_by_gh_v1"
+K_SM_TRAPS_BY_GH = "scp:sm_traps_by_gh_v1"
 
 
 # ── Builders (canonical queries used across endpoints) ─────────────────────
@@ -145,10 +150,11 @@ _DOC_INVALIDATIONS = {
     "Pests Stages": (K_OBSERVATION_TYPES,),
     "Disease Stages": (K_OBSERVATION_TYPES,),
     "Predator Stages": (K_OBSERVATION_TYPES,),
-    "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES),
-    "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES),
-    "Warehouse": (K_GREENHOUSES_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES),
-    "Farm": (K_FARMS_AND_GREENHOUSES,),
+    "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH),
+    "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_SM_BEDS_BY_GH),
+    "Warehouse": (K_GREENHOUSES_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS),
+    "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS),
+    "Trap": (K_SM_TRAPS_BY_GH,),
     "Spray Equipment Details": (K_AFP_SPRAY_EQUIPMENT,),
     "Item": (K_CHEMICALS_LIST,),
 }

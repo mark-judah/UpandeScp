@@ -17,6 +17,7 @@
 		"dl-daily":     "upande_scp.serverscripts.send_daily_scouting_report.download_daily_pdf",
 		"dl-weekly":    "upande_scp.serverscripts.send_weekly_trap_report.download_weekly_pdf",
 		"dl-fcm":       "upande_scp.serverscripts.send_fcm_weekly_excel_report.download_fcm_xlsx",
+		"list-fcm-farms": "upande_scp.serverscripts.send_fcm_weekly_excel_report.list_farms_with_data",
 	};
 
 	var LABELS = {
@@ -67,6 +68,40 @@
 		return meta ? meta.getAttribute("content") : "";
 	}
 
+	/* ── Farm-select helpers ── */
+	function getFarmFor(action) {
+		var sel = root.querySelector('[data-farm-select="' + action + '"]');
+		return sel ? sel.value : "";
+	}
+
+	function populateFarmSelectors() {
+		var selects = root.querySelectorAll("select[data-farm-select]");
+		if (!selects.length) return;
+		fetch("/api/method/" + API["list-fcm-farms"], {
+			method: "POST",
+			headers: {
+				"X-Frappe-CSRF-Token": csrfToken(),
+				"X-Requested-With": "XMLHttpRequest",
+				"Accept": "application/json",
+			},
+			credentials: "same-origin",
+		})
+			.then(function (r) { return r.ok ? r.json() : { message: [] }; })
+			.then(function (json) {
+				var farms = (json && json.message) || [];
+				if (!farms.length) return;
+				selects.forEach(function (sel) {
+					farms.forEach(function (f) {
+						var opt = document.createElement("option");
+						opt.value = f.farm;
+						opt.textContent = f.display + (f.kephis_farm_id ? " — " + f.kephis_farm_id : "");
+						sel.appendChild(opt);
+					});
+				});
+			})
+			.catch(function () { /* silent — selects stay on defaults */ });
+	}
+
 	/* ── Trigger (email) handler ── */
 	function triggerEmail(action, btn) {
 		var method = API[action];
@@ -74,13 +109,22 @@
 		setBusy(btn, "Queuing email…");
 		showStatus("Sending " + label + " email…", "info");
 
+		var body = null;
+		var headers = {
+			"X-Frappe-CSRF-Token": csrfToken(),
+			"X-Requested-With": "XMLHttpRequest",
+			"Accept": "application/json",
+		};
+		var farm = getFarmFor(action);
+		if (farm) {
+			headers["Content-Type"] = "application/x-www-form-urlencoded";
+			body = "farm=" + encodeURIComponent(farm);
+		}
+
 		fetch("/api/method/" + method, {
 			method: "POST",
-			headers: {
-				"X-Frappe-CSRF-Token": csrfToken(),
-				"X-Requested-With": "XMLHttpRequest",
-				"Accept": "application/json",
-			},
+			headers: headers,
+			body: body,
 			credentials: "same-origin",
 		})
 			.then(function (r) {
@@ -107,15 +151,31 @@
 	function downloadFile(action, btn) {
 		var method = API[action];
 		var label = LABELS[action];
+
+		var farm = getFarmFor(action);
+		var sel = root.querySelector('[data-farm-select="' + action + '"]');
+		if (sel && !farm) {
+			showStatus("Please choose a farm before downloading the FCM report.", "error");
+			return;
+		}
+
 		setBusy(btn, "Generating…");
 		showStatus("Generating " + label + "…", "info");
 
+		var headers = {
+			"X-Frappe-CSRF-Token": csrfToken(),
+			"X-Requested-With": "XMLHttpRequest",
+		};
+		var body = null;
+		if (farm) {
+			headers["Content-Type"] = "application/x-www-form-urlencoded";
+			body = "farm=" + encodeURIComponent(farm);
+		}
+
 		fetch("/api/method/" + method, {
 			method: "POST",
-			headers: {
-				"X-Frappe-CSRF-Token": csrfToken(),
-				"X-Requested-With": "XMLHttpRequest",
-			},
+			headers: headers,
+			body: body,
 			credentials: "same-origin",
 		})
 			.then(function (r) {
@@ -157,4 +217,6 @@
 			downloadFile(action, btn);
 		}
 	});
+
+	populateFarmSelectors();
 })();

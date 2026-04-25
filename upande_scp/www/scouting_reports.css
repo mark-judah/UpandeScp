@@ -285,6 +285,36 @@
 	to { transform: rotate(360deg); }
 }
 
+/* ── INLINE FARM SELECTOR (FCM cards) ── */
+#scouting-reports-root .sr-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-top: 10px;
+}
+#scouting-reports-root .sr-field-lbl {
+	font-size: 0.72rem;
+	font-weight: 600;
+	color: #6b7280;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+#scouting-reports-root .sr-select {
+	font-family: inherit;
+	font-size: 0.8125rem;
+	padding: 7px 10px;
+	border: 1px solid #d1d5db;
+	border-radius: 4px;
+	background: #fff;
+	color: #1f2937;
+	min-width: 200px;
+}
+#scouting-reports-root .sr-select:focus {
+	outline: none;
+	border-color: #0D2B5E;
+	box-shadow: 0 0 0 2px rgba(13, 43, 94, 0.12);
+}
+
 /* ── FOOTER NOTE ── */
 #scouting-reports-root .sr-note {
 	background: #f4f6fb;

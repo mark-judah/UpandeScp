@@ -212,17 +212,14 @@ def createScoutingEntry():
                     })
                     continue
 
-                # Tree is required when a row is provided (Block flow).
+                # Tree detection is best-effort in the Block flow — if no tree
+                # matches the GPS point (e.g. row has no trees with raw_geojson
+                # yet), persist the entry at block/row granularity without a tree.
                 if row_for_tree and not determined_tree:
-                    has_errors = True
-                    results.append({
-                        "status": "error",
-                        "message": f"Could not determine tree for row: {row_for_tree}. No tree geometry found.",
-                        "coordinates": f"({latitude}, {longitude})",
-                        "accuracy": accuracy,
-                        "row": row_for_tree,
-                    })
-                    continue
+                    frappe.log_error(
+                        "Scouting: tree not determined",
+                        f"row={row_for_tree} block={block} coords=({latitude},{longitude}) accuracy={accuracy}",
+                    )
 
                 requires_review = confidence < 0.5 and (determined_zone or determined_tree) is not None
 

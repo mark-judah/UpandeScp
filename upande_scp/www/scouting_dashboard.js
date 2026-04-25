@@ -47,6 +47,11 @@ var scoutingYearData = null;
 var greenhouseFilter = "";
 var farmFilter = "";
 var allGreenhouses = [];
+/* Canonical {farm: [greenhouse_name, ...]} map from scouting_metrics_api.
+   Populated by loadGreenhouseOptions; falls back to parsing the greenhouse
+   name for data that hasn't synced through yet. */
+var farmsAndGreenhouses = {};
+var greenhouseToFarm = {};
 var activeTab = "overview";          // default to overview on load
 var scoutingAnalysis = null;
 var observationColors = { pests: {}, diseases: {} };
@@ -77,6 +82,9 @@ function notifyUser(message) {
 function getFarmFromGreenhouseName(greenhouseName) {
 	var gh = (greenhouseName || "").toString().trim();
 	if (!gh) return "";
+	/* Canonical lookup first (custom_farm from Warehouse). */
+	if (greenhouseToFarm[gh]) return greenhouseToFarm[gh];
+	/* Fallback: parse the GH name (handles data the backend hasn't fed us yet). */
 	var match = gh.match(/^(.+?)\s+GH\s*\d+/i);
 	if (match && match[1]) return match[1].trim();
 	var parts = gh.split(/\s+GH\s+/i);
@@ -734,22 +742,34 @@ function fetchCompleteScoutingEntries(fromDate, toDate, greenhouse) {
 }
 
 function loadGreenhouseOptions() {
-	return callFrappe("frappe.client.get_list", {
-		doctype: "Scouting Entry",
-		fields: ["greenhouse"],
-		group_by: "greenhouse",
-		order_by: "greenhouse asc",
-		limit_page_length: 5000,
-	}).then(function (r) {
-		if (r.message) {
-			allGreenhouses = [...new Set(r.message.map(function (d) { return d.greenhouse; }).filter(Boolean))];
-			renderFarmOptions();
-			renderGreenhouseOptionsForFarm();
-		}
+	/* Canonical source: scouting_metrics_api.get_farms_and_greenhouses returns
+	   {farm: [greenhouse_name, ...]} from the Warehouse doctype (active,
+	   warehouse_type='Greenhouse'). Falls back to deriving from Scouting
+	   Entry rows if the new endpoint isn't available yet (e.g. during
+	   rollout). */
+	return callFrappe(
+		"upande_scp.serverscripts.scouting_metrics_api.get_farms_and_greenhouses",
+		{}
+	).then(function (r) {
+		var map = r && r.message;
+		if (!map || typeof map !== "object") throw new Error("empty farms/greenhouses");
+		farmsAndGreenhouses = map;
+		greenhouseToFarm = {};
+		var flat = [];
+		Object.keys(map).forEach(function (farm) {
+			(map[farm] || []).forEach(function (gh) {
+				flat.push(gh);
+				greenhouseToFarm[gh] = farm;
+			});
+		});
+		allGreenhouses = [...new Set(flat.filter(Boolean))];
+		renderFarmOptions();
+		renderGreenhouseOptionsForFarm();
 	}).catch(function () {
 		return callFrappe("frappe.client.get_list", {
 			doctype: "Scouting Entry",
 			fields: ["greenhouse"],
+			group_by: "greenhouse",
 			order_by: "greenhouse asc",
 			limit_page_length: 5000,
 		}).then(function (r) {

@@ -11,10 +11,16 @@ def getScoutingAnalysis():
 
         greenhouse = frappe.form_dict.get("greenhouse") or ""
 
-        # Build filters
-        se_filters = [["date_of_capture", "=", date_str]]
+        # The "greenhouse" param is actually a warehouse name — could be a
+        # Block or a Greenhouse — so match either field on the entry. Avocado
+        # entries carry the warehouse on `block`, rose entries on `greenhouse`.
+        se_filters = {"date_of_capture": date_str}
+        se_or_filters = None
         if greenhouse:
-            se_filters.append(["greenhouse", "=", greenhouse])
+            se_or_filters = [
+                ["greenhouse", "=", greenhouse],
+                ["block", "=", greenhouse],
+            ]
 
         # Fetch scouting entries for the given date (and optional greenhouse)
         scouting_entries = frappe.get_all(
@@ -23,6 +29,7 @@ def getScoutingAnalysis():
                     "zone", "time_of_capture", "date_of_capture", "latitude", "longitude", "creation",
                     "crop_scouted", "tree", "block", "row"],
             filters=se_filters,
+            or_filters=se_or_filters,
             order_by="time_of_capture asc"
         )
 

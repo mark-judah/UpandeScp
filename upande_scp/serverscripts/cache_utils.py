@@ -55,6 +55,8 @@ K_SM_FARM_BUNDLE_PREFIX = "scp:sm_farm_bundle_v1"
 # scouts map. Key suffix is the block (Warehouse) name.
 K_ORCHARD_TREES_PREFIX = "scp:orchard_trees_v1"
 K_CROPS_SCOUTED = "scp:crops_scouted_v1"
+# Cascading Farm → Section → Block/Greenhouse hierarchy for the scouts map.
+K_FARM_HIERARCHY = "scp:farm_hierarchy_v1"
 
 
 def invalidate_farm_bundle(farm):
@@ -74,7 +76,8 @@ def invalidate_orchard_trees_for_doc(doc):
     """Invalidate the cached tree FeatureCollection for the doc's block.
 
     Resolves the block from `doc.block` first, then via the row's greenhouse
-    when block is missing (e.g. on insert before before_save fires).
+    when block is missing (e.g. on insert before before_save fires). Also
+    drops the per-farm key so the farm-wide tree map rebuilds.
     """
     block = getattr(doc, "block", None)
     if not block:
@@ -82,6 +85,10 @@ def invalidate_orchard_trees_for_doc(doc):
         if row:
             block = frappe.db.get_value("Bed", row, "greenhouse")
     invalidate_orchard_trees_for_block(block)
+    if block:
+        farm = frappe.db.get_value("Warehouse", block, "custom_farm")
+        if farm:
+            invalidate(f"{K_ORCHARD_TREES_PREFIX}:farm:{farm}")
 
 
 def invalidate_farm_bundle_for_doc(doc):
@@ -210,8 +217,8 @@ _DOC_INVALIDATIONS = {
     "Predator Stages": (K_OBSERVATION_TYPES,),
     "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH),
     "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_SM_BEDS_BY_GH),
-    "Warehouse": (K_GREENHOUSES_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS),
-    "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS),
+    "Warehouse": (K_GREENHOUSES_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_FARM_HIERARCHY),
+    "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS, K_FARM_HIERARCHY),
     "Trap": (K_SM_TRAPS_BY_GH,),
     "Spray Equipment Details": (K_AFP_SPRAY_EQUIPMENT,),
     "Item": (K_CHEMICALS_LIST,),

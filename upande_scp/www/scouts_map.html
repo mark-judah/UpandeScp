@@ -419,7 +419,36 @@
 				</select>
 			</div>
 
-			<!-- Greenhouse Filter -->
+			<!-- Farm Filter -->
+			<div class="section">
+				<label class="section-label">
+					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21h18M5 21V10l7-5 7 5v11M9 21v-6h6v6" />
+					</svg>
+					Farm
+				</label>
+				<select id="farm-select" class="gh-select">
+					<option value="">All Farms</option>
+					{% for farm in farm_hierarchy %}
+					<option value="{{ farm.name }}">{{ farm.name }}</option>
+					{% endfor %}
+				</select>
+			</div>
+
+			<!-- Section Filter -->
+			<div class="section">
+				<label class="section-label">
+					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+					</svg>
+					Section
+				</label>
+				<select id="section-select" class="gh-select" disabled>
+					<option value="">All Sections</option>
+				</select>
+			</div>
+
+			<!-- Block / Greenhouse Filter -->
 			<div class="section">
 				<label class="section-label">
 					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -430,13 +459,10 @@
 							d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"
 						/>
 					</svg>
-					Greenhouse
+					Block / Greenhouse
 				</label>
 				<select id="gh-select" class="gh-select">
-					<option value="">All Greenhouses</option>
-					{% for gh in greenhouses_geojson %}
-					<option value="{{ gh.name }}">{{ gh.short_name }}</option>
-					{% endfor %}
+					<option value="">All Blocks / Greenhouses</option>
 				</select>
 			</div>
 
@@ -500,6 +526,7 @@
 <script>
 	window.onload = function () {
 	    window.greenhouses_geojson = {{ greenhouses_geojson | tojson | safe }};
+	    window.farm_hierarchy = {{ farm_hierarchy | tojson | safe }};
 	    const LAT  = {{ lat | json }};
 	    const LON  = {{ lon | json }};
 	    const ZOOM = {{ default_zoom | json }};
@@ -519,6 +546,13 @@
 	    let ghOverlay = null;
 	    let treeLayer = null;
 	    let lastResolvedCrop = '';
+
+	    // Hardcoded farm view defaults — picking the farm pans/zooms here.
+	    // `defaultCrop` makes the scouts map snap to that crop's render mode
+	    // even when the day's payload has no entries to infer from.
+	    const FARM_DEFAULTS = {
+	        'Lokitela': { lat: 0.984247, lon: 34.861851, zoom: 16, defaultCrop: 'Avocado' },
+	    };
 
 	    // Zone GeoJSON parse cache
 	    const zoneCache = new Map();
@@ -847,7 +881,7 @@
 	        const manual = document.getElementById('crop-select').value;
 	        if (manual) return manual;
 
-	        // Auto: any avocado-named crop in the payload → avocado, else dominant non-null, else ''
+	        // Auto: any avocado-named crop in the payload → avocado, else dominant non-null
 	        const counts = {};
 	        (allData.scouting_entries || []).forEach(e => {
 	            const k = e.crop_scouted || '';
@@ -857,19 +891,27 @@
 	        const avocadoKey = Object.keys(counts).find(k => /avocado/i.test(k));
 	        if (avocadoKey) return avocadoKey;
 	        const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-	        return ranked[0]?.[0] || '';
+	        if (ranked.length) return ranked[0][0];
+
+	        // No signal in payload — fall back to the farm's default crop, if any.
+	        const farm = document.getElementById('farm-select').value;
+	        return FARM_DEFAULTS[farm]?.defaultCrop || '';
 	    };
 
-	    const fetchTreeGeojson = (block) => {
-	        if (!block) return Promise.resolve({ type: 'FeatureCollection', features: [] });
-	        if (treeCache.has(block)) return Promise.resolve(treeCache.get(block));
-	        return fetch(`/api/method/upande_scp.serverscripts.get_orchard_trees.get_orchard_trees_geojson?block=${encodeURIComponent(block)}`, {
+	    const fetchTreeGeojson = ({ block, farm } = {}) => {
+	        const key = block ? `block:${block}` : (farm ? `farm:${farm}` : '');
+	        if (!key) return Promise.resolve({ type: 'FeatureCollection', features: [] });
+	        if (treeCache.has(key)) return Promise.resolve(treeCache.get(key));
+	        const qs = block
+	            ? `block=${encodeURIComponent(block)}`
+	            : `farm=${encodeURIComponent(farm)}`;
+	        return fetch(`/api/method/upande_scp.serverscripts.get_orchard_trees.get_orchard_trees_geojson?${qs}`, {
 	            headers: { 'X-Frappe-CSRF-Token': CSRF }
 	        })
 	        .then(r => r.ok ? r.json() : { message: { type: 'FeatureCollection', features: [] } })
 	        .then(j => {
 	            const fc = j.message || { type: 'FeatureCollection', features: [] };
-	            treeCache.set(block, fc);
+	            treeCache.set(key, fc);
 	            return fc;
 	        })
 	        .catch(() => ({ type: 'FeatureCollection', features: [] }));
@@ -932,11 +974,13 @@
 	        const crop = resolveCropFromPayload(allData);
 	        lastResolvedCrop = crop;
 	        const block = document.getElementById('gh-select').value;
+	        const farm  = document.getElementById('farm-select').value;
 
-	        if (isAvocadoCrop(crop) && block) {
-	            fetchTreeGeojson(block).then(fc => {
+	        if (isAvocadoCrop(crop) && (block || farm)) {
+	            // Block is preferred; if none picked, render every tree on the farm.
+	            fetchTreeGeojson({ block, farm: block ? null : farm }).then(fc => {
 	                if (!renderTreeCircles(fc, allData)) {
-	                    // No trees configured for this block — fall back to rose view
+	                    // No trees for this scope — fall back to rose view.
 	                    if (window.zoneLayer && !window.map.hasLayer(window.zoneLayer)) window.zoneLayer.addTo(window.map);
 	                }
 	            });
@@ -1016,13 +1060,11 @@
 	        .then(r => {
 	            const allData = r.message || r.data;
 	            const entries = (allData?.scouting_entries || []).filter(e => e.scouts_name);
-	            if (!entries.length) {
-	                if (!background) hideOverlay(true);
-	                return;
-	            }
 	            allData.scouting_entries = entries;
 	            dataCache.set(cacheKey, allData);
 	            if (!background) {
+	                // Render even when no scouting today — trees still need to draw
+	                // for blocks/farms that have orchard data.
 	                _renderScoutData(allData, setProgress);
 	                prefetchPastDays(date, greenhouse);
 	            }
@@ -1075,6 +1117,68 @@
 	    document.getElementById('crop-select').addEventListener('change', () => {
 	        if (window.lastScoutingData) applyCropMode(window.lastScoutingData);
 	    });
+
+	    // ── Farm → Section → Block cascade ──────────────────────────────────
+	    const farmSelect    = document.getElementById('farm-select');
+	    const sectionSelect = document.getElementById('section-select');
+	    const blockSelect   = document.getElementById('gh-select');
+	    const farmsByName = new Map((window.farm_hierarchy || []).map(f => [f.name, f]));
+
+	    const populateSections = (farmName) => {
+	        const farm = farmsByName.get(farmName);
+	        sectionSelect.innerHTML = '<option value="">All Sections</option>';
+	        if (!farm) { sectionSelect.disabled = true; return; }
+	        (farm.sections || []).forEach(sec => {
+	            const opt = document.createElement('option');
+	            opt.value = sec.name; // empty string = "(No section)" bucket
+	            opt.textContent = sec.label;
+	            sectionSelect.appendChild(opt);
+	        });
+	        sectionSelect.disabled = farm.sections.length === 0;
+	    };
+
+	    const populateBlocks = (farmName, sectionName) => {
+	        const previous = blockSelect.value;
+	        blockSelect.innerHTML = '<option value="">All Blocks / Greenhouses</option>';
+	        const farm = farmsByName.get(farmName);
+	        const sections = farm
+	            ? (sectionName !== null && sectionName !== undefined && farmName
+	                ? farm.sections.filter(s => s.name === sectionName)
+	                : farm.sections)
+	            : (window.farm_hierarchy || []).flatMap(f => f.sections);
+	        sections.forEach(sec => {
+	            (sec.blocks || []).forEach(b => {
+	                const opt = document.createElement('option');
+	                opt.value = b.name;
+	                opt.textContent = `${b.label} (${b.type || ''})`.trim();
+	                blockSelect.appendChild(opt);
+	            });
+	        });
+	        // Preserve prior selection if still in list
+	        if (previous && [...blockSelect.options].some(o => o.value === previous)) {
+	            blockSelect.value = previous;
+	        }
+	    };
+
+	    farmSelect.addEventListener('change', () => {
+	        const farmName = farmSelect.value;
+	        populateSections(farmName);
+	        populateBlocks(farmName, '');
+	        const center = FARM_DEFAULTS[farmName];
+	        if (center && window.map) {
+	            window.map.setView([center.lat, center.lon], center.zoom);
+	        }
+	        zoneCache.clear();
+	        debouncedFetch(document.getElementById('scout-date-picker').value, blockSelect.value);
+	    });
+	    sectionSelect.addEventListener('change', () => {
+	        populateBlocks(farmSelect.value, sectionSelect.value);
+	        zoneCache.clear();
+	        debouncedFetch(document.getElementById('scout-date-picker').value, blockSelect.value);
+	    });
+
+	    // Initial population (All Farms → all blocks across hierarchy).
+	    populateBlocks('', '');
 
 	    initializeMap();
 	};

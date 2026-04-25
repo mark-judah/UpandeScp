@@ -3,11 +3,70 @@ import frappe
 
 from upande_scp.serverscripts.cache_utils import (
     K_CROPS_SCOUTED,
+    K_FARM_HIERARCHY,
     K_GREENHOUSES_GEOJSON,
     TTL_LONG,
     TTL_MEDIUM,
     get_or_set,
 )
+
+
+def _build_farm_hierarchy():
+    """Build a Farm → Section → Block/Greenhouse cascade.
+
+    Sections are optional: when a block sits directly under a Farm-type
+    warehouse, it is bucketed under section name `""` so the client can show
+    it under "(No section)".
+    """
+    leaves = frappe.get_all(
+        "Warehouse",
+        filters={
+            "warehouse_type": ["in", ["Block", "Greenhouse"]],
+            "disabled": 0,
+            "is_group": 0,
+        },
+        fields=["name", "warehouse_name", "warehouse_type", "parent_warehouse", "custom_farm"],
+        order_by="warehouse_name",
+        limit_page_length=0,
+    )
+
+    parent_names = {l["parent_warehouse"] for l in leaves if l.get("parent_warehouse")}
+    parents = frappe.get_all(
+        "Warehouse",
+        filters={"name": ["in", list(parent_names)]} if parent_names else {"name": ""},
+        fields=["name", "warehouse_name", "warehouse_type"],
+        limit_page_length=0,
+    )
+    parent_by_name = {p["name"]: p for p in parents}
+
+    farms = {}
+    for leaf in leaves:
+        farm = leaf.get("custom_farm") or "(Unassigned)"
+        parent = parent_by_name.get(leaf.get("parent_warehouse") or "", {})
+        is_section = parent.get("warehouse_type") == "Section"
+        section_name = parent["name"] if is_section else ""
+        section_label = parent.get("warehouse_name") if is_section else "(No section)"
+
+        farm_bucket = farms.setdefault(farm, {"name": farm, "sections": {}})
+        section_bucket = farm_bucket["sections"].setdefault(
+            section_name, {"name": section_name, "label": section_label, "blocks": []}
+        )
+        section_bucket["blocks"].append(
+            {
+                "name": leaf["name"],
+                "label": leaf.get("warehouse_name") or leaf["name"],
+                "type": leaf.get("warehouse_type"),
+            }
+        )
+
+    out = []
+    for farm in sorted(farms.values(), key=lambda f: f["name"].lower()):
+        sections = sorted(
+            farm["sections"].values(),
+            key=lambda s: (s["name"] == "", s["label"].lower()),
+        )
+        out.append({"name": farm["name"], "sections": sections})
+    return out
 
 
 def _build_crops_scouted():
@@ -66,5 +125,8 @@ def get_context(context):
     )
     context.crops_scouted = get_or_set(
         K_CROPS_SCOUTED, _build_crops_scouted, ttl=TTL_MEDIUM
+    )
+    context.farm_hierarchy = get_or_set(
+        K_FARM_HIERARCHY, _build_farm_hierarchy, ttl=TTL_LONG
     )
     return context

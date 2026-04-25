@@ -888,23 +888,27 @@
 	        if (window.zoneLayer && window.map.hasLayer(window.zoneLayer)) window.map.removeLayer(window.zoneLayer);
 	        if (window.lineIdLabels && window.map.hasLayer(window.lineIdLabels)) window.map.removeLayer(window.lineIdLabels);
 
-	        const scoutColors = generateScoutColors(allData);
+	        const SCOUTED = '#22c55e';
+	        const UNSCOUTED = '#94a3b8';
+
+	        const scoutedTrees = new Set();
 	        const treeToScout = new Map();
 	        (allData.scouting_entries || []).forEach(e => {
-	            if (e.tree && e.scouts_name) treeToScout.set(e.tree, e.scouts_name);
+	            if (!e.tree) return;
+	            scoutedTrees.add(e.tree);
+	            if (e.scouts_name) treeToScout.set(e.tree, e.scouts_name);
 	        });
 
 	        treeLayer = L.geoJSON(fc, {
 	            renderer: canvasRenderer,
 	            pointToLayer: (feat, latlng) => {
 	                const tn = feat.properties?.tree_name;
-	                const scout = tn ? treeToScout.get(tn) : null;
-	                const fillColor = scout ? (scoutColors[scout] || '#ef4444') : '#5b684a';
+	                const isScouted = tn && scoutedTrees.has(tn);
 	                return L.circleMarker(latlng, {
-	                    radius: 2.6,
+	                    radius: 2.8,
 	                    weight: 0,
-	                    fillColor,
-	                    fillOpacity: scout ? 0.95 : 0.5,
+	                    fillColor: isScouted ? SCOUTED : UNSCOUTED,
+	                    fillOpacity: isScouted ? 0.95 : 0.6,
 	                });
 	            },
 	            onEachFeature: (feat, layer) => {
@@ -915,6 +919,12 @@
 	                layer.bindTooltip(html);
 	            }
 	        }).addTo(window.map);
+
+	        // Zoom-fit to the avocado block on entry.
+	        try {
+	            const b = treeLayer.getBounds();
+	            if (b.isValid()) window.map.fitBounds(b, { padding: [40, 40], maxZoom: 20 });
+	        } catch (e) { /* ignore */ }
 	        return true;
 	    };
 

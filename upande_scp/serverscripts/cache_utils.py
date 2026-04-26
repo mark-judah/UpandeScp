@@ -47,6 +47,7 @@ K_SM_ZONES_BY_GH = "scp:sm_zones_by_gh_v1"
 K_SM_ZONE_COUNTS_BY_GH = "scp:sm_zone_counts_by_gh_v1"
 K_SM_UNITS_BY_WH = "scp:sm_units_by_wh_v1"
 K_SM_FARMS_AND_WHS = "scp:sm_farms_and_whs_v1"
+K_SM_SEVERITY_THRESHOLDS = "scp:sm_severity_thresholds_v1"
 K_SM_TRAPS_BY_GH = "scp:sm_traps_by_gh_v1"
 # Per-farm bulk bundle for the mobile configure flow. Key is suffixed with
 # the farm name: "scp:sm_farm_bundle_v1:{farm}". Holds all warehouses +
@@ -291,7 +292,9 @@ _DOC_INVALIDATIONS = {
     "Trap": (K_SM_TRAPS_BY_GH,),
     "Spray Equipment Details": (K_AFP_SPRAY_EQUIPMENT,),
     "Item": (K_CHEMICALS_LIST,),
-    "Crop Scouted": (K_CROPS_SCOUTED,),
+    "Crop Scouted": (K_CROPS_SCOUTED, K_SM_SEVERITY_THRESHOLDS),
+    "Pest Filter": (K_SM_SEVERITY_THRESHOLDS,),
+    "Disease Filter": (K_SM_SEVERITY_THRESHOLDS,),
 }
 
 

@@ -3,6 +3,7 @@ import frappe
 from upande_scp.serverscripts import scouting_metrics
 from upande_scp.serverscripts.cache_utils import (
     K_CROPS_SCOUTED,
+    K_SM_SEVERITY_THRESHOLDS,
     K_SM_UNITS_BY_WH,
     K_SM_ZONE_COUNTS_BY_GH,
     TTL_LONG,
@@ -70,6 +71,14 @@ def _cached_crops_with_farms():
     )
 
 
+def _cached_severity_thresholds():
+    return get_or_set(
+        K_SM_SEVERITY_THRESHOLDS,
+        scouting_metrics.get_severity_thresholds,
+        ttl=TTL_MEDIUM,
+    )
+
+
 def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True):
     # Date filter is always applied. The dashboard sends a single "greenhouse"
     # parameter for either warehouse type; match against `greenhouse` OR
@@ -124,6 +133,7 @@ def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=
         # blocks) plus the crop allow-list.
         payload["units_by_greenhouse"] = _cached_units_by_warehouse()
         payload["crops_scouted"] = _cached_crops_with_farms()
+        payload["severity_thresholds"] = _cached_severity_thresholds()
 
     entry_names = [e.name for e in scouting_entries]
     if not entry_names:

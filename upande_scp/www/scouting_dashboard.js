@@ -53,9 +53,15 @@ var greenhouseToFarm = {};
    dropdown when a crop is selected. */
 var cropsScouted = [];
 var cropFarms = {};
-/* {warehouse: {type:"greenhouse"|"block", count:N, farm:""}} from backend.
-   Drives the zones-vs-trees denominator for pressure metrics. */
+/* {warehouse: {type:"greenhouse"|"block", count:N, farm:"", area_ha:0}} from
+   backend. Drives the zones-vs-trees denominator for pressure metrics, and
+   the area_ha denominator for Per-Hectare severity thresholds. */
 var unitsPerWarehouse = {};
+/* Per-crop severity bands from Crop Scouted:
+   {crop: {pests: {pest: {unit, low, moderate, high}}, diseases: {...}}}.
+   When empty for a given crop+pest combo, severity falls back to the legacy
+   magnitude heuristic so old data keeps classifying. */
+var severityThresholds = {};
 var activeTab = "overview";          // default to overview on load
 var scoutingAnalysis = null;
 var observationColors = { pests: {}, diseases: {} };
@@ -527,6 +533,45 @@ function getTotalZonesForGreenhouses(entries) {
 function toBedInfectionPercent(infectedCount, total) {
 	if (!total) return 0;
 	return Number(((infectedCount / total) * 100).toFixed(2));
+}
+
+/* Classify one observation against the active crop's severity bands.
+   Returns "high" | "moderate" | "low" | null (null = below the Low threshold).
+   `kind` is "pests" or "diseases"; `name` is the pest / disease name; `count`
+   is the raw observation count; `warehouse` is the GH or block the entry
+   belongs to (so Per-Hectare can divide by Warehouse.custom_area_ha).
+
+   Falls back to the legacy >15 / >5 magnitude heuristic when no thresholds
+   are configured for this crop+name combo, so historical data still buckets. */
+function classifyObservationSeverity(kind, name, count, warehouse) {
+	var n = Number(count) || 0;
+	var crop = (cropFilter || DEFAULT_CROP);
+	var entry = severityThresholds && severityThresholds[crop] && severityThresholds[crop][kind];
+	var spec = entry && entry[name];
+	if (!spec || (!spec.low && !spec.moderate && !spec.high)) {
+		// Legacy fallback — keeps existing dashboards meaningful when an
+		// admin hasn't yet populated the Crop Scouted thresholds.
+		if (kind === "pests") {
+			if (n > 15) return "high";
+			if (n > 5)  return "moderate";
+			return n > 0 ? "low" : null;
+		}
+		// Diseases legacy: pure presence counts, no count-based magnitude
+		// heuristic — caller scans the disease's stage string instead, so
+		// just signal "no threshold" here.
+		return null;
+	}
+	var denom = 1;
+	if ((spec.unit || "").toLowerCase() === "per hectare") {
+		var u = unitsPerWarehouse && unitsPerWarehouse[warehouse];
+		var ha = u && Number(u.area_ha);
+		denom = (ha && ha > 0) ? ha : 1;
+	}
+	var v = n / denom;
+	if (spec.high && v >= spec.high) return "high";
+	if (spec.moderate && v >= spec.moderate) return "moderate";
+	if (spec.low && v >= spec.low) return "low";
+	return null;
 }
 
 function buildDailyBedInfectionMap(entries, observationType) {
@@ -1044,8 +1089,13 @@ function buildScoutingData(entries, trapEntries) {
 				data.pests[name].stages[stage] = (data.pests[name].stages[stage] || 0) + count;
 				if (p.plant_section)
 					data.pests[name].sections[p.plant_section] = (data.pests[name].sections[p.plant_section] || 0) + count;
-				if (count > 15) data.pests[name].severity.high++;
-				else if (count > 5) data.pests[name].severity.moderate++;
+				/* Per-crop band classification (Crop Scouted thresholds). Falls
+				   back to the legacy magnitude heuristic when no thresholds
+				   are configured for this pest. Sub-Low observations are
+				   still bucketed as "low" so the matrix shows them. */
+				var sev = classifyObservationSeverity("pests", name, count, warehouseName);
+				if (sev === "high") data.pests[name].severity.high++;
+				else if (sev === "moderate") data.pests[name].severity.moderate++;
 				else data.pests[name].severity.low++;
 			});
 		}
@@ -1119,6 +1169,36 @@ function buildScoutingData(entries, trapEntries) {
 	Object.keys(data.greenhouses).forEach(function (gh) {
 		data.greenhouses[gh].scoutCount = data.greenhouses[gh].scouts.size;
 	});
+
+	/* Disease severity reclassification.
+	   Disease entries don't carry a count field — each row is one incident —
+	   so per-row magnitude classification is meaningless. Instead, when the
+	   active crop has thresholds configured for a disease, aggregate
+	   incidents per warehouse and bucket each warehouse's total against the
+	   bands. We override the legacy keyword-scan severity only for diseases
+	   that actually have thresholds, so historical data without config keeps
+	   the old classification. */
+	var crop = (cropFilter || DEFAULT_CROP);
+	var diseaseSpecs = severityThresholds && severityThresholds[crop] && severityThresholds[crop].diseases;
+	if (diseaseSpecs) {
+		Object.keys(data.diseases).forEach(function (name) {
+			var spec = diseaseSpecs[name];
+			if (!spec || (!spec.low && !spec.moderate && !spec.high)) return;
+			var perWh = {};
+			(data.diseases[name].counts || []).forEach(function (c) {
+				var wh = (c.block || c.greenhouse || "Unknown").trim();
+				perWh[wh] = (perWh[wh] || 0) + 1;
+			});
+			var sev = { low: 0, moderate: 0, high: 0 };
+			Object.keys(perWh).forEach(function (wh) {
+				var bucket = classifyObservationSeverity("diseases", name, perWh[wh], wh);
+				if (bucket === "high") sev.high++;
+				else if (bucket === "moderate") sev.moderate++;
+				else if (bucket === "low") sev.low++;
+			});
+			data.diseases[name].severity = sev;
+		});
+	}
 	return data;
 }
 
@@ -1400,6 +1480,7 @@ function renderFromCache(rangeInfo) {
 	observationColors = extractObservationColors(metaCache.pest_colors, metaCache.disease_colors);
 	zonesPerGreenhouse = metaCache.zones_by_greenhouse || {};
 	unitsPerWarehouse = metaCache.units_by_greenhouse || {};
+	severityThresholds = metaCache.severity_thresholds || {};
 	if (Array.isArray(metaCache.crops_scouted) && metaCache.crops_scouted.length) {
 		ingestCropsScouted(metaCache.crops_scouted);
 	}
@@ -1506,6 +1587,7 @@ function fetchScoutingData() {
 							zones_by_greenhouse: res.zones_by_greenhouse || {},
 							units_by_greenhouse: res.units_by_greenhouse || {},
 							crops_scouted: res.crops_scouted || [],
+							severity_thresholds: res.severity_thresholds || {},
 						};
 					}
 					done++;

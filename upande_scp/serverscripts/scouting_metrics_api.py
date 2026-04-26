@@ -18,6 +18,7 @@ from upande_scp.serverscripts.cache_utils import (
     K_SM_BEDS_BY_GH,
     K_SM_FARMS_AND_GHS,
     K_SM_FARMS_AND_WHS,
+    K_SM_SEVERITY_THRESHOLDS,
     K_SM_TRAPS_BY_GH,
     K_SM_UNITS_BY_WH,
     K_SM_ZONES_BY_GH,
@@ -67,6 +68,20 @@ def get_crops_with_farms():
     return get_or_set(
         K_CROPS_SCOUTED,
         scouting_metrics.get_crops_with_farms,
+        ttl=TTL_MEDIUM,
+    )
+
+
+@frappe.whitelist()
+def get_severity_thresholds():
+    """{crop: {pests: {pest: {unit, low, moderate, high}}, diseases: {...}}}.
+
+    Drives the dashboard pest/disease severity classifier. Cache key is
+    invalidated by Crop Scouted / Pest Filter / Disease Filter doc events.
+    """
+    return get_or_set(
+        K_SM_SEVERITY_THRESHOLDS,
+        scouting_metrics.get_severity_thresholds,
         ttl=TTL_MEDIUM,
     )
 

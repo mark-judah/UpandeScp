@@ -307,6 +307,7 @@ fixtures = [
                         "Warehouse-custom_bed_numbering",
                         "Warehouse-custom_raw_geojson",
                         "Warehouse-custom_location",
+                        "Warehouse-custom_area_ha",
                         # Item fields
                         "Item-custom_ghs",
                         "Item-custom_irac",

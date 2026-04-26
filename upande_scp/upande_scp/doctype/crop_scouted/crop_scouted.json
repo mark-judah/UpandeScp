@@ -78,9 +78,9 @@
    "label": "Diseases"
   },
   {
-   "description": "If empty, Diseases will be hidden on Scouting Entry for this crop",
+   "description": "If empty, Diseases will be hidden on Scouting Entry for this crop. Expand a row to set per-crop severity thresholds.",
    "fieldname": "diseases",
-   "fieldtype": "Table MultiSelect",
+   "fieldtype": "Table",
    "label": "Diseases",
    "options": "Disease Filter"
   },

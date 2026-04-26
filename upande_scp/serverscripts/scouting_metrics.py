@@ -170,44 +170,19 @@ def get_zone_counts_by_greenhouse():
 
 
 def get_units_by_warehouse():
-    """Return {warehouse_name: {"type": "greenhouse"|"block", "count": N, "farm": str}}.
+    """Return {warehouse_name: {"type": "greenhouse"|"block", "count": N, "farm": str, "area_ha": float}}.
 
-    Greenhouses → number of Zones; blocks → number of Orchard Trees. Drives the
-    "Zone Coverage %" / "Tree Coverage %" denominator on the scouting dashboard
-    so pressure metrics match the right unit per warehouse type.
+    Greenhouses → number of Zones; blocks → number of Orchard Trees. ``area_ha``
+    comes from ``Warehouse.custom_area_ha`` and is the denominator for
+    Per-Hectare severity thresholds. Drives the "Zone Coverage %" / "Tree
+    Coverage %" denominator on the scouting dashboard so pressure metrics
+    match the right unit per warehouse type.
     """
-    out = {}
-    zone_counts = frappe.db.sql(
-        """
-        SELECT z.greenhouse AS wh, COUNT(*) AS cnt, w.custom_farm AS farm
-        FROM   `tabZone` z
-        LEFT   JOIN `tabWarehouse` w ON w.name = z.greenhouse
-        WHERE  z.greenhouse IS NOT NULL AND z.greenhouse != ''
-        GROUP  BY z.greenhouse, w.custom_farm
-        """,
-        as_dict=True,
-    )
-    for r in zone_counts:
-        out[r.wh] = {"type": "greenhouse", "count": int(r.cnt or 0), "farm": r.farm or ""}
-
-    tree_counts = frappe.db.sql(
-        """
-        SELECT t.block AS wh, COUNT(*) AS cnt, w.custom_farm AS farm
-        FROM   `tabOrchard Tree` t
-        LEFT   JOIN `tabWarehouse` w ON w.name = t.block
-        WHERE  t.block IS NOT NULL AND t.block != ''
-        GROUP  BY t.block, w.custom_farm
-        """,
-        as_dict=True,
-    )
-    for r in tree_counts:
-        out[r.wh] = {"type": "block", "count": int(r.cnt or 0), "farm": r.farm or ""}
-
-    # Make sure every active greenhouse / block warehouse appears even when it
-    # has no zones / trees yet — without this the chart silently drops them.
+    # Single warehouse pass: type, farm, and area_ha for every active GH/Block.
     wh_rows = frappe.db.sql(
         """
-        SELECT name, warehouse_type, custom_farm AS farm
+        SELECT name, warehouse_type, custom_farm AS farm,
+               COALESCE(custom_area_ha, 0) AS area_ha
         FROM   `tabWarehouse`
         WHERE  warehouse_type IN ('Greenhouse', 'Block')
           AND  disabled = 0
@@ -215,15 +190,91 @@ def get_units_by_warehouse():
         """,
         as_dict=True,
     )
+    out = {}
     for r in wh_rows:
-        if r.name in out:
-            if not out[r.name].get("farm"):
-                out[r.name]["farm"] = r.farm or ""
-            continue
         out[r.name] = {
             "type": "block" if r.warehouse_type == "Block" else "greenhouse",
             "count": 0,
             "farm": r.farm or "",
+            "area_ha": float(r.area_ha or 0),
+        }
+
+    zone_counts = frappe.db.sql(
+        """
+        SELECT greenhouse AS wh, COUNT(*) AS cnt
+        FROM   `tabZone`
+        WHERE  greenhouse IS NOT NULL AND greenhouse != ''
+        GROUP  BY greenhouse
+        """,
+        as_dict=True,
+    )
+    for r in zone_counts:
+        if r.wh in out:
+            out[r.wh]["count"] = int(r.cnt or 0)
+        else:
+            # Zone references an inactive / non-listed warehouse — keep it
+            # rather than silently dropping; assume greenhouse-type.
+            out[r.wh] = {"type": "greenhouse", "count": int(r.cnt or 0), "farm": "", "area_ha": 0.0}
+
+    tree_counts = frappe.db.sql(
+        """
+        SELECT block AS wh, COUNT(*) AS cnt
+        FROM   `tabOrchard Tree`
+        WHERE  block IS NOT NULL AND block != ''
+        GROUP  BY block
+        """,
+        as_dict=True,
+    )
+    for r in tree_counts:
+        if r.wh in out:
+            out[r.wh]["type"] = "block"
+            out[r.wh]["count"] = int(r.cnt or 0)
+        else:
+            out[r.wh] = {"type": "block", "count": int(r.cnt or 0), "farm": "", "area_ha": 0.0}
+    return out
+
+
+def get_severity_thresholds():
+    """Return {crop: {"pests": {pest: {...}}, "diseases": {disease: {...}}}}.
+
+    Each leaf carries ``unit``, ``low``, ``moderate``, ``high``. Drives the
+    dashboard's pest/disease severity classifier — replaces the legacy
+    hardcoded ``count > 5`` / ``count > 15`` heuristic with per-crop, per-pest
+    bands configured on Crop Scouted. Missing entries simply mean "no
+    severity classification configured for this crop+pest combo".
+    """
+    pests = frappe.db.sql(
+        """
+        SELECT parent AS crop, pest, unit, low_threshold, moderate_threshold, high_threshold
+        FROM   `tabPest Filter`
+        WHERE  parenttype = 'Crop Scouted' AND pest IS NOT NULL AND pest != ''
+        """,
+        as_dict=True,
+    )
+    diseases = frappe.db.sql(
+        """
+        SELECT parent AS crop, disease, unit, low_threshold, moderate_threshold, high_threshold
+        FROM   `tabDisease Filter`
+        WHERE  parenttype = 'Crop Scouted' AND disease IS NOT NULL AND disease != ''
+        """,
+        as_dict=True,
+    )
+    out = {}
+    for r in pests:
+        bucket = out.setdefault(r.crop, {"pests": {}, "diseases": {}})
+        bucket["pests"][r.pest] = {
+            "unit": r.unit or "Per Warehouse",
+            "low": float(r.low_threshold or 0),
+            "moderate": float(r.moderate_threshold or 0),
+            "high": float(r.high_threshold or 0),
+        }
+    for r in diseases:
+        bucket = out.setdefault(r.crop, {"pests": {}, "diseases": {}})
+        bucket["diseases"][r.disease] = {
+            "unit": r.unit or "Per Warehouse",
+            "low": float(r.low_threshold or 0),
+            "moderate": float(r.moderate_threshold or 0),
+            "high": float(r.high_threshold or 0),
         }
     return out
 

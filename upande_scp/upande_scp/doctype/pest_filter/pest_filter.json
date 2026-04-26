@@ -32,29 +32,29 @@
    "options": "Per Warehouse\nPer Hectare"
   },
   {
-   "description": "Pest count at which severity becomes Low.",
+   "description": "Pest count at which severity becomes Low (threshold value).",
    "fieldname": "low_threshold",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Low",
+   "label": "Low Threshold",
    "non_negative": 1,
    "precision": "4"
   },
   {
-   "description": "Pest count at which severity becomes Moderate.",
+   "description": "Pest count at which severity becomes Moderate (threshold value).",
    "fieldname": "moderate_threshold",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Moderate",
+   "label": "Moderate Threshold",
    "non_negative": 1,
    "precision": "4"
   },
   {
-   "description": "Pest count at which severity becomes High.",
+   "description": "Pest count at which severity becomes High (threshold value).",
    "fieldname": "high_threshold",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "High",
+   "label": "High Threshold",
    "non_negative": 1,
    "precision": "4"
   },

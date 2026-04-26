@@ -31,29 +31,29 @@
    "options": "Per Warehouse\nPer Hectare"
   },
   {
-   "description": "Incident count at which severity becomes Low.",
+   "description": "Incident count at which severity becomes Low (threshold value).",
    "fieldname": "low_threshold",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Low",
+   "label": "Low Threshold",
    "non_negative": 1,
    "precision": "4"
   },
   {
-   "description": "Incident count at which severity becomes Moderate.",
+   "description": "Incident count at which severity becomes Moderate (threshold value).",
    "fieldname": "moderate_threshold",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Moderate",
+   "label": "Moderate Threshold",
    "non_negative": 1,
    "precision": "4"
   },
   {
-   "description": "Incident count at which severity becomes High.",
+   "description": "Incident count at which severity becomes High (threshold value).",
    "fieldname": "high_threshold",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "High",
+   "label": "High Threshold",
    "non_negative": 1,
    "precision": "4"
   }

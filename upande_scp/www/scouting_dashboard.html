@@ -39,10 +39,6 @@
 					<label for="scout-week-to">To</label>
 					<input type="week" id="scout-week-to" class="filter-input">
 				</div>
-				<button id="scout-refresh-btn" class="refresh-btn" type="button">
-					<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-					Refresh
-				</button>
 				<a href="/scouting_reports" class="refresh-btn" style="background:#fff;color:#0D2B5E;border:1px solid #0D2B5E;text-decoration:none;" title="Email or download scouting reports">
 					<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
 					Reports
@@ -114,46 +110,62 @@
 			</div>
 		</div>
 
-		<div class="chart-card chart-card-wide">
-			<div class="chart-header"><h4>Activity Timeline</h4><span class="chart-subtitle">Pests · Diseases · Traps · daily counts</span></div>
-			<div class="chart-body"><canvas id="overview-timeline-chart"></canvas></div>
+		<!-- Row 1: Activity Timeline (80%) + Daily Comparison Bar (20%) -->
+		<div class="charts-grid charts-grid-4-1">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Activity Timeline</h4><span class="chart-subtitle">Pests · Diseases · Traps · daily counts (stratified) · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="overview-timeline-chart"></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Range Totals</h4><span class="chart-subtitle">Pests · Diseases · Traps · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="overview-daily-bar-chart"></div>
+			</div>
 		</div>
 
+		<!-- Row 2: 3 equal columns — Pest Radar | Disease Radar | Category Split -->
 		<div class="charts-grid charts-grid-3">
 			<div class="chart-card">
-				<div class="chart-header"><h4>Category Split</h4><span class="chart-subtitle">Observation breakdown</span></div>
-				<div class="chart-body donut-container">
-					<canvas id="overview-donut-chart"></canvas>
+				<div class="chart-header"><h4>Pest Section Radar</h4><span class="chart-subtitle">Pest pressure by plant area · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="overview-pest-radar-chart"></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Disease Section Radar</h4><span class="chart-subtitle">Disease spread by plant area · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="overview-disease-radar-chart"></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Category Split</h4><span class="chart-subtitle">Observation breakdown · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host donut-container" id="overview-donut-chart">
 					<div class="donut-center"><div class="donut-total" id="overview-donut-total">0</div><div class="donut-label">Total</div></div>
 				</div>
-			</div>
-			<div class="chart-card">
-				<div class="chart-header"><h4>Pest Section Radar</h4><span class="chart-subtitle">Pest pressure by plant area</span></div>
-				<div class="chart-body"><canvas id="overview-pest-radar-chart"></canvas></div>
-			</div>
-			<div class="chart-card">
-				<div class="chart-header"><h4>Disease Section Radar</h4><span class="chart-subtitle">Disease spread by plant area</span></div>
-				<div class="chart-body"><canvas id="overview-disease-radar-chart"></canvas></div>
 			</div>
 		</div>
 
 		<!-- ── Scout Performance ── -->
-		<div class="chart-card chart-card-wide">
-			<div class="chart-header"><h4>Scout Activity Trend</h4><span class="chart-subtitle">Daily entries per scout (top 5)</span></div>
-			<div class="chart-body"><canvas id="scout-perf-trend-chart"></canvas></div>
+		<!-- Row 3: Scout Activity Trend (80%) + Activity Distribution (20%) -->
+		<div class="charts-grid charts-grid-4-1">
+			<div class="chart-card">
+				<div class="chart-header"><h4>Scout Activity Trend</h4><span class="chart-subtitle">Daily entries per scout (top 5) · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="scout-perf-trend-chart"></div>
+			</div>
+			<div class="chart-card">
+				<div class="chart-header"><h4>Activity Distribution</h4><span class="chart-subtitle">Share of total scouting by scout · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="scout-perf-radial-chart"></div>
+			</div>
 		</div>
+
+		<!-- Row 4: 3 equal columns — Entries & Obs | Perf Radar | Scouts Active Per Day -->
 		<div class="charts-grid charts-grid-3">
 			<div class="chart-card">
-				<div class="chart-header"><h4>Entries &amp; Observations</h4><span class="chart-subtitle">Per scout · entries, pests, diseases</span></div>
-				<div class="chart-body"><canvas id="scout-perf-bar-chart"></canvas></div>
+				<div class="chart-header"><h4>Entries &amp; Observations</h4><span class="chart-subtitle">Per scout · entries, pests, diseases · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="scout-perf-bar-chart"></div>
 			</div>
 			<div class="chart-card">
-				<div class="chart-header"><h4>Scout Performance Radar</h4><span class="chart-subtitle">Normalized metrics (top 6 scouts)</span></div>
-				<div class="chart-body"><canvas id="scout-perf-radar-chart"></canvas></div>
+				<div class="chart-header"><h4>Scout Performance Radar</h4><span class="chart-subtitle">Normalized metrics (top 6 scouts) · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="scout-perf-radar-chart"></div>
 			</div>
 			<div class="chart-card">
-				<div class="chart-header"><h4>Activity Distribution</h4><span class="chart-subtitle">Share of total scouting by scout</span></div>
-				<div class="chart-body donut-container"><canvas id="scout-perf-radial-chart"></canvas></div>
+				<div class="chart-header"><h4>Scouts Active Per Day</h4><span class="chart-subtitle">Unique scouts working each day · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="scout-active-per-day-chart"></div>
 			</div>
 		</div>
 

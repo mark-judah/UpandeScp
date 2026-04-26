@@ -264,6 +264,39 @@
 	margin-bottom: 20px;
 }
 
+.charts-grid-2-1 {
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+	gap: 16px;
+	margin-bottom: 16px;
+}
+
+/* 80% / 20% split for hero rows where the secondary chart is a small companion. */
+.charts-grid-4-1 {
+	display: grid;
+	grid-template-columns: minmax(0, 4fr) minmax(0, 1fr);
+	gap: 16px;
+	margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+	.charts-grid-2-1,
+	.charts-grid-4-1 { grid-template-columns: 1fr; }
+}
+
+/* compact chart-body sizes — heights bumped +20% over the prior pass.
+   3-column rows get a taller override so cards look near-square. */
+.chart-body-sm { flex: none; height: 248px; min-height: 248px; }
+.chart-body-md { flex: none; height: 304px; min-height: 304px; }
+.chart-body-lg { flex: none; height: 359px; min-height: 359px; }
+
+.charts-grid-3 .chart-body-md,
+.charts-grid-3 .chart-body { height: 360px; min-height: 360px; flex: none; }
+
+/* 80/20 hero rows get +20% height (304 → 365) so the wide chart breathes. */
+.charts-grid-4-1 .chart-body-md,
+.charts-grid-4-1 .chart-body { height: 365px; min-height: 365px; flex: none; }
+
 .chart-card {
 	background: var(--sd-card);
 	border: 1px solid var(--sd-border);
@@ -274,13 +307,13 @@
 	}
 
 .chart-card-wide {
-	margin-bottom: 20px;
+	margin-bottom: 16px;
 }
 
 .chart-card-wide .chart-body {
 	flex: none;
-	height: 44vh;
-	min-height: 280px;
+	height: 240px;
+	min-height: 220px;
 }
 
 
@@ -333,6 +366,99 @@
 .chart-body canvas {
 	width: 100% !important;
 	height: 100% !important;
+}
+
+/* ApexCharts containers: clickable zoom-in affordance only — no visual hover state. */
+.chart-body.chart-host {
+	cursor: zoom-in;
+}
+
+/* Constrain ECharts svg width so it never overflows the card */
+.chart-body > div > svg, .chart-body > svg { max-width: 100%; }
+
+/* ════════════════════════════════════════
+   CHART ZOOM MODAL
+   ════════════════════════════════════════ */
+
+.chart-zoom-modal {
+	position: fixed;
+	inset: 0;
+	background: rgba(13, 43, 94, 0.55);
+	backdrop-filter: blur(2px);
+	-webkit-backdrop-filter: blur(2px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 1500;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity .2s ease;
+}
+
+.chart-zoom-modal.open {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.chart-zoom-panel {
+	background: var(--sd-card, #fff);
+	border-radius: 14px;
+	width: min(92vw, 1100px);
+	max-height: 88vh;
+	box-shadow: 0 30px 80px rgba(13, 43, 94, .25);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	transform: translateY(8px) scale(.98);
+	transition: transform .2s ease;
+}
+
+.chart-zoom-modal.open .chart-zoom-panel {
+	transform: translateY(0) scale(1);
+}
+
+.chart-zoom-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	padding: 16px 20px;
+	border-bottom: 1px solid var(--sd-border, #e2e8f0);
+	gap: 16px;
+}
+
+.chart-zoom-title {
+	font-size: 1rem;
+	font-weight: 600;
+	color: var(--sd-text, #0f172a);
+	letter-spacing: -.01em;
+}
+
+.chart-zoom-sub {
+	font-size: .75rem;
+	color: var(--sd-muted, #64748b);
+	margin-top: 2px;
+}
+
+.chart-zoom-close {
+	background: transparent;
+	border: 0;
+	font-size: 1.4rem;
+	line-height: 1;
+	cursor: pointer;
+	color: var(--sd-muted, #64748b);
+	padding: 4px 8px;
+	border-radius: 6px;
+}
+
+.chart-zoom-close:hover {
+	background: rgba(0,0,0,.05);
+	color: var(--sd-text, #0f172a);
+}
+
+.chart-zoom-body {
+	padding: 16px 20px 20px;
+	overflow: auto;
+	min-height: 360px;
 }
 
 /* ════════════════════════════════════════
@@ -922,6 +1048,7 @@
    LOADING
    ════════════════════════════════════════ */
 
+/* Mirror scouts_map's compact loader so the visual is consistent across pages. */
 .loading-overlay {
 	position: fixed;
 	inset: 0;
@@ -938,27 +1065,27 @@
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 10px;
-	padding: 24px 28px;
-	min-width: 260px;
+	gap: 8px;
+	padding: 16px 20px;
 }
 
 .loading-title {
-	font-size: .95rem;
+	font-size: .875rem;
 	font-weight: 600;
 	color: #1e293b;
+	margin-bottom: .15rem;
 }
 
 .loading-text {
-	font-size: .78rem;
+	font-size: .72rem;
 	color: #64748b;
 	min-width: 220px;
 	text-align: center;
 }
 
 .loading-bar {
-	width: 260px;
-	height: 6px;
+	width: 220px;
+	height: 5px;
 	background: #e2e8f0;
 	border-radius: 3px;
 	overflow: hidden;
@@ -973,14 +1100,11 @@
 }
 
 .loading-bar-pct {
-	font-size: 1.35rem;
-	font-weight: 700;
+	font-size: .72rem;
+	font-weight: 600;
 	color: #2563eb;
 	font-variant-numeric: tabular-nums;
 	letter-spacing: .02em;
-	padding: 4px 14px;
-	background: rgba(37,99,235,.1);
-	border-radius: 999px;
 	margin-top: 2px;
 }
 

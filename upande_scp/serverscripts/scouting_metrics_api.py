@@ -14,9 +14,12 @@ import frappe
 
 from upande_scp.serverscripts import scouting_metrics
 from upande_scp.serverscripts.cache_utils import (
+    K_CROPS_SCOUTED,
     K_SM_BEDS_BY_GH,
     K_SM_FARMS_AND_GHS,
+    K_SM_FARMS_AND_WHS,
     K_SM_TRAPS_BY_GH,
+    K_SM_UNITS_BY_WH,
     K_SM_ZONES_BY_GH,
     TTL_LONG,
     TTL_MEDIUM,
@@ -30,6 +33,40 @@ def get_farms_and_greenhouses():
     return get_or_set(
         K_SM_FARMS_AND_GHS,
         scouting_metrics.get_farms_and_greenhouses,
+        ttl=TTL_MEDIUM,
+    )
+
+
+@frappe.whitelist()
+def get_farms_and_warehouses():
+    """{farm: [warehouse_name, ...]} — greenhouses *and* blocks (active only).
+
+    Used by the scouting dashboard so block-based farms (orchards) appear
+    alongside greenhouse-based farms in the Farm dropdown.
+    """
+    return get_or_set(
+        K_SM_FARMS_AND_WHS,
+        scouting_metrics.get_farms_and_warehouses,
+        ttl=TTL_MEDIUM,
+    )
+
+
+@frappe.whitelist()
+def get_units_by_warehouse():
+    """{warehouse: {type: greenhouse|block, count, farm}} — pressure denominator."""
+    return get_or_set(
+        K_SM_UNITS_BY_WH,
+        scouting_metrics.get_units_by_warehouse,
+        ttl=TTL_LONG,
+    )
+
+
+@frappe.whitelist()
+def get_crops_with_farms():
+    """[{name, crop_name, farms: [...]}] — drives the dashboard Crop filter."""
+    return get_or_set(
+        K_CROPS_SCOUTED,
+        scouting_metrics.get_crops_with_farms,
         ttl=TTL_MEDIUM,
     )
 

@@ -312,8 +312,13 @@
 
 .chart-card-wide .chart-body {
 	flex: none;
-	height: 240px;
-	min-height: 220px;
+	height: 304px;
+	min-height: 280px;
+}
+
+.chart-card-wide .chart-body.chart-body-md {
+	height: 304px;
+	min-height: 280px;
 }
 
 
@@ -363,18 +368,15 @@
 	min-height: 200px;
 }
 
-.chart-body canvas {
-	width: 100% !important;
-	height: 100% !important;
-}
-
-/* ApexCharts containers: clickable zoom-in affordance only — no visual hover state. */
-.chart-body.chart-host {
+/* ECharts containers: clickable zoom-in affordance — no visual hover state. */
+.chart-body.chart-host,
+.chart-host {
 	cursor: zoom-in;
 }
 
 /* Constrain ECharts svg width so it never overflows the card */
-.chart-body > div > svg, .chart-body > svg { max-width: 100%; }
+.chart-body > div > svg, .chart-body > svg,
+.chart-host > div > svg, .chart-host > svg { max-width: 100%; }
 
 /* ════════════════════════════════════════
    CHART ZOOM MODAL
@@ -1042,7 +1044,7 @@
 	margin-top: 2px;
 }
 
-.gh-trend-wrap { height: 180px; }
+.gh-trend-wrap { height: 220px; min-height: 220px; cursor: zoom-in; }
 
 /* ════════════════════════════════════════
    LOADING

@@ -169,6 +169,127 @@ def get_zone_counts_by_greenhouse():
     return counts
 
 
+def get_units_by_warehouse():
+    """Return {warehouse_name: {"type": "greenhouse"|"block", "count": N, "farm": str}}.
+
+    Greenhouses → number of Zones; blocks → number of Orchard Trees. Drives the
+    "Zone Coverage %" / "Tree Coverage %" denominator on the scouting dashboard
+    so pressure metrics match the right unit per warehouse type.
+    """
+    out = {}
+    zone_counts = frappe.db.sql(
+        """
+        SELECT z.greenhouse AS wh, COUNT(*) AS cnt, w.custom_farm AS farm
+        FROM   `tabZone` z
+        LEFT   JOIN `tabWarehouse` w ON w.name = z.greenhouse
+        WHERE  z.greenhouse IS NOT NULL AND z.greenhouse != ''
+        GROUP  BY z.greenhouse, w.custom_farm
+        """,
+        as_dict=True,
+    )
+    for r in zone_counts:
+        out[r.wh] = {"type": "greenhouse", "count": int(r.cnt or 0), "farm": r.farm or ""}
+
+    tree_counts = frappe.db.sql(
+        """
+        SELECT t.block AS wh, COUNT(*) AS cnt, w.custom_farm AS farm
+        FROM   `tabOrchard Tree` t
+        LEFT   JOIN `tabWarehouse` w ON w.name = t.block
+        WHERE  t.block IS NOT NULL AND t.block != ''
+        GROUP  BY t.block, w.custom_farm
+        """,
+        as_dict=True,
+    )
+    for r in tree_counts:
+        out[r.wh] = {"type": "block", "count": int(r.cnt or 0), "farm": r.farm or ""}
+
+    # Make sure every active greenhouse / block warehouse appears even when it
+    # has no zones / trees yet — without this the chart silently drops them.
+    wh_rows = frappe.db.sql(
+        """
+        SELECT name, warehouse_type, custom_farm AS farm
+        FROM   `tabWarehouse`
+        WHERE  warehouse_type IN ('Greenhouse', 'Block')
+          AND  disabled = 0
+          AND  is_group = 0
+        """,
+        as_dict=True,
+    )
+    for r in wh_rows:
+        if r.name in out:
+            if not out[r.name].get("farm"):
+                out[r.name]["farm"] = r.farm or ""
+            continue
+        out[r.name] = {
+            "type": "block" if r.warehouse_type == "Block" else "greenhouse",
+            "count": 0,
+            "farm": r.farm or "",
+        }
+    return out
+
+
+def get_farms_and_warehouses():
+    """Return {farm: [warehouse_name, ...]} including both greenhouses and blocks.
+
+    Companion to ``get_farms_and_greenhouses`` which only lists greenhouses;
+    block-based farms (avocado orchards etc.) need to show up so the dashboard
+    can scope to them.
+    """
+    rows = frappe.db.sql(
+        """
+        SELECT name, custom_farm AS farm
+        FROM   `tabWarehouse`
+        WHERE  warehouse_type IN ('Greenhouse', 'Block')
+          AND  disabled = 0
+          AND  is_group = 0
+        ORDER  BY custom_farm, name
+        """,
+        as_dict=True,
+    )
+    grouped = defaultdict(list)
+    for r in rows:
+        farm = r.farm or "(no farm)"
+        grouped[farm].append(r.name)
+    return dict(grouped)
+
+
+def get_crops_with_farms():
+    """Return [{name, crop_name, farms: [...]}] for every Crop Scouted record.
+
+    Powers the dashboard Crop filter and the farm-narrowing behaviour: when a
+    crop is selected, the Farm dropdown is restricted to that crop's ``farms``
+    allow-list.
+    """
+    crops = frappe.get_all(
+        "Crop Scouted",
+        fields=["name", "crop_name"],
+        order_by="crop_name",
+        limit_page_length=0,
+    )
+    if not crops:
+        return []
+    farm_rows = frappe.db.sql(
+        """
+        SELECT parent, farm
+        FROM   `tabFarm Filter`
+        WHERE  parenttype = 'Crop Scouted'
+        """,
+        as_dict=True,
+    )
+    farms_by_crop = defaultdict(list)
+    for r in farm_rows:
+        if r.farm:
+            farms_by_crop[r.parent].append(r.farm)
+    return [
+        {
+            "name": c.name,
+            "crop_name": c.crop_name or c.name,
+            "farms": sorted(set(farms_by_crop.get(c.name, []))),
+        }
+        for c in crops
+    ]
+
+
 def get_zones_by_greenhouse():
     """Return {greenhouse: [{name, bed, zone}, ...]} for every Zone."""
     rows = frappe.db.sql(

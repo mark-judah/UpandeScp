@@ -45,6 +45,8 @@ K_SM_FARMS_AND_GHS = "scp:sm_farms_and_ghs_v1"
 K_SM_BEDS_BY_GH = "scp:sm_beds_by_gh_v1"
 K_SM_ZONES_BY_GH = "scp:sm_zones_by_gh_v1"
 K_SM_ZONE_COUNTS_BY_GH = "scp:sm_zone_counts_by_gh_v1"
+K_SM_UNITS_BY_WH = "scp:sm_units_by_wh_v1"
+K_SM_FARMS_AND_WHS = "scp:sm_farms_and_whs_v1"
 K_SM_TRAPS_BY_GH = "scp:sm_traps_by_gh_v1"
 # Per-farm bulk bundle for the mobile configure flow. Key is suffixed with
 # the farm name: "scp:sm_farm_bundle_v1:{farm}". Holds all warehouses +
@@ -281,10 +283,11 @@ _DOC_INVALIDATIONS = {
     "Pest Filter": (K_OBSERVATION_TYPES,),
     "Disease Stages": (K_OBSERVATION_TYPES,),
     "Predator Stages": (K_OBSERVATION_TYPES,),
-    "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH),
+    "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH, K_SM_UNITS_BY_WH),
     "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_SM_BEDS_BY_GH),
-    "Warehouse": (K_GREENHOUSES_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_FARM_HIERARCHY),
-    "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS, K_FARM_HIERARCHY),
+    "Warehouse": (K_GREENHOUSES_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_SM_UNITS_BY_WH, K_FARM_HIERARCHY),
+    "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_FARM_HIERARCHY),
+    "Orchard Tree": (K_SM_UNITS_BY_WH,),
     "Trap": (K_SM_TRAPS_BY_GH,),
     "Spray Equipment Details": (K_AFP_SPRAY_EQUIPMENT,),
     "Item": (K_CHEMICALS_LIST,),

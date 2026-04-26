@@ -20,6 +20,12 @@
 		<div class="header-right">
 			<div class="filter-group">
 				<div class="filter-field">
+					<label for="scout-crop-filter">Crop</label>
+					<select id="scout-crop-filter" class="filter-select">
+						<option value="Rose">Rose</option>
+					</select>
+				</div>
+				<div class="filter-field">
 					<label for="scout-farm-filter">Farm</label>
 					<select id="scout-farm-filter" class="filter-select">
 						<option value="">All Farms</option>
@@ -33,11 +39,11 @@
 				</div>
 				<div class="filter-field">
 					<label for="scout-week-from">From</label>
-					<input type="week" id="scout-week-from" class="filter-input">
+					<input type="date" id="scout-week-from" class="filter-input">
 				</div>
 				<div class="filter-field">
 					<label for="scout-week-to">To</label>
-					<input type="week" id="scout-week-to" class="filter-input">
+					<input type="date" id="scout-week-to" class="filter-input">
 				</div>
 				<a href="/scouting_reports" class="refresh-btn" style="background:#fff;color:#0D2B5E;border:1px solid #0D2B5E;text-decoration:none;" title="Email or download scouting reports">
 					<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -205,46 +211,46 @@
 
 		<div class="chart-card chart-card-wide">
 			<div class="chart-header">
-				<div><h4>Pest Trends</h4><span class="chart-subtitle">Beds infected (%) · daily data points</span></div>
+				<div><h4>Pest Trends</h4><span class="chart-subtitle">Beds infected (%) · daily data points · click to zoom</span></div>
 				<div class="chart-controls">
 					<div class="filter-field"><label>Pest</label><select id="pest-weekly-pest-filter" class="filter-select"></select></div>
 					<div class="filter-field"><label>Section</label><select id="pest-weekly-section-filter" class="filter-select"></select></div>
 					<div class="filter-field"><label>Stage</label><select id="pest-weekly-stage-filter" class="filter-select"></select></div>
 				</div>
 			</div>
-			<div class="chart-body"><canvas id="pest-weekly-trend-chart"></canvas></div>
+			<div class="chart-body chart-body-md chart-host" id="pest-weekly-trend-chart"></div>
 		</div>
 
 
-		<div class="charts-grid-3">
+		<div class="charts-grid charts-grid-3">
 			<div class="chart-card">
-				<div class="chart-header"><h4>Plant Section Split</h4><span class="chart-subtitle">Where pests are found</span></div>
-				<div class="chart-body"><canvas id="pest-section-chart"></canvas></div>
+				<div class="chart-header"><h4>Plant Section Split</h4><span class="chart-subtitle">Where pests are found · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="pest-section-chart"></div>
 			</div>
 			<div class="chart-card">
-				<div class="chart-header"><h4>Entries by Stage</h4><span class="chart-subtitle">Filtered to selected pest</span></div>
-				<div class="chart-body"><canvas id="pest-stage-radial-chart"></canvas></div>
+				<div class="chart-header"><h4>Entries by Stage</h4><span class="chart-subtitle">Filtered to selected pest · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="pest-stage-radial-chart"></div>
 			</div>
 			<div class="chart-card">
-				<div class="chart-header"><h4>Pest Distribution</h4><span class="chart-subtitle">Beds infected by pest type</span></div>
-				<div class="chart-body"><canvas id="pest-distribution-chart"></canvas></div>
+				<div class="chart-header"><h4>Pest Distribution</h4><span class="chart-subtitle">Beds infected by pest type · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="pest-distribution-chart"></div>
 			</div>
 		</div>
 
 		<div class="charts-grid">
 			<div class="chart-card"><div class="chart-header"><h4>Severity Matrix</h4><span class="chart-subtitle">Current infestation levels</span></div><div class="chart-body"><div class="severity-matrix" id="pest-severity-matrix"></div></div></div>
-			<div class="chart-card"><div class="chart-header"><h4>Pest Incidence Trend</h4></div><div class="chart-body"><canvas id="pest-trend-chart"></canvas></div></div>
+			<div class="chart-card"><div class="chart-header"><h4>Pest Incidence Trend</h4><span class="chart-subtitle">Zones infected daily · click to zoom</span></div><div class="chart-body chart-body-md chart-host" id="pest-trend-chart"></div></div>
 		</div>
 
 		<!-- Greenhouse & Bed bar charts -->
 		<div class="charts-grid">
 			<div class="chart-card">
-				<div class="chart-header"><h4>Pest Pressure by Greenhouse</h4><span class="chart-subtitle">Total observations · zone coverage %</span></div>
-				<div class="chart-body" style="height:260px"><canvas id="pest-gh-bar-chart"></canvas></div>
+				<div class="chart-header"><h4>Pest Pressure by Greenhouse</h4><span class="chart-subtitle">Total observations · zone coverage % · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="pest-gh-bar-chart"></div>
 			</div>
 			<div class="chart-card">
-				<div class="chart-header"><h4>Top Beds by Pest Count</h4><span class="chart-subtitle">Highest cumulative pest counts</span></div>
-				<div class="chart-body" style="height:260px"><canvas id="pest-bed-bar-chart"></canvas></div>
+				<div class="chart-header"><h4>Top Beds by Pest Count</h4><span class="chart-subtitle">Highest cumulative pest counts · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="pest-bed-bar-chart"></div>
 			</div>
 		</div>
 
@@ -263,48 +269,48 @@
 
 		<div class="chart-card chart-card-wide">
 			<div class="chart-header">
-				<div><h4>Disease Trends</h4><span class="chart-subtitle">Beds infected (%) · daily data points</span></div>
+				<div><h4>Disease Trends</h4><span class="chart-subtitle">Beds infected (%) · daily data points · click to zoom</span></div>
 				<div class="chart-controls">
 					<div class="filter-field"><label>Disease</label><select id="disease-weekly-disease-filter" class="filter-select"></select></div>
 					<div class="filter-field"><label>Section</label><select id="disease-weekly-section-filter" class="filter-select"></select></div>
 					<div class="filter-field">
-        <label>Stage</label>
-        <select id="disease-weekly-stage-filter" class="filter-select"></select>
-      </div>
+						<label>Stage</label>
+						<select id="disease-weekly-stage-filter" class="filter-select"></select>
+					</div>
 				</div>
 			</div>
-			<div class="chart-body"><canvas id="disease-weekly-trend-chart"></canvas></div>
+			<div class="chart-body chart-body-md chart-host" id="disease-weekly-trend-chart"></div>
 		</div>
 
-		<div class="charts-grid-3">
+		<div class="charts-grid charts-grid-3">
 			<div class="chart-card">
-				<div class="chart-header"><h4>Stage Split</h4><span class="chart-subtitle">Selected or all diseases</span></div>
-				<div class="chart-body"><canvas id="disease-stage-chart"></canvas></div>
+				<div class="chart-header"><h4>Stage Split</h4><span class="chart-subtitle">Selected or all diseases · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="disease-stage-chart"></div>
 			</div>
 			<div class="chart-card">
-				<div class="chart-header"><h4>Entries by Stage</h4><span class="chart-subtitle">Filtered to selected disease</span></div>
-				<div class="chart-body"><canvas id="disease-stage-radial-chart"></canvas></div>
+				<div class="chart-header"><h4>Entries by Stage</h4><span class="chart-subtitle">Filtered to selected disease · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="disease-stage-radial-chart"></div>
 			</div>
 			<div class="chart-card">
-				<div class="chart-header"><h4>Disease Distribution</h4><span class="chart-subtitle">Beds infected by disease type</span></div>
-				<div class="chart-body"><canvas id="disease-distribution-chart"></canvas></div>
+				<div class="chart-header"><h4>Disease Distribution</h4><span class="chart-subtitle">Beds infected by disease type · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="disease-distribution-chart"></div>
 			</div>
 		</div>
 
 		<div class="charts-grid">
 			<div class="chart-card"><div class="chart-header"><h4>Severity Levels</h4><span class="chart-subtitle">Infection intensity</span></div><div class="chart-body"><div class="severity-bubbles" id="disease-severity-bubbles"></div></div></div>
-			<div class="chart-card"><div class="chart-header"><h4>Disease Incidence Trend</h4></div><div class="chart-body"><canvas id="disease-trend-chart"></canvas></div></div>
+			<div class="chart-card"><div class="chart-header"><h4>Disease Incidence Trend</h4><span class="chart-subtitle">Zones infected daily · click to zoom</span></div><div class="chart-body chart-body-md chart-host" id="disease-trend-chart"></div></div>
 		</div>
 
 		<!-- Greenhouse & Bed bar charts -->
 		<div class="charts-grid">
 			<div class="chart-card">
-				<div class="chart-header"><h4>Disease Pressure by Greenhouse</h4><span class="chart-subtitle">Total incidents · zone coverage %</span></div>
-				<div class="chart-body" style="height:260px"><canvas id="disease-gh-bar-chart"></canvas></div>
+				<div class="chart-header"><h4>Disease Pressure by Greenhouse</h4><span class="chart-subtitle">Total incidents · zone coverage % · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="disease-gh-bar-chart"></div>
 			</div>
 			<div class="chart-card">
-				<div class="chart-header"><h4>Top Beds by Disease Incidence</h4><span class="chart-subtitle">Highest disease observation counts</span></div>
-				<div class="chart-body" style="height:260px"><canvas id="disease-bed-bar-chart"></canvas></div>
+				<div class="chart-header"><h4>Top Beds by Disease Incidence</h4><span class="chart-subtitle">Highest disease observation counts · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="disease-bed-bar-chart"></div>
 			</div>
 		</div>
 
@@ -323,34 +329,34 @@
 
 		<div class="chart-card chart-card-wide">
 			<div class="chart-header">
-				<div><h4>Trap Trends</h4><span class="chart-subtitle">Counts · daily data points</span></div>
+				<div><h4>Trap Trends</h4><span class="chart-subtitle">Counts · daily data points · click to zoom</span></div>
 				<div class="chart-controls">
 					<div class="filter-field"><label>Trap</label><select id="trap-weekly-trap-filter" class="filter-select"></select></div>
 					<div class="filter-field"><label>Pest</label><select id="trap-weekly-pest-filter" class="filter-select"></select></div>
 				</div>
 			</div>
-			<div class="chart-body"><canvas id="trap-weekly-trend-chart"></canvas></div>
+			<div class="chart-body chart-body-md chart-host" id="trap-weekly-trend-chart"></div>
 		</div>
 
 		<div class="charts-grid">
-			<div class="chart-card"><div class="chart-header"><h4>Trap Count Trends</h4></div><div class="chart-body"><canvas id="trap-trend-chart"></canvas></div></div>
-			<div class="chart-card"><div class="chart-header"><h4>Trap Performance</h4><span class="chart-subtitle">By location</span></div><div class="chart-body"><canvas id="trap-performance-chart"></canvas></div></div>
+			<div class="chart-card"><div class="chart-header"><h4>Trap Count Trends</h4><span class="chart-subtitle">Daily trap catches · click to zoom</span></div><div class="chart-body chart-body-md chart-host" id="trap-trend-chart"></div></div>
+			<div class="chart-card"><div class="chart-header"><h4>Trap Performance</h4><span class="chart-subtitle">By location · click to zoom</span></div><div class="chart-body chart-body-md chart-host" id="trap-performance-chart"></div></div>
 		</div>
 
 		<div class="charts-grid">
 			<div class="chart-card"><div class="chart-header"><h4>Location Heatmap</h4><span class="chart-subtitle">Count intensity</span></div><div class="chart-body"><div class="trap-heatmap" id="trap-heatmap"></div></div></div>
-			<div class="chart-card"><div class="chart-header"><h4>Pest Breakdown</h4><span class="chart-subtitle">By pest type in traps</span></div><div class="chart-body"><canvas id="trap-pest-breakdown"></canvas></div></div>
+			<div class="chart-card"><div class="chart-header"><h4>Pest Breakdown</h4><span class="chart-subtitle">By pest type in traps · click to zoom</span></div><div class="chart-body chart-body-md chart-host" id="trap-pest-breakdown"></div></div>
 		</div>
 
 		<!-- FCM vs General & Indoor/Outdoor bar charts -->
 		<div class="charts-grid">
 			<div class="chart-card">
-				<div class="chart-header"><h4>FCM vs General Traps by Greenhouse</h4><span class="chart-subtitle">Stacked catch counts · focus vs other pests</span></div>
-				<div class="chart-body" style="height:260px"><canvas id="trap-gh-bar-chart"></canvas></div>
+				<div class="chart-header"><h4>FCM vs General Traps by Greenhouse</h4><span class="chart-subtitle">Stacked catch counts · focus vs other pests · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="trap-gh-bar-chart"></div>
 			</div>
 			<div class="chart-card">
-				<div class="chart-header"><h4>Indoor vs Outdoor Scouting</h4><span class="chart-subtitle">Trap entries by location type per greenhouse</span></div>
-				<div class="chart-body" style="height:260px"><canvas id="trap-indoor-outdoor-chart"></canvas></div>
+				<div class="chart-header"><h4>Indoor vs Outdoor Scouting</h4><span class="chart-subtitle">Trap entries by location type per greenhouse · click to zoom</span></div>
+				<div class="chart-body chart-body-md chart-host" id="trap-indoor-outdoor-chart"></div>
 			</div>
 		</div>
 
@@ -379,8 +385,8 @@
 		</div>
 
 		<div class="chart-card" style="margin-bottom:16px;">
-			<div class="chart-header"><h4>FCM &amp; Moth Trends</h4><span class="chart-subtitle">Daily catches (traps) + scouting counts — FCM vs other moths</span></div>
-			<div class="chart-body" style="height:160px;"><canvas id="fcm-moth-trend-chart"></canvas></div>
+			<div class="chart-header"><h4>FCM &amp; Moth Trends</h4><span class="chart-subtitle">Daily catches (traps) + scouting counts — FCM vs other moths · click to zoom</span></div>
+			<div class="chart-body chart-body-md chart-host" id="fcm-moth-trend-chart"></div>
 		</div>
 
 		<div class="charts-grid">
@@ -444,7 +450,7 @@
 				<div class="gh-sec-label" style="margin-top:20px">Trap Summary</div>
 				<div class="gh-len-grid" id="scout-gh-traps"></div>
 				<div class="gh-sec-label" style="margin-top:20px">Daily Trend</div>
-				<div class="gh-trend-wrap"><canvas id="scout-gh-trend-chart"></canvas></div>
+				<div class="gh-trend-wrap" id="scout-gh-trend-chart"></div>
 			</div>
 		</div>
 	</div>

@@ -2,8 +2,11 @@ import frappe
 
 from upande_scp.serverscripts import scouting_metrics
 from upande_scp.serverscripts.cache_utils import (
+    K_CROPS_SCOUTED,
+    K_SM_UNITS_BY_WH,
     K_SM_ZONE_COUNTS_BY_GH,
     TTL_LONG,
+    TTL_MEDIUM,
     get_or_set,
 )
 
@@ -50,20 +53,49 @@ def _cached_zones_by_greenhouse():
     )
 
 
+def _cached_units_by_warehouse():
+    """{warehouse: {type, count, farm}} — zones for greenhouses, trees for blocks."""
+    return get_or_set(
+        K_SM_UNITS_BY_WH,
+        scouting_metrics.get_units_by_warehouse,
+        ttl=TTL_LONG,
+    )
+
+
+def _cached_crops_with_farms():
+    return get_or_set(
+        K_CROPS_SCOUTED,
+        scouting_metrics.get_crops_with_farms,
+        ttl=TTL_MEDIUM,
+    )
+
+
 def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True):
+    # Date filter is always applied. The dashboard sends a single "greenhouse"
+    # parameter for either warehouse type; match against `greenhouse` OR
+    # `block` so block-based scouting (avocado orchards) scopes correctly.
     entry_filters = [["date_of_capture", "between", [from_date, to_date]]]
+    or_filters = None
     if greenhouse_filter:
-        entry_filters.append(["greenhouse", "=", greenhouse_filter])
+        or_filters = [
+            ["greenhouse", "=", greenhouse_filter],
+            ["block", "=", greenhouse_filter],
+        ]
 
     scouting_entries = frappe.get_all(
         "Scouting Entry",
         filters=entry_filters,
+        or_filters=or_filters,
         fields=[
             "name",
             "scouts_name",
             "greenhouse",
             "bed",
             "zone",
+            "block",
+            "`row`",
+            "tree",
+            "crop_scouted",
             "time_of_capture",
             "date_of_capture",
             "owner",
@@ -86,7 +118,12 @@ def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=
     if include_meta:
         payload["pest_colors"] = _cached_pest_colors()
         payload["disease_colors"] = _cached_disease_colors()
+        # Legacy field — kept so older clients still render.
         payload["zones_by_greenhouse"] = _cached_zones_by_greenhouse()
+        # New: warehouse-type-aware unit map (zones for greenhouses, trees for
+        # blocks) plus the crop allow-list.
+        payload["units_by_greenhouse"] = _cached_units_by_warehouse()
+        payload["crops_scouted"] = _cached_crops_with_farms()
 
     entry_names = [e.name for e in scouting_entries]
     if not entry_names:

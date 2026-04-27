@@ -2407,14 +2407,22 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const r = await response.json();
-            if (r.message && r.message.status === "success") {
-                setLoaderMessage('Work Order created! Redirecting...');
-                showToast(`Work Order ${r.message.work_order_name} created successfully!`, "success");
-                setTimeout(() => { window.location.href = `/application_work_order?name=${encodeURIComponent(r.message.work_order_name)}`; }, 1500);
-            } else {
-                showToast(`Error creating Work Order: ${r.message?.message || "Unknown error"}`, "error");
-                hideLoader();
-            }
+           if (r.message && r.message.status === "success") {
+				setLoaderMessage("Work Order created! Redirecting...");
+				showToast(
+					`Work Order ${r.message.work_order_name} created successfully!`,
+					"success",
+				);
+				setTimeout(() => {
+					window.location.href = `/app/work-order/${encodeURIComponent(r.message.work_order_name)}`;
+				}, 1500);
+			} else {
+				showToast(
+					`Error creating Work Order: ${r.message?.message || "Unknown error"}`,
+					"error",
+				);
+				hideLoader();
+			}
         } catch (error) {
             showToast("An unexpected error occurred during creation. Please try again.", "error");
             hideLoader();

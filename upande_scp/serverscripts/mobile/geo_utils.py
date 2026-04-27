@@ -110,6 +110,8 @@ def _build_tree_cache(utm_epsg: str, project_to_utm):
             geojson_data = json.loads(tree.raw_geojson)
             geometry = None
             radius = DEFAULT_TREE_RADIUS_M
+            
+            # Handle FeatureCollection format
             if (
                 geojson_data.get("type") == "FeatureCollection"
                 and geojson_data.get("features")
@@ -122,6 +124,16 @@ def _build_tree_cache(utm_epsg: str, project_to_utm):
                         radius = float(props["radius"])
                     except (TypeError, ValueError):
                         pass
+            # Handle Feature format
+            elif geojson_data.get("type") == "Feature":
+                geometry = geojson_data.get("geometry", {})
+                props = geojson_data.get("properties", {}) or {}
+                if props.get("radius") is not None:
+                    try:
+                        radius = float(props["radius"])
+                    except (TypeError, ValueError):
+                        pass
+            # Handle direct Point format
             elif geojson_data.get("type") == "Point":
                 geometry = geojson_data
 
@@ -151,6 +163,7 @@ def _build_tree_cache(utm_epsg: str, project_to_utm):
 
 
 def _get_cached_trees(utm_epsg: str, project_to_utm):
+    """Return cached tree list, rebuilding if stale or missing."""
     entry = _tree_cache.get(utm_epsg)
     if entry and (time.monotonic() - entry["built_at"]) < CACHE_TTL_SECONDS:
         return entry["trees"]
@@ -162,6 +175,21 @@ def _get_cached_trees(utm_epsg: str, project_to_utm):
 # ---------------------------------------------------------------------------
 
 def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
+    """
+    Find the nearest Zone for a given GPS point.
+    
+    Args:
+        latitude: GPS latitude
+        longitude: GPS longitude
+        bed: Bed name to filter zones (optional, but recommended)
+        accuracy: GPS accuracy in meters
+        
+    Returns:
+        tuple: (zone_name, confidence, details_dict)
+        - zone_name: Name of the closest zone or None
+        - confidence: 0.0 to 1.0
+        - details: dict with distance, buffer, fallback info
+    """
     try:
         lat = float(latitude)
         lon = float(longitude)
@@ -251,14 +279,20 @@ def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
 
 def get_tree_from_coordinates(latitude, longitude, row, accuracy, block=None):
     """
-    Parallel to get_zone_from_coordinates for the Block/Row/Tree flow.
-
-    Given a GPS point + a Row link (and optionally a Block), return the nearest
-    Tree whose row matches. Falls back to trees in the same block when no trees
-    are registered on that row, and to all trees as a last resort.
-
-    Returns (tree_name, confidence, detail_dict) — same shape as the zone
-    matcher so callers can share formatting/logging code.
+    Find the nearest Orchard Tree for a given GPS point.
+    
+    Args:
+        latitude: GPS latitude
+        longitude: GPS longitude
+        row: Row name to filter trees (primary filter)
+        accuracy: GPS accuracy in meters
+        block: Block name (secondary filter, used as fallback)
+        
+    Returns:
+        tuple: (tree_name, confidence, details_dict)
+        - tree_name: Name of the closest tree or None
+        - confidence: 0.0 to 1.0
+        - details: dict with distance, buffer, radius, fallback info
     """
     try:
         lat = float(latitude)
@@ -272,35 +306,53 @@ def get_tree_from_coordinates(latitude, longitude, row, accuracy, block=None):
 
         scout_point_utm = transform(project_to_utm, Point(lon, lat))
 
+        # Get all cached trees
         all_trees = _get_cached_trees(utm_epsg, project_to_utm)
 
-        # Row filter first, then block fallback, then all trees. Mirrors the
-        # bed→any fallback in the zone matcher so a misattributed row doesn't
-        # silently drop the point.
+        if not all_trees:
+            return None, 0.0, "No trees configured in the system"
+
+        # --- Smart filtering with fallbacks ---
+        # Priority 1: Match by exact row
+        # Priority 2: If no row match, try block (if provided)
+        # Priority 3: Fall back to all trees (last resort)
+        
         used_fallback = False
+        fallback_level = "none"
+        
         if row:
             candidates = [t for t in all_trees if t["row"] == row]
+            
             if not candidates and block:
+                # Try block as secondary filter
                 candidates = [t for t in all_trees if t["block"] == block]
-                used_fallback = bool(candidates)
-            elif not candidates:
+                used_fallback = True
+                fallback_level = "block"
+                
+            if not candidates:
+                # Last resort: use all trees
                 candidates = all_trees
                 used_fallback = True
+                fallback_level = "all_trees"
         elif block:
+            # No row specified, but block is provided
             candidates = [t for t in all_trees if t["block"] == block]
-            used_fallback = False
             if not candidates:
                 candidates = all_trees
                 used_fallback = True
+                fallback_level = "all_trees"
         else:
+            # Neither row nor block specified
             candidates = all_trees
+            used_fallback = True
+            fallback_level = "all_trees"
 
         if not candidates:
-            return None, 0.0, "No trees configured in the system"
+            return None, 0.0, "No matching trees found"
 
+        # Find the nearest tree by distance
         closest_tree = None
         min_distance = float("inf")
-        confidence = 0.0
         closest_radius = DEFAULT_TREE_RADIUS_M
 
         for tree in candidates:
@@ -319,11 +371,11 @@ def get_tree_from_coordinates(latitude, longitude, row, accuracy, block=None):
         if closest_tree is None:
             return None, 0.0, f"No tree geometry found within range (accuracy: {accuracy_m}m)"
 
-        # Tolerance = max(tree radius, GPS accuracy). Inside tolerance = high
-        # confidence; beyond that, confidence falls off with distance.
+        # Calculate confidence based on distance vs tree radius and GPS accuracy
         tolerance = max(closest_radius, accuracy_m)
+        
         if min_distance <= closest_radius:
-            confidence = 1.0
+            confidence = 1.0  # GPS point is within the tree's radius
         elif min_distance <= tolerance * 0.6:
             confidence = 0.9
         elif min_distance <= tolerance:
@@ -335,12 +387,25 @@ def get_tree_from_coordinates(latitude, longitude, row, accuracy, block=None):
         else:
             confidence = 0.1
 
-        return closest_tree, confidence, {
+        # Build detailed response
+        details = {
             "distance": f"{min_distance:.2f}",
             "buffer": f"{tolerance:.2f}",
             "radius": f"{closest_radius:.2f}",
             "fallback": used_fallback,
+            "fallback_level": fallback_level,
+            "candidates_count": len(candidates),
+            "total_trees": len(all_trees)
         }
+
+        # Log if fallback was used (this helps with debugging)
+        if used_fallback and fallback_level != "none":
+            frappe.log_error(
+                f"Tree detection used fallback to {fallback_level}",
+                f"Row='{row}' Block='{block}' -> found {closest_tree} at {min_distance:.2f}m"
+            )
+
+        return closest_tree, confidence, details
 
     except Exception as e:
         error_msg = f"Error in get_tree_from_coordinates: {str(e)}"

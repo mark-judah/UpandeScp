@@ -289,6 +289,7 @@ scheduler_events = {
 # }
 website_route_rules = [
     {"from_route": "/scouts-map", "to_route": "/scouts_map"},
+    {"from_route": "/avocado-scouts-map", "to_route": "/avocado_scouts_map"},
     {"from_route": "/observations-map", "to_route": "/observations_map"},
     {"from_route": "/scouting-heatmaps", "to_route": "/scouting_heatmaps"},
     {"from_route": "/variety-map", "to_route": "/variety_map"},

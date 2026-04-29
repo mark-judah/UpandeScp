@@ -1,0 +1,125 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "allow_rename": 1,
+ "autoname": "prompt",
+ "creation": "2026-04-29 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "asset_type",
+  "asset_label",
+  "column_break_basics",
+  "farm",
+  "block",
+  "section_break_geometry",
+  "height",
+  "radius",
+  "section_break_location",
+  "location_geojson"
+ ],
+ "fields": [
+  {
+   "default": "Tank",
+   "fieldname": "asset_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Asset Type",
+   "options": "Tank\nValve",
+   "reqd": 1
+  },
+  {
+   "description": "Optional human label, e.g. 'WESA Main Tank'.",
+   "fieldname": "asset_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Label"
+  },
+  {
+   "fieldname": "column_break_basics",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "farm",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Farm",
+   "options": "Farm"
+  },
+  {
+   "description": "Optional. Block/Greenhouse the asset belongs to.",
+   "fieldname": "block",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Block",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "section_break_geometry",
+   "fieldtype": "Section Break",
+   "label": "3D Geometry"
+  },
+  {
+   "default": "3.0",
+   "description": "Height in metres. For valves, this is total height from ground to wheel.",
+   "fieldname": "height",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Height (m)",
+   "non_negative": 1,
+   "precision": "2"
+  },
+  {
+   "default": "0.5",
+   "description": "Radius in metres. For tanks, this is cylinder radius. For valves, this scales the pipe/wheel.",
+   "fieldname": "radius",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Radius (m)",
+   "non_negative": 1,
+   "precision": "2"
+  },
+  {
+   "fieldname": "section_break_location",
+   "fieldtype": "Section Break",
+   "label": "Location"
+  },
+  {
+   "description": "GeoJSON Point Feature with the asset's coordinates.",
+   "fieldname": "location_geojson",
+   "fieldtype": "Code",
+   "label": "Location GeoJSON",
+   "options": "JSON"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-04-29 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Tank And Valve",
+ "naming_rule": "Set by user",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

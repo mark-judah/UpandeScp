@@ -313,6 +313,7 @@
 	    const LAT  = {{ lat | json }};
 	    const LON  = {{ lon | json }};
 	    const ZOOM = {{ default_zoom | json }};
+	    const FARM_DEFAULTS = {{ farm_coordinates | tojson | safe }};
 	    const CSRF = "{{csrf_token}}";
 
 	    const palette = ['#ef4444','#3b82f6','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f43f5e','#22c55e','#a78bfa','#fb923c'];
@@ -327,11 +328,6 @@
 	    window.lastScoutingData  = null;
 	    window.allLatLngs = [];
 	    let ghOverlay = null;
-
-	    // Hardcoded farm view defaults — picking the farm pans/zooms here.
-	    const FARM_DEFAULTS = {
-	        'Lokitela': { lat: 0.984247, lon: 34.861851, zoom: 16 },
-	    };
 
 	    // Rose-only filter: keep entries where crop_scouted is empty or matches /rose/i.
 	    const isRoseEntry = (e) => {
@@ -831,12 +827,29 @@
 	        }
 	    };
 
+	    // Close any sticky tooltip before panning — leaving one open while the
+	    // underlying layer reflows races against the move and produces a
+	    // tooltip stuck mid-screen until the next mousemove.
+	    const closeTooltipsRecursive = (layer) => {
+	        if (!layer) return;
+	        if (layer.closeTooltip) layer.closeTooltip();
+	        if (typeof layer.eachLayer === 'function') {
+	            layer.eachLayer(closeTooltipsRecursive);
+	        }
+	    };
+	    const closeAllTooltips = () => {
+	        if (!window.map) return;
+	        window.map.closeTooltip();
+	        window.map.eachLayer(closeTooltipsRecursive);
+	    };
+
 	    farmSelect.addEventListener('change', () => {
 	        const farmName = farmSelect.value;
 	        populateSections(farmName);
 	        populateBlocks(farmName, '');
 	        const center = FARM_DEFAULTS[farmName];
 	        if (center && window.map) {
+	            closeAllTooltips();
 	            window.map.setView([center.lat, center.lon], center.zoom);
 	        }
 	        zoneCache.clear();

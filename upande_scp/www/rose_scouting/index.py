@@ -105,6 +105,21 @@ def _build_greenhouses_geojson():
     return greenhouses
 
 
+def _build_farm_coordinates(map_settings):
+    """Map of farm name → {lat, lon, zoom} from Map Settings child table."""
+    out = {}
+    for row in (map_settings.get("farm_coordinates") or []):
+        farm = (row.farm or "").strip()
+        if not farm or row.lat in (None, 0) or row.lon in (None, 0):
+            continue
+        out[farm] = {
+            "lat": row.lat,
+            "lon": row.lon,
+            "zoom": row.default_zoom or map_settings.default_zoom,
+        }
+    return out
+
+
 def get_context(context):
     context.no_cache = 1
     map_settings = frappe.get_doc("Map Settings", "Map Settings")
@@ -112,6 +127,7 @@ def get_context(context):
     context.lat = map_settings.lat
     context.lon = map_settings.lon
     context.default_zoom = map_settings.default_zoom
+    context.farm_coordinates = _build_farm_coordinates(map_settings)
     context.csrf_token = frappe.sessions.get_csrf_token()
 
     context.greenhouses_geojson = get_or_set(

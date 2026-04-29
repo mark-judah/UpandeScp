@@ -14,7 +14,10 @@ from upande_scp.serverscripts.cache_utils import (
     TTL_LONG,
     get_or_set,
 )
-from upande_scp.www.rose_scouting.index import _build_farm_hierarchy
+from upande_scp.www.rose_scouting.index import (
+    _build_farm_coordinates,
+    _build_farm_hierarchy,
+)
 
 
 def _build_blocks_geojson():
@@ -74,6 +77,7 @@ def get_context(context):
     context.lat = map_settings.lat
     context.lon = map_settings.lon
     context.default_zoom = map_settings.default_zoom
+    context.farm_coordinates = _build_farm_coordinates(map_settings)
     context.csrf_token = frappe.sessions.get_csrf_token()
 
     context.blocks_geojson = get_or_set(

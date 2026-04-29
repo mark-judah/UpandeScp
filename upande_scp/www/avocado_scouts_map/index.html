@@ -331,17 +331,13 @@
 	const LAT  = {{ lat | json }};
 	const LON  = {{ lon | json }};
 	const ZOOM = {{ default_zoom | json }};
+	const FARM_DEFAULTS = {{ farm_coordinates | tojson | safe }};
 	const CSRF = "{{ csrf_token }}";
 
 	// Same palette as the 2D scouts map so a scout's colour is consistent
 	// across pages. Avocado-only doesn't share state, but the visual hue does.
 	const palette = ['#ef4444','#3b82f6','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f43f5e','#22c55e','#a78bfa','#fb923c'];
 	const UNSCOUTED_COLOR = '#7c8b6a'; // muted olive — reads as "tree" but quiet
-
-	// Hardcoded farm view defaults — picking the farm pans/zooms here.
-	const FARM_DEFAULTS = {
-		'Lokitela': { lat: 0.984247, lon: 34.861851, zoom: 16 },
-	};
 
 	const setProgress = (pct, msg) => {
 		const fill = document.getElementById('map-load-fill');

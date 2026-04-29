@@ -658,7 +658,13 @@
 			const tankRimMat    = new THREE.MeshLambertMaterial({ color: 0x6b7480, flatShading: true });
 			const valvePipeMat  = new THREE.MeshLambertMaterial({ color: 0x4b6079, flatShading: true });
 			const valveStemMat  = new THREE.MeshLambertMaterial({ color: 0xb8c0c8, flatShading: true });
-			const valveWheelMat = new THREE.MeshLambertMaterial({ color: 0xb45309, flatShading: true });
+			const valveWheelMat = new THREE.MeshBasicMaterial({ color: 0xffd400 });
+			const valveHaloMat  = new THREE.MeshBasicMaterial({
+				color: 0xffeb3b, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false,
+			});
+			const valveBeaconMat = new THREE.MeshBasicMaterial({
+				color: 0xffeb3b, transparent: true, opacity: 0.55, depthWrite: false,
+			});
 
 			for (const f of this.features) {
 				const props = f.properties || {};
@@ -672,30 +678,51 @@
 				const group = new THREE.Group();
 
 				if (props.asset_type === 'Valve') {
-					const pipeH = h * 0.55;
+					const VALVE_SCALE = 10;
+					const vh = h * VALVE_SCALE;
+					const vr = r * VALVE_SCALE;
+
+					const pipeH = vh * 0.55;
 					const pipe = new THREE.Mesh(
-						new THREE.CylinderGeometry(r, r, pipeH, 16),
+						new THREE.CylinderGeometry(vr, vr, pipeH, 16),
 						valvePipeMat,
 					);
 					pipe.position.y = pipeH / 2;
 					group.add(pipe);
 
-					const stemH = h * 0.4;
+					const stemH = vh * 0.4;
 					const stem = new THREE.Mesh(
-						new THREE.CylinderGeometry(r * 0.22, r * 0.22, stemH, 12),
+						new THREE.CylinderGeometry(vr * 0.22, vr * 0.22, stemH, 12),
 						valveStemMat,
 					);
 					stem.position.y = pipeH + stemH / 2;
 					group.add(stem);
 
-					const wheelR = r * 1.6;
-					const wheelH = Math.max(0.05, h * 0.05);
+					const wheelR = vr * 1.6;
+					const wheelH = Math.max(0.05, vh * 0.05);
 					const wheel = new THREE.Mesh(
 						new THREE.CylinderGeometry(wheelR, wheelR, wheelH, 24),
 						valveWheelMat,
 					);
 					wheel.position.y = pipeH + stemH + wheelH / 2;
 					group.add(wheel);
+
+					// Highlight: glowing ground halo + vertical beacon above the wheel
+					const halo = new THREE.Mesh(
+						new THREE.RingGeometry(vr * 1.8, vr * 3.2, 40),
+						valveHaloMat,
+					);
+					halo.rotation.x = -Math.PI / 2;
+					halo.position.y = 0.05;
+					group.add(halo);
+
+					const beaconH = vh * 0.6;
+					const beacon = new THREE.Mesh(
+						new THREE.CylinderGeometry(vr * 0.35, vr * 0.05, beaconH, 16),
+						valveBeaconMat,
+					);
+					beacon.position.y = pipeH + stemH + wheelH + beaconH / 2;
+					group.add(beacon);
 				} else {
 					const body = new THREE.Mesh(
 						new THREE.CylinderGeometry(r, r, h, 24),

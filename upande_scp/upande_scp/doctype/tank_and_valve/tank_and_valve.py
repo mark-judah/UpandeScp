@@ -16,8 +16,18 @@ class TankAndValve(Document):
 			geo = json.loads(raw)
 		except ValueError:
 			frappe.throw("Location GeoJSON is not valid JSON.")
-		# Accept either a Feature or a bare Point geometry
-		geom = geo.get("geometry") if isinstance(geo, dict) and geo.get("type") == "Feature" else geo
+		if not isinstance(geo, dict):
+			frappe.throw("Location GeoJSON must be a Point Feature.")
+		# Accept FeatureCollection (use first feature), Feature, or bare Point
+		if geo.get("type") == "FeatureCollection":
+			feats = geo.get("features") or []
+			if not feats or not isinstance(feats[0], dict):
+				frappe.throw("Location GeoJSON FeatureCollection must contain a Point Feature.")
+			geom = feats[0].get("geometry")
+		elif geo.get("type") == "Feature":
+			geom = geo.get("geometry")
+		else:
+			geom = geo
 		if not isinstance(geom, dict) or geom.get("type") != "Point":
 			frappe.throw("Location GeoJSON must be a Point Feature.")
 		coords = geom.get("coordinates")

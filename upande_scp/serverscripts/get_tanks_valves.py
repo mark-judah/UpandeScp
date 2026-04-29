@@ -27,12 +27,20 @@ def _features_from_rows(rows):
 			continue
 		if not isinstance(geo, dict):
 			continue
-		# Allow either Feature or bare Point geometry
-		if geo.get("type") == "Feature":
+		# Allow FeatureCollection (use first feature), Feature, or bare Point
+		if geo.get("type") == "FeatureCollection":
+			feats = geo.get("features") or []
+			if not feats or not isinstance(feats[0], dict):
+				continue
+			feat = feats[0]
+		elif geo.get("type") == "Feature":
 			feat = geo
 		elif geo.get("type") == "Point":
 			feat = {"type": "Feature", "geometry": geo, "properties": {}}
 		else:
+			continue
+		geom = feat.get("geometry") if isinstance(feat, dict) else None
+		if not isinstance(geom, dict) or geom.get("type") != "Point":
 			continue
 		props = feat.setdefault("properties", {})
 		props["asset_name"] = r["name"]

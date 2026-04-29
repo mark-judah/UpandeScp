@@ -1261,13 +1261,20 @@
 		const today = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`;
 		document.getElementById('scout-date-picker').value = today;
 
-		// Default farm: Lokitela if present → load farm-wide.
+		// Default farm: first farm with coordinates in Map Settings, else the
+		// first farm in the dropdown. Anything left after that lands on the
+		// empty-hint state.
 		const farmSelect = document.getElementById('farm-select');
-		const hasLokitela = [...farmSelect.options].some(o => o.value === 'Lokitela');
-		if (hasLokitela) {
-			farmSelect.value = 'Lokitela';
-			buildBlockOptions('Lokitela');
-			loadScope({ farm: 'Lokitela' });
+		const configuredFarms = Object.keys(FARM_DEFAULTS || {});
+		const farmOptions = [...farmSelect.options].map(o => o.value).filter(Boolean);
+		const defaultFarm =
+			configuredFarms.find(f => farmOptions.includes(f)) ||
+			farmOptions[0] ||
+			'';
+		if (defaultFarm) {
+			farmSelect.value = defaultFarm;
+			buildBlockOptions(defaultFarm);
+			loadScope({ farm: defaultFarm });
 		} else {
 			document.getElementById('empty-hint').style.display = 'block';
 		}

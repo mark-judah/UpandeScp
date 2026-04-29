@@ -213,7 +213,7 @@
 			});
 			mapInitialized = true;
 			renderBaseLayers();
-			window.map.setView([0.0692, 35.7565], 18);
+			window.map.setView([{{ lat | json }}, {{ lon | json }}], {{ default_zoom | json }});
 			fetchBedsAndZones();
 		};
 

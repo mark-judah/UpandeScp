@@ -213,9 +213,6 @@
 		pointer-events: none;
 	}
 
-	/* No hover tooltips on this page — the sticky variant was racing pan/zoom. */
-	.leaflet-tooltip { display: none !important; }
-
 	@media (max-width: 768px) {
 		.scout-filters {
 			gap: 8px;
@@ -495,15 +492,15 @@
 	        window.zoneLayer = L.geoJSON(allFeats, {
 	            renderer: canvasRenderer,
 	            style: { color: '#1e293b', weight:0.7, opacity:0.6, fill:false },
-	            interactive: false
-	        });
-
-	        window.map.on('zoomend', () => {
-	            const z = window.map.getZoom();
-	            if (z >= 15) { if (!window.map.hasLayer(window.zoneLayer)) window.zoneLayer.addTo(window.map); }
-	            else { if (window.zoneLayer && window.map.hasLayer(window.zoneLayer)) window.map.removeLayer(window.zoneLayer); }
-	            if (z >= 19) { if (!window.map.hasLayer(window.lineIdLabels)) window.lineIdLabels.addTo(window.map); }
-	            else { if (window.lineIdLabels && window.map.hasLayer(window.lineIdLabels)) window.map.removeLayer(window.lineIdLabels); }
+	            onEachFeature: (f, layer) => {
+	                if (f.properties?.zone_name) {
+	                    const parts = f.properties.zone_name.split(' - ');
+	                    const html = parts.length >= 4
+	                        ? `<div style='font-size:0.75rem;line-height:1.5;'><strong>${parts[0]}</strong><br>${parts.slice(1).join(' – ')}</div>`
+	                        : f.properties.zone_name;
+	                    layer.bindTooltip(html);
+	                }
+	            }
 	        });
 
 	        const z = window.map.getZoom();
@@ -755,9 +752,30 @@
 	        window.map = L.map('map', { zoomSnap:0.1, zoomDelta:0.1, maxZoom:22.4, zoomControl:true });
 	        mapInitialized = true;
 
+	        // maxNativeZoom = 19 (OSM's hard cap); maxZoom matches the map so
+	        // Leaflet upscales tiles past 19 instead of going blank.
 	        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-	            maxZoom: 19, attribution: '© OpenStreetMap contributors'
+	            maxNativeZoom: 19,
+	            maxZoom: 22.4,
+	            attribution: '© OpenStreetMap contributors'
 	        }).addTo(window.map);
+
+	        // One-shot zoomend handler — toggles zone grid above 15, line-ID
+	        // labels above 19. Registered here (not inside renderZones) so it
+	        // doesn't stack up on every farm/date change.
+	        window.map.on('zoomend', () => {
+	            const z = window.map.getZoom();
+	            const zones = window.zoneLayer;
+	            const labels = window.lineIdLabels;
+	            if (zones) {
+	                if (z >= 15 && !window.map.hasLayer(zones)) zones.addTo(window.map);
+	                else if (z < 15 && window.map.hasLayer(zones)) window.map.removeLayer(zones);
+	            }
+	            if (labels) {
+	                if (z >= 19 && !window.map.hasLayer(labels)) labels.addTo(window.map);
+	                else if (z < 19 && window.map.hasLayer(labels)) window.map.removeLayer(labels);
+	            }
+	        });
 
 	        window.map.setView([LAT, LON], ZOOM);
 

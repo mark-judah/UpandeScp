@@ -428,7 +428,8 @@
 	        mapInitialized = true;
 
 	        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-	            maxZoom: 19,
+	            maxNativeZoom: 19,
+	            maxZoom: 22.4,
 	            attribution: '© OpenStreetMap contributors'
 	        }).addTo(window.map);
 

@@ -213,6 +213,9 @@
 		pointer-events: none;
 	}
 
+	/* No hover tooltips on this page — the sticky variant was racing pan/zoom. */
+	.leaflet-tooltip { display: none !important; }
+
 	@media (max-width: 768px) {
 		.scout-filters {
 			gap: 8px;
@@ -492,15 +495,7 @@
 	        window.zoneLayer = L.geoJSON(allFeats, {
 	            renderer: canvasRenderer,
 	            style: { color: '#1e293b', weight:0.7, opacity:0.6, fill:false },
-	            onEachFeature: (f, layer) => {
-	                if (f.properties?.zone_name) {
-	                    const parts = f.properties.zone_name.split(' - ');
-	                    const html = parts.length >= 4
-	                        ? `<div style='font-size:0.75rem;line-height:1.5;'><strong>${parts[0]}</strong><br>${parts.slice(1).join(' – ')}</div>`
-	                        : f.properties.zone_name;
-	                    layer.bindTooltip(html, { sticky: true, direction: 'top', offset: [0, -4] });
-	                }
-	            }
+	            interactive: false
 	        });
 
 	        window.map.on('zoomend', () => {
@@ -572,11 +567,7 @@
 	                const start = getEdgeMidpoint(visits[i].coords);
 	                const end   = getEdgeMidpoint(visits[i+1].coords);
 	                if (!start || !end) continue;
-	                const line = L.polyline([start, end], { color, weight:2.5, opacity:0.8, smoothFactor:1.2, lineJoin:'round', bubblingMouseEvents:false });
-	                line.bindTooltip(
-	                    `<div style='font-size:0.8125rem;'><strong>${scoutName}</strong><br>${visits[i].zoneName} → ${visits[i+1].zoneName}</div>`,
-	                    { sticky: true, direction: 'top', offset: [0, -4] }
-	                );
+	                const line = L.polyline([start, end], { color, weight:2.5, opacity:0.8, smoothFactor:1.2, lineJoin:'round', interactive:false });
 	                group.addLayer(line);
 	            }
 	        });
@@ -827,29 +818,12 @@
 	        }
 	    };
 
-	    // Close any sticky tooltip before panning — leaving one open while the
-	    // underlying layer reflows races against the move and produces a
-	    // tooltip stuck mid-screen until the next mousemove.
-	    const closeTooltipsRecursive = (layer) => {
-	        if (!layer) return;
-	        if (layer.closeTooltip) layer.closeTooltip();
-	        if (typeof layer.eachLayer === 'function') {
-	            layer.eachLayer(closeTooltipsRecursive);
-	        }
-	    };
-	    const closeAllTooltips = () => {
-	        if (!window.map) return;
-	        window.map.closeTooltip();
-	        window.map.eachLayer(closeTooltipsRecursive);
-	    };
-
 	    farmSelect.addEventListener('change', () => {
 	        const farmName = farmSelect.value;
 	        populateSections(farmName);
 	        populateBlocks(farmName, '');
 	        const center = FARM_DEFAULTS[farmName];
 	        if (center && window.map) {
-	            closeAllTooltips();
 	            window.map.setView([center.lat, center.lon], center.zoom);
 	        }
 	        zoneCache.clear();

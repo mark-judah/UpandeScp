@@ -14,7 +14,7 @@ from upande_scp.serverscripts.cache_utils import (
     TTL_LONG,
     get_or_set,
 )
-from upande_scp.www.rose_scouting import _build_farm_hierarchy
+from upande_scp.www.rose_scouting.index import _build_farm_hierarchy
 
 
 def _build_blocks_geojson():

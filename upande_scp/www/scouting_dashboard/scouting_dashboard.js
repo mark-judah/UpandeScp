@@ -312,6 +312,16 @@ function formatDateYmd(dateObj) {
 	return y + "-" + m + "-" + d;
 }
 
+/* Today's date in the user's local timezone as YYYY-MM-DD. Avoids the off-by-one
+   you get from `new Date().toISOString()` when the browser is east of UTC. */
+function localTodayYmd() {
+	var d = new Date();
+	var y = d.getFullYear();
+	var m = String(d.getMonth() + 1).padStart(2, "0");
+	var dd = String(d.getDate()).padStart(2, "0");
+	return y + "-" + m + "-" + dd;
+}
+
 function getIsoWeekDateRange(year, week) {
 	var simple = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
 	var dow = simple.getUTCDay();
@@ -384,7 +394,7 @@ function parseDateValue(dateStr) {
 function getSelectedWeekRangeInfo() {
 	var fromValue = root_element.querySelector("#scout-week-from")?.value;
 	var toValue = root_element.querySelector("#scout-week-to")?.value;
-	var todayStr = formatDateYmd(new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z"));
+	var todayStr = localTodayYmd();
 	var fromParsed = parseDateValue(fromValue) || parseDateValue(todayStr);
 	var toParsed = parseDateValue(toValue) || parseDateValue(todayStr);
 	if (!fromParsed || !toParsed) return null;
@@ -942,7 +952,7 @@ function loadGreenhouseOptions() {
 function setDefaultWeekInputsToLatestScouting(weekFromInput, weekToInput) {
 	/* Default range = current ISO week (Mon → Sun); replaced by latest scouting
 	   week if the API call below returns a record. */
-	var todayIso = getIsoWeekString(new Date());
+	var todayIso = getIsoWeekString(localTodayYmd());
 	var todayParts = todayIso.match(/^(\d{4})-W(\d{2})$/);
 	if (todayParts) {
 		var defRange = getIsoWeekDateRange(Number(todayParts[1]), Number(todayParts[2]));

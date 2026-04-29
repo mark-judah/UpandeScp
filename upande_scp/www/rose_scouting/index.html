@@ -502,7 +502,7 @@
 	                    const html = parts.length >= 4
 	                        ? `<div style='font-size:0.75rem;line-height:1.5;'><strong>${parts[0]}</strong><br>${parts.slice(1).join(' – ')}</div>`
 	                        : f.properties.zone_name;
-	                    layer.bindTooltip(html);
+	                    layer.bindTooltip(html, { sticky: true, direction: 'top', offset: [0, -4] });
 	                }
 	            }
 	        });
@@ -538,8 +538,7 @@
 	            try {
 	                const coords = geo.features[0].geometry.coordinates.map(c => [c[1],c[0]]);
 	                const color = scoutColors[info.scout];
-	                const line = L.polyline(coords, { color, weight:0, opacity:1, pane:'overlayPane' });
-	                line.bindTooltip(`<div style='font-size:0.8125rem;line-height:1.4;'><strong>${zone.name}</strong><br>${info.scout}<br>${info.count} entries</div>`);
+	                const line = L.polyline(coords, { color, weight:0, opacity:1, pane:'overlayPane', interactive:false });
 	                window.scoutLayers[info.scout].addLayer(line);
 	                window.allLatLngs.push(...coords);
 	                if (!window.scoutedBedOverlay.hasLayer(window.scoutLayers[info.scout])) window.scoutedBedOverlay.addLayer(window.scoutLayers[info.scout]);
@@ -577,8 +576,11 @@
 	                const start = getEdgeMidpoint(visits[i].coords);
 	                const end   = getEdgeMidpoint(visits[i+1].coords);
 	                if (!start || !end) continue;
-	                const line = L.polyline([start, end], { color, weight:2.5, opacity:0.8, smoothFactor:1.2, lineJoin:'round' });
-	                line.bindTooltip(`<div style='font-size:0.8125rem;'><strong>${scoutName}</strong><br>${visits[i].zoneName} → ${visits[i+1].zoneName}</div>`);
+	                const line = L.polyline([start, end], { color, weight:2.5, opacity:0.8, smoothFactor:1.2, lineJoin:'round', bubblingMouseEvents:false });
+	                line.bindTooltip(
+	                    `<div style='font-size:0.8125rem;'><strong>${scoutName}</strong><br>${visits[i].zoneName} → ${visits[i+1].zoneName}</div>`,
+	                    { sticky: true, direction: 'top', offset: [0, -4] }
+	                );
 	                group.addLayer(line);
 	            }
 	        });
@@ -741,11 +743,18 @@
 	        });
 	    };
 
+	    const localDateISO = (d = new Date()) => {
+	        const y = d.getFullYear();
+	        const m = String(d.getMonth() + 1).padStart(2, '0');
+	        const day = String(d.getDate()).padStart(2, '0');
+	        return `${y}-${m}-${day}`;
+	    };
+
 	    const prefetchPastDays = (fromDate, greenhouse) => {
 	        const d = new Date(fromDate + 'T00:00:00');
 	        for (let i = 1; i <= 3; i++) {
 	            d.setDate(d.getDate() - 1);
-	            const day = d.toISOString().slice(0, 10);
+	            const day = localDateISO(d);
 	            if (!dataCache.has(`${day}_${greenhouse || ''}`)) {
 	                fetchAllData(day, greenhouse, true);
 	            }
@@ -765,7 +774,7 @@
 
 	        window.map.setView([LAT, LON], ZOOM);
 
-	        const today = new Date().toISOString().slice(0, 10);
+	        const today = localDateISO();
 	        document.getElementById('scout-date-picker').value = today;
 
 	        fetchAllData(today, '');

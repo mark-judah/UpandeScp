@@ -855,11 +855,18 @@
 	        });
 	    }
 
+	    const localDateISO = (d = new Date()) => {
+	        const y = d.getFullYear();
+	        const m = String(d.getMonth() + 1).padStart(2, '0');
+	        const day = String(d.getDate()).padStart(2, '0');
+	        return `${y}-${m}-${day}`;
+	    };
+
 	    const prefetchPastDays = (fromDate, greenhouse) => {
 	        const d = new Date(fromDate + 'T00:00:00');
 	        for (let i = 1; i <= 3; i++) {
 	            d.setDate(d.getDate() - 1);
-	            const day = d.toISOString().slice(0, 10);
+	            const day = localDateISO(d);
 	            if (!dataCache.has(`${day}_${greenhouse || ''}`)) {
 	                fetchObservations(day, greenhouse, true);
 	            }
@@ -880,8 +887,8 @@
 
 	        window.map.setView([LAT, LON], ZOOM);
 
-	        // Set today's date and do initial fetch
-	        const today = new Date().toISOString().slice(0, 10);
+	        // Set today's date and do initial fetch (local timezone)
+	        const today = localDateISO();
 	        datePicker.value = today;
 
 	        fetchObservations(today, ghSelect.value);

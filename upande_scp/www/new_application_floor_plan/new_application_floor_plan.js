@@ -2430,4 +2430,12 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     renderThresholdCheckboxes(null);
+
+    if (els.scheduledApplicationTime && !els.scheduledApplicationTime.value) {
+        const _d = new Date();
+        els.scheduledApplicationTime.value =
+            _d.getFullYear() + "-" +
+            String(_d.getMonth() + 1).padStart(2, "0") + "-" +
+            String(_d.getDate()).padStart(2, "0");
+    }
 });

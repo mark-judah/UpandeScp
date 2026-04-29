@@ -611,7 +611,13 @@
 		let farmsData = [];
 		let greenhouseMap = {};
 		let allGreenhouseResults = {};
-		let currentDate = new Date().toISOString().split("T")[0];
+		const localDateISO = (d = new Date()) => {
+			const y = d.getFullYear();
+			const m = String(d.getMonth() + 1).padStart(2, "0");
+			const day = String(d.getDate()).padStart(2, "0");
+			return `${y}-${m}-${day}`;
+		};
+		let currentDate = localDateISO();
 		let currentFarmFilter = "__all__";
 		let currentGHFilter = "__all__";
 		let currentPestFilter = "__all__";
@@ -657,11 +663,11 @@
 		// ── Calculate date range (current date and 2 days before) ──
 		function getDateRange() {
 			const dates = [];
-			const today = new Date(currentDate);
+			const today = new Date(currentDate + "T00:00:00");
 			for (let i = 0; i < 3; i++) {
 				const d = new Date(today);
 				d.setDate(d.getDate() - i);
-				dates.push(d.toISOString().split("T")[0]);
+				dates.push(localDateISO(d));
 			}
 			return dates;
 		}

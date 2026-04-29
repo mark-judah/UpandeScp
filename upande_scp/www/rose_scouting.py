@@ -1,12 +1,16 @@
+"""Rose-only scouting map (renamed from scouts_map).
+
+The page filters scouting entries to crop_scouted in ('', 'Rose'/'Roses') so
+avocado data is excluded — that view lives on /avocado-scouts-map.
+"""
+
 import json
 import frappe
 
 from upande_scp.serverscripts.cache_utils import (
-    K_CROPS_SCOUTED,
     K_FARM_HIERARCHY,
     K_GREENHOUSES_GEOJSON,
     TTL_LONG,
-    TTL_MEDIUM,
     get_or_set,
 )
 
@@ -69,16 +73,6 @@ def _build_farm_hierarchy():
     return out
 
 
-def _build_crops_scouted():
-    rows = frappe.get_all(
-        "Crop Scouted",
-        fields=["name", "crop_name"],
-        order_by="crop_name",
-        limit_page_length=0,
-    )
-    return [{"name": r["name"], "label": r.get("crop_name") or r["name"]} for r in rows]
-
-
 def _build_greenhouses_geojson():
     """Parse once, cache forever (until Warehouse update invalidates)."""
     gh_warehouses = frappe.get_all(
@@ -122,9 +116,6 @@ def get_context(context):
 
     context.greenhouses_geojson = get_or_set(
         K_GREENHOUSES_GEOJSON, _build_greenhouses_geojson, ttl=TTL_LONG
-    )
-    context.crops_scouted = get_or_set(
-        K_CROPS_SCOUTED, _build_crops_scouted, ttl=TTL_MEDIUM
     )
     context.farm_hierarchy = get_or_set(
         K_FARM_HIERARCHY, _build_farm_hierarchy, ttl=TTL_LONG

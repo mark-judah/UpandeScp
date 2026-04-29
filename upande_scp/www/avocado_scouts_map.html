@@ -268,6 +268,14 @@
 				<span>Row arrows</span>
 			</label>
 			<label class="toggle-item">
+				<input type="checkbox" id="toggle-tanks" checked />
+				<span>Tanks</span>
+			</label>
+			<label class="toggle-item">
+				<input type="checkbox" id="toggle-valves" checked />
+				<span>Valves</span>
+			</label>
+			<label class="toggle-item">
 				<input type="checkbox" id="toggle-topdown" />
 				<span>Top-down</span>
 			</label>
@@ -612,8 +620,149 @@
 		}
 	}
 
+	// ── Tanks & Valves layer (Three.js, per-asset geometry) ──────────────
+	// Asset counts are small (dozens), so individual meshes per asset are
+	// fine — each instance has its own height/radius which would defeat
+	// instancing anyway.
+	class AssetsLayer {
+		constructor(features) {
+			this.id = 'assets';
+			this.type = 'custom';
+			this.renderingMode = '3d';
+			this.features = features;
+			this.assetGroups = [];
+		}
+
+		onAdd(map, gl) {
+			this.map = map;
+			this.camera = new THREE.Camera();
+			this.scene = new THREE.Scene();
+
+			this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+			const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+			sun.position.set(0.4, 1, 0.6);
+			this.scene.add(sun);
+
+			this.renderer = new THREE.WebGLRenderer({
+				canvas: map.getCanvas(), context: gl, antialias: true,
+			});
+			this.renderer.autoClear = false;
+
+			if (!this.features.length) return;
+
+			const [lng0, lat0] = this.features[0].geometry.coordinates;
+			this.anchor = maplibregl.MercatorCoordinate.fromLngLat([lng0, lat0], 0);
+			const meter = this.anchor.meterInMercatorCoordinateUnits();
+
+			const tankBodyMat   = new THREE.MeshLambertMaterial({ color: 0x9aa5ad, flatShading: true });
+			const tankRimMat    = new THREE.MeshLambertMaterial({ color: 0x6b7480, flatShading: true });
+			const valvePipeMat  = new THREE.MeshLambertMaterial({ color: 0x4b6079, flatShading: true });
+			const valveStemMat  = new THREE.MeshLambertMaterial({ color: 0xb8c0c8, flatShading: true });
+			const valveWheelMat = new THREE.MeshLambertMaterial({ color: 0xb45309, flatShading: true });
+
+			for (const f of this.features) {
+				const props = f.properties || {};
+				const [lng, lat] = f.geometry.coordinates;
+				const m = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], 0);
+				const dx = (m.x - this.anchor.x) / meter;
+				const dz = (m.y - this.anchor.y) / meter;
+
+				const h = Math.max(0.1, parseFloat(props.height) || 3);
+				const r = Math.max(0.05, parseFloat(props.radius) || 0.5);
+				const group = new THREE.Group();
+
+				if (props.asset_type === 'Valve') {
+					const pipeH = h * 0.55;
+					const pipe = new THREE.Mesh(
+						new THREE.CylinderGeometry(r, r, pipeH, 16),
+						valvePipeMat,
+					);
+					pipe.position.y = pipeH / 2;
+					group.add(pipe);
+
+					const stemH = h * 0.4;
+					const stem = new THREE.Mesh(
+						new THREE.CylinderGeometry(r * 0.22, r * 0.22, stemH, 12),
+						valveStemMat,
+					);
+					stem.position.y = pipeH + stemH / 2;
+					group.add(stem);
+
+					const wheelR = r * 1.6;
+					const wheelH = Math.max(0.05, h * 0.05);
+					const wheel = new THREE.Mesh(
+						new THREE.CylinderGeometry(wheelR, wheelR, wheelH, 24),
+						valveWheelMat,
+					);
+					wheel.position.y = pipeH + stemH + wheelH / 2;
+					group.add(wheel);
+				} else {
+					const body = new THREE.Mesh(
+						new THREE.CylinderGeometry(r, r, h, 24),
+						tankBodyMat,
+					);
+					body.position.y = h / 2;
+					group.add(body);
+
+					const rimH = Math.max(0.06, h * 0.04);
+					const rim = new THREE.Mesh(
+						new THREE.CylinderGeometry(r * 1.06, r * 1.06, rimH, 24),
+						tankRimMat,
+					);
+					rim.position.y = h - rimH / 2;
+					group.add(rim);
+				}
+
+				group.position.set(dx, 0, dz);
+				group.userData = props;
+				this.scene.add(group);
+				this.assetGroups.push({ group, asset_type: props.asset_type || 'Tank' });
+			}
+		}
+
+		setTypeVisibility(type, visible) {
+			for (const a of this.assetGroups) {
+				if (a.asset_type === type) a.group.visible = visible;
+			}
+			if (this.map) this.map.triggerRepaint();
+		}
+
+		render(gl, args) {
+			if (!this.anchor) return;
+			let matrix = args;
+			if (args && !Array.isArray(args) && typeof args !== 'function') {
+				matrix =
+					(args.defaultProjectionData &&
+						(args.defaultProjectionData.mainMatrix ||
+							args.defaultProjectionData.matrix)) ||
+					args.matrix ||
+					args;
+			}
+			if (!matrix || matrix.length !== 16) return;
+			const meter = this.anchor.meterInMercatorCoordinateUnits();
+			const rotX = new THREE.Matrix4().makeRotationAxis(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+			const world = new THREE.Matrix4()
+				.makeTranslation(this.anchor.x, this.anchor.y, this.anchor.z)
+				.scale(new THREE.Vector3(meter, -meter, meter))
+				.multiply(rotX);
+			this.camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix).multiply(world);
+			this.renderer.resetState();
+			this.renderer.render(this.scene, this.camera);
+			this.map.triggerRepaint();
+		}
+
+		onRemove() {
+			this.scene.traverse((o) => {
+				if (o.geometry) o.geometry.dispose();
+				if (o.material) o.material.dispose();
+			});
+		}
+	}
+
 	// ── State ─────────────────────────────────────────────────────────────
 	let activeTrees = null;
+	let activeAssets = null;
+	let lastAssetFeatures = null;
 	let lastTreeFeatures = null;     // FeatureCollection.features for current scope
 	let lastScoutingData = null;     // last avocado payload
 	let scoutColorMap = new Map();   // scout name -> hex
@@ -668,6 +817,16 @@
 		})
 			.then(r => r.ok ? r.json() : { message: { type: 'FeatureCollection', features: [] } })
 			.then(j => j.message || { type: 'FeatureCollection', features: [] });
+	}
+
+	function fetchTanksValves(farm) {
+		const qs = farm ? `farm=${encodeURIComponent(farm)}` : '';
+		return fetch(`/api/method/upande_scp.serverscripts.get_tanks_valves.get_tanks_valves_geojson?${qs}`, {
+			headers: { 'X-Frappe-CSRF-Token': CSRF },
+		})
+			.then(r => r.ok ? r.json() : { message: { type: 'FeatureCollection', features: [] } })
+			.then(j => j.message || { type: 'FeatureCollection', features: [] })
+			.catch(() => ({ type: 'FeatureCollection', features: [] }));
 	}
 
 	function fetchScouting(date, block) {
@@ -963,6 +1122,14 @@
 		hideRowArrows();
 	}
 
+	function clearAssets() {
+		if (activeAssets && map.getLayer('assets')) {
+			map.removeLayer('assets');
+		}
+		activeAssets = null;
+		lastAssetFeatures = null;
+	}
+
 	function flyToFarm(farmName) {
 		const c = FARM_DEFAULTS[farmName];
 		if (c) {
@@ -972,6 +1139,7 @@
 
 	async function loadScope({ block = '', farm = '' } = {}) {
 		clearTrees();
+		clearAssets();
 		// Empty hint only when there's no scope at all.
 		document.getElementById('empty-hint').style.display = (block || farm) ? 'none' : 'block';
 		if (!block && !farm) return;
@@ -983,16 +1151,26 @@
 		if (block) flyToBlock(block);
 		else flyToFarm(farm);
 
+		// Resolve the farm name for tank/valve lookup. When a block is
+		// selected without an explicit farm, pull it from the block feature.
+		let assetsFarm = farm;
+		if (!assetsFarm && block) {
+			const f = (BLOCKS_GEOJSON.features || []).find(fe => fe.properties.block === block);
+			assetsFarm = (f && f.properties.farm) || '';
+		}
+
 		const date = document.getElementById('scout-date-picker').value;
-		const [treeFC, scouting] = await Promise.all([
+		const [treeFC, scouting, assetsFC] = await Promise.all([
 			fetchTrees({ block, farm }),
 			fetchScouting(date, block),
+			fetchTanksValves(assetsFarm),
 		]);
 		if (token !== selectionToken) return; // superseded
 		setProgress(60, 'Building scene…');
 
 		lastTreeFeatures = treeFC.features || [];
 		lastScoutingData = scouting;
+		lastAssetFeatures = assetsFC.features || [];
 
 		const entries = scouting.scouting_entries || [];
 		scoutColorMap = buildScoutColorMap(entries);
@@ -1001,6 +1179,14 @@
 		if (lastTreeFeatures.length) {
 			activeTrees = new TreesLayer(lastTreeFeatures, treeColors);
 			map.addLayer(activeTrees);
+		}
+
+		if (lastAssetFeatures.length) {
+			activeAssets = new AssetsLayer(lastAssetFeatures);
+			map.addLayer(activeAssets);
+			// Apply current toggle state so assets respect user prefs across reloads.
+			activeAssets.setTypeVisibility('Tank', document.getElementById('toggle-tanks').checked);
+			activeAssets.setTypeVisibility('Valve', document.getElementById('toggle-valves').checked);
 		}
 
 		// Scout paths
@@ -1098,6 +1284,12 @@
 		if (e.target.checked) showRowArrows();
 		else hideRowArrows();
 	});
+	document.getElementById('toggle-tanks').addEventListener('change', (e) => {
+		if (activeAssets) activeAssets.setTypeVisibility('Tank', e.target.checked);
+	});
+	document.getElementById('toggle-valves').addEventListener('change', (e) => {
+		if (activeAssets) activeAssets.setTypeVisibility('Valve', e.target.checked);
+	});
 	document.getElementById('toggle-topdown').addEventListener('change', (e) => {
 		if (e.target.checked) {
 			savedPitch = map.getPitch();
@@ -1125,10 +1317,40 @@
 		}
 		return best && bestD < maxPx * maxPx ? best : null;
 	}
+	function nearestAssetAt(point, maxPx = 30) {
+		if (!lastAssetFeatures || !lastAssetFeatures.length) return null;
+		const px = point.x, py = point.y;
+		let best = null, bestD = Infinity;
+		for (const f of lastAssetFeatures) {
+			const p = map.project(f.geometry.coordinates);
+			const d = (p.x - px) ** 2 + (p.y - py) ** 2;
+			if (d < bestD) { bestD = d; best = f; }
+		}
+		return best && bestD < maxPx * maxPx ? best : null;
+	}
+
 	map.on('click', (e) => {
 		// Skip if click landed on the blocks fill (handled separately)
 		const hit = map.queryRenderedFeatures(e.point, { layers: ['blocks-fill'] });
 		if (hit && hit.length) return;
+
+		// Asset click takes priority over tree click — they're rarer and
+		// usually larger. Tap radius is wider than for trees.
+		const asset = nearestAssetAt(e.point, 28);
+		if (asset) {
+			const p = asset.properties || {};
+			const label = p.asset_label || p.asset_name || '(asset)';
+			const html = `<div style="font-size:0.8rem;line-height:1.4;">
+				<strong>${label}</strong>
+				<br><span style="color:#6b7280">${p.asset_type || ''} · ${(p.height || '?')}m × ${(p.radius || '?')}m</span>
+			</div>`;
+			new maplibregl.Popup({ closeOnClick: true })
+				.setLngLat(asset.geometry.coordinates)
+				.setHTML(html)
+				.addTo(map);
+			return;
+		}
+
 		const f = nearestTreeAt(e.point, 20);
 		if (!f) return;
 		const tn = (f.properties && f.properties.tree_name) || '(unnamed)';

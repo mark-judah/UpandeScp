@@ -171,6 +171,7 @@ doc_events = {
     "Item": _SCP_CACHE_EVENTS,
     "Orchard Tree": _SCP_CACHE_EVENTS,
     "Crop Scouted": _SCP_CACHE_EVENTS,
+    "Tank And Valve": _SCP_CACHE_EVENTS,
 }
 
 # Scheduled Tasks
@@ -288,7 +289,7 @@ scheduler_events = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 website_route_rules = [
-    {"from_route": "/scouts-map", "to_route": "/scouts_map"},
+    {"from_route": "/rose-scouting", "to_route": "/rose_scouting"},
     {"from_route": "/avocado-scouts-map", "to_route": "/avocado_scouts_map"},
     {"from_route": "/observations-map", "to_route": "/observations_map"},
     {"from_route": "/scouting-heatmaps", "to_route": "/scouting_heatmaps"},

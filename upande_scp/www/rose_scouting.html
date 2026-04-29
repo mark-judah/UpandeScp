@@ -241,15 +241,6 @@
 	<!-- Floating filter bar (top) -->
 	<div class="scout-filters" id="scout-filters">
 		<div class="scout-filter-item">
-			<label for="crop-select">Crop</label>
-			<select id="crop-select">
-				<option value="">Auto-detect</option>
-				{% for crop in crops_scouted %}
-				<option value="{{ crop.name }}">{{ crop.label }}</option>
-				{% endfor %}
-			</select>
-		</div>
-		<div class="scout-filter-item">
 			<label for="farm-select">Farm</label>
 			<select id="farm-select">
 				<option value="">All Farms</option>
@@ -336,22 +327,27 @@
 	    window.lastScoutingData  = null;
 	    window.allLatLngs = [];
 	    let ghOverlay = null;
-	    let treeLayer = null;
-	    let lastResolvedCrop = '';
 
 	    // Hardcoded farm view defaults — picking the farm pans/zooms here.
-	    // `defaultCrop` makes the scouts map snap to that crop's render mode
-	    // even when the day's payload has no entries to infer from.
 	    const FARM_DEFAULTS = {
-	        'Lokitela': { lat: 0.984247, lon: 34.861851, zoom: 16, defaultCrop: 'Avocado' },
+	        'Lokitela': { lat: 0.984247, lon: 34.861851, zoom: 16 },
+	    };
+
+	    // Rose-only filter: keep entries where crop_scouted is empty or matches /rose/i.
+	    const isRoseEntry = (e) => {
+	        const c = (e && e.crop_scouted) || '';
+	        return !c || /rose/i.test(c);
+	    };
+	    const filterToRoses = (data) => {
+	        if (!data || !Array.isArray(data.scouting_entries)) return data;
+	        data.scouting_entries = data.scouting_entries.filter(isRoseEntry);
+	        return data;
 	    };
 
 	    // Zone GeoJSON parse cache
 	    const zoneCache = new Map();
 	    // Client-side data cache: "date_greenhouse" → API response
 	    const dataCache = new Map();
-	    // Per-block Orchard Tree FeatureCollection cache (block → FC)
-	    const treeCache = new Map();
 
 	    const canvasRenderer = L.canvas({ padding: 0.5 });
 
@@ -662,133 +658,6 @@
 	        document.getElementById('kpi-min-bed').textContent  = mpb ? mpb.toFixed(1) : '—';
 	    };
 
-	    const isAvocadoCrop = (crop) => !!crop && /avocado/i.test(crop);
-
-	    const resolveCropFromPayload = (allData) => {
-	        // Manual selection wins
-	        const manual = document.getElementById('crop-select').value;
-	        if (manual) return manual;
-
-	        // Auto: any avocado-named crop in the payload → avocado, else dominant non-null
-	        const counts = {};
-	        (allData.scouting_entries || []).forEach(e => {
-	            const k = e.crop_scouted || '';
-	            if (!k) return;
-	            counts[k] = (counts[k] || 0) + 1;
-	        });
-	        const avocadoKey = Object.keys(counts).find(k => /avocado/i.test(k));
-	        if (avocadoKey) return avocadoKey;
-	        const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-	        if (ranked.length) return ranked[0][0];
-
-	        // No signal in payload — fall back to the farm's default crop, if any.
-	        const farm = document.getElementById('farm-select').value;
-	        return FARM_DEFAULTS[farm]?.defaultCrop || '';
-	    };
-
-	    const fetchTreeGeojson = ({ block, farm } = {}) => {
-	        const key = block ? `block:${block}` : (farm ? `farm:${farm}` : '');
-	        if (!key) return Promise.resolve({ type: 'FeatureCollection', features: [] });
-	        if (treeCache.has(key)) return Promise.resolve(treeCache.get(key));
-	        const qs = block
-	            ? `block=${encodeURIComponent(block)}`
-	            : `farm=${encodeURIComponent(farm)}`;
-	        return fetch(`/api/method/upande_scp.serverscripts.get_orchard_trees.get_orchard_trees_geojson?${qs}`, {
-	            headers: { 'X-Frappe-CSRF-Token': CSRF }
-	        })
-	        .then(r => r.ok ? r.json() : { message: { type: 'FeatureCollection', features: [] } })
-	        .then(j => {
-	            const fc = j.message || { type: 'FeatureCollection', features: [] };
-	            treeCache.set(key, fc);
-	            return fc;
-	        })
-	        .catch(() => ({ type: 'FeatureCollection', features: [] }));
-	    };
-
-	    const removeTreeLayer = () => {
-	        if (treeLayer && window.map.hasLayer(treeLayer)) window.map.removeLayer(treeLayer);
-	        treeLayer = null;
-	    };
-
-	    const renderTreeCircles = (fc, allData) => {
-	        removeTreeLayer();
-	        if (!fc.features?.length) return false;
-
-	        // Hide zone polygons in tree mode — avocado view is point-based.
-	        if (window.zoneLayer && window.map.hasLayer(window.zoneLayer)) window.map.removeLayer(window.zoneLayer);
-	        if (window.lineIdLabels && window.map.hasLayer(window.lineIdLabels)) window.map.removeLayer(window.lineIdLabels);
-
-	        const SCOUTED = '#22c55e';
-	        const UNSCOUTED = '#94a3b8';
-
-	        const scoutedTrees = new Set();
-	        const treeToScout = new Map();
-	        (allData.scouting_entries || []).forEach(e => {
-	            if (!e.tree) return;
-	            scoutedTrees.add(e.tree);
-	            if (e.scouts_name) treeToScout.set(e.tree, e.scouts_name);
-	        });
-
-	        // For very large tree sets, skip per-feature tooltips to keep mount
-	        // time and memory in check. ~5k seems to be the comfortable upper
-	        // bound for `bindTooltip` × N on canvas; above that, hovers can
-	        // still surface the tree code via `layer.feature.properties` if we
-	        // ever wire a delegated tooltip.
-	        const TOOLTIP_THRESHOLD = 5000;
-	        const bindTooltips = fc.features.length <= TOOLTIP_THRESHOLD;
-
-	        treeLayer = L.geoJSON(fc, {
-	            renderer: canvasRenderer,
-	            pointToLayer: (feat, latlng) => {
-	                const tn = feat.properties?.tree_name;
-	                const isScouted = tn && scoutedTrees.has(tn);
-	                return L.circleMarker(latlng, {
-	                    radius: 2.8,
-	                    weight: 0,
-	                    fillColor: isScouted ? SCOUTED : UNSCOUTED,
-	                    fillOpacity: isScouted ? 0.95 : 0.6,
-	                });
-	            },
-	            onEachFeature: bindTooltips ? (feat, layer) => {
-	                const p = feat.properties || {};
-	                const scout = p.tree_name ? treeToScout.get(p.tree_name) : null;
-	                const html = `<strong>${p.tree_code || p.tree_name || 'Tree'}</strong>` +
-	                    (scout ? `<br>${scout}` : '');
-	                layer.bindTooltip(html);
-	            } : undefined
-	        }).addTo(window.map);
-
-	        // Zoom-fit to the avocado block on entry.
-	        try {
-	            const b = treeLayer.getBounds();
-	            if (b.isValid()) window.map.fitBounds(b, { padding: [40, 40], maxZoom: 20 });
-	        } catch (e) { /* ignore */ }
-	        return true;
-	    };
-
-	    const applyCropMode = (allData) => {
-	        const crop = resolveCropFromPayload(allData);
-	        lastResolvedCrop = crop;
-	        const block = document.getElementById('gh-select').value;
-	        const farm  = document.getElementById('farm-select').value;
-
-	        if (isAvocadoCrop(crop) && (block || farm)) {
-	            // Block is preferred; if none picked, render every tree on the farm.
-	            fetchTreeGeojson({ block, farm: block ? null : farm }).then(fc => {
-	                if (!renderTreeCircles(fc, allData)) {
-	                    // No trees for this scope — fall back to rose view.
-	                    if (window.zoneLayer && !window.map.hasLayer(window.zoneLayer)) window.zoneLayer.addTo(window.map);
-	                }
-	            });
-	        } else {
-	            removeTreeLayer();
-	            // Restore zones if they were hidden by a previous tree-mode pass
-	            if (window.zoneLayer && !window.map.hasLayer(window.zoneLayer) && window.map.getZoom() >= 15) {
-	                window.zoneLayer.addTo(window.map);
-	            }
-	        }
-	    };
-
 	    const _renderScoutData = (allData, onProgress = () => {}) => {
 	        window.lastScoutingData = allData;
 	        if (window.scoutedBedOverlay) window.map.removeLayer(window.scoutedBedOverlay);
@@ -807,7 +676,6 @@
 	        renderScoutLegend(scoutColors);
 	        renderTimeline(allData);
 	        updateKPIs(allData);
-	        applyCropMode(allData);
 	        onProgress(100, 'Complete');
 	        setTimeout(() => hideOverlay(false), 350);
 	    };
@@ -838,7 +706,7 @@
 	            }, 150);
 	        }
 
-	        const body = { date };
+	        const body = { date, crops: ['', 'Rose', 'Roses'] };
 	        if (greenhouse) body.greenhouse = greenhouse;
 
 	        fetch('/api/method/upande_scp.serverscripts.get_scouting_analysis.getScoutingAnalysis', {
@@ -857,10 +725,11 @@
 	            const allData = r.message || r.data;
 	            const entries = (allData?.scouting_entries || []).filter(e => e.scouts_name);
 	            allData.scouting_entries = entries;
+	            // Rose-only page — strip avocado/non-rose entries from the payload
+	            // before caching so all downstream views are already filtered.
+	            filterToRoses(allData);
 	            dataCache.set(cacheKey, allData);
 	            if (!background) {
-	                // Render even when no scouting today — trees still need to draw
-	                // for blocks/farms that have orchard data.
 	                _renderScoutData(allData, setProgress);
 	                prefetchPastDays(date, greenhouse);
 	            }
@@ -909,9 +778,6 @@
 	    document.getElementById('gh-select').addEventListener('change', e => {
 	        zoneCache.clear();
 	        debouncedFetch(document.getElementById('scout-date-picker').value, e.target.value);
-	    });
-	    document.getElementById('crop-select').addEventListener('change', () => {
-	        if (window.lastScoutingData) applyCropMode(window.lastScoutingData);
 	    });
 
 	    // ── Farm → Section → Block cascade ──────────────────────────────────

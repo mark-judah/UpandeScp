@@ -58,6 +58,9 @@ K_SM_FARM_BUNDLE_PREFIX = "scp:sm_farm_bundle_v1"
 # Per-block Orchard Tree FeatureCollection used by the avocado view of the
 # scouts map. Key suffix is the block (Warehouse) name.
 K_ORCHARD_TREES_PREFIX = "scp:orchard_trees_v1"
+# Per-farm Tank & Valve FeatureCollection for the avocado 3D map. Suffix is
+# the farm name (or '__all__' for the unfiltered bundle).
+K_TANKS_VALVES_PREFIX = "scp:tanks_valves_v1"
 K_CROPS_SCOUTED = "scp:crops_scouted_v1"
 # Cascading Farm → Section → Block/Greenhouse hierarchy for the scouts map.
 K_FARM_HIERARCHY = "scp:farm_hierarchy_v1"
@@ -74,6 +77,14 @@ def invalidate_orchard_trees_for_block(block):
     if not block:
         return
     invalidate(f"{K_ORCHARD_TREES_PREFIX}:{block}")
+
+
+def invalidate_tanks_valves_for_doc(doc):
+    """Drop both the doc's farm key and the unfiltered bundle."""
+    farm = getattr(doc, "farm", None)
+    invalidate(f"{K_TANKS_VALVES_PREFIX}:__all__")
+    if farm:
+        invalidate(f"{K_TANKS_VALVES_PREFIX}:{farm}")
 
 
 def invalidate_orchard_trees_for_doc(doc):
@@ -296,6 +307,7 @@ _DOC_INVALIDATIONS = {
     "Crop Scouted": (K_CROPS_SCOUTED, K_SM_SEVERITY_THRESHOLDS),
     "Pest Filter": (K_SM_SEVERITY_THRESHOLDS,),
     "Disease Filter": (K_SM_SEVERITY_THRESHOLDS,),
+    "Tank And Valve": (),
 }
 
 
@@ -310,3 +322,6 @@ def invalidate_on_change(doc, method=None):
     # Drop the per-block Orchard Tree FeatureCollection when trees move.
     if doc.doctype == "Orchard Tree":
         invalidate_orchard_trees_for_doc(doc)
+    # Drop the per-farm Tank & Valve bundle when assets move or get edited.
+    if doc.doctype == "Tank And Valve":
+        invalidate_tanks_valves_for_doc(doc)

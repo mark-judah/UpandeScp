@@ -1,13 +1,50 @@
-{% extends "upande_scp/www/map_base.html" %} 
+{% extends "upande_scp/www/map_base.html" %}
 
 {% block head %}
 <style>
+	/* ────────────────────────────────────────────────
+	   SCOUTING HEATMAPS — theme aligned with
+	   observations_map: Inter font, white panels on
+	   light-gray canvas, deep-gray (#4b5563) accent.
+	   ──────────────────────────────────────────────── */
+	:root {
+		--hm-bg:        #f5f7fa;
+		--hm-bg-soft:   #f3f4f6;
+		--hm-card:      #ffffff;
+		--hm-ink:       #374151;
+		--hm-text:      #374151;
+		--hm-muted:     #6b7280;
+		--hm-quiet:     #9ca3af;
+		--hm-line:      #e5e7eb;
+		--hm-line-soft: #f3f4f6;
+		--hm-accent:    #4b5563;
+		--hm-accent-2:  #374151;
+		--hm-pistachio: #f3f4f6;
+		--hm-pistachio-2: #e5e7eb;
+		--hm-marker:    #4b5563;
+		--hm-tooltip:   #4b5563;
+
+		--hm-radius:    8px;
+		--hm-radius-lg: 12px;
+		--hm-radius-pill: 999px;
+
+		--hm-shadow-1: 0 1px 2px rgba(0,0,0,.05);
+		--hm-shadow-2: 0 4px 12px rgba(0,0,0,.08);
+		--hm-shadow-3: 0 18px 48px rgba(0,0,0,.12);
+
+		--hm-font:        "Inter", "Helvetica Neue", Arial, sans-serif;
+		--hm-font-display:"Inter", "Helvetica Neue", Arial, sans-serif;
+	}
+
 	#dashboard-page {
 		height: 100vh;
 		width: 100%;
 		display: flex;
 		position: relative;
 		overflow: hidden;
+		font-family: var(--hm-font);
+		color: var(--hm-text);
+		background: var(--hm-bg);
 	}
 
 	#content-container {
@@ -15,114 +52,185 @@
 		position: relative;
 		z-index: 1;
 		overflow: auto;
-		padding: 60px 12px 12px;
+		padding: 64px 18px 18px;
 	}
 
-	/* Farm filter pills inside top floating bar */
+	/* ── Page heading panel ──────────────────────── */
+	.heatmap-page-head {
+		display: flex;
+		align-items: flex-end;
+		justify-content: space-between;
+		gap: 18px;
+		flex-wrap: wrap;
+		padding: 4px 4px 14px;
+		margin-bottom: 14px;
+		border-bottom: 1px solid var(--hm-line);
+	}
+
+	.heatmap-title-block {
+		position: relative;
+	}
+	.heatmap-title-block::before { content: none; }
+	.heatmap-title {
+		font-family: var(--hm-font);
+		font-size: 1.4rem;
+		font-weight: 600;
+		color: var(--hm-ink);
+		letter-spacing: -.01em;
+		line-height: 1.15;
+		margin: 0 0 2px;
+	}
+	.heatmap-eyebrow {
+		font-size: .68rem;
+		text-transform: uppercase;
+		letter-spacing: .04em;
+		font-weight: 500;
+		color: var(--hm-muted);
+	}
+
+	/* Farm filter pills (top-floating bar) */
 	.gh-filter-tabs {
 		display: flex;
 		flex-wrap: nowrap;
-		gap: 4px;
-		max-width: 360px;
+		gap: 6px;
+		max-width: 380px;
 		max-height: 32px;
 		overflow-x: auto;
 		overflow-y: hidden;
 		scrollbar-width: thin;
 	}
 	.gh-filter-tabs::-webkit-scrollbar { height: 4px; }
-	.gh-filter-tabs::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 2px; }
+	.gh-filter-tabs::-webkit-scrollbar-thumb { background: var(--hm-line); border-radius: 2px; }
 
 	.gh-btn,
 	.farm-btn,
 	.pest-btn {
-		padding: 4px 10px;
-		border: 1px solid #e5e7eb;
-		background: #ffffff;
-		color: #374151;
+		padding: 5px 12px;
+		border: 1px solid var(--hm-line);
+		background: var(--hm-card);
+		color: var(--hm-text);
 		font-size: 0.72rem;
-		font-weight: 500;
-		border-radius: 6px;
+		font-weight: 600;
+		font-family: var(--hm-font);
+		border-radius: var(--hm-radius-pill);
 		cursor: pointer;
-		text-align: left;
+		text-align: center;
 		white-space: nowrap;
+		transition: background .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
+	}
+	.gh-btn:hover,
+	.farm-btn:hover,
+	.pest-btn:hover {
+		border-color: var(--hm-pistachio-2);
+		background: var(--hm-pistachio);
+		color: var(--hm-accent);
 	}
 	.gh-btn.active,
 	.farm-btn.active,
 	.pest-btn.active {
-		background: #4b5563;
-		border-color: #4b5563;
-		color: #ffffff;
+		background: var(--hm-accent) !important;
+		border-color: var(--hm-accent) !important;
+		color: #fff !important;
+		box-shadow: 0 2px 6px rgba(75,85,99,.18);
 	}
 
 	input.gh-btn {
-		padding: 0 8px;
-		height: 30px;
-		font-weight: 400;
-		min-width: 130px;
+		padding: 0 12px;
+		height: 32px;
+		font-weight: 500;
+		min-width: 140px;
 	}
 
-	/* New filter styles */
+	/* Filter row inside the canvas */
 	.filter-row {
 		display: flex;
-		gap: 12px;
+		gap: 18px;
 		align-items: center;
 		flex-wrap: wrap;
-		margin-bottom: 16px;
-		padding: 8px 0;
+		margin-bottom: 18px;
+		padding: 12px 14px;
+		background: var(--hm-card);
+		border: 1px solid var(--hm-line);
+		border-radius: var(--hm-radius-lg);
+		box-shadow: var(--hm-shadow-1);
 	}
 
 	.filter-label {
-		font-size: 0.72rem;
-		font-weight: 600;
-		color: #6b7280;
+		font-size: 0.62rem;
+		font-weight: 700;
+		color: var(--hm-quiet);
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: 0.9px;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.filter-label::before {
+		content: "";
+		width: 7px;
+		height: 7px;
+		background: var(--hm-marker);
+		border-radius: 1px;
 	}
 
 	.filter-group {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 10px;
 	}
 
 	.gh-select {
-		padding: 6px 12px;
-		border: 1px solid #e5e7eb;
-		border-radius: 6px;
-		background: #ffffff;
-		color: #374151;
-		font-size: 0.75rem;
+		padding: 7px 14px;
+		border: 1px solid var(--hm-line);
+		border-radius: var(--hm-radius-pill);
+		background: var(--hm-pistachio);
+		color: var(--hm-accent);
+		font-size: 0.78rem;
+		font-weight: 600;
+		font-family: var(--hm-font);
 		min-width: 200px;
 		cursor: pointer;
+		transition: border-color .15s ease, box-shadow .15s ease;
+	}
+	.gh-select:focus {
+		outline: none;
+		border-color: var(--hm-accent);
+		box-shadow: 0 0 0 2px rgba(75,85,99,.18);
 	}
 
 	.pest-filter-tabs {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px;
-		max-height: 60px;
+		gap: 6px;
+		max-height: 64px;
 		overflow-y: auto;
 		scrollbar-width: thin;
 	}
 	.pest-filter-tabs::-webkit-scrollbar { width: 4px; }
-	.pest-filter-tabs::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 2px; }
+	.pest-filter-tabs::-webkit-scrollbar-thumb { background: var(--hm-line); border-radius: 2px; }
 
 	.multi-day-indicator {
-		font-size: 0.7rem;
-		color: #6b7280;
-		margin-left: 8px;
-		font-weight: 400;
+		font-size: 0.65rem;
+		color: var(--hm-muted);
+		margin-left: 6px;
+		font-weight: 500;
+		font-style: italic;
 	}
 
-	/* --- All-Greenhouses Table Layout --- */
+	/* ── All-Greenhouses Table ───────────────────── */
 	.all-gh-table-wrapper {
 		overflow-x: auto;
 		overflow-y: auto;
-		height: 100%;
+		height: calc(100% - 90px);
+		background: var(--hm-card);
+		border: 1px solid var(--hm-line);
+		border-radius: var(--hm-radius-lg);
+		box-shadow: var(--hm-shadow-1);
 	}
 
 	.all-gh-table {
-		border-collapse: collapse;
+		border-collapse: separate;
+		border-spacing: 0;
 		width: max-content;
 		min-width: 100%;
 	}
@@ -131,14 +239,26 @@
 		position: sticky;
 		top: 0;
 		z-index: 20;
-		background: var(--panel-bg);
-		padding: 10px 14px;
-		font-size: 13px;
-		font-weight: 600;
-		color: var(--text);
-		text-align: center;
-		border-bottom: 2px solid var(--border);
+		background: var(--hm-pistachio);
+		padding: 12px 16px;
+		font-size: 12px;
+		font-weight: 700;
+		color: var(--hm-accent);
+		text-align: left;
+		border-bottom: 1px solid var(--hm-pistachio-2);
 		white-space: nowrap;
+		letter-spacing: -.005em;
+	}
+
+	.all-gh-table thead th::before {
+		content: "";
+		display: inline-block;
+		width: 8px;
+		height: 8px;
+		background: var(--hm-marker);
+		border-radius: 1px;
+		margin-right: 8px;
+		vertical-align: middle;
 	}
 
 	.all-gh-table thead th.col-gh-label {
@@ -146,172 +266,337 @@
 		position: sticky;
 		left: 0;
 		z-index: 30;
-		background: var(--panel-bg);
-		min-width: 100px;
-		padding-left: 12px;
+		min-width: 110px;
+		padding-left: 14px;
+		font-family: var(--hm-font);
+		text-transform: uppercase;
+		font-size: 11px;
+		letter-spacing: .8px;
 	}
+	.all-gh-table thead th.col-gh-label::before { display: none; }
 
 	.all-gh-table tbody td {
 		vertical-align: top;
-		padding: 6px 4px;
-		border-bottom: 1px solid #f0f0f0;
+		padding: 8px 6px;
+		border-bottom: 1px solid var(--hm-line-soft);
 	}
+
+	.all-gh-table tbody tr:hover td { background: var(--hm-bg-soft); }
+	.all-gh-table tbody tr:hover td.td-gh-label { background: var(--hm-pistachio); }
 
 	.all-gh-table tbody td.td-gh-label {
 		position: sticky;
 		left: 0;
 		z-index: 10;
-		background: var(--panel-bg);
-		padding: 10px 14px 10px 12px;
+		background: var(--hm-card);
+		padding: 12px 16px 12px 14px;
 		white-space: nowrap;
-		border-right: 1px solid #e5e7eb;
+		border-right: 1px solid var(--hm-line);
+		transition: background .15s ease;
 	}
 
 	.td-gh-date {
-		font-size: 12px;
-		color: var(--text-muted);
+		font-size: 11px;
+		color: var(--hm-muted);
 		line-height: 1.2;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: .15px;
 	}
 
 	.td-gh-name {
-		font-size: 14px;
-		font-weight: 700;
-		color: var(--text);
-		line-height: 1.4;
+		font-family: var(--hm-font-display);
+		font-size: 16px;
+		font-weight: 600;
+		color: var(--hm-ink);
+		line-height: 1.2;
+		letter-spacing: -.015em;
 	}
 
-	/* --- Mini Heatmap Card inside table cell --- */
+	/* ── Mini Heatmap Card inside table cell ─────── */
 	.mini-card {
 		display: inline-block;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-input);
-		background: var(--panel-bg);
-		min-width: 140px;
+		border: 1px solid var(--hm-line);
+		border-radius: var(--hm-radius);
+		background: var(--hm-card);
+		min-width: 144px;
 		cursor: pointer;
 		vertical-align: top;
 		overflow: hidden;
+		transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
 	}
+	.mini-card:hover {
+		border-color: var(--hm-pistachio-2);
+		box-shadow: var(--hm-shadow-2);
+		transform: translateY(-1px);
+	}
+
 	.mini-card-head {
 		display: flex;
 		justify-content: space-between;
 		align-items: baseline;
-		padding: 4px 6px 3px;
-		border-bottom: 1px solid var(--border);
-		background: var(--bg);
+		padding: 5px 8px 4px;
+		border-bottom: 1px solid var(--hm-line-soft);
+		background: var(--hm-bg-soft);
 	}
 
 	.mini-card-gh {
 		font-size: 9px;
-		font-weight: 600;
-		color: var(--text);
-		max-width: 80px;
+		font-weight: 700;
+		color: var(--hm-ink);
+		max-width: 84px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		letter-spacing: .15px;
 	}
 
 	.mini-card-date {
 		font-size: 8px;
-		color: var(--text-muted);
+		color: var(--hm-muted);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.mini-card-obs {
-		padding: 2px 6px 1px;
-		font-size: 9px;
+		padding: 4px 8px 2px;
+		font-size: 10px;
 		font-weight: 700;
-		color: var(--text);
+		color: var(--hm-accent);
+		letter-spacing: .1px;
 	}
 
 	.mini-card-body {
-		padding: 2px 4px 4px;
+		padding: 3px 6px 6px;
 	}
 
-	/* --- Mini grid inside card --- */
-	.mini-grid {
-		display: grid;
-		gap: 1px;
+	/* ── Upright plot — vertical strip of bed-rows with capsule-shaped zone
+	   cells. Geojson is consulted only for *position*: each cell is placed
+	   along the row at the lng-fraction of its raw_geojson bbox, so double-
+	   bed houses (gh 11, gh 14) leave a real central-aisle gap and irregular
+	   greenhouses surface as shorter rows. Painted cells carry the stage
+	   glyph (Fresh, Dry, Adult, Larvae …) so different stages read distinctly. */
+	.upright-plot {
+		display: flex;
+		flex-direction: column;
+		padding: 4px 8px 6px;
+		font-variant-numeric: tabular-nums;
 	}
 
-	.mini-grid .mg-cell {
-		height: 7px;
-		font-size: 0;
-	}
-
-	.mini-grid .mg-zone-hdr {
-		background: transparent;
-		height: 8px;
+	.upright-row {
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		font-size: 6px;
-		color: var(--gray-400, #9ca3af);
-	}
-
-	.mini-grid .mg-bed-lbl {
-		background: transparent;
-		height: 7px;
-		display: flex;
-		align-items: center;
-		justify-content: flex-end;
-		padding-right: 2px;
-		font-size: 6px;
-		color: var(--gray-400, #9ca3af);
-	}
-
-	.mini-grid .mg-data {
-		height: 7px;
-		border-radius: 1px;
-		border: 1px solid rgba(0, 0, 0, 0.12);
-	}
-
-	.mini-grid .mg-data.mg-empty {
-		background: transparent;
-		border: 0.5px solid var(--border);
-	}
-
-	.mini-grid .mg-corner {
-		height: 8px;
-	}
-
-	/* Multi-day indicator in mini card */
-	.mini-card-multi-day {
+		height: 9px;
 		position: relative;
 	}
 
+	.upright-row-label {
+		width: 14px;
+		font-size: 6px;
+		color: var(--hm-quiet);
+		text-align: right;
+		padding-right: 4px;
+		font-weight: 700;
+		flex-shrink: 0;
+		line-height: 1;
+	}
+
+	.upright-track {
+		flex: 1;
+		height: 7px;
+		position: relative;
+	}
+
+	.upright-cell {
+		position: absolute;
+		top: 0;
+		height: 7px;
+		min-width: 3px;
+		border-radius: 1.5px;
+		border: 0.5px solid rgba(20,32,26,.18);
+		background: var(--hm-line);
+		font-size: 5px;
+		font-weight: 700;
+		color: #fff;
+		text-align: center;
+		line-height: 7px;
+		font-family: var(--hm-font);
+		overflow: hidden;
+		white-space: nowrap;
+		letter-spacing: -.5px;
+		text-shadow: 0 0 1px rgba(20,32,26,.55);
+	}
+
+	.upright-cell.upright-cell-empty {
+		background: transparent;
+		border-color: var(--hm-line-soft);
+		border-style: dotted;
+	}
+
+	.upright-cell.upright-cell-prev {
+		border-style: dashed;
+	}
+
+	.upright-plot-lg {
+		padding: 14px 18px 16px;
+		background: var(--hm-card);
+		border-radius: var(--hm-radius);
+	}
+
+	.upright-plot-lg .upright-row { height: 18px; }
+
+	.upright-plot-lg .upright-row-label {
+		width: 30px;
+		font-size: 10px;
+		padding-right: 8px;
+	}
+
+	.upright-plot-lg .upright-track {
+		height: 14px;
+	}
+
+	.upright-plot-lg .upright-cell {
+		height: 14px;
+		min-width: 8px;
+		font-size: 9px;
+		line-height: 14px;
+		border-radius: 3px;
+		letter-spacing: 0;
+		text-shadow: 0 0 1px rgba(20,32,26,.7);
+	}
+
+	.upright-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 90px;
+		color: var(--hm-quiet);
+		font-size: 9px;
+		font-style: italic;
+		border: 1px dashed var(--hm-line);
+		border-radius: var(--hm-radius);
+	}
+
+	/* Sub-block boundary marker: a hairline rule with a tick. Surfaces the
+	   point where a greenhouse breaks into two rectangles and bed numbering
+	   reverses direction. */
+	.upright-split {
+		position: relative;
+		height: 4px;
+		margin: 2px 0;
+		border-top: 1px dashed var(--hm-pistachio-2);
+	}
+	.upright-split::after {
+		content: "";
+		position: absolute;
+		top: -3px;
+		left: 50%;
+		width: 5px;
+		height: 5px;
+		background: var(--hm-marker);
+		border-radius: 50%;
+		transform: translateX(-50%);
+	}
+	.upright-plot-lg .upright-split {
+		height: 10px;
+		margin: 4px 0;
+		border-top-width: 1.5px;
+	}
+	.upright-plot-lg .upright-split::after {
+		top: -5px;
+		width: 9px;
+		height: 9px;
+	}
+
+	/* ── SVG floor plan (matches the observations_map modal technique).
+	   Layers: faint baseline rail per bed, coloured polylines per
+	   zone-segment, bed-number labels at each block's left edge. */
+	.upright-svg {
+		display: block;
+		width: 100%;
+		height: auto;
+	}
+	.upright-svg-lg {
+		max-height: 560px;
+	}
+	.upright-svg .gh-bed-baseline {
+		stroke: #cbd5e1;
+		stroke-width: 0.6;
+		stroke-opacity: 0.55;
+		fill: none;
+		pointer-events: none;
+	}
+	.upright-svg .gh-zone {
+		cursor: pointer;
+		stroke-linejoin: miter;
+		stroke-linecap: butt;
+		fill: none;
+	}
+	.upright-svg .gh-zone:hover {
+		filter: brightness(0.85);
+	}
+	.upright-svg .gh-bed-label {
+		font-size: 5px;
+		font-weight: 600;
+		fill: var(--hm-quiet);
+		dominant-baseline: middle;
+		pointer-events: none;
+		font-family: var(--hm-font);
+	}
+	.upright-svg-lg .gh-bed-label {
+		font-size: 8px;
+	}
+
+	/* Stage legend chip used inside the modal */
+	.stage-glyph-chip {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		border-radius: var(--hm-radius);
+		background: var(--hm-ink);
+		color: #fff;
+		font-weight: 700;
+		font-size: 11px;
+		font-family: var(--hm-font);
+		flex-shrink: 0;
+	}
+
+	.mini-card-multi-day { position: relative; }
 	.mini-card-multi-day::after {
 		content: "3D";
 		position: absolute;
-		top: 2px;
-		right: 2px;
+		top: 4px;
+		right: 4px;
 		font-size: 6px;
-		background: #3b82f6;
+		background: var(--hm-tooltip);
 		color: white;
-		padding: 1px 3px;
-		border-radius: 2px;
+		padding: 1px 4px;
+		border-radius: var(--hm-radius-pill);
 		font-weight: 700;
+		letter-spacing: .3px;
 	}
 
-	/* Empty table cell placeholder */
 	.mini-card-empty {
 		display: inline-block;
-		min-width: 140px;
-		min-height: 20px;
+		min-width: 144px;
+		min-height: 24px;
+		border: 1px dashed var(--hm-line);
+		border-radius: var(--hm-radius);
+		background: rgba(255,255,255,.4);
 	}
 
-	/* --- Intensity classes --- */
+	/* Intensity classes — saturation steps */
 	.intensity-0 {
 		opacity: 1;
-		background: var(--border) !important;
+		background: var(--hm-line) !important;
 		cursor: default;
 	}
-
-	.intensity-1 { opacity: 0.2; }
-	.intensity-2 { opacity: 0.4; }
-	.intensity-3 { opacity: 0.6; }
-	.intensity-4 { opacity: 0.8; }
+	.intensity-1 { opacity: 0.22; }
+	.intensity-2 { opacity: 0.42; }
+	.intensity-3 { opacity: 0.62; }
+	.intensity-4 { opacity: 0.82; }
 	.intensity-5 { opacity: 1; }
 
-	/* Multi-day overlay styles */
 	.multi-day-overlay {
 		display: grid;
 		grid-template-columns: 1fr;
@@ -320,28 +605,32 @@
 
 	.day-indicator {
 		display: flex;
-		gap: 4px;
+		gap: 5px;
 		align-items: center;
-		margin-top: 4px;
-		padding: 2px 4px;
-		background: #f9fafb;
-		border-radius: 3px;
+		margin-top: 5px;
+		padding: 3px 6px;
+		background: var(--hm-bg-soft);
+		border-radius: var(--hm-radius-pill);
 		font-size: 7px;
-		color: #6b7280;
+		color: var(--hm-muted);
+		font-weight: 600;
 	}
 
 	.day-dot {
-		width: 6px;
-		height: 6px;
+		width: 7px;
+		height: 7px;
 		border-radius: 50%;
 		display: inline-block;
+		box-shadow: 0 0 0 1.5px rgba(255,255,255,.7);
 	}
 
-	/* --- Modal --- */
+	/* ── Modal ───────────────────────────────────── */
 	.modal {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.8);
+		background: rgba(20,32,26,.62);
+		backdrop-filter: blur(3px);
+		-webkit-backdrop-filter: blur(3px);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -351,188 +640,295 @@
 	.modal.hidden { display: none; }
 
 	.modal-content {
-		background: var(--panel-bg);
-		border-radius: var(--radius-card);
-		border: 1px solid var(--border);
-		max-width: 90vw;
+		background: var(--hm-card);
+		border-radius: var(--hm-radius-lg);
+		border: 1px solid var(--hm-line);
+		max-width: 92vw;
 		max-height: 90vh;
 		width: 1200px;
 		overflow: auto;
-		padding: 30px;
+		padding: 30px 32px;
 		position: relative;
+		box-shadow: var(--hm-shadow-3);
 	}
 
 	.modal-close {
 		position: absolute;
-		top: 15px;
-		right: 20px;
-		font-size: 32px;
-		color: var(--text-muted);
-		background: none;
-		border: none;
+		top: 16px;
+		right: 22px;
+		font-size: 22px;
+		color: var(--hm-ink);
+		background: var(--hm-card);
+		border: 1px solid var(--hm-line);
 		cursor: pointer;
 		line-height: 1;
 		padding: 0;
-		width: 32px;
-		height: 32px;
+		width: 36px;
+		height: 36px;
+		border-radius: var(--hm-radius-pill);
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		transition: background .15s ease;
+	}
+	.modal-close:hover { background: var(--hm-pistachio); }
+
+	#modal-body h2 {
+		font-family: var(--hm-font-display);
+		letter-spacing: -.02em !important;
 	}
 
-	/* --- Full-size heatmap grid --- */
+	/* ── Modal full-view container (wraps the strip plot) ────── */
 	.heatmap-container {
-		padding: 10px;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-card);
-		background: var(--panel-bg);
+		padding: 14px;
+		border: 1px solid var(--hm-line);
+		border-radius: var(--hm-radius);
+		background: var(--hm-bg-soft);
 		overflow: hidden;
-	}
-
-	.heatmap-grid {
-		display: grid;
-		gap: 1px;
-	}
-
-	.grid-cell {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		height: 20px;
-		font-size: 10px;
-		font-weight: 500;
-		color: #fff;
-		border: 1px solid rgba(0, 0, 0, 0.12);
-	}
-
-	.zone-header-cell,
-	.bed-label-cell {
-		background: var(--sidebar-bg);
-		color: var(--text);
-		font-weight: 600;
-		font-size: 10px;
-		padding: 2px 5px;
-		border-radius: var(--radius-input);
-	}
-
-	.bed-label-cell {
-		justify-content: flex-end;
-		height: 20px;
-	}
-
-	.zone-header-cell {
-		justify-content: center;
-		height: 20px;
-	}
-
-	.data-cell {
-		height: 20px;
-		border-radius: 2px;
-		cursor: pointer;
-		position: relative;
 	}
 
 	.legend {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		margin-top: 10px;
-		padding-top: 10px;
-		border-top: 1px solid var(--border);
+		gap: 12px;
+		margin-top: 14px;
+		padding-top: 12px;
+		border-top: 1px dashed var(--hm-line);
 		font-size: 11px;
+		color: var(--hm-muted);
 		flex-wrap: wrap;
 	}
 
 	.legend-item {
 		display: flex;
 		align-items: center;
-		gap: 5px;
+		gap: 6px;
+		font-weight: 500;
 	}
 
 	.legend-box {
-		width: 15px;
-		height: 10px;
+		width: 18px;
+		height: 12px;
 		border-radius: 2px;
-		border: 1px solid var(--border);
+		border: 1px solid var(--hm-line);
 	}
 
 	.stage-legend {
 		display: flex;
-		gap: 5px;
+		gap: 6px;
 		flex-wrap: wrap;
-		margin-top: 5px;
-		padding: 5px;
-		background: var(--panel-bg);
-		border-radius: var(--radius-card);
-		border: 1px solid var(--border);
+		margin-top: 10px;
+		padding: 10px 12px;
+		background: var(--hm-bg-soft);
+		border-radius: var(--hm-radius);
+		border: 1px solid var(--hm-line);
 	}
 
 	.stage-item {
 		display: flex;
 		align-items: center;
-		gap: 5px;
+		gap: 6px;
 		font-size: 11px;
-		padding: 2px 6px;
-		background: var(--panel-bg);
-		border-radius: var(--radius-input);
-		border: 1px solid var(--border);
+		padding: 3px 10px;
+		background: var(--hm-card);
+		border-radius: var(--hm-radius-pill);
+		border: 1px solid var(--hm-line);
+		font-weight: 500;
 	}
 
 	/* Multi-day comparison in modal */
 	.multi-day-grids {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-		gap: 16px;
-		margin-top: 16px;
+		gap: 18px;
+		margin-top: 18px;
 	}
 
 	.day-section {
-		border: 1px solid #e5e7eb;
-		border-radius: 8px;
-		padding: 12px;
-		background: #f9fafb;
+		border: 1px solid var(--hm-line);
+		border-radius: var(--hm-radius);
+		padding: 14px;
+		background: var(--hm-card);
 	}
 
 	.day-section h4 {
-		margin: 0 0 8px 0;
-		font-size: 14px;
-		color: #374151;
+		margin: 0 0 10px 0;
+		font-family: var(--hm-font);
+		font-size: 12px;
+		text-transform: uppercase;
+		letter-spacing: .9px;
+		font-weight: 700;
+		color: var(--hm-accent);
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.day-section h4::before {
+		content: "";
+		width: 8px;
+		height: 8px;
+		background: var(--hm-marker);
+		border-radius: 1px;
 	}
 
-	/* --- Loader --- */
+	/* ── Loader ──────────────────────────────────── */
 	#map-loader {
 		position: absolute; inset: 0;
-		background: rgba(255,255,255,0.93);
+		background: rgba(244,242,236,0.94);
+		backdrop-filter: blur(2px);
 		display: flex; flex-direction: column;
 		align-items: center; justify-content: center;
-		z-index: 2000; gap: 0.5rem;
+		z-index: 2000; gap: 0.55rem;
 	}
-	.map-load-title { font-size: 0.875rem; font-weight: 600; color: #1e293b; margin-bottom: 0.15rem; }
+	.map-load-title {
+		font-family: var(--hm-font-display);
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--hm-ink);
+		margin-bottom: 0.15rem;
+		letter-spacing: -.015em;
+	}
 	.map-load-track {
-		width: 220px; height: 5px;
-		background: #e2e8f0; border-radius: 3px; overflow: hidden;
+		width: 240px; height: 6px;
+		background: var(--hm-line); border-radius: 3px; overflow: hidden;
 	}
 	.map-load-fill {
 		height: 100%; width: 0%;
-		background: #2563eb; border-radius: 3px;
+		background: linear-gradient(90deg, var(--hm-accent), var(--hm-pistachio-2));
+		border-radius: 3px;
 		transition: width 0.25s ease;
 	}
-	.map-load-status { font-size: 0.72rem; color: #64748b; min-width: 220px; text-align: center; }
+	.map-load-status {
+		font-size: 0.72rem;
+		color: var(--hm-accent);
+		font-weight: 700;
+		min-width: 240px;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: .04em;
+	}
 
 	.empty-state {
 		text-align: center;
-		padding: 60px 20px;
-		color: var(--text-muted);
+		padding: 64px 24px;
+		color: var(--hm-muted);
+		font-family: var(--hm-font);
 	}
 
 	.empty-state svg {
 		width: 64px;
 		height: 64px;
 		margin: 0 auto 16px;
-		opacity: 0.5;
+		opacity: 0.4;
+		color: var(--hm-accent);
+	}
+
+	.empty-state p:first-of-type {
+		font-family: var(--hm-font-display);
+		font-size: 1.15rem;
+		font-weight: 600;
+		color: var(--hm-ink);
+		letter-spacing: -.015em;
+		margin-bottom: 8px;
+	}
+
+	/* ── Override the floating summary + filter bar from map_base.html ── */
+	.scout-summary {
+		background: var(--hm-card) !important;
+		border: 1px solid var(--hm-line) !important;
+		border-radius: var(--hm-radius-lg) !important;
+		box-shadow: var(--hm-shadow-2);
+		padding: 14px 16px !important;
+		font-family: var(--hm-font);
+	}
+
+	.scout-summary .panel-title {
+		font-family: var(--hm-font);
+		color: var(--hm-quiet) !important;
+		font-size: 0.62rem !important;
+		letter-spacing: .9px !important;
+		font-weight: 700 !important;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.scout-summary .panel-title::before {
+		content: "";
+		width: 8px;
+		height: 8px;
+		background: var(--hm-marker);
+		border-radius: 1px;
+	}
+
+	.scout-summary .scout-stat {
+		background: var(--hm-bg-soft) !important;
+		border: 1px solid var(--hm-line) !important;
+		border-radius: var(--hm-radius) !important;
+		padding: 10px 12px !important;
+		position: relative;
+		overflow: hidden;
+	}
+	.scout-summary .scout-stat::before {
+		content: "";
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 3px;
+		background: var(--hm-accent);
+	}
+
+	.scout-summary .scout-stat-label {
+		font-size: 0.6rem !important;
+		color: var(--hm-quiet) !important;
+		font-weight: 700 !important;
+		letter-spacing: .8px !important;
+	}
+
+	.scout-summary .scout-stat-value {
+		font-family: var(--hm-font-display) !important;
+		font-size: 1.4rem !important;
+		font-weight: 600 !important;
+		color: var(--hm-ink) !important;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -.02em;
+	}
+
+	.scout-filters {
+		background: var(--hm-card) !important;
+		border: 1px solid var(--hm-line) !important;
+		box-shadow: var(--hm-shadow-1);
+	}
+	.scout-filters label {
+		color: var(--hm-quiet) !important;
+		font-weight: 700 !important;
+		letter-spacing: .85px !important;
+		text-transform: uppercase;
+		font-size: 0.62rem !important;
+	}
+	.scout-filters input[type="date"] {
+		border: 1px solid var(--hm-line) !important;
+		border-radius: var(--hm-radius-pill) !important;
+		font-family: var(--hm-font) !important;
+		color: var(--hm-text) !important;
+		font-weight: 600 !important;
+		font-variant-numeric: tabular-nums;
+		padding: 6px 14px !important;
+	}
+	.scout-filters input[type="date"]:focus {
+		border-color: var(--hm-accent) !important;
+		box-shadow: 0 0 0 2px rgba(75,85,99,.18) !important;
+	}
+
+	@media (max-width: 768px) {
+		#content-container { padding: 60px 12px 12px; }
+		.heatmap-title { font-size: 1.2rem; }
+		.filter-row { padding: 10px 12px; gap: 12px; }
+		.gh-select { min-width: 160px; }
+		.modal-content { padding: 22px; }
 	}
 </style>
-{% endblock %} 
+{% endblock %}
 
 {% block page_content %}
 <div>
@@ -543,22 +939,28 @@
 				<div class="map-load-track"><div class="map-load-fill" id="map-load-fill"></div></div>
 				<span class="map-load-status" id="map-load-status">0%</span>
 			</div>
-			
-			<!-- New filters section -->
-			<div class="filter-row">
-				<div class="filter-group">
-					<span class="filter-label">Greenhouse:</span>
-					<select id="greenhouse-select" class="gh-select">
-						<option value="__all__">All Greenhouses</option>
-					</select>
+				<div class="heatmap-page-head">
+					<div class="heatmap-title-block">
+						<div class="heatmap-eyebrow">Scouting · Zone Heatmaps</div>
+						<h1 class="heatmap-title">Pest &amp; Disease Density</h1>
+					</div>
 				</div>
-				<div class="filter-group">
-					<span class="filter-label">Pests:</span>
-					<div class="pest-filter-tabs" id="pest-filter"></div>
-				</div>
-			</div>
 
-			<div class="all-gh-table-wrapper" id="all-gh-table-wrapper">
+				<!-- Filters -->
+				<div class="filter-row">
+					<div class="filter-group">
+						<span class="filter-label">Greenhouse</span>
+						<select id="greenhouse-select" class="gh-select">
+							<option value="__all__">All Greenhouses</option>
+						</select>
+					</div>
+					<div class="filter-group">
+						<span class="filter-label">Pests</span>
+						<div class="pest-filter-tabs" id="pest-filter"></div>
+					</div>
+				</div>
+
+				<div class="all-gh-table-wrapper" id="all-gh-table-wrapper">
 				<!-- Table rendered here -->
 			</div>
 		</div>
@@ -588,7 +990,7 @@
 					<div class="scout-stat-value" id="hm-stat-obs">—</div>
 				</div>
 				<div class="scout-stat">
-					<div class="scout-stat-label">Beds</div>
+					<div class="scout-stat-label">Zones</div>
 					<div class="scout-stat-value" id="hm-stat-beds">—</div>
 				</div>
 				<div class="scout-stat">
@@ -918,29 +1320,34 @@
 		}
 
 		// ── Update summary with filtered data ──
+		// Counts are zone-based: obsTotal is sum of observations across zones,
+		// zonesTotal is the number of distinct (bed, zone) cells that had any
+		// scouting activity. We never surface "entries" as a primitive.
 		function updateHeatmapSummary(greenhouses) {
 			const farms = new Set();
 			let obsTotal = 0;
-			let bedsTotal = 0;
-			
+			let zonesTotal = 0;
+
 			greenhouses.forEach(g => {
 				if (g._farmName) farms.add(g._farmName);
+				const zoneSet = new Set();
 				(g.scouting_entries || []).forEach(entry => {
+					if (entry.zone) zoneSet.add(entry.zone);
 					CATEGORIES.forEach(cat => {
 						const items = entry[cat.key] || [];
 						items.forEach(it => { obsTotal += +(it.count || it.bed_count || 1) || 1; });
 					});
 				});
-				bedsTotal += (g.beds_with_obs || g.bed_count || 0);
+				zonesTotal += zoneSet.size;
 			});
-			
+
 			const set = (id, val) => {
 				const el = document.getElementById(id);
 				if (el) el.textContent = String(val);
 			};
 			set("hm-stat-gh", greenhouses.length);
 			set("hm-stat-obs", obsTotal);
-			set("hm-stat-beds", bedsTotal);
+			set("hm-stat-beds", zonesTotal);
 			set("hm-stat-farms", farms.size);
 		}
 
@@ -1027,27 +1434,13 @@
 			greenhouses.forEach(ghData => {
 				const ghName = ghData._ghName || "";
 				const ghLabel = (ghData._warehouseName || ghName).replace(/ - .+$/, "");
-				const bedCount = ghData.bed_count || 0;
-				const zoneCount = ghData.zone_count || 0;
-
-				const activeBedSet = {};
-				const activeZoneSet = {};
-				(ghData.scouting_entries || []).forEach(entry => {
-					const parsed = parseZone(entry.zone);
-					if (parsed) {
-						activeBedSet[parsed.bed] = true;
-						activeZoneSet[parsed.zone] = true;
-					}
-				});
-				const activeBeds = Object.keys(activeBedSet).map(Number).sort((a, b) => b - a);
-				const activeZones = Object.keys(activeZoneSet).map(Number).sort((a, b) => b - a);
 
 				const tr = document.createElement("tr");
 
 				// Row label
 				const tdLabel = document.createElement("td");
 				tdLabel.className = "td-gh-label";
-				tdLabel.innerHTML = 
+				tdLabel.innerHTML =
 					'<div class="td-gh-date">' + escapeHtml(currentDate) + '</div>' +
 					'<div class="td-gh-name">' + escapeHtml(ghLabel) + '</div>';
 				tr.appendChild(tdLabel);
@@ -1055,16 +1448,7 @@
 				// Each observation column with multi-day data
 				observations.forEach(obs => {
 					const td = document.createElement("td");
-					const cardEl = buildMultiDayMiniCard(
-						ghData,
-						ghLabel,
-						obs,
-						bedCount,
-						zoneCount,
-						activeBeds,
-						activeZones,
-						ghName
-					);
+					const cardEl = buildMultiDayMiniCard(ghData, ghLabel, obs, ghName);
 					if (cardEl) {
 						td.appendChild(cardEl);
 					} else {
@@ -1084,44 +1468,46 @@
 		}
 
 		// ── Build multi-day mini card ──
-		function buildMultiDayMiniCard(ghData, ghLabel, obs, bedCount, zoneCount, activeBeds, activeZones, ghName) {
-			// Build matrix for each day
+		// Per day we keep a zone-name keyed map → {count, stages:[{stage,count}]}
+		// so the upright plot renders one cell per zone (stage glyph included)
+		// while geojson positions each cell along its bed-row so aisle gaps and
+		// irregular footprints surface naturally.
+		function buildMultiDayMiniCard(ghData, ghLabel, obs, ghName) {
+			const bedCount = ghData.bed_count || 0;
+			const zoneCount = ghData.zone_count || 0;
 			const dayMatrices = {};
 			let totalAllDays = 0;
 			let maxCountAllDays = 0;
 			const stageBreakdown = {};
 
 			availableDates.forEach(date => {
-				const dayMatrix = {};
+				const dayMap = {};
 				const dayData = multiDayData[date] && multiDayData[date][ghName];
-				
+
 				if (dayData) {
 					(dayData.scouting_entries || []).forEach(entry => {
 						const items = entry[obs.catKey] || [];
 						items.forEach(item => {
 							if (item.name !== obs.name) return;
-							const parsed = parseZone(entry.zone);
-							if (!parsed) return;
+							if (!entry.zone) return;
 
-							const bed = parsed.bed;
-							const zone = parsed.zone;
 							const cnt = item.count || 1;
+							const stage = item.stage || "Present";
 
-							if (!dayMatrix[bed]) dayMatrix[bed] = {};
-							if (!dayMatrix[bed][zone]) dayMatrix[bed][zone] = 0;
-							dayMatrix[bed][zone] += cnt;
+							if (!dayMap[entry.zone]) dayMap[entry.zone] = { count: 0, stages: [] };
+							dayMap[entry.zone].count += cnt;
+							dayMap[entry.zone].stages.push({ stage: stage, count: cnt });
 
 							totalAllDays += cnt;
-							maxCountAllDays = Math.max(maxCountAllDays, dayMatrix[bed][zone] || 0);
+							maxCountAllDays = Math.max(maxCountAllDays, dayMap[entry.zone].count);
 
-							const stage = item.stage || "Present";
 							if (!stageBreakdown[stage]) stageBreakdown[stage] = 0;
 							stageBreakdown[stage] += cnt;
 						});
 					});
 				}
-				
-				dayMatrices[date] = dayMatrix;
+
+				dayMatrices[date] = dayMap;
 			});
 
 			if (totalAllDays === 0) return null;
@@ -1143,7 +1529,9 @@
 					bedCount,
 					zoneCount,
 					ghData.observation_types,
-					ghName
+					ghName,
+					ghData.zone_geojson || [],
+					stagesMap
 				);
 			});
 
@@ -1161,66 +1549,36 @@
 			obsDiv.textContent = obs.name;
 			card.appendChild(obsDiv);
 
-			// Mini grid body - show current day's data as primary
+			// Floor-plan body — true greenhouse footprint from zone polygons.
 			const body = document.createElement("div");
 			body.className = "mini-card-body";
 
-			const grid = document.createElement("div");
-			grid.className = "mini-grid";
-			grid.style.gridTemplateColumns = "22px repeat(" + activeZones.length + ", 1fr)";
+			const stagesMeta = (ghData.observation_types &&
+				ghData.observation_types[obs.category] &&
+				ghData.observation_types[obs.category][obs.name] &&
+				ghData.observation_types[obs.category][obs.name].stages) || [];
+			const stagesMap = {};
+			stagesMeta.forEach(s => { stagesMap[s.stage] = s; });
 
-			// Corner
-			const corner = document.createElement("div");
-			corner.className = "mg-corner";
-			grid.appendChild(corner);
-
-			// Zone headers
-			activeZones.forEach(z => {
-				const zh = document.createElement("div");
-				zh.className = "mg-zone-hdr";
-				zh.textContent = z;
-				grid.appendChild(zh);
-			});
-
-			// Bed rows
-			activeBeds.forEach(bed => {
-				const bedLbl = document.createElement("div");
-				bedLbl.className = "mg-bed-lbl";
-				bedLbl.textContent = bed;
-				grid.appendChild(bedLbl);
-
-				activeZones.forEach(zone => {
-					const cnt = (dayMatrices[currentDate] && dayMatrices[currentDate][bed] && dayMatrices[currentDate][bed][zone]) || 0;
-					const cell = document.createElement("div");
-					cell.className = "mg-data";
-
-					if (cnt > 0) {
-						cell.style.backgroundColor = obs.color;
-						cell.className += " " + getIntensityClass(cnt, maxCountAllDays);
-						cell.title = "Bed " + bed + " – Zone " + zone + ": " + cnt + " (today)";
-					} else {
-						// Check if there's data from previous days
-						let hasPreviousData = false;
-						availableDates.filter(d => d !== currentDate).forEach(date => {
-							const prevCnt = (dayMatrices[date] && dayMatrices[date][bed] && dayMatrices[date][bed][zone]) || 0;
-							if (prevCnt > 0) hasPreviousData = true;
-						});
-						
-						if (hasPreviousData) {
-							cell.style.backgroundColor = obs.color;
-							cell.style.opacity = "0.3";
-							cell.title = "Bed " + bed + " – Zone " + zone + ": Previous days data";
-						} else {
-							cell.className += " mg-empty";
-							cell.title = "Bed " + bed + " – Zone " + zone + ": None";
-						}
+			const prevSet = {};
+			availableDates.filter(d => d !== currentDate).forEach(date => {
+				Object.keys(dayMatrices[date] || {}).forEach(zoneName => {
+					if (!(dayMatrices[currentDate] && dayMatrices[currentDate][zoneName])) {
+						prevSet[zoneName] = true;
 					}
-
-					grid.appendChild(cell);
 				});
 			});
 
-			// Add day indicators
+			const plot = buildUprightPlot({
+				geojson: ghData.zone_geojson || [],
+				today: dayMatrices[currentDate] || {},
+				prev: prevSet,
+				maxCount: maxCountAllDays,
+				color: obs.color,
+				stagesMap: stagesMap,
+				large: false,
+			});
+
 			const dayIndicator = document.createElement("div");
 			dayIndicator.className = "day-indicator";
 			availableDates.forEach((date, index) => {
@@ -1230,171 +1588,425 @@
 				dot.style.backgroundColor = hasData ? obs.color : "#e5e7eb";
 				dot.title = date + (hasData ? " (data available)" : " (no data)");
 				dayIndicator.appendChild(dot);
-				
+
 				if (index < availableDates.length - 1) {
 					dayIndicator.appendChild(document.createTextNode(" "));
 				}
 			});
 			body.appendChild(dayIndicator);
 
-			body.appendChild(grid);
+			body.appendChild(plot);
 			card.appendChild(body);
 
 			return card;
 		}
 
+		// ── Upright plot builder (SVG floor-plan) ──
+		// Mirrors the observations_map modal: parse each zone's raw_geojson
+		// → LineString features (one centerline per bed-segment), project
+		// into a rotated frame so beds align, cluster the rings into blocks,
+		// draw three layers — faint baseline rail per bed, coloured polyline
+		// per zone-segment, bed numbers at each block's left edge. Heatmap
+		// drives a single observation, so colour is fixed and intensity
+		// scales the polyline's stroke-opacity.
+		function _hmParseZoneFeatures(zone) {
+			if (zone._features) return zone._features;
+			let parsed;
+			try { parsed = JSON.parse(zone.raw_geojson); } catch (_) { return null; }
+			if (!parsed || !parsed.features || !parsed.features.length) return null;
+			zone._features = parsed.features;
+			return parsed.features;
+		}
+
+		function buildUprightPlot(opts) {
+			const geojson = opts.geojson || [];
+			const today = opts.today || {};
+			const prev = opts.prev || {};
+			const maxCount = opts.maxCount || 1;
+			const color = opts.color || "#666666";
+			const large = !!opts.large;
+
+			// 1. Pull rings + line_ids per zone, gather all points for projection
+			const zones = [];
+			const allPoints = [];
+			for (const z of geojson) {
+				const features = _hmParseZoneFeatures(z);
+				if (!features) continue;
+				const rings = [];
+				const lineIds = [];
+				for (const f of features) {
+					const c = f.geometry && f.geometry.coordinates;
+					if (!Array.isArray(c) || !c.length) continue;
+					const ring = [];
+					for (const p of c) {
+						if (typeof p[0] !== 'number' || typeof p[1] !== 'number') continue;
+						ring.push([p[0], p[1]]);
+						allPoints.push(ring[ring.length - 1]);
+					}
+					if (ring.length) {
+						rings.push(ring);
+						lineIds.push((f.properties && f.properties.line_id) ?? null);
+					}
+				}
+				if (rings.length) zones.push({ name: z.name, rings, lineIds });
+			}
+
+			if (!allPoints.length) {
+				const empty = document.createElement("div");
+				empty.className = "upright-empty";
+				empty.textContent = "Zone polygons unavailable";
+				return empty;
+			}
+
+			// 2. Equirectangular projection (latScale ≈ cos(meanLat))
+			let sumLat = 0;
+			for (const [, lat] of allPoints) sumLat += lat;
+			const meanLat = sumLat / allPoints.length;
+			const latScale = Math.cos(meanLat * Math.PI / 180);
+
+			// 3. Bed direction: axial mean of line vectors → fall back to PCA.
+			let sumCos = 0, sumSin = 0, foundDir = false;
+			for (const z of zones) {
+				for (const ring of z.rings) {
+					if (ring.length < 2) continue;
+					const first = ring[0], last = ring[ring.length - 1];
+					const dx = (last[0] - first[0]) * latScale;
+					const dy = last[1] - first[1];
+					const len2 = dx*dx + dy*dy;
+					if (len2 < 1e-20) continue;
+					const a = Math.atan2(dy, dx);
+					const len = Math.sqrt(len2);
+					sumCos += Math.cos(2*a) * len;
+					sumSin += Math.sin(2*a) * len;
+					foundDir = true;
+				}
+			}
+			let bedDir;
+			if (foundDir) {
+				bedDir = 0.5 * Math.atan2(sumSin, sumCos);
+			} else {
+				// PCA fallback
+				let mx = 0, my = 0;
+				for (const [lng, lat] of allPoints) { mx += lng * latScale; my += lat; }
+				mx /= allPoints.length; my /= allPoints.length;
+				let cxx = 0, cxy = 0, cyy = 0;
+				for (const [lng, lat] of allPoints) {
+					const dx = lng * latScale - mx, dy = lat - my;
+					cxx += dx*dx; cxy += dx*dy; cyy += dy*dy;
+				}
+				bedDir = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+			}
+			const rot = -bedDir;
+			const rcos = Math.cos(rot), rsin = Math.sin(rot);
+
+			let cxRaw = 0, cyRaw = 0;
+			for (const [lng, lat] of allPoints) { cxRaw += lng * latScale; cyRaw += lat; }
+			cxRaw /= allPoints.length; cyRaw /= allPoints.length;
+			const project = ([lng, lat]) => {
+				const x = lng * latScale - cxRaw;
+				const y = lat - cyRaw;
+				return [x * rcos - y * rsin, x * rsin + y * rcos];
+			};
+
+			let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+			const projected = zones.map(z => {
+				const rings = z.rings.map(ring => {
+					const out = ring.map(project);
+					for (const [x, y] of out) {
+						if (x < minX) minX = x; if (x > maxX) maxX = x;
+						if (y < minY) minY = y; if (y > maxY) maxY = y;
+					}
+					return out;
+				});
+				return { name: z.name, rings, lineIds: z.lineIds };
+			});
+
+			const w = maxX - minX, h = maxY - minY;
+			if (w === 0 || h === 0) {
+				const empty = document.createElement("div");
+				empty.className = "upright-empty";
+				empty.textContent = "Zone polygons degenerate";
+				return empty;
+			}
+
+			// 4. Cluster the *raw rings* into horizontal blocks. Doing it on
+			// rings (not aggregated beds) keeps blocks honest when bed
+			// numbering restarts in each block — a block-1 bed and its
+			// block-2 namesake stay in their own clusters instead of getting
+			// merged into one entry that spans the whole greenhouse.
+			const allRings = [];
+			for (const z of projected) {
+				for (let i = 0; i < z.rings.length; i++) {
+					const lid = z.lineIds[i];
+					const ring = z.rings[i];
+					if (lid == null || lid === '' || !ring.length) continue;
+					let sx = 0, sy = 0, mn = Infinity, mx = -Infinity;
+					for (const [x, y] of ring) {
+						sx += x; sy += y;
+						if (x < mn) mn = x;
+						if (x > mx) mx = x;
+					}
+					allRings.push({
+						lid, ring, zoneName: z.name,
+						cx: sx / ring.length, cy: sy / ring.length,
+						minX: mn, maxX: mx
+					});
+				}
+			}
+			const sortedRings = allRings.slice().sort((a, b) => a.cx - b.cx);
+			const GAP_THRESHOLD = w * 0.05;
+			const blocks = [];
+			for (const r of sortedRings) {
+				const last = blocks[blocks.length - 1];
+				if (!last || r.cx > last.maxX + GAP_THRESHOLD) {
+					blocks.push({ rings: [r], minX: r.minX, maxX: r.maxX });
+				} else {
+					last.rings.push(r);
+					if (r.maxX > last.maxX) last.maxX = r.maxX;
+					if (r.minX < last.minX) last.minX = r.minX;
+				}
+			}
+			for (const blk of blocks) {
+				const bedMap = {};
+				for (const r of blk.rings) {
+					if (!bedMap[r.lid]) bedMap[r.lid] = { lid: r.lid, pts: [] };
+					for (const p of r.ring) bedMap[r.lid].pts.push(p);
+				}
+				blk.beds = Object.values(bedMap).map(b => {
+					let mn = Infinity, mx = -Infinity, sx = 0, sy = 0;
+					for (const [x, y] of b.pts) {
+						if (x < mn) mn = x;
+						if (x > mx) mx = x;
+						sx += x; sy += y;
+					}
+					return {
+						lid: b.lid,
+						minX: mn, maxX: mx,
+						cx: sx / b.pts.length,
+						cy: sy / b.pts.length
+					};
+				});
+			}
+			const bedMeta = blocks.flatMap(blk => blk.beds);
+
+			// 5. Layout dimensions
+			const PAD = large ? 12 : 4;
+			const LABEL_MARGIN = large ? 26 : 14;
+			const padLeft = LABEL_MARGIN;
+			const padRight = PAD;
+			const TARGET_W = large ? 880 : 280;
+			const TARGET_H = large ? 540 : 200;
+			const scale = Math.min((TARGET_W - padLeft - padRight) / w, (TARGET_H - 2*PAD) / h);
+			const svgW = w * scale + padLeft + padRight;
+			const svgH = h * scale + 2*PAD;
+			const toSvg = ([x, y]) => [
+				padLeft + (x - minX) * scale,
+				PAD + (maxY - y) * scale
+			];
+
+			// 6. Bed thickness from cluster count on the perpendicular axis
+			const countClusters = (vals, tol) => {
+				if (!vals.length) return 1;
+				const s = vals.slice().sort((a, b) => a - b);
+				let n = 1;
+				for (let i = 1; i < s.length; i++) if (s[i] - s[i-1] > tol) n++;
+				return n;
+			};
+			const yClusters = countClusters(bedMeta.map(b => b.cy), h * 0.02);
+			const xClusters = countClusters(bedMeta.map(b => b.cx), w * 0.02);
+			const stackExtent = ((yClusters >= xClusters) ? h : w) * scale;
+			const stackedBeds = Math.max(1, Math.max(yClusters, xClusters));
+			const bedSpacing = stackExtent / stackedBeds;
+			const bedThickness = large
+				? Math.max(2, Math.min(6, bedSpacing * 0.4))
+				: Math.max(1, Math.min(3, bedSpacing * 0.35));
+
+			// 7. Build SVG
+			const SVG_NS = "http://www.w3.org/2000/svg";
+			const svg = document.createElementNS(SVG_NS, "svg");
+			svg.setAttribute("viewBox", `0 0 ${svgW.toFixed(2)} ${svgH.toFixed(2)}`);
+			svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+			svg.setAttribute("class", "upright-svg" + (large ? " upright-svg-lg" : ""));
+
+			// Layer 1 — baselines (faint rail per bed, capped to its block)
+			for (const blk of blocks) {
+				for (const bed of blk.beds) {
+					const [x0, y0] = toSvg([blk.maxX, bed.cy]);
+					const [x1, y1] = toSvg([blk.minX, bed.cy]);
+					const ln = document.createElementNS(SVG_NS, "line");
+					ln.setAttribute("class", "gh-bed-baseline");
+					ln.setAttribute("x1", x0.toFixed(2));
+					ln.setAttribute("y1", y0.toFixed(2));
+					ln.setAttribute("x2", x1.toFixed(2));
+					ln.setAttribute("y2", y1.toFixed(2));
+					svg.appendChild(ln);
+				}
+			}
+
+			// Layer 2 — coloured zone polylines (one per ring per zone)
+			for (const z of projected) {
+				const obs = today[z.name];
+				const cnt = obs ? obs.count : 0;
+				const isPrev = !obs && prev[z.name];
+				if (cnt <= 0 && !isPrev) continue; // empty → only baseline shows
+				let opacity;
+				if (cnt > 0) {
+					const ratio = Math.min(1, cnt / Math.max(maxCount, 1));
+					opacity = 0.55 + ratio * 0.45;
+				} else {
+					opacity = 0.22;
+				}
+				let titleSuffix;
+				if (cnt > 0) {
+					titleSuffix = " · " + cnt + (
+						obs.stages && obs.stages.length
+							? " · " + obs.stages.map(s => s.stage + "(" + s.count + ")").join(", ")
+							: ""
+					);
+				} else {
+					titleSuffix = " · prior-day data";
+				}
+				for (const ring of z.rings) {
+					if (ring.length < 2) continue;
+					const pts = ring.map(p => toSvg(p).join(',')).join(' ');
+					const pl = document.createElementNS(SVG_NS, "polyline");
+					pl.setAttribute("class", "gh-zone");
+					pl.setAttribute("points", pts);
+					pl.setAttribute("stroke", color);
+					pl.setAttribute("stroke-width", bedThickness.toFixed(2));
+					pl.setAttribute("stroke-opacity", opacity.toFixed(2));
+					if (isPrev) pl.setAttribute("stroke-dasharray", (bedThickness * 1.2).toFixed(1) + "," + (bedThickness * 0.9).toFixed(1));
+					const title = document.createElementNS(SVG_NS, "title");
+					title.textContent = z.name + titleSuffix;
+					pl.appendChild(title);
+					svg.appendChild(pl);
+				}
+			}
+
+			// Layer 3 — bed labels at each block's left edge
+			for (const blk of blocks) {
+				for (const bed of blk.beds) {
+					const [ix, iy] = toSvg([blk.minX, bed.cy]);
+					const t = document.createElementNS(SVG_NS, "text");
+					t.setAttribute("class", "gh-bed-label");
+					t.setAttribute("x", (ix - 3).toFixed(2));
+					t.setAttribute("y", iy.toFixed(2));
+					t.setAttribute("text-anchor", "end");
+					t.textContent = bed.lid;
+					svg.appendChild(t);
+				}
+			}
+
+			return svg;
+		}
+
 		// ── Open multi-day modal ──
-		function openMultiDayModal(ghLabel, observationName, observationType, color, dayMatrices, maxCount, total, stageBreakdown, bedCount, zoneCount, obsTypes, ghName) {
+		function openMultiDayModal(ghLabel, observationName, observationType, color, dayMatrices, maxCount, total, stageBreakdown, bedCount, zoneCount, obsTypes, ghName, geojson, stagesMap) {
 			const modalBody = document.getElementById("modal-body");
 			modalBody.innerHTML = "";
 
 			const metadata = obsTypes && obsTypes[observationType] && obsTypes[observationType][observationName];
+			const stagesMapResolved = stagesMap || (function () {
+				const m = {};
+				if (metadata && metadata.stages) metadata.stages.forEach(s => { m[s.stage] = s; });
+				return m;
+			})();
 
 			// Header
 			const header = document.createElement("div");
 			header.style.marginBottom = "20px";
-			header.innerHTML = 
+			header.innerHTML =
 				'<h2 style="font-size:24px;font-weight:700;color:' + color + ';margin-bottom:8px;">' +
 				escapeHtml(observationName) + '</h2>' +
-				'<p style="font-size:14px;color:var(--text-muted);">' +
-				escapeHtml(ghLabel) + ' | 3-Day View | Total Count: ' + total + '</p>';
+				'<p style="font-size:14px;color:var(--hm-muted);">' +
+				escapeHtml(ghLabel) + ' &nbsp;·&nbsp; 3-day view &nbsp;·&nbsp; Total: ' + total + '</p>';
 			modalBody.appendChild(header);
 
-			// Stage breakdown
+			// Stage breakdown — symbol chip + count
 			if (metadata && metadata.stages && metadata.stages.length > 0) {
 				const stageLegendDiv = document.createElement("div");
 				stageLegendDiv.className = "stage-legend";
 
 				const title = document.createElement("div");
-				title.style.fontWeight = "600";
-				title.style.fontSize = "13px";
-				title.style.marginBottom = "8px";
+				title.style.fontWeight = "700";
+				title.style.fontSize = "11px";
+				title.style.textTransform = "uppercase";
+				title.style.letterSpacing = ".9px";
+				title.style.color = "var(--hm-quiet)";
+				title.style.marginBottom = "10px";
 				title.style.width = "100%";
-				title.textContent = "Stages Breakdown:";
+				title.textContent = "Stages on this card";
 				stageLegendDiv.appendChild(title);
 
 				metadata.stages.forEach(stage => {
 					const stageItem = document.createElement("div");
 					stageItem.className = "stage-item";
 					const stageCount = stageBreakdown[stage.stage] || 0;
-					stageItem.innerHTML = 
-						(stage.symbol ? '<span style="font-size:16px;">' + stage.symbol + '</span>' : '') +
+					const glyph = stage.symbol || (stage.stage ? stage.stage[0].toUpperCase() : "•");
+					stageItem.innerHTML =
+						'<span class="stage-glyph-chip" style="background:' + color + ';">' +
+						escapeHtml(glyph) + '</span>' +
 						'<span>' + escapeHtml(stage.stage) + '</span>' +
-						'<span style="font-size:11px;color:var(--gray-400, #9ca3af);">(' + stageCount + ')</span>';
+						'<span style="font-size:11px;color:var(--hm-quiet);">(' + stageCount + ')</span>';
 					stageLegendDiv.appendChild(stageItem);
 				});
 				modalBody.appendChild(stageLegendDiv);
 			}
 
-			// Multi-day grids
+			// Per-day upright plots
 			const multiDayContainer = document.createElement("div");
 			multiDayContainer.className = "multi-day-grids";
+
+			const allZoneNames = new Set();
+			Object.values(dayMatrices).forEach(m => Object.keys(m || {}).forEach(z => allZoneNames.add(z)));
 
 			availableDates.forEach(date => {
 				const daySection = document.createElement("div");
 				daySection.className = "day-section";
-				
+
 				const dayHeader = document.createElement("h4");
-				dayHeader.textContent = date + (date === currentDate ? " (Selected)" : "");
+				dayHeader.textContent = date + (date === currentDate ? " (selected)" : "");
 				daySection.appendChild(dayHeader);
 
-				const dayMatrix = dayMatrices[date] || {};
-				const dayGrid = renderFullHeatmapGrid(dayMatrix, maxCount, color, bedCount, zoneCount);
-				daySection.appendChild(dayGrid);
-				
+				const dayMap = dayMatrices[date] || {};
+				const prevSet = {};
+				allZoneNames.forEach(z => { if (!dayMap[z]) prevSet[z] = true; });
+
+				const plot = buildUprightPlot({
+					geojson: geojson || [],
+					today: dayMap,
+					prev: prevSet,
+					maxCount: maxCount || 1,
+					color: color,
+					stagesMap: stagesMapResolved,
+					large: true,
+				});
+
+				const container = document.createElement("div");
+				container.className = "heatmap-container";
+				container.appendChild(plot);
+				daySection.appendChild(container);
+
 				multiDayContainer.appendChild(daySection);
 			});
 
 			modalBody.appendChild(multiDayContainer);
 
-			// Legend
+			// Intensity legend
 			const legend = document.createElement("div");
 			legend.className = "legend";
 			legend.style.marginTop = "20px";
-			legend.innerHTML = 
-				'<div class="legend-item"><div class="legend-box intensity-0" style="background:' + color + ';"></div><span>None (0)</span></div>' +
-				'<div class="legend-item"><div class="legend-box intensity-2" style="background:' + color + ';"></div><span>Low</span></div>' +
-				'<div class="legend-item"><div class="legend-box intensity-4" style="background:' + color + ';"></div><span>Medium</span></div>' +
-				'<div class="legend-item"><div class="legend-box intensity-5" style="background:' + color + ';"></div><span>High</span></div>' +
-				'<div style="margin-left:auto;font-weight:600;">Max: ' + maxCount + '</div>';
+			legend.innerHTML =
+				'<div class="legend-item"><div class="legend-box" style="background:' + color + ';opacity:.3;"></div><span>Low</span></div>' +
+				'<div class="legend-item"><div class="legend-box" style="background:' + color + ';opacity:.6;"></div><span>Medium</span></div>' +
+				'<div class="legend-item"><div class="legend-box" style="background:' + color + ';opacity:.95;"></div><span>High</span></div>' +
+				'<div class="legend-item"><div class="legend-box" style="background:' + color + ';opacity:.1;border-style:dashed;"></div><span>Prior days</span></div>' +
+				'<div style="margin-left:auto;font-weight:700;">Max: ' + maxCount + '</div>';
 			modalBody.appendChild(legend);
 
 			document.getElementById("heatmap-modal").classList.remove("hidden");
 		}
 
-		// ── Parse zone string ──
-		function parseZone(zoneStr) {
-			const m = zoneStr.match(/^(.+?)\s+-\s+Bed\s+(\d+)\s+-\s+Zone\s+(\d+)$/);
-			if (!m) return null;
-			return {
-				gh: m[1].trim(),
-				bed: +m[2],
-				zone: +m[3],
-			};
-		}
-
-		// ── Intensity class ──
-		function getIntensityClass(count, max) {
-			if (count === 0) return "intensity-0";
-			const r = count / max;
-			if (r <= 0.2) return "intensity-1";
-			if (r <= 0.4) return "intensity-2";
-			if (r <= 0.6) return "intensity-3";
-			if (r <= 0.8) return "intensity-4";
-			return "intensity-5";
-		}
-
-		// ── Full heatmap grid for modal ──
-		function renderFullHeatmapGrid(matrix, maxCount, color, bedCount, zoneCount) {
-			const grid = document.createElement("div");
-			grid.className = "heatmap-grid";
-			grid.style.gridTemplateColumns = "50px repeat(" + zoneCount + ", 1fr)";
-
-			// Corner
-			const corner = document.createElement("div");
-			corner.className = "grid-cell";
-			grid.appendChild(corner);
-
-			// Zone headers
-			for (let z = zoneCount; z >= 1; z--) {
-				const lbl = document.createElement("div");
-				lbl.className = "grid-cell zone-header-cell";
-				lbl.textContent = z;
-				grid.appendChild(lbl);
-			}
-
-			// Bed rows
-			for (let bed = bedCount; bed >= 1; bed--) {
-				const bedLbl = document.createElement("div");
-				bedLbl.className = "grid-cell bed-label-cell";
-				bedLbl.textContent = bed;
-				grid.appendChild(bedLbl);
-
-				for (let zone = zoneCount; zone >= 1; zone--) {
-					const cnt = (matrix[bed] && matrix[bed][zone]) || 0;
-					const cellDiv = document.createElement("div");
-					cellDiv.className = "grid-cell data-cell " + getIntensityClass(cnt, maxCount);
-
-					if (cnt > 0 && maxCount > 0) {
-						cellDiv.style.backgroundColor = color;
-					}
-
-					cellDiv.title = "Bed " + bed + " – Zone " + zone + ": " + (cnt || "None");
-
-					if (cnt === 0) {
-						cellDiv.style.backgroundColor = "";
-						cellDiv.title = "Bed " + bed + " – Zone " + zone + ": None";
-					}
-
-					grid.appendChild(cellDiv);
-				}
-			}
-
-			const container = document.createElement("div");
-			container.className = "heatmap-container";
-			container.appendChild(grid);
-			return container;
-		}
 
 		// ── Modal management ──
 		const modal = document.getElementById("heatmap-modal");
@@ -1406,68 +2018,6 @@
 		modal.addEventListener("click", (e) => {
 			if (e.target === modal) modal.classList.add("hidden");
 		});
-
-		// Keep original openModal for backward compatibility
-		function openModal(ghLabel, observationName, observationType, color, matrix, maxCount, total, stageBreakdown, bedCount, zoneCount, obsTypes) {
-			modalBody.innerHTML = "";
-
-			const metadata = obsTypes && obsTypes[observationType] && obsTypes[observationType][observationName];
-
-			// Header
-			const header = document.createElement("div");
-			header.style.marginBottom = "20px";
-			header.innerHTML = 
-				'<h2 style="font-size:24px;font-weight:700;color:' + color + ';margin-bottom:8px;">' +
-				escapeHtml(observationName) + '</h2>' +
-				'<p style="font-size:14px;color:var(--text-muted);">' +
-				escapeHtml(ghLabel) + ' | Date: ' + escapeHtml(currentDate) + ' | Total Count: ' + total + '</p>';
-			modalBody.appendChild(header);
-
-			// Stage breakdown
-			if (metadata && metadata.stages && metadata.stages.length > 0) {
-				const stageLegendDiv = document.createElement("div");
-				stageLegendDiv.className = "stage-legend";
-
-				const title = document.createElement("div");
-				title.style.fontWeight = "600";
-				title.style.fontSize = "13px";
-				title.style.marginBottom = "8px";
-				title.style.width = "100%";
-				title.textContent = "Stages Breakdown:";
-				stageLegendDiv.appendChild(title);
-
-				metadata.stages.forEach(stage => {
-					const stageItem = document.createElement("div");
-					stageItem.className = "stage-item";
-					const stageCount = stageBreakdown[stage.stage] || 0;
-					stageItem.innerHTML = 
-						(stage.symbol ? '<span style="font-size:16px;">' + stage.symbol + '</span>' : '') +
-						'<span>' + escapeHtml(stage.stage) + '</span>' +
-						'<span style="font-size:11px;color:var(--gray-400, #9ca3af);">(' + stageCount + ')</span>';
-					stageLegendDiv.appendChild(stageItem);
-				});
-				modalBody.appendChild(stageLegendDiv);
-			}
-
-			// Full grid
-			const fullGrid = renderFullHeatmapGrid(matrix, maxCount, color, bedCount, zoneCount);
-			fullGrid.style.marginTop = "20px";
-			modalBody.appendChild(fullGrid);
-
-			// Legend
-			const legend = document.createElement("div");
-			legend.className = "legend";
-			legend.style.marginTop = "20px";
-			legend.innerHTML = 
-				'<div class="legend-item"><div class="legend-box intensity-0" style="background:' + color + ';"></div><span>None (0)</span></div>' +
-				'<div class="legend-item"><div class="legend-box intensity-2" style="background:' + color + ';"></div><span>Low</span></div>' +
-				'<div class="legend-item"><div class="legend-box intensity-4" style="background:' + color + ';"></div><span>Medium</span></div>' +
-				'<div class="legend-item"><div class="legend-box intensity-5" style="background:' + color + ';"></div><span>High</span></div>' +
-				'<div style="margin-left:auto;font-weight:600;">Max: ' + maxCount + '</div>';
-			modalBody.appendChild(legend);
-
-			modal.classList.remove("hidden");
-		}
 
 		// ── Farm filter ──
 		function setupFarmFilter() {
@@ -1520,7 +2070,7 @@
 							d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
 					</svg>
 					<p style="font-weight: 600; margin-bottom: 8px;">No Data Available</p>
-					<p>No scouting entries found for this date.</p>
+					<p>No scouted zones found for this date.</p>
 				</div>
 			`;
 		}

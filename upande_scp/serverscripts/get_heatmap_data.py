@@ -8,6 +8,8 @@ from upande_scp.serverscripts.cache_utils import (
     K_FARMS_AND_GREENHOUSES,
     K_OBSERVATION_TYPES,
     K_ZONE_COUNT_BY_BED,
+    K_ZONES_GEOJSON,
+    TTL_LONG,
     TTL_MEDIUM,
     TTL_SHORT,
     build_bed_count_by_gh,
@@ -15,6 +17,16 @@ from upande_scp.serverscripts.cache_utils import (
     build_zone_count_by_bed,
     get_or_set,
 )
+
+
+def _build_zones_geojson():
+    """All zones with raw_geojson — cached, filtered per-greenhouse downstream."""
+    return frappe.get_all(
+        "Zone",
+        filters={"raw_geojson": ["is", "set"]},
+        fields=["name", "greenhouse", "raw_geojson"],
+        limit_page_length=0,
+    )
 
 
 _BED_NUM_RE = re.compile(r"Bed\s+(\d+)", re.IGNORECASE)
@@ -77,6 +89,17 @@ def getHeatmapData(date, greenhouse):
 
         observation_types = get_or_set(K_OBSERVATION_TYPES, build_observation_types, ttl=TTL_MEDIUM)
 
+        # Zone polygons drive the floor-plan rendering on the client. Cached
+        # once across all greenhouses; we filter to the active greenhouse here
+        # so the per-card payload stays small for irregular footprints
+        # (double-bed / split-aisle houses parse out as multi-line features).
+        all_zone_geojson = get_or_set(K_ZONES_GEOJSON, _build_zones_geojson, ttl=TTL_LONG)
+        zone_geojson = [
+            {"name": z["name"], "raw_geojson": z["raw_geojson"]}
+            for z in all_zone_geojson
+            if z.get("greenhouse") == greenhouse
+        ]
+
         if not scouting_entries:
             return {
                 "scouting_entries": [],
@@ -84,6 +107,7 @@ def getHeatmapData(date, greenhouse):
                 "bed_count": bed_count,
                 "zone_count": max_zone_count,
                 "zone_count_by_bed": zone_count_by_bed_num,
+                "zone_geojson": zone_geojson,
                 "message": "No scouting entries found for this date and greenhouse",
             }
 
@@ -129,6 +153,7 @@ def getHeatmapData(date, greenhouse):
             "bed_count": bed_count,
             "zone_count": max_zone_count,
             "zone_count_by_bed": zone_count_by_bed_num,
+            "zone_geojson": zone_geojson,
             "date": date,
             "greenhouse": greenhouse,
         }

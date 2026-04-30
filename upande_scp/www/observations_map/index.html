@@ -293,6 +293,118 @@
 			display: none;
 		}
 	}
+
+	/* ── Greenhouse modal ── */
+	.gh-modal {
+		position: fixed; inset: 0; z-index: 5000;
+		display: none;
+		align-items: center; justify-content: center;
+	}
+	.gh-modal.open { display: flex; }
+	.gh-modal-backdrop {
+		position: absolute; inset: 0;
+		background: rgba(15, 23, 42, 0.55);
+		backdrop-filter: blur(2px);
+	}
+	.gh-modal-content {
+		position: relative;
+		width: min(1280px, 96vw);
+		height: min(880px, 92vh);
+		background: #fff;
+		border-radius: 10px;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+	}
+	.gh-modal-header {
+		display: flex; align-items: center; justify-content: space-between;
+		padding: 12px 16px;
+		border-bottom: 1px solid #e5e7eb;
+		flex-shrink: 0;
+	}
+	.gh-modal-titles { display: flex; flex-direction: column; min-width: 0; }
+	.gh-modal-title {
+		font-size: 1rem; font-weight: 600; color: #111827; margin: 0;
+		white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+	}
+	.gh-modal-subtitle { font-size: 0.72rem; color: #6b7280; margin-top: 2px; }
+	.gh-modal-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+	.gh-modal-btn {
+		background: #fff; border: 1px solid #e5e7eb; border-radius: 6px;
+		padding: 4px 10px; font-size: 0.75rem; cursor: pointer; color: #374151;
+	}
+	.gh-modal-btn:hover { background: #f9fafb; }
+	.gh-modal-close {
+		background: transparent; border: none; cursor: pointer;
+		font-size: 1.5rem; line-height: 1; color: #9ca3af; padding: 0 6px;
+	}
+	.gh-modal-close:hover { color: #374151; }
+	.gh-modal-body {
+		flex: 1; min-height: 0;
+		display: flex;
+		overflow: hidden;
+	}
+	.gh-modal-svg-wrap {
+		flex: 1; min-width: 0;
+		display: flex; align-items: center; justify-content: center;
+		background: #f9fafb;
+		padding: 16px;
+	}
+	.gh-modal-svg-wrap svg {
+		width: 100%; height: 100%;
+		max-width: 100%; max-height: 100%;
+	}
+	.gh-modal-side {
+		width: 280px;
+		border-left: 1px solid #e5e7eb;
+		padding: 14px 16px;
+		overflow-y: auto;
+		background: #fff;
+		flex-shrink: 0;
+	}
+	.gh-side-section-title {
+		font-size: 0.68rem; font-weight: 700; color: #6b7280;
+		text-transform: uppercase; letter-spacing: 0.05em;
+		margin: 10px 0 4px;
+	}
+	.gh-side-section-title:first-child { margin-top: 0; }
+	.gh-side-row {
+		display: flex; align-items: center; gap: 6px;
+		padding: 3px 0; font-size: 0.78rem; color: #374151;
+	}
+	.gh-side-row .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+	.gh-side-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.gh-side-row .ct { font-size: 0.7rem; color: #6b7280; flex-shrink: 0; }
+	.gh-side-empty { color: #94a3b8; font-size: 0.78rem; padding: 10px 0; }
+	.gh-side-hint { color: #9ca3af; font-size: 0.7rem; margin-top: 14px; }
+
+	.gh-zone {
+		cursor: pointer;
+		transition: stroke-opacity 0.12s ease, filter 0.12s ease;
+		stroke-linejoin: miter;
+		stroke-linecap: butt;
+	}
+	.gh-zone:hover { filter: brightness(0.85); }
+	.gh-zone.selected {
+		stroke-opacity: 1 !important;
+		filter: brightness(0.82) saturate(1.15);
+	}
+	.gh-bed-label {
+		font-size: 8px;
+		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+		font-weight: 500;
+		fill: #6b7280;
+		dominant-baseline: middle;
+		pointer-events: none;
+	}
+	.gh-bed-baseline {
+		stroke: #cbd5e1;
+		stroke-width: 0.6;
+		stroke-opacity: 0.55;
+		fill: none;
+		pointer-events: none;
+	}
 </style>
 {% endblock %} {% block page_content %}
 <div id="map-page">
@@ -366,6 +478,27 @@
 				</div>
 			</div>
 		</details>
+	</div>
+
+	<!-- Greenhouse upright-view modal -->
+	<div class="gh-modal" id="gh-modal" role="dialog" aria-modal="true" aria-hidden="true">
+		<div class="gh-modal-backdrop" id="gh-modal-backdrop"></div>
+		<div class="gh-modal-content">
+			<div class="gh-modal-header">
+				<div class="gh-modal-titles">
+					<h3 class="gh-modal-title" id="gh-modal-title">Greenhouse</h3>
+					<div class="gh-modal-subtitle" id="gh-modal-subtitle"></div>
+				</div>
+				<div class="gh-modal-actions">
+					<button class="gh-modal-btn" id="gh-modal-download" title="Download SVG">Download SVG</button>
+					<button class="gh-modal-close" id="gh-modal-close" aria-label="Close">&times;</button>
+				</div>
+			</div>
+			<div class="gh-modal-body">
+				<div class="gh-modal-svg-wrap" id="gh-modal-svg-wrap"></div>
+				<div class="gh-modal-side" id="gh-modal-side"></div>
+			</div>
+		</div>
 	</div>
 </div>
 
@@ -544,6 +677,416 @@
 	        return html;
 	    }
 
+	    // ── Greenhouse upright-view modal ──
+	    const ghOf = (zoneName) => zoneName.split(' - ')[0];
+
+	    function pcaAngle(points, latScale) {
+	        // Fallback: principal axis from vertex distribution
+	        const n = points.length;
+	        if (n < 2) return 0;
+	        let mx = 0, my = 0;
+	        for (const [lng, lat] of points) { mx += lng * latScale; my += lat; }
+	        mx /= n; my /= n;
+	        let cxx = 0, cxy = 0, cyy = 0;
+	        for (const [lng, lat] of points) {
+	            const dx = lng * latScale - mx, dy = lat - my;
+	            cxx += dx * dx; cxy += dx * dy; cyy += dy * dy;
+	        }
+	        return 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+	    }
+
+	    // Average direction of all bed lines (geojson features), weighted by length.
+	    // Uses the axial (double-angle) mean to handle 180° ambiguity.
+	    function bedLineAngle(zones, latScale) {
+	        let sumCos = 0, sumSin = 0, found = false;
+	        for (const z of zones) {
+	            for (const ring of z.rings) {
+	                if (!ring || ring.length < 2) continue;
+	                const first = ring[0], last = ring[ring.length - 1];
+	                const dx = (last[0] - first[0]) * latScale;
+	                const dy = last[1] - first[1];
+	                const len2 = dx*dx + dy*dy;
+	                if (len2 < 1e-20) continue;
+	                const a = Math.atan2(dy, dx);
+	                const len = Math.sqrt(len2);
+	                sumCos += Math.cos(2*a) * len;
+	                sumSin += Math.sin(2*a) * len;
+	                found = true;
+	            }
+	        }
+	        if (!found) return null;
+	        return 0.5 * Math.atan2(sumSin, sumCos);
+	    }
+
+	    function buildGreenhouseSVG(ghName, data) {
+	        const ghZones = (data.all_zones_geojson || []).filter(z => ghOf(z.name) === ghName);
+	        if (!ghZones.length) return null;
+
+	        // Collect rings per zone (each "feature" in geojson = one row/line)
+	        const zones = [];
+	        const allPoints = [];
+	        for (const zone of ghZones) {
+	            const geo = parseZone(zone);
+	            if (!geo?.features) continue;
+	            const rings = [];
+	            const lineIds = [];
+	            geo.features.forEach(f => {
+	                const c = f.geometry?.coordinates;
+	                if (Array.isArray(c) && c.length) {
+	                    const ring = c.map(p => [p[0], p[1]]);
+	                    rings.push(ring);
+	                    lineIds.push(f.properties?.line_id ?? null);
+	                    allPoints.push(...ring);
+	                }
+	            });
+	            if (rings.length) zones.push({ name: zone.name, rings, lineIds });
+	        }
+	        if (!allPoints.length) return null;
+
+	        // Equirectangular projection: scale lng by cos(meanLat) to preserve aspect
+	        let sumLat = 0;
+	        for (const [, lat] of allPoints) sumLat += lat;
+	        const meanLat = sumLat / allPoints.length;
+	        const latScale = Math.cos(meanLat * Math.PI / 180);
+
+	        // Bed direction from line features (fall back to PCA on outline if unavailable).
+	        // Rotate so beds run horizontally (parallel to screen width, left→right).
+	        let bedDir = bedLineAngle(zones, latScale);
+	        if (bedDir === null) bedDir = pcaAngle(allPoints, latScale);
+	        const rot = -bedDir;
+	        const cos = Math.cos(rot), sin = Math.sin(rot);
+
+	        // Centroid in scaled coords
+	        let cxRaw = 0, cyRaw = 0;
+	        for (const [lng, lat] of allPoints) { cxRaw += lng * latScale; cyRaw += lat; }
+	        cxRaw /= allPoints.length; cyRaw /= allPoints.length;
+
+	        const project = ([lng, lat]) => {
+	            const x = lng * latScale - cxRaw;
+	            const y = lat - cyRaw;
+	            return [x * cos - y * sin, x * sin + y * cos];
+	        };
+
+	        // Rotate every ring + bounding box
+	        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+	        const projected = zones.map(z => {
+	            const rings = z.rings.map(ring => {
+	                const out = ring.map(project);
+	                for (const [x, y] of out) {
+	                    if (x < minX) minX = x; if (x > maxX) maxX = x;
+	                    if (y < minY) minY = y; if (y > maxY) maxY = y;
+	                }
+	                return out;
+	            });
+	            return { name: z.name, rings, lineIds: z.lineIds };
+	        });
+
+	        const w = maxX - minX, h = maxY - minY;
+	        if (w === 0 || h === 0) return null;
+
+	        // Cluster the *raw rings* (not aggregated beds) into horizontal
+	        // blocks. Critical: line_id can repeat across blocks (e.g. each
+	        // block restarts numbering at 1), so aggregating by line_id first
+	        // would merge a block-1 bed with its block-2 namesake into one
+	        // entry that spans the whole greenhouse — hiding the gap and
+	        // producing baselines that stretch across every block.
+	        const allRings = [];
+	        for (const z of projected) {
+	            for (let i = 0; i < z.rings.length; i++) {
+	                const lid = z.lineIds[i];
+	                const ring = z.rings[i];
+	                if (lid == null || lid === '' || !ring.length) continue;
+	                let sx = 0, sy = 0, mn = Infinity, mx = -Infinity;
+	                for (const [x, y] of ring) {
+	                    sx += x; sy += y;
+	                    if (x < mn) mn = x;
+	                    if (x > mx) mx = x;
+	                }
+	                allRings.push({
+	                    lid, ring,
+	                    cx: sx / ring.length,
+	                    cy: sy / ring.length,
+	                    minX: mn, maxX: mx
+	                });
+	            }
+	        }
+	        // Sweep by ring centroid x; a gap > 5% of total greenhouse width
+	        // starts a new block.
+	        const sortedRings = allRings.slice().sort((a, b) => a.cx - b.cx);
+	        const GAP_THRESHOLD = w * 0.05;
+	        const blocks = [];
+	        for (const r of sortedRings) {
+	            const last = blocks[blocks.length - 1];
+	            if (!last || r.cx > last.maxX + GAP_THRESHOLD) {
+	                blocks.push({ rings: [r], minX: r.minX, maxX: r.maxX });
+	            } else {
+	                last.rings.push(r);
+	                if (r.maxX > last.maxX) last.maxX = r.maxX;
+	                if (r.minX < last.minX) last.minX = r.minX;
+	            }
+	        }
+	        // Group each block's rings by line_id → that block's beds. Each bed
+	        // gets bbox + centroid for baseline / label / thickness math.
+	        for (const blk of blocks) {
+	            const bedMap = {};
+	            for (const r of blk.rings) {
+	                if (!bedMap[r.lid]) bedMap[r.lid] = { lid: r.lid, pts: [] };
+	                for (const p of r.ring) bedMap[r.lid].pts.push(p);
+	            }
+	            blk.beds = Object.values(bedMap).map(b => {
+	                let mn = Infinity, mx = -Infinity, sx = 0, sy = 0;
+	                for (const [x, y] of b.pts) {
+	                    if (x < mn) mn = x;
+	                    if (x > mx) mx = x;
+	                    sx += x; sy += y;
+	                }
+	                return {
+	                    lid: b.lid,
+	                    minX: mn, maxX: mx,
+	                    cx: sx / b.pts.length,
+	                    cy: sy / b.pts.length
+	                };
+	            });
+	        }
+	        // Flat list across blocks — used by the thickness clustering.
+	        const bedMeta = blocks.flatMap(blk => blk.beds);
+
+	        // Only block 1's labels need a margin (they hang off the left edge).
+	        // Subsequent blocks' labels live inside the inter-block gaps.
+	        const PAD = 16;
+	        const LABEL_MARGIN = 24;
+	        const padLeft = LABEL_MARGIN;
+	        const padRight = PAD;
+	        const TARGET_W = 1100, TARGET_H = 760;
+	        const scale = Math.min((TARGET_W - padLeft - padRight) / w, (TARGET_H - 2*PAD) / h);
+	        const svgW = w * scale + padLeft + padRight;
+	        const svgH = h * scale + 2*PAD;
+
+	        // SVG y grows downward → flip y
+	        const toSvg = ([x, y]) => [
+	            padLeft + (x - minX) * scale,
+	            PAD + (maxY - y) * scale
+	        ];
+
+	        // Bed thickness: cluster centroids on each axis — the perpendicular
+	        // (stack) axis is the one with more clusters, since every bed has a
+	        // distinct centre in that direction. Use that axis's extent divided
+	        // by the cluster count to get true row spacing, regardless of
+	        // whether beds end up horizontal or vertical after rotation.
+	        const countClusters = (vals, tol) => {
+	            if (!vals.length) return 1;
+	            const s = vals.slice().sort((a, b) => a - b);
+	            let n = 1;
+	            for (let i = 1; i < s.length; i++) {
+	                if (s[i] - s[i-1] > tol) n++;
+	            }
+	            return n;
+	        };
+	        const yCenters = bedMeta.map(b => b.cy);
+	        const xCenters = bedMeta.map(b => b.cx);
+	        const yClusters = countClusters(yCenters, h * 0.02);
+	        const xClusters = countClusters(xCenters, w * 0.02);
+	        const stackExtent = ((yClusters >= xClusters) ? h : w) * scale;
+	        const stackedBeds = Math.max(1, Math.max(yClusters, xClusters));
+	        const bedSpacing = stackExtent / stackedBeds;
+	        const bedThickness = Math.max(1.5, Math.min(4, bedSpacing * 0.25));
+
+	        // Observations / colors per zone (active type, current filters)
+	        const zoneObsMap = buildZoneObsMap(data, activeType);
+	        const zoneCounts = {};
+	        for (const [zn, items] of Object.entries(zoneObsMap)) {
+	            let total = 0;
+	            for (const [n, info] of Object.entries(items)) {
+	                if (!hiddenItems.has(n)) total += info.count;
+	            }
+	            if (total > 0) zoneCounts[zn] = total;
+	        }
+	        const maxCount = Math.max(...Object.values(zoneCounts), 1);
+
+	        // Layer 1 — baselines: one faint line per bed, capped at *its own
+	        // block's* extent (NOT the whole greenhouse). Block 2 stops at
+	        // block 2's left edge; it does not bleed into block 1.
+	        let baselines = '';
+	        for (const blk of blocks) {
+	            for (const bed of blk.beds) {
+	                const [x0, y0] = toSvg([blk.maxX, bed.cy]);
+	                const [x1, y1] = toSvg([blk.minX, bed.cy]);
+	                baselines += `<line class="gh-bed-baseline" x1="${x0.toFixed(2)}" y1="${y0.toFixed(2)}" x2="${x1.toFixed(2)}" y2="${y1.toFixed(2)}"/>`;
+	            }
+	        }
+
+	        // Layer 2 — coloured zone polylines (one per bed-segment in the
+	        // zone, so a bed reads as a continuous line with colour changes
+	        // at zone boundaries).
+	        let body = '';
+	        for (const z of projected) {
+	            const count = zoneCounts[z.name] || 0;
+	            const items = zoneObsMap[z.name] || {};
+	            const visible = Object.entries(items).filter(([n]) => !hiddenItems.has(n));
+	            let color = '#cbd5e1';
+	            if (visible.length) {
+	                visible.sort((a, b) => b[1].count - a[1].count);
+	                color = visible[0][1].color;
+	            }
+	            const hasObs = count > 0;
+	            const ratio = hasObs ? Math.min(1, count / maxCount) : 0;
+	            const opacity = hasObs ? (0.7 + ratio * 0.3) : 0.55;
+	            const safeName = z.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+	            for (const ring of z.rings) {
+	                if (ring.length < 2) continue;
+	                const pts = ring.map(p => toSvg(p).join(',')).join(' ');
+	                body += `<polyline class="gh-zone" data-zone="${safeName}" points="${pts}" `
+	                    + `fill="none" stroke="${color}" stroke-width="${bedThickness.toFixed(2)}" `
+	                    + `stroke-opacity="${opacity}">`
+	                    + `<title>${safeName}${hasObs ? ' · ' + count : ''}</title></polyline>`;
+	            }
+	        }
+
+	        // Layer 3 — bed numbers, always on the LEFT side of the bed. For
+	        // block 1 that's the greenhouse's left margin; for any block N>1
+	        // it lands in the gap between block N-1 and block N.
+	        let labels = '';
+	        for (const blk of blocks) {
+	            for (const bed of blk.beds) {
+	                const [ix, iy] = toSvg([blk.minX, bed.cy]);
+	                const safeLid = String(bed.lid).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+	                labels += `<text class="gh-bed-label" x="${(ix - 4).toFixed(2)}" y="${iy.toFixed(2)}" text-anchor="end">${safeLid}</text>`;
+	            }
+	        }
+
+	        return {
+	            svg: `<svg viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">${baselines}${body}${labels}</svg>`,
+	            width: svgW, height: svgH
+	        };
+	    }
+
+	    function buildGhSummaryHTML(ghName, data) {
+	        const ghEntries = (data.scouting_entries || []).filter(e => ghOf(e.zone) === ghName);
+	        const obsByType = {};
+	        for (const entry of ghEntries) {
+	            for (const type of Object.keys(OBS_TYPES)) {
+	                for (const obs of (entry[type] || [])) {
+	                    if (!obsByType[type]) obsByType[type] = {};
+	                    if (!obsByType[type][obs.name]) {
+	                        obsByType[type][obs.name] = { color: obs.color || '#999', count: 0 };
+	                    }
+	                    obsByType[type][obs.name].count += (obs.count || 1);
+	                }
+	            }
+	        }
+
+	        const zonesScouted = new Set(ghEntries.map(e => e.zone)).size;
+	        let html = `<div class="gh-side-section-title">Greenhouse summary</div>`;
+	        html += `<div class="gh-side-row"><span class="nm">Entries</span><span class="ct">${ghEntries.length}</span></div>`;
+	        html += `<div class="gh-side-row"><span class="nm">Zones scouted</span><span class="ct">${zonesScouted}</span></div>`;
+
+	        let any = false;
+	        for (const [type, items] of Object.entries(obsByType)) {
+	            if (!Object.keys(items).length) continue;
+	            any = true;
+	            const meta = OBS_TYPES[type] || {};
+	            html += `<div class="gh-side-section-title">${meta.label}</div>`;
+	            const sorted = Object.entries(items).sort((a, b) => b[1].count - a[1].count);
+	            for (const [name, info] of sorted) {
+	                html += `<div class="gh-side-row">`
+	                    + `<span class="dot" style="background:${info.color}"></span>`
+	                    + `<span class="nm" title="${name}">${name}</span>`
+	                    + `<span class="ct">×${info.count}</span></div>`;
+	            }
+	        }
+	        if (!any) html += '<div class="gh-side-empty">No observations recorded</div>';
+	        html += '<div class="gh-side-hint">Click a zone to see its details.</div>';
+	        return html;
+	    }
+
+	    function buildZoneDetailHTML(zoneName, data) {
+	        const allObs = buildZoneAllObs(data, zoneName);
+	        const shortZone = zoneName.split(' - ').slice(1).join(' - ') || zoneName;
+	        let html = `<div class="gh-side-section-title">${shortZone}</div>`;
+	        let any = false;
+	        for (const [type, items] of Object.entries(allObs)) {
+	            if (!Object.keys(items).length) continue;
+	            any = true;
+	            const meta = OBS_TYPES[type] || {};
+	            html += `<div class="gh-side-section-title">${meta.label}</div>`;
+	            for (const [name, info] of Object.entries(items)) {
+	                html += `<div class="gh-side-row">`
+	                    + `<span class="dot" style="background:${info.color}"></span>`
+	                    + `<span class="nm" title="${name}">${name}</span>`
+	                    + `<span class="ct">×${info.count}${info.stage ? ' · '+info.stage : ''}</span></div>`;
+	            }
+	        }
+	        if (!any) html += '<div class="gh-side-empty">No observations recorded for this zone</div>';
+	        return html;
+	    }
+
+	    let _ghModalCurrent = null; // { ghName, data }
+
+	    function openGhModal(ghName) {
+	        if (!activeData) return;
+	        const built = buildGreenhouseSVG(ghName, activeData);
+	        if (!built) return;
+
+	        _ghModalCurrent = { ghName, data: activeData };
+
+	        document.getElementById('gh-modal-title').textContent = ghName;
+	        const ghEntries = (activeData.scouting_entries || []).filter(e => ghOf(e.zone) === ghName);
+	        const zonesScouted = new Set(ghEntries.map(e => e.zone)).size;
+	        document.getElementById('gh-modal-subtitle').textContent =
+	            `${ghEntries.length} ${ghEntries.length === 1 ? 'entry' : 'entries'} · `
+	            + `${zonesScouted} zone${zonesScouted !== 1 ? 's' : ''} scouted · `
+	            + (OBS_TYPES[activeType]?.label || activeType);
+
+	        document.getElementById('gh-modal-svg-wrap').innerHTML = built.svg;
+	        document.getElementById('gh-modal-side').innerHTML = buildGhSummaryHTML(ghName, activeData);
+
+	        document.querySelectorAll('#gh-modal-svg-wrap .gh-zone').forEach(p => {
+	            p.addEventListener('click', () => {
+	                const zoneName = p.getAttribute('data-zone');
+	                document.querySelectorAll('#gh-modal-svg-wrap .gh-zone.selected')
+	                    .forEach(s => s.classList.remove('selected'));
+	                p.classList.add('selected');
+	                document.getElementById('gh-modal-side').innerHTML =
+	                    buildZoneDetailHTML(zoneName, activeData);
+	            });
+	        });
+
+	        const modal = document.getElementById('gh-modal');
+	        modal.classList.add('open');
+	        modal.setAttribute('aria-hidden', 'false');
+	    }
+
+	    function closeGhModal() {
+	        const modal = document.getElementById('gh-modal');
+	        modal.classList.remove('open');
+	        modal.setAttribute('aria-hidden', 'true');
+	        _ghModalCurrent = null;
+	    }
+
+	    function downloadGhSvg() {
+	        if (!_ghModalCurrent) return;
+	        const svgEl = document.querySelector('#gh-modal-svg-wrap svg');
+	        if (!svgEl) return;
+	        const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(svgEl);
+	        const blob = new Blob([xml], { type: 'image/svg+xml' });
+	        const url = URL.createObjectURL(blob);
+	        const a = document.createElement('a');
+	        a.href = url;
+	        a.download = `${_ghModalCurrent.ghName.replace(/[^\w\-]+/g, '_')}.svg`;
+	        document.body.appendChild(a); a.click(); a.remove();
+	        setTimeout(() => URL.revokeObjectURL(url), 0);
+	    }
+
+	    document.getElementById('gh-modal-close').addEventListener('click', closeGhModal);
+	    document.getElementById('gh-modal-backdrop').addEventListener('click', closeGhModal);
+	    document.getElementById('gh-modal-download').addEventListener('click', downloadGhSvg);
+	    document.addEventListener('keydown', (e) => {
+	        if (e.key === 'Escape' && document.getElementById('gh-modal').classList.contains('open')) {
+	            closeGhModal();
+	        }
+	    });
+
 	    // ── Render zone fill layer ──
 	    function renderZoneFills(data) {
 	        if (zoneLayer) { window.map.removeLayer(zoneLayer); zoneLayer = null; }
@@ -635,12 +1178,7 @@
 	                const zoneName = f.properties.zone_name;
 	                layer.bindTooltip(zoneName, { sticky: true, className: '' });
 	                layer.on('click', () => {
-	                    const allObs = buildZoneAllObs(data, zoneName);
-	                    const html = buildPopupHTML(zoneName, allObs);
-	                    L.popup({ maxWidth: 300 })
-	                        .setLatLng(layer.getBounds().getCenter())
-	                        .setContent(html)
-	                        .openOn(window.map);
+	                    openGhModal(ghOf(zoneName));
 	                });
 	            }
 	        });

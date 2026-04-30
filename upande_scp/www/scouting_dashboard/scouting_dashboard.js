@@ -950,15 +950,17 @@ function loadGreenhouseOptions() {
 }
 
 function setDefaultWeekInputsToLatestScouting(weekFromInput, weekToInput) {
-	/* Default range = current ISO week (Mon → Sun); replaced by latest scouting
-	   week if the API call below returns a record. */
-	var todayIso = getIsoWeekString(localTodayYmd());
-	var todayParts = todayIso.match(/^(\d{4})-W(\d{2})$/);
-	if (todayParts) {
-		var defRange = getIsoWeekDateRange(Number(todayParts[1]), Number(todayParts[2]));
-		weekFromInput.value = defRange.fromDate;
-		weekToInput.value = defRange.toDate;
+	/* Default range = last 30 days ending today. Replaced by a 30-day window
+	   ending on the latest scouting date if the API call below succeeds. */
+	function _applyMonthRange(toYmd) {
+		var end = new Date(toYmd + "T00:00:00Z");
+		if (!Number.isFinite(end.getTime())) return;
+		var start = new Date(end);
+		start.setUTCDate(end.getUTCDate() - 30);
+		weekFromInput.value = formatDateYmd(start);
+		weekToInput.value   = formatDateYmd(end);
 	}
+	_applyMonthRange(localTodayYmd());
 	return callFrappe("frappe.client.get_list", {
 		doctype: "Scouting Entry",
 		fields: ["date_of_capture"],
@@ -966,15 +968,7 @@ function setDefaultWeekInputsToLatestScouting(weekFromInput, weekToInput) {
 		limit_page_length: 1,
 	}).then(function (r) {
 		var latest = r?.message?.[0]?.date_of_capture;
-		if (!latest) return;
-		var dt = new Date(String(latest) + "T00:00:00Z");
-		if (!Number.isFinite(dt.getTime())) return;
-		var weekStr = getIsoWeekString(dt);
-		var wm = weekStr.match(/^(\d{4})-W(\d{2})$/);
-		if (!wm) return;
-		var range = getIsoWeekDateRange(Number(wm[1]), Number(wm[2]));
-		weekFromInput.value = range.fromDate;
-		weekToInput.value = range.toDate;
+		if (latest) _applyMonthRange(String(latest));
 	}).catch(function () { /* use defaults */ });
 }
 
@@ -1309,6 +1303,27 @@ function initScoutingDashboard() {
 	setupWeeklyTrendFilterListeners();
 }
 
+/* Sentinel that flags "merge this dimension into a single deduplicated series".
+   Distinct from "" (which historically means "All", and on the Section/Stage
+   dropdowns actually splits the chart into per-section/per-stage lines). */
+var CUMULATIVE_VALUE = "__cumulative__";
+var CUMULATIVE_LABEL = "Cumulative (combine all)";
+
+/* Apply Cumulative as the initial default the first time a section/stage
+   dropdown is populated. Subsequent paints preserve whatever the user picked.
+   MUST be called *after* setSelectOptions, so the option exists when we
+   assign .value (otherwise the assignment is silently dropped). */
+function _seedCumulativeDefault(selectEl) {
+	if (!selectEl) return;
+	if (selectEl.dataset.cumDefaultApplied) return;
+	var hasCumulative = Array.prototype.some.call(selectEl.options, function (o) {
+		return o.value === CUMULATIVE_VALUE;
+	});
+	if (!hasCumulative) return;
+	selectEl.dataset.cumDefaultApplied = "1";
+	selectEl.value = CUMULATIVE_VALUE;
+}
+
 /* Rebuild stage dropdown for pests: empty when "All Pests" selected */
 function rebuildPestStageOptions() {
 	var stageSel = root_element.querySelector("#pest-weekly-stage-filter");
@@ -1323,10 +1338,14 @@ function rebuildPestStageOptions() {
 		stageSel.disabled = false;
 		setSelectOptions(
 			stageSel,
-			[{ value: "", label: "All Stages" }].concat(
+			[
+				{ value: "", label: "All Stages" },
+				{ value: CUMULATIVE_VALUE, label: CUMULATIVE_LABEL },
+			].concat(
 				Array.from(stages).sort().map(function (s) { return { value: s, label: s }; })
 			)
 		);
+		_seedCumulativeDefault(stageSel);
 	} else {
 		setSelectOptions(stageSel, [{ value: "", label: "Select a pest first" }]);
 		stageSel.disabled = true;
@@ -1347,10 +1366,14 @@ function rebuildDiseaseStageOptions() {
 		stageSel.disabled = false;
 		setSelectOptions(
 			stageSel,
-			[{ value: "", label: "All Stages" }].concat(
+			[
+				{ value: "", label: "All Stages" },
+				{ value: CUMULATIVE_VALUE, label: CUMULATIVE_LABEL },
+			].concat(
 				Array.from(stages).sort().map(function (s) { return { value: s, label: s }; })
 			)
 		);
+		_seedCumulativeDefault(stageSel);
 	} else {
 		setSelectOptions(stageSel, [{ value: "", label: "Select a disease first" }]);
 		stageSel.disabled = true;
@@ -2209,7 +2232,7 @@ function _updateScoutPerfTrend(scouts, dates) {
 			},
 			yAxis: {
 				type: "value",
-				name: "Entries",
+				name: "Zones",
 				nameTextStyle: { color: "#64748b", fontSize: 11, fontFamily: SD_FONT_FAMILY },
 				splitLine: { lineStyle: { color: "rgba(0,0,0,0.06)", type: "dashed" } },
 				axisLine: { show: false },
@@ -2235,7 +2258,7 @@ function _updateScoutPerfTrend(scouts, dates) {
 
 	renderEChart("scout-perf-trend-chart", builder, {
 		title: "Scout Activity Trend",
-		subtitle: "Daily entries per scout (top 5) · ISO-week ticks",
+		subtitle: "Daily zones per scout (top 5) · ISO-week ticks",
 	});
 }
 
@@ -2247,7 +2270,7 @@ function _updateScoutPerfBar(scouts) {
 		var base = _echartsBase(compact);
 		return Object.assign(base, {
 			color: ["#3b82f6", "#10b981", "#f59e0b"],
-			legend: Object.assign({}, base.legend, { data: ["Entries", "Pest Obs", "Disease Obs"] }),
+			legend: Object.assign({}, base.legend, { data: ["Zones", "Pest Obs", "Disease Obs"] }),
 			tooltip: Object.assign({}, base.tooltip, { trigger: "axis", axisPointer: { type: "shadow" } }),
 			grid: { left: 40, right: 16, top: 16, bottom: compact ? 56 : 76, containLabel: false },
 			xAxis: {
@@ -2264,8 +2287,8 @@ function _updateScoutPerfBar(scouts) {
 				axisTick: { show: false },
 				axisLabel: { color: "#64748b", fontSize: 11, fontFamily: SD_FONT_FAMILY, formatter: function (v) { return Math.round(v); } },
 			},
-			series: ["Entries", "Pest Obs", "Disease Obs"].map(function (name, i) {
-				var key = name === "Entries" ? "entries" : (name === "Pest Obs" ? "pests" : "diseases");
+			series: ["Zones", "Pest Obs", "Disease Obs"].map(function (name, i) {
+				var key = name === "Zones" ? "entries" : (name === "Pest Obs" ? "pests" : "diseases");
 				return {
 					name: name,
 					type: "bar",
@@ -2279,8 +2302,8 @@ function _updateScoutPerfBar(scouts) {
 	}
 
 	renderEChart("scout-perf-bar-chart", builder, {
-		title: "Entries & Observations",
-		subtitle: "Per scout · entries, pests, diseases",
+		title: "Zones & Observations",
+		subtitle: "Per scout · zones, pests, diseases",
 	});
 }
 
@@ -2294,7 +2317,7 @@ function _updateScoutPerfRadar(scouts) {
 	var maxAvgDay  = Math.max.apply(null, top6.map(function (s) {
 		return s.entries / (Object.keys(s.daily).length || 1);
 	})) || 1;
-	var labels = ["Entries", "Pest Obs", "Disease Obs", "Trap Obs", "Avg/Day"];
+	var labels = ["Zones", "Pest Obs", "Disease Obs", "Trap Obs", "Avg/Day"];
 	var palette = top6.map(function (_, i) { return getPaletteColor(i).border; });
 
 	function builder(compact) {
@@ -2358,7 +2381,7 @@ function _updateScoutPerfRadial(scouts) {
 				trigger: "item",
 				formatter: function (p) {
 					return '<div style="font-weight:600;margin-bottom:2px;">' + p.marker + p.name + '</div>'
-						+ '<div>' + formatNumber(p.value) + ' entries  ·  ' + p.percent.toFixed(1) + '%</div>';
+						+ '<div>' + formatNumber(p.value) + ' zones  ·  ' + p.percent.toFixed(1) + '%</div>';
 				},
 			}),
 			grid: undefined,
@@ -2371,7 +2394,7 @@ function _updateScoutPerfRadial(scouts) {
 				label: compact ? { show: false } : {
 					show: true,
 					position: "center",
-					formatter: function () { return "{a|" + formatNumber(total) + "}\n{b|Entries}"; },
+					formatter: function () { return "{a|" + formatNumber(total) + "}\n{b|Zones}"; },
 					rich: {
 						a: { fontSize: 18, fontWeight: 700, color: "#0D2B5E", fontFamily: SD_FONT_FAMILY },
 						b: { fontSize: 11, color: "#64748b", fontFamily: SD_FONT_FAMILY, padding: [4, 0, 0, 0] },
@@ -2502,7 +2525,7 @@ function updateTopScouts() {
 		? '<div class="empty-state">No scout data</div>'
 		: scouts.map(function (s, i) {
 			var cls = i === 0 ? "first" : i === 1 ? "second" : i === 2 ? "third" : "";
-			return '<div class="item-row"><div class="item-rank ' + cls + '">' + (i + 1) + '</div><div class="item-info"><div class="item-name">' + (s.name || "Unknown") + '</div><div class="item-meta">' + s.entries + ' entries</div></div></div>';
+			return '<div class="item-row"><div class="item-rank ' + cls + '">' + (i + 1) + '</div><div class="item-info"><div class="item-name">' + (s.name || "Unknown") + '</div><div class="item-meta">' + s.entries + ' zones</div></div></div>';
 		}).join("");
 }
 
@@ -2511,7 +2534,7 @@ function updateRecentEntries() {
 	if (!container) return;
 	var entries = scoutingData.entries.slice(0, 10);
 	container.innerHTML = entries.length === 0
-		? '<div class="empty-state">No recent entries</div>'
+		? '<div class="empty-state">No recent zone activity</div>'
 		: entries.map(function (e) {
 			var type = e.pests_scouting_entry?.length ? "pest" : e.diseases_scouting_entry?.length ? "disease" : "trap";
 			var label = type === "pest" ? "Pest" : type === "disease" ? "Disease" : "Trap";
@@ -2560,8 +2583,8 @@ function updatePestTrendChart() {
 	var dates      = Object.keys(scoutingData.daily).sort();
 	if (!dates.length) return;
 	var totalBeds  = getTotalZonesForGreenhouses(scoutingData.entries);
-	var stageVal   = (root_element.querySelector("#pest-weekly-stage-filter")?.value || "")
-	                  .trim().toLowerCase();
+	var stageRaw   = root_element.querySelector("#pest-weekly-stage-filter")?.value || "";
+	var stageVal   = (stageRaw === CUMULATIVE_VALUE ? "" : stageRaw).trim().toLowerCase();
 	var fullDailyMap = buildDailyBedInfectionMap(scoutingData.entries, "pests");
 	var includeYear = new Set(dates.map(function (d) { return d.slice(0, 4); })).size > 1;
 	var unitWordPlural = getScopedUnitLabel(true);
@@ -2652,11 +2675,15 @@ function updatePestWeeklyTrend() {
 	});
 	setSelectOptions(
 		secSel,
-		[{ value: "", label: "All Sections" }].concat(
+		[
+			{ value: "", label: "All Sections" },
+			{ value: CUMULATIVE_VALUE, label: CUMULATIVE_LABEL },
+		].concat(
 			Array.from(secs).sort().map(function (s) { return { value: s, label: s }; })
 		)
 	);
- 
+	_seedCumulativeDefault(secSel);
+
 	/* Stage options depend on which pest is selected */
 	rebuildPestStageOptions();
 
@@ -2674,65 +2701,95 @@ function updatePestWeeklyTrendChart() {
 	var dayIndex = {};
 	axis.keys.forEach(function (k, i) { dayIndex[k] = i; });
 
-	var pestName  = root_element.querySelector("#pest-weekly-pest-filter")?.value    || "";
-	var section   = root_element.querySelector("#pest-weekly-section-filter")?.value || "";
-	var stage     = root_element.querySelector("#pest-weekly-stage-filter")?.value   || "";
+	var pestName    = root_element.querySelector("#pest-weekly-pest-filter")?.value    || "";
+	var sectionRaw  = root_element.querySelector("#pest-weekly-section-filter")?.value || "";
+	var stageEl     = root_element.querySelector("#pest-weekly-stage-filter");
+	var stageRaw    = stageEl?.value || "";
+	/* Disabled stage dropdown (no pest selected) → treat as cumulative so the
+	   chart shows one line per pest instead of splitting by stage. */
+	var stageDisabled     = !!stageEl?.disabled;
+	var sectionCumulative = sectionRaw === CUMULATIVE_VALUE;
+	var stageCumulative   = stageRaw === CUMULATIVE_VALUE || stageDisabled;
+	var section = sectionCumulative ? "" : sectionRaw;
+	var stage   = stageCumulative   ? "" : stageRaw;
+	/* "All X" (empty) splits per X; "Cumulative" or a specific value collapses to one bucket. */
+	var splitBySection = !section && !sectionCumulative;
+	var splitByStage   = !stage   && !stageCumulative;
 	var totalBeds = getTotalZonesForGreenhouses(scoutingData.entries);
 
-	var includeFn = function (c) {
-		if (section && c.section !== section)     return false;
-		if (stage   && (c.stage || "") !== stage) return false;
-		return true;
-	};
+	var pestList = pestName ? [pestName] : Object.keys(scoutingData.pests || {}).sort();
+	var allCounts = pestList.reduce(function (acc, p) {
+		return acc.concat(scoutingData.pests?.[p]?.counts || []);
+	}, []);
+
+	function _buckets(splitFlag, fixedVal, key) {
+		if (splitFlag) {
+			var vals = Array.from(new Set(allCounts.map(function (c) { return c[key] || ""; }).filter(Boolean))).sort();
+			return vals.length ? vals : [null];
+		}
+		return fixedVal ? [fixedVal] : [null];
+	}
+	var sectionBuckets = _buckets(splitBySection, section, "section");
+	var stageBuckets   = _buckets(splitByStage,   stage,   "stage");
+
+	/* When no pest is selected and we're splitting on either dimension,
+	   aggregate all pests into per-bucket lines (matches existing
+	   "All Pests + All Sections" behaviour, now extended to stages). */
+	var aggregatePests = !pestName && (splitBySection || splitByStage);
 
 	var seriesDefs = [];
+	var seriesIdx = 0;
 
-	if (!section) {
-		var allCounts = pestName
-			? (scoutingData.pests?.[pestName]?.counts || [])
-			: Object.values(scoutingData.pests || {}).reduce(function (acc, p) { return acc.concat(p.counts || []); }, []);
-		var sections = Array.from(new Set(allCounts.map(function (c) { return c.section || ""; }).filter(Boolean))).sort();
-		if (sections.length === 0) {
-			(pestName ? [pestName] : Object.keys(scoutingData.pests || {}).sort()).forEach(function (p, idx) {
-				var d = buildDailyBedInfectionSeries(
-					scoutingData.pests[p]?.counts || [],
-					axis, dayIndex, totalBeds, function (c) { return !stage || (c.stage || "") === stage; }
-				);
+	sectionBuckets.forEach(function (secVal) {
+		stageBuckets.forEach(function (stgVal) {
+			var includeFn = function (c) {
+				if (secVal !== null && c.section !== secVal) return false;
+				if (stgVal !== null && (c.stage || "") !== stgVal) return false;
+				return true;
+			};
+
+			if (aggregatePests) {
+				var d = buildDailyBedInfectionSeries(allCounts, axis, dayIndex, totalBeds, includeFn);
 				if (!d.some(function (v) { return v > 0; })) return;
-				var pal = getPaletteColor(idx);
-				seriesDefs.push({ name: p, color: observationColors.pests[p] || pal.border, data: d });
-			});
-		} else {
-			sections.forEach(function (sec, idx) {
-				var sectionIncludeFn = function (c) {
-					if (c.section !== sec) return false;
-					if (stage && (c.stage || "") !== stage) return false;
-					return true;
-				};
-				var d = buildDailyBedInfectionSeries(allCounts, axis, dayIndex, totalBeds, sectionIncludeFn);
+				var palA = getPaletteColor(seriesIdx++);
+				var partsA = [];
+				if (secVal !== null) partsA.push(secVal);
+				if (stgVal !== null) partsA.push(stgVal);
+				seriesDefs.push({ name: partsA.join(" · ") || "All", color: palA.border, data: d });
+				return;
+			}
+
+			pestList.forEach(function (p) {
+				var d = buildDailyBedInfectionSeries(scoutingData.pests?.[p]?.counts || [], axis, dayIndex, totalBeds, includeFn);
 				if (!d.some(function (v) { return v > 0; })) return;
-				var pal = getPaletteColor(idx);
-				seriesDefs.push({ name: pestName ? pestName + " – " + sec : sec, color: pal.border, data: d });
+				var palP = getPaletteColor(seriesIdx++);
+				var color = (sectionBuckets.length === 1 && stageBuckets.length === 1)
+					? (observationColors.pests[p] || palP.border)
+					: palP.border;
+				var name = p;
+				if (secVal !== null && splitBySection)        name += " – " + secVal;
+				else if (secVal !== null && !splitBySection)  name += " (" + secVal + ")";
+				else if (sectionCumulative)                   name += " (all sections)";
+				if (stgVal !== null && splitByStage)          name += " · " + stgVal;
+				else if (stgVal !== null && !splitByStage)    name += " [" + stgVal + "]";
+				else if (stageCumulative)                     name += " [all stages]";
+				seriesDefs.push({ name: name, color: color, data: d });
 			});
-		}
-	} else if (pestName) {
-		var d0 = buildDailyBedInfectionSeries(scoutingData.pests?.[pestName]?.counts || [], axis, dayIndex, totalBeds, includeFn);
-		seriesDefs.push({
-			name: pestName + " (" + section + ")" + (stage ? " [" + stage + "]" : ""),
-			color: observationColors.pests[pestName] || "#10b981",
-			data: d0,
 		});
-	} else {
-		Object.keys(scoutingData.pests || {}).sort().forEach(function (p, idx) {
-			var d = buildDailyBedInfectionSeries(scoutingData.pests[p].counts || [], axis, dayIndex, totalBeds, includeFn);
-			if (!d.some(function (v) { return v > 0; })) return;
-			var pal = getPaletteColor(idx);
-			seriesDefs.push({ name: p + " (" + section + ")", color: observationColors.pests[p] || pal.border, data: d });
-		});
-	}
+	});
 
 	var unitWordPlural = getScopedUnitLabel(true);
 	var subtitleText = unitWordPlural + " affected (%) · daily data points";
+	var splitDims = [];
+	if (splitBySection) splitDims.push("section");
+	if (splitByStage)   splitDims.push("stage");
+	if (splitDims.length) subtitleText += " · split by " + splitDims.join(" & ");
+	var cumDims = [];
+	if (sectionCumulative) cumDims.push("sections");
+	if (stageCumulative)   cumDims.push("stages");
+	if (cumDims.length) {
+		subtitleText += " · cumulative across " + cumDims.join(" & ") + " (deduped " + unitWordPlural.toLowerCase() + ")";
+	}
 	if (!seriesDefs.length) {
 		seriesDefs.push({ name: unitWordPlural + " Affected (%)", color: "#10b981", data: new Array(axis.keys.length).fill(0) });
 	}
@@ -2991,7 +3048,7 @@ function updatePestStageRadialChart() {
 	}
 
 	renderEChart("pest-stage-radial-chart", builder, {
-		title: "Entries by Stage",
+		title: "Zones by Stage",
 		subtitle: pestName ? pestName : "All pests",
 	});
 }
@@ -3078,7 +3135,8 @@ function updateDiseaseTrendChart() {
 	var dates     = Object.keys(scoutingData.daily).sort();
 	if (!dates.length) return;
 	var totalBeds = getTotalZonesForGreenhouses(scoutingData.entries);
-	var stageVal  = (root_element.querySelector("#disease-weekly-stage-filter")?.value || "").trim().toLowerCase();
+	var stageRaw  = root_element.querySelector("#disease-weekly-stage-filter")?.value || "";
+	var stageVal  = (stageRaw === CUMULATIVE_VALUE ? "" : stageRaw).trim().toLowerCase();
 	var fullDailyMap = buildDailyBedInfectionMap(scoutingData.entries, "diseases");
 	var includeYear = new Set(dates.map(function (d) { return d.slice(0, 4); })).size > 1;
 	var unitWordPlural = getScopedUnitLabel(true);
@@ -3170,11 +3228,15 @@ function updateDiseaseWeeklyTrend() {
 	});
 	setSelectOptions(
 		secSel,
-		[{ value: "", label: "All Sections" }].concat(
+		[
+			{ value: "", label: "All Sections" },
+			{ value: CUMULATIVE_VALUE, label: CUMULATIVE_LABEL },
+		].concat(
 			Array.from(secs).sort().map(function (s) { return { value: s, label: s }; })
 		)
 	);
- 
+	_seedCumulativeDefault(secSel);
+
 	/* Stage options depend on which disease is selected */
 	rebuildDiseaseStageOptions();
 
@@ -3193,64 +3255,89 @@ function updateDiseaseWeeklyTrendChart() {
 	axis.keys.forEach(function (k, i) { dayIndex[k] = i; });
 
 	var diseaseName = root_element.querySelector("#disease-weekly-disease-filter")?.value || "";
-	var section     = root_element.querySelector("#disease-weekly-section-filter")?.value || "";
-	var stage       = root_element.querySelector("#disease-weekly-stage-filter")?.value   || "";
-	var totalBeds   = getTotalZonesForGreenhouses(scoutingData.entries);
+	var sectionRaw  = root_element.querySelector("#disease-weekly-section-filter")?.value || "";
+	var stageEl     = root_element.querySelector("#disease-weekly-stage-filter");
+	var stageRaw    = stageEl?.value || "";
+	/* Disabled stage dropdown (no disease selected) → treat as cumulative. */
+	var stageDisabled     = !!stageEl?.disabled;
+	var sectionCumulative = sectionRaw === CUMULATIVE_VALUE;
+	var stageCumulative   = stageRaw === CUMULATIVE_VALUE || stageDisabled;
+	var section = sectionCumulative ? "" : sectionRaw;
+	var stage   = stageCumulative   ? "" : stageRaw;
+	var splitBySection = !section && !sectionCumulative;
+	var splitByStage   = !stage   && !stageCumulative;
+	var totalBeds = getTotalZonesForGreenhouses(scoutingData.entries);
 
-	var includeFn = function (c) {
-		if (section && c.section !== section)     return false;
-		if (stage   && (c.stage || "") !== stage) return false;
-		return true;
-	};
+	var diseaseList = diseaseName ? [diseaseName] : Object.keys(scoutingData.diseases || {}).sort();
+	var allCounts = diseaseList.reduce(function (acc, dn) {
+		return acc.concat(scoutingData.diseases?.[dn]?.counts || []);
+	}, []);
+
+	function _buckets(splitFlag, fixedVal, key) {
+		if (splitFlag) {
+			var vals = Array.from(new Set(allCounts.map(function (c) { return c[key] || ""; }).filter(Boolean))).sort();
+			return vals.length ? vals : [null];
+		}
+		return fixedVal ? [fixedVal] : [null];
+	}
+	var sectionBuckets = _buckets(splitBySection, section, "section");
+	var stageBuckets   = _buckets(splitByStage,   stage,   "stage");
+
+	var aggregateDiseases = !diseaseName && (splitBySection || splitByStage);
 
 	var seriesDefs = [];
+	var seriesIdx = 0;
 
-	if (!section) {
-		var allCounts = diseaseName
-			? (scoutingData.diseases?.[diseaseName]?.counts || [])
-			: Object.values(scoutingData.diseases || {}).reduce(function (acc, d) { return acc.concat(d.counts || []); }, []);
-		var sections = Array.from(new Set(allCounts.map(function (c) { return c.section || ""; }).filter(Boolean))).sort();
-		if (sections.length === 0) {
-			(diseaseName ? [diseaseName] : Object.keys(scoutingData.diseases || {}).sort()).forEach(function (dn, idx) {
-				var d = buildDailyBedInfectionSeries(
-					scoutingData.diseases[dn]?.counts || [],
-					axis, dayIndex, totalBeds, function (c) { return !stage || (c.stage || "") === stage; }
-				);
+	sectionBuckets.forEach(function (secVal) {
+		stageBuckets.forEach(function (stgVal) {
+			var includeFn = function (c) {
+				if (secVal !== null && c.section !== secVal) return false;
+				if (stgVal !== null && (c.stage || "") !== stgVal) return false;
+				return true;
+			};
+
+			if (aggregateDiseases) {
+				var d = buildDailyBedInfectionSeries(allCounts, axis, dayIndex, totalBeds, includeFn);
 				if (!d.some(function (v) { return v > 0; })) return;
-				var pal = getPaletteColor(idx);
-				seriesDefs.push({ name: dn, color: observationColors.diseases[dn] || pal.border, data: d });
-			});
-		} else {
-			sections.forEach(function (sec, idx) {
-				var sectionIncludeFn = function (c) {
-					if (c.section !== sec) return false;
-					if (stage && (c.stage || "") !== stage) return false;
-					return true;
-				};
-				var d = buildDailyBedInfectionSeries(allCounts, axis, dayIndex, totalBeds, sectionIncludeFn);
+				var palA = getPaletteColor(seriesIdx++);
+				var partsA = [];
+				if (secVal !== null) partsA.push(secVal);
+				if (stgVal !== null) partsA.push(stgVal);
+				seriesDefs.push({ name: partsA.join(" · ") || "All", color: palA.border, data: d });
+				return;
+			}
+
+			diseaseList.forEach(function (dn) {
+				var d = buildDailyBedInfectionSeries(scoutingData.diseases?.[dn]?.counts || [], axis, dayIndex, totalBeds, includeFn);
 				if (!d.some(function (v) { return v > 0; })) return;
-				var pal = getPaletteColor(idx);
-				seriesDefs.push({ name: diseaseName ? diseaseName + " – " + sec : sec, color: pal.border, data: d });
+				var palD = getPaletteColor(seriesIdx++);
+				var color = (sectionBuckets.length === 1 && stageBuckets.length === 1)
+					? (observationColors.diseases[dn] || palD.border)
+					: palD.border;
+				var name = dn;
+				if (secVal !== null && splitBySection)        name += " – " + secVal;
+				else if (secVal !== null && !splitBySection)  name += " (" + secVal + ")";
+				else if (sectionCumulative)                   name += " (all sections)";
+				if (stgVal !== null && splitByStage)          name += " · " + stgVal;
+				else if (stgVal !== null && !splitByStage)    name += " [" + stgVal + "]";
+				else if (stageCumulative)                     name += " [all stages]";
+				seriesDefs.push({ name: name, color: color, data: d });
 			});
-		}
-	} else if (diseaseName) {
-		var d0 = buildDailyBedInfectionSeries(scoutingData.diseases?.[diseaseName]?.counts || [], axis, dayIndex, totalBeds, includeFn);
-		seriesDefs.push({
-			name: diseaseName + " (" + section + ")" + (stage ? " [" + stage + "]" : ""),
-			color: observationColors.diseases[diseaseName] || "#f59e0b",
-			data: d0,
 		});
-	} else {
-		Object.keys(scoutingData.diseases || {}).sort().forEach(function (dn, idx) {
-			var d = buildDailyBedInfectionSeries(scoutingData.diseases[dn].counts || [], axis, dayIndex, totalBeds, includeFn);
-			if (!d.some(function (v) { return v > 0; })) return;
-			var pal = getPaletteColor(idx);
-			seriesDefs.push({ name: dn + " (" + section + ")", color: observationColors.diseases[dn] || pal.border, data: d });
-		});
-	}
+	});
 
 	var unitWordPlural = getScopedUnitLabel(true);
 	var subtitleText = unitWordPlural + " affected (%) · daily data points";
+	var splitDims = [];
+	if (splitBySection) splitDims.push("section");
+	if (splitByStage)   splitDims.push("stage");
+	if (splitDims.length) subtitleText += " · split by " + splitDims.join(" & ");
+	var cumDims = [];
+	if (sectionCumulative) cumDims.push("sections");
+	if (stageCumulative)   cumDims.push("stages");
+	if (cumDims.length) {
+		subtitleText += " · cumulative across " + cumDims.join(" & ") + " (deduped " + unitWordPlural.toLowerCase() + ")";
+	}
 	if (!seriesDefs.length) {
 		seriesDefs.push({ name: unitWordPlural + " Affected (%)", color: "#f59e0b", data: new Array(axis.keys.length).fill(0) });
 	}
@@ -3502,7 +3589,7 @@ function updateDiseaseStageRadialChart() {
 	}
 
 	renderEChart("disease-stage-radial-chart", builder, {
-		title: "Entries by Stage",
+		title: "Zones by Stage",
 		subtitle: diseaseName ? diseaseName : "All diseases",
 	});
 }
@@ -4177,13 +4264,13 @@ function updateTrapIndoorOutdoorChart() {
 		_ghHorizontalBarBuilder({
 			categories: labels,
 			stacked: true,
-			xLabel: "Entries",
+			xLabel: "Zones",
 			series: [
 				{ name: "Indoor",          color: "#10b981", data: labels.map(function (g) { return indoorGh[g] || 0; }) },
 				{ name: "Outdoor / Field", color: "#f59e0b", data: labels.map(function (g) { return outdoorGh[g] || 0; }) },
 			],
 		}),
-		{ title: "Indoor vs Outdoor Scouting", subtitle: "Trap entries by location type per greenhouse" });
+		{ title: "Indoor vs Outdoor Scouting", subtitle: "Trap zones by location type per greenhouse" });
 }
 
 /* ==========  FCM / FOCUS PESTS TAB  ========== */
@@ -4378,7 +4465,7 @@ function updateFcmTab() {
 	if (recentEl) {
 		var recent = impacted.slice(0, 10);
 		recentEl.innerHTML = !recent.length
-			? '<div class="empty-state">No recent focus entries</div>'
+			? '<div class="empty-state">No recent focus zones</div>'
 			: recent.map(function (e) {
 				var focusNames = [];
 				(e.trap_scouting_entry || []).forEach(function (t) { var k = getFocusKey(t?.pest || ""); if (k) focusNames.push(getFocusLabel(k)); });

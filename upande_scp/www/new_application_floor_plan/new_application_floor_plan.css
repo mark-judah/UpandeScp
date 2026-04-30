@@ -1,3 +1,16 @@
+/* Restore native date picker chrome for #scheduled-application-time
+   (chemical_base.html hides the indicator and overlays a custom calendar icon
+   intended for Flatpickr inputs; this page uses the browser's native picker). */
+.form-group input#scheduled-application-time {
+  background-image: none;
+  padding-right: 12px;
+}
+.form-group input#scheduled-application-time::-webkit-calendar-picker-indicator {
+  display: block;
+  opacity: 1;
+  cursor: pointer;
+}
+
 /* ── Page header (matches Application Work Order History) ── */
 .nafp-page-header {
   display: flex;

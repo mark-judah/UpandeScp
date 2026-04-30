@@ -2,8 +2,9 @@
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="/new_application_floor_plan/new_application_floor_plan.css" />
-<script src="/new_application_floor_plan/new_application_floor_plan.js"></script>
 <script src="/assets/frappe/js/frappe-web.min.js"></script>
+<script>window._nafpCSRF = "{{ csrf_token }}";</script>
+<script src="/new_application_floor_plan/new_application_floor_plan.js"></script>
 
 {% endblock %}
 {% block page_content %}
@@ -95,7 +96,7 @@
           <h3 class="form-section-title">Spray Details</h3>
           <div class="form-group">
             <label class="form-label" for="scheduled-application-time">Scheduled Application Date</label>
-            <input type="date" id="scheduled-application-time" class="form-input" required>
+            <input type="date" id="scheduled-application-time" class="form-input" data-fp-init="1" required>
           </div>
           <div class="form-group">
             <label class="form-label" for="spray-type">Spray Type</label>

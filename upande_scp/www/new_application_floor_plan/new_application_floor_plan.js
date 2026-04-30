@@ -1,6 +1,9 @@
 // ==================== CONSTANTS ====================
 const WATER_VOLUME_RATE = 1000;
 
+const getCSRFToken = () =>
+    (window.frappe && window.frappe.csrf_token) || window._nafpCSRF || "";
+
 document.addEventListener("DOMContentLoaded", () => {
     // ==================== STATE & CACHE ====================
     const state = {
@@ -371,7 +374,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Frappe-CSRF-Token': "{{csrf_token}}"
+                    'X-Frappe-CSRF-Token': getCSRFToken()
                 }
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -399,10 +402,10 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const [pestsRes, diseasesRes] = await Promise.all([
                 fetch('/api/resource/Pest?fields=["common_name"]&limit_page_length=0', {
-                    headers: { 'X-Frappe-CSRF-Token': "{{csrf_token}}" }
+                    headers: { 'X-Frappe-CSRF-Token': getCSRFToken() }
                 }),
                 fetch('/api/resource/Plant Disease?fields=["common_name"]&limit_page_length=0', {
-                    headers: { 'X-Frappe-CSRF-Token': "{{csrf_token}}" }
+                    headers: { 'X-Frappe-CSRF-Token': getCSRFToken() }
                 })
             ]);
 
@@ -433,7 +436,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Frappe-CSRF-Token': "{{csrf_token}}"
+                    'X-Frappe-CSRF-Token': getCSRFToken()
                 },
                 body: JSON.stringify({ chemical: chemicalName })
             });
@@ -472,7 +475,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Frappe-CSRF-Token': "{{csrf_token}}"
+                    'X-Frappe-CSRF-Token': getCSRFToken()
                 },
                 body: JSON.stringify({ greenhouse })
             });
@@ -1617,7 +1620,7 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const response = await fetch('/api/method/upande_scp.serverscripts.create_bom.createBOM', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': "{{csrf_token}}" },
+                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': getCSRFToken() },
                 body: JSON.stringify(bomData)
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -1674,7 +1677,7 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const response = await fetch('/api/method/upande_scp.serverscripts.get_bom_stock_balances.getBomStockBalances', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': "{{csrf_token}}" },
+                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': getCSRFToken() },
                 body: JSON.stringify({ data: JSON.stringify({ chemicals: uniqueItems }) })
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -2259,7 +2262,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const fullPayload = { payload: { raw_data: formData } };
             const response = await fetch('/api/method/upande_scp.serverscripts.validate_frac_irac_guidelines.validateGuidelines', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': "{{csrf_token}}" },
+                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': getCSRFToken() },
                 body: JSON.stringify(fullPayload)
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -2402,7 +2405,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const fullPayload = { payload: { raw_data: data } };
             const response = await fetch('/api/method/upande_scp.serverscripts.create_application_work_order.createApplicationWorkOrder', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': "{{csrf_token}}" },
+                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': getCSRFToken() },
                 body: JSON.stringify(fullPayload)
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);

@@ -64,6 +64,10 @@ K_TANKS_VALVES_PREFIX = "scp:tanks_valves_v1"
 K_CROPS_SCOUTED = "scp:crops_scouted_v1"
 # Cascading Farm → Section → Block/Greenhouse hierarchy for the scouts map.
 K_FARM_HIERARCHY = "scp:farm_hierarchy_v1"
+# One-centroid-per-Zone payload for the rose 3D map. Invalidated by Zone
+# create/update/delete (the geometry source of truth) and Bed/Warehouse
+# changes (which can rename or reparent zones).
+K_ZONE_CENTROIDS = "scp:zone_centroids_v1"
 
 
 def invalidate_farm_bundle(farm):
@@ -296,9 +300,9 @@ _DOC_INVALIDATIONS = {
     "Pest Filter": (K_OBSERVATION_TYPES,),
     "Disease Stages": (K_OBSERVATION_TYPES,),
     "Predator Stages": (K_OBSERVATION_TYPES,),
-    "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH, K_SM_UNITS_BY_WH),
-    "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_SM_BEDS_BY_GH),
-    "Warehouse": (K_GREENHOUSES_GEOJSON, K_BLOCKS_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_SM_UNITS_BY_WH, K_FARM_HIERARCHY),
+    "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH, K_SM_UNITS_BY_WH, K_ZONE_CENTROIDS),
+    "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_SM_BEDS_BY_GH, K_ZONE_CENTROIDS),
+    "Warehouse": (K_GREENHOUSES_GEOJSON, K_BLOCKS_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_SM_UNITS_BY_WH, K_FARM_HIERARCHY, K_ZONE_CENTROIDS),
     "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_FARM_HIERARCHY),
     "Orchard Tree": (K_SM_UNITS_BY_WH,),
     "Trap": (K_SM_TRAPS_BY_GH,),

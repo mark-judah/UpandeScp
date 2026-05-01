@@ -413,8 +413,22 @@
 				return;
 			}
 
-			const [lng0, lat0] = this.features[0].coord;
-			this.anchor = maplibregl.MercatorCoordinate.fromLngLat([lng0, lat0], 0);
+			// Anchor at the bbox centre of all features. With farms tens to
+			// hundreds of km apart, anchoring at features[0] would push far
+			// instances into 100k+ metre local coordinates — enough to lose
+			// 32-bit float precision in the vertex shader and clip past the
+			// projection's far plane.
+			let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+			for (const f of this.features) {
+				const [lng, lat] = f.coord;
+				if (lng < minLng) minLng = lng;
+				if (lng > maxLng) maxLng = lng;
+				if (lat < minLat) minLat = lat;
+				if (lat > maxLat) maxLat = lat;
+			}
+			const cLng = (minLng + maxLng) / 2;
+			const cLat = (minLat + maxLat) / 2;
+			this.anchor = maplibregl.MercatorCoordinate.fromLngLat([cLng, cLat], 0);
 			const meter = this.anchor.meterInMercatorCoordinateUnits();
 
 			const N = this.features.length;
@@ -502,6 +516,13 @@
 			this.stemMesh = stemMesh;
 			this.leafMesh = leafMesh;
 			this.bloomMesh = bloomMesh;
+			// InstancedMesh frustum culling uses the *geometry* bounding
+			// sphere, not the instance positions — it falsely culls the
+			// whole mesh once the camera is far from anchor. Disable it;
+			// the GPU will drop offscreen instances anyway.
+			stemMesh.frustumCulled = false;
+			leafMesh.frustumCulled = false;
+			bloomMesh.frustumCulled = false;
 			this.scene.add(stemMesh);
 			this.scene.add(leafMesh);
 			this.scene.add(bloomMesh);

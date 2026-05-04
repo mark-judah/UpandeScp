@@ -197,28 +197,37 @@ def check_duplicate_bom(bom_item_name, water_ph, water_hardness, chemicals):
     
 @frappe.whitelist()
 def getAllChemicals():
-    # Get both item code (name) and item name (item_name)
-    chemicals = frappe.get_all("Item", 
-        filters={'item_group': 'CHEMICALS'},
-        fields=["name", "item_name", "stock_uom"],
-        order_by="item_name"
+    # Fetch both chemicals and fertilizers in one query
+    items = frappe.get_all(
+        "Item",
+        filters={"item_group": ["in", ["CHEMICALS", "Fertilizer"]], "disabled": 0},
+        fields=["name", "item_name", "stock_uom", "item_group"],
+        order_by="item_name",
     )
-    
-    # Build lists and maps
+
     chemical_names = []
+    fertilizer_names = []
     item_uom_map = {}
-    item_code_map = {}  # Maps display name to item code
-    
-    for chemical in chemicals:
-        display_name = chemical.item_name or chemical.name
-        chemical_names.append(display_name)
-        item_uom_map[display_name] = chemical.stock_uom
-        item_code_map[display_name] = chemical.name  # Store the actual item code
-    
+    item_code_map = {}
+    item_type_map = {}
+
+    for it in items:
+        display_name = it.item_name or it.name
+        item_type = "fertilizer" if it.item_group == "Fertilizer" else "chemical"
+        if item_type == "fertilizer":
+            fertilizer_names.append(display_name)
+        else:
+            chemical_names.append(display_name)
+        item_uom_map[display_name] = it.stock_uom
+        item_code_map[display_name] = it.name
+        item_type_map[display_name] = item_type
+
     return {
-        "chemicals": sorted(list(set(chemical_names))),  # Remove duplicates and sort
+        "chemicals": sorted(set(chemical_names)),
+        "fertilizers": sorted(set(fertilizer_names)),
         "item_uom_map": item_uom_map,
-        "item_code_map": item_code_map  # Frontend can use this if needed for backend calls
+        "item_code_map": item_code_map,
+        "item_type_map": item_type_map,
     }
     
 @frappe.whitelist()

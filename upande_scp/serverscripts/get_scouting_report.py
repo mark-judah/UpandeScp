@@ -17,18 +17,31 @@ from upande_scp.serverscripts.cache_utils import (
 _BED_NUM_RE = re.compile(r"Bed\s+(\d+)", re.IGNORECASE)
 
 
-def _cached_chemicals():
+def _cached_bom_items():
     def _build():
-        return sorted({
-            c.item_name
-            for c in frappe.db.get_list(
-                "Item",
-                filters={"item_group": "CHEMICALS"},
-                fields=["item_name"],
-                limit_page_length=0,
-            )
-            if c.item_name
-        })
+        rows = frappe.db.get_list(
+            "Item",
+            filters={"item_group": ["in", ["CHEMICALS", "Fertilizer"]], "disabled": 0},
+            fields=["item_name", "item_group"],
+            limit_page_length=0,
+        )
+        chemicals = set()
+        fertilizers = set()
+        type_map = {}
+        for r in rows:
+            if not r.item_name:
+                continue
+            if r.item_group == "Fertilizer":
+                fertilizers.add(r.item_name)
+                type_map[r.item_name] = "fertilizer"
+            else:
+                chemicals.add(r.item_name)
+                type_map[r.item_name] = "chemical"
+        return {
+            "chemicals": sorted(chemicals),
+            "fertilizers": sorted(fertilizers),
+            "item_type_map": type_map,
+        }
 
     return get_or_set(K_CHEMICALS_LIST, _build, ttl=TTL_MEDIUM)
 
@@ -415,7 +428,10 @@ def getScoutingData():
             filters={"name": greenhouse},
             fields=["custom_bed_numbering", "custom_zone_numbering"]
         )
-        all_chemicals = _cached_chemicals()
+        bom_item_lookup = _cached_bom_items()
+        all_chemicals = bom_item_lookup["chemicals"]
+        all_fertilizers = bom_item_lookup["fertilizers"]
+        item_type_map = bom_item_lookup["item_type_map"]
         bed_data     = frappe.get_all("Bed", filters={"greenhouse": greenhouse}, fields=["bed", "bed__area", "total_variety_area", "variety"])
         spray_teams  = frappe.get_all("Spray Team", filters={"enabled": 1}, fields=["name"])
 
@@ -453,6 +469,8 @@ def getScoutingData():
             "custom_bed_numbering": bed_zone_numbering[0].get("custom_bed_numbering") if bed_zone_numbering else None,
             "custom_zone_numbering": bed_zone_numbering[0].get("custom_zone_numbering") if bed_zone_numbering else None,
             "all_chemicals": all_chemicals,
+            "all_fertilizers": all_fertilizers,
+            "item_type_map": item_type_map,
             "bed_data": bed_data,
             "zone_count_by_bed": zone_count_by_bed_num,
             "spray_team_team": spray_teams,

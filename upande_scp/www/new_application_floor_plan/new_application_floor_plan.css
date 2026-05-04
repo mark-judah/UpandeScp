@@ -947,12 +947,65 @@
   }
 
   .popup-item {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
     padding: 10px 12px;
     color: #374151;
     text-decoration: none;
     transition: background 0.15s ease;
     border-bottom: 1px solid #f3f4f6;
+  }
+  .popup-item-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Item type badge (Chemical / Fertilizer) */
+  .item-type-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 8px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    line-height: 1.4;
+  }
+  .item-type-badge--chemical {
+    background: #fee2e2;
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+  .item-type-badge--fertilizer {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #bbf7d0;
+  }
+  .item-type-badge--empty {
+    background: transparent;
+    border-color: transparent;
+    padding: 0;
+    min-width: 0;
+  }
+
+  /* Wrap for chemical row name input + badge */
+  .chemical-name-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .chemical-name-wrap input {
+    flex: 1;
+    min-width: 0;
   }
   /* Status Message */
   .status-message {

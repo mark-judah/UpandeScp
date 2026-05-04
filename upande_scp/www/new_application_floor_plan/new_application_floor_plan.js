@@ -16,6 +16,8 @@ document.addEventListener("DOMContentLoaded", () => {
         bomsData: [],
         bomItems: [],
         allChemicals: [],
+        allFertilizers: [],
+        itemTypeMap: {},
         bedData: [],
         teamData: [],
         observationMetadata: {},
@@ -266,14 +268,20 @@ document.addEventListener("DOMContentLoaded", () => {
         dataCache.forEach((item) => {
             const option = document.createElement("a");
             option.href = "#";
-            option.textContent = item;
             option.className = "popup-item";
+
+            const label = document.createElement("span");
+            label.className = "popup-item-label";
+            label.textContent = item;
+            option.appendChild(label);
+            option.appendChild(buildTypeBadge(getItemType(item)));
 
             option.addEventListener("click", (e) => {
                 e.preventDefault();
                 inputElement.value = item;
                 const row = inputElement.closest(".chemical-row, .bom-chemical-row");
                 if (row) {
+                    updateRowTypeBadge(row, item);
                     const uomSelector = row.classList.contains("bom-chemical-row")
                         ? ".bom-chemical-uom-input"
                         : ".tw-chemical-uom-input";
@@ -310,7 +318,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const filterPopup = () => {
         const filterText = els.popupSearch.value.toUpperCase();
         Array.from(els.popupContent.children).forEach(option => {
-            option.style.display = option.textContent.toUpperCase().includes(filterText) ? 'block' : 'none';
+            const labelEl = option.querySelector(".popup-item-label");
+            const haystack = (labelEl ? labelEl.textContent : option.textContent).toUpperCase();
+            option.style.display = haystack.includes(filterText) ? 'flex' : 'none';
         });
     };
 
@@ -366,6 +376,36 @@ document.addEventListener("DOMContentLoaded", () => {
         return { dataMap, observationsInGreenhouse, stagesInGreenhouse, sectionsInGreenhouse };
     };
 
+    // ==================== ITEM TYPE HELPERS ====================
+    const getItemType = (name) => state.itemTypeMap[name] || "chemical";
+
+    const getCombinedItemList = () => {
+        const combined = [...state.allChemicals, ...state.allFertilizers];
+        return [...new Set(combined)].sort((a, b) => a.localeCompare(b));
+    };
+
+    const buildTypeBadge = (type) => {
+        const span = document.createElement("span");
+        span.className = `item-type-badge item-type-badge--${type}`;
+        span.textContent = type === "fertilizer" ? "Fertilizer" : "Chemical";
+        return span;
+    };
+
+    const updateRowTypeBadge = (row, name) => {
+        if (!row) return;
+        const badge = row.querySelector(".item-type-badge");
+        if (!badge) return;
+        const type = name ? getItemType(name) : null;
+        badge.classList.remove("item-type-badge--chemical", "item-type-badge--fertilizer", "item-type-badge--empty");
+        if (!type) {
+            badge.classList.add("item-type-badge--empty");
+            badge.textContent = "";
+            return;
+        }
+        badge.classList.add(`item-type-badge--${type}`);
+        badge.textContent = type === "fertilizer" ? "Fertilizer" : "Chemical";
+    };
+
     // ==================== DATA FETCHING FUNCTIONS ====================
     const fetchChemicals = async () => {
         showLoader();
@@ -385,10 +425,20 @@ document.addEventListener("DOMContentLoaded", () => {
                     .filter(name => typeof name === 'string' && name.trim().length > 0)
                     .filter((name, idx, arr) => arr.indexOf(name) === idx)
                     .sort();
+                state.allFertilizers = Array.isArray(data.fertilizers)
+                    ? data.fertilizers
+                        .filter(name => typeof name === 'string' && name.trim().length > 0)
+                        .filter((name, idx, arr) => arr.indexOf(name) === idx)
+                        .sort()
+                    : [];
+                if (data.item_type_map) {
+                    state.itemTypeMap = { ...state.itemTypeMap, ...data.item_type_map };
+                }
                 if (data.item_uom_map) {
                     state.chemicalUomCache = { ...state.chemicalUomCache, ...data.item_uom_map };
                     refreshRowUoms();
                 }
+                refreshRowTypeBadges();
             }
         } catch (error) {
             console.error("Error fetching chemicals:", error);
@@ -506,7 +556,17 @@ document.addEventListener("DOMContentLoaded", () => {
                         .filter((name, idx, arr) => arr.indexOf(name) === idx)
                         .sort()
                     : [];
+                state.allFertilizers = Array.isArray(data.all_fertilizers)
+                    ? data.all_fertilizers
+                        .filter(name => typeof name === 'string' && name.trim().length > 0)
+                        .filter((name, idx, arr) => arr.indexOf(name) === idx)
+                        .sort()
+                    : [];
+                if (data.item_type_map) {
+                    state.itemTypeMap = { ...state.itemTypeMap, ...data.item_type_map };
+                }
                 populateBoms(state.bomsData);
+                refreshRowTypeBadges();
             }
             state.bedData = data.bed_data || [];
             if (data.susceptibility) {
@@ -1543,15 +1603,26 @@ document.addEventListener("DOMContentLoaded", () => {
         row.style.gap = "12px";
         row.style.alignItems = "center";
 
+        const nameWrap = document.createElement("div");
+        nameWrap.className = "chemical-name-wrap";
+
         const nameInp = document.createElement("input");
         nameInp.type = "text";
         nameInp.className = "form-input bom-chemical-name-input";
         nameInp.value = itemName;
-        nameInp.placeholder = "Chemical";
+        nameInp.placeholder = "Chemical or Fertilizer";
         nameInp.addEventListener("focus", async e => {
-            if (!state.allChemicals.length) await fetchChemicals();
-            showPopup(e.target, state.allChemicals);
+            if (!state.allChemicals.length && !state.allFertilizers.length) await fetchChemicals();
+            showPopup(e.target, getCombinedItemList());
         });
+
+        const nameBadge = buildTypeBadge(itemName ? getItemType(itemName) : "chemical");
+        if (!itemName) {
+            nameBadge.classList.remove("item-type-badge--chemical");
+            nameBadge.classList.add("item-type-badge--empty");
+            nameBadge.textContent = "";
+        }
+        nameWrap.append(nameInp, nameBadge);
 
         const rateInp = document.createElement("input");
         rateInp.type = "number";
@@ -1574,7 +1645,7 @@ document.addEventListener("DOMContentLoaded", () => {
         del.innerHTML = "×";
         del.onclick = () => { row.remove(); updateStockBalances(); };
 
-        row.append(nameInp, rateInp, uomInp, del);
+        row.append(nameWrap, rateInp, uomInp, del);
         return row;
     };
 
@@ -1585,7 +1656,7 @@ document.addEventListener("DOMContentLoaded", () => {
         els.bomWaterHardness.value = '';
         els.bomModalChemicalsList.innerHTML = '';
         els.bomModalChemicalsList.appendChild(createBomChemicalRow());
-        if (state.allChemicals.length === 0) { await fetchChemicals(); }
+        if (state.allChemicals.length === 0 && state.allFertilizers.length === 0) { await fetchChemicals(); }
         updateStockBalances();
     };
 
@@ -1896,14 +1967,25 @@ document.addEventListener("DOMContentLoaded", () => {
         row.style.gridTemplateColumns = "2fr 1fr 1fr auto";
         row.style.gap = "12px";
         row.style.alignItems = "center";
+        const nameWrap = document.createElement("div");
+        nameWrap.className = "chemical-name-wrap";
+
         const nameInput = document.createElement("input");
         nameInput.type = "text";
         nameInput.className = "tw-chemical-name-input form-input";
         nameInput.value = itemName;
-        nameInput.placeholder = "Chemical";
+        nameInput.placeholder = "Chemical or Fertilizer";
         nameInput.readOnly = !!itemName;
-        nameInput.addEventListener("focus", e => showPopup(e.target, state.allChemicals));
+        nameInput.addEventListener("focus", e => showPopup(e.target, getCombinedItemList()));
         nameInput.addEventListener("input", () => { clearTimeout(nameInput._debounce); nameInput._debounce = setTimeout(updateStockBalances, 500); });
+
+        const nameBadge = buildTypeBadge(itemName ? getItemType(itemName) : "chemical");
+        if (!itemName) {
+            nameBadge.classList.remove("item-type-badge--chemical");
+            nameBadge.classList.add("item-type-badge--empty");
+            nameBadge.textContent = "";
+        }
+        nameWrap.append(nameInput, nameBadge);
         const rateInput = document.createElement("input");
         rateInput.type = "number";
         rateInput.className = "tw-chemical-qty-input form-input";
@@ -1923,7 +2005,7 @@ document.addEventListener("DOMContentLoaded", () => {
         removeBtn.className = "btn-remove";
         removeBtn.innerHTML = "×";
         removeBtn.onclick = () => { row.remove(); updateStockBalances(); };
-        row.append(nameInput, rateInput, uomInput, removeBtn);
+        row.append(nameWrap, rateInput, uomInput, removeBtn);
         return row;
     };
 
@@ -2098,6 +2180,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 const name = nameInput.value.trim();
                 if (name && state.chemicalUomCache[name]) { uomInput.value = state.chemicalUomCache[name]; }
             }
+        });
+    };
+
+    const refreshRowTypeBadges = () => {
+        document.querySelectorAll(".chemical-row, .bom-chemical-row").forEach(row => {
+            const isBomRow = row.classList.contains("bom-chemical-row");
+            const nameInput = row.querySelector(isBomRow ? ".bom-chemical-name-input" : ".tw-chemical-name-input");
+            if (!nameInput) return;
+            updateRowTypeBadge(row, nameInput.value.trim());
         });
     };
 

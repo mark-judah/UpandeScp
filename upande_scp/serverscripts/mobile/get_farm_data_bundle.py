@@ -92,7 +92,14 @@ def _build_farm_bundle(farm: str) -> dict:
         order_by="lft asc",
     )
 
-    leaf_names = [w.name for w in warehouses if not w.is_group]
+    # Stations are the warehouses that beds and traps link to. Leaf
+    # warehouses (is_group=0) plus Block group-warehouses — orchard blocks
+    # often carry row sub-warehouses underneath, so the block itself is
+    # is_group=1 even though it is the station beds and traps reference.
+    station_names = [
+        w.name for w in warehouses
+        if (not w.is_group) or w.warehouse_type == "Block"
+    ]
     sections = [
         {"name": w.name, "warehouse_name": w.warehouse_name}
         for w in warehouses
@@ -102,10 +109,10 @@ def _build_farm_bundle(farm: str) -> dict:
     beds_by_warehouse: dict[str, list] = {}
     traps_by_warehouse: dict[str, list] = {}
 
-    if leaf_names:
+    if station_names:
         beds = frappe.get_all(
             "Bed",
-            filters={"greenhouse": ["in", leaf_names]},
+            filters={"greenhouse": ["in", station_names]},
             fields=_BED_FIELDS,
             limit_page_length=0,
             order_by="bed asc",
@@ -117,7 +124,7 @@ def _build_farm_bundle(farm: str) -> dict:
 
         traps = frappe.get_all(
             "Trap",
-            filters={"greenhouse": ["in", leaf_names]},
+            filters={"greenhouse": ["in", station_names]},
             fields=_TRAP_FIELDS,
             limit_page_length=0,
             order_by="trap_number asc",
@@ -126,7 +133,7 @@ def _build_farm_bundle(farm: str) -> dict:
             traps_by_warehouse.setdefault(t.greenhouse, []).append(dict(t))
 
     station_type = _infer_station_type(warehouses)
-    version = _compute_farm_version(farm, leaf_names)
+    version = _compute_farm_version(farm, station_names)
 
     return {
         "farm": farm,
@@ -142,20 +149,24 @@ def _build_farm_bundle(farm: str) -> dict:
 
 
 def _infer_station_type(warehouses) -> str | None:
-    """Pick the dominant leaf warehouse_type (Greenhouse vs Block)."""
+    """Pick the dominant station warehouse_type (Greenhouse vs Block).
+
+    Group Block warehouses count too — a block can be is_group=1 when it has
+    row sub-warehouses, but it's still the scouting station the app needs.
+    """
     counts: dict[str, int] = {}
     for w in warehouses:
-        if w.is_group:
-            continue
         wt = w.warehouse_type
-        if wt in ("Greenhouse", "Block"):
+        if wt == "Greenhouse" and not w.is_group:
+            counts[wt] = counts.get(wt, 0) + 1
+        elif wt == "Block":
             counts[wt] = counts.get(wt, 0) + 1
     if not counts:
         return None
     return max(counts.items(), key=lambda kv: kv[1])[0]
 
 
-def _compute_farm_version(farm: str, leaf_names: list[str]) -> str:
+def _compute_farm_version(farm: str, station_names: list[str]) -> str:
     """Digest = max(modified) across Warehouse / Bed / Trap for this farm.
 
     Cheap (3 indexed MAX queries) and changes the moment any underlying
@@ -169,16 +180,16 @@ def _compute_farm_version(farm: str, leaf_names: list[str]) -> str:
     )
     parts.append(_digest_part(wh_max))
 
-    if leaf_names:
+    if station_names:
         bed_max = frappe.db.sql(
             "SELECT MAX(modified) FROM `tabBed` WHERE greenhouse IN %(names)s",
-            {"names": tuple(leaf_names)},
+            {"names": tuple(station_names)},
         )
         parts.append(_digest_part(bed_max))
 
         trap_max = frappe.db.sql(
             "SELECT MAX(modified) FROM `tabTrap` WHERE greenhouse IN %(names)s",
-            {"names": tuple(leaf_names)},
+            {"names": tuple(station_names)},
         )
         parts.append(_digest_part(trap_max))
     else:

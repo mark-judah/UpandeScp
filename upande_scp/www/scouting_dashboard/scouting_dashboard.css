@@ -135,6 +135,17 @@
 	letter-spacing: .9px;
 }
 
+.filter-field label .week-hint {
+	margin-left: 4px;
+	color: var(--sd-accent, #2563eb);
+	font-weight: 600;
+	letter-spacing: .4px;
+}
+
+.filter-field label .week-hint:empty {
+	display: none;
+}
+
 .filter-input,
 .filter-select {
 	padding: 8px 12px;

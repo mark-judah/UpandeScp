@@ -322,6 +322,17 @@ function localTodayYmd() {
 	return y + "-" + m + "-" + dd;
 }
 
+/* Show "W18" next to a date picker label so users can see which ISO week
+   they've landed on (the native <input type="date"> popup hides it). */
+function updateWeekHint(inputEl, hintId) {
+	var hintEl = root_element.querySelector("#" + hintId);
+	if (!hintEl) return;
+	var val = inputEl?.value;
+	if (!val) { hintEl.textContent = ""; return; }
+	var parsed = parseDateValue(val);
+	hintEl.textContent = parsed ? "· W" + String(parsed.week).padStart(2, "0") : "";
+}
+
 function getIsoWeekDateRange(year, week) {
 	var simple = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
 	var dow = simple.getUTCDay();
@@ -618,13 +629,16 @@ function buildWeeklyBedInfectionSeries(counts, axis, weekIndex, totalBeds, inclu
 	});
 }
 
-/* Daily axis helper – one entry per calendar day in the selected range */
+/* Daily axis helper – one entry per calendar day in the selected range.
+   Sundays are skipped: no scouting is done on Sundays, so including them
+   leaves a daily zero that distorts trend lines. */
 function getDayRangeAxis(rangeInfo) {
 	if (!rangeInfo?.fromDate || !rangeInfo?.toDate) return null;
 	var start = new Date(rangeInfo.fromDate + "T00:00:00Z");
 	var end   = new Date(rangeInfo.toDate   + "T00:00:00Z");
 	var keys = [], labels = [];
 	for (var d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+		if (d.getUTCDay() === 0) continue;
 		var ymd = formatDateYmd(d);
 		keys.push(ymd);
 		labels.push(ymd.slice(5)); /* MM-DD */
@@ -1253,15 +1267,27 @@ function initScoutingDashboard() {
 		loadGreenhouseOptions(),
 		loadCropOptions(),
 		setDefaultWeekInputsToLatestScouting(weekFromInput, weekToInput),
-	]).then(function () { fetchScoutingData(); });
+	]).then(function () {
+		updateWeekHint(weekFromInput, "scout-week-from-hint");
+		updateWeekHint(weekToInput, "scout-week-to-hint");
+		fetchScoutingData();
+	});
 
 	// Debounced auto-refresh — listen on both `change` and `input` so picker
 	// commits and typed edits both fire the refresh.
 	var debouncedRefresh = _debounce(refreshAllData, 250);
-	weekFromInput.addEventListener("change", debouncedRefresh);
-	weekFromInput.addEventListener("input", debouncedRefresh);
-	weekToInput.addEventListener("change", debouncedRefresh);
-	weekToInput.addEventListener("input", debouncedRefresh);
+	function onFromChange() {
+		updateWeekHint(weekFromInput, "scout-week-from-hint");
+		debouncedRefresh();
+	}
+	function onToChange() {
+		updateWeekHint(weekToInput, "scout-week-to-hint");
+		debouncedRefresh();
+	}
+	weekFromInput.addEventListener("change", onFromChange);
+	weekFromInput.addEventListener("input", onFromChange);
+	weekToInput.addEventListener("change", onToChange);
+	weekToInput.addEventListener("input", onToChange);
 	/* Farm-first: greenhouse select is disabled until a farm is chosen */
 	updateGreenhouseSelectState();
 

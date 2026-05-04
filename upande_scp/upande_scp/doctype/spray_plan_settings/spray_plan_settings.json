@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "creation": "2026-05-04 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "intro_section",
+  "intro_note",
+  "farms_section",
+  "allowed_farms",
+  "keywords_section",
+  "exclude_keywords"
+ ],
+ "fields": [
+  {
+   "fieldname": "intro_section",
+   "fieldtype": "Section Break",
+   "label": "About"
+  },
+  {
+   "default": "Controls which greenhouses are listed in the New Application Floor Plan dropdown. A greenhouse appears only when its farm is in Allowed Farms AND its name does not match any Exclude Keyword.",
+   "fieldname": "intro_note",
+   "fieldtype": "Small Text",
+   "label": "Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "farms_section",
+   "fieldtype": "Section Break",
+   "label": "Allowed Farms"
+  },
+  {
+   "description": "Greenhouses are shown in the spray plan dropdown only when their Farm is listed here. Leaving this empty hides every greenhouse.",
+   "fieldname": "allowed_farms",
+   "fieldtype": "Table",
+   "label": "Allowed Farms",
+   "options": "Spray Plan Allowed Farm"
+  },
+  {
+   "fieldname": "keywords_section",
+   "fieldtype": "Section Break",
+   "label": "Exclude Keywords"
+  },
+  {
+   "description": "Case-insensitive substrings. Any greenhouse whose name contains one of these is hidden (e.g. 'phase', 'tunnel', 'ipm', 'wetland').",
+   "fieldname": "exclude_keywords",
+   "fieldtype": "Table",
+   "label": "Exclude Keywords",
+   "options": "Spray Plan Exclude Keyword"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-05-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Spray Plan Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 0,
+   "role": "System Manager",
+   "share": 0,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

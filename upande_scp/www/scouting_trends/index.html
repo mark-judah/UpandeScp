@@ -1,0 +1,109 @@
+{% extends "upande_scp/www/map_base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="/scouting_trends/scouting_trends.css">
+{% endblock %}
+
+{% block page_content %}
+<div id="scouting-trends-root">
+	<div class="st-shell">
+
+		<!-- ─── HEADER ─── -->
+		<header class="st-header">
+			<div class="st-header-left">
+				<h3 class="st-title">Scouting Trends</h3>
+				<span class="st-subtitle">Explore observations across farms, stations, pests &amp; stages</span>
+			</div>
+			<div class="st-header-right">
+				<div class="st-filter-field">
+					<label for="st-crop">Crop</label>
+					<select id="st-crop" class="st-input">
+						<option value="Rose">Rose</option>
+					</select>
+				</div>
+				<div class="st-filter-field">
+					<label for="st-from">From</label>
+					<input type="date" id="st-from" class="st-input">
+				</div>
+				<div class="st-filter-field">
+					<label for="st-to">To</label>
+					<input type="date" id="st-to" class="st-input">
+				</div>
+				<button type="button" class="st-btn st-btn-primary" id="st-refresh">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+					Reload
+				</button>
+			</div>
+		</header>
+
+		<!-- ─── BODY ─── -->
+		<div class="st-body">
+
+			<!-- LEFT: filters -->
+			<aside class="st-sidebar" id="st-sidebar">
+
+				<!-- Tree: Farms & Stations -->
+				<section class="st-panel">
+					<div class="st-panel-head">
+						<div class="st-panel-title">Farms &amp; Stations</div>
+						<div class="st-panel-actions">
+							<button type="button" class="st-link-btn" data-tree-action="expand-all">Expand</button>
+							<button type="button" class="st-link-btn" data-tree-action="collapse-all">Collapse</button>
+							<button type="button" class="st-link-btn st-link-btn-danger" data-tree-action="clear">Clear</button>
+						</div>
+					</div>
+					<div class="st-panel-search">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+						<input type="text" id="st-tree-search" placeholder="Search farms or stations…">
+					</div>
+					<div class="st-tree" id="st-tree" role="tree"></div>
+				</section>
+
+				<!-- Observation tree: Pests / Diseases -->
+				<section class="st-panel">
+					<div class="st-panel-head">
+						<div class="st-panel-title">Observations</div>
+						<div class="st-panel-actions">
+							<button type="button" class="st-link-btn" data-obs-action="expand-all">Expand</button>
+							<button type="button" class="st-link-btn" data-obs-action="collapse-all">Collapse</button>
+							<button type="button" class="st-link-btn st-link-btn-danger" data-obs-action="clear">Clear</button>
+						</div>
+					</div>
+					<div class="st-panel-search">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+						<input type="text" id="st-obs-search" placeholder="Search pests or diseases…">
+					</div>
+					<div class="st-tree" id="st-obs-tree" role="tree"></div>
+				</section>
+
+			</aside>
+
+			<!-- RIGHT: chart panels -->
+			<main class="st-main" id="st-main">
+				<div class="st-empty" id="st-empty">
+					<div class="st-empty-icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+					</div>
+					<div class="st-empty-title">Pick stations to start</div>
+					<div class="st-empty-text">Tick one or more stations on the left. Each chart panel below will get one line per selected station.</div>
+				</div>
+				<div class="st-panels" id="st-panels" hidden></div>
+			</main>
+
+		</div>
+
+		<!-- ─── LOADING OVERLAY ─── -->
+		<div class="st-loader" id="st-loader" hidden>
+			<div class="st-loader-card">
+				<div class="spinner"></div>
+				<div class="loader-text" id="st-loader-text">Loading…</div>
+			</div>
+		</div>
+
+	</div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script src="/scouting_trends/scouting_trends.js"></script>
+{% endblock %}

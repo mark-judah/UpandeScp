@@ -5,3 +5,4 @@
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 upande_scp.patches.v1_0.migrate_pest_stages_to_pest_filter
+upande_scp.patches.v1_0.seed_spray_plan_settings

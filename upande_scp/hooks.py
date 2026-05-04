@@ -172,6 +172,16 @@ doc_events = {
     "Orchard Tree": _SCP_CACHE_EVENTS,
     "Crop Scouted": _SCP_CACHE_EVENTS,
     "Tank And Valve": _SCP_CACHE_EVENTS,
+    "Spray Plan Settings": _SCP_CACHE_EVENTS,
+    "Spray Plan Allowed Farm": _SCP_CACHE_EVENTS,
+    "Spray Plan Exclude Keyword": _SCP_CACHE_EVENTS,
+    # Scouting payload cache invalidation. Child-table edits don't always
+    # touch the parent's `modified`, so each is hooked individually — the
+    # invalidator simply bumps the cache version stamp.
+    "Scouting Entry": _SCP_CACHE_EVENTS,
+    "Pests Scouting Entry": _SCP_CACHE_EVENTS,
+    "Diseases Scouting Entry": _SCP_CACHE_EVENTS,
+    "Trap Scouting Entry": _SCP_CACHE_EVENTS,
 }
 
 # Scheduled Tasks

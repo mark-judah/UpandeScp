@@ -43,11 +43,21 @@
         <div class="form-group">
           <label class="form-label" for="greenhouse">Greenhouse</label>
           <select id="greenhouse" class="form-select" required>
+            {% if warehouses_list %}
             <option value="">Select greenhouse</option>
             {% for warehouse in warehouses_list %}
             <option value="{{ warehouse.name }}">{{ warehouse.name }}</option>
             {% endfor %}
+            {% else %}
+            <option value="" disabled selected>No farms configured — open Spray Plan Settings</option>
+            {% endif %}
           </select>
+          {% if not warehouses_list %}
+          <small class="tw-text-amber-600 tw-text-xs">
+            No farms are configured for the spray plan dropdown.
+            <a href="{{ spray_settings_url }}" target="_blank">Open Spray Plan Settings</a> to add allowed farms.
+          </small>
+          {% endif %}
         </div>
         <div class="form-group">
           <label class="form-label">Scouting Date</label>

@@ -64,10 +64,35 @@ K_TANKS_VALVES_PREFIX = "scp:tanks_valves_v1"
 K_CROPS_SCOUTED = "scp:crops_scouted_v1"
 # Cascading Farm → Section → Block/Greenhouse hierarchy for the scouts map.
 K_FARM_HIERARCHY = "scp:farm_hierarchy_v1"
+# Versioned scouting payload cache. Keys use the prefix + version stamp +
+# args, so invalidation is O(1): bump the stamp and old keys orphan via TTL.
+K_SCOUTING_PAYLOAD_PREFIX  = "scp:scouting_payload_v1"
+K_SCOUTING_PAYLOAD_VERSION = "scp:scouting_payload_ver"
 # One-centroid-per-Zone payload for the rose 3D map. Invalidated by Zone
 # create/update/delete (the geometry source of truth) and Bed/Warehouse
 # changes (which can rename or reparent zones).
 K_ZONE_CENTROIDS = "scp:zone_centroids_v1"
+
+
+def scouting_payload_version():
+    """Current version stamp for the scouting payload cache namespace.
+
+    Used as part of the cache key so we can invalidate everything by simply
+    bumping the stamp — old keys orphan and TTL-out.
+    """
+    cache = frappe.cache()
+    v = cache.get_value(K_SCOUTING_PAYLOAD_VERSION)
+    if v is None:
+        v = 1
+        cache.set_value(K_SCOUTING_PAYLOAD_VERSION, v)
+    return v
+
+
+def invalidate_scouting_payload():
+    """Bump the version so every cached scouting payload becomes a miss."""
+    cache = frappe.cache()
+    v = cache.get_value(K_SCOUTING_PAYLOAD_VERSION) or 1
+    cache.set_value(K_SCOUTING_PAYLOAD_VERSION, int(v) + 1)
 
 
 def invalidate_farm_bundle(farm):
@@ -312,6 +337,25 @@ _DOC_INVALIDATIONS = {
     "Pest Filter": (K_SM_SEVERITY_THRESHOLDS,),
     "Disease Filter": (K_SM_SEVERITY_THRESHOLDS,),
     "Tank And Valve": (),
+    "Spray Plan Settings": (K_AFP_WAREHOUSES,),
+    "Spray Plan Allowed Farm": (K_AFP_WAREHOUSES,),
+    "Spray Plan Exclude Keyword": (K_AFP_WAREHOUSES,),
+}
+
+
+_SCOUTING_PAYLOAD_INVALIDATORS = {
+    "Scouting Entry",
+    "Pests Scouting Entry",
+    "Diseases Scouting Entry",
+    "Trap Scouting Entry",
+    # Master data that changes the denominator (zone/tree counts) or the
+    # farm/station mapping should also bust the payload cache so derived
+    # percentages stay correct.
+    "Zone",
+    "Bed",
+    "Warehouse",
+    "Farm",
+    "Orchard Tree",
 }
 
 
@@ -329,3 +373,7 @@ def invalidate_on_change(doc, method=None):
     # Drop the per-farm Tank & Valve bundle when assets move or get edited.
     if doc.doctype == "Tank And Valve":
         invalidate_tanks_valves_for_doc(doc)
+    # Bump the scouting payload version on any change that could shift the
+    # cached entries response or its derived denominators.
+    if doc.doctype in _SCOUTING_PAYLOAD_INVALIDATORS:
+        invalidate_scouting_payload()

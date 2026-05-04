@@ -3,12 +3,15 @@ import frappe
 from upande_scp.serverscripts import scouting_metrics
 from upande_scp.serverscripts.cache_utils import (
     K_CROPS_SCOUTED,
+    K_SCOUTING_PAYLOAD_PREFIX,
     K_SM_SEVERITY_THRESHOLDS,
     K_SM_UNITS_BY_WH,
     K_SM_ZONE_COUNTS_BY_GH,
     TTL_LONG,
     TTL_MEDIUM,
+    TTL_SHORT,
     get_or_set,
+    scouting_payload_version,
 )
 
 
@@ -79,7 +82,33 @@ def _cached_severity_thresholds():
     )
 
 
+def _scouting_payload_cache_key(from_date, to_date, greenhouse_filter, include_meta):
+    """Versioned cache key. The version stamp lives in
+    K_SCOUTING_PAYLOAD_VERSION; bumping it is how we invalidate everything
+    in the payload namespace at once (see cache_utils.invalidate_scouting_payload)."""
+    v = scouting_payload_version()
+    gh = (greenhouse_filter or "").strip()
+    return f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{from_date}:{to_date}:{gh}:{int(bool(include_meta))}"
+
+
 def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True):
+    """Cached wrapper. Returns the same shape as the underlying builder.
+
+    Cache hit ratio is high because most callers ask for the same date range
+    repeatedly; misses fall through to the builder and write to Redis with a
+    short TTL plus an event-driven invalidator (see cache_utils).
+    """
+    cache_key = _scouting_payload_cache_key(from_date, to_date, greenhouse_filter, include_meta)
+    cache = frappe.cache()
+    cached = cache.get_value(cache_key)
+    if cached is not None:
+        return cached
+    payload = _build_scouting_payload(from_date, to_date, greenhouse_filter, include_meta)
+    cache.set_value(cache_key, payload, expires_in_sec=TTL_SHORT)
+    return payload
+
+
+def _build_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True):
     # Date filter is always applied. The dashboard sends a single "greenhouse"
     # parameter for either warehouse type; match against `greenhouse` OR
     # `block` so block-based scouting (avocado orchards) scopes correctly.

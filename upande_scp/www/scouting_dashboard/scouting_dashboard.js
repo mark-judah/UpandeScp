@@ -1263,6 +1263,29 @@ function initScoutingDashboard() {
 		return;
 	}
 
+	/* Take over flatpickr on the From/To inputs so the calendar shows an
+	   ISO-week column. Mark them so map_base.html's global initializer
+	   doesn't override our config; existing change/input listeners below
+	   continue to fire normally on selection. */
+	function initLocalDatePickers() {
+		if (typeof flatpickr === "undefined") {
+			window.addEventListener("load", initLocalDatePickers, { once: true });
+			return;
+		}
+		[weekFromInput, weekToInput].forEach(function (el) {
+			if (el._flatpickr) el._flatpickr.destroy();
+			el.setAttribute("data-fp-init", "1");
+			flatpickr(el, {
+				dateFormat: "Y-m-d",
+				allowInput: true,
+				disableMobile: true,
+				weekNumbers: true,
+				locale: { firstDayOfWeek: 1 },  /* Mon = 1 → ISO-aligned week numbers */
+			});
+		});
+	}
+	initLocalDatePickers();
+
 	Promise.all([
 		loadGreenhouseOptions(),
 		loadCropOptions(),

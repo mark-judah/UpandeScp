@@ -31,6 +31,7 @@
 	var panelHostIds = [];     // dynamic chart-host ids for dispose tracking
 	var echartInstances = {};  // id -> echarts instance
 	var echartResizeBound = false;
+	var _hostSeq = 0;          // monotonic id counter so incremental adds don't collide
 
 	/* ════════════════════════════════════════
 	   ECharts loading + rendering helpers
@@ -123,6 +124,29 @@
 		return out;
 	}
 
+	/* ISO 8601 week string (YYYY-Www) for a YYYY-MM-DD date. Mon=1…Sun=7. */
+	function isoWeekStringForDate(dateStr) {
+		var d = new Date(dateStr + "T00:00:00Z");
+		var dayNum = d.getUTCDay() || 7;
+		d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+		var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+		var weekNum = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+		return d.getUTCFullYear() + "-W" + ("0" + weekNum).slice(-2);
+	}
+
+	/* Daily x-axis with Sundays excluded — no scouting on Sundays, so dropping
+	   them keeps the trend from snapping to zero each weekend. */
+	function buildDayAxisSkippingSunday(fromStr, toStr) {
+		var keys = [];
+		var f = new Date(fromStr + "T00:00:00");
+		var t = new Date(toStr + "T00:00:00");
+		while (f <= t) {
+			if (f.getDay() !== 0) keys.push(fmtDate(f));
+			f.setDate(f.getDate() + 1);
+		}
+		return keys;
+	}
+
 	/* ════════════════════════════════════════
 	   Data loading
 	   ════════════════════════════════════════ */
@@ -179,11 +203,113 @@
 		});
 	}
 
-	function fetchScoutingData() {
+	/* ─── Monthly chunked fetch (mirrors scouting_dashboard) ───
+	   Each chunk is a separate Redis key on the server, so any month
+	   already loaded by the dashboard is reused here (and vice versa).
+	   monthCache persists across navigations within the page session;
+	   only missing months are fetched. */
+	var monthCache = { key: "", months: {} };
+	var metaCache  = null;
+
+	function _pad2(n) { return ("0" + n).slice(-2); }
+
+	function getMonthKeysBetween(fromStr, toStr) {
+		var out = [];
+		var fy = parseInt(fromStr.slice(0, 4), 10);
+		var fm = parseInt(fromStr.slice(5, 7), 10);
+		var ty = parseInt(toStr.slice(0, 4), 10);
+		var tm = parseInt(toStr.slice(5, 7), 10);
+		while (fy < ty || (fy === ty && fm <= tm)) {
+			out.push(fy + "-" + _pad2(fm));
+			fm++; if (fm > 12) { fm = 1; fy++; }
+		}
+		return out;
+	}
+
+	function monthBounds(monthKey) {
+		var y = parseInt(monthKey.slice(0, 4), 10);
+		var m = parseInt(monthKey.slice(5, 7), 10);
+		var lastDay = new Date(y, m, 0).getDate();
+		return {
+			fromDate: monthKey + "-01",
+			toDate:   monthKey + "-" + _pad2(lastDay),
+		};
+	}
+
+	function fetchScoutingChunk(fromDate, toDate, includeMeta) {
 		return callFrappe(
-			"upande_scp.serverscripts.get_complete_scouting_entries.getCompleteScoutingEntries",
-			{ from_date: state.fromDate, to_date: state.toDate }
+			"upande_scp.serverscripts.get_complete_scouting_entries.getScoutingEntriesChunk",
+			{ from_date: fromDate, to_date: toDate, include_meta: includeMeta ? 1 : 0 }
 		).then(function (r) { return (r && r.message) || {}; });
+	}
+
+	function collectCachedEntries(fromStr, toStr) {
+		var out = [];
+		Object.keys(monthCache.months).forEach(function (mk) {
+			(monthCache.months[mk] || []).forEach(function (e) {
+				var d = (e && e.date_of_capture || "").slice(0, 10);
+				if (d >= fromStr && d <= toStr) out.push(e);
+			});
+		});
+		return out;
+	}
+
+	/* Returns a payload shaped like the old single-call response so the rest
+	   of the page can treat it identically. Only fetches months not already
+	   in monthCache. Meta payload (zone counts, colors, …) is fetched once
+	   alongside the first missing month. */
+	function fetchScoutingData() {
+		var fromYear = state.fromDate.slice(0, 4);
+		var toYear   = state.toDate.slice(0, 4);
+		var key = fromYear + "|" + toYear;
+		if (monthCache.key !== key) {
+			monthCache = { key: key, months: {} };
+		}
+
+		var months = getMonthKeysBetween(state.fromDate, state.toDate);
+		var missing = months.filter(function (mk) { return !monthCache.months[mk]; });
+
+		if (missing.length === 0 && metaCache) {
+			return Promise.resolve(_payloadFromCache());
+		}
+
+		var needMeta = !metaCache;
+		var chain = Promise.resolve();
+		missing.forEach(function (monthKey, idx) {
+			chain = chain.then(function () {
+				var bounds = monthBounds(monthKey);
+				var withMeta = needMeta && idx === 0;
+				return fetchScoutingChunk(bounds.fromDate, bounds.toDate, withMeta).then(function (res) {
+					monthCache.months[monthKey] = res.entries || [];
+					if (withMeta) {
+						metaCache = {
+							pest_colors:         res.pest_colors         || [],
+							disease_colors:      res.disease_colors      || [],
+							zones_by_greenhouse: res.zones_by_greenhouse || {},
+							units_by_greenhouse: res.units_by_greenhouse || {},
+							crops_scouted:       res.crops_scouted       || [],
+							severity_thresholds: res.severity_thresholds || {},
+						};
+					}
+				});
+			});
+		});
+		return chain.then(_payloadFromCache);
+	}
+
+	function _payloadFromCache() {
+		var p = {
+			entries: collectCachedEntries(state.fromDate, state.toDate),
+		};
+		if (metaCache) {
+			p.pest_colors         = metaCache.pest_colors;
+			p.disease_colors      = metaCache.disease_colors;
+			p.zones_by_greenhouse = metaCache.zones_by_greenhouse;
+			p.units_by_greenhouse = metaCache.units_by_greenhouse;
+			p.crops_scouted       = metaCache.crops_scouted;
+			p.severity_thresholds = metaCache.severity_thresholds;
+		}
+		return p;
 	}
 
 	/* Build station→farm and station→unit-count lookups from the
@@ -612,10 +738,57 @@
 		if (!key) return;
 		var arr = state.stagePicks[key] || [];
 		var idx = arr.indexOf(stage);
-		if (idx >= 0) arr.splice(idx, 1);
-		else arr.push(stage);
+		var added = idx < 0;
+		if (added) arr.push(stage);
+		else arr.splice(idx, 1);
 		state.stagePicks[key] = arr;
-		renderPanels();
+
+		/* Locate the parent card; if it's not on screen for some reason, fall
+		   back to a full re-render. */
+		var panelsEl = document.getElementById("st-panels");
+		var parentCard = panelsEl && Array.prototype.slice.call(panelsEl.querySelectorAll(".st-card")).filter(function (c) {
+			return c.dataset.obsKey === key;
+		})[0];
+		if (!parentCard) { renderPanels(); return; }
+
+		/* Sync the stage check pill's visual state. */
+		var pill = Array.prototype.slice.call(parentCard.querySelectorAll(".st-stage-check")).filter(function (b) {
+			return b.dataset.stage === stage;
+		})[0];
+		if (pill) pill.dataset.checked = added ? "true" : "false";
+
+		var children = parentCard.querySelector(".st-card-children");
+		if (!children) return;
+
+		if (added) {
+			/* Add a new child card for this stage without re-rendering anything
+			   else — preserves scroll position and existing chart instances. */
+			var stations = getSelectedStations();
+			if (!stations.length) return;
+			var days = buildDayAxisSkippingSunday(state.fromDate, state.toDate);
+			var built = _buildChildCard(obs, stage, stations, days, _stationsMetaLabel(stations));
+			children.appendChild(built.el);
+			panelHostIds.push(built.hostId);
+			built.render();
+			return;
+		}
+
+		/* Removed: dispose just this child's chart and remove the element. */
+		var existing = Array.prototype.slice.call(children.querySelectorAll(".st-card-child")).filter(function (c) {
+			return c.dataset.stage === stage;
+		})[0];
+		if (!existing) return;
+		var hostEl = existing.querySelector(".st-card-child-host");
+		if (hostEl) {
+			var inst = echartInstances[hostEl.id];
+			if (inst) {
+				try { inst.dispose(); } catch (e) {}
+				delete echartInstances[hostEl.id];
+			}
+			var i = panelHostIds.indexOf(hostEl.id);
+			if (i >= 0) panelHostIds.splice(i, 1);
+		}
+		existing.remove();
 	}
 
 	/* ════════════════════════════════════════
@@ -657,23 +830,23 @@
 		});
 	}
 
-	function buildSeriesForPanel(filter, stations, dates) {
-		/* filter: { obs: {kind,name}|null, stage, section }
+	function buildSeriesForPanel(filter, stations, days) {
+		/* filter:   { obs: {kind,name}|null, stage, section }
 		   stations: [{farm, station}]
-		   dates: ['YYYY-MM-DD', ...]
+		   days:     daily YYYY-MM-DD keys with Sundays already excluded
 		   Returns [{name, color, data:[Number], denom}] — one series per
 		   selected station; values = % of zones/trees with ≥1 matching obs
 		   that day. Falls back to 0 where the station has no unit count. */
 		var dayIndex = {};
-		dates.forEach(function (d, i) { dayIndex[d] = i; });
+		days.forEach(function (d, i) { dayIndex[d] = i; });
 
 		return stations.map(function (st, idx) {
-			var perDay = dates.map(function () { return new Set(); });
+			var perDay = days.map(function () { return new Set(); });
 			state.filteredEntries.forEach(function (e) {
 				var stStr = (e.block || e.greenhouse || "").trim();
 				if (stStr !== st.station) return;
 				var di = dayIndex[(e.date_of_capture || "").slice(0, 10)];
-				if (di == null) return;
+				if (di == null) return; // Sundays / out of range
 				if (!_entryRowsMatching(e, filter).length) return;
 				var key = unitKeyForEntry(e);
 				if (key) perDay[di].add(key);
@@ -700,7 +873,7 @@
 	];
 	function paletteColor(i) { return PALETTE[i % PALETTE.length]; }
 
-	function buildChartOption(seriesDefs, dates, panelTitle) {
+	function buildChartOption(seriesDefs, xLabels, panelTitle) {
 		return {
 			color: seriesDefs.map(function (s) { return s.color; }),
 			textStyle: { fontFamily: '"Inter", "Helvetica Neue", Arial, sans-serif' },
@@ -722,39 +895,43 @@
 				data: seriesDefs.map(function (s) { return s.name; }),
 			},
 			legendHoverLink: true,
+			/* Per-item tooltip: hovering a specific point/line shows just the
+			   station name, nothing else. */
 			tooltip: {
-				trigger: "axis",
-				axisPointer: { type: "line", lineStyle: { color: "rgba(13,43,94,0.35)" } },
+				trigger: "item",
 				backgroundColor: "rgba(75,85,99,0.96)",
 				borderColor: "rgba(75,85,99,0.96)",
 				textStyle: { color: "#fff", fontSize: 12 },
+				padding: [6, 10],
 				formatter: function (params) {
-					if (!params || !params.length) return "";
-					var idx = params[0].dataIndex;
-					var rows = params.map(function (p) {
-						var def = seriesDefs[p.seriesIndex] || {};
-						var denom = def.denom || 0;
-						var label = denom > 0
-							? Number(p.value).toFixed(1) + "%"
-							: "n/a";
-						return '<div style="display:flex;justify-content:space-between;gap:14px;font-size:12px;">'
-							+ '<span>' + p.marker + p.seriesName + '</span>'
-							+ '<span style="font-weight:600;">' + label + '</span></div>';
-					}).join("");
-					return '<div style="font-weight:600;margin-bottom:6px;">' + dates[idx] + '</div>' + rows;
+					return params && params.seriesName ? params.seriesName : "";
 				},
 			},
 			xAxis: {
 				type: "category",
 				boundaryGap: false,
-				data: dates,
+				data: xLabels,
 				axisLine: { lineStyle: { color: "rgba(0,0,0,0.15)" } },
 				axisTick: { show: false },
 				axisLabel: {
 					color: "#64748b",
-					fontSize: 10,
+					fontSize: 11,
+					interval: 0,
 					hideOverlap: true,
-					formatter: function (v) { return v.slice(5); },
+					/* Daily x-axis with ISO-week labels: only render the label
+					   on the first day of each new ISO week (and on the very
+					   first day of the range). Year prefix appears on year
+					   transitions so the axis stays readable across boundaries. */
+					formatter: function (v, idx) {
+						if (!v) return "";
+						var iso = isoWeekStringForDate(v);
+						var prevIso = idx > 0 ? isoWeekStringForDate(xLabels[idx - 1]) : null;
+						if (prevIso === iso) return "";
+						var parts = iso.split("-W");
+						var year = parts[0], wk = parts[1];
+						var prevYear = prevIso ? prevIso.split("-W")[0] : null;
+						return (prevYear !== year ? year + " · " : "") + "W" + wk;
+					},
 				},
 			},
 			yAxis: {
@@ -797,6 +974,56 @@
 		};
 	}
 
+	/* Compute the meta line shown on each card head. */
+	function _stationsMetaLabel(stations) {
+		var denomTotal = stations.reduce(function (s, st) { return s + unitCountFor(st.station); }, 0);
+		var unitWord = denomTotal > 0
+			? "% of zones/trees with matching observations"
+			: "no zone/tree counts configured";
+		return stations.length + " station" + (stations.length === 1 ? "" : "s") + " · " + unitWord;
+	}
+
+	/* Build one stage drill-down child card and its chart. Caller is
+	   responsible for appending the returned element + tracking the host id. */
+	function _buildChildCard(obs, stage, stations, days, stationsMeta) {
+		var childFilter = { obs: obs, stage: stage, section: null };
+		var childSeries = buildSeriesForPanel(childFilter, stations, days);
+
+		var child = document.createElement("div");
+		child.className = "st-card-child";
+		child.dataset.stage = stage;
+
+		var childHead = document.createElement("div");
+		childHead.className = "st-card-child-head";
+		var childTitle = document.createElement("div");
+		childTitle.className = "st-card-child-title";
+		childTitle.textContent = obs.name + " · " + stage;
+		childHead.appendChild(childTitle);
+		var childTag = document.createElement("span");
+		childTag.className = "st-card-child-tag";
+		childTag.textContent = "Stage";
+		childHead.appendChild(childTag);
+		var childMeta = document.createElement("div");
+		childMeta.className = "st-card-child-meta";
+		childMeta.textContent = stationsMeta;
+		childHead.appendChild(childMeta);
+		child.appendChild(childHead);
+
+		var childHostId = "st-panel-host-" + (_hostSeq++);
+		var childHost = document.createElement("div");
+		childHost.className = "st-card-child-host";
+		childHost.id = childHostId;
+		child.appendChild(childHost);
+
+		return {
+			el: child,
+			hostId: childHostId,
+			render: function () {
+				renderEcharts(childHost, buildChartOption(childSeries, days, childTitle.textContent));
+			},
+		};
+	}
+
 	function renderPanels() {
 		disposePanels();
 		var emptyEl  = document.getElementById("st-empty");
@@ -813,24 +1040,19 @@
 		if (emptyEl) emptyEl.style.display = "none";
 		panelsEl.removeAttribute("hidden");
 
-		var dates = dateKeysBetween(state.fromDate, state.toDate);
+		var days = buildDayAxisSkippingSunday(state.fromDate, state.toDate);
 		var observations = getSelectedObservations();
 		var obsSlots = observations.length ? observations : [null];
-
-		var hostIdx = 0;
-		var denomTotal = stations.reduce(function (s, st) { return s + unitCountFor(st.station); }, 0);
-		var unitWord = denomTotal > 0
-			? "% of zones/trees with matching observations"
-			: "no zone/tree counts configured";
-		var stationsMeta = stations.length + " station" + (stations.length === 1 ? "" : "s") + " · " + unitWord;
+		var stationsMeta = _stationsMetaLabel(stations);
 
 		obsSlots.forEach(function (obs) {
 			/* Parent card: this observation, no stage filter. */
 			var parentFilter = { obs: obs, stage: null, section: null };
-			var parentSeries = buildSeriesForPanel(parentFilter, stations, dates);
+			var parentSeries = buildSeriesForPanel(parentFilter, stations, days);
 
 			var card = document.createElement("div");
 			card.className = "st-card";
+			if (obs) card.dataset.obsKey = obsId(obs);
 
 			var head = document.createElement("div");
 			head.className = "st-card-head";
@@ -856,7 +1078,7 @@
 			head.appendChild(meta);
 			card.appendChild(head);
 
-			var parentHostId = "st-panel-host-" + (hostIdx++);
+			var parentHostId = "st-panel-host-" + (_hostSeq++);
 			var parentHost = document.createElement("div");
 			parentHost.className = "st-card-host";
 			parentHost.id = parentHostId;
@@ -888,6 +1110,7 @@
 						var check = document.createElement("button");
 						check.type = "button";
 						check.className = "st-stage-check";
+						check.dataset.stage = sg;
 						check.dataset.checked = pickedStages.has(sg) ? "true" : "false";
 						check.innerHTML =
 							'<span class="st-stage-check-box">' + TT_CHECK + '</span>'
@@ -911,41 +1134,14 @@
 
 			panelsEl.appendChild(card);
 			panelHostIds.push(parentHostId);
-			renderEcharts(parentHost, buildChartOption(parentSeries, dates, title.textContent));
+			renderEcharts(parentHost, buildChartOption(parentSeries, days, title.textContent));
 
 			if (obs) {
 				getStagePicksFor(obs).forEach(function (stage) {
-					var childFilter = { obs: obs, stage: stage, section: null };
-					var childSeries = buildSeriesForPanel(childFilter, stations, dates);
-
-					var child = document.createElement("div");
-					child.className = "st-card-child";
-
-					var childHead = document.createElement("div");
-					childHead.className = "st-card-child-head";
-					var childTitle = document.createElement("div");
-					childTitle.className = "st-card-child-title";
-					childTitle.textContent = obs.name + " · " + stage;
-					childHead.appendChild(childTitle);
-					var childTag = document.createElement("span");
-					childTag.className = "st-card-child-tag";
-					childTag.textContent = "Stage";
-					childHead.appendChild(childTag);
-					var childMeta = document.createElement("div");
-					childMeta.className = "st-card-child-meta";
-					childMeta.textContent = stationsMeta;
-					childHead.appendChild(childMeta);
-					child.appendChild(childHead);
-
-					var childHostId = "st-panel-host-" + (hostIdx++);
-					var childHost = document.createElement("div");
-					childHost.className = "st-card-child-host";
-					childHost.id = childHostId;
-					child.appendChild(childHost);
-					children.appendChild(child);
-
-					panelHostIds.push(childHostId);
-					renderEcharts(childHost, buildChartOption(childSeries, dates, childTitle.textContent));
+					var built = _buildChildCard(obs, stage, stations, days, stationsMeta);
+					children.appendChild(built.el);
+					panelHostIds.push(built.hostId);
+					built.render();
 				});
 			}
 		});
@@ -961,18 +1157,29 @@
 
 		renderTree(document.getElementById("st-tree"), buildTreeNodes(options), function () {
 			renderPanels();
+			updateNavCounts();
 		});
 
 		renderTree(document.getElementById("st-obs-tree"), buildObsTreeNodes(options), function () {
 			renderPanels();
+			updateNavCounts();
 		});
 
 		renderPanels();
+		updateNavCounts();
 	}
 
 	/* ════════════════════════════════════════
 	   Wire up controls
 	   ════════════════════════════════════════ */
+
+	/* Debounced reload so flatpickr's per-keystroke onChange events don't
+	   fire a network request every typed digit. */
+	var _reloadTimer = null;
+	function debouncedReload() {
+		if (_reloadTimer) clearTimeout(_reloadTimer);
+		_reloadTimer = setTimeout(function () { _reloadTimer = null; reload(); }, 250);
+	}
 
 	function bindHeader() {
 		var fromEl = document.getElementById("st-from");
@@ -985,14 +1192,50 @@
 		fromEl.value = def.from;
 		toEl.value   = def.to;
 
-		[fromEl, toEl].forEach(function (el) {
-			el.addEventListener("change", function () {
-				state.fromDate = fromEl.value;
-				state.toDate   = toEl.value;
+		function onDateInputChange() {
+			state.fromDate = fromEl.value;
+			state.toDate   = toEl.value;
+			debouncedReload();
+		}
+
+		/* Take ownership of flatpickr on these inputs so we can switch on
+		   weekNumbers (the ISO-week column) and forward onChange to reload.
+		   Marker tells map_base.html's global initializer to skip them. */
+		function initLocalFlatpickr() {
+			if (typeof flatpickr === "undefined") {
+				/* flatpickr loads later in some contexts — try again on `load`. */
+				window.addEventListener("load", initLocalFlatpickr, { once: true });
+				return;
+			}
+			[fromEl, toEl].forEach(function (el) {
+				if (el._flatpickr) el._flatpickr.destroy();
+				el.setAttribute("data-fp-init", "1");
+				flatpickr(el, {
+					dateFormat: "Y-m-d",
+					allowInput: true,
+					disableMobile: true,
+					weekNumbers: true,
+					locale: { firstDayOfWeek: 1 },  /* Mon = 1, so the week column lines up with ISO weeks */
+					onChange: onDateInputChange,
+				});
 			});
+		}
+		initLocalFlatpickr();
+
+		/* Native fallback covers typed-and-blur cases or browsers without
+		   flatpickr. The debounce keeps duplicate fires harmless. */
+		[fromEl, toEl].forEach(function (el) {
+			el.addEventListener("change", onDateInputChange);
 		});
 
-		refresh.addEventListener("click", function () { reload(); });
+		refresh.addEventListener("click", function () {
+			/* Reload button = "give me fresh data" — drop the local month
+			   cache so we re-hit the server (which still benefits from its
+			   Redis cache, invalidated by Scouting Entry change hooks). */
+			monthCache = { key: "", months: {} };
+			metaCache = null;
+			reload();
+		});
 
 		var cropEl = document.getElementById("st-crop");
 		if (cropEl) {
@@ -1008,29 +1251,85 @@
 
 	function bindTreeControls() {
 		document.querySelectorAll('[data-tree-action]').forEach(function (btn) {
-			btn.addEventListener("click", function () {
+			btn.addEventListener("click", function (ev) {
+				ev.stopPropagation();
 				var act = btn.dataset.treeAction;
 				if      (act === "expand-all")   setTreeAllExpanded(true);
 				else if (act === "collapse-all") setTreeAllExpanded(false);
-				else if (act === "clear")        { clearTree(); renderPanels(); }
+				else if (act === "clear")        { clearTree(); renderPanels(); updateNavCounts(); }
 			});
 		});
 		document.querySelectorAll('[data-obs-action]').forEach(function (btn) {
-			btn.addEventListener("click", function () {
+			btn.addEventListener("click", function (ev) {
+				ev.stopPropagation();
 				var act = btn.dataset.obsAction;
 				if      (act === "expand-all")   setObsAllExpanded(true);
 				else if (act === "collapse-all") setObsAllExpanded(false);
-				else if (act === "clear")        { clearObsTree(); renderPanels(); }
+				else if (act === "clear")        { clearObsTree(); renderPanels(); updateNavCounts(); }
 			});
 		});
 
 		var search = document.getElementById("st-tree-search");
 		if (search) {
 			search.addEventListener("input", function () { applyTreeFilter(search.value); });
+			search.addEventListener("click", function (ev) { ev.stopPropagation(); });
 		}
 		var obsSearch = document.getElementById("st-obs-search");
 		if (obsSearch) {
 			obsSearch.addEventListener("input", function () { applyObsTreeFilter(obsSearch.value); });
+			obsSearch.addEventListener("click", function (ev) { ev.stopPropagation(); });
+		}
+	}
+
+	/* ─── Header dropdown popovers ─── */
+
+	function closeAllNavPopovers() {
+		document.querySelectorAll(".st-nav-popover").forEach(function (p) { p.setAttribute("hidden", ""); });
+		document.querySelectorAll(".st-nav-btn").forEach(function (b) { b.setAttribute("aria-expanded", "false"); });
+	}
+
+	function toggleNavPopover(dropdownEl) {
+		var btn = dropdownEl.querySelector(".st-nav-btn");
+		var pop = document.getElementById(dropdownEl.dataset.popoverId);
+		if (!btn || !pop) return;
+		var open = btn.getAttribute("aria-expanded") === "true";
+		closeAllNavPopovers();
+		if (!open) {
+			pop.removeAttribute("hidden");
+			btn.setAttribute("aria-expanded", "true");
+		}
+	}
+
+	function bindNavDropdowns() {
+		document.querySelectorAll(".st-nav-dropdown").forEach(function (dd) {
+			var btn = dd.querySelector(".st-nav-btn");
+			if (btn) {
+				btn.addEventListener("click", function (ev) {
+					ev.stopPropagation();
+					toggleNavPopover(dd);
+				});
+			}
+			var pop = document.getElementById(dd.dataset.popoverId);
+			if (pop) pop.addEventListener("click", function (ev) { ev.stopPropagation(); });
+		});
+		document.addEventListener("click", function () { closeAllNavPopovers(); });
+		document.addEventListener("keydown", function (ev) {
+			if (ev.key === "Escape") closeAllNavPopovers();
+		});
+	}
+
+	function updateNavCounts() {
+		var stationCount = getSelectedStations().length;
+		var obsCount     = getSelectedObservations().length;
+		var stEl = document.getElementById("st-stations-count");
+		var obEl = document.getElementById("st-obs-count");
+		if (stEl) {
+			stEl.textContent = stationCount;
+			stEl.dataset.active = stationCount > 0 ? "true" : "false";
+		}
+		if (obEl) {
+			obEl.textContent = obsCount;
+			obEl.dataset.active = obsCount > 0 ? "true" : "false";
 		}
 	}
 
@@ -1076,6 +1375,7 @@
 	function init() {
 		bindHeader();
 		bindTreeControls();
+		bindNavDropdowns();
 		reload();
 	}
 

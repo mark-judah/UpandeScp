@@ -217,3 +217,29 @@ def getAllScoutedGreenhouses(date):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get All Scouted Greenhouses Error")
         frappe.throw(_("Error fetching scouted greenhouses: {0}").format(str(e)))
+
+
+@frappe.whitelist()
+def getRecentScoutingDates(date, limit=3):
+    """Most recent distinct dates with any scouting activity on or before `date`.
+
+    Drives the heatmap's "3-day comparison" so the columns line up with days
+    that actually had scouting — calendar gaps (weekends, downtime) collapse
+    instead of showing as empty cards.
+    """
+    try:
+        rows = frappe.db.sql(
+            """
+            SELECT DISTINCT date_of_capture
+            FROM `tabScouting Entry`
+            WHERE date_of_capture <= %s
+            ORDER BY date_of_capture DESC
+            LIMIT %s
+            """,
+            (date, int(limit)),
+            as_dict=True,
+        )
+        return {"dates": [str(r["date_of_capture"]) for r in rows]}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Get Recent Scouting Dates Error")
+        frappe.throw(_("Error fetching recent scouting dates: {0}").format(str(e)))

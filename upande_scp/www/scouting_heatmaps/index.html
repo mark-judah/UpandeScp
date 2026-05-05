@@ -51,181 +51,328 @@
 		flex: 1;
 		position: relative;
 		z-index: 1;
-		overflow: auto;
-		padding: 64px 18px 18px;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		padding: 0;
 	}
 
-	/* ── Page heading panel ──────────────────────── */
-	.heatmap-page-head {
+	/* ── Sticky top toolbar (mirrors scouting_trends header) ── */
+	.hm-toolbar {
+		flex-shrink: 0;
+		background: var(--hm-card);
+		border-bottom: 1px solid var(--hm-line);
+		position: sticky;
+		top: 0;
+		z-index: 30;
+	}
+	.hm-toolbar-row {
 		display: flex;
 		align-items: flex-end;
 		justify-content: space-between;
-		gap: 18px;
+		gap: 16px;
+		padding: 12px 20px;
 		flex-wrap: wrap;
-		padding: 4px 4px 14px;
-		margin-bottom: 14px;
-		border-bottom: 1px solid var(--hm-line);
 	}
-
-	.heatmap-title-block {
-		position: relative;
-	}
-	.heatmap-title-block::before { content: none; }
-	.heatmap-title {
+	.hm-toolbar-left { min-width: 0; flex: 1 1 260px; }
+	.hm-title {
+		margin: 0;
 		font-family: var(--hm-font);
-		font-size: 1.4rem;
+		font-size: 1.05rem;
 		font-weight: 600;
 		color: var(--hm-ink);
 		letter-spacing: -.01em;
-		line-height: 1.15;
-		margin: 0 0 2px;
+		line-height: 1.2;
 	}
-	.heatmap-eyebrow {
-		font-size: .68rem;
+	.hm-subtitle {
+		display: block;
+		margin-bottom: 1px;
+		font-size: .64rem;
 		text-transform: uppercase;
 		letter-spacing: .04em;
+		color: var(--hm-quiet);
 		font-weight: 500;
+	}
+	.hm-stat-strip {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 16px;
+		margin-top: 6px;
+		font-size: .7rem;
 		color: var(--hm-muted);
 	}
-
-	/* Farm filter pills (top-floating bar) */
-	.gh-filter-tabs {
-		display: flex;
-		flex-wrap: nowrap;
-		gap: 6px;
-		max-width: 380px;
-		max-height: 32px;
-		overflow-x: auto;
-		overflow-y: hidden;
-		scrollbar-width: thin;
+	.hm-stat-strip span {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 4px;
 	}
-	.gh-filter-tabs::-webkit-scrollbar { height: 4px; }
-	.gh-filter-tabs::-webkit-scrollbar-thumb { background: var(--hm-line); border-radius: 2px; }
-
-	.gh-btn,
-	.farm-btn,
-	.pest-btn {
-		padding: 5px 12px;
-		border: 1px solid var(--hm-line);
-		background: var(--hm-card);
-		color: var(--hm-text);
-		font-size: 0.72rem;
+	.hm-stat-strip b {
 		font-weight: 600;
-		font-family: var(--hm-font);
-		border-radius: var(--hm-radius-pill);
-		cursor: pointer;
-		text-align: center;
-		white-space: nowrap;
-		transition: background .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
-	}
-	.gh-btn:hover,
-	.farm-btn:hover,
-	.pest-btn:hover {
-		border-color: var(--hm-pistachio-2);
-		background: var(--hm-pistachio);
-		color: var(--hm-accent);
-	}
-	.gh-btn.active,
-	.farm-btn.active,
-	.pest-btn.active {
-		background: var(--hm-accent) !important;
-		border-color: var(--hm-accent) !important;
-		color: #fff !important;
-		box-shadow: 0 2px 6px rgba(75,85,99,.18);
+		color: var(--hm-text);
+		font-variant-numeric: tabular-nums;
+		font-size: .72rem;
 	}
 
-	input.gh-btn {
-		padding: 0 12px;
-		height: 32px;
-		font-weight: 500;
-		min-width: 140px;
-	}
-
-	/* Filter row inside the canvas */
-	.filter-row {
+	.hm-toolbar-right {
 		display: flex;
-		gap: 18px;
-		align-items: center;
+		align-items: flex-end;
+		gap: 10px;
 		flex-wrap: wrap;
-		margin-bottom: 18px;
-		padding: 12px 14px;
-		background: var(--hm-card);
-		border: 1px solid var(--hm-line);
-		border-radius: var(--hm-radius-lg);
-		box-shadow: var(--hm-shadow-1);
 	}
 
-	.filter-label {
-		font-size: 0.62rem;
+	.hm-filter-field {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+	.hm-filter-field label {
+		font-size: .62rem;
 		font-weight: 700;
 		color: var(--hm-quiet);
 		text-transform: uppercase;
-		letter-spacing: 0.9px;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
+		letter-spacing: .04em;
 	}
-	.filter-label::before {
-		content: "";
-		width: 7px;
-		height: 7px;
-		background: var(--hm-marker);
-		border-radius: 1px;
-	}
-
-	.filter-group {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-	}
-
-	.gh-select {
-		padding: 7px 14px;
-		border: 1px solid var(--hm-line);
-		border-radius: var(--hm-radius-pill);
-		background: var(--hm-pistachio);
-		color: var(--hm-accent);
-		font-size: 0.78rem;
-		font-weight: 600;
-		font-family: var(--hm-font);
-		min-width: 200px;
-		cursor: pointer;
-		transition: border-color .15s ease, box-shadow .15s ease;
-	}
-	.gh-select:focus {
+	.hm-input {
+		height: 32px;
+		padding: 0 10px;
+		border: 1px solid #d1d5db;
+		border-radius: var(--hm-radius);
+		font-size: .78rem;
+		color: var(--hm-text);
+		background: var(--hm-card);
 		outline: none;
+		font-family: inherit;
+		min-width: 140px;
+		font-variant-numeric: tabular-nums;
+	}
+	.hm-input:focus {
 		border-color: var(--hm-accent);
 		box-shadow: 0 0 0 2px rgba(75,85,99,.18);
 	}
 
-	.pest-filter-tabs {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		max-height: 64px;
-		overflow-y: auto;
-		scrollbar-width: thin;
+	/* ── Multi-select dropdown (Farms / Greenhouses / Pests) ── */
+	.hm-dd { position: relative; align-self: flex-end; }
+	.hm-dd-btn {
+		height: 32px;
+		padding: 0 12px;
+		border: 1px solid var(--hm-line);
+		border-radius: var(--hm-radius);
+		background: var(--hm-card);
+		color: var(--hm-text);
+		font-family: inherit;
+		font-size: .76rem;
+		font-weight: 600;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		transition: border-color .12s, box-shadow .12s, background .12s;
 	}
-	.pest-filter-tabs::-webkit-scrollbar { width: 4px; }
-	.pest-filter-tabs::-webkit-scrollbar-thumb { background: var(--hm-line); border-radius: 2px; }
-
-	.multi-day-indicator {
-		font-size: 0.65rem;
+	.hm-dd-btn:hover { border-color: #cbd5e1; }
+	.hm-dd-btn[aria-expanded="true"] {
+		border-color: var(--hm-accent);
+		box-shadow: 0 0 0 2px rgba(75,85,99,.18);
+	}
+	.hm-dd-btn > svg:not(.hm-dd-caret) { width: 14px; height: 14px; color: var(--hm-quiet); }
+	.hm-dd-btn-label { letter-spacing: .15px; }
+	.hm-dd-btn-count {
+		min-width: 28px;
+		height: 18px;
+		padding: 0 7px;
+		border-radius: var(--hm-radius-pill);
+		background: var(--hm-pistachio);
 		color: var(--hm-muted);
-		margin-left: 6px;
-		font-weight: 500;
-		font-style: italic;
+		font-size: .65rem;
+		font-weight: 700;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		transition: background .12s, color .12s;
 	}
+	.hm-dd-btn-count[data-active="true"] {
+		background: var(--hm-accent);
+		color: #fff;
+	}
+	.hm-dd-caret {
+		width: 12px;
+		height: 12px;
+		transition: transform .15s;
+	}
+	.hm-dd-btn[aria-expanded="true"] .hm-dd-caret { transform: rotate(180deg); }
+
+	.hm-dd-pop {
+		position: absolute;
+		top: calc(100% + 6px);
+		right: 0;
+		z-index: 50;
+		width: 320px;
+		max-height: 70vh;
+		background: var(--hm-card);
+		border: 1px solid var(--hm-line);
+		border-radius: var(--hm-radius);
+		box-shadow: var(--hm-shadow-3);
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.hm-dd-pop[hidden] { display: none; }
+
+	.hm-dd-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 10px 12px;
+		border-bottom: 1px solid var(--hm-line-soft);
+	}
+	.hm-dd-title {
+		flex: 1;
+		font-size: .72rem;
+		font-weight: 700;
+		color: var(--hm-accent-2);
+		text-transform: uppercase;
+		letter-spacing: .6px;
+	}
+	.hm-dd-actions { display: flex; gap: 4px; }
+	.hm-link-btn {
+		border: none;
+		background: transparent;
+		font-size: .68rem;
+		font-weight: 600;
+		color: var(--hm-muted);
+		cursor: pointer;
+		padding: 3px 8px;
+		border-radius: 4px;
+		font-family: inherit;
+		transition: background .12s, color .12s;
+	}
+	.hm-link-btn:hover { background: rgba(75,85,99,.08); color: var(--hm-text); }
+
+	.hm-dd-search {
+		position: relative;
+		padding: 8px 10px;
+		border-bottom: 1px solid var(--hm-line-soft);
+	}
+	.hm-dd-search input {
+		width: 100%;
+		height: 30px;
+		padding: 0 10px 0 30px;
+		border: 1px solid var(--hm-line);
+		border-radius: var(--hm-radius);
+		font-size: .76rem;
+		font-family: inherit;
+		color: var(--hm-text);
+		background: var(--hm-card);
+		outline: none;
+	}
+	.hm-dd-search input:focus {
+		border-color: var(--hm-accent);
+		box-shadow: 0 0 0 2px rgba(75,85,99,.18);
+	}
+	.hm-dd-search svg {
+		position: absolute;
+		left: 20px;
+		top: 50%;
+		transform: translateY(-50%);
+		width: 14px;
+		height: 14px;
+		color: var(--hm-quiet);
+		pointer-events: none;
+	}
+
+	.hm-dd-list {
+		flex: 1;
+		min-height: 80px;
+		max-height: 360px;
+		overflow-y: auto;
+		padding: 4px 0 8px;
+	}
+	.hm-dd-list::-webkit-scrollbar { width: 8px; }
+	.hm-dd-list::-webkit-scrollbar-thumb { background: var(--hm-line); border-radius: 4px; }
+	.hm-dd-list::-webkit-scrollbar-track { background: transparent; }
+
+	.hm-dd-section {
+		padding: 8px 12px 4px;
+		font-size: .6rem;
+		font-weight: 700;
+		color: var(--hm-quiet);
+		text-transform: uppercase;
+		letter-spacing: .08em;
+	}
+
+	.hm-dd-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 5px 12px;
+		cursor: pointer;
+		user-select: none;
+		transition: background .1s;
+		font-size: .8rem;
+		color: var(--hm-text);
+	}
+	.hm-dd-row:hover { background: rgba(75,85,99,.06); }
+	.hm-dd-row[data-hidden="true"] { display: none; }
+	.hm-dd-row[data-checked="true"] {
+		color: var(--hm-accent-2);
+		font-weight: 600;
+	}
+
+	.hm-dd-check {
+		width: 14px;
+		height: 14px;
+		border: 1.5px solid var(--hm-line);
+		border-radius: 3px;
+		background: var(--hm-card);
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		color: #fff;
+		transition: background .1s, border-color .1s;
+	}
+	.hm-dd-check svg { width: 10px; height: 10px; display: none; }
+	.hm-dd-row[data-checked="true"] .hm-dd-check {
+		background: var(--hm-accent);
+		border-color: var(--hm-accent);
+	}
+	.hm-dd-row[data-checked="true"] .hm-dd-check svg { display: block; }
+
+	.hm-dd-color {
+		width: 10px;
+		height: 10px;
+		border-radius: 3px;
+		flex-shrink: 0;
+		border: 1px solid rgba(0,0,0,.08);
+	}
+	.hm-dd-name {
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.hm-dd-empty {
+		padding: 16px;
+		text-align: center;
+		color: var(--hm-quiet);
+		font-size: .76rem;
+	}
+
+	/* ── Main content area ── */
+	.hm-main {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		padding: 14px 18px 18px;
+	}
+
 
 	/* ── All-Greenhouses Table ───────────────────── */
 	.all-gh-table-wrapper {
-		overflow-x: auto;
-		overflow-y: auto;
-		height: calc(100% - 90px);
+		flex: 1;
+		min-height: 0;
+		overflow: auto;
 		background: var(--hm-card);
-		border: 1px solid var(--hm-line);
-		border-radius: var(--hm-radius-lg);
-		box-shadow: var(--hm-shadow-1);
 	}
 
 	.all-gh-table {
@@ -239,26 +386,16 @@
 		position: sticky;
 		top: 0;
 		z-index: 20;
-		background: var(--hm-pistachio);
-		padding: 12px 16px;
-		font-size: 12px;
-		font-weight: 700;
-		color: var(--hm-accent);
+		background: var(--hm-card);
+		padding: 10px 14px;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--hm-quiet);
 		text-align: left;
-		border-bottom: 1px solid var(--hm-pistachio-2);
+		text-transform: uppercase;
+		letter-spacing: .04em;
+		border-bottom: 1px solid var(--hm-line);
 		white-space: nowrap;
-		letter-spacing: -.005em;
-	}
-
-	.all-gh-table thead th::before {
-		content: "";
-		display: inline-block;
-		width: 8px;
-		height: 8px;
-		background: var(--hm-marker);
-		border-radius: 1px;
-		margin-right: 8px;
-		vertical-align: middle;
 	}
 
 	.all-gh-table thead th.col-gh-label {
@@ -268,12 +405,7 @@
 		z-index: 30;
 		min-width: 110px;
 		padding-left: 14px;
-		font-family: var(--hm-font);
-		text-transform: uppercase;
-		font-size: 11px;
-		letter-spacing: .8px;
 	}
-	.all-gh-table thead th.col-gh-label::before { display: none; }
 
 	.all-gh-table tbody td {
 		vertical-align: top;
@@ -282,7 +414,6 @@
 	}
 
 	.all-gh-table tbody tr:hover td { background: var(--hm-bg-soft); }
-	.all-gh-table tbody tr:hover td.td-gh-label { background: var(--hm-pistachio); }
 
 	.all-gh-table tbody td.td-gh-label {
 		position: sticky;
@@ -291,178 +422,71 @@
 		background: var(--hm-card);
 		padding: 12px 16px 12px 14px;
 		white-space: nowrap;
-		border-right: 1px solid var(--hm-line);
 		transition: background .15s ease;
 	}
 
 	.td-gh-date {
 		font-size: 11px;
-		color: var(--hm-muted);
+		color: var(--hm-quiet);
 		line-height: 1.2;
 		font-variant-numeric: tabular-nums;
-		letter-spacing: .15px;
 	}
 
 	.td-gh-name {
 		font-family: var(--hm-font-display);
-		font-size: 16px;
+		font-size: 14px;
 		font-weight: 600;
 		color: var(--hm-ink);
 		line-height: 1.2;
-		letter-spacing: -.015em;
+		letter-spacing: -.01em;
 	}
 
 	/* ── Mini Heatmap Card inside table cell ─────── */
 	.mini-card {
 		display: inline-block;
-		border: 1px solid var(--hm-line);
-		border-radius: var(--hm-radius);
 		background: var(--hm-card);
 		min-width: 144px;
 		cursor: pointer;
 		vertical-align: top;
-		overflow: hidden;
-		transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+		transition: background .15s ease;
 	}
-	.mini-card:hover {
-		border-color: var(--hm-pistachio-2);
-		box-shadow: var(--hm-shadow-2);
-		transform: translateY(-1px);
-	}
+	.mini-card:hover { background: var(--hm-bg-soft); }
 
 	.mini-card-head {
 		display: flex;
 		justify-content: space-between;
 		align-items: baseline;
-		padding: 5px 8px 4px;
-		border-bottom: 1px solid var(--hm-line-soft);
-		background: var(--hm-bg-soft);
+		padding: 4px 8px 3px;
 	}
 
 	.mini-card-gh {
 		font-size: 9px;
-		font-weight: 700;
-		color: var(--hm-ink);
+		font-weight: 600;
+		color: var(--hm-text);
 		max-width: 84px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		letter-spacing: .15px;
 	}
 
 	.mini-card-date {
 		font-size: 8px;
-		color: var(--hm-muted);
+		color: var(--hm-quiet);
 		font-variant-numeric: tabular-nums;
 	}
 
 	.mini-card-obs {
-		padding: 4px 8px 2px;
+		padding: 2px 8px 2px;
 		font-size: 10px;
-		font-weight: 700;
-		color: var(--hm-accent);
-		letter-spacing: .1px;
+		font-weight: 600;
+		color: var(--hm-text);
 	}
 
 	.mini-card-body {
-		padding: 3px 6px 6px;
+		padding: 2px 6px 6px;
 	}
 
-	/* ── Upright plot — vertical strip of bed-rows with capsule-shaped zone
-	   cells. Geojson is consulted only for *position*: each cell is placed
-	   along the row at the lng-fraction of its raw_geojson bbox, so double-
-	   bed houses (gh 11, gh 14) leave a real central-aisle gap and irregular
-	   greenhouses surface as shorter rows. Painted cells carry the stage
-	   glyph (Fresh, Dry, Adult, Larvae …) so different stages read distinctly. */
-	.upright-plot {
-		display: flex;
-		flex-direction: column;
-		padding: 4px 8px 6px;
-		font-variant-numeric: tabular-nums;
-	}
-
-	.upright-row {
-		display: flex;
-		align-items: center;
-		height: 9px;
-		position: relative;
-	}
-
-	.upright-row-label {
-		width: 14px;
-		font-size: 6px;
-		color: var(--hm-quiet);
-		text-align: right;
-		padding-right: 4px;
-		font-weight: 700;
-		flex-shrink: 0;
-		line-height: 1;
-	}
-
-	.upright-track {
-		flex: 1;
-		height: 7px;
-		position: relative;
-	}
-
-	.upright-cell {
-		position: absolute;
-		top: 0;
-		height: 7px;
-		min-width: 3px;
-		border-radius: 1.5px;
-		border: 0.5px solid rgba(20,32,26,.18);
-		background: var(--hm-line);
-		font-size: 5px;
-		font-weight: 700;
-		color: #fff;
-		text-align: center;
-		line-height: 7px;
-		font-family: var(--hm-font);
-		overflow: hidden;
-		white-space: nowrap;
-		letter-spacing: -.5px;
-		text-shadow: 0 0 1px rgba(20,32,26,.55);
-	}
-
-	.upright-cell.upright-cell-empty {
-		background: transparent;
-		border-color: var(--hm-line-soft);
-		border-style: dotted;
-	}
-
-	.upright-cell.upright-cell-prev {
-		border-style: dashed;
-	}
-
-	.upright-plot-lg {
-		padding: 14px 18px 16px;
-		background: var(--hm-card);
-		border-radius: var(--hm-radius);
-	}
-
-	.upright-plot-lg .upright-row { height: 18px; }
-
-	.upright-plot-lg .upright-row-label {
-		width: 30px;
-		font-size: 10px;
-		padding-right: 8px;
-	}
-
-	.upright-plot-lg .upright-track {
-		height: 14px;
-	}
-
-	.upright-plot-lg .upright-cell {
-		height: 14px;
-		min-width: 8px;
-		font-size: 9px;
-		line-height: 14px;
-		border-radius: 3px;
-		letter-spacing: 0;
-		text-shadow: 0 0 1px rgba(20,32,26,.7);
-	}
-
+	/* Fallback shown when zone polygons are missing or degenerate. */
 	.upright-empty {
 		display: flex;
 		align-items: center;
@@ -475,40 +499,9 @@
 		border-radius: var(--hm-radius);
 	}
 
-	/* Sub-block boundary marker: a hairline rule with a tick. Surfaces the
-	   point where a greenhouse breaks into two rectangles and bed numbering
-	   reverses direction. */
-	.upright-split {
-		position: relative;
-		height: 4px;
-		margin: 2px 0;
-		border-top: 1px dashed var(--hm-pistachio-2);
-	}
-	.upright-split::after {
-		content: "";
-		position: absolute;
-		top: -3px;
-		left: 50%;
-		width: 5px;
-		height: 5px;
-		background: var(--hm-marker);
-		border-radius: 50%;
-		transform: translateX(-50%);
-	}
-	.upright-plot-lg .upright-split {
-		height: 10px;
-		margin: 4px 0;
-		border-top-width: 1.5px;
-	}
-	.upright-plot-lg .upright-split::after {
-		top: -5px;
-		width: 9px;
-		height: 9px;
-	}
-
-	/* ── SVG floor plan (matches the observations_map modal technique).
+	/* ── SVG floor plan (same algorithm as the observations_map modal).
 	   Layers: faint baseline rail per bed, coloured polylines per
-	   zone-segment, bed-number labels at each block's left edge. */
+	   zone-segment (gray when no observations), bed numbers per block. */
 	.upright-svg {
 		display: block;
 		width: 100%;
@@ -562,66 +555,29 @@
 	}
 
 	.mini-card-multi-day { position: relative; }
-	.mini-card-multi-day::after {
-		content: "3D";
-		position: absolute;
-		top: 4px;
-		right: 4px;
-		font-size: 6px;
-		background: var(--hm-tooltip);
-		color: white;
-		padding: 1px 4px;
-		border-radius: var(--hm-radius-pill);
-		font-weight: 700;
-		letter-spacing: .3px;
-	}
 
 	.mini-card-empty {
 		display: inline-block;
 		min-width: 144px;
 		min-height: 24px;
-		border: 1px dashed var(--hm-line);
-		border-radius: var(--hm-radius);
-		background: rgba(255,255,255,.4);
-	}
-
-	/* Intensity classes — saturation steps */
-	.intensity-0 {
-		opacity: 1;
-		background: var(--hm-line) !important;
-		cursor: default;
-	}
-	.intensity-1 { opacity: 0.22; }
-	.intensity-2 { opacity: 0.42; }
-	.intensity-3 { opacity: 0.62; }
-	.intensity-4 { opacity: 0.82; }
-	.intensity-5 { opacity: 1; }
-
-	.multi-day-overlay {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: 0;
 	}
 
 	.day-indicator {
 		display: flex;
-		gap: 5px;
+		gap: 4px;
 		align-items: center;
-		margin-top: 5px;
-		padding: 3px 6px;
-		background: var(--hm-bg-soft);
-		border-radius: var(--hm-radius-pill);
+		margin-top: 4px;
+		padding: 0 6px;
 		font-size: 7px;
-		color: var(--hm-muted);
-		font-weight: 600;
+		color: var(--hm-quiet);
+		font-weight: 500;
 	}
 
 	.day-dot {
-		width: 7px;
-		height: 7px;
+		width: 6px;
+		height: 6px;
 		border-radius: 50%;
 		display: inline-block;
-		box-shadow: 0 0 0 1.5px rgba(255,255,255,.7);
 	}
 
 	/* ── Modal ───────────────────────────────────── */
@@ -642,58 +598,53 @@
 	.modal-content {
 		background: var(--hm-card);
 		border-radius: var(--hm-radius-lg);
-		border: 1px solid var(--hm-line);
 		max-width: 92vw;
 		max-height: 90vh;
 		width: 1200px;
 		overflow: auto;
-		padding: 30px 32px;
+		padding: 28px 32px;
 		position: relative;
-		box-shadow: var(--hm-shadow-3);
+		box-shadow: 0 16px 40px rgba(0,0,0,.14);
 	}
 
 	.modal-close {
 		position: absolute;
-		top: 16px;
-		right: 22px;
+		top: 14px;
+		right: 18px;
 		font-size: 22px;
-		color: var(--hm-ink);
-		background: var(--hm-card);
-		border: 1px solid var(--hm-line);
+		color: var(--hm-quiet);
+		background: transparent;
+		border: none;
 		cursor: pointer;
 		line-height: 1;
 		padding: 0;
-		width: 36px;
-		height: 36px;
+		width: 32px;
+		height: 32px;
 		border-radius: var(--hm-radius-pill);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		transition: background .15s ease;
+		transition: background .15s ease, color .15s ease;
 	}
-	.modal-close:hover { background: var(--hm-pistachio); }
+	.modal-close:hover { background: var(--hm-pistachio); color: var(--hm-ink); }
 
 	#modal-body h2 {
 		font-family: var(--hm-font-display);
 		letter-spacing: -.02em !important;
 	}
 
-	/* ── Modal full-view container (wraps the strip plot) ────── */
+	/* Modal: container wrapping each per-day plot — flat, no chrome. */
 	.heatmap-container {
-		padding: 14px;
-		border: 1px solid var(--hm-line);
-		border-radius: var(--hm-radius);
-		background: var(--hm-bg-soft);
-		overflow: hidden;
+		padding: 6px 0 0;
 	}
 
 	.legend {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		margin-top: 14px;
+		gap: 14px;
+		margin-top: 18px;
 		padding-top: 12px;
-		border-top: 1px dashed var(--hm-line);
+		border-top: 1px solid var(--hm-line-soft);
 		font-size: 11px;
 		color: var(--hm-muted);
 		flex-wrap: wrap;
@@ -707,68 +658,58 @@
 	}
 
 	.legend-box {
-		width: 18px;
-		height: 12px;
+		width: 16px;
+		height: 10px;
 		border-radius: 2px;
-		border: 1px solid var(--hm-line);
 	}
 
+	/* Stage chips inline above the per-day plots — no surrounding box. */
 	.stage-legend {
 		display: flex;
-		gap: 6px;
+		gap: 10px 14px;
 		flex-wrap: wrap;
-		margin-top: 10px;
-		padding: 10px 12px;
-		background: var(--hm-bg-soft);
-		border-radius: var(--hm-radius);
-		border: 1px solid var(--hm-line);
+		margin-top: 12px;
+		padding: 0;
 	}
 
 	.stage-item {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 11px;
-		padding: 3px 10px;
-		background: var(--hm-card);
-		border-radius: var(--hm-radius-pill);
-		border: 1px solid var(--hm-line);
-		font-weight: 500;
-	}
-
-	/* Multi-day comparison in modal */
-	.multi-day-grids {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-		gap: 18px;
-		margin-top: 18px;
-	}
-
-	.day-section {
-		border: 1px solid var(--hm-line);
-		border-radius: var(--hm-radius);
-		padding: 14px;
-		background: var(--hm-card);
-	}
-
-	.day-section h4 {
-		margin: 0 0 10px 0;
-		font-family: var(--hm-font);
-		font-size: 12px;
-		text-transform: uppercase;
-		letter-spacing: .9px;
-		font-weight: 700;
-		color: var(--hm-accent);
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
+		font-size: 11px;
+		padding: 0;
+		background: transparent;
+		border: none;
+		font-weight: 500;
+		color: var(--hm-text);
 	}
-	.day-section h4::before {
-		content: "";
-		width: 8px;
-		height: 8px;
-		background: var(--hm-marker);
-		border-radius: 1px;
+
+	/* Multi-day comparison in modal — three columns separated by hairlines. */
+	.multi-day-grids {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		gap: 0;
+		margin-top: 16px;
+	}
+
+	.day-section {
+		padding: 4px 16px;
+		border-left: 1px solid var(--hm-line-soft);
+	}
+	.day-section:first-child {
+		border-left: none;
+		padding-left: 0;
+	}
+	.day-section:last-child { padding-right: 0; }
+
+	.day-section h4 {
+		margin: 0 0 8px 0;
+		font-family: var(--hm-font);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: .8px;
+		font-weight: 600;
+		color: var(--hm-quiet);
 	}
 
 	/* ── Loader ──────────────────────────────────── */
@@ -832,99 +773,11 @@
 		margin-bottom: 8px;
 	}
 
-	/* ── Override the floating summary + filter bar from map_base.html ── */
-	.scout-summary {
-		background: var(--hm-card) !important;
-		border: 1px solid var(--hm-line) !important;
-		border-radius: var(--hm-radius-lg) !important;
-		box-shadow: var(--hm-shadow-2);
-		padding: 14px 16px !important;
-		font-family: var(--hm-font);
-	}
-
-	.scout-summary .panel-title {
-		font-family: var(--hm-font);
-		color: var(--hm-quiet) !important;
-		font-size: 0.62rem !important;
-		letter-spacing: .9px !important;
-		font-weight: 700 !important;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-	}
-	.scout-summary .panel-title::before {
-		content: "";
-		width: 8px;
-		height: 8px;
-		background: var(--hm-marker);
-		border-radius: 1px;
-	}
-
-	.scout-summary .scout-stat {
-		background: var(--hm-bg-soft) !important;
-		border: 1px solid var(--hm-line) !important;
-		border-radius: var(--hm-radius) !important;
-		padding: 10px 12px !important;
-		position: relative;
-		overflow: hidden;
-	}
-	.scout-summary .scout-stat::before {
-		content: "";
-		position: absolute;
-		left: 0;
-		top: 0;
-		bottom: 0;
-		width: 3px;
-		background: var(--hm-accent);
-	}
-
-	.scout-summary .scout-stat-label {
-		font-size: 0.6rem !important;
-		color: var(--hm-quiet) !important;
-		font-weight: 700 !important;
-		letter-spacing: .8px !important;
-	}
-
-	.scout-summary .scout-stat-value {
-		font-family: var(--hm-font-display) !important;
-		font-size: 1.4rem !important;
-		font-weight: 600 !important;
-		color: var(--hm-ink) !important;
-		font-variant-numeric: tabular-nums;
-		letter-spacing: -.02em;
-	}
-
-	.scout-filters {
-		background: var(--hm-card) !important;
-		border: 1px solid var(--hm-line) !important;
-		box-shadow: var(--hm-shadow-1);
-	}
-	.scout-filters label {
-		color: var(--hm-quiet) !important;
-		font-weight: 700 !important;
-		letter-spacing: .85px !important;
-		text-transform: uppercase;
-		font-size: 0.62rem !important;
-	}
-	.scout-filters input[type="date"] {
-		border: 1px solid var(--hm-line) !important;
-		border-radius: var(--hm-radius-pill) !important;
-		font-family: var(--hm-font) !important;
-		color: var(--hm-text) !important;
-		font-weight: 600 !important;
-		font-variant-numeric: tabular-nums;
-		padding: 6px 14px !important;
-	}
-	.scout-filters input[type="date"]:focus {
-		border-color: var(--hm-accent) !important;
-		box-shadow: 0 0 0 2px rgba(75,85,99,.18) !important;
-	}
-
 	@media (max-width: 768px) {
-		#content-container { padding: 60px 12px 12px; }
-		.heatmap-title { font-size: 1.2rem; }
-		.filter-row { padding: 10px 12px; gap: 12px; }
-		.gh-select { min-width: 160px; }
+		.hm-toolbar-row { padding: 10px 14px; gap: 12px; }
+		.hm-title { font-size: 1.1rem; }
+		.hm-main { padding: 12px 14px 14px; }
+		.hm-dd-pop { width: min(320px, calc(100vw - 28px)); }
 		.modal-content { padding: 22px; }
 	}
 </style>
@@ -939,67 +792,100 @@
 				<div class="map-load-track"><div class="map-load-fill" id="map-load-fill"></div></div>
 				<span class="map-load-status" id="map-load-status">0%</span>
 			</div>
-				<div class="heatmap-page-head">
-					<div class="heatmap-title-block">
-						<div class="heatmap-eyebrow">Scouting · Zone Heatmaps</div>
-						<h1 class="heatmap-title">Pest &amp; Disease Density</h1>
+			<!-- ─── Sticky toolbar ─── -->
+			<header class="hm-toolbar">
+				<div class="hm-toolbar-row">
+					<div class="hm-toolbar-left">
+						<span class="hm-subtitle">Scouting · Zone Heatmaps</span>
+						<h1 class="hm-title">Pest &amp; Disease Density</h1>
+						<div class="hm-stat-strip" aria-label="Filtered totals">
+							<span><b id="hm-stat-gh">—</b>Greenhouses</span>
+							<span><b id="hm-stat-obs">—</b>Observations</span>
+							<span><b id="hm-stat-beds">—</b>Zones</span>
+							<span><b id="hm-stat-farms">—</b>Farms</span>
+						</div>
+					</div>
+					<div class="hm-toolbar-right">
+						<div class="hm-filter-field">
+							<label for="scout-date-picker">Date</label>
+							<input type="date" id="scout-date-picker" class="hm-input" />
+						</div>
+
+						<!-- Farms multi-select -->
+						<div class="hm-dd" data-popover-id="hm-pop-farms">
+							<button type="button" class="hm-dd-btn" id="hm-farms-btn" aria-haspopup="dialog" aria-expanded="false">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 22V8l10-5 10 5v14"/><path d="M9 22v-7h6v7"/></svg>
+								<span class="hm-dd-btn-label">Farms</span>
+								<span class="hm-dd-btn-count" id="hm-farms-count">All</span>
+								<svg class="hm-dd-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+							</button>
+							<div class="hm-dd-pop" id="hm-pop-farms" hidden>
+								<div class="hm-dd-head">
+									<div class="hm-dd-title">Farms</div>
+									<div class="hm-dd-actions">
+										<button type="button" class="hm-link-btn" data-action="hm-farms-clear">Clear</button>
+									</div>
+								</div>
+								<div class="hm-dd-list" id="hm-farms-list"></div>
+							</div>
+						</div>
+
+						<!-- Greenhouses multi-select -->
+						<div class="hm-dd" data-popover-id="hm-pop-greenhouses">
+							<button type="button" class="hm-dd-btn" id="hm-gh-btn" aria-haspopup="dialog" aria-expanded="false">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/></svg>
+								<span class="hm-dd-btn-label">Greenhouses</span>
+								<span class="hm-dd-btn-count" id="hm-gh-count">All</span>
+								<svg class="hm-dd-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+							</button>
+							<div class="hm-dd-pop" id="hm-pop-greenhouses" hidden>
+								<div class="hm-dd-head">
+									<div class="hm-dd-title">Greenhouses</div>
+									<div class="hm-dd-actions">
+										<button type="button" class="hm-link-btn" data-action="hm-gh-clear">Clear</button>
+									</div>
+								</div>
+								<div class="hm-dd-search">
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+									<input type="text" id="hm-gh-search" placeholder="Search greenhouses…" />
+								</div>
+								<div class="hm-dd-list" id="hm-gh-list"></div>
+							</div>
+						</div>
+
+						<!-- Pests multi-select -->
+						<div class="hm-dd" data-popover-id="hm-pop-pests">
+							<button type="button" class="hm-dd-btn" id="hm-pest-btn" aria-haspopup="dialog" aria-expanded="false">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v4M12 14v4M8 10h8"/></svg>
+								<span class="hm-dd-btn-label">Observations</span>
+								<span class="hm-dd-btn-count" id="hm-pest-count">All</span>
+								<svg class="hm-dd-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+							</button>
+							<div class="hm-dd-pop" id="hm-pop-pests" hidden>
+								<div class="hm-dd-head">
+									<div class="hm-dd-title">Pests &amp; observations</div>
+									<div class="hm-dd-actions">
+										<button type="button" class="hm-link-btn" data-action="hm-pest-clear">Clear</button>
+									</div>
+								</div>
+								<div class="hm-dd-search">
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+									<input type="text" id="hm-pest-search" placeholder="Search…" />
+								</div>
+								<div class="hm-dd-list" id="hm-pest-list"></div>
+							</div>
+						</div>
 					</div>
 				</div>
+			</header>
 
-				<!-- Filters -->
-				<div class="filter-row">
-					<div class="filter-group">
-						<span class="filter-label">Greenhouse</span>
-						<select id="greenhouse-select" class="gh-select">
-							<option value="__all__">All Greenhouses</option>
-						</select>
-					</div>
-					<div class="filter-group">
-						<span class="filter-label">Pests</span>
-						<div class="pest-filter-tabs" id="pest-filter"></div>
-					</div>
-				</div>
-
+			<!-- ─── Heatmap grid ─── -->
+			<main class="hm-main">
 				<div class="all-gh-table-wrapper" id="all-gh-table-wrapper">
-				<!-- Table rendered here -->
-			</div>
+					<!-- Table rendered here -->
+				</div>
+			</main>
 		</div>
-
-		<!-- Floating filter bar (top) -->
-		<div class="scout-filters">
-			<div class="scout-filter-item">
-				<label for="scout-date-picker">Date</label>
-				<input type="date" id="scout-date-picker" />
-			</div>
-			<div class="scout-filter-item" style="flex:1; min-width:0">
-				<label>Farm</label>
-				<div class="gh-filter-tabs" id="farm-filter"></div>
-			</div>
-		</div>
-
-		<!-- Floating summary (bottom-right) -->
-		<div class="scout-summary">
-			<div class="panel-title">Today's Summary</div>
-			<div class="scout-summary-grid">
-				<div class="scout-stat">
-					<div class="scout-stat-label">Greenhouses</div>
-					<div class="scout-stat-value" id="hm-stat-gh">—</div>
-				</div>
-				<div class="scout-stat">
-					<div class="scout-stat-label">Observations</div>
-					<div class="scout-stat-value" id="hm-stat-obs">—</div>
-				</div>
-				<div class="scout-stat">
-					<div class="scout-stat-label">Zones</div>
-					<div class="scout-stat-value" id="hm-stat-beds">—</div>
-				</div>
-				<div class="scout-stat">
-					<div class="scout-stat-label">Farms</div>
-					<div class="scout-stat-value" id="hm-stat-farms">—</div>
-				</div>
-			</div>
-		</div>
-	</div>
 
 	<div id="heatmap-modal" class="modal hidden">
 		<div class="modal-content">
@@ -1020,10 +906,16 @@
 			return `${y}-${m}-${day}`;
 		};
 		let currentDate = localDateISO();
-		let currentFarmFilter = "__all__";
-		let currentGHFilter = "__all__";
-		let currentPestFilter = "__all__";
-		
+		// Most recent scouting date ≤ currentDate — drives the "primary" view
+		// of the table/cards. May differ from currentDate if no scouting
+		// happened on the picked day.
+		let primaryDate = currentDate;
+		// Multi-select filter state. Empty Set ⇒ "All" (no filter applied).
+		let selectedFarms = new Set();
+		let selectedGreenhouses = new Set();
+		let selectedPests = new Set();
+		let allPestsList = []; // [{name, category, catKey, color}]
+
 		// Multi-day data storage (3 days)
 		let multiDayData = {}; // { 'YYYY-MM-DD': { greenhouseName: data } }
 		let availableDates = [];
@@ -1062,23 +954,30 @@
 			document.getElementById("map-loader").style.display = "none";
 		}
 
-		// ── Calculate date range (current date and 2 days before) ──
-		function getDateRange() {
-			const dates = [];
-			const today = new Date(currentDate + "T00:00:00");
-			for (let i = 0; i < 3; i++) {
-				const d = new Date(today);
-				d.setDate(d.getDate() - i);
-				dates.push(localDateISO(d));
-			}
-			return dates;
+		// ── Last 3 dates that actually had scouting (≤ currentDate) ──
+		// Calendar gaps (weekends, downtime) collapse instead of showing as
+		// empty 3-day cards.
+		function fetchRecentScoutingDates() {
+			return fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getRecentScoutingDates", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-Frappe-CSRF-Token": "{{ csrf_token }}",
+				},
+				body: JSON.stringify({ date: currentDate, limit: 3 }),
+			})
+				.then(r => r.ok ? r.json() : Promise.reject(r))
+				.then(r => (r.message && r.message.dates) || [])
+				.catch(err => {
+					console.error("Error fetching recent scouting dates:", err);
+					return [];
+				});
 		}
 
 		// ── Fetch farms ──
 		function initialize() {
 			showLoader();
 			document.getElementById("scout-date-picker").value = currentDate;
-			availableDates = getDateRange();
 
 			fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getFarmsAndGreenhouses", {
 				method: "POST",
@@ -1100,8 +999,8 @@
 						});
 					});
 
-					setupFarmFilter();
-					setupGreenhouseFilter();
+					populateFarmsDropdown();
+					populateGreenhousesDropdown();
 					loadMultiDayData();
 				})
 				.catch((err) => {
@@ -1111,105 +1010,258 @@
 				});
 		}
 
-		// ── Setup greenhouse dropdown filter ──
-		function setupGreenhouseFilter() {
-			const select = document.getElementById("greenhouse-select");
-			
-			// Clear existing options except "All"
-			while (select.options.length > 1) {
-				select.remove(1);
+		// ── Multi-select dropdown helpers ──
+		const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+		function ddRow(opts) {
+			// opts: { value, label, color?, set, onChange }
+			const row = document.createElement("div");
+			row.className = "hm-dd-row";
+			row.dataset.value = opts.value;
+			row.dataset.label = (opts.label || "").toLowerCase();
+			row.dataset.checked = opts.set.has(opts.value) ? "true" : "false";
+			let inner = '<span class="hm-dd-check">' + CHECK_SVG + '</span>';
+			if (opts.color) inner += '<span class="hm-dd-color" style="background:' + opts.color + '"></span>';
+			inner += '<span class="hm-dd-name" title="' + escapeHtml(opts.label) + '">' + escapeHtml(opts.label) + '</span>';
+			row.innerHTML = inner;
+			row.addEventListener("click", () => {
+				if (opts.set.has(opts.value)) opts.set.delete(opts.value);
+				else opts.set.add(opts.value);
+				row.dataset.checked = opts.set.has(opts.value) ? "true" : "false";
+				opts.onChange();
+			});
+			return row;
+		}
+
+		function applyDdSearch(listEl, query) {
+			const q = (query || "").trim().toLowerCase();
+			listEl.querySelectorAll(".hm-dd-row").forEach(row => {
+				row.dataset.hidden = q && !row.dataset.label.includes(q) ? "true" : "false";
+			});
+			listEl.querySelectorAll(".hm-dd-section").forEach(sec => {
+				let next = sec.nextElementSibling;
+				let anyVisible = false;
+				while (next && !next.classList.contains("hm-dd-section")) {
+					if (next.classList.contains("hm-dd-row") && next.dataset.hidden !== "true") {
+						anyVisible = true;
+						break;
+					}
+					next = next.nextElementSibling;
+				}
+				sec.style.display = anyVisible ? "" : "none";
+			});
+		}
+
+		function updateDdCount(countEl, n, total) {
+			countEl.textContent = n === 0 ? "All" : String(n);
+			countEl.dataset.active = n > 0 ? "true" : "false";
+		}
+
+		// ── Populate Farms dropdown ──
+		function populateFarmsDropdown() {
+			const list = document.getElementById("hm-farms-list");
+			list.innerHTML = "";
+			if (!farmsData.length) {
+				list.innerHTML = '<div class="hm-dd-empty">No farms available.</div>';
+			} else {
+				farmsData.forEach(farm => {
+					list.appendChild(ddRow({
+						value: farm.name,
+						label: farm.name,
+						set: selectedFarms,
+						onChange: () => {
+							updateDdCount(document.getElementById("hm-farms-count"), selectedFarms.size, farmsData.length);
+							renderAllGreenhousesTable();
+						},
+					}));
+				});
+			}
+			updateDdCount(document.getElementById("hm-farms-count"), selectedFarms.size, farmsData.length);
+		}
+
+		// ── Populate Greenhouses dropdown (grouped by farm) ──
+		function populateGreenhousesDropdown() {
+			const list = document.getElementById("hm-gh-list");
+			list.innerHTML = "";
+			let total = 0;
+			if (!farmsData.length) {
+				list.innerHTML = '<div class="hm-dd-empty">No greenhouses available.</div>';
+			} else {
+				farmsData.forEach(farm => {
+					const ghs = (farm.greenhouses || []).slice().sort((a, b) => {
+						const al = (a.warehouse_name || a.name).toLowerCase();
+						const bl = (b.warehouse_name || b.name).toLowerCase();
+						return al.localeCompare(bl);
+					});
+					if (!ghs.length) return;
+					const sec = document.createElement("div");
+					sec.className = "hm-dd-section";
+					sec.textContent = farm.name;
+					list.appendChild(sec);
+					ghs.forEach(gh => {
+						total++;
+						const label = (gh.warehouse_name || gh.name).replace(/ - .+$/, "");
+						list.appendChild(ddRow({
+							value: gh.name,
+							label: label,
+							set: selectedGreenhouses,
+							onChange: () => {
+								updateDdCount(document.getElementById("hm-gh-count"), selectedGreenhouses.size, total);
+								renderAllGreenhousesTable();
+							},
+						}));
+					});
+				});
+			}
+			updateDdCount(document.getElementById("hm-gh-count"), selectedGreenhouses.size, total);
+		}
+
+		// ── Populate Pests dropdown (grouped by category) ──
+		function populatePestsDropdown(pestList) {
+			allPestsList = pestList || [];
+			const list = document.getElementById("hm-pest-list");
+			list.innerHTML = "";
+
+			// Drop selections that no longer exist in the loaded data
+			const knownNames = new Set(allPestsList.map(p => p.name));
+			[...selectedPests].forEach(name => {
+				if (!knownNames.has(name)) selectedPests.delete(name);
+			});
+
+			if (!allPestsList.length) {
+				list.innerHTML = '<div class="hm-dd-empty">No observations on these dates.</div>';
+				updateDdCount(document.getElementById("hm-pest-count"), 0, 0);
+				return;
 			}
 
-			// Add greenhouse options sorted by name
-			const greenhouses = Object.keys(greenhouseMap).sort();
-			greenhouses.forEach(ghName => {
-				const option = document.createElement("option");
-				option.value = ghName;
-				option.textContent = (greenhouseMap[ghName].warehouse_name || ghName).replace(/ - .+$/, "");
-				select.appendChild(option);
+			const byCategory = {};
+			CATEGORIES.forEach(c => { byCategory[c.type] = []; });
+			allPestsList.forEach(p => {
+				if (!byCategory[p.category]) byCategory[p.category] = [];
+				byCategory[p.category].push(p);
 			});
 
-			select.addEventListener("change", (e) => {
-				currentGHFilter = e.target.value;
+			const onChange = () => {
+				updateDdCount(document.getElementById("hm-pest-count"), selectedPests.size, allPestsList.length);
 				renderAllGreenhousesTable();
-			});
-		}
+			};
 
-		// ── Setup pest filter tabs ──
-		function setupPestFilter(pestList) {
-			const filterContainer = document.getElementById("pest-filter");
-			filterContainer.innerHTML = "";
-
-			// All Pests button
-			const allBtn = document.createElement("button");
-			allBtn.className = "pest-btn" + (currentPestFilter === "__all__" ? " active" : "");
-			allBtn.textContent = "All Pests";
-			allBtn.addEventListener("click", () => {
-				document.querySelectorAll(".pest-btn").forEach(btn => btn.classList.remove("active"));
-				allBtn.classList.add("active");
-				currentPestFilter = "__all__";
-				renderAllGreenhousesTable();
-			});
-			filterContainer.appendChild(allBtn);
-
-			// Individual pest buttons
-			pestList.forEach(pest => {
-				const button = document.createElement("button");
-				button.className = "pest-btn" + (pest.name === currentPestFilter ? " active" : "");
-				button.textContent = pest.name;
-				button.style.color = pest.color;
-				button.style.borderColor = pest.color;
-
-				button.addEventListener("click", () => {
-					document.querySelectorAll(".pest-btn").forEach(btn => btn.classList.remove("active"));
-					button.classList.add("active");
-					currentPestFilter = pest.name;
-					renderAllGreenhousesTable();
+			CATEGORIES.forEach(cat => {
+				const items = (byCategory[cat.type] || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+				if (!items.length) return;
+				const sec = document.createElement("div");
+				sec.className = "hm-dd-section";
+				sec.textContent = cat.type.replace(/_/g, " ");
+				list.appendChild(sec);
+				items.forEach(p => {
+					list.appendChild(ddRow({
+						value: p.name,
+						label: p.name,
+						color: p.color,
+						set: selectedPests,
+						onChange: onChange,
+					}));
 				});
+			});
 
-				filterContainer.appendChild(button);
+			updateDdCount(document.getElementById("hm-pest-count"), selectedPests.size, allPestsList.length);
+		}
+
+		// ── Popover behaviour (mirrors scouting_trends header) ──
+		function closeAllPopovers() {
+			document.querySelectorAll(".hm-dd-pop").forEach(p => p.setAttribute("hidden", ""));
+			document.querySelectorAll(".hm-dd-btn").forEach(b => b.setAttribute("aria-expanded", "false"));
+		}
+		function togglePopover(ddEl) {
+			const btn = ddEl.querySelector(".hm-dd-btn");
+			const pop = document.getElementById(ddEl.dataset.popoverId);
+			if (!btn || !pop) return;
+			const open = btn.getAttribute("aria-expanded") === "true";
+			closeAllPopovers();
+			if (!open) {
+				pop.removeAttribute("hidden");
+				btn.setAttribute("aria-expanded", "true");
+			}
+		}
+		function bindDropdowns() {
+			document.querySelectorAll(".hm-dd").forEach(dd => {
+				const btn = dd.querySelector(".hm-dd-btn");
+				if (btn) btn.addEventListener("click", ev => { ev.stopPropagation(); togglePopover(dd); });
+				const pop = document.getElementById(dd.dataset.popoverId);
+				if (pop) pop.addEventListener("click", ev => ev.stopPropagation());
+			});
+			document.addEventListener("click", () => closeAllPopovers());
+			document.addEventListener("keydown", ev => { if (ev.key === "Escape") closeAllPopovers(); });
+
+			// Search inputs (greenhouse + pest)
+			const ghSearch = document.getElementById("hm-gh-search");
+			if (ghSearch) ghSearch.addEventListener("input", e => applyDdSearch(document.getElementById("hm-gh-list"), e.target.value));
+			const pestSearch = document.getElementById("hm-pest-search");
+			if (pestSearch) pestSearch.addEventListener("input", e => applyDdSearch(document.getElementById("hm-pest-list"), e.target.value));
+
+			// Clear-all buttons
+			document.querySelector('[data-action="hm-farms-clear"]').addEventListener("click", () => {
+				selectedFarms.clear();
+				populateFarmsDropdown();
+				renderAllGreenhousesTable();
+			});
+			document.querySelector('[data-action="hm-gh-clear"]').addEventListener("click", () => {
+				selectedGreenhouses.clear();
+				populateGreenhousesDropdown();
+				renderAllGreenhousesTable();
+			});
+			document.querySelector('[data-action="hm-pest-clear"]').addEventListener("click", () => {
+				selectedPests.clear();
+				populatePestsDropdown(allPestsList);
+				renderAllGreenhousesTable();
 			});
 		}
 
-		// ── Load data for multiple days ──
+		// ── Load data for the last 3 actual scouting dates ──
 		function loadMultiDayData() {
-			const dates = getDateRange();
-			availableDates = dates;
-			let loadedDates = 0;
-			
 			abortAllRequests();
 			showLoader();
 			multiDayData = {};
 			setProgress(0);
 
-			const loadPromises = dates.map((date, index) => {
-				return loadSingleDayData(date).then(data => {
-					multiDayData[date] = data;
-					loadedDates++;
-					setProgress((loadedDates / dates.length) * 100);
-				});
-			});
-
-			Promise.all(loadPromises)
-				.then(() => {
-					// Collect all unique pests across all days
-					const allPests = collectAllPests();
-					setupPestFilter(allPests);
-					
-					// Set current day's data as primary
-					allGreenhouseResults = multiDayData[currentDate] || {};
-					dateCache.set(currentDate, allGreenhouseResults);
-					
-					setProgress(100);
-					setTimeout(hideLoader, 350);
-					renderAllGreenhousesTable();
-				})
-				.catch(err => {
-					if (err.name === "AbortError") return;
-					console.error("Error loading multi-day data:", err);
+			fetchRecentScoutingDates().then(dates => {
+				availableDates = dates;
+				if (!dates.length) {
 					hideLoader();
 					showEmptyState();
+					return;
+				}
+
+				let loadedDates = 0;
+				const loadPromises = dates.map(date => {
+					return loadSingleDayData(date).then(data => {
+						multiDayData[date] = data;
+						loadedDates++;
+						setProgress((loadedDates / dates.length) * 100);
+					});
 				});
+
+				Promise.all(loadPromises)
+					.then(() => {
+						const allPests = collectAllPests();
+						populatePestsDropdown(allPests);
+
+						// Primary view = most recent scouting date (≤ picked date)
+						primaryDate = dates[0];
+						allGreenhouseResults = multiDayData[primaryDate] || {};
+						dateCache.set(primaryDate, allGreenhouseResults);
+
+						setProgress(100);
+						setTimeout(hideLoader, 350);
+						renderAllGreenhousesTable();
+					})
+					.catch(err => {
+						if (err.name === "AbortError") return;
+						console.error("Error loading multi-day data:", err);
+						hideLoader();
+						showEmptyState();
+					});
+			});
 		}
 
 		// ── Load data for a single day ──
@@ -1355,12 +1407,12 @@
 		function renderAllGreenhousesTable() {
 			const wrapper = document.getElementById("all-gh-table-wrapper");
 
-			// Filter greenhouses
+			// Filter greenhouses (empty Set ⇒ "All")
 			let greenhouses = [];
 			Object.keys(allGreenhouseResults).forEach(ghName => {
 				const d = allGreenhouseResults[ghName];
-				if (currentFarmFilter !== "__all__" && d._farmName !== currentFarmFilter) return;
-				if (currentGHFilter !== "__all__" && d._ghName !== currentGHFilter) return;
+				if (selectedFarms.size && !selectedFarms.has(d._farmName)) return;
+				if (selectedGreenhouses.size && !selectedGreenhouses.has(d._ghName)) return;
 				greenhouses.push(d);
 			});
 
@@ -1380,7 +1432,7 @@
 					CATEGORIES.forEach(cat => {
 						const items = entry[cat.key] || [];
 						items.forEach(item => {
-							if (currentPestFilter !== "__all__" && item.name !== currentPestFilter) return;
+							if (selectedPests.size && !selectedPests.has(item.name)) return;
 							if (!obsMap[item.name]) {
 								let color = "#999999";
 								const typeData = ghData.observation_types && ghData.observation_types[cat.type];
@@ -1421,7 +1473,7 @@
 
 			observations.forEach(obs => {
 				const th = document.createElement("th");
-				th.innerHTML = `${obs.name} <span class="multi-day-indicator">(3-day view)</span>`;
+				th.textContent = obs.name;
 				headerRow.appendChild(th);
 			});
 
@@ -1441,7 +1493,7 @@
 				const tdLabel = document.createElement("td");
 				tdLabel.className = "td-gh-label";
 				tdLabel.innerHTML =
-					'<div class="td-gh-date">' + escapeHtml(currentDate) + '</div>' +
+					'<div class="td-gh-date">' + escapeHtml(primaryDate) + '</div>' +
 					'<div class="td-gh-name">' + escapeHtml(ghLabel) + '</div>';
 				tr.appendChild(tdLabel);
 
@@ -1469,9 +1521,9 @@
 
 		// ── Build multi-day mini card ──
 		// Per day we keep a zone-name keyed map → {count, stages:[{stage,count}]}
-		// so the upright plot renders one cell per zone (stage glyph included)
-		// while geojson positions each cell along its bed-row so aisle gaps and
-		// irregular footprints surface naturally.
+		// fed straight into buildUprightPlot, which renders the greenhouse
+		// floor plan from raw_geojson (same algorithm as the observations_map
+		// modal — gray polyline for empty zones, coloured for observed).
 		function buildMultiDayMiniCard(ghData, ghLabel, obs, ghName) {
 			const bedCount = ghData.bed_count || 0;
 			const zoneCount = ghData.zone_count || 0;
@@ -1540,7 +1592,7 @@
 			head.className = "mini-card-head";
 			head.innerHTML = 
 				'<span class="mini-card-gh">' + escapeHtml(ghLabel) + '</span>' +
-				'<span class="mini-card-date">' + escapeHtml(currentDate) + '</span>';
+				'<span class="mini-card-date">' + escapeHtml(primaryDate) + '</span>';
 			card.appendChild(head);
 
 			// Observation name
@@ -1561,9 +1613,9 @@
 			stagesMeta.forEach(s => { stagesMap[s.stage] = s; });
 
 			const prevSet = {};
-			availableDates.filter(d => d !== currentDate).forEach(date => {
+			availableDates.filter(d => d !== primaryDate).forEach(date => {
 				Object.keys(dayMatrices[date] || {}).forEach(zoneName => {
-					if (!(dayMatrices[currentDate] && dayMatrices[currentDate][zoneName])) {
+					if (!(dayMatrices[primaryDate] && dayMatrices[primaryDate][zoneName])) {
 						prevSet[zoneName] = true;
 					}
 				});
@@ -1571,7 +1623,7 @@
 
 			const plot = buildUprightPlot({
 				geojson: ghData.zone_geojson || [],
-				today: dayMatrices[currentDate] || {},
+				today: dayMatrices[primaryDate] || {},
 				prev: prevSet,
 				maxCount: maxCountAllDays,
 				color: obs.color,
@@ -1843,39 +1895,53 @@
 				}
 			}
 
-			// Layer 2 — coloured zone polylines (one per ring per zone)
+			// Layer 2 — coloured zone polylines (one per ring per zone).
+			// Mirrors observations_map: every zone is drawn so the greenhouse
+			// silhouette is always visible. Today → full colour, prior-day →
+			// dashed colour, empty → faint gray rail.
+			const EMPTY_STROKE = "#cbd5e1";
 			for (const z of projected) {
 				const obs = today[z.name];
 				const cnt = obs ? obs.count : 0;
 				const isPrev = !obs && prev[z.name];
-				if (cnt <= 0 && !isPrev) continue; // empty → only baseline shows
-				let opacity;
+
+				let strokeColor, opacity, dashArray;
 				if (cnt > 0) {
 					const ratio = Math.min(1, cnt / Math.max(maxCount, 1));
-					opacity = 0.55 + ratio * 0.45;
+					strokeColor = color;
+					opacity = 0.7 + ratio * 0.3;
+					dashArray = null;
+				} else if (isPrev) {
+					strokeColor = color;
+					opacity = 0.32;
+					dashArray = (bedThickness * 1.2).toFixed(1) + "," + (bedThickness * 0.9).toFixed(1);
 				} else {
-					opacity = 0.22;
+					strokeColor = EMPTY_STROKE;
+					opacity = 0.55;
+					dashArray = null;
 				}
-				let titleSuffix;
+
+				let titleSuffix = "";
 				if (cnt > 0) {
 					titleSuffix = " · " + cnt + (
 						obs.stages && obs.stages.length
 							? " · " + obs.stages.map(s => s.stage + "(" + s.count + ")").join(", ")
 							: ""
 					);
-				} else {
+				} else if (isPrev) {
 					titleSuffix = " · prior-day data";
 				}
+
 				for (const ring of z.rings) {
 					if (ring.length < 2) continue;
 					const pts = ring.map(p => toSvg(p).join(',')).join(' ');
 					const pl = document.createElementNS(SVG_NS, "polyline");
 					pl.setAttribute("class", "gh-zone");
 					pl.setAttribute("points", pts);
-					pl.setAttribute("stroke", color);
+					pl.setAttribute("stroke", strokeColor);
 					pl.setAttribute("stroke-width", bedThickness.toFixed(2));
 					pl.setAttribute("stroke-opacity", opacity.toFixed(2));
-					if (isPrev) pl.setAttribute("stroke-dasharray", (bedThickness * 1.2).toFixed(1) + "," + (bedThickness * 0.9).toFixed(1));
+					if (dashArray) pl.setAttribute("stroke-dasharray", dashArray);
 					const title = document.createElementNS(SVG_NS, "title");
 					title.textContent = z.name + titleSuffix;
 					pl.appendChild(title);
@@ -1965,7 +2031,7 @@
 				daySection.className = "day-section";
 
 				const dayHeader = document.createElement("h4");
-				dayHeader.textContent = date + (date === currentDate ? " (selected)" : "");
+				dayHeader.textContent = date + (date === primaryDate ? " (latest)" : "");
 				daySection.appendChild(dayHeader);
 
 				const dayMap = dayMatrices[date] || {};
@@ -2019,44 +2085,10 @@
 			if (e.target === modal) modal.classList.add("hidden");
 		});
 
-		// ── Farm filter ──
-		function setupFarmFilter() {
-			const filterContainer = document.getElementById("farm-filter");
-			filterContainer.innerHTML = "";
-
-			// All Farms button
-			const allBtn = document.createElement("button");
-			allBtn.className = "farm-btn" + (currentFarmFilter === "__all__" ? " active" : "");
-			allBtn.textContent = "All Farms";
-			allBtn.addEventListener("click", () => {
-				document.querySelectorAll(".farm-btn").forEach(btn => btn.classList.remove("active"));
-				allBtn.classList.add("active");
-				currentFarmFilter = "__all__";
-				renderAllGreenhousesTable();
-			});
-			filterContainer.appendChild(allBtn);
-
-			farmsData.forEach(farm => {
-				const button = document.createElement("button");
-				button.className = "farm-btn" + (farm.name === currentFarmFilter ? " active" : "");
-				button.textContent = farm.name;
-
-				button.addEventListener("click", () => {
-					document.querySelectorAll(".farm-btn").forEach(btn => btn.classList.remove("active"));
-					button.classList.add("active");
-					currentFarmFilter = farm.name;
-					renderAllGreenhousesTable();
-				});
-
-				filterContainer.appendChild(button);
-			});
-		}
-
 		// ── Date change ──
 		document.getElementById("scout-date-picker").addEventListener("change", (e) => {
 			currentDate = e.target.value;
 			abortAllRequests();
-			availableDates = getDateRange();
 			loadMultiDayData();
 		});
 
@@ -2084,7 +2116,10 @@
 		}
 
 		// ── Init ──
-		document.addEventListener("DOMContentLoaded", initialize);
+		document.addEventListener("DOMContentLoaded", () => {
+			bindDropdowns();
+			initialize();
+		});
 	</script>
 </div>
 {% endblock %}

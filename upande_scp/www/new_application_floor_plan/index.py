@@ -60,7 +60,7 @@ def _build_warehouses():
     allowed_lower = tuple(f.lower() for f in allowed)
     if not allowed_lower:
         return []
-    warehouses = frappe.db.get_list(
+    warehouses = frappe.get_all(
         "Warehouse",
         filters={"warehouse_type": "Greenhouse"},
         fields=["name", "custom_farm"],

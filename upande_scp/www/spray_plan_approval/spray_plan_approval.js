@@ -35,6 +35,7 @@ var _checked      = new Set();   // Checked WO names
 var _statusFilter = "pending";   // "pending" | "forwarded" | "all"
 var _scoutCache   = {};          // gh → scouting data
 var _allQrLabels  = [];          // Accumulated QR labels from approval run
+var _busy         = false;       // true while an approve/stop run is in flight
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", function () {
@@ -442,8 +443,8 @@ function _syncSelectAll() {
 function _updateSelectionUI() {
   var count = _checked.size;
   document.getElementById("spa-sel-count").textContent = count;
-  document.getElementById("btn-approve").disabled = count === 0;
-  document.getElementById("btn-stop").disabled    = count === 0;
+  document.getElementById("btn-approve").disabled = _busy || count === 0;
+  document.getElementById("btn-stop").disabled    = _busy || count === 0;
   if (count === 0) _dismissStopConfirm();
 }
 
@@ -490,13 +491,25 @@ function _dismissStopConfirm() {
 
 function _onConfirmStop() {
   _dismissStopConfirm();
+  if (_busy) return;
   var selected = Array.from(_checked);
-  if (selected.length) _runStop(selected);
+  if (!selected.length) return;
+  _setBusy(true);
+  _runStop(selected);
 }
 
 function _onApprove() {
+  if (_busy) return;
   var selected = Array.from(_checked);
-  if (selected.length) _runApproval(selected);
+  if (!selected.length) return;
+  _setBusy(true);
+  _runApproval(selected);
+}
+
+function _setBusy(busy) {
+  _busy = busy;
+  _updateSelectionUI();
+  document.getElementById("btn-load").disabled = busy;
 }
 
 // ── Approval flow ─────────────────────────────────────────────────────────────
@@ -514,6 +527,7 @@ function _runApproval(woNames) {
       _setProgressTitle("Done — " + okCount + " approved, " + errCount + " failed.", color);
       document.getElementById("btn-pp-close").classList.remove("hidden");
       if (_allQrLabels.length) _showQrSection(_allQrLabels);
+      _setBusy(false);
       // Reload to reflect new forwarded status
       setTimeout(loadWorkOrders, 800);
       return;
@@ -573,6 +587,7 @@ function _runStop(woNames) {
       var color = errCount === 0 ? "#f87171" : errCount === woNames.length ? "#f87171" : "#fbbf24";
       _setProgressTitle("Done — " + okCount + " stopped, " + errCount + " failed.", color);
       document.getElementById("btn-pp-close").classList.remove("hidden");
+      _setBusy(false);
       setTimeout(loadWorkOrders, 800);
       return;
     }

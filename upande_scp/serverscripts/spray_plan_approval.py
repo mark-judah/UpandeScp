@@ -164,6 +164,18 @@ def approve_single_work_order(wo_name):
         safe_filename,
     )
 
+    # Row-lock the WO so the duplicate-SE guard below is atomic with the
+    # subsequent insert. Without this, two concurrent approve calls can
+    # both pass the guard and each create a draft SE — the second one
+    # then fails to submit with "Material Transferred for Manufacturing
+    # cannot be greater than planned quantity".
+    locked = frappe.db.sql(
+        "SELECT name FROM `tabWork Order` WHERE name=%s FOR UPDATE",
+        wo_name,
+    )
+    if not locked:
+        return {"wo": wo_name, "status": "error", "message": "Work order not found."}
+
     try:
         wo_doc = frappe.get_doc("Work Order", wo_name)
     except frappe.DoesNotExistError:
@@ -176,13 +188,13 @@ def approve_single_work_order(wo_name):
             "message": f"Skipped — status is '{wo_doc.status}'.",
         }
 
-    # Guard: draft SE already exists?
+    # Guard: any non-cancelled MTM SE already exists?
     existing = frappe.get_all(
         "Stock Entry",
         filters=[
             ["work_order", "=", wo_name],
             ["purpose",    "=", "Material Transfer for Manufacture"],
-            ["docstatus",  "=", 0],
+            ["docstatus",  "<", 2],
         ],
         fields=["name"],
         limit=1,

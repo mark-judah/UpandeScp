@@ -27,6 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
         chemicalUomCache: {},
         susceptibilityData: [],
         kitWarehouse: "",
+        greenhouseFarm: "",
         selectedTargets: new Set(),
         selectedVarieties: new Set(),
         allTargetOptions: [],
@@ -1536,9 +1537,19 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // Build one table section (chemicals OR fertilizers) and return its HTML
+    const warehouseMatchesFarm = (wh, farm) => {
+        if (!farm) return true;
+        return (wh || "").toLowerCase().includes(farm.toLowerCase());
+    };
+
     const buildStockSection = (balances, warehouses, itemLabel) => {
         const itemNames = Object.keys(balances).sort();
         if (itemNames.length === 0) return "";
+
+        const farm = state.greenhouseFarm;
+        const farmNotice = farm
+            ? `<p class="tw-text-xs tw-text-amber-700 tw-mb-2">Recommended source: <strong>${farm}</strong> chemical store (matches the selected greenhouse's farm). You may pick another store if needed; a ⚠ will flag the mismatch but submission will still go through.</p>`
+            : "";
 
         // Header row: item | warehouse columns... | source | total
         let thead = `<thead>
@@ -1576,16 +1587,23 @@ document.addEventListener("DOMContentLoaded", () => {
             const totalClass = totalStock === 0.0 ? "stock-total stock-total-insufficient" : "stock-total";
             // Escape item name for use in id attribute (spaces → underscores)
             const safeId = itemName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+            const showCaution = !!(cachedWh && farm && !warehouseMatchesFarm(cachedWh, farm));
+            const cautionTitle = farm ? `Selected store is not in ${farm}` : "";
             tbody += `<tr>
                 <td>${itemName}</td>
                 ${whCells}
-                <td><select id="select-wh-${safeId}" class="form-select" data-item-code="${itemName}" onchange="handleWarehouseChange(this)">${selectOpts}</select></td>
+                <td>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <select id="select-wh-${safeId}" class="form-select" data-item-code="${itemName}" onchange="handleWarehouseChange(this)" style="flex:1;">${selectOpts}</select>
+                        <span id="caution-${safeId}" class="farm-mismatch-caution" title="${cautionTitle}" style="display:${showCaution ? 'inline-flex' : 'none'};color:#d97706;font-size:16px;line-height:1;">⚠</span>
+                    </div>
+                </td>
                 <td class="tw-text-center ${totalClass}">${totalStock.toFixed(2)}</td>
             </tr>`;
         });
         tbody += "</tbody>";
 
-        return `<table class="stock-table">${thead}${tbody}</table>`;
+        return `${farmNotice}<table class="stock-table">${thead}${tbody}</table>`;
     };
 
     const renderStockTable = (balances, allWarehouses) => {
@@ -2196,11 +2214,23 @@ document.addEventListener("DOMContentLoaded", () => {
         const itemCode = element.getAttribute("data-item-code");
         const warehouse = element.value;
         if (state.sourceWarehouseCache[itemCode]) { state.sourceWarehouseCache[itemCode].source_warehouse = warehouse || null; }
+
+        const safeId = element.id.replace(/^select-wh-/, "");
+        const caution = document.getElementById(`caution-${safeId}`);
+        if (caution) {
+            const farm = state.greenhouseFarm;
+            const mismatch = !!(warehouse && farm && !warehouseMatchesFarm(warehouse, farm));
+            caution.style.display = mismatch ? "inline-flex" : "none";
+            caution.title = farm ? `Selected store is not in ${farm}` : "";
+        }
     };
 
     // ==================== EVENT LISTENERS ====================
     els.greenhouse.addEventListener("change", async (e) => {
         if (e.target.value) {
+            const selectedGh = e.target.options[e.target.selectedIndex];
+            state.greenhouseFarm = selectedGh?.dataset.farm || "";
+            state.sourceWarehouseCache = {};
             els.sprayType.value = "";
             els.kit.value = "";
             state.kitWarehouse = "";
@@ -2443,14 +2473,21 @@ document.addEventListener("DOMContentLoaded", () => {
     // verify everything is correct before the work order is created.
     const showWarehouseConfirmationModal = (chemicals, greenhouse, onConfirm) => {
         const allMapped = chemicals.every(c => c.source_warehouse);
+        const farm = state.greenhouseFarm;
+        const mismatchCount = chemicals.filter(c => c.source_warehouse && farm && !warehouseMatchesFarm(c.source_warehouse, farm)).length;
         const rows = chemicals.map(c => {
             const color = c.source_warehouse ? "#059669" : "#dc2626";
             const label = c.source_warehouse || "<em>Not selected</em>";
+            const mismatch = c.source_warehouse && farm && !warehouseMatchesFarm(c.source_warehouse, farm);
+            const warn = mismatch ? ` <span title="Not in ${farm}" style="color:#d97706;">⚠</span>` : "";
             return `<tr>
                 <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${c.chemical}</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:${color};">${label}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:${color};">${label}${warn}</td>
             </tr>`;
         }).join("");
+        const mismatchNotice = mismatchCount > 0
+            ? `<p style="margin:16px 0 0 0;color:#d97706;font-weight:500;">⚠ ${mismatchCount} item${mismatchCount > 1 ? "s use" : " uses"} a store outside <strong>${farm}</strong>. You can still proceed if intentional.</p>`
+            : "";
 
         const overlay = document.createElement("div");
         overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;";
@@ -2474,6 +2511,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <tbody>${rows}</tbody>
                     </table>
                     ${!allMapped ? '<p style="margin:16px 0 0 0;color:#dc2626;font-weight:500;">Some items have no source warehouse selected. Go back and select warehouses before proceeding.</p>' : ""}
+                    ${mismatchNotice}
                 </div>
                 <div style="padding:20px;border-top:1px solid #e5e7eb;display:flex;justify-content:flex-end;gap:10px;">
                     <button id="wh-modal-cancel" style="padding:10px 20px;border-radius:6px;border:none;background:#f3f4f6;color:#374151;font-size:14px;cursor:pointer;">Cancel</button>

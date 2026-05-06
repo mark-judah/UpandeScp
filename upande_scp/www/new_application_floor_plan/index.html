@@ -46,7 +46,7 @@
             {% if warehouses_list %}
             <option value="">Select greenhouse</option>
             {% for warehouse in warehouses_list %}
-            <option value="{{ warehouse.name }}">{{ warehouse.name }}</option>
+            <option value="{{ warehouse.name }}" data-farm="{{ warehouse.custom_farm or '' }}">{{ warehouse.name }}</option>
             {% endfor %}
             {% else %}
             <option value="" disabled selected>No farms configured — open Spray Plan Settings</option>

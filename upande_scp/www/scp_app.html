@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SCP App</title>
+    <link rel="stylesheet" href="/assets/upande_scp/dist/scp.css" />
+    <script>
+        window.__SCP__ = {
+            csrf_token: "{{ csrf_token }}",
+            user: "{{ user }}",
+            bootstrap: {{ bootstrap_json | safe }}
+        };
+    </script>
+</head>
+<body>
+    <div id="scp-root"></div>
+    <script type="module" src="/assets/upande_scp/dist/scp.js"></script>
+</body>
+</html>

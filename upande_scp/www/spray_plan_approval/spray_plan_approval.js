@@ -509,7 +509,6 @@ function _onApprove() {
 function _setBusy(busy) {
   _busy = busy;
   _updateSelectionUI();
-  document.getElementById("btn-load").disabled = busy;
 }
 
 // ── Approval flow ─────────────────────────────────────────────────────────────

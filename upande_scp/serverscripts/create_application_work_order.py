@@ -141,7 +141,7 @@ def createApplicationWorkOrder():
         team_str = format_spray_team(raw_data.get("custom_spray_team"))
 
         # -------------------------------------------------- 8. Create Work Order
-        wo = frappe.get_doc({
+        wo_data = {
             "doctype": "Work Order",
             "production_item": production_item,
             "bom_no": bom_to_use,
@@ -164,8 +164,15 @@ def createApplicationWorkOrder():
             "custom_area": area_ha,
             "custom_spray_team": team_str,
             "custom_scheduled_application_time": scheduled_application_time,
-            "required_items": required_items
-        })
+            "required_items": required_items,
+        }
+        # Mirror the user-picked scheduled time into the native
+        # planned_start_date so ERPNext's stock-entry / scheduling logic
+        # uses the same date the operator sees on the form.
+        if scheduled_application_time:
+            wo_data["planned_start_date"] = scheduled_application_time
+
+        wo = frappe.get_doc(wo_data)
         wo.insert(ignore_permissions=True)
 
         # Fallback-mirror planned_start_date into custom_scheduled_application_time

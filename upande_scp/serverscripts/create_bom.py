@@ -1,5 +1,32 @@
-import frappe 
+import frappe
 import json
+
+from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
+    get_allowed_farms,
+)
+
+
+def _resolve_bom_farm(data):
+    """Pick the farm to attach to a new BOM.
+
+    Priority: an explicit ``custom_farm`` from the caller, then the
+    greenhouse warehouse's ``custom_farm``, then the first allowed farm
+    from Spray Plan Settings. Returns ``None`` if nothing resolves so the
+    BOM is created without a farm rather than with a stale default.
+    """
+    farm = (data.get("custom_farm") or "").strip()
+    if farm:
+        return farm
+
+    greenhouse = (data.get("custom_greenhouse") or "").strip()
+    if greenhouse:
+        gh_farm = frappe.db.get_value("Warehouse", greenhouse, "custom_farm")
+        if gh_farm:
+            return gh_farm
+
+    allowed = get_allowed_farms()
+    return allowed[0] if allowed else None
+
 
 @frappe.whitelist()
 def createBOM():
@@ -54,9 +81,11 @@ def createBOM():
         # === CREATE BOM ===
         bom_doc = frappe.new_doc("BOM")
         bom_doc.item = bom_item_name
-        bom_doc.custom_item_group="Chemical Mix"
+        bom_doc.custom_item_group = "Chemical Mix"
         bom_doc.company = "Karen Roses"
-        bom_doc.custom_farm = "Chepsito"
+        bom_farm = _resolve_bom_farm(data)
+        if bom_farm:
+            bom_doc.custom_farm = bom_farm
         bom_doc.custom_business_unit = "Roses"
         bom_doc.uom = "Tank Mix (1000L)"
         bom_doc.quantity = 1

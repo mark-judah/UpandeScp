@@ -243,3 +243,72 @@ def getRecentScoutingDates(date, limit=3):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Recent Scouting Dates Error")
         frappe.throw(_("Error fetching recent scouting dates: {0}").format(str(e)))
+
+
+@frappe.whitelist()
+def getRecentScoutingDatesPerGreenhouse(date, limit=3):
+    """For each recently-active greenhouse, its own last `limit` scouting dates.
+
+    "Recently active" = scouted on one of the last `limit` global scouting
+    dates ≤ `date`. Per-greenhouse dates may extend further back: a house last
+    scouted Mon, Wed, and last Fri shows those three — not the global Wed/Tue/Mon.
+    """
+    try:
+        global_dates = frappe.db.sql(
+            """
+            SELECT DISTINCT date_of_capture
+            FROM `tabScouting Entry`
+            WHERE date_of_capture <= %s
+            ORDER BY date_of_capture DESC
+            LIMIT %s
+            """,
+            (date, int(limit)),
+            as_dict=True,
+        )
+        if not global_dates:
+            return {"greenhouses": {}}
+
+        date_list = [r["date_of_capture"] for r in global_dates]
+
+        gh_rows = frappe.db.sql(
+            """
+            SELECT DISTINCT greenhouse
+            FROM `tabScouting Entry`
+            WHERE date_of_capture IN %(dates)s
+              AND greenhouse IS NOT NULL AND greenhouse != ''
+            """,
+            {"dates": tuple(date_list)},
+            as_dict=True,
+        )
+        greenhouses = [r["greenhouse"] for r in gh_rows]
+        if not greenhouses:
+            return {"greenhouses": {}}
+
+        rows = frappe.db.sql(
+            """
+            SELECT DISTINCT greenhouse, date_of_capture
+            FROM `tabScouting Entry`
+            WHERE date_of_capture <= %(date)s
+              AND greenhouse IN %(ghs)s
+            ORDER BY greenhouse ASC, date_of_capture DESC
+            """,
+            {"date": date, "ghs": tuple(greenhouses)},
+            as_dict=True,
+        )
+
+        per_gh = {}
+        cap = int(limit)
+        for r in rows:
+            gh = r["greenhouse"]
+            bucket = per_gh.setdefault(gh, [])
+            if len(bucket) < cap:
+                bucket.append(str(r["date_of_capture"]))
+        return {"greenhouses": per_gh}
+    except Exception as e:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "Get Recent Scouting Dates Per Greenhouse Error",
+        )
+        frappe.throw(
+            _("Error fetching per-greenhouse scouting dates: {0}").format(str(e))
+        )

@@ -1547,8 +1547,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (itemNames.length === 0) return "";
 
         const farm = state.greenhouseFarm;
+        const sourceLabel = itemLabel === "Fertilizer" ? "fertilizer unit" : "chemical store";
         const farmNotice = farm
-            ? `<p class="tw-text-xs tw-text-amber-700 tw-mb-2">Recommended source: <strong>${farm}</strong> chemical store (matches the selected greenhouse's farm). You may pick another store if needed; a ⚠ will flag the mismatch but submission will still go through.</p>`
+            ? `<p class="tw-text-xs tw-text-amber-700 tw-mb-2">Recommended source: <strong>${farm}</strong> ${sourceLabel} (matches the selected greenhouse's farm). You may pick another store if needed; a ⚠ will flag the mismatch but submission will still go through.</p>`
             : "";
 
         // Header row: item | warehouse columns... | source | total
@@ -1606,11 +1607,19 @@ document.addEventListener("DOMContentLoaded", () => {
         return `${farmNotice}<table class="stock-table">${thead}${tbody}</table>`;
     };
 
-    const renderStockTable = (balances, allWarehouses) => {
+    const renderStockSections = (sections) => {
         els.stockBalancesContainer.classList.remove("tw-hidden");
-        const html = buildStockSection(balances, allWarehouses, "Chemical");
-        els.stockTableWrapper.innerHTML = html ||
-            `<table class="stock-table"><tbody><tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data available</td></tr></tbody></table>`;
+        const parts = sections
+            .filter(({ balances, warehouses }) =>
+                balances && Object.keys(balances).length && warehouses && warehouses.length,
+            )
+            .map(({ balances, warehouses, label }) => {
+                const heading = `<h4 class="tw-text-sm tw-font-semibold tw-mt-3 tw-mb-1">${label} Stock</h4>`;
+                return heading + buildStockSection(balances, warehouses, label);
+            });
+        els.stockTableWrapper.innerHTML = parts.length
+            ? parts.join("")
+            : `<table class="stock-table"><tbody><tr><td colspan="10" class="tw-text-center tw-py-6 tw-text-gray-500">No stock data available</td></tr></tbody></table>`;
     };
 
     const createBomChemicalRow = (itemName = "", rate = "", uom = "") => {
@@ -1704,7 +1713,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const invalidChemicals = chemicals.filter(c => !c.custom_application_rate || c.custom_application_rate <= 0);
         if (invalidChemicals.length > 0) { showToast("All chemicals must have a valid rate", "error"); return; }
 
-        const bomData = { item: itemName, custom_water_ph: waterPh, custom_water_hardness: waterHardness, items: chemicals };
+        const bomData = {
+            item: itemName,
+            custom_water_ph: waterPh,
+            custom_water_hardness: waterHardness,
+            items: chemicals,
+            custom_greenhouse: els.greenhouse.value || "",
+            custom_farm: state.greenhouseFarm || "",
+        };
         showLoader();
         try {
             const response = await fetch('/api/method/upande_scp.serverscripts.create_bom.createBOM', {
@@ -1773,12 +1789,22 @@ document.addEventListener("DOMContentLoaded", () => {
             const r = await response.json();
             const data = r.message || r.data;
             if (data) {
-                const stockData = data.stock_balances;
                 if (data.item_uom_map) { state.chemicalUomCache = { ...state.chemicalUomCache, ...data.item_uom_map }; refreshRowUoms(); }
-                if (stockData && Object.keys(stockData).length > 0) {
-                    const firstItem = Object.keys(stockData)[0];
-                    const allWarehouses = Object.keys(stockData[firstItem]);
-                    renderStockTable(stockData, allWarehouses);
+                const sections = [
+                    {
+                        label: "Chemical",
+                        balances: data.chemical_balances || {},
+                        warehouses: data.chemical_warehouses || [],
+                    },
+                    {
+                        label: "Fertilizer",
+                        balances: data.fertilizer_balances || {},
+                        warehouses: data.fertilizer_warehouses || [],
+                    },
+                ];
+                const hasAny = sections.some((s) => Object.keys(s.balances).length && s.warehouses.length);
+                if (hasAny) {
+                    renderStockSections(sections);
                 } else { setStockMessage("No stock data found"); }
             } else { setStockMessage("No stock data found"); }
         } catch (error) {

@@ -917,8 +917,9 @@
 		let allPestsList = []; // [{name, category, catKey, color}]
 
 		// Multi-day data storage (3 days)
-		let multiDayData = {}; // { 'YYYY-MM-DD': { greenhouseName: data } }
-		let availableDates = [];
+		let multiDayData = {}; // { 'YYYY-MM-DD': { greenhouseName: data } } — sparse: only (date, gh) pairs we requested
+		let availableDates = []; // union of all per-greenhouse dates, sorted desc
+		let perGreenhouseDates = {}; // { ghName: [d1, d2, d3] } — each gh's own last 3 scouting dates
 
 		// ── Abort + cache ──
 		const dateCache = new Map();
@@ -954,11 +955,12 @@
 			document.getElementById("map-loader").style.display = "none";
 		}
 
-		// ── Last 3 dates that actually had scouting (≤ currentDate) ──
-		// Calendar gaps (weekends, downtime) collapse instead of showing as
-		// empty 3-day cards.
-		function fetchRecentScoutingDates() {
-			return fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getRecentScoutingDates", {
+		// ── Per-greenhouse last 3 scouting dates (≤ currentDate) ──
+		// Each greenhouse's columns line up with days that greenhouse was
+		// actually scouted — a house scouted Mon, Wed, last Fri shows those
+		// three, not the global Wed/Tue/Mon.
+		function fetchPerGreenhouseDates() {
+			return fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getRecentScoutingDatesPerGreenhouse", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -967,10 +969,10 @@
 				body: JSON.stringify({ date: currentDate, limit: 3 }),
 			})
 				.then(r => r.ok ? r.json() : Promise.reject(r))
-				.then(r => (r.message && r.message.dates) || [])
+				.then(r => (r.message && r.message.greenhouses) || {})
 				.catch(err => {
-					console.error("Error fetching recent scouting dates:", err);
-					return [];
+					console.error("Error fetching per-greenhouse scouting dates:", err);
+					return {};
 				});
 		}
 
@@ -1217,38 +1219,71 @@
 			});
 		}
 
-		// ── Load data for the last 3 actual scouting dates ──
+		// ── Load data for each greenhouse's own last 3 scouting dates ──
 		function loadMultiDayData() {
 			abortAllRequests();
 			showLoader();
 			multiDayData = {};
+			perGreenhouseDates = {};
+			availableDates = [];
 			setProgress(0);
 
-			fetchRecentScoutingDates().then(dates => {
-				availableDates = dates;
-				if (!dates.length) {
+			fetchPerGreenhouseDates().then(perGh => {
+				perGreenhouseDates = perGh;
+				const ghNames = Object.keys(perGh);
+				if (!ghNames.length) {
 					hideLoader();
 					showEmptyState();
 					return;
 				}
 
-				let loadedDates = 0;
-				const loadPromises = dates.map(date => {
-					return loadSingleDayData(date).then(data => {
-						multiDayData[date] = data;
-						loadedDates++;
-						setProgress((loadedDates / dates.length) * 100);
+				// Build (gh, date) work list and the sorted union of all dates
+				const dateSet = new Set();
+				const pairs = [];
+				ghNames.forEach(gh => {
+					(perGh[gh] || []).forEach(date => {
+						dateSet.add(date);
+						pairs.push({ gh: gh, date: date });
 					});
 				});
+				availableDates = Array.from(dateSet).sort().reverse();
+				primaryDate = availableDates[0] || currentDate;
+
+				if (!pairs.length) {
+					hideLoader();
+					showEmptyState();
+					return;
+				}
+
+				let completed = 0;
+				const total = pairs.length;
+				const loadPromises = pairs.map(({ gh, date }) =>
+					loadGreenhouseDay(gh, date).then(data => {
+						if (data) {
+							if (!multiDayData[date]) multiDayData[date] = {};
+							multiDayData[date][gh] = data;
+						}
+						completed++;
+						setProgress((completed / total) * 100);
+					})
+				);
 
 				Promise.all(loadPromises)
 					.then(() => {
 						const allPests = collectAllPests();
 						populatePestsDropdown(allPests);
 
-						// Primary view = most recent scouting date (≤ picked date)
-						primaryDate = dates[0];
-						allGreenhouseResults = multiDayData[primaryDate] || {};
+						// Per-greenhouse primary = first loaded date in its own list
+						allGreenhouseResults = {};
+						ghNames.forEach(gh => {
+							const dates = perGh[gh] || [];
+							for (const d of dates) {
+								if (multiDayData[d] && multiDayData[d][gh]) {
+									allGreenhouseResults[gh] = multiDayData[d][gh];
+									break;
+								}
+							}
+						});
 						dateCache.set(primaryDate, allGreenhouseResults);
 
 						setProgress(100);
@@ -1264,79 +1299,36 @@
 			});
 		}
 
-		// ── Load data for a single day ──
-		function loadSingleDayData(date) {
-			return new Promise((resolve, reject) => {
-				const dayResults = {};
-				
-				const dayCtrl = new AbortController();
-				activeAbortControllers.push(dayCtrl);
-
-				fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getAllScoutedGreenhouses", {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-						"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-					},
-					body: JSON.stringify({ date: date }),
-					signal: dayCtrl.signal,
-				})
-				.then(r => r.json())
+		// ── Load heatmap data for one (greenhouse, date) pair ──
+		function loadGreenhouseDay(ghName, date) {
+			const ctrl = new AbortController();
+			activeAbortControllers.push(ctrl);
+			return fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-Frappe-CSRF-Token": "{{ csrf_token }}",
+				},
+				body: JSON.stringify({ date: date, greenhouse: ghName }),
+				signal: ctrl.signal,
+			})
+				.then(r => r.ok ? r.json() : Promise.reject(r))
 				.then(response => {
-					const scoutedList = (response.message && response.message.greenhouses) || [];
-					
-					if (scoutedList.length === 0) {
-						resolve(dayResults);
-						return;
+					const data = response.message;
+					if (data && data.scouting_entries && data.scouting_entries.length > 0) {
+						const info = greenhouseMap[ghName] || {};
+						data._farmName = info.farmName || "";
+						data._warehouseName = info.warehouse_name || ghName;
+						data._ghName = ghName;
+						return data;
 					}
-
-					let completed = 0;
-					const total = scoutedList.length;
-
-					scoutedList.forEach(ghName => {
-						const ghCtrl = new AbortController();
-						activeAbortControllers.push(ghCtrl);
-
-						fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData", {
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json",
-								"X-Frappe-CSRF-Token": "{{ csrf_token }}",
-							},
-							body: JSON.stringify({ date: date, greenhouse: ghName }),
-							signal: ghCtrl.signal,
-						})
-						.then(r => r.ok ? r.json() : Promise.reject(r))
-						.then(response => {
-							const data = response.message;
-							if (data && data.scouting_entries && data.scouting_entries.length > 0) {
-								const info = greenhouseMap[ghName] || {};
-								data._farmName = info.farmName || "";
-								data._warehouseName = info.warehouse_name || ghName;
-								data._ghName = ghName;
-								dayResults[ghName] = data;
-							}
-						})
-						.catch(err => {
-							if (err.name === "AbortError") return;
-							console.error("Error fetching " + ghName + ":", err);
-						})
-						.finally(() => {
-							completed++;
-							if (completed >= total) {
-								resolve(dayResults);
-							}
-						});
-					});
+					return null;
 				})
 				.catch(err => {
-					if (err.name === "AbortError") {
-						resolve(dayResults);
-					} else {
-						reject(err);
-					}
+					if (err.name === "AbortError") return null;
+					console.error("Error fetching " + ghName + " " + date + ":", err);
+					return null;
 				});
-			});
 		}
 
 		// ── Collect all unique pests across all days ──
@@ -1489,11 +1481,13 @@
 
 				const tr = document.createElement("tr");
 
-				// Row label
+				// Row label — date is this greenhouse's own most-recent scouting day
+				const ghDates = perGreenhouseDates[ghName] || [];
+				const ghPrimary = ghDates[0] || primaryDate;
 				const tdLabel = document.createElement("td");
 				tdLabel.className = "td-gh-label";
 				tdLabel.innerHTML =
-					'<div class="td-gh-date">' + escapeHtml(primaryDate) + '</div>' +
+					'<div class="td-gh-date">' + escapeHtml(ghPrimary) + '</div>' +
 					'<div class="td-gh-name">' + escapeHtml(ghLabel) + '</div>';
 				tr.appendChild(tdLabel);
 
@@ -1532,7 +1526,11 @@
 			let maxCountAllDays = 0;
 			const stageBreakdown = {};
 
-			availableDates.forEach(date => {
+			// This greenhouse's own last 3 scouting dates (most-recent first)
+			const ghDates = perGreenhouseDates[ghName] || [];
+			const ghPrimary = ghDates[0];
+
+			ghDates.forEach(date => {
 				const dayMap = {};
 				const dayData = multiDayData[date] && multiDayData[date][ghName];
 
@@ -1583,16 +1581,18 @@
 					ghData.observation_types,
 					ghName,
 					ghData.zone_geojson || [],
-					stagesMap
+					stagesMap,
+					ghDates,
+					ghPrimary
 				);
 			});
 
 			// Header
 			const head = document.createElement("div");
 			head.className = "mini-card-head";
-			head.innerHTML = 
+			head.innerHTML =
 				'<span class="mini-card-gh">' + escapeHtml(ghLabel) + '</span>' +
-				'<span class="mini-card-date">' + escapeHtml(primaryDate) + '</span>';
+				'<span class="mini-card-date">' + escapeHtml(ghPrimary || "") + '</span>';
 			card.appendChild(head);
 
 			// Observation name
@@ -1613,9 +1613,9 @@
 			stagesMeta.forEach(s => { stagesMap[s.stage] = s; });
 
 			const prevSet = {};
-			availableDates.filter(d => d !== primaryDate).forEach(date => {
+			ghDates.filter(d => d !== ghPrimary).forEach(date => {
 				Object.keys(dayMatrices[date] || {}).forEach(zoneName => {
-					if (!(dayMatrices[primaryDate] && dayMatrices[primaryDate][zoneName])) {
+					if (!(dayMatrices[ghPrimary] && dayMatrices[ghPrimary][zoneName])) {
 						prevSet[zoneName] = true;
 					}
 				});
@@ -1623,7 +1623,7 @@
 
 			const plot = buildUprightPlot({
 				geojson: ghData.zone_geojson || [],
-				today: dayMatrices[primaryDate] || {},
+				today: dayMatrices[ghPrimary] || {},
 				prev: prevSet,
 				maxCount: maxCountAllDays,
 				color: obs.color,
@@ -1633,7 +1633,7 @@
 
 			const dayIndicator = document.createElement("div");
 			dayIndicator.className = "day-indicator";
-			availableDates.forEach((date, index) => {
+			ghDates.forEach((date, index) => {
 				const hasData = Object.keys(dayMatrices[date] || {}).length > 0;
 				const dot = document.createElement("span");
 				dot.className = "day-dot";
@@ -1641,7 +1641,7 @@
 				dot.title = date + (hasData ? " (data available)" : " (no data)");
 				dayIndicator.appendChild(dot);
 
-				if (index < availableDates.length - 1) {
+				if (index < ghDates.length - 1) {
 					dayIndicator.appendChild(document.createTextNode(" "));
 				}
 			});
@@ -1967,7 +1967,7 @@
 		}
 
 		// ── Open multi-day modal ──
-		function openMultiDayModal(ghLabel, observationName, observationType, color, dayMatrices, maxCount, total, stageBreakdown, bedCount, zoneCount, obsTypes, ghName, geojson, stagesMap) {
+		function openMultiDayModal(ghLabel, observationName, observationType, color, dayMatrices, maxCount, total, stageBreakdown, bedCount, zoneCount, obsTypes, ghName, geojson, stagesMap, dates, primaryForGh) {
 			const modalBody = document.getElementById("modal-body");
 			modalBody.innerHTML = "";
 
@@ -2026,12 +2026,14 @@
 			const allZoneNames = new Set();
 			Object.values(dayMatrices).forEach(m => Object.keys(m || {}).forEach(z => allZoneNames.add(z)));
 
-			availableDates.forEach(date => {
+			const modalDates = (dates && dates.length) ? dates : availableDates;
+			const modalPrimary = primaryForGh || (modalDates[0] || primaryDate);
+			modalDates.forEach(date => {
 				const daySection = document.createElement("div");
 				daySection.className = "day-section";
 
 				const dayHeader = document.createElement("h4");
-				dayHeader.textContent = date + (date === primaryDate ? " (latest)" : "");
+				dayHeader.textContent = date + (date === modalPrimary ? " (latest)" : "");
 				daySection.appendChild(dayHeader);
 
 				const dayMap = dayMatrices[date] || {};

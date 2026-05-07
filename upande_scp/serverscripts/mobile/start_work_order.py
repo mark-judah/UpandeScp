@@ -264,13 +264,14 @@ def create_material_transfer(work_order):
         
         # Mandatory fields
         stock_entry.company = work_order.company
-        
-        # Extract custom_farm from custom_greenhouse (first part before space)
-        if hasattr(work_order, 'custom_greenhouse') and work_order.custom_greenhouse:
-            # Split by space and take the first part
-            # Example: "Chepsito GH 07 - KR" -> "Chepsito"
-            custom_farm = work_order.custom_greenhouse.split()[0]
-            stock_entry.custom_farm = custom_farm
+
+        # Resolve farm from the greenhouse warehouse's custom_farm link so
+        # any farm configured in Spray Plan Settings flows through unchanged.
+        greenhouse = getattr(work_order, "custom_greenhouse", None)
+        if greenhouse:
+            farm = frappe.db.get_value("Warehouse", greenhouse, "custom_farm")
+            if farm:
+                stock_entry.custom_farm = farm
         
         # Stock Entry Type and Work Order fields
         stock_entry.stock_entry_type = "Material Transfer for Manufacture"

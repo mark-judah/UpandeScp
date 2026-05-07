@@ -2,12 +2,12 @@
 send_fcm_weekly_excel_report.py
 ================================
 Generate and email the KEPHIS FCM Weekly Monitoring Excel report.
-Mirrors the format of the official KEPHIS template (originally CHEPSITO).
+Mirrors the format of the official KEPHIS template.
 
 One workbook is produced **per farm**. Farm identity (display name,
 KEPHIS site id, abbreviation) is sourced from the Farm doctype — nothing
-is hard-coded here. Scheduler loops over every farm that has scouting
-data for the year.
+is hard-coded here. The scheduler loops over every farm that has
+scouting data for the year and is enabled in Spray Plan Settings.
 
 Sheets generated
 ----------------
@@ -42,6 +42,9 @@ from upande_scp.serverscripts.scouting_metrics import (
     get_scouting_records_weekly,
     get_weekly_trap_pest_totals_indoor,
 )
+from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
+    get_allowed_farms,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -75,10 +78,13 @@ def _resolve_farm(farm_name):
 
 
 def _farms_with_data(year):
-    """Farms that have at least one scouting entry in ``year``.
+    """Farms that have at least one scouting entry in ``year`` AND are
+    enabled in Spray Plan Settings.
 
     Uses ``Warehouse.custom_farm`` as the authoritative link from a
-    scouting entry's greenhouse to a farm.
+    scouting entry's greenhouse to a farm. When Spray Plan Settings has
+    no allowed farms configured, every farm with scouting data is
+    returned so existing setups keep working.
     """
     rows = frappe.db.sql(
         """
@@ -93,7 +99,11 @@ def _farms_with_data(year):
         (year,),
         as_dict=True,
     )
-    return [r.farm for r in rows]
+    farms = [r.farm for r in rows]
+    allowed = set(get_allowed_farms())
+    if allowed:
+        farms = [f for f in farms if f in allowed]
+    return farms
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +157,7 @@ def _build_workbook_bytes(farm):
         return n // 100 if n >= 100 else 0
 
     def gh_from_warehouse(gh_name):
-        """Extract GH number from 'Chepsito GH 12 - KR' → 12."""
+        """Extract GH number from a warehouse name like 'X GH 12 - KR'."""
         if not gh_name:
             return 0
         m = re.search(r"GH\s+(\d+)", str(gh_name))

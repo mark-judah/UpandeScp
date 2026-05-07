@@ -29,7 +29,7 @@
    "label": "FCM KEPHIS — Weekly Excel Report"
   },
   {
-   "description": "Comma-separated list of email addresses that receive the FCM KEPHIS weekly Excel report (CHEPSITO KE0300809046). Leave blank to use the same list as above.",
+   "description": "Comma-separated list of email addresses that receive the FCM KEPHIS weekly Excel report. One workbook is sent per farm with scouting data. Leave blank to use the same list as above.",
    "fieldname": "fcm_excel_report_recipients",
    "fieldtype": "Small Text",
    "label": "FCM Excel Report Recipients"

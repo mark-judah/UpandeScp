@@ -44,7 +44,7 @@ app_license = "mit"
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
-# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -381,7 +381,6 @@ fixtures = [
                     "Refresh Greenhouse Rentry Time",
                     "Hide Start Button On Work Order",
                     "Spray Plan Approval v7",
-                    "Spray Plan Chemical Transfers",
                     "Combined Script"  # to deactivate the script on deployment
                 ]
             ]

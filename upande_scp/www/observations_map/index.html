@@ -678,7 +678,7 @@
 	    }
 
 	    // ── Greenhouse upright-view modal ──
-	    const ghOf = (zoneName) => zoneName.split(' - ')[0];
+	    const ghOf = (zoneName) => zoneName ? zoneName.split(' - ')[0] : '';
 
 	    function pcaAngle(points, latScale) {
 	        // Fallback: principal axis from vertex distribution
@@ -1112,6 +1112,7 @@
 	        const lineMap = {};
 
 	        for (const zone of (data.all_zones_geojson || [])) {
+	            if (!zone.name) continue;
 	            const geo = parseZone(zone);
 	            if (!geo?.features) continue;
 
@@ -1176,9 +1177,11 @@
 	            }),
 	            onEachFeature: (f, layer) => {
 	                const zoneName = f.properties.zone_name;
+	                if (!zoneName) return;
 	                layer.bindTooltip(zoneName, { sticky: true, className: '' });
 	                layer.on('click', () => {
-	                    openGhModal(ghOf(zoneName));
+	                    const gh = ghOf(zoneName);
+	                    if (gh) openGhModal(gh);
 	                });
 	            }
 	        });

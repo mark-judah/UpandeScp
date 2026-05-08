@@ -628,6 +628,10 @@ export interface PlanBootstrap {
     uom?: string;
     quantity?: number;
   }>;
+  /** Names of enabled Spray Team rows — drives the ``custom_spray_team``
+   *  dropdown on the application plan page. Defaults to ``[]`` for
+   *  older bootstrap responses that pre-date the field. */
+  spray_teams?: string[];
 }
 
 export interface BomChemical {
@@ -703,9 +707,43 @@ export async function fetchApplicationPlanBootstrap(): Promise<PlanBootstrap> {
         "upande_scp.serverscripts.scouting_metrics_api.get_application_plan_bootstrap",
         {},
       );
-      return r || { warehouses: [], kits: [], boms: [] };
+      return r || { warehouses: [], kits: [], boms: [], spray_teams: [] };
     } catch {
-      return { warehouses: [], kits: [], boms: [] };
+      return { warehouses: [], kits: [], boms: [], spray_teams: [] };
+    }
+  });
+}
+
+/** Per-bed area data — one row per Bed doctype record, used by the
+ *  ApplicationPlan page to compute the area-to-spray (and water volume)
+ *  reactively from the picked scope. Mirrors the legacy
+ *  ``state.bedData`` shape from ``new_application_floor_plan.js``. */
+export interface BedAreaRow {
+  /** Doctype primary key — looks like "Greenhouse X - Bed 12". */
+  name: string;
+  /** Just the trailing bed identifier (e.g. "12"). */
+  bed: string;
+  unit_type?: string;
+  variety?: string;
+  /** Square metres — divide by 10000 for hectares. */
+  bed__area?: number;
+}
+
+/** Cached fetch of every active bed grouped by greenhouse. Server-side
+ *  the response is cached for hours, so the network cost is paid at
+ *  most once per session. */
+export async function fetchBedsByGreenhouse(): Promise<
+  Record<string, BedAreaRow[]>
+> {
+  return cached("beds_by_gh", async () => {
+    try {
+      const r = await call<Record<string, BedAreaRow[]>>(
+        "upande_scp.serverscripts.scouting_metrics_api.get_beds_by_greenhouse",
+        { active_only: 1 },
+      );
+      return r || {};
+    } catch {
+      return {};
     }
   });
 }

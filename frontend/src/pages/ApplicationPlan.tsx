@@ -44,9 +44,11 @@ import {
   createBom,
   fetchApplicationPlanBootstrap,
   fetchBedsAndZones,
+  fetchBedsByGreenhouse,
   fetchBomDetails,
   fetchZonesByGreenhouse,
   searchChemicalItems,
+  type BedAreaRow,
   type BomChemical,
   type BomDetails,
   type ChemicalItem,
@@ -61,6 +63,12 @@ import {
   useObservationColors,
 } from "@/lib/observation-colors";
 import type { ZoneGeo, ZoneObs } from "./maps/upright-svg";
+
+/** Litres of water per hectare — same constant the legacy
+ *  ``new_application_floor_plan.js`` uses to derive ``custom_water_volume``
+ *  from the area-to-spray. Exported as a named constant so the UI
+ *  caption stays in sync if it ever needs tweaking. */
+const WATER_VOLUME_RATE = 1000;
 
 const SPRAY_TYPES = [
   "Full",
@@ -112,6 +120,7 @@ interface ChemRow extends BomChemical {
 export function ApplicationPlan() {
   const [bootstrap, setBootstrap] = useState<PlanBootstrap | null>(null);
   const [varietyTree, setVarietyTree] = useState<VarietyNode[]>([]);
+  const [bedsByGh, setBedsByGh] = useState<Record<string, BedAreaRow[]>>({});
   const [zonesByGh, setZonesByGh] = useState<Record<string, number>>({});
   const [greenhouse, setGreenhouse] = useState<string>("");
   const [diag, setDiag] = useState<DiagnoseFilters>({
@@ -200,6 +209,7 @@ export function ApplicationPlan() {
     fetchApplicationPlanBootstrap().then(setBootstrap);
     fetchBedsAndZones().then(setVarietyTree);
     fetchZonesByGreenhouse().then(setZonesByGh);
+    fetchBedsByGreenhouse().then(setBedsByGh);
   }, []);
 
   // BOM details loader.

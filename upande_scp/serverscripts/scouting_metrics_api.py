@@ -527,10 +527,13 @@ def get_application_plan_bootstrap():
     """One-shot bootstrap for the React Application Plan page.
 
     Returns:
-        warehouses: greenhouses allowed for spray plans (filtered by Spray
-                    Plan Settings allowed-farms + spray equipment registry).
-        kits:       Spray Equipment Details rows ({kit, warehouse}).
-        boms:       Active Chemical Mix BOMs the planner can pick from.
+        warehouses:   greenhouses allowed for spray plans (filtered by Spray
+                      Plan Settings allowed-farms + spray equipment registry).
+        kits:         Spray Equipment Details rows ({kit, warehouse}).
+        boms:         Active Chemical Mix BOMs the planner can pick from.
+        spray_teams:  Names of enabled Spray Team rows — populates the
+                      ``custom_spray_team`` dropdown in the React plan
+                      page (legacy field on the Application Floor Plan).
     """
     from upande_scp.serverscripts.cache_utils import (
         K_AFP_WAREHOUSES,
@@ -555,6 +558,17 @@ def get_application_plan_bootstrap():
             limit_page_length=0,
         )
 
+    spray_teams = [
+        r.name
+        for r in frappe.get_all(
+            "Spray Team",
+            filters={"enabled": 1},
+            fields=["name"],
+            order_by="name asc",
+            limit_page_length=0,
+        )
+    ]
+
     return {
         "warehouses": get_or_set(K_AFP_WAREHOUSES, _build_warehouses, ttl=TTL_LONG),
         "kits": get_or_set(K_AFP_SPRAY_EQUIPMENT, _build_kits, ttl=TTL_LONG),
@@ -569,6 +583,7 @@ def get_application_plan_bootstrap():
             order_by="modified desc",
             limit_page_length=200,
         ),
+        "spray_teams": spray_teams,
     }
 
 

@@ -239,14 +239,16 @@ export function ApplicationPlan() {
     fetchBedsByGreenhouse().then(setBedsByGh);
   }, []);
 
-  // BOM details loader.
+  // BOM details loader. Note: waterVolume is owned by the area-calc
+  // effect below — we deliberately don't seed it here so the BOM
+  // loader (which runs whenever ``bom`` changes) can't race with the
+  // scope-driven auto-calc and clobber a freshly computed value.
   useEffect(() => {
     if (!bom) {
       setBomDetails(null);
       setChemRows([]);
       setWaterPh("");
       setWaterHardness("");
-      setWaterVolume("");
       return;
     }
     let cancelled = false;
@@ -257,7 +259,6 @@ export function ApplicationPlan() {
         setBomDetails(d);
         setWaterPh(d.custom_water_ph?.toString() || "");
         setWaterHardness(d.custom_water_hardness?.toString() || "");
-        setWaterVolume(d.custom_water_volume?.toString() || "");
         setChemRows(
           d.chemicals.map((c, i) => {
             const balances = c.balances || {};
@@ -381,15 +382,34 @@ export function ApplicationPlan() {
     };
   }, [greenhouse, scope, bedsByGh, selectedVarieties, bedNumbers]);
 
-  // Push the derived numbers into the area + water-volume inputs so the
-  // legacy auto-calc behaviour holds. The BOM may also seed
-  // ``waterVolume`` from its own field — that wins until the user picks
-  // a scope, at which point area drives water volume just like legacy.
+  // Push the derived numbers into the area + water-volume inputs.
+  // Single source of truth — the BOM loader does NOT seed waterVolume
+  // anymore so this effect can't be raced. Priority order:
+  //   1. derived scope-based value if scope is set and bed areas resolve
+  //   2. BOM's ``custom_water_volume`` as a fallback when there's no
+  //      derivable area yet (e.g. user picked the BOM but not the scope)
+  //   3. empty string otherwise
   useEffect(() => {
-    if (!scope) return;
-    setArea(areaHa > 0 ? areaHa.toFixed(4) : "");
-    setWaterVolume(waterVolumeL > 0 ? waterVolumeL.toFixed(2) : "");
-  }, [scope, areaHa, waterVolumeL]);
+    if (scope && areaHa > 0) {
+      setArea(areaHa.toFixed(4));
+      setWaterVolume(waterVolumeL.toFixed(2));
+      return;
+    }
+    if (scope) {
+      // Scope is set but no bed areas resolved yet (still loading, or
+      // greenhouse has no Bed records) — keep the field empty so the
+      // user knows the calc didn't find anything.
+      setArea("");
+      setWaterVolume("");
+      return;
+    }
+    if (bomDetails?.custom_water_volume) {
+      setWaterVolume(String(bomDetails.custom_water_volume));
+    } else {
+      setWaterVolume("");
+    }
+    setArea("");
+  }, [scope, areaHa, waterVolumeL, bomDetails]);
 
   const zonesInGh: ZoneGeo[] = useMemo(() => {
     if (!greenhouse) return [];

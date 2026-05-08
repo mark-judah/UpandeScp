@@ -39,8 +39,7 @@
   {
    "fieldname": "pests_legend_color",
    "fieldtype": "Color",
-   "label": "Pests Legend Color",
-   "read_only": 1
+   "label": "Pests Legend Color"
   },
   {
    "fieldname": "severity",

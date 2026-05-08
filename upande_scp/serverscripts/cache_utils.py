@@ -62,6 +62,11 @@ K_ORCHARD_TREES_PREFIX = "scp:orchard_trees_v1"
 # the farm name (or '__all__' for the unfiltered bundle).
 K_TANKS_VALVES_PREFIX = "scp:tanks_valves_v1"
 K_CROPS_SCOUTED = "scp:crops_scouted_v1"
+# Pest / Plant Disease legend colours (the per-name hex stored on the
+# doctype). Cached separately from the heavy scouting payload so a colour
+# tweak invalidates instantly without rebuilding the per-month entries.
+K_PEST_COLORS = "scouting_dashboard:pest_colors"
+K_DISEASE_COLORS = "scouting_dashboard:disease_colors"
 # Cascading Farm → Section → Block/Greenhouse hierarchy for the scouts map.
 K_FARM_HIERARCHY = "scp:farm_hierarchy_v1"
 # Versioned scouting payload cache. Keys use the prefix + version stamp +
@@ -362,8 +367,8 @@ def build_bed_count_by_gh():
 
 _DOC_INVALIDATIONS = {
     "Employee": ("scp:sm_scout_lookup_v1",),
-    "Pest": (K_OBSERVATION_TYPES,),
-    "Plant Disease": (K_OBSERVATION_TYPES,),
+    "Pest": (K_OBSERVATION_TYPES, K_PEST_COLORS),
+    "Plant Disease": (K_OBSERVATION_TYPES, K_DISEASE_COLORS),
     "Predator": (K_OBSERVATION_TYPES,),
     "Weed": (K_OBSERVATION_TYPES,),
     "Incident": (K_OBSERVATION_TYPES,),

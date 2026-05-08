@@ -11,9 +11,12 @@
  */
 
 const DB_NAME = "upande_scp";
-// v2 — added latitude/longitude fields. Existing stores keep working but
-// rows fetched before the version bump won't have coordinates.
-const DB_VERSION = 2;
+// v3 — force a clean rehydrate so every cached row carries lat/lng. v2
+// added the columns to the IDB schema but pre-existing rows kept their
+// pre-v2 shape and the loaded_months registry blocked refetches; the
+// traps map needs coordinates on every entry, so on upgrade we drop the
+// entries store and clear the loaded_months pointer.
+const DB_VERSION = 3;
 const STORE_ENTRIES = "entries";
 const STORE_META = "meta";
 
@@ -37,8 +40,30 @@ function open(): Promise<IDBDatabase> {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
+      req.onupgradeneeded = (event) => {
         const db = req.result;
+        const oldVersion = (event as IDBVersionChangeEvent).oldVersion || 0;
+
+        // v3: pre-existing rows can lack lat/lng. Drop entries + the
+        // loaded_months pointer so the next page load rehydrates cleanly.
+        if (oldVersion > 0 && oldVersion < 3) {
+          if (db.objectStoreNames.contains(STORE_ENTRIES)) {
+            db.deleteObjectStore(STORE_ENTRIES);
+          }
+          const upgradeTx = req.transaction;
+          if (
+            upgradeTx &&
+            db.objectStoreNames.contains(STORE_META)
+          ) {
+            try {
+              upgradeTx.objectStore(STORE_META).delete("loaded_months");
+              upgradeTx.objectStore(STORE_META).delete("watermark");
+            } catch {
+              // Ignore — the meta keys may not exist yet.
+            }
+          }
+        }
+
         if (!db.objectStoreNames.contains(STORE_ENTRIES)) {
           const s = db.createObjectStore(STORE_ENTRIES, { keyPath: "name" });
           s.createIndex("month", "month", { unique: false });

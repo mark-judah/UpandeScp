@@ -41,6 +41,8 @@ export function normalizeScoutingEntries(raw: RawEntry[]): ScoutingEntry[] {
         owner: row?.owner || "",
         modified_by: row?.modified_by || "",
         scouts_name: row?.scouts_name || row?.scout_name || row?.scout || "",
+        latitude: row?.latitude,
+        longitude: row?.longitude,
         pests_scouting_entry: [],
         diseases_scouting_entry: [],
         trap_scouting_entry: [],
@@ -65,6 +67,8 @@ export function normalizeScoutingEntries(raw: RawEntry[]): ScoutingEntry[] {
         "scouts_name",
         row?.scouts_name || row?.scout_name || row?.scout || "",
       );
+      fill("latitude", row?.latitude);
+      fill("longitude", row?.longitude);
     }
     return byName[key];
   };
@@ -566,7 +570,30 @@ export interface BomChemical {
   amount?: number;
   idx?: number;
   item_group?: string;
+  /** Set by get_bom_details — used to pick the right warehouse list. */
+  is_fertilizer?: boolean;
   balances?: Record<string, number>;
+}
+
+export interface ChemicalItem {
+  item_code: string;
+  item_name?: string;
+  stock_uom?: string;
+  item_group?: string;
+  is_fertilizer?: boolean;
+}
+
+export async function searchChemicalItems(
+  q?: string,
+): Promise<ChemicalItem[]> {
+  try {
+    return await call<ChemicalItem[]>(
+      "upande_scp.serverscripts.scouting_metrics_api.list_chemical_items",
+      { q: q || undefined, limit: 50 },
+    );
+  } catch {
+    return [];
+  }
 }
 
 export interface BomDetails {

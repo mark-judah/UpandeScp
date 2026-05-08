@@ -85,6 +85,12 @@ doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # before_install = "upande_scp.install.before_install"
 # after_install = "upande_scp.install.after_install"
 
+# Run the canonical pest/disease colour seed on every migrate so a fresh
+# install (or a newly added pest doc) gets sensible defaults without manual
+# steps. The seed only fills empty colour fields, so operator-set overrides
+# are preserved.
+after_migrate = ["upande_scp.serverscripts.observation_colors.after_migrate"]
+
 # Uninstallation
 # ------------
 

@@ -367,6 +367,39 @@ def cancel_application_work_order(name):
 
 
 @frappe.whitelist()
+def list_chemical_items(q=None, limit=50):
+    """Search Items the planner can add to a BOM — restricted to chemical /
+    fertilizer item groups so we don't surface every Item in the company."""
+    from upande_scp.serverscripts.get_bom_stock_balances import (
+        _FERTILIZER_GROUP,
+    )
+
+    filters = [
+        ["Item", "disabled", "=", 0],
+        ["Item", "item_group", "in", ["Chemicals", _FERTILIZER_GROUP]],
+    ]
+    if q:
+        filters.append(["Item", "item_name", "like", f"%{q}%"])
+    rows = frappe.get_all(
+        "Item",
+        filters=filters,
+        fields=["name", "item_name", "stock_uom", "item_group"],
+        order_by="item_name asc",
+        limit_page_length=int(limit) or 50,
+    )
+    return [
+        {
+            "item_code": r["name"],
+            "item_name": r["item_name"],
+            "stock_uom": r["stock_uom"],
+            "item_group": r["item_group"],
+            "is_fertilizer": r["item_group"] == _FERTILIZER_GROUP,
+        }
+        for r in rows
+    ]
+
+
+@frappe.whitelist()
 def get_bom_details(name):
     """Single BOM with its exploded chemicals + stock balances per warehouse.
 
@@ -378,9 +411,16 @@ def get_bom_details(name):
     if not name:
         frappe.throw("name is required")
 
+    from upande_scp.serverscripts.get_bom_stock_balances import (
+        _FERTILIZER_GROUP,
+    )
+
     bom = frappe.get_doc("BOM", name)
     chemicals = []
     for it in bom.exploded_items or []:
+        item_group = (
+            frappe.db.get_value("Item", it.item_code, "item_group") or ""
+        )
         chemicals.append({
             "item_code": it.item_code,
             "item_name": it.item_name,
@@ -389,7 +429,11 @@ def get_bom_details(name):
             "rate": it.rate,
             "amount": it.amount,
             "idx": it.idx,
-            "item_group": frappe.db.get_value("Item", it.item_code, "item_group") or "",
+            "item_group": item_group,
+            # Explicit flag so the React picker knows which warehouse list
+            # ("Chemical Store" vs "Fertilizer Store") to show. Source of
+            # truth lives in get_bom_stock_balances._FERTILIZER_GROUP.
+            "is_fertilizer": item_group == _FERTILIZER_GROUP,
         })
 
     # Stock balances for every chemical the BOM explodes into.
@@ -453,29 +497,14 @@ def get_application_plan_bootstrap():
     )
 
     def _build_warehouses():
-        # Mirrors the new_application_floor_plan/index.py filter — Spray Plan
-        # Settings.allowed_farms + warehouses that have spray equipment.
-        try:
-            settings = frappe.get_single("Spray Plan Settings")
-        except frappe.DoesNotExistError:
-            settings = None
-        allowed_farms = (
-            [r.farm for r in (getattr(settings, "allowed_farms", None) or [])]
-            if settings
-            else []
+        # Use the exact same filter as new_application_floor_plan/index.py:
+        # Spray Plan Settings allowed_farms + the GH-name regex + exclude
+        # keywords. Keeps the React greenhouse list aligned with the JS one.
+        from upande_scp.www.new_application_floor_plan.index import (
+            _build_warehouses as _build_afp_warehouses,
         )
-        filters = {"warehouse_type": "Greenhouse", "disabled": 0}
-        rows = frappe.get_all(
-            "Warehouse",
-            filters=filters,
-            fields=["name", "custom_farm"],
-            limit_page_length=0,
-        )
-        if allowed_farms:
-            rows = [
-                r for r in rows if (r.get("custom_farm") or "") in allowed_farms
-            ]
-        return rows
+
+        return _build_afp_warehouses()
 
     def _build_kits():
         return frappe.get_all(

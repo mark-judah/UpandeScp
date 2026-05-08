@@ -3,11 +3,13 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Line,
   LineChart,
   XAxis,
   YAxis,
 } from "recharts";
+import { useObservationColors } from "@/lib/observation-colors";
 import {
   ChartContainer,
   ChartTooltip,
@@ -48,6 +50,7 @@ export function PestsTab({
     section: ALL_FILTER,
     stage: ALL_FILTER,
   });
+  const { pest: pestColor } = useObservationColors();
   const opts = useMemo(() => pestFilterOptions(data), [data]);
   const ranking = useMemo(() => pestRanking(data), [data]);
   const trend = useMemo(
@@ -195,7 +198,11 @@ export function PestsTab({
                       />
                     }
                   />
-                  <Bar dataKey="pct" fill="var(--sd-data-cyan)" radius={[3, 3, 3, 3]} />
+                  <Bar dataKey="pct" radius={[3, 3, 3, 3]}>
+                    {distribution.slice(0, 12).map((row) => (
+                      <Cell key={row.name} fill={pestColor(row.name)} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ChartContainer>
             ) : (
@@ -259,7 +266,14 @@ export function PestsTab({
                       className="grid grid-cols-[1fr_auto] gap-3 items-center px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]"
                     >
                       <div className="min-w-0">
-                        <div className="text-sm font-medium truncate">{r.name}</div>
+                        <div className="text-sm font-medium truncate flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full shrink-0 border"
+                            style={{ background: pestColor(r.name) }}
+                            aria-hidden
+                          />
+                          <span className="truncate">{r.name}</span>
+                        </div>
                         <div className="mt-1.5 h-2 rounded-full overflow-hidden bg-[var(--sd-line)] flex">
                           <div
                             className="h-full bg-[var(--sd-data-red)]"

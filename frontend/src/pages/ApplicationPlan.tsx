@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Loader2, Plus, X, AlertTriangle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, Plus, Trash2, Maximize2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -22,6 +23,14 @@ import { Separator } from "@/components/ui/separator";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { DatePicker } from "@/components/DatePicker";
 import { UprightHeatmap } from "@/components/UprightHeatmap";
+import { Toaster, type ToastItem } from "@/components/Toaster";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -36,13 +45,22 @@ import {
   fetchBedsAndZones,
   fetchBomDetails,
   fetchZonesByGreenhouse,
+  searchChemicalItems,
+  type BomChemical,
   type BomDetails,
+  type ChemicalItem,
   type PlanBootstrap,
   type VarietyNode,
 } from "@/lib/scouting-api";
 import { call } from "@/lib/frappe";
 import { ymd } from "@/lib/utils";
+import {
+  pestColor,
+  diseaseColor,
+  useObservationColors,
+} from "@/lib/observation-colors";
 import type { ZoneGeo, ZoneObs } from "./maps/upright-svg";
+import { useView } from "@/lib/router";
 
 const SPRAY_TYPES = [
   "Full",
@@ -53,32 +71,20 @@ const SPRAY_TYPES = [
   "Outside",
   "Drench",
 ] as const;
-
 const SCOPES = ["Full Greenhouse", "Specific Variety", "Specific Bed(s)"] as const;
+const ALL = "__all__";
 
-const COLOR_POOL = [
-  "#E63946",
-  "#E66BAA",
-  "#E9A23B",
-  "#8466C7",
-  "#3D54B0",
-  "#2BA6E0",
-  "#5BB45D",
-  "#10b981",
-  "#f97316",
-  "#a855f7",
-];
-const PEST_PALETTE: Record<string, string> = {};
+/**
+ * Pick a canonical colour for an observation name. Tries pest first, then
+ * disease — same name can never be both, so the second lookup is a cheap
+ * fallback. Returns the neutral grey if neither knows it.
+ */
 function colorFor(name: string): string {
-  if (!PEST_PALETTE[name]) {
-    PEST_PALETTE[name] =
-      COLOR_POOL[Object.keys(PEST_PALETTE).length % COLOR_POOL.length];
-  }
-  return PEST_PALETTE[name];
+  const p = pestColor(name);
+  if (p && p !== "#9ca3af") return p;
+  return diseaseColor(name);
 }
 
-/** Wider window than 14 days so the "latest scouting" lookup catches real
- *  data even on greenhouses with sporadic visits. */
 function defaultRange(): { from: string; to: string } {
   const today = new Date();
   const from = new Date(today);
@@ -97,50 +103,71 @@ interface DiagnoseFilters {
   section: string;
 }
 
-const ALL = "__all__";
+interface ChemRow extends BomChemical {
+  /** Stable id so React doesn't re-mount unrelated rows when items change. */
+  rowId: string;
+  source?: string;
+}
 
 export function ApplicationPlan() {
+  const [, navigate] = useView();
   const [bootstrap, setBootstrap] = useState<PlanBootstrap | null>(null);
   const [varietyTree, setVarietyTree] = useState<VarietyNode[]>([]);
   const [zonesByGh, setZonesByGh] = useState<Record<string, number>>({});
   const [greenhouse, setGreenhouse] = useState<string>("");
-
   const [diag, setDiag] = useState<DiagnoseFilters>({
     pest: ALL,
     stage: ALL,
     section: ALL,
   });
+  // Subscribe to the live doctype colour map; we don't need its return
+  // value because `colorFor` reads the module-level cache, but mounting
+  // the hook here ensures the diagnose plot redraws after the fetch.
+  useObservationColors();
 
-  // Spray details
+  // Spray + BOM state
   const [sprayDate, setSprayDate] = useState<string>(ymd(new Date()));
   const [sprayType, setSprayType] = useState<string>("");
   const [scope, setScope] = useState<string>("");
   const [bom, setBom] = useState<string>("");
   const [kit, setKit] = useState<string>("");
-  const [busy, setBusy] = useState(false);
-  const [submitMsg, setSubmitMsg] = useState<string>("");
-  const [submitErr, setSubmitErr] = useState<string>("");
-
-  // BOM details (chemicals + per-warehouse balances + selected source).
-  const [bomDetails, setBomDetails] = useState<BomDetails | null>(null);
+  const [waterPh, setWaterPh] = useState<string>("");
+  const [waterHardness, setWaterHardness] = useState<string>("");
+  const [waterVolume, setWaterVolume] = useState<string>("");
+  const [chemRows, setChemRows] = useState<ChemRow[]>([]);
   const [bomLoading, setBomLoading] = useState(false);
-  // chemical item_code → chosen source warehouse
-  const [chemSource, setChemSource] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [bomDetails, setBomDetails] = useState<BomDetails | null>(null);
 
-  // ── Background prefetch ───────────────────────────────────────────────
-  // Mount kicks off scouting hydrate with crop=undefined so EVERY entry in
-  // the 60-day window lands in IDB. Then when the user picks a greenhouse,
-  // the filter is a cheap in-memory pass — no fresh API call, no spinner.
-  // The "latest scouting" date works the same way: as soon as the bootstrap
-  // arrives we already have entries to look at.
+  // Add-chemical dialog
+  const [addOpen, setAddOpen] = useState(false);
+  const [addQuery, setAddQuery] = useState("");
+  const [addResults, setAddResults] = useState<ChemicalItem[]>([]);
+  const addTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Heatmap fullscreen modal
+  const [heatmapModal, setHeatmapModal] = useState(false);
+
+  // Inline toaster pinned just below the header.
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const toastIdRef = useRef(0);
+  const pushToast = (kind: ToastItem["kind"], text: string, autoMs = 4000) => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev, { id, kind, text }]);
+    if (kind !== "loading" && autoMs > 0) {
+      setTimeout(
+        () => setToasts((prev) => prev.filter((t) => t.id !== id)),
+        autoMs,
+      );
+    }
+    return id;
+  };
+  const dismissToast = (id: number) =>
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+
+  // Eager scouting prefetch (no greenhouse filter — IDB stays universal).
   const [{ from, to }] = useState(defaultRange);
-  const { data, loading } = useScouting({
-    from,
-    to,
-    crop: "Rose",
-    // Intentionally not passing `greenhouse` — we filter client-side below,
-    // which keeps the IDB warm for switching greenhouses without re-fetching.
-  });
+  const { data, loading } = useScouting({ from, to, crop: "Rose" });
 
   useEffect(() => {
     fetchApplicationPlanBootstrap().then(setBootstrap);
@@ -148,29 +175,39 @@ export function ApplicationPlan() {
     fetchZonesByGreenhouse().then(setZonesByGh);
   }, []);
 
-  // BOM detail fetch when selection changes.
+  // BOM details loader.
   useEffect(() => {
     if (!bom) {
       setBomDetails(null);
-      setChemSource({});
+      setChemRows([]);
+      setWaterPh("");
+      setWaterHardness("");
+      setWaterVolume("");
       return;
     }
     let cancelled = false;
     setBomLoading(true);
     fetchBomDetails(bom)
       .then((d) => {
-        if (cancelled) return;
+        if (cancelled || !d) return;
         setBomDetails(d);
-        // Default each chemical's source to the first warehouse where it has stock.
-        const next: Record<string, string> = {};
-        d?.chemicals.forEach((c) => {
-          const balances = c.balances || {};
-          const first = Object.entries(balances).find(([, v]) => v > 0);
-          if (first) next[c.item_code] = first[0];
-          else if ((d.chemical_warehouses || []).length)
-            next[c.item_code] = d.chemical_warehouses[0];
-        });
-        setChemSource(next);
+        setWaterPh(d.custom_water_ph?.toString() || "");
+        setWaterHardness(d.custom_water_hardness?.toString() || "");
+        setWaterVolume(d.custom_water_volume?.toString() || "");
+        setChemRows(
+          d.chemicals.map((c, i) => {
+            const balances = c.balances || {};
+            const first = Object.entries(balances).find(([, v]) => v > 0);
+            const fallback = c.is_fertilizer
+              ? d.fertilizer_warehouses
+              : d.chemical_warehouses;
+            return {
+              ...c,
+              rowId: `${c.item_code}-${i}`,
+              source: first?.[0] || (fallback?.length ? fallback[0] : ""),
+            };
+          }),
+        );
       })
       .finally(() => !cancelled && setBomLoading(false));
     return () => {
@@ -178,7 +215,18 @@ export function ApplicationPlan() {
     };
   }, [bom]);
 
-  // Zones for the selected greenhouse.
+  // Add-chemical search debounce.
+  useEffect(() => {
+    if (!addOpen) return;
+    if (addTimerRef.current) clearTimeout(addTimerRef.current);
+    addTimerRef.current = setTimeout(() => {
+      searchChemicalItems(addQuery).then(setAddResults);
+    }, 200);
+    return () => {
+      if (addTimerRef.current) clearTimeout(addTimerRef.current);
+    };
+  }, [addQuery, addOpen]);
+
   const zonesInGh: ZoneGeo[] = useMemo(() => {
     if (!greenhouse) return [];
     const out: ZoneGeo[] = [];
@@ -193,8 +241,6 @@ export function ApplicationPlan() {
     return out;
   }, [varietyTree, greenhouse]);
 
-  // Per-zone observation aggregate, filtered by Diagnose. Filters by
-  // greenhouse here (instead of in useScouting) so the IDB stays universal.
   const zoneObs: Record<string, ZoneObs> = useMemo(() => {
     const out: Record<string, ZoneObs> = {};
     if (!data || !greenhouse) return out;
@@ -218,17 +264,11 @@ export function ApplicationPlan() {
     return out;
   }, [data, greenhouse, diag]);
 
-  // Latest scouting date for the selected greenhouse — picked from the
-  // already-warmed IDB rather than a separate fetch.
   const latestScoutingDate = useMemo(() => {
     if (!data) return null;
-    if (!greenhouse) {
-      return data.entries[0]?.date_of_capture || null;
-    }
+    if (!greenhouse) return data.entries[0]?.date_of_capture || null;
     for (const e of data.entries) {
-      if (greenhouseOfZone(e.zone || "") === greenhouse) {
-        return e.date_of_capture;
-      }
+      if (greenhouseOfZone(e.zone || "") === greenhouse) return e.date_of_capture;
     }
     return null;
   }, [data, greenhouse]);
@@ -274,19 +314,69 @@ export function ApplicationPlan() {
           : "No observations match this filter";
 
   const ghList = useMemo(
-    () => bootstrap?.warehouses.map((w) => w.name).sort() || [],
+    () => bootstrap?.warehouses.map((w) => w.name) || [],
     [bootstrap],
   );
   const bomList = useMemo(() => bootstrap?.boms || [], [bootstrap]);
   const kitList = useMemo(() => bootstrap?.kits || [], [bootstrap]);
 
+  const updateChem = (rowId: string, patch: Partial<ChemRow>) =>
+    setChemRows((prev) =>
+      prev.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r)),
+    );
+  const removeChem = (rowId: string) =>
+    setChemRows((prev) => prev.filter((r) => r.rowId !== rowId));
+
+  const addChemical = (item: ChemicalItem) => {
+    const fallbackList = item.is_fertilizer
+      ? bomDetails?.fertilizer_warehouses
+      : bomDetails?.chemical_warehouses;
+    setChemRows((prev) => [
+      ...prev,
+      {
+        item_code: item.item_code,
+        item_name: item.item_name,
+        stock_uom: item.stock_uom,
+        item_group: item.item_group,
+        is_fertilizer: item.is_fertilizer,
+        rowId: `${item.item_code}-${Date.now()}-${prev.length}`,
+        source: fallbackList?.[0] || "",
+        balances: {},
+        stock_qty: 0,
+      },
+    ]);
+    setAddOpen(false);
+    setAddQuery("");
+  };
+
   const submit = async () => {
-    setSubmitMsg("");
-    setSubmitErr("");
     if (!greenhouse || !sprayDate || !sprayType || !scope || !bom || !kit) {
-      setSubmitErr("Fill in greenhouse, date, spray type, scope, kit and BOM.");
+      pushToast("err", "Fill in greenhouse, date, spray type, scope, kit and BOM.");
       return;
     }
+    if (!chemRows.length) {
+      pushToast("err", "Add at least one chemical.");
+      return;
+    }
+    for (const c of chemRows) {
+      if (!c.item_code || !c.stock_uom || !c.source) {
+        pushToast(
+          "err",
+          "Every chemical needs an item, UoM and source warehouse.",
+        );
+        return;
+      }
+      if (!c.stock_qty || c.stock_qty <= 0) {
+        pushToast("err", `Set a quantity > 0 for ${c.item_name || c.item_code}.`);
+        return;
+      }
+    }
+    if (!waterPh || !waterHardness) {
+      pushToast("err", "Water pH and hardness are required.");
+      return;
+    }
+
+    const loaderId = pushToast("loading", "Submitting spray plan…", 0);
     setBusy(true);
     try {
       const wh = kitList.find((k) => k.kit === kit)?.warehouse || undefined;
@@ -300,7 +390,16 @@ export function ApplicationPlan() {
           kit,
           bom,
           source_warehouse: wh,
-          chemical_sources: chemSource,
+          water_ph: Number(waterPh),
+          water_hardness: Number(waterHardness),
+          water_volume: waterVolume ? Number(waterVolume) : undefined,
+          chemicals: chemRows.map((c) => ({
+            chemical: c.item_name || c.item_code,
+            item_code: c.item_code,
+            uom: c.stock_uom,
+            application_rate: c.stock_qty,
+            source_warehouse: c.source,
+          })),
           targets:
             diag.pest !== ALL
               ? [{ target: diag.pest }]
@@ -309,11 +408,15 @@ export function ApplicationPlan() {
                   .map(([z]) => ({ zone: z })),
         },
       );
-      setSubmitMsg(
-        `Created ${r?.work_order || r?.message?.work_order || "work order"} — sent to Approvals.`,
+      dismissToast(loaderId);
+      pushToast(
+        "ok",
+        `Created ${r?.work_order || r?.message?.work_order || "work order"} — redirecting to Approvals…`,
       );
+      setTimeout(() => navigate("approvals"), 800);
     } catch (e: any) {
-      setSubmitErr(e?.message || "Submission failed");
+      dismissToast(loaderId);
+      pushToast("err", e?.message || "Submission failed");
     } finally {
       setBusy(false);
     }
@@ -321,7 +424,7 @@ export function ApplicationPlan() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
+      <header className="sticky top-0 z-40 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <SidebarTrigger />
@@ -335,13 +438,16 @@ export function ApplicationPlan() {
               </p>
             </div>
           </div>
-          <div className="text-xs text-muted-foreground">
-            <a href="/scp_app#/historical" className="underline">
-              View past plans →
-            </a>
-          </div>
+          <a
+            href="/scp_app#/historical"
+            className="text-xs text-muted-foreground underline"
+          >
+            View past plans →
+          </a>
         </div>
       </header>
+
+      <Toaster items={toasts} onDismiss={dismissToast} />
 
       {/* ── STEP 1 · DIAGNOSE ────────────────────────────────────── */}
       <section className="px-4 md:px-6 py-4 flex flex-col gap-3">
@@ -373,37 +479,52 @@ export function ApplicationPlan() {
               </SelectContent>
             </Select>
           </div>
-
           <div className="flex flex-col gap-1 text-xs text-muted-foreground">
             <span>Latest scouting</span>
             <span className="font-medium tabular-nums text-foreground">
               {loading && !latestScoutingDate
                 ? "Loading…"
                 : latestScoutingDate ||
-                  (greenhouse
-                    ? "No entries in 60 days"
-                    : "Pick a greenhouse")}
+                  (greenhouse ? "No entries in 60 days" : "—")}
             </span>
           </div>
-
           {greenhouse && (
             <div className="ml-auto text-xs text-muted-foreground tabular-nums">
-              {affectedZones} / {totalZones} zones affected · {coveragePct}%
+              {affectedZones} / {totalZones} zones · {coveragePct}%
             </div>
           )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-3">
-          <div>
-            {greenhouse ? (
-              <UprightHeatmap zones={zonesInGh} zoneObs={zoneObs} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="relative">
+            {greenhouse && zonesInGh.length ? (
+              <button
+                type="button"
+                onClick={() => setHeatmapModal(true)}
+                className="block w-full text-left"
+                title="Click for full-screen view"
+              >
+                <UprightHeatmap
+                  zones={zonesInGh}
+                  zoneObs={zoneObs}
+                  className="hover:ring-2 hover:ring-[var(--sd-accent)]/30 transition-shadow"
+                />
+                <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-md bg-card/90 backdrop-blur border px-2 py-1 text-[0.65rem] text-muted-foreground">
+                  <Maximize2 className="h-3 w-3" />
+                  Click for full view
+                </span>
+              </button>
             ) : (
-              <Card className="p-12 flex flex-col items-center justify-center text-center min-h-[420px]">
-                <CardTitle className="text-sm">No greenhouse selected</CardTitle>
+              <Card className="p-8 flex flex-col items-center justify-center text-center min-h-[320px]">
+                <CardTitle className="text-sm">
+                  {greenhouse ? "Loading geometry…" : "No greenhouse selected"}
+                </CardTitle>
                 <CardDescription className="mt-1">
-                  {loading
-                    ? "Loading scouting entries in the background…"
-                    : "Pick a greenhouse to load the scouting heatmap."}
+                  {greenhouse
+                    ? "Zone polygons are being parsed in the background."
+                    : loading
+                      ? "Loading scouting entries in the background…"
+                      : "Pick a greenhouse to load the scouting heatmap."}
                 </CardDescription>
               </Card>
             )}
@@ -412,9 +533,12 @@ export function ApplicationPlan() {
           <Card className="p-3">
             <CardHeader className="p-0 pb-2">
               <CardTitle className="text-sm">Filters</CardTitle>
+              <CardDescription>
+                Same controls as the legacy spray-plan page · pest / stage / section.
+              </CardDescription>
             </CardHeader>
-            <CardContent className="p-0 flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
+            <CardContent className="p-0 grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1 col-span-2">
                 <Label>Pest / Disease</Label>
                 <Select
                   value={diag.pest}
@@ -472,7 +596,7 @@ export function ApplicationPlan() {
                 </Select>
               </div>
 
-              <div className="rounded-md border bg-[var(--sd-bg-soft)] p-2.5">
+              <div className="col-span-2 rounded-md border bg-[var(--sd-bg-soft)] p-2.5">
                 <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground mb-1">
                   Chemical Requirements
                 </div>
@@ -570,7 +694,6 @@ export function ApplicationPlan() {
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="col-span-2">
                 <Label>Targets</Label>
                 <div className="mt-1 flex flex-wrap gap-1.5">
@@ -638,22 +761,6 @@ export function ApplicationPlan() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="h-9"
-                  title="Open Desk to create a new BOM"
-                >
-                  <a
-                    href="/app/bom/new?custom_item_group=Chemical+Mix"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    New BOM
-                  </a>
-                </Button>
               </div>
 
               {bomLoading && (
@@ -665,69 +772,93 @@ export function ApplicationPlan() {
 
               {bomDetails && !bomLoading && (
                 <>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <Stat
-                      label="Mix size"
-                      value={`${bomDetails.quantity || 0} ${bomDetails.uom || ""}`}
-                    />
-                    <Stat
-                      label="Water pH"
-                      value={bomDetails.custom_water_ph ?? "—"}
-                    />
-                    <Stat
+                  <div className="grid grid-cols-3 gap-2">
+                    <NumInput label="Water pH" value={waterPh} onChange={setWaterPh} />
+                    <NumInput
                       label="Hardness"
-                      value={bomDetails.custom_water_hardness ?? "—"}
+                      value={waterHardness}
+                      onChange={setWaterHardness}
+                    />
+                    <NumInput
+                      label="Volume L/Ha"
+                      value={waterVolume}
+                      onChange={setWaterVolume}
                     />
                   </div>
 
                   <div>
-                    <Label>Chemicals · pick source warehouse</Label>
-                    {bomDetails.chemicals.length ? (
+                    <div className="flex items-center justify-between mb-1">
+                      <Label>Chemicals · pick source warehouse</Label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[0.7rem]"
+                        onClick={() => setAddOpen(true)}
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add chemical
+                      </Button>
+                    </div>
+                    {chemRows.length ? (
                       <Table>
                         <TableHeader>
                           <TableRow>
                             <TableHead>Chemical</TableHead>
                             <TableHead className="text-right">Qty</TableHead>
                             <TableHead>Source</TableHead>
+                            <TableHead className="w-8" />
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {bomDetails.chemicals.map((c) => {
+                          {chemRows.map((c) => {
                             const balances = c.balances || {};
-                            const isFert =
-                              c.item_group ===
-                              (bomDetails.fertilizer_warehouses?.length
-                                ? "Fertilizer"
-                                : "");
-                            const whs = isFert
+                            const whs = c.is_fertilizer
                               ? bomDetails.fertilizer_warehouses
                               : bomDetails.chemical_warehouses;
-                            const picked = chemSource[c.item_code] || "";
                             return (
-                              <TableRow key={c.item_code}>
+                              <TableRow key={c.rowId}>
                                 <TableCell className="text-xs">
                                   <div className="font-medium">
                                     {c.item_name || c.item_code}
                                   </div>
                                   <div className="text-[0.65rem] text-muted-foreground font-mono">
                                     {c.item_code}
+                                    {c.is_fertilizer ? (
+                                      <span className="ml-1 text-[var(--sd-data-green)]">
+                                        · Fertilizer Store
+                                      </span>
+                                    ) : (
+                                      <span className="ml-1 text-[var(--sd-data-cyan)]">
+                                        · Chemical Store
+                                      </span>
+                                    )}
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-right tabular-nums text-xs">
-                                  {c.stock_qty ?? "—"}
-                                  {c.stock_uom ? ` ${c.stock_uom}` : ""}
+                                <TableCell className="text-right">
+                                  <Input
+                                    value={c.stock_qty?.toString() || ""}
+                                    onChange={(e) =>
+                                      updateChem(c.rowId, {
+                                        stock_qty: Number(e.target.value),
+                                      })
+                                    }
+                                    type="number"
+                                    step="any"
+                                    min={0}
+                                    className="h-7 text-xs text-right tabular-nums w-20 ml-auto"
+                                  />
+                                  <div className="text-[0.65rem] text-muted-foreground mt-0.5">
+                                    {c.stock_uom || ""}
+                                  </div>
                                 </TableCell>
                                 <TableCell>
                                   <Select
-                                    value={picked}
+                                    value={c.source || ""}
                                     onValueChange={(v) =>
-                                      setChemSource((prev) => ({
-                                        ...prev,
-                                        [c.item_code]: v,
-                                      }))
+                                      updateChem(c.rowId, { source: v })
                                     }
                                   >
-                                    <SelectTrigger className="h-7 text-xs min-w-40">
+                                    <SelectTrigger className="h-7 text-xs min-w-44">
                                       <SelectValue placeholder="Source" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -735,9 +866,7 @@ export function ApplicationPlan() {
                                         const bal = balances[w] || 0;
                                         return (
                                           <SelectItem key={w} value={w}>
-                                            <span className="truncate">
-                                              {w}
-                                            </span>{" "}
+                                            <span className="truncate">{w}</span>{" "}
                                             <span className="text-muted-foreground tabular-nums">
                                               · {bal}
                                             </span>
@@ -747,6 +876,17 @@ export function ApplicationPlan() {
                                     </SelectContent>
                                   </Select>
                                 </TableCell>
+                                <TableCell>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-muted-foreground"
+                                    onClick={() => removeChem(c.rowId)}
+                                    title="Remove"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </TableCell>
                               </TableRow>
                             );
                           })}
@@ -754,48 +894,15 @@ export function ApplicationPlan() {
                       </Table>
                     ) : (
                       <div className="text-xs text-muted-foreground py-2">
-                        BOM has no exploded items.
+                        BOM has no exploded items. Add one with the button above.
                       </div>
                     )}
                   </div>
-
-                  <a
-                    href={`/app/bom/${encodeURIComponent(bomDetails.name)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[0.7rem] text-muted-foreground underline inline-flex items-center gap-1"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    Open BOM in Desk
-                  </a>
                 </>
               )}
             </CardContent>
           </Card>
         </div>
-
-        {(submitMsg || submitErr) && (
-          <div
-            className={`rounded-md border px-3 py-2 text-xs flex items-center gap-2 ${submitErr ? "border-[var(--sd-data-red)]/40 text-[var(--sd-data-red)] bg-[var(--sd-data-red)]/8" : "border-[var(--sd-data-green)]/40 text-[var(--sd-data-green)] bg-[var(--sd-data-green)]/8"}`}
-          >
-            {submitErr ? (
-              <AlertTriangle className="h-3.5 w-3.5" />
-            ) : (
-              <Plus className="h-3.5 w-3.5" />
-            )}
-            {submitErr || submitMsg}
-            <button
-              type="button"
-              onClick={() => {
-                setSubmitMsg("");
-                setSubmitErr("");
-              }}
-              className="ml-auto text-[0.7rem] underline"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        )}
 
         <div className="flex justify-end">
           <Button onClick={submit} disabled={busy || !greenhouse} size="lg">
@@ -805,24 +912,93 @@ export function ApplicationPlan() {
         </div>
       </section>
 
+      {/* Fullscreen heatmap modal */}
+      <Dialog open={heatmapModal} onOpenChange={setHeatmapModal}>
+        <DialogContent className="max-w-6xl">
+          <DialogHeader>
+            <DialogTitle>{greenhouse}</DialogTitle>
+            <DialogDescription>
+              {affectedZones} of {totalZones} zones · {coveragePct}% coverage
+            </DialogDescription>
+          </DialogHeader>
+          <UprightHeatmap zones={zonesInGh} zoneObs={zoneObs} />
+        </DialogContent>
+      </Dialog>
+
+      {/* Add-chemical popup */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add chemical</DialogTitle>
+            <DialogDescription>
+              Search by item name. Restricted to chemical and fertilizer item
+              groups so the source-warehouse picker stays valid.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={addQuery}
+            onChange={(e) => setAddQuery(e.target.value)}
+            placeholder="Search…"
+            autoFocus
+          />
+          <div className="max-h-72 overflow-auto flex flex-col gap-1">
+            {addResults.map((it) => (
+              <button
+                key={it.item_code}
+                type="button"
+                onClick={() => addChemical(it)}
+                className="text-left px-3 py-2 rounded-md border bg-card hover:bg-muted transition-colors"
+              >
+                <div className="text-xs font-medium">
+                  {it.item_name || it.item_code}
+                </div>
+                <div className="text-[0.65rem] text-muted-foreground font-mono">
+                  {it.item_code} · {it.stock_uom || ""}
+                  {it.is_fertilizer ? (
+                    <span className="ml-1 text-[var(--sd-data-green)]">
+                      · Fertilizer Store
+                    </span>
+                  ) : (
+                    <span className="ml-1 text-[var(--sd-data-cyan)]">
+                      · Chemical Store
+                    </span>
+                  )}
+                </div>
+              </button>
+            ))}
+            {!addResults.length && (
+              <div className="text-xs text-muted-foreground py-3 text-center">
+                Type to search.
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <LoadingStrip active={loading || busy || bomLoading} />
     </div>
   );
 }
 
-function Stat({
+function NumInput({
   label,
   value,
+  onChange,
 }: {
   label: string;
-  value: React.ReactNode;
+  value: string;
+  onChange: (v: string) => void;
 }) {
   return (
-    <div className="px-2 py-1.5 rounded bg-[var(--sd-bg-soft)] border">
-      <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
-        {label}
-      </div>
-      <div className="text-xs font-medium tabular-nums">{value || "—"}</div>
+    <div className="flex flex-col gap-1">
+      <Label className="text-[0.65rem]">{label}</Label>
+      <Input
+        type="number"
+        step="any"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-8 text-xs tabular-nums"
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { MapBase } from "@/components/MapBase";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { ALL, MapHeader, type MapFilterValue } from "./maps/MapHeader";
 import { DEFAULT_CROP } from "@/lib/scouting-api";
+import { useObservationColors } from "@/lib/observation-colors";
 import { ymd } from "@/lib/utils";
 import type { ScoutingEntry } from "@/lib/scouting-types";
 
@@ -64,6 +65,9 @@ export function Observations() {
     return data.entries.filter(entryHasCoords);
   }, [data]);
 
+  const { pest: resolvePestColor, disease: resolveDiseaseColor } =
+    useObservationColors();
+
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
 
@@ -83,7 +87,20 @@ export function Observations() {
       const lat = (p as any).latitude as number;
       const lng = (p as any).longitude as number;
       const kind = entryKind(p);
-      const color = KIND_COLOR[kind];
+      // Per-pest / per-disease colour wins when the entry has a single
+      // dominant observation; falls back to the kind-level palette for
+      // mixed entries (or trap-only entries that don't carry a pest).
+      let color: string = KIND_COLOR[kind];
+      if (kind === "pest" && p.pests_scouting_entry?.[0]?.pest) {
+        color = resolvePestColor(p.pests_scouting_entry[0].pest);
+      } else if (
+        kind === "disease" &&
+        p.diseases_scouting_entry?.[0]?.disease
+      ) {
+        color = resolveDiseaseColor(p.diseases_scouting_entry[0].disease);
+      } else if (kind === "trap" && p.trap_scouting_entry?.[0]?.pest) {
+        color = resolvePestColor(p.trap_scouting_entry[0].pest);
+      }
       const marker = L.circleMarker([lat, lng], {
         radius: 4,
         color: "#ffffff",
@@ -118,7 +135,7 @@ export function Observations() {
     if (bounds.isValid()) {
       map.fitBounds(bounds.pad(0.1), { animate: false });
     }
-  }, [points]);
+  }, [points, resolvePestColor, resolveDiseaseColor]);
 
   // Apply farm filter (we don't have it in useScouting) — narrow points by
   // greenhouse-from-farm map. Cheap because farms stays small.

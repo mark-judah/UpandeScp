@@ -3,6 +3,8 @@ import frappe
 from upande_scp.serverscripts import scouting_metrics
 from upande_scp.serverscripts.cache_utils import (
     K_CROPS_SCOUTED,
+    K_DISEASE_COLORS,
+    K_PEST_COLORS,
     K_SCOUTING_PAYLOAD_PREFIX,
     K_SM_SEVERITY_THRESHOLDS,
     K_SM_UNITS_BY_WH,
@@ -20,29 +22,27 @@ CACHE_TTL = 300  # seconds; legend colors + zone counts rarely change
 
 def _cached_pest_colors():
     cache = frappe.cache()
-    key = "scouting_dashboard:pest_colors"
-    value = cache.get_value(key)
+    value = cache.get_value(K_PEST_COLORS)
     if value is None:
         value = frappe.get_all(
             "Pest",
             fields=["name", "pests_legend_color"],
             limit_page_length=0,
         )
-        cache.set_value(key, value, expires_in_sec=CACHE_TTL)
+        cache.set_value(K_PEST_COLORS, value, expires_in_sec=CACHE_TTL)
     return value
 
 
 def _cached_disease_colors():
     cache = frappe.cache()
-    key = "scouting_dashboard:disease_colors"
-    value = cache.get_value(key)
+    value = cache.get_value(K_DISEASE_COLORS)
     if value is None:
         value = frappe.get_all(
             "Plant Disease",
             fields=["name", "disease_legend_color"],
             limit_page_length=0,
         )
-        cache.set_value(key, value, expires_in_sec=CACHE_TTL)
+        cache.set_value(K_DISEASE_COLORS, value, expires_in_sec=CACHE_TTL)
     return value
 
 

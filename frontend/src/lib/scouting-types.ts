@@ -35,6 +35,11 @@ export interface ScoutingEntry {
   owner: string;
   modified_by: string;
   scouts_name: string;
+  /** Frappe ships Float fields as either number or string — consumers must
+   *  parse before use. Preserved through normalization so map pages can
+   *  read coords without re-querying IDB. */
+  latitude?: number | string;
+  longitude?: number | string;
   pests_scouting_entry: PestObs[];
   diseases_scouting_entry: DiseaseObs[];
   trap_scouting_entry: TrapObs[];

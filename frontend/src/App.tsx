@@ -1,8 +1,10 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { useView } from "@/lib/router";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { LoadingStrip } from "@/components/LoadingStrip";
+import { primeBedsAndZones } from "@/lib/scouting-api";
+import { loadObservationColors } from "@/lib/observation-colors";
 
 // Each page imports its own heavy deps (recharts, leaflet, react-day-picker).
 // React.lazy + Suspense splits them into separate bundles so first paint of
@@ -53,6 +55,16 @@ function PageFallback() {
 
 export function App() {
   const [view, navigate] = useView();
+
+  // Warm long-lived reference caches once per session. Heatmaps and the
+  // Application Plan diagnose plot read straight from the IDB-backed
+  // bed/zone payload — priming on boot means switching to those pages
+  // does not pay a network round-trip.
+  useEffect(() => {
+    primeBedsAndZones();
+    void loadObservationColors();
+  }, []);
+
   return (
     <SidebarProvider>
       <AppSidebar view={view} onNavigate={navigate} />

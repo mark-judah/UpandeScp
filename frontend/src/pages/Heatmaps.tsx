@@ -205,14 +205,25 @@ function buildCards(
   return cards;
 }
 
-/** Group zones by greenhouse so the per-card render only walks its own slice. */
+/** Group zones by greenhouse so the per-card render only walks its own slice.
+ *
+ *  Geometry is preserved as the already-parsed object — the SVG builder
+ *  accepts both strings and parsed FeatureCollections, and skipping the
+ *  ``JSON.stringify``/parse round-trip on every card render is the single
+ *  biggest contributor to keeping the page from chewing CPU on multi-card
+ *  re-paints. */
 function indexZonesByGh(zones: ZoneFeature[]): Record<string, ZoneGeo[]> {
   const out: Record<string, ZoneGeo[]> = {};
   for (const z of zones) {
+    if (!z.geometry) continue;
     const gh = ghOf(z.zoneName);
     if (!gh) continue;
     if (!out[gh]) out[gh] = [];
-    out[gh].push({ name: z.zoneName, raw_geojson: JSON.stringify(z.geometry) });
+    // Cast: the upright-svg parser checks for object vs string.
+    out[gh].push({
+      name: z.zoneName,
+      raw_geojson: z.geometry as unknown as string,
+    });
   }
   return out;
 }
@@ -403,7 +414,9 @@ export function Heatmaps() {
                       <UprightHeatmap
                         zones={zoneList}
                         zoneObs={c.zoneObs}
-                        className="min-h-[180px] [&_svg]:max-h-[200px]"
+                        width={780}
+                        height={300}
+                        className="min-h-[260px] [&_svg]:max-h-[320px] [&_svg]:w-full"
                       />
                     ) : (
                       <div className="text-[0.72rem] text-muted-foreground border rounded-md p-3 bg-[var(--sd-bg-soft)]">
@@ -433,7 +446,7 @@ export function Heatmaps() {
           from the IDB-cached entries that already drive the page; no
           extra fetches. */}
       <Dialog open={!!picked} onOpenChange={(o) => !o && setPicked(null)}>
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="max-w-[min(98vw,1600px)] max-h-[92vh] overflow-y-auto">
           {picked && (
             <>
               <DialogHeader>
@@ -497,7 +510,9 @@ export function Heatmaps() {
                             <UprightHeatmap
                               zones={zonesByGh[picked.greenhouse] || []}
                               zoneObs={slice.zoneObs}
-                              className="min-h-[260px] [&_svg]:max-h-[280px]"
+                              width={1200}
+                              height={520}
+                              className="min-h-[420px] [&_svg]:max-h-[520px] [&_svg]:w-full"
                             />
                             <div className="text-[0.7rem] text-muted-foreground">
                               {slice.zones} affected zone

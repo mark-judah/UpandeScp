@@ -17,6 +17,11 @@ export interface UprightHeatmapProps {
   zoneObs: Record<string, ZoneObs>;
   className?: string;
   onSelectZone?: (zoneName: string) => void;
+  /** Optional viewport size — passed through to the SVG builder. Lets the
+   *  heatmap card grid render compact thumbnails and the modal strips
+   *  render full-size plots from the same component. */
+  width?: number;
+  height?: number;
 }
 
 export function UprightHeatmap({
@@ -24,11 +29,13 @@ export function UprightHeatmap({
   zoneObs,
   className,
   onSelectZone,
+  width,
+  height,
 }: UprightHeatmapProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const built = useMemo(
-    () => buildGreenhouseUprightSvg(zones, zoneObs),
-    [zones, zoneObs],
+    () => buildGreenhouseUprightSvg(zones, zoneObs, { width, height }),
+    [zones, zoneObs, width, height],
   );
 
   // Click handler: re-attached after each render because innerHTML rewrites

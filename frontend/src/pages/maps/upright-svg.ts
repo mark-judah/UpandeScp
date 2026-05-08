@@ -275,15 +275,15 @@ export function buildGreenhouseUprightSvg(
   const bedMeta: BedMeta[] = blocks.flatMap((blk) => blk.beds);
 
   // 5. SVG viewport math (label margin on the left).
-  // Smaller defaults than the observations modal — the floor-plan view sits
-  // inline with the page (not a fullscreen modal), so 720×420 reads cleanly
-  // at typical desktop widths without making lines/labels feel oversized.
-  const PAD = 12;
-  const LABEL_MARGIN = 18;
+  // Defaults sized for the heatmap card grid + modal strips — wider than the
+  // old 720×420 so multi-block greenhouses don't crush their corridors.
+  // Callers can still override via ``options``.
+  const PAD = 14;
+  const LABEL_MARGIN = 24;
   const padLeft = LABEL_MARGIN;
   const padRight = PAD;
-  const TARGET_W = options.width ?? 720;
-  const TARGET_H = options.height ?? 420;
+  const TARGET_W = options.width ?? 1100;
+  const TARGET_H = options.height ?? 560;
   const scale = Math.min(
     (TARGET_W - padLeft - padRight) / w,
     (TARGET_H - 2 * PAD) / h,
@@ -350,13 +350,60 @@ export function buildGreenhouseUprightSvg(
     }
   }
 
-  let labels = "";
+  // Bed labels — when there are 2+ blocks (the typical multi-strip layout),
+  // place ONE label per unique bed lid centred in each corridor between
+  // adjacent blocks. With a single block we fall back to the leftmost
+  // gutter. The old code rendered a label for every (block × bed) pair at
+  // the block's left edge, which crowded the leftmost area and overlapped
+  // the polylines of preceding blocks once you had 4-6 strips.
+  const safeLabel = (lid: string | number) =>
+    String(lid).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+  // Average y-centre per unique bed lid so the label sits on the row even
+  // if a bed only exists in some blocks.
+  const lidYAvg = new Map<string, { lid: string | number; cy: number; n: number }>();
   for (const blk of blocks) {
     for (const bed of blk.beds) {
-      const [ix, iy] = toSvg([blk.minX, bed.cy]);
-      const safeLid = String(bed.lid).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-      labels += `<text class="gh-bed-label" x="${(ix - 4).toFixed(2)}" y="${iy.toFixed(2)}" text-anchor="end">${safeLid}</text>`;
+      const k = String(bed.lid);
+      const ex = lidYAvg.get(k);
+      if (!ex) lidYAvg.set(k, { lid: bed.lid, cy: bed.cy, n: 1 });
+      else {
+        ex.cy = (ex.cy * ex.n + bed.cy) / (ex.n + 1);
+        ex.n += 1;
+      }
     }
+  }
+
+  let labels = "";
+  if (blocks.length >= 2) {
+    // One label per unique bed in each corridor between adjacent blocks,
+    // centred in the gap. Hard-skip if the gap is too narrow for legible
+    // text (≈ 14 px in projected units * 1.6 char headroom).
+    for (let i = 0; i < blocks.length - 1; i++) {
+      const left = blocks[i];
+      const right = blocks[i + 1];
+      const gap = right.minX - left.maxX;
+      if (gap <= 0) continue;
+      const corridorMidX = (left.maxX + right.minX) / 2;
+      lidYAvg.forEach(({ lid, cy }) => {
+        const [tx, ty] = toSvg([corridorMidX, cy]);
+        labels += `<text class="gh-bed-label" x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="middle">${safeLabel(lid)}</text>`;
+      });
+    }
+    // Plus a single set in the leftmost gutter so the leftmost block isn't
+    // missing its row markers.
+    const leftEdge = blocks[0].minX;
+    lidYAvg.forEach(({ lid, cy }) => {
+      const [tx, ty] = toSvg([leftEdge, cy]);
+      labels += `<text class="gh-bed-label" x="${(tx - 4).toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="end">${safeLabel(lid)}</text>`;
+    });
+  } else {
+    // Single block: use the leftmost gutter once per unique bed.
+    const leftEdge = blocks[0].minX;
+    lidYAvg.forEach(({ lid, cy }) => {
+      const [tx, ty] = toSvg([leftEdge, cy]);
+      labels += `<text class="gh-bed-label" x="${(tx - 4).toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="end">${safeLabel(lid)}</text>`;
+    });
   }
 
   return {

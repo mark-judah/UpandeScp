@@ -216,6 +216,43 @@ export async function setMeta<T = unknown>(key: string, value: T): Promise<void>
   await tx(STORE_META, "readwrite", (s) => s.put({ key, value }) as IDBRequest);
 }
 
+/* ---------- timestamped payload cache (used for reference data that's
+ *           expensive to fetch — bed/zone GeoJSON, etc.) ---------- */
+
+export interface CachedPayload<T> {
+  /** Schema version. Bump in the consumer when the payload shape changes
+   *  so we never deserialize a row written by an older build. */
+  v: number;
+  /** epoch-ms of the write. */
+  ts: number;
+  value: T;
+}
+
+/**
+ * Read a cached payload if it's fresh AND of the expected schema version.
+ * Returns null on miss, schema mismatch, or expiry. Callers fall back to
+ * the network and call ``setPayload`` after a successful fetch.
+ */
+export async function getPayload<T>(
+  key: string,
+  expectedVersion: number,
+  maxAgeMs: number,
+): Promise<T | null> {
+  const cached = await getMeta<CachedPayload<T>>(key);
+  if (!cached) return null;
+  if (cached.v !== expectedVersion) return null;
+  if (Date.now() - cached.ts > maxAgeMs) return null;
+  return cached.value;
+}
+
+export async function setPayload<T>(
+  key: string,
+  value: T,
+  version: number,
+): Promise<void> {
+  await setMeta<CachedPayload<T>>(key, { v: version, ts: Date.now(), value });
+}
+
 /* ---------- eviction ---------- */
 
 const ROLLING_WINDOW_DAYS = 90;

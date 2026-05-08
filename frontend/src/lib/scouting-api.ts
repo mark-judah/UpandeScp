@@ -1,4 +1,5 @@
 import { call } from "./frappe";
+import { getPayload, setPayload } from "./idb";
 import type {
   RawEntry,
   ScoutingEntry,
@@ -438,25 +439,93 @@ export interface VarietyNode {
 }
 
 /**
- * Bed × Zone tree, used as the denominator in heatmaps and trends. Cached
- * client-side for 30 min on top of the server's 24h Redis cache.
+ * Bed × Zone tree — the geometry denominator for every heatmap/floor-plan
+ * page. Multi-tier cache so re-renders, page switches, and full-page
+ * reloads all stay snappy:
+ *
+ *   - module-level in-memory map (instant after first call this session)
+ *   - IndexedDB payload (survives reloads; 24h freshness window)
+ *   - server endpoint (last resort; the server itself caches this for 24h)
+ *
+ * Bumping ``BEDS_ZONES_VERSION`` discards every cached row — use this if
+ * the payload shape changes server-side (e.g. a new field operators rely
+ * on for filters).
  */
+const BEDS_ZONES_VERSION = 1;
+const BEDS_ZONES_KEY = "beds_zones_v1";
+const BEDS_ZONES_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 export async function fetchBedsAndZones(): Promise<VarietyNode[]> {
   return cached("beds_zones", async () => {
+    // 1. IDB hit — almost instant, no network.
     try {
-      const r = await call<{ data: VarietyNode[] } | VarietyNode[]>(
-        "upande_scp.serverscripts.get_beds_and_zones.getBedsAndZones",
-        {},
+      const idbHit = await getPayload<VarietyNode[]>(
+        BEDS_ZONES_KEY,
+        BEDS_ZONES_VERSION,
+        BEDS_ZONES_MAX_AGE_MS,
       );
-      // Endpoint returns via frappe.response["data"], so the wrapper either
-      // unwraps {message: {data: [...]}} or hands back the array directly.
-      if (Array.isArray(r)) return r;
-      const wrapped = r as { data?: VarietyNode[] };
-      return wrapped?.data || [];
+      if (idbHit && idbHit.length) {
+        // Schedule a stale-while-revalidate pass: refresh in the background
+        // so subsequent visits get newer geometry without blocking this one.
+        void refreshBedsAndZonesInBackground();
+        return idbHit;
+      }
     } catch {
-      return [];
+      // IDB might be unavailable in private browsing; fall through.
     }
+
+    // 2. Network — first hit of the session, or IDB stale/missing.
+    const fresh = await fetchBedsAndZonesFromServer();
+    if (fresh.length) {
+      try {
+        await setPayload(BEDS_ZONES_KEY, fresh, BEDS_ZONES_VERSION);
+      } catch {
+        /* IDB write failures are non-fatal */
+      }
+    }
+    return fresh;
   });
+}
+
+async function fetchBedsAndZonesFromServer(): Promise<VarietyNode[]> {
+  try {
+    const r = await call<{ data: VarietyNode[] } | VarietyNode[]>(
+      "upande_scp.serverscripts.get_beds_and_zones.getBedsAndZones",
+      {},
+    );
+    if (Array.isArray(r)) return r;
+    const wrapped = r as { data?: VarietyNode[] };
+    return wrapped?.data || [];
+  } catch {
+    return [];
+  }
+}
+
+let bgRefreshInFlight = false;
+async function refreshBedsAndZonesInBackground(): Promise<void> {
+  if (bgRefreshInFlight) return;
+  bgRefreshInFlight = true;
+  try {
+    const fresh = await fetchBedsAndZonesFromServer();
+    if (fresh.length) {
+      await setPayload(BEDS_ZONES_KEY, fresh, BEDS_ZONES_VERSION);
+      // Update the in-memory cache so the next call sees the new value.
+      refCache.set("beds_zones", { ts: Date.now(), value: fresh });
+    }
+  } catch {
+    /* swallow — the page already has the previous payload */
+  } finally {
+    bgRefreshInFlight = false;
+  }
+}
+
+/**
+ * Prime the bed/zone cache before any consumer asks. Call this on app
+ * mount so switching to Heatmaps / Application Plan / Varieties is
+ * instant — the IDB read happens in parallel with the rest of the boot.
+ */
+export function primeBedsAndZones(): void {
+  void fetchBedsAndZones().catch(() => {});
 }
 
 /**

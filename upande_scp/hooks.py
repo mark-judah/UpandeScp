@@ -147,11 +147,22 @@ doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 
 # Invalidate cached dashboard/map payloads when underlying master data changes.
 _SCP_CACHE_INVALIDATOR = "upande_scp.serverscripts.cache_utils.invalidate_on_change"
+_SCP_REALTIME_DIRTY = "upande_scp.serverscripts.cache_utils.publish_scouting_dirty"
 _SCP_CACHE_EVENTS = {
     "on_update": _SCP_CACHE_INVALIDATOR,
     "on_trash": _SCP_CACHE_INVALIDATOR,
 }
+# Scouting docs also push a "dirty" realtime nudge so live clients can advance
+# their delta watermark without polling. on_update covers create + edit; the
+# dedicated on_trash entry below ensures deletes still fire even though the
+# parent on_update may not.
+_SCP_SCOUTING_EVENTS = {
+    "on_update": [_SCP_CACHE_INVALIDATOR, _SCP_REALTIME_DIRTY],
+    "on_trash": [_SCP_CACHE_INVALIDATOR, _SCP_REALTIME_DIRTY],
+    "after_insert": _SCP_REALTIME_DIRTY,
+}
 doc_events = {
+    "Employee": _SCP_CACHE_EVENTS,
     "Pest": _SCP_CACHE_EVENTS,
     "Plant Disease": _SCP_CACHE_EVENTS,
     "Predator": _SCP_CACHE_EVENTS,
@@ -175,13 +186,15 @@ doc_events = {
     "Spray Plan Settings": _SCP_CACHE_EVENTS,
     "Spray Plan Allowed Farm": _SCP_CACHE_EVENTS,
     "Spray Plan Exclude Keyword": _SCP_CACHE_EVENTS,
-    # Scouting payload cache invalidation. Child-table edits don't always
-    # touch the parent's `modified`, so each is hooked individually — the
-    # invalidator simply bumps the cache version stamp.
-    "Scouting Entry": _SCP_CACHE_EVENTS,
-    "Pests Scouting Entry": _SCP_CACHE_EVENTS,
-    "Diseases Scouting Entry": _SCP_CACHE_EVENTS,
-    "Trap Scouting Entry": _SCP_CACHE_EVENTS,
+    # Scouting payload cache invalidation + realtime "dirty" nudge.
+    # Child-table edits don't always touch the parent's `modified`, so each
+    # is hooked individually — the invalidator bumps the cache version stamp,
+    # and publish_scouting_dirty nudges live clients to re-sync the affected
+    # month (see docs/data_caching.md L4 section).
+    "Scouting Entry": _SCP_SCOUTING_EVENTS,
+    "Pests Scouting Entry": _SCP_SCOUTING_EVENTS,
+    "Diseases Scouting Entry": _SCP_SCOUTING_EVENTS,
+    "Trap Scouting Entry": _SCP_SCOUTING_EVENTS,
 }
 
 # Scheduled Tasks

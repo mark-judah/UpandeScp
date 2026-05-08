@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+/* ─── Kaitet design tokens (mirrors scouting_dashboard.css :root) ─── */
+:root {
+  /* Surfaces */
+  --sd-bg: #f5f7fa;
+  --sd-bg-soft: #f3f4f6;
+  --sd-card: #ffffff;
+  --sd-ink: #374151;
+  --sd-text: #374151;
+  --sd-muted: #6b7280;
+  --sd-quiet: #9ca3af;
+  --sd-line: #e5e7eb;
+  --sd-line-soft: #f3f4f6;
+
+  /* Brand accents */
+  --sd-accent: #4b5563;
+  --sd-accent-fg: #ffffff;
+  --sd-accent-2: #374151;
+  --sd-pistachio: #f3f4f6;
+  --sd-pistachio-2: #e5e7eb;
+  --sd-target: #f59e0b;
+
+  /* Chart palette */
+  --sd-data-cyan: #2ba6e0;
+  --sd-data-pink: #e66baa;
+  --sd-data-purple: #8466c7;
+  --sd-data-red: #e63946;
+  --sd-data-green: #5bb45d;
+  --sd-data-amber: #e9a23b;
+  --sd-data-indigo: #3d54b0;
+
+  /* Severity */
+  --sd-sev-critical: #e63946;
+  --sd-sev-high: #e9a23b;
+  --sd-sev-moderate: #5bb45d;
+  --sd-sev-low: #d9e2d2;
+
+  /* Type */
+  --sd-font: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --sd-font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas,
+    monospace;
+
+  /* Geometry */
+  --sd-radius-xs: 4px;
+  --sd-radius: 8px;
+  --sd-radius-lg: 12px;
+  --sd-radius-pill: 999px;
+
+  /* Shadows */
+  --sd-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --sd-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --sd-shadow-3: 0 18px 48px rgba(0, 0, 0, 0.12);
+  --sd-ring: 0 0 0 2px rgba(75, 85, 99, 0.18);
+
+  /* shadcn semantic tokens (mapped onto kaitet palette) */
+  --background: var(--sd-bg);
+  --foreground: var(--sd-ink);
+  --card: var(--sd-card);
+  --card-foreground: var(--sd-ink);
+  --popover: var(--sd-card);
+  --popover-foreground: var(--sd-ink);
+  --primary: var(--sd-accent);
+  --primary-foreground: var(--sd-accent-fg);
+  --secondary: var(--sd-pistachio);
+  --secondary-foreground: var(--sd-ink);
+  --muted: var(--sd-pistachio);
+  --muted-foreground: var(--sd-muted);
+  --accent: var(--sd-pistachio);
+  --accent-foreground: var(--sd-ink);
+  --destructive: var(--sd-data-red);
+  --destructive-foreground: #ffffff;
+  --border: var(--sd-line);
+  --input: var(--sd-line);
+  --ring: var(--sd-accent);
+  --radius: var(--sd-radius);
+
+  /* sidebar */
+  --sidebar: #ffffff;
+  --sidebar-foreground: var(--sd-ink);
+  --sidebar-primary: var(--sd-accent);
+  --sidebar-primary-foreground: var(--sd-accent-fg);
+  --sidebar-accent: var(--sd-pistachio);
+  --sidebar-accent-foreground: var(--sd-ink);
+  --sidebar-border: var(--sd-line);
+  --sidebar-ring: var(--sd-accent);
+
+  /* recharts palette */
+  --chart-1: var(--sd-data-cyan);
+  --chart-2: var(--sd-data-pink);
+  --chart-3: var(--sd-data-purple);
+  --chart-4: var(--sd-data-amber);
+  --chart-5: var(--sd-data-green);
+  --chart-6: var(--sd-data-indigo);
+  --chart-7: var(--sd-data-red);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 8px);
+
+  --font-sans: var(--sd-font);
+  --font-mono: var(--sd-font-mono);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html,
+  body,
+  #scp-root {
+    height: 100%;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--sd-font);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: rgba(75, 85, 99, 0.18);
+  }
+}

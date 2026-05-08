@@ -66,8 +66,8 @@ K_CROPS_SCOUTED = "scp:crops_scouted_v1"
 K_FARM_HIERARCHY = "scp:farm_hierarchy_v1"
 # Versioned scouting payload cache. Keys use the prefix + version stamp +
 # args, so invalidation is O(1): bump the stamp and old keys orphan via TTL.
-K_SCOUTING_PAYLOAD_PREFIX  = "scp:scouting_payload_v1"
-K_SCOUTING_PAYLOAD_VERSION = "scp:scouting_payload_ver"
+K_SCOUTING_PAYLOAD_PREFIX  = "scp:scouting_payload_v2"
+K_SCOUTING_PAYLOAD_VERSION = "scp:scouting_payload_ver_v2"
 # One-centroid-per-Zone payload for the rose 3D map. Invalidated by Zone
 # create/update/delete (the geometry source of truth) and Bed/Warehouse
 # changes (which can rename or reparent zones).
@@ -93,6 +93,52 @@ def invalidate_scouting_payload():
     cache = frappe.cache()
     v = cache.get_value(K_SCOUTING_PAYLOAD_VERSION) or 1
     cache.set_value(K_SCOUTING_PAYLOAD_VERSION, int(v) + 1)
+
+
+def _resolve_scouting_month(doc):
+    """Best-effort YYYY-MM string for a scouting-related doc.
+
+    Parent rows carry ``date_of_capture`` directly. Child rows (Pests/Diseases/
+    Trap Scouting Entry) walk to their parent. Other doctypes that bust the
+    payload cache (Zone, Bed, Warehouse, Farm, Orchard Tree) don't have a
+    natural month — return ``None`` so the client treats them as a global
+    invalidation."""
+    dt = getattr(doc, "doctype", None)
+    if dt == "Scouting Entry":
+        d = getattr(doc, "date_of_capture", None)
+        return str(d)[:7] if d else None
+    if dt in ("Pests Scouting Entry", "Diseases Scouting Entry", "Trap Scouting Entry"):
+        parent = getattr(doc, "parent", None)
+        if not parent:
+            return None
+        d = frappe.db.get_value("Scouting Entry", parent, "date_of_capture")
+        return str(d)[:7] if d else None
+    return None
+
+
+def publish_scouting_dirty(doc, method=None):
+    """Realtime nudge so listening clients re-run their delta sync.
+
+    Payload shape:
+        { months: ["YYYY-MM"] | [] }   (empty list = global invalidation)
+
+    Channel ``scp:scouting:dirty`` is broadcast site-wide; permission scoping
+    happens client-side because the message contains no row data — only a hint
+    that *something* changed.
+    """
+    try:
+        month = _resolve_scouting_month(doc)
+        frappe.publish_realtime(
+            event="scp:scouting:dirty",
+            message={"months": [month] if month else []},
+            after_commit=True,
+        )
+    except Exception:
+        # Never let a realtime failure break the underlying write.
+        frappe.log_error(
+            f"publish_scouting_dirty failed for {getattr(doc, 'doctype', '?')}",
+            "SCP Realtime",
+        )
 
 
 def invalidate_farm_bundle(farm):
@@ -315,6 +361,7 @@ def build_bed_count_by_gh():
 
 
 _DOC_INVALIDATIONS = {
+    "Employee": ("scp:sm_scout_lookup_v1",),
     "Pest": (K_OBSERVATION_TYPES,),
     "Plant Disease": (K_OBSERVATION_TYPES,),
     "Predator": (K_OBSERVATION_TYPES,),

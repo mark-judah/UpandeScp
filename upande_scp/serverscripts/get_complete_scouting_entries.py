@@ -82,48 +82,148 @@ def _cached_severity_thresholds():
     )
 
 
-def _scouting_payload_cache_key(from_date, to_date, greenhouse_filter, include_meta):
-    """Versioned cache key. The version stamp lives in
-    K_SCOUTING_PAYLOAD_VERSION; bumping it is how we invalidate everything
-    in the payload namespace at once (see cache_utils.invalidate_scouting_payload)."""
+CACHE_WINDOW_DAYS = 90  # months older than this serve uncached (see docs/data_caching.md)
+
+
+def _month_cache_key(year, month):
+    """Per-calendar-month cache key. No greenhouse suffix: filtering is applied
+    in-memory after the cache hit so we don't duplicate the same source rows
+    once per (greenhouse, all) combination."""
     v = scouting_payload_version()
-    gh = (greenhouse_filter or "").strip()
-    return f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{from_date}:{to_date}:{gh}:{int(bool(include_meta))}"
+    return f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{year:04d}-{month:02d}"
 
 
-def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True):
-    """Cached wrapper. Returns the same shape as the underlying builder.
+def _months_in_range(from_date, to_date):
+    from datetime import date
 
-    Cache hit ratio is high because most callers ask for the same date range
-    repeatedly; misses fall through to the builder and write to Redis with a
-    short TTL plus an event-driven invalidator (see cache_utils).
+    start = _coerce_date(from_date)
+    end = _coerce_date(to_date)
+    if start > end:
+        start, end = end, start
+    y, m = start.year, start.month
+    out = []
+    while (y, m) <= (end.year, end.month):
+        out.append((y, m))
+        if m == 12:
+            y, m = y + 1, 1
+        else:
+            m += 1
+    return out
+
+
+def _coerce_date(value):
+    """Accept ``date``, ``datetime`` or ISO/Frappe-style strings."""
+    from datetime import date, datetime
+
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if not value:
+        raise ValueError("date required")
+    text = str(value)[:10]
+    return datetime.strptime(text, "%Y-%m-%d").date()
+
+
+def _month_bounds(year, month):
+    from calendar import monthrange
+    from datetime import date
+
+    last = monthrange(year, month)[1]
+    return date(year, month, 1), date(year, month, last)
+
+
+def _is_recent_month(year, month):
+    """Whether (year, month) sits inside the rolling cache window."""
+    from datetime import date, timedelta
+
+    cutoff = date.today() - timedelta(days=CACHE_WINDOW_DAYS)
+    last = _month_bounds(year, month)[1]
+    return last >= cutoff
+
+
+def _fetch_month_entries(year, month):
+    """Return the list of normalized entries for one calendar month.
+
+    Cached per-month, version-stamped, capped to a rolling
+    ``CACHE_WINDOW_DAYS`` window. Greenhouse/block filtering is the caller's
+    responsibility — keeping the cache key month-only avoids storing the same
+    source rows once per filter shape (see docs/data_caching.md L1 section).
     """
-    cache_key = _scouting_payload_cache_key(from_date, to_date, greenhouse_filter, include_meta)
     cache = frappe.cache()
+    cache_key = _month_cache_key(year, month)
     cached = cache.get_value(cache_key)
     if cached is not None:
         return cached
-    payload = _build_scouting_payload(from_date, to_date, greenhouse_filter, include_meta)
-    cache.set_value(cache_key, payload, expires_in_sec=TTL_SHORT)
+
+    start, end = _month_bounds(year, month)
+    entries = _build_month_entries(start.isoformat(), end.isoformat())
+
+    if _is_recent_month(year, month):
+        cache.set_value(cache_key, entries, expires_in_sec=TTL_MEDIUM)
+    return entries
+
+
+def _filter_entries(entries, from_date, to_date, greenhouse_filter):
+    from_d = _coerce_date(from_date).isoformat()
+    to_d = _coerce_date(to_date).isoformat()
+    gh = (greenhouse_filter or "").strip()
+    out = []
+    for e in entries:
+        d = e.get("date_of_capture")
+        if not d:
+            continue
+        ds = str(d)[:10]
+        if ds < from_d or ds > to_d:
+            continue
+        if gh and e.get("greenhouse") != gh and e.get("block") != gh:
+            continue
+        out.append(e)
+    return out
+
+
+def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True):
+    """Cached wrapper. Stitches month-aligned cache slices and applies the
+    greenhouse / block filter in-memory.
+
+    On a warm cache this is one Redis read per month covered by the range,
+    plus a Python list filter. On a miss only the missing months are built.
+    """
+    months = _months_in_range(from_date, to_date)
+    all_entries = []
+    for (y, m) in months:
+        all_entries.extend(_fetch_month_entries(y, m))
+
+    entries = _filter_entries(all_entries, from_date, to_date, greenhouse_filter)
+    payload = {
+        "entries": entries,
+        "total_entries": len(entries),
+        "filters_applied": {
+            "from_date": str(from_date),
+            "to_date": str(to_date),
+            "greenhouse": greenhouse_filter,
+        },
+    }
+    if include_meta:
+        payload["pest_colors"] = _cached_pest_colors()
+        payload["disease_colors"] = _cached_disease_colors()
+        payload["zones_by_greenhouse"] = _cached_zones_by_greenhouse()
+        payload["units_by_greenhouse"] = _cached_units_by_warehouse()
+        payload["crops_scouted"] = _cached_crops_with_farms()
+        payload["severity_thresholds"] = _cached_severity_thresholds()
     return payload
 
 
-def _build_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True):
-    # Date filter is always applied. The dashboard sends a single "greenhouse"
-    # parameter for either warehouse type; match against `greenhouse` OR
-    # `block` so block-based scouting (avocado orchards) scopes correctly.
-    entry_filters = [["date_of_capture", "between", [from_date, to_date]]]
-    or_filters = None
-    if greenhouse_filter:
-        or_filters = [
-            ["greenhouse", "=", greenhouse_filter],
-            ["block", "=", greenhouse_filter],
-        ]
+def _build_month_entries(from_date, to_date):
+    """Run the SQL join for one date range and return the entries list only.
 
+    Identical to ``_build_scouting_payload`` minus the meta payload (meta has
+    its own per-key caches; see _cached_* helpers above). Greenhouse filtering
+    is intentionally NOT applied here — the cache is shared across all
+    consumers."""
     scouting_entries = frappe.get_all(
         "Scouting Entry",
-        filters=entry_filters,
-        or_filters=or_filters,
+        filters=[["date_of_capture", "between", [from_date, to_date]]],
         fields=[
             "name",
             "scouts_name",
@@ -138,35 +238,18 @@ def _build_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=
             "date_of_capture",
             "owner",
             "modified_by",
+            "modified",
+            "latitude",
+            "longitude",
         ],
         order_by="date_of_capture desc, time_of_capture desc",
         limit_page_length=0,
     )
+    if not scouting_entries:
+        return []
 
-    payload = {
-        "entries": [],
-        "total_entries": len(scouting_entries),
-        "filters_applied": {
-            "from_date": from_date,
-            "to_date": to_date,
-            "greenhouse": greenhouse_filter,
-        },
-    }
-
-    if include_meta:
-        payload["pest_colors"] = _cached_pest_colors()
-        payload["disease_colors"] = _cached_disease_colors()
-        # Legacy field — kept so older clients still render.
-        payload["zones_by_greenhouse"] = _cached_zones_by_greenhouse()
-        # New: warehouse-type-aware unit map (zones for greenhouses, trees for
-        # blocks) plus the crop allow-list.
-        payload["units_by_greenhouse"] = _cached_units_by_warehouse()
-        payload["crops_scouted"] = _cached_crops_with_farms()
-        payload["severity_thresholds"] = _cached_severity_thresholds()
-
-    entry_names = [e.name for e in scouting_entries]
-    if not entry_names:
-        return payload
+    entry_names = [e["name"] for e in scouting_entries]
+    entries_dict = {e["name"]: e for e in scouting_entries}
 
     pests = frappe.get_all(
         "Pests Scouting Entry",
@@ -174,14 +257,12 @@ def _build_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=
         fields=["parent", "plant_section", "pest", "stage", "count"],
         limit_page_length=0,
     )
-
     diseases = frappe.get_all(
         "Diseases Scouting Entry",
         filters=[["parent", "in", entry_names]],
         fields=["parent", "disease", "plant_section", "stage"],
         limit_page_length=0,
     )
-
     traps = frappe.get_all(
         "Trap Scouting Entry",
         filters=[["parent", "in", entry_names]],
@@ -189,25 +270,20 @@ def _build_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=
         limit_page_length=0,
     )
 
-    entries_dict = {entry.name: entry for entry in scouting_entries}
-
-    for pest in pests:
-        parent = pest.pop("parent", None)
+    for p in pests:
+        parent = p.pop("parent", None)
         if parent in entries_dict:
-            entries_dict[parent].setdefault("pests", []).append(pest)
-
-    for disease in diseases:
-        parent = disease.pop("parent", None)
+            entries_dict[parent].setdefault("pests", []).append(p)
+    for d in diseases:
+        parent = d.pop("parent", None)
         if parent in entries_dict:
-            entries_dict[parent].setdefault("diseases", []).append(disease)
-
-    for trap in traps:
-        parent = trap.pop("parent", None)
+            entries_dict[parent].setdefault("diseases", []).append(d)
+    for t in traps:
+        parent = t.pop("parent", None)
         if parent in entries_dict:
-            entries_dict[parent].setdefault("traps", []).append(trap)
+            entries_dict[parent].setdefault("traps", []).append(t)
 
-    payload["entries"] = list(entries_dict.values())
-    return payload
+    return list(entries_dict.values())
 
 
 @frappe.whitelist()
@@ -251,3 +327,130 @@ def getScoutingEntriesChunk(from_date=None, to_date=None, greenhouse=None, inclu
     except Exception as e:
         frappe.log_error(f"Error in scouting chunk extraction: {str(e)}", "Scouting Entry API")
         frappe.throw(str(e))
+
+
+@frappe.whitelist()
+def get_entries_since(since=None, greenhouse=None, farm=None, limit=2000):
+    """Delta endpoint: rows whose ``modified`` is strictly greater than ``since``.
+
+    Used by the IndexedDB client to advance its watermark without re-shipping
+    a full month. Bypasses the L1 payload cache (which is keyed by month);
+    the row count is bounded by ``limit`` and the caller is expected to keep
+    calling until ``has_more`` is false.
+
+    Response:
+        {
+            server_now: ISO ts (advance the client watermark to this),
+            entries:    [normalized entries],
+            has_more:   bool — true if the limit was hit,
+            since:      echo of the input,
+        }
+    """
+    from datetime import datetime
+
+    since = since or frappe.form_dict.get("since")
+    greenhouse_filter = greenhouse or frappe.form_dict.get("greenhouse")
+    farm_filter = farm or frappe.form_dict.get("farm")
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 2000
+    limit = max(1, min(limit, 10000))
+
+    if not since:
+        # Sentinel so the first sync grabs everything from the rolling window.
+        from datetime import date, timedelta
+
+        since = (date.today() - timedelta(days=CACHE_WINDOW_DAYS)).isoformat() + " 00:00:00"
+
+    server_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+
+    base_filters = [["modified", ">", since]]
+    or_filters = None
+    if greenhouse_filter:
+        or_filters = [
+            ["greenhouse", "=", greenhouse_filter],
+            ["block", "=", greenhouse_filter],
+        ]
+
+    entries = frappe.get_all(
+        "Scouting Entry",
+        filters=base_filters,
+        or_filters=or_filters,
+        fields=[
+            "name",
+            "scouts_name",
+            "greenhouse",
+            "bed",
+            "zone",
+            "block",
+            "`row`",
+            "tree",
+            "crop_scouted",
+            "time_of_capture",
+            "date_of_capture",
+            "owner",
+            "modified_by",
+            "modified",
+            "latitude",
+            "longitude",
+        ],
+        order_by="modified asc",
+        limit_page_length=limit + 1,
+    )
+
+    has_more = len(entries) > limit
+    if has_more:
+        entries = entries[:limit]
+
+    if farm_filter and entries:
+        from upande_scp.serverscripts import scouting_metrics
+
+        farms_map = scouting_metrics.get_farms_and_warehouses() or {}
+        allowed = set(farms_map.get(farm_filter, []) or [])
+        entries = [
+            e for e in entries
+            if (e.get("greenhouse") in allowed) or (e.get("block") in allowed)
+        ]
+
+    if entries:
+        entry_names = [e["name"] for e in entries]
+        entries_dict = {e["name"]: e for e in entries}
+        pests = frappe.get_all(
+            "Pests Scouting Entry",
+            filters=[["parent", "in", entry_names]],
+            fields=["parent", "plant_section", "pest", "stage", "count"],
+            limit_page_length=0,
+        )
+        diseases = frappe.get_all(
+            "Diseases Scouting Entry",
+            filters=[["parent", "in", entry_names]],
+            fields=["parent", "disease", "plant_section", "stage"],
+            limit_page_length=0,
+        )
+        traps = frappe.get_all(
+            "Trap Scouting Entry",
+            filters=[["parent", "in", entry_names]],
+            fields=["parent", "trap", "pest", "location", "count"],
+            limit_page_length=0,
+        )
+        for p in pests:
+            parent = p.pop("parent", None)
+            if parent in entries_dict:
+                entries_dict[parent].setdefault("pests", []).append(p)
+        for d in diseases:
+            parent = d.pop("parent", None)
+            if parent in entries_dict:
+                entries_dict[parent].setdefault("diseases", []).append(d)
+        for t in traps:
+            parent = t.pop("parent", None)
+            if parent in entries_dict:
+                entries_dict[parent].setdefault("traps", []).append(t)
+        entries = list(entries_dict.values())
+
+    return {
+        "server_now": server_now,
+        "since": since,
+        "entries": entries,
+        "has_more": has_more,
+    }

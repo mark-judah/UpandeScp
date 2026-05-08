@@ -114,6 +114,346 @@ def get_zones_by_greenhouse():
 
 
 @frappe.whitelist()
+def get_zone_counts_by_greenhouse():
+    """{greenhouse: zone_count}. Denominator for trends/heatmap percentages."""
+    from upande_scp.serverscripts.cache_utils import K_SM_ZONE_COUNTS_BY_GH
+
+    return get_or_set(
+        K_SM_ZONE_COUNTS_BY_GH,
+        scouting_metrics.get_zone_counts_by_greenhouse,
+        ttl=TTL_LONG,
+    )
+
+
+_K_SCOUTS_LOOKUP = "scp:sm_scout_lookup_v1"
+
+
+def _build_scout_lookup():
+    """{employee_id: employee_name} for every Employee referenced as a scout.
+
+    The Scouting Entry ``scouts_name`` field stores the Employee's numeric ID
+    (e.g. ``"200397"``). We need the readable name for top-scouts widgets.
+    """
+    rows = frappe.get_all(
+        "Employee",
+        fields=["name", "employee_name"],
+        filters={"status": "Active"},
+        limit_page_length=0,
+    )
+    return {r["name"]: (r.get("employee_name") or r["name"]) for r in rows}
+
+
+@frappe.whitelist()
+def list_tank_mixes(farm=None, q=None, active_only=1, limit=200):
+    """List Chemical-Mix BOMs with their exploded chemicals attached.
+
+    Mirrors upande_scp/www/tank_mix_list/index.py so the React port can
+    pull the same data over a single round-trip instead of replicating
+    the multi-table fetch on the client.
+    """
+    bom_filters = [["BOM", "custom_item_group", "=", "Chemical Mix"]]
+    if str(active_only).strip() in ("1", "true", "yes"):
+        bom_filters.append(["BOM", "is_active", "=", 1])
+    if farm:
+        bom_filters.append(["BOM", "custom_farm", "=", farm])
+    if q:
+        bom_filters.append(["BOM", "item", "like", f"%{q}%"])
+
+    boms = frappe.get_list(
+        "BOM",
+        filters=bom_filters,
+        fields=[
+            "name",
+            "item",
+            "item_name",
+            "custom_farm",
+            "custom_business_unit",
+            "custom_water_ph",
+            "custom_water_hardness",
+            "uom",
+            "quantity",
+            "is_active",
+            "is_default",
+            "modified",
+            "modified_by",
+            "owner",
+        ],
+        order_by="modified desc",
+        limit=int(limit) or 200,
+    )
+    bom_names = [b["name"] for b in boms]
+    items_by_bom = {}
+    if bom_names:
+        rows = frappe.get_all(
+            "BOM Explosion Item",
+            filters={"parent": ["in", bom_names], "parenttype": "BOM"},
+            fields=[
+                "parent",
+                "item_code",
+                "item_name",
+                "stock_qty",
+                "stock_uom",
+                "rate",
+                "amount",
+                "idx",
+            ],
+            order_by="parent asc, idx asc",
+            limit_page_length=10000,
+        )
+        for r in rows:
+            items_by_bom.setdefault(r["parent"], []).append(r)
+
+    for b in boms:
+        b["chemicals"] = items_by_bom.get(b["name"], [])
+        b["item_count"] = len(b["chemicals"])
+        b["total_amount"] = sum(c.get("amount") or 0 for c in b["chemicals"])
+    return {
+        "tank_mixes": boms,
+        "farms": sorted({b.get("custom_farm") for b in boms if b.get("custom_farm")}),
+    }
+
+
+@frappe.whitelist()
+def list_application_work_orders(
+    from_date=None,
+    to_date=None,
+    farm=None,
+    greenhouse=None,
+    status=None,
+    limit=200,
+):
+    """Application Floor Plan Work Orders for the React Historical page.
+
+    Echoes the server-rendered query in
+    upande_scp/www/application_work_order_history/index.py without forcing
+    a page reload to change filters.
+    """
+    from frappe.utils import add_days, getdate, nowdate
+
+    today = getdate(nowdate())
+    df = getdate(from_date) if from_date else add_days(today, -30)
+    dt = getdate(to_date) if to_date else today
+
+    filters = [
+        ["Work Order", "custom_type", "=", "Application Floor Plan"],
+        ["Work Order", "custom_scheduled_application_time", ">=", df],
+        ["Work Order", "custom_scheduled_application_time", "<=", add_days(dt, 1)],
+    ]
+    if greenhouse:
+        filters.append(["Work Order", "custom_greenhouse", "=", greenhouse])
+    s = (status or "").lower()
+    if s == "pending":
+        filters.append(["Work Order", "docstatus", "=", 0])
+    elif s == "approved":
+        filters.append(["Work Order", "docstatus", "=", 1])
+    elif s == "cancelled":
+        filters.append(["Work Order", "docstatus", "=", 2])
+
+    rows = frappe.get_list(
+        "Work Order",
+        filters=filters,
+        fields=[
+            "name",
+            "production_item",
+            "item_name",
+            "qty",
+            "stock_uom",
+            "custom_greenhouse",
+            "custom_variety",
+            "custom_scope",
+            "custom_spray_type",
+            "custom_kit",
+            "custom_scheduled_application_time",
+            "custom_area",
+            "docstatus",
+            "owner",
+            "creation",
+        ],
+        order_by="custom_scheduled_application_time desc, creation desc",
+        limit=int(limit) or 200,
+    )
+    if farm:
+        f_low = farm.lower()
+        rows = [
+            w for w in rows
+            if w.get("custom_greenhouse")
+            and (
+                w["custom_greenhouse"].split(" - ")[-1] == farm
+                or f_low in (w["custom_greenhouse"] or "").lower()
+            )
+        ]
+    for w in rows:
+        ds = w.get("docstatus")
+        w["status_label"] = (
+            "Approved" if ds == 1 else "Cancelled" if ds == 2 else "Pending"
+        )
+        w["status_state"] = (
+            "approved" if ds == 1 else "cancelled" if ds == 2 else "pending"
+        )
+
+    ghs = frappe.db.sql(
+        """
+        SELECT DISTINCT custom_greenhouse
+        FROM `tabWork Order`
+        WHERE custom_type = 'Application Floor Plan'
+          AND custom_greenhouse IS NOT NULL AND custom_greenhouse != ''
+        ORDER BY custom_greenhouse
+        """,
+        as_dict=True,
+    )
+    farms = sorted({
+        (g["custom_greenhouse"] or "").split(" - ")[-1]
+        for g in ghs
+        if g["custom_greenhouse"]
+    })
+    return {
+        "work_orders": rows,
+        "greenhouses": [g["custom_greenhouse"] for g in ghs],
+        "farms": [f for f in farms if f],
+    }
+
+
+@frappe.whitelist()
+def get_application_work_order(name):
+    """Single Application Work Order with its BOM exploded items, used by
+    the React detail view."""
+    if not name:
+        frappe.throw("name is required")
+    wo = frappe.get_doc("Work Order", name).as_dict()
+    bom = None
+    chemicals = []
+    if wo.get("bom_no"):
+        try:
+            bom_doc = frappe.get_doc("BOM", wo["bom_no"])
+            bom = bom_doc.as_dict()
+            chemicals = [c.as_dict() for c in (bom_doc.exploded_items or [])]
+        except frappe.DoesNotExistError:
+            pass
+    if wo.get("docstatus") == 1:
+        status_label, status_state = "Approved", "approved"
+    elif wo.get("docstatus") == 2:
+        status_label, status_state = "Cancelled", "cancelled"
+    else:
+        status_label, status_state = "Pending", "pending"
+    return {
+        "work_order": wo,
+        "bom": bom,
+        "chemicals": chemicals,
+        "status_label": status_label,
+        "status_state": status_state,
+    }
+
+
+@frappe.whitelist()
+def submit_application_work_order(name):
+    """Approve a Work Order from the Approvals page (docstatus 0 → 1)."""
+    if not name:
+        frappe.throw("name is required")
+    doc = frappe.get_doc("Work Order", name)
+    if doc.docstatus == 0:
+        doc.submit()
+    return {"name": doc.name, "docstatus": doc.docstatus}
+
+
+@frappe.whitelist()
+def cancel_application_work_order(name):
+    """Cancel a submitted Work Order from the Approvals page."""
+    if not name:
+        frappe.throw("name is required")
+    doc = frappe.get_doc("Work Order", name)
+    if doc.docstatus == 1:
+        doc.cancel()
+    return {"name": doc.name, "docstatus": doc.docstatus}
+
+
+@frappe.whitelist()
+def get_application_plan_bootstrap():
+    """One-shot bootstrap for the React Application Plan page.
+
+    Returns:
+        warehouses: greenhouses allowed for spray plans (filtered by Spray
+                    Plan Settings allowed-farms + spray equipment registry).
+        kits:       Spray Equipment Details rows ({kit, warehouse}).
+        boms:       Active Chemical Mix BOMs the planner can pick from.
+    """
+    from upande_scp.serverscripts.cache_utils import (
+        K_AFP_WAREHOUSES,
+        K_AFP_SPRAY_EQUIPMENT,
+        TTL_LONG,
+    )
+
+    def _build_warehouses():
+        # Mirrors the new_application_floor_plan/index.py filter — Spray Plan
+        # Settings.allowed_farms + warehouses that have spray equipment.
+        try:
+            settings = frappe.get_single("Spray Plan Settings")
+        except frappe.DoesNotExistError:
+            settings = None
+        allowed_farms = (
+            [r.farm for r in (getattr(settings, "allowed_farms", None) or [])]
+            if settings
+            else []
+        )
+        filters = {"warehouse_type": "Greenhouse", "disabled": 0}
+        rows = frappe.get_all(
+            "Warehouse",
+            filters=filters,
+            fields=["name", "custom_farm"],
+            limit_page_length=0,
+        )
+        if allowed_farms:
+            rows = [
+                r for r in rows if (r.get("custom_farm") or "") in allowed_farms
+            ]
+        return rows
+
+    def _build_kits():
+        return frappe.get_all(
+            "Spray Equipment Details",
+            fields=["kit", "warehouse"],
+            limit_page_length=0,
+        )
+
+    return {
+        "warehouses": get_or_set(K_AFP_WAREHOUSES, _build_warehouses, ttl=TTL_LONG),
+        "kits": get_or_set(K_AFP_SPRAY_EQUIPMENT, _build_kits, ttl=TTL_LONG),
+        "boms": frappe.get_all(
+            "BOM",
+            filters={
+                "custom_item_group": "Chemical Mix",
+                "is_active": 1,
+                "docstatus": 1,
+            },
+            fields=["name", "item_name", "custom_farm", "uom", "quantity"],
+            order_by="modified desc",
+            limit_page_length=200,
+        ),
+    }
+
+
+@frappe.whitelist()
+def get_blocks_geojson():
+    """Block-warehouse polygons for the 3D avocado map. Wraps the existing
+    K_BLOCKS_GEOJSON cache so the React page can pull it without a server-
+    rendered context injection."""
+    from upande_scp.serverscripts.cache_utils import (
+        K_BLOCKS_GEOJSON,
+        TTL_LONG,
+    )
+    from upande_scp.www.avocado_scouts_map.index import _build_blocks_geojson
+
+    return get_or_set(K_BLOCKS_GEOJSON, _build_blocks_geojson, ttl=TTL_LONG)
+
+
+@frappe.whitelist()
+def get_scout_lookup():
+    """Map of Employee ``name`` (the numeric ID) to human-readable
+    ``employee_name``. Cached because the Employee list rarely changes during
+    a session and Top Scouts panels render on every dashboard load."""
+    return get_or_set(_K_SCOUTS_LOOKUP, _build_scout_lookup, ttl=TTL_LONG)
+
+
+@frappe.whitelist()
 def get_traps_by_greenhouse(trap_type=None):
     """{greenhouse: {"indoor": [...], "outdoor": [...]}}.
 

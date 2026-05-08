@@ -4,6 +4,8 @@
 *.swp
 tags
 node_modules
+upande_scp/public/dist
+package-lock.json
 __pycache__
 data.csv
 pest data.txt

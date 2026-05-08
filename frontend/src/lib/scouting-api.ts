@@ -724,6 +724,101 @@ export async function fetchBlocksGeojson(): Promise<GeoJsonFC> {
   });
 }
 
+/**
+ * Map Settings — global default lat/lon/zoom + per-farm overrides used by
+ * the Traps / Observations / Rose Scouting maps to fly-to a farm when the
+ * operator selects one. IDB-cached on top of the server's cache so a
+ * full-page reload doesn't have to round-trip again.
+ */
+export interface FarmCoord {
+  lat: number;
+  lon: number;
+  zoom: number;
+}
+export interface MapSettings {
+  lat: number;
+  lon: number;
+  default_zoom: number;
+  farms: Record<string, FarmCoord>;
+}
+
+const MAP_SETTINGS_VERSION = 1;
+const MAP_SETTINGS_KEY = "map_settings_v1";
+const MAP_SETTINGS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+const EMPTY_MAP_SETTINGS: MapSettings = {
+  lat: 0,
+  lon: 0,
+  default_zoom: 16,
+  farms: {},
+};
+
+export async function fetchMapSettings(): Promise<MapSettings> {
+  return cached("map_settings", async () => {
+    try {
+      const idbHit = await getPayload<MapSettings>(
+        MAP_SETTINGS_KEY,
+        MAP_SETTINGS_VERSION,
+        MAP_SETTINGS_MAX_AGE_MS,
+      );
+      if (idbHit) {
+        // Refresh in the background so an admin's edit in the doctype
+        // appears on the next render without blocking this one.
+        void refreshMapSettingsInBackground();
+        return idbHit;
+      }
+    } catch {
+      /* IDB might be unavailable in private browsing */
+    }
+    const fresh = await fetchMapSettingsFromServer();
+    try {
+      await setPayload(MAP_SETTINGS_KEY, fresh, MAP_SETTINGS_VERSION);
+    } catch {
+      /* non-fatal */
+    }
+    return fresh;
+  });
+}
+
+async function fetchMapSettingsFromServer(): Promise<MapSettings> {
+  try {
+    const r = await call<MapSettings>(
+      "upande_scp.serverscripts.scouting_metrics_api.get_map_settings",
+      {},
+    );
+    if (!r) return EMPTY_MAP_SETTINGS;
+    return {
+      lat: Number(r.lat) || 0,
+      lon: Number(r.lon) || 0,
+      default_zoom: Number(r.default_zoom) || 16,
+      farms: r.farms || {},
+    };
+  } catch {
+    return EMPTY_MAP_SETTINGS;
+  }
+}
+
+let mapSettingsBgInFlight = false;
+async function refreshMapSettingsInBackground(): Promise<void> {
+  if (mapSettingsBgInFlight) return;
+  mapSettingsBgInFlight = true;
+  try {
+    const fresh = await fetchMapSettingsFromServer();
+    await setPayload(MAP_SETTINGS_KEY, fresh, MAP_SETTINGS_VERSION);
+    refCache.set("map_settings", { ts: Date.now(), value: fresh });
+  } catch {
+    /* swallow — page already rendered with the previous payload */
+  } finally {
+    mapSettingsBgInFlight = false;
+  }
+}
+
+/** Prime the Map Settings cache on app boot — same idiom as
+ *  ``primeBedsAndZones`` so picking a farm is instant. */
+export function primeMapSettings(): void {
+  void fetchMapSettings().catch(() => {});
+}
+
 export async function fetchTanksValvesGeojson(
   args: { farm?: string } = {},
 ): Promise<GeoJsonFC> {

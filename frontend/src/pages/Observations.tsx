@@ -1,204 +1,489 @@
+/**
+ * Observations map — port of upande_scp/www/observations_map/index.html.
+ *
+ * Single-day view of scouting activity for one crop/farm/greenhouse:
+ * each scouted zone is rendered as a closed polygon filled with the
+ * canonical pest / disease colour of the dominant observation under the
+ * active kind. No range — picking a date range layered multiple days'
+ * worth of observations into one polygon and turned the map into noise.
+ *
+ * Reads only from the IDB-cached scouting payload and the IDB-cached
+ * bed/zone GeoJSON (warmed on app boot). The leaflet container sits in
+ * its own ``isolate z-0`` stacking context so the date-picker popover
+ * always paints above the map.
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
 import { LoadingStrip } from "@/components/LoadingStrip";
-import { ALL, MapHeader, type MapFilterValue } from "./maps/MapHeader";
-import { DEFAULT_CROP } from "@/lib/scouting-api";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ALL,
+  SingleDayHeader,
+  type SingleDayFilterValue,
+} from "./maps/SingleDayHeader";
+import { fetchBedsAndZones } from "@/lib/scouting-api";
+import { flyToFarm, useMapSettings } from "@/hooks/use-map-settings";
 import { useObservationColors } from "@/lib/observation-colors";
 import { ymd } from "@/lib/utils";
+import {
+  flattenZones,
+  zonePolygonFromGeometry,
+  type ZoneFeature,
+} from "./maps/zone-utils";
 import type { ScoutingEntry } from "@/lib/scouting-types";
 
-function defaultRange(): { from: string; to: string } {
-  const today = new Date();
-  const from = new Date(today);
-  from.setDate(today.getDate() - 14);
-  return { from: ymd(from), to: ymd(today) };
-}
+type Kind = "pest" | "disease" | "trap";
 
-const KIND_COLOR = {
+const KIND_LABEL: Record<Kind, string> = {
+  pest: "Pests",
+  disease: "Diseases",
+  trap: "Traps",
+};
+
+const KIND_FALLBACK: Record<Kind, string> = {
   pest: "#2BA6E0",
   disease: "#E66BAA",
   trap: "#8466C7",
-  empty: "#9ca3af",
-} as const;
+};
 
-function entryKind(e: ScoutingEntry): keyof typeof KIND_COLOR {
-  if (e.pests_scouting_entry?.length) return "pest";
-  if (e.diseases_scouting_entry?.length) return "disease";
-  if (e.trap_scouting_entry?.length) return "trap";
-  return "empty";
+function ghOf(zoneOrBed: string): string {
+  const i = zoneOrBed.indexOf(" - Bed ");
+  return i >= 0 ? zoneOrBed.slice(0, i) : zoneOrBed.split(" - ")[0];
 }
 
-function entryHasCoords(e: any): e is ScoutingEntry & {
-  latitude: number;
-  longitude: number;
-} {
-  return (
-    typeof e?.latitude === "number" &&
-    typeof e?.longitude === "number" &&
-    Number.isFinite(e.latitude) &&
-    Number.isFinite(e.longitude) &&
-    Math.abs(e.latitude) > 0.001
-  );
+/** Ordered observation names of the requested kind on a single entry. */
+function namesForKind(e: ScoutingEntry, kind: Kind): string[] {
+  if (kind === "pest")
+    return (e.pests_scouting_entry || [])
+      .map((p) => p.pest)
+      .filter(Boolean) as string[];
+  if (kind === "disease")
+    return (e.diseases_scouting_entry || [])
+      .map((d) => d.disease)
+      .filter(Boolean) as string[];
+  return (e.trap_scouting_entry || [])
+    .map((t) => t.pest)
+    .filter(Boolean) as string[];
+}
+
+/** Map intensity (count / max) → fill opacity. Mirrors the legacy
+ *  ``intensityToOpacity`` helper. */
+function intensityToOpacity(count: number, maxCount: number): number {
+  if (!count || !maxCount) return 0;
+  return 0.15 + (count / maxCount) * 0.75;
 }
 
 export function Observations() {
-  const [filters, setFilters] = useState<MapFilterValue>(() => ({
-    crop: DEFAULT_CROP,
+  const [filters, setFilters] = useState<SingleDayFilterValue>(() => ({
+    crop: "Rose",
     farm: ALL,
     greenhouse: ALL,
-    ...defaultRange(),
+    date: ymd(new Date()),
   }));
-  const ghForCall = filters.greenhouse === ALL ? undefined : filters.greenhouse;
+  const [kind, setKind] = useState<Kind>("pest");
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+
+  // Single-day query: from === to. The IDB cache is day-precise, so this
+  // is a single-day slice of an already-resident dataset.
+  const ghForCall =
+    filters.greenhouse === ALL ? undefined : filters.greenhouse;
   const { data, loading } = useScouting({
-    from: filters.from,
-    to: filters.to,
+    from: filters.date,
+    to: filters.date,
     greenhouse: ghForCall,
     crop: filters.crop,
   });
 
-  const points = useMemo(() => {
+  const { pest: pestColor, disease: diseaseColor } = useObservationColors();
+  const mapSettings = useMapSettings();
+  const resolveColor = (name: string): string =>
+    kind === "disease" ? diseaseColor(name) : pestColor(name);
+
+  // Reset legend selection when the kind toggles.
+  useEffect(() => {
+    setHidden(new Set());
+  }, [kind]);
+
+  // Geometry — IDB-cached on app boot, near-instant.
+  const [zones, setZones] = useState<ZoneFeature[]>([]);
+  useEffect(() => {
+    fetchBedsAndZones().then((vs) => setZones(flattenZones(vs)));
+  }, []);
+
+  const farmNeedle = filters.farm === ALL ? "" : filters.farm.toLowerCase();
+  const inFarm = (e: ScoutingEntry) => {
+    if (!farmNeedle) return true;
+    return (e.greenhouse || e.block || "")
+      .toLowerCase()
+      .includes(farmNeedle);
+  };
+
+  // Entries to consider — single day, filtered by farm.
+  const dayEntries = useMemo(() => {
     if (!data) return [];
-    // Farm filter is applied client-side because useScouting only takes
-    // greenhouse — we narrow further here without re-fetching.
-    return data.entries.filter(entryHasCoords);
-  }, [data]);
+    return data.entries.filter(
+      (e) => e.date_of_capture === filters.date && inFarm(e),
+    );
+  }, [data, filters.date, farmNeedle]);
 
-  const { pest: resolvePestColor, disease: resolveDiseaseColor } =
-    useObservationColors();
+  // Per-zone observation map: zone -> { name -> count } under the active kind.
+  const zoneObs = useMemo(() => {
+    const out: Record<string, Record<string, number>> = {};
+    for (const e of dayEntries) {
+      if (!e.zone) continue;
+      const list =
+        kind === "pest"
+          ? e.pests_scouting_entry
+          : kind === "disease"
+            ? e.diseases_scouting_entry
+            : e.trap_scouting_entry;
+      if (!list?.length) continue;
+      for (const o of list as any[]) {
+        const name = kind === "disease" ? o.disease : o.pest;
+        if (!name) continue;
+        const c = Number(o.count) > 0 ? Number(o.count) : 1;
+        if (!out[e.zone]) out[e.zone] = {};
+        out[e.zone][name] = (out[e.zone][name] || 0) + c;
+      }
+    }
+    return out;
+  }, [dayEntries, kind]);
 
+  // Per-zone visible totals (after the legend hide-set is applied).
+  const zoneTotals = useMemo(() => {
+    const out = new Map<string, number>();
+    Object.entries(zoneObs).forEach(([zone, items]) => {
+      let total = 0;
+      Object.entries(items).forEach(([name, c]) => {
+        if (!hidden.has(name)) total += c;
+      });
+      if (total > 0) out.set(zone, total);
+    });
+    return out;
+  }, [zoneObs, hidden]);
+
+  const maxIntensity = useMemo(() => {
+    let m = 1;
+    zoneTotals.forEach((v) => {
+      if (v > m) m = v;
+    });
+    return m;
+  }, [zoneTotals]);
+
+  // Legend rows: count per observation name across the day.
+  const legendRows = useMemo(() => {
+    const counts: Record<string, number> = {};
+    Object.values(zoneObs).forEach((items) =>
+      Object.entries(items).forEach(([name, c]) => {
+        counts[name] = (counts[name] || 0) + c;
+      }),
+    );
+    return Object.entries(counts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [zoneObs]);
+
+  // KPIs (Zones, Beds, Scouts, Entries) — restricted to the visible kind.
+  const stats = useMemo(() => {
+    const zonesSet = new Set<string>();
+    const beds = new Set<string>();
+    const scouts = new Set<string>();
+    let entries = 0;
+    for (const e of dayEntries) {
+      const names = namesForKind(e, kind);
+      if (!names.length) continue;
+      if (!names.some((n) => !hidden.has(n))) continue;
+      if (e.zone) zonesSet.add(e.zone);
+      if (e.bed) beds.add(e.bed);
+      if (e.scouts_name) scouts.add(e.scouts_name);
+      entries += 1;
+    }
+    return {
+      zones: zonesSet.size,
+      beds: beds.size,
+      scouts: scouts.size,
+      entries,
+    };
+  }, [dayEntries, kind, hidden]);
+
+  // ── Map rendering ────────────────────────────────────────────────────
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
 
-  // Render markers whenever the filtered point list changes.
+  // Index zones by name for O(1) lookup; only zones present in the day's
+  // entries actually get drawn.
+  const zoneByName = useMemo(() => {
+    const m = new Map<string, ZoneFeature>();
+    for (const z of zones) m.set(z.zoneName, z);
+    return m;
+  }, [zones]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (!layerRef.current) {
-      layerRef.current = L.layerGroup().addTo(map);
-    }
+    if (!layerRef.current) layerRef.current = L.layerGroup().addTo(map);
     const layer = layerRef.current;
     layer.clearLayers();
-    if (!points.length) return;
+
+    if (!zoneTotals.size) return;
 
     const bounds = L.latLngBounds([]);
-    points.forEach((p) => {
-      const lat = (p as any).latitude as number;
-      const lng = (p as any).longitude as number;
-      const kind = entryKind(p);
-      // Per-pest / per-disease colour wins when the entry has a single
-      // dominant observation; falls back to the kind-level palette for
-      // mixed entries (or trap-only entries that don't carry a pest).
-      let color: string = KIND_COLOR[kind];
-      if (kind === "pest" && p.pests_scouting_entry?.[0]?.pest) {
-        color = resolvePestColor(p.pests_scouting_entry[0].pest);
-      } else if (
-        kind === "disease" &&
-        p.diseases_scouting_entry?.[0]?.disease
+    zoneTotals.forEach((total, zoneName) => {
+      const z = zoneByName.get(zoneName);
+      if (!z?.geometry) return;
+      // Restrict by greenhouse selector.
+      if (
+        filters.greenhouse !== ALL &&
+        !z.bedName.startsWith(filters.greenhouse)
       ) {
-        color = resolveDiseaseColor(p.diseases_scouting_entry[0].disease);
-      } else if (kind === "trap" && p.trap_scouting_entry?.[0]?.pest) {
-        color = resolvePestColor(p.trap_scouting_entry[0].pest);
+        return;
       }
-      const marker = L.circleMarker([lat, lng], {
-        radius: 4,
-        color: "#ffffff",
-        weight: 1,
-        fillColor: color,
-        fillOpacity: 0.9,
+      const polygon = zonePolygonFromGeometry(z.geometry);
+      if (!polygon) return;
+
+      // Dominant visible observation in this zone → its canonical colour.
+      const items = zoneObs[zoneName] || {};
+      const visible = Object.entries(items).filter(
+        ([n]) => !hidden.has(n),
+      );
+      if (!visible.length) return;
+      visible.sort((a, b) => b[1] - a[1]);
+      const dominantName = visible[0][0];
+      const fill = resolveColor(dominantName) || KIND_FALLBACK[kind];
+      const op = intensityToOpacity(total, maxIntensity);
+
+      const layerObj = L.geoJSON(polygon as any, {
+        style: () => ({
+          color: fill,
+          weight: 1.6,
+          opacity: 0.9,
+          fillColor: fill,
+          fillOpacity: op,
+        }),
       });
-      const obsList: string[] = [];
-      p.pests_scouting_entry?.forEach((x) =>
-        obsList.push(`Pest · ${x.pest}${x.stage ? ` · ${x.stage}` : ""}`),
-      );
-      p.diseases_scouting_entry?.forEach((x) =>
-        obsList.push(`Disease · ${x.disease}${x.stage ? ` · ${x.stage}` : ""}`),
-      );
-      p.trap_scouting_entry?.forEach((x) =>
-        obsList.push(`Trap · ${x.trap} · ${x.pest || "—"} (${x.count})`),
-      );
-      const obsHtml = obsList.length
-        ? obsList.map((o) => `<li>${o}</li>`).join("")
-        : "<li>No observations</li>";
-      marker.bindPopup(
-        `<div style="font:12px Inter,Arial,sans-serif;color:#374151;min-width:180px">
-           <div style="font-weight:600;margin-bottom:2px">${p.greenhouse || p.block || "—"}</div>
-           <div style="color:#6b7280;font-size:11px;margin-bottom:6px">${p.zone || p.tree || ""} · ${p.date_of_capture}</div>
-           <ul style="padding-left:14px;margin:0">${obsHtml}</ul>
+
+      // Tooltip: zone name + total + dominant observation.
+      const popupRows = visible
+        .map(
+          ([n, c]) =>
+            `<div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+               <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${resolveColor(n)};border:1px solid #fff"></span>
+               <span style="flex:1">${n}</span>
+               <span style="font-variant-numeric:tabular-nums;color:#6b7280">×${c}</span>
+             </div>`,
+        )
+        .join("");
+      layerObj.bindPopup(
+        `<div style="font:12px Inter,Arial,sans-serif;color:#374151;min-width:220px">
+           <div style="font-weight:600;margin-bottom:4px">${zoneName}</div>
+           <div style="color:#6b7280;font-size:11px;margin-bottom:6px">
+             ${KIND_LABEL[kind]} · ${total} observation${total === 1 ? "" : "s"}
+           </div>
+           ${popupRows}
          </div>`,
         { closeButton: false },
       );
-      marker.addTo(layer);
-      bounds.extend([lat, lng]);
+      layerObj.bindTooltip(zoneName, { sticky: true });
+      layerObj.addTo(layer);
+      try {
+        bounds.extend(layerObj.getBounds());
+      } catch {
+        /* skip empty */
+      }
     });
+
     if (bounds.isValid()) {
-      map.fitBounds(bounds.pad(0.1), { animate: false });
-    }
-  }, [points, resolvePestColor, resolveDiseaseColor]);
-
-  // Apply farm filter (we don't have it in useScouting) — narrow points by
-  // greenhouse-from-farm map. Cheap because farms stays small.
-  const farmFiltered = useMemo(() => {
-    if (filters.farm === ALL) return points;
-    // We rely on the entry's greenhouse / block name carrying the farm
-    // prefix; otherwise fall back to a name-includes match.
-    const needle = filters.farm.toLowerCase();
-    return points.filter((p) => {
-      const wh = (p.greenhouse || p.block || "").toLowerCase();
-      return wh.includes(needle);
-    });
-  }, [points, filters.farm]);
-
-  // Use farm-filtered set when rendering to actually narrow the marker set.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !layerRef.current) return;
-    layerRef.current.eachLayer((m: any) => {
-      const ll = m.getLatLng?.();
-      if (!ll) return;
-      const found = farmFiltered.find(
-        (p: any) => p.latitude === ll.lat && p.longitude === ll.lng,
+      map.fitBounds(bounds.pad(0.08), { animate: false });
+    } else if (mapSettings.lat || mapSettings.lon) {
+      flyToFarm(
+        map,
+        mapSettings,
+        filters.farm === ALL ? null : filters.farm,
+        { animate: false },
       );
-      m.setStyle?.({ fillOpacity: found ? 0.9 : 0.05 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoneTotals, zoneByName, kind, maxIntensity, filters.greenhouse, mapSettings, filters.farm]);
+
+  // Fly-to whenever the Farm dropdown changes, using the per-farm
+  // coordinates from the Map Settings doctype.
+  const farmFlyMounted = useRef(false);
+  useEffect(() => {
+    if (!farmFlyMounted.current) {
+      farmFlyMounted.current = true;
+      const t = setTimeout(() => {
+        flyToFarm(
+          mapRef.current,
+          mapSettings,
+          filters.farm === ALL ? null : filters.farm,
+          { animate: false },
+        );
+      }, 60);
+      return () => clearTimeout(t);
+    }
+    flyToFarm(
+      mapRef.current,
+      mapSettings,
+      filters.farm === ALL ? null : filters.farm,
+      { animate: true },
+    );
+  }, [filters.farm, mapSettings]);
+
+  const toggleName = (name: string) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
     });
-  }, [farmFiltered]);
 
   return (
     <div className="flex flex-col min-h-svh">
-      <MapHeader
+      <SingleDayHeader
         title="Observations"
-        subtitle="Scouting entries · color-coded by kind"
+        subtitle="Scouted zones · single-day · canonical pest / disease colour"
         value={filters}
         onChange={setFilters}
       />
 
-      <div className="flex-1 flex flex-col">
-        <div className="flex items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b">
-          <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full" style={{ background: KIND_COLOR.pest }} />
-            Pests
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full" style={{ background: KIND_COLOR.disease }} />
-            Diseases
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full" style={{ background: KIND_COLOR.trap }} />
-            Traps
-          </span>
-          <span className="ml-auto tabular-nums">
-            {farmFiltered.length} / {points.length} points
-          </span>
+      {/* Kind pills with live observation counts. */}
+      <div className="flex flex-wrap items-center gap-2 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b bg-card/50">
+        <div className="flex items-center gap-0.5 rounded-md border bg-card p-0.5">
+          {(["pest", "disease", "trap"] as Kind[]).map((k) => {
+            const total = dayEntries.reduce(
+              (s, e) => s + namesForKind(e, k).length,
+              0,
+            );
+            return (
+              <button
+                key={k}
+                onClick={() => setKind(k)}
+                className={`px-2.5 py-1 rounded text-[0.7rem] transition-colors flex items-center gap-1.5 ${
+                  kind === k
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <span
+                  className="h-2 w-2 rounded-full border"
+                  style={{ background: KIND_FALLBACK[k] }}
+                  aria-hidden
+                />
+                {KIND_LABEL[k]}
+                <span className="text-[0.65rem] tabular-nums opacity-80">
+                  {total}
+                </span>
+              </button>
+            );
+          })}
         </div>
+        <span className="ml-auto tabular-nums">
+          {zoneTotals.size} scouted zone{zoneTotals.size === 1 ? "" : "s"}
+        </span>
+      </div>
 
-        <div className="flex-1 min-h-0">
+      {/* Map + floating panel. ``isolate z-0`` keeps the leaflet panes
+          (z-index up to 700 internally) inside this stacking context so
+          the date-picker popover (z-50, portaled to body) always paints
+          above the map. */}
+      <div className="relative flex-1 min-h-0">
+        <div className="absolute inset-0 isolate z-0">
           <MapBase
-            onReady={(map) => {
-              mapRef.current = map;
+            onReady={(m) => {
+              mapRef.current = m;
             }}
           />
         </div>
+
+        <Card className="absolute bottom-4 right-4 z-10 w-72 max-h-[70vh] overflow-y-auto bg-card/95 backdrop-blur shadow-md p-3">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle className="text-sm">{KIND_LABEL[kind]} summary</CardTitle>
+            <CardDescription className="text-[0.7rem] tabular-nums">
+              {filters.date}
+            </CardDescription>
+          </CardHeader>
+
+          <div className="grid grid-cols-4 gap-2 mb-3">
+            {[
+              ["Zones", stats.zones],
+              ["Beds", stats.beds],
+              ["Scouts", stats.scouts],
+              ["Entries", stats.entries],
+            ].map(([label, v]) => (
+              <div
+                key={label as string}
+                className="rounded border bg-[var(--sd-bg-soft)] px-1.5 py-1 text-center"
+              >
+                <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
+                  {label}
+                </div>
+                <div className="text-sm font-semibold tabular-nums">{v}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground">
+              Legend
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="text-[0.65rem] px-2 py-0.5 rounded border bg-card hover:bg-muted"
+                onClick={() => setHidden(new Set())}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className="text-[0.65rem] px-2 py-0.5 rounded border bg-card hover:bg-muted"
+                onClick={() =>
+                  setHidden(new Set(legendRows.map((r) => r.name)))
+                }
+              >
+                None
+              </button>
+            </div>
+          </div>
+
+          {legendRows.length === 0 ? (
+            <div className="text-[0.72rem] text-muted-foreground py-3 text-center">
+              No {KIND_LABEL[kind].toLowerCase()} on this date.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              {legendRows.map((r) => {
+                const off = hidden.has(r.name);
+                return (
+                  <label
+                    key={r.name}
+                    className={`flex items-center gap-2 px-1.5 py-1 rounded hover:bg-muted cursor-pointer transition-opacity ${off ? "opacity-50" : ""}`}
+                  >
+                    <Checkbox
+                      checked={!off}
+                      onCheckedChange={() => toggleName(r.name)}
+                    />
+                    <span
+                      className="h-3 w-3 rounded-full border shrink-0"
+                      style={{ background: resolveColor(r.name) }}
+                      aria-hidden
+                    />
+                    <span className="text-[0.72rem] flex-1 truncate">
+                      {r.name}
+                    </span>
+                    <span className="text-[0.65rem] tabular-nums px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+                      {r.count}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </Card>
       </div>
 
       <LoadingStrip active={loading} />

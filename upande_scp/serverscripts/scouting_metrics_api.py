@@ -15,6 +15,7 @@ import frappe
 from upande_scp.serverscripts import scouting_metrics
 from upande_scp.serverscripts.cache_utils import (
     K_CROPS_SCOUTED,
+    K_MAP_SETTINGS,
     K_SM_BEDS_BY_GH,
     K_SM_FARMS_AND_GHS,
     K_SM_FARMS_AND_WHS,
@@ -36,6 +37,47 @@ def get_farms_and_greenhouses():
         scouting_metrics.get_farms_and_greenhouses,
         ttl=TTL_MEDIUM,
     )
+
+
+def _build_map_settings():
+    """Read Map Settings + its child Farm Map Coordinate rows into a flat
+    dict the SPA can fly the map to.
+
+    Returns:
+        {
+          lat, lon, default_zoom: float — the global fallback view,
+          farms: { farm_name: { lat, lon, zoom } } — per-farm overrides
+        }
+    """
+    doc = frappe.get_doc("Map Settings", "Map Settings")
+    farms = {}
+    for row in (doc.get("farm_coordinates") or []):
+        farm = (row.farm or "").strip()
+        if not farm:
+            continue
+        if row.lat in (None, 0) and row.lon in (None, 0):
+            continue
+        farms[farm] = {
+            "lat": float(row.lat or 0),
+            "lon": float(row.lon or 0),
+            "zoom": float(row.default_zoom or doc.default_zoom or 16),
+        }
+    return {
+        "lat": float(doc.lat or 0),
+        "lon": float(doc.lon or 0),
+        "default_zoom": float(doc.default_zoom or 16),
+        "farms": farms,
+    }
+
+
+@frappe.whitelist()
+def get_map_settings():
+    """Cached Map Settings payload for the React SPA's fly-to logic.
+
+    Cache invalidates automatically when ``Map Settings`` or
+    ``Farm Map Coordinate`` rows are saved (see ``cache_utils._DOC_INVALIDATIONS``).
+    """
+    return get_or_set(K_MAP_SETTINGS, _build_map_settings, ttl=TTL_LONG)
 
 
 @frappe.whitelist()

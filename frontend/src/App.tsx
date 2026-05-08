@@ -3,7 +3,7 @@ import { useView } from "@/lib/router";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { LoadingStrip } from "@/components/LoadingStrip";
-import { primeBedsAndZones } from "@/lib/scouting-api";
+import { primeBedsAndZones, primeMapSettings } from "@/lib/scouting-api";
 import { loadObservationColors } from "@/lib/observation-colors";
 
 // Each page imports its own heavy deps (recharts, leaflet, react-day-picker).
@@ -62,6 +62,7 @@ export function App() {
   // does not pay a network round-trip.
   useEffect(() => {
     primeBedsAndZones();
+    primeMapSettings();
     void loadObservationColors();
   }, []);
 

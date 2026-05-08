@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ALL, MapHeader, type MapFilterValue } from "./maps/MapHeader";
 import { DEFAULT_CROP, fetchFarmsAndWarehouses } from "@/lib/scouting-api";
+import { flyToFarm, useMapSettings } from "@/hooks/use-map-settings";
 import {
   pestColor,
   readableInk,
@@ -248,6 +249,7 @@ export function TrapsMap() {
   const [farmSel, setFarmSel] = useState<Set<string> | null>(null);
   const [ghToFarm, setGhToFarm] = useState<Record<string, string>>({});
   const { pest: resolvePestColor } = useObservationColors();
+  const mapSettings = useMapSettings();
 
   // farm → greenhouses map. Cached server-side; only hits the network on the
   // first scouting page in the session.
@@ -453,8 +455,44 @@ export function TrapsMap() {
       marker.addTo(layer);
       bounds.extend([lat, lng]);
     }
-    if (bounds.isValid()) m.fitBounds(bounds.pad(0.1), { animate: false });
-  }, [visibleTraps]);
+    if (bounds.isValid()) {
+      m.fitBounds(bounds.pad(0.1), { animate: false });
+    } else if (mapSettings.lat || mapSettings.lon) {
+      // No traps to frame — fall back to the farm/default coordinate so
+      // the operator at least sees the right region.
+      flyToFarm(
+        m,
+        mapSettings,
+        filters.farm === ALL ? null : filters.farm,
+        { animate: false },
+      );
+    }
+  }, [visibleTraps, mapSettings, filters.farm]);
+
+  // Fly to the picked farm whenever the operator changes the Farm dropdown.
+  // Skips the very first render so the trap-fitBounds above wins on boot.
+  const farmFlyMounted = useRef(false);
+  useEffect(() => {
+    if (!farmFlyMounted.current) {
+      farmFlyMounted.current = true;
+      // Initial framing — wait for the map to exist, then nudge into place.
+      const t = setTimeout(() => {
+        flyToFarm(
+          mapRef.current,
+          mapSettings,
+          filters.farm === ALL ? null : filters.farm,
+          { animate: false },
+        );
+      }, 60);
+      return () => clearTimeout(t);
+    }
+    flyToFarm(
+      mapRef.current,
+      mapSettings,
+      filters.farm === ALL ? null : filters.farm,
+      { animate: true },
+    );
+  }, [filters.farm, mapSettings]);
 
   const totalCatches = visibleTraps.reduce((s, t) => s + t.totalCount, 0);
   const indoorCount = visibleTraps.filter((t) => t.location === "Indoor").length;

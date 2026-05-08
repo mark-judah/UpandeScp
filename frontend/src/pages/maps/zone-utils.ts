@@ -43,15 +43,49 @@ export function flattenZones(varieties: VarietyNode[]): ZoneFeature[] {
 }
 
 /**
- * Compute the [lat, lng] centroid of a Polygon / MultiPolygon. Returns null
- * if the geometry is missing or unrecognised.
+ * Compute the [lat, lng] centroid of a Polygon / MultiPolygon /
+ * FeatureCollection-of-LineStrings. Returns null if the geometry is
+ * missing or unrecognised.
+ *
+ * Zones in the bed/zone payload arrive as FeatureCollections of LineString
+ * features (one per bed-line in the zone) — the LineString case averages
+ * every vertex across every feature so the centroid sits in the middle of
+ * the entire zone, not just one of its lines.
  */
 export function geometryCentroid(geom: any): [number, number] | null {
   if (!geom) return null;
+
+  // FeatureCollection — average across every feature's coordinates.
+  if (geom.type === "FeatureCollection" && Array.isArray(geom.features)) {
+    let lat = 0;
+    let lng = 0;
+    let n = 0;
+    for (const f of geom.features) {
+      const g = f?.geometry;
+      if (!g) continue;
+      if (g.type === "LineString" && Array.isArray(g.coordinates)) {
+        for (const c of g.coordinates) {
+          lng += c[0];
+          lat += c[1];
+          n += 1;
+        }
+      } else if (g.type === "Polygon" && Array.isArray(g.coordinates?.[0])) {
+        for (const c of g.coordinates[0]) {
+          lng += c[0];
+          lat += c[1];
+          n += 1;
+        }
+      }
+    }
+    return n ? [lat / n, lng / n] : null;
+  }
+
   let coords: number[][] = [];
   if (geom.type === "Polygon") coords = geom.coordinates?.[0] || [];
   else if (geom.type === "MultiPolygon")
     coords = geom.coordinates?.[0]?.[0] || [];
+  else if (geom.type === "LineString")
+    coords = (geom.coordinates as number[][]) || [];
   else if (geom.type === "Point") {
     const c = geom.coordinates;
     return c && c.length >= 2 ? [c[1], c[0]] : null;
@@ -65,6 +99,41 @@ export function geometryCentroid(geom: any): [number, number] | null {
     lat += c[1];
   }
   return [lat / coords.length, lng / coords.length];
+}
+
+/**
+ * Build a closed `Polygon` GeoJSON geometry from a zone's
+ * FeatureCollection-of-LineStrings — i.e. the same trick the legacy
+ * observations_map page uses (``getZoneCoords`` + ring-close) to draw a
+ * leaflet polygon with a fill colour. Returns null when the geometry is
+ * unusable (no points, single point, etc.).
+ */
+export function zonePolygonFromGeometry(geom: any): any | null {
+  if (!geom) return null;
+  // Already a polygon — pass through.
+  if (geom.type === "Polygon" || geom.type === "MultiPolygon") return geom;
+
+  const ring: number[][] = [];
+  if (geom.type === "LineString" && Array.isArray(geom.coordinates)) {
+    for (const c of geom.coordinates) ring.push([c[0], c[1]]);
+  } else if (
+    geom.type === "FeatureCollection" &&
+    Array.isArray(geom.features)
+  ) {
+    for (const f of geom.features) {
+      const g = f?.geometry;
+      if (!g) continue;
+      if (g.type === "LineString" && Array.isArray(g.coordinates)) {
+        for (const c of g.coordinates) ring.push([c[0], c[1]]);
+      }
+    }
+  }
+  if (ring.length < 3) return null;
+  // Close the ring if needed.
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) ring.push(first);
+  return { type: "Polygon", coordinates: [ring] };
 }
 
 /**

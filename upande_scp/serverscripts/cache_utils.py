@@ -67,6 +67,10 @@ K_CROPS_SCOUTED = "scp:crops_scouted_v1"
 # tweak invalidates instantly without rebuilding the per-month entries.
 K_PEST_COLORS = "scouting_dashboard:pest_colors"
 K_DISEASE_COLORS = "scouting_dashboard:disease_colors"
+# Map Settings — global default lat/lon/zoom + per-farm coordinates that
+# the SPA uses to fly-to a farm when the operator picks one in the
+# Traps / Observations / Rose Scouting headers.
+K_MAP_SETTINGS = "scp:map_settings_v1"
 # Cascading Farm → Section → Block/Greenhouse hierarchy for the scouts map.
 K_FARM_HIERARCHY = "scp:farm_hierarchy_v1"
 # Versioned scouting payload cache. Keys use the prefix + version stamp +
@@ -392,6 +396,8 @@ _DOC_INVALIDATIONS = {
     "Spray Plan Settings": (K_AFP_WAREHOUSES,),
     "Spray Plan Allowed Farm": (K_AFP_WAREHOUSES,),
     "Spray Plan Exclude Keyword": (K_AFP_WAREHOUSES,),
+    "Map Settings": (K_MAP_SETTINGS,),
+    "Farm Map Coordinate": (K_MAP_SETTINGS,),
 }
 
 

@@ -367,6 +367,76 @@ def cancel_application_work_order(name):
 
 
 @frappe.whitelist()
+def get_bom_details(name):
+    """Single BOM with its exploded chemicals + stock balances per warehouse.
+
+    Returned chemicals already carry ``balances`` (warehouse → qty) so the
+    React Application Plan can render the source-warehouse pickers without
+    a second round-trip. Falls back to chem warehouses only when fertilizer
+    balances aren't relevant.
+    """
+    if not name:
+        frappe.throw("name is required")
+
+    bom = frappe.get_doc("BOM", name)
+    chemicals = []
+    for it in bom.exploded_items or []:
+        chemicals.append({
+            "item_code": it.item_code,
+            "item_name": it.item_name,
+            "stock_qty": it.stock_qty,
+            "stock_uom": it.stock_uom,
+            "rate": it.rate,
+            "amount": it.amount,
+            "idx": it.idx,
+            "item_group": frappe.db.get_value("Item", it.item_code, "item_group") or "",
+        })
+
+    # Stock balances for every chemical the BOM explodes into.
+    item_codes = [c["item_code"] for c in chemicals if c.get("item_code")]
+    chem_warehouses = []
+    fert_warehouses = []
+    balances_by_code = {}
+
+    if item_codes:
+        from upande_scp.serverscripts.get_bom_stock_balances import (
+            _FERTILIZER_GROUP,
+            _fill_balances,
+            get_allowed_chemical_store_warehouses,
+            get_allowed_fertilizer_unit_warehouses,
+        )
+
+        chem_warehouses = get_allowed_chemical_store_warehouses()
+        fert_warehouses = get_allowed_fertilizer_unit_warehouses()
+
+        chem_codes = [c["item_code"] for c in chemicals if c.get("item_group") != _FERTILIZER_GROUP]
+        fert_codes = [c["item_code"] for c in chemicals if c.get("item_group") == _FERTILIZER_GROUP]
+
+        if chem_codes:
+            balances_by_code.update(_fill_balances(chem_codes, chem_warehouses))
+        if fert_codes:
+            balances_by_code.update(_fill_balances(fert_codes, fert_warehouses))
+
+    for c in chemicals:
+        c["balances"] = balances_by_code.get(c["item_code"], {})
+
+    return {
+        "name": bom.name,
+        "item_name": bom.item_name,
+        "uom": bom.uom,
+        "quantity": bom.quantity,
+        "custom_water_ph": bom.get("custom_water_ph"),
+        "custom_water_hardness": bom.get("custom_water_hardness"),
+        "custom_water_volume": bom.get("custom_water_volume"),
+        "custom_farm": bom.get("custom_farm"),
+        "custom_business_unit": bom.get("custom_business_unit"),
+        "chemicals": chemicals,
+        "chemical_warehouses": chem_warehouses,
+        "fertilizer_warehouses": fert_warehouses,
+    }
+
+
+@frappe.whitelist()
 def get_application_plan_bootstrap():
     """One-shot bootstrap for the React Application Plan page.
 

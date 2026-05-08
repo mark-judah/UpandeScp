@@ -557,6 +557,49 @@ export interface PlanBootstrap {
   }>;
 }
 
+export interface BomChemical {
+  item_code: string;
+  item_name?: string;
+  stock_qty?: number;
+  stock_uom?: string;
+  rate?: number;
+  amount?: number;
+  idx?: number;
+  item_group?: string;
+  balances?: Record<string, number>;
+}
+
+export interface BomDetails {
+  name: string;
+  item_name?: string;
+  uom?: string;
+  quantity?: number;
+  custom_water_ph?: number;
+  custom_water_hardness?: number;
+  custom_water_volume?: number;
+  custom_farm?: string;
+  custom_business_unit?: string;
+  chemicals: BomChemical[];
+  chemical_warehouses: string[];
+  fertilizer_warehouses: string[];
+}
+
+export async function fetchBomDetails(
+  name: string,
+): Promise<BomDetails | null> {
+  if (!name) return null;
+  return cached(`bom:${name}`, async () => {
+    try {
+      return await call<BomDetails>(
+        "upande_scp.serverscripts.scouting_metrics_api.get_bom_details",
+        { name },
+      );
+    } catch {
+      return null as unknown as BomDetails;
+    }
+  });
+}
+
 export async function fetchApplicationPlanBootstrap(): Promise<PlanBootstrap> {
   return cached("plan_bootstrap", async () => {
     try {

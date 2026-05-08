@@ -275,12 +275,15 @@ export function buildGreenhouseUprightSvg(
   const bedMeta: BedMeta[] = blocks.flatMap((blk) => blk.beds);
 
   // 5. SVG viewport math (label margin on the left).
-  const PAD = 16;
-  const LABEL_MARGIN = 24;
+  // Smaller defaults than the observations modal — the floor-plan view sits
+  // inline with the page (not a fullscreen modal), so 720×420 reads cleanly
+  // at typical desktop widths without making lines/labels feel oversized.
+  const PAD = 12;
+  const LABEL_MARGIN = 18;
   const padLeft = LABEL_MARGIN;
   const padRight = PAD;
-  const TARGET_W = options.width ?? 1100;
-  const TARGET_H = options.height ?? 760;
+  const TARGET_W = options.width ?? 720;
+  const TARGET_H = options.height ?? 420;
   const scale = Math.min(
     (TARGET_W - padLeft - padRight) / w,
     (TARGET_H - 2 * PAD) / h,
@@ -308,7 +311,9 @@ export function buildGreenhouseUprightSvg(
   const stackExtent = (yClusters >= xClusters ? h : w) * scale;
   const stackedBeds = Math.max(1, Math.max(yClusters, xClusters));
   const bedSpacing = stackExtent / stackedBeds;
-  const bedThickness = Math.max(1.5, Math.min(4, bedSpacing * 0.25));
+  // Tighter clamp than the modal version — bed strokes were visually heavy
+  // in the inline view. 0.7–2 px reads as a fine line, never a fat ribbon.
+  const bedThickness = Math.max(0.7, Math.min(2, bedSpacing * 0.2));
 
   // 7. Layers: baselines, colored polylines, bed labels.
   let baselines = "";

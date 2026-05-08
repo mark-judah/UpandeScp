@@ -15,7 +15,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -23,11 +22,21 @@ import { Separator } from "@/components/ui/separator";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { DatePicker } from "@/components/DatePicker";
 import { UprightHeatmap } from "@/components/UprightHeatmap";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useScouting } from "@/hooks/use-scouting";
 import {
   fetchApplicationPlanBootstrap,
   fetchBedsAndZones,
+  fetchBomDetails,
   fetchZonesByGreenhouse,
+  type BomDetails,
   type PlanBootstrap,
   type VarietyNode,
 } from "@/lib/scouting-api";
@@ -47,7 +56,6 @@ const SPRAY_TYPES = [
 
 const SCOPES = ["Full Greenhouse", "Specific Variety", "Specific Bed(s)"] as const;
 
-const PEST_PALETTE: Record<string, string> = {};
 const COLOR_POOL = [
   "#E63946",
   "#E66BAA",
@@ -60,6 +68,7 @@ const COLOR_POOL = [
   "#f97316",
   "#a855f7",
 ];
+const PEST_PALETTE: Record<string, string> = {};
 function colorFor(name: string): string {
   if (!PEST_PALETTE[name]) {
     PEST_PALETTE[name] =
@@ -68,14 +77,15 @@ function colorFor(name: string): string {
   return PEST_PALETTE[name];
 }
 
+/** Wider window than 14 days so the "latest scouting" lookup catches real
+ *  data even on greenhouses with sporadic visits. */
 function defaultRange(): { from: string; to: string } {
   const today = new Date();
   const from = new Date(today);
-  from.setDate(today.getDate() - 14);
+  from.setDate(today.getDate() - 60);
   return { from: ymd(from), to: ymd(today) };
 }
 
-/** Greenhouse name comes off zone names like "Karen GH 01 - KR - Bed 14 - Zone 1". */
 function greenhouseOfZone(zoneName: string): string {
   const idx = zoneName.indexOf(" - Bed ");
   return idx >= 0 ? zoneName.slice(0, idx) : zoneName.split(" - ")[0];
@@ -111,11 +121,25 @@ export function ApplicationPlan() {
   const [submitMsg, setSubmitMsg] = useState<string>("");
   const [submitErr, setSubmitErr] = useState<string>("");
 
-  // Diagnose data — last 14 days from IDB.
+  // BOM details (chemicals + per-warehouse balances + selected source).
+  const [bomDetails, setBomDetails] = useState<BomDetails | null>(null);
+  const [bomLoading, setBomLoading] = useState(false);
+  // chemical item_code → chosen source warehouse
+  const [chemSource, setChemSource] = useState<Record<string, string>>({});
+
+  // ── Background prefetch ───────────────────────────────────────────────
+  // Mount kicks off scouting hydrate with crop=undefined so EVERY entry in
+  // the 60-day window lands in IDB. Then when the user picks a greenhouse,
+  // the filter is a cheap in-memory pass — no fresh API call, no spinner.
+  // The "latest scouting" date works the same way: as soon as the bootstrap
+  // arrives we already have entries to look at.
+  const [{ from, to }] = useState(defaultRange);
   const { data, loading } = useScouting({
-    ...defaultRange(),
+    from,
+    to,
     crop: "Rose",
-    greenhouse: greenhouse || undefined,
+    // Intentionally not passing `greenhouse` — we filter client-side below,
+    // which keeps the IDB warm for switching greenhouses without re-fetching.
   });
 
   useEffect(() => {
@@ -124,7 +148,37 @@ export function ApplicationPlan() {
     fetchZonesByGreenhouse().then(setZonesByGh);
   }, []);
 
-  // Zones in this greenhouse.
+  // BOM detail fetch when selection changes.
+  useEffect(() => {
+    if (!bom) {
+      setBomDetails(null);
+      setChemSource({});
+      return;
+    }
+    let cancelled = false;
+    setBomLoading(true);
+    fetchBomDetails(bom)
+      .then((d) => {
+        if (cancelled) return;
+        setBomDetails(d);
+        // Default each chemical's source to the first warehouse where it has stock.
+        const next: Record<string, string> = {};
+        d?.chemicals.forEach((c) => {
+          const balances = c.balances || {};
+          const first = Object.entries(balances).find(([, v]) => v > 0);
+          if (first) next[c.item_code] = first[0];
+          else if ((d.chemical_warehouses || []).length)
+            next[c.item_code] = d.chemical_warehouses[0];
+        });
+        setChemSource(next);
+      })
+      .finally(() => !cancelled && setBomLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [bom]);
+
+  // Zones for the selected greenhouse.
   const zonesInGh: ZoneGeo[] = useMemo(() => {
     if (!greenhouse) return [];
     const out: ZoneGeo[] = [];
@@ -139,7 +193,8 @@ export function ApplicationPlan() {
     return out;
   }, [varietyTree, greenhouse]);
 
-  // Per-zone observation aggregate, filtered by Diagnose.
+  // Per-zone observation aggregate, filtered by Diagnose. Filters by
+  // greenhouse here (instead of in useScouting) so the IDB stays universal.
   const zoneObs: Record<string, ZoneObs> = useMemo(() => {
     const out: Record<string, ZoneObs> = {};
     if (!data || !greenhouse) return out;
@@ -152,8 +207,6 @@ export function ApplicationPlan() {
         const key = e.zone!;
         if (!out[key]) out[key] = { count: 0, color: colorFor(name) };
         out[key].count += 1;
-        // Color stays as the first-encountered observation's color so the
-        // dominant pest/disease in this zone isn't shuffled per render.
       };
       e.pests_scouting_entry.forEach((p) =>
         apply(p.pest, p.plant_section || "", p.stage || ""),
@@ -164,6 +217,21 @@ export function ApplicationPlan() {
     }
     return out;
   }, [data, greenhouse, diag]);
+
+  // Latest scouting date for the selected greenhouse — picked from the
+  // already-warmed IDB rather than a separate fetch.
+  const latestScoutingDate = useMemo(() => {
+    if (!data) return null;
+    if (!greenhouse) {
+      return data.entries[0]?.date_of_capture || null;
+    }
+    for (const e of data.entries) {
+      if (greenhouseOfZone(e.zone || "") === greenhouse) {
+        return e.date_of_capture;
+      }
+    }
+    return null;
+  }, [data, greenhouse]);
 
   const filterOpts = useMemo(() => {
     const pests = new Set<string>();
@@ -191,13 +259,11 @@ export function ApplicationPlan() {
     };
   }, [data, greenhouse]);
 
-  // Threshold panel — % zones with any observation.
   const totalZones = greenhouse ? zonesByGh[greenhouse] || 0 : 0;
   const affectedZones = Object.values(zoneObs).filter((o) => o.count > 0).length;
   const coveragePct = totalZones
     ? Math.round((affectedZones / totalZones) * 1000) / 10
     : 0;
-
   const recommendation =
     coveragePct >= 30
       ? "Heavy infestation — consider full greenhouse spray"
@@ -207,7 +273,6 @@ export function ApplicationPlan() {
           ? "Light pressure — spot-treat the flagged zones"
           : "No observations match this filter";
 
-  // Greenhouse list cascading off the bootstrap warehouses.
   const ghList = useMemo(
     () => bootstrap?.warehouses.map((w) => w.name).sort() || [],
     [bootstrap],
@@ -224,8 +289,7 @@ export function ApplicationPlan() {
     }
     setBusy(true);
     try {
-      const wh =
-        kitList.find((k) => k.kit === kit)?.warehouse || undefined;
+      const wh = kitList.find((k) => k.kit === kit)?.warehouse || undefined;
       const r: any = await call(
         "upande_scp.serverscripts.create_application_work_order.createApplicationWorkOrder",
         {
@@ -236,8 +300,7 @@ export function ApplicationPlan() {
           kit,
           bom,
           source_warehouse: wh,
-          // Pest/disease targets list — populated from the diagnose filter
-          // when the user picked a specific pest, otherwise empty.
+          chemical_sources: chemSource,
           targets:
             diag.pest !== ALL
               ? [{ target: diag.pest }]
@@ -310,17 +373,24 @@ export function ApplicationPlan() {
               </SelectContent>
             </Select>
           </div>
+
+          <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+            <span>Latest scouting</span>
+            <span className="font-medium tabular-nums text-foreground">
+              {loading && !latestScoutingDate
+                ? "Loading…"
+                : latestScoutingDate ||
+                  (greenhouse
+                    ? "No entries in 60 days"
+                    : "Pick a greenhouse")}
+            </span>
+          </div>
+
           {greenhouse && (
-            <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-              <span>Latest scouting</span>
-              <span className="font-medium tabular-nums text-foreground">
-                {data?.entries?.[0]?.date_of_capture || "—"}
-              </span>
+            <div className="ml-auto text-xs text-muted-foreground tabular-nums">
+              {affectedZones} / {totalZones} zones affected · {coveragePct}%
             </div>
           )}
-          <div className="ml-auto text-xs text-muted-foreground tabular-nums">
-            {affectedZones} / {totalZones} zones affected · {coveragePct}%
-          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-3">
@@ -331,7 +401,9 @@ export function ApplicationPlan() {
               <Card className="p-12 flex flex-col items-center justify-center text-center min-h-[420px]">
                 <CardTitle className="text-sm">No greenhouse selected</CardTitle>
                 <CardDescription className="mt-1">
-                  Pick a greenhouse to load the scouting heatmap.
+                  {loading
+                    ? "Loading scouting entries in the background…"
+                    : "Pick a greenhouse to load the scouting heatmap."}
                 </CardDescription>
               </Card>
             )}
@@ -404,9 +476,7 @@ export function ApplicationPlan() {
                 <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground mb-1">
                   Chemical Requirements
                 </div>
-                <div className="text-xs text-foreground">
-                  {recommendation}
-                </div>
+                <div className="text-xs text-foreground">{recommendation}</div>
                 <div className="mt-2 h-2 rounded-full bg-[var(--sd-line)] overflow-hidden">
                   <div
                     className="h-full"
@@ -502,7 +572,7 @@ export function ApplicationPlan() {
               </div>
 
               <div className="col-span-2">
-                <Label>Targets (from heatmap filter)</Label>
+                <Label>Targets</Label>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {diag.pest !== ALL ? (
                     <Badge variant="default" className="text-[0.65rem]">
@@ -550,7 +620,7 @@ export function ApplicationPlan() {
                 {bomList.length} active Chemical Mix BOMs
               </CardDescription>
             </CardHeader>
-            <CardContent className="p-0 flex flex-col gap-2">
+            <CardContent className="p-0 flex flex-col gap-3">
               <div className="flex items-end gap-2">
                 <div className="flex-1 flex flex-col gap-1">
                   <Label>BOM</Label>
@@ -585,25 +655,120 @@ export function ApplicationPlan() {
                   </a>
                 </Button>
               </div>
-              {bom && (
-                <div className="rounded-md border bg-[var(--sd-bg-soft)] p-2.5 text-xs">
-                  <div className="font-medium">
-                    {bomList.find((b) => b.name === bom)?.item_name || bom}
+
+              {bomLoading && (
+                <div className="text-xs text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading chemicals…
+                </div>
+              )}
+
+              {bomDetails && !bomLoading && (
+                <>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <Stat
+                      label="Mix size"
+                      value={`${bomDetails.quantity || 0} ${bomDetails.uom || ""}`}
+                    />
+                    <Stat
+                      label="Water pH"
+                      value={bomDetails.custom_water_ph ?? "—"}
+                    />
+                    <Stat
+                      label="Hardness"
+                      value={bomDetails.custom_water_hardness ?? "—"}
+                    />
                   </div>
-                  <div className="text-muted-foreground mt-1">
-                    {bomList.find((b) => b.name === bom)?.quantity}{" "}
-                    {bomList.find((b) => b.name === bom)?.uom}
+
+                  <div>
+                    <Label>Chemicals · pick source warehouse</Label>
+                    {bomDetails.chemicals.length ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Chemical</TableHead>
+                            <TableHead className="text-right">Qty</TableHead>
+                            <TableHead>Source</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {bomDetails.chemicals.map((c) => {
+                            const balances = c.balances || {};
+                            const isFert =
+                              c.item_group ===
+                              (bomDetails.fertilizer_warehouses?.length
+                                ? "Fertilizer"
+                                : "");
+                            const whs = isFert
+                              ? bomDetails.fertilizer_warehouses
+                              : bomDetails.chemical_warehouses;
+                            const picked = chemSource[c.item_code] || "";
+                            return (
+                              <TableRow key={c.item_code}>
+                                <TableCell className="text-xs">
+                                  <div className="font-medium">
+                                    {c.item_name || c.item_code}
+                                  </div>
+                                  <div className="text-[0.65rem] text-muted-foreground font-mono">
+                                    {c.item_code}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums text-xs">
+                                  {c.stock_qty ?? "—"}
+                                  {c.stock_uom ? ` ${c.stock_uom}` : ""}
+                                </TableCell>
+                                <TableCell>
+                                  <Select
+                                    value={picked}
+                                    onValueChange={(v) =>
+                                      setChemSource((prev) => ({
+                                        ...prev,
+                                        [c.item_code]: v,
+                                      }))
+                                    }
+                                  >
+                                    <SelectTrigger className="h-7 text-xs min-w-40">
+                                      <SelectValue placeholder="Source" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {whs.map((w) => {
+                                        const bal = balances[w] || 0;
+                                        return (
+                                          <SelectItem key={w} value={w}>
+                                            <span className="truncate">
+                                              {w}
+                                            </span>{" "}
+                                            <span className="text-muted-foreground tabular-nums">
+                                              · {bal}
+                                            </span>
+                                          </SelectItem>
+                                        );
+                                      })}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <div className="text-xs text-muted-foreground py-2">
+                        BOM has no exploded items.
+                      </div>
+                    )}
                   </div>
+
                   <a
-                    href={`/app/bom/${encodeURIComponent(bom)}`}
+                    href={`/app/bom/${encodeURIComponent(bomDetails.name)}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 mt-1 text-[0.7rem] underline text-muted-foreground"
+                    className="text-[0.7rem] text-muted-foreground underline inline-flex items-center gap-1"
                   >
                     <ExternalLink className="h-3 w-3" />
                     Open BOM in Desk
                   </a>
-                </div>
+                </>
               )}
             </CardContent>
           </Card>
@@ -640,7 +805,24 @@ export function ApplicationPlan() {
         </div>
       </section>
 
-      <LoadingStrip active={loading || busy} />
+      <LoadingStrip active={loading || busy || bomLoading} />
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="px-2 py-1.5 rounded bg-[var(--sd-bg-soft)] border">
+      <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="text-xs font-medium tabular-nums">{value || "—"}</div>
     </div>
   );
 }

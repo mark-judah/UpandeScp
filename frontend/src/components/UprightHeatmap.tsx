@@ -66,8 +66,8 @@ export function UprightHeatmap({
       ref={wrapRef}
       className={cn(
         "rounded-md border bg-card overflow-hidden p-2",
-        "[&_.gh-bed-baseline]:stroke-[var(--sd-line)] [&_.gh-bed-baseline]:[stroke-width:1]",
-        "[&_.gh-bed-label]:fill-[var(--sd-muted)] [&_.gh-bed-label]:[font-size:9px] [&_.gh-bed-label]:[font-family:var(--sd-font)]",
+        "[&_.gh-bed-baseline]:stroke-[var(--sd-line)] [&_.gh-bed-baseline]:[stroke-width:0.5]",
+        "[&_.gh-bed-label]:fill-[var(--sd-muted)] [&_.gh-bed-label]:[font-size:6.5px] [&_.gh-bed-label]:[font-family:var(--sd-font)]",
         "[&_.gh-zone]:cursor-pointer [&_.gh-zone:hover]:brightness-90",
         className,
       )}

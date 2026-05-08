@@ -105,6 +105,33 @@ function greenhouseOfZone(zoneName: string): string {
   return idx >= 0 ? zoneName.slice(0, idx) : zoneName.split(" - ")[0];
 }
 
+/**
+ * Parse the legacy "Specific Bed(s)" mini-language into a Set of bed
+ * numbers as strings. Accepts comma-separated single numbers and
+ * inclusive ranges (e.g. ``"1-5, 7, 9"`` → ``{"1","2","3","4","5","7","9"}``).
+ * Whitespace around tokens and around the hyphen is tolerated; anything
+ * that doesn't parse as a number or range is silently ignored — same
+ * permissive semantics as the legacy ``calculateAreaToSpray`` parser.
+ */
+function parseBedRanges(input: string): Set<string> {
+  const out = new Set<string>();
+  if (!input) return out;
+  for (const seg of input.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const range = seg.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (range) {
+      const start = parseInt(range[1], 10);
+      const end = parseInt(range[2], 10);
+      if (Number.isFinite(start) && Number.isFinite(end) && start <= end) {
+        for (let i = start; i <= end; i++) out.add(String(i));
+      }
+      continue;
+    }
+    const single = seg.match(/^(\d+)$/);
+    if (single) out.add(single[1]);
+  }
+  return out;
+}
+
 interface DiagnoseFilters {
   pest: string;
   stage: string;
@@ -299,6 +326,70 @@ export function ApplicationPlan() {
     }
     return Array.from(out).sort();
   }, [varietyTree, greenhouse]);
+
+  /**
+   * Auto-calculated area-to-spray (Ha) and water volume (L). Direct port
+   * of the legacy ``calculateAreaToSpray`` function — sums per-bed
+   * ``bed__area`` (sq m) according to the scope, divides by 10000 for
+   * hectares, then multiplies by ``WATER_VOLUME_RATE`` for litres of
+   * water at the standard 1000 L/Ha spray rate.
+   *
+   * "Specific Variety" sums each selected variety's bed-areas in this
+   * greenhouse once (mirroring the ``accountedVarieties`` guard in the
+   * legacy code so each variety isn't counted multiple times when it
+   * spans many beds).
+   *
+   * "Specific Bed(s)" parses the same "1-5, 7, 9" mini-language the
+   * legacy page accepts.
+   */
+  const { areaHa, waterVolumeL } = useMemo(() => {
+    if (!greenhouse || !scope) return { areaHa: 0, waterVolumeL: 0 };
+    const beds = bedsByGh[greenhouse] || [];
+    let sqm = 0;
+    if (scope === "Full Greenhouse") {
+      sqm = beds.reduce((s, b) => s + (b.bed__area || 0), 0);
+    } else if (scope === "Specific Variety") {
+      const accounted = new Set<string>();
+      for (const b of beds) {
+        if (
+          b.variety &&
+          selectedVarieties.has(b.variety) &&
+          !accounted.has(b.variety)
+        ) {
+          // Sum the variety's full footprint in this greenhouse on first
+          // encounter, then mark it accounted so a multi-bed variety
+          // doesn't double-count.
+          const total = beds
+            .filter((x) => x.variety === b.variety)
+            .reduce((s, x) => s + (x.bed__area || 0), 0);
+          sqm += total;
+          accounted.add(b.variety);
+        }
+      }
+    } else if (scope === "Specific Bed(s)") {
+      const wanted = parseBedRanges(bedNumbers);
+      if (wanted.size) {
+        for (const b of beds) {
+          if (b.bed && wanted.has(String(b.bed))) sqm += b.bed__area || 0;
+        }
+      }
+    }
+    const ha = sqm > 0 ? sqm / 10000 : 0;
+    return {
+      areaHa: ha,
+      waterVolumeL: ha > 0 ? ha * WATER_VOLUME_RATE : 0,
+    };
+  }, [greenhouse, scope, bedsByGh, selectedVarieties, bedNumbers]);
+
+  // Push the derived numbers into the area + water-volume inputs so the
+  // legacy auto-calc behaviour holds. The BOM may also seed
+  // ``waterVolume`` from its own field — that wins until the user picks
+  // a scope, at which point area drives water volume just like legacy.
+  useEffect(() => {
+    if (!scope) return;
+    setArea(areaHa > 0 ? areaHa.toFixed(4) : "");
+    setWaterVolume(waterVolumeL > 0 ? waterVolumeL.toFixed(2) : "");
+  }, [scope, areaHa, waterVolumeL]);
 
   const zonesInGh: ZoneGeo[] = useMemo(() => {
     if (!greenhouse) return [];
@@ -937,25 +1028,40 @@ export function ApplicationPlan() {
               )}
 
               <div className="flex flex-col gap-1">
-                <Label>Area (Ha)</Label>
+                <Label className="flex items-center justify-between">
+                  <span>Area (Ha)</span>
+                  {areaHa > 0 && (
+                    <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
+                      auto
+                    </span>
+                  )}
+                </Label>
                 <Input
                   value={area}
                   onChange={(e) => setArea(e.target.value)}
                   type="number"
                   step="any"
                   min={0}
-                  placeholder="0.00"
-                  className="h-9"
+                  placeholder={
+                    areaHa > 0 ? areaHa.toFixed(4) : "Pick scope to compute"
+                  }
+                  className="h-9 tabular-nums"
                 />
               </div>
               <div className="flex flex-col gap-1">
                 <Label>Spray Team</Label>
-                <Input
-                  value={sprayTeam}
-                  onChange={(e) => setSprayTeam(e.target.value)}
-                  placeholder="optional"
-                  className="h-9"
-                />
+                <Select value={sprayTeam} onValueChange={setSprayTeam}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Pick a team" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(bootstrap?.spray_teams || []).map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="flex flex-col gap-1 col-span-2">
@@ -1070,7 +1176,7 @@ export function ApplicationPlan() {
                       onChange={setWaterHardness}
                     />
                     <NumInput
-                      label="Volume L/Ha"
+                      label="Water Volume (L)"
                       value={waterVolume}
                       onChange={setWaterVolume}
                     />

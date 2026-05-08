@@ -710,6 +710,43 @@ export async function fetchApplicationPlanBootstrap(): Promise<PlanBootstrap> {
   });
 }
 
+/** Create a new Chemical Mix BOM. Mirrors the legacy
+ *  `create_application_floor_plan` page's BOM creation modal — used by
+ *  ApplicationPlan when the operator can't find the BOM they want in
+ *  the dropdown and wants to define one inline. */
+export interface CreateBomArgs {
+  item: string;
+  custom_water_ph: number;
+  custom_water_hardness: number;
+  items: Array<{
+    item_code: string;
+    item_name?: string;
+    qty: number;
+    stock_uom?: string;
+    rate?: number;
+  }>;
+  custom_greenhouse?: string;
+  custom_farm?: string;
+}
+
+export interface CreateBomResult {
+  status: "success" | "error";
+  message?: string;
+  bom_name?: string;
+}
+
+export async function createBom(args: CreateBomArgs): Promise<CreateBomResult> {
+  try {
+    const r = await call<CreateBomResult>(
+      "upande_scp.serverscripts.create_bom.createBOM",
+      args as unknown as Record<string, unknown>,
+    );
+    return r || { status: "error", message: "No response from server" };
+  } catch (e: any) {
+    return { status: "error", message: e?.message || "Failed to create BOM" };
+  }
+}
+
 export async function fetchBlocksGeojson(): Promise<GeoJsonFC> {
   return cached("blocks_geojson", async () => {
     try {

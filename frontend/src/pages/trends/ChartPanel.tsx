@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { Download, FileText } from "lucide-react";
 import {
   ChartContainer,
   ChartLegend,
@@ -15,7 +16,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  exportChartAsPng,
+  printChartAsPdf,
+  slugifyForFile,
+} from "@/lib/chart-export";
 import type { ObsKey, Selection } from "./trends-types";
 import { buildSeries, type EntryIndex } from "./aggregate";
 
@@ -130,6 +137,30 @@ export function ChartPanel({
   const title = obs ? obs.label : "All Observations";
   const tag = obs ? (obs.kind === "pest" ? "Pest" : "Disease") : "Mixed";
 
+  // Reference to the recharts wrapper so we can serialise the SVG when
+  // the operator hits Export. Lives at the CardContent level — the
+  // Card itself includes the title chrome we don't want in the export.
+  const exportRef = useRef<HTMLDivElement | null>(null);
+  const baseFilename = slugifyForFile(
+    child ? `${title}-${child.stage}` : title,
+  );
+  const exportTitle = child ? `${title} · ${child.stage}` : title;
+
+  const onPng = async () => {
+    const node = exportRef.current;
+    if (!node) return;
+    try {
+      await exportChartAsPng(node, baseFilename);
+    } catch (e) {
+      console.error("[trends] PNG export failed", e);
+    }
+  };
+  const onPdf = () => {
+    const node = exportRef.current;
+    if (!node) return;
+    printChartAsPdf(node, exportTitle);
+  };
+
   return (
     <Card className={cn("p-4", child && "ml-8")}>
       <CardHeader className="p-0 pb-3">
@@ -143,6 +174,30 @@ export function ChartPanel({
             {selections.length !== 1 ? "s" : ""} · % zones with matching
             observations
           </CardDescription>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-[0.7rem] gap-1.5"
+              onClick={onPng}
+              title="Download chart as PNG"
+            >
+              <Download className="h-3 w-3" />
+              PNG
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-[0.7rem] gap-1.5"
+              onClick={onPdf}
+              title="Open print dialog — choose 'Save as PDF'"
+            >
+              <FileText className="h-3 w-3" />
+              PDF
+            </Button>
+          </div>
         </div>
         {!child && stages.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -184,6 +239,7 @@ export function ChartPanel({
         )}
       </CardHeader>
       <CardContent className="p-0">
+        <div ref={exportRef}>
         <ChartContainer
           config={config}
           className={cn("w-full", child ? "h-48" : "h-64")}
@@ -248,6 +304,7 @@ export function ChartPanel({
             })}
           </LineChart>
         </ChartContainer>
+        </div>
       </CardContent>
       {!child &&
         Array.from(picked).map((stage) => (

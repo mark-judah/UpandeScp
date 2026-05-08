@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, Maximize2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Maximize2, FilePlus2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/table";
 import { useScouting } from "@/hooks/use-scouting";
 import {
+  createBom,
   fetchApplicationPlanBootstrap,
   fetchBedsAndZones,
   fetchBomDetails,
@@ -60,7 +61,6 @@ import {
   useObservationColors,
 } from "@/lib/observation-colors";
 import type { ZoneGeo, ZoneObs } from "./maps/upright-svg";
-import { useView } from "@/lib/router";
 
 const SPRAY_TYPES = [
   "Full",
@@ -110,7 +110,6 @@ interface ChemRow extends BomChemical {
 }
 
 export function ApplicationPlan() {
-  const [, navigate] = useView();
   const [bootstrap, setBootstrap] = useState<PlanBootstrap | null>(null);
   const [varietyTree, setVarietyTree] = useState<VarietyNode[]>([]);
   const [zonesByGh, setZonesByGh] = useState<Record<string, number>>({});
@@ -139,11 +138,39 @@ export function ApplicationPlan() {
   const [busy, setBusy] = useState(false);
   const [bomDetails, setBomDetails] = useState<BomDetails | null>(null);
 
+  // Scope-driven extras (legacy parity).
+  // ``selectedVarieties`` populates the WO's ``custom_variety``
+  // (comma-separated) when scope === "Specific Variety".
+  // ``bedNumbers`` populates ``custom_scope_details`` when scope is
+  // "Specific Bed(s)" — same free-text format as the legacy page (e.g.
+  // "1-5, 7, 9").
+  const [selectedVarieties, setSelectedVarieties] = useState<Set<string>>(
+    new Set(),
+  );
+  const [bedNumbers, setBedNumbers] = useState<string>("");
+  const [area, setArea] = useState<string>("");
+  const [sprayTeam, setSprayTeam] = useState<string>("");
+
   // Add-chemical dialog
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [addResults, setAddResults] = useState<ChemicalItem[]>([]);
   const addTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // BOM creation dialog
+  const [bomDialogOpen, setBomDialogOpen] = useState(false);
+  const [newBomItem, setNewBomItem] = useState<string>("");
+  const [newBomPh, setNewBomPh] = useState<string>("7");
+  const [newBomHardness, setNewBomHardness] = useState<string>("100");
+  const [newBomChems, setNewBomChems] = useState<ChemicalItem[]>([]);
+  const [newBomSearch, setNewBomSearch] = useState<string>("");
+  const [newBomSearchResults, setNewBomSearchResults] = useState<ChemicalItem[]>(
+    [],
+  );
+  const [creatingBom, setCreatingBom] = useState(false);
+  const newBomSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   // Heatmap fullscreen modal
   const [heatmapModal, setHeatmapModal] = useState(false);
@@ -226,6 +253,42 @@ export function ApplicationPlan() {
       if (addTimerRef.current) clearTimeout(addTimerRef.current);
     };
   }, [addQuery, addOpen]);
+
+  // BOM-creation chemical search debounce.
+  useEffect(() => {
+    if (!bomDialogOpen) return;
+    if (newBomSearchTimerRef.current)
+      clearTimeout(newBomSearchTimerRef.current);
+    newBomSearchTimerRef.current = setTimeout(() => {
+      searchChemicalItems(newBomSearch).then(setNewBomSearchResults);
+    }, 200);
+    return () => {
+      if (newBomSearchTimerRef.current)
+        clearTimeout(newBomSearchTimerRef.current);
+    };
+  }, [newBomSearch, bomDialogOpen]);
+
+  // Reset scope-detail extras when the scope or greenhouse changes.
+  useEffect(() => {
+    setSelectedVarieties(new Set());
+    setBedNumbers("");
+  }, [scope, greenhouse]);
+
+  // Varieties present in the picked greenhouse (legacy "Specific Variety"
+  // multi-select source).
+  const varietiesInGh: string[] = useMemo(() => {
+    if (!greenhouse) return [];
+    const out = new Set<string>();
+    for (const v of varietyTree) {
+      for (const b of v.beds) {
+        if (b.name.startsWith(greenhouse)) {
+          out.add(v.variety);
+          break;
+        }
+      }
+    }
+    return Array.from(out).sort();
+  }, [varietyTree, greenhouse]);
 
   const zonesInGh: ZoneGeo[] = useMemo(() => {
     if (!greenhouse) return [];
@@ -349,6 +412,16 @@ export function ApplicationPlan() {
     setAddQuery("");
   };
 
+  /**
+   * Build the legacy form payload and call the same endpoint the
+   * server-rendered page used. Endpoint expects ``{payload: {raw_data:
+   * {...formData}}}`` (NOT a flat dict — the server pulls the form via
+   * ``frappe.form_dict["payload"]["raw_data"]``).
+   *
+   * On success the legacy page hard-redirects to the Desk Work Order
+   * page so the operator can submit the manufacturing flow there. We
+   * mirror that behaviour with ``window.location.assign``.
+   */
   const submit = async () => {
     if (!greenhouse || !sprayDate || !sprayType || !scope || !bom || !kit) {
       pushToast("err", "Fill in greenhouse, date, spray type, scope, kit and BOM.");
@@ -375,50 +448,169 @@ export function ApplicationPlan() {
       pushToast("err", "Water pH and hardness are required.");
       return;
     }
+    if (scope === "Specific Variety" && !selectedVarieties.size) {
+      pushToast("err", "Pick at least one variety.");
+      return;
+    }
+    if (scope === "Specific Bed(s)" && !bedNumbers.trim()) {
+      pushToast("err", "Enter the bed numbers (e.g. 1-5, 7, 9).");
+      return;
+    }
+
+    // ── Build the legacy formData ─────────────────────────────────
+    const targetsList =
+      diag.pest !== ALL
+        ? [diag.pest]
+        : Array.from(
+            new Set(
+              data?.entries
+                .filter(
+                  (e) =>
+                    greenhouseOfZone(e.zone || "") === greenhouse &&
+                    (e.zone ? !!zoneObs[e.zone] : false),
+                )
+                .flatMap((e) => [
+                  ...e.pests_scouting_entry.map((p) => p.pest),
+                  ...e.diseases_scouting_entry.map((d) => d.disease),
+                ]) || [],
+            ),
+          );
+    if (!targetsList.length) {
+      pushToast("err", "No targets — pick a pest in the diagnose filter.");
+      return;
+    }
+
+    const customScopeDetails =
+      scope === "Specific Variety"
+        ? Array.from(selectedVarieties).join(",")
+        : scope === "Specific Bed(s)"
+          ? bedNumbers.trim()
+          : "";
+    const customVariety =
+      scope === "Specific Variety"
+        ? Array.from(selectedVarieties).join(",")
+        : "";
+    const kitWarehouse =
+      kitList.find((k) => k.kit === kit)?.warehouse || "";
+
+    const formData: Record<string, unknown> = {
+      custom_type: "Application Floor Plan",
+      custom_greenhouse: greenhouse,
+      custom_variety: customVariety,
+      custom_targets: targetsList,
+      custom_spray_type: sprayType,
+      custom_kit: kit,
+      custom_kit_warehouse: kitWarehouse,
+      custom_scope: scope,
+      custom_scope_details: customScopeDetails,
+      production_item: bom,
+      qty: 1,
+      custom_water_ph: parseFloat(waterPh) || 0,
+      custom_water_hardness: parseFloat(waterHardness) || 0,
+      custom_water_volume: parseFloat(waterVolume) || 0,
+      custom_area: parseFloat(area) || 0,
+      custom_spray_team: sprayTeam || "",
+      custom_scheduled_application_time: sprayDate || null,
+      chemicals: chemRows.map((c) => ({
+        chemical: c.item_name || c.item_code,
+        item_code: c.item_code,
+        uom: c.stock_uom,
+        application_rate: c.stock_qty,
+        source_warehouse: c.source,
+      })),
+    };
 
     const loaderId = pushToast("loading", "Submitting spray plan…", 0);
     setBusy(true);
     try {
-      const wh = kitList.find((k) => k.kit === kit)?.warehouse || undefined;
       const r: any = await call(
         "upande_scp.serverscripts.create_application_work_order.createApplicationWorkOrder",
-        {
-          greenhouse,
-          scheduled_application_time: sprayDate,
-          spray_type: sprayType,
-          scope,
-          kit,
-          bom,
-          source_warehouse: wh,
-          water_ph: Number(waterPh),
-          water_hardness: Number(waterHardness),
-          water_volume: waterVolume ? Number(waterVolume) : undefined,
-          chemicals: chemRows.map((c) => ({
-            chemical: c.item_name || c.item_code,
-            item_code: c.item_code,
-            uom: c.stock_uom,
-            application_rate: c.stock_qty,
-            source_warehouse: c.source,
-          })),
-          targets:
-            diag.pest !== ALL
-              ? [{ target: diag.pest }]
-              : Object.entries(zoneObs)
-                  .filter(([, v]) => v.count > 0)
-                  .map(([z]) => ({ zone: z })),
-        },
+        { payload: { raw_data: formData } },
       );
+      const woName = r?.work_order_name || r?.work_order;
+      if (r?.status && r.status !== "success") {
+        dismissToast(loaderId);
+        pushToast("err", r?.message || "Server rejected the work order.");
+        return;
+      }
       dismissToast(loaderId);
       pushToast(
         "ok",
-        `Created ${r?.work_order || r?.message?.work_order || "work order"} — redirecting to Approvals…`,
+        woName
+          ? `Created ${woName} — redirecting to Desk…`
+          : "Spray plan created — redirecting…",
       );
-      setTimeout(() => navigate("approvals"), 800);
+      // Legacy parity: hard-redirect to the Frappe Desk Work Order page
+      // so the user can review and trigger the production flow from
+      // there. Small delay so the success toast is readable.
+      setTimeout(() => {
+        if (woName) {
+          window.location.assign(
+            `/app/work-order/${encodeURIComponent(woName)}`,
+          );
+        }
+      }, 1200);
     } catch (e: any) {
       dismissToast(loaderId);
       pushToast("err", e?.message || "Submission failed");
     } finally {
       setBusy(false);
+    }
+  };
+
+  // ── BOM creation ────────────────────────────────────────────────
+  const addNewBomChem = (it: ChemicalItem) => {
+    if (newBomChems.some((c) => c.item_code === it.item_code)) return;
+    setNewBomChems((prev) => [...prev, it]);
+    setNewBomSearch("");
+  };
+  const removeNewBomChem = (code: string) =>
+    setNewBomChems((prev) => prev.filter((c) => c.item_code !== code));
+
+  const submitNewBom = async () => {
+    if (!newBomItem.trim()) {
+      pushToast("err", "BOM name is required.");
+      return;
+    }
+    if (!newBomChems.length) {
+      pushToast("err", "Add at least one chemical to the BOM.");
+      return;
+    }
+    setCreatingBom(true);
+    const loaderId = pushToast("loading", "Creating BOM…", 0);
+    try {
+      const r = await createBom({
+        item: newBomItem.trim(),
+        custom_water_ph: parseFloat(newBomPh) || 0,
+        custom_water_hardness: parseFloat(newBomHardness) || 0,
+        items: newBomChems.map((c) => ({
+          item_code: c.item_code,
+          item_name: c.item_name,
+          qty: 1,
+          stock_uom: c.stock_uom,
+        })),
+        custom_greenhouse: greenhouse || undefined,
+      });
+      dismissToast(loaderId);
+      if (r.status === "success" && r.bom_name) {
+        pushToast("ok", `Created BOM ${r.bom_name}.`);
+        // Refresh bootstrap so the new BOM appears in the dropdown,
+        // then auto-select it.
+        const fresh = await fetchApplicationPlanBootstrap();
+        setBootstrap(fresh);
+        setBom(r.bom_name);
+        setBomDialogOpen(false);
+        setNewBomItem("");
+        setNewBomChems([]);
+        setNewBomSearch("");
+      } else {
+        pushToast("err", r.message || "Could not create BOM.");
+      }
+    } catch (e: any) {
+      dismissToast(loaderId);
+      pushToast("err", e?.message || "Could not create BOM.");
+    } finally {
+      setCreatingBom(false);
     }
   };
 
@@ -678,6 +870,84 @@ export function ApplicationPlan() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {scope === "Specific Variety" && (
+                <div className="flex flex-col gap-1 col-span-2">
+                  <Label>Varieties</Label>
+                  {varietiesInGh.length ? (
+                    <div className="flex flex-wrap gap-1.5 rounded-md border bg-card p-2 max-h-40 overflow-auto">
+                      {varietiesInGh.map((v) => {
+                        const on = selectedVarieties.has(v);
+                        return (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() =>
+                              setSelectedVarieties((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(v)) next.delete(v);
+                                else next.add(v);
+                                return next;
+                              })
+                            }
+                            className={
+                              "px-2 py-0.5 rounded-full text-[0.7rem] border transition-colors " +
+                              (on
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-muted hover:bg-muted/70")
+                            }
+                          >
+                            {v}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      No varieties recorded for this greenhouse.
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {scope === "Specific Bed(s)" && (
+                <div className="flex flex-col gap-1 col-span-2">
+                  <Label>Bed Numbers</Label>
+                  <Input
+                    value={bedNumbers}
+                    onChange={(e) => setBedNumbers(e.target.value)}
+                    placeholder="e.g. 1-5, 7, 9"
+                    className="h-9"
+                  />
+                  <span className="text-[0.65rem] text-muted-foreground">
+                    Use ranges with hyphens and commas — same format as the
+                    legacy spray-plan page.
+                  </span>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1">
+                <Label>Area (Ha)</Label>
+                <Input
+                  value={area}
+                  onChange={(e) => setArea(e.target.value)}
+                  type="number"
+                  step="any"
+                  min={0}
+                  placeholder="0.00"
+                  className="h-9"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label>Spray Team</Label>
+                <Input
+                  value={sprayTeam}
+                  onChange={(e) => setSprayTeam(e.target.value)}
+                  placeholder="optional"
+                  className="h-9"
+                />
+              </div>
+
               <div className="flex flex-col gap-1 col-span-2">
                 <Label>Kit</Label>
                 <Select value={kit} onValueChange={setKit}>
@@ -761,6 +1031,16 @@ export function ApplicationPlan() {
                     </SelectContent>
                   </Select>
                 </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1"
+                  onClick={() => setBomDialogOpen(true)}
+                >
+                  <FilePlus2 className="h-3.5 w-3.5" />
+                  New
+                </Button>
               </div>
 
               {bomLoading && (
@@ -971,6 +1251,123 @@ export function ApplicationPlan() {
                 Type to search.
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create-BOM dialog (legacy parity) */}
+      <Dialog open={bomDialogOpen} onOpenChange={setBomDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Create new Chemical Mix BOM</DialogTitle>
+            <DialogDescription>
+              Inline BOM creation — same fields as the legacy spray-plan page.
+              The new BOM is auto-selected on success.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <Label>BOM Name</Label>
+              <Input
+                value={newBomItem}
+                onChange={(e) => setNewBomItem(e.target.value)}
+                placeholder="e.g. Botrytis Mix · Greenhouse 12"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <NumInput
+                label="Water pH"
+                value={newBomPh}
+                onChange={setNewBomPh}
+              />
+              <NumInput
+                label="Water Hardness"
+                value={newBomHardness}
+                onChange={setNewBomHardness}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label>Add chemical</Label>
+              <Input
+                value={newBomSearch}
+                onChange={(e) => setNewBomSearch(e.target.value)}
+                placeholder="Search…"
+              />
+              {newBomSearch && newBomSearchResults.length > 0 && (
+                <div className="rounded-md border bg-card max-h-40 overflow-auto">
+                  {newBomSearchResults.map((it) => (
+                    <button
+                      key={it.item_code}
+                      type="button"
+                      onClick={() => addNewBomChem(it)}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted border-b last:border-b-0"
+                    >
+                      <span className="font-medium">
+                        {it.item_name || it.item_code}
+                      </span>
+                      <span className="ml-2 text-[0.65rem] text-muted-foreground font-mono">
+                        {it.item_code}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {newBomChems.length > 0 && (
+              <div className="rounded-md border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Chemical</TableHead>
+                      <TableHead>UoM</TableHead>
+                      <TableHead className="w-8" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {newBomChems.map((c) => (
+                      <TableRow key={c.item_code}>
+                        <TableCell className="text-xs">
+                          <div className="font-medium">
+                            {c.item_name || c.item_code}
+                          </div>
+                          <div className="text-[0.65rem] text-muted-foreground font-mono">
+                            {c.item_code}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {c.stock_uom || ""}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground"
+                            onClick={() => removeNewBomChem(c.item_code)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                variant="ghost"
+                onClick={() => setBomDialogOpen(false)}
+                disabled={creatingBom}
+              >
+                Cancel
+              </Button>
+              <Button onClick={submitNewBom} disabled={creatingBom}>
+                {creatingBom ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                Create BOM
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

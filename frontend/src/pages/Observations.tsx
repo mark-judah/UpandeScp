@@ -31,7 +31,6 @@ import { useObservationColors } from "@/lib/observation-colors";
 import { ymd } from "@/lib/utils";
 import {
   flattenZones,
-  zonePolygonFromGeometry,
   type ZoneFeature,
 } from "./maps/zone-utils";
 import type { ScoutingEntry } from "@/lib/scouting-types";
@@ -242,8 +241,6 @@ export function Observations() {
       ) {
         return;
       }
-      const polygon = zonePolygonFromGeometry(z.geometry);
-      if (!polygon) return;
 
       // Dominant visible observation in this zone → its canonical colour.
       const items = zoneObs[zoneName] || {};
@@ -255,18 +252,29 @@ export function Observations() {
       const dominantName = visible[0][0];
       const fill = resolveColor(dominantName) || KIND_FALLBACK[kind];
       const op = intensityToOpacity(total, maxIntensity);
+      // Stroke weight scales with intensity so heavy infestations read
+      // visually heavier even at low zoom (where polygon fill is too
+      // small to see). Mirrors what the legacy page achieved by zooming
+      // its zone fill in/out.
+      const weight = 4 + Math.round(op * 8); // 4 → 12 px
 
-      const layerObj = L.geoJSON(polygon as any, {
+      // Render the zone's actual FeatureCollection (one LineString per
+      // bed-line) directly. This is more robust than synthesising a
+      // single Polygon from disjoint bed lines, which produced a
+      // degenerate ring on multi-block greenhouses and rendered
+      // invisibly in some farms.
+      const layerObj = L.geoJSON(z.geometry as any, {
         style: () => ({
           color: fill,
-          weight: 1.6,
-          opacity: 0.9,
+          weight,
+          opacity: 0.95,
+          // For any actual polygon features in the geometry, fill in
+          // the dominant colour at the intensity-scaled opacity.
           fillColor: fill,
           fillOpacity: op,
         }),
       });
 
-      // Tooltip: zone name + total + dominant observation.
       const popupRows = visible
         .map(
           ([n, c]) =>

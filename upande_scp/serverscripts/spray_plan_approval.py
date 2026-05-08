@@ -15,12 +15,30 @@ from frappe.utils import add_days, cstr, flt, now_datetime, today
 
 AFP_TYPE = "Application Floor Plan"
 
+APPROVAL_ROLES = ("General Manager", "System Manager")
+
+
+def _ensure_approval_role():
+    """Mirror the page-level role gate from
+    ``upande_scp/www/spray_plan_approval/index.py`` so that direct API
+    calls (e.g. from the React app or REST clients) cannot bypass it."""
+    user = frappe.session.user
+    if not user or user == "Guest":
+        frappe.throw("Please log in to use spray plan approval.", frappe.PermissionError)
+    user_roles = set(frappe.get_roles(user))
+    if not user_roles.intersection(APPROVAL_ROLES):
+        frappe.throw(
+            "Spray plan approval requires General Manager access.",
+            frappe.PermissionError,
+        )
+
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
 @frappe.whitelist()
 def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=None):
+    _ensure_approval_role()
     """
     Return AFP Work Orders (Not Started, submitted) with child items
     and forwarding status (draft SE exists?).
@@ -121,6 +139,7 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
 @frappe.whitelist()
 def get_farms_and_greenhouses():
     """Return distinct farms and their greenhouse lists (from open WOs)."""
+    _ensure_approval_role()
     wos = frappe.get_all(
         "Work Order",
         filters=[
@@ -157,6 +176,7 @@ def approve_single_work_order(wo_name):
 
     Returns a dict with keys: wo, status, se, warehouse, qr_labels, message.
     """
+    _ensure_approval_role()
     from upande_scp.serverscripts.qr_generator import (
         attach_qr_to_document,
         build_chemical_qr_payload,
@@ -279,6 +299,7 @@ def approve_single_work_order(wo_name):
 @frappe.whitelist()
 def stop_single_work_order(wo_name):
     """Stop (cancel) a single Work Order. Returns {wo, status, message}."""
+    _ensure_approval_role()
     try:
         from erpnext.manufacturing.doctype.work_order.work_order import stop_unstop
         stop_unstop(wo_name, "Stopped")

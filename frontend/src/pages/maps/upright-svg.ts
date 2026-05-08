@@ -57,6 +57,29 @@ interface BlockMeta {
   beds: BedMeta[];
 }
 
+interface ProjectedZone {
+  name: string;
+  rings: number[][][];
+  lineIds: (string | number | null)[];
+}
+
+interface CachedGeometry {
+  projected: ProjectedZone[];
+  blocks: BlockMeta[];
+  bedLeftmost: Map<
+    string,
+    { lid: string | number; cy: number; blockIdx: number }
+  >;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  w: number;
+  h: number;
+  /** Stacked-bed count along the dominant axis — used for spacing/font. */
+  stackedBeds: number;
+}
+
 export interface UprightSvgResult {
   svg: string;
   width: number;
@@ -128,13 +151,13 @@ function escapeAttr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 }
 
-export function buildGreenhouseUprightSvg(
-  zones: ZoneGeo[],
-  zoneObs: Record<string, ZoneObs>,
-  options: { width?: number; height?: number } = {},
-): UprightSvgResult | null {
-  if (!zones.length) return null;
+/** WeakMap-cached projection + clustering. The Heatmaps page memoizes the
+ *  per-greenhouse zones array, so the same array reference comes back on
+ *  every re-render — re-projecting/clustering each time was ~20-40ms per
+ *  card on multi-block greenhouses, and the page renders 20+ cards. */
+const geomCache = new WeakMap<object, CachedGeometry | null>();
 
+function prepareGeometry(zones: ZoneGeo[]): CachedGeometry | null {
   // 1. Collect rings per zone with line_id metadata.
   const internal: InternalZone[] = [];
   const allPoints: number[][] = [];
@@ -188,7 +211,7 @@ export function buildGreenhouseUprightSvg(
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
-  const projected = internal.map((z) => {
+  const projected: ProjectedZone[] = internal.map((z) => {
     const rings = z.rings.map((ring) => {
       const out = ring.map(project);
       for (const [x, y] of out) {
@@ -274,10 +297,75 @@ export function buildGreenhouseUprightSvg(
   }
   const bedMeta: BedMeta[] = blocks.flatMap((blk) => blk.beds);
 
-  // 5. SVG viewport math (label margin on the left).
-  // Defaults sized for the heatmap card grid + modal strips — wider than the
-  // old 720×420 so multi-block greenhouses don't crush their corridors.
-  // Callers can still override via ``options``.
+  // For each unique bed lid, remember the leftmost block it appears in.
+  const bedLeftmost = new Map<
+    string,
+    { lid: string | number; cy: number; blockIdx: number }
+  >();
+  for (let bi = 0; bi < blocks.length; bi++) {
+    for (const bed of blocks[bi].beds) {
+      const k = String(bed.lid);
+      if (!bedLeftmost.has(k)) {
+        bedLeftmost.set(k, { lid: bed.lid, cy: bed.cy, blockIdx: bi });
+      }
+    }
+  }
+
+  // Stacked-bed count along the dominant axis (used for spacing/font in render).
+  const countClusters = (vals: number[], tol: number): number => {
+    if (!vals.length) return 1;
+    const s = vals.slice().sort((a, b) => a - b);
+    let n = 1;
+    for (let i = 1; i < s.length; i++) if (s[i] - s[i - 1] > tol) n++;
+    return n;
+  };
+  const yClusters = countClusters(
+    bedMeta.map((b) => b.cy),
+    h * 0.02,
+  );
+  const xClusters = countClusters(
+    bedMeta.map((b) => b.cx),
+    w * 0.02,
+  );
+  const stackedBeds = Math.max(1, Math.max(yClusters, xClusters));
+
+  return {
+    projected,
+    blocks,
+    bedLeftmost,
+    minX,
+    maxX,
+    minY,
+    maxY,
+    w,
+    h,
+    stackedBeds,
+  };
+}
+
+function getGeometry(zones: ZoneGeo[]): CachedGeometry | null {
+  const cached = geomCache.get(zones);
+  if (cached !== undefined) return cached;
+  const fresh = prepareGeometry(zones);
+  geomCache.set(zones, fresh);
+  return fresh;
+}
+
+export function buildGreenhouseUprightSvg(
+  zones: ZoneGeo[],
+  zoneObs: Record<string, ZoneObs>,
+  options: { width?: number; height?: number } = {},
+): UprightSvgResult | null {
+  if (!zones.length) return null;
+
+  const geom = getGeometry(zones);
+  if (!geom) return null;
+  const { projected, blocks, bedLeftmost, minX, maxY, w, h, stackedBeds } = geom;
+
+  // SVG viewport math (label margin on the left). Defaults sized for the
+  // heatmap card grid + modal strips — wider than the old 720×420 so
+  // multi-block greenhouses don't crush their corridors. Callers can
+  // override via ``options``.
   const PAD = 14;
   const LABEL_MARGIN = 24;
   const padLeft = LABEL_MARGIN;
@@ -296,26 +384,13 @@ export function buildGreenhouseUprightSvg(
     PAD + (maxY - y) * scale,
   ];
 
-  // 6. Bed thickness (cluster centroids on each axis).
-  const countClusters = (vals: number[], tol: number): number => {
-    if (!vals.length) return 1;
-    const s = vals.slice().sort((a, b) => a - b);
-    let n = 1;
-    for (let i = 1; i < s.length; i++) if (s[i] - s[i - 1] > tol) n++;
-    return n;
-  };
-  const yCenters = bedMeta.map((b) => b.cy);
-  const xCenters = bedMeta.map((b) => b.cx);
-  const yClusters = countClusters(yCenters, h * 0.02);
-  const xClusters = countClusters(xCenters, w * 0.02);
-  const stackExtent = (yClusters >= xClusters ? h : w) * scale;
-  const stackedBeds = Math.max(1, Math.max(yClusters, xClusters));
+  // Bed thickness (tighter than the modal version — 0.7-2 px reads as a
+  // fine line, never a fat ribbon).
+  const stackExtent = h * scale;
   const bedSpacing = stackExtent / stackedBeds;
-  // Tighter clamp than the modal version — bed strokes were visually heavy
-  // in the inline view. 0.7–2 px reads as a fine line, never a fat ribbon.
   const bedThickness = Math.max(0.7, Math.min(2, bedSpacing * 0.2));
 
-  // 7. Layers: baselines, colored polylines, bed labels.
+  // Layer 1 — baselines.
   let baselines = "";
   for (const blk of blocks) {
     for (const bed of blk.beds) {
@@ -325,6 +400,7 @@ export function buildGreenhouseUprightSvg(
     }
   }
 
+  // Layer 2 — colored polylines per zone.
   const counts = Object.values(zoneObs).map((o) => o.count);
   const maxCount = counts.length ? Math.max(...counts, 1) : 1;
 
@@ -350,61 +426,50 @@ export function buildGreenhouseUprightSvg(
     }
   }
 
-  // Bed labels — when there are 2+ blocks (the typical multi-strip layout),
-  // place ONE label per unique bed lid centred in each corridor between
-  // adjacent blocks. With a single block we fall back to the leftmost
-  // gutter. The old code rendered a label for every (block × bed) pair at
-  // the block's left edge, which crowded the leftmost area and overlapped
-  // the polylines of preceding blocks once you had 4-6 strips.
+  // Layer 3 — bed labels.
+  //
+  // Each bed lid gets exactly ONE label. Labels live in "slots": the
+  // leftmost gutter, plus one corridor between each pair of adjacent
+  // blocks. With a single block there is one slot (leftmost) and every
+  // label stacks there. With 2+ blocks we round-robin labels across the
+  // available slots — sorted top-to-bottom so each slot ends up with
+  // well-spaced labels (e.g. with 4 blocks and 12 beds, each slot holds
+  // 3 labels at every-fourth-row spacing). This is the fix for the old
+  // "all 12 labels stacked on the leftmost edge and overlapping" look
+  // when a wide greenhouse splits into 4+ strips.
   const safeLabel = (lid: string | number) =>
     String(lid).replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
-  // Average y-centre per unique bed lid so the label sits on the row even
-  // if a bed only exists in some blocks.
-  const lidYAvg = new Map<string, { lid: string | number; cy: number; n: number }>();
-  for (const blk of blocks) {
-    for (const bed of blk.beds) {
-      const k = String(bed.lid);
-      const ex = lidYAvg.get(k);
-      if (!ex) lidYAvg.set(k, { lid: bed.lid, cy: bed.cy, n: 1 });
-      else {
-        ex.cy = (ex.cy * ex.n + bed.cy) / (ex.n + 1);
-        ex.n += 1;
-      }
+  type LabelSlot = { svgX: number; anchor: "end" | "middle" };
+  const slots: LabelSlot[] = [];
+  {
+    const [tx0] = toSvg([blocks[0].minX, 0]);
+    slots.push({ svgX: tx0 - 4, anchor: "end" });
+    for (let i = 1; i < blocks.length; i++) {
+      const cx = (blocks[i - 1].maxX + blocks[i].minX) / 2;
+      const [tx] = toSvg([cx, 0]);
+      slots.push({ svgX: tx, anchor: "middle" });
     }
   }
 
+  // Top-to-bottom in SVG = descending projected-y (toSvg flips the axis).
+  const sortedBeds = [...bedLeftmost.values()].sort((a, b) => b.cy - a.cy);
+
+  // Font scales with bed spacing so card thumbnails stay legible without
+  // overflowing rows. Clamp to a 4-6 px window — small enough to fit
+  // between bed rows on tightly-packed greenhouses, large enough to read
+  // on the modal at full size.
+  const fontPx = Math.max(4, Math.min(6, bedSpacing * 0.55));
+
   let labels = "";
-  if (blocks.length >= 2) {
-    // One label per unique bed in each corridor between adjacent blocks,
-    // centred in the gap. Hard-skip if the gap is too narrow for legible
-    // text (≈ 14 px in projected units * 1.6 char headroom).
-    for (let i = 0; i < blocks.length - 1; i++) {
-      const left = blocks[i];
-      const right = blocks[i + 1];
-      const gap = right.minX - left.maxX;
-      if (gap <= 0) continue;
-      const corridorMidX = (left.maxX + right.minX) / 2;
-      lidYAvg.forEach(({ lid, cy }) => {
-        const [tx, ty] = toSvg([corridorMidX, cy]);
-        labels += `<text class="gh-bed-label" x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="middle">${safeLabel(lid)}</text>`;
-      });
-    }
-    // Plus a single set in the leftmost gutter so the leftmost block isn't
-    // missing its row markers.
-    const leftEdge = blocks[0].minX;
-    lidYAvg.forEach(({ lid, cy }) => {
-      const [tx, ty] = toSvg([leftEdge, cy]);
-      labels += `<text class="gh-bed-label" x="${(tx - 4).toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="end">${safeLabel(lid)}</text>`;
-    });
-  } else {
-    // Single block: use the leftmost gutter once per unique bed.
-    const leftEdge = blocks[0].minX;
-    lidYAvg.forEach(({ lid, cy }) => {
-      const [tx, ty] = toSvg([leftEdge, cy]);
-      labels += `<text class="gh-bed-label" x="${(tx - 4).toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="end">${safeLabel(lid)}</text>`;
-    });
-  }
+  sortedBeds.forEach((bed, idx) => {
+    const slot = slots[idx % slots.length];
+    const [, ty] = toSvg([0, bed.cy]);
+    labels +=
+      `<text class="gh-bed-label" x="${slot.svgX.toFixed(2)}" ` +
+      `y="${ty.toFixed(2)}" font-size="${fontPx.toFixed(2)}" ` +
+      `text-anchor="${slot.anchor}">${safeLabel(bed.lid)}</text>`;
+  });
 
   return {
     svg: `<svg viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">${baselines}${body}${labels}</svg>`,

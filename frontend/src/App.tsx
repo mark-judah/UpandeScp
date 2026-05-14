@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { AppSidebar } from "@/components/AppSidebar"
 import { ApplicationFloorPlan } from "@/pages/ApplicationFloorPlan"
 import { Dashboard } from "@/pages/Dashboard"
+import { SprayPlanApproval } from "@/pages/SprayPlanApproval"
 import { useView } from "@/lib/router"
 
 function App() {
@@ -13,7 +14,13 @@ function App() {
       <SidebarProvider>
         <AppSidebar view={view} onNavigate={navigate} />
         <SidebarInset>
-          {view === "dashboard" ? <Dashboard /> : <ApplicationFloorPlan />}
+          {view === "dashboard" ? (
+            <Dashboard />
+          ) : view === "spray-plan" ? (
+            <SprayPlanApproval />
+          ) : (
+            <ApplicationFloorPlan />
+          )}
         </SidebarInset>
         <Toaster richColors position="top-right" />
       </SidebarProvider>

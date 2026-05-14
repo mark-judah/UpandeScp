@@ -4,7 +4,6 @@ import { toast } from "sonner"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -529,7 +528,6 @@ export function ApplicationFloorPlan() {
         <Separator orientation="vertical" className="h-5" />
         <div className="flex flex-1 items-center gap-3">
           <h1 className="text-lg font-semibold tracking-tight">Application Floor Plan</h1>
-          <Badge variant="secondary">React port</Badge>
           {report?.scouting_date && (
             <span className="hidden text-xs text-muted-foreground sm:inline">
               Latest scouting: {formatDate(report.scouting_date)}

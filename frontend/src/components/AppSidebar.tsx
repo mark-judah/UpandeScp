@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/sidebar"
 import { currentUser } from "@/lib/frappe"
 import { type ViewId, viewHash } from "@/lib/router"
+import upandeLogo from "@/assets/Upande_logo.png"
 
 interface InAppItem {
   kind: "in-app"
@@ -41,12 +42,7 @@ type NavItem = InAppItem | ExternalItem
 
 const planning: NavItem[] = [
   { kind: "in-app", title: "Application Floor Plan", view: "floor-plan", icon: ClipboardList },
-  {
-    kind: "external",
-    title: "Spray Plan Approval",
-    url: "/spray_plan_approval",
-    icon: CheckCircle2,
-  },
+  { kind: "in-app", title: "Spray Plan Approval", view: "spray-plan", icon: CheckCircle2 },
 ]
 
 const insight: NavItem[] = [
@@ -115,14 +111,18 @@ export function AppSidebar({ view, onNavigate }: Props) {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-1.5">
-          <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Sprout className="size-4" />
+        <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
+          <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background ring-1 ring-border/60 group-data-[collapsible=icon]:size-6">
+            <img
+              src={upandeLogo}
+              alt="Upande"
+              className="size-full object-contain"
+            />
           </div>
-          <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="font-semibold">Upande SCP</span>
-            <span className="text-xs text-muted-foreground">
-              Scouting & Crop Protection
+          <div className="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
+            <span className="truncate font-semibold">Upande SCP</span>
+            <span className="truncate text-xs text-muted-foreground">
+              Scouting &amp; Crop Protection
             </span>
           </div>
         </div>

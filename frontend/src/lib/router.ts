@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react"
 
-export type ViewId = "floor-plan" | "dashboard"
+export type ViewId = "floor-plan" | "dashboard" | "spray-plan"
 
 const HASHES: Record<ViewId, string> = {
   "floor-plan": "#floor-plan",
   dashboard: "#dashboard",
+  "spray-plan": "#spray-plan",
 }
 
 export const viewHash = (v: ViewId): string => HASHES[v]
@@ -13,6 +14,8 @@ const fromHash = (raw: string): ViewId => {
   switch (raw) {
     case "#dashboard":
       return "dashboard"
+    case "#spray-plan":
+      return "spray-plan"
     case "#floor-plan":
     default:
       return "floor-plan"

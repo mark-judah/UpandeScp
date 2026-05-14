@@ -2,6 +2,12 @@
 // Field names mirror the legacy fetch calls in www/new_application_floor_plan.js.
 
 import { call } from "@/lib/frappe"
+import type {
+  ApproveResponse,
+  FarmsResponse,
+  StopResponse,
+  WorkOrdersResponse,
+} from "@/pages/spray-plan-approval/types"
 
 export interface Greenhouse {
   name: string
@@ -163,4 +169,34 @@ export const scpApi = {
       "upande_scp.serverscripts.create_application_work_order.createApplicationWorkOrder",
       { payload: { raw_data: rawData } },
     ),
+
+  sprayPlan: {
+    getFarmsAndGreenhouses: () =>
+      call<FarmsResponse>(
+        "upande_scp.serverscripts.spray_plan_approval.get_farms_and_greenhouses",
+      ),
+
+    getPendingWorkOrders: (args: {
+      from_date: string | null
+      to_date: string | null
+      farm: string | null
+      greenhouse: string | null
+    }) =>
+      call<WorkOrdersResponse>(
+        "upande_scp.serverscripts.spray_plan_approval.get_pending_work_orders",
+        args,
+      ),
+
+    approve: (woName: string) =>
+      call<ApproveResponse>(
+        "upande_scp.serverscripts.spray_plan_approval.approve_single_work_order",
+        { wo_name: woName },
+      ),
+
+    stop: (woName: string) =>
+      call<StopResponse>(
+        "upande_scp.serverscripts.spray_plan_approval.stop_single_work_order",
+        { wo_name: woName },
+      ),
+  },
 }

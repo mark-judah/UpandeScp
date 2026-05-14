@@ -26,6 +26,7 @@ import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { trapPestBreakdown } from "./aggregate";
 import type { ProcessedData } from "@/lib/scouting-types";
+import { weekTickFormatter } from "@/lib/iso-week";
 
 const FOCUS = /fcm|moth|codling|tortrix|noctuid/i;
 
@@ -106,8 +107,9 @@ export function FcmTab({ data }: { data: ProcessedData | null }) {
                   dataKey="date"
                   tickLine={false}
                   axisLine={false}
-                  minTickGap={30}
-                  tickFormatter={(v: string) => v.slice(5)}
+                  interval={0}
+                  minTickGap={0}
+                  tickFormatter={weekTickFormatter}
                 />
                 <YAxis tickLine={false} axisLine={false} width={32} />
                 <ChartTooltip content={<ChartTooltipContent indicator="line" />} />

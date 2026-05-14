@@ -3,7 +3,7 @@
  *
  *  - ``exportChartAsPng``  serialises the recharts SVG inside the given
  *    container into a high-resolution PNG and triggers a download.
- *  - ``printChartAsPdf``   opens a new tab with the SVG inlined onto a
+ *  - ``printChartAsPdf``   mounts a hidden iframe with the SVG on a
  *    print-friendly page and auto-triggers the browser's print dialog.
  *    Operators choose "Save as PDF" from the destination dropdown — every
  *    modern browser ships this without us bundling jsPDF.
@@ -82,20 +82,34 @@ function findChartSvg(container: HTMLElement): SVGSVGElement | null {
   return svg && svg.tagName.toLowerCase() === "svg" ? svg : null;
 }
 
-/** Download the chart inside ``container`` as a PNG file. */
+export type LegendItem = { label: string; color: string };
+
+export type ChartExportOptions = {
+  /** Title drawn at the top of the PNG (e.g. "Thrips Adults"). */
+  title?: string;
+  /** Small badge drawn next to the title (e.g. "Pest", "Disease"). */
+  badge?: string;
+  /** Legend rendered as a column on the right of the PNG. */
+  legend?: LegendItem[];
+};
+
+/** Download the chart inside ``container`` as a PNG file. When ``opts``
+ *  include a title/badge/legend the canvas is enlarged and those elements
+ *  are painted directly so the exported image is self-explanatory. */
 export async function exportChartAsPng(
   container: HTMLElement,
   filename: string,
+  opts: ChartExportOptions = {},
 ): Promise<void> {
   const svg = findChartSvg(container);
   if (!svg) throw new Error("No chart SVG found inside container.");
 
-  const w = svg.clientWidth || svg.viewBox.baseVal.width || 800;
-  const h = svg.clientHeight || svg.viewBox.baseVal.height || 400;
+  const chartW = svg.clientWidth || svg.viewBox.baseVal.width || 800;
+  const chartH = svg.clientHeight || svg.viewBox.baseVal.height || 400;
 
   const inlined = inlineSvgStyles(svg);
-  inlined.setAttribute("width", String(w));
-  inlined.setAttribute("height", String(h));
+  inlined.setAttribute("width", String(chartW));
+  inlined.setAttribute("height", String(chartH));
   const svgBlob = new Blob([svgString(inlined)], {
     type: "image/svg+xml;charset=utf-8",
   });
@@ -109,20 +123,85 @@ export async function exportChartAsPng(
     img.src = url;
   });
 
+  // Layout in CSS pixels — scaled up by PNG_SCALE when committed to canvas.
+  const hasTitle = !!opts.title;
+  const headerH = hasTitle ? 56 : 0;
+  const legendItems = opts.legend || [];
+  const legendW = legendItems.length ? 180 : 0;
+  const pad = 16;
+  const totalW = chartW + legendW + (legendW ? pad : 0);
+  const totalH = chartH + headerH;
+
   const canvas = document.createElement("canvas");
-  canvas.width = w * PNG_SCALE;
-  canvas.height = h * PNG_SCALE;
+  canvas.width = totalW * PNG_SCALE;
+  canvas.height = totalH * PNG_SCALE;
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     URL.revokeObjectURL(url);
     throw new Error("Canvas 2D context unavailable.");
   }
-  // White paint underneath so the PNG isn't transparent — matters when
-  // the operator drops it into a printed report or a slide deck.
+  ctx.scale(PNG_SCALE, PNG_SCALE);
+  // White paint underneath so the PNG isn't transparent.
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, totalW, totalH);
+
+  if (hasTitle) {
+    ctx.fillStyle = "#0f172a";
+    ctx.font =
+      "600 18px Inter, system-ui, -apple-system, Segoe UI, Arial, sans-serif";
+    ctx.textBaseline = "top";
+    const titleX = 8;
+    const titleY = 14;
+    ctx.fillText(opts.title!, titleX, titleY);
+    if (opts.badge) {
+      const titleW = ctx.measureText(opts.title!).width;
+      ctx.font =
+        "500 11px Inter, system-ui, -apple-system, Segoe UI, Arial, sans-serif";
+      const badgeText = opts.badge;
+      const tw = ctx.measureText(badgeText).width;
+      const bx = titleX + titleW + 10;
+      const by = titleY + 2;
+      const bw = tw + 12;
+      const bh = 18;
+      ctx.fillStyle = "#e2e8f0";
+      const r = 9;
+      ctx.beginPath();
+      ctx.moveTo(bx + r, by);
+      ctx.arcTo(bx + bw, by, bx + bw, by + bh, r);
+      ctx.arcTo(bx + bw, by + bh, bx, by + bh, r);
+      ctx.arcTo(bx, by + bh, bx, by, r);
+      ctx.arcTo(bx, by, bx + bw, by, r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#334155";
+      ctx.textBaseline = "middle";
+      ctx.fillText(badgeText, bx + 6, by + bh / 2);
+      ctx.textBaseline = "top";
+    }
+  }
+
+  ctx.drawImage(img, 0, headerH, chartW, chartH);
   URL.revokeObjectURL(url);
+
+  if (legendItems.length) {
+    const lx = chartW + pad;
+    let ly = headerH + 8;
+    ctx.font =
+      "500 12px Inter, system-ui, -apple-system, Segoe UI, Arial, sans-serif";
+    ctx.textBaseline = "middle";
+    for (const item of legendItems) {
+      ctx.fillStyle = resolveCssColor(item.color, container);
+      ctx.beginPath();
+      ctx.arc(lx + 5, ly + 7, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#475569";
+      const maxLabelW = legendW - 18;
+      const label = ellipsize(ctx, item.label, maxLabelW);
+      ctx.fillText(label, lx + 14, ly + 7);
+      ly += 18;
+    }
+    ctx.textBaseline = "top";
+  }
 
   const pngBlob: Blob = await new Promise((resolve, reject) =>
     canvas.toBlob(
@@ -133,26 +212,66 @@ export async function exportChartAsPng(
   triggerDownload(pngBlob, filename.endsWith(".png") ? filename : `${filename}.png`);
 }
 
-/** Open a new tab with the chart inlined on a print-friendly page and
- *  auto-trigger ``window.print()`` so the operator can pick "Save as PDF".
- *  Returns the opened window so callers can add their own teardown if
- *  they need to. */
+/** Resolve a CSS color string (including ``var(--foo)``) to a concrete
+ *  rgb/hex value that the canvas paint loop will accept. */
+function resolveCssColor(color: string, ctx: HTMLElement): string {
+  if (!color.startsWith("var(")) return color;
+  const match = color.match(/var\(([^),]+)\)/);
+  if (!match) return color;
+  const name = match[1].trim();
+  const resolved = getComputedStyle(ctx).getPropertyValue(name).trim();
+  return resolved || "#64748b";
+}
+
+function ellipsize(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxW: number,
+): string {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (ctx.measureText(text.slice(0, mid) + "…").width <= maxW) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo) + "…";
+}
+
+/** Render the chart on a print-friendly page inside a hidden iframe and
+ *  trigger the browser's print dialog so the operator can pick "Save as
+ *  PDF". Uses an iframe instead of a popup window because modern browsers
+ *  return ``null`` from ``window.open`` when the ``noopener`` feature is
+ *  set, which left the popup tab blank. */
 export function printChartAsPdf(
   container: HTMLElement,
   title: string,
-): Window | null {
+  opts: { badge?: string; legend?: LegendItem[] } = {},
+): void {
   const svg = findChartSvg(container);
-  if (!svg) return null;
+  if (!svg) return;
   const inlined = inlineSvgStyles(svg);
   const w = svg.clientWidth || svg.viewBox.baseVal.width || 800;
   const h = svg.clientHeight || svg.viewBox.baseVal.height || 400;
   inlined.setAttribute("width", String(w));
   inlined.setAttribute("height", String(h));
 
-  const win = window.open("", "_blank", "noopener,noreferrer");
-  if (!win) return null;
-  const safeTitle = title.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  win.document.write(`<!doctype html>
+  const esc = (s: string) =>
+    s.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const safeTitle = esc(title);
+  const badgeHtml = opts.badge
+    ? `<span class="badge">${esc(opts.badge)}</span>`
+    : "";
+  const legendItems = (opts.legend || []).map((it) => {
+    const color = resolveCssColor(it.color, container);
+    return `<li><span class="swatch" style="background:${esc(color)}"></span><span>${esc(it.label)}</span></li>`;
+  });
+  const legendHtml = legendItems.length
+    ? `<aside class="legend"><ul>${legendItems.join("")}</ul></aside>`
+    : "";
+
+  const html = `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -160,30 +279,77 @@ export function printChartAsPdf(
   <style>
     @page { margin: 18mm; }
     body { font: 13px Inter, Arial, sans-serif; color: #1f2937; margin: 0; padding: 16px; }
-    h1 { font-size: 16px; margin: 0 0 4px 0; }
-    .meta { font-size: 11px; color: #6b7280; margin-bottom: 16px; }
-    .chart { width: 100%; max-width: 100%; }
+    h1 { font-size: 18px; margin: 0; display: inline-block; }
+    .badge { display: inline-block; background: #e2e8f0; color: #334155; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 9999px; margin-left: 8px; vertical-align: middle; }
+    .meta { font-size: 11px; color: #6b7280; margin: 4px 0 16px 0; }
+    .layout { display: flex; gap: 16px; align-items: stretch; }
+    .chart { flex: 1; min-width: 0; }
     .chart svg { width: 100%; height: auto; }
-    @media print {
-      body { padding: 0; }
-      .no-print { display: none !important; }
-    }
-    .actions { margin-top: 12px; }
-    .actions button { font: 13px Inter, Arial, sans-serif; padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; }
+    .legend { width: 180px; flex-shrink: 0; border-left: 1px solid #e5e7eb; padding-left: 12px; }
+    .legend ul { list-style: none; margin: 0; padding: 0; }
+    .legend li { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #475569; padding: 3px 0; }
+    .swatch { width: 8px; height: 8px; border-radius: 9999px; flex-shrink: 0; }
+    @media print { body { padding: 0; } }
   </style>
 </head>
 <body>
-  <h1>${safeTitle}</h1>
+  <div><h1>${safeTitle}</h1>${badgeHtml}</div>
   <div class="meta">Exported ${new Date().toLocaleString()}</div>
-  <div class="chart">${svgString(inlined)}</div>
-  <div class="actions no-print">
-    <button onclick="window.print()">Save as PDF</button>
+  <div class="layout">
+    <div class="chart">${svgString(inlined)}</div>
+    ${legendHtml}
   </div>
-  <script>setTimeout(function(){ window.print(); }, 200);</script>
 </body>
-</html>`);
-  win.document.close();
-  return win;
+</html>`;
+
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.style.opacity = "0";
+  document.body.appendChild(iframe);
+
+  let printed = false;
+  const cleanup = () => {
+    // Delay removal until after the print dialog interaction settles —
+    // tearing the iframe down mid-print can abort the job in some browsers.
+    setTimeout(() => {
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    }, 1000);
+  };
+  const triggerPrint = () => {
+    if (printed) return;
+    printed = true;
+    const cw = iframe.contentWindow;
+    if (!cw) {
+      cleanup();
+      return;
+    }
+    try {
+      cw.focus();
+      cw.print();
+    } catch (e) {
+      console.error("[chart-export] PDF print failed", e);
+    } finally {
+      cleanup();
+    }
+  };
+
+  iframe.onload = triggerPrint;
+  const idoc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (idoc) {
+    idoc.open();
+    idoc.write(html);
+    idoc.close();
+  }
+  // Fallback for browsers that don't fire `load` after document.write —
+  // ensures the print dialog still appears once the SVG has had a moment
+  // to lay out.
+  setTimeout(triggerPrint, 400);
 }
 
 function triggerDownload(blob: Blob, filename: string): void {

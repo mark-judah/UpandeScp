@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { greenhouseDetail } from "./aggregate";
 import type { ProcessedData } from "@/lib/scouting-types";
+import { weekTickFormatter } from "@/lib/iso-week";
 
 const SERIES = {
   pests: { label: "Pests", color: "var(--sd-data-cyan)" },
@@ -155,8 +156,9 @@ export function GreenhouseModal({
                     dataKey="date"
                     tickLine={false}
                     axisLine={false}
-                    minTickGap={20}
-                    tickFormatter={(v: string) => v.slice(5)}
+                    interval={0}
+                    minTickGap={0}
+                    tickFormatter={weekTickFormatter}
                   />
                   <YAxis tickLine={false} axisLine={false} width={28} />
                   <ChartTooltip content={<ChartTooltipContent indicator="line" />} />

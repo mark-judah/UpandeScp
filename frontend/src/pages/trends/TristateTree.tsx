@@ -68,6 +68,31 @@ export function TristateTree({
     onChange(next);
   };
 
+  const allLeafIds = useMemo(() => {
+    const out: string[] = [];
+    const walk = (n: TreeNode) => {
+      if (!n.children?.length) out.push(n.id);
+      else n.children.forEach(walk);
+    };
+    nodes.forEach(walk);
+    return out;
+  }, [nodes]);
+
+  const selectAllGlobal = () => onChange(new Set(allLeafIds));
+
+  const selectSubtree = (n: TreeNode) => {
+    const next = new Set(checked);
+    collectLeafIds(n).forEach((id) => next.add(id));
+    onChange(next);
+  };
+
+  const unselectSubtree = (n: TreeNode) => {
+    const next = new Set(checked);
+    collectLeafIds(n).forEach((id) => next.delete(id));
+    next.delete(n.id);
+    onChange(next);
+  };
+
   const expandAll = (open: boolean) => {
     if (!open) {
       setExpanded(new Set());
@@ -141,7 +166,34 @@ export function TristateTree({
           )}
         </div>
         {hasChildren && open && (
-          <div>{n.children!.map((c) => renderNode(c, depth + 1))}</div>
+          <>
+            <div
+              className="flex items-center gap-1 pl-7 py-0.5"
+              style={{ paddingLeft: depth * 14 + 28 }}
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  selectSubtree(n);
+                }}
+                className="text-[0.7rem] font-medium text-primary hover:underline"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  unselectSubtree(n);
+                }}
+                className="text-[0.7rem] font-medium text-[var(--sd-data-red)] hover:underline ml-2"
+              >
+                Unselect
+              </button>
+            </div>
+            <div>{n.children!.map((c) => renderNode(c, depth + 1))}</div>
+          </>
         )}
       </div>
     );
@@ -165,10 +217,24 @@ export function TristateTree({
         </div>
       </div>
       <div className="flex items-center gap-1.5 text-[0.7rem]">
+        <button
+          type="button"
+          onClick={selectAllGlobal}
+          className="text-[0.75rem] font-semibold text-primary hover:underline"
+        >
+          Select all
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange(new Set())}
+          className="text-[0.75rem] font-semibold text-[var(--sd-data-red)] hover:underline ml-1"
+        >
+          Unselect
+        </button>
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 px-2 text-[0.7rem]"
+          className="h-6 px-2 text-[0.7rem] ml-2"
           onClick={() => expandAll(true)}
         >
           Expand
@@ -180,14 +246,6 @@ export function TristateTree({
           onClick={() => expandAll(false)}
         >
           Collapse
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-[0.7rem]"
-          onClick={() => onChange(new Set())}
-        >
-          Clear
         </Button>
         <span className="ml-auto text-muted-foreground">
           {checked.size} selected

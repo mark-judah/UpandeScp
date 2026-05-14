@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { EmptyHint } from "./EmptyHint";
+import { weekTickFormatter } from "@/lib/iso-week";
 
 const PALETTE = [
   "var(--sd-data-cyan)",
@@ -76,8 +77,9 @@ export function TrendStrip({
               dataKey="date"
               tickLine={false}
               axisLine={false}
-              minTickGap={30}
-              tickFormatter={(v: string) => v.slice(5)}
+              interval={0}
+              minTickGap={0}
+              tickFormatter={weekTickFormatter}
             />
             <YAxis tickLine={false} axisLine={false} width={32} />
             <ChartTooltip

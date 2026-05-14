@@ -6,8 +6,9 @@
  * Stock Entries + QR labels per chemical) or stop them, with a live
  * progress panel and a 30×40 mm QR print window.
  *
- * Server access is gated to "General Manager" / "System Manager" on the
- * endpoint side (see ``upande_scp/serverscripts/spray_plan_approval.py``);
+ * Server access is gated to "Spray Plan Approver" / "General Manager" /
+ * "System Manager" on the endpoint side
+ * (see ``upande_scp/serverscripts/spray_plan_approval.py``);
  * non-privileged users will still see the route but every API call
  * fails with PermissionError, which we surface as an error state.
  */
@@ -151,7 +152,7 @@ export function Approvals() {
       setAllWos([]);
       setErrorMsg(
         e?.message?.includes("permission")
-          ? "You do not have permission to view spray plan approvals. Ask an admin for the General Manager role."
+          ? "You do not have permission to view spray plan approvals. Ask an admin for the Spray Plan Approver role."
           : "Failed to load work orders. Check your connection or permissions.",
       );
     } finally {

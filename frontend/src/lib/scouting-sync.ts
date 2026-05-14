@@ -1,10 +1,12 @@
 /**
  * Scouting cache orchestrator.
  *
- *  - First read: fetch months we don't already have in IDB from L1
- *    (getScoutingEntriesChunk).
+ *  - First read: fetch ISO weeks we don't already have in IDB from L1
+ *    (getScoutingEntriesChunk). All missing weeks fire in parallel so the
+ *    operator's wall-clock is bounded by the slowest single week, not the
+ *    sum of them.
  *  - Background: delta sync via L2 (get_entries_since) advances the watermark.
- *  - Realtime nudges from L4 invalidate a single month and re-run delta.
+ *  - Realtime nudges from L4 invalidate the affected weeks and re-run delta.
  *
  * Filtering by greenhouse / farm / crop happens *after* IDB reads, never on
  * the server side — see docs/data_caching.md (L1 keys section).
@@ -14,14 +16,15 @@ import { call } from "./frappe";
 import {
   putEntries,
   getEntriesInRange,
-  monthOf,
   getMeta,
   setMeta,
   evictOldMonths,
   type IdbEntry,
 } from "./idb";
+import { isoWeek } from "./iso-week";
 
-const META_LOADED_MONTHS = "loaded_months";
+const META_LOADED_WEEKS = "loaded_weeks";
+const META_LOADED_MONTHS_LEGACY = "loaded_months";
 const META_WATERMARK = "watermark";
 
 interface ChunkResp {
@@ -35,84 +38,126 @@ interface DeltaResp {
   has_more: boolean;
 }
 
-function monthsBetween(from: string, to: string): string[] {
-  if (!from || !to) return [];
-  const [fy, fm] = from.split("-").map(Number);
-  const [ty, tm] = to.split("-").map(Number);
-  const out: string[] = [];
-  let y = fy;
-  let m = fm;
-  while (y < ty || (y === ty && m <= tm)) {
-    out.push(`${y}-${String(m).padStart(2, "0")}`);
-    m++;
-    if (m > 12) {
-      m = 1;
-      y++;
-    }
+function ymd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function startOfIsoWeek(d: Date): Date {
+  const day = d.getDay() || 7; // Sunday → 7 so Monday becomes the anchor
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  out.setDate(d.getDate() - (day - 1));
+  return out;
+}
+
+function isoWeekYear(d: Date): number {
+  // ISO 8601: the year of the Thursday in the same ISO week.
+  const t = new Date(d);
+  const day = t.getDay() || 7;
+  t.setDate(t.getDate() + 4 - day);
+  return t.getFullYear();
+}
+
+interface WeekSlot {
+  key: string;
+  from: string;
+  to: string;
+}
+
+function weeksBetween(from: string, to: string): WeekSlot[] {
+  if (!from || !to || from > to) return [];
+  const fromDate = new Date(from + "T00:00:00");
+  const toDate = new Date(to + "T00:00:00");
+  const out: WeekSlot[] = [];
+  let cur = startOfIsoWeek(fromDate);
+  while (cur.getTime() <= toDate.getTime()) {
+    const sun = new Date(cur);
+    sun.setDate(cur.getDate() + 6);
+    const wy = isoWeekYear(cur);
+    const wn = isoWeek(cur);
+    out.push({
+      key: `${wy}-W${String(wn).padStart(2, "0")}`,
+      from: ymd(cur),
+      to: ymd(sun),
+    });
+    cur = new Date(cur);
+    cur.setDate(cur.getDate() + 7);
   }
   return out;
 }
 
-function monthBounds(month: string): { from: string; to: string } {
-  const [y, m] = month.split("-").map(Number);
-  const last = new Date(y, m, 0).getDate();
-  return {
-    from: `${month}-01`,
-    to: `${month}-${String(last).padStart(2, "0")}`,
-  };
-}
-
-async function loadedMonthsSet(): Promise<Set<string>> {
-  const v = (await getMeta<string[]>(META_LOADED_MONTHS)) || [];
+async function loadedWeeksSet(): Promise<Set<string>> {
+  const v = (await getMeta<string[]>(META_LOADED_WEEKS)) || [];
   return new Set(v);
 }
 
-async function markMonthLoaded(month: string): Promise<void> {
-  const set = await loadedMonthsSet();
-  set.add(month);
-  await setMeta(META_LOADED_MONTHS, Array.from(set));
+async function markWeekLoaded(week: string): Promise<void> {
+  const set = await loadedWeeksSet();
+  set.add(week);
+  await setMeta(META_LOADED_WEEKS, Array.from(set));
+}
+
+let legacyMonthsCleared = false;
+async function clearLegacyMonthsRegistry(): Promise<void> {
+  // One-time migration on the first hydrateRange call after deploy. The
+  // entries store keeps its data — putEntries upserts — but the old
+  // month-granular "fully loaded" registry is no longer trusted.
+  if (legacyMonthsCleared) return;
+  legacyMonthsCleared = true;
+  try {
+    const legacy = await getMeta<string[]>(META_LOADED_MONTHS_LEGACY);
+    if (legacy) await setMeta(META_LOADED_MONTHS_LEGACY, []);
+  } catch {
+    // Non-fatal — worst case we re-fetch a few weeks that IDB already has.
+  }
 }
 
 /**
- * Make sure every month touching [from, to] is fully present in IDB.
- * Skips months we've already fully loaded (the loaded_months registry).
+ * Make sure every ISO week touching [from, to] is fully present in IDB.
+ * Skips weeks we've already fully loaded (the loaded_weeks registry).
  *
- * `onProgress` is called with `(loaded, total, currentMonth)` after each
- * month resolves so callers can drive a progress bar instead of seeing the
- * value pinned at 10% during a multi-month first-paint download.
+ * All missing weeks are fetched concurrently. ``onProgress`` is called with
+ * ``(loaded, total, weekKey)`` after each week resolves so callers can drive
+ * a progress bar.
  */
 export async function hydrateRange(
   from: string,
   to: string,
-  onProgress?: (loaded: number, total: number, month: string) => void,
+  onProgress?: (loaded: number, total: number, week: string) => void,
 ): Promise<void> {
-  const months = monthsBetween(monthOf(from), monthOf(to));
-  const known = await loadedMonthsSet();
-  const missing = months.filter((m) => !known.has(m));
+  await clearLegacyMonthsRegistry();
+  const weeks = weeksBetween(from, to);
+  const known = await loadedWeeksSet();
+  const missing = weeks.filter((w) => !known.has(w.key));
 
   if (!missing.length) return;
 
-  for (let i = 0; i < missing.length; i++) {
-    const m = missing[i];
-    const { from: mFrom, to: mTo } = monthBounds(m);
-    try {
-      const resp = await call<ChunkResp>(
-        "upande_scp.serverscripts.get_complete_scouting_entries.getScoutingEntriesChunk",
-        {
-          from_date: mFrom,
-          to_date: mTo,
-          include_meta: 0,
-        },
-      );
-      const entries = resp?.entries || [];
-      if (entries.length) await putEntries(entries);
-      await markMonthLoaded(m);
-    } catch (err) {
-      console.error("[scouting-sync] hydrate month failed", m, err);
-      throw err;
-    }
-    onProgress?.(i + 1, missing.length, m);
-  }
+  let done = 0;
+  await Promise.all(
+    missing.map(async (w) => {
+      try {
+        const resp = await call<ChunkResp>(
+          "upande_scp.serverscripts.get_complete_scouting_entries.getScoutingEntriesChunk",
+          {
+            from_date: w.from,
+            to_date: w.to,
+            include_meta: 0,
+          },
+        );
+        const entries = resp?.entries || [];
+        if (entries.length) await putEntries(entries);
+        await markWeekLoaded(w.key);
+      } catch (err) {
+        console.error("[scouting-sync] hydrate week failed", w.key, err);
+        throw err;
+      }
+      done += 1;
+      onProgress?.(done, missing.length, w.key);
+    }),
+  );
 }
 
 /**
@@ -144,17 +189,29 @@ export async function runDelta(): Promise<{ added: number; advanced: string }> {
 
 /**
  * Read entries for [from, to] from IDB. Optionally filter by greenhouse,
- * block, or crop in-memory. This is the single read path used by every
- * page; nothing else queries IDB directly.
+ * block, or crop in-memory. ``greenhouses`` accepts a list — pages use
+ * that to express "any greenhouse on this farm" without giving up the
+ * single read path. This is the single read path used by every page;
+ * nothing else queries IDB directly.
  */
 export async function readEntries(
   from: string,
   to: string,
-  filters: { greenhouse?: string; block?: string; crop?: string } = {},
+  filters: {
+    greenhouse?: string;
+    greenhouses?: string[];
+    block?: string;
+    crop?: string;
+  } = {},
 ): Promise<IdbEntry[]> {
   let rows = await getEntriesInRange(from, to);
-  const { greenhouse, block, crop } = filters;
-  if (greenhouse) rows = rows.filter((r) => r.greenhouse === greenhouse);
+  const { greenhouse, greenhouses, block, crop } = filters;
+  if (greenhouse) {
+    rows = rows.filter((r) => r.greenhouse === greenhouse);
+  } else if (greenhouses && greenhouses.length) {
+    const allow = new Set(greenhouses);
+    rows = rows.filter((r) => !!r.greenhouse && allow.has(r.greenhouse));
+  }
   if (block) rows = rows.filter((r) => r.block === block);
   if (crop) rows = rows.filter((r) => (r.crop_scouted || "Rose") === crop);
   return rows;
@@ -176,15 +233,22 @@ export async function primeAndDelta(
 }
 
 /**
- * Drop one month from the local cache so the next read re-fetches it.
- * Used by the realtime "scp:scouting:dirty" listener.
+ * Drop the loaded-weeks pointer for everything touched by ``month`` so the
+ * next hydrate re-fetches those weeks. ``month`` is a "YYYY-MM" string;
+ * passing ``null`` clears the entire week registry. Used by the realtime
+ * "scp:scouting:dirty" listener which still speaks in month buckets.
  */
 export async function invalidateMonth(month: string | null): Promise<void> {
-  const known = await loadedMonthsSet();
-  if (month) {
-    known.delete(month);
-  } else {
+  const known = await loadedWeeksSet();
+  if (!month) {
     known.clear();
+  } else {
+    const [y, m] = month.split("-").map(Number);
+    if (!y || !m) return;
+    const first = `${month}-01`;
+    const last = new Date(y, m, 0).getDate();
+    const lastStr = `${month}-${String(last).padStart(2, "0")}`;
+    weeksBetween(first, lastStr).forEach((w) => known.delete(w.key));
   }
-  await setMeta(META_LOADED_MONTHS, Array.from(known));
+  await setMeta(META_LOADED_WEEKS, Array.from(known));
 }

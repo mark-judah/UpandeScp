@@ -44,6 +44,7 @@ import {
   topScouts,
 } from "./aggregate";
 import type { ProcessedData } from "@/lib/scouting-types";
+import { weekTickFormatter } from "@/lib/iso-week";
 
 const series: ChartConfig = {
   pests: { label: "Pests", color: "var(--sd-data-cyan)" },
@@ -123,8 +124,9 @@ export function OverviewTab({
                     dataKey="date"
                     tickLine={false}
                     axisLine={false}
-                    minTickGap={30}
-                    tickFormatter={(v: string) => v.slice(5)}
+                    interval={0}
+                    minTickGap={0}
+                    tickFormatter={weekTickFormatter}
                   />
                   <YAxis tickLine={false} axisLine={false} width={32} />
                   <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
@@ -223,8 +225,9 @@ export function OverviewTab({
                     dataKey="date"
                     tickLine={false}
                     axisLine={false}
-                    minTickGap={30}
-                    tickFormatter={(v: string) => v.slice(5)}
+                    interval={0}
+                    minTickGap={0}
+                    tickFormatter={weekTickFormatter}
                   />
                   <YAxis tickLine={false} axisLine={false} width={28} />
                   <ChartTooltip content={<ChartTooltipContent indicator="line" />} />

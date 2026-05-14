@@ -37,6 +37,7 @@ import {
   type DashFilters,
 } from "./aggregate";
 import type { ProcessedData } from "@/lib/scouting-types";
+import { weekTickFormatter } from "@/lib/iso-week";
 
 export function PestsTab({
   data,
@@ -127,8 +128,9 @@ export function PestsTab({
                   dataKey="date"
                   tickLine={false}
                   axisLine={false}
-                  minTickGap={30}
-                  tickFormatter={(v: string) => v.slice(5)}
+                  interval={0}
+                  minTickGap={0}
+                  tickFormatter={weekTickFormatter}
                 />
                 <YAxis
                   tickLine={false}

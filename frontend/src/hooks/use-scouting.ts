@@ -25,7 +25,13 @@ const EMPTY_META: ScoutingMeta = {
 export interface UseScoutingArgs {
   from: string;
   to: string;
+  /** Convenience for pages that only ever select a single greenhouse. */
   greenhouse?: string;
+  /** Explicit allow-list of greenhouses — used by pages that need to
+   *  express "every greenhouse on this farm" without dropping back to
+   *  an unfiltered fetch. Takes precedence over ``greenhouse`` when both
+   *  are set. */
+  greenhouses?: string[];
   crop?: string;
 }
 
@@ -44,6 +50,7 @@ async function loadAndProcess(args: UseScoutingArgs): Promise<ProcessedData> {
       args.greenhouse && args.greenhouse !== "__all__"
         ? args.greenhouse
         : undefined,
+    greenhouses: args.greenhouses,
     crop: args.crop,
   });
   return buildScoutingData(rows as unknown as RawEntry[]);
@@ -53,6 +60,7 @@ export function useScouting({
   from,
   to,
   greenhouse,
+  greenhouses,
   crop,
 }: UseScoutingArgs): UseScoutingResult {
   const [data, setData] = useState<ProcessedData | null>(null);
@@ -63,9 +71,14 @@ export function useScouting({
   const [tick, setTick] = useState(0);
   const tokenRef = useRef(0);
 
+  // Memoise the greenhouses list so we don't re-fire the effect every render
+  // when callers spread a fresh array literal. The dep below is the stable
+  // signature, not the array reference.
+  const greenhousesKey = greenhouses ? greenhouses.slice().sort().join("|") : "";
+
   // Primary load:
   //   1) read whatever's already in IDB → render immediately
-  //   2) hydrate any missing months in parallel; re-render after each
+  //   2) hydrate every missing week in parallel; throttle re-renders
   //   3) kick off a background delta sync
   useEffect(() => {
     if (!from || !to || from > to) return;
@@ -78,11 +91,30 @@ export function useScouting({
       const refresh = async () => {
         if (tokenRef.current !== token) return;
         try {
-          const processed = await loadAndProcess({ from, to, greenhouse, crop });
+          const processed = await loadAndProcess({
+            from,
+            to,
+            greenhouse,
+            greenhouses,
+            crop,
+          });
           if (tokenRef.current === token) setData(processed);
         } catch (e) {
           console.error("[scouting] processing failed", e);
         }
+      };
+
+      // Throttled refresh — weeks land in parallel and could otherwise
+      // trigger 10+ rebuilds in the same animation frame. We coalesce
+      // calls that arrive within 250 ms.
+      let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+      const scheduleRefresh = () => {
+        if (tokenRef.current !== token) return;
+        if (refreshTimer) return;
+        refreshTimer = setTimeout(() => {
+          refreshTimer = null;
+          void refresh();
+        }, 250);
       };
 
       // 1) Eager render from IDB (instant if anything is cached locally).
@@ -94,19 +126,24 @@ export function useScouting({
         console.error("[scouting] initial IDB read failed", e);
       }
 
-      // 2) Hydrate missing months. Each month done patches the view.
+      // 2) Hydrate missing weeks. Progressive renders feel snappier than
+      //    a final all-at-once paint.
       try {
-        await hydrateRange(from, to, async (loaded, total, month) => {
+        await hydrateRange(from, to, (loaded, total, week) => {
           if (tokenRef.current !== token) return;
           const span = Math.round(20 + (70 * loaded) / Math.max(1, total));
           setProgress(span);
           console.log(
-            `[scouting] hydrated month ${month} (${loaded}/${total})`,
+            `[scouting] hydrated week ${week} (${loaded}/${total})`,
           );
-          await refresh();
+          scheduleRefresh();
         });
         if (tokenRef.current !== token) return;
         setProgress(95);
+        if (refreshTimer) {
+          clearTimeout(refreshTimer);
+          refreshTimer = null;
+        }
         await refresh();
         setProgress(100);
       } catch (e: any) {
@@ -125,7 +162,8 @@ export function useScouting({
         })
         .catch((e) => console.error("[scouting] delta failed", e));
     })();
-  }, [from, to, greenhouse, crop, tick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to, greenhouse, greenhousesKey, crop, tick]);
 
   // Realtime: invalidate the affected month and re-render.
   useRealtime("scp:scouting:dirty", async (payload: { months?: string[] }) => {

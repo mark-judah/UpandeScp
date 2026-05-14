@@ -15,7 +15,7 @@ from frappe.utils import add_days, cstr, flt, now_datetime, today
 
 AFP_TYPE = "Application Floor Plan"
 
-APPROVAL_ROLES = ("General Manager", "System Manager")
+APPROVAL_ROLES = ("Spray Plan Approver", "General Manager", "System Manager")
 
 
 def _ensure_approval_role():
@@ -28,7 +28,7 @@ def _ensure_approval_role():
     user_roles = set(frappe.get_roles(user))
     if not user_roles.intersection(APPROVAL_ROLES):
         frappe.throw(
-            "Spray plan approval requires General Manager access.",
+            "Spray plan approval requires the Spray Plan Approver role.",
             frappe.PermissionError,
         )
 

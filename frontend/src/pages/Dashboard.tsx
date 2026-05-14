@@ -92,11 +92,19 @@ export function Dashboard() {
     return (farms[farm] || []).slice().sort();
   }, [farm, farmList, farms]);
 
-  const ghForCall = greenhouse === ALL_GH ? undefined : greenhouse;
+  // Scope precedence: explicit greenhouse > farm's greenhouses > undefined.
+  // Picking "Karen Farm" + "All Greenhouses" used to fall through to the
+  // unfiltered fetch because only `greenhouse` was ever passed downstream.
+  const greenhouseScope = useMemo(() => {
+    if (greenhouse !== ALL_GH) return [greenhouse];
+    if (farm !== ALL_FARMS) return farms[farm] || [];
+    return undefined;
+  }, [farm, greenhouse, farms]);
+
   const { data, loading, error, reload } = useScouting({
     from,
     to,
-    greenhouse: ghForCall,
+    greenhouses: greenhouseScope,
     crop,
   });
 

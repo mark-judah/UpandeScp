@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildScoutingData } from "@/lib/scouting-api";
 import {
+  getMissingWeeks,
   hydrateRange,
   invalidateMonth,
   primeAndDelta,
@@ -40,6 +41,8 @@ export interface UseScoutingResult {
   meta: ScoutingMeta;
   loading: boolean;
   progress: number;
+  weeksLoaded: number;
+  weeksTotal: number;
   error: string | null;
   reload: () => void;
 }
@@ -67,84 +70,71 @@ export function useScouting({
   const [meta] = useState<ScoutingMeta>(EMPTY_META);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [weeksLoaded, setWeeksLoaded] = useState(0);
+  const [weeksTotal, setWeeksTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const tokenRef = useRef(0);
 
-  // Memoise the greenhouses list so we don't re-fire the effect every render
-  // when callers spread a fresh array literal. The dep below is the stable
-  // signature, not the array reference.
-  const greenhousesKey = greenhouses ? greenhouses.slice().sort().join("|") : "";
+  // Memoise the greenhouses list so we don't re-fire the render effect every
+  // render when callers spread a fresh array literal.
+  const greenhousesKey = greenhouses
+    ? greenhouses.slice().sort().join("|")
+    : "";
 
-  // Primary load:
-  //   1) read whatever's already in IDB → render immediately
-  //   2) hydrate every missing week in parallel; throttle re-renders
-  //   3) kick off a background delta sync
+  // Shared filter+render — used by both effects below.
+  const buildAndSet = async (token: number) => {
+    if (tokenRef.current !== token) return;
+    try {
+      const processed = await loadAndProcess({
+        from,
+        to,
+        greenhouse,
+        greenhouses,
+        crop,
+      });
+      if (tokenRef.current === token) setData(processed);
+    } catch (e) {
+      console.error("[scouting] processing failed", e);
+    }
+  };
+
+  // Effect A — Hydration. Runs only when the date range (or a manual reload)
+  // changes. Owns loading / progress / weeks counters. Skips the loading
+  // state entirely when everything is already cached so greenhouse switches
+  // (handled by Effect B) never flash a loading indicator.
   useEffect(() => {
     if (!from || !to || from > to) return;
     const token = ++tokenRef.current;
-    setLoading(true);
     setError(null);
-    setProgress(10);
 
     (async () => {
-      const refresh = async () => {
-        if (tokenRef.current !== token) return;
-        try {
-          const processed = await loadAndProcess({
-            from,
-            to,
-            greenhouse,
-            greenhouses,
-            crop,
-          });
-          if (tokenRef.current === token) setData(processed);
-        } catch (e) {
-          console.error("[scouting] processing failed", e);
-        }
-      };
+      const missing = await getMissingWeeks(from, to);
+      if (tokenRef.current !== token) return;
 
-      // Throttled refresh — weeks land in parallel and could otherwise
-      // trigger 10+ rebuilds in the same animation frame. We coalesce
-      // calls that arrive within 250 ms.
-      let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-      const scheduleRefresh = () => {
-        if (tokenRef.current !== token) return;
-        if (refreshTimer) return;
-        refreshTimer = setTimeout(() => {
-          refreshTimer = null;
-          void refresh();
-        }, 250);
-      };
-
-      // 1) Eager render from IDB (instant if anything is cached locally).
-      try {
-        await refresh();
-        if (tokenRef.current !== token) return;
-        setProgress(20);
-      } catch (e) {
-        console.error("[scouting] initial IDB read failed", e);
+      if (missing.length === 0) {
+        // Cached path — Effect B will refresh data; nothing for us to do.
+        setLoading(false);
+        setProgress(100);
+        setWeeksLoaded(0);
+        setWeeksTotal(0);
+        return;
       }
 
-      // 2) Hydrate missing weeks. Progressive renders feel snappier than
-      //    a final all-at-once paint.
+      setLoading(true);
+      setProgress(0);
+      setWeeksLoaded(0);
+      setWeeksTotal(missing.length);
+
       try {
         await hydrateRange(from, to, (loaded, total, week) => {
           if (tokenRef.current !== token) return;
-          const span = Math.round(20 + (70 * loaded) / Math.max(1, total));
-          setProgress(span);
-          console.log(
-            `[scouting] hydrated week ${week} (${loaded}/${total})`,
-          );
-          scheduleRefresh();
+          setWeeksLoaded(loaded);
+          setWeeksTotal(total);
+          setProgress(Math.round((100 * loaded) / Math.max(1, total)));
+          console.log(`[scouting] hydrated week ${week} (${loaded}/${total})`);
         });
         if (tokenRef.current !== token) return;
-        setProgress(95);
-        if (refreshTimer) {
-          clearTimeout(refreshTimer);
-          refreshTimer = null;
-        }
-        await refresh();
         setProgress(100);
       } catch (e: any) {
         if (tokenRef.current !== token) return;
@@ -155,15 +145,27 @@ export function useScouting({
         if (tokenRef.current === token) setLoading(false);
       }
 
-      // 3) Background delta — quietly refresh when complete.
+      // Background delta — quietly refresh when complete.
       void runDelta()
         .then(async ({ added }) => {
-          if (added > 0 && tokenRef.current === token) await refresh();
+          if (added > 0 && tokenRef.current === token) {
+            await buildAndSet(token);
+          }
         })
         .catch((e) => console.error("[scouting] delta failed", e));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, greenhouse, greenhousesKey, crop, tick]);
+  }, [from, to, tick]);
+
+  // Effect B — Render. Runs whenever filters change (and also after Effect A
+  // mutates IDB, because `tick` and range are shared). Pure IDB-read +
+  // ProcessedData rebuild; never touches loading/progress.
+  useEffect(() => {
+    if (!from || !to || from > to) return;
+    const token = tokenRef.current;
+    void buildAndSet(token);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to, greenhouse, greenhousesKey, crop, tick, weeksLoaded]);
 
   // Realtime: invalidate the affected month and re-render.
   useRealtime("scp:scouting:dirty", async (payload: { months?: string[] }) => {
@@ -182,13 +184,14 @@ export function useScouting({
       meta,
       loading,
       progress,
+      weeksLoaded,
+      weeksTotal,
       error,
       reload: () => {
-        // Force a re-prime by clearing the loaded-months registry, then re-run.
         void primeAndDelta(from, to).catch(() => {});
         setTick((n) => n + 1);
       },
     }),
-    [data, meta, loading, progress, error, from, to],
+    [data, meta, loading, progress, weeksLoaded, weeksTotal, error, from, to],
   );
 }

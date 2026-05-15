@@ -125,6 +125,24 @@ def _coerce_date(value):
     return datetime.strptime(text, "%Y-%m-%d").date()
 
 
+def _iso_year_week(d):
+    """Return ``(iso_year, iso_week)`` for a date. Follows ISO 8601 — the year
+    of the Thursday in the same week, so the last few days of December may
+    belong to ISO week 1 of the next year (and vice versa)."""
+    iso = d.isocalendar()
+    return (iso[0], iso[1])
+
+
+def _week_bounds(iso_year, iso_week):
+    """Return ``(monday_date, sunday_date)`` for an ISO ``(year, week)`` pair."""
+    from datetime import date, timedelta
+
+    # ISO uses Monday=1. ``date.fromisocalendar`` returns the Monday.
+    monday = date.fromisocalendar(iso_year, iso_week, 1)
+    sunday = monday + timedelta(days=6)
+    return monday, sunday
+
+
 def _month_bounds(year, month):
     from calendar import monthrange
     from datetime import date

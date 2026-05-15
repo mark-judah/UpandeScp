@@ -1,8 +1,15 @@
+export interface ScpBootstrap {
+  user: string;
+  full_name: string;
+  user_image: string;
+  site_name: string;
+}
+
 declare global {
   interface Window {
     SCP?: {
       csrf_token?: string;
-      bootstrap?: Record<string, unknown>;
+      bootstrap?: Partial<ScpBootstrap> & Record<string, unknown>;
     };
     csrf_token?: string;
   }
@@ -26,8 +33,14 @@ function csrf(): string {
   );
 }
 
-export function bootstrap<T = Record<string, unknown>>(): T {
-  return (window.SCP?.bootstrap || {}) as T;
+export function bootstrap(): ScpBootstrap {
+  const raw = window.SCP?.bootstrap || {};
+  return {
+    user: typeof raw.user === "string" ? raw.user : "",
+    full_name: typeof raw.full_name === "string" ? raw.full_name : "",
+    user_image: typeof raw.user_image === "string" ? raw.user_image : "",
+    site_name: typeof raw.site_name === "string" ? raw.site_name : "",
+  };
 }
 
 export async function call<T = unknown>(

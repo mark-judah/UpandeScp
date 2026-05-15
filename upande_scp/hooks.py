@@ -221,7 +221,10 @@ scheduler_events = {
         "0 8 * * 2": [
             "upande_scp.serverscripts.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
         ],
-    }
+    },
+    "daily": [
+        "upande_scp.serverscripts.scouting_prewarm.daily_prewarm",
+    ],
 }
 
 # scheduler_events = {

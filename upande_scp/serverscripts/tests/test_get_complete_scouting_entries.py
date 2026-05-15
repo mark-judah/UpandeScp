@@ -94,5 +94,23 @@ class TestFilterEntriesWholeWeek(unittest.TestCase):
         self.assertEqual([e["greenhouse"] for e in result], ["G1"])
 
 
+class TestPrewarm(unittest.TestCase):
+    def test_prewarm_calls_fetch_for_recent_weeks(self):
+        from unittest.mock import patch
+        import datetime
+        import upande_scp.serverscripts.scouting_prewarm as pre
+
+        # Freeze "today" to a known Monday so we can assert exact weeks.
+        FAKE_TODAY = datetime.date(2025, 5, 5)  # Monday, ISO week 19/2025
+
+        with patch.object(pre, "_today", return_value=FAKE_TODAY), \
+             patch.object(pre, "_fetch_week_entries", return_value=[]) as wk:
+            pre.daily_prewarm()
+
+        called = sorted(c.args for c in wk.call_args_list)
+        # Current week (W19) + previous 4 (W18, W17, W16, W15)
+        self.assertEqual(called, [(2025, 15), (2025, 16), (2025, 17), (2025, 18), (2025, 19)])
+
+
 if __name__ == "__main__":
     unittest.main()

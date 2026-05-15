@@ -93,6 +93,17 @@ def _month_cache_key(year, month):
     return f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{year:04d}-{month:02d}"
 
 
+def _week_cache_key(iso_year, iso_week):
+    """Per-ISO-week cache key.
+
+    Mirrors the previous monthly key but is finer-grained. Filtering by
+    greenhouse / block is still applied in-memory after the cache hit so
+    we don't store the same source rows once per (greenhouse, all) shape.
+    """
+    v = scouting_payload_version()
+    return f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{iso_year:04d}-W{iso_week:02d}"
+
+
 def _months_in_range(from_date, to_date):
     from datetime import date
 
@@ -188,6 +199,15 @@ def _is_recent_month(year, month):
     return last >= cutoff
 
 
+def _is_recent_week(iso_year, iso_week):
+    """Whether (iso_year, iso_week) sits inside the rolling cache window."""
+    from datetime import date, timedelta
+
+    _, sunday = _week_bounds(iso_year, iso_week)
+    cutoff = date.today() - timedelta(days=CACHE_WINDOW_DAYS)
+    return sunday >= cutoff
+
+
 def _fetch_month_entries(year, month):
     """Return the list of normalized entries for one calendar month.
 
@@ -206,6 +226,28 @@ def _fetch_month_entries(year, month):
     entries = _build_month_entries(start.isoformat(), end.isoformat())
 
     if _is_recent_month(year, month):
+        cache.set_value(cache_key, entries, expires_in_sec=TTL_MEDIUM)
+    return entries
+
+
+def _fetch_week_entries(iso_year, iso_week):
+    """Return the normalized entries for one ISO week.
+
+    Cached per-week, version-stamped, capped to the rolling
+    ``CACHE_WINDOW_DAYS`` window. Greenhouse/block filtering is the caller's
+    responsibility — keeping the cache key week-only avoids storing the same
+    source rows once per filter shape.
+    """
+    cache = frappe.cache()
+    cache_key = _week_cache_key(iso_year, iso_week)
+    cached = cache.get_value(cache_key)
+    if cached is not None:
+        return cached
+
+    monday, sunday = _week_bounds(iso_year, iso_week)
+    entries = _build_month_entries(monday.isoformat(), sunday.isoformat())
+
+    if _is_recent_week(iso_year, iso_week):
         cache.set_value(cache_key, entries, expires_in_sec=TTL_MEDIUM)
     return entries
 

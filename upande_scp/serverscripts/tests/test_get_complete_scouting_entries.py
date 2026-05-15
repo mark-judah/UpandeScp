@@ -36,5 +36,16 @@ class TestWeeksInRange(unittest.TestCase):
         self.assertEqual(a, b)
 
 
+class TestWeekCacheKey(unittest.TestCase):
+    def test_key_uses_iso_year_week(self):
+        from upande_scp.serverscripts.get_complete_scouting_entries import _week_cache_key
+        # Patch scouting_payload_version to a known stamp.
+        import upande_scp.serverscripts.get_complete_scouting_entries as mod
+        from unittest.mock import patch
+        with patch.object(mod, "scouting_payload_version", return_value=7):
+            self.assertEqual(_week_cache_key(2025, 18), "scp:scouting_payload_v2:7:2025-W18")
+            self.assertEqual(_week_cache_key(2026, 1),  "scp:scouting_payload_v2:7:2026-W01")
+
+
 if __name__ == "__main__":
     unittest.main()

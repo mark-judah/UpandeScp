@@ -111,6 +111,34 @@ def _months_in_range(from_date, to_date):
     return out
 
 
+def _weeks_in_range(from_date, to_date):
+    """List of ``(iso_year, iso_week)`` tuples covering [from_date, to_date].
+
+    Order is monotonic in time. Inputs that arrive swapped are normalised.
+    """
+    start = _coerce_date(from_date)
+    end = _coerce_date(to_date)
+    if start > end:
+        start, end = end, start
+    seen = []
+    seen_set = set()
+    cur = start
+    while cur <= end:
+        key = _iso_year_week(cur)
+        if key not in seen_set:
+            seen_set.add(key)
+            seen.append(key)
+        # Step forward by 7 days; this can skip into the next ISO week.
+        from datetime import timedelta
+        cur = cur + timedelta(days=1)
+        # Fast-forward to Monday of the week containing `cur` so we don't
+        # iterate day-by-day across long ranges.
+        weekday = cur.isoweekday()  # Mon=1..Sun=7
+        if weekday != 1:
+            cur = cur + timedelta(days=(8 - weekday))
+    return seen
+
+
 def _coerce_date(value):
     """Accept ``date``, ``datetime`` or ISO/Frappe-style strings."""
     from datetime import date, datetime

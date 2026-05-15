@@ -16,5 +16,25 @@ class TestWeekHelpers(unittest.TestCase):
         self.assertEqual(_iso_year_week(datetime.date(2025, 12, 29)), (2026, 1))
 
 
+class TestWeeksInRange(unittest.TestCase):
+    def test_single_week(self):
+        from upande_scp.serverscripts.get_complete_scouting_entries import _weeks_in_range
+        # 2025-04-28 (Mon) to 2025-05-04 (Sun) — one ISO week
+        weeks = _weeks_in_range("2025-04-28", "2025-05-04")
+        self.assertEqual(weeks, [(2025, 18)])
+
+    def test_span_across_year_boundary(self):
+        from upande_scp.serverscripts.get_complete_scouting_entries import _weeks_in_range
+        # 2025-12-29 is ISO 2026-W01, 2026-01-05 is ISO 2026-W02
+        weeks = _weeks_in_range("2025-12-29", "2026-01-05")
+        self.assertEqual(weeks, [(2026, 1), (2026, 2)])
+
+    def test_swapped_range_is_normalised(self):
+        from upande_scp.serverscripts.get_complete_scouting_entries import _weeks_in_range
+        a = _weeks_in_range("2025-04-28", "2025-05-04")
+        b = _weeks_in_range("2025-05-04", "2025-04-28")
+        self.assertEqual(a, b)
+
+
 if __name__ == "__main__":
     unittest.main()

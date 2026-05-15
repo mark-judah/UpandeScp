@@ -354,6 +354,9 @@ fixtures = [
                         "Item-custom_targets",
                         "Item-custom_section_break_vuei1",
                         "Item-custom_chemical_intervention_threshhold",
+                        "Item-custom_scouting_and_crop_protection_tab",
+                        "Item-custom_lower_rate_limit",
+                        "Item-custom_upper_rate_limit",
                         # BOM fields
                         "BOM-custom_water_hardness",
                         "BOM-custom_water_ph",

@@ -1263,3 +1263,17 @@
 }
 
   }
+
+/* Live rate-limit validation on chemical rate inputs. Driven by the JS
+   helper applyRateLimitState() which toggles `rate-limit-invalid` and
+   appends a sibling .rate-limit-msg with the human-readable reason. */
+.tw-chemical-qty-input.rate-limit-invalid,
+.bom-chemical-rate-input.rate-limit-invalid {
+  border-color: #b91c1c;
+  box-shadow: 0 0 0 1px rgba(185, 28, 28, 0.25);
+}
+.rate-limit-msg {
+  /* Inline message is positioned by the row's grid layout — see the
+     inline `style` set by the JS helper. Color matches the input border. */
+  color: #b91c1c;
+}

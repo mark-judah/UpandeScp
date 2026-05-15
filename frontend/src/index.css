@@ -75,15 +75,16 @@
   --ring: var(--sd-accent);
   --radius: var(--sd-radius);
 
-  /* sidebar */
-  --sidebar: #ffffff;
-  --sidebar-foreground: var(--sd-ink);
-  --sidebar-primary: var(--sd-accent);
-  --sidebar-primary-foreground: var(--sd-accent-fg);
-  --sidebar-accent: var(--sd-pistachio);
-  --sidebar-accent-foreground: var(--sd-ink);
-  --sidebar-border: var(--sd-line);
-  --sidebar-ring: var(--sd-accent);
+  /* sidebar — mona palette (oklch neutral). Keep the surface light:
+     near-white panel with a subtle hover/active step, dark active pill. */
+  --sidebar: oklch(0.985 0 0); /* ~#fafafa — light, like mona */
+  --sidebar-foreground: oklch(0.145 0 0); /* near-black text */
+  --sidebar-primary: oklch(0.205 0 0); /* active item bg */
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.95 0 0); /* hover/active hover */
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
 
   /* recharts palette */
   --chart-1: var(--sd-data-cyan);
@@ -151,10 +152,16 @@
   #scp-root {
     height: 100%;
   }
+  /* Match the www pages' denser type scale: 14px body, 1.5 line-height.
+     The www templates (e.g. scouting_dashboard.css, new_application_floor_plan.css)
+     read at 14px base; matching here keeps rem-based shadcn components in step
+     with the server-rendered pages users navigate between. */
   body {
     background: var(--background);
     color: var(--foreground);
     font-family: var(--sd-font);
+    font-size: 14px;
+    line-height: 1.5;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
   }
@@ -162,3 +169,4 @@
     background: rgba(75, 85, 99, 0.18);
   }
 }
+

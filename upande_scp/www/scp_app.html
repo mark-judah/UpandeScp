@@ -27,14 +27,19 @@
 				"csrf_token": "{{ csrf_token }}"
 			}
 		</script>
+		<script type="application/json" id="scp-prefetch">{{ prefetch_json | safe }}</script>
 		<script>
 			(function () {
-				var el = document.getElementById("scp-bootstrap");
-				var data = {};
-				try { data = JSON.parse(el.textContent || "{}"); } catch (_) {}
+				var bootEl = document.getElementById("scp-bootstrap");
+				var preEl = document.getElementById("scp-prefetch");
+				var boot = {};
+				var pre = {};
+				try { boot = JSON.parse(bootEl.textContent || "{}"); } catch (_) {}
+				try { pre = JSON.parse(preEl.textContent || "{}"); } catch (_) {}
 				window.SCP = {
-					csrf_token: data.csrf_token || window.csrf_token || "",
-					bootstrap: data
+					csrf_token: boot.csrf_token || window.csrf_token || "",
+					bootstrap: boot,
+					prefetch: pre
 				};
 			})();
 		</script>

@@ -25,6 +25,11 @@ document.addEventListener("DOMContentLoaded", () => {
         activeObservationTypes: [],
         sourceWarehouseCache: {},
         chemicalUomCache: {},
+        // Per-chemical rate bounds (display-name → {lower, upper}). Populated
+        // from `getAllChemicals.item_rate_limits_map` so we can flag
+        // out-of-range rates as the operator types, rather than only at
+        // submit time.
+        itemRateLimitsMap: {},
         susceptibilityData: [],
         kitWarehouse: "",
         greenhouseFarm: "",
@@ -438,6 +443,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (data.item_uom_map) {
                     state.chemicalUomCache = { ...state.chemicalUomCache, ...data.item_uom_map };
                     refreshRowUoms();
+                }
+                if (data.item_rate_limits_map) {
+                    state.itemRateLimitsMap = { ...(state.itemRateLimitsMap || {}), ...data.item_rate_limits_map };
+                    refreshRowRateLimits();
                 }
                 refreshRowTypeBadges();
             }
@@ -1658,6 +1667,9 @@ document.addEventListener("DOMContentLoaded", () => {
         rateInp.min = "0";
         rateInp.step = "0.01";
         rateInp.placeholder = "Rate/1000 L";
+        rateInp.addEventListener("input", () => applyRateLimitState(row));
+        nameInp.addEventListener("change", () => applyRateLimitState(row));
+        nameInp.addEventListener("input", () => applyRateLimitState(row));
 
         const uomInp = document.createElement("input");
         uomInp.type = "text";
@@ -1712,6 +1724,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (chemicals.length === 0) { showToast("Please add at least one chemical", "error"); return; }
         const invalidChemicals = chemicals.filter(c => !c.custom_application_rate || c.custom_application_rate <= 0);
         if (invalidChemicals.length > 0) { showToast("All chemicals must have a valid rate", "error"); return; }
+        for (const c of chemicals) {
+            const limitErr = computeRateLimitError(c.item_name, c.custom_application_rate);
+            if (limitErr) {
+                showToast(`${c.item_name}: ${limitErr}`, "error");
+                return;
+            }
+        }
 
         const bomData = {
             item: itemName,
@@ -2037,7 +2056,14 @@ document.addEventListener("DOMContentLoaded", () => {
         rateInput.min = "0";
         rateInput.step = "0.01";
         rateInput.placeholder = "Rate/1000 L";
-        rateInput.addEventListener("input", updateStockBalances);
+        rateInput.addEventListener("input", () => {
+            applyRateLimitState(row);
+            updateStockBalances();
+        });
+        // Re-validate when the chemical itself is picked/changed — the
+        // limits live on the Item, so the answer depends on the name too.
+        nameInput.addEventListener("change", () => applyRateLimitState(row));
+        nameInput.addEventListener("input", () => applyRateLimitState(row));
         const uomInput = document.createElement("input");
         uomInput.type = "text";
         uomInput.className = "tw-chemical-uom-input form-input";
@@ -2236,6 +2262,64 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     };
 
+    /**
+     * Compute the rate-limit error for one chemical/rate pair. Returns a
+     * short user-facing string when ``rate`` falls outside the limits set
+     * on the Item, or ``""`` when the rate is fine / the chemical has no
+     * limits configured.
+     */
+    const computeRateLimitError = (chemicalName, rate) => {
+        const name = (chemicalName || "").trim();
+        if (!name || !rate || rate <= 0) return "";
+        const lim = state.itemRateLimitsMap && state.itemRateLimitsMap[name];
+        if (!lim) return "";
+        const lower = Number(lim.lower) || 0;
+        const upper = Number(lim.upper) || 0;
+        if (lower && rate < lower) return `Below lower limit of ${lower} per 1000L.`;
+        if (upper && rate > upper) return `Above upper limit of ${upper} per 1000L.`;
+        return "";
+    };
+
+    /** Apply the (in)valid styling + inline message under one chemical
+     *  row's rate input. Idempotent so it's safe to call from input
+     *  handlers AND from refresh-after-fetch loops. */
+    const applyRateLimitState = (row) => {
+        if (!row) return;
+        const isBomRow = row.classList.contains("bom-chemical-row");
+        const nameInput = row.querySelector(isBomRow ? ".bom-chemical-name-input" : ".tw-chemical-name-input");
+        const rateInput = row.querySelector(isBomRow ? ".bom-chemical-rate-input" : ".tw-chemical-qty-input");
+        if (!nameInput || !rateInput) return;
+        const err = computeRateLimitError(nameInput.value, parseFloat(rateInput.value));
+        if (err) {
+            rateInput.classList.add("rate-limit-invalid");
+            rateInput.setAttribute("aria-invalid", "true");
+            rateInput.title = err;
+        } else {
+            rateInput.classList.remove("rate-limit-invalid");
+            rateInput.removeAttribute("aria-invalid");
+            rateInput.removeAttribute("title");
+        }
+        let msg = row.querySelector(".rate-limit-msg");
+        if (err) {
+            if (!msg) {
+                msg = document.createElement("div");
+                msg.className = "rate-limit-msg";
+                msg.style.cssText = "grid-column: 1 / -1; font-size: 11px; color: #b91c1c; padding: 2px 0 0 2px;";
+                row.appendChild(msg);
+            }
+            msg.textContent = err;
+        } else if (msg) {
+            msg.remove();
+        }
+    };
+
+    /** Re-validate every existing chemical row — call after the
+     *  itemRateLimitsMap is populated or after the user picks a different
+     *  chemical from the autocomplete dropdown. */
+    const refreshRowRateLimits = () => {
+        document.querySelectorAll(".chemical-row, .bom-chemical-row").forEach(applyRateLimitState);
+    };
+
     window.handleWarehouseChange = function (element) {
         const itemCode = element.getAttribute("data-item-code");
         const warehouse = element.value;
@@ -2361,6 +2445,11 @@ document.addEventListener("DOMContentLoaded", () => {
             const sourceWarehouse = state.sourceWarehouseCache[chemical.chemical]?.source_warehouse;
             if (!chemical.chemical || !chemical.uom || chemical.application_rate <= 0 || !sourceWarehouse) {
                 showToast("All chemical rows must have valid item name, quantity, UoM, and source warehouse.", "error"); return;
+            }
+            const limitErr = computeRateLimitError(chemical.chemical, chemical.application_rate);
+            if (limitErr) {
+                showToast(`${chemical.chemical}: ${limitErr}`, "error");
+                return;
             }
         }
         if (!waterPh || !waterHardness) { showToast("Please provide values for water pH and water hardness.", "error"); return; }
@@ -2563,24 +2652,45 @@ document.addEventListener("DOMContentLoaded", () => {
                 headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': getCSRFToken() },
                 body: JSON.stringify(fullPayload)
             });
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const r = await response.json();
-           if (r.message && r.message.status === "success") {
-				setLoaderMessage("Work Order created! Redirecting...");
-				showToast(
-					`Work Order ${r.message.work_order_name} created successfully!`,
-					"success",
-				);
-				setTimeout(() => {
-					window.location.href = `/app/work-order/${encodeURIComponent(r.message.work_order_name)}`;
-				}, 1500);
-			} else {
-				showToast(
-					`Error creating Work Order: ${r.message?.message || "Unknown error"}`,
-					"error",
-				);
-				hideLoader();
-			}
+            const r = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                // Frappe puts user-facing exceptions in _server_messages
+                // (a JSON-encoded list of {message, raise_exception, ...}).
+                // Extract the first message so we surface "Rate exceeds
+                // upper limit…" instead of a generic HTTP error.
+                let serverMsg = "";
+                try {
+                    const sm = r && r._server_messages
+                        ? JSON.parse(r._server_messages)
+                        : [];
+                    if (Array.isArray(sm) && sm.length) {
+                        const first = typeof sm[0] === "string" ? JSON.parse(sm[0]) : sm[0];
+                        serverMsg = (first && first.message) || "";
+                    }
+                } catch (_e) { /* fall through */ }
+                const detail = serverMsg
+                    || (r && r.exception)
+                    || `HTTP ${response.status}`;
+                showToast(`Error creating Work Order: ${detail}`, "error");
+                hideLoader();
+                return;
+            }
+            if (r.message && r.message.status === "success") {
+                setLoaderMessage("Work Order created! Redirecting...");
+                showToast(
+                    `Work Order ${r.message.work_order_name} created successfully!`,
+                    "success",
+                );
+                setTimeout(() => {
+                    window.location.href = `/app/work-order/${encodeURIComponent(r.message.work_order_name)}`;
+                }, 1500);
+            } else {
+                showToast(
+                    `Error creating Work Order: ${r.message?.message || "Unknown error"}`,
+                    "error",
+                );
+                hideLoader();
+            }
         } catch (error) {
             showToast("An unexpected error occurred during creation. Please try again.", "error");
             hideLoader();

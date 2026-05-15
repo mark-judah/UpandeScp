@@ -419,14 +419,47 @@ interface CacheEntry<T> {
 }
 
 const refCache = new Map<string, CacheEntry<unknown>>();
+/* Dedupe concurrent callers: if two components mount and both ask for the
+ * same key before the network responds, share the single in-flight promise. */
+const inFlight = new Map<string, Promise<unknown>>();
 
 async function cached<T>(key: string, loader: () => Promise<T>): Promise<T> {
   const hit = refCache.get(key) as CacheEntry<T> | undefined;
   if (hit && Date.now() - hit.ts < REFERENCE_TTL_MS) return hit.value;
-  const value = await loader();
-  refCache.set(key, { ts: Date.now(), value });
-  return value;
+  const existing = inFlight.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const p = loader()
+    .then((value) => {
+      refCache.set(key, { ts: Date.now(), value });
+      return value;
+    })
+    .finally(() => {
+      inFlight.delete(key);
+    });
+  inFlight.set(key, p);
+  return p;
 }
+
+/* Seed refCache from the JSON the Frappe scp_app.py page inlines into the
+ * HTML shell (``window.SCP.prefetch``). When present, ApplicationPlan and the
+ * sidebar primers find their reference payloads already warm and skip the
+ * first-paint network round-trip entirely. Safe to call multiple times. */
+export function hydrateFromPrefetch(): void {
+  if (typeof window === "undefined") return;
+  const pre = (window as unknown as { SCP?: { prefetch?: Record<string, unknown> } })
+    .SCP?.prefetch;
+  if (!pre || typeof pre !== "object") return;
+  const ts = Date.now();
+  for (const [key, value] of Object.entries(pre)) {
+    if (value == null) continue;
+    if (refCache.has(key)) continue;
+    refCache.set(key, { ts, value });
+  }
+}
+
+// Hydrate eagerly at module load so the first call into any cached() helper
+// already sees the seeded values — even if React hasn't rendered yet.
+hydrateFromPrefetch();
 
 export interface BedZoneNode {
   name: string;
@@ -667,6 +700,32 @@ export async function searchChemicalItems(
   } catch {
     return [];
   }
+}
+
+/** Per-chemical application-rate limits keyed by ``item_code``. Chemicals
+ *  whose Item has neither limit set are omitted, so callers can treat an
+ *  absent entry as "no bound". */
+export type RateLimit = {
+  lower: number | null;
+  upper: number | null;
+  label: string;
+};
+
+export async function fetchChemicalRateLimits(): Promise<
+  Record<string, RateLimit>
+> {
+  return cached("chemical_rate_limits", async () => {
+    try {
+      return (
+        (await call<Record<string, RateLimit>>(
+          "upande_scp.serverscripts.create_bom.get_chemical_rate_limits",
+          {},
+        )) || {}
+      );
+    } catch {
+      return {};
+    }
+  });
 }
 
 export interface BomDetails {

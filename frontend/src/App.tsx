@@ -53,6 +53,42 @@ function PageFallback() {
   return <LoadingStrip active />;
 }
 
+/* Page-shaped skeleton for ApplicationPlan. Matches the real header + two-column
+ * layout so the user sees structure instantly while the heavy chunk (recharts,
+ * leaflet, the 1500-line module) parses. */
+function ApplicationPlanSkeleton() {
+  return (
+    <div className="flex flex-col min-h-svh animate-pulse">
+      <header className="sticky top-0 z-40 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="h-6 w-6 rounded bg-muted" />
+            <div className="space-y-1.5">
+              <div className="h-4 w-56 rounded bg-muted" />
+              <div className="h-2.5 w-40 rounded bg-muted/70" />
+            </div>
+          </div>
+          <div className="h-3 w-24 rounded bg-muted/70" />
+        </div>
+      </header>
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 p-4 md:p-6">
+        <div className="lg:col-span-1 space-y-3">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="rounded-md border bg-card p-3 space-y-2">
+              <div className="h-3 w-24 rounded bg-muted" />
+              <div className="h-8 w-full rounded bg-muted/70" />
+            </div>
+          ))}
+        </div>
+        <div className="lg:col-span-2 rounded-md border bg-card p-4">
+          <div className="h-4 w-40 rounded bg-muted mb-3" />
+          <div className="h-72 w-full rounded bg-muted/60" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function App() {
   const [view, navigate] = useView();
 
@@ -70,7 +106,15 @@ export function App() {
     <SidebarProvider>
       <AppSidebar view={view} onNavigate={navigate} />
       <SidebarInset>
-        <Suspense fallback={<PageFallback />}>
+        <Suspense
+          fallback={
+            view === "application-plan" ? (
+              <ApplicationPlanSkeleton />
+            ) : (
+              <PageFallback />
+            )
+          }
+        >
           {view === "trends" ? (
             <Trends />
           ) : view === "observations" ? (

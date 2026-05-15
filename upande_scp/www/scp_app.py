@@ -23,6 +23,35 @@ def _read_manifest():
 		return {}
 
 
+def _safe_call(fn, *args, **kwargs):
+	"""Best-effort prefetch — never let a server-side hiccup break page render.
+
+	The React app already falls back to fetching each endpoint on its own if
+	the inlined payload is missing or empty, so a failure here just means the
+	first paint pays a network round-trip instead of being instant."""
+	try:
+		return fn(*args, **kwargs)
+	except Exception:
+		frappe.log_error(title="scp_app prefetch failed")
+		return None
+
+
+def _build_prefetch():
+	"""Resolve the long-lived reference payloads ApplicationPlan / Dashboard
+	read on mount, so the HTML shell ships them inline. Keyed to match the
+	``cached()`` keys in ``frontend/src/lib/scouting-api.ts`` — the client
+	seeds its in-memory cache from these on boot.
+	"""
+	from upande_scp.serverscripts import scouting_metrics_api as api
+
+	return {
+		"plan_bootstrap": _safe_call(api.get_application_plan_bootstrap),
+		"beds_by_gh": _safe_call(api.get_beds_by_greenhouse, active_only=1),
+		"farms_and_warehouses": _safe_call(api.get_farms_and_warehouses),
+		"map_settings": _safe_call(api.get_map_settings),
+	}
+
+
 def get_context(context):
 	if frappe.session.user == "Guest":
 		raise frappe.PermissionError(_("Login required"))
@@ -36,8 +65,22 @@ def get_context(context):
 	js_file = entry.get("file") or "scp.js"
 	css_files = entry.get("css") or [manifest.get("style.css", {}).get("file") or "scp.css"]
 
-	context.scp_js = "/assets/upande_scp/dist/" + js_file
-	context.scp_css = "/assets/upande_scp/dist/" + css_files[0]
+	# Vite emits fixed names (scp.js / scp.css) so the browser cache pins to
+	# whatever it loaded first — hard-refresh won't pull new builds. Append
+	# the bundle's mtime as a query string so every rebuild gets a fresh URL.
+	app_path = frappe.get_app_path("upande_scp")
+	def _ver(rel_path):
+		full = os.path.join(app_path, "public", "dist", rel_path)
+		try:
+			return str(int(os.path.getmtime(full)))
+		except OSError:
+			return ""
+
+	js_ver = _ver(js_file)
+	css_ver = _ver(css_files[0])
+
+	context.scp_js = "/assets/upande_scp/dist/" + js_file + (f"?v={js_ver}" if js_ver else "")
+	context.scp_css = "/assets/upande_scp/dist/" + css_files[0] + (f"?v={css_ver}" if css_ver else "")
 
 	context.bootstrap_json = json.dumps(
 		{
@@ -45,6 +88,7 @@ def get_context(context):
 			"site_name": frappe.local.site,
 		}
 	)
+	context.prefetch_json = json.dumps(_build_prefetch(), default=str)
 	context.csrf_token = frappe.sessions.get_csrf_token()
 	return context
 

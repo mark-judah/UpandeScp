@@ -3,6 +3,58 @@ import json
 from frappe import _
 
 
+def _validate_chemical_rate_limits(chemicals):
+    """Reject the request if any chemical's ``application_rate`` falls
+    outside the Item-level ``custom_lower_rate_limit`` / ``custom_upper_rate_limit``.
+
+    The limits live on Item, in the *Scouting and Crop Protection* tab,
+    and are stored per 1000L — same unit as the rates sent in by both the
+    WWW page and the React app. Limits of 0 (unset) are skipped, so legacy
+    chemicals without limits keep working unchanged.
+    """
+    if not chemicals:
+        return
+    by_name = {}
+    for c in chemicals:
+        name = (c.get("chemical") or "").strip()
+        if not name:
+            continue
+        rate = float(c.get("application_rate") or 0)
+        if rate <= 0:
+            continue
+        by_name.setdefault(name, rate)
+    if not by_name:
+        return
+
+    rows = frappe.get_all(
+        "Item",
+        filters={"item_name": ["in", list(by_name.keys())], "disabled": 0},
+        fields=["item_name", "custom_lower_rate_limit", "custom_upper_rate_limit"],
+    )
+    limits = {r.item_name: r for r in rows}
+
+    for name, rate in by_name.items():
+        info = limits.get(name)
+        if not info:
+            continue
+        lower = float(info.get("custom_lower_rate_limit") or 0)
+        upper = float(info.get("custom_upper_rate_limit") or 0)
+        if lower and rate < lower:
+            frappe.throw(
+                _(
+                    "Rate {0} for <b>{1}</b> is below the configured lower limit "
+                    "of {2} per 1000L."
+                ).format(rate, name, lower)
+            )
+        if upper and rate > upper:
+            frappe.throw(
+                _(
+                    "Rate {0} for <b>{1}</b> exceeds the configured upper limit "
+                    "of {2} per 1000L."
+                ).format(rate, name, upper)
+            )
+
+
 @frappe.whitelist()
 def createApplicationWorkOrder():
     try:
@@ -53,6 +105,13 @@ def createApplicationWorkOrder():
             frappe.throw(_("Area must be > 0."))
         if water_volume_l <= 0:
             frappe.throw(_("Water volume must be > 0."))
+
+        # ── Rate-limit guard ──────────────────────────────────────────────
+        # Mirror the check in create_bom.createBOM so that both the BOM
+        # dialog and the spray-plan submit flow reject out-of-range rates.
+        # Reads the per-item Lower/Upper Rate Limit (per 1000L) from the
+        # Item master; unset limits (0) mean "no bound on that side".
+        _validate_chemical_rate_limits(chemicals)
 
         # -------------------------------------------------- 3. Load BOM (safe)
         if not frappe.db.exists("BOM", bom_name):

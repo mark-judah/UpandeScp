@@ -121,6 +121,29 @@ def createBOM():
 
             item = frappe.get_doc("Item", item_code)
 
+            # === RATE LIMIT GUARD ===
+            # Block under/over-dosing when the item-level limits are set.
+            # Limits are stored per 1000L on the Item; ``rate`` is already in
+            # the same unit (see BOM Item.custom_application_rate convention).
+            lower = float(getattr(item, "custom_lower_rate_limit", 0) or 0)
+            upper = float(getattr(item, "custom_upper_rate_limit", 0) or 0)
+            if lower and rate < lower:
+                return {
+                    "status": "error",
+                    "message": (
+                        f"Rate {rate} for '{item_name}' is below the configured "
+                        f"lower limit of {lower} per 1000L."
+                    ),
+                }
+            if upper and rate > upper:
+                return {
+                    "status": "error",
+                    "message": (
+                        f"Rate {rate} for '{item_name}' exceeds the configured "
+                        f"upper limit of {upper} per 1000L."
+                    ),
+                }
+
             # === ADD BOM ITEM ===
             bom_doc.append("items", {
                 "item_code": item_code,
@@ -225,12 +248,59 @@ def check_duplicate_bom(bom_item_name, water_ph, water_hardness, chemicals):
         return None
     
 @frappe.whitelist()
+@frappe.whitelist()
+def get_chemical_rate_limits():
+    """Return a compact map of per-chemical rate limits for live validation.
+
+    Shape::
+
+        {
+          "ITEM-CODE-001": {"lower": 5.0, "upper": 15.0, "label": "Glyphosate 41%"},
+          ...
+        }
+
+    Chemicals whose Item has neither limit set are omitted so the client
+    can use ``in``-checks rather than special-casing zero values. The
+    extra label is purely a convenience so the toast messages don't have
+    to round-trip item_code → item_name."""
+    rows = frappe.get_all(
+        "Item",
+        filters={"item_group": "CHEMICALS", "disabled": 0},
+        fields=[
+            "name",
+            "item_name",
+            "custom_lower_rate_limit",
+            "custom_upper_rate_limit",
+        ],
+    )
+    out = {}
+    for r in rows:
+        lower = float(r.get("custom_lower_rate_limit") or 0)
+        upper = float(r.get("custom_upper_rate_limit") or 0)
+        if not lower and not upper:
+            continue
+        out[r.name] = {
+            "lower": lower or None,
+            "upper": upper or None,
+            "label": r.item_name or r.name,
+        }
+    return out
+
+
+@frappe.whitelist()
 def getAllChemicals():
     # Fetch both chemicals and fertilizers in one query
     items = frappe.get_all(
         "Item",
         filters={"item_group": ["in", ["CHEMICALS", "Fertilizer"]], "disabled": 0},
-        fields=["name", "item_name", "stock_uom", "item_group"],
+        fields=[
+            "name",
+            "item_name",
+            "stock_uom",
+            "item_group",
+            "custom_lower_rate_limit",
+            "custom_upper_rate_limit",
+        ],
         order_by="item_name",
     )
 
@@ -239,6 +309,10 @@ def getAllChemicals():
     item_uom_map = {}
     item_code_map = {}
     item_type_map = {}
+    # Rate limits are only ever set on CHEMICALS, but we publish them for
+    # every row in the map so the client can look them up by display name
+    # without branching on type.
+    item_rate_limits_map = {}
 
     for it in items:
         display_name = it.item_name or it.name
@@ -250,6 +324,13 @@ def getAllChemicals():
         item_uom_map[display_name] = it.stock_uom
         item_code_map[display_name] = it.name
         item_type_map[display_name] = item_type
+        lower = float(it.get("custom_lower_rate_limit") or 0)
+        upper = float(it.get("custom_upper_rate_limit") or 0)
+        if lower or upper:
+            item_rate_limits_map[display_name] = {
+                "lower": lower or None,
+                "upper": upper or None,
+            }
 
     return {
         "chemicals": sorted(set(chemical_names)),
@@ -257,6 +338,7 @@ def getAllChemicals():
         "item_uom_map": item_uom_map,
         "item_code_map": item_code_map,
         "item_type_map": item_type_map,
+        "item_rate_limits_map": item_rate_limits_map,
     }
     
 @frappe.whitelist()

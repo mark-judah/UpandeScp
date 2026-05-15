@@ -46,6 +46,7 @@ import {
   fetchBedsAndZones,
   fetchBedsByGreenhouse,
   fetchBomDetails,
+  fetchChemicalRateLimits,
   fetchZonesByGreenhouse,
   searchChemicalItems,
   type BedAreaRow,
@@ -53,6 +54,7 @@ import {
   type BomDetails,
   type ChemicalItem,
   type PlanBootstrap,
+  type RateLimit,
   type VarietyNode,
 } from "@/lib/scouting-api";
 import { call } from "@/lib/frappe";
@@ -144,11 +146,36 @@ interface ChemRow extends BomChemical {
   source?: string;
 }
 
+/** Return a human message when ``qty`` falls outside the limits for
+ *  ``itemCode``, or ``null`` when it's in range / no limits are configured.
+ *  Pure so the same function can drive both the inline warning under the
+ *  rate input and the pre-submit guard. */
+function rateLimitError(
+  itemCode: string | undefined,
+  qty: number | undefined,
+  limits: Record<string, RateLimit>,
+): string | null {
+  if (!itemCode || !qty || qty <= 0) return null;
+  const lim = limits[itemCode];
+  if (!lim) return null;
+  if (lim.lower != null && qty < lim.lower) {
+    return `Below lower limit of ${lim.lower} per 1000L.`;
+  }
+  if (lim.upper != null && qty > lim.upper) {
+    return `Above upper limit of ${lim.upper} per 1000L.`;
+  }
+  return null;
+}
+
 export function ApplicationPlan() {
   const [bootstrap, setBootstrap] = useState<PlanBootstrap | null>(null);
   const [varietyTree, setVarietyTree] = useState<VarietyNode[]>([]);
   const [bedsByGh, setBedsByGh] = useState<Record<string, BedAreaRow[]>>({});
   const [zonesByGh, setZonesByGh] = useState<Record<string, number>>({});
+  // Per-chemical application-rate bounds (Item.custom_lower/upper_rate_limit).
+  // Empty by default; populated once at mount so the rate inputs can flag
+  // out-of-range values inline as the operator types.
+  const [rateLimits, setRateLimits] = useState<Record<string, RateLimit>>({});
   const [greenhouse, setGreenhouse] = useState<string>("");
   const [diag, setDiag] = useState<DiagnoseFilters>({
     pest: ALL,
@@ -234,6 +261,7 @@ export function ApplicationPlan() {
 
   useEffect(() => {
     fetchApplicationPlanBootstrap().then(setBootstrap);
+    fetchChemicalRateLimits().then(setRateLimits);
     fetchBedsAndZones().then(setVarietyTree);
     fetchZonesByGreenhouse().then(setZonesByGh);
     fetchBedsByGreenhouse().then(setBedsByGh);
@@ -562,6 +590,11 @@ export function ApplicationPlan() {
       }
       if (!c.stock_qty || c.stock_qty <= 0) {
         pushToast("err", `Set a quantity > 0 for ${c.item_name || c.item_code}.`);
+        return;
+      }
+      const limitErr = rateLimitError(c.item_code, c.stock_qty, rateLimits);
+      if (limitErr) {
+        pushToast("err", `${c.item_name || c.item_code}: ${limitErr}`);
         return;
       }
     }
@@ -1251,21 +1284,42 @@ export function ApplicationPlan() {
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  <Input
-                                    value={c.stock_qty?.toString() || ""}
-                                    onChange={(e) =>
-                                      updateChem(c.rowId, {
-                                        stock_qty: Number(e.target.value),
-                                      })
-                                    }
-                                    type="number"
-                                    step="any"
-                                    min={0}
-                                    className="h-7 text-xs text-right tabular-nums w-20 ml-auto"
-                                  />
-                                  <div className="text-[0.65rem] text-muted-foreground mt-0.5">
-                                    {c.stock_uom || ""}
-                                  </div>
+                                  {(() => {
+                                    const limitErr = rateLimitError(
+                                      c.item_code,
+                                      c.stock_qty,
+                                      rateLimits,
+                                    );
+                                    return (
+                                      <>
+                                        <Input
+                                          value={c.stock_qty?.toString() || ""}
+                                          onChange={(e) =>
+                                            updateChem(c.rowId, {
+                                              stock_qty: Number(e.target.value),
+                                            })
+                                          }
+                                          type="number"
+                                          step="any"
+                                          min={0}
+                                          aria-invalid={!!limitErr}
+                                          className={
+                                            limitErr
+                                              ? "h-7 text-xs text-right tabular-nums w-20 ml-auto border-[var(--sd-data-red)] focus-visible:ring-[var(--sd-data-red)]"
+                                              : "h-7 text-xs text-right tabular-nums w-20 ml-auto"
+                                          }
+                                        />
+                                        <div className="text-[0.65rem] text-muted-foreground mt-0.5">
+                                          {c.stock_uom || ""}
+                                        </div>
+                                        {limitErr && (
+                                          <div className="text-[0.65rem] text-[var(--sd-data-red)] mt-0.5 max-w-[10rem] ml-auto text-right">
+                                            {limitErr}
+                                          </div>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                 </TableCell>
                                 <TableCell>
                                   <Select

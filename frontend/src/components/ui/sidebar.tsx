@@ -311,14 +311,17 @@ export const SidebarGroupLabel = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => {
-  const { state } = useSidebar();
   return (
     <div
       ref={ref}
       data-sidebar="group-label"
+      // Mona's pattern: animate margin AND opacity together. When the parent
+      // flips to data-collapsible="icon" the label fades AND pulls itself up
+      // by its own h-8 so the menu items below slide up smoothly instead of
+      // staying parked below an empty 32px row. CSS-driven (no React state
+      // toggle) so it stays in sync with the sidebar's width transition.
       className={cn(
-        "flex h-8 shrink-0 items-center px-2 text-[0.7rem] font-medium uppercase tracking-wider text-sidebar-foreground/60 transition-opacity",
-        state === "collapsed" && "opacity-0",
+        "flex h-8 shrink-0 items-center px-2 text-[0.7rem] font-medium uppercase tracking-wider text-sidebar-foreground/60 whitespace-nowrap overflow-hidden transition-[margin,opacity] duration-200 ease-linear group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
         className,
       )}
       {...props}
@@ -367,12 +370,15 @@ export const SidebarMenuItem = React.forwardRef<
 SidebarMenuItem.displayName = "SidebarMenuItem";
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding] focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:font-medium data-[active=true]:text-sidebar-primary-foreground data-[state=open]:hover:bg-sidebar-accent group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>svg]:size-4 [&>svg]:shrink-0",
+  // [&>span:last-child]:truncate keeps the label on a single line during the
+  // sidebar's width animation — otherwise text wraps to two rows at narrow
+  // intermediate widths and the row visibly jumps. Mirrors mona's pattern.
+  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding] focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:font-medium data-[active=true]:text-sidebar-primary-foreground data-[state=open]:hover:bg-sidebar-accent group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>span:last-child]:truncate [&>span:last-child]:min-w-0",
   {
     variants: {
       size: {
-        default: "h-9",
-        sm: "h-8 text-xs",
+        default: "h-8 text-sm",
+        sm: "h-7 text-xs",
         lg: "h-12 group-data-[collapsible=icon]:!p-0",
       },
     },

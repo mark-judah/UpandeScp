@@ -1,7 +1,6 @@
 import {
   LayoutDashboard,
   LineChart,
-  Leaf,
   Flower,
   Sprout,
   Search,
@@ -30,6 +29,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { viewHash, type View } from "@/lib/router";
+import upandeLogo from "@/assets/Upande_logo.png";
 
 type IconType = React.ComponentType<{ className?: string }>;
 
@@ -120,20 +120,22 @@ export function AppSidebar({
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-1.5 py-1">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--sd-accent)] text-white">
-            <Leaf className="h-3.5 w-3.5" />
+        <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
+          <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background ring-1 ring-border/60 group-data-[collapsible=icon]:size-6">
+            <img
+              src={upandeLogo}
+              alt="Upande"
+              className="size-full object-contain"
+            />
           </div>
-          {!collapsed && (
-            <div className="flex flex-col leading-tight">
-              <span className="text-[0.78rem] font-semibold tracking-tight text-foreground">
-                Scouting &amp; CP
-              </span>
-              <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-                Field intelligence
-              </span>
-            </div>
-          )}
+          {/* Always rendered, hidden via CSS so the width animation plays
+              around it without React inserting/removing nodes mid-transition. */}
+          <div className="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
+            <span className="truncate font-semibold">Upande SCP</span>
+            <span className="truncate text-xs text-muted-foreground">
+              Scouting &amp; Crop Protection
+            </span>
+          </div>
         </div>
       </SidebarHeader>
       <SidebarSeparator />

@@ -47,5 +47,21 @@ class TestWeekCacheKey(unittest.TestCase):
             self.assertEqual(_week_cache_key(2026, 1),  "scp:scouting_payload_v2:7:2026-W01")
 
 
+class TestFetchPayloadUsesWeeks(unittest.TestCase):
+    """Integration check: _fetch_scouting_payload should hit _fetch_week_entries
+    once per ISO week in range, not _fetch_month_entries."""
+
+    def test_one_call_per_week(self):
+        from unittest.mock import patch
+        import upande_scp.serverscripts.get_complete_scouting_entries as mod
+
+        with patch.object(mod, "_fetch_week_entries", return_value=[]) as wk:
+            mod._fetch_scouting_payload("2025-04-28", "2025-05-12", None, include_meta=False)
+
+        # 2025-04-28..2025-05-12 spans ISO weeks 18 + 19 + 20 of 2025
+        called_args = sorted(c.args for c in wk.call_args_list)
+        self.assertEqual(called_args, [(2025, 18), (2025, 19), (2025, 20)])
+
+
 if __name__ == "__main__":
     unittest.main()

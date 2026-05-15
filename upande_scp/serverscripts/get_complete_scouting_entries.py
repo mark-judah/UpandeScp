@@ -271,16 +271,16 @@ def _filter_entries(entries, from_date, to_date, greenhouse_filter):
 
 
 def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True):
-    """Cached wrapper. Stitches month-aligned cache slices and applies the
+    """Cached wrapper. Stitches ISO-week cache slices and applies the
     greenhouse / block filter in-memory.
 
-    On a warm cache this is one Redis read per month covered by the range,
-    plus a Python list filter. On a miss only the missing months are built.
+    On a warm cache this is one Redis read per week covered by the range,
+    plus a Python list filter. On a miss only the missing weeks are built.
     """
-    months = _months_in_range(from_date, to_date)
+    weeks = _weeks_in_range(from_date, to_date)
     all_entries = []
-    for (y, m) in months:
-        all_entries.extend(_fetch_month_entries(y, m))
+    for (iy, iw) in weeks:
+        all_entries.extend(_fetch_week_entries(iy, iw))
 
     entries = _filter_entries(all_entries, from_date, to_date, greenhouse_filter)
     payload = {

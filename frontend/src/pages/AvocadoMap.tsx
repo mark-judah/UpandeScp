@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import { useScouting } from "@/hooks/use-scouting";
 import { Map3D } from "@/components/Map3D";
-import { LoadingStrip } from "@/components/LoadingStrip";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { ALL, MapHeader, type MapFilterValue } from "./maps/MapHeader";
 import { TreesLayer } from "./maps/TreesLayer";
 import {
@@ -100,7 +100,7 @@ export function AvocadoMap() {
     greenhouse: ALL,
     ...defaultRange(),
   }));
-  const { data, loading } = useScouting({
+  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
     from: filters.from,
     to: filters.to,
     crop: filters.crop,
@@ -349,7 +349,12 @@ export function AvocadoMap() {
         <Map3D onReady={onMapReady} />
       </div>
 
-      <LoadingStrip active={loading || loadingGeo} />
+      <LoadingOverlay
+        open={loading || loadingGeo}
+        progress={loading ? progress : 100}
+        weeksLoaded={weeksLoaded}
+        weeksTotal={weeksTotal}
+      />
     </div>
   );
 }

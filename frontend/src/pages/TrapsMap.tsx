@@ -3,7 +3,7 @@ import L from "leaflet";
 import { ChevronDown } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
-import { LoadingStrip } from "@/components/LoadingStrip";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -276,7 +276,7 @@ export function TrapsMap() {
   }, []);
 
   const ghForCall = filters.greenhouse === ALL ? undefined : filters.greenhouse;
-  const { data, loading } = useScouting({
+  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
     from: filters.from,
     to: filters.to,
     greenhouse: ghForCall,
@@ -625,7 +625,12 @@ export function TrapsMap() {
         </div>
       </div>
 
-      <LoadingStrip active={loading} />
+      <LoadingOverlay
+        open={loading}
+        progress={progress}
+        weeksLoaded={weeksLoaded}
+        weeksTotal={weeksTotal}
+      />
     </div>
   );
 }

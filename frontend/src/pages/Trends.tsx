@@ -17,7 +17,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/DatePicker";
-import { LoadingStrip } from "@/components/LoadingStrip";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 import {
   Popover,
   PopoverContent,
@@ -77,7 +77,7 @@ export function Trends() {
     fetchZonesByGreenhouse().then(setZonesByGh);
   }, []);
 
-  const { data, loading, error, reload } = useScouting({
+  const { data, loading, progress, weeksLoaded, weeksTotal, error, reload } = useScouting({
     from,
     to,
     crop,
@@ -281,7 +281,12 @@ export function Trends() {
           </>
         )}
       </div>
-      <LoadingStrip active={loading} />
+      <LoadingOverlay
+        open={loading}
+        progress={progress}
+        weeksLoaded={weeksLoaded}
+        weeksTotal={weeksTotal}
+      />
     </div>
   );
 }

@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { LoadingStrip } from "@/components/LoadingStrip";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { DatePicker } from "@/components/DatePicker";
 import { UprightHeatmap } from "@/components/UprightHeatmap";
 import { Toaster, type ToastItem } from "@/components/Toaster";
@@ -257,7 +257,7 @@ export function ApplicationPlan() {
 
   // Eager scouting prefetch (no greenhouse filter — IDB stays universal).
   const [{ from, to }] = useState(defaultRange);
-  const { data, loading } = useScouting({ from, to, crop: "Rose" });
+  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({ from, to, crop: "Rose" });
 
   useEffect(() => {
     fetchApplicationPlanBootstrap().then(setBootstrap);
@@ -1562,7 +1562,12 @@ export function ApplicationPlan() {
         </DialogContent>
       </Dialog>
 
-      <LoadingStrip active={loading || busy || bomLoading} />
+      <LoadingOverlay
+        open={loading || busy || bomLoading}
+        progress={loading ? progress : 100}
+        weeksLoaded={weeksLoaded}
+        weeksTotal={weeksTotal}
+      />
     </div>
   );
 }

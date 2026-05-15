@@ -30,7 +30,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/DatePicker";
-import { LoadingStrip } from "@/components/LoadingStrip";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { OverviewTab } from "./dashboard/OverviewTab";
 import { PestsTab } from "./dashboard/PestsTab";
 import { DiseasesTab } from "./dashboard/DiseasesTab";
@@ -101,7 +101,7 @@ export function Dashboard() {
     return undefined;
   }, [farm, greenhouse, farms]);
 
-  const { data, loading, error, reload } = useScouting({
+  const { data, loading, progress, weeksLoaded, weeksTotal, error, reload } = useScouting({
     from,
     to,
     greenhouses: greenhouseScope,
@@ -286,7 +286,12 @@ export function Dashboard() {
           )}
         </Tabs>
       </div>
-      <LoadingStrip active={loading} />
+      <LoadingOverlay
+        open={loading}
+        progress={progress}
+        weeksLoaded={weeksLoaded}
+        weeksTotal={weeksTotal}
+      />
     </div>
   );
 }

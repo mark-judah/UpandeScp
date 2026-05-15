@@ -38,7 +38,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useScouting } from "@/hooks/use-scouting";
-import { LoadingStrip } from "@/components/LoadingStrip";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { UprightHeatmap } from "@/components/UprightHeatmap";
 import { ALL, MapHeader, type MapFilterValue } from "./maps/MapHeader";
 import { fetchBedsAndZones, DEFAULT_CROP } from "@/lib/scouting-api";
@@ -246,7 +246,7 @@ export function Heatmaps() {
       : (n: string) => disease(n) || diseaseColor(n);
 
   const ghForCall = filters.greenhouse === ALL ? undefined : filters.greenhouse;
-  const { data, loading } = useScouting({
+  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
     from: filters.from,
     to: filters.to,
     greenhouse: ghForCall,
@@ -593,7 +593,12 @@ export function Heatmaps() {
         </DialogContent>
       </Dialog>
 
-      <LoadingStrip active={loading} />
+      <LoadingOverlay
+        open={loading}
+        progress={progress}
+        weeksLoaded={weeksLoaded}
+        weeksTotal={weeksTotal}
+      />
     </div>
   );
 }

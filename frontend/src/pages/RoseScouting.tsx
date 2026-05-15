@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
-import { LoadingStrip } from "@/components/LoadingStrip";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 import {
   Card,
   CardContent,
@@ -115,7 +115,7 @@ export function RoseScouting() {
   const ghForCall =
     filters.greenhouse === ALL ? undefined : filters.greenhouse;
   // Single-day query: from === to. Cache is day-precise.
-  const { data, loading } = useScouting({
+  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
     from: filters.date,
     to: filters.date,
     greenhouse: ghForCall,
@@ -699,7 +699,12 @@ export function RoseScouting() {
         </div>
       </div>
 
-      <LoadingStrip active={loading} />
+      <LoadingOverlay
+        open={loading}
+        progress={progress}
+        weeksLoaded={weeksLoaded}
+        weeksTotal={weeksTotal}
+      />
     </div>
   );
 }

@@ -93,6 +93,24 @@ class TestFilterEntriesWholeWeek(unittest.TestCase):
         result = _filter_entries(entries, "2025-04-28", "2025-05-04", "G1")
         self.assertEqual([e["greenhouse"] for e in result], ["G1"])
 
+    def test_non_week_range_still_applies_strict_date_filter(self):
+        """When the range isn't an exact ISO week (Mon→Sun), the short-circuit
+        does NOT activate and out-of-range entries must be filtered out.
+        Pairs with test_whole_week_short_circuit_matches_filter to cover both
+        branches of _filter_entries."""
+        from upande_scp.serverscripts.get_complete_scouting_entries import _filter_entries
+        entries = [
+            {"date_of_capture": "2025-04-29", "greenhouse": "G1", "block": ""},
+            {"date_of_capture": "2025-05-01", "greenhouse": "G1", "block": ""},
+            # Out of range — must be filtered out.
+            {"date_of_capture": "2025-04-28", "greenhouse": "G1", "block": ""},
+            {"date_of_capture": "2025-05-05", "greenhouse": "G1", "block": ""},
+        ]
+        # Tuesday → Friday: not Monday-aligned, only 3 days, so no short-circuit.
+        result = _filter_entries(entries, "2025-04-29", "2025-05-02", None)
+        dates = sorted(e["date_of_capture"] for e in result)
+        self.assertEqual(dates, ["2025-04-29", "2025-05-01"])
+
 
 class TestPrewarm(unittest.TestCase):
     def test_prewarm_calls_fetch_for_recent_weeks(self):

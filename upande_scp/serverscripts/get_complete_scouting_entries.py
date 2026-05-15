@@ -85,14 +85,6 @@ def _cached_severity_thresholds():
 CACHE_WINDOW_DAYS = 90  # months older than this serve uncached (see docs/data_caching.md)
 
 
-def _month_cache_key(year, month):
-    """Per-calendar-month cache key. No greenhouse suffix: filtering is applied
-    in-memory after the cache hit so we don't duplicate the same source rows
-    once per (greenhouse, all) combination."""
-    v = scouting_payload_version()
-    return f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{year:04d}-{month:02d}"
-
-
 def _week_cache_key(iso_year, iso_week):
     """Per-ISO-week cache key.
 
@@ -102,24 +94,6 @@ def _week_cache_key(iso_year, iso_week):
     """
     v = scouting_payload_version()
     return f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{iso_year:04d}-W{iso_week:02d}"
-
-
-def _months_in_range(from_date, to_date):
-    from datetime import date
-
-    start = _coerce_date(from_date)
-    end = _coerce_date(to_date)
-    if start > end:
-        start, end = end, start
-    y, m = start.year, start.month
-    out = []
-    while (y, m) <= (end.year, end.month):
-        out.append((y, m))
-        if m == 12:
-            y, m = y + 1, 1
-        else:
-            m += 1
-    return out
 
 
 def _weeks_in_range(from_date, to_date):
@@ -182,23 +156,6 @@ def _week_bounds(iso_year, iso_week):
     return monday, sunday
 
 
-def _month_bounds(year, month):
-    from calendar import monthrange
-    from datetime import date
-
-    last = monthrange(year, month)[1]
-    return date(year, month, 1), date(year, month, last)
-
-
-def _is_recent_month(year, month):
-    """Whether (year, month) sits inside the rolling cache window."""
-    from datetime import date, timedelta
-
-    cutoff = date.today() - timedelta(days=CACHE_WINDOW_DAYS)
-    last = _month_bounds(year, month)[1]
-    return last >= cutoff
-
-
 def _is_recent_week(iso_year, iso_week):
     """Whether (iso_year, iso_week) sits inside the rolling cache window."""
     from datetime import date, timedelta
@@ -206,28 +163,6 @@ def _is_recent_week(iso_year, iso_week):
     _, sunday = _week_bounds(iso_year, iso_week)
     cutoff = date.today() - timedelta(days=CACHE_WINDOW_DAYS)
     return sunday >= cutoff
-
-
-def _fetch_month_entries(year, month):
-    """Return the list of normalized entries for one calendar month.
-
-    Cached per-month, version-stamped, capped to a rolling
-    ``CACHE_WINDOW_DAYS`` window. Greenhouse/block filtering is the caller's
-    responsibility — keeping the cache key month-only avoids storing the same
-    source rows once per filter shape (see docs/data_caching.md L1 section).
-    """
-    cache = frappe.cache()
-    cache_key = _month_cache_key(year, month)
-    cached = cache.get_value(cache_key)
-    if cached is not None:
-        return cached
-
-    start, end = _month_bounds(year, month)
-    entries = _build_month_entries(start.isoformat(), end.isoformat())
-
-    if _is_recent_month(year, month):
-        cache.set_value(cache_key, entries, expires_in_sec=TTL_MEDIUM)
-    return entries
 
 
 def _fetch_week_entries(iso_year, iso_week):

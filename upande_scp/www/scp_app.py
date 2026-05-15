@@ -82,9 +82,15 @@ def get_context(context):
 	context.scp_js = "/assets/upande_scp/dist/" + js_file + (f"?v={js_ver}" if js_ver else "")
 	context.scp_css = "/assets/upande_scp/dist/" + css_files[0] + (f"?v={css_ver}" if css_ver else "")
 
+	user_id = frappe.session.user
+	user_doc = frappe.db.get_value(
+		"User", user_id, ["full_name", "user_image"], as_dict=True
+	) or {}
 	context.bootstrap_json = json.dumps(
 		{
-			"user": frappe.session.user,
+			"user": user_id,
+			"full_name": user_doc.get("full_name") or user_id,
+			"user_image": user_doc.get("user_image") or "",
 			"site_name": frappe.local.site,
 		}
 	)

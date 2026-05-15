@@ -12,7 +12,6 @@ import {
   Layers,
   FileText,
   GitFork,
-  LogOut,
 } from "lucide-react";
 import {
   Sidebar,
@@ -28,6 +27,7 @@ import {
   SidebarSeparator,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { SidebarUser } from "@/components/SidebarUser";
 import { viewHash, type View } from "@/lib/router";
 import upandeLogo from "@/assets/Upande_logo.png";
 
@@ -183,16 +183,7 @@ export function AppSidebar({
         ))}
       </SidebarContent>
       <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild title="Exit to workspace">
-              <a href="/app/scouting-&-crop-protection">
-                <LogOut className="h-4 w-4" />
-                <span>Exit</span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <SidebarUser />
       </SidebarFooter>
     </Sidebar>
   );

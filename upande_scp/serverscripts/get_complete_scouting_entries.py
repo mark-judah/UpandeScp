@@ -253,17 +253,28 @@ def _fetch_week_entries(iso_year, iso_week):
 
 
 def _filter_entries(entries, from_date, to_date, greenhouse_filter):
-    from_d = _coerce_date(from_date).isoformat()
-    to_d = _coerce_date(to_date).isoformat()
+    from_d = _coerce_date(from_date)
+    to_d = _coerce_date(to_date)
     gh = (greenhouse_filter or "").strip()
+
+    # Short-circuit: if the requested range matches an ISO week, skip the
+    # per-row date filter — entries pulled for one cached week already
+    # satisfy it.
+    from_is_monday = from_d.isoweekday() == 1
+    range_is_one_week = (to_d - from_d).days == 6
+    skip_date_filter = from_is_monday and range_is_one_week
+
+    from_s = from_d.isoformat()
+    to_s = to_d.isoformat()
     out = []
     for e in entries:
         d = e.get("date_of_capture")
         if not d:
             continue
-        ds = str(d)[:10]
-        if ds < from_d or ds > to_d:
-            continue
+        if not skip_date_filter:
+            ds = str(d)[:10]
+            if ds < from_s or ds > to_s:
+                continue
         if gh and e.get("greenhouse") != gh and e.get("block") != gh:
             continue
         out.append(e)

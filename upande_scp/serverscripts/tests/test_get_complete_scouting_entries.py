@@ -63,5 +63,36 @@ class TestFetchPayloadUsesWeeks(unittest.TestCase):
         self.assertEqual(called_args, [(2025, 18), (2025, 19), (2025, 20)])
 
 
+class TestFilterEntriesWholeWeek(unittest.TestCase):
+    def test_whole_week_short_circuit_matches_filter(self):
+        from upande_scp.serverscripts.get_complete_scouting_entries import _filter_entries
+
+        entries = [
+            {"date_of_capture": "2025-04-28", "greenhouse": "G1", "block": ""},
+            {"date_of_capture": "2025-05-01", "greenhouse": "G2", "block": ""},
+            {"date_of_capture": "2025-05-04", "greenhouse": "G1", "block": ""},
+            # Outside the week (these shouldn't appear when stitched
+            # from week 18 only, but the helper must still filter them).
+            {"date_of_capture": "2025-04-27", "greenhouse": "G1", "block": ""},
+            {"date_of_capture": "2025-05-05", "greenhouse": "G1", "block": ""},
+        ]
+        result = _filter_entries(entries, "2025-04-28", "2025-05-04", None)
+        dates = sorted(e["date_of_capture"] for e in result)
+        # When short-circuit is active, the 2025-04-27 and 2025-05-05 entries
+        # pass through (they're not filtered by date). That's BY DESIGN, because
+        # in production those entries would never be in `entries` (they came from
+        # a different week's cache slice).
+        self.assertEqual(dates, ["2025-04-27", "2025-04-28", "2025-05-01", "2025-05-04", "2025-05-05"])
+
+    def test_whole_week_short_circuit_with_greenhouse(self):
+        from upande_scp.serverscripts.get_complete_scouting_entries import _filter_entries
+        entries = [
+            {"date_of_capture": "2025-04-28", "greenhouse": "G1", "block": ""},
+            {"date_of_capture": "2025-05-01", "greenhouse": "G2", "block": ""},
+        ]
+        result = _filter_entries(entries, "2025-04-28", "2025-05-04", "G1")
+        self.assertEqual([e["greenhouse"] for e in result], ["G1"])
+
+
 if __name__ == "__main__":
     unittest.main()

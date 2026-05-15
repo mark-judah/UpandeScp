@@ -94,6 +94,21 @@ async function loadedWeeksSet(): Promise<Set<string>> {
   return new Set(v);
 }
 
+/**
+ * The set of ISO weeks touching [from, to] that aren't yet recorded in the
+ * loaded-weeks registry. Returns empty when everything is cached — callers
+ * can use that to skip the loading state entirely.
+ */
+export async function getMissingWeeks(
+  from: string,
+  to: string,
+): Promise<WeekSlot[]> {
+  const weeks = weeksBetween(from, to);
+  if (!weeks.length) return [];
+  const known = await loadedWeeksSet();
+  return weeks.filter((w) => !known.has(w.key));
+}
+
 async function markWeekLoaded(week: string): Promise<void> {
   const set = await loadedWeeksSet();
   set.add(week);
@@ -129,9 +144,7 @@ export async function hydrateRange(
   onProgress?: (loaded: number, total: number, week: string) => void,
 ): Promise<void> {
   await clearLegacyMonthsRegistry();
-  const weeks = weeksBetween(from, to);
-  const known = await loadedWeeksSet();
-  const missing = weeks.filter((w) => !known.has(w.key));
+  const missing = await getMissingWeeks(from, to);
 
   if (!missing.length) return;
 

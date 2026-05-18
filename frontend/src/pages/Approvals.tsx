@@ -72,6 +72,8 @@ import {
   type PendingWorkOrder,
   type QrLabel,
 } from "@/lib/spray-plan-api";
+import { approveDraftsBulk } from "@/lib/spray-plan-creator-api";
+import { ApprovalChemicalsTable } from "@/components/spray-plan/ApprovalChemicalsTable";
 
 const ALL = "__all__";
 type StatusFilter = "pending" | "forwarded" | "all";
@@ -124,6 +126,7 @@ export function Approvals() {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [stopConfirm, setStopConfirm] = useState(false);
   const [progress, setProgress] = useState<ProgressState>(INITIAL_PROGRESS);
   const reloadTimerRef = useRef<number | null>(null);
@@ -377,6 +380,45 @@ export function Approvals() {
     const names = Array.from(checked);
     if (!names.length) return;
     void runApproval(names);
+  };
+
+  const bulkApprove = async () => {
+    if (!checked.size) return;
+    setBulkBusy(true);
+    try {
+      const result = await approveDraftsBulk(Array.from(checked));
+      appendLog(
+        `✓ Bulk approved ${result.approved.length}` +
+          (result.skipped.length
+            ? ` · ${result.skipped.length} skipped`
+            : "") +
+          ".",
+        "ok",
+      );
+      setProgress((p) => ({
+        ...p,
+        open: true,
+        title: `Approved ${result.approved.length}${result.skipped.length ? ` · ${result.skipped.length} skipped` : ""}.`,
+        fillPct: 100,
+        doneColor: "#10b981",
+        closable: true,
+      }));
+      setChecked(new Set());
+      window.setTimeout(() => void reload(), 800);
+    } catch (e: any) {
+      setProgress({
+        open: true,
+        title: "Bulk approve failed",
+        fillPct: 100,
+        isStop: false,
+        doneColor: "#ef4444",
+        closable: true,
+        log: [{ text: e?.message || String(e), variant: "err" }],
+        qrLabels: [],
+      });
+    } finally {
+      setBulkBusy(false);
+    }
   };
 
   const onStopSelected = () => {
@@ -651,8 +693,11 @@ export function Approvals() {
                         </TableRow>
                         {isOpen && (
                           <TableRow className="bg-muted/30 hover:bg-muted/30">
-                            <TableCell colSpan={8} className="p-4">
-                              <DetailPanel wo={w} />
+                            <TableCell colSpan={8} className="p-0">
+                              <ApprovalChemicalsTable woName={w.name} />
+                              <div className="p-4">
+                                <DetailPanel wo={w} />
+                              </div>
                             </TableCell>
                           </TableRow>
                         )}
@@ -704,7 +749,7 @@ export function Approvals() {
                   size="sm"
                   variant="outline"
                   className="h-8 text-destructive hover:text-destructive"
-                  disabled={busy}
+                  disabled={busy || bulkBusy}
                   onClick={onStopSelected}
                 >
                   <XCircle className="h-3.5 w-3.5" />
@@ -712,8 +757,23 @@ export function Approvals() {
                 </Button>
                 <Button
                   size="sm"
+                  variant="outline"
                   className="h-8"
-                  disabled={busy}
+                  disabled={busy || bulkBusy}
+                  onClick={() => void bulkApprove()}
+                  title="Fast approve — raises draft Stock Entries without streaming progress"
+                >
+                  {bulkBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  Quick Approve
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8"
+                  disabled={busy || bulkBusy}
                   onClick={onApproveSelected}
                 >
                   {busy ? (

@@ -393,6 +393,12 @@ fixtures = [
                         "Farm-spray_plan_creators",
                         # Spray Team fields
                         "Spray Team-custom_farm",
+                        # Work Order spray-plan fields
+                        "Work Order-custom_classification",
+                        "Work Order-custom_preventive_reason",
+                        "Work Order-custom_cost_center",
+                        "Work Order-custom_rate_overridden",
+                        "Work Order-custom_weather_snapshot",
                 ]
             ]
         ]

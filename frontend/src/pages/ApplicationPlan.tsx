@@ -47,22 +47,23 @@ import {
 } from "./maps/bed-projection";
 import {
   createBom,
-  fetchApplicationPlanBootstrap,
   fetchBedsAndZones,
   fetchBedsByGreenhouse,
   fetchBomDetails,
-  fetchChemicalRateLimits,
   fetchZonesByGreenhouse,
   searchChemicalItems,
   type BedAreaRow,
   type BomChemical,
   type BomDetails,
   type ChemicalItem,
-  type PlanBootstrap,
   type RateLimit,
   type VarietyNode,
 } from "@/lib/scouting-api";
-import { call } from "@/lib/frappe";
+import {
+  fetchCreatorBootstrap,
+  type CreatorBootstrap,
+} from "@/lib/spray-plan-creator-api";
+import { call, FrappeError } from "@/lib/frappe";
 import { ymd } from "@/lib/utils";
 import {
   pestColor,
@@ -185,7 +186,8 @@ function rateLimitError(
 }
 
 export function ApplicationPlan() {
-  const [bootstrap, setBootstrap] = useState<PlanBootstrap | null>(null);
+  const [bootstrap, setBootstrap] = useState<CreatorBootstrap | null>(null);
+  const [bootstrapError, setBootstrapError] = useState<{ status: number; message: string } | null>(null);
   const [varietyTree, setVarietyTree] = useState<VarietyNode[]>([]);
   const [bedsByGh, setBedsByGh] = useState<Record<string, BedAreaRow[]>>({});
   const [zonesByGh, setZonesByGh] = useState<Record<string, number>>({});
@@ -297,11 +299,27 @@ export function ApplicationPlan() {
   const loading = diagnoseState.loading;
 
   useEffect(() => {
-    fetchApplicationPlanBootstrap().then(setBootstrap);
-    fetchChemicalRateLimits().then(setRateLimits);
-    fetchBedsAndZones().then(setVarietyTree);
-    fetchZonesByGreenhouse().then(setZonesByGh);
-    fetchBedsByGreenhouse().then(setBedsByGh);
+    let cancelled = false;
+    fetchCreatorBootstrap()
+      .then((b) => {
+        if (cancelled) return;
+        setBootstrap(b);
+        setRateLimits(b.rate_limits as Record<string, RateLimit>);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        if (e instanceof FrappeError) {
+          setBootstrapError({ status: e.status, message: e.message });
+        } else {
+          setBootstrapError({ status: 0, message: String(e) });
+        }
+      });
+    fetchBedsAndZones().then((v) => !cancelled && setVarietyTree(v));
+    fetchZonesByGreenhouse().then((z) => !cancelled && setZonesByGh(z));
+    fetchBedsByGreenhouse().then((b) => !cancelled && setBedsByGh(b));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // BOM details loader. Note: waterVolume is owned by the area-calc
@@ -565,11 +583,26 @@ export function ApplicationPlan() {
           : "No observations match this filter";
 
   const ghList = useMemo(
-    () => bootstrap?.warehouses.map((w) => w.name) || [],
+    () => bootstrap?.greenhouses.map((g) => g.name) || [],
     [bootstrap],
   );
-  const bomList = useMemo(() => bootstrap?.boms || [], [bootstrap]);
-  const kitList = useMemo(() => bootstrap?.kits || [], [bootstrap]);
+  const bomList = useMemo(
+    () =>
+      (bootstrap?.tank_mixes || []).map((t) => ({
+        name: t.name,
+        item_name: t.item_name,
+        custom_farm: t.custom_farm,
+      })),
+    [bootstrap],
+  );
+  const kitList = useMemo(
+    () =>
+      (bootstrap?.kits || []).map((k) => ({
+        kit: k.kit,
+        warehouse: k.warehouse,
+      })),
+    [bootstrap],
+  );
 
   const updateChem = (rowId: string, patch: Partial<ChemRow>) =>
     setChemRows((prev) =>
@@ -777,7 +810,7 @@ export function ApplicationPlan() {
         pushToast("ok", `Created BOM ${r.bom_name}.`);
         // Refresh bootstrap so the new BOM appears in the dropdown,
         // then auto-select it.
-        const fresh = await fetchApplicationPlanBootstrap();
+        const fresh = await fetchCreatorBootstrap();
         setBootstrap(fresh);
         setBom(r.bom_name);
         setBomDialogOpen(false);
@@ -794,6 +827,13 @@ export function ApplicationPlan() {
       setCreatingBom(false);
     }
   };
+
+  if (bootstrapError) {
+    return <AccessGate error={bootstrapError} />;
+  }
+  if (bootstrap && bootstrap.scope.farms.length === 0) {
+    return <NoFarmsGate />;
+  }
 
   return (
     <div className="flex flex-col min-h-svh">
@@ -1137,8 +1177,8 @@ export function ApplicationPlan() {
                   </SelectTrigger>
                   <SelectContent>
                     {(bootstrap?.spray_teams || []).map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t}
+                      <SelectItem key={t.name} value={t.name}>
+                        {t.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1585,6 +1625,41 @@ export function ApplicationPlan() {
         </DialogContent>
       </Dialog>
 
+    </div>
+  );
+}
+
+function AccessGate({ error }: { error: { status: number; message: string } }) {
+  return (
+    <div className="flex flex-col min-h-svh items-center justify-center px-4">
+      <Card className="max-w-md border-destructive/40">
+        <CardHeader>
+          <CardTitle className="text-base text-destructive">
+            {error.status === 403 ? "Access denied" : "Cannot load spray plan tools"}
+          </CardTitle>
+          <CardDescription>
+            {error.status === 403
+              ? "This page is restricted to users with the 'Spray Plan Creator' role. Ask a General Manager to grant you the role."
+              : error.message}
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    </div>
+  );
+}
+
+function NoFarmsGate() {
+  return (
+    <div className="flex flex-col min-h-svh items-center justify-center px-4">
+      <Card className="max-w-md">
+        <CardHeader>
+          <CardTitle className="text-base">No farms assigned yet</CardTitle>
+          <CardDescription>
+            You hold the 'Spray Plan Creator' role but no farm has been assigned to you.
+            Ask a General Manager to add you on the Spray Plan Access page.
+          </CardDescription>
+        </CardHeader>
+      </Card>
     </div>
   );
 }

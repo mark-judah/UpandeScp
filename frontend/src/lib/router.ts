@@ -13,6 +13,7 @@ export type View =
   | "tank-mixes"
   | "historical"
   | "approvals"
+  | "spray-plan-access"
   | "application-plan";
 
 const DEFAULT: View = "dashboard";
@@ -29,6 +30,7 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set([
   "tank-mixes",
   "historical",
   "approvals",
+  "spray-plan-access",
   "application-plan",
 ]);
 

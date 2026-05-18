@@ -12,6 +12,7 @@ import {
   Layers,
   FileText,
   GitFork,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -88,6 +89,12 @@ const NAV: NavSection[] = [
         view: "approvals",
         label: "Approvals",
         icon: CheckSquare,
+      },
+      {
+        kind: "view",
+        view: "spray-plan-access",
+        label: "Access Control",
+        icon: ShieldCheck,
       },
       {
         kind: "view",

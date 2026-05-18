@@ -241,8 +241,9 @@ export function SprayPlanAccess() {
                             disabled={r.saving}
                           />
                           {r.error && (
-                            <div className="text-[0.65rem] text-destructive mt-1">
-                              {r.error}
+                            <div className="text-[0.65rem] text-destructive mt-1 flex items-start gap-1">
+                              <ShieldAlert className="h-3 w-3 mt-[1px] flex-shrink-0" />
+                              <span>{r.error}</span>
                             </div>
                           )}
                         </TableCell>

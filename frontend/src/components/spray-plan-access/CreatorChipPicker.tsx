@@ -133,7 +133,9 @@ export function CreatorChipPicker({ value, onChange, disabled }: Props) {
           )}
           {open && !searching && results.length === 0 && query && (
             <div className="absolute top-8 left-0 z-50 min-w-56 rounded-md border bg-popover px-3 py-2 text-xs text-muted-foreground shadow-md">
-              No matching users with the Spray Plan Creator role.
+              No users found. Only enabled accounts with the
+              {" "}"Spray Plan Creator"{" "}role appear here. Grant the
+              role in Frappe Desk first if you need to give a user access.
             </div>
           )}
         </div>

@@ -9,7 +9,19 @@
   "farms_section",
   "allowed_farms",
   "keywords_section",
-  "exclude_keywords"
+  "exclude_keywords",
+  "thresholds_section",
+  "irac_rotation_window_days",
+  "frac_rotation_window_days",
+  "weather_section",
+  "weather_wind_green_max_kmh",
+  "weather_wind_red_min_kmh",
+  "weather_rain_green_max_pct",
+  "weather_rain_red_min_pct",
+  "weather_temp_green_min_c",
+  "weather_temp_green_max_c",
+  "weather_temp_red_max_c",
+  "weather_temp_red_min_c"
  ],
  "fields": [
   {
@@ -47,12 +59,24 @@
    "fieldtype": "Table",
    "label": "Exclude Keywords",
    "options": "Spray Plan Exclude Keyword"
-  }
+  },
+  {"fieldname": "thresholds_section", "fieldtype": "Section Break", "label": "Resistance Rotation Windows"},
+  {"default": "14", "description": "Warn if the same IRAC code was used on the same greenhouse within this many days.", "fieldname": "irac_rotation_window_days", "fieldtype": "Int", "label": "IRAC Rotation Window (days)", "non_negative": 1},
+  {"default": "21", "description": "Warn if the same FRAC code was used on the same greenhouse within this many days.", "fieldname": "frac_rotation_window_days", "fieldtype": "Int", "label": "FRAC Rotation Window (days)", "non_negative": 1},
+  {"fieldname": "weather_section", "fieldtype": "Section Break", "label": "Weather Spray-Friendliness Thresholds"},
+  {"default": "10", "fieldname": "weather_wind_green_max_kmh", "fieldtype": "Float", "label": "Wind: green <= (km/h)"},
+  {"default": "15", "fieldname": "weather_wind_red_min_kmh", "fieldtype": "Float", "label": "Wind: red >= (km/h)"},
+  {"default": "20", "fieldname": "weather_rain_green_max_pct", "fieldtype": "Float", "label": "Rain prob: green <= (%)"},
+  {"default": "50", "fieldname": "weather_rain_red_min_pct", "fieldtype": "Float", "label": "Rain prob: red >= (%)"},
+  {"default": "10", "fieldname": "weather_temp_green_min_c", "fieldtype": "Float", "label": "Temp: green >= (degC)"},
+  {"default": "28", "fieldname": "weather_temp_green_max_c", "fieldtype": "Float", "label": "Temp: green <= (degC)"},
+  {"default": "32", "fieldname": "weather_temp_red_max_c", "fieldtype": "Float", "label": "Temp: red >= (degC)"},
+  {"default": "8", "fieldname": "weather_temp_red_min_c", "fieldtype": "Float", "label": "Temp: red <= (degC)"}
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-04 00:00:00.000000",
+ "modified": "2026-05-18 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Spray Plan Settings",

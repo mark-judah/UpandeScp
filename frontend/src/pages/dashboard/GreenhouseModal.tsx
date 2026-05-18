@@ -15,8 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { greenhouseDetail } from "./aggregate";
-import type { ProcessedData } from "@/lib/scouting-types";
+import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { weekTickFormatter } from "@/lib/iso-week";
 
 const SERIES = {
@@ -25,29 +24,40 @@ const SERIES = {
   traps: { label: "Traps", color: "var(--sd-data-purple)" },
 };
 
-export function GreenhouseModal({
-  data,
-  greenhouse,
-  open,
-  onOpenChange,
-  fromDate,
-  toDate,
-}: {
-  data: ProcessedData | null;
+export interface GhDetailPayload {
+  topPests:    Array<{ name: string; count: number }>;
+  topDiseases: Array<{ name: string; count: number }>;
+  traps:       Array<{ pest: string; total: number }>;
+  daily:       Array<{ date: string; pests: number; diseases: number; traps: number }>;
+  scouts:      number;
+  alerts:      number;
+}
+
+export interface GreenhouseModalProps {
   greenhouse: string | null;
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
   fromDate: string;
   toDate: string;
-}) {
-  const detail = greenhouseDetail(data, greenhouse || "");
+  crop: string;
+  onClose: () => void;
+}
+
+export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }: GreenhouseModalProps) {
+  const open = greenhouse !== null && greenhouse !== "";
+  const { data } = useDashboardAggregate<GhDetailPayload>(
+    "greenhouse_detail",
+    { from_date: fromDate, to_date: toDate, crop, greenhouse: greenhouse ?? "" },
+    open,
+  );
+
+  const detail = data ?? { topPests: [], topDiseases: [], traps: [], daily: [],
+                           scouts: 0, alerts: 0 };
   const total =
     detail.topPests.reduce((s, x) => s + x.count, 0) +
     detail.topDiseases.reduce((s, x) => s + x.count, 0) +
     detail.traps.reduce((s, x) => s + x.total, 0);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{greenhouse || "Greenhouse"}</DialogTitle>

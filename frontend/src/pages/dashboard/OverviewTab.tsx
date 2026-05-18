@@ -52,11 +52,13 @@ export function OverviewTab({
   scoutLookup,
   fromDate,
   toDate,
+  crop = "",
 }: {
   data: OverviewPayload | null;
   scoutLookup: Record<string, string>;
   fromDate: string;
   toDate: string;
+  crop?: string;
 }) {
   const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, highAlerts: 0 };
   const daily = data?.daily ?? [];
@@ -450,12 +452,11 @@ export function OverviewTab({
       </Card>
 
       <GreenhouseModal
-        data={null as any}
         greenhouse={openGh}
-        open={!!openGh}
-        onOpenChange={(v) => !v && setOpenGh(null)}
         fromDate={fromDate}
         toDate={toDate}
+        crop={crop}
+        onClose={() => setOpenGh(null)}
       />
     </div>
   );

@@ -183,7 +183,10 @@ doc_events = {
     "Bed": _SCP_CACHE_EVENTS,
     "Trap": _SCP_CACHE_EVENTS,
     "Warehouse": _SCP_CACHE_EVENTS,
-    "Farm": _SCP_CACHE_EVENTS,
+    "Farm": {
+        **_SCP_CACHE_EVENTS,
+        "validate": "upande_scp.upande_scp.doctype.farm_spray_plan_creator.farm_spray_plan_creator.validate_farm_spray_plan_creators",
+    },
     "Spray Equipment Details": _SCP_CACHE_EVENTS,
     "Item": _SCP_CACHE_EVENTS,
     "Orchard Tree": _SCP_CACHE_EVENTS,
@@ -385,7 +388,9 @@ fixtures = [
                         "Work Order-custom_greenhouse",
                         "Work Order-custom_application_floor_plan",
                         # Work Order Item fields
-                        "Work Order Item-custom_updated_required_qty"
+                        "Work Order Item-custom_updated_required_qty",
+                        # Farm fields
+                        "Farm-spray_plan_creators",
                 ]
             ]
         ]

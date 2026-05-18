@@ -35,7 +35,7 @@ def ensure_user(email: str, roles: list[str] | None = None, full_name: str = "")
 
 def ensure_farm(name: str) -> str:
     if not frappe.db.exists("Farm", name):
-        frappe.get_doc({"doctype": "Farm", "farm_name": name}).insert(ignore_permissions=True)
+        frappe.get_doc({"doctype": "Farm", "farm": name}).insert(ignore_permissions=True)
     return name
 
 

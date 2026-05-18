@@ -64,6 +64,7 @@ import {
   fetchCreatorBootstrap,
   type CreatorBootstrap,
 } from "@/lib/spray-plan-creator-api";
+import { DraftBatchPanel } from "@/components/spray-plan/DraftBatchPanel";
 import { FrappeError } from "@/lib/frappe";
 import { ymd } from "@/lib/utils";
 import {
@@ -1028,7 +1029,7 @@ export function ApplicationPlan() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr_18rem] gap-3">
           <Card className="p-4">
             <CardHeader className="p-0 pb-2">
               <CardTitle className="text-sm">Spray Details</CardTitle>
@@ -1471,6 +1472,10 @@ export function ApplicationPlan() {
               )}
             </CardContent>
           </Card>
+
+          <div className="hidden xl:block">
+            <DraftBatchPanel onToast={pushToast} onDismiss={dismissToast} />
+          </div>
         </div>
 
         <div className="flex justify-end">
@@ -1478,6 +1483,10 @@ export function ApplicationPlan() {
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Add to batch
           </Button>
+        </div>
+
+        <div className="xl:hidden mt-3">
+          <DraftBatchPanel onToast={pushToast} onDismiss={dismissToast} />
         </div>
       </section>
 

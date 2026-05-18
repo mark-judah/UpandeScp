@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useView } from "@/lib/router";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
@@ -48,6 +48,12 @@ const Approvals = lazy(() =>
 const ApplicationPlan = lazy(() =>
   import("@/pages/ApplicationPlan").then((m) => ({ default: m.ApplicationPlan })),
 );
+// Throwaway POC route — gated on a hash that the normal router doesn't
+// recognise so it never appears in the sidebar. Open with
+// ``#/poc-heatmap?gh=<Greenhouse>&obs=<Name>&kind=pest|disease``.
+const HeatmapPoc = lazy(() =>
+  import("@/pages/HeatmapPoc").then((m) => ({ default: m.HeatmapPoc })),
+);
 
 function PageFallback() {
   return <LoadingStrip active />;
@@ -89,8 +95,22 @@ function ApplicationPlanSkeleton() {
   );
 }
 
+function usePocHashMatch(): boolean {
+  const [match, setMatch] = useState(() =>
+    (window.location.hash || "").startsWith("#/poc-heatmap"),
+  );
+  useEffect(() => {
+    const onHash = () =>
+      setMatch((window.location.hash || "").startsWith("#/poc-heatmap"));
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  return match;
+}
+
 export function App() {
   const [view, navigate] = useView();
+  const isPoc = usePocHashMatch();
 
   // Warm long-lived reference caches once per session. Heatmaps and the
   // Application Plan diagnose plot read straight from the IDB-backed
@@ -115,7 +135,9 @@ export function App() {
             )
           }
         >
-          {view === "trends" ? (
+          {isPoc ? (
+            <HeatmapPoc />
+          ) : view === "trends" ? (
             <Trends />
           ) : view === "observations" ? (
             <Observations />

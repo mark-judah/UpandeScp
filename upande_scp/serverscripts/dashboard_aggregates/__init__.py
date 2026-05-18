@@ -14,6 +14,9 @@ from upande_scp.serverscripts.dashboard_aggregates._fcm             import fcm  
 from upande_scp.serverscripts.dashboard_aggregates._gh_detail       import (
     greenhouse_detail as _gh_detail,
 )
+from upande_scp.serverscripts.dashboard_aggregates._heatmap_poc     import (
+    heatmap_poc as _heatmap_poc,
+)
 
 
 def _truthy(v) -> bool:
@@ -54,3 +57,8 @@ def fcm(**kwargs):
 @frappe.whitelist()
 def greenhouse_detail(**kwargs):
     return _call(_gh_detail, **kwargs)
+
+
+@frappe.whitelist()
+def heatmap_poc(**kwargs):
+    return _call(_heatmap_poc, **kwargs)

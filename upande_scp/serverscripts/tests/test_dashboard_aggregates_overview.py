@@ -88,3 +88,31 @@ class TestOverviewDailyAndTotals(FrappeTestCase):
         self.assertTrue(all(s == "high" for s in sevs))
         self.assertIn("pest", kinds)
         self.assertIn("disease", kinds)
+
+
+class TestOverviewScouts(FrappeTestCase):
+    def setUp(self):
+        insert_fixture()
+
+    def _call(self):
+        from upande_scp.serverscripts.dashboard_aggregates._overview import overview
+        return overview({
+            "from_date": "2026-05-04", "to_date": "2026-05-15",
+            "crop": "", "farm": "", "greenhouse": "",
+        }, force=True)
+
+    def test_top_scouts_returns_scout_ids(self):
+        payload = self._call()
+        ids = [s["scoutId"] for s in payload["topScouts"]]
+        self.assertIn("_TEST Scout 001", ids)
+
+    def test_scouts_per_day_distinct(self):
+        payload = self._call()
+        self.assertTrue(all(d["scouts"] == 1 for d in payload["scoutsPerDay"]))
+
+    def test_recent_activity_top_8_with_scoutId(self):
+        payload = self._call()
+        self.assertLessEqual(len(payload["recentActivity"]), 8)
+        for r in payload["recentActivity"]:
+            self.assertIn("scoutId", r)
+            self.assertIn("kind", r)

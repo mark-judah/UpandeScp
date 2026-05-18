@@ -44,6 +44,8 @@ def _build(from_date, to_date, crop, scope) -> dict:
     daily, range_totals = _daily_and_totals(obs)
     gh_health, alerts_total = _gh_health(obs)
     active = _active_alerts(obs)
+    top_scouts, scouts_per_day, scout_perf = _scout_aggs(obs)
+    recent = _recent_activity(where, params)
 
     kpis["highAlerts"] = alerts_total
 
@@ -52,10 +54,10 @@ def _build(from_date, to_date, crop, scope) -> dict:
         "daily": daily,
         "rangeTotals": range_totals,
         "ghHealth": gh_health,
-        "topScouts": [],         # filled in T8
-        "scoutsPerDay": [],
-        "scoutPerformance": [],
-        "recentActivity": [],
+        "topScouts": top_scouts,
+        "scoutsPerDay": scouts_per_day,
+        "scoutPerformance": scout_perf,
+        "recentActivity": recent,
         "activeAlerts": active,
     }
 
@@ -208,3 +210,71 @@ def _active_alerts(obs: list, n: int = 8) -> list:
     out.sort(key=lambda a: a["date"], reverse=True)
     out.sort(key=lambda a: a["severity"] != "high")
     return out[:n]
+
+
+def _scout_aggs(obs: list) -> tuple:
+    """Returns (topScouts, scoutsPerDay, scoutPerformance) — all keyed by scoutId."""
+    entries_by_scout = {}
+    obs_by_scout = {}
+    scouts_by_date = {}
+    seen_entries = set()
+    for r in obs:
+        sid = (r.scouts_name or "").strip()
+        date = str(r.date_of_capture)[:10]
+        if not sid:
+            continue
+        if r.name not in seen_entries:
+            seen_entries.add(r.name)
+            entries_by_scout[sid] = entries_by_scout.get(sid, 0) + 1
+            scouts_by_date.setdefault(date, set()).add(sid)
+        ob = obs_by_scout.setdefault(sid, {"pests": 0, "diseases": 0})
+        if r.kind == "pest":
+            ob["pests"] += 1
+        elif r.kind == "disease":
+            ob["diseases"] += 1
+    top = [{"scoutId": s, "entries": n} for s, n in entries_by_scout.items()]
+    top.sort(key=lambda x: x["entries"], reverse=True)
+    perf = [
+        {"scoutId": s, "zones": entries_by_scout.get(s, 0),
+         "pests": ob["pests"], "diseases": ob["diseases"]}
+        for s, ob in obs_by_scout.items()
+    ]
+    perf.sort(key=lambda x: x["zones"], reverse=True)
+    spd = [{"date": d, "scouts": len(s)} for d, s in scouts_by_date.items()]
+    spd.sort(key=lambda x: x["date"])
+    return top[:6], spd, perf[:8]
+
+
+def _recent_activity(where: str, params: dict, n: int = 8) -> list:
+    """Top N most recent entries with their primary observation kind."""
+    rows = frappe.db.sql(
+        f"""
+        SELECT se.name, se.date_of_capture, se.time_of_capture,
+               se.greenhouse, se.block, se.zone, se.tree, se.scouts_name,
+               EXISTS(SELECT 1 FROM `tabPests Scouting Entry` p WHERE p.parent = se.name)    AS has_pest,
+               EXISTS(SELECT 1 FROM `tabDiseases Scouting Entry` d WHERE d.parent = se.name) AS has_disease,
+               EXISTS(SELECT 1 FROM `tabTrap Scouting Entry` t WHERE t.parent = se.name)     AS has_trap
+        FROM `tabScouting Entry` se
+        WHERE {where}
+        ORDER BY se.date_of_capture DESC, se.time_of_capture DESC
+        LIMIT %(limit)s
+        """,
+        {**params, "limit": n},
+        as_dict=True,
+    )
+    out = []
+    for r in rows:
+        kind = ("pest"    if r.has_pest
+                else "disease" if r.has_disease
+                else "trap"    if r.has_trap
+                else "other")
+        out.append({
+            "name":       r.name,
+            "date":       str(r.date_of_capture)[:10],
+            "time":       str(r.time_of_capture or ""),
+            "greenhouse": r.greenhouse or r.block or "—",
+            "zone":       r.zone or r.tree or "",
+            "scoutId":    r.scouts_name or "",
+            "kind":       kind,
+        })
+    return out

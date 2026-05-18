@@ -233,3 +233,145 @@ class TestResolveExpenseAccount(FrappeTestCase):
         item = _ensure_chemical_mix_item("MI-TANK-3", co, None)
         with self.assertRaises(frappe.ValidationError):
             resolve_expense_account(item, co)
+
+
+from upande_scp.serverscripts.spray_plan_creator.auto_material_issue import (
+    build_material_issue,
+)
+
+
+class _FakeItemRow:
+    def __init__(self, item_code, item_name, qty, uom, stock_uom,
+                 description=None, item_group=None, is_finished_item=0,
+                 conversion_factor=1):
+        self.item_code = item_code
+        self.item_name = item_name
+        self.qty = qty
+        self.uom = uom
+        self.stock_uom = stock_uom
+        self.transfer_qty = qty
+        self.description = description or item_name
+        self.item_group = item_group or "Chemical Mix"
+        self.is_finished_item = is_finished_item
+        self.conversion_factor = conversion_factor
+
+
+class _FakeManufactureSE:
+    def __init__(self, *, company, to_warehouse, custom_location, letter_head, items):
+        self.purpose = "Manufacture"
+        self.stock_entry_type = "Manufacture"
+        self.company = company
+        self.to_warehouse = to_warehouse
+        self.custom_location = custom_location
+        self.letter_head = letter_head
+        self.items = items
+
+
+class TestBuildMaterialIssue(FrappeTestCase):
+    def test_builds_expected_dict(self):
+        co = _ensure_company()
+        acc = _ensure_account("MI Build Acc", co)
+        _set_settings_default_account(acc)
+        item = _ensure_chemical_mix_item("MI-FG-1", co, acc)
+        emp = _ensure_employee("EMP-MI-BUILD-1", "Builder Sup")
+        # Ensure farm exists first (Warehouse link-validates custom_farm).
+        if not frappe.db.exists("Farm", "_Test Farm MI"):
+            frappe.get_doc({"doctype": "Farm", "farm": "_Test Farm MI"}).insert(ignore_permissions=True)
+        # Greenhouse warehouse with custom_farm (Frappe appends company abbr to name).
+        abbr = frappe.db.get_value("Company", co, "abbr")
+        gh = f"_Test GH MI Build - {abbr}"
+        if not frappe.db.exists("Warehouse", gh):
+            frappe.get_doc({
+                "doctype": "Warehouse", "warehouse_name": "_Test GH MI Build",
+                "company": co, "warehouse_type": "Greenhouse",
+                "custom_farm": "_Test Farm MI", "is_group": 0,
+            }).insert(ignore_permissions=True)
+
+        cost_center = frappe.db.get_value(
+            "Cost Center", {"company": co, "is_group": 0}, "name"
+        )
+        wo = _FakeWO(name="MFG-WO-MI-1", company=co, custom_cost_center=cost_center)
+
+        chemical = _FakeItemRow("CHEM-A", "Chem A", 1.5, "Litre", "Litre", is_finished_item=0)
+        fg = _FakeItemRow(item, "MI-FG-1", 2, "Tank Mix (1000L)",
+                          "Tank Mix (1000L)", is_finished_item=1)
+        manu = _FakeManufactureSE(
+            company=co, to_warehouse=gh, custom_location="Ravine",
+            letter_head="Karen Roses Letterhead", items=[chemical, fg],
+        )
+
+        result = build_material_issue(manu, wo, emp)
+
+        self.assertEqual(result["stock_entry_type"], "Material Issue")
+        self.assertEqual(result["purpose"], "Material Issue")
+        self.assertEqual(result["from_warehouse"], gh)
+        self.assertEqual(result["custom_farm"], "_Test Farm MI")
+        self.assertEqual(result["custom_location"], "Ravine")
+        self.assertEqual(result["company"], co)
+        self.assertEqual(result["letter_head"], "Karen Roses Letterhead")
+        self.assertEqual(result["custom_biometric_verified"], 0)
+        self.assertEqual(result.get("custom_biometric_data", []), [])
+
+        # Exactly one row — the FG item, not the chemicals.
+        self.assertEqual(len(result["items"]), 1)
+        row = result["items"][0]
+        self.assertEqual(row["item_code"], item)
+        self.assertEqual(row["qty"], 2)
+        self.assertEqual(row["s_warehouse"], gh)
+        self.assertEqual(row["expense_account"], acc)
+        self.assertEqual(row["cost_center"], cost_center)
+        self.assertEqual(row["farm"], "_Test Farm MI")
+
+        # Employee row.
+        self.assertEqual(len(result["custom_employee_data"]), 1)
+        self.assertEqual(result["custom_employee_data"][0]["employee"], emp)
+
+    def test_throws_when_no_finished_item(self):
+        co = _ensure_company()
+        wo = _FakeWO(name="MFG-WO-MI-2", company=co, custom_cost_center="X")
+        manu = _FakeManufactureSE(
+            company=co, to_warehouse="_Test GH MI Build",
+            custom_location="", letter_head="",
+            items=[_FakeItemRow("CHEM-A", "Chem A", 1.0, "Litre", "Litre",
+                                is_finished_item=0)],
+        )
+        with self.assertRaises(frappe.ValidationError):
+            build_material_issue(manu, wo, "EMP-MI-BUILD-1")
+
+    def test_throws_when_greenhouse_has_no_farm(self):
+        co = _ensure_company()
+        acc = _ensure_account("MI Build Acc 2", co)
+        _set_settings_default_account(acc)
+        item = _ensure_chemical_mix_item("MI-FG-2", co, acc)
+        emp = _ensure_employee("EMP-MI-BUILD-2", "B2")
+        abbr = frappe.db.get_value("Company", co, "abbr")
+        gh = f"_Test GH No Farm - {abbr}"
+        if not frappe.db.exists("Warehouse", gh):
+            frappe.get_doc({
+                "doctype": "Warehouse", "warehouse_name": "_Test GH No Farm",
+                "company": co, "warehouse_type": "Greenhouse", "is_group": 0,
+            }).insert(ignore_permissions=True)
+        wo = _FakeWO(name="MFG-WO-MI-3", company=co, custom_cost_center="X")
+        manu = _FakeManufactureSE(
+            company=co, to_warehouse=gh, custom_location="",
+            letter_head="", items=[
+                _FakeItemRow(item, item, 1.0, "Litre", "Litre", is_finished_item=1),
+            ],
+        )
+        with self.assertRaises(frappe.ValidationError):
+            build_material_issue(manu, wo, emp)
+
+    def test_throws_when_cost_center_missing(self):
+        co = _ensure_company()
+        acc = _ensure_account("MI Build Acc 3", co)
+        _set_settings_default_account(acc)
+        item = _ensure_chemical_mix_item("MI-FG-3", co, acc)
+        emp = _ensure_employee("EMP-MI-BUILD-3", "B3")
+        gh = "_Test GH MI Build"  # reused from happy-path test
+        wo = _FakeWO(name="MFG-WO-MI-4", company=co, custom_cost_center=None)
+        manu = _FakeManufactureSE(
+            company=co, to_warehouse=gh, custom_location="", letter_head="",
+            items=[_FakeItemRow(item, item, 1.0, "Litre", "Litre", is_finished_item=1)],
+        )
+        with self.assertRaises(frappe.ValidationError):
+            build_material_issue(manu, wo, emp)

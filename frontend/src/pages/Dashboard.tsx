@@ -1,28 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { LayoutGrid, Bug, Hexagon, Crosshair, Sparkles,
+         FileText, RefreshCw } from "lucide-react";
 import {
-  LayoutGrid,
-  Bug,
-  Hexagon,
-  Crosshair,
-  Sparkles,
-  FileText,
-  RefreshCw,
-} from "lucide-react";
-import { useScouting } from "@/hooks/use-scouting";
-import {
-  fetchCrops,
-  fetchFarmsAndWarehouses,
-  fetchScoutLookup,
-  fetchZonesByGreenhouse,
-  DEFAULT_CROP,
+  fetchCrops, fetchFarmsAndWarehouses, fetchScoutLookup,
+  fetchZonesByGreenhouse, DEFAULT_CROP,
 } from "@/lib/scouting-api";
+import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -30,13 +16,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/DatePicker";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
-import { OverviewTab } from "./dashboard/OverviewTab";
-import { PestsTab } from "./dashboard/PestsTab";
-import { DiseasesTab } from "./dashboard/DiseasesTab";
-import { TrapsTab } from "./dashboard/TrapsTab";
-import { FcmTab } from "./dashboard/FcmTab";
+import { OverviewTab }  from "./dashboard/OverviewTab";
+import { PestsTab }     from "./dashboard/PestsTab";
+import { DiseasesTab }  from "./dashboard/DiseasesTab";
+import { TrapsTab }     from "./dashboard/TrapsTab";
+import { FcmTab }       from "./dashboard/FcmTab";
 import { ymd } from "@/lib/utils";
+import type { OverviewPayload } from "./dashboard/overview-types";
+import type { PestsPayload, DiseasesPayload } from "./dashboard/pests-diseases-types";
+import type { TrapsPayload } from "./dashboard/traps-types";
+import type { FcmPayload } from "./dashboard/fcm-types";
 
 const ALL_FARMS = "__all__";
 const ALL_GH = "__all__";
@@ -48,68 +37,77 @@ function defaultRange() {
   return { from: ymd(from), to: ymd(today) };
 }
 
+type TabId = "overview" | "pests" | "diseases" | "traps" | "fcm";
+
 export function Dashboard() {
   const [crop, setCrop] = useState<string>(DEFAULT_CROP);
   const [farm, setFarm] = useState<string>(ALL_FARMS);
   const [greenhouse, setGreenhouse] = useState<string>(ALL_GH);
   const [{ from, to }, setRange] = useState(defaultRange);
-  const [crops, setCrops] = useState<
-    Array<{ name: string; crop_name: string; farms?: string[] }>
-  >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
+  const [crops, setCrops] = useState<Array<{ name: string; crop_name: string;
+                                              farms?: string[] }>>([
+    { name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }
+  ]);
   const [farms, setFarms] = useState<Record<string, string[]>>({});
   const [scoutLookup, setScoutLookup] = useState<Record<string, string>>({});
-  const [zonesByGh, setZonesByGh] = useState<Record<string, number>>({});
 
   useEffect(() => {
     fetchCrops().then((r) => {
       if (!r.length) return;
       const hasDefault = r.some((c) => c.crop_name === DEFAULT_CROP);
-      setCrops(
-        hasDefault
-          ? r
-          : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
-      );
+      setCrops(hasDefault ? r : [
+        { name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r,
+      ]);
     });
     fetchFarmsAndWarehouses().then(setFarms);
     fetchScoutLookup().then(setScoutLookup);
-    fetchZonesByGreenhouse().then(setZonesByGh);
+    void fetchZonesByGreenhouse();
   }, []);
 
-  const farmList = useMemo(() => {
+  const farmList = (() => {
     const cropAllow = crops.find((c) => c.crop_name === crop)?.farms || [];
     const all = Object.keys(farms);
     if (!cropAllow.length) return all;
     const allowSet = new Set(cropAllow);
     return all.filter((f) => allowSet.has(f));
-  }, [farms, crops, crop]);
+  })();
 
-  const greenhouseList = useMemo(() => {
-    if (farm === ALL_FARMS) {
-      return Array.from(
-        new Set(farmList.flatMap((f) => farms[f] || [])),
-      ).sort();
-    }
+  const greenhouseList = (() => {
+    if (farm === ALL_FARMS)
+      return Array.from(new Set(farmList.flatMap((f) => farms[f] || []))).sort();
     return (farms[farm] || []).slice().sort();
-  }, [farm, farmList, farms]);
+  })();
 
-  // Scope precedence: explicit greenhouse > farm's greenhouses > undefined.
-  // Picking "Karen Farm" + "All Greenhouses" used to fall through to the
-  // unfiltered fetch because only `greenhouse` was ever passed downstream.
-  const greenhouseScope = useMemo(() => {
-    if (greenhouse !== ALL_GH) return [greenhouse];
-    if (farm !== ALL_FARMS) return farms[farm] || [];
-    return undefined;
-  }, [farm, greenhouse, farms]);
-
-  const { data, loading, progress, weeksLoaded, weeksTotal, error, reload } = useScouting({
-    from,
-    to,
-    greenhouses: greenhouseScope,
-    crop,
+  const [tab, setTab] = useState<TabId>("overview");
+  const [pestFilters, setPestFilters] = useState({
+    observation: "", section: "", stage: "",
   });
+  const [diseaseFilters, setDiseaseFilters] = useState({
+    observation: "", section: "", stage: "",
+  });
+
+  const base = {
+    from_date: from,
+    to_date: to,
+    crop: crop === DEFAULT_CROP ? "" : crop,
+    farm: farm === ALL_FARMS ? "" : farm,
+    greenhouse: greenhouse === ALL_GH ? "" : greenhouse,
+  };
+
+  const overview  = useDashboardAggregate<OverviewPayload>("overview",  base, tab === "overview");
+  const pests     = useDashboardAggregate<PestsPayload>(   "pests",     { ...base, ...pestFilters },    tab === "pests");
+  const diseases  = useDashboardAggregate<DiseasesPayload>("diseases",  { ...base, ...diseaseFilters }, tab === "diseases");
+  const traps     = useDashboardAggregate<TrapsPayload>(   "traps",     base, tab === "traps");
+  const fcm       = useDashboardAggregate<FcmPayload>(     "fcm",       base, tab === "fcm");
+
+  const reloadActive = () => {
+    const h = ({overview, pests, diseases, traps, fcm} as const)[tab];
+    h.reload({ force: true });
+  };
 
   return (
     <div className="flex flex-col min-h-svh">
+      {/* === Filter bar (same as before) === */}
       <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
@@ -205,9 +203,9 @@ export function Dashboard() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => reload()}
+              onClick={reloadActive}
               className="h-9"
-              title="Reload (clears cache)"
+              title="Reload (force cache refresh)"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               Reload
@@ -222,88 +220,78 @@ export function Dashboard() {
           </div>
         </div>
 
-        {error && (
+        {overview.error && tab === "overview" && (
           <div className="text-xs text-[var(--sd-data-red)]">
-            Failed to load: {error}
+            Failed to load: {overview.error}
           </div>
         )}
       </header>
 
       <div className="flex-1 px-4 py-4 md:px-6 md:py-6">
-        <Tabs defaultValue="overview" className="flex flex-col gap-4">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="flex flex-col gap-4">
           <TabsList className="self-start flex-wrap">
-            <TabsTrigger value="overview">
-              <LayoutGrid />
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="pests">
-              <Bug />
-              Pests
-            </TabsTrigger>
-            <TabsTrigger value="diseases">
-              <Hexagon />
-              Diseases
-            </TabsTrigger>
-            <TabsTrigger value="traps">
-              <Crosshair />
-              Traps
-            </TabsTrigger>
-            <TabsTrigger value="fcm">
-              <Sparkles />
-              FCM &amp; Moths
-            </TabsTrigger>
+            <TabsTrigger value="overview"><LayoutGrid />Overview</TabsTrigger>
+            <TabsTrigger value="pests"><Bug />Pests</TabsTrigger>
+            <TabsTrigger value="diseases"><Hexagon />Diseases</TabsTrigger>
+            <TabsTrigger value="traps"><Crosshair />Traps</TabsTrigger>
+            <TabsTrigger value="fcm"><Sparkles />FCM &amp; Moths</TabsTrigger>
           </TabsList>
 
-          {loading && !data ? (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-24" />
-              ))}
-            </div>
-          ) : (
-            <>
-              <TabsContent value="overview" className="mt-0">
-                <OverviewTab
-                  data={null as any}      // wired in T21
-                  scoutLookup={scoutLookup}
-                  fromDate={from}
-                  toDate={to}
-                />
-              </TabsContent>
-              <TabsContent value="pests" className="mt-0">
-                <PestsTab
-                  data={null as any}
-                  pestName=""
-                  section=""
-                  stage=""
-                  onFiltersChange={() => {}}
-                />
-              </TabsContent>
-              <TabsContent value="diseases" className="mt-0">
-                <DiseasesTab
-                  data={null as any}
-                  diseaseName=""
-                  section=""
-                  stage=""
-                  onFiltersChange={() => {}}
-                />
-              </TabsContent>
-              <TabsContent value="traps" className="mt-0">
-                <TrapsTab data={null as any} />
-              </TabsContent>
-              <TabsContent value="fcm" className="mt-0">
-                <FcmTab data={null as any} />
-              </TabsContent>
-            </>
-          )}
+          <TabsContent value="overview" className="mt-0">
+            {overview.loading && !overview.data ? <KpiSkeleton /> : (
+              <OverviewTab
+                data={overview.data}
+                scoutLookup={scoutLookup}
+                fromDate={from}
+                toDate={to}
+                crop={base.crop}
+              />
+            )}
+          </TabsContent>
+          <TabsContent value="pests" className="mt-0">
+            {pests.loading && !pests.data ? <KpiSkeleton /> : (
+              <PestsTab
+                data={pests.data}
+                pestName={pestFilters.observation}
+                section={pestFilters.section}
+                stage={pestFilters.stage}
+                onFiltersChange={setPestFilters}
+              />
+            )}
+          </TabsContent>
+          <TabsContent value="diseases" className="mt-0">
+            {diseases.loading && !diseases.data ? <KpiSkeleton /> : (
+              <DiseasesTab
+                data={diseases.data}
+                diseaseName={diseaseFilters.observation}
+                section={diseaseFilters.section}
+                stage={diseaseFilters.stage}
+                onFiltersChange={setDiseaseFilters}
+              />
+            )}
+          </TabsContent>
+          <TabsContent value="traps" className="mt-0">
+            {traps.loading && !traps.data ? <KpiSkeleton /> : (
+              <TrapsTab data={traps.data} />
+            )}
+          </TabsContent>
+          <TabsContent value="fcm" className="mt-0">
+            {fcm.loading && !fcm.data ? <KpiSkeleton /> : (
+              <FcmTab data={fcm.data} />
+            )}
+          </TabsContent>
         </Tabs>
       </div>
-      <LoadingOverlay
-        open={loading}
-        progress={progress}
-        weeksLoaded={weeksLoaded}
-        weeksTotal={weeksTotal}
-      />
+    </div>
+  );
+}
+
+function KpiSkeleton() {
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <Skeleton key={i} className="h-24" />
+      ))}
     </div>
   );
 }

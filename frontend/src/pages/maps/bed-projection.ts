@@ -22,6 +22,11 @@ export interface BedPath {
   /** Concatenated SVG path "M x y L x y L … M x y L …", one moveto per
    *  ring belonging to this bed. */
   d: string;
+  /** Position to drop a label for this bed: just to the left of the
+   *  leftmost point along the bed's centerline. ``labelY`` is the bed's
+   *  centroid in SVG y. */
+  labelX: number;
+  labelY: number;
 }
 
 export interface ProjectedGeometry {
@@ -179,16 +184,24 @@ export function projectGeometry(
   }
   const beds: BedPath[] = Object.entries(bedRings).map(([bedId, rs]) => {
     const segments: string[] = [];
+    let minSvgX = Infinity;
+    let sumY = 0;
+    let nPts = 0;
     for (const r of rs) {
       if (r.pts.length < 2) continue;
       const parts: string[] = [];
       for (let i = 0; i < r.pts.length; i++) {
         const [sx, sy] = toSvg(r.pts[i][0], r.pts[i][1]);
         parts.push(`${i === 0 ? "M" : "L"}${sx.toFixed(2)} ${sy.toFixed(2)}`);
+        if (sx < minSvgX) minSvgX = sx;
+        sumY += sy;
+        nPts += 1;
       }
       segments.push(parts.join(" "));
     }
-    return { bedId, d: segments.join(" ") };
+    const labelX = minSvgX === Infinity ? 0 : minSvgX - 2;
+    const labelY = nPts > 0 ? sumY / nPts : 0;
+    return { bedId, d: segments.join(" "), labelX, labelY };
   });
 
   // Zone centroids: mean of all that zone's projected points.

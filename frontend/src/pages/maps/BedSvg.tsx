@@ -47,13 +47,23 @@ export function BedSvg({
   // Bed-path IDs live only inside this svg root. Memoise so the same
   // geometry doesn't rebuild the defs string each render.
   const bedSymbol = useMemo(() => {
-    const paths = geometry.beds
-      .map(
-        (b) =>
-          `<path d="${b.d}" fill="none" stroke="rgba(0,0,0,0.35)" stroke-width="0.7" />`,
-      )
-      .join("");
-    return `<g id="${defsId}-beds">${paths}</g>`;
+    const parts: string[] = [];
+    for (const b of geometry.beds) {
+      parts.push(
+        `<path d="${b.d}" fill="none" stroke="rgba(0,0,0,0.45)" stroke-width="0.7" />`,
+      );
+      // Bed-id label hugs the leftmost point of each bed. Tiny font so a
+      // 30-greenhouse grid stays legible without overlapping the line.
+      const safe = String(b.bedId)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;");
+      parts.push(
+        `<text x="${b.labelX.toFixed(2)}" y="${b.labelY.toFixed(2)}" ` +
+        `font-size="3.5" text-anchor="end" dominant-baseline="middle" ` +
+        `fill="rgba(0,0,0,0.55)" font-family="var(--sd-font, sans-serif)">${safe}</text>`,
+      );
+    }
+    return `<g id="${defsId}-beds">${parts.join("")}</g>`;
   }, [geometry, defsId]);
 
   return (

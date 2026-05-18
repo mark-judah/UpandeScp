@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/sidebar";
 import { SidebarUser } from "@/components/SidebarUser";
 import { viewHash, type View } from "@/lib/router";
+import { bootstrap } from "@/lib/frappe";
 import upandeLogo from "@/assets/Upande_logo.png";
 
 type IconType = React.ComponentType<{ className?: string }>;
@@ -40,6 +41,7 @@ type InAppItem = {
   label: string;
   icon: IconType;
   hint?: string;
+  requireRoles?: string[];
 };
 
 type ExternalItem = {
@@ -48,6 +50,7 @@ type ExternalItem = {
   label: string;
   icon: IconType;
   hint?: string;
+  requireRoles?: string[];
 };
 
 type NavItem = InAppItem | ExternalItem;
@@ -95,6 +98,7 @@ const NAV: NavSection[] = [
         view: "spray-plan-access",
         label: "Access Control",
         icon: ShieldCheck,
+        requireRoles: ["General Manager", "System Manager"],
       },
       {
         kind: "view",
@@ -114,6 +118,11 @@ const NAV: NavSection[] = [
   },
 ];
 
+function userHasAnyRole(required: string[] | undefined, userRoles: string[]): boolean {
+  if (!required || required.length === 0) return true;
+  return required.some((r) => userRoles.includes(r));
+}
+
 export function AppSidebar({
   view,
   onNavigate,
@@ -123,6 +132,7 @@ export function AppSidebar({
 }) {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
+  const roles = bootstrap().roles || [];
 
   return (
     <Sidebar collapsible="icon">
@@ -147,47 +157,53 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarSeparator />
       <SidebarContent>
-        {NAV.map((section) => (
-          <SidebarGroup key={section.label}>
-            <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {section.items.map((item) => {
-                  const Icon = item.icon;
-                  const active =
-                    item.kind === "view" ? view === item.view : false;
-                  return (
-                    <SidebarMenuItem key={`${item.kind}:${item.label}`}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={active}
-                        title={item.hint || item.label}
-                      >
-                        {item.kind === "view" ? (
-                          <a
-                            href={viewHash(item.view)}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              onNavigate(item.view);
-                            }}
-                          >
-                            <Icon className="h-4 w-4" />
-                            <span>{item.label}</span>
-                          </a>
-                        ) : (
-                          <a href={item.href}>
-                            <Icon className="h-4 w-4" />
-                            <span>{item.label}</span>
-                          </a>
-                        )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
+        {NAV.map((section) => {
+          const visibleItems = section.items.filter((item) =>
+            userHasAnyRole(item.requireRoles, roles),
+          );
+          if (visibleItems.length === 0) return null;
+          return (
+            <SidebarGroup key={section.label}>
+              <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {visibleItems.map((item) => {
+                    const Icon = item.icon;
+                    const active =
+                      item.kind === "view" ? view === item.view : false;
+                    return (
+                      <SidebarMenuItem key={`${item.kind}:${item.label}`}>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={active}
+                          title={item.hint || item.label}
+                        >
+                          {item.kind === "view" ? (
+                            <a
+                              href={viewHash(item.view)}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                onNavigate(item.view);
+                              }}
+                            >
+                              <Icon className="h-4 w-4" />
+                              <span>{item.label}</span>
+                            </a>
+                          ) : (
+                            <a href={item.href}>
+                              <Icon className="h-4 w-4" />
+                              <span>{item.label}</span>
+                            </a>
+                          )}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          );
+        })}
       </SidebarContent>
       <SidebarFooter>
         <SidebarUser />

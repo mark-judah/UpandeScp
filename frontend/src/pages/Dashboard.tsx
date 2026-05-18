@@ -271,10 +271,22 @@ export function Dashboard() {
                 />
               </TabsContent>
               <TabsContent value="pests" className="mt-0">
-                <PestsTab data={data} zonesByGreenhouse={zonesByGh} />
+                <PestsTab
+                  data={null as any}
+                  pestName=""
+                  section=""
+                  stage=""
+                  onFiltersChange={() => {}}
+                />
               </TabsContent>
               <TabsContent value="diseases" className="mt-0">
-                <DiseasesTab data={data} zonesByGreenhouse={zonesByGh} />
+                <DiseasesTab
+                  data={null as any}
+                  diseaseName=""
+                  section=""
+                  stage=""
+                  onFiltersChange={() => {}}
+                />
               </TabsContent>
               <TabsContent value="traps" className="mt-0">
                 <TrapsTab data={data} />

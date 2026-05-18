@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -26,61 +26,48 @@ import {
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { DashFilterRow } from "./DashFilterRow";
-import {
-  ALL_FILTER,
-  greenhousePressurePercent,
-  pestDailyPercent,
-  pestDistributionPercent,
-  pestFilterOptions,
-  pestRanking,
-  pestSectionPercent,
-  type DashFilters,
-} from "./aggregate";
-import type { ProcessedData } from "@/lib/scouting-types";
+import type { PestsPayload } from "./pests-diseases-types";
 import { weekTickFormatter } from "@/lib/iso-week";
+
+export interface PestsTabProps {
+  data: PestsPayload | null;
+  pestName: string;       // page-level filter (the "observation" filter)
+  section: string;
+  stage: string;
+  onFiltersChange: (next: { observation: string; section: string; stage: string }) => void;
+}
 
 export function PestsTab({
   data,
-  zonesByGreenhouse,
-}: {
-  data: ProcessedData | null;
-  zonesByGreenhouse: Record<string, number>;
-}) {
-  const [filters, setFilters] = useState<DashFilters>({
-    observation: ALL_FILTER,
-    section: ALL_FILTER,
-    stage: ALL_FILTER,
-  });
+  pestName,
+  section,
+  stage,
+  onFiltersChange,
+}: PestsTabProps) {
   const { pest: pestColor } = useObservationColors();
-  const opts = useMemo(() => pestFilterOptions(data), [data]);
-  const ranking = useMemo(() => pestRanking(data), [data]);
-  const trend = useMemo(
-    () => pestDailyPercent(data, zonesByGreenhouse, filters),
-    [data, zonesByGreenhouse, filters],
-  );
-  const distribution = useMemo(
-    () => pestDistributionPercent(data, zonesByGreenhouse, filters),
-    [data, zonesByGreenhouse, filters],
-  );
-  const sectionSplit = useMemo(
-    () => pestSectionPercent(data, filters),
-    [data, filters],
-  );
-  const ghPressure = useMemo(
-    () => greenhousePressurePercent(data, zonesByGreenhouse, "pest", filters),
-    [data, zonesByGreenhouse, filters],
-  );
+
+  const opts = data?.filterOptions ?? { pests: [], sections: [], stages: [] };
+  const ranking = data?.ranking ?? [];
+  const trendRows = data?.dailyPercent ?? [];
+  const distribution = data?.distribution ?? [];
+  const sectionSplit = data?.sectionSplit ?? [];
+  const ghPressure = data?.greenhousePressure ?? [];
+
+  const trend = { rows: trendRows, pestName: pestName || "All pests" };
 
   const total = ranking.reduce((s, r) => s + r.total, 0);
   const high = ranking.reduce((s, r) => s + r.high, 0);
   const top = ranking[0];
 
-  const lineConfig: ChartConfig = {
-    value: { label: trend.pestName, color: "var(--sd-data-cyan)" },
-  };
+  const lineConfig: ChartConfig = useMemo(
+    () => ({ value: { label: trend.pestName, color: "var(--sd-data-cyan)" } }),
+    [trend.pestName],
+  );
   const distConfig: ChartConfig = {
     pct: { label: "% zones", color: "var(--sd-data-cyan)" },
   };
+
+  const filters = { observation: pestName, section, stage };
 
   return (
     <div className="flex flex-col gap-4">
@@ -115,7 +102,7 @@ export function PestsTab({
               sectionOptions={opts.sections}
               stageOptions={opts.stages}
               value={filters}
-              onChange={setFilters}
+              onChange={onFiltersChange}
             />
           </div>
         </CardHeader>
@@ -354,3 +341,4 @@ export function PestsTab({
     </div>
   );
 }
+

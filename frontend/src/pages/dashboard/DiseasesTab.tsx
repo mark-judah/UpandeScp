@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -26,61 +26,48 @@ import {
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { DashFilterRow } from "./DashFilterRow";
-import {
-  ALL_FILTER,
-  diseaseDailyPercent,
-  diseaseDistributionPercent,
-  diseaseFilterOptions,
-  diseaseRanking,
-  diseaseSectionPercent,
-  greenhousePressurePercent,
-  type DashFilters,
-} from "./aggregate";
-import type { ProcessedData } from "@/lib/scouting-types";
+import type { DiseasesPayload } from "./pests-diseases-types";
 import { weekTickFormatter } from "@/lib/iso-week";
+
+export interface DiseasesTabProps {
+  data: DiseasesPayload | null;
+  diseaseName: string;    // page-level filter (the "observation" filter)
+  section: string;
+  stage: string;
+  onFiltersChange: (next: { observation: string; section: string; stage: string }) => void;
+}
 
 export function DiseasesTab({
   data,
-  zonesByGreenhouse,
-}: {
-  data: ProcessedData | null;
-  zonesByGreenhouse: Record<string, number>;
-}) {
-  const [filters, setFilters] = useState<DashFilters>({
-    observation: ALL_FILTER,
-    section: ALL_FILTER,
-    stage: ALL_FILTER,
-  });
+  diseaseName,
+  section,
+  stage,
+  onFiltersChange,
+}: DiseasesTabProps) {
   const { disease: diseaseColor } = useObservationColors();
-  const opts = useMemo(() => diseaseFilterOptions(data), [data]);
-  const ranking = useMemo(() => diseaseRanking(data), [data]);
-  const trend = useMemo(
-    () => diseaseDailyPercent(data, zonesByGreenhouse, filters),
-    [data, zonesByGreenhouse, filters],
-  );
-  const distribution = useMemo(
-    () => diseaseDistributionPercent(data, zonesByGreenhouse, filters),
-    [data, zonesByGreenhouse, filters],
-  );
-  const sectionSplit = useMemo(
-    () => diseaseSectionPercent(data, filters),
-    [data, filters],
-  );
-  const ghPressure = useMemo(
-    () => greenhousePressurePercent(data, zonesByGreenhouse, "disease", filters),
-    [data, zonesByGreenhouse, filters],
-  );
+
+  const opts = data?.filterOptions ?? { diseases: [], sections: [], stages: [] };
+  const ranking = data?.ranking ?? [];
+  const trendRows = data?.dailyPercent ?? [];
+  const distribution = data?.distribution ?? [];
+  const sectionSplit = data?.sectionSplit ?? [];
+  const ghPressure = data?.greenhousePressure ?? [];
+
+  const trend = { rows: trendRows, diseaseName: diseaseName || "All diseases" };
 
   const total = ranking.reduce((s, r) => s + r.total, 0);
   const severe = ranking.reduce((s, r) => s + r.high, 0);
   const top = ranking[0];
 
-  const lineConfig: ChartConfig = {
-    value: { label: trend.diseaseName, color: "var(--sd-data-pink)" },
-  };
+  const lineConfig: ChartConfig = useMemo(
+    () => ({ value: { label: trend.diseaseName, color: "var(--sd-data-pink)" } }),
+    [trend.diseaseName],
+  );
   const distConfig: ChartConfig = {
     pct: { label: "% zones", color: "var(--sd-data-pink)" },
   };
+
+  const filters = { observation: diseaseName, section, stage };
 
   return (
     <div className="flex flex-col gap-4">
@@ -115,7 +102,7 @@ export function DiseasesTab({
               sectionOptions={opts.sections}
               stageOptions={opts.stages}
               value={filters}
-              onChange={setFilters}
+              onChange={onFiltersChange}
             />
           </div>
         </CardHeader>

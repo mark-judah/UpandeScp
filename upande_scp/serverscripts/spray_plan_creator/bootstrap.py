@@ -3,6 +3,11 @@ from __future__ import annotations
 
 import frappe
 
+from upande_scp.serverscripts.warehouse_filter import (
+    is_greenhouse_allowed,
+    load_settings,
+)
+
 from .scope import _resolve_user_scope
 
 
@@ -17,7 +22,20 @@ def fetch_creator_bootstrap() -> dict:
     farms = scope["farms"]
     warehouse_names = [w["name"] for w in scope["warehouses"]]
 
-    greenhouses = _enrich_greenhouses(scope["greenhouses"])
+    # Apply the Spray Plan Settings exclude-keyword filter on top of the
+    # farm-scoped greenhouses so CSU / IPM / phase / tunnel rooms don't
+    # appear in the picker. The "allowed farms" check is folded in below
+    # by overriding with the user's actual farm scope.
+    _, exclude_lower = load_settings()
+    farms_lower = tuple((f or "").lower() for f in farms)
+    filtered_ghs = [
+        gh for gh in scope["greenhouses"]
+        if is_greenhouse_allowed(
+            gh["name"], farms_lower, exclude_lower,
+            has_farm=bool(gh.get("custom_farm")),
+        )
+    ]
+    greenhouses = _enrich_greenhouses(filtered_ghs)
 
     # Kits live in `Spray Equipment Details` (child table), NOT `Spray Kit` (which doesn't exist here).
     kits = []
@@ -30,11 +48,28 @@ def fetch_creator_bootstrap() -> dict:
         for k in kits:
             k["custom_farm"] = frappe.db.get_value("Warehouse", k["warehouse"], "custom_farm")
 
-    spray_teams = frappe.get_all(
-        "Spray Team",
-        filters={"custom_farm": ["in", farms], "enabled": 1},
-        fields=["name", "custom_farm"],
-    )
+    # Spray teams are matched by farm-name substring on the team_name —
+    # custom_farm is unreliable (not all teams have it populated; the
+    # backfill only covered teams with a clean WO history). Convention
+    # at Upande is to prefix the team name with the farm (e.g.
+    # "CHEPSITO CSU 1" belongs to the "Chepsito" farm).
+    spray_teams = []
+    if farms:
+        name_clauses = " OR ".join(["LOWER(name) LIKE %s"] * len(farms))
+        like_params = [f"%{(f or '').lower()}%" for f in farms]
+        rows = frappe.db.sql(
+            f"""SELECT name, custom_farm FROM `tabSpray Team`
+                WHERE enabled = 1 AND ({name_clauses})""",
+            like_params,
+            as_dict=True,
+        )
+        # De-dupe in case a team name matches multiple allowed farms.
+        seen = set()
+        for row in rows:
+            if row["name"] in seen:
+                continue
+            seen.add(row["name"])
+            spray_teams.append(row)
     for t in spray_teams:
         t["members"] = frappe.get_all(
             "Spray Team Details",

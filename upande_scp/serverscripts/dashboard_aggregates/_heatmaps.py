@@ -32,27 +32,31 @@ _KIND_TABLE = {
 
 
 def heatmaps_grid(args: dict, force: bool = False) -> dict:
-    mode = (args.get("mode") or "pest").strip().lower()
-    if mode not in _KIND_TABLE:
-        mode = "pest"
-    obs_name = (args.get("obs_name") or "").strip()
     job_id = (args.get("job_id") or "").strip()
 
     farms_map = scouting_metrics.get_farms_and_warehouses() or {}
-    scope = resolve_greenhouse_scope(
-        (args.get("greenhouse") or "").strip(),
-        (args.get("farm") or "").strip(),
-        farms_map,
-    )
+
+    # Greenhouse scope: prefer an explicit list of selections (the Trends-
+    # style tristate picker sends an array); fall back to the single
+    # ``greenhouse`` / ``farm`` form so older callers (and the smoke
+    # tests) keep working.
+    explicit = args.get("greenhouses")
+    if isinstance(explicit, list) and explicit:
+        scope = [str(g).strip() for g in explicit if str(g).strip()]
+    else:
+        scope = resolve_greenhouse_scope(
+            (args.get("greenhouse") or "").strip(),
+            (args.get("farm") or "").strip(),
+            farms_map,
+        )
 
     filters = {
-        "from_date":  args.get("from_date", ""),
-        "to_date":    args.get("to_date", ""),
-        "crop":       (args.get("crop") or "").strip(),
-        "farm":       (args.get("farm") or "").strip(),
-        "greenhouse": (args.get("greenhouse") or "").strip(),
-        "mode":       mode,
-        "obs_name":   obs_name,
+        "from_date":   args.get("from_date", ""),
+        "to_date":     args.get("to_date", ""),
+        "crop":        (args.get("crop") or "").strip(),
+        # Stash the scope (sorted) in the cache key so different greenhouse
+        # selections don't collide.
+        "scope_key":   "|".join(sorted(scope)) if isinstance(scope, list) else "",
     }
     return cached_aggregate(
         "heatmaps_grid",
@@ -67,28 +71,46 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
     where, params = parent_filter_conditions(
         filters["from_date"], filters["to_date"], filters["crop"], scope,
     )
-    mode = filters["mode"]
-    table, col, color_field = _KIND_TABLE[mode]
 
-    publish_progress(job_id, 20, f"counting {mode} observations")
+    publish_progress(job_id, 25, "loading pest rows")
+    pest_rows = _query_kind(where, params, "pest")
 
-    extra_where = ""
-    if filters["obs_name"]:
-        extra_where = f" AND c.{col} = %(obs_name)s"
-        params["obs_name"] = filters["obs_name"]
+    publish_progress(job_id, 55, "loading disease rows")
+    disease_rows = _query_kind(where, params, "disease")
 
-    publish_progress(job_id, 35, f"loading {mode} rows")
+    publish_progress(job_id, 80, "building cards")
+    pest_colors = _cached_pest_colors()
+    pest_color_map = {
+        r["name"]: r.get("pests_legend_color")
+        for r in pest_colors if r.get("name")
+    }
+    disease_colors = _cached_disease_colors()
+    disease_color_map = {
+        r["name"]: r.get("disease_legend_color")
+        for r in disease_colors if r.get("name")
+    }
+    cards = _build_cards(pest_rows, "pest", pest_color_map)
+    cards.extend(_build_cards(disease_rows, "disease", disease_color_map))
+    # Most-active first across both kinds, then stable order.
+    cards.sort(key=lambda c: (-c["totalObs"], c["greenhouse"], c["obsName"]))
 
-    # One row per (greenhouse, obs_name, date, zone). The count column
-    # is the SUM of child.count where present, otherwise the row-count.
-    # Diseases don't carry a count, so we use COUNT(*) for them; pests
-    # use SUM(COALESCE(c.count, 1)).
-    if mode == "pest":
-        count_expr = "SUM(GREATEST(COALESCE(c.`count`, 1), 1))"
-    else:
-        count_expr = "COUNT(*)"
+    publish_progress(job_id, 100, "")
+    return {"cards": cards}
 
-    rows = frappe.db.sql(
+
+def _query_kind(where: str, params: dict, mode: str) -> list:
+    """One SQL pass over the child table for ``mode``, grouped by
+    (greenhouse, obs_name, date, zone)."""
+    table, col, _color_field = _KIND_TABLE[mode]
+    # Pests have a numeric count; diseases don't (one row = one
+    # observation), so we sum-with-fallback for the former and
+    # count rows for the latter.
+    count_expr = (
+        "SUM(GREATEST(COALESCE(c.`count`, 1), 1))"
+        if mode == "pest"
+        else "COUNT(*)"
+    )
+    return frappe.db.sql(
         f"""
         SELECT
             COALESCE(NULLIF(se.greenhouse, ''), se.block)   AS greenhouse,
@@ -100,21 +122,11 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
         JOIN `{table}` c ON c.parent = se.name
         WHERE {where}
           AND se.zone IS NOT NULL AND se.zone != ''
-          {extra_where}
         GROUP BY 1, 2, 3, 4
         """,
         params,
         as_dict=True,
     )
-
-    publish_progress(job_id, 75, "building cards")
-    color_rows = _cached_pest_colors() if mode == "pest" else _cached_disease_colors()
-    color_map = {r["name"]: r.get(color_field) for r in color_rows if r.get("name")}
-
-    cards = _build_cards(rows, mode, color_map)
-
-    publish_progress(job_id, 100, "")
-    return {"cards": cards}
 
 
 def _build_cards(rows: list, mode: str, color_map: dict) -> list:

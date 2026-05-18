@@ -2,22 +2,20 @@
  * Heatmaps grid — bed-line plots with instanced observation markers.
  *
  * Data: ``upande_scp.serverscripts.dashboard_aggregates.heatmaps_grid``
- *       returns every (greenhouse × pest|disease) card matching the
- *       filter row, with each card carrying the 3 most-recent scouting
- *       dates and per-zone counts.
- *
- * Render: ``BedSvg`` draws one prerendered SVG path per bed + an
- *         instanced marker shape (from ``MarkerDefs``) at each observed
- *         zone's centroid. Card thumbnails show the latest date; the
- *         click-to-expand modal lays out the 3 dates side-by-side.
- *
- * Bed geometry comes from the long-cached ``fetchBedsAndZones`` payload;
- * each greenhouse is projected once via ``projectGeometry`` and the
- * result is memoised so cards for the same greenhouse share the math.
+ *       returns every (greenhouse × pest|disease) card in the filter
+ *       date range, irrespective of mode. The page filters client-side
+ *       via the Trends-style tristate pickers — no extra server hops
+ *       when the user narrows obs or stations.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Maximize2 } from "lucide-react";
+import {
+  Maximize2,
+  ChevronDown,
+  MapPin,
+  Sparkles,
+  RefreshCw,
+} from "lucide-react";
 import {
   Card,
   CardContent,
@@ -43,10 +41,20 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  useDashboardAggregate,
-} from "@/hooks/use-dashboard-aggregate";
-import { ALL, MapHeader, type MapFilterValue } from "./maps/MapHeader";
-import { fetchBedsAndZones, DEFAULT_CROP } from "@/lib/scouting-api";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Separator } from "@/components/ui/separator";
+import { DatePicker } from "@/components/DatePicker";
+import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
+import {
+  fetchBedsAndZones,
+  fetchCrops,
+  fetchFarmsAndWarehouses,
+  DEFAULT_CROP,
+} from "@/lib/scouting-api";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
 import { ymd } from "@/lib/utils";
 import { ProgressOverlay } from "./dashboard/ProgressOverlay";
@@ -57,8 +65,13 @@ import {
   type ProjectedGeometry,
   type ZoneGeoLike,
 } from "./maps/bed-projection";
-
-type Mode = "pest" | "disease";
+import { TristateTree } from "./trends/TristateTree";
+import {
+  buildStationTree,
+  buildObsTree,
+  parseSelection,
+  parseObs,
+} from "./trends/aggregate";
 
 function ghOf(zoneName: string): string {
   const i = zoneName.indexOf(" - Bed ");
@@ -87,8 +100,6 @@ interface HeatmapsGridPayload {
   cards: HeatmapCard[];
 }
 
-/** Group raw zone features by greenhouse so each card only walks its
- *  own slice. Memoised once at page load — geometry rarely changes. */
 function indexZonesByGh(zones: ZoneFeature[]): Record<string, ZoneGeoLike[]> {
   const out: Record<string, ZoneGeoLike[]> = {};
   for (const z of zones) {
@@ -104,9 +115,6 @@ function indexZonesByGh(zones: ZoneFeature[]): Record<string, ZoneGeoLike[]> {
   return out;
 }
 
-/** Lazy per-greenhouse projection. The first card to need a greenhouse
- *  pays the ~80 ms cost; every later card for the same greenhouse hits
- *  the memo. */
 function useProjectedGeometries(
   zonesByGh: Record<string, ZoneGeoLike[]>,
   needed: string[],
@@ -117,8 +125,6 @@ function useProjectedGeometries(
   useEffect(() => {
     const missing = needed.filter((gh) => !(gh in cache) && zonesByGh[gh]);
     if (!missing.length) return;
-    // Project synchronously; ~80 ms each, so a chunk of work but it's
-    // the only price we pay for not running this server-side.
     const next: Record<string, ProjectedGeometry | null> = { ...cache };
     for (const gh of missing) {
       next[gh] = projectGeometry(zonesByGh[gh]);
@@ -130,157 +136,291 @@ function useProjectedGeometries(
 }
 
 export function Heatmaps() {
-  const [mode, setMode] = useState<Mode>("pest");
-  const [filters, setFilters] = useState<MapFilterValue>(() => ({
-    crop: DEFAULT_CROP,
-    farm: ALL,
-    greenhouse: ALL,
-    ...defaultRange(),
-  }));
-  const [obsSel, setObsSel] = useState<string>(ALL);
+  const [crop, setCrop] = useState<string>(DEFAULT_CROP);
+  const [{ from, to }, setRange] = useState(defaultRange);
+  const [crops, setCrops] = useState<
+    Array<{ name: string; crop_name: string; farms?: string[] }>
+  >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
+  const [farmsByGh, setFarmsByGh] = useState<Record<string, string>>({});
+  const [stationChecks, setStationChecks] = useState<Set<string>>(new Set());
+  const [obsChecks, setObsChecks] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<HeatmapCard | null>(null);
 
-  // Reset obs picker when mode flips — pest list ≠ disease list.
-  useEffect(() => setObsSel(ALL), [mode]);
+  // Bootstrap data: crop list + farm→greenhouse map for the tree.
+  useEffect(() => {
+    fetchCrops().then((r) => {
+      if (!r.length) return;
+      const hasDefault = r.some((c) => c.crop_name === DEFAULT_CROP);
+      setCrops(
+        hasDefault
+          ? r
+          : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
+      );
+    });
+    fetchFarmsAndWarehouses().then((farms) => {
+      const ghToFarm: Record<string, string> = {};
+      Object.entries(farms).forEach(([farm, ghs]) => {
+        (ghs || []).forEach((g) => (ghToFarm[g] = farm));
+      });
+      setFarmsByGh(ghToFarm);
+    });
+  }, []);
 
-  // Aggregate fetch — one server call returns every applicable card.
-  const aggFilters = {
-    from_date: filters.from,
-    to_date:   filters.to,
-    crop:      filters.crop === DEFAULT_CROP ? "" : filters.crop,
-    farm:      filters.farm === ALL ? "" : filters.farm,
-    greenhouse: filters.greenhouse === ALL ? "" : filters.greenhouse,
-    mode,
-    observation: obsSel === ALL ? "" : obsSel,
-  };
+  // Server-side filter: only the crop, date range, and explicit greenhouse
+  // selections (if any) go to the server. Obs filtering is purely
+  // client-side from the returned card list.
+  const selections = useMemo(
+    () =>
+      Array.from(stationChecks)
+        .map(parseSelection)
+        .filter((s): s is NonNullable<typeof s> => !!s),
+    [stationChecks],
+  );
+
+  // Translate the tristate picker selections into a flat greenhouses
+  // list for the server. Empty list = no greenhouse filter (return all).
+  // We treat a "farm:Karen" check as "every greenhouse on Karen" by
+  // walking farmsByGh; "station:Karen|GH 01" passes the literal gh through.
+  const greenhouseFilter = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of selections) {
+      if (s.kind === "station") {
+        set.add(s.station);
+      } else {
+        for (const [gh, f] of Object.entries(farmsByGh)) {
+          if (f === s.farm) set.add(gh);
+        }
+      }
+    }
+    return Array.from(set);
+  }, [selections, farmsByGh]);
+
+  const aggFilters = useMemo(
+    () => ({
+      from_date: from,
+      to_date: to,
+      crop: crop === DEFAULT_CROP ? "" : crop,
+      greenhouses: greenhouseFilter,
+    }),
+    [from, to, crop, greenhouseFilter],
+  );
+
   const gridState = useDashboardAggregate<HeatmapsGridPayload>(
     "heatmaps_grid",
-    aggFilters,
+    aggFilters as any,
     true,
   );
   const cards = gridState.data?.cards ?? [];
 
-  // Geometry — fetched once, projected per-greenhouse on demand.
+  // Client-side obs filter from the tristate selections. Empty = all.
+  const obsFilter = useMemo(() => {
+    const list = Array.from(obsChecks)
+      .map(parseObs)
+      .filter((o): o is NonNullable<typeof o> => !!o);
+    return new Set(list.map((o) => `${o.kind}::${o.name}`));
+  }, [obsChecks]);
+
+  const visibleCards = useMemo(() => {
+    if (!obsFilter.size) return cards;
+    return cards.filter((c) =>
+      obsFilter.has(`${c.obsKind}::${c.obsName}`),
+    );
+  }, [cards, obsFilter]);
+
+  // Bed/zone geometry: fetched once, projected per greenhouse on demand.
   const [zones, setZones] = useState<ZoneFeature[]>([]);
   useEffect(() => {
     fetchBedsAndZones().then((vs) => setZones(flattenZones(vs)));
   }, []);
   const zonesByGh = useMemo(() => indexZonesByGh(zones), [zones]);
   const neededGhs = useMemo(
-    () => Array.from(new Set(cards.map((c) => c.greenhouse))),
-    [cards],
+    () => Array.from(new Set(visibleCards.map((c) => c.greenhouse))),
+    [visibleCards],
   );
   const geometryByGh = useProjectedGeometries(zonesByGh, neededGhs);
 
-  // Obs picker options — distinct names from the returned cards. No
-  // separate scan of raw entries; the server already grouped by obs.
-  const obsOptions = useMemo(() => {
-    const s = new Set<string>();
-    for (const c of cards) s.add(c.obsName);
-    return Array.from(s).sort();
-  }, [cards]);
+  // Tree options derived from the full (un-obs-filtered) card list — so
+  // un-checking and re-checking obs never depopulates the tree.
+  const treeData = useMemo(() => {
+    const farmStations: Record<string, Record<string, number>> = {};
+    const pestCounts: Record<string, number> = {};
+    const diseaseCounts: Record<string, number> = {};
+    for (const c of cards) {
+      const farm = farmsByGh[c.greenhouse] || "Unknown";
+      if (!farmStations[farm]) farmStations[farm] = {};
+      farmStations[farm][c.greenhouse] =
+        (farmStations[farm][c.greenhouse] || 0) + c.totalObs;
+      if (c.obsKind === "pest")
+        pestCounts[c.obsName] = (pestCounts[c.obsName] || 0) + c.totalObs;
+      else
+        diseaseCounts[c.obsName] =
+          (diseaseCounts[c.obsName] || 0) + c.totalObs;
+    }
+    return {
+      stationTree: buildStationTree(farmStations),
+      obsTree: buildObsTree(pestCounts, diseaseCounts),
+    };
+  }, [cards, farmsByGh]);
 
-  // Counters in the strip under the filter bar.
-  const totalObs = cards.reduce((s, c) => s + c.totalObs, 0);
-  const totalZones = cards.reduce((s, c) => s + c.zonesAffected, 0);
-  const distinctGh = new Set(cards.map((c) => c.greenhouse)).size;
-
-  // Color lookup straight from the server response (color is per-card).
-  const obsToColor = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const c of cards) m[c.obsName] = c.color;
-    return m;
-  }, [cards]);
-
-  const kind: MarkerKind = mode === "disease" ? "disease" : "pest";
+  // Counters strip
+  const totalObs = visibleCards.reduce((s, c) => s + c.totalObs, 0);
+  const totalZones = visibleCards.reduce((s, c) => s + c.zonesAffected, 0);
+  const distinctGh = new Set(visibleCards.map((c) => c.greenhouse)).size;
 
   return (
     <div className="flex flex-col min-h-svh">
       <MarkerDefs />
-      <MapHeader
-        title="Heatmaps"
-        subtitle="Per-greenhouse zone intensity · coloured by pest / disease"
-        value={filters}
-        onChange={setFilters}
-        rightSlot={
-          <div className="flex flex-col gap-1 min-w-32">
-            <Label>Mode</Label>
-            <Select value={mode} onValueChange={(v) => setMode(v as Mode)}>
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pest">Pests</SelectItem>
-                <SelectItem value="disease">Diseases</SelectItem>
-              </SelectContent>
-            </Select>
+      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <SidebarTrigger />
+            <Separator orientation="vertical" className="h-6" />
+            <div>
+              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
+                Heatmaps
+              </h1>
+              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
+                Per-greenhouse zone intensity · pest &amp; disease markers
+              </p>
+            </div>
           </div>
-        }
-      />
 
-      <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b bg-card/50">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="hm-obs" className="text-[0.7rem] uppercase">
-            {mode === "pest" ? "Pest" : "Disease"}
-          </Label>
-          <Select value={obsSel} onValueChange={setObsSel}>
-            <SelectTrigger id="hm-obs" className="h-8 w-48">
-              <SelectValue placeholder="All" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All</SelectItem>
-              {obsOptions.map((o) => (
-                <SelectItem key={o} value={o}>
-                  <span className="inline-flex items-center gap-2">
-                    <span
-                      className="h-2 w-2 rounded-full border"
-                      style={{ background: obsToColor[o] || "#888" }}
-                    />
-                    {o}
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col gap-1 min-w-32">
+              <Label htmlFor="hm-crop">Crop</Label>
+              <Select value={crop} onValueChange={setCrop}>
+                <SelectTrigger id="hm-crop" className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {crops.map((c) => (
+                    <SelectItem key={c.crop_name} value={c.crop_name}>
+                      {c.crop_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <Label>From</Label>
+              <DatePicker
+                value={from}
+                onChange={(v) => setRange({ from: v, to })}
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <Label>To</Label>
+              <DatePicker
+                value={to}
+                onChange={(v) => setRange({ from, to: v })}
+              />
+            </div>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 gap-2">
+                  <MapPin className="h-3.5 w-3.5" />
+                  Farms
+                  <span className="text-muted-foreground tabular-nums">
+                    {selections.length || "—"}
                   </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80">
+                <TristateTree
+                  nodes={treeData.stationTree}
+                  checked={stationChecks}
+                  onChange={setStationChecks}
+                  emptyHint="No farms in date range"
+                  searchPlaceholder="Search farms or greenhouses…"
+                />
+              </PopoverContent>
+            </Popover>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 gap-2">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Observations
+                  <span className="text-muted-foreground tabular-nums">
+                    {obsChecks.size
+                      ? Array.from(obsChecks).filter((id) =>
+                          id.startsWith("obs:") && !id.startsWith("obs:group:"),
+                        ).length || "—"
+                      : "—"}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80">
+                <TristateTree
+                  nodes={treeData.obsTree}
+                  checked={obsChecks}
+                  onChange={setObsChecks}
+                  emptyHint="No observations in date range"
+                  searchPlaceholder="Search observations…"
+                />
+              </PopoverContent>
+            </Popover>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => gridState.reload({ force: true })}
+              className="h-9"
+              title="Reload (force cache refresh)"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Reload
+            </Button>
+          </div>
         </div>
 
+        {gridState.error && (
+          <div className="text-xs text-[var(--sd-data-red)]">
+            Failed to load: {gridState.error}
+          </div>
+        )}
+      </header>
+
+      <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b bg-card/50">
         <span className="ml-auto tabular-nums">
           {distinctGh} greenhouses · {totalZones} zones · {totalObs}{" "}
-          {mode === "pest" ? "pest" : "disease"}
-          {totalObs === 1 ? "" : "s"}
+          observation{totalObs === 1 ? "" : "s"}
         </span>
       </div>
 
       <div className="flex-1 px-4 md:px-6 py-4 md:py-6">
         {gridState.loading && !gridState.data ? (
           <ProgressOverlay progress={gridState.progress} />
-        ) : gridState.error ? (
-          <Card className="p-8 text-sm text-[var(--sd-data-red)]">
-            Failed to load: {gridState.error}
-          </Card>
-        ) : !cards.length ? (
+        ) : !visibleCards.length ? (
           <Card className="p-12 text-center">
             <CardTitle className="text-base">No matching observations</CardTitle>
             <CardDescription className="mt-1">
-              Widen the date range or pick a different{" "}
-              {mode === "pest" ? "pest" : "disease"}.
+              Widen the date range, pick more stations, or clear the
+              observation filter.
             </CardDescription>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {cards.map((c) => {
+            {visibleCards.map((c) => {
               const geom = geometryByGh[c.greenhouse];
-              const markers: BedMarker[] = (c.recent[0]?.zoneObs
+              const kind: MarkerKind =
+                c.obsKind === "disease" ? "disease" : "pest";
+              const markers: BedMarker[] = c.recent[0]?.zoneObs
                 ? Object.entries(c.recent[0].zoneObs).map(([zone, count]) => ({
                     zone,
                     count,
                     kind,
                     color: c.color,
                   }))
-                : []) as BedMarker[];
+                : [];
               return (
                 <Card
-                  key={`${c.greenhouse}::${c.obsName}`}
+                  key={`${c.greenhouse}::${c.obsKind}::${c.obsName}`}
                   className="p-3 cursor-pointer hover:shadow-md transition-shadow"
                   onClick={() => setPicked(c)}
                 >
@@ -296,6 +436,7 @@ export function Heatmaps() {
                           <span className="truncate">{c.greenhouse}</span>
                         </CardTitle>
                         <CardDescription className="text-[0.7rem] truncate">
+                          <span className="capitalize">{c.obsKind}</span> ·{" "}
                           {c.obsName}
                           {c.lastDate ? ` · ${c.lastDate}` : ""}
                         </CardDescription>
@@ -337,8 +478,6 @@ export function Heatmaps() {
         )}
       </div>
 
-      {/* Expanded modal — 3-date strip. Markers come from the same payload
-          the card thumbnail used; no extra fetch on open. */}
       <Dialog open={!!picked} onOpenChange={(o) => !o && setPicked(null)}>
         <DialogContent className="max-w-[min(98vw,1600px)] max-h-[92vh] overflow-y-auto">
           {picked && (
@@ -375,6 +514,8 @@ export function Heatmaps() {
                       "3rd latest scouting",
                     ];
                     const geom = geometryByGh[picked.greenhouse];
+                    const kind: MarkerKind =
+                      picked.obsKind === "disease" ? "disease" : "pest";
                     const dayMarkers: BedMarker[] = slice
                       ? Object.entries(slice.zoneObs).map(([zone, count]) => ({
                           zone,
@@ -423,7 +564,9 @@ export function Heatmaps() {
                             />
                             <div className="text-[0.7rem] text-muted-foreground">
                               {Object.keys(slice.zoneObs).length} affected zone
-                              {Object.keys(slice.zoneObs).length === 1 ? "" : "s"}
+                              {Object.keys(slice.zoneObs).length === 1
+                                ? ""
+                                : "s"}
                             </div>
                           </>
                         ) : slice ? (

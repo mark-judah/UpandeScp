@@ -32,18 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { GreenhouseModal } from "./GreenhouseModal";
-import {
-  activeAlerts,
-  computeOverviewKpis,
-  dailySeries,
-  ghHealth,
-  rangeTotals,
-  recentActivity,
-  scoutPerformance,
-  scoutsPerDay,
-  topScouts,
-} from "./aggregate";
-import type { ProcessedData } from "@/lib/scouting-types";
+import type { OverviewPayload } from "./overview-types";
 import { weekTickFormatter } from "@/lib/iso-week";
 
 const series: ChartConfig = {
@@ -64,21 +53,41 @@ export function OverviewTab({
   fromDate,
   toDate,
 }: {
-  data: ProcessedData | null;
+  data: OverviewPayload | null;
   scoutLookup: Record<string, string>;
   fromDate: string;
   toDate: string;
 }) {
-  const k = computeOverviewKpis(data);
-  const daily = dailySeries(data);
-  const totals = rangeTotals(data);
+  const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, highAlerts: 0 };
+  const daily = data?.daily ?? [];
+  const totals = data
+    ? [
+        { name: "pests", value: data.rangeTotals.pests },
+        { name: "diseases", value: data.rangeTotals.diseases },
+        { name: "traps", value: data.rangeTotals.traps },
+      ]
+    : [
+        { name: "pests", value: 0 },
+        { name: "diseases", value: 0 },
+        { name: "traps", value: 0 },
+      ];
   const totalsMax = Math.max(1, totals.reduce((s, t) => s + t.value, 0));
-  const ghs = ghHealth(data);
-  const scouts = topScouts(data, scoutLookup);
-  const recent = recentActivity(data, scoutLookup);
-  const alerts = activeAlerts(data);
-  const scoutsDaily = scoutsPerDay(data);
-  const perf = scoutPerformance(data, scoutLookup);
+  const ghs = data?.ghHealth ?? [];
+  const scouts = (data?.topScouts ?? []).map((s) => ({
+    ...s,
+    name: s.scoutId,
+    displayName: scoutLookup[s.scoutId] || s.scoutId,
+  }));
+  const recent = (data?.recentActivity ?? []).map((r) => ({
+    ...r,
+    scout: scoutLookup[r.scoutId] || r.scoutId,
+  }));
+  const alerts = data?.activeAlerts ?? [];
+  const scoutsDaily = data?.scoutsPerDay ?? [];
+  const perf = (data?.scoutPerformance ?? []).map((p) => ({
+    ...p,
+    name: scoutLookup[p.scoutId] || p.scoutId,
+  }));
   const [openGh, setOpenGh] = useState<string | null>(null);
 
   return (
@@ -441,7 +450,7 @@ export function OverviewTab({
       </Card>
 
       <GreenhouseModal
-        data={data}
+        data={null as any}
         greenhouse={openGh}
         open={!!openGh}
         onOpenChange={(v) => !v && setOpenGh(null)}

@@ -264,7 +264,7 @@ export function Dashboard() {
             <>
               <TabsContent value="overview" className="mt-0">
                 <OverviewTab
-                  data={data}
+                  data={null as any}      // wired in T21
                   scoutLookup={scoutLookup}
                   fromDate={from}
                   toDate={to}

@@ -60,10 +60,11 @@ import {
   type VarietyNode,
 } from "@/lib/scouting-api";
 import {
+  createDraftSprayPlan,
   fetchCreatorBootstrap,
   type CreatorBootstrap,
 } from "@/lib/spray-plan-creator-api";
-import { call, FrappeError } from "@/lib/frappe";
+import { FrappeError } from "@/lib/frappe";
 import { ymd } from "@/lib/utils";
 import {
   pestColor,
@@ -234,6 +235,7 @@ export function ApplicationPlan() {
   const [bedNumbers, setBedNumbers] = useState<string>("");
   const [area, setArea] = useState<string>("");
   const [sprayTeam, setSprayTeam] = useState<string>("");
+  const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
 
   // Add-chemical dialog
   const [addOpen, setAddOpen] = useState(false);
@@ -396,6 +398,10 @@ export function ApplicationPlan() {
     setSelectedVarieties(new Set());
     setBedNumbers("");
   }, [scope, greenhouse]);
+
+  useEffect(() => {
+    setSelectedTargets(new Set());
+  }, [greenhouse, classification]);
 
   // Varieties present in the picked greenhouse (legacy "Specific Variety"
   // multi-select source).
@@ -635,16 +641,6 @@ export function ApplicationPlan() {
     setAddQuery("");
   };
 
-  /**
-   * Build the legacy form payload and call the same endpoint the
-   * server-rendered page used. Endpoint expects ``{payload: {raw_data:
-   * {...formData}}}`` (NOT a flat dict — the server pulls the form via
-   * ``frappe.form_dict["payload"]["raw_data"]``).
-   *
-   * On success the legacy page hard-redirects to the Desk Work Order
-   * page so the operator can submit the manufacturing flow there. We
-   * mirror that behaviour with ``window.location.assign``.
-   */
   const submit = async () => {
     if (!greenhouse || !sprayDate || !sprayType || !scope || !bom || !kit || !classification) {
       pushToast("err", "Fill in greenhouse, date, spray type, scope, kit, BOM and classification.");
@@ -689,14 +685,9 @@ export function ApplicationPlan() {
       return;
     }
 
-    // ── Build the legacy formData ─────────────────────────────────
-    // Targets come straight from the diagnose endpoint: when a specific
-    // pest is filtered it's that single name; otherwise it's every
-    // distinct obs name in the currently-scoped zones.
-    const targetsList: string[] =
-      diag.pest !== ALL ? [diag.pest] : diagnose?.targets ?? [];
+    const targetsList = Array.from(selectedTargets);
     if (!targetsList.length) {
-      pushToast("err", "No targets — pick a pest in the diagnose filter.");
+      pushToast("err", "Pick at least one target.");
       return;
     }
 
@@ -706,70 +697,49 @@ export function ApplicationPlan() {
         : scope === "Specific Bed(s)"
           ? bedNumbers.trim()
           : "";
-    const customVariety =
-      scope === "Specific Variety"
-        ? Array.from(selectedVarieties).join(",")
-        : "";
-    const kitWarehouse =
-      kitList.find((k) => k.kit === kit)?.warehouse || "";
-
-    const formData: Record<string, unknown> = {
-      custom_type: "Application Floor Plan",
-      custom_greenhouse: greenhouse,
-      custom_variety: customVariety,
-      custom_targets: targetsList,
-      custom_spray_type: sprayType,
-      custom_kit: kit,
-      custom_kit_warehouse: kitWarehouse,
-      custom_scope: scope,
-      custom_scope_details: customScopeDetails,
-      production_item: bom,
-      qty: 1,
-      custom_water_ph: parseFloat(waterPh) || 0,
-      custom_water_hardness: parseFloat(waterHardness) || 0,
-      custom_water_volume: parseFloat(waterVolume) || 0,
-      custom_area: parseFloat(area) || 0,
-      custom_spray_team: sprayTeam || "",
-      custom_scheduled_application_time: sprayDate || null,
-      chemicals: chemRows.map((c) => ({
-        chemical: c.item_name || c.item_code,
-        item_code: c.item_code,
-        uom: c.stock_uom,
-        application_rate: c.stock_qty,
-        source_warehouse: c.source,
-      })),
-    };
 
     const loaderId = pushToast("loading", "Submitting spray plan…", 0);
     setBusy(true);
     try {
-      const r: any = await call(
-        "upande_scp.serverscripts.create_application_work_order.createApplicationWorkOrder",
-        { payload: { raw_data: formData } },
-      );
-      const woName = r?.work_order_name || r?.work_order;
-      if (r?.status && r.status !== "success") {
-        dismissToast(loaderId);
-        pushToast("err", r?.message || "Server rejected the work order.");
-        return;
-      }
+      const draftPayload = {
+        custom_greenhouse: greenhouse,
+        custom_classification: classification,
+        custom_preventive_reason: preventiveReason,
+        custom_spray_type: sprayType,
+        custom_scope: scope,
+        custom_scope_details: customScopeDetails,
+        custom_kit: kit,
+        custom_spray_team: sprayTeam || null,
+        custom_water_ph: parseFloat(waterPh) || 0,
+        custom_water_hardness: parseFloat(waterHardness) || 0,
+        custom_water_volume: parseFloat(waterVolume) || 0,
+        custom_area: parseFloat(area) || 0,
+        custom_targets: targetsList,
+        production_item: bom,
+        chemicals: chemRows.map((c) => ({
+          item_code: c.item_code,
+          item_name: c.item_name,
+          uom: c.stock_uom,
+          source_warehouse: c.source,
+          application_rate: c.stock_qty,
+        })),
+        custom_scheduled_application_time: sprayDate || null,
+      };
+      const r = await createDraftSprayPlan(draftPayload as Parameters<typeof createDraftSprayPlan>[0]);
+      const woName = r?.work_order;
       dismissToast(loaderId);
       pushToast(
         "ok",
-        woName
-          ? `Created ${woName} — redirecting to Desk…`
-          : "Spray plan created — redirecting…",
+        woName ? `Added ${woName} to your draft batch.` : "Plan added to batch.",
       );
-      // Legacy parity: hard-redirect to the Frappe Desk Work Order page
-      // so the user can review and trigger the production flow from
-      // there. Small delay so the success toast is readable.
-      setTimeout(() => {
-        if (woName) {
-          window.location.assign(
-            `/app/work-order/${encodeURIComponent(woName)}`,
-          );
-        }
-      }, 1200);
+      // Reset form so the user can build the next plan in the batch
+      setClassification("");
+      setPreventiveReason("");
+      setSelectedTargets(new Set());
+      setChemRows([]);
+      setBom("");
+      // Notify the draft batch panel (mounted in Task 5) to refresh
+      window.dispatchEvent(new CustomEvent("spray-plan:draft-added"));
     } catch (e: any) {
       dismissToast(loaderId);
       pushToast("err", e?.message || "Submission failed");
@@ -1247,27 +1217,58 @@ export function ApplicationPlan() {
                 </Select>
               </div>
               <div className="col-span-2">
-                <Label>Targets</Label>
+                <Label className="flex items-center justify-between">
+                  <span>Targets</span>
+                  <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
+                    {selectedTargets.size} selected
+                  </span>
+                </Label>
                 <div className="mt-1 flex flex-wrap gap-1.5">
-                  {diag.pest !== ALL ? (
-                    <Badge variant="default" className="text-[0.65rem]">
-                      {diag.pest}
-                    </Badge>
-                  ) : (diagnose?.targets?.length ?? 0) > 0 ? (
-                    (diagnose?.targets ?? []).slice(0, 12).map((t) => (
-                        <Badge
+                  {(() => {
+                    const sourceList =
+                      classification === "Preventive"
+                        ? [
+                            ...(bootstrap?.pest_catalog || []).map((p) => p.name),
+                            ...(bootstrap?.disease_catalog || []).map((d) => d.name),
+                          ]
+                        : (diagnose?.targets ?? []);
+                    if (!sourceList.length) {
+                      return (
+                        <span className="text-xs text-muted-foreground">
+                          {classification === "Preventive"
+                            ? "Pest + Disease catalog is empty — add entries in Frappe Desk."
+                            : classification === "Curative"
+                              ? "No pest/disease observations in the chosen greenhouse yet."
+                              : "Pick Classification first."}
+                        </span>
+                      );
+                    }
+                    return sourceList.sort().map((t) => {
+                      const on = selectedTargets.has(t);
+                      return (
+                        <button
                           key={t}
-                          variant="outline"
-                          className="text-[0.65rem]"
+                          type="button"
+                          onClick={() =>
+                            setSelectedTargets((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(t)) next.delete(t);
+                              else next.add(t);
+                              return next;
+                            })
+                          }
+                          className={
+                            "px-2 py-0.5 rounded-full text-[0.7rem] border transition-colors " +
+                            (on
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-muted hover:bg-muted/70")
+                          }
                         >
                           {t}
-                        </Badge>
-                      ))
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      Pick a pest or filter the heatmap to define targets.
-                    </span>
-                  )}
+                        </button>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             </CardContent>
@@ -1475,7 +1476,7 @@ export function ApplicationPlan() {
         <div className="flex justify-end">
           <Button onClick={submit} disabled={busy || !greenhouse} size="lg">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Create Spray Plan
+            Add to batch
           </Button>
         </div>
       </section>

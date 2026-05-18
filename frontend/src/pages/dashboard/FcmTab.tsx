@@ -24,57 +24,13 @@ import {
 } from "@/components/ui/card";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
-import { trapPestBreakdown } from "./aggregate";
-import type { ProcessedData } from "@/lib/scouting-types";
+import type { FcmPayload } from "./fcm-types";
 import { weekTickFormatter } from "@/lib/iso-week";
 
-const FOCUS = /fcm|moth|codling|tortrix|noctuid/i;
-
-export function FcmTab({ data }: { data: ProcessedData | null }) {
-  const focusTraps = data
-    ? Object.values(data.traps).filter((t) => FOCUS.test(t.pest))
-    : [];
-  const focusPests = data
-    ? Object.values(data.pests).filter((p) => FOCUS.test(p.name))
-    : [];
-
-  const trapTotal = focusTraps.reduce((s, t) => s + t.total, 0);
-  const pestTotal = focusPests.reduce(
-    (s, p) => s + p.counts.reduce((a, c) => a + (c.count || 0), 0),
-    0,
-  );
-
-  const zones = new Set<string>();
-  focusPests.forEach((p) =>
-    p.counts.forEach((c) => {
-      if (c.zone) zones.add(c.zone);
-    }),
-  );
-  const ghs = new Set<string>();
-  focusTraps.forEach((t) =>
-    t.counts.forEach((c) => {
-      if (c.greenhouse) ghs.add(c.greenhouse);
-    }),
-  );
-
-  const dailyMap: Record<string, { date: string; traps: number; scouting: number }> = {};
-  focusTraps.forEach((t) =>
-    t.counts.forEach((c) => {
-      if (!dailyMap[c.date]) dailyMap[c.date] = { date: c.date, traps: 0, scouting: 0 };
-      dailyMap[c.date].traps += c.count || 0;
-    }),
-  );
-  focusPests.forEach((p) =>
-    p.counts.forEach((c) => {
-      if (!dailyMap[c.date]) dailyMap[c.date] = { date: c.date, traps: 0, scouting: 0 };
-      dailyMap[c.date].scouting += c.count || 0;
-    }),
-  );
-  const daily = Object.values(dailyMap).sort((a, b) =>
-    a.date.localeCompare(b.date),
-  );
-
-  const breakdown = trapPestBreakdown(data).filter((b) => FOCUS.test(b.name));
+export function FcmTab({ data }: { data: FcmPayload | null }) {
+  const k = data?.kpis ?? { trapTotal: 0, pestTotal: 0, focusZones: 0, greenhouseCount: 0 };
+  const daily = data?.daily ?? [];
+  const breakdown = data?.pestBreakdown ?? [];
 
   const lineConfig: ChartConfig = {
     traps: { label: "Trap catches", color: "var(--sd-data-purple)" },
@@ -87,10 +43,10 @@ export function FcmTab({ data }: { data: ProcessedData | null }) {
   return (
     <div className="flex flex-col gap-4">
       <KpiGrid cols={4}>
-        <Kpi label="Trap Counts" value={trapTotal} hint="focus pests · traps" />
-        <Kpi label="Non-Trap Counts" value={pestTotal} hint="focus pests · scouting" />
-        <Kpi label="Focus Zones" value={zones.size} hint="zones with focus pests" />
-        <Kpi label="Greenhouses" value={ghs.size} hint="impacted" />
+        <Kpi label="Trap Counts" value={k.trapTotal} hint="focus pests · traps" />
+        <Kpi label="Non-Trap Counts" value={k.pestTotal} hint="focus pests · scouting" />
+        <Kpi label="Focus Zones" value={k.focusZones} hint="zones with focus pests" />
+        <Kpi label="Greenhouses" value={k.greenhouseCount} hint="impacted" />
       </KpiGrid>
 
       <Card className="p-4">
@@ -165,25 +121,18 @@ export function FcmTab({ data }: { data: ProcessedData | null }) {
             <CardDescription>Top focus pests by scouting</CardDescription>
           </CardHeader>
           <CardContent className="p-0 flex flex-col gap-1.5">
-            {focusPests.length ? (
-              focusPests
-                .map((p) => ({
-                  name: p.name,
-                  total: p.counts.reduce((s, c) => s + (c.count || 0), 0),
-                }))
-                .sort((a, b) => b.total - a.total)
-                .slice(0, 10)
-                .map((r) => (
-                  <div
-                    key={r.name}
-                    className="flex items-center justify-between px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]"
-                  >
-                    <span className="text-sm font-medium">{r.name}</span>
-                    <span className="text-sm text-muted-foreground tabular-nums">
-                      {r.total}
-                    </span>
-                  </div>
-                ))
+            {(data?.focusPests ?? []).length ? (
+              (data?.focusPests ?? []).slice(0, 10).map((r) => (
+                <div
+                  key={r.name}
+                  className="flex items-center justify-between px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]"
+                >
+                  <span className="text-sm font-medium">{r.name}</span>
+                  <span className="text-sm text-muted-foreground tabular-nums">
+                    {r.total}
+                  </span>
+                </div>
+              ))
             ) : (
               <EmptyHint title="No focus pests" />
             )}

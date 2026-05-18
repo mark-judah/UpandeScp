@@ -10,7 +10,6 @@ import re
 
 import frappe
 
-from upande_scp.serverscripts.cache_utils import get_or_set, scouting_payload_version
 
 
 def resolve_greenhouse_scope(
@@ -67,12 +66,19 @@ def disease_severity(s) -> str | None:
 
 
 K_DASH_AGG_PREFIX = "scp:dash_agg"
-DASH_AGG_TTL = 120  # seconds
+# Versioning the key with K_SCOUTING_PAYLOAD_VERSION was the original design,
+# but every Scouting Entry insert/update bumps that stamp via
+# cache_utils.invalidate_on_change — on a busy site (mobile syncs) the
+# cache never warmed because the version flipped between cold compute and
+# warm read. Drop the version stamp; rely on TTL for staleness bounds, and
+# rely on the scp:scouting:dirty realtime channel for prompt invalidation
+# in the browser (frontend refetches, which hits a still-warm key but with
+# server-side recompute on TTL expiry).
+DASH_AGG_TTL = 60  # seconds — bound stale window when realtime push misses
 
 
 def _build_key(endpoint: str, filters: dict) -> str:
-    v = scouting_payload_version()
-    return f"{K_DASH_AGG_PREFIX}:v{v}:{endpoint}:{filter_hash(filters)}"
+    return f"{K_DASH_AGG_PREFIX}:{endpoint}:{filter_hash(filters)}"
 
 
 def cached_aggregate(endpoint: str, filters: dict, compute, force: bool = False):
@@ -80,16 +86,26 @@ def cached_aggregate(endpoint: str, filters: dict, compute, force: bool = False)
 
     `compute` is a zero-arg callable producing the payload. `force=True`
     skips the read and overwrites the cached value with a freshly computed
-    one. Backed by the same Redis adapter as ``cache_utils.get_or_set``;
-    any ``frappe.cache()`` failure propagates to the caller as a 500 — we
-    do not silently swallow it.
+    one.
+
+    We do NOT use ``cache_utils.get_or_set`` because Frappe's
+    ``RedisWrapper.get_value`` (called without ``expires=True``) memoizes
+    the cached value — including ``None`` — into ``frappe.local.cache``.
+    A subsequent ``set_value`` with ``expires_in_sec`` only updates Redis;
+    the in-process ``None`` memo stays, so future reads in the same
+    worker keep returning ``None`` and ``compute()`` runs every call.
+    The fix is to pass ``expires=True`` on the read, which the wrapper
+    documents as "don't store it in frappe.local".
     """
+    cache = frappe.cache()
     key = _build_key(endpoint, filters)
-    if force:
-        payload = compute()
-        frappe.cache().set_value(key, payload, expires_in_sec=DASH_AGG_TTL)
-        return payload
-    return get_or_set(key, compute, ttl=DASH_AGG_TTL)
+    if not force:
+        cached = cache.get_value(key, expires=True)
+        if cached is not None:
+            return cached
+    payload = compute()
+    cache.set_value(key, payload, expires_in_sec=DASH_AGG_TTL)
+    return payload
 
 
 def parent_filter_conditions(

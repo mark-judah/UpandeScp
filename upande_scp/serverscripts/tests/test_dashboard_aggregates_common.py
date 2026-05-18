@@ -94,22 +94,30 @@ class TestCachedAggregate(unittest.TestCase):
             calls["n"] += 1
             return {"x": 1}
 
-        with patch.object(_common, "get_or_set",
-                          side_effect=lambda key, builder, ttl: builder()) as gs_miss, \
-             patch.object(_common, "_build_key", return_value="key"):
+        fake_cache = unittest.mock.MagicMock()
+        # First call: cache miss → compute → set_value
+        fake_cache.get_value.return_value = None
+        with patch.object(_common, "_build_key", return_value="key"), \
+             patch.object(_common.frappe, "cache", return_value=fake_cache):
             v1 = _common.cached_aggregate("overview", {"a": 1}, compute, force=False)
         self.assertEqual(v1, {"x": 1})
         self.assertEqual(calls["n"], 1)
+        # The get must use expires=True (so the wrapper doesn't memoize None
+        # into frappe.local.cache and poison the next read).
+        fake_cache.get_value.assert_called_once_with("key", expires=True)
+        from upande_scp.serverscripts.dashboard_aggregates._common import DASH_AGG_TTL
+        fake_cache.set_value.assert_called_once_with("key", {"x": 1},
+                                                     expires_in_sec=DASH_AGG_TTL)
 
-        # Second call: get_or_set short-circuits and returns the cached value
-        # without invoking builder.
-        with patch.object(_common, "get_or_set",
-                          return_value={"x": 1}) as gs_hit, \
-             patch.object(_common, "_build_key", return_value="key"):
+        # Second call: cache hit → no compute, no set
+        fake_cache.reset_mock()
+        fake_cache.get_value.return_value = {"x": 1}
+        with patch.object(_common, "_build_key", return_value="key"), \
+             patch.object(_common.frappe, "cache", return_value=fake_cache):
             v2 = _common.cached_aggregate("overview", {"a": 1}, compute, force=False)
         self.assertEqual(v2, {"x": 1})
         self.assertEqual(calls["n"], 1)  # compute still only called once total
-        gs_hit.assert_called_once()
+        fake_cache.set_value.assert_not_called()
 
     def test_force_bypasses_cache(self):
         from upande_scp.serverscripts.dashboard_aggregates import _common
@@ -119,13 +127,15 @@ class TestCachedAggregate(unittest.TestCase):
 
         fake_cache = unittest.mock.MagicMock()
         with patch.object(_common, "_build_key", return_value="key"), \
-             patch.object(_common.frappe, "cache", return_value=fake_cache), \
-             patch.object(_common, "get_or_set") as gs:
+             patch.object(_common.frappe, "cache", return_value=fake_cache):
             v = _common.cached_aggregate("overview", {"a": 1}, compute, force=True)
         self.assertEqual(v, {"x": 2})
-        gs.assert_not_called()              # force path skips get_or_set
+        fake_cache.get_value.assert_not_called()  # force path skips the read
+        from upande_scp.serverscripts.dashboard_aggregates._common import (
+            DASH_AGG_TTL,
+        )
         fake_cache.set_value.assert_called_once_with("key", {"x": 2},
-                                                     expires_in_sec=120)
+                                                     expires_in_sec=DASH_AGG_TTL)
 
 
 class TestParentFilterConditions(unittest.TestCase):

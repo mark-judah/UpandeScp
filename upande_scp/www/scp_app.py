@@ -65,22 +65,14 @@ def get_context(context):
 	js_file = entry.get("file") or "scp.js"
 	css_files = entry.get("css") or [manifest.get("style.css", {}).get("file") or "scp.css"]
 
-	# Vite emits fixed names (scp.js / scp.css) so the browser cache pins to
-	# whatever it loaded first — hard-refresh won't pull new builds. Append
-	# the bundle's mtime as a query string so every rebuild gets a fresh URL.
-	app_path = frappe.get_app_path("upande_scp")
-	def _ver(rel_path):
-		full = os.path.join(app_path, "public", "dist", rel_path)
-		try:
-			return str(int(os.path.getmtime(full)))
-		except OSError:
-			return ""
-
-	js_ver = _ver(js_file)
-	css_ver = _ver(css_files[0])
-
-	context.scp_js = "/assets/upande_scp/dist/" + js_file + (f"?v={js_ver}" if js_ver else "")
-	context.scp_css = "/assets/upande_scp/dist/" + css_files[0] + (f"?v={css_ver}" if css_ver else "")
+	# Vite hashes the entry filename (scp-[hash].js / scp-[hash].css), so the
+	# URL itself busts the browser cache on every build. A ?v= suffix on the
+	# entry script would create two distinct module URLs — chunks import the
+	# entry by its bare hashed name, while the <script> tag would carry the
+	# query — and the browser would instantiate React twice, crashing hooks
+	# with the "Invalid hook call" / error #321.
+	context.scp_js = "/assets/upande_scp/dist/" + js_file
+	context.scp_css = "/assets/upande_scp/dist/" + css_files[0]
 
 	user_id = frappe.session.user
 	user_doc = frappe.db.get_value(

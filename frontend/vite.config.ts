@@ -18,10 +18,10 @@ export default defineConfig({
     cssCodeSplit: false,
     rollupOptions: {
       output: {
-        entryFileNames: "scp.js",
+        entryFileNames: "scp-[hash].js",
         assetFileNames: (assetInfo) => {
           const name = assetInfo.name || "";
-          if (name.endsWith(".css")) return "scp.css";
+          if (name.endsWith(".css")) return "scp-[hash].css";
           return "assets/[name]-[hash][extname]";
         },
         chunkFileNames: "chunks/[name]-[hash].js",

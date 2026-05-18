@@ -246,6 +246,29 @@ export async function primeAndDelta(
 }
 
 /**
+ * Drop the loaded-weeks pointer for every ISO week touching the last
+ * ``daysBack`` days. Called once per dashboard mount so retroactively-synced
+ * mobile entries (whose ``modified`` timestamp predates our delta watermark)
+ * still show up: the next ``hydrateRange`` call will re-fetch these weeks
+ * from the server, picking up any rows the watermark-based delta misses.
+ *
+ * Server-side per-week payloads are Redis-cached with a version stamp that
+ * bumps on every Scouting Entry insert/update, so a re-fetch is a single
+ * Redis read on warm cache or one fresh build per modified week. Cheap.
+ */
+export async function invalidateRecentWeeks(daysBack: number): Promise<void> {
+  if (!Number.isFinite(daysBack) || daysBack <= 0) return;
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(today.getDate() - daysBack);
+  const recent = weeksBetween(ymd(start), ymd(today));
+  if (!recent.length) return;
+  const known = await loadedWeeksSet();
+  recent.forEach((w) => known.delete(w.key));
+  await setMeta(META_LOADED_WEEKS, Array.from(known));
+}
+
+/**
  * Drop the loaded-weeks pointer for everything touched by ``month`` so the
  * next hydrate re-fetches those weeks. ``month`` is a "YYYY-MM" string;
  * passing ``null`` clears the entire week registry. Used by the realtime

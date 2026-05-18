@@ -4,6 +4,7 @@ import {
   getMissingWeeks,
   hydrateRange,
   invalidateMonth,
+  invalidateRecentWeeks,
   primeAndDelta,
   readEntries,
   runDelta,
@@ -109,43 +110,55 @@ export function useScouting({
     setError(null);
 
     (async () => {
+      // Force re-hydration of ISO weeks touching the last 14 days so any
+      // entries that landed on the server with an older modified timestamp
+      // (typical for offline-created mobile rows that sync days later) are
+      // refetched on every mount. The watermark-based runDelta below misses
+      // those rows by definition. Server caches the per-week payload so the
+      // extra fetches stay cheap.
+      await invalidateRecentWeeks(14);
       const missing = await getMissingWeeks(from, to);
       if (tokenRef.current !== token) return;
 
       if (missing.length === 0) {
-        // Cached path — Effect B will refresh data; nothing for us to do.
+        // Cached path — skip the hydrate spinner entirely. Effect B will
+        // re-render from IDB; the delta below picks up anything new.
         setLoading(false);
         setProgress(100);
         setWeeksLoaded(0);
         setWeeksTotal(0);
-        return;
-      }
+      } else {
+        setLoading(true);
+        setProgress(0);
+        setWeeksLoaded(0);
+        setWeeksTotal(missing.length);
 
-      setLoading(true);
-      setProgress(0);
-      setWeeksLoaded(0);
-      setWeeksTotal(missing.length);
-
-      try {
-        await hydrateRange(from, to, (loaded, total, week) => {
+        try {
+          await hydrateRange(from, to, (loaded, total, week) => {
+            if (tokenRef.current !== token) return;
+            setWeeksLoaded(loaded);
+            setWeeksTotal(total);
+            setProgress(Math.round((100 * loaded) / Math.max(1, total)));
+            console.log(`[scouting] hydrated week ${week} (${loaded}/${total})`);
+          });
           if (tokenRef.current !== token) return;
-          setWeeksLoaded(loaded);
-          setWeeksTotal(total);
-          setProgress(Math.round((100 * loaded) / Math.max(1, total)));
-          console.log(`[scouting] hydrated week ${week} (${loaded}/${total})`);
-        });
-        if (tokenRef.current !== token) return;
-        setProgress(100);
-      } catch (e: any) {
-        if (tokenRef.current !== token) return;
-        console.error("[scouting] hydrate failed", e);
-        setError(e?.message || "Failed to load scouting data");
-        return;
-      } finally {
-        if (tokenRef.current === token) setLoading(false);
+          setProgress(100);
+        } catch (e: any) {
+          if (tokenRef.current !== token) return;
+          console.error("[scouting] hydrate failed", e);
+          setError(e?.message || "Failed to load scouting data");
+          return;
+        } finally {
+          if (tokenRef.current === token) setLoading(false);
+        }
       }
 
-      // Background delta — quietly refresh when complete.
+      // Background delta — runs on BOTH paths. New entries created since
+      // our watermark land in IDB and the rebuild surfaces them. Without
+      // this on the cached path, return visits stayed pinned to the rows
+      // that existed at first hydrate; realtime pushes were the only way
+      // new entries showed up, and in self-hosted Frappe that channel is
+      // often silent.
       void runDelta()
         .then(async ({ added }) => {
           if (added > 0 && tokenRef.current === token) {

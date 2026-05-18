@@ -8,3 +8,4 @@ upande_scp.patches.v1_0.migrate_pest_stages_to_pest_filter
 upande_scp.patches.v1_0.seed_spray_plan_settings
 upande_scp.patches.v1_0.add_scouting_indexes
 upande_scp.patches.v1_0.create_spray_plan_creator_role
+upande_scp.patches.v1_0.backfill_spray_team_farm

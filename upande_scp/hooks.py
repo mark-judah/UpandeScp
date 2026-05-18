@@ -391,6 +391,8 @@ fixtures = [
                         "Work Order Item-custom_updated_required_qty",
                         # Farm fields
                         "Farm-spray_plan_creators",
+                        # Spray Team fields
+                        "Spray Team-custom_farm",
                 ]
             ]
         ]

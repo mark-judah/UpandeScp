@@ -6,8 +6,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import type { DashFilters } from "./aggregate";
-import { ALL_FILTER } from "./aggregate";
+export interface DashFilters {
+  observation: string;
+  section: string;
+  stage: string;
+}
+
+export const ALL_FILTER = "";
 
 const ALL_TOKEN = "__all__";
 

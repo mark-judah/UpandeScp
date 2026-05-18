@@ -128,31 +128,24 @@ def createApplicationWorkOrder():
         # -------------------------------------------------- 4. Work Order qty = number of 1000L tanks
         wo_qty = round(water_volume_l / 1000.0, 2)
 
-        # -------------------------------------------------- 5. Dynamic BOM? (only chemicals + rates)
+        # -------------------------------------------------- 5. Always use the template BOM
+        # Per the Spray Plan Creator workflow design (Part A §3.9), we no longer
+        # create dynamic BOMs from rate overrides. The user-entered application
+        # rates land only on the Work Order's required_items below. A boolean
+        # `custom_rate_overridden` flag is set when any rate diverges from the
+        # template so the change is auditable downstream.
         bom_to_use = bom_name
-        needs_dynamic = False
-
-        try:
-            needs_dynamic = should_create_dynamic_bom(template_bom=template_bom, user_chemicals=chemicals)
-
-            if needs_dynamic:
-                dynamic_bom_name = create_dynamic_bom(
-                    template_bom=template_bom,
-                    user_chemicals=chemicals,
-                    area_ha=area_ha,
-                    water_volume_l=water_volume_l,
-                    greenhouse=greenhouse,
-                    raw_data=raw_data
-                )
-                bom_to_use = dynamic_bom_name
-                frappe.msgprint(f"Dynamic BOM: <b>{dynamic_bom_name}</b>", indicator="blue")
-            else:
-                frappe.msgprint("Using template BOM", indicator="green")
-
-        except Exception as e:
-            frappe.log_error(frappe.get_traceback(), "Dynamic BOM Failed")
-            frappe.msgprint(f"Using template BOM: {str(e)}", indicator="orange")
-            bom_to_use = bom_name
+        template_rates = {
+            i.item_name: float(i.custom_application_rate or 0)
+            for i in template_bom.get("items", [])
+        }
+        rate_overridden = False
+        for chem in chemicals:
+            template_rate = template_rates.get(chem.get("chemical"), 0)
+            user_rate = float(chem.get("application_rate") or 0)
+            if round(template_rate, 4) != round(user_rate, 4):
+                rate_overridden = True
+                break
 
         # -------------------------------------------------- 5.5. Get BOM UOM for Work Order
         bom_doc = frappe.get_doc("BOM", bom_to_use)
@@ -224,6 +217,7 @@ def createApplicationWorkOrder():
             "custom_spray_team": team_str,
             "custom_scheduled_application_time": scheduled_application_time,
             "required_items": required_items,
+            "custom_rate_overridden": 1 if rate_overridden else 0,
         }
         # Mirror the user-picked scheduled time into the native
         # planned_start_date so ERPNext's stock-entry / scheduling logic
@@ -261,88 +255,6 @@ def createApplicationWorkOrder():
         frappe.log_error(frappe.get_traceback(), "Work Order Creation Failed")
         return {"status": "error", "message": str(e)}
 
-
-# ----------------------------------------------------------------------
-# HELPER: Should create dynamic BOM? (only chemicals + rates)
-# ----------------------------------------------------------------------
-def should_create_dynamic_bom(template_bom, user_chemicals):
-    template_items = {
-        i.item_name: float(i.custom_application_rate or 0)
-        for i in template_bom.get("items", [])
-    }
-    user_items = {
-        c["chemical"]: float(c.get("application_rate") or 0)
-        for c in user_chemicals
-    }
-
-    if set(template_items.keys()) != set(user_items.keys()):
-        return True
-
-    for name, t_rate in template_items.items():
-        u_rate = user_items[name]
-        if abs(t_rate - u_rate) > 0.001:
-            return True
-
-    return False
-
-
-# ----------------------------------------------------------------------
-# HELPER: Create dynamic BOM (1 × 1000L tank)
-# ----------------------------------------------------------------------
-def create_dynamic_bom(template_bom, user_chemicals, area_ha, water_volume_l, greenhouse, raw_data):
-    items = []
-    for c in user_chemicals:
-        name = c["chemical"]
-        rate = float(c.get("application_rate") or 0)
-        item = frappe.db.get_value("Item", {"item_name": name}, ["name", "stock_uom"], as_dict=1)
-        if not item:
-            frappe.throw(f"Item not found: {name}")
-
-        # Round BOM item qty to 2dp to stay consistent with wo_qty precision
-        qty = round(rate, 2)
-
-        items.append({
-            "item_code": item.name,
-            "item_name": name,
-            "qty": qty,
-            "stock_qty": qty,
-            "qty_consumed_per_unit": qty,
-            "uom": c.get("uom") or item.stock_uom,
-            "stock_uom": item.stock_uom,
-            "conversion_factor": 1,
-            "custom_application_rate": str(qty),
-            "custom_rate_unit": "Per 1000L",
-            "include_item_in_manufacturing": 1,  # CRITICAL: Enable material transfer
-            "description": name
-        })
-
-    desc = [
-        f"Auto-BOM for {greenhouse}",
-        f"Area: {area_ha:.4f} ha",
-        f"Volume: {water_volume_l:.0f} L",
-        f"Targets: {', '.join(raw_data.get('custom_targets', [])) or 'N/A'}"
-    ]
-
-    bom = frappe.get_doc({
-        "doctype": "BOM",
-        "item": template_bom.item,
-        "custom_item_group": template_bom.custom_item_group,
-        "quantity": 1,
-        "uom": "Tank Mix (1000L)",
-        "company": template_bom.company,
-        "is_active": 1,
-        "is_default": 0,
-        "custom_farm": template_bom.custom_farm,
-        "custom_business_unit": template_bom.custom_business_unit,
-        "custom_water_ph": raw_data.get("custom_water_ph"),
-        "custom_water_hardness": raw_data.get("custom_water_hardness"),
-        "items": items,
-        "description": "\n".join(desc)
-    })
-    bom.insert(ignore_permissions=True)
-    bom.submit()
-    frappe.db.commit()
-    return bom.name
 
 
 # ----------------------------------------------------------------------

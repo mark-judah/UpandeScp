@@ -375,3 +375,278 @@ class TestBuildMaterialIssue(FrappeTestCase):
         )
         with self.assertRaises(frappe.ValidationError):
             build_material_issue(manu, wo, emp)
+
+
+class TestAutoMaterialIssueIntegration(FrappeTestCase):
+    """End-to-end: Manufacture SE submit -> Material Issue auto-created + submitted.
+
+    We don't run a real BOM/Manufacture flow (heavy setup). Instead, we
+    construct a Manufacture SE document with the same shape that
+    erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry would
+    produce, submit it, and assert on the resulting Material Issue.
+    """
+
+    def _setup_world(self, suffix: str):
+        co = _ensure_company()
+        acc = _ensure_account(f"MI E2E Acc {suffix}", co)
+        _set_settings_default_account(acc)
+        farm = f"_Test Farm E2E {suffix}"
+        if not frappe.db.exists("Farm", farm):
+            frappe.get_doc({
+                "doctype": "Farm", "farm": farm, "company": co,
+            }).insert(ignore_permissions=True)
+        else:
+            # Ensure company is set correctly (in case it was created without it).
+            frappe.db.set_value("Farm", farm, "company", co, update_modified=False)
+        # Two warehouses: CSU (source for chemicals) and Greenhouse (target).
+        abbr = frappe.db.get_value("Company", co, "abbr")
+        csu_name = f"_Test CSU E2E {suffix}"
+        gh_name = f"_Test GH E2E {suffix}"
+        for wh, wtype in [(csu_name, "Farm"), (gh_name, "Greenhouse")]:
+            doc_name = f"{wh} - {abbr}"
+            if not frappe.db.exists("Warehouse", doc_name):
+                frappe.get_doc({
+                    "doctype": "Warehouse", "warehouse_name": wh,
+                    "company": co, "warehouse_type": wtype,
+                    "custom_farm": farm, "is_group": 0,
+                }).insert(ignore_permissions=True)
+        csu = f"{csu_name} - {abbr}"
+        gh = f"{gh_name} - {abbr}"
+        # A finished tank-mix item with the expense account on Item Default.
+        fg_item = _ensure_chemical_mix_item(f"MI-FG-E2E-{suffix}", co, acc)
+        # A raw-material item (chemical ingredient) — needed so the Manufacture SE
+        # passes the ERPNext "at least one raw material (s_warehouse)" check.
+        raw_item = _ensure_chemical_mix_item(f"MI-RAW-E2E-{suffix}", co, acc)
+        # Cost center: pick a leaf cost center for this company.
+        cost_center = frappe.db.get_value(
+            "Cost Center", {"company": co, "is_group": 0}, "name"
+        )
+        # The Application Floor Plan Work Order. We bypass the WO submit path
+        # entirely — db.set_value the bare minimum the handler reads.
+        # NOTE: Work Order uses naming_series autoname so we cannot force a name;
+        # we capture the auto-assigned name after insert.
+        wo = frappe.get_doc({
+            "doctype": "Work Order",
+            "company": co,
+            "production_item": fg_item,
+            "qty": 2,
+            "fg_warehouse": gh,
+            "wip_warehouse": csu,
+            "custom_type": "Application Floor Plan",
+            "custom_cost_center": cost_center,
+            "custom_greenhouse": gh,
+        })
+        wo.flags.ignore_mandatory = True
+        wo.flags.ignore_validate = True
+        wo.flags.ignore_links = True
+        # Temporarily suppress workflow validation for this insert.
+        _prev_install = frappe.flags.in_install
+        frappe.flags.in_install = "frappe"
+        try:
+            wo.insert(ignore_permissions=True)
+        finally:
+            frappe.flags.in_install = _prev_install
+        wo_name = wo.name
+        # Bypass workflow validation + submit gate by writing state directly to DB.
+        frappe.db.set_value("Work Order", wo_name, {
+            "workflow_state": "Tank Mix Manufactured",
+            "docstatus": 1,
+        }, update_modified=False)
+        # Add a Supervisor row to the per-plan team table.
+        emp = _ensure_employee(
+            f"EMP-MI-E2E-{suffix}", f"Supervisor E2E {suffix}"
+        )
+        frappe.get_doc({
+            "doctype": "Custom Spray Plan Team Member",
+            "parent": wo_name, "parenttype": "Work Order",
+            "parentfield": "custom_spray_plan_team_members",
+            "employee": emp, "role": "Supervisor",
+        }).insert(ignore_permissions=True)
+        # Reload so the child rows are attached.
+        wo = frappe.get_doc("Work Order", wo_name)
+        return {
+            "company": co, "farm": farm, "csu": csu, "gh": gh,
+            "fg_item": fg_item, "raw_item": raw_item, "cost_center": cost_center,
+            "wo": wo, "supervisor": emp, "expense_account": acc,
+        }
+
+    def _make_manufacture_se(self, *, ctx, qty: float = 2.0):
+        """Stock-in the finished item at the greenhouse (for the Material Issue
+        to consume) AND stock-in the raw material at CSU (for the Manufacture
+        SE raw-material row). Returns the GH receipt SE doc."""
+        # Pre-stock FG at the greenhouse.
+        receipt_gh = frappe.get_doc({
+            "doctype": "Stock Entry",
+            "stock_entry_type": "Material Receipt",
+            "purpose": "Material Receipt",
+            "company": ctx["company"],
+            "to_warehouse": ctx["gh"],
+            "items": [{
+                "item_code": ctx["fg_item"],
+                "qty": qty, "uom": "Litre", "stock_uom": "Litre",
+                "conversion_factor": 1,
+                "t_warehouse": ctx["gh"],
+                "basic_rate": 100, "allow_zero_valuation_rate": 1,
+                "expense_account": ctx["expense_account"],
+                "cost_center": ctx["cost_center"],
+            }],
+        })
+        receipt_gh.flags.ignore_permissions = True
+        receipt_gh.insert()
+        receipt_gh.submit()
+        # Pre-stock the raw material at CSU so the Manufacture SE has stock
+        # to consume on submit.
+        receipt_csu = frappe.get_doc({
+            "doctype": "Stock Entry",
+            "stock_entry_type": "Material Receipt",
+            "purpose": "Material Receipt",
+            "company": ctx["company"],
+            "to_warehouse": ctx["csu"],
+            "items": [{
+                "item_code": ctx["raw_item"],
+                "qty": qty, "uom": "Litre", "stock_uom": "Litre",
+                "conversion_factor": 1,
+                "t_warehouse": ctx["csu"],
+                "basic_rate": 100, "allow_zero_valuation_rate": 1,
+                "expense_account": ctx["expense_account"],
+                "cost_center": ctx["cost_center"],
+            }],
+        })
+        receipt_csu.flags.ignore_permissions = True
+        receipt_csu.insert()
+        receipt_csu.submit()
+        return receipt_gh
+
+    def test_manufacture_submit_creates_and_submits_material_issue(self):
+        ctx = self._setup_world("HAPPY")
+        # Pre-stock the greenhouse so the Material Issue can consume.
+        self._make_manufacture_se(ctx=ctx, qty=5)
+
+        # Build a Manufacture SE directly (skipping the BOM path which would
+        # require a full BOM scaffold). The handler only reads .purpose,
+        # .work_order, .items[is_finished_item], .to_warehouse, .company,
+        # .custom_location, .letter_head.
+        manu = frappe.get_doc({
+            "doctype": "Stock Entry",
+            "stock_entry_type": "Manufacture",
+            "purpose": "Manufacture",
+            "company": ctx["company"],
+            "from_bom": 1,
+            "work_order": ctx["wo"].name,
+            "fg_completed_qty": 2,
+            "to_warehouse": ctx["gh"],
+            "custom_location": "Ravine",
+            "letter_head": "",
+            "items": [
+                # Raw material row (required by ERPNext SE validation).
+                {
+                    "item_code": ctx["raw_item"], "is_finished_item": 0,
+                    "qty": 2, "uom": "Litre", "stock_uom": "Litre",
+                    "conversion_factor": 1, "s_warehouse": ctx["csu"],
+                    "basic_rate": 100, "allow_zero_valuation_rate": 1,
+                    "expense_account": ctx["expense_account"],
+                    "cost_center": ctx["cost_center"],
+                },
+                # Finished-good row — this is what the handler picks up.
+                {
+                    "item_code": ctx["fg_item"], "is_finished_item": 1,
+                    "qty": 2, "uom": "Litre", "stock_uom": "Litre",
+                    "conversion_factor": 1, "t_warehouse": ctx["gh"],
+                    "basic_rate": 100, "allow_zero_valuation_rate": 1,
+                    "expense_account": ctx["expense_account"],
+                    "cost_center": ctx["cost_center"],
+                },
+            ],
+        })
+        manu.flags.ignore_permissions = True
+        manu.flags.ignore_links = True
+        manu.insert()
+        manu.submit()
+
+        # Assert: exactly one Material Issue SE links back via the same WO.
+        rows = frappe.get_all(
+            "Stock Entry",
+            filters={
+                "purpose": "Material Issue",
+                "from_warehouse": ctx["gh"],
+                "docstatus": 1,
+            },
+            fields=["name", "company", "custom_farm", "custom_location"],
+        )
+        # Filter by our FG item.
+        matched = []
+        for row in rows:
+            child = frappe.db.get_value(
+                "Stock Entry Detail",
+                {"parent": row.name, "item_code": ctx["fg_item"]},
+                "name",
+            )
+            if child:
+                matched.append(row)
+        self.assertEqual(len(matched), 1, f"expected one Material Issue, got {matched}")
+        mi = frappe.get_doc("Stock Entry", matched[0].name)
+        self.assertEqual(mi.custom_farm, ctx["farm"])
+        self.assertEqual(mi.custom_location, "Ravine")
+        # Items shape:
+        self.assertEqual(len(mi.items), 1)
+        item_row = mi.items[0]
+        self.assertEqual(item_row.s_warehouse, ctx["gh"])
+        self.assertEqual(item_row.expense_account, ctx["expense_account"])
+        self.assertEqual(item_row.cost_center, ctx["cost_center"])
+        self.assertEqual(item_row.qty, 2)
+        # Employee row populated with the Supervisor.
+        self.assertEqual(len(mi.custom_employee_data), 1)
+        self.assertEqual(mi.custom_employee_data[0].employee, ctx["supervisor"])
+        # WO state -> Completed.
+        self.assertEqual(
+            frappe.db.get_value("Work Order", ctx["wo"].name, "workflow_state"),
+            "Completed",
+        )
+
+    def test_non_afp_wo_is_skipped(self):
+        ctx = self._setup_world("NONAFP")
+        # Flip custom_type so the handler bails.
+        frappe.db.set_value("Work Order", ctx["wo"].name, "custom_type", "Standard")
+        # Pre-stock again for safety.
+        self._make_manufacture_se(ctx=ctx, qty=5)
+        manu = frappe.get_doc({
+            "doctype": "Stock Entry",
+            "stock_entry_type": "Manufacture",
+            "purpose": "Manufacture",
+            "company": ctx["company"], "from_bom": 1,
+            "work_order": ctx["wo"].name, "fg_completed_qty": 2,
+            "to_warehouse": ctx["gh"],
+            "items": [
+                {
+                    "item_code": ctx["raw_item"], "is_finished_item": 0,
+                    "qty": 2, "uom": "Litre", "stock_uom": "Litre",
+                    "conversion_factor": 1, "s_warehouse": ctx["csu"],
+                    "basic_rate": 100, "allow_zero_valuation_rate": 1,
+                    "expense_account": ctx["expense_account"],
+                    "cost_center": ctx["cost_center"],
+                },
+                {
+                    "item_code": ctx["fg_item"], "is_finished_item": 1,
+                    "qty": 2, "uom": "Litre", "stock_uom": "Litre",
+                    "conversion_factor": 1, "t_warehouse": ctx["gh"],
+                    "basic_rate": 100, "allow_zero_valuation_rate": 1,
+                    "expense_account": ctx["expense_account"],
+                    "cost_center": ctx["cost_center"],
+                },
+            ],
+        })
+        manu.flags.ignore_permissions = True
+        manu.flags.ignore_links = True
+        manu.insert()
+        manu.submit()
+        # Assert: no Material Issue created since the last test by this manu.
+        rows = frappe.get_all(
+            "Stock Entry",
+            filters={
+                "purpose": "Material Issue",
+                "from_warehouse": ctx["gh"],
+                "docstatus": 1,
+                "creation": [">=", manu.creation],
+            },
+        )
+        self.assertEqual(rows, [])

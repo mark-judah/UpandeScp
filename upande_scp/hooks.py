@@ -204,6 +204,12 @@ doc_events = {
     "Pests Scouting Entry": _SCP_SCOUTING_EVENTS,
     "Diseases Scouting Entry": _SCP_SCOUTING_EVENTS,
     "Trap Scouting Entry": _SCP_SCOUTING_EVENTS,
+    # Auto-create + submit the Material Issue when a Manufacture Stock Entry
+    # for an Application Floor Plan Work Order is submitted. Runs in the same
+    # transaction as the submit — any throw rolls the submit back.
+    "Stock Entry": {
+        "on_submit": "upande_scp.serverscripts.spray_plan_creator.auto_material_issue.on_manufacture_submit",
+    },
 }
 
 # Scheduled Tasks

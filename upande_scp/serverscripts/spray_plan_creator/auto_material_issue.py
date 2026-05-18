@@ -166,16 +166,39 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
 
 def on_manufacture_submit(doc, method):
     """Stock Entry on_submit hook. No-op unless this is a Manufacture SE for
-    an Application Floor Plan Work Order."""
+    an Application Floor Plan Work Order. On match, create + submit a Material
+    Issue SE in the same transaction."""
     if getattr(doc, "purpose", None) != "Manufacture":
         return None
-    work_order = getattr(doc, "work_order", None)
-    if not work_order:
+    work_order_name = getattr(doc, "work_order", None)
+    if not work_order_name:
         return None
 
-    wo_type = frappe.db.get_value("Work Order", work_order, "custom_type")
+    wo_type = frappe.db.get_value("Work Order", work_order_name, "custom_type")
     if wo_type != AFP_TYPE:
         return None
 
-    # Real work lands in subsequent tasks.
-    return None
+    wo = frappe.get_doc("Work Order", work_order_name)
+    supervisor = resolve_supervisor_employee(wo)
+    payload = build_material_issue(doc, wo, supervisor)
+
+    mi = frappe.get_doc(payload)
+    mi.flags.ignore_permissions = True
+    mi.flags.ignore_links = True
+    mi.insert()
+    mi.submit()
+
+    frappe.db.set_value(
+        "Work Order", work_order_name, "workflow_state", "Completed",
+        update_modified=True,
+    )
+    try:
+        wo.add_comment(
+            "Workflow",
+            f"Auto Material Issue {mi.name} submitted by {frappe.session.user}. "
+            "State: Tank Mix Manufactured -> Completed.",
+        )
+    except Exception:
+        # Comment failures must not block the submission chain.
+        pass
+    return mi.name

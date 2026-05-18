@@ -212,6 +212,8 @@ export function ApplicationPlan() {
   const [scope, setScope] = useState<string>("");
   const [bom, setBom] = useState<string>("");
   const [kit, setKit] = useState<string>("");
+  const [classification, setClassification] = useState<"" | "Curative" | "Preventive">("");
+  const [preventiveReason, setPreventiveReason] = useState<string>("");
   const [waterPh, setWaterPh] = useState<string>("");
   const [waterHardness, setWaterHardness] = useState<string>("");
   const [waterVolume, setWaterVolume] = useState<string>("");
@@ -644,8 +646,12 @@ export function ApplicationPlan() {
    * mirror that behaviour with ``window.location.assign``.
    */
   const submit = async () => {
-    if (!greenhouse || !sprayDate || !sprayType || !scope || !bom || !kit) {
-      pushToast("err", "Fill in greenhouse, date, spray type, scope, kit and BOM.");
+    if (!greenhouse || !sprayDate || !sprayType || !scope || !bom || !kit || !classification) {
+      pushToast("err", "Fill in greenhouse, date, spray type, scope, kit, BOM and classification.");
+      return;
+    }
+    if (classification === "Preventive" && preventiveReason.trim().length < 20) {
+      pushToast("err", "Preventive plans need a reason of at least 20 characters.");
       return;
     }
     if (!chemRows.length) {
@@ -1058,6 +1064,45 @@ export function ApplicationPlan() {
               <CardTitle className="text-sm">Spray Details</CardTitle>
             </CardHeader>
             <CardContent className="p-0 grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1 col-span-2">
+                <Label>Classification</Label>
+                <div className="flex gap-2">
+                  {(["Curative", "Preventive"] as const).map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setClassification(c)}
+                      className={
+                        "px-3 py-1.5 rounded-md border text-xs transition-colors " +
+                        (classification === c
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted hover:bg-muted/70")
+                      }
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {classification === "Preventive" && (
+                <div className="flex flex-col gap-1 col-span-2">
+                  <Label className="flex items-center justify-between">
+                    <span>Preventive Reason</span>
+                    <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
+                      required (min 20 chars)
+                    </span>
+                  </Label>
+                  <textarea
+                    value={preventiveReason}
+                    onChange={(e) => setPreventiveReason(e.target.value)}
+                    placeholder="Why does this routine spray make sense without an observation trigger?"
+                    rows={3}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-xs"
+                  />
+                </div>
+              )}
+
               <div className="flex flex-col gap-1 col-span-2">
                 <Label>Scheduled Application Date</Label>
                 <DatePicker value={sprayDate} onChange={setSprayDate} />

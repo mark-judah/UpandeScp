@@ -131,3 +131,105 @@ class TestResolveSupervisorEmployee(FrappeTestCase):
         wo = _FakeWO(custom_spray_plan_team_members=[])
         with self.assertRaises(frappe.ValidationError):
             resolve_supervisor_employee(wo)
+
+
+from upande_scp.serverscripts.spray_plan_creator.auto_material_issue import (
+    resolve_expense_account,
+)
+
+
+def _ensure_company(name: str = "_Test Auto MI Co", abbr: str = "TAMC") -> str:
+    if frappe.db.exists("Company", name):
+        return name
+    doc = frappe.get_doc({
+        "doctype": "Company",
+        "company_name": name,
+        "abbr": abbr,
+        "default_currency": "KES",
+        "country": "Kenya",
+    })
+    doc.flags.ignore_mandatory = True
+    doc.insert(ignore_permissions=True)
+    return name
+
+
+def _ensure_account(name: str, company: str, account_type: str = "Expense Account") -> str:
+    """Create a leaf Account under the company's tree. Returns the docname."""
+    abbr = frappe.db.get_value("Company", company, "abbr")
+    docname = f"{name} - {abbr}"
+    if frappe.db.exists("Account", docname):
+        return docname
+    parent = frappe.db.get_value(
+        "Account",
+        {"company": company, "is_group": 1, "account_type": ["in", ["", "Expense Account"]]},
+        "name",
+        order_by="lft ASC",
+    )
+    if not parent:
+        # Pick any group as parent.
+        parent = frappe.db.get_value("Account", {"company": company, "is_group": 1}, "name")
+    doc = frappe.get_doc({
+        "doctype": "Account",
+        "account_name": name,
+        "parent_account": parent,
+        "company": company,
+        "account_type": account_type,
+        "is_group": 0,
+    })
+    doc.flags.ignore_mandatory = True
+    doc.insert(ignore_permissions=True)
+    return doc.name
+
+
+def _ensure_chemical_mix_item(code: str, company: str | None = None,
+                              expense_account: str | None = None) -> str:
+    if frappe.db.exists("Item", code):
+        frappe.delete_doc("Item", code, force=1, ignore_permissions=True)
+    item_group = "Chemical Mix" if frappe.db.exists("Item Group", "Chemical Mix") else "All Item Groups"
+    doc = frappe.get_doc({
+        "doctype": "Item",
+        "item_code": code,
+        "item_name": code,
+        "item_group": item_group,
+        "stock_uom": "Litre",
+    })
+    if company and expense_account:
+        doc.append("item_defaults", {
+            "company": company,
+            "expense_account": expense_account,
+        })
+    doc.flags.ignore_mandatory = True
+    doc.insert(ignore_permissions=True)
+    return doc.name
+
+
+def _set_settings_default_account(account: str | None) -> None:
+    settings = frappe.get_single("Spray Plan Settings")
+    settings.default_chemical_expense_account = account or ""
+    settings.flags.ignore_permissions = True
+    settings.flags.ignore_validate = True
+    settings.save()
+
+
+class TestResolveExpenseAccount(FrappeTestCase):
+    def test_item_default_wins(self):
+        co = _ensure_company()
+        item_acc = _ensure_account("Chemicals Expense MI Test", co)
+        fallback = _ensure_account("Fallback MI Test", co)
+        _set_settings_default_account(fallback)
+        item = _ensure_chemical_mix_item("MI-TANK-1", co, item_acc)
+        self.assertEqual(resolve_expense_account(item, co), item_acc)
+
+    def test_falls_back_to_spray_plan_settings(self):
+        co = _ensure_company()
+        fallback = _ensure_account("Fallback MI Test 2", co)
+        _set_settings_default_account(fallback)
+        item = _ensure_chemical_mix_item("MI-TANK-2", co, None)  # no Item Default
+        self.assertEqual(resolve_expense_account(item, co), fallback)
+
+    def test_throws_when_neither_set(self):
+        co = _ensure_company()
+        _set_settings_default_account(None)
+        item = _ensure_chemical_mix_item("MI-TANK-3", co, None)
+        with self.assertRaises(frappe.ValidationError):
+            resolve_expense_account(item, co)

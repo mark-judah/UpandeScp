@@ -399,6 +399,7 @@ fixtures = [
                         "Work Order-custom_cost_center",
                         "Work Order-custom_rate_overridden",
                         "Work Order-custom_weather_snapshot",
+                        "Work Order-custom_spray_plan_team_members",
                 ]
             ]
         ]

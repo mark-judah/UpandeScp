@@ -1,0 +1,23 @@
+{
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "name": "Custom Spray Plan Team Member",
+ "module": "Upande Scp",
+ "istable": 1,
+ "is_child_table": 1,
+ "creation": "2026-05-18 00:00:00.000000",
+ "modified": "2026-05-18 00:00:00.000000",
+ "modified_by": "Administrator", "owner": "Administrator",
+ "actions": [], "links": [], "permissions": [],
+ "sort_field": "modified", "sort_order": "DESC", "states": [],
+ "index_web_pages_for_search": 0, "track_changes": 0,
+ "field_order": ["employee", "employee_name", "role"],
+ "fields": [
+  {"fieldname": "employee", "fieldtype": "Link", "options": "Employee",
+   "label": "Employee", "in_list_view": 1, "reqd": 1},
+  {"fieldname": "employee_name", "fieldtype": "Data", "label": "Name",
+   "fetch_from": "employee.employee_name", "in_list_view": 1, "read_only": 1},
+  {"fieldname": "role", "fieldtype": "Data", "label": "Role",
+   "in_list_view": 1, "description": "e.g. Supervisor, Pump Operator, Sprayer"}
+ ]
+}

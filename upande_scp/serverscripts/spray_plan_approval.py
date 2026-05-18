@@ -48,7 +48,7 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
     params = {"type": AFP_TYPE}
     where = [
         "custom_type = %(type)s",
-        "status = 'Not Started'",
+        "workflow_state = 'Awaiting Approval'",
         "docstatus = 1",
     ]
 
@@ -286,6 +286,17 @@ def approve_single_work_order(wo_name):
                 )
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"QR gen – {se_doc.name} / {item.item_code}")
+
+    # Bump workflow state to Approved (Task 16 of Spray Plan A1)
+    frappe.db.set_value("Work Order", wo_name, "workflow_state", "Approved", update_modified=True)
+    try:
+        frappe.get_doc("Work Order", wo_name).add_comment(
+            "Workflow",
+            f"Approved by {frappe.session.user}. State: Awaiting Approval -> Approved.",
+        )
+    except Exception:
+        # Comment add failure must not block approval
+        pass
 
     return {
         "wo":        wo_name,

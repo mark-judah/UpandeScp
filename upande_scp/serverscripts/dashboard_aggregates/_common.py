@@ -90,3 +90,42 @@ def cached_aggregate(endpoint: str, filters: dict, compute, force: bool = False)
         frappe.cache().set_value(key, payload, expires_in_sec=DASH_AGG_TTL)
         return payload
     return get_or_set(key, compute, ttl=DASH_AGG_TTL)
+
+
+def parent_filter_conditions(
+    from_date: str,
+    to_date: str,
+    crop: str,
+    greenhouse_scope: list | None,
+) -> tuple:
+    """Build a ``(sql_where, params_dict)`` pair restricting tabScouting Entry.
+
+    Returns ('1=0', {}) if greenhouse_scope is an empty list (i.e. farm with
+    no greenhouses — filter excludes everything). None means no greenhouse
+    filter at all.
+    """
+    if greenhouse_scope == []:
+        return "1=0", {}
+
+    parts = ["se.date_of_capture BETWEEN %(from_date)s AND %(to_date)s"]
+    params = {"from_date": from_date, "to_date": to_date}
+
+    if crop:
+        parts.append("se.crop_scouted = %(crop)s")
+        params["crop"] = crop
+
+    if greenhouse_scope is not None:
+        # MySQL/MariaDB: place-holder list expansion via frappe.db.escape
+        gh_list = ", ".join(frappe.db.escape(g) for g in greenhouse_scope)
+        parts.append(f"(se.greenhouse IN ({gh_list}) OR se.block IN ({gh_list}))")
+
+    return " AND ".join(parts), params
+
+
+def coerce_date(value, default=None) -> str:
+    """Accept date/datetime/'YYYY-MM-DD' and return canonical 'YYYY-MM-DD'."""
+    if not value:
+        return default or ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()[:10]
+    return str(value)[:10]

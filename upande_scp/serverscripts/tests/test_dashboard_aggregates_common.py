@@ -126,3 +126,32 @@ class TestCachedAggregate(unittest.TestCase):
         gs.assert_not_called()              # force path skips get_or_set
         fake_cache.set_value.assert_called_once_with("key", {"x": 2},
                                                      expires_in_sec=120)
+
+
+class TestParentFilterConditions(unittest.TestCase):
+    def test_includes_date_range_always(self):
+        from upande_scp.serverscripts.dashboard_aggregates._common import (
+            parent_filter_conditions,
+        )
+        where, params = parent_filter_conditions("2026-04-18", "2026-05-18", "", None)
+        self.assertIn("BETWEEN %(from_date)s AND %(to_date)s", where)
+        self.assertEqual(params["from_date"], "2026-04-18")
+        self.assertEqual(params["to_date"], "2026-05-18")
+
+    def test_empty_scope_excludes_all(self):
+        from upande_scp.serverscripts.dashboard_aggregates._common import (
+            parent_filter_conditions,
+        )
+        where, params = parent_filter_conditions("2026-04-18", "2026-05-18", "",
+                                                  greenhouse_scope=[])
+        self.assertEqual(where, "1=0")
+        self.assertEqual(params, {})
+
+    def test_crop_clause_added(self):
+        from upande_scp.serverscripts.dashboard_aggregates._common import (
+            parent_filter_conditions,
+        )
+        where, params = parent_filter_conditions("2026-04-18", "2026-05-18",
+                                                  "Rose", None)
+        self.assertIn("se.crop_scouted = %(crop)s", where)
+        self.assertEqual(params["crop"], "Rose")

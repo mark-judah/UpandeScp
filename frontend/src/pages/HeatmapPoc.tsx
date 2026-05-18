@@ -290,7 +290,6 @@ export function HeatmapPoc() {
                         <BedSvg
                           geometry={geom}
                           markers={markers}
-                          defsId={`poc-${rowIdx}-${i}`}
                           className="w-full h-auto"
                         />
                       </div>

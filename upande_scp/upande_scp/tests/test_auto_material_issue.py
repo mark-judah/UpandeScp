@@ -650,3 +650,73 @@ class TestAutoMaterialIssueIntegration(FrappeTestCase):
             },
         )
         self.assertEqual(rows, [])
+
+
+class TestAutoMaterialIssueAtomic(FrappeTestCase):
+    def test_missing_fallback_rolls_back_manufacture_submit(self):
+        # Reuse the integration helpers via instantiation.
+        helper = TestAutoMaterialIssueIntegration()
+        ctx = helper._setup_world("ATOMIC")
+        # Pre-stock so we don't fail for negative-stock reasons.
+        helper._make_manufacture_se(ctx=ctx, qty=5)
+
+        # Strip BOTH the Item Default expense account AND the Settings fallback.
+        frappe.db.sql(
+            "DELETE FROM `tabItem Default` WHERE parent=%s AND company=%s",
+            (ctx["fg_item"], ctx["company"]),
+        )
+        _set_settings_default_account(None)
+
+        manu = frappe.get_doc({
+            "doctype": "Stock Entry",
+            "stock_entry_type": "Manufacture",
+            "purpose": "Manufacture",
+            "company": ctx["company"], "from_bom": 1,
+            "work_order": ctx["wo"].name, "fg_completed_qty": 2,
+            "to_warehouse": ctx["gh"],
+            "items": [
+                {
+                    "item_code": ctx["raw_item"], "is_finished_item": 0,
+                    "qty": 2, "uom": "Litre", "stock_uom": "Litre",
+                    "conversion_factor": 1, "s_warehouse": ctx["csu"],
+                    "basic_rate": 100, "allow_zero_valuation_rate": 1,
+                    "expense_account": ctx["expense_account"],
+                    "cost_center": ctx["cost_center"],
+                },
+                {
+                    "item_code": ctx["fg_item"], "is_finished_item": 1,
+                    "qty": 2, "uom": "Litre", "stock_uom": "Litre",
+                    "conversion_factor": 1, "t_warehouse": ctx["gh"],
+                    "basic_rate": 100, "allow_zero_valuation_rate": 1,
+                    "expense_account": ctx["expense_account"],
+                    "cost_center": ctx["cost_center"],
+                },
+            ],
+        })
+        manu.flags.ignore_permissions = True
+        manu.flags.ignore_links = True
+        manu.insert()
+        with self.assertRaises(frappe.ValidationError):
+            manu.submit()
+
+        # Manufacture must not be submitted (docstatus stays at 0 in the DB).
+        self.assertEqual(
+            frappe.db.get_value("Stock Entry", manu.name, "docstatus"),
+            0,
+            "Manufacture SE should not be submitted when auto-issue throws",
+        )
+        # No Material Issue created.
+        rows = frappe.get_all(
+            "Stock Entry",
+            filters={
+                "purpose": "Material Issue",
+                "from_warehouse": ctx["gh"],
+                "creation": [">=", manu.creation],
+            },
+        )
+        self.assertEqual(rows, [])
+        # WO state stays at whatever was set before (Tank Mix Manufactured).
+        self.assertEqual(
+            frappe.db.get_value("Work Order", ctx["wo"].name, "workflow_state"),
+            "Tank Mix Manufactured",
+        )

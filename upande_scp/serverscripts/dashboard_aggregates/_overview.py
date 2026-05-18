@@ -39,18 +39,24 @@ def overview(args: dict, force: bool = False) -> dict:
 def _build(from_date, to_date, crop, scope) -> dict:
     where, params = parent_filter_conditions(from_date, to_date, crop, scope)
 
-    kpis = _kpis(where, params)
+    kpis    = _kpis(where, params)
+    obs     = _observation_rows(where, params)
+    daily, range_totals = _daily_and_totals(obs)
+    gh_health, alerts_total = _gh_health(obs)
+    active = _active_alerts(obs)
+
+    kpis["highAlerts"] = alerts_total
 
     return {
         "kpis": kpis,
-        "daily": [],            # next steps fill these
-        "rangeTotals": {"pests": 0, "diseases": 0, "traps": 0},
-        "ghHealth": [],
-        "topScouts": [],
+        "daily": daily,
+        "rangeTotals": range_totals,
+        "ghHealth": gh_health,
+        "topScouts": [],         # filled in T8
         "scoutsPerDay": [],
         "scoutPerformance": [],
         "recentActivity": [],
-        "activeAlerts": [],
+        "activeAlerts": active,
     }
 
 
@@ -71,5 +77,134 @@ def _kpis(where: str, params: dict) -> dict:
         "totalScouts":     int(row.get("total_scouts") or 0),
         "zonesScouted":    int(row.get("zones_scouted") or 0),
         "greenhouseCount": int(row.get("gh_count") or 0),
-        "highAlerts":      0,  # set in Task 7 alongside ghHealth
+        "highAlerts":      0,  # overwritten in _build after _gh_health runs
     }
+
+
+def _observation_rows(where: str, params: dict) -> list:
+    """One row per (entry, observation kind, observation row). Sub-queries
+    UNION pests/diseases/traps so a single Python pass can derive most of
+    the Overview metrics."""
+    return frappe.db.sql(
+        f"""
+        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
+               se.scouts_name, se.zone, se.bed, se.tree,
+               'pest'    AS kind,
+               p.pest    AS obs_name, p.count AS count,
+               p.stage   AS stage,    p.plant_section AS plant_section
+        FROM `tabScouting Entry` se
+        JOIN `tabPests Scouting Entry` p ON p.parent = se.name
+        WHERE {where}
+        UNION ALL
+        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
+               se.scouts_name, se.zone, se.bed, se.tree,
+               'disease' AS kind,
+               d.disease AS obs_name, NULL AS count,
+               d.stage   AS stage, d.plant_section AS plant_section
+        FROM `tabScouting Entry` se
+        JOIN `tabDiseases Scouting Entry` d ON d.parent = se.name
+        WHERE {where}
+        UNION ALL
+        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
+               se.scouts_name, se.zone, se.bed, se.tree,
+               'trap'    AS kind,
+               t.trap    AS obs_name, t.count AS count,
+               NULL      AS stage, t.location AS plant_section
+        FROM `tabScouting Entry` se
+        JOIN `tabTrap Scouting Entry` t ON t.parent = se.name
+        WHERE {where}
+        """,
+        params,
+        as_dict=True,
+    )
+
+
+def _daily_and_totals(obs: list) -> tuple:
+    """Counts a row per (date, kind). One observation = one count; this mirrors
+    the JS aggregator's append() which pushes one element per child row."""
+    by_date = {}
+    totals = {"pests": 0, "diseases": 0, "traps": 0}
+    for r in obs:
+        d = str(r.date_of_capture)[:10]
+        bucket = by_date.setdefault(d, {"date": d, "pests": 0, "diseases": 0, "traps": 0})
+        if r.kind == "pest":
+            bucket["pests"] += 1
+            totals["pests"] += 1
+        elif r.kind == "disease":
+            bucket["diseases"] += 1
+            totals["diseases"] += 1
+        elif r.kind == "trap":
+            bucket["traps"] += 1
+            totals["traps"] += 1
+    return sorted(by_date.values(), key=lambda x: x["date"]), totals
+
+
+def _gh_health(obs: list) -> tuple:
+    """Per-greenhouse counts + alert count. Alert rule:
+       - pest count > 15 → +1 alert
+       - disease severity high/active/severe → +1 alert
+       - trap count > 10 → +1 alert (matches greenhouseDetail in aggregate.ts)"""
+    from upande_scp.serverscripts.dashboard_aggregates._common import (
+        pest_severity, disease_severity,
+    )
+    by_gh = {}
+    total_alerts = 0
+    scouts_by_gh = {}
+    for r in obs:
+        gh = r.greenhouse or r.block or "—"
+        bucket = by_gh.setdefault(gh, {"name": gh, "pests": 0, "diseases": 0,
+                                       "traps": 0, "scoutCount": 0, "alerts": 0})
+        scouts_by_gh.setdefault(gh, set()).add(r.scouts_name or "")
+        if r.kind == "pest":
+            bucket["pests"] += 1
+            if pest_severity(r.count) == "high":
+                bucket["alerts"] += 1
+                total_alerts += 1
+        elif r.kind == "disease":
+            bucket["diseases"] += 1
+            if disease_severity(r.stage) == "high":
+                bucket["alerts"] += 1
+                total_alerts += 1
+        elif r.kind == "trap":
+            bucket["traps"] += 1
+            if (r.count or 0) > 10:
+                bucket["alerts"] += 1
+                total_alerts += 1
+    for gh, bucket in by_gh.items():
+        bucket["scoutCount"] = len([s for s in scouts_by_gh[gh] if s])
+        a = bucket["alerts"]
+        bucket["status"] = "critical" if a > 2 else "warning" if a > 0 else "good"
+    out = sorted(
+        by_gh.values(),
+        key=lambda x: x["pests"] + x["diseases"] + x["traps"],
+        reverse=True,
+    )
+    return out, total_alerts
+
+
+def _active_alerts(obs: list, n: int = 8) -> list:
+    from upande_scp.serverscripts.dashboard_aggregates._common import (
+        pest_severity, disease_severity,
+    )
+    out = []
+    for r in obs:
+        gh   = r.greenhouse or r.block or "—"
+        zone = r.zone or r.tree or ""
+        date = str(r.date_of_capture)[:10]
+        if r.kind == "pest":
+            sev = pest_severity(r.count)
+            if sev:
+                out.append({"name": r.obs_name, "kind": "pest", "severity": sev,
+                            "count": int(r.count or 0),
+                            "greenhouse": gh, "zone": zone, "date": date})
+        elif r.kind == "disease":
+            sev = disease_severity(r.stage)
+            if sev:
+                out.append({"name": r.obs_name, "kind": "disease", "severity": sev,
+                            "count": 1,
+                            "greenhouse": gh, "zone": zone, "date": date})
+    # JS comparator: high-first, then date desc. Python list.sort is stable,
+    # so sort by date desc first (secondary key), then by severity (primary).
+    out.sort(key=lambda a: a["date"], reverse=True)
+    out.sort(key=lambda a: a["severity"] != "high")
+    return out[:n]

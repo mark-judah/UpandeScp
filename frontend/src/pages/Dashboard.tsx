@@ -289,7 +289,7 @@ export function Dashboard() {
                 />
               </TabsContent>
               <TabsContent value="traps" className="mt-0">
-                <TrapsTab data={data} />
+                <TrapsTab data={null as any} />
               </TabsContent>
               <TabsContent value="fcm" className="mt-0">
                 <FcmTab data={data} />

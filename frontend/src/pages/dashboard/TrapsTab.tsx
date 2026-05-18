@@ -34,8 +34,7 @@ import {
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { TrendStrip } from "./TrendStrip";
-import { trapPestBreakdown, trapRanking, trapTrendSeries } from "./aggregate";
-import type { ProcessedData } from "@/lib/scouting-types";
+import type { TrapsPayload } from "./traps-types";
 
 const PALETTE = [
   "var(--sd-data-purple)",
@@ -46,16 +45,16 @@ const PALETTE = [
   "var(--sd-data-indigo)",
 ];
 
-export function TrapsTab({ data }: { data: ProcessedData | null }) {
-  const ranking = trapRanking(data);
-  const breakdown = trapPestBreakdown(data);
-  const trend = trapTrendSeries(data);
+export function TrapsTab({ data }: { data: TrapsPayload | null }) {
+  const ranking = data?.ranking ?? [];
+  const breakdown = data?.pestBreakdown ?? [];
+  const trend = data?.trendSeries ?? { rows: [], keys: [] };
   const total = ranking.reduce((s, r) => s + r.total, 0);
   const fcm = ranking
     .filter((r) => /fcm|moth/i.test(r.pest))
     .reduce((s, r) => s + r.total, 0);
-  const traps = data ? Object.keys(data.traps).length : 0;
-  const ghCount = data ? Object.keys(data.greenhouses).length : 0;
+  const traps = ranking.length;
+  const ghCount = data ? new Set(ranking.map((r) => r.trap.split("/")[0])).size : 0;
 
   const barConfig: ChartConfig = {
     total: { label: "Catches", color: "var(--sd-data-purple)" },

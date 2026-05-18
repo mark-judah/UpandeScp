@@ -207,12 +207,8 @@ doc_events = {
     # Auto-create + submit the Material Issue when a Manufacture Stock Entry
     # for an Application Floor Plan Work Order is submitted. Runs in the same
     # transaction as the submit — any throw rolls the submit back.
-    # NOTE: we use before_submit (not on_submit) so that a throw here prevents
-    # the Manufacture SE's own db_update (docstatus=1) from landing, giving us
-    # true atomic rollback even inside the test runner's single-connection
-    # transaction where uncommitted writes are visible to the same connection.
     "Stock Entry": {
-        "before_submit": "upande_scp.serverscripts.spray_plan_creator.auto_material_issue.on_manufacture_submit",
+        "on_submit": "upande_scp.serverscripts.spray_plan_creator.auto_material_issue.on_manufacture_submit",
     },
 }
 

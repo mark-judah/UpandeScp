@@ -5,13 +5,12 @@ this handler atomically creates + submits a Material Issue SE that consumes
 the manufactured tank-mix from the greenhouse warehouse. Workflow state advances
 to ``Completed``.
 
-The handler is registered on the ``before_submit`` doc-event (not ``on_submit``)
-so that any ``frappe.throw`` here fires *before* the Manufacture SE's
-``db_update()`` writes docstatus=1 to the database. This guarantees true atomic
-rollback: if the Material Issue chain fails, the Manufacture SE docstatus stays
-at 0 and no partial state persists — even inside the test runner's single-
-connection transaction where uncommitted writes are visible to the same
-connection.
+The handler is registered on the ``on_submit`` doc-event so that it fires
+*after* the Manufacture SE's Stock Ledger Entry has been written — the
+greenhouse now holds the manufactured FG stock that the Material Issue will
+consume. Any ``frappe.throw`` here propagates out of ``doc.submit()`` and
+Frappe rolls back the entire transaction, unwinding both the Manufacture
+docstatus=1 write and any partial Material Issue state.
 """
 from __future__ import annotations
 
@@ -170,10 +169,11 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
 
 
 def on_manufacture_submit(doc, method):
-    """Stock Entry before_submit hook. No-op unless this is a Manufacture SE for
+    """Stock Entry on_submit hook. No-op unless this is a Manufacture SE for
     an Application Floor Plan Work Order. On match, create + submit a Material
-    Issue SE in the same transaction. Fires before db_update(), so any throw
-    rolls back both the Manufacture docstatus and all Material Issue state."""
+    Issue SE in the same transaction. Any throw propagates out of submit() and
+    Frappe rolls back the whole transaction, including the Manufacture
+    docstatus=1 write and all Material Issue state."""
     if getattr(doc, "purpose", None) != "Manufacture":
         return None
     work_order_name = getattr(doc, "work_order", None)

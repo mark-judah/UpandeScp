@@ -17,6 +17,9 @@ from upande_scp.serverscripts.dashboard_aggregates._gh_detail       import (
 from upande_scp.serverscripts.dashboard_aggregates._heatmap_poc     import (
     heatmap_poc as _heatmap_poc,
 )
+from upande_scp.serverscripts.dashboard_aggregates._heatmaps        import (
+    heatmaps_grid as _heatmaps_grid,
+)
 
 
 def _truthy(v) -> bool:
@@ -62,3 +65,8 @@ def greenhouse_detail(**kwargs):
 @frappe.whitelist()
 def heatmap_poc(**kwargs):
     return _call(_heatmap_poc, **kwargs)
+
+
+@frappe.whitelist()
+def heatmaps_grid(**kwargs):
+    return _call(_heatmaps_grid, **kwargs)

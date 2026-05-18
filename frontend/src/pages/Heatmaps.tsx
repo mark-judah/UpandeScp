@@ -1,14 +1,19 @@
 /**
- * Greenhouse heatmap grid — variation of the in-app upright plot that
- * Application Plan uses for its diagnose step. Mirrors the legacy
- * www/scouting_heatmaps page's per-greenhouse mini-card layout but reads
- * straight from the IDB-cached scouting payload (no separate getHeatmapData
- * round-trips) and colours each plot with the canonical pest / disease
- * colour pulled from the Pest / Plant Disease doctypes.
+ * Heatmaps grid — bed-line plots with instanced observation markers.
  *
- * Layout idiom: same `MapHeader` strip + filter row + responsive `grid`
- * of cards used on `ApplicationPlan.tsx`, so the two pages feel like
- * variants of the same widget instead of two unrelated maps.
+ * Data: ``upande_scp.serverscripts.dashboard_aggregates.heatmaps_grid``
+ *       returns every (greenhouse × pest|disease) card matching the
+ *       filter row, with each card carrying the 3 most-recent scouting
+ *       dates and per-zone counts.
+ *
+ * Render: ``BedSvg`` draws one prerendered SVG path per bed + an
+ *         instanced marker shape (from ``MarkerDefs``) at each observed
+ *         zone's centroid. Card thumbnails show the latest date; the
+ *         click-to-expand modal lays out the 3 dates side-by-side.
+ *
+ * Bed geometry comes from the long-cached ``fetchBedsAndZones`` payload;
+ * each greenhouse is projected once via ``projectGeometry`` and the
+ * result is memoised so cards for the same greenhouse share the math.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -37,27 +42,21 @@ import {
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useScouting } from "@/hooks/use-scouting";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
-import { UprightHeatmap } from "@/components/UprightHeatmap";
+import {
+  useDashboardAggregate,
+} from "@/hooks/use-dashboard-aggregate";
 import { ALL, MapHeader, type MapFilterValue } from "./maps/MapHeader";
 import { fetchBedsAndZones, DEFAULT_CROP } from "@/lib/scouting-api";
-import {
-  pestColor,
-  diseaseColor,
-  useObservationColors,
-} from "@/lib/observation-colors";
-import { ymd } from "@/lib/utils";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
-import type { ZoneGeo, ZoneObs } from "./maps/upright-svg";
-import type { ScoutingEntry } from "@/lib/scouting-types";
-
-function defaultRange(): { from: string; to: string } {
-  const today = new Date();
-  const from = new Date(today);
-  from.setDate(today.getDate() - 14);
-  return { from: ymd(from), to: ymd(today) };
-}
+import { ymd } from "@/lib/utils";
+import { ProgressOverlay } from "./dashboard/ProgressOverlay";
+import { MarkerDefs, type MarkerKind } from "./maps/MarkerDefs";
+import { BedSvg, type BedMarker } from "./maps/BedSvg";
+import {
+  projectGeometry,
+  type ProjectedGeometry,
+  type ZoneGeoLike,
+} from "./maps/bed-projection";
 
 type Mode = "pest" | "disease";
 
@@ -66,166 +65,68 @@ function ghOf(zoneName: string): string {
   return i >= 0 ? zoneName.slice(0, i) : zoneName.split(" - ")[0];
 }
 
-/** One scouting date's contribution to a (greenhouse × pest|disease)
- *  card. The "trend strip" in the modal renders one of these per slot. */
-interface DateSlice {
-  /** ``date_of_capture`` of the scouting entries that fed this slice. */
-  date: string;
-  zoneObs: Record<string, ZoneObs>;
-  total: number;
-  zones: number;
+function defaultRange(): { from: string; to: string } {
+  const today = new Date();
+  const from = new Date(today);
+  from.setDate(today.getDate() - 14);
+  return { from: ymd(from), to: ymd(today) };
 }
 
-interface HeatmapCardData {
+interface HeatmapCard {
   greenhouse: string;
   obsName: string;
-  /** Hex from the Pest / Plant Disease doctype (with canonical fallback). */
+  obsKind: "pest" | "disease";
   color: string;
-  /** Per-zone counts aggregated across the whole window — drives the
-   *  thumbnail on the card. */
-  zoneObs: Record<string, ZoneObs>;
   totalObs: number;
   zonesAffected: number;
-  /** Most recent date that contributed to this card (``recent[0].date``
-   *  when ``recent`` is non-empty). */
   lastDate: string;
-  /** Last 3 *distinct* scouting dates for this (greenhouse, obs), most
-   *  recent first. The dates may not be consecutive — the user wants the
-   *  three actual scouting events even if a fortnight separates them. */
-  recent: DateSlice[];
+  recent: Array<{ date: string; zoneObs: Record<string, number> }>;
 }
 
-/**
- * Build one heatmap card per (greenhouse × pest|disease). Every card has
- * its own ``zoneObs`` map keyed by the full zone name (e.g.
- * ``Greenhouse X - Bed 3 - Zone 2``). Cards with zero observations are
- * dropped — the legacy page rendered an empty card for those, but a grid
- * full of empties added noise without information.
- */
-/** Mutable accumulator the buildCards reducer fills in. Stays internal —
- *  the public surface is ``HeatmapCardData``. */
-interface Bucket {
-  /** Aggregate zone -> count across every entry that matched the filter. */
-  zones: Map<string, number>;
-  total: number;
-  /** date_of_capture -> (zone -> count). Lets us slice per-date in O(1)
-   *  when the modal opens, instead of re-scanning entries. */
-  byDate: Map<string, Map<string, number>>;
+interface HeatmapsGridPayload {
+  cards: HeatmapCard[];
 }
 
-function buildCards(
-  entries: ScoutingEntry[],
-  mode: Mode,
-  obsFilter: Set<string>,
-  resolveColor: (name: string) => string,
-): HeatmapCardData[] {
-  // [greenhouse][obs] → Bucket
-  const acc = new Map<string, Map<string, Bucket>>();
-  for (const e of entries) {
-    const list =
-      mode === "pest" ? e.pests_scouting_entry : e.diseases_scouting_entry;
-    if (!list || !list.length || !e.zone) continue;
-    const gh = ghOf(e.zone);
-    if (!gh) continue;
-    const date = e.date_of_capture || "";
-    for (const row of list as any[]) {
-      const name = mode === "pest" ? row.pest : row.disease;
-      if (!name) continue;
-      if (obsFilter.size && !obsFilter.has(name)) continue;
-      let byGh = acc.get(gh);
-      if (!byGh) {
-        byGh = new Map();
-        acc.set(gh, byGh);
-      }
-      let bucket = byGh.get(name);
-      if (!bucket) {
-        bucket = { zones: new Map(), total: 0, byDate: new Map() };
-        byGh.set(name, bucket);
-      }
-      const c = Number(row.count) > 0 ? Number(row.count) : 1;
-      bucket.zones.set(e.zone, (bucket.zones.get(e.zone) || 0) + c);
-      bucket.total += c;
-      if (date) {
-        let day = bucket.byDate.get(date);
-        if (!day) {
-          day = new Map();
-          bucket.byDate.set(date, day);
-        }
-        day.set(e.zone, (day.get(e.zone) || 0) + c);
-      }
-    }
-  }
-
-  const cards: HeatmapCardData[] = [];
-  acc.forEach((byGh, gh) => {
-    byGh.forEach((bucket, obsName) => {
-      const color = resolveColor(obsName);
-      const zoneObs: Record<string, ZoneObs> = {};
-      bucket.zones.forEach((count, zone) => {
-        zoneObs[zone] = { count, color };
-      });
-
-      // Pick the last 3 distinct scouting dates. ISO YYYY-MM-DD sorts as
-      // a string, so a plain descending sort gives us "latest first"
-      // without parsing.
-      const recent: DateSlice[] = Array.from(bucket.byDate.keys())
-        .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
-        .slice(0, 3)
-        .map((date) => {
-          const dayMap = bucket.byDate.get(date)!;
-          const dayZoneObs: Record<string, ZoneObs> = {};
-          let total = 0;
-          dayMap.forEach((count, zone) => {
-            dayZoneObs[zone] = { count, color };
-            total += count;
-          });
-          return { date, zoneObs: dayZoneObs, total, zones: dayMap.size };
-        });
-
-      cards.push({
-        greenhouse: gh,
-        obsName,
-        color,
-        zoneObs,
-        totalObs: bucket.total,
-        zonesAffected: bucket.zones.size,
-        lastDate: recent[0]?.date || "",
-        recent,
-      });
-    });
-  });
-
-  // Most-active first.
-  cards.sort(
-    (a, b) =>
-      b.totalObs - a.totalObs ||
-      a.greenhouse.localeCompare(b.greenhouse) ||
-      a.obsName.localeCompare(b.obsName),
-  );
-  return cards;
-}
-
-/** Group zones by greenhouse so the per-card render only walks its own slice.
- *
- *  Geometry is preserved as the already-parsed object — the SVG builder
- *  accepts both strings and parsed FeatureCollections, and skipping the
- *  ``JSON.stringify``/parse round-trip on every card render is the single
- *  biggest contributor to keeping the page from chewing CPU on multi-card
- *  re-paints. */
-function indexZonesByGh(zones: ZoneFeature[]): Record<string, ZoneGeo[]> {
-  const out: Record<string, ZoneGeo[]> = {};
+/** Group raw zone features by greenhouse so each card only walks its
+ *  own slice. Memoised once at page load — geometry rarely changes. */
+function indexZonesByGh(zones: ZoneFeature[]): Record<string, ZoneGeoLike[]> {
+  const out: Record<string, ZoneGeoLike[]> = {};
   for (const z of zones) {
     if (!z.geometry) continue;
     const gh = ghOf(z.zoneName);
     if (!gh) continue;
     if (!out[gh]) out[gh] = [];
-    // Cast: the upright-svg parser checks for object vs string.
     out[gh].push({
       name: z.zoneName,
       raw_geojson: z.geometry as unknown as string,
     });
   }
   return out;
+}
+
+/** Lazy per-greenhouse projection. The first card to need a greenhouse
+ *  pays the ~80 ms cost; every later card for the same greenhouse hits
+ *  the memo. */
+function useProjectedGeometries(
+  zonesByGh: Record<string, ZoneGeoLike[]>,
+  needed: string[],
+): Record<string, ProjectedGeometry | null> {
+  const [cache, setCache] = useState<Record<string, ProjectedGeometry | null>>(
+    {},
+  );
+  useEffect(() => {
+    const missing = needed.filter((gh) => !(gh in cache) && zonesByGh[gh]);
+    if (!missing.length) return;
+    // Project synchronously; ~80 ms each, so a chunk of work but it's
+    // the only price we pay for not running this server-side.
+    const next: Record<string, ProjectedGeometry | null> = { ...cache };
+    for (const gh of missing) {
+      next[gh] = projectGeometry(zonesByGh[gh]);
+    }
+    setCache(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needed.join("|"), zonesByGh]);
+  return cache;
 }
 
 export function Heatmaps() {
@@ -237,80 +138,65 @@ export function Heatmaps() {
     ...defaultRange(),
   }));
   const [obsSel, setObsSel] = useState<string>(ALL);
-  const [picked, setPicked] = useState<HeatmapCardData | null>(null);
+  const [picked, setPicked] = useState<HeatmapCard | null>(null);
 
-  const { pest, disease } = useObservationColors();
-  const resolveColor =
-    mode === "pest"
-      ? (n: string) => pest(n) || pestColor(n)
-      : (n: string) => disease(n) || diseaseColor(n);
+  // Reset obs picker when mode flips — pest list ≠ disease list.
+  useEffect(() => setObsSel(ALL), [mode]);
 
-  const ghForCall = filters.greenhouse === ALL ? undefined : filters.greenhouse;
-  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
-    from: filters.from,
-    to: filters.to,
-    greenhouse: ghForCall,
-    crop: filters.crop,
-  });
+  // Aggregate fetch — one server call returns every applicable card.
+  const aggFilters = {
+    from_date: filters.from,
+    to_date:   filters.to,
+    crop:      filters.crop === DEFAULT_CROP ? "" : filters.crop,
+    farm:      filters.farm === ALL ? "" : filters.farm,
+    greenhouse: filters.greenhouse === ALL ? "" : filters.greenhouse,
+    mode,
+    observation: obsSel === ALL ? "" : obsSel,
+  };
+  const gridState = useDashboardAggregate<HeatmapsGridPayload>(
+    "heatmaps_grid",
+    aggFilters,
+    true,
+  );
+  const cards = gridState.data?.cards ?? [];
 
+  // Geometry — fetched once, projected per-greenhouse on demand.
   const [zones, setZones] = useState<ZoneFeature[]>([]);
   useEffect(() => {
     fetchBedsAndZones().then((vs) => setZones(flattenZones(vs)));
   }, []);
-
   const zonesByGh = useMemo(() => indexZonesByGh(zones), [zones]);
+  const neededGhs = useMemo(
+    () => Array.from(new Set(cards.map((c) => c.greenhouse))),
+    [cards],
+  );
+  const geometryByGh = useProjectedGeometries(zonesByGh, neededGhs);
 
-  // Reset obs selection when switching modes — pest options ≠ disease options.
-  useEffect(() => {
-    setObsSel(ALL);
-  }, [mode]);
-
-  // Available obs names within the current data window so the picker only
-  // lists what's actually present (instead of every Pest doctype row).
+  // Obs picker options — distinct names from the returned cards. No
+  // separate scan of raw entries; the server already grouped by obs.
   const obsOptions = useMemo(() => {
-    if (!data) return [] as string[];
     const s = new Set<string>();
-    for (const e of data.entries) {
-      const list = mode === "pest" ? e.pests_scouting_entry : e.diseases_scouting_entry;
-      list?.forEach((row: any) => {
-        const name = mode === "pest" ? row.pest : row.disease;
-        if (name) s.add(name);
-      });
-    }
+    for (const c of cards) s.add(c.obsName);
     return Array.from(s).sort();
-  }, [data, mode]);
+  }, [cards]);
 
-  const obsFilter = useMemo(
-    () => (obsSel === ALL ? new Set<string>() : new Set([obsSel])),
-    [obsSel],
-  );
+  // Counters in the strip under the filter bar.
+  const totalObs = cards.reduce((s, c) => s + c.totalObs, 0);
+  const totalZones = cards.reduce((s, c) => s + c.zonesAffected, 0);
+  const distinctGh = new Set(cards.map((c) => c.greenhouse)).size;
 
-  const cards = useMemo(() => {
-    if (!data) return [];
-    return buildCards(data.entries, mode, obsFilter, resolveColor);
-  }, [data, mode, obsFilter, resolveColor]);
+  // Color lookup straight from the server response (color is per-card).
+  const obsToColor = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const c of cards) m[c.obsName] = c.color;
+    return m;
+  }, [cards]);
 
-  const farmLower = filters.farm === ALL ? "" : filters.farm.toLowerCase();
-  const ghLower =
-    filters.greenhouse === ALL ? "" : filters.greenhouse.toLowerCase();
-  const visibleCards = useMemo(
-    () =>
-      cards.filter((c) => {
-        if (ghLower && !c.greenhouse.toLowerCase().includes(ghLower))
-          return false;
-        if (farmLower && !c.greenhouse.toLowerCase().includes(farmLower))
-          return false;
-        return true;
-      }),
-    [cards, farmLower, ghLower],
-  );
-
-  const totalObs = visibleCards.reduce((s, c) => s + c.totalObs, 0);
-  const totalZones = visibleCards.reduce((s, c) => s + c.zonesAffected, 0);
-  const distinctGh = new Set(visibleCards.map((c) => c.greenhouse)).size;
+  const kind: MarkerKind = mode === "disease" ? "disease" : "pest";
 
   return (
     <div className="flex flex-col min-h-svh">
+      <MarkerDefs />
       <MapHeader
         title="Heatmaps"
         subtitle="Per-greenhouse zone intensity · coloured by pest / disease"
@@ -348,7 +234,7 @@ export function Heatmaps() {
                   <span className="inline-flex items-center gap-2">
                     <span
                       className="h-2 w-2 rounded-full border"
-                      style={{ background: resolveColor(o) }}
+                      style={{ background: obsToColor[o] || "#888" }}
                     />
                     {o}
                   </span>
@@ -366,11 +252,13 @@ export function Heatmaps() {
       </div>
 
       <div className="flex-1 px-4 md:px-6 py-4 md:py-6">
-        {!data || !zones.length ? (
-          <Card className="p-12 text-center text-sm text-muted-foreground">
-            Loading scouting data and zone geometry…
+        {gridState.loading && !gridState.data ? (
+          <ProgressOverlay progress={gridState.progress} />
+        ) : gridState.error ? (
+          <Card className="p-8 text-sm text-[var(--sd-data-red)]">
+            Failed to load: {gridState.error}
           </Card>
-        ) : visibleCards.length === 0 ? (
+        ) : !cards.length ? (
           <Card className="p-12 text-center">
             <CardTitle className="text-base">No matching observations</CardTitle>
             <CardDescription className="mt-1">
@@ -380,8 +268,16 @@ export function Heatmaps() {
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {visibleCards.map((c) => {
-              const zoneList = zonesByGh[c.greenhouse] || [];
+            {cards.map((c) => {
+              const geom = geometryByGh[c.greenhouse];
+              const markers: BedMarker[] = (c.recent[0]?.zoneObs
+                ? Object.entries(c.recent[0].zoneObs).map(([zone, count]) => ({
+                    zone,
+                    count,
+                    kind,
+                    color: c.color,
+                  }))
+                : []) as BedMarker[];
               return (
                 <Card
                   key={`${c.greenhouse}::${c.obsName}`}
@@ -410,17 +306,17 @@ export function Heatmaps() {
                     </div>
                   </CardHeader>
                   <CardContent className="p-0">
-                    {zoneList.length ? (
-                      <UprightHeatmap
-                        zones={zoneList}
-                        zoneObs={c.zoneObs}
-                        width={780}
-                        height={300}
-                        className="min-h-[260px] [&_svg]:max-h-[320px] [&_svg]:w-full"
+                    {geom ? (
+                      <BedSvg
+                        geometry={geom}
+                        markers={markers}
+                        className="w-full h-auto min-h-[200px] max-h-[260px]"
                       />
                     ) : (
-                      <div className="text-[0.72rem] text-muted-foreground border rounded-md p-3 bg-[var(--sd-bg-soft)]">
-                        Zone geometry not available for this greenhouse.
+                      <div className="text-[0.72rem] text-muted-foreground border rounded-md p-3 bg-[var(--sd-bg-soft)] min-h-[200px] flex items-center justify-center">
+                        {zonesByGh[c.greenhouse]
+                          ? "Projecting…"
+                          : "Zone geometry not available for this greenhouse."}
                       </div>
                     )}
                     <div className="mt-2 flex items-center justify-between text-[0.7rem] text-muted-foreground">
@@ -441,10 +337,8 @@ export function Heatmaps() {
         )}
       </div>
 
-      {/* Expanded modal — three trend strips for the last 3 distinct
-          scouting events (not the last 3 calendar days). Reads straight
-          from the IDB-cached entries that already drive the page; no
-          extra fetches. */}
+      {/* Expanded modal — 3-date strip. Markers come from the same payload
+          the card thumbnail used; no extra fetch on open. */}
       <Dialog open={!!picked} onOpenChange={(o) => !o && setPicked(null)}>
         <DialogContent className="max-w-[min(98vw,1600px)] max-h-[92vh] overflow-y-auto">
           {picked && (
@@ -480,6 +374,21 @@ export function Heatmaps() {
                       "2nd latest scouting",
                       "3rd latest scouting",
                     ];
+                    const geom = geometryByGh[picked.greenhouse];
+                    const dayMarkers: BedMarker[] = slice
+                      ? Object.entries(slice.zoneObs).map(([zone, count]) => ({
+                          zone,
+                          count,
+                          kind,
+                          color: picked.color,
+                        }))
+                      : [];
+                    const total = slice
+                      ? Object.values(slice.zoneObs).reduce(
+                          (a, b) => a + b,
+                          0,
+                        )
+                      : 0;
                     return (
                       <div
                         key={i}
@@ -494,7 +403,7 @@ export function Heatmaps() {
                               variant="outline"
                               className="tabular-nums shrink-0"
                             >
-                              {slice.total}
+                              {total}
                             </Badge>
                           ) : (
                             <span className="text-[0.7rem] text-muted-foreground">
@@ -502,23 +411,25 @@ export function Heatmaps() {
                             </span>
                           )}
                         </div>
-                        {slice ? (
+                        {slice && geom ? (
                           <>
                             <div className="text-xs font-medium tabular-nums">
                               {slice.date}
                             </div>
-                            <UprightHeatmap
-                              zones={zonesByGh[picked.greenhouse] || []}
-                              zoneObs={slice.zoneObs}
-                              width={1200}
-                              height={520}
+                            <BedSvg
+                              geometry={geom}
+                              markers={dayMarkers}
                               className="min-h-[420px] [&_svg]:max-h-[520px] [&_svg]:w-full"
                             />
                             <div className="text-[0.7rem] text-muted-foreground">
-                              {slice.zones} affected zone
-                              {slice.zones === 1 ? "" : "s"}
+                              {Object.keys(slice.zoneObs).length} affected zone
+                              {Object.keys(slice.zoneObs).length === 1 ? "" : "s"}
                             </div>
                           </>
+                        ) : slice ? (
+                          <div className="flex-1 flex items-center justify-center min-h-[260px] text-[0.72rem] text-muted-foreground border-dashed border rounded-md bg-[var(--sd-bg-soft)]">
+                            Projecting bed geometry…
+                          </div>
                         ) : (
                           <div className="flex-1 flex items-center justify-center min-h-[260px] text-[0.72rem] text-muted-foreground border-dashed border rounded-md bg-[var(--sd-bg-soft)]">
                             No earlier scouting recorded
@@ -530,7 +441,6 @@ export function Heatmaps() {
                 </div>
               )}
 
-              {/* Trend hint: how the count moved across the 3 dates. */}
               {picked.recent.length > 1 && (
                 <div className="flex flex-wrap items-center gap-3 text-[0.72rem] text-muted-foreground border-t pt-2">
                   <span className="font-medium text-foreground">Trend</span>
@@ -538,9 +448,19 @@ export function Heatmaps() {
                     .slice()
                     .reverse()
                     .map((s, i, arr) => {
-                      const prev = i > 0 ? arr[i - 1].total : null;
+                      const total = Object.values(s.zoneObs).reduce(
+                        (a, b) => a + b,
+                        0,
+                      );
+                      const prevTotal =
+                        i > 0
+                          ? Object.values(arr[i - 1].zoneObs).reduce(
+                              (a, b) => a + b,
+                              0,
+                            )
+                          : null;
                       const delta =
-                        prev != null ? s.total - prev : null;
+                        prevTotal != null ? total - prevTotal : null;
                       return (
                         <span
                           key={s.date}
@@ -550,7 +470,7 @@ export function Heatmaps() {
                             {s.date}
                           </span>
                           <span className="font-semibold text-foreground">
-                            {s.total}
+                            {total}
                           </span>
                           {delta != null && delta !== 0 && (
                             <span
@@ -571,14 +491,13 @@ export function Heatmaps() {
               )}
 
               <div className="flex items-center gap-2 text-[0.7rem] text-muted-foreground border-t pt-2">
-                <span>Intensity</span>
-                {[0.2, 0.4, 0.6, 0.8, 1].map((op) => (
+                <span className="inline-flex items-center gap-2">
                   <span
-                    key={op}
-                    className="h-2.5 w-6 rounded border"
-                    style={{ background: picked.color, opacity: op }}
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ background: picked.color }}
                   />
-                ))}
+                  {picked.obsName} — one marker per affected zone
+                </span>
                 <Button
                   variant="outline"
                   size="sm"
@@ -592,13 +511,6 @@ export function Heatmaps() {
           )}
         </DialogContent>
       </Dialog>
-
-      <LoadingOverlay
-        open={loading}
-        progress={progress}
-        weeksLoaded={weeksLoaded}
-        weeksTotal={weeksTotal}
-      />
     </div>
   );
 }

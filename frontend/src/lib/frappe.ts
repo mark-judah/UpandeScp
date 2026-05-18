@@ -3,6 +3,7 @@ export interface ScpBootstrap {
   full_name: string;
   user_image: string;
   site_name: string;
+  roles: string[];
 }
 
 declare global {
@@ -40,6 +41,7 @@ export function bootstrap(): ScpBootstrap {
     full_name: typeof raw.full_name === "string" ? raw.full_name : "",
     user_image: typeof raw.user_image === "string" ? raw.user_image : "",
     site_name: typeof raw.site_name === "string" ? raw.site_name : "",
+    roles: Array.isArray(raw.roles) ? (raw.roles as string[]) : [],
   };
 }
 

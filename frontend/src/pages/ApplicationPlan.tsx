@@ -20,9 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { DatePicker } from "@/components/DatePicker";
-import { UprightHeatmap } from "@/components/UprightHeatmap";
 import { Toaster, type ToastItem } from "@/components/Toaster";
 import {
   Dialog,
@@ -39,7 +37,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useScouting } from "@/hooks/use-scouting";
+import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
+import { MarkerDefs } from "./maps/MarkerDefs";
+import { BedSvg, type BedMarker } from "./maps/BedSvg";
+import {
+  projectGeometry,
+  type ProjectedGeometry,
+  type ZoneGeoLike,
+} from "./maps/bed-projection";
 import {
   createBom,
   fetchApplicationPlanBootstrap,
@@ -64,7 +69,19 @@ import {
   diseaseColor,
   useObservationColors,
 } from "@/lib/observation-colors";
-import type { ZoneGeo, ZoneObs } from "./maps/upright-svg";
+interface ZoneObs {
+  count: number;
+  color: string;
+  kind?: "pest" | "disease";
+}
+
+interface DiagnosePayload {
+  zoneObs: Record<string, ZoneObs>;
+  latestDate: string | null;
+  filterOpts: { pests: string[]; sections: string[]; stages: string[] };
+  totalRows: number;
+  targets: string[];
+}
 
 /** Litres of water per hectare — same constant the legacy
  *  ``new_application_floor_plan.js`` uses to derive ``custom_water_volume``
@@ -255,9 +272,29 @@ export function ApplicationPlan() {
   const dismissToast = (id: number) =>
     setToasts((prev) => prev.filter((t) => t.id !== id));
 
-  // Eager scouting prefetch (no greenhouse filter — IDB stays universal).
+  // Diagnose-step data: per-zone counts + filter options for the currently
+  // selected greenhouse. One server endpoint replaces the old
+  // useScouting-pulls-everything pattern.
   const [{ from, to }] = useState(defaultRange);
-  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({ from, to, crop: "Rose" });
+  const diagnoseFilters = useMemo(
+    () => ({
+      greenhouse,
+      from_date: from,
+      to_date:   to,
+      crop:      "Rose",
+      pest:      diag.pest === ALL ? "" : diag.pest,
+      section:   diag.section === ALL ? "" : diag.section,
+      stage:     diag.stage === ALL ? "" : diag.stage,
+    }),
+    [greenhouse, from, to, diag],
+  );
+  const diagnoseState = useDashboardAggregate<DiagnosePayload>(
+    "application_plan_diagnose",
+    diagnoseFilters as any,
+    !!greenhouse,
+  );
+  const diagnose = diagnoseState.data;
+  const loading = diagnoseState.loading;
 
   useEffect(() => {
     fetchApplicationPlanBootstrap().then(setBootstrap);
@@ -439,9 +476,9 @@ export function ApplicationPlan() {
     setArea("");
   }, [scope, areaHa, waterVolumeL, bomDetails]);
 
-  const zonesInGh: ZoneGeo[] = useMemo(() => {
+  const zonesInGh: ZoneGeoLike[] = useMemo(() => {
     if (!greenhouse) return [];
-    const out: ZoneGeo[] = [];
+    const out: ZoneGeoLike[] = [];
     for (const v of varietyTree) {
       for (const b of v.beds) {
         if (!b.name.startsWith(greenhouse)) continue;
@@ -453,63 +490,65 @@ export function ApplicationPlan() {
     return out;
   }, [varietyTree, greenhouse]);
 
+  // Equirectangular projection for the selected greenhouse. Memoised on
+  // the zonesInGh reference so flipping diagnose filters doesn't redo
+  // the math.
+  const geometry: ProjectedGeometry | null = useMemo(
+    () => (zonesInGh.length ? projectGeometry(zonesInGh) : null),
+    [zonesInGh],
+  );
+
   const zoneObs: Record<string, ZoneObs> = useMemo(() => {
+    if (!diagnose) return {};
+    // Server-aggregated counts come back as plain dicts; we just trust them.
+    // Color overrides via colorFor() let a fresh legend tweak surface
+    // without bumping the server cache.
     const out: Record<string, ZoneObs> = {};
-    if (!data || !greenhouse) return out;
-    for (const e of data.entries) {
-      if (greenhouseOfZone(e.zone || "") !== greenhouse) continue;
-      const apply = (name: string, section: string, stage: string) => {
-        if (diag.pest !== ALL && name !== diag.pest) return;
-        if (diag.section !== ALL && section !== diag.section) return;
-        if (diag.stage !== ALL && stage !== diag.stage) return;
-        const key = e.zone!;
-        if (!out[key]) out[key] = { count: 0, color: colorFor(name) };
-        out[key].count += 1;
+    for (const [zone, obs] of Object.entries(diagnose.zoneObs)) {
+      out[zone] = {
+        count: obs.count,
+        color: obs.color, // already resolved from the doctype legend server-side
+        kind: obs.kind,
       };
-      e.pests_scouting_entry.forEach((p) =>
-        apply(p.pest, p.plant_section || "", p.stage || ""),
-      );
-      e.diseases_scouting_entry.forEach((d) =>
-        apply(d.disease, d.plant_section || "", d.stage || ""),
-      );
     }
     return out;
-  }, [data, greenhouse, diag]);
+  }, [diagnose]);
 
-  const latestScoutingDate = useMemo(() => {
-    if (!data) return null;
-    if (!greenhouse) return data.entries[0]?.date_of_capture || null;
-    for (const e of data.entries) {
-      if (greenhouseOfZone(e.zone || "") === greenhouse) return e.date_of_capture;
-    }
-    return null;
-  }, [data, greenhouse]);
+  // Markers for the BedSvg layer. One per affected zone, color +
+  // shape inherited from the diagnose result.
+  const bedMarkers: BedMarker[] = useMemo(
+    () =>
+      Object.entries(zoneObs).map(([zone, obs]) => ({
+        zone,
+        count: obs.count,
+        kind: (obs.kind === "disease" ? "disease" : "pest") as
+          | "pest"
+          | "disease",
+        color: obs.color,
+      })),
+    [zoneObs],
+  );
+
+  const latestScoutingDate = useMemo(
+    () => diagnose?.latestDate ?? null,
+    [diagnose],
+  );
 
   const filterOpts = useMemo(() => {
     const pests = new Set<string>();
     const stages = new Set<string>();
     const sections = new Set<string>();
-    if (data && greenhouse) {
-      for (const e of data.entries) {
-        if (greenhouseOfZone(e.zone || "") !== greenhouse) continue;
-        e.pests_scouting_entry.forEach((p) => {
-          pests.add(p.pest);
-          if (p.stage) stages.add(p.stage);
-          if (p.plant_section) sections.add(p.plant_section);
-        });
-        e.diseases_scouting_entry.forEach((d) => {
-          pests.add(d.disease);
-          if (d.stage) stages.add(d.stage);
-          if (d.plant_section) sections.add(d.plant_section);
-        });
-      }
+    if (diagnose) {
+      diagnose.filterOpts.pests.forEach((p) => pests.add(p));
+      diagnose.filterOpts.stages.forEach((s) => stages.add(s));
+      diagnose.filterOpts.sections.forEach((s) => sections.add(s));
     }
     return {
       pests: Array.from(pests).sort(),
       stages: Array.from(stages).sort(),
       sections: Array.from(sections).sort(),
     };
-  }, [data, greenhouse]);
+  }, [diagnose]);
 
   const totalZones = greenhouse ? zonesByGh[greenhouse] || 0 : 0;
   const affectedZones = Object.values(zoneObs).filter((o) => o.count > 0).length;
@@ -612,23 +651,11 @@ export function ApplicationPlan() {
     }
 
     // ── Build the legacy formData ─────────────────────────────────
-    const targetsList =
-      diag.pest !== ALL
-        ? [diag.pest]
-        : Array.from(
-            new Set(
-              data?.entries
-                .filter(
-                  (e) =>
-                    greenhouseOfZone(e.zone || "") === greenhouse &&
-                    (e.zone ? !!zoneObs[e.zone] : false),
-                )
-                .flatMap((e) => [
-                  ...e.pests_scouting_entry.map((p) => p.pest),
-                  ...e.diseases_scouting_entry.map((d) => d.disease),
-                ]) || [],
-            ),
-          );
+    // Targets come straight from the diagnose endpoint: when a specific
+    // pest is filtered it's that single name; otherwise it's every
+    // distinct obs name in the currently-scoped zones.
+    const targetsList: string[] =
+      diag.pest !== ALL ? [diag.pest] : diagnose?.targets ?? [];
     if (!targetsList.length) {
       pushToast("err", "No targets — pick a pest in the diagnose filter.");
       return;
@@ -770,6 +797,7 @@ export function ApplicationPlan() {
 
   return (
     <div className="flex flex-col min-h-svh">
+      <MarkerDefs />
       <header className="sticky top-0 z-40 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
@@ -843,17 +871,17 @@ export function ApplicationPlan() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="relative">
-            {greenhouse && zonesInGh.length ? (
+            {greenhouse && geometry ? (
               <button
                 type="button"
                 onClick={() => setHeatmapModal(true)}
                 className="block w-full text-left"
                 title="Click for full-screen view"
               >
-                <UprightHeatmap
-                  zones={zonesInGh}
-                  zoneObs={zoneObs}
-                  className="hover:ring-2 hover:ring-[var(--sd-accent)]/30 transition-shadow"
+                <BedSvg
+                  geometry={geometry}
+                  markers={bedMarkers}
+                  className="w-full h-auto min-h-[260px] max-h-[360px] hover:ring-2 hover:ring-[var(--sd-accent)]/30 transition-shadow rounded-md border bg-card p-2"
                 />
                 <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-md bg-card/90 backdrop-blur border px-2 py-1 text-[0.65rem] text-muted-foreground">
                   <Maximize2 className="h-3 w-3" />
@@ -1140,23 +1168,8 @@ export function ApplicationPlan() {
                     <Badge variant="default" className="text-[0.65rem]">
                       {diag.pest}
                     </Badge>
-                  ) : Object.keys(zoneObs).length ? (
-                    Array.from(
-                      new Set(
-                        data?.entries
-                          .filter(
-                            (e) =>
-                              greenhouseOfZone(e.zone || "") === greenhouse &&
-                              (e.zone ? !!zoneObs[e.zone] : false),
-                          )
-                          .flatMap((e) => [
-                            ...e.pests_scouting_entry.map((p) => p.pest),
-                            ...e.diseases_scouting_entry.map((d) => d.disease),
-                          ]) || [],
-                      ),
-                    )
-                      .slice(0, 12)
-                      .map((t) => (
+                  ) : (diagnose?.targets?.length ?? 0) > 0 ? (
+                    (diagnose?.targets ?? []).slice(0, 12).map((t) => (
                         <Badge
                           key={t}
                           variant="outline"
@@ -1391,7 +1404,17 @@ export function ApplicationPlan() {
               {affectedZones} of {totalZones} zones · {coveragePct}% coverage
             </DialogDescription>
           </DialogHeader>
-          <UprightHeatmap zones={zonesInGh} zoneObs={zoneObs} />
+          {geometry ? (
+            <BedSvg
+              geometry={geometry}
+              markers={bedMarkers}
+              className="w-full h-auto min-h-[420px] [&_svg]:max-h-[640px] [&_svg]:w-full"
+            />
+          ) : (
+            <div className="text-xs text-muted-foreground p-4">
+              Zone geometry not available for this greenhouse.
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -1562,12 +1585,6 @@ export function ApplicationPlan() {
         </DialogContent>
       </Dialog>
 
-      <LoadingOverlay
-        open={loading || busy || bomLoading}
-        progress={loading ? progress : 100}
-        weeksLoaded={weeksLoaded}
-        weeksTotal={weeksTotal}
-      />
     </div>
   );
 }

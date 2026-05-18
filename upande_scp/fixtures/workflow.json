@@ -1,0 +1,25 @@
+[
+ {
+  "doctype": "Workflow",
+  "name": "Application Floor Plan Workflow",
+  "workflow_name": "Application Floor Plan Workflow",
+  "document_type": "Work Order",
+  "is_active": 1,
+  "override_status": 0,
+  "send_email_alert": 0,
+  "workflow_state_field": "workflow_state",
+  "states": [
+   {"state": "Pending Submission",    "doc_status": 0, "allow_edit": "Spray Plan Creator"},
+   {"state": "Awaiting Approval",     "doc_status": 1, "allow_edit": "General Manager"},
+   {"state": "Approved",              "doc_status": 1, "allow_edit": "General Manager"},
+   {"state": "Chemical Issued",       "doc_status": 1, "allow_edit": "General Manager"},
+   {"state": "Tank Mix Manufactured", "doc_status": 1, "allow_edit": "General Manager"},
+   {"state": "Spraying In Progress",  "doc_status": 1, "allow_edit": "General Manager"},
+   {"state": "Completed",             "doc_status": 1, "allow_edit": "General Manager"}
+  ],
+  "transitions": [
+   {"state": "Pending Submission", "action": "Submit for Approval", "next_state": "Awaiting Approval", "allowed": "Spray Plan Creator"},
+   {"state": "Awaiting Approval",  "action": "Approve Plan",        "next_state": "Approved",          "allowed": "General Manager"}
+  ]
+ }
+]

@@ -1,0 +1,4 @@
+[
+ {"doctype": "Workflow Action Master", "name": "Submit for Approval", "workflow_action_name": "Submit for Approval"},
+ {"doctype": "Workflow Action Master", "name": "Approve Plan",        "workflow_action_name": "Approve Plan"}
+]

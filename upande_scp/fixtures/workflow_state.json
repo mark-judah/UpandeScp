@@ -1,0 +1,9 @@
+[
+ {"doctype": "Workflow State", "name": "Pending Submission",    "workflow_state_name": "Pending Submission",    "style": "Inverse", "icon": "edit"},
+ {"doctype": "Workflow State", "name": "Awaiting Approval",     "workflow_state_name": "Awaiting Approval",     "style": "Warning", "icon": "hourglass"},
+ {"doctype": "Workflow State", "name": "Approved",              "workflow_state_name": "Approved",              "style": "Success", "icon": "check"},
+ {"doctype": "Workflow State", "name": "Chemical Issued",       "workflow_state_name": "Chemical Issued",       "style": "Primary", "icon": "share-square"},
+ {"doctype": "Workflow State", "name": "Tank Mix Manufactured", "workflow_state_name": "Tank Mix Manufactured", "style": "Primary", "icon": "flask"},
+ {"doctype": "Workflow State", "name": "Spraying In Progress",  "workflow_state_name": "Spraying In Progress",  "style": "Primary", "icon": "refresh"},
+ {"doctype": "Workflow State", "name": "Completed",             "workflow_state_name": "Completed",             "style": "Success", "icon": "thumbs-up"}
+]

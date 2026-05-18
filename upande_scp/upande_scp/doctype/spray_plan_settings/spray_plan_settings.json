@@ -21,7 +21,9 @@
   "weather_temp_green_min_c",
   "weather_temp_green_max_c",
   "weather_temp_red_max_c",
-  "weather_temp_red_min_c"
+  "weather_temp_red_min_c",
+  "material_issue_section",
+  "default_chemical_expense_account"
  ],
  "fields": [
   {
@@ -71,12 +73,14 @@
   {"default": "10", "fieldname": "weather_temp_green_min_c", "fieldtype": "Float", "label": "Temp: green >= (degC)"},
   {"default": "28", "fieldname": "weather_temp_green_max_c", "fieldtype": "Float", "label": "Temp: green <= (degC)"},
   {"default": "32", "fieldname": "weather_temp_red_max_c", "fieldtype": "Float", "label": "Temp: red >= (degC)"},
-  {"default": "8", "fieldname": "weather_temp_red_min_c", "fieldtype": "Float", "label": "Temp: red <= (degC)"}
+  {"default": "8", "fieldname": "weather_temp_red_min_c", "fieldtype": "Float", "label": "Temp: red <= (degC)"},
+  {"fieldname": "material_issue_section", "fieldtype": "Section Break", "label": "Material Issue Defaults"},
+  {"fieldname": "default_chemical_expense_account", "fieldtype": "Link", "options": "Account", "label": "Default Chemical Expense Account", "description": "Used as the fallback expense account on auto-Material-Issue rows when the tank-mix Item has no Item Default for the Work Order's company."}
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-18 00:00:00.000000",
+ "modified": "2026-05-18 00:00:01.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Spray Plan Settings",

@@ -26,7 +26,19 @@ export interface BedSvgProps {
   /** Bed-label font size in viewport units. Default is sized to be
    *  legible at the typical card width. */
   labelFontSize?: number;
+  /** Only label every Nth bed (in bed-id order) so the gutter doesn't
+   *  turn into a column of overlapping numbers. ``1`` = label every bed.
+   *  Beds whose ID doesn't parse as a number are always labeled. */
+  labelEvery?: number;
   className?: string;
+}
+
+function shouldLabel(bedId: string, every: number): boolean {
+  if (every <= 1) return true;
+  const n = parseInt(bedId, 10);
+  if (!Number.isFinite(n)) return true;
+  // Mark 1, 1+every, 1+2*every, … (so the first bed is always labeled).
+  return (n - 1) % every === 0;
 }
 
 const STROKE_COLOR = "rgba(0,0,0,0.55)";
@@ -36,7 +48,8 @@ export function BedSvg({
   geometry,
   markers,
   markerSize = 10,
-  labelFontSize = 7,
+  labelFontSize = 3,
+  labelEvery = 7,
   className,
 }: BedSvgProps) {
   return (
@@ -65,20 +78,22 @@ export function BedSvg({
           porting the upright-svg label-slot system, but for the POC having
           *any* visible numbers beats a perfect layout). */}
       <g>
-        {geometry.beds.map((b) => (
-          <text
-            key={b.bedId}
-            x={b.labelX}
-            y={b.labelY}
-            fontSize={labelFontSize}
-            textAnchor="end"
-            dominantBaseline="middle"
-            fill={LABEL_COLOR}
-            fontFamily="ui-sans-serif, system-ui, sans-serif"
-          >
-            {b.bedId}
-          </text>
-        ))}
+        {geometry.beds
+          .filter((b) => shouldLabel(b.bedId, labelEvery))
+          .map((b) => (
+            <text
+              key={b.bedId}
+              x={b.labelX}
+              y={b.labelY}
+              fontSize={labelFontSize}
+              textAnchor="end"
+              dominantBaseline="middle"
+              fill={LABEL_COLOR}
+              fontFamily="ui-sans-serif, system-ui, sans-serif"
+            >
+              {b.bedId}
+            </text>
+          ))}
       </g>
 
       {/* Marker layer. */}

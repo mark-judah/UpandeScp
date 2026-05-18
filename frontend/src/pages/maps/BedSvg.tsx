@@ -36,7 +36,7 @@ export function BedSvg({
   geometry,
   markers,
   markerSize = 10,
-  labelFontSize = 12,
+  labelFontSize = 7,
   className,
 }: BedSvgProps) {
   return (

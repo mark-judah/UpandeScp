@@ -21,6 +21,7 @@ def ensure_user(email: str, roles: list[str] | None = None, full_name: str = "")
             "send_welcome_email": 0, "enabled": 1,
         })
         u.insert(ignore_permissions=True)
+    # Roles are additive: this factory never removes roles already on the user.
     if roles:
         for r in roles:
             ensure_role(r)

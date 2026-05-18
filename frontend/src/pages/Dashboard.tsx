@@ -220,11 +220,14 @@ export function Dashboard() {
           </div>
         </div>
 
-        {overview.error && tab === "overview" && (
-          <div className="text-xs text-[var(--sd-data-red)]">
-            Failed to load: {overview.error}
-          </div>
-        )}
+        {(() => {
+          const active = ({ overview, pests, diseases, traps, fcm } as const)[tab];
+          return active.error ? (
+            <div className="text-xs text-[var(--sd-data-red)]">
+              Failed to load: {active.error}
+            </div>
+          ) : null;
+        })()}
       </header>
 
       <div className="flex-1 px-4 py-4 md:px-6 md:py-6">

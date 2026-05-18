@@ -83,9 +83,11 @@ export function useDashboardAggregate<T>(
 
   // Realtime invalidation: a new scouting write busts the server cache,
   // so we just refetch (server returns the fresh version, cached or not).
-  useRealtime<{ months?: string[] }>("scp:scouting:dirty", () => {
+  // Stable handler so useRealtime's effect doesn't re-subscribe on every render.
+  const onDirty = useCallback(() => {
     void fetchOnce(false);
-  });
+  }, [fetchOnce]);
+  useRealtime<{ months?: string[] }>("scp:scouting:dirty", onDirty);
 
   return {
     data,

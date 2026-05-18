@@ -8,6 +8,10 @@ import hashlib
 import json
 import re
 
+import frappe
+
+from upande_scp.serverscripts.cache_utils import get_or_set, scouting_payload_version
+
 
 def resolve_greenhouse_scope(
     greenhouse: str,
@@ -60,3 +64,29 @@ def disease_severity(s) -> str | None:
     if _MOD_RE.search(text):
         return "moderate"
     return None
+
+
+K_DASH_AGG_PREFIX = "scp:dash_agg"
+DASH_AGG_TTL = 120  # seconds
+
+
+def _build_key(endpoint: str, filters: dict) -> str:
+    v = scouting_payload_version()
+    return f"{K_DASH_AGG_PREFIX}:v{v}:{endpoint}:{filter_hash(filters)}"
+
+
+def cached_aggregate(endpoint: str, filters: dict, compute, force: bool = False):
+    """Read-through cache for an aggregate endpoint.
+
+    `compute` is a zero-arg callable producing the payload. `force=True`
+    skips the read and overwrites the cached value with a freshly computed
+    one. Backed by the same Redis adapter as ``cache_utils.get_or_set``;
+    any ``frappe.cache()`` failure propagates to the caller as a 500 — we
+    do not silently swallow it.
+    """
+    key = _build_key(endpoint, filters)
+    if force:
+        payload = compute()
+        frappe.cache().set_value(key, payload, expires_in_sec=DASH_AGG_TTL)
+        return payload
+    return get_or_set(key, compute, ttl=DASH_AGG_TTL)

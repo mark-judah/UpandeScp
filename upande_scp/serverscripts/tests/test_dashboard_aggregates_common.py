@@ -1,4 +1,6 @@
 import unittest
+import unittest.mock
+from unittest.mock import patch
 
 
 class TestResolveGreenhouseScope(unittest.TestCase):
@@ -81,3 +83,46 @@ class TestSeverity(unittest.TestCase):
         self.assertEqual(disease_severity("low"), None)
         self.assertEqual(disease_severity(""), None)
         self.assertEqual(disease_severity(None), None)
+
+
+class TestCachedAggregate(unittest.TestCase):
+    def test_cache_hit_skips_compute(self):
+        from upande_scp.serverscripts.dashboard_aggregates import _common
+        calls = {"n": 0}
+
+        def compute():
+            calls["n"] += 1
+            return {"x": 1}
+
+        with patch.object(_common, "get_or_set",
+                          side_effect=lambda key, builder, ttl: builder()) as gs_miss, \
+             patch.object(_common, "_build_key", return_value="key"):
+            v1 = _common.cached_aggregate("overview", {"a": 1}, compute, force=False)
+        self.assertEqual(v1, {"x": 1})
+        self.assertEqual(calls["n"], 1)
+
+        # Second call: get_or_set short-circuits and returns the cached value
+        # without invoking builder.
+        with patch.object(_common, "get_or_set",
+                          return_value={"x": 1}) as gs_hit, \
+             patch.object(_common, "_build_key", return_value="key"):
+            v2 = _common.cached_aggregate("overview", {"a": 1}, compute, force=False)
+        self.assertEqual(v2, {"x": 1})
+        self.assertEqual(calls["n"], 1)  # compute still only called once total
+        gs_hit.assert_called_once()
+
+    def test_force_bypasses_cache(self):
+        from upande_scp.serverscripts.dashboard_aggregates import _common
+
+        def compute():
+            return {"x": 2}
+
+        fake_cache = unittest.mock.MagicMock()
+        with patch.object(_common, "_build_key", return_value="key"), \
+             patch.object(_common.frappe, "cache", return_value=fake_cache), \
+             patch.object(_common, "get_or_set") as gs:
+            v = _common.cached_aggregate("overview", {"a": 1}, compute, force=True)
+        self.assertEqual(v, {"x": 2})
+        gs.assert_not_called()              # force path skips get_or_set
+        fake_cache.set_value.assert_called_once_with("key", {"x": 2},
+                                                     expires_in_sec=120)

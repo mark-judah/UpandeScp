@@ -79,9 +79,12 @@ function ghOf(zoneName: string): string {
 }
 
 function defaultRange(): { from: string; to: string } {
+  // Previous one week. Even though the page won't fetch until the
+  // operator picks a farm or greenhouse, having a sensible range
+  // pre-filled means the first pick lands a meaningful result.
   const today = new Date();
   const from = new Date(today);
-  from.setDate(today.getDate() - 14);
+  from.setDate(today.getDate() - 7);
   return { from: ymd(from), to: ymd(today) };
 }
 
@@ -205,10 +208,15 @@ export function Heatmaps() {
     [from, to, crop, greenhouseFilter],
   );
 
+  // Only fire the server call once the operator has narrowed the scope
+  // by at least one farm or greenhouse. Loading every greenhouse on page
+  // open is hectic on a busy site and adds no value when the user
+  // already knows which farm they're investigating.
+  const hasScope = greenhouseFilter.length > 0;
   const gridState = useDashboardAggregate<HeatmapsGridPayload>(
     "heatmaps_grid",
     aggFilters as any,
-    true,
+    hasScope,
   );
   const cards = gridState.data?.cards ?? [];
 
@@ -239,28 +247,38 @@ export function Heatmaps() {
   );
   const geometryByGh = useProjectedGeometries(zonesByGh, neededGhs);
 
-  // Tree options derived from the full (un-obs-filtered) card list — so
-  // un-checking and re-checking obs never depopulates the tree.
-  const treeData = useMemo(() => {
+  // Station tree is built from the full farm map (every farm/greenhouse the
+  // tenant has) so the operator can browse and pick before any cards exist.
+  // No counts here — counts come from the cards once a pick has been made.
+  const stationTree = useMemo(() => {
     const farmStations: Record<string, Record<string, number>> = {};
+    // Optional in-range counts overlay (only on greenhouses that have cards).
+    const ghTotals: Record<string, number> = {};
+    for (const c of cards) {
+      ghTotals[c.greenhouse] = (ghTotals[c.greenhouse] || 0) + c.totalObs;
+    }
+    for (const [gh, farm] of Object.entries(farmsByGh)) {
+      if (!farmStations[farm]) farmStations[farm] = {};
+      farmStations[farm][gh] = ghTotals[gh] || 0;
+    }
+    return buildStationTree(farmStations);
+  }, [farmsByGh, cards]);
+
+  // Observation tree is built from the returned cards (so it surfaces only
+  // pests/diseases that actually appear in the current scope). Empty until
+  // the first server response comes back.
+  const obsTree = useMemo(() => {
     const pestCounts: Record<string, number> = {};
     const diseaseCounts: Record<string, number> = {};
     for (const c of cards) {
-      const farm = farmsByGh[c.greenhouse] || "Unknown";
-      if (!farmStations[farm]) farmStations[farm] = {};
-      farmStations[farm][c.greenhouse] =
-        (farmStations[farm][c.greenhouse] || 0) + c.totalObs;
       if (c.obsKind === "pest")
         pestCounts[c.obsName] = (pestCounts[c.obsName] || 0) + c.totalObs;
       else
         diseaseCounts[c.obsName] =
           (diseaseCounts[c.obsName] || 0) + c.totalObs;
     }
-    return {
-      stationTree: buildStationTree(farmStations),
-      obsTree: buildObsTree(pestCounts, diseaseCounts),
-    };
-  }, [cards, farmsByGh]);
+    return buildObsTree(pestCounts, diseaseCounts);
+  }, [cards]);
 
   // Counters strip
   const totalObs = visibleCards.reduce((s, c) => s + c.totalObs, 0);
@@ -331,10 +349,10 @@ export function Heatmaps() {
               </PopoverTrigger>
               <PopoverContent className="w-80">
                 <TristateTree
-                  nodes={treeData.stationTree}
+                  nodes={stationTree}
                   checked={stationChecks}
                   onChange={setStationChecks}
-                  emptyHint="No farms in date range"
+                  emptyHint="No farms configured"
                   searchPlaceholder="Search farms or greenhouses…"
                 />
               </PopoverContent>
@@ -357,10 +375,14 @@ export function Heatmaps() {
               </PopoverTrigger>
               <PopoverContent className="w-80">
                 <TristateTree
-                  nodes={treeData.obsTree}
+                  nodes={obsTree}
                   checked={obsChecks}
                   onChange={setObsChecks}
-                  emptyHint="No observations in date range"
+                  emptyHint={
+                    hasScope
+                      ? "No observations in date range"
+                      : "Pick farms first"
+                  }
                   searchPlaceholder="Search observations…"
                 />
               </PopoverContent>
@@ -394,7 +416,21 @@ export function Heatmaps() {
       </div>
 
       <div className="flex-1 px-4 md:px-6 py-4 md:py-6">
-        {gridState.loading && !gridState.data ? (
+        {!hasScope ? (
+          <Card className="p-12 flex flex-col items-center justify-center text-center gap-2">
+            <div className="h-10 w-10 rounded-full bg-[var(--sd-pistachio)] flex items-center justify-center">
+              <MapPin className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <CardTitle className="text-base">
+              Pick farms or greenhouses to start
+            </CardTitle>
+            <CardDescription className="max-w-md">
+              Use the Farms picker above. Click a farm for every greenhouse
+              under it, or drill into specific greenhouses. Nothing loads
+              until you narrow the scope.
+            </CardDescription>
+          </Card>
+        ) : gridState.loading && !gridState.data ? (
           <ProgressOverlay progress={gridState.progress} />
         ) : !visibleCards.length ? (
           <Card className="p-12 text-center">

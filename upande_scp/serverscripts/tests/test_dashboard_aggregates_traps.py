@@ -34,3 +34,12 @@ class TestTrapsEndpoint(FrappeTestCase):
         self.assertEqual(set(payload["trendSeries"]["keys"]),
                          {"_TEST False Codling Moth"})
         self.assertEqual(len(payload["trendSeries"]["rows"]), 4)
+
+    def test_kpis(self):
+        payload = self._call()
+        # 48 trap catches total (all FCM via Yellow Sticky).
+        # 1 distinct trap name (Yellow Sticky), 1 distinct greenhouse (GH 3).
+        self.assertEqual(payload["kpis"]["trapZones"], 1)
+        self.assertEqual(payload["kpis"]["activeTraps"], 1)
+        self.assertEqual(payload["kpis"]["fcmCount"], 48)
+        self.assertEqual(payload["kpis"]["totalCatches"], 48)

@@ -1,8 +1,11 @@
 """Traps tab aggregator."""
 
+import re
 import frappe
 
 from upande_scp.serverscripts import scouting_metrics
+
+_FCM_RE = re.compile(r"fcm|moth", re.IGNORECASE)
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     parent_filter_conditions,
@@ -46,6 +49,7 @@ def _build(filters: dict, scope) -> dict:
     )
 
     return {
+        "kpis":          _kpis(rows),
         "ranking":       _ranking(rows),
         "pestBreakdown": _pest_breakdown(rows),
         "trendSeries":   _trend_series(rows),
@@ -99,3 +103,32 @@ def _trend_series(rows: list, top_n: int = 5) -> dict:
             row[p["name"]] = p["daily"].get(d, 0)
         out_rows.append(row)
     return {"rows": out_rows, "keys": keys}
+
+
+def _kpis(rows: list) -> dict:
+    """KPIs the TrapsTab grid displays:
+       trapZones    — distinct greenhouses (or block fallback) with any trap row
+       activeTraps  — distinct trap-name values
+       fcmCount     — total catches whose pest matches /fcm|moth/i
+       totalCatches — total catches across all rows
+    """
+    ghs = set()
+    trap_names = set()
+    fcm = 0
+    total = 0
+    for r in rows:
+        gh = r.greenhouse or r.block
+        if gh:
+            ghs.add(gh)
+        if r.trap:
+            trap_names.add(r.trap)
+        c = int(r.count or 0)
+        total += c
+        if _FCM_RE.search(r.pest or ""):
+            fcm += c
+    return {
+        "trapZones":    len(ghs),
+        "activeTraps":  len(trap_names),
+        "fcmCount":     fcm,
+        "totalCatches": total,
+    }

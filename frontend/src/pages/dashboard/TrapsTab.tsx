@@ -49,12 +49,7 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
   const ranking = data?.ranking ?? [];
   const breakdown = data?.pestBreakdown ?? [];
   const trend = data?.trendSeries ?? { rows: [], keys: [] };
-  const total = ranking.reduce((s, r) => s + r.total, 0);
-  const fcm = ranking
-    .filter((r) => /fcm|moth/i.test(r.pest))
-    .reduce((s, r) => s + r.total, 0);
-  const traps = ranking.length;
-  const ghCount = data ? new Set(ranking.map((r) => r.trap.split("/")[0])).size : 0;
+  const k = data?.kpis ?? { trapZones: 0, activeTraps: 0, fcmCount: 0, totalCatches: 0 };
 
   const barConfig: ChartConfig = {
     total: { label: "Catches", color: "var(--sd-data-purple)" },
@@ -70,10 +65,10 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
   return (
     <div className="flex flex-col gap-4">
       <KpiGrid cols={4}>
-        <Kpi label="Trap Zones" value={ghCount} hint="greenhouses with traps" />
-        <Kpi label="Active Traps" value={traps} hint="trap × pest pairs" />
-        <Kpi label="FCM Count" value={fcm} hint="false codling moth catches" />
-        <Kpi label="Total Catches" value={total} hint="across range" />
+        <Kpi label="Trap Zones" value={k.trapZones} hint="greenhouses with traps" />
+        <Kpi label="Active Traps" value={k.activeTraps} hint="distinct traps" />
+        <Kpi label="FCM Count" value={k.fcmCount} hint="false codling moth catches" />
+        <Kpi label="Total Catches" value={k.totalCatches} hint="across range" />
       </KpiGrid>
 
       <TrendStrip

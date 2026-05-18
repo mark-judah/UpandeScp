@@ -1,23 +1,23 @@
 /**
- * Heatmap rendering POC.
+ * Heatmap rendering POC — single-GH and multi-GH modes.
  *
- * Standalone route to measure the bed-symbol-instance rendering approach
- * end-to-end. Reads target params from ``window.location.hash`` (so the
- * URL can be shared without any React router changes), fetches geometry
- * via the existing ``fetchBedsAndZones`` cache + observations via the new
- * ``heatmap_poc`` endpoint, then renders three panels with shared bed
- * paths and per-day marker layers.
+ * URL forms:
+ *   #/poc-heatmap?gh=<Greenhouse>&obs=<Name>&kind=pest|disease
+ *   #/poc-heatmap?ghs=<GH1>|<GH2>|<GH3>&obs=<Name>&kind=pest|disease
  *
- * Times four numbers to ``console.log("[poc-timing]", …)``:
- *   fetch_ms       — network round-trip for the obs endpoint
- *   parse_ms       — JSON.parse on the response body
- *   project_ms     — equirectangular projection + bed-path emit
- *   full_ready_ms  — request sent → first frame painted with panels
+ * The multi-GH form fires all greenhouse fetches in parallel, projects
+ * each greenhouse's bed geometry exactly once, and renders one row per
+ * greenhouse with its 3-day strip. The whole grid is what the full
+ * Heatmaps page will look like; this POC just hard-codes the GH list
+ * via the URL so we can profile scaling without building the filter row.
  *
- * URL: ``/scp_app#poc-heatmap?gh=<Greenhouse>&obs=<Name>&kind=pest|disease``
+ * Timing logs:
+ *   [poc-projection] per-greenhouse projection time
+ *   [poc-row]        per-greenhouse fetch+ready time
+ *   [poc-grid]       overall: rows, total markers, end-to-end ms
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { call } from "@/lib/frappe";
 import { fetchBedsAndZones } from "@/lib/scouting-api";
 import {
@@ -35,121 +35,174 @@ interface PocResponse {
   recent: Array<{ date: string; zoneObs: Record<string, number> }>;
 }
 
-function parseHash(): { gh: string; obs: string; kind: "pest" | "disease" } {
+interface HashParams {
+  ghs: string[];
+  obs: string;
+  kind: "pest" | "disease";
+}
+
+function parseHash(): HashParams {
   const h = window.location.hash || "";
   const q = h.includes("?") ? h.slice(h.indexOf("?") + 1) : "";
   const params = new URLSearchParams(q);
+  // Prefer the multi-GH ``ghs=...`` form; fall back to the single ``gh=...``.
+  const ghsRaw = params.get("ghs") || params.get("gh") || "";
+  const ghs = ghsRaw
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
   return {
-    gh: params.get("gh") || "",
+    ghs,
     obs: params.get("obs") || "",
-    kind: (params.get("kind") === "disease" ? "disease" : "pest") as
-      | "pest"
-      | "disease",
+    kind: params.get("kind") === "disease" ? "disease" : "pest",
   };
+}
+
+interface RowState {
+  greenhouse: string;
+  resp?: PocResponse;
+  geometry?: ProjectedGeometry;
+  err?: string;
+  fetch_ms?: number;
+  project_ms?: number;
+  ready_ms?: number;
 }
 
 export function HeatmapPoc() {
   const [params, setParams] = useState(parseHash);
-  const [resp, setResp] = useState<PocResponse | null>(null);
-  const [zoneRows, setZoneRows] = useState<{ name: string; raw_geojson?: string }[] | null>(
-    null,
-  );
+  const [tree, setTree] = useState<
+    Array<{ beds: Array<{ name: string; zones: Array<{ name: string; raw_geojson?: string }> }> }> | null
+  >(null);
+  const [rows, setRows] = useState<RowState[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  const fetchStartRef = useRef<number>(0);
+  const [t0, setT0] = useState<number>(0);
 
-  // Re-read hash when it changes (so manually editing the URL refreshes).
   useEffect(() => {
     const onHash = () => setParams(parseHash());
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // Fetch zone geometry once. Uses the shared 24h-cached path.
+  // Fetch the bed/zone tree once (24h-cached client-side).
   useEffect(() => {
-    if (!params.gh) return;
+    if (!params.ghs.length) return;
     void fetchBedsAndZones()
-      .then((tree) => {
-        // VarietyNode[] → BedZoneNode[] flatten — we only need the zones
-        // attached to the matching greenhouse. Bed names contain the
-        // greenhouse as prefix (e.g. "Karen GH 1 - Bed 3"), so a startsWith
-        // match captures every bed under this greenhouse regardless of
-        // variety nesting.
-        const ghPrefix = params.gh + " - ";
-        const zones: { name: string; raw_geojson?: string }[] = [];
-        for (const v of tree) {
-          for (const bed of v.beds || []) {
-            if (!bed.name?.startsWith(ghPrefix) && bed.name !== params.gh) continue;
-            for (const z of bed.zones || []) zones.push(z);
-          }
-        }
-        setZoneRows(zones);
-      })
+      .then((t) => setTree(t as any))
       .catch((e) => setErr(e?.message || "geometry fetch failed"));
-  }, [params.gh]);
+  }, [params.ghs.length === 0]);
 
-  // Fetch observations whenever (gh, obs, kind) changes. Time the round-trip.
+  // Fetch all GHs in parallel whenever the param set changes.
   useEffect(() => {
-    if (!params.gh || !params.obs) return;
-    setErr(null);
-    setResp(null);
-    const t0 = performance.now();
-    fetchStartRef.current = t0;
-    void call<{ message?: PocResponse }>(
-      "upande_scp.serverscripts.dashboard_aggregates.heatmap_poc",
-      { greenhouse: params.gh, obs_name: params.obs, obs_kind: params.kind },
-    )
-      .then((raw) => {
-        const tFetch = performance.now();
-        const payload = (raw as any)?.message ?? (raw as PocResponse);
-        const tParse = performance.now();
-        // (Frappe already JSON.parsed via fetch.json(); ``parse_ms`` here
-        // is the time we spend reaching into ``.message`` and shallow-
-        // checking the response, sub-millisecond — log anyway for
-        // completeness.)
-        setResp(payload);
-        // Defer the full-ready stamp to the next animation frame so
-        // we measure after React commits and the browser paints.
-        requestAnimationFrame(() => {
-          const tReady = performance.now();
-          console.log("[poc-timing]", {
-            fetch_ms: +(tFetch - t0).toFixed(1),
-            parse_ms: +(tParse - tFetch).toFixed(2),
-            full_ready_ms: +(tReady - t0).toFixed(1),
-            greenhouse: params.gh,
-            obs: params.obs,
-            kind: params.kind,
-            dates: payload?.recent?.length || 0,
+    if (!params.ghs.length || !params.obs || !tree) return;
+    const start = performance.now();
+    setT0(start);
+    setRows(params.ghs.map((g) => ({ greenhouse: g })));
+
+    params.ghs.forEach((gh, rowIdx) => {
+      const rowStart = performance.now();
+      void call<{ message?: PocResponse }>(
+        "upande_scp.serverscripts.dashboard_aggregates.heatmap_poc",
+        { greenhouse: gh, obs_name: params.obs, obs_kind: params.kind },
+      )
+        .then((raw) => {
+          const tFetch = performance.now();
+          const resp = (raw as any)?.message ?? (raw as PocResponse);
+
+          // Project this greenhouse's geometry from the cached tree.
+          const ghPrefix = gh + " - ";
+          const zones: { name: string; raw_geojson?: string }[] = [];
+          for (const v of tree) {
+            for (const bed of v.beds || []) {
+              if (!bed.name?.startsWith(ghPrefix) && bed.name !== gh) continue;
+              for (const z of bed.zones || []) zones.push(z);
+            }
+          }
+          const tProj0 = performance.now();
+          const geometry = projectGeometry(zones) || undefined;
+          const tProj1 = performance.now();
+          const project_ms = +(tProj1 - tProj0).toFixed(1);
+          const fetch_ms = +(tFetch - rowStart).toFixed(1);
+
+          requestAnimationFrame(() => {
+            const tReady = performance.now();
+            const ready_ms = +(tReady - rowStart).toFixed(1);
+            console.log("[poc-row]", {
+              greenhouse: gh,
+              fetch_ms,
+              project_ms,
+              ready_ms,
+              dates: resp?.recent?.length || 0,
+              bed_paths: geometry?.beds.length || 0,
+              zones: Object.keys(geometry?.zoneCentroids || {}).length,
+            });
           });
-        });
-      })
-      .catch((e) => setErr(e?.message || "obs fetch failed"));
-  }, [params.gh, params.obs, params.kind]);
 
-  // Project geometry once per zone-array reference. Time the projection.
-  const projected = useMemo<ProjectedGeometry | null>(() => {
-    if (!zoneRows || !zoneRows.length) return null;
-    const t0 = performance.now();
-    const g = projectGeometry(zoneRows);
-    const t1 = performance.now();
-    console.log("[poc-projection]", {
-      project_ms: +(t1 - t0).toFixed(1),
-      bed_paths: g?.beds.length || 0,
-      zones: Object.keys(g?.zoneCentroids || {}).length,
+          setRows((cur) => {
+            const next = cur.slice();
+            next[rowIdx] = {
+              greenhouse: gh,
+              resp,
+              geometry,
+              fetch_ms,
+              project_ms,
+            };
+            return next;
+          });
+        })
+        .catch((e) =>
+          setRows((cur) => {
+            const next = cur.slice();
+            next[rowIdx] = {
+              greenhouse: gh,
+              err: e?.message || "fetch failed",
+            };
+            return next;
+          }),
+        );
     });
-    return g;
-  }, [zoneRows]);
+  }, [params.ghs.join("|"), params.obs, params.kind, tree]);
 
-  if (!params.gh || !params.obs) {
+  // When every row has either landed or errored, emit the grid summary.
+  const allDone = rows.length > 0 && rows.every((r) => r.resp || r.err);
+  useEffect(() => {
+    if (!allDone || !t0) return;
+    requestAnimationFrame(() => {
+      const tEnd = performance.now();
+      const successful = rows.filter((r) => r.resp);
+      const totalMarkers = successful.reduce(
+        (s, r) =>
+          s +
+          (r.resp?.recent || []).reduce(
+            (a, d) => a + Object.keys(d.zoneObs).length,
+            0,
+          ),
+        0,
+      );
+      console.log("[poc-grid]", {
+        rows: rows.length,
+        ok: successful.length,
+        errors: rows.length - successful.length,
+        total_markers: totalMarkers,
+        end_to_end_ms: +(tEnd - t0).toFixed(1),
+      });
+    });
+  }, [allDone, t0, rows]);
+
+  if (!params.ghs.length || !params.obs) {
     return (
       <div className="p-8 text-sm">
         <p className="font-medium mb-2">Heatmap rendering POC</p>
         <p className="text-muted-foreground mb-3">
-          Open this route with hash params: <code>#poc-heatmap?gh=&lt;Greenhouse&gt;&amp;obs=&lt;Name&gt;&amp;kind=pest|disease</code>
+          Open with hash params:
         </p>
-        <p className="text-muted-foreground">
-          Example:{" "}
-          <code>#poc-heatmap?gh=Karen GH 1&amp;obs=Thrips&amp;kind=pest</code>
-        </p>
+        <ul className="text-muted-foreground space-y-1 ml-4 list-disc">
+          <li>
+            Single: <code>#/poc-heatmap?gh=&lt;GH&gt;&amp;obs=&lt;Name&gt;&amp;kind=pest|disease</code>
+          </li>
+          <li>
+            Multi: <code>#/poc-heatmap?ghs=&lt;GH1&gt;|&lt;GH2&gt;|&lt;GH3&gt;&amp;obs=&lt;Name&gt;&amp;kind=pest|disease</code>
+          </li>
+        </ul>
       </div>
     );
   }
@@ -158,16 +211,7 @@ export function HeatmapPoc() {
     return <div className="p-8 text-sm text-[var(--sd-data-red)]">Error: {err}</div>;
   }
 
-  if (!projected || !resp) {
-    return (
-      <div className="p-8 text-sm text-muted-foreground">
-        Loading {params.gh} · {params.obs} ({params.kind})…
-      </div>
-    );
-  }
-
-  const kind: MarkerKind =
-    params.kind === "disease" ? "disease" : "pest";
+  const kind: MarkerKind = params.kind === "disease" ? "disease" : "pest";
 
   return (
     <div className="p-4 md:p-6 flex flex-col gap-4">
@@ -175,48 +219,85 @@ export function HeatmapPoc() {
       <header className="flex items-baseline justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-lg font-semibold">
-            {resp.greenhouse} · {resp.obsName}
+            {params.ghs.length} greenhouse{params.ghs.length === 1 ? "" : "s"} · {params.obs}
           </h1>
           <p className="text-xs text-muted-foreground">
-            {resp.recent.length} scouting dates · {projected.beds.length} beds ·{" "}
-            {Object.keys(projected.zoneCentroids).length} zones
+            Open DevTools console for timing logs: [poc-row], [poc-grid]
           </p>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Open dev-tools console for timing logs (search "[poc-timing]")
-        </p>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {resp.recent.length === 0 && (
-          <div className="col-span-3 text-sm text-muted-foreground p-8 border rounded-md bg-[var(--sd-bg-soft)]">
-            No scouting entries for {resp.obsName} in {resp.greenhouse} in the
-            last 90 days.
-          </div>
-        )}
-        {resp.recent.map((day, i) => {
-          const markers: BedMarker[] = Object.entries(day.zoneObs).map(
-            ([zone, count]) => ({
-              zone,
-              count,
-              kind,
-              color: resp.color,
-            }),
-          );
-          return (
-            <div key={day.date} className="flex flex-col gap-1 border rounded-md bg-card p-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-medium">{day.date}</span>
-                <span className="text-muted-foreground tabular-nums">
-                  {markers.length} zone{markers.length === 1 ? "" : "s"}
-                </span>
+      <div className="flex flex-col gap-3">
+        {rows.map((r, rowIdx) => {
+          if (r.err) {
+            return (
+              <div
+                key={rowIdx}
+                className="border rounded-md p-3 text-xs text-[var(--sd-data-red)]"
+              >
+                {r.greenhouse}: {r.err}
               </div>
-              <BedSvg
-                geometry={projected}
-                markers={markers}
-                defsId={`poc-${i}`}
-                className="w-full h-auto"
-              />
+            );
+          }
+          if (!r.resp || !r.geometry) {
+            return (
+              <div
+                key={rowIdx}
+                className="border rounded-md p-3 text-xs text-muted-foreground"
+              >
+                Loading {r.greenhouse}…
+              </div>
+            );
+          }
+          const resp = r.resp;
+          const geom = r.geometry;
+          return (
+            <div key={rowIdx} className="border rounded-md p-3 bg-card flex flex-col gap-2">
+              <div className="flex items-baseline justify-between flex-wrap gap-2">
+                <div>
+                  <h2 className="text-sm font-medium">{resp.greenhouse}</h2>
+                  <p className="text-[10px] text-muted-foreground">
+                    {geom.beds.length} beds · {Object.keys(geom.zoneCentroids).length} zones · {resp.recent.length} scouting dates
+                  </p>
+                </div>
+                <p className="text-[10px] tabular-nums text-muted-foreground">
+                  fetch {r.fetch_ms}ms · project {r.project_ms}ms
+                </p>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+                {resp.recent.length === 0 ? (
+                  <div className="col-span-3 text-xs text-muted-foreground p-4 border rounded-md bg-[var(--sd-bg-soft)]">
+                    No {params.obs} entries in {resp.greenhouse} in the last 90 days.
+                  </div>
+                ) : (
+                  resp.recent.map((day, i) => {
+                    const markers: BedMarker[] = Object.entries(day.zoneObs).map(
+                      ([zone, count]) => ({
+                        zone,
+                        count,
+                        kind,
+                        color: resp.color,
+                      }),
+                    );
+                    return (
+                      <div key={day.date} className="flex flex-col gap-1 border rounded-md bg-[var(--sd-bg-soft)] p-2">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="font-medium">{day.date}</span>
+                          <span className="text-muted-foreground tabular-nums">
+                            {markers.length}z
+                          </span>
+                        </div>
+                        <BedSvg
+                          geometry={geom}
+                          markers={markers}
+                          defsId={`poc-${rowIdx}-${i}`}
+                          className="w-full h-auto"
+                        />
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           );
         })}

@@ -76,3 +76,64 @@ def submit_drafts_for_approval(wo_names) -> dict:
 
     frappe.db.commit()
     return {"submitted": submitted, "skipped": skipped}
+
+
+@frappe.whitelist()
+def approve_drafts_bulk(wo_names) -> dict:
+    """Race-free GM bulk approval: Awaiting Approval -> Approved.
+
+    Single transaction with row locks, all-or-nothing. Does NOT yet call
+    `approve_single_work_order` (which creates a Material Transfer SE) because
+    that legacy endpoint runs heavy logic and we want this Part-A bulk endpoint
+    isolated. Task 16 wires the legacy single-approver path to also set
+    workflow_state; Part B will pair this bulk endpoint with the SE creation.
+    """
+    user = frappe.session.user
+    if isinstance(wo_names, str):
+        wo_names = frappe.parse_json(wo_names)
+    if not wo_names:
+        frappe.throw("No work orders to approve.")
+    if user != "Administrator":
+        # Use DB check (Redis cache may miss in tests)
+        gm_or_sm = bool(frappe.db.sql(
+            """SELECT 1 FROM `tabHas Role`
+               WHERE parent=%s AND role IN ('General Manager', 'System Manager') LIMIT 1""",
+            (user,),
+        ))
+        if not gm_or_sm:
+            raise frappe.PermissionError("Only General Manager / System Manager can bulk-approve.")
+
+    approved: list[str] = []
+    skipped: list[dict] = []
+    try:
+        for name in wo_names:
+            row = frappe.db.sql(
+                """SELECT name, docstatus, workflow_state
+                   FROM `tabWork Order` WHERE name=%s FOR UPDATE""",
+                (name,), as_dict=True,
+            )
+            if not row:
+                skipped.append({"name": name, "reason": "missing"}); continue
+            row = row[0]
+            if row.docstatus != 1 or row.workflow_state != "Awaiting Approval":
+                skipped.append({"name": name, "reason": "not awaiting approval"}); continue
+            # Flip state via raw SQL (avoids ERPNext on_update_after_submit hooks)
+            frappe.db.sql(
+                "UPDATE `tabWork Order` SET workflow_state=%s, modified=NOW() WHERE name=%s",
+                ("Approved", name),
+            )
+            try:
+                frappe.get_doc("Work Order", name).add_comment(
+                    "Workflow",
+                    f"Approved by {user}. State: Awaiting Approval -> Approved.",
+                )
+            except Exception:
+                # Comment add failure must not block the approval
+                pass
+            approved.append(name)
+        frappe.db.commit()
+    except Exception:
+        frappe.db.rollback()
+        raise
+
+    return {"approved": approved, "skipped": skipped}

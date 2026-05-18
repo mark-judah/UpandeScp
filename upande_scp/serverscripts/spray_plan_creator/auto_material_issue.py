@@ -199,6 +199,10 @@ def on_manufacture_submit(doc, method):
             "State: Tank Mix Manufactured -> Completed.",
         )
     except Exception:
-        # Comment failures must not block the submission chain.
-        pass
+        # Comment failures must not block the submission chain. Log so we can
+        # diagnose any silent breakage in production.
+        frappe.log_error(
+            frappe.get_traceback(),
+            "auto_material_issue: add_comment failed",
+        )
     return mi.name

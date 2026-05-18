@@ -9,7 +9,7 @@ import frappe
 
 
 SEED_FARMS = ("Chepsito", "Kaptumbo", "Kapkolia", "Torongo", "Simotwo", "Karen")
-SEED_KEYWORDS = ("phase", "tunnel", "ipm", "wetland")
+SEED_KEYWORDS = ("phase", "tunnel", "ipm", "wetland", "csu")
 
 
 def execute():

@@ -285,10 +285,23 @@ def get_farms_and_warehouses():
     Companion to ``get_farms_and_greenhouses`` which only lists greenhouses;
     block-based farms (avocado orchards etc.) need to show up so the dashboard
     can scope to them.
+
+    Greenhouses (warehouse_type='Greenhouse') are filtered to the same
+    invariant the Application Floor Plan + spray planner already use:
+    must belong to an allowed farm (Spray Plan Settings.allowed_farms),
+    match the ``GH <N>`` naming convention, and avoid the exclude
+    keywords (``tunnel``, ``phase``, ``ipm``, ``wetland``, ``csu``).
+    Orphans (no ``custom_farm``) drop out. Block-type warehouses bypass
+    the greenhouse filter — orchards don't follow the GH convention.
     """
+    from upande_scp.serverscripts.warehouse_filter import (
+        is_greenhouse_allowed,
+        load_settings,
+    )
+
     rows = frappe.db.sql(
         """
-        SELECT name, custom_farm AS farm
+        SELECT name, warehouse_type, custom_farm AS farm
         FROM   `tabWarehouse`
         WHERE  warehouse_type IN ('Greenhouse', 'Block')
           AND  disabled = 0
@@ -297,9 +310,18 @@ def get_farms_and_warehouses():
         """,
         as_dict=True,
     )
+    allowed, exclude = load_settings()
+    allowed_lower = tuple(f.lower() for f in allowed)
     grouped = defaultdict(list)
     for r in rows:
-        farm = r.farm or "(no farm)"
+        farm = r.farm
+        if not farm:
+            continue  # orphan — there is no policy for unparented warehouses
+        if r.warehouse_type == "Greenhouse":
+            if not is_greenhouse_allowed(
+                r.name, allowed_lower, exclude, has_farm=True
+            ):
+                continue
         grouped[farm].append(r.name)
     return dict(grouped)
 

@@ -108,6 +108,32 @@ def cached_aggregate(endpoint: str, filters: dict, compute, force: bool = False)
     return payload
 
 
+DASH_AGG_PROGRESS_EVENT = "scp:dash_agg:progress"
+
+
+def publish_progress(job_id: str, percent: int, label: str = "") -> None:
+    """Push a progress event to the calling user's socket.
+
+    ``after_commit=False`` so the message is flushed immediately while the
+    worker is still computing; otherwise it would queue until the request
+    ends and the client would only see 100% at completion. No-ops when
+    ``job_id`` is falsy so endpoints can skip the work when the caller did
+    not pass a job id (warm-cache hits never reach here anyway).
+    """
+    if not job_id:
+        return
+    try:
+        frappe.publish_realtime(
+            event=DASH_AGG_PROGRESS_EVENT,
+            message={"job_id": job_id, "percent": int(percent), "label": label},
+            user=frappe.session.user,
+            after_commit=False,
+        )
+    except Exception:
+        # Realtime is best-effort UI sugar; never let it break the response.
+        pass
+
+
 def parent_filter_conditions(
     from_date: str,
     to_date: str,

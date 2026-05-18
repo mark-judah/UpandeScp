@@ -6,6 +6,7 @@ from upande_scp.serverscripts import scouting_metrics
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     parent_filter_conditions,
+    publish_progress,
     resolve_greenhouse_scope,
 )
 
@@ -20,6 +21,7 @@ def overview(args: dict, force: bool = False) -> dict:
     crop      = (args.get("crop") or "").strip()
     farm      = (args.get("farm") or "").strip()
     gh        = (args.get("greenhouse") or "").strip()
+    job_id    = (args.get("job_id") or "").strip()
 
     farms_map = scouting_metrics.get_farms_and_warehouses() or {}
     scope = resolve_greenhouse_scope(gh, farm, farms_map)
@@ -31,24 +33,33 @@ def overview(args: dict, force: bool = False) -> dict:
     return cached_aggregate(
         "overview",
         cache_filters,
-        lambda: _build(from_date, to_date, crop, scope),
+        lambda: _build(from_date, to_date, crop, scope, job_id),
         force=force,
     )
 
 
-def _build(from_date, to_date, crop, scope) -> dict:
+def _build(from_date, to_date, crop, scope, job_id: str = "") -> dict:
+    publish_progress(job_id, 5, "resolving filters")
     where, params = parent_filter_conditions(from_date, to_date, crop, scope)
 
+    publish_progress(job_id, 15, "counting entries")
     kpis    = _kpis(where, params)
+
+    publish_progress(job_id, 35, "loading observations")
     obs     = _observation_rows(where, params)
+
+    publish_progress(job_id, 85, "computing summaries")
     daily, range_totals = _daily_and_totals(obs)
     gh_health, alerts_total = _gh_health(obs)
     active = _active_alerts(obs)
     top_scouts, scouts_per_day, scout_perf = _scout_aggs(obs)
+
+    publish_progress(job_id, 95, "loading recent activity")
     recent = _recent_activity(where, params)
 
     kpis["highAlerts"] = alerts_total
 
+    publish_progress(job_id, 100, "")
     return {
         "kpis": kpis,
         "daily": daily,

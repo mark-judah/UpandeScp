@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/DatePicker";
@@ -21,6 +20,7 @@ import { PestsTab }     from "./dashboard/PestsTab";
 import { DiseasesTab }  from "./dashboard/DiseasesTab";
 import { TrapsTab }     from "./dashboard/TrapsTab";
 import { FcmTab }       from "./dashboard/FcmTab";
+import { ProgressOverlay } from "./dashboard/ProgressOverlay";
 import { ymd } from "@/lib/utils";
 import type { OverviewPayload } from "./dashboard/overview-types";
 import type { PestsPayload, DiseasesPayload } from "./dashboard/pests-diseases-types";
@@ -241,7 +241,9 @@ export function Dashboard() {
           </TabsList>
 
           <TabsContent value="overview" className="mt-0">
-            {overview.loading && !overview.data ? <KpiSkeleton /> : (
+            {overview.loading && !overview.data ? (
+              <ProgressOverlay progress={overview.progress} />
+            ) : (
               <OverviewTab
                 data={overview.data}
                 scoutLookup={scoutLookup}
@@ -252,7 +254,9 @@ export function Dashboard() {
             )}
           </TabsContent>
           <TabsContent value="pests" className="mt-0">
-            {pests.loading && !pests.data ? <KpiSkeleton /> : (
+            {pests.loading && !pests.data ? (
+              <ProgressOverlay progress={pests.progress} />
+            ) : (
               <PestsTab
                 data={pests.data}
                 pestName={pestFilters.observation}
@@ -263,7 +267,9 @@ export function Dashboard() {
             )}
           </TabsContent>
           <TabsContent value="diseases" className="mt-0">
-            {diseases.loading && !diseases.data ? <KpiSkeleton /> : (
+            {diseases.loading && !diseases.data ? (
+              <ProgressOverlay progress={diseases.progress} />
+            ) : (
               <DiseasesTab
                 data={diseases.data}
                 diseaseName={diseaseFilters.observation}
@@ -274,12 +280,16 @@ export function Dashboard() {
             )}
           </TabsContent>
           <TabsContent value="traps" className="mt-0">
-            {traps.loading && !traps.data ? <KpiSkeleton /> : (
+            {traps.loading && !traps.data ? (
+              <ProgressOverlay progress={traps.progress} />
+            ) : (
               <TrapsTab data={traps.data} />
             )}
           </TabsContent>
           <TabsContent value="fcm" className="mt-0">
-            {fcm.loading && !fcm.data ? <KpiSkeleton /> : (
+            {fcm.loading && !fcm.data ? (
+              <ProgressOverlay progress={fcm.progress} />
+            ) : (
               <FcmTab data={fcm.data} />
             )}
           </TabsContent>
@@ -289,12 +299,3 @@ export function Dashboard() {
   );
 }
 
-function KpiSkeleton() {
-  return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <Skeleton key={i} className="h-24" />
-      ))}
-    </div>
-  );
-}

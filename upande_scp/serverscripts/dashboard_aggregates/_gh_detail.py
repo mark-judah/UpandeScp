@@ -6,11 +6,13 @@ from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     disease_severity,
     parent_filter_conditions,
+    publish_progress,
 )
 
 
 def greenhouse_detail(args: dict, force: bool = False) -> dict:
     gh = (args.get("greenhouse") or "").strip()
+    job_id = (args.get("job_id") or "").strip()
     filters = {
         "greenhouse": gh,
         "from_date":  args.get("from_date", ""),
@@ -20,7 +22,7 @@ def greenhouse_detail(args: dict, force: bool = False) -> dict:
     if not gh:
         return _empty()
     return cached_aggregate(
-        "greenhouse_detail", filters, lambda: _build(filters), force=force,
+        "greenhouse_detail", filters, lambda: _build(filters, job_id), force=force,
     )
 
 
@@ -29,12 +31,14 @@ def _empty() -> dict:
             "scouts": 0, "alerts": 0}
 
 
-def _build(filters: dict) -> dict:
+def _build(filters: dict, job_id: str = "") -> dict:
+    publish_progress(job_id, 10, "resolving filters")
     where, params = parent_filter_conditions(
         filters["from_date"], filters["to_date"], filters["crop"],
         [filters["greenhouse"]],
     )
 
+    publish_progress(job_id, 25, "loading pest rows")
     pests = frappe.db.sql(f"""
         SELECT se.name, se.date_of_capture, p.pest, p.count
         FROM `tabScouting Entry` se
@@ -42,6 +46,7 @@ def _build(filters: dict) -> dict:
         WHERE {where}
     """, params, as_dict=True)
 
+    publish_progress(job_id, 50, "loading disease rows")
     diseases = frappe.db.sql(f"""
         SELECT se.name, se.date_of_capture, d.disease, d.stage
         FROM `tabScouting Entry` se
@@ -49,6 +54,7 @@ def _build(filters: dict) -> dict:
         WHERE {where}
     """, params, as_dict=True)
 
+    publish_progress(job_id, 70, "loading trap rows")
     traps = frappe.db.sql(f"""
         SELECT se.name, se.date_of_capture, t.pest, t.count
         FROM `tabScouting Entry` se
@@ -56,6 +62,7 @@ def _build(filters: dict) -> dict:
         WHERE {where}
     """, params, as_dict=True)
 
+    publish_progress(job_id, 85, "counting scouts")
     scout_rows = frappe.db.sql(f"""
         SELECT DISTINCT scouts_name FROM `tabScouting Entry` se WHERE {where}
     """, params, as_dict=True)
@@ -97,7 +104,7 @@ def _build(filters: dict) -> dict:
             key=lambda x: x["count"], reverse=True,
         )[:n]
 
-    return {
+    payload = {
         "topPests":    _top(pest_map),
         "topDiseases": _top(disease_map),
         "traps":       sorted(
@@ -109,3 +116,5 @@ def _build(filters: dict) -> dict:
                        if (r.scouts_name or "").strip()}),
         "alerts": alerts,
     }
+    publish_progress(job_id, 100, "")
+    return payload

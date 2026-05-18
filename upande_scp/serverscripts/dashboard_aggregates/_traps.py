@@ -9,6 +9,7 @@ _FCM_RE = re.compile(r"fcm|moth", re.IGNORECASE)
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     parent_filter_conditions,
+    publish_progress,
     resolve_greenhouse_scope,
 )
 
@@ -20,6 +21,7 @@ def traps(args: dict, force: bool = False) -> dict:
         (args.get("farm") or "").strip(),
         farms_map,
     )
+    job_id = (args.get("job_id") or "").strip()
     filters = {
         "from_date": args.get("from_date", ""),
         "to_date":   args.get("to_date", ""),
@@ -28,14 +30,16 @@ def traps(args: dict, force: bool = False) -> dict:
         "greenhouse":(args.get("greenhouse") or "").strip(),
     }
     return cached_aggregate(
-        "traps", filters, lambda: _build(filters, scope), force=force,
+        "traps", filters, lambda: _build(filters, scope, job_id), force=force,
     )
 
 
-def _build(filters: dict, scope) -> dict:
+def _build(filters: dict, scope, job_id: str = "") -> dict:
+    publish_progress(job_id, 10, "resolving filters")
     where, params = parent_filter_conditions(
         filters["from_date"], filters["to_date"], filters["crop"], scope,
     )
+    publish_progress(job_id, 30, "loading trap rows")
     rows = frappe.db.sql(
         f"""
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
@@ -48,12 +52,15 @@ def _build(filters: dict, scope) -> dict:
         as_dict=True,
     )
 
-    return {
+    publish_progress(job_id, 80, "summarising catches")
+    payload = {
         "kpis":          _kpis(rows),
         "ranking":       _ranking(rows),
         "pestBreakdown": _pest_breakdown(rows),
         "trendSeries":   _trend_series(rows),
     }
+    publish_progress(job_id, 100, "")
+    return payload
 
 
 def _ranking(rows: list) -> list:

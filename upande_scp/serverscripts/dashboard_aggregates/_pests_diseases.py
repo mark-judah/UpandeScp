@@ -9,6 +9,7 @@ from upande_scp.serverscripts.dashboard_aggregates._common import (
     disease_severity,
     parent_filter_conditions,
     pest_severity,
+    publish_progress,
     resolve_greenhouse_scope,
 )
 
@@ -34,6 +35,7 @@ def _build_endpoint(kind: str, args: dict, force: bool) -> dict:
         (args.get("farm") or "").strip(),
         farms_map,
     )
+    job_id = (args.get("job_id") or "").strip()
     filters = {
         "kind": kind,
         "from_date": args.get("from_date", ""),
@@ -48,17 +50,19 @@ def _build_endpoint(kind: str, args: dict, force: bool) -> dict:
     return cached_aggregate(
         kind + "s",
         filters,
-        lambda: _build(kind, filters, scope),
+        lambda: _build(kind, filters, scope, job_id),
         force=force,
     )
 
 
-def _build(kind: str, filters: dict, scope) -> dict:
+def _build(kind: str, filters: dict, scope, job_id: str = "") -> dict:
+    publish_progress(job_id, 5, "resolving filters")
     where, params = parent_filter_conditions(
         filters["from_date"], filters["to_date"], filters["crop"], scope,
     )
     table, col = _TABLE[kind]
     count_clause = "c.count AS count" if kind == "pest" else "NULL AS count"
+    publish_progress(job_id, 20, f"loading {kind} observations")
     rows = frappe.db.sql(
         f"""
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
@@ -74,13 +78,14 @@ def _build(kind: str, filters: dict, scope) -> dict:
         as_dict=True,
     )
 
+    publish_progress(job_id, 75, "computing zone metrics")
     zones_by_gh = get_zone_counts_by_greenhouse() or {}
 
     ranking = _ranking(kind, rows)
     fo = _filter_options(rows)
     fo[kind + "s"] = fo.pop("items")
 
-    return {
+    payload = {
         "filterOptions":      fo,
         "ranking":             ranking,
         "distribution":       _distribution(rows, filters, zones_by_gh),
@@ -89,6 +94,8 @@ def _build(kind: str, filters: dict, scope) -> dict:
         "dailyPercent":       _daily_percent(rows, filters, zones_by_gh),
         "trendSeries":        _trend_series(rows, kind),
     }
+    publish_progress(job_id, 100, "")
+    return payload
 
 
 def _ranking(kind: str, rows: list) -> list:

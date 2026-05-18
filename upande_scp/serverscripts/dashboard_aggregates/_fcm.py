@@ -9,6 +9,7 @@ from upande_scp.serverscripts import scouting_metrics
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     parent_filter_conditions,
+    publish_progress,
     resolve_greenhouse_scope,
 )
 
@@ -23,6 +24,7 @@ def fcm(args: dict, force: bool = False) -> dict:
         (args.get("farm") or "").strip(),
         farms_map,
     )
+    job_id = (args.get("job_id") or "").strip()
     filters = {
         "from_date": args.get("from_date", ""),
         "to_date":   args.get("to_date", ""),
@@ -31,15 +33,17 @@ def fcm(args: dict, force: bool = False) -> dict:
         "greenhouse":(args.get("greenhouse") or "").strip(),
     }
     return cached_aggregate(
-        "fcm", filters, lambda: _build(filters, scope), force=force,
+        "fcm", filters, lambda: _build(filters, scope, job_id), force=force,
     )
 
 
-def _build(filters: dict, scope) -> dict:
+def _build(filters: dict, scope, job_id: str = "") -> dict:
+    publish_progress(job_id, 5, "resolving filters")
     where, params = parent_filter_conditions(
         filters["from_date"], filters["to_date"], filters["crop"], scope,
     )
 
+    publish_progress(job_id, 25, "loading pest rows")
     pests = frappe.db.sql(
         f"""
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
@@ -52,6 +56,7 @@ def _build(filters: dict, scope) -> dict:
         params,
         as_dict=True,
     )
+    publish_progress(job_id, 60, "loading trap rows")
     traps = frappe.db.sql(
         f"""
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
@@ -64,6 +69,7 @@ def _build(filters: dict, scope) -> dict:
         as_dict=True,
     )
 
+    publish_progress(job_id, 85, "filtering focus pests")
     focus_pests = [r for r in pests if _FOCUS_RE.search(r.pest or "")]
     focus_traps = [r for r in traps if _FOCUS_RE.search(r.pest or "")]
 
@@ -90,7 +96,7 @@ def _build(filters: dict, scope) -> dict:
     for r in focus_pests:
         focus_pest_totals[r.pest] = focus_pest_totals.get(r.pest, 0) + int(r.count or 0)
 
-    return {
+    payload = {
         "kpis": {
             "trapTotal":       trap_total,
             "pestTotal":       pest_total,
@@ -107,3 +113,5 @@ def _build(filters: dict, scope) -> dict:
             key=lambda x: x["total"], reverse=True,
         )[:10],
     }
+    publish_progress(job_id, 100, "")
+    return payload

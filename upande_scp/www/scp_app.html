@@ -20,13 +20,7 @@
 	<body>
 		<div id="scp-root"></div>
 
-		<script type="application/json" id="scp-bootstrap">
-			{
-				"user": "{{ frappe.session.user }}",
-				"site_name": "{{ frappe.local.site }}",
-				"csrf_token": "{{ csrf_token }}"
-			}
-		</script>
+		<script type="application/json" id="scp-bootstrap">{{ bootstrap_json | safe }}</script>
 		<script type="application/json" id="scp-prefetch">{{ prefetch_json | safe }}</script>
 		<script>
 			(function () {

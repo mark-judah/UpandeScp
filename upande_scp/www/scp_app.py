@@ -84,6 +84,7 @@ def get_context(context):
 	# We surface it explicitly so frontend role gates honour the pseudo-role.
 	if user_id == "Administrator" and "Administrator" not in user_roles:
 		user_roles.append("Administrator")
+	csrf_token = frappe.sessions.get_csrf_token()
 	context.bootstrap_json = json.dumps(
 		{
 			"user": user_id,
@@ -91,10 +92,11 @@ def get_context(context):
 			"user_image": user_doc.get("user_image") or "",
 			"site_name": frappe.local.site,
 			"roles": user_roles,
+			"csrf_token": csrf_token,
 		}
 	)
 	context.prefetch_json = json.dumps(_build_prefetch(), default=str)
-	context.csrf_token = frappe.sessions.get_csrf_token()
+	context.csrf_token = csrf_token
 	return context
 
 

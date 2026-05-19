@@ -19,19 +19,33 @@ PREVENTIVE_REASON_MIN_CHARS = 20
 def derive_cost_center(greenhouse_warehouse: str) -> str:
     """Return the Cost Center whose name matches the greenhouse warehouse name.
 
-    Raises ValidationError if no exact match exists.
+    Tries exact match first, then falls back to a whitespace- and
+    case-insensitive comparison so warehouse "Chepsito GH 15 - KR" still
+    resolves to cost center "Chepsito GH15 - KR" (and vice-versa).
+    Raises ValidationError when no match exists.
     """
     if not greenhouse_warehouse:
         frappe.throw("Greenhouse warehouse is required to derive Cost Center.")
     cc = frappe.db.get_value("Cost Center", greenhouse_warehouse, "name")
-    if not cc:
-        frappe.throw(
-            f"No Cost Center named '{greenhouse_warehouse}' exists. "
-            "Create a Cost Center with the same name as the greenhouse warehouse, "
-            "then retry.",
-            title="Cost Center missing",
-        )
-    return cc
+    if cc:
+        return cc
+    # Fallback: whitespace-normalised, case-insensitive match.
+    rows = frappe.db.sql(
+        """SELECT name FROM `tabCost Center`
+           WHERE disabled = 0
+             AND REPLACE(LOWER(name), ' ', '') = REPLACE(LOWER(%s), ' ', '')
+           LIMIT 1""",
+        greenhouse_warehouse,
+    )
+    if rows:
+        return rows[0][0]
+    frappe.throw(
+        f"No Cost Center named '{greenhouse_warehouse}' exists "
+        "(checked exact match and whitespace-tolerant fallback). "
+        "Create a Cost Center with the same name as the greenhouse warehouse, "
+        "then retry.",
+        title="Cost Center missing",
+    )
 
 
 def validate_preventive_reason(classification: str, reason: str | None) -> None:

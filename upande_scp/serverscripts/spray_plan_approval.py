@@ -350,15 +350,29 @@ def _fmt_qty(val):
 
 
 def _friendly_error(raw):
-    """Map raw exception text to a user-readable sentence."""
-    lower = cstr(raw).lower()
+    """Map raw exception text to a user-readable sentence.
+
+    Rule order matters: more-specific exception names come before generic
+    substrings. The 'permission' pattern is matched against the exception
+    class name only (not the traceback body) so that 'ignore_permissions=True'
+    appearing in a stack frame doesn't masquerade as a real PermissionError.
+    """
+    text = cstr(raw)
+    lower = text.lower()
+
+    # Match exception class names where they appear after a colon so we
+    # ignore code text like `ignore_permissions=True` in tracebacks.
+    if "mandatoryerror" in lower:
+        return "Required fields are missing. Check the work order setup."
+    if "permissionerror" in lower:
+        return "You do not have permission to perform this action."
+
     rules = [
         ("not enough stock",        "Insufficient stock in the source warehouse. Check inventory."),
         ("negative stock",          "This transfer would create negative stock. Verify warehouse balances."),
         ("does not exist",          "The work order or a referenced document could not be found."),
-        ("docstatus",               "The work order is not in a valid state for processing."),
         ("already a stock entry",   "A stock transfer already exists for this work order."),
-        ("permission",              "You do not have permission to perform this action."),
+        ("docstatus",               "The work order is not in a valid state for processing."),
         ("mandatory",               "Required fields are missing. Check the work order setup."),
         ("valuation",               "Item valuation rate is missing. Run a stock reconciliation first."),
         ("bom",                     "No Bill of Materials found for this work order."),

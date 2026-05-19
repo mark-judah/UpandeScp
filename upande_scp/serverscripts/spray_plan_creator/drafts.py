@@ -147,6 +147,17 @@ def _build_duplicate_warning(wo_names: list[str], greenhouse: str, scheduled_iso
     )
 
 
+def _resolve_kit_warehouse(kit_name: str | None) -> str | None:
+    """Look up the warehouse linked to a spray kit. Returns None if the kit
+    isn't recognised — the WO will still insert (wip_warehouse stays empty)
+    and the operator can fix the kit/warehouse mapping later."""
+    if not kit_name:
+        return None
+    return frappe.db.get_value(
+        "Spray Equipment Details", {"kit": kit_name}, "warehouse"
+    )
+
+
 def _derive_plan_company(payload: dict) -> str:
     """Return the Company for a draft plan, derived from the greenhouse.
 
@@ -196,6 +207,10 @@ def _apply_payload(wo, payload: dict) -> None:
             "stock_uom": c.get("uom") or c.get("stock_uom"),
             "source_warehouse": c.get("source_warehouse") or c.get("source"),
             "required_qty": c.get("application_rate") or c.get("rate") or c.get("qty") or 0,
+            # CRITICAL: without this, ERPNext's make_stock_entry skips the
+            # row when building Material Transfer for Manufacture, returning
+            # an SE with empty items that then fails MandatoryError on insert.
+            "include_item_in_manufacturing": 1,
         })
         if c.get("_rate_differs_from_bom"):
             rate_overridden = True
@@ -272,6 +287,10 @@ def create_draft_spray_plan(payload):
         *[(f"Chemical source {i + 1}", w) for i, w in enumerate(chem_sources)],
     ])
 
+    # Derive WIP warehouse from the picked kit (Spray Equipment Details.warehouse)
+    # so ERPNext's make_stock_entry has a target for the Material Transfer.
+    wip_warehouse = _resolve_kit_warehouse(payload.get("custom_kit"))
+
     wo = frappe.new_doc("Work Order")
     wo.flags.ignore_mandatory = True
     wo.company = company
@@ -281,6 +300,9 @@ def create_draft_spray_plan(payload):
     wo.bom_no = bom_meta["name"]
     wo.qty = 1
     wo.custom_cost_center = cost_center
+    wo.fg_warehouse = payload["custom_greenhouse"]
+    if wip_warehouse:
+        wo.wip_warehouse = wip_warehouse
     _apply_payload(wo, payload)
     wo.insert(ignore_permissions=True)
 

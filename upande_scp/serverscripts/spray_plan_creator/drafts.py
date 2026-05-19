@@ -75,9 +75,36 @@ def _assert_same_company(company: str, refs: list[tuple[str, str | None]]) -> No
             )
 
 
+def _coerce_date_str(value) -> str:
+    """Return a YYYY-MM-DD string for a date-ish input, or empty string.
+
+    Accepts ISO strings ("2026-05-19T08:00:00"), date strings, datetime /
+    date objects (as returned by frappe.db when reading Datetime/Date
+    columns). Falsy inputs return "".
+    """
+    if not value:
+        return ""
+    if hasattr(value, "date") and callable(value.date):
+        try:
+            return value.date().isoformat()
+        except Exception:
+            pass
+    if hasattr(value, "isoformat") and callable(value.isoformat):
+        try:
+            return value.isoformat()[:10]
+        except Exception:
+            pass
+    s = str(value).strip()
+    if "T" in s:
+        s = s.split("T", 1)[0]
+    if " " in s:
+        s = s.split(" ", 1)[0]
+    return s[:10]
+
+
 def _find_same_day_duplicates(
     greenhouse: str | None,
-    scheduled_iso: str | None,
+    scheduled_iso,
     *,
     exclude_wo: str | None = None,
 ) -> list[str]:
@@ -86,11 +113,12 @@ def _find_same_day_duplicates(
 
     Looks at every WO (own + others) that hasn't been cancelled, so the
     planner sees conflicts across the whole farm. Returns an empty list
-    when either input is missing.
+    when either input is missing. ``scheduled_iso`` may be a string or a
+    ``datetime``.
     """
     if not greenhouse:
         return []
-    target_date = (scheduled_iso or "").split("T", 1)[0].strip() if scheduled_iso else ""
+    target_date = _coerce_date_str(scheduled_iso)
     if not target_date:
         return []
     rows = frappe.db.sql(
@@ -107,10 +135,10 @@ def _find_same_day_duplicates(
     return [r[0] for r in rows]
 
 
-def _build_duplicate_warning(wo_names: list[str], greenhouse: str, scheduled_iso: str | None) -> str | None:
+def _build_duplicate_warning(wo_names: list[str], greenhouse: str, scheduled_iso) -> str | None:
     if not wo_names:
         return None
-    date = (scheduled_iso or "").split("T", 1)[0]
+    date = _coerce_date_str(scheduled_iso)
     others = ", ".join(wo_names[:3])
     extra = f" +{len(wo_names) - 3} more" if len(wo_names) > 3 else ""
     return (

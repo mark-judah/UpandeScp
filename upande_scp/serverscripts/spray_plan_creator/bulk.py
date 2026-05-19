@@ -57,7 +57,10 @@ def submit_drafts_for_approval(wo_names) -> dict:
         now = frappe.utils.now()
         frappe.db.sql(
             """UPDATE `tabWork Order`
-               SET docstatus=1, workflow_state='Awaiting Approval', modified=%s
+               SET docstatus=1,
+                   workflow_state='Awaiting Approval',
+                   status='Not Started',
+                   modified=%s
                WHERE name=%s""",
             (now, name),
         )

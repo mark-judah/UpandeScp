@@ -201,11 +201,16 @@ def approve_single_work_order(wo_name):
     except frappe.DoesNotExistError:
         return {"wo": wo_name, "status": "error", "message": "Work order not found."}
 
-    if wo_doc.status != "Not Started":
+    # The canonical readiness signal for Application Floor Plan WOs is our
+    # own workflow_state, not ERPNext's manufacturing `status` field. The
+    # bulk-submit endpoint sets docstatus=1 via raw SQL without going through
+    # ERPNext's save path, so `status` stays at 'Draft' even though the WO
+    # is fully submitted and awaiting approval.
+    if wo_doc.workflow_state != "Awaiting Approval":
         return {
             "wo":      wo_name,
             "status":  "skipped",
-            "message": f"Skipped — status is '{wo_doc.status}'.",
+            "message": f"Skipped — workflow state is '{wo_doc.workflow_state or 'unset'}'.",
         }
 
     # Guard: any non-cancelled MTM SE already exists?

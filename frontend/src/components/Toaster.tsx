@@ -1,7 +1,7 @@
 import { CheckCircle2, AlertTriangle, Info, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type ToastKind = "ok" | "err" | "info" | "loading";
+export type ToastKind = "ok" | "err" | "warn" | "info" | "loading";
 
 export interface ToastItem {
   id: number;
@@ -12,6 +12,7 @@ export interface ToastItem {
 const TONE: Record<ToastKind, string> = {
   ok: "border-[var(--sd-data-green)]/40 text-[var(--sd-data-green)] bg-[var(--sd-data-green)]/8",
   err: "border-[var(--sd-data-red)]/40 text-[var(--sd-data-red)] bg-[var(--sd-data-red)]/8",
+  warn: "border-amber-500/40 text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/30",
   info: "border-[var(--sd-line)] text-foreground bg-card",
   loading: "border-[var(--sd-line)] text-muted-foreground bg-card",
 };
@@ -19,6 +20,7 @@ const TONE: Record<ToastKind, string> = {
 const ICON: Record<ToastKind, React.ComponentType<{ className?: string }>> = {
   ok: CheckCircle2,
   err: AlertTriangle,
+  warn: AlertTriangle,
   info: Info,
   loading: Loader2,
 };

@@ -738,6 +738,9 @@ export function ApplicationPlan() {
         "ok",
         woName ? `Added ${woName} to your draft batch.` : "Plan added to batch.",
       );
+      for (const w of r?.warnings || []) {
+        pushToast("warn", w, 8000);
+      }
       // Reset form so the user can build the next plan in the batch
       setClassification("");
       setPreventiveReason("");

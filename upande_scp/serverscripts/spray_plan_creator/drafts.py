@@ -75,6 +75,50 @@ def _assert_same_company(company: str, refs: list[tuple[str, str | None]]) -> No
             )
 
 
+def _find_same_day_duplicates(
+    greenhouse: str | None,
+    scheduled_iso: str | None,
+    *,
+    exclude_wo: str | None = None,
+) -> list[str]:
+    """Return the names of other Application-Floor-Plan Work Orders that
+    target the same greenhouse on the same calendar day.
+
+    Looks at every WO (own + others) that hasn't been cancelled, so the
+    planner sees conflicts across the whole farm. Returns an empty list
+    when either input is missing.
+    """
+    if not greenhouse:
+        return []
+    target_date = (scheduled_iso or "").split("T", 1)[0].strip() if scheduled_iso else ""
+    if not target_date:
+        return []
+    rows = frappe.db.sql(
+        """SELECT name FROM `tabWork Order`
+           WHERE custom_type = 'Application Floor Plan'
+             AND docstatus < 2
+             AND custom_greenhouse = %s
+             AND DATE(custom_scheduled_application_time) = %s
+             AND (%s = '' OR name != %s)
+           ORDER BY creation DESC
+           LIMIT 10""",
+        (greenhouse, target_date, exclude_wo or "", exclude_wo or ""),
+    )
+    return [r[0] for r in rows]
+
+
+def _build_duplicate_warning(wo_names: list[str], greenhouse: str, scheduled_iso: str | None) -> str | None:
+    if not wo_names:
+        return None
+    date = (scheduled_iso or "").split("T", 1)[0]
+    others = ", ".join(wo_names[:3])
+    extra = f" +{len(wo_names) - 3} more" if len(wo_names) > 3 else ""
+    return (
+        f"Heads up: {len(wo_names)} other plan(s) already exist for "
+        f"{greenhouse} on {date} ({others}{extra})."
+    )
+
+
 def _derive_plan_company(payload: dict) -> str:
     """Return the Company for a draft plan, derived from the greenhouse.
 
@@ -212,7 +256,20 @@ def create_draft_spray_plan(payload):
     _apply_payload(wo, payload)
     wo.insert(ignore_permissions=True)
 
-    return {"work_order": wo.name, "summary": _summarize(wo)}
+    warnings: list[str] = []
+    dup_warning = _build_duplicate_warning(
+        _find_same_day_duplicates(
+            payload.get("custom_greenhouse"),
+            payload.get("custom_scheduled_application_time"),
+            exclude_wo=wo.name,
+        ),
+        payload["custom_greenhouse"],
+        payload.get("custom_scheduled_application_time"),
+    )
+    if dup_warning:
+        warnings.append(dup_warning)
+
+    return {"work_order": wo.name, "summary": _summarize(wo), "warnings": warnings}
 
 
 @frappe.whitelist()
@@ -240,7 +297,13 @@ def list_my_draft_plans() -> list[dict]:
         r["targets"] = (r.pop("custom_targets") or "").split("\n") if r.get("custom_targets") else []
         r["scheduled_date"] = r.pop("custom_scheduled_application_time")
         r["total_water_volume"] = r.pop("custom_water_volume")
-        r["has_warnings"] = False
+        dups = _find_same_day_duplicates(
+            r["greenhouse"], r["scheduled_date"], exclude_wo=r["name"],
+        )
+        r["has_warnings"] = bool(dups)
+        r["warning_text"] = _build_duplicate_warning(
+            dups, r["greenhouse"], r["scheduled_date"],
+        )
     return rows
 
 
@@ -301,7 +364,21 @@ def update_draft_plan(name: str, payload):
     _apply_payload(wo, payload)
     wo.flags.ignore_mandatory = True
     wo.save(ignore_permissions=True)
-    return {"work_order": wo.name, "summary": _summarize(wo)}
+
+    warnings: list[str] = []
+    gh_for_check = payload.get("custom_greenhouse") or wo.custom_greenhouse
+    sched_for_check = (
+        payload.get("custom_scheduled_application_time")
+        or wo.custom_scheduled_application_time
+    )
+    dup_warning = _build_duplicate_warning(
+        _find_same_day_duplicates(gh_for_check, sched_for_check, exclude_wo=wo.name),
+        gh_for_check,
+        sched_for_check,
+    )
+    if dup_warning:
+        warnings.append(dup_warning)
+    return {"work_order": wo.name, "summary": _summarize(wo), "warnings": warnings}
 
 
 @frappe.whitelist()

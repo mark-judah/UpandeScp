@@ -111,11 +111,18 @@ export interface DraftSummary {
   chemical_count: number;
   total_water_volume: number;
   has_warnings: boolean;
+  warning_text?: string | null;
+}
+
+export interface CreateDraftResponse {
+  work_order: string;
+  summary: unknown;
+  warnings: string[];
 }
 
 export async function createDraftSprayPlan(
   payload: DraftPayload,
-): Promise<{ work_order: string; summary: unknown }> {
+): Promise<CreateDraftResponse> {
   return call(
     "upande_scp.serverscripts.spray_plan_creator.drafts.create_draft_spray_plan",
     { payload: JSON.stringify(payload) },

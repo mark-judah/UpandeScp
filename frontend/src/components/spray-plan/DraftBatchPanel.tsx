@@ -132,7 +132,16 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
                 className="px-3 py-2 flex flex-col gap-0.5 text-xs hover:bg-muted/30"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{d.name}</span>
+                  <span className="font-medium flex items-center gap-1">
+                    {d.has_warnings && (
+                      <AlertTriangle
+                        className="h-3 w-3 text-amber-500"
+                        aria-label="Has warnings"
+                        title={d.warning_text || "This draft has warnings."}
+                      />
+                    )}
+                    <span>{d.name}</span>
+                  </span>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -143,6 +152,11 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
+                {d.has_warnings && d.warning_text && (
+                  <div className="text-[0.65rem] text-amber-700 dark:text-amber-300">
+                    {d.warning_text}
+                  </div>
+                )}
                 <div className="text-[0.65rem] text-muted-foreground">
                   {d.greenhouse} · {d.classification}
                 </div>

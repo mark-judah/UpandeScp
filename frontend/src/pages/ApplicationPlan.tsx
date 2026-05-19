@@ -595,6 +595,11 @@ export function ApplicationPlan() {
     () => bootstrap?.greenhouses.map((g) => g.name) || [],
     [bootstrap],
   );
+  const derivedCostCenter = useMemo(() => {
+    if (!greenhouse) return null;
+    const match = bootstrap?.greenhouses.find((g) => g.name === greenhouse);
+    return match?.cost_center || null;
+  }, [bootstrap, greenhouse]);
   const bomList = useMemo(
     () =>
       (bootstrap?.tank_mixes || []).map((t) => ({
@@ -879,6 +884,25 @@ export function ApplicationPlan() {
                   (greenhouse ? "No entries in 60 days" : "—")}
             </span>
           </div>
+          {greenhouse && (
+            <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+              <span>Cost Center</span>
+              <span
+                className={
+                  derivedCostCenter
+                    ? "font-medium text-foreground"
+                    : "font-medium text-destructive"
+                }
+                title={
+                  derivedCostCenter
+                    ? "Auto-derived from the greenhouse warehouse name."
+                    : "No matching Cost Center found — create one with the same name as the greenhouse."
+                }
+              >
+                {derivedCostCenter || "Not configured"}
+              </span>
+            </div>
+          )}
           {greenhouse && (
             <div className="ml-auto text-xs text-muted-foreground tabular-nums">
               {affectedZones} / {totalZones} zones · {coveragePct}%

@@ -16,20 +16,18 @@ from frappe.utils import add_days, now_datetime
 PREVENTIVE_REASON_MIN_CHARS = 20
 
 
-def derive_cost_center(greenhouse_warehouse: str) -> str:
-    """Return the Cost Center whose name matches the greenhouse warehouse name.
+def match_cost_center(greenhouse_warehouse: str) -> str | None:
+    """Return the Cost Center matching the greenhouse warehouse name, or None.
 
-    Tries exact match first, then falls back to a whitespace- and
-    case-insensitive comparison so warehouse "Chepsito GH 15 - KR" still
-    resolves to cost center "Chepsito GH15 - KR" (and vice-versa).
-    Raises ValidationError when no match exists.
+    Non-throwing variant. Tries exact match first, then a whitespace- and
+    case-insensitive fallback so "Chepsito GH 15 - KR" resolves to
+    "Chepsito GH15 - KR" (and vice-versa).
     """
     if not greenhouse_warehouse:
-        frappe.throw("Greenhouse warehouse is required to derive Cost Center.")
+        return None
     cc = frappe.db.get_value("Cost Center", greenhouse_warehouse, "name")
     if cc:
         return cc
-    # Fallback: whitespace-normalised, case-insensitive match.
     rows = frappe.db.sql(
         """SELECT name FROM `tabCost Center`
            WHERE disabled = 0
@@ -37,8 +35,20 @@ def derive_cost_center(greenhouse_warehouse: str) -> str:
            LIMIT 1""",
         greenhouse_warehouse,
     )
-    if rows:
-        return rows[0][0]
+    return rows[0][0] if rows else None
+
+
+def derive_cost_center(greenhouse_warehouse: str) -> str:
+    """Return the Cost Center whose name matches the greenhouse warehouse name.
+
+    Throws ValidationError when no match exists. See ``match_cost_center``
+    for the non-throwing equivalent used by previews.
+    """
+    if not greenhouse_warehouse:
+        frappe.throw("Greenhouse warehouse is required to derive Cost Center.")
+    cc = match_cost_center(greenhouse_warehouse)
+    if cc:
+        return cc
     frappe.throw(
         f"No Cost Center named '{greenhouse_warehouse}' exists "
         "(checked exact match and whitespace-tolerant fallback). "

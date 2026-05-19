@@ -27,6 +27,7 @@ export interface CreatorGreenhouse {
   custom_farm: string;
   latitude: number | null;
   longitude: number | null;
+  cost_center: string | null;
 }
 
 export interface CreatorKit {

@@ -9,6 +9,7 @@ from upande_scp.serverscripts.warehouse_filter import (
 )
 
 from .scope import _resolve_user_scope
+from .validation import match_cost_center
 
 
 @frappe.whitelist()
@@ -38,15 +39,23 @@ def fetch_creator_bootstrap() -> dict:
     greenhouses = _enrich_greenhouses(filtered_ghs)
 
     # Kits live in `Spray Equipment Details` (child table), NOT `Spray Kit` (which doesn't exist here).
+    # The source data has literal duplicate rows (same kit + same warehouse repeated 3x), so we
+    # deduplicate by (kit, warehouse) tuple before returning.
     kits = []
     if frappe.db.table_exists("Spray Equipment Details") and warehouse_names:
-        kits = frappe.get_all(
+        rows = frappe.get_all(
             "Spray Equipment Details",
             filters={"warehouse": ["in", warehouse_names]},
             fields=["kit", "warehouse"],
         )
-        for k in kits:
-            k["custom_farm"] = frappe.db.get_value("Warehouse", k["warehouse"], "custom_farm")
+        seen: set[tuple[str, str]] = set()
+        for r in rows:
+            key = (r.get("kit") or "", r.get("warehouse") or "")
+            if key in seen or not key[0]:
+                continue
+            seen.add(key)
+            r["custom_farm"] = frappe.db.get_value("Warehouse", r["warehouse"], "custom_farm")
+            kits.append(r)
 
     # Spray teams are matched by farm-name substring on the team_name —
     # custom_farm is unreliable (not all teams have it populated; the
@@ -165,6 +174,7 @@ def _enrich_greenhouses(greenhouses: list[dict]) -> list[dict]:
             "custom_farm": gh.get("custom_farm"),
             "latitude": None,
             "longitude": None,
+            "cost_center": match_cost_center(gh["name"]),
         }
         if has_coords and gh.get("custom_farm"):
             row = frappe.db.get_value(

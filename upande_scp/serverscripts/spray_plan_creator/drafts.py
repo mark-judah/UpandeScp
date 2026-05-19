@@ -130,11 +130,25 @@ def create_draft_spray_plan(payload):
 
     cost_center = derive_cost_center(payload["custom_greenhouse"])
 
+    # The frontend sends `production_item` as a BOM name (Chemical Mix BOM).
+    # ERPNext's Work Order expects `production_item` to be an Item code and
+    # the BOM separately as `bom_no`. Resolve the BOM to its FG item here.
+    bom_name = payload.get("production_item")
+    bom_meta = frappe.db.get_value(
+        "BOM", bom_name, ["item", "name"], as_dict=True
+    ) if bom_name else None
+    if not bom_meta:
+        frappe.throw(
+            f"BOM {bom_name!r} not found. Pick a valid Chemical Mix tank mix.",
+            title="Invalid tank mix",
+        )
+
     wo = frappe.new_doc("Work Order")
     wo.flags.ignore_mandatory = True
     wo.custom_type = "Application Floor Plan"
     wo.workflow_state = "Pending Submission"
-    wo.production_item = payload.get("production_item")
+    wo.production_item = bom_meta["item"]
+    wo.bom_no = bom_meta["name"]
     wo.qty = 1
     wo.custom_cost_center = cost_center
     _apply_payload(wo, payload)
@@ -191,6 +205,22 @@ def update_draft_plan(name: str, payload):
 
     if payload.get("custom_greenhouse"):
         wo.custom_cost_center = derive_cost_center(payload["custom_greenhouse"])
+
+    # See create_draft_spray_plan: the payload `production_item` is the BOM
+    # name; the WO needs the BOM's FG Item code on `production_item` and the
+    # BOM name on `bom_no`.
+    bom_name = payload.get("production_item")
+    if bom_name and bom_name != wo.bom_no:
+        bom_meta = frappe.db.get_value(
+            "BOM", bom_name, ["item", "name"], as_dict=True
+        )
+        if not bom_meta:
+            frappe.throw(
+                f"BOM {bom_name!r} not found. Pick a valid Chemical Mix tank mix.",
+                title="Invalid tank mix",
+            )
+        wo.production_item = bom_meta["item"]
+        wo.bom_no = bom_meta["name"]
 
     _apply_payload(wo, payload)
     wo.flags.ignore_mandatory = True

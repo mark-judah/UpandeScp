@@ -7,6 +7,7 @@ boundary.
 """
 from __future__ import annotations
 
+import re
 from typing import Iterable
 
 import frappe
@@ -15,27 +16,44 @@ from frappe.utils import add_days, now_datetime
 
 PREVENTIVE_REASON_MIN_CHARS = 20
 
+# Normalisation key for fuzzy cost-center matching: lower-case, strip every
+# whitespace character, and drop leading zeros inside multi-digit runs so
+# "GH 07" and "GH7" collapse to the same key. The trailing single-digit
+# zero is preserved (no run to strip).
+_LEADING_ZERO_RE = re.compile(r"\b0+(\d)")
+
+
+def _normalise_name_key(name: str) -> str:
+    if not name:
+        return ""
+    lowered = (name or "").lower()
+    no_space = re.sub(r"\s+", "", lowered)
+    return _LEADING_ZERO_RE.sub(r"\1", no_space)
+
 
 def match_cost_center(greenhouse_warehouse: str) -> str | None:
     """Return the Cost Center matching the greenhouse warehouse name, or None.
 
-    Non-throwing variant. Tries exact match first, then a whitespace- and
-    case-insensitive fallback so "Chepsito GH 15 - KR" resolves to
-    "Chepsito GH15 - KR" (and vice-versa).
+    Non-throwing variant. Tries exact match first, then a whitespace-,
+    leading-zero-, and case-insensitive fallback so "Chepsito GH 15 - KR"
+    resolves to "Chepsito GH15 - KR" and "Chepsito GH 07 - KR" resolves to
+    "Chepsito GH7 - KR".
     """
     if not greenhouse_warehouse:
         return None
     cc = frappe.db.get_value("Cost Center", greenhouse_warehouse, "name")
     if cc:
         return cc
-    rows = frappe.db.sql(
-        """SELECT name FROM `tabCost Center`
-           WHERE disabled = 0
-             AND REPLACE(LOWER(name), ' ', '') = REPLACE(LOWER(%s), ' ', '')
-           LIMIT 1""",
-        greenhouse_warehouse,
+    target_key = _normalise_name_key(greenhouse_warehouse)
+    if not target_key:
+        return None
+    candidates = frappe.get_all(
+        "Cost Center", filters={"disabled": 0}, pluck="name"
     )
-    return rows[0][0] if rows else None
+    for candidate in candidates:
+        if _normalise_name_key(candidate) == target_key:
+            return candidate
+    return None
 
 
 def derive_cost_center(greenhouse_warehouse: str) -> str:

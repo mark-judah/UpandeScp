@@ -129,8 +129,41 @@ class TestResolveSupervisorEmployee(FrappeTestCase):
         # A session user with no Employee link, no team members.
         frappe.set_user("Administrator")  # Administrator has no Employee record.
         wo = _FakeWO(custom_spray_plan_team_members=[])
+        wo.custom_spray_team = None
         with self.assertRaises(frappe.ValidationError):
             resolve_supervisor_employee(wo)
+
+    def test_fallback_to_linked_spray_team(self):
+        """When the per-plan snapshot is empty but the WO links a Spray Team
+        that has a Supervisor row, that row's Employee wins (before the
+        session-user fallback)."""
+        emp = _ensure_employee("EMP-LINKED-SUP-1", "Linked Sup")
+        team_name = "_Test Spray Team With Sup"
+        if frappe.db.exists("Spray Team", team_name):
+            frappe.delete_doc("Spray Team", team_name, force=1, ignore_permissions=True)
+        team = frappe.get_doc({
+            "doctype": "Spray Team",
+            "team_name": team_name,
+            "enabled": 1,
+            "team": [
+                {"name1": "EMP-LINKED-SPR-1", "role": "Sprayer"},
+                {"name1": emp, "role": "Supervisor"},
+                {"name1": "EMP-LINKED-SUP-OTHER", "role": "Supervisor"},
+            ],
+        })
+        team.flags.ignore_mandatory = True
+        team.flags.ignore_links = True
+        team.insert(ignore_permissions=True)
+
+        # Empty snapshot AND Administrator session (no Employee link) so the
+        # only viable resolution is via the linked Spray Team.
+        frappe.set_user("Administrator")
+        wo = _FakeWO(custom_spray_plan_team_members=[])
+        wo.custom_spray_team = team_name
+        try:
+            self.assertEqual(resolve_supervisor_employee(wo), emp)
+        finally:
+            frappe.delete_doc("Spray Team", team_name, force=1, ignore_permissions=True)
 
 
 from upande_scp.serverscripts.spray_plan_creator.auto_material_issue import (

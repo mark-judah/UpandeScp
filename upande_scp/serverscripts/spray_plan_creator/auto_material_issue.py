@@ -24,16 +24,34 @@ def resolve_supervisor_employee(wo) -> str:
     """Return the Employee id responsible for the auto Material Issue.
 
     Order of resolution:
-      1. First row in ``wo.custom_spray_plan_team_members`` where
-         ``role.strip().lower() == "supervisor"``.
-      2. Fallback: ``Employee.user_id == frappe.session.user`` (most recent).
-      3. Both missing -> ``frappe.throw``.
+      1. First row in ``wo.custom_spray_plan_team_members`` (the per-plan
+         snapshot) where ``role.strip().lower() == "supervisor"``.
+      2. Fallback: linked ``wo.custom_spray_team`` -> ``Spray Team Details``
+         child row where ``role == 'Supervisor'``. The Employee link lives
+         in ``Spray Team Details.name1``.
+      3. Fallback: ``Employee.user_id == frappe.session.user`` (most recent).
+      4. All missing -> ``frappe.throw``.
     """
     rows = getattr(wo, "custom_spray_plan_team_members", None) or []
     for row in rows:
         role = (getattr(row, "role", "") or "").strip().lower()
         if role == "supervisor" and getattr(row, "employee", None):
             return row.employee
+
+    team_name = getattr(wo, "custom_spray_team", None)
+    if team_name:
+        team_supervisor = frappe.db.sql(
+            """SELECT name1 FROM `tabSpray Team Details`
+               WHERE parent = %s
+                 AND parenttype = 'Spray Team'
+                 AND LOWER(TRIM(role)) = 'supervisor'
+                 AND name1 IS NOT NULL AND name1 != ''
+               ORDER BY idx ASC
+               LIMIT 1""",
+            (team_name,),
+        )
+        if team_supervisor and team_supervisor[0][0]:
+            return team_supervisor[0][0]
 
     user = frappe.session.user
     if user and user not in ("Guest", "Administrator"):

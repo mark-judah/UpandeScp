@@ -134,11 +134,13 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium flex items-center gap-1">
                     {d.has_warnings && (
-                      <AlertTriangle
-                        className="h-3 w-3 text-amber-500"
-                        aria-label="Has warnings"
+                      <span
                         title={d.warning_text || "This draft has warnings."}
-                      />
+                        aria-label="Has warnings"
+                        className="inline-flex"
+                      >
+                        <AlertTriangle className="h-3 w-3 text-amber-500" />
+                      </span>
                     )}
                     <span>{d.name}</span>
                   </span>

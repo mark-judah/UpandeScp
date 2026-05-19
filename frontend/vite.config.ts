@@ -1,5 +1,7 @@
-/// <reference types="vitest" />
-import { defineConfig } from "vite";
+// defineConfig is imported from "vitest/config" so the `test` block below
+// is typed correctly. vitest/config re-exports vite's defineConfig with the
+// extra `test` field on UserConfig.
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";

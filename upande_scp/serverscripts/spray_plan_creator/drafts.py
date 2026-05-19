@@ -55,6 +55,44 @@ def _own_draft(wo_name: str) -> "frappe.Document":
     return wo
 
 
+def _assert_same_company(company: str, refs: list[tuple[str, str | None]]) -> None:
+    """Check that every (label, warehouse_or_kit_name) pair resolves to ``company``.
+
+    `refs` is a list of ``(human_label, warehouse_name)`` tuples. Empty
+    warehouse values are skipped. Each warehouse's ``company`` field must
+    equal ``company`` or we throw a clear cross-company error.
+    """
+    for label, warehouse in refs:
+        if not warehouse:
+            continue
+        wh_company = frappe.db.get_value("Warehouse", warehouse, "company")
+        if wh_company and wh_company != company:
+            frappe.throw(
+                f"{label} '{warehouse}' belongs to company '{wh_company}', but "
+                f"this plan is for '{company}'. All warehouses on a spray plan "
+                "must belong to the same company.",
+                title="Cross-company warehouse",
+            )
+
+
+def _derive_plan_company(payload: dict) -> str:
+    """Return the Company for a draft plan, derived from the greenhouse.
+
+    Throws if the greenhouse isn't linked to a company.
+    """
+    greenhouse = payload.get("custom_greenhouse")
+    if not greenhouse:
+        frappe.throw("Greenhouse is required to derive Company.")
+    company = frappe.db.get_value("Warehouse", greenhouse, "company")
+    if not company:
+        frappe.throw(
+            f"Warehouse '{greenhouse}' has no Company set. Configure the "
+            "greenhouse's company before creating spray plans for it.",
+            title="Warehouse misconfigured",
+        )
+    return company
+
+
 def _apply_payload(wo, payload: dict) -> None:
     pass_fields = [
         "custom_greenhouse", "custom_classification", "custom_preventive_reason",
@@ -128,6 +166,7 @@ def create_draft_spray_plan(payload):
     _assert_in_scope(payload, scope)
     _validate_payload(payload, scope)
 
+    company = _derive_plan_company(payload)
     cost_center = derive_cost_center(payload["custom_greenhouse"])
 
     # The frontend sends `production_item` as a BOM name (Chemical Mix BOM).
@@ -135,16 +174,35 @@ def create_draft_spray_plan(payload):
     # the BOM separately as `bom_no`. Resolve the BOM to its FG item here.
     bom_name = payload.get("production_item")
     bom_meta = frappe.db.get_value(
-        "BOM", bom_name, ["item", "name"], as_dict=True
+        "BOM", bom_name, ["item", "name", "company"], as_dict=True
     ) if bom_name else None
     if not bom_meta:
         frappe.throw(
             f"BOM {bom_name!r} not found. Pick a valid Chemical Mix tank mix.",
             title="Invalid tank mix",
         )
+    if bom_meta.get("company") and bom_meta["company"] != company:
+        frappe.throw(
+            f"Tank mix '{bom_meta['name']}' belongs to company "
+            f"'{bom_meta['company']}', but the greenhouse is for '{company}'. "
+            "Pick a tank mix for the same company.",
+            title="Cross-company tank mix",
+        )
+
+    # Reject any cross-company warehouse references up-front so the user
+    # gets a clear error instead of ERPNext's cryptic InvalidWarehouseCompany.
+    chem_sources = [
+        ((c.get("source_warehouse") or c.get("source")) or None)
+        for c in (payload.get("chemicals") or [])
+    ]
+    _assert_same_company(company, [
+        ("Greenhouse", payload["custom_greenhouse"]),
+        *[(f"Chemical source {i + 1}", w) for i, w in enumerate(chem_sources)],
+    ])
 
     wo = frappe.new_doc("Work Order")
     wo.flags.ignore_mandatory = True
+    wo.company = company
     wo.custom_type = "Application Floor Plan"
     wo.workflow_state = "Pending Submission"
     wo.production_item = bom_meta["item"]
@@ -203,7 +261,9 @@ def update_draft_plan(name: str, payload):
     _assert_in_scope(payload, scope)
     _validate_payload(payload, scope)
 
+    company = _derive_plan_company(payload) if payload.get("custom_greenhouse") else wo.company
     if payload.get("custom_greenhouse"):
+        wo.company = company
         wo.custom_cost_center = derive_cost_center(payload["custom_greenhouse"])
 
     # See create_draft_spray_plan: the payload `production_item` is the BOM
@@ -212,15 +272,31 @@ def update_draft_plan(name: str, payload):
     bom_name = payload.get("production_item")
     if bom_name and bom_name != wo.bom_no:
         bom_meta = frappe.db.get_value(
-            "BOM", bom_name, ["item", "name"], as_dict=True
+            "BOM", bom_name, ["item", "name", "company"], as_dict=True
         )
         if not bom_meta:
             frappe.throw(
                 f"BOM {bom_name!r} not found. Pick a valid Chemical Mix tank mix.",
                 title="Invalid tank mix",
             )
+        if bom_meta.get("company") and bom_meta["company"] != company:
+            frappe.throw(
+                f"Tank mix '{bom_meta['name']}' belongs to company "
+                f"'{bom_meta['company']}', but this plan is for '{company}'. "
+                "Pick a tank mix for the same company.",
+                title="Cross-company tank mix",
+            )
         wo.production_item = bom_meta["item"]
         wo.bom_no = bom_meta["name"]
+
+    chem_sources = [
+        ((c.get("source_warehouse") or c.get("source")) or None)
+        for c in (payload.get("chemicals") or [])
+    ]
+    _assert_same_company(company, [
+        ("Greenhouse", payload.get("custom_greenhouse") or wo.custom_greenhouse),
+        *[(f"Chemical source {i + 1}", w) for i, w in enumerate(chem_sources)],
+    ])
 
     _apply_payload(wo, payload)
     wo.flags.ignore_mandatory = True

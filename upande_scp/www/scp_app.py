@@ -78,14 +78,19 @@ def get_context(context):
 	user_doc = frappe.db.get_value(
 		"User", user_id, ["full_name", "user_image"], as_dict=True
 	) or {}
-	user_roles = frappe.get_roles(user_id) or []
+	user_roles = list(frappe.get_roles(user_id) or [])
+	# Frappe doesn't include 'Administrator' in get_roles() output for the
+	# Administrator user - they're a special case that bypasses role checks.
+	# We surface it explicitly so frontend role gates honour the pseudo-role.
+	if user_id == "Administrator" and "Administrator" not in user_roles:
+		user_roles.append("Administrator")
 	context.bootstrap_json = json.dumps(
 		{
 			"user": user_id,
 			"full_name": user_doc.get("full_name") or user_id,
 			"user_image": user_doc.get("user_image") or "",
 			"site_name": frappe.local.site,
-			"roles": list(user_roles),
+			"roles": user_roles,
 		}
 	)
 	context.prefetch_json = json.dumps(_build_prefetch(), default=str)

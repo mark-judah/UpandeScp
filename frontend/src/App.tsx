@@ -48,6 +48,9 @@ const Approvals = lazy(() =>
 const SprayPlanAccess = lazy(() =>
   import("@/pages/SprayPlanAccess").then((m) => ({ default: m.SprayPlanAccess })),
 );
+const Settings = lazy(() =>
+  import("@/pages/Settings").then((m) => ({ default: m.Settings })),
+);
 const ApplicationPlan = lazy(() =>
   import("@/pages/ApplicationPlan").then((m) => ({ default: m.ApplicationPlan })),
 );
@@ -162,6 +165,8 @@ export function App() {
             <Historical />
           ) : view === "approvals" ? (
             <Approvals />
+          ) : view === "settings" ? (
+            <Settings />
           ) : view === "spray-plan-access" ? (
             <SprayPlanAccess />
           ) : view === "application-plan" ? (

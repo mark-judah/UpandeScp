@@ -13,6 +13,7 @@ export type View =
   | "tank-mixes"
   | "historical"
   | "approvals"
+  | "settings"
   | "spray-plan-access"
   | "application-plan";
 
@@ -30,12 +31,16 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set([
   "tank-mixes",
   "historical",
   "approvals",
+  "settings",
   "spray-plan-access",
   "application-plan",
 ]);
 
 function viewFromHash(): View {
-  const raw = (window.location.hash || "").replace(/^#\/?/, "").toLowerCase();
+  // Strip the optional ?tab=... suffix the Settings page uses so the
+  // hash-based router still resolves the base view correctly.
+  const rawWithQuery = (window.location.hash || "").replace(/^#\/?/, "").toLowerCase();
+  const raw = rawWithQuery.split("?")[0];
   if ((KNOWN_VIEWS as Set<string>).has(raw)) return raw as View;
   return DEFAULT;
 }

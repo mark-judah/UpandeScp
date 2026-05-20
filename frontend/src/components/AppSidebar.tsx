@@ -95,8 +95,8 @@ const NAV: NavSection[] = [
       },
       {
         kind: "view",
-        view: "spray-plan-access",
-        label: "Access Control",
+        view: "settings",
+        label: "Settings",
         icon: ShieldCheck,
         requireRoles: ["General Manager", "System Manager", "Administrator"],
       },

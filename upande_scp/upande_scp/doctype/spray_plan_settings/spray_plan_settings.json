@@ -23,7 +23,9 @@
   "weather_temp_red_max_c",
   "weather_temp_red_min_c",
   "material_issue_section",
-  "default_chemical_expense_account"
+  "default_chemical_expense_account",
+  "submission_gating_section",
+  "bypass_owner_check"
  ],
  "fields": [
   {
@@ -75,7 +77,9 @@
   {"default": "32", "fieldname": "weather_temp_red_max_c", "fieldtype": "Float", "label": "Temp: red >= (degC)"},
   {"default": "8", "fieldname": "weather_temp_red_min_c", "fieldtype": "Float", "label": "Temp: red <= (degC)"},
   {"fieldname": "material_issue_section", "fieldtype": "Section Break", "label": "Material Issue Defaults"},
-  {"fieldname": "default_chemical_expense_account", "fieldtype": "Link", "options": "Account", "label": "Default Chemical Expense Account", "description": "Used as the fallback expense account on auto-Material-Issue rows when the tank-mix Item has no Item Default for the Work Order's company."}
+  {"fieldname": "default_chemical_expense_account", "fieldtype": "Link", "options": "Account", "label": "Default Chemical Expense Account", "description": "Used as the fallback expense account on auto-Material-Issue rows when the tank-mix Item has no Item Default for the Work Order's company."},
+  {"fieldname": "submission_gating_section", "fieldtype": "Section Break", "label": "Submission Gating"},
+  {"default": "0", "fieldname": "bypass_owner_check", "fieldtype": "Check", "label": "Bypass owner check on Submit for Approval", "description": "When ON, any Spray Plan Creator can submit any draft (not just drafts they own). Farm-scope checks still apply. Intended for testing — leave OFF in production."}
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,

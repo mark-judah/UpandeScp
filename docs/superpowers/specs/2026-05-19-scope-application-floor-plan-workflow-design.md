@@ -120,7 +120,40 @@ clears the state for non-spray WOs (and the backfill patch did the
 same for historical rows), the widget surfaces the error to the user
 unless we intercept the endpoint.
 
-### 3. Backfill patch
+### 3. Client-side `is_read_only` override
+
+**Location:** `upande_scp/upande_scp/public/js/spray_plan_wo_form.js`
+(top of file — loads via the existing `doctype_js` hook for Work Order)
+
+```javascript
+(function () {
+    if (!frappe.workflow || frappe.workflow.__upande_scp_patched) return;
+    frappe.workflow.__upande_scp_patched = true;
+    const orig_is_read_only = frappe.workflow.is_read_only;
+    frappe.workflow.is_read_only = function (doctype, name) {
+        if (doctype === "Work Order") {
+            const doc = locals[doctype] && locals[doctype][name];
+            if (doc && doc.custom_type !== "Application Floor Plan") {
+                return false;
+            }
+        }
+        return orig_is_read_only.call(this, doctype, name);
+    };
+})();
+```
+
+**Why this is needed:** the form's read-only check in
+`frappe/public/js/frappe/model/workflow.js::is_read_only` falls back to
+`get_default_state(doctype, doc.docstatus)` when `doc.workflow_state` is
+empty, then enforces that state's `allow_edit` role gate. With the
+server now clearing `workflow_state` on every non-spray WO, the client
+would render those forms read-only for any user without the Spray Plan
+Creator / General Manager roles — manifesting as a "Not Saved" status
+that never clears even after repeated Submit clicks. The patch
+short-circuits the check to `false` (editable) for non-spray Work
+Orders only; everything else delegates to the original.
+
+### 4. Backfill patch
 
 **Location:** `upande_scp/patches/v1_0/clear_non_spray_work_order_workflow_state.py`
 

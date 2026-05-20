@@ -10,30 +10,6 @@
 //
 // Calls the same race-safe endpoint as the bulk flow (single-WO list).
 
-// Neutralise the client-side workflow read-only check for non-spray Work
-// Orders. The Application Floor Plan Workflow is bound to Work Order, but
-// CustomWorkOrder makes it inert server-side for records where
-// custom_type != "Application Floor Plan". Without this patch the client's
-// `frappe.workflow.is_read_only` falls back to the workflow's *default*
-// state whenever `workflow_state` is empty, then applies that state's
-// `allow_edit` role gate — leaving the form effectively read-only and
-// stuck on "Not Saved" for users who lack Spray Plan Creator / General
-// Manager.
-(function () {
-    if (!frappe.workflow || frappe.workflow.__upande_scp_patched) return;
-    frappe.workflow.__upande_scp_patched = true;
-    const orig_is_read_only = frappe.workflow.is_read_only;
-    frappe.workflow.is_read_only = function (doctype, name) {
-        if (doctype === "Work Order") {
-            const doc = locals[doctype] && locals[doctype][name];
-            if (doc && doc.custom_type !== "Application Floor Plan") {
-                return false;
-            }
-        }
-        return orig_is_read_only.call(this, doctype, name);
-    };
-})();
-
 frappe.ui.form.on("Work Order", {
     refresh: function (frm) {
         if (frm.doc.custom_type !== "Application Floor Plan") return;

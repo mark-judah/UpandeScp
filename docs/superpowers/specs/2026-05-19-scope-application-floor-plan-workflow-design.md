@@ -1,206 +1,147 @@
-# Scope the Application Floor Plan Workflow to Spray-Plan Work Orders
+# Remove the Application Floor Plan Workflow
 
 ## Problem
 
-The "Application Floor Plan Workflow" (defined in
-`upande_scp/upande_scp/fixtures/workflow.json`) is bound to
-`document_type: "Work Order"`. Frappe binds a Workflow 1:1 to a DocType
-and offers no native condition / filter, so the workflow's default state
-("Pending Submission"), role-based `allow_edit` constraints, and
-transition actions ("Submit for Approval", "Approve Plan") currently
-apply to **every** Work Order — including unrelated manufacturing
-orders. Spray-plan Work Orders are distinguished by the custom field
-`custom_type == "Application Floor Plan"`.
+The "Application Floor Plan Workflow" was bound to the `Work Order`
+DocType (see prior `fixtures/workflow.json`). Frappe binds a Workflow
+1:1 to a DocType and offers no per-record scoping, so every layer of
+Frappe's workflow framework ran on every Work Order — including
+unrelated manufacturing orders. Symptoms experienced by users:
 
-The most visible symptom is that users without the "Spray Plan Creator"
-or "General Manager" roles (e.g. Production Managers) can't save
-non-spray Work Orders, because the workflow's `allow_edit` role gate
-refuses the save while the WO sits in "Pending Submission".
+- Save blocked by the `allow_edit` role gate inside
+  `frappe.model.workflow.validate_workflow`, even though the user
+  wasn't a spray-plan participant.
+- `WorkflowStateError("Workflow State not set")` thrown by
+  `frappe.model.workflow.get_transitions` on form load.
+- Most subtly: the client `frappe/public/js/frappe/form/workflow.js`
+  re-runs `get_state` on every refresh and, when `workflow_state` is
+  empty, calls `frm.set_value(state_field, default_state)` — which
+  sets `__unsaved = 1`. The form is permanently dirty; "Not Saved"
+  never clears, no matter how many times the user clicks Submit.
+
+Successive attempts to suppress the framework per-record (a
+`CustomWorkOrder.validate_workflow` override, a wrapper on the
+`get_transitions` whitelisted endpoint, a client-side
+`is_read_only` monkey-patch) each addressed one path but left the
+others fighting back. Patching symptoms doesn't work because the
+client-side state machine assumes a workflow applies to *the
+DocType*, not to individual records.
 
 ## Goal
 
-The workflow should only take effect on Work Orders where
-`custom_type == "Application Floor Plan"`. All other Work Orders behave
-as if no workflow exists.
+Stop running the Frappe Workflow framework against Work Order
+entirely. Preserve the spray-plan user experience (submit drafts for
+approval, approve, mark completed) which is already implemented in
+custom code that drives `workflow_state` directly.
 
 ## Approach
 
-The workflow definition stays unchanged. We override the `Work Order`
-controller class via `override_doctype_class` and replace
-`validate_workflow` so it no-ops for non-spray Work Orders (and clears
-any leftover `workflow_state` in the same call). The whole workflow
-framework — default-state setter, `allow_edit` role gate, transition
-check inside `frappe.model.workflow.validate_workflow` — is therefore
-bypassed on those records.
+Remove the Frappe Workflow record for Work Order. Once
+`meta.get_workflow("Work Order")` returns `None`, every server- and
+client-side workflow code path short-circuits at the first check:
 
-We also add a one-off `post_model_sync` patch that clears
-`workflow_state` on existing non-spray Work Orders in bulk, so historic
-records normalise immediately rather than only on their next save.
+- `Document.validate_workflow` → no-op (line 689 `if workflow:`).
+- `frappe.ui.form.States` constructor → returns early (line 10:
+  `if (!this.state_fieldname) return;`).
+- `frappe.workflow.is_read_only` → returns `false` (line 70).
+- `get_transitions` → never called by the form for this DocType.
 
-### Why not `doc_events` (`before_validate` / `before_save`)?
+The spray-plan "workflow" continues to function because it never
+actually used Frappe's framework:
 
-`frappe.model.workflow.validate_workflow` (called from
-`Document._validate` → `Document.validate_workflow`) re-applies
-`workflow.states[0].state` whenever the field is empty. The lifecycle
-runs `before_validate → validate (re-defaults) → before_save`, so:
+- The **"Submit for Approval" button** is rendered by
+  `public/js/spray_plan_wo_form.js`, gated on
+  `custom_type === "Application Floor Plan"` and
+  `workflow_state === "Pending Submission"`.
+- That button calls
+  `serverscripts/spray_plan_creator/bulk.py::submit_drafts_for_approval`,
+  which transitions `Pending Submission → Awaiting Approval` via raw
+  SQL.
+- Approval is driven by
+  `serverscripts/spray_plan_approval.py::approve_plan`, which calls
+  `frappe.db.set_value("Work Order", name, "workflow_state",
+  "Approved")`.
+- `auto_material_issue.py` sets `workflow_state = "Completed"` after
+  the Material Issue is posted.
 
-- `before_validate` clears the field, then `validate_workflow` puts it
-  right back.
-- `before_save` runs after the re-defaulting, but by then the role gate
-  inside `validate_workflow` has already thrown for unprivileged users
-  — so the save never reaches `before_save`.
-
-Overriding the controller method is the only point that sits *above*
-the workflow framework's own defaulting and role gate.
+A grep across `upande_scp` confirmed there are zero callsites of
+`apply_workflow` or any other `frappe.model.workflow` function —
+nothing depends on the Workflow framework.
 
 ## Components
 
-### 1. `CustomWorkOrder` subclass
+### 1. Delete the Workflow fixture
 
-**Location:** `upande_scp/upande_scp/serverscripts/spray_plan_creator/custom_work_order.py`
+`upande_scp/upande_scp/fixtures/workflow.json` is removed. The
+sibling fixtures (`workflow_state.json`, `workflow_action_master.json`)
+stay — they define the state and action records that the custom
+field on Work Order references.
 
-```python
-from erpnext.manufacturing.doctype.work_order.work_order import WorkOrder
+### 2. Backfill patch: delete the Workflow record
 
-
-class CustomWorkOrder(WorkOrder):
-    def validate_workflow(self):
-        if (self.get("custom_type") or "") != "Application Floor Plan":
-            self.workflow_state = None
-            return
-        return super().validate_workflow()
-```
-
-**Wiring** in `upande_scp/hooks.py`:
-
-```python
-override_doctype_class = {
-    "Work Order": "upande_scp.serverscripts.spray_plan_creator.custom_work_order.CustomWorkOrder",
-}
-```
-
-ERPNext's `WorkOrder.validate` and every other method are inherited
-untouched.
-
-### 2. `get_transitions` override
-
-**Location:** `upande_scp/upande_scp/serverscripts/spray_plan_creator/workflow_transitions.py`
-
-```python
-import frappe
-from frappe.model.workflow import get_transitions as _orig_get_transitions
-
-@frappe.whitelist()
-def get_transitions(doc, workflow=None, raise_exception=False):
-    if hasattr(doc, "doctype"):
-        doctype = doc.doctype
-        custom_type = doc.get("custom_type") or ""
-    else:
-        d = frappe.parse_json(doc) if isinstance(doc, str) else doc
-        doctype = d.get("doctype") if isinstance(d, dict) else None
-        custom_type = (d.get("custom_type") or "") if isinstance(d, dict) else ""
-    if doctype == "Work Order" and custom_type != "Application Floor Plan":
-        return []
-    return _orig_get_transitions(doc, workflow=workflow, raise_exception=raise_exception)
-```
-
-**Wiring** in `upande_scp/hooks.py`:
-
-```python
-override_whitelisted_methods = {
-    "frappe.model.workflow.get_transitions": "upande_scp.serverscripts.spray_plan_creator.workflow_transitions.get_transitions",
-}
-```
-
-**Why this is needed:** `frappe/model/workflow.py::get_transitions`
-is a whitelisted endpoint the form's workflow widget calls on every
-refresh. It throws `WorkflowStateError("Workflow State not set")` when
-`current_state` is empty. Since `CustomWorkOrder.validate_workflow`
-clears the state for non-spray WOs (and the backfill patch did the
-same for historical rows), the widget surfaces the error to the user
-unless we intercept the endpoint.
-
-### 3. Client-side `is_read_only` override
-
-**Location:** `upande_scp/upande_scp/public/js/spray_plan_wo_form.js`
-(top of file — loads via the existing `doctype_js` hook for Work Order)
-
-```javascript
-(function () {
-    if (!frappe.workflow || frappe.workflow.__upande_scp_patched) return;
-    frappe.workflow.__upande_scp_patched = true;
-    const orig_is_read_only = frappe.workflow.is_read_only;
-    frappe.workflow.is_read_only = function (doctype, name) {
-        if (doctype === "Work Order") {
-            const doc = locals[doctype] && locals[doctype][name];
-            if (doc && doc.custom_type !== "Application Floor Plan") {
-                return false;
-            }
-        }
-        return orig_is_read_only.call(this, doctype, name);
-    };
-})();
-```
-
-**Why this is needed:** the form's read-only check in
-`frappe/public/js/frappe/model/workflow.js::is_read_only` falls back to
-`get_default_state(doctype, doc.docstatus)` when `doc.workflow_state` is
-empty, then enforces that state's `allow_edit` role gate. With the
-server now clearing `workflow_state` on every non-spray WO, the client
-would render those forms read-only for any user without the Spray Plan
-Creator / General Manager roles — manifesting as a "Not Saved" status
-that never clears even after repeated Submit clicks. The patch
-short-circuits the check to `false` (editable) for non-spray Work
-Orders only; everything else delegates to the original.
-
-### 4. Backfill patch
-
-**Location:** `upande_scp/patches/v1_0/clear_non_spray_work_order_workflow_state.py`
+**Location:** `upande_scp/patches/v1_0/delete_application_floor_plan_workflow.py`
 
 ```python
 import frappe
 
 def execute():
-    if not frappe.db.has_column("Work Order", "custom_type"):
+    name = "Application Floor Plan Workflow"
+    if not frappe.db.exists("Workflow", name):
         return
-    frappe.db.sql("""
-        UPDATE `tabWork Order`
-        SET workflow_state = NULL
-        WHERE COALESCE(custom_type, '') != 'Application Floor Plan'
-          AND workflow_state IS NOT NULL
-    """)
+    frappe.delete_doc("Workflow", name, force=True, ignore_missing=True)
     frappe.db.commit()
+    # DocType meta caches the workflow association; without an
+    # explicit invalidation the next save raises
+    # "Workflow Application Floor Plan Workflow not found".
+    frappe.clear_cache(doctype="Work Order")
 ```
 
-Registered in `upande_scp/patches.txt` under `[post_model_sync]`:
+Registered in `patches.txt` under `[post_model_sync]`.
 
-```
-upande_scp.patches.v1_0.clear_non_spray_work_order_workflow_state
-```
+### 3. Remove the now-dead overrides
 
-Raw SQL avoids bumping `modified` / `modified_by` on every historical
-record. Idempotent.
+- `upande_scp/serverscripts/spray_plan_creator/custom_work_order.py` — deleted.
+- `upande_scp/serverscripts/spray_plan_creator/workflow_transitions.py` — deleted.
+- `upande_scp/hooks.py` — removed the `override_doctype_class` and
+  `override_whitelisted_methods` entries.
+- `upande_scp/public/js/spray_plan_wo_form.js` — removed the
+  `frappe.workflow.is_read_only` monkey-patch (the "Submit for
+  Approval" button block is kept).
+
+The prior backfill patch
+`clear_non_spray_work_order_workflow_state.py` stays — it's
+idempotent and harmless. It cleared the 717 leaked workflow_state
+values that the broken framework set on non-spray WOs.
 
 ## Out of Scope
 
-- The workflow fixture itself (still `document_type: "Work Order"`).
-- Other apps that may want to override Work Order's class — they would
-  need to subclass `CustomWorkOrder` instead of `WorkOrder` directly.
-  No installed app does so today.
+- The `workflow_state` Custom Field on Work Order (Link → Workflow
+  State) stays. It now functions as a plain status field on Work
+  Order, written and read only by spray-plan custom code.
+- The `tabWorkflow State` records stay — they're the linked values.
+- The `allow_edit` role gate the Workflow used to enforce
+  (e.g. "only General Manager can edit an Approved spray plan") is
+  not re-implemented. The spray-plan endpoints in `bulk.py`,
+  `spray_plan_approval.py`, and `drafts.py` already validate role
+  and scope on the transitions that matter. If finer-grained
+  field-level gating is needed later, add a `before_save` hook
+  scoped to Work Orders where `custom_type == "Application Floor
+  Plan"`.
 
 ## Test Plan
 
-- **New spray-plan WO:** Create a Work Order with
-  `custom_type = "Application Floor Plan"`. `workflow_state` becomes
-  "Pending Submission"; "Submit for Approval" button appears for the
-  Spray Plan Creator role.
-- **New non-spray WO:** Create a Work Order with any other
-  `custom_type` (or empty). `workflow_state` stays `NULL`; the standard
-  Submit button works; no workflow role restriction blocks edits — in
-  particular, a user without "Spray Plan Creator" / "General Manager"
-  can save the WO.
-- **Migrate:** Run `bench migrate`. Existing non-spray Work Orders that
-  had any `workflow_state` are cleared in one statement.
-- **Edit a non-spray WO with a stale `workflow_state` set manually:**
-  Saving it should clear the state (covered by the overridden
-  `validate_workflow`).
+- **Workflow gone:** `meta.get_workflow("Work Order")` returns
+  `None`; `frappe.db.exists("Workflow", "Application Floor Plan
+  Workflow")` returns `False`.
+- **Non-spray WO save:** A draft non-spray WO saves cleanly
+  (`workflow_state` stays `None`, no role gate, no
+  `WorkflowStateError`).
+- **Spray-plan submit:** A draft Application Floor Plan WO at
+  `Pending Submission` transitions to `Awaiting Approval` and
+  `docstatus = 1` via the existing
+  `bulk.submit_drafts_for_approval` endpoint.
+- **Form behaviour (browser):** Open a non-spray WO — no workflow
+  badge, no "Not Saved" loop, normal Save/Submit work. Open a
+  spray-plan WO at `Pending Submission` — the custom "Submit for
+  Approval" button still appears and still posts to the bulk
+  endpoint.

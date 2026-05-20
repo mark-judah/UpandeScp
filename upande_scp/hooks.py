@@ -212,6 +212,14 @@ doc_events = {
     },
 }
 
+# The Application Floor Plan Workflow is bound to Work Order but should only
+# apply to spray-plan WOs. CustomWorkOrder overrides ``validate_workflow`` to
+# no-op for any Work Order whose ``custom_type`` is not "Application Floor
+# Plan" — bypassing the default-state setter and the ``allow_edit`` role gate.
+override_doctype_class = {
+    "Work Order": "upande_scp.serverscripts.spray_plan_creator.custom_work_order.CustomWorkOrder",
+}
+
 # Scheduled Tasks
 # ---------------
 

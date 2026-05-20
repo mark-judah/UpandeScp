@@ -75,6 +75,103 @@ def _assert_same_company(company: str, refs: list[tuple[str, str | None]]) -> No
             )
 
 
+def _resolve_cost_center_with_override(
+    override: str | None, greenhouse: str, company: str | None,
+) -> str:
+    """Return the cost center that should be persisted on the plan.
+
+    Resolution order:
+      1. ``override`` (set by the operator via the picker) — validated to exist
+         in the same company and be enabled/non-group; otherwise we throw a
+         clear error rather than silently fall back, so the user notices
+         their pick was wrong.
+      2. ``derive_cost_center(greenhouse)`` — the explicit-field → exact →
+         fuzzy chain that the React/www pages already use for the default.
+
+    The override path is the new addition; the derive path preserves the
+    previous behaviour for callers (or older clients) that don't send a
+    `custom_cost_center` field.
+    """
+    if override:
+        override = override.strip()
+    if override:
+        cc = frappe.db.get_value(
+            "Cost Center",
+            override,
+            ["name", "company", "disabled", "is_group"],
+            as_dict=True,
+        )
+        if not cc:
+            frappe.throw(
+                f"Cost Center '{override}' not found. Pick another or leave blank "
+                "to use the auto-resolved value.",
+                title="Invalid Cost Center",
+            )
+        if cc.get("disabled"):
+            frappe.throw(
+                f"Cost Center '{override}' is disabled.",
+                title="Invalid Cost Center",
+            )
+        if cc.get("is_group"):
+            frappe.throw(
+                f"Cost Center '{override}' is a group — pick a leaf Cost Center.",
+                title="Invalid Cost Center",
+            )
+        if company and cc.get("company") and cc["company"] != company:
+            frappe.throw(
+                f"Cost Center '{override}' belongs to company '{cc['company']}', "
+                f"but this plan is for '{company}'. Pick a Cost Center in the "
+                "same company.",
+                title="Cross-company Cost Center",
+            )
+        return cc["name"]
+    return derive_cost_center(greenhouse)
+
+
+def _resolve_item_code(value: str) -> str:
+    """Resolve a chemical payload's ``item_code`` to a real ``Item.name``.
+
+    The legacy spray-plan creator UI only captures the chemical's display
+    *name* in its input field (e.g. ``"SECURE 36% SC"``) while the actual
+    ``Item.name`` at Upande is a numeric code (e.g. ``"1112012"``). Without
+    this resolver, ERPNext's ``make_stock_entry`` later fails with
+    ``DoesNotExistError`` when it tries to look up the Item by what is
+    actually its display name — blocking the GM approval flow entirely.
+
+    Resolution order:
+      1. ``value`` is already an Item primary key → return as-is.
+      2. Exactly one Item has ``item_name = value`` → return that Item's
+         primary key.
+      3. Otherwise throw a clear error so the operator knows which
+         chemical is unknown / ambiguous.
+    """
+    value = (value or "").strip()
+    if not value:
+        frappe.throw("Chemical item_code is required.")
+    if frappe.db.exists("Item", value):
+        return value
+    rows = frappe.get_all(
+        "Item",
+        filters={"item_name": value},
+        fields=["name"],
+        limit=2,
+    )
+    if len(rows) == 1:
+        return rows[0]["name"]
+    if len(rows) > 1:
+        frappe.throw(
+            f"Chemical '{value}' matches {len(rows)} Items by name. "
+            "The BOM needs to reference the exact Item code instead of the "
+            "display name.",
+            title="Ambiguous chemical",
+        )
+    frappe.throw(
+        f"Chemical '{value}' is not a known Item. Check the BOM or "
+        "update the chemicals list before saving.",
+        title="Unknown chemical",
+    )
+
+
 def _coerce_date_str(value) -> str:
     """Return a YYYY-MM-DD string for a date-ish input, or empty string.
 
@@ -188,6 +285,14 @@ def _apply_payload(wo, payload: dict) -> None:
         if f in payload:
             wo.set(f, payload[f])
 
+    # Mirror the operator-picked spray date onto ERPNext's `planned_start_date`
+    # so the standard WO calendar/timeline lands on the right day. Without
+    # this, ERPNext defaults the field to `now()` and a plan scheduled for
+    # next week shows up as "today" in stock-planning reports.
+    scheduled = payload.get("custom_scheduled_application_time")
+    if scheduled:
+        wo.planned_start_date = scheduled
+
     targets = payload.get("custom_targets") or []
     if isinstance(targets, list):
         wo.custom_targets = "\n".join(targets)
@@ -197,13 +302,40 @@ def _apply_payload(wo, payload: dict) -> None:
     snap = payload.get("custom_weather_snapshot")
     wo.custom_weather_snapshot = json.dumps(snap) if isinstance(snap, dict) else (snap or "")
 
+    # Per-plan team roster. The operator picks a Spray Team to seed the rows
+    # in the UI, then adds/removes individuals without mutating the master
+    # team. ``auto_material_issue.py`` reads this child table first; an empty
+    # list intentionally falls back to the master team there.
+    if "custom_spray_plan_team_members" in payload:
+        members = payload.get("custom_spray_plan_team_members") or []
+        wo.custom_spray_plan_team_members = []
+        seen_emps: set[str] = set()
+        for m in members:
+            emp = (m.get("employee") or "").strip()
+            if not emp or emp in seen_emps:
+                continue
+            seen_emps.add(emp)
+            wo.append("custom_spray_plan_team_members", {
+                "employee": emp,
+                "role": (m.get("role") or "").strip(),
+            })
+
     chems = payload.get("chemicals") or []
     wo.required_items = []
     rate_overridden = False
     for c in chems:
+        # Resolve display name -> real Item primary key. Legacy UI sends
+        # display names; the React UI sends real codes. Either is OK now.
+        real_code = _resolve_item_code(c.get("item_code"))
+        # Pull a clean display name from the Item if the payload didn't
+        # provide one — keeps the WO readable when ERPNext doesn't fetch
+        # the name from the link target itself.
+        item_name = c.get("item_name") or frappe.db.get_value(
+            "Item", real_code, "item_name"
+        ) or real_code
         wo.append("required_items", {
-            "item_code": c["item_code"],
-            "item_name": c.get("item_name"),
+            "item_code": real_code,
+            "item_name": item_name,
             "stock_uom": c.get("uom") or c.get("stock_uom"),
             "source_warehouse": c.get("source_warehouse") or c.get("source"),
             "required_qty": c.get("application_rate") or c.get("rate") or c.get("qty") or 0,
@@ -254,7 +386,11 @@ def create_draft_spray_plan(payload):
     _validate_payload(payload, scope)
 
     company = _derive_plan_company(payload)
-    cost_center = derive_cost_center(payload["custom_greenhouse"])
+    cost_center = _resolve_cost_center_with_override(
+        payload.get("custom_cost_center"),
+        payload["custom_greenhouse"],
+        company,
+    )
 
     # The frontend sends `production_item` as a BOM name (Chemical Mix BOM).
     # ERPNext's Work Order expects `production_item` to be an Item code and
@@ -377,7 +513,17 @@ def update_draft_plan(name: str, payload):
     company = _derive_plan_company(payload) if payload.get("custom_greenhouse") else wo.company
     if payload.get("custom_greenhouse"):
         wo.company = company
-        wo.custom_cost_center = derive_cost_center(payload["custom_greenhouse"])
+        wo.custom_cost_center = _resolve_cost_center_with_override(
+            payload.get("custom_cost_center"),
+            payload["custom_greenhouse"],
+            company,
+        )
+    elif payload.get("custom_cost_center"):
+        # No greenhouse change but the user picked a different cost center
+        # on the existing greenhouse — accept it after a same-company check.
+        wo.custom_cost_center = _resolve_cost_center_with_override(
+            payload["custom_cost_center"], wo.fg_warehouse or "", wo.company,
+        )
 
     # See create_draft_spray_plan: the payload `production_item` is the BOM
     # name; the WO needs the BOM's FG Item code on `production_item` and the
@@ -477,5 +623,13 @@ def _expand_wo(wo) -> dict:
                 "application_rate": r.required_qty,
             }
             for r in (wo.required_items or [])
+        ],
+        "custom_spray_plan_team_members": [
+            {
+                "employee": m.employee,
+                "employee_name": m.employee_name,
+                "role": m.role,
+            }
+            for m in (wo.custom_spray_plan_team_members or [])
         ],
     }

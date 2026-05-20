@@ -36,10 +36,28 @@ export interface CreatorKit {
   custom_farm: string;
 }
 
+export interface SprayTeamMember {
+  /** Employee ID — equals the payroll number at Upande (e.g. "200986"). */
+  employee: string;
+  /** Pre-fetched display name; falls back to the ID server-side. */
+  employee_name: string;
+  designation?: string | null;
+  role: string;
+}
+
 export interface CreatorSprayTeam {
   name: string;
   custom_farm: string;
-  members: { employee: string; role: string }[];
+  members: SprayTeamMember[];
+}
+
+export interface EmployeeSearchHit {
+  employee: string;
+  employee_name: string;
+  designation: string | null;
+  department: string | null;
+  company: string | null;
+  image: string | null;
 }
 
 export interface CreatorTankMix {
@@ -53,6 +71,12 @@ export interface CreatorRateLimit {
   upper: number | null;
 }
 
+export interface CreatorCostCenter {
+  name: string;
+  company: string | null;
+  custom_farm: string | null;
+}
+
 export interface CreatorBootstrap {
   scope: CreatorScope;
   greenhouses: CreatorGreenhouse[];
@@ -62,6 +86,7 @@ export interface CreatorBootstrap {
   rate_limits: Record<string, CreatorRateLimit>;
   pest_catalog: { name: string }[];
   disease_catalog: { name: string }[];
+  cost_centers: CreatorCostCenter[];
   weather_settings: Record<string, number>;
   irac_window_days: number;
   frac_window_days: number;
@@ -83,8 +108,16 @@ export interface DraftPayloadChemical {
   application_rate?: number;
 }
 
+export interface DraftPayloadTeamMember {
+  employee: string;
+  role: string;
+}
+
 export interface DraftPayload {
   custom_greenhouse: string;
+  /** Optional cost-center override. Empty string or omitted = let the
+   *  backend derive (Warehouse.custom_cost_center → exact → fuzzy chain). */
+  custom_cost_center?: string;
   custom_classification: "Curative" | "Preventive";
   custom_preventive_reason?: string;
   custom_spray_type: string;
@@ -92,6 +125,9 @@ export interface DraftPayload {
   custom_scope_details?: string;
   custom_kit?: string | null;
   custom_spray_team?: string | null;
+  /** Per-plan team roster. Empty list = fall back to the master team's
+   *  members at material-issue time. */
+  custom_spray_plan_team_members?: DraftPayloadTeamMember[];
   custom_water_ph: number;
   custom_water_hardness: number;
   custom_water_volume: number;
@@ -139,6 +175,18 @@ export async function deleteDraftPlan(name: string): Promise<{ deleted: string }
   return call(
     "upande_scp.serverscripts.spray_plan_creator.drafts.delete_draft_plan",
     { name },
+  );
+}
+
+// ---------- Employee search (team-member picker) ----------
+
+export async function searchEmployees(
+  query: string,
+  limit: number = 20,
+): Promise<EmployeeSearchHit[]> {
+  return call<EmployeeSearchHit[]>(
+    "upande_scp.serverscripts.spray_plan_creator.employees.search_employees",
+    { query, limit },
   );
 }
 

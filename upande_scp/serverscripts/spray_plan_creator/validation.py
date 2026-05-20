@@ -24,6 +24,11 @@ PREVENTIVE_REASON_MIN_CHARS = 20
 # lookbehind for a digit instead. Trailing zeros (e.g. "GH10") are
 # preserved because the preceding char IS a digit.
 _LEADING_ZERO_RE = re.compile(r"(?<!\d)0+(\d)")
+# Collapse a trailing repeated hyphen-token like "-kr-kr" → "-kr" so
+# Cost Centers with an accidentally-duplicated suffix (e.g.
+# "Kapkolia GH18 - KR - KR") still match their warehouse counterpart.
+# Anchored at end-of-string to keep mid-name dashes untouched.
+_TRAILING_DUP_SUFFIX_RE = re.compile(r"(-[a-z0-9]+)(?:\1)+$")
 
 
 def _normalise_name_key(name: str) -> str:
@@ -31,7 +36,8 @@ def _normalise_name_key(name: str) -> str:
         return ""
     lowered = (name or "").lower()
     no_space = re.sub(r"\s+", "", lowered)
-    return _LEADING_ZERO_RE.sub(r"\1", no_space)
+    no_zeros = _LEADING_ZERO_RE.sub(r"\1", no_space)
+    return _TRAILING_DUP_SUFFIX_RE.sub(r"\1", no_zeros)
 
 
 def match_cost_center(greenhouse_warehouse: str) -> str | None:
@@ -86,6 +92,54 @@ def derive_cost_center(greenhouse_warehouse: str) -> str:
         "then retry.",
         title="Cost Center missing",
     )
+
+
+@frappe.whitelist()
+def list_cost_centers(company: str | None = None) -> list[dict]:
+    """Return all active, non-group Cost Centers — used by the application
+    floor-plan pages to drive the override picker.
+
+    Optionally filter to a single company. Output rows are
+    ``{name, company, custom_farm}`` so the UI can group/badge them.
+    """
+    filters: dict = {"disabled": 0, "is_group": 0}
+    if company:
+        filters["company"] = company
+    return frappe.get_all(
+        "Cost Center",
+        filters=filters,
+        fields=["name", "company", "custom_farm"],
+        order_by="name asc",
+        limit_page_length=0,
+    )
+
+
+@frappe.whitelist()
+def resolve_warehouse_cost_center(warehouse: str) -> dict:
+    """Lazy lookup: return the Cost Center for `warehouse` via the same
+    resolver chain the React page uses.
+
+    Used by the www `new_application_floor_plan` page on greenhouse-select so
+    the upfront page-load cost of resolving every warehouse is avoided.
+    Returns ``{"cost_center": str|None, "source": "explicit"|"exact"|"fuzzy"|None}``
+    so the UI can label why a value was chosen if needed.
+    """
+    if not warehouse:
+        return {"cost_center": None, "source": None}
+    explicit = frappe.db.get_value("Warehouse", warehouse, "custom_cost_center")
+    if explicit:
+        return {"cost_center": explicit, "source": "explicit"}
+    if frappe.db.exists("Cost Center", {"name": warehouse, "disabled": 0}):
+        return {"cost_center": warehouse, "source": "exact"}
+    target_key = _normalise_name_key(warehouse)
+    if not target_key:
+        return {"cost_center": None, "source": None}
+    for candidate in frappe.get_all(
+        "Cost Center", filters={"disabled": 0}, pluck="name"
+    ):
+        if _normalise_name_key(candidate) == target_key:
+            return {"cost_center": candidate, "source": "fuzzy"}
+    return {"cost_center": None, "source": None}
 
 
 def validate_preventive_reason(classification: str, reason: str | None) -> None:

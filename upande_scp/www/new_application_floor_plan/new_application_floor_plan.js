@@ -37,7 +37,24 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedVarieties: new Set(),
         allTargetOptions: [],
         allVarieties: [],
-        zoneCountByBed: {}
+        zoneCountByBed: {},
+        // ── Spray plan classification state ──
+        // Empty string = nothing picked yet (mirrors the React page's initial
+        // state). When "Preventive" we require a 20+ char reason and source
+        // targets from the full pest+disease catalogs instead of scouting.
+        classification: "",
+        preventiveReason: "",
+        // Scouting-derived target names — populated as the heatmap loads;
+        // used as the autocomplete source when classification === "Curative".
+        scoutingTargets: new Set(),
+        // Draft Spray Plans currently in the user's Pending Submission batch.
+        // Refreshed on page load, after each Add-to-batch submit, and on
+        // explicit refresh / submit-all.
+        drafts: [],
+        // Per-plan team roster (the Spray Team picker only seeds this; the
+        // operator can add/remove individuals here without mutating the
+        // master Spray Team). Submitted as `custom_spray_plan_team_members`.
+        teamMembers: []
     };
 
     // ==================== DOM ELEMENTS ====================
@@ -93,8 +110,50 @@ document.addEventListener("DOMContentLoaded", () => {
         bomWaterPh: document.getElementById("bom-water-ph"),
         bomWaterHardness: document.getElementById("bom-water-hardness"),
         bomModalChemicalsList: document.getElementById("bom-modal-chemicals-list"),
-        addBomChemicalBtn: document.getElementById("add-bom-chemical-btn")
+        addBomChemicalBtn: document.getElementById("add-bom-chemical-btn"),
+        // ── Classification toggle + Preventive reason ──
+        classificationButtons: document.querySelectorAll(".nafp-classification__btn"),
+        classificationValue: document.getElementById("classification-value"),
+        preventiveReasonContainer: document.getElementById("preventive-reason-container"),
+        preventiveReason: document.getElementById("preventive-reason"),
+        preventiveReasonCounter: document.getElementById("preventive-reason-counter"),
+        // ── Spray team editor (per-plan roster) ──
+        teamEditor: document.getElementById("team-editor"),
+        teamEditorBody: document.getElementById("team-editor-body"),
+        teamEditorCount: document.getElementById("team-editor-count"),
+        teamEditorBreakdown: document.getElementById("team-editor-breakdown"),
+        teamEditorAddBtn: document.getElementById("team-editor-add-btn"),
+        teamClearBtn: document.getElementById("spray-team-clear-btn"),
+        empPickerOverlay: document.getElementById("employee-picker-overlay"),
+        empPickerInput: document.getElementById("employee-picker-input"),
+        empPickerClear: document.getElementById("employee-picker-clear"),
+        empPickerResults: document.getElementById("employee-picker-results"),
+        empPickerClose: document.getElementById("employee-picker-close"),
+        // ── Cost center picker (Diagnose strip) ──
+        costCenter: document.getElementById("greenhouse-cost-center"),
+        costCenterValue: document.getElementById("greenhouse-cost-center-value"),
+        costCenterInput: document.getElementById("greenhouse-cost-center-input"),
+        costCenterSource: document.getElementById("greenhouse-cost-center-source"),
+        costCenterReset: document.getElementById("greenhouse-cost-center-reset"),
+        costCenterDatalist: document.getElementById("cost-center-options"),
+        // ── Draft batch panel ──
+        batchBody: document.getElementById("draft-batch-body"),
+        batchCount: document.getElementById("draft-batch-count"),
+        batchRefreshBtn: document.getElementById("batch-refresh-btn"),
+        batchSubmitAllBtn: document.getElementById("batch-submit-all-btn")
     };
+
+    // Server-injected reference data (rendered by index.py into a <script> tag).
+    // Used by classification → targets switch and the spray team members preview.
+    const serverData = (typeof window !== "undefined" && window._nafpServerData) || {
+        pestCatalog: [],
+        diseaseCatalog: [],
+        sprayTeamsWithMembers: []
+    };
+    const sprayTeamMembersByName = {};
+    (serverData.sprayTeamsWithMembers || []).forEach((t) => {
+        if (t && t.name) sprayTeamMembersByName[t.name] = t.members || [];
+    });
 
     // ==================== UTILITY FUNCTIONS ====================
     const getLoaderMsg = () => document.querySelector('#map-loader p');
@@ -2004,11 +2063,18 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     const populateTeams = (teams) => {
-        els.sprayTeam.innerHTML = "";
+        // Placeholder so the dropdown starts empty — the operator must
+        // explicitly pick a team to seed the per-plan roster. Without
+        // this, the browser auto-selects the first option and the
+        // "change" event never fires, leaving the editor mysteriously empty.
+        els.sprayTeam.innerHTML = '<option value="">Pick a team to seed the roster…</option>';
         teams.forEach((team) => {
             const option = document.createElement("option");
             option.value = team.name;
-            option.textContent = team.name;
+            const memberCount = (sprayTeamMembersByName[team.name] || []).length;
+            option.textContent = memberCount
+                ? `${team.name} · ${memberCount} member${memberCount === 1 ? "" : "s"}`
+                : team.name;
             els.sprayTeam.appendChild(option);
         });
     };
@@ -2095,12 +2161,24 @@ document.addEventListener("DOMContentLoaded", () => {
                 (entry[obsType] || []).forEach(obs => { if (obs.name) scoutingTargets.add(obs.name); });
             });
         });
+        // Persist the scouting-derived set on state so the Curative
+        // classification target source can use it. The legacy code merged
+        // these into `allTargetOptions` directly — we still do that for
+        // the existing free-text autocomplete, but classification-aware
+        // code paths read the dedicated set.
+        state.scoutingTargets = scoutingTargets;
         scoutingTargets.forEach(name => {
             if (!state.allTargetOptions.find(t => t.name === name)) {
                 state.allTargetOptions.push({ name, type: 'Scouting' });
             }
         });
         state.allTargetOptions.sort((a, b) => a.name.localeCompare(b.name));
+        // If the operator already picked a classification, refresh the
+        // classification-aware list so newly arrived scouting observations
+        // (or a freshly-loaded catalog) flow into the autocomplete.
+        if (typeof updateTargetOptionsForClassification === "function" && state.classification) {
+            updateTargetOptionsForClassification();
+        }
     };
 
     // ==================== TARGET AUTOCOMPLETE + PILLS ====================
@@ -2154,7 +2232,14 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     targetInput.addEventListener("focus", async () => {
-        if (state.allTargetOptions.length === 0) await fetchAllTargets();
+        if (state.allTargetOptions.length === 0) {
+            await fetchAllTargets();
+            // After the legacy fetch, re-narrow to the classification's pool
+            // so Curative doesn't accidentally show the full catalog.
+            if (typeof updateTargetOptionsForClassification === "function") {
+                updateTargetOptionsForClassification();
+            }
+        }
         showTargetDropdown(targetInput.value);
     });
     targetInput.addEventListener("input", () => { showTargetDropdown(targetInput.value); });
@@ -2335,25 +2420,310 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    const costCenterRow = document.getElementById("greenhouse-cost-center");
-    const costCenterValue = document.getElementById("greenhouse-cost-center-value");
-    const renderCostCenter = (cc) => {
-        if (!costCenterRow || !costCenterValue) return;
-        if (cc) {
-            costCenterValue.textContent = cc;
-            costCenterRow.classList.remove("tw-hidden");
+    const costCenterRow = els.costCenter;
+    const costCenterValue = els.costCenterValue;
+    const costCenterInput = els.costCenterInput;
+    const costCenterSourceBadge = els.costCenterSource;
+    const costCenterResetBtn = els.costCenterReset;
+    const costCenterDatalist = els.costCenterDatalist;
+
+    /** Populate the <datalist> once on boot from server-injected data so
+     *  the input shows auto-suggestions. The list is small (typically
+     *  <100 entries) so HTML datalist is the right tool — no JS framework
+     *  needed for the autocomplete dropdown. */
+    const populateCostCenterDatalist = () => {
+        if (!costCenterDatalist) return;
+        const list = (serverData.costCenters || []).filter((c) => c && c.name);
+        costCenterDatalist.innerHTML = list.map((c) => {
+            const company = (c.company || "").trim();
+            const farm = (c.custom_farm || "").trim();
+            const labelBits = [farm || "", company || ""].filter(Boolean).join(" · ");
+            return `<option value="${escapeHtmlEarly(c.name)}"${
+                labelBits ? ` label="${escapeHtmlEarly(labelBits)}"` : ""
+            }></option>`;
+        }).join("");
+    };
+    // Hoisted escape so the populate above can call it even though the
+    // main escapeHtml helper appears later in the file.
+    const escapeHtmlEarly = (s) => String(s || "")
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+    /** Tracks what the auto-resolver returned for the currently-picked
+     *  greenhouse, so we can compare the user's edit against it and
+     *  detect when they've moved off the default. */
+    state.costCenter = {
+        warehouse: "",          // current greenhouse the picker is bound to
+        resolved: "",           // value the resolver returned (the "auto" value)
+        resolvedSource: null,   // "explicit" | "exact" | "fuzzy" | null
+        value: "",              // current picker value (resolved OR user edit)
+        isCustom: false,        // true when the operator picked something else
+        loading: false
+    };
+
+    const setSourceBadge = (text, hidden) => {
+        if (!costCenterSourceBadge) return;
+        if (hidden || !text) {
+            costCenterSourceBadge.textContent = "";
+            costCenterSourceBadge.classList.add("tw-hidden");
         } else {
-            costCenterValue.textContent = "";
-            costCenterRow.classList.add("tw-hidden");
+            costCenterSourceBadge.textContent = text;
+            costCenterSourceBadge.classList.remove("tw-hidden");
         }
     };
+
+    /**
+     * Show / hide the Cost Center picker beside the greenhouse selector.
+     *
+     *  - opts.loading             → grey chip with "Resolving…"
+     *  - opts.isCustom            → blue chip, "Custom" badge + Reset button
+     *  - cc truthy, hasGh true    → green chip with source-aware badge
+     *  - cc falsy, hasGh true     → red "Not configured" chip, picker still
+     *                               editable so the operator can choose one
+     *  - hasGh false              → picker hidden until a greenhouse is picked
+     */
+    const renderCostCenter = (cc, hasGh, opts = {}) => {
+        if (!costCenterRow) return;
+        if (!hasGh) {
+            costCenterRow.classList.add("tw-hidden");
+            costCenterRow.classList.remove("is-missing", "is-loading", "is-custom");
+            if (costCenterInput) {
+                costCenterInput.value = "";
+                costCenterInput.placeholder = "Resolving…";
+            }
+            setSourceBadge("", true);
+            if (costCenterResetBtn) costCenterResetBtn.classList.add("tw-hidden");
+            return;
+        }
+        costCenterRow.classList.remove("tw-hidden");
+        if (opts.loading) {
+            costCenterRow.classList.add("is-loading");
+            costCenterRow.classList.remove("is-missing", "is-custom");
+            if (costCenterInput) {
+                costCenterInput.value = "";
+                costCenterInput.placeholder = "Resolving…";
+            }
+            setSourceBadge("Resolving…", false);
+            if (costCenterResetBtn) costCenterResetBtn.classList.add("tw-hidden");
+            return;
+        }
+        costCenterRow.classList.remove("is-loading");
+        if (costCenterInput && document.activeElement !== costCenterInput) {
+            // Only overwrite the input if the user isn't actively typing in it
+            costCenterInput.value = cc || "";
+        }
+        if (cc) {
+            if (opts.isCustom) {
+                costCenterRow.classList.add("is-custom");
+                costCenterRow.classList.remove("is-missing");
+                setSourceBadge("Custom", false);
+                if (costCenterInput) {
+                    costCenterInput.title = "You picked this manually. Click Reset to revert to auto.";
+                    costCenterInput.placeholder = "Cost center";
+                }
+                if (costCenterResetBtn) costCenterResetBtn.classList.remove("tw-hidden");
+            } else {
+                costCenterRow.classList.remove("is-missing", "is-custom");
+                const source = opts.source || "explicit";
+                const badgeText = { explicit: "Set", exact: "Match", fuzzy: "Auto" }[source] || "Auto";
+                setSourceBadge(badgeText, false);
+                if (costCenterInput) {
+                    costCenterInput.title = {
+                        explicit: "Set explicitly on the Warehouse record.",
+                        exact: "Matched an active Cost Center with the same name.",
+                        fuzzy: "Resolved via a case-/whitespace-insensitive name match. Edit to override."
+                    }[source] || "Auto-derived from the warehouse.";
+                    costCenterInput.placeholder = "Cost center";
+                }
+                if (costCenterResetBtn) costCenterResetBtn.classList.add("tw-hidden");
+            }
+        } else {
+            costCenterRow.classList.add("is-missing");
+            costCenterRow.classList.remove("is-custom");
+            setSourceBadge("Not set", false);
+            if (costCenterInput) {
+                costCenterInput.placeholder = "Type or pick a Cost Center…";
+                costCenterInput.title = "No matching Cost Center found — type or pick one.";
+            }
+            if (costCenterResetBtn) costCenterResetBtn.classList.add("tw-hidden");
+        }
+    };
+
+    /** Per-warehouse cost center cache to avoid re-hitting the resolver
+     *  endpoint when the operator flips between greenhouses. Keyed by
+     *  warehouse name; value is the {cost_center, source} payload. */
+    const costCenterCache = {};
+    let costCenterFetchToken = 0;
+
+    /**
+     * Resolve a greenhouse's cost center on demand. If the option already
+     * carries `data-cost-center` (set explicitly on the Warehouse record),
+     * we show it directly. Otherwise we hit the lazy resolver endpoint
+     * which runs the same exact → fuzzy chain `match_cost_center` uses.
+     *
+     * Uses a token to ignore stale responses when the operator picks
+     * another greenhouse before the previous lookup returns.
+     */
+    /** Update both state and the rendered picker after a resolver result. */
+    const applyResolvedCostCenter = (warehouse, cc, source) => {
+        state.costCenter.warehouse = warehouse;
+        state.costCenter.resolved = cc || "";
+        state.costCenter.resolvedSource = source || null;
+        state.costCenter.value = cc || "";
+        state.costCenter.isCustom = false;
+        state.costCenter.loading = false;
+        renderCostCenter(cc || "", true, { source });
+    };
+
+    const resolveCostCenter = async (warehouse, explicitCc) => {
+        console.log("[cost-center] resolveCostCenter called", { warehouse, explicitCc });
+        if (!warehouse) {
+            console.log("[cost-center] no warehouse, hiding chip");
+            state.costCenter = {
+                warehouse: "", resolved: "", resolvedSource: null,
+                value: "", isCustom: false, loading: false
+            };
+            renderCostCenter("", false);
+            return;
+        }
+        if (explicitCc) {
+            console.log("[cost-center] explicit value present, no API call", { explicitCc });
+            applyResolvedCostCenter(warehouse, explicitCc, "explicit");
+            return;
+        }
+        const cached = costCenterCache[warehouse];
+        if (cached) {
+            console.log("[cost-center] using in-memory cache", cached);
+            applyResolvedCostCenter(warehouse, cached.cost_center, cached.source);
+            return;
+        }
+        const token = ++costCenterFetchToken;
+        renderCostCenter("", true, { loading: true });
+        const url =
+            "/api/method/upande_scp.serverscripts.spray_plan_creator.validation.resolve_warehouse_cost_center";
+        const body = JSON.stringify({ warehouse });
+        const csrf = getCSRFToken();
+        console.log("[cost-center] POST →", { url, body, csrfLen: csrf?.length || 0, token });
+        try {
+            const r = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Frappe-CSRF-Token": csrf,
+                    "X-Requested-With": "XMLHttpRequest"
+                },
+                body
+            });
+            console.log("[cost-center] response", {
+                status: r.status,
+                ok: r.ok,
+                contentType: r.headers.get("content-type"),
+                token
+            });
+            if (token !== costCenterFetchToken) {
+                console.log("[cost-center] stale response, ignoring", { token, current: costCenterFetchToken });
+                return;
+            }
+            const raw = await r.text();
+            console.log("[cost-center] raw body (first 500 chars):", raw.slice(0, 500));
+            let j = null;
+            try { j = JSON.parse(raw); } catch (parseErr) {
+                console.error("[cost-center] body is not JSON — likely a login redirect or HTML error page", parseErr);
+                renderCostCenter("", true);
+                return;
+            }
+            if (!r.ok) {
+                console.error("[cost-center] HTTP error", {
+                    status: r.status,
+                    exc_type: j?.exc_type,
+                    exception: j?.exception,
+                    _server_messages: j?._server_messages
+                });
+                renderCostCenter("", true);
+                return;
+            }
+            const payload = (j && j.message) || { cost_center: null, source: null };
+            console.log("[cost-center] resolved", payload);
+            costCenterCache[warehouse] = payload;
+            applyResolvedCostCenter(warehouse, payload.cost_center, payload.source);
+        } catch (err) {
+            if (token !== costCenterFetchToken) return;
+            console.error("[cost-center] fetch threw:", err);
+            renderCostCenter("", true);
+        }
+    };
+
+    // ── Picker input + Reset wiring ──────────────────────────────
+    if (costCenterInput) {
+        // Track edits as the user types or picks from the datalist.
+        // We treat anything that doesn't match `state.costCenter.resolved`
+        // (case-sensitive, since Cost Center names are stored verbatim)
+        // as a "custom" pick.
+        const handlePickerChange = () => {
+            if (!state.costCenter.warehouse) return;
+            const val = (costCenterInput.value || "").trim();
+            state.costCenter.value = val;
+            state.costCenter.isCustom = val !== state.costCenter.resolved;
+            if (val) {
+                // Don't change `renderCostCenter`'s baseline (red/green); just
+                // update the badge and reset button to reflect custom-ness.
+                if (state.costCenter.isCustom) {
+                    costCenterRow.classList.add("is-custom");
+                    costCenterRow.classList.remove("is-missing");
+                    setSourceBadge("Custom", false);
+                    if (costCenterResetBtn) costCenterResetBtn.classList.remove("tw-hidden");
+                    if (costCenterInput) {
+                        costCenterInput.title = "You picked this manually. Click Reset to revert to auto.";
+                    }
+                } else {
+                    // User typed back to the auto value — restore normal state
+                    renderCostCenter(state.costCenter.resolved, true, {
+                        source: state.costCenter.resolvedSource
+                    });
+                }
+            } else {
+                // Cleared — reset to auto-resolved
+                state.costCenter.value = state.costCenter.resolved;
+                state.costCenter.isCustom = false;
+                renderCostCenter(state.costCenter.resolved, true, {
+                    source: state.costCenter.resolvedSource
+                });
+                if (costCenterInput) costCenterInput.value = state.costCenter.resolved;
+            }
+        };
+        costCenterInput.addEventListener("input", handlePickerChange);
+        costCenterInput.addEventListener("change", handlePickerChange);
+    }
+
+    if (costCenterResetBtn) {
+        costCenterResetBtn.addEventListener("click", () => {
+            if (!state.costCenter.warehouse) return;
+            state.costCenter.value = state.costCenter.resolved;
+            state.costCenter.isCustom = false;
+            if (costCenterInput) costCenterInput.value = state.costCenter.resolved;
+            renderCostCenter(state.costCenter.resolved, true, {
+                source: state.costCenter.resolvedSource
+            });
+        });
+    }
+
+    // One-time datalist population from server-injected data.
+    populateCostCenterDatalist();
 
     // ==================== EVENT LISTENERS ====================
     els.greenhouse.addEventListener("change", async (e) => {
         if (e.target.value) {
             const selectedGh = e.target.options[e.target.selectedIndex];
+            console.log("[cost-center] greenhouse change", {
+                value: e.target.value,
+                dataset: selectedGh?.dataset ? { ...selectedGh.dataset } : null,
+                hasResolver: typeof resolveCostCenter === "function"
+            });
             state.greenhouseFarm = selectedGh?.dataset.farm || "";
-            renderCostCenter(selectedGh?.dataset.costCenter || "");
+            // Resolve lazily — only the picked greenhouse goes through the
+            // fuzzy lookup, instead of pre-resolving every warehouse on
+            // page build.
+            resolveCostCenter(e.target.value, selectedGh?.dataset.costCenter || "");
             state.sourceWarehouseCache = {};
             els.sprayType.value = "";
             els.kit.value = "";
@@ -2380,8 +2750,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 fetchScoutingData(e.target.value),
                 fetchAllTargets()
             ]);
+            // Reapply classification-aware target filter (fetchAllTargets
+            // populates the full list; we want Curative to only see
+            // scouting-observed names for this greenhouse).
+            if (typeof updateTargetOptionsForClassification === "function") {
+                updateTargetOptionsForClassification();
+            }
         } else {
-            renderCostCenter("");
+            renderCostCenter("", false);
         }
     });
 
@@ -2431,9 +2807,15 @@ document.addEventListener("DOMContentLoaded", () => {
         if (e.target.id === "global-popup-overlay") { els.popupOverlay.classList.remove("active"); }
     });
 
-    // ==================== FORM SUBMISSION ====================
+    // ==================== FORM SUBMISSION (draft batch flow) ====================
+    // Replaces the legacy `validateGuidelines → warehouse-confirm → createWorkOrder`
+    // chain with a single `create_draft_spray_plan` call. The endpoint creates
+    // a Work Order in `workflow_state = "Pending Submission"`; any FRAC/IRAC or
+    // resistance warnings come back inline so we can surface them as toasts
+    // (no separate validation modal).
     document.getElementById("spray-plan-form").addEventListener("submit", async (e) => {
         e.preventDefault();
+
         const greenhouse = els.greenhouse.value;
         const sprayType = els.sprayType.value;
         const kit = els.kit.value;
@@ -2445,22 +2827,42 @@ document.addEventListener("DOMContentLoaded", () => {
         const areaToSpray = els.areaToSpray.value;
         const sprayTeam = els.sprayTeam.value;
         const scheduledApplicationTime = els.scheduledApplicationTime.value || null;
+        const classification = state.classification;
+        const preventiveReason = (state.preventiveReason || "").trim();
         const selectedTargets = Array.from(state.selectedTargets);
 
-        if (selectedTargets.length === 0) { showToast("Please select at least one target.", "error"); return; }
-
-        const targets = selectedTargets;
-        const { activeStages, activeSections } = getActiveFilters();
-        const chemicals = getFinalChemicals();
-
-        if (!greenhouse || targets.length === 0 || !sprayType || !kit || !scope || !bom) {
-            showToast("Please fill out all required fields.", "error"); return;
+        // ── Required field guards (order mirrors the React page) ──
+        if (!greenhouse || !sprayType || !scope || !bom || !kit) {
+            showToast("Fill in greenhouse, date, spray type, scope, kit and BOM.", "error");
+            return;
         }
-        if (chemicals.length === 0) { showToast("Please add at least one chemical.", "error"); return; }
+        if (!classification) {
+            showToast("Pick a classification (Curative or Preventive).", "error");
+            return;
+        }
+        if (classification === "Preventive" && preventiveReason.length < 20) {
+            showToast("Preventive plans need a reason of at least 20 characters.", "error");
+            return;
+        }
+        if (selectedTargets.length === 0) {
+            showToast("Pick at least one target.", "error");
+            return;
+        }
+
+        const chemicals = getFinalChemicals();
+        if (chemicals.length === 0) {
+            showToast("Add at least one chemical.", "error");
+            return;
+        }
         for (const chemical of chemicals) {
-            const sourceWarehouse = state.sourceWarehouseCache[chemical.chemical]?.source_warehouse;
+            const sourceWarehouse =
+                state.sourceWarehouseCache[chemical.chemical]?.source_warehouse;
             if (!chemical.chemical || !chemical.uom || chemical.application_rate <= 0 || !sourceWarehouse) {
-                showToast("All chemical rows must have valid item name, quantity, UoM, and source warehouse.", "error"); return;
+                showToast(
+                    "Every chemical needs an item, UoM, source warehouse and a rate > 0.",
+                    "error",
+                );
+                return;
             }
             const limitErr = computeRateLimitError(chemical.chemical, chemical.application_rate);
             if (limitErr) {
@@ -2468,74 +2870,142 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
         }
-        if (!waterPh || !waterHardness) { showToast("Please provide values for water pH and water hardness.", "error"); return; }
-
-        let custom_scope_value = "";
+        if (!waterPh || !waterHardness) {
+            showToast("Water pH and hardness are required.", "error");
+            return;
+        }
         if (scope === "Specific Variety") {
-            const selectedVarieties = Array.from(els.varietyMultiSelect.selectedOptions).map(opt => opt.value);
-            custom_scope_value = selectedVarieties.join(",");
-        } else if (scope === "Specific Bed(s)") {
-            custom_scope_value = els.bedNumbers.value;
+            const selVar = Array.from(els.varietyMultiSelect.selectedOptions).map(o => o.value);
+            if (!selVar.length) {
+                showToast("Pick at least one variety.", "error");
+                return;
+            }
+        }
+        if (scope === "Specific Bed(s)" && !els.bedNumbers.value.trim()) {
+            showToast("Enter the bed numbers (e.g. 1-5, 7, 9).", "error");
+            return;
         }
 
-        const chemicalsWithWarehouse = chemicals.map(chem => ({
-            ...chem,
-            source_warehouse: state.sourceWarehouseCache[chem.chemical]?.source_warehouse || ""
-        }));
+        // ── Build payload (shape mirrors createDraftSprayPlan in React) ──
+        let customScopeDetails = "";
+        if (scope === "Specific Variety") {
+            const selVar = Array.from(els.varietyMultiSelect.selectedOptions)
+                .map(o => o.value)
+                .filter(v => v && v !== "__all__");
+            customScopeDetails = selVar.join(",");
+        } else if (scope === "Specific Bed(s)") {
+            customScopeDetails = els.bedNumbers.value.trim();
+        }
 
-        // Get selected varieties for the form submission
-        const selectedVarietiesArray = Array.from(state.selectedVarieties);
-        const varietyToSend = selectedVarietiesArray.includes('__all__') ? '' : selectedVarietiesArray.join(',');
+        // Cost-center override: only send when the operator deviated from
+        // the auto-resolved value (or there's no auto value and they typed
+        // their own). Sending the auto value back as an override would be
+        // redundant — the server will derive the same thing.
+        const ccPicked = (state.costCenter?.value || "").trim();
+        const ccResolved = (state.costCenter?.resolved || "").trim();
+        const costCenterOverride = ccPicked && ccPicked !== ccResolved ? ccPicked : "";
 
-        const formData = {
-            custom_type: "Application Floor Plan",
+        const payload = {
             custom_greenhouse: greenhouse,
-            custom_variety: varietyToSend,
-            custom_targets: targets,
+            custom_cost_center: costCenterOverride,
+            custom_classification: classification,
+            custom_preventive_reason: classification === "Preventive" ? preventiveReason : "",
             custom_spray_type: sprayType,
-            custom_kit: kit,
-            custom_kit_warehouse: state.kitWarehouse,
             custom_scope: scope,
-            custom_scope_details: custom_scope_value,
-            production_item: bom,
-            qty: 1,
+            custom_scope_details: customScopeDetails,
+            custom_kit: kit,
+            custom_spray_team: sprayTeam || null,
+            custom_spray_plan_team_members: (state.teamMembers || []).map(m => ({
+                employee: m.employee,
+                role: m.role || ""
+            })),
             custom_water_ph: parseFloat(waterPh) || 0,
             custom_water_hardness: parseFloat(waterHardness) || 0,
-            chemicals: chemicalsWithWarehouse,
             custom_water_volume: parseFloat(waterVolume) || 0,
             custom_area: parseFloat(areaToSpray) || 0,
-            custom_spray_team: sprayTeam,
+            custom_targets: selectedTargets,
+            production_item: bom,
+            chemicals: chemicals.map(c => ({
+                item_code: c.chemical,
+                item_name: c.chemical,
+                uom: c.uom,
+                source_warehouse: state.sourceWarehouseCache[c.chemical]?.source_warehouse || "",
+                application_rate: c.application_rate
+            })),
             custom_scheduled_application_time: scheduledApplicationTime
         };
 
-        showLoader('Validating spray plan...');
+        const submitBtn = document.getElementById("add-to-batch-btn");
+        if (submitBtn) submitBtn.disabled = true;
+        showLoader("Adding draft to batch…");
 
         try {
-            const fullPayload = { payload: { raw_data: formData } };
-            const response = await fetch('/api/method/upande_scp.serverscripts.validate_frac_irac_guidelines.validateGuidelines', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': getCSRFToken() },
-                body: JSON.stringify(fullPayload)
-            });
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const r = await response.json();
-            const validationResult = r.message;
+            const r = await fetch(
+                "/api/method/upande_scp.serverscripts.spray_plan_creator.drafts.create_draft_spray_plan",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Frappe-CSRF-Token": getCSRFToken(),
+                        "X-Requested-With": "XMLHttpRequest"
+                    },
+                    body: JSON.stringify({ payload: JSON.stringify(payload) })
+                },
+            );
+            const j = await r.json().catch(() => ({}));
+            hideLoader();
 
-            if (validationResult?.valid === true) {
-                hideLoader();
-                showWarehouseConfirmationModal(chemicalsWithWarehouse, greenhouse, () => {
-                    showLoader('Creating spray plan...');
-                    createWorkOrder(formData);
-                });
+            if (!r.ok) {
+                const msg = j?._server_messages
+                    ? (() => {
+                        try {
+                            const arr = JSON.parse(j._server_messages);
+                            const first = JSON.parse(arr[0] || "{}");
+                            return first.message || "Could not save draft.";
+                        } catch (_) {
+                            return j.exception || "Could not save draft.";
+                        }
+                    })()
+                    : j.exception || j.message || "Could not save draft.";
+                showToast(msg, "error");
                 return;
             }
-            if (validationResult?.valid === false) { hideLoader(); showValidationDialog(validationResult.errors, formData); return; }
-            showToast("Unexpected response structure from validation server.", "error");
+
+            const resp = j.message || {};
+            const woName = resp.work_order;
+            showToast(
+                woName ? `Added ${woName} to your draft batch.` : "Plan added to batch.",
+                "success",
+            );
+            (resp.warnings || []).forEach((w) => showToast(w, "warning"));
+
+            // ── Reset only the fields the React page resets ──
+            state.classification = "";
+            state.preventiveReason = "";
+            state.selectedTargets = new Set();
+            renderTargetPills();
+            updateClassificationButtons();
+            els.preventiveReason.value = "";
+            updatePreventiveReasonCounter();
+            els.preventiveReasonContainer.classList.add("tw-hidden");
+            updateTargetOptionsForClassification();
+            els.bom.value = "";
+            populateBomDetails("");
+            els.bomDetailsContainer.classList.add("tw-hidden");
+            els.bomChemicalsList.innerHTML = "";
+            els.stockBalancesContainer.classList.add("tw-hidden");
+            els.stockTableWrapper.innerHTML = "";
+            // The spray team + roster intentionally persist between
+            // batched submissions — the same crew is usually on the
+            // ground across multiple plans in one batch session.
+
+            await loadDraftBatch();
+        } catch (err) {
             hideLoader();
-        } catch (error) {
-            showToast("An error occurred during validation. Please try again.", "error");
-            console.error("Validation API Error:", error);
-            hideLoader();
+            console.error("create_draft_spray_plan failed:", err);
+            showToast("An unexpected error occurred. Please try again.", "error");
+        } finally {
+            if (submitBtn) submitBtn.disabled = false;
         }
     });
 
@@ -2712,6 +3182,675 @@ document.addEventListener("DOMContentLoaded", () => {
             hideLoader();
         }
     };
+
+    // ============================================================
+    // Classification toggle (Curative / Preventive)
+    // ============================================================
+    const updateClassificationButtons = () => {
+        els.classificationButtons.forEach((btn) => {
+            const isActive = btn.dataset.value === state.classification;
+            btn.classList.toggle("is-active", isActive);
+            btn.setAttribute("aria-checked", isActive ? "true" : "false");
+        });
+        if (els.classificationValue) els.classificationValue.value = state.classification || "";
+    };
+
+    const updatePreventiveReasonCounter = () => {
+        if (!els.preventiveReasonCounter) return;
+        const len = (state.preventiveReason || "").trim().length;
+        els.preventiveReasonCounter.textContent = `${len} / 20 characters`;
+        els.preventiveReasonCounter.classList.toggle("is-ok", len >= 20);
+    };
+
+    /**
+     * Repopulate `state.allTargetOptions` based on the current classification.
+     *
+     * - Curative: only targets observed in scouting for the current greenhouse
+     *   (drawn from `state.scoutingTargets`, populated as the heatmap loads).
+     * - Preventive: full pest + disease catalogs (server-injected as
+     *   `_nafpServerData.pestCatalog` + `diseaseCatalog`).
+     * - No classification: empty list so the autocomplete dropdown stays empty
+     *   until the operator picks one.
+     *
+     * Also re-renders the quick-pick chip strip so the operator can tap a
+     * suggestion instead of typing — mirrors the React page's pill grid.
+     */
+    const updateTargetOptionsForClassification = () => {
+        const cls = state.classification;
+        let opts = [];
+        if (cls === "Preventive") {
+            const pests = (serverData.pestCatalog || [])
+                .map(p => ({ name: p.name, type: "Pest" }))
+                .filter(p => p.name);
+            const diseases = (serverData.diseaseCatalog || [])
+                .map(d => ({ name: d.name, type: "Disease" }))
+                .filter(d => d.name);
+            opts = [...pests, ...diseases];
+        } else if (cls === "Curative") {
+            opts = Array.from(state.scoutingTargets || []).map(n => ({
+                name: n,
+                type: "Scouting"
+            }));
+        }
+        opts.sort((a, b) => a.name.localeCompare(b.name));
+        state.allTargetOptions = opts;
+        renderTargetQuickPick();
+    };
+
+    /**
+     * Render the quick-pick pill strip above the autocomplete. Visible only
+     * when a classification is picked AND there are options to show. Each
+     * pill toggles its target in `state.selectedTargets` — same data path
+     * the autocomplete uses, so removing a pill from the strip or the
+     * selected-pills row stays in sync.
+     */
+    const renderTargetQuickPick = () => {
+        const strip = document.getElementById("target-quick-pick");
+        const hint = document.getElementById("target-quick-hint");
+        if (!strip) return;
+        const cls = state.classification;
+        const opts = state.allTargetOptions || [];
+
+        if (!cls) {
+            strip.classList.add("tw-hidden");
+            strip.innerHTML = "";
+            if (hint) hint.classList.add("tw-hidden");
+            return;
+        }
+        if (hint) {
+            hint.textContent = cls === "Curative"
+                ? "Scouting · tap to add"
+                : "Catalog · tap to add";
+            hint.classList.remove("tw-hidden");
+        }
+        if (!opts.length) {
+            strip.classList.remove("tw-hidden");
+            strip.innerHTML = `<span class="nafp-target-quick__empty">${
+                cls === "Curative"
+                    ? "No pest/disease observations in this greenhouse yet — type a custom target below."
+                    : "Pest + Disease catalog is empty — add entries in Frappe Desk."
+            }</span>`;
+            return;
+        }
+        strip.classList.remove("tw-hidden");
+        strip.innerHTML = opts.map(o => {
+            const on = state.selectedTargets.has(o.name) ? " is-on" : "";
+            const safeName = escapeHtml(o.name);
+            const typeLabel = (o.type || "").toLowerCase();
+            return `<button type="button"
+                            class="nafp-target-quick__chip${on}"
+                            data-target="${safeName}"
+                            data-type="${escapeHtml(typeLabel)}"
+                            title="${safeName}">
+                        <span>${safeName}</span>
+                        <span class="nafp-target-quick__chip-type">${escapeHtml(o.type || "")}</span>
+                    </button>`;
+        }).join("");
+    };
+
+    // Delegate clicks on quick-pick chips. Toggling here also updates the
+    // selected-pills strip via renderTargetPills() so both stay in sync.
+    document.addEventListener("click", (e) => {
+        const chip = e.target.closest(".nafp-target-quick__chip");
+        if (!chip) return;
+        const t = chip.getAttribute("data-target");
+        if (!t) return;
+        if (state.selectedTargets.has(t)) {
+            state.selectedTargets.delete(t);
+        } else {
+            state.selectedTargets.add(t);
+        }
+        renderTargetPills();
+        renderTargetQuickPick();
+    });
+
+    els.classificationButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+            state.classification = btn.dataset.value || "";
+            // Clear targets — Curative vs Preventive draw from different pools
+            // so anything picked under the old classification is no longer valid.
+            state.selectedTargets = new Set();
+            renderTargetPills();
+            updateClassificationButtons();
+            updateTargetOptionsForClassification();
+            // Also clear the autocomplete input + dropdown — the suggestions
+            // shown there are now drawn from a different pool.
+            const tInput = document.getElementById("target-autocomplete-input");
+            const tDropdown = document.getElementById("target-autocomplete-dropdown");
+            if (tInput) tInput.value = "";
+            if (tDropdown) tDropdown.classList.remove("active");
+            if (state.classification === "Preventive") {
+                els.preventiveReasonContainer.classList.remove("tw-hidden");
+                if (els.preventiveReason) {
+                    setTimeout(() => els.preventiveReason.focus(), 0);
+                }
+            } else {
+                els.preventiveReasonContainer.classList.add("tw-hidden");
+                state.preventiveReason = "";
+                if (els.preventiveReason) els.preventiveReason.value = "";
+                updatePreventiveReasonCounter();
+            }
+        });
+    });
+
+    if (els.preventiveReason) {
+        els.preventiveReason.addEventListener("input", (e) => {
+            state.preventiveReason = e.target.value || "";
+            updatePreventiveReasonCounter();
+        });
+    }
+    updatePreventiveReasonCounter();
+
+    // ============================================================
+    // Spray Team editor — per-plan roster (replaces the read-only
+    // chip preview). Picking a team seeds the roster from the master
+    // Spray Team Details list; the operator can then add or remove
+    // individuals without altering the master team.
+    // ============================================================
+    const escapeHtml = (s) => String(s || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    const initialsOf = (name) => {
+        const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+        if (!parts.length) return "?";
+        if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    };
+    const hueOf = (seed) => {
+        let h = 0;
+        for (let i = 0; i < (seed || "").length; i++) {
+            h = (h * 31 + seed.charCodeAt(i)) % 360;
+        }
+        return h;
+    };
+    const ROLE_OPTIONS = ["Supervisor", "Sprayer", "Pump Operator"];
+
+    const setTeamMembers = (next) => {
+        state.teamMembers = Array.isArray(next) ? next.slice() : [];
+        renderTeamEditor();
+    };
+
+    const renderTeamEditor = () => {
+        if (!els.teamEditorBody) return;
+        const rows = state.teamMembers || [];
+
+        // Count chip
+        if (els.teamEditorCount) {
+            els.teamEditorCount.textContent = String(rows.length);
+            els.teamEditorCount.classList.toggle("is-zero", rows.length === 0);
+        }
+
+        // Breakdown (X sup · Y spr · Z pump)
+        if (els.teamEditorBreakdown) {
+            const sup = rows.filter(r => r.role === "Supervisor").length;
+            const spr = rows.filter(r => r.role === "Sprayer").length;
+            const pmp = rows.filter(r => r.role === "Pump Operator").length;
+            const parts = [];
+            if (sup) parts.push(`${sup} sup`);
+            if (spr) parts.push(`${spr} spr`);
+            if (pmp) parts.push(`${pmp} pump`);
+            els.teamEditorBreakdown.textContent = parts.length ? `· ${parts.join(" · ")}` : "";
+        }
+
+        // Clear-team button visibility
+        if (els.teamClearBtn) {
+            const teamPicked = !!(els.sprayTeam && els.sprayTeam.value);
+            els.teamClearBtn.classList.toggle("tw-hidden", !teamPicked);
+        }
+
+        if (!rows.length) {
+            els.teamEditorBody.innerHTML = `
+                <div class="nafp-team-editor__empty">
+                    <span class="nafp-team-editor__empty-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                    </span>
+                    <span class="nafp-team-editor__empty-title">No one assigned yet</span>
+                    <span class="nafp-team-editor__empty-text">
+                        Pick a Spray Team above to seed the roster, or click
+                        <b>Add member</b> to build it from scratch.
+                    </span>
+                </div>`;
+            return;
+        }
+
+        els.teamEditorBody.innerHTML = rows.map((m) => {
+            const hue = hueOf(m.employee || "");
+            const initials = initialsOf(m.employee_name || m.employee || "");
+            const safeName = escapeHtml(m.employee_name || m.employee || "");
+            const safeId = escapeHtml(m.employee || "");
+            const designation = m.designation ? `<span class="nafp-team-editor__meta-sep">·</span><span class="nafp-team-editor__meta-extra">${escapeHtml(m.designation)}</span>` : "";
+            const roleOptions = ROLE_OPTIONS.map(r => {
+                const sel = r === m.role ? " selected" : "";
+                return `<option value="${r}"${sel}>${r}</option>`;
+            }).join("");
+            const noneSel = !m.role ? " selected" : "";
+            return `
+                <div class="nafp-team-editor__row" data-emp="${safeId}">
+                    <div class="nafp-team-editor__avatar"
+                         style="background: hsl(${hue} 70% 92%); color: hsl(${hue} 55% 28%);"
+                         aria-hidden="true">${escapeHtml(initials)}</div>
+                    <div class="nafp-team-editor__info">
+                        <div class="nafp-team-editor__name">${safeName}</div>
+                        <div class="nafp-team-editor__meta">#${safeId}${designation}</div>
+                    </div>
+                    <select class="nafp-team-editor__role" data-action="role" data-emp="${safeId}" aria-label="Role for ${safeName}">
+                        <option value=""${noneSel}>No role</option>
+                        ${roleOptions}
+                    </select>
+                    <button type="button" class="nafp-team-editor__remove" data-action="remove" data-emp="${safeId}" title="Remove ${safeName} from this plan" aria-label="Remove ${safeName}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"></path>
+                            <path d="M10 11v6"></path>
+                            <path d="M14 11v6"></path>
+                            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                </div>`;
+        }).join("");
+    };
+
+    // Delegate row events (role change + remove) to the body so we don't
+    // rebind on every re-render.
+    if (els.teamEditorBody) {
+        els.teamEditorBody.addEventListener("change", (e) => {
+            const sel = e.target.closest("[data-action='role']");
+            if (!sel) return;
+            const emp = sel.getAttribute("data-emp");
+            const role = sel.value || "";
+            state.teamMembers = state.teamMembers.map(m =>
+                m.employee === emp ? { ...m, role } : m,
+            );
+            renderTeamEditor();
+        });
+        els.teamEditorBody.addEventListener("click", (e) => {
+            const btn = e.target.closest("[data-action='remove']");
+            if (!btn) return;
+            const emp = btn.getAttribute("data-emp");
+            state.teamMembers = state.teamMembers.filter(m => m.employee !== emp);
+            renderTeamEditor();
+        });
+    }
+
+    // Seed the roster when the operator picks a team. Switching teams
+    // replaces the roster — that's the operator saying "start fresh from
+    // this list". Clearing the team keeps the current roster.
+    const seedFromTeam = (teamName) => {
+        if (!teamName) {
+            setTeamMembers([]);
+            return;
+        }
+        const masters = sprayTeamMembersByName[teamName] || [];
+        setTeamMembers(masters.map(m => ({
+            employee: m.employee,
+            employee_name: m.employee_name || m.employee,
+            designation: m.designation || "",
+            role: m.role || ""
+        })));
+    };
+
+    if (els.sprayTeam) {
+        els.sprayTeam.addEventListener("change", (e) => {
+            seedFromTeam(e.target.value || "");
+        });
+    }
+    if (els.teamClearBtn) {
+        els.teamClearBtn.addEventListener("click", () => {
+            if (els.sprayTeam) els.sprayTeam.value = "";
+            renderTeamEditor();
+        });
+    }
+
+    // ── Employee picker (modal search) ──────────────────────────
+    let empPickerDebounce = null;
+    const openEmployeePicker = () => {
+        if (!els.empPickerOverlay) return;
+        els.empPickerOverlay.classList.add("is-open");
+        if (els.empPickerInput) {
+            els.empPickerInput.value = "";
+            els.empPickerInput.focus();
+        }
+        if (els.empPickerClear) els.empPickerClear.classList.add("tw-hidden");
+        searchEmployees("");
+    };
+    const closeEmployeePicker = () => {
+        if (!els.empPickerOverlay) return;
+        els.empPickerOverlay.classList.remove("is-open");
+    };
+    const renderEmployeeRows = (rows) => {
+        if (!els.empPickerResults) return;
+        if (!rows.length) {
+            const q = (els.empPickerInput && els.empPickerInput.value) || "";
+            els.empPickerResults.innerHTML = `
+                <div class="nafp-emp-picker__empty">
+                    ${q ? `No active employees match "${escapeHtml(q)}".` : "Type to search active employees."}
+                </div>`;
+            return;
+        }
+        const onPlan = new Set(state.teamMembers.map(m => m.employee));
+        els.empPickerResults.innerHTML = rows.map(hit => {
+            const hue = hueOf(hit.employee);
+            const initials = initialsOf(hit.employee_name || hit.employee);
+            const safeName = escapeHtml(hit.employee_name || hit.employee);
+            const safeId = escapeHtml(hit.employee);
+            const designation = hit.designation ? `<span class="nafp-team-editor__meta-sep">·</span><span class="nafp-emp-picker__row-extra">${escapeHtml(hit.designation)}</span>` : "";
+            const department = hit.department ? `<span class="nafp-team-editor__meta-sep">·</span><span class="nafp-emp-picker__row-extra">${escapeHtml(hit.department)}</span>` : "";
+            const already = onPlan.has(hit.employee);
+            return `
+                <button type="button" class="nafp-emp-picker__row" data-emp="${safeId}" ${already ? "disabled aria-disabled='true'" : ""}>
+                    <div class="nafp-team-editor__avatar"
+                         style="background: hsl(${hue} 70% 92%); color: hsl(${hue} 55% 28%);"
+                         aria-hidden="true">${escapeHtml(initials)}</div>
+                    <div class="nafp-emp-picker__row-info">
+                        <div class="nafp-emp-picker__row-name">${safeName}</div>
+                        <div class="nafp-emp-picker__row-meta">#${safeId}${designation}${department}</div>
+                    </div>
+                    ${already
+                        ? `<span class="nafp-emp-picker__row-badge">On plan</span>`
+                        : `<span class="nafp-emp-picker__row-plus" aria-hidden="true">+</span>`}
+                </button>`;
+        }).join("");
+    };
+    const searchEmployees = (query) => {
+        if (empPickerDebounce) clearTimeout(empPickerDebounce);
+        if (els.empPickerResults) {
+            els.empPickerResults.innerHTML = `<div class="nafp-emp-picker__loading">Searching…</div>`;
+        }
+        empPickerDebounce = setTimeout(async () => {
+            try {
+                const r = await fetch(
+                    "/api/method/upande_scp.serverscripts.spray_plan_creator.employees.search_employees",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-Frappe-CSRF-Token": getCSRFToken(),
+                            "X-Requested-With": "XMLHttpRequest",
+                        },
+                        body: JSON.stringify({ query, limit: 25 }),
+                    },
+                );
+                const j = await r.json().catch(() => ({}));
+                const rows = Array.isArray(j.message) ? j.message : [];
+                // Cache so the row-click handler can recover the display
+                // name + designation without a second fetch.
+                state._lastEmpResults = rows;
+                renderEmployeeRows(rows);
+            } catch (err) {
+                if (els.empPickerResults) {
+                    els.empPickerResults.innerHTML = `<div class="nafp-emp-picker__empty">Search failed. Try again.</div>`;
+                }
+            }
+        }, 200);
+    };
+
+    if (els.teamEditorAddBtn) {
+        els.teamEditorAddBtn.addEventListener("click", openEmployeePicker);
+    }
+    if (els.empPickerClose) {
+        els.empPickerClose.addEventListener("click", closeEmployeePicker);
+    }
+    if (els.empPickerOverlay) {
+        els.empPickerOverlay.addEventListener("click", (e) => {
+            if (e.target === els.empPickerOverlay) closeEmployeePicker();
+        });
+    }
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && els.empPickerOverlay && els.empPickerOverlay.classList.contains("is-open")) {
+            closeEmployeePicker();
+        }
+    });
+    if (els.empPickerInput) {
+        els.empPickerInput.addEventListener("input", (e) => {
+            const v = e.target.value || "";
+            if (els.empPickerClear) els.empPickerClear.classList.toggle("tw-hidden", !v);
+            searchEmployees(v);
+        });
+    }
+    if (els.empPickerClear) {
+        els.empPickerClear.addEventListener("click", () => {
+            if (els.empPickerInput) {
+                els.empPickerInput.value = "";
+                els.empPickerInput.focus();
+            }
+            els.empPickerClear.classList.add("tw-hidden");
+            searchEmployees("");
+        });
+    }
+    if (els.empPickerResults) {
+        els.empPickerResults.addEventListener("click", (e) => {
+            const row = e.target.closest(".nafp-emp-picker__row");
+            if (!row || row.disabled) return;
+            const emp = row.getAttribute("data-emp");
+            // Find the original hit so we get name + designation
+            const cached = (state._lastEmpResults || []).find(r => r.employee === emp);
+            const name = cached ? (cached.employee_name || cached.employee) : emp;
+            const designation = cached ? (cached.designation || "") : "";
+            if (state.teamMembers.some(m => m.employee === emp)) return;
+            state.teamMembers = state.teamMembers.concat([{
+                employee: emp,
+                employee_name: name,
+                designation,
+                role: ""
+            }]);
+            renderTeamEditor();
+            closeEmployeePicker();
+        });
+    }
+
+    // Paint the initial editor state (empty roster, hidden clear button).
+    renderTeamEditor();
+
+    // ============================================================
+    // Draft Batch panel — list / remove / submit-all
+    // ============================================================
+    const setBatchCount = (n) => {
+        if (!els.batchCount) return;
+        els.batchCount.textContent = String(n);
+        els.batchCount.classList.toggle("is-zero", n === 0);
+        if (els.batchSubmitAllBtn) els.batchSubmitAllBtn.disabled = n === 0;
+    };
+
+    const formatDraftDate = (s) => {
+        if (!s) return "";
+        const d = new Date(s);
+        if (Number.isNaN(d.getTime())) return s;
+        return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    };
+
+    const renderBatchPanel = () => {
+        if (!els.batchBody) return;
+        const drafts = state.drafts || [];
+        setBatchCount(drafts.length);
+        if (!drafts.length) {
+            els.batchBody.innerHTML = `
+                <div class="nafp-batch__empty">
+                    No drafts yet. Build a plan above, click <b>Add to batch</b>, and it appears here.
+                </div>`;
+            return;
+        }
+        els.batchBody.innerHTML = drafts.map((d) => {
+            const cls = (d.classification || "").toLowerCase();
+            const clsChipClass = cls === "preventive"
+                ? "nafp-batch__chip--preventive"
+                : "nafp-batch__chip--curative";
+            const targets = Array.isArray(d.targets) ? d.targets : [];
+            const visibleTargets = targets.slice(0, 4).join(", ");
+            const overflow = targets.length > 4 ? ` · +${targets.length - 4}` : "";
+            const scheduled = formatDraftDate(d.scheduled_date);
+            const warningChip = d.has_warnings
+                ? `<span class="nafp-batch__chip nafp-batch__chip--warning" title="${escapeHtml(d.warning_text || "Has warnings")}">!</span>`
+                : "";
+            const warningBox = d.has_warnings && d.warning_text
+                ? `<div class="nafp-batch__item-warning">${escapeHtml(d.warning_text)}</div>`
+                : "";
+            return `
+                <div class="nafp-batch__item" data-name="${escapeHtml(d.name)}">
+                  <div class="nafp-batch__item-main">
+                    <div class="nafp-batch__item-head">
+                      ${warningChip}
+                      <span class="nafp-batch__item-name">${escapeHtml(d.name)}</span>
+                      ${d.classification ? `<span class="nafp-batch__chip ${clsChipClass}">${escapeHtml(d.classification)}</span>` : ""}
+                    </div>
+                    <div class="nafp-batch__item-meta">${escapeHtml(d.greenhouse || "—")}${d.chemical_count != null ? ` · ${d.chemical_count} chemical${d.chemical_count === 1 ? "" : "s"}` : ""}${d.total_water_volume ? ` · ${d.total_water_volume} L` : ""}</div>
+                    ${targets.length ? `<div class="nafp-batch__item-targets">${escapeHtml(visibleTargets)}${overflow}</div>` : ""}
+                    ${scheduled ? `<div class="nafp-batch__item-date">${escapeHtml(scheduled)}</div>` : ""}
+                    ${warningBox}
+                  </div>
+                  <button type="button" class="nafp-batch__item-remove" data-action="remove" title="Remove from batch" aria-label="Remove ${escapeHtml(d.name)}">×</button>
+                </div>`;
+        }).join("");
+    };
+
+    const loadDraftBatch = async () => {
+        if (!els.batchBody) return;
+        els.batchBody.innerHTML = `<div class="nafp-batch__loading">Loading drafts…</div>`;
+        try {
+            const r = await fetch(
+                "/api/method/upande_scp.serverscripts.spray_plan_creator.drafts.list_my_draft_plans",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Frappe-CSRF-Token": getCSRFToken(),
+                        "X-Requested-With": "XMLHttpRequest"
+                    },
+                    body: "{}"
+                },
+            );
+            if (r.status === 403) {
+                state.drafts = [];
+                setBatchCount(0);
+                els.batchBody.innerHTML = `
+                    <div class="nafp-batch__error">
+                        You need the <b>Spray Plan Creator</b> role to use the draft batch.
+                        Ask a General Manager to grant it.
+                    </div>`;
+                return;
+            }
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const j = await r.json();
+            const rows = Array.isArray(j.message) ? j.message : [];
+            state.drafts = rows;
+            renderBatchPanel();
+        } catch (err) {
+            console.error("list_my_draft_plans failed:", err);
+            state.drafts = [];
+            setBatchCount(0);
+            els.batchBody.innerHTML = `
+                <div class="nafp-batch__error">Couldn't load your drafts. Try refreshing.</div>`;
+        }
+    };
+
+    const removeDraft = async (name) => {
+        if (!name) return;
+        showLoader(`Removing ${name}…`);
+        try {
+            const r = await fetch(
+                "/api/method/upande_scp.serverscripts.spray_plan_creator.drafts.delete_draft_plan",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Frappe-CSRF-Token": getCSRFToken(),
+                        "X-Requested-With": "XMLHttpRequest"
+                    },
+                    body: JSON.stringify({ name })
+                },
+            );
+            hideLoader();
+            if (!r.ok) {
+                showToast(`Could not remove ${name}.`, "error");
+                return;
+            }
+            showToast(`${name} removed from batch.`, "success");
+            await loadDraftBatch();
+        } catch (err) {
+            hideLoader();
+            console.error("delete_draft_plan failed:", err);
+            showToast(`Could not remove ${name}.`, "error");
+        }
+    };
+
+    const submitAllDrafts = async () => {
+        const drafts = state.drafts || [];
+        if (!drafts.length) return;
+        const names = drafts.map(d => d.name);
+        showLoader(`Submitting ${names.length} draft(s)…`);
+        try {
+            const r = await fetch(
+                "/api/method/upande_scp.serverscripts.spray_plan_creator.bulk.submit_drafts_for_approval",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Frappe-CSRF-Token": getCSRFToken(),
+                        "X-Requested-With": "XMLHttpRequest"
+                    },
+                    body: JSON.stringify({ wo_names: JSON.stringify(names) })
+                },
+            );
+            const j = await r.json().catch(() => ({}));
+            hideLoader();
+            if (!r.ok) {
+                showToast("Bulk submit failed.", "error");
+                return;
+            }
+            const result = j.message || {};
+            const submitted = (result.submitted || []).length;
+            const skipped = (result.skipped || []).length;
+            if (skipped) {
+                showToast(
+                    `Submitted ${submitted} for approval · ${skipped} skipped.`,
+                    "warning",
+                );
+                (result.skipped || []).slice(0, 3).forEach((s) => {
+                    showToast(`${s.name}: ${s.reason || "skipped"}`, "warning");
+                });
+            } else {
+                showToast(`Submitted ${submitted} draft(s) for approval.`, "success");
+            }
+            await loadDraftBatch();
+        } catch (err) {
+            hideLoader();
+            console.error("submit_drafts_for_approval failed:", err);
+            showToast("Bulk submit failed.", "error");
+        }
+    };
+
+    if (els.batchBody) {
+        els.batchBody.addEventListener("click", (e) => {
+            const btn = e.target.closest("[data-action='remove']");
+            if (!btn) return;
+            const item = btn.closest(".nafp-batch__item");
+            const name = item?.dataset.name;
+            if (name) removeDraft(name);
+        });
+    }
+    if (els.batchRefreshBtn) {
+        els.batchRefreshBtn.addEventListener("click", loadDraftBatch);
+    }
+    if (els.batchSubmitAllBtn) {
+        els.batchSubmitAllBtn.addEventListener("click", submitAllDrafts);
+    }
+
+    // Auto-refresh batch when another tab/component adds a draft
+    window.addEventListener("spray-plan:draft-added", loadDraftBatch);
+
+    // Initial render
+    updateClassificationButtons();
+    updateTargetOptionsForClassification();
+    renderBatchPanel();
+    loadDraftBatch();
 
     renderThresholdCheckboxes(null);
 

@@ -80,10 +80,20 @@ def fetch_creator_bootstrap() -> dict:
             seen.add(row["name"])
             spray_teams.append(row)
     for t in spray_teams:
-        t["members"] = frappe.get_all(
-            "Spray Team Details",
-            filters={"parent": t["name"]},
-            fields=["name1 as employee", "role"],
+        # JOIN onto Employee so the picker can show real names alongside the
+        # Employee ID (== payroll number). Coalesce avoids dropping rows when
+        # the Employee row was renamed or deleted out from under the team.
+        t["members"] = frappe.db.sql(
+            """SELECT std.name1 AS employee,
+                      COALESCE(emp.employee_name, std.name1) AS employee_name,
+                      emp.designation AS designation,
+                      std.role AS role
+                 FROM `tabSpray Team Details` std
+                 LEFT JOIN `tabEmployee` emp ON emp.name = std.name1
+                WHERE std.parent = %s
+                ORDER BY std.idx""",
+            (t["name"],),
+            as_dict=True,
         )
 
     bom_filters = {
@@ -107,6 +117,15 @@ def fetch_creator_bootstrap() -> dict:
     # Disease catalog is `Plant Disease`, not `Disease`.
     disease_catalog = frappe.get_all("Plant Disease", fields=["name"], order_by="name") \
         if frappe.db.table_exists("Plant Disease") else []
+    # Active, non-group Cost Centers — drives the override picker on the
+    # ApplicationPlan page. Returns all companies so the picker can show
+    # cross-company options when the operator overrides intentionally.
+    cost_centers = frappe.get_all(
+        "Cost Center",
+        filters={"disabled": 0, "is_group": 0},
+        fields=["name", "company", "custom_farm"],
+        order_by="name asc",
+    )
 
     settings = frappe.get_single("Spray Plan Settings")
     return {
@@ -118,6 +137,7 @@ def fetch_creator_bootstrap() -> dict:
         "rate_limits": rate_limits,
         "pest_catalog": pest_catalog,
         "disease_catalog": disease_catalog,
+        "cost_centers": cost_centers,
         "weather_settings": {
             "wind_green_max_kmh": settings.weather_wind_green_max_kmh,
             "wind_red_min_kmh":   settings.weather_wind_red_min_kmh,
@@ -138,6 +158,7 @@ def _empty_bootstrap() -> dict:
         "scope": {"farms": [], "allowed_warehouses": []},
         "greenhouses": [], "kits": [], "spray_teams": [], "tank_mixes": [],
         "rate_limits": {}, "pest_catalog": [], "disease_catalog": [],
+        "cost_centers": [],
         "weather_settings": {}, "irac_window_days": 14, "frac_window_days": 21,
     }
 

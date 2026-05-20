@@ -39,7 +39,7 @@ K_BEDS_AND_ZONES = "scp:beds_and_zones_payload_v1"
 K_GREENHOUSES_GEOJSON = "scp:greenhouses_geojson_v1"
 K_BLOCKS_GEOJSON = "scp:blocks_geojson_v1"
 K_FARMS_AND_GREENHOUSES = "scp:farms_and_greenhouses_v1"
-K_AFP_WAREHOUSES = "scp:afp_warehouses_v2"
+K_AFP_WAREHOUSES = "scp:afp_warehouses_v3"
 K_AFP_SPRAY_EQUIPMENT = "scp:afp_spray_equipment_v1"
 K_CHEMICALS_LIST = "scp:chemicals_list_v2"
 K_SM_FARMS_AND_GHS = "scp:sm_farms_and_ghs_v1"
@@ -396,6 +396,11 @@ _DOC_INVALIDATIONS = {
     "Spray Plan Settings": (K_AFP_WAREHOUSES,),
     "Spray Plan Allowed Farm": (K_AFP_WAREHOUSES,),
     "Spray Plan Exclude Keyword": (K_AFP_WAREHOUSES,),
+    # The new_application_floor_plan greenhouse picker fuzzy-resolves the
+    # Cost Center for warehouses where `custom_cost_center` is still empty,
+    # so a new/renamed Cost Center should bust the cached warehouse list
+    # AND the cached picker options.
+    "Cost Center": (K_AFP_WAREHOUSES, "scp:afp_cost_centers_v1"),
     "Map Settings": (K_MAP_SETTINGS,),
     "Farm Map Coordinate": (K_MAP_SETTINGS,),
 }

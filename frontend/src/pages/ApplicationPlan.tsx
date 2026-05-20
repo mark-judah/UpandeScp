@@ -65,6 +65,10 @@ import {
   type CreatorBootstrap,
 } from "@/lib/spray-plan-creator-api";
 import { DraftBatchPanel } from "@/components/spray-plan/DraftBatchPanel";
+import {
+  SprayTeamEditor,
+  type TeamMemberRow,
+} from "@/components/spray-plan/SprayTeamEditor";
 import { FrappeError } from "@/lib/frappe";
 import { ymd } from "@/lib/utils";
 import {
@@ -224,6 +228,13 @@ export function ApplicationPlan() {
   const [busy, setBusy] = useState(false);
   const [bomDetails, setBomDetails] = useState<BomDetails | null>(null);
 
+  // Cost-center override. Defaults to the auto-resolved value for the
+  // picked greenhouse (read from bootstrap.greenhouses[].cost_center).
+  // The operator can type or pick another Cost Center; the override only
+  // travels with the submit payload when it differs from the default.
+  const [costCenterOverride, setCostCenterOverride] = useState<string>("");
+  const [costCenterEditing, setCostCenterEditing] = useState<boolean>(false);
+
   // Scope-driven extras (legacy parity).
   // ``selectedVarieties`` populates the WO's ``custom_variety``
   // (comma-separated) when scope === "Specific Variety".
@@ -236,6 +247,10 @@ export function ApplicationPlan() {
   const [bedNumbers, setBedNumbers] = useState<string>("");
   const [area, setArea] = useState<string>("");
   const [sprayTeam, setSprayTeam] = useState<string>("");
+  // Per-plan team roster. Seeded from a picked Spray Team but editable
+  // without mutating the master `Spray Team Details`. Submitted as the
+  // WO's `custom_spray_plan_team_members` child table.
+  const [teamMembers, setTeamMembers] = useState<TeamMemberRow[]>([]);
   const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
 
   // Add-chemical dialog
@@ -600,6 +615,23 @@ export function ApplicationPlan() {
     const match = bootstrap?.greenhouses.find((g) => g.name === greenhouse);
     return match?.cost_center || null;
   }, [bootstrap, greenhouse]);
+  const costCenterOptions = useMemo(
+    () => bootstrap?.cost_centers || [],
+    [bootstrap],
+  );
+  // Effective cost center to display + send: override wins when set, else
+  // the auto-resolved value. Trimmed so a whitespace-only override doesn't
+  // count as "edited".
+  const effectiveCostCenter = (costCenterOverride.trim() || derivedCostCenter || "").trim();
+  const isCostCenterCustom =
+    !!costCenterOverride.trim() && costCenterOverride.trim() !== (derivedCostCenter || "");
+
+  // Reset the override whenever the greenhouse changes — the operator's
+  // previous override is only meaningful for the previous greenhouse.
+  useEffect(() => {
+    setCostCenterOverride("");
+    setCostCenterEditing(false);
+  }, [greenhouse]);
   const bomList = useMemo(
     () =>
       (bootstrap?.tank_mixes || []).map((t) => ({
@@ -707,8 +739,14 @@ export function ApplicationPlan() {
     const loaderId = pushToast("loading", "Submitting spray plan…", 0);
     setBusy(true);
     try {
+      // Only ship the override when it differs from the auto-resolved
+      // value — the server derives the same default otherwise, so sending
+      // it back redundantly is noise.
+      const ccTrim = costCenterOverride.trim();
+      const ccOverride = ccTrim && ccTrim !== (derivedCostCenter || "") ? ccTrim : "";
       const draftPayload = {
         custom_greenhouse: greenhouse,
+        custom_cost_center: ccOverride,
         custom_classification: classification,
         custom_preventive_reason: preventiveReason,
         custom_spray_type: sprayType,
@@ -716,6 +754,10 @@ export function ApplicationPlan() {
         custom_scope_details: customScopeDetails,
         custom_kit: kit,
         custom_spray_team: sprayTeam || null,
+        custom_spray_plan_team_members: teamMembers.map((m) => ({
+          employee: m.employee,
+          role: m.role,
+        })),
         custom_water_ph: parseFloat(waterPh) || 0,
         custom_water_hardness: parseFloat(waterHardness) || 0,
         custom_water_volume: parseFloat(waterVolume) || 0,
@@ -741,12 +783,17 @@ export function ApplicationPlan() {
       for (const w of r?.warnings || []) {
         pushToast("warn", w, 8000);
       }
-      // Reset form so the user can build the next plan in the batch
+      // Reset form so the user can build the next plan in the batch.
+      // The spray team + roster intentionally persist — the same crew is
+      // usually on the ground across multiple plans in one batch, so we
+      // keep it around to save the operator from re-picking each time.
       setClassification("");
       setPreventiveReason("");
       setSelectedTargets(new Set());
       setChemRows([]);
       setBom("");
+      setCostCenterOverride("");
+      setCostCenterEditing(false);
       // Notify the draft batch panel (mounted in Task 5) to refresh
       window.dispatchEvent(new CustomEvent("spray-plan:draft-added"));
     } catch (e: any) {
@@ -888,22 +935,81 @@ export function ApplicationPlan() {
             </span>
           </div>
           {greenhouse && (
-            <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-              <span>Cost Center</span>
-              <span
-                className={
-                  derivedCostCenter
-                    ? "font-medium text-foreground"
-                    : "font-medium text-destructive"
-                }
-                title={
-                  derivedCostCenter
-                    ? "Auto-derived from the greenhouse warehouse name."
-                    : "No matching Cost Center found — create one with the same name as the greenhouse."
-                }
-              >
-                {derivedCostCenter || "Not configured"}
+            <div className="flex flex-col gap-1 text-xs text-muted-foreground min-w-[14rem]">
+              <span className="flex items-center justify-between gap-2">
+                <span>Cost Center</span>
+                {effectiveCostCenter && (
+                  <span
+                    className={
+                      "text-[0.6rem] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded " +
+                      (isCostCenterCustom
+                        ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300")
+                    }
+                  >
+                    {isCostCenterCustom ? "Custom" : "Auto"}
+                  </span>
+                )}
               </span>
+              {costCenterEditing ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    list="cost-center-options"
+                    className="h-7 flex-1 min-w-0 rounded-md border bg-background px-2 text-xs font-medium text-foreground tabular-nums focus:outline-none focus:ring-2 focus:ring-[var(--sd-accent)]/40"
+                    value={costCenterOverride || derivedCostCenter || ""}
+                    onChange={(e) => setCostCenterOverride(e.target.value)}
+                    onBlur={() => setCostCenterEditing(false)}
+                    placeholder="Type or pick a Cost Center…"
+                    autoFocus
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <datalist id="cost-center-options">
+                    {costCenterOptions.map((c) => (
+                      <option
+                        key={c.name}
+                        value={c.name}
+                        label={[c.custom_farm, c.company]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      />
+                    ))}
+                  </datalist>
+                  {isCostCenterCustom && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCostCenterOverride("");
+                        setCostCenterEditing(false);
+                      }}
+                      className="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground border px-2 py-1 rounded transition-colors"
+                      title="Revert to the auto-resolved Cost Center."
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setCostCenterEditing(true)}
+                  className={
+                    "font-medium text-left text-xs hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--sd-accent)]/30 rounded px-0.5 " +
+                    (effectiveCostCenter
+                      ? "text-foreground"
+                      : "text-destructive")
+                  }
+                  title={
+                    effectiveCostCenter
+                      ? isCostCenterCustom
+                        ? "Custom override — click to edit, Reset to revert."
+                        : "Auto-resolved. Click to edit if needed."
+                      : "No matching Cost Center found — click to pick one."
+                  }
+                >
+                  {effectiveCostCenter || "Not configured — click to set"}
+                </button>
+              )}
             </div>
           )}
           {greenhouse && (
@@ -1212,20 +1318,14 @@ export function ApplicationPlan() {
                   className="h-9 tabular-nums"
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <Label>Spray Team</Label>
-                <Select value={sprayTeam} onValueChange={setSprayTeam}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Pick a team" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(bootstrap?.spray_teams || []).map((t) => (
-                      <SelectItem key={t.name} value={t.name}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="col-span-2">
+                <SprayTeamEditor
+                  teams={bootstrap?.spray_teams || []}
+                  team={sprayTeam}
+                  onTeamChange={setSprayTeam}
+                  members={teamMembers}
+                  onMembersChange={setTeamMembers}
+                />
               </div>
 
               <div className="flex flex-col gap-1 col-span-2">

@@ -4,6 +4,14 @@
 <link rel="stylesheet" href="/new_application_floor_plan/new_application_floor_plan.css" />
 <script src="/assets/frappe/js/frappe-web.min.js"></script>
 <script>window._nafpCSRF = "{{ csrf_token }}";</script>
+<script>
+  window._nafpServerData = {
+    pestCatalog: {{ (pest_catalog or []) | tojson }},
+    diseaseCatalog: {{ (disease_catalog or []) | tojson }},
+    sprayTeamsWithMembers: {{ (spray_teams_with_members or []) | tojson }},
+    costCenters: {{ (cost_centers or []) | tojson }}
+  };
+</script>
 <script src="/new_application_floor_plan/new_application_floor_plan.js"></script>
 
 {% endblock %}
@@ -52,9 +60,29 @@
             <option value="" disabled selected>No farms configured — open Spray Plan Settings</option>
             {% endif %}
           </select>
-          <small id="greenhouse-cost-center" class="tw-text-gray-500 tw-text-xs tw-mt-1 tw-block tw-hidden">
-            Cost Center: <span id="greenhouse-cost-center-value" class="tw-font-medium tw-text-gray-700"></span>
-          </small>
+          <div id="greenhouse-cost-center" class="nafp-cost-center tw-hidden">
+            <span class="nafp-cost-center__label">Cost Center</span>
+            <div class="nafp-cost-center__picker">
+              <input
+                type="text"
+                id="greenhouse-cost-center-input"
+                class="nafp-cost-center__input"
+                list="cost-center-options"
+                placeholder="Resolving…"
+                autocomplete="off"
+                spellcheck="false">
+              <datalist id="cost-center-options"></datalist>
+              <span id="greenhouse-cost-center-source" class="nafp-cost-center__source"></span>
+              <button
+                type="button"
+                id="greenhouse-cost-center-reset"
+                class="nafp-cost-center__reset tw-hidden"
+                title="Reset to auto-resolved value">
+                Reset
+              </button>
+            </div>
+            <span id="greenhouse-cost-center-value" class="tw-hidden" aria-hidden="true"></span>
+          </div>
           {% if not warehouses_list %}
           <small class="tw-text-amber-600 tw-text-xs">
             No farms are configured for the spray plan dropdown.
@@ -153,6 +181,29 @@
         <div class="form-section">
           <h3 class="form-section-title">Spray Details</h3>
           <div class="form-group">
+            <label class="form-label">Classification *</label>
+            <div class="nafp-classification" role="radiogroup" aria-label="Spray classification">
+              <button type="button" class="nafp-classification__btn" data-value="Curative" role="radio" aria-checked="false">
+                <span class="nafp-classification__btn-title">Curative</span>
+                <span class="nafp-classification__btn-sub">Triggered by a scouting observation</span>
+              </button>
+              <button type="button" class="nafp-classification__btn" data-value="Preventive" role="radio" aria-checked="false">
+                <span class="nafp-classification__btn-title">Preventive</span>
+                <span class="nafp-classification__btn-sub">Routine spray with documented justification</span>
+              </button>
+            </div>
+            <input type="hidden" id="classification-value" value="">
+          </div>
+          <div id="preventive-reason-container" class="form-group tw-hidden">
+            <label class="form-label nafp-preventive-label" for="preventive-reason">
+              <span>Preventive Reason</span>
+              <span class="nafp-preventive-label__hint">Required · min 20 chars</span>
+            </label>
+            <textarea id="preventive-reason" class="form-input nafp-preventive-textarea" rows="3"
+              placeholder="Why does this routine spray make sense without an observation trigger?"></textarea>
+            <small class="nafp-preventive-counter" id="preventive-reason-counter">0 / 20 characters</small>
+          </div>
+          <div class="form-group">
             <label class="form-label" for="scheduled-application-time">Scheduled Application Date</label>
             <input type="date" id="scheduled-application-time" class="form-input" data-fp-init="1" required>
           </div>
@@ -170,13 +221,17 @@
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Targets *</label>
+            <label class="form-label nafp-target-label">
+              <span>Targets *</span>
+              <span id="target-quick-hint" class="nafp-target-label__hint tw-hidden"></span>
+            </label>
+            <div id="target-quick-pick" class="nafp-target-quick tw-hidden" aria-label="Suggested targets"></div>
             <div id="target-autocomplete-wrapper" style="position:relative;">
               <div id="target-pills-container" class="target-pills-container"></div>
               <input type="text" id="target-autocomplete-input" class="form-input" placeholder="Search pests & diseases or type a custom target..." autocomplete="off">
               <div id="target-autocomplete-dropdown" class="target-autocomplete-dropdown"></div>
             </div>
-            <small class="tw-text-gray-500 tw-text-xs">Search from all pests & diseases, or type a custom name and press Enter.</small>
+            <small class="tw-text-gray-500 tw-text-xs">Click a suggestion above, search, or type a custom name and press Enter.</small>
             <select id="final-targets" multiple class="form-select" style="display:none;"></select>
           </div>
           <div class="form-group">
@@ -211,14 +266,31 @@
               <p class="tw-text-gray-500">Selected varieties will appear here...</p>
             </div>
           </div>
-          <div class="tw-grid tw-grid-cols-2 tw-gap-4">
-            <div class="form-group">
-              <label class="form-label" for="area_to_spray">Area to Spray (Ha)</label>
-              <input type="number" id="area_to_spray" class="form-input" step="any" readonly>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="spray-team-select">Spray Team</label>
-              <select id="spray-team-select" class="form-select" required></select>
+          <div class="form-group">
+            <label class="form-label" for="area_to_spray">Area to Spray (Ha)</label>
+            <input type="number" id="area_to_spray" class="form-input" step="any" readonly>
+          </div>
+          <div class="form-group">
+            <label class="form-label nafp-team-editor-label" for="spray-team-select">
+              <span><svg class="nafp-team-editor-label__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Spray Team</span>
+              <button type="button" id="spray-team-clear-btn" class="nafp-team-editor-clear tw-hidden" title="Clear the picked team — the current roster stays in place.">Clear team</button>
+            </label>
+            <select id="spray-team-select" class="form-select"></select>
+            <small class="tw-text-gray-500 tw-text-xs">Picking a team copies its members below. Add or remove individuals for this plan — the master team list is left untouched.</small>
+
+            <div class="nafp-team-editor" id="team-editor">
+              <div class="nafp-team-editor__header">
+                <div class="nafp-team-editor__title">
+                  <span>Team On Ground</span>
+                  <span class="nafp-team-editor__count is-zero" id="team-editor-count">0</span>
+                  <span id="team-editor-breakdown" class="nafp-team-editor__breakdown"></span>
+                </div>
+                <button type="button" id="team-editor-add-btn" class="nafp-team-editor__add">
+                  <span class="nafp-team-editor__add-plus" aria-hidden="true">+</span>
+                  Add member
+                </button>
+              </div>
+              <div class="nafp-team-editor__body" id="team-editor-body"></div>
             </div>
           </div>
         </div>
@@ -271,7 +343,46 @@
       </div>
 
       <div class="nafp-submit-bar">
-        <button type="submit" class="btn-primary nafp-submit-btn">Create Spray Plan</button>
+        <p class="nafp-submit-bar__hint">
+          Drafts collect in the batch below. Submit them for approval together when you're ready.
+        </p>
+        <button type="submit" class="btn-primary nafp-submit-btn" id="add-to-batch-btn">
+          <span class="nafp-submit-btn__icon" aria-hidden="true">+</span>
+          Add to batch
+        </button>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- STEP 3 · DRAFT BATCH: review your queued plans and submit all -->
+    <!-- ============================================================ -->
+    <section class="nafp-step nafp-step--batch">
+      <header class="nafp-step-header">
+        <span class="nafp-step-num">3</span>
+        <div>
+          <h2 class="nafp-step-title">Submit Batch</h2>
+          <p class="nafp-step-sub">Review the draft plans you've built and submit them for approval together.</p>
+        </div>
+      </header>
+
+      <div id="draft-batch-panel" class="nafp-batch">
+        <div class="nafp-batch__header">
+          <div class="nafp-batch__title">
+            <span>Draft batch</span>
+            <span id="draft-batch-count" class="nafp-batch__count">0</span>
+          </div>
+          <div class="nafp-batch__actions">
+            <button type="button" id="batch-refresh-btn" class="btn-primary btn-secondary nafp-batch__btn-refresh" title="Refresh list">
+              Refresh
+            </button>
+            <button type="button" id="batch-submit-all-btn" class="btn-primary nafp-batch__btn-submit" disabled>
+              Submit all for approval
+            </button>
+          </div>
+        </div>
+        <div id="draft-batch-body" class="nafp-batch__body">
+          <div class="nafp-batch__loading">Loading drafts…</div>
+        </div>
       </div>
     </section>
   </form>
@@ -280,6 +391,27 @@
     <div id="global-popup" class="popup">
       <input type="text" id="global-popup-search" class="popup-search" placeholder="Search...">
       <div id="global-popup-content" class="popup-content"></div>
+    </div>
+  </div>
+
+  <!-- Employee picker for the spray-team editor -->
+  <div id="employee-picker-overlay" class="nafp-emp-picker-overlay">
+    <div id="employee-picker" class="nafp-emp-picker" role="dialog" aria-modal="true">
+      <div class="nafp-emp-picker__header">
+        <div>
+          <div class="nafp-emp-picker__title">Add team member</div>
+          <div class="nafp-emp-picker__subtitle">Search by name or payroll number — active employees only.</div>
+        </div>
+        <button type="button" id="employee-picker-close" class="nafp-emp-picker__close" aria-label="Close">×</button>
+      </div>
+      <div class="nafp-emp-picker__search">
+        <svg class="nafp-emp-picker__search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        <input type="text" id="employee-picker-input" autocomplete="off" placeholder="Type a name or payroll number…" />
+        <button type="button" id="employee-picker-clear" class="nafp-emp-picker__clear tw-hidden" aria-label="Clear search">×</button>
+      </div>
+      <div class="nafp-emp-picker__results" id="employee-picker-results">
+        <div class="nafp-emp-picker__empty">Type to search active employees.</div>
+      </div>
     </div>
   </div>
 

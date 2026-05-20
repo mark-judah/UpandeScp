@@ -170,13 +170,990 @@
 /* Submit bar */
 .nafp-submit-bar {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
   margin-top: 28px;
   padding-top: 20px;
   border-top: 1px solid #e5e7eb;
+  flex-wrap: wrap;
+}
+.nafp-submit-bar__hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+  max-width: 520px;
+  line-height: 1.5;
 }
 .nafp-submit-btn {
   min-width: 220px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.nafp-submit-btn__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+/* ── Cost Center picker (Diagnose step) ────────────────────────
+   Editable combobox with a state-aware accent. Defaults to the
+   server-resolved value; the operator can type/pick another. */
+.nafp-cost-center {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  min-width: 280px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.nafp-cost-center__label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  font-size: 0.6rem;
+  color: #047857;
+}
+.nafp-cost-center__picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.nafp-cost-center__input {
+  flex: 1;
+  min-width: 160px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #065f46;
+  font-family: inherit;
+  font-feature-settings: "tnum" 1;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.nafp-cost-center__input::placeholder {
+  color: #9ca3af;
+  font-weight: 400;
+  font-style: italic;
+}
+.nafp-cost-center__input:hover {
+  border-color: #a7f3d0;
+  background: #ffffff;
+}
+.nafp-cost-center__input:focus {
+  border-color: #059669;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
+}
+.nafp-cost-center__source {
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(5, 150, 105, 0.14);
+  color: #047857;
+  white-space: nowrap;
+}
+.nafp-cost-center__reset {
+  background: none;
+  border: 1px solid #d1d5db;
+  color: #4b5563;
+  padding: 3px 8px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.nafp-cost-center__reset:hover {
+  border-color: #9ca3af;
+  background: #f9fafb;
+  color: #111827;
+}
+
+/* ── State variants ─────────────────────────────────────────── */
+.nafp-cost-center.is-missing {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.nafp-cost-center.is-missing .nafp-cost-center__label {
+  color: #b91c1c;
+}
+.nafp-cost-center.is-missing .nafp-cost-center__input {
+  color: #991b1b;
+}
+.nafp-cost-center.is-missing .nafp-cost-center__input::placeholder {
+  color: #d97706;
+  font-style: normal;
+  font-weight: 600;
+}
+.nafp-cost-center.is-missing .nafp-cost-center__source {
+  background: rgba(185, 28, 28, 0.12);
+  color: #b91c1c;
+}
+
+.nafp-cost-center.is-custom {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.nafp-cost-center.is-custom .nafp-cost-center__label {
+  color: #1d4ed8;
+}
+.nafp-cost-center.is-custom .nafp-cost-center__input {
+  color: #1e3a8a;
+}
+.nafp-cost-center.is-custom .nafp-cost-center__input:hover {
+  border-color: #bfdbfe;
+}
+.nafp-cost-center.is-custom .nafp-cost-center__input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+.nafp-cost-center.is-custom .nafp-cost-center__source {
+  background: rgba(29, 78, 216, 0.14);
+  color: #1d4ed8;
+}
+
+.nafp-cost-center.is-loading {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+  animation: nafp-cost-pulse 1.4s ease-in-out infinite;
+}
+.nafp-cost-center.is-loading .nafp-cost-center__label {
+  color: #6b7280;
+}
+.nafp-cost-center.is-loading .nafp-cost-center__input {
+  color: #4b5563;
+}
+@keyframes nafp-cost-pulse {
+  0%, 100% { opacity: 0.92; }
+  50% { opacity: 0.6; }
+}
+
+/* ── Classification toggle (Curative / Preventive) ────────────── */
+.nafp-classification {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.nafp-classification__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease,
+    background 0.18s ease, transform 0.06s ease;
+}
+.nafp-classification__btn:hover {
+  border-color: #9ca3af;
+  background: #fafafa;
+}
+.nafp-classification__btn:active {
+  transform: translateY(1px);
+}
+.nafp-classification__btn.is-active {
+  border-color: #4f46e5;
+  background: #eef2ff;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+.nafp-classification__btn.is-active .nafp-classification__btn-title {
+  color: #3730a3;
+}
+.nafp-classification__btn-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #111827;
+}
+.nafp-classification__btn-sub {
+  font-size: 0.72rem;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+/* ── Preventive reason textarea ──────────────────────────────── */
+.nafp-preventive-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.nafp-preventive-label__hint {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #b45309;
+  font-weight: 600;
+}
+.nafp-preventive-textarea {
+  min-height: 78px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.nafp-preventive-counter {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: #6b7280;
+  font-feature-settings: "tnum" 1;
+}
+.nafp-preventive-counter.is-ok {
+  color: #047857;
+}
+
+/* ── Spray team editor (per-plan roster, replaces the legacy chip
+       preview) ──────────────────────────────────────────────────── */
+.nafp-team-editor-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.nafp-team-editor-label > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #374151;
+}
+.nafp-team-editor-label__icon {
+  color: #6b7280;
+}
+.nafp-team-editor-clear {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.nafp-team-editor-clear:hover {
+  color: #111827;
+  background: #f3f4f6;
+}
+.nafp-team-editor {
+  margin-top: 10px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.nafp-team-editor__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #eef2ff 0%, #ffffff 100%);
+  border-bottom: 1px solid #e5e7eb;
+}
+.nafp-team-editor__title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1f2937;
+  min-width: 0;
+}
+.nafp-team-editor__count {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(79, 70, 229, 0.15);
+  color: #3730a3;
+  font-feature-settings: "tnum" 1;
+}
+.nafp-team-editor__count.is-zero {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.nafp-team-editor__breakdown {
+  font-size: 0.66rem;
+  color: #6b7280;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  font-feature-settings: "tnum" 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nafp-team-editor__add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #c7d2fe;
+  background: #ffffff;
+  color: #4338ca;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    transform 0.06s ease;
+}
+.nafp-team-editor__add:hover {
+  background: #eef2ff;
+  border-color: #818cf8;
+  color: #312e81;
+}
+.nafp-team-editor__add:active {
+  transform: translateY(1px);
+}
+.nafp-team-editor__add-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(79, 70, 229, 0.15);
+  color: #4338ca;
+  font-weight: 700;
+  font-size: 0.78rem;
+  line-height: 1;
+}
+.nafp-team-editor__body {
+  max-height: 360px;
+  overflow-y: auto;
+}
+.nafp-team-editor__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 28px 18px;
+  color: #6b7280;
+}
+.nafp-team-editor__empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f3f4f6;
+  color: #9ca3af;
+  margin-bottom: 8px;
+}
+.nafp-team-editor__empty-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #374151;
+}
+.nafp-team-editor__empty-text {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: #6b7280;
+  max-width: 320px;
+}
+.nafp-team-editor__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.15s ease;
+}
+.nafp-team-editor__row:last-child {
+  border-bottom: none;
+}
+.nafp-team-editor__row:hover {
+  background: #fafafa;
+}
+.nafp-team-editor__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.nafp-team-editor__info {
+  min-width: 0;
+}
+.nafp-team-editor__name {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nafp-team-editor__meta {
+  margin-top: 2px;
+  font-size: 0.68rem;
+  color: #6b7280;
+  font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  font-feature-settings: "tnum" 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nafp-team-editor__meta-sep {
+  margin: 0 4px;
+  color: #d1d5db;
+}
+.nafp-team-editor__meta-extra {
+  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  color: #9ca3af;
+}
+.nafp-team-editor__role {
+  padding: 5px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  font-size: 0.74rem;
+  color: #374151;
+  font-family: inherit;
+  min-width: 120px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.nafp-team-editor__role:hover {
+  border-color: #9ca3af;
+}
+.nafp-team-editor__role:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.18);
+}
+.nafp-team-editor__remove {
+  background: none;
+  border: 1px solid transparent;
+  color: #9ca3af;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.nafp-team-editor__remove:hover {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+/* ── Employee picker modal ───────────────────────────────────── */
+.nafp-emp-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  display: none;
+  z-index: 80;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 6vh 12px;
+}
+.nafp-emp-picker-overlay.is-open {
+  display: flex;
+}
+.nafp-emp-picker {
+  background: #ffffff;
+  border-radius: 14px;
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  max-height: min(80vh, 640px);
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+  animation: nafp-emp-pop-in 160ms ease-out;
+}
+@keyframes nafp-emp-pop-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.nafp-emp-picker__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.nafp-emp-picker__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #111827;
+}
+.nafp-emp-picker__subtitle {
+  margin-top: 2px;
+  font-size: 0.74rem;
+  color: #6b7280;
+  line-height: 1.4;
+}
+.nafp-emp-picker__close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  color: #9ca3af;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.nafp-emp-picker__close:hover {
+  color: #111827;
+  background: #f3f4f6;
+}
+.nafp-emp-picker__search {
+  position: relative;
+  padding: 12px 18px;
+  border-bottom: 1px solid #f3f4f6;
+  background: #f9fafb;
+}
+.nafp-emp-picker__search input {
+  width: 100%;
+  padding: 10px 36px;
+  border-radius: 8px;
+  border: 1.5px solid #d1d5db;
+  background: #ffffff;
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.nafp-emp-picker__search input:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+.nafp-emp-picker__search-icon {
+  position: absolute;
+  left: 30px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  pointer-events: none;
+}
+.nafp-emp-picker__clear {
+  position: absolute;
+  right: 30px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+.nafp-emp-picker__clear:hover {
+  color: #374151;
+  background: #f3f4f6;
+}
+.nafp-emp-picker__results {
+  overflow-y: auto;
+  flex: 1;
+}
+.nafp-emp-picker__empty,
+.nafp-emp-picker__loading {
+  padding: 28px 18px;
+  text-align: center;
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+.nafp-emp-picker__loading::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border: 2px solid #e5e7eb;
+  border-top-color: #4f46e5;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: spin 0.8s linear infinite;
+}
+.nafp-emp-picker__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 18px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.15s ease;
+  font-family: inherit;
+}
+.nafp-emp-picker__row:hover {
+  background: #f9fafb;
+}
+.nafp-emp-picker__row[disabled] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.nafp-emp-picker__row[disabled]:hover {
+  background: #f9fafb;
+}
+.nafp-emp-picker__row .nafp-team-editor__avatar {
+  width: 38px;
+  height: 38px;
+}
+.nafp-emp-picker__row-info {
+  min-width: 0;
+}
+.nafp-emp-picker__row-name {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nafp-emp-picker__row-meta {
+  margin-top: 2px;
+  font-size: 0.7rem;
+  color: #6b7280;
+  font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nafp-emp-picker__row-extra {
+  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  color: #9ca3af;
+}
+.nafp-emp-picker__row-badge {
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.nafp-emp-picker__row[disabled] .nafp-emp-picker__row-badge {
+  background: #ecfccb;
+  color: #4d7c0f;
+}
+.nafp-emp-picker__row-plus {
+  color: #4338ca;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* ── Legacy chip preview (kept for compatibility) ─────────────── */
+.nafp-team-members {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+.nafp-team-members__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.7rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.nafp-team-members__count {
+  color: #4f46e5;
+  background: #eef2ff;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+}
+.nafp-team-members__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.nafp-team-members__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  font-size: 0.74rem;
+  color: #1f2937;
+}
+.nafp-team-members__chip-role {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.nafp-team-members__empty {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+/* ── Step 3 · Draft Batch panel ───────────────────────────────── */
+.nafp-step--batch .nafp-step-num {
+  background: #ea580c;
+}
+.nafp-batch {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.nafp-batch__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e5e7eb;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+  flex-wrap: wrap;
+}
+.nafp-batch__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #111827;
+}
+.nafp-batch__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #ea580c;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.nafp-batch__count.is-zero {
+  background: #e5e7eb;
+  color: #6b7280;
+}
+.nafp-batch__actions {
+  display: inline-flex;
+  gap: 8px;
+}
+.nafp-batch__btn-refresh,
+.nafp-batch__btn-submit {
+  padding: 8px 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.nafp-batch__btn-submit:disabled {
+  background: #d1d5db;
+  cursor: not-allowed;
+  color: #6b7280;
+}
+.nafp-batch__body {
+  max-height: 540px;
+  overflow-y: auto;
+}
+.nafp-batch__loading,
+.nafp-batch__empty,
+.nafp-batch__error {
+  padding: 22px 18px;
+  font-size: 0.85rem;
+  color: #6b7280;
+  text-align: center;
+}
+.nafp-batch__empty {
+  border-top: 1px dashed #e5e7eb;
+}
+.nafp-batch__error {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+.nafp-batch__item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.15s ease;
+}
+.nafp-batch__item:hover {
+  background: #fafafa;
+}
+.nafp-batch__item:last-child {
+  border-bottom: none;
+}
+.nafp-batch__item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.nafp-batch__item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #111827;
+  flex-wrap: wrap;
+}
+.nafp-batch__item-name {
+  font-feature-settings: "tnum" 1;
+  font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  font-size: 0.82rem;
+  color: #1f2937;
+}
+.nafp-batch__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.nafp-batch__chip--curative {
+  background: #ecfeff;
+  color: #0e7490;
+  border: 1px solid #a5f3fc;
+}
+.nafp-batch__chip--preventive {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+.nafp-batch__chip--warning {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+.nafp-batch__item-meta {
+  font-size: 0.75rem;
+  color: #6b7280;
+  line-height: 1.5;
+}
+.nafp-batch__item-targets {
+  font-size: 0.72rem;
+  color: #4b5563;
+}
+.nafp-batch__item-date {
+  font-size: 0.7rem;
+  color: #9ca3af;
+  font-feature-settings: "tnum" 1;
+}
+.nafp-batch__item-warning {
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: #b45309;
+  background: #fffbeb;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border-left: 3px solid #f59e0b;
+}
+.nafp-batch__item-remove {
+  background: none;
+  border: 1px solid transparent;
+  color: #9ca3af;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  align-self: start;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.nafp-batch__item-remove:hover {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+@media (max-width: 1024px) {
+  .nafp-classification {
+    grid-template-columns: 1fr;
+  }
+  .nafp-batch__header {
+    align-items: stretch;
+  }
+  .nafp-batch__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .nafp-submit-bar {
+    justify-content: stretch;
+  }
 }
 
 /* Responsive collapse: vertical dividers become top dividers when stacked */
@@ -546,6 +1523,106 @@
     white-space: nowrap;
     font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
   }
+
+/* ── Target quick-pick strip ──────────────────────────────────
+   Pill grid surfaced above the autocomplete so the operator can
+   tap a scouting-observed pest (Curative) or a catalog entry
+   (Preventive) instead of typing. Toggles selection — re-click
+   removes it from the picks. */
+.nafp-target-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.nafp-target-label__hint {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: #6b7280;
+}
+.nafp-target-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px dashed #e2e8f0;
+}
+.nafp-target-quick__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  font-weight: 500;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    transform 0.06s ease;
+  font-family: inherit;
+}
+.nafp-target-quick__chip:hover {
+  border-color: #818cf8;
+  background: #eef2ff;
+  color: #3730a3;
+}
+.nafp-target-quick__chip:active {
+  transform: translateY(1px);
+}
+.nafp-target-quick__chip.is-on {
+  background: #4338ca;
+  border-color: #4338ca;
+  color: #ffffff;
+}
+.nafp-target-quick__chip.is-on:hover {
+  background: #3730a3;
+  border-color: #3730a3;
+}
+.nafp-target-quick__chip-type {
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #475569;
+}
+.nafp-target-quick__chip.is-on .nafp-target-quick__chip-type {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+.nafp-target-quick__chip[data-type="pest"] .nafp-target-quick__chip-type {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.nafp-target-quick__chip[data-type="disease"] .nafp-target-quick__chip-type {
+  background: #fef3c7;
+  color: #92400e;
+}
+.nafp-target-quick__chip[data-type="scouting"] .nafp-target-quick__chip-type {
+  background: #dcfce7;
+  color: #166534;
+}
+.nafp-target-quick__chip.is-on[data-type="pest"] .nafp-target-quick__chip-type,
+.nafp-target-quick__chip.is-on[data-type="disease"] .nafp-target-quick__chip-type,
+.nafp-target-quick__chip.is-on[data-type="scouting"] .nafp-target-quick__chip-type {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+.nafp-target-quick__empty {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-style: italic;
+  padding: 4px 6px;
+}
 
   /* Target pills */
 .target-pills-container {

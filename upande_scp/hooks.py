@@ -220,6 +220,13 @@ override_doctype_class = {
     "Work Order": "upande_scp.serverscripts.spray_plan_creator.custom_work_order.CustomWorkOrder",
 }
 
+# Stop the form's workflow widget from throwing "Workflow State not set" when
+# it queries transitions for a non-spray WO (whose workflow_state we've
+# cleared). The wrapper returns [] for those and delegates everything else.
+override_whitelisted_methods = {
+    "frappe.model.workflow.get_transitions": "upande_scp.serverscripts.spray_plan_creator.workflow_transitions.get_transitions",
+}
+
 # Scheduled Tasks
 # ---------------
 

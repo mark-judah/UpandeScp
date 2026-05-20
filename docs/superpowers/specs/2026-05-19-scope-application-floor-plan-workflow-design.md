@@ -82,7 +82,45 @@ override_doctype_class = {
 ERPNext's `WorkOrder.validate` and every other method are inherited
 untouched.
 
-### 2. Backfill patch
+### 2. `get_transitions` override
+
+**Location:** `upande_scp/upande_scp/serverscripts/spray_plan_creator/workflow_transitions.py`
+
+```python
+import frappe
+from frappe.model.workflow import get_transitions as _orig_get_transitions
+
+@frappe.whitelist()
+def get_transitions(doc, workflow=None, raise_exception=False):
+    if hasattr(doc, "doctype"):
+        doctype = doc.doctype
+        custom_type = doc.get("custom_type") or ""
+    else:
+        d = frappe.parse_json(doc) if isinstance(doc, str) else doc
+        doctype = d.get("doctype") if isinstance(d, dict) else None
+        custom_type = (d.get("custom_type") or "") if isinstance(d, dict) else ""
+    if doctype == "Work Order" and custom_type != "Application Floor Plan":
+        return []
+    return _orig_get_transitions(doc, workflow=workflow, raise_exception=raise_exception)
+```
+
+**Wiring** in `upande_scp/hooks.py`:
+
+```python
+override_whitelisted_methods = {
+    "frappe.model.workflow.get_transitions": "upande_scp.serverscripts.spray_plan_creator.workflow_transitions.get_transitions",
+}
+```
+
+**Why this is needed:** `frappe/model/workflow.py::get_transitions`
+is a whitelisted endpoint the form's workflow widget calls on every
+refresh. It throws `WorkflowStateError("Workflow State not set")` when
+`current_state` is empty. Since `CustomWorkOrder.validate_workflow`
+clears the state for non-spray WOs (and the backfill patch did the
+same for historical rows), the widget surfaces the error to the user
+unless we intercept the endpoint.
+
+### 3. Backfill patch
 
 **Location:** `upande_scp/patches/v1_0/clear_non_spray_work_order_workflow_state.py`
 

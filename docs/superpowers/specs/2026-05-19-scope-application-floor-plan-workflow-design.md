@@ -98,7 +98,39 @@ def execute():
 
 Registered in `patches.txt` under `[post_model_sync]`.
 
-### 3. Remove the now-dead overrides
+### 3. Delete the legacy "Submit for Approval" Client Script
+
+Live testing surfaced a DB-only Client Script named **"Submit button
+ Work order"** (double space, view=Form, enabled=1) that added a
+prominent `btn-primary` "Submit for Approval" button calling
+`frappe.model.workflow.apply_workflow` directly. With the workflow
+gone, that call raises `DoesNotExistError: Workflow Application
+Floor Plan Workflow not found`. The working button — added by
+`public/js/spray_plan_wo_form.js` and calling
+`bulk.submit_drafts_for_approval` — was hidden under the "Spray
+Plan" group, so users clicked the broken primary one, got the
+error, then used the plain Submit button (which advanced docstatus
+without touching workflow_state).
+
+A second one-off patch deletes the legacy script:
+
+**Location:** `upande_scp/patches/v1_0/delete_legacy_submit_for_approval_client_script.py`
+
+```python
+import frappe
+
+def execute():
+    name = "Submit button  Work order"  # double space intentional
+    if not frappe.db.exists("Client Script", name):
+        return
+    frappe.delete_doc("Client Script", name, force=True, ignore_missing=True)
+    frappe.db.commit()
+```
+
+Registered in `patches.txt`. Idempotent — no-op on sites that never
+had the legacy script.
+
+### 4. Remove the now-dead overrides
 
 - `upande_scp/serverscripts/spray_plan_creator/custom_work_order.py` — deleted.
 - `upande_scp/serverscripts/spray_plan_creator/workflow_transitions.py` — deleted.

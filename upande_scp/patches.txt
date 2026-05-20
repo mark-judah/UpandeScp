@@ -12,3 +12,4 @@ upande_scp.patches.v1_0.backfill_spray_team_farm
 upande_scp.patches.v1_0.seed_spray_plan_thresholds
 upande_scp.patches.v1_0.clear_non_spray_work_order_workflow_state
 upande_scp.patches.v1_0.delete_application_floor_plan_workflow
+upande_scp.patches.v1_0.delete_legacy_submit_for_approval_client_script

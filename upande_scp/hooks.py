@@ -471,10 +471,6 @@ fixtures = [
         "dt": "Crop Scouted"
     },
     {
-        "doctype": "Workflow",
-        "filters": [["name", "in", ["Application Floor Plan Workflow"]]]
-    },
-    {
         "doctype": "Workflow State",
         "filters": [["name", "in", [
             "Pending Submission", "Awaiting Approval", "Approved",

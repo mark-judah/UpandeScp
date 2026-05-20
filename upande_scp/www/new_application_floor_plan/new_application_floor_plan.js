@@ -2335,11 +2335,25 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    const costCenterRow = document.getElementById("greenhouse-cost-center");
+    const costCenterValue = document.getElementById("greenhouse-cost-center-value");
+    const renderCostCenter = (cc) => {
+        if (!costCenterRow || !costCenterValue) return;
+        if (cc) {
+            costCenterValue.textContent = cc;
+            costCenterRow.classList.remove("tw-hidden");
+        } else {
+            costCenterValue.textContent = "";
+            costCenterRow.classList.add("tw-hidden");
+        }
+    };
+
     // ==================== EVENT LISTENERS ====================
     els.greenhouse.addEventListener("change", async (e) => {
         if (e.target.value) {
             const selectedGh = e.target.options[e.target.selectedIndex];
             state.greenhouseFarm = selectedGh?.dataset.farm || "";
+            renderCostCenter(selectedGh?.dataset.costCenter || "");
             state.sourceWarehouseCache = {};
             els.sprayType.value = "";
             els.kit.value = "";
@@ -2366,6 +2380,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 fetchScoutingData(e.target.value),
                 fetchAllTargets()
             ]);
+        } else {
+            renderCostCenter("");
         }
     });
 

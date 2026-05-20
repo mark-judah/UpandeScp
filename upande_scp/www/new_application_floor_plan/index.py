@@ -21,7 +21,7 @@ def _build_warehouses():
     warehouses = frappe.get_all(
         "Warehouse",
         filters={"warehouse_type": "Greenhouse"},
-        fields=["name", "custom_farm"],
+        fields=["name", "custom_farm", "custom_cost_center"],
         limit_page_length=0,
     )
     filtered = [

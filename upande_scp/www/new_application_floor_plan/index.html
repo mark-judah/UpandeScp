@@ -46,12 +46,15 @@
             {% if warehouses_list %}
             <option value="">Select greenhouse</option>
             {% for warehouse in warehouses_list %}
-            <option value="{{ warehouse.name }}" data-farm="{{ warehouse.custom_farm or '' }}">{{ warehouse.name }}</option>
+            <option value="{{ warehouse.name }}" data-farm="{{ warehouse.custom_farm or '' }}" data-cost-center="{{ warehouse.custom_cost_center or '' }}">{{ warehouse.name }}</option>
             {% endfor %}
             {% else %}
             <option value="" disabled selected>No farms configured — open Spray Plan Settings</option>
             {% endif %}
           </select>
+          <small id="greenhouse-cost-center" class="tw-text-gray-500 tw-text-xs tw-mt-1 tw-block tw-hidden">
+            Cost Center: <span id="greenhouse-cost-center-value" class="tw-font-medium tw-text-gray-700"></span>
+          </small>
           {% if not warehouses_list %}
           <small class="tw-text-amber-600 tw-text-xs">
             No farms are configured for the spray plan dropdown.

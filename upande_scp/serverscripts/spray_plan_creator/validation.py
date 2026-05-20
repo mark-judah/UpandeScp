@@ -17,10 +17,13 @@ from frappe.utils import add_days, now_datetime
 PREVENTIVE_REASON_MIN_CHARS = 20
 
 # Normalisation key for fuzzy cost-center matching: lower-case, strip every
-# whitespace character, and drop leading zeros inside multi-digit runs so
-# "GH 07" and "GH7" collapse to the same key. The trailing single-digit
-# zero is preserved (no run to strip).
-_LEADING_ZERO_RE = re.compile(r"\b0+(\d)")
+# whitespace character, then drop leading zeros from any digit run that
+# follows a non-digit so "Simotwo GH 07 - KR" collapses onto "Simotwo GH7
+# - KR". `\b0+(\d)` does NOT work here because `\b` requires a word/non-word
+# transition and both letter and digit are word characters — use a negative
+# lookbehind for a digit instead. Trailing zeros (e.g. "GH10") are
+# preserved because the preceding char IS a digit.
+_LEADING_ZERO_RE = re.compile(r"(?<!\d)0+(\d)")
 
 
 def _normalise_name_key(name: str) -> str:
@@ -32,15 +35,24 @@ def _normalise_name_key(name: str) -> str:
 
 
 def match_cost_center(greenhouse_warehouse: str) -> str | None:
-    """Return the Cost Center matching the greenhouse warehouse name, or None.
+    """Return the Cost Center for a greenhouse warehouse, or None.
 
-    Non-throwing variant. Tries exact match first, then a whitespace-,
-    leading-zero-, and case-insensitive fallback so "Chepsito GH 15 - KR"
-    resolves to "Chepsito GH15 - KR" and "Chepsito GH 07 - KR" resolves to
-    "Chepsito GH7 - KR".
+    Resolution order:
+      1. ``Warehouse.custom_cost_center`` — explicit, authoritative.
+      2. Exact-name match against ``Cost Center`` (legacy).
+      3. Whitespace-, leading-zero-, and case-insensitive name match (legacy).
+
+    The fallback exists so warehouses where the new field hasn't been set
+    yet keep resolving via the original name convention. Set
+    ``custom_cost_center`` on the warehouse to opt out of the fallback.
     """
     if not greenhouse_warehouse:
         return None
+    explicit = frappe.db.get_value(
+        "Warehouse", greenhouse_warehouse, "custom_cost_center"
+    )
+    if explicit:
+        return explicit
     cc = frappe.db.get_value("Cost Center", greenhouse_warehouse, "name")
     if cc:
         return cc

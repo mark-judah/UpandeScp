@@ -352,6 +352,7 @@ fixtures = [
                         "Warehouse-custom_raw_geojson",
                         "Warehouse-custom_location",
                         "Warehouse-custom_area_ha",
+                        "Warehouse-custom_cost_center",
                         # Item fields
                         "Item-custom_ghs",
                         "Item-custom_irac",
@@ -422,6 +423,7 @@ fixtures = [
                     "BOM Toggle Fields",
                     "Items Toggle Fields",
                     "Greenhouse Map",
+                    "Warehouse Cost Center Query",
                     "Pests Legend Color Toggle",
                     "Refresh Greenhouse Rentry Time",
                     "Hide Start Button On Work Order",

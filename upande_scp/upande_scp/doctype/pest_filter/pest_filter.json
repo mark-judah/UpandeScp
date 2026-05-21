@@ -23,13 +23,13 @@
    "reqd": 1
   },
   {
-   "default": "Per Warehouse",
-   "description": "Threshold denominator. \"Per Warehouse\" = each greenhouse / block counts as one unit. \"Per Hectare\" divides the observed pest count by Warehouse.Area (HA) before comparing against the bands below.",
+   "default": "Per Zone %",
+   "description": "Threshold denominator. \"Per Zone %\" = percentage of the greenhouse's zones where the pest appeared. \"Per Warehouse\" / \"Per Hectare\" keep the legacy count-based semantics for back-compat.",
    "fieldname": "unit",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Unit",
-   "options": "Per Warehouse\nPer Hectare"
+   "options": "Per Zone %\nPer Warehouse\nPer Hectare"
   },
   {
    "description": "Pest count at which severity becomes Low (threshold value).",
@@ -69,7 +69,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-26 00:00:00.000000",
+ "modified": "2026-05-21 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Pest Filter",

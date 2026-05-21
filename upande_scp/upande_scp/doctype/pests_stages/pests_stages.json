@@ -10,7 +10,11 @@
   "image",
   "symbol",
   "reading_type",
-  "plant_sections"
+  "plant_sections",
+  "thresholds_section",
+  "low_threshold",
+  "moderate_threshold",
+  "high_threshold"
  ],
  "fields": [
   {
@@ -38,13 +42,45 @@
    "fieldname": "plant_sections",
    "fieldtype": "Code",
    "label": "Plant Sections"
+  },
+  {
+   "fieldname": "thresholds_section",
+   "fieldtype": "Section Break",
+   "label": "Stage Thresholds"
+  },
+  {
+   "description": "Severity becomes Low when % of zones with this pest+stage reaches this value. Overrides the parent Pest Filter low_threshold when set.",
+   "fieldname": "low_threshold",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Low Threshold",
+   "non_negative": 1,
+   "precision": "4"
+  },
+  {
+   "description": "Severity becomes Moderate when % of zones with this pest+stage reaches this value. Overrides the parent Pest Filter moderate_threshold when set.",
+   "fieldname": "moderate_threshold",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Moderate Threshold",
+   "non_negative": 1,
+   "precision": "4"
+  },
+  {
+   "description": "Severity becomes High when % of zones with this pest+stage reaches this value. Overrides the parent Pest Filter high_threshold when set.",
+   "fieldname": "high_threshold",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "High Threshold",
+   "non_negative": 1,
+   "precision": "4"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-10-30 02:11:14.989962",
+ "modified": "2026-05-21 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Pests Stages",

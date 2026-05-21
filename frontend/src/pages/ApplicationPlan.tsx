@@ -175,6 +175,14 @@ interface ChemRow extends BomChemical {
   /** Stable id so React doesn't re-mount unrelated rows when items change. */
   rowId: string;
   source?: string;
+  /** Source of truth from the BOM — the per-1000 L Tank-Mix rate. The
+   *  visible ``stock_qty`` field is auto-derived as
+   *  ``bom_rate × (waterVolumeL / 1000)`` whenever the water volume
+   *  changes (and area changes propagate to water volume). Once the
+   *  operator types a new ``stock_qty`` we set ``rate_override`` so
+   *  the auto-recalc stops touching this row. */
+  bom_rate?: number;
+  rate_override?: boolean;
 }
 
 /** Return a human message when ``qty`` falls outside the limits for
@@ -381,10 +389,16 @@ export function ApplicationPlan() {
             const fallback = c.is_fertilizer
               ? d.fertilizer_warehouses
               : d.chemical_warehouses;
+            // ``c.stock_qty`` from the BOM is the per-1000 L Tank-Mix rate.
+            // Store it as ``bom_rate`` so the water-volume recalc can scale
+            // ``stock_qty`` while preserving the master recipe.
+            const bomRate = Number(c.stock_qty) || 0;
             return {
               ...c,
               rowId: `${c.item_code}-${i}`,
               source: first?.[0] || (fallback?.length ? fallback[0] : ""),
+              bom_rate: bomRate,
+              rate_override: false,
             };
           }),
         );
@@ -529,6 +543,27 @@ export function ApplicationPlan() {
     }
     setArea("");
   }, [scope, areaHa, waterVolumeL, bomDetails]);
+
+  // Auto-derive each chemical's stock_qty from the BOM's per-1000-L rate
+  // scaled by the current water volume. The chain is:
+  //   scope → areaHa → waterVolumeL → stock_qty
+  // Rows with ``rate_override = true`` are skipped — once the operator
+  // types a manual qty, that row sticks until the BOM is reloaded.
+  useEffect(() => {
+    const wv = parseFloat(waterVolume) || 0;
+    if (wv <= 0) return;
+    const ratio = wv / WATER_VOLUME_RATE; // 1 = BOM batch is "per 1000 L"
+    setChemRows((prev) =>
+      prev.map((c) => {
+        if (c.rate_override) return c;
+        const bomRate = Number(c.bom_rate ?? 0);
+        if (!bomRate) return c;
+        const next = Math.round(bomRate * ratio * 10000) / 10000;
+        if (next === c.stock_qty) return c;
+        return { ...c, stock_qty: next };
+      }),
+    );
+  }, [waterVolume]);
 
   const zonesInGh: ZoneGeoLike[] = useMemo(() => {
     if (!greenhouse) return [];
@@ -1629,6 +1664,11 @@ export function ApplicationPlan() {
                                           onChange={(e) =>
                                             updateChem(c.rowId, {
                                               stock_qty: Number(e.target.value),
+                                              // Lock this row from the
+                                              // water-volume auto-recalc as
+                                              // soon as the operator types
+                                              // a manual override.
+                                              rate_override: true,
                                             })
                                           }
                                           type="number"

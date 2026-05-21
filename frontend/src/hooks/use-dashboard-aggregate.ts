@@ -10,7 +10,8 @@ export type Endpoint =
   | "fcm"
   | "greenhouse_detail"
   | "heatmaps_grid"
-  | "application_plan_diagnose";
+  | "application_plan_diagnose"
+  | "trends";
 
 export interface AggregateFilters {
   from_date: string;
@@ -49,6 +50,7 @@ const METHOD: Record<Endpoint, string> = {
   heatmaps_grid:      "upande_scp.serverscripts.dashboard_aggregates.heatmaps_grid",
   application_plan_diagnose:
     "upande_scp.serverscripts.dashboard_aggregates.application_plan_diagnose",
+  trends:             "upande_scp.serverscripts.dashboard_aggregates.trends",
 };
 
 function newJobId(): string {

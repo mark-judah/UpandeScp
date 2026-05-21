@@ -23,6 +23,9 @@ from upande_scp.serverscripts.dashboard_aggregates._heatmaps        import (
 from upande_scp.serverscripts.dashboard_aggregates._application_plan import (
     application_plan_diagnose as _application_plan_diagnose,
 )
+from upande_scp.serverscripts.dashboard_aggregates._trends import (
+    trends as _trends,
+)
 
 
 def _truthy(v) -> bool:
@@ -78,3 +81,8 @@ def heatmaps_grid(**kwargs):
 @frappe.whitelist()
 def application_plan_diagnose(**kwargs):
     return _call(_application_plan_diagnose, **kwargs)
+
+
+@frappe.whitelist()
+def trends(**kwargs):
+    return _call(_trends, **kwargs)

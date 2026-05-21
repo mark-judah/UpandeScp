@@ -60,7 +60,15 @@ export function OverviewTab({
   toDate: string;
   crop?: string;
 }) {
-  const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, highAlerts: 0 };
+  const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, blockCount: 0, highAlerts: 0 };
+  // Avocado scouting uses Blocks (open-field), everything else uses Greenhouses.
+  // Fall back to data shape too, so the label tracks reality even if the
+  // crop string ever drifts (case/whitespace) or a new block-crop is added.
+  const showBlocks =
+    (crop || "").trim().toLowerCase() === "avocado" ||
+    (k.blockCount > 0 && k.greenhouseCount === 0);
+  const unitLabel = showBlocks ? "Blocks" : "Greenhouses";
+  const unitValue = showBlocks ? k.blockCount : k.greenhouseCount;
   const daily = data?.daily ?? [];
   const totals = data
     ? [
@@ -108,8 +116,8 @@ export function OverviewTab({
         />
         <Kpi label="Zones Scouted" value={k.zonesScouted} hint="zone visits" />
         <Kpi
-          label="Greenhouses"
-          value={k.greenhouseCount}
+          label={unitLabel}
+          value={unitValue}
           hint="monitored"
         />
         <Kpi

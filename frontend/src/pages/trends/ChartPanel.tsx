@@ -23,8 +23,8 @@ import {
   printChartAsPdf,
   slugifyForFile,
 } from "@/lib/chart-export";
-import type { ObsKey, Selection } from "./trends-types";
-import { buildSeries, type EntryIndex } from "./aggregate";
+import type { ObsKey, Selection, TrendsPayload } from "./trends-types";
+import { buildSeries, type MatrixIndex } from "./aggregate";
 
 function SideLegend({
   items,
@@ -77,18 +77,18 @@ const PALETTE = [
 ];
 
 export function ChartPanel({
+  payload,
   index,
   selections,
   obs,
   stages,
-  zonesByGreenhouse,
   child,
 }: {
-  index: EntryIndex;
+  payload: TrendsPayload;
+  index: MatrixIndex;
   selections: Selection[];
   obs: ObsKey | null;
   stages: string[];
-  zonesByGreenhouse: Record<string, number>;
   child?: { stage: string };
 }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -113,15 +113,8 @@ export function ChartPanel({
     }, 120);
   };
   const seriesData = useMemo(
-    () =>
-      buildSeries(
-        index,
-        selections,
-        obs,
-        child?.stage || null,
-        zonesByGreenhouse,
-      ),
-    [index, selections, obs, child?.stage, zonesByGreenhouse],
+    () => buildSeries(payload, index, selections, obs, child?.stage || null),
+    [payload, index, selections, obs, child?.stage],
   );
   const config = useMemo<ChartConfig>(() => {
     const c: ChartConfig = {};
@@ -328,11 +321,11 @@ export function ChartPanel({
         Array.from(picked).map((stage) => (
           <div key={stage} className="mt-3">
             <ChartPanel
+              payload={payload}
               index={index}
               selections={selections}
               obs={obs}
               stages={[]}
-              zonesByGreenhouse={zonesByGreenhouse}
               child={{ stage }}
             />
           </div>

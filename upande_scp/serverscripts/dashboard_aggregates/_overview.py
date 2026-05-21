@@ -74,13 +74,26 @@ def _build(from_date, to_date, crop, scope, job_id: str = "") -> dict:
 
 
 def _kpis(where: str, params: dict) -> dict:
+    # Resolve each entry's production unit via Warehouse.warehouse_type, not by
+    # which column it sits in: greenhouse-typed warehouses → "Greenhouses" KPI,
+    # block-typed → "Blocks" KPI. Some entries store a block in the greenhouse
+    # column (or vice-versa), so we LEFT JOIN both columns and classify by type.
     row = frappe.db.sql(
         f"""
         SELECT
             COUNT(DISTINCT se.scouts_name) AS total_scouts,
             COUNT(DISTINCT se.name)        AS zones_scouted,
-            COUNT(DISTINCT COALESCE(NULLIF(se.greenhouse, ''), se.block)) AS gh_count
+            COUNT(DISTINCT CASE
+                WHEN gw.warehouse_type = 'Greenhouse' THEN gw.name
+                WHEN bw.warehouse_type = 'Greenhouse' THEN bw.name
+            END) AS gh_count,
+            COUNT(DISTINCT CASE
+                WHEN gw.warehouse_type = 'Block' THEN gw.name
+                WHEN bw.warehouse_type = 'Block' THEN bw.name
+            END) AS block_count
         FROM `tabScouting Entry` se
+        LEFT JOIN `tabWarehouse` gw ON gw.name = se.greenhouse
+        LEFT JOIN `tabWarehouse` bw ON bw.name = se.block
         WHERE {where}
         """,
         params,
@@ -90,6 +103,7 @@ def _kpis(where: str, params: dict) -> dict:
         "totalScouts":     int(row.get("total_scouts") or 0),
         "zonesScouted":    int(row.get("zones_scouted") or 0),
         "greenhouseCount": int(row.get("gh_count") or 0),
+        "blockCount":      int(row.get("block_count") or 0),
         "highAlerts":      0,  # overwritten in _build after _gh_health runs
     }
 

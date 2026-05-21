@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { LayoutGrid, Bug, Hexagon, Crosshair, Sparkles,
-         FileText, RefreshCw } from "lucide-react";
+import { FileText, RefreshCw } from "lucide-react";
+import PillNav from "@/components/PillNav";
 import {
   fetchCrops, fetchFarmsAndWarehouses, fetchScoutLookup,
   fetchZonesByGreenhouse, DEFAULT_CROP,
 } from "@/lib/scouting-api";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -232,13 +232,23 @@ export function Dashboard() {
 
       <div className="flex-1 px-4 py-4 md:px-6 md:py-6">
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="flex flex-col gap-4">
-          <TabsList className="self-start flex-wrap">
-            <TabsTrigger value="overview"><LayoutGrid />Overview</TabsTrigger>
-            <TabsTrigger value="pests"><Bug />Pests</TabsTrigger>
-            <TabsTrigger value="diseases"><Hexagon />Diseases</TabsTrigger>
-            <TabsTrigger value="traps"><Crosshair />Traps</TabsTrigger>
-            <TabsTrigger value="fcm"><Sparkles />FCM &amp; Moths</TabsTrigger>
-          </TabsList>
+          <PillNav
+            items={[
+              { label: "Overview",   href: "#overview" },
+              { label: "Pests",      href: "#pests" },
+              { label: "Diseases",   href: "#diseases" },
+              { label: "Traps",      href: "#traps" },
+              { label: "FCM & Moths", href: "#fcm" },
+            ]}
+            activeHref={`#${tab}`}
+            onSelect={(item) => setTab(item.href.slice(1) as TabId)}
+            baseColor="var(--primary)"
+            pillColor="var(--card)"
+            pillTextColor="var(--foreground)"
+            hoveredPillTextColor="var(--primary-foreground)"
+            initialLoadAnimation={false}
+            className="dashboard-pill-nav"
+          />
 
           <TabsContent value="overview" className="mt-0">
             {overview.loading && !overview.data ? (

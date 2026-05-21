@@ -2,6 +2,7 @@ export interface OverviewKpis {
   totalScouts: number;
   zonesScouted: number;
   greenhouseCount: number;
+  blockCount: number;
   highAlerts: number;
 }
 

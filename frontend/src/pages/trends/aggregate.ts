@@ -1,66 +1,22 @@
-import type { ScoutingEntry } from "@/lib/scouting-types";
-import type { ObsKey, Selection, TreeNode } from "./trends-types";
+import type {
+  ObsKey,
+  Selection,
+  TreeNode,
+  TrendsPayload,
+  TrendsOptions,
+} from "./trends-types";
 
-export function stationOf(entry: ScoutingEntry): string {
-  return (entry.block || entry.greenhouse || "").trim();
-}
-
-export function farmOf(
-  station: string,
-  greenhouseToFarm: Record<string, string>,
-): string {
-  return greenhouseToFarm[station] || "Unknown";
-}
-
-export interface OptionsBundle {
-  farmStations: Record<string, Record<string, number>>;
-  pests: Record<string, number>;
-  diseases: Record<string, number>;
-  stagesByObs: Record<string, Set<string>>;
-}
-
-export function gatherOptions(
-  entries: ScoutingEntry[],
-  greenhouseToFarm: Record<string, string>,
-): OptionsBundle {
-  const farmStations: Record<string, Record<string, number>> = {};
-  const pests: Record<string, number> = {};
-  const diseases: Record<string, number> = {};
-  const stagesByObs: Record<string, Set<string>> = {};
-
-  entries.forEach((e) => {
-    const station = stationOf(e);
-    const obsCount =
-      e.pests_scouting_entry.length + e.diseases_scouting_entry.length;
-    if (station && obsCount) {
-      const farm = farmOf(station, greenhouseToFarm);
-      if (!farmStations[farm]) farmStations[farm] = {};
-      farmStations[farm][station] =
-        (farmStations[farm][station] || 0) + obsCount;
-    }
-    e.pests_scouting_entry.forEach((p) => {
-      const name = (p.pest || "").trim();
-      if (!name) return;
-      pests[name] = (pests[name] || 0) + 1;
-      const key = `pest:${name}`;
-      if (!stagesByObs[key]) stagesByObs[key] = new Set();
-      if (p.stage) stagesByObs[key].add(p.stage);
-    });
-    e.diseases_scouting_entry.forEach((d) => {
-      const name = (d.disease || "").trim();
-      if (!name) return;
-      diseases[name] = (diseases[name] || 0) + 1;
-      const key = `disease:${name}`;
-      if (!stagesByObs[key]) stagesByObs[key] = new Set();
-      if (d.stage) stagesByObs[key].add(d.stage);
-    });
-  });
-
-  return { farmStations, pests, diseases, stagesByObs };
-}
+/* =============================================================
+ * Tree builders — picker UI input
+ *
+ * Backed by the ``options`` block on the server payload, so the
+ * shape (farms → stations, pests/diseases lists, stages per obs)
+ * is identical to what the previous client-side ``gatherOptions``
+ * produced; only the source changed.
+ * ============================================================= */
 
 export function buildStationTree(
-  farmStations: Record<string, Record<string, number>>,
+  farmStations: TrendsOptions["farmStations"],
 ): TreeNode[] {
   return Object.keys(farmStations)
     .sort()
@@ -83,8 +39,8 @@ export function buildStationTree(
 }
 
 export function buildObsTree(
-  pests: Record<string, number>,
-  diseases: Record<string, number>,
+  pests: TrendsOptions["pests"],
+  diseases: TrendsOptions["diseases"],
 ): TreeNode[] {
   const out: TreeNode[] = [];
   const pKeys = Object.keys(pests).sort();
@@ -116,7 +72,7 @@ export function buildObsTree(
   return out;
 }
 
-/** ID parsers — each tree row carries `farm:Name` or `station:Farm|Station`. */
+/** ID parsers — each tree row carries ``farm:Name`` or ``station:Farm|Station``. */
 export function parseSelection(id: string): Selection | null {
   if (id.startsWith("farm:")) {
     const farm = id.slice("farm:".length);
@@ -146,224 +102,241 @@ export function parseObs(id: string): ObsKey | null {
   return { kind, name, label: name };
 }
 
-function unitKey(entry: ScoutingEntry): string {
-  const block = (entry.block || "").trim();
-  if (block) {
-    const tree = (entry.tree || "").trim();
-    if (!tree) return "";
-    return `${block}::tree::${tree}`;
-  }
-  const zone = (entry.zone || "").trim();
-  if (zone) return `zone::${zone}`;
-  const bed = (entry.bed || "").trim();
-  return bed ? `bed::${bed}` : "";
-}
-
-/* ============================================================
- * Pre-indexed entry view
+/* =============================================================
+ * Series builder
  *
- * buildSeries is called once per chart panel × per stage drill-down. With a
- * naive nested loop it becomes O(stations × days × entries) which freezes
- * the page on multi-month ranges. We index once at the page level and pass
- * the cheap structure through to every panel.
- * ============================================================ */
-
-export interface EntryIndex {
-  /** station -> date -> list of entries on that date */
-  byStationDate: Map<string, Map<string, ScoutingEntry[]>>;
-  /** station -> Set of unit keys ever scouted in this period (denominator) */
-  unitsByStation: Map<string, Set<string>>;
-  /** stations grouped by farm (for farm-aggregate selections) */
-  stationsByFarm: Map<string, string[]>;
-  /** sorted dates that any of the indexed stations was scouted */
-  allDates: string[];
-}
-
-export function buildEntryIndex(
-  entries: ScoutingEntry[],
-  greenhouseToFarm: Record<string, string>,
-): EntryIndex {
-  const byStationDate = new Map<string, Map<string, ScoutingEntry[]>>();
-  const unitsByStation = new Map<string, Set<string>>();
-  const stationsByFarm = new Map<string, Set<string>>();
-  const dates = new Set<string>();
-
-  for (const e of entries) {
-    const stn = stationOf(e);
-    const date = e.date_of_capture;
-    if (!stn || !date) continue;
-
-    let byDate = byStationDate.get(stn);
-    if (!byDate) {
-      byDate = new Map();
-      byStationDate.set(stn, byDate);
-    }
-    let list = byDate.get(date);
-    if (!list) {
-      list = [];
-      byDate.set(date, list);
-    }
-    list.push(e);
-
-    const u = unitKey(e);
-    if (u) {
-      let set = unitsByStation.get(stn);
-      if (!set) {
-        set = new Set();
-        unitsByStation.set(stn, set);
-      }
-      set.add(u);
-    }
-
-    const farm = farmOf(stn, greenhouseToFarm);
-    let farmSet = stationsByFarm.get(farm);
-    if (!farmSet) {
-      farmSet = new Set();
-      stationsByFarm.set(farm, farmSet);
-    }
-    farmSet.add(stn);
-
-    dates.add(date);
-  }
-
-  return {
-    byStationDate,
-    unitsByStation,
-    stationsByFarm: new Map(
-      Array.from(stationsByFarm).map(([f, s]) => [f, Array.from(s).sort()]),
-    ),
-    allDates: Array.from(dates).sort(),
-  };
-}
-
-function entryMatches(
-  e: ScoutingEntry,
-  obs: ObsKey | null,
-  stage: string | null,
-): boolean {
-  if (!obs) {
-    return (
-      e.pests_scouting_entry.length > 0 || e.diseases_scouting_entry.length > 0
-    );
-  }
-  if (obs.kind === "pest") {
-    return e.pests_scouting_entry.some(
-      (p) => p.pest === obs.name && (!stage || (p.stage || "") === stage),
-    );
-  }
-  return e.diseases_scouting_entry.some(
-    (d) => d.disease === obs.name && (!stage || (d.stage || "") === stage),
-  );
-}
-
-/** Stations covered by a selection — single greenhouse or every greenhouse
- * in a farm. */
-function stationsForSelection(
-  sel: Selection,
-  index: EntryIndex,
-): string[] {
-  if (sel.kind === "station") return [sel.station];
-  return index.stationsByFarm.get(sel.farm) || [];
-}
+ * The chart shows ``% zones with the matching observation`` per day,
+ * per selection. The numerator is the count of distinct unit keys that
+ * matched on that day; the denominator is the structural total zones
+ * of the selection (sum of zonesByGreenhouse across covered stations).
+ *
+ * Unit keys are station-prefixed on the server (``block::tree::Tx``
+ * or ``zone::Zy``) so summing the per-station ``n`` from a row stays
+ * a correct distinct-unit count for the selection.
+ * ============================================================= */
 
 export interface DaySeriesPoint {
   date: string;
   [seriesLabel: string]: number | string | null;
 }
 
-/**
- * Total zones in the unit a selection covers.
- *
- * Source of truth is the ``zonesByGreenhouse`` map (Zone doctype counts via
- * ``get_zone_counts_by_greenhouse``). For a farm we sum across every
- * greenhouse the index has under that farm. Falls back to the in-period
- * scouted-units count if the structural map is missing for a station — the
- * data may not have all zones registered yet, so a fallback keeps the line
- * non-empty rather than dividing by zero.
- */
+export interface MatrixIndex {
+  /** dateIdx → stationIdx → n (any obs) */
+  any: Map<number, Map<number, number>>;
+  /** dateIdx → stationIdx → obsIdx → n */
+  kn: Map<number, Map<number, Map<number, number>>>;
+  /** dateIdx → stationIdx → obsIdx → stageIdx → n */
+  kns: Map<number, Map<number, Map<number, Map<number, number>>>>;
+  dateByIdx: string[];
+  dateIdxByDate: Map<string, number>;
+  stationIdxByName: Map<string, number>;
+  obsIdxByKey: Map<string, number>;
+  stageIdxByName: Map<string, number>;
+}
+
+/** Build the fast-lookup index from the server payload — runs once per
+ * payload (not per chart panel). Cheap: nested ``Map`` ops on a few
+ * thousand rows at most. */
+export function buildMatrixIndex(payload: TrendsPayload): MatrixIndex {
+  const any = new Map<number, Map<number, number>>();
+  for (const [d, s, n] of payload.byAny) {
+    let row = any.get(d);
+    if (!row) {
+      row = new Map();
+      any.set(d, row);
+    }
+    row.set(s, n);
+  }
+
+  const kn = new Map<number, Map<number, Map<number, number>>>();
+  for (const [d, s, o, n] of payload.byKindName) {
+    let stnMap = kn.get(d);
+    if (!stnMap) {
+      stnMap = new Map();
+      kn.set(d, stnMap);
+    }
+    let obsMap = stnMap.get(s);
+    if (!obsMap) {
+      obsMap = new Map();
+      stnMap.set(s, obsMap);
+    }
+    obsMap.set(o, n);
+  }
+
+  const kns = new Map<number, Map<number, Map<number, Map<number, number>>>>();
+  for (const [d, s, o, g, n] of payload.byKindNameStage) {
+    let stnMap = kns.get(d);
+    if (!stnMap) {
+      stnMap = new Map();
+      kns.set(d, stnMap);
+    }
+    let obsMap = stnMap.get(s);
+    if (!obsMap) {
+      obsMap = new Map();
+      stnMap.set(s, obsMap);
+    }
+    let stageMap = obsMap.get(o);
+    if (!stageMap) {
+      stageMap = new Map();
+      obsMap.set(o, stageMap);
+    }
+    stageMap.set(g, n);
+  }
+
+  const dateIdxByDate = new Map(payload.vocab.dates.map((d, i) => [d, i]));
+  const stationIdxByName = new Map(
+    payload.vocab.stations.map((s, i) => [s, i]),
+  );
+  const obsIdxByKey = new Map(payload.vocab.obs.map((o, i) => [o, i]));
+  const stageIdxByName = new Map(
+    payload.vocab.stages.map((g, i) => [g, i]),
+  );
+
+  return {
+    any,
+    kn,
+    kns,
+    dateByIdx: payload.vocab.dates,
+    dateIdxByDate,
+    stationIdxByName,
+    obsIdxByKey,
+    stageIdxByName,
+  };
+}
+
+function stationsForSelection(
+  sel: Selection,
+  stationsByFarm: Record<string, string[]>,
+): string[] {
+  if (sel.kind === "station") return [sel.station];
+  return stationsByFarm[sel.farm] || [];
+}
+
 function denomForSelection(
   sel: Selection,
-  index: EntryIndex,
+  stationsByFarm: Record<string, string[]>,
   zonesByGreenhouse: Record<string, number>,
+  unitsByStation: Record<string, number>,
 ): number {
-  const stations = stationsForSelection(sel, index);
+  const stations = stationsForSelection(sel, stationsByFarm);
   let total = 0;
   for (const stn of stations) {
     const fromMap = zonesByGreenhouse[stn];
     if (typeof fromMap === "number" && fromMap > 0) {
       total += fromMap;
     } else {
-      // Fallback: distinct units scouted in the period — better than 0.
-      total += index.unitsByStation.get(stn)?.size || 0;
+      // Fallback — same rule the prior client-side aggregate.ts used.
+      total += unitsByStation[stn] || 0;
     }
   }
   return total;
 }
 
-/**
- * Build the chart series data.
+/** Numerator: sum of per-(date, station) distinct unit counts.
  *
- * Per scouted day, per ``Selection``:
- *   numerator   = distinct zones with the matching observation that day
- *   denominator = total zones structurally present in the unit
- *                 (sum of ``zonesByGreenhouse[gh]`` across the selection's
- *                  greenhouses; constant per selection, day-independent)
- *   value       = round(num / denom × 100)
+ * Picks the most selective lookup table available:
+ *   * obs+stage → kns table
+ *   * obs only  → kn  table
+ *   * no obs    → any table
  *
- * "No entry ≠ zero": a day where none of the selection's stations were
- * scouted returns **null**, so Recharts' ``connectNulls`` bridges the gap
- * and the line walks straight to the next scouted day rather than diving
- * to 0% on every quiet weekend.
- */
+ * Each table already deduped unit keys server-side, so summing across
+ * stations is the same as a distinct-unit count for the selection. */
+function numeratorForCell(
+  index: MatrixIndex,
+  dateIdx: number,
+  stationIdxs: number[],
+  obsIdx: number | null,
+  stageIdx: number | null,
+): number {
+  let total = 0;
+  if (obsIdx === null) {
+    const stn = index.any.get(dateIdx);
+    if (!stn) return 0;
+    for (const sIdx of stationIdxs) total += stn.get(sIdx) || 0;
+    return total;
+  }
+  if (stageIdx === null || stageIdx === 0) {
+    const stn = index.kn.get(dateIdx);
+    if (!stn) return 0;
+    for (const sIdx of stationIdxs) {
+      const obs = stn.get(sIdx);
+      if (!obs) continue;
+      total += obs.get(obsIdx) || 0;
+    }
+    return total;
+  }
+  const stn = index.kns.get(dateIdx);
+  if (!stn) return 0;
+  for (const sIdx of stationIdxs) {
+    const obs = stn.get(sIdx);
+    if (!obs) continue;
+    const stages = obs.get(obsIdx);
+    if (!stages) continue;
+    total += stages.get(stageIdx) || 0;
+  }
+  return total;
+}
+
 export function buildSeries(
-  index: EntryIndex,
+  payload: TrendsPayload,
+  index: MatrixIndex,
   selections: Selection[],
   obs: ObsKey | null,
   stage: string | null,
-  zonesByGreenhouse: Record<string, number> = {},
 ): DaySeriesPoint[] {
-  if (!selections.length || !index.allDates.length) return [];
+  if (!selections.length || !payload.allDates.length) return [];
 
-  // Per-selection: list of stations + structural total-zones denominator.
-  const selStations: string[][] = selections.map((sel) =>
-    stationsForSelection(sel, index),
+  const obsKey = obs ? `${obs.kind}:${obs.name}` : null;
+  const obsIdx = obsKey ? index.obsIdxByKey.get(obsKey) ?? null : null;
+  const stageIdx = stage ? index.stageIdxByName.get(stage) ?? null : null;
+
+  // The server never indexed this (obs, stage) pair, so nothing matches
+  // — every day point becomes null and the chart shows a flat empty line.
+  if (obs && obsIdx === null) {
+    return payload.allDates.map((date) => {
+      const point: DaySeriesPoint = { date };
+      for (const sel of selections) point[sel.label] = null;
+      return point;
+    });
+  }
+
+  // Per-selection: station-index list and structural denominator.
+  const selStationIdxs: number[][] = selections.map((sel) =>
+    stationsForSelection(sel, payload.stationsByFarm)
+      .map((stn) => index.stationIdxByName.get(stn))
+      .filter((i): i is number => typeof i === "number"),
   );
   const selDenoms: number[] = selections.map((sel) =>
-    denomForSelection(sel, index, zonesByGreenhouse),
+    denomForSelection(
+      sel,
+      payload.stationsByFarm,
+      payload.zonesByGreenhouse,
+      payload.unitsByStation,
+    ),
   );
 
-  return index.allDates.map((date) => {
+  return payload.allDates.map((date) => {
     const point: DaySeriesPoint = { date };
+    const dateIdx = index.dateIdxByDate.get(date);
+    if (typeof dateIdx !== "number") {
+      for (const sel of selections) point[sel.label] = null;
+      return point;
+    }
     selections.forEach((sel, i) => {
-      const stations = selStations[i];
       const denom = selDenoms[i];
-      const matchedUnits = new Set<string>();
-
-      for (const stn of stations) {
-        const byDate = index.byStationDate.get(stn);
-        if (!byDate) continue;
-        const dayEntries = byDate.get(date);
-        if (!dayEntries || !dayEntries.length) continue;
-        for (const e of dayEntries) {
-          if (!entryMatches(e, obs, stage)) continue;
-          const u = unitKey(e);
-          if (u) matchedUnits.add(u);
-        }
-      }
-
-      // Skip rule: a day where this specific observation (and stage, if
-      // drilled in) was not seen is a *gap* — connectNulls bridges to the
-      // next "found it" day. Avoids the chart diving to 0% on quiet days.
-      if (matchedUnits.size === 0) {
+      const num = numeratorForCell(
+        index,
+        dateIdx,
+        selStationIdxs[i],
+        obsIdx,
+        stageIdx,
+      );
+      if (num === 0 || denom <= 0) {
+        // Treat a "no match" day as a gap — connectNulls bridges it.
         point[sel.label] = null;
-        return;
+      } else {
+        point[sel.label] = Math.round(((num / denom) * 100) * 10) / 10;
       }
-      if (denom <= 0) {
-        point[sel.label] = null;
-        return;
-      }
-      const pct = (matchedUnits.size / denom) * 100;
-      point[sel.label] = Math.round(pct * 10) / 10;
     });
     return point;
   });

@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, MapPin, Sparkles, RefreshCw } from "lucide-react";
-import { useScouting } from "@/hooks/use-scouting";
-import {
-  fetchCrops,
-  fetchFarmsAndWarehouses,
-  fetchZonesByGreenhouse,
-  DEFAULT_CROP,
-} from "@/lib/scouting-api";
+import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
+import { fetchCrops, DEFAULT_CROP } from "@/lib/scouting-api";
 import {
   Select,
   SelectContent,
@@ -30,13 +25,13 @@ import { ymd } from "@/lib/utils";
 import { TristateTree } from "./trends/TristateTree";
 import { ChartPanel } from "./trends/ChartPanel";
 import {
-  buildEntryIndex,
+  buildMatrixIndex,
   buildObsTree,
   buildStationTree,
-  gatherOptions,
   parseObs,
   parseSelection,
 } from "./trends/aggregate";
+import type { TrendsPayload } from "./trends/trends-types";
 
 function defaultRange() {
   const today = new Date();
@@ -51,8 +46,6 @@ export function Trends() {
   const [crops, setCrops] = useState<
     Array<{ name: string; crop_name: string; farms?: string[] }>
   >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
-  const [farmsByGh, setFarmsByGh] = useState<Record<string, string>>({});
-  const [zonesByGh, setZonesByGh] = useState<Record<string, number>>({});
   const [stationChecks, setStationChecks] = useState<Set<string>>(new Set());
   const [obsChecks, setObsChecks] = useState<Set<string>>(new Set());
 
@@ -66,34 +59,27 @@ export function Trends() {
           : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
       );
     });
-    fetchFarmsAndWarehouses().then((farms) => {
-      const ghToFarm: Record<string, string> = {};
-      Object.entries(farms).forEach(([farm, ghs]) => {
-        (ghs || []).forEach((g) => (ghToFarm[g] = farm));
-      });
-      setFarmsByGh(ghToFarm);
-    });
-    // Total zones per greenhouse — denominator for trend percentages.
-    fetchZonesByGreenhouse().then(setZonesByGh);
   }, []);
 
-  const { data, loading, progress, weeksLoaded, weeksTotal, error, reload } = useScouting({
-    from,
-    to,
-    crop,
-  });
+  const { data, loading, error, progress, reload } =
+    useDashboardAggregate<TrendsPayload>(
+      "trends",
+      {
+        from_date: from,
+        to_date: to,
+        crop: crop === DEFAULT_CROP ? "" : crop,
+      },
+      true,
+    );
 
-  const opts = useMemo(
-    () => (data ? gatherOptions(data.entries, farmsByGh) : null),
-    [data, farmsByGh],
-  );
   const stationTree = useMemo(
-    () => (opts ? buildStationTree(opts.farmStations) : []),
-    [opts],
+    () => (data ? buildStationTree(data.options.farmStations) : []),
+    [data],
   );
   const obsTree = useMemo(
-    () => (opts ? buildObsTree(opts.pests, opts.diseases) : []),
-    [opts],
+    () =>
+      data ? buildObsTree(data.options.pests, data.options.diseases) : [],
+    [data],
   );
 
   const selections = useMemo(
@@ -111,21 +97,13 @@ export function Trends() {
     [obsChecks],
   );
 
-  // Heavy index built once per (data, farm-map) pair and shared across every
-  // chart panel — replaces the O(stations × days × entries) per-panel scan.
-  const entryIndex = useMemo(
-    () => buildEntryIndex(data?.entries || [], farmsByGh),
-    [data?.entries, farmsByGh],
+  // Heavy index built once per payload — every ChartPanel reuses it.
+  const matrixIndex = useMemo(
+    () => (data ? buildMatrixIndex(data) : null),
+    [data],
   );
 
-  const stagesByObsId: Record<string, string[]> = useMemo(() => {
-    if (!opts) return {};
-    const out: Record<string, string[]> = {};
-    Object.entries(opts.stagesByObs).forEach(([k, set]) => {
-      out[k] = Array.from(set).sort();
-    });
-    return out;
-  }, [opts]);
+  const stagesByObsId: Record<string, string[]> = data?.options.stagesByObs || {};
 
   return (
     <div className="flex flex-col min-h-svh">
@@ -224,7 +202,7 @@ export function Trends() {
             <Button
               variant="default"
               size="sm"
-              onClick={() => reload()}
+              onClick={() => reload({ force: true })}
               className="h-9"
             >
               <RefreshCw className="h-3.5 w-3.5" />
@@ -253,15 +231,15 @@ export function Trends() {
               series.
             </p>
           </Card>
-        ) : (
+        ) : data && matrixIndex ? (
           <>
             {observations.length === 0 ? (
               <ChartPanel
-                index={entryIndex}
+                payload={data}
+                index={matrixIndex}
                 selections={selections}
                 obs={null}
                 stages={[]}
-                zonesByGreenhouse={zonesByGh}
               />
             ) : (
               observations.map((o) => {
@@ -269,23 +247,21 @@ export function Trends() {
                 return (
                   <ChartPanel
                     key={key}
-                    index={entryIndex}
+                    payload={data}
+                    index={matrixIndex}
                     selections={selections}
                     obs={o}
                     stages={stagesByObsId[key] || []}
-                    zonesByGreenhouse={zonesByGh}
                   />
                 );
               })
             )}
           </>
-        )}
+        ) : null}
       </div>
       <LoadingOverlay
-        open={loading}
-        progress={progress}
-        weeksLoaded={weeksLoaded}
-        weeksTotal={weeksTotal}
+        open={loading && !data}
+        progress={progress?.percent ?? 0}
       />
     </div>
   );

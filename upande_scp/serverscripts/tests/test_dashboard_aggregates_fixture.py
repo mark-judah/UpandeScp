@@ -30,14 +30,25 @@ _TEST_TRAP = "_TEST Yellow Sticky"
 _TEST_SCOUT = "_TEST Scout 001"
 
 
-def _ensure_warehouse(name: str, is_group: int = 0, parent: str = ""):
+def _ensure_warehouse_type(name: str):
+    if not frappe.db.exists("Warehouse Type", name):
+        frappe.get_doc({"doctype": "Warehouse Type", "name": name}).insert(
+            ignore_permissions=True, ignore_if_duplicate=True,
+        )
+
+
+def _ensure_warehouse(name: str, is_group: int = 0, parent: str = "",
+                      warehouse_type: str = ""):
     if not frappe.db.exists("Warehouse", name):
+        if warehouse_type:
+            _ensure_warehouse_type(warehouse_type)
         doc = frappe.get_doc({
             "doctype": "Warehouse",
             "warehouse_name": name.replace("_TEST ", ""),
             "name": name,
             "is_group": is_group,
             "parent_warehouse": parent,
+            "warehouse_type": warehouse_type or None,
         })
         doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
 
@@ -67,9 +78,9 @@ def _ensure_trap(name: str):
 def _ensure_masters():
     _ensure_warehouse(_TEST_FARM_A, is_group=1)
     _ensure_warehouse(_TEST_FARM_B, is_group=1)
-    _ensure_warehouse(_TEST_GH_1, parent=_TEST_FARM_A)
-    _ensure_warehouse(_TEST_GH_2, parent=_TEST_FARM_A)
-    _ensure_warehouse(_TEST_GH_3, parent=_TEST_FARM_B)
+    _ensure_warehouse(_TEST_GH_1, parent=_TEST_FARM_A, warehouse_type="Greenhouse")
+    _ensure_warehouse(_TEST_GH_2, parent=_TEST_FARM_A, warehouse_type="Greenhouse")
+    _ensure_warehouse(_TEST_GH_3, parent=_TEST_FARM_B, warehouse_type="Greenhouse")
     _ensure_pest(_TEST_PEST_THRIPS)
     _ensure_pest(_TEST_PEST_FCM)
     _ensure_disease(_TEST_DISEASE_PM)

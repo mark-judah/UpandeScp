@@ -12,7 +12,7 @@ import {
   Layers,
   FileText,
   GitFork,
-  ShieldCheck,
+  Settings,
 } from "lucide-react";
 import {
   Sidebar,
@@ -97,7 +97,7 @@ const NAV: NavSection[] = [
         kind: "view",
         view: "settings",
         label: "Settings",
-        icon: ShieldCheck,
+        icon: Settings,
         requireRoles: ["General Manager", "System Manager", "Administrator"],
       },
       {

@@ -15,6 +15,7 @@
 import { useEffect, useState } from "react";
 import {
   Beaker,
+  Gauge,
   Loader2,
   MapPin,
   Settings as SettingsIcon,
@@ -30,13 +31,14 @@ import { AccessTab } from "@/components/settings/AccessTab";
 import { ChemicalsTab } from "@/components/settings/ChemicalsTab";
 import { FarmMapTab } from "@/components/settings/FarmMapTab";
 import { SprayPlanTab } from "@/components/settings/SprayPlanTab";
+import { ThresholdsTab } from "@/components/settings/ThresholdsTab";
 import { FrappeError } from "@/lib/frappe";
 import {
   fetchSettingsBundle,
   type SettingsBundle,
 } from "@/lib/settings-api";
 
-const TABS = ["access", "spray-plan", "farms", "chemicals"] as const;
+const TABS = ["access", "spray-plan", "thresholds", "farms", "chemicals"] as const;
 type TabId = (typeof TABS)[number];
 
 function getInitialTab(): TabId {
@@ -160,6 +162,10 @@ export function Settings() {
                 <Sliders />
                 Spray Plan
               </TabsTrigger>
+              <TabsTrigger value="thresholds">
+                <Gauge />
+                Thresholds
+              </TabsTrigger>
               <TabsTrigger value="farms">
                 <MapPin />
                 Farms & Map
@@ -181,6 +187,9 @@ export function Settings() {
                   setBundle({ ...bundle, spray_plan: saved })
                 }
               />
+            </TabsContent>
+            <TabsContent value="thresholds">
+              <ThresholdsTab />
             </TabsContent>
             <TabsContent value="farms">
               <FarmMapTab

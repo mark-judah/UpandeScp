@@ -706,42 +706,14 @@ export function ApplicationPlan() {
       })),
     [bootstrap],
   );
-  // Kits and spray teams are farm-scoped: once the user picks a farm
-  // (explicit filter, or inferred from the chosen greenhouse / single
-  // allowed farm) only the kits / teams that belong to that farm should
-  // appear in their pickers. ``weatherFarm`` already resolves to the
-  // right context; reuse it here so the rule stays consistent.
   const kitList = useMemo(
     () =>
-      (bootstrap?.kits || [])
-        .filter((k) => !weatherFarm || k.custom_farm === weatherFarm)
-        .map((k) => ({
-          kit: k.kit,
-          warehouse: k.warehouse,
-          custom_farm: k.custom_farm,
-        })),
-    [bootstrap, weatherFarm],
+      (bootstrap?.kits || []).map((k) => ({
+        kit: k.kit,
+        warehouse: k.warehouse,
+      })),
+    [bootstrap],
   );
-
-  const sprayTeamList = useMemo(
-    () =>
-      (bootstrap?.spray_teams || []).filter(
-        (t) => !weatherFarm || t.custom_farm === weatherFarm,
-      ),
-    [bootstrap, weatherFarm],
-  );
-
-  // Drop a previously-picked Kit / Spray Team when it no longer belongs
-  // to the active farm, so the form doesn't carry a hidden cross-farm
-  // selection forward into submission.
-  useEffect(() => {
-    if (kit && !kitList.some((k) => k.kit === kit)) setKit("");
-  }, [kit, kitList]);
-  useEffect(() => {
-    if (sprayTeam && !sprayTeamList.some((t) => t.name === sprayTeam)) {
-      setSprayTeam("");
-    }
-  }, [sprayTeam, sprayTeamList]);
 
   const updateChem = (rowId: string, patch: Partial<ChemRow>) =>
     setChemRows((prev) =>
@@ -1453,7 +1425,7 @@ export function ApplicationPlan() {
               </div>
               <div className="col-span-2">
                 <SprayTeamEditor
-                  teams={sprayTeamList}
+                  teams={bootstrap?.spray_teams || []}
                   team={sprayTeam}
                   onTeamChange={setSprayTeam}
                   members={teamMembers}

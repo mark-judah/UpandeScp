@@ -106,18 +106,17 @@ export function Trends() {
   );
 
   // Load the per-stage / aggregate thresholds for the chosen crop so the
-  // ChartPanel can draw the Low / Mod / High reference lines. We deliberately
-  // fetch here (not bundled into the trends aggregator) so editing
-  // thresholds via Settings → Thresholds re-renders chart bands without
-  // invalidating the 30-day trends payload cache.
+  // ChartPanel can draw the Low / Mod / High reference lines. Pass the
+  // literal crop name (NOT the empty-string convention the aggregate
+  // endpoint uses for the default crop) — thresholds_api keys by the
+  // Crop Scouted doc name and needs the real value.
   useEffect(() => {
-    const c = crop === DEFAULT_CROP ? "" : crop;
-    if (!c) {
+    if (!crop) {
       setThresholdBundle(null);
       return;
     }
     let cancelled = false;
-    getThresholds(c)
+    getThresholds(crop)
       .then((b) => {
         if (!cancelled) setThresholdBundle(b);
       })

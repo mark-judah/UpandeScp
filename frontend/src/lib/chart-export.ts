@@ -82,6 +82,21 @@ function findChartSvg(container: HTMLElement): SVGSVGElement | null {
   return svg && svg.tagName.toLowerCase() === "svg" ? svg : null;
 }
 
+function findChartSvgs(container: HTMLElement): SVGSVGElement[] {
+  // Every recharts chart inside the export container — the parent plus
+  // any expanded stage-drill children — so the export can stack them.
+  const surfaces = Array.from(
+    container.querySelectorAll<SVGSVGElement>(
+      ".recharts-wrapper svg.recharts-surface",
+    ),
+  );
+  if (surfaces.length) return surfaces;
+  // Fallback: any top-level chart SVG.
+  return Array.from(
+    container.querySelectorAll<SVGSVGElement>(".recharts-wrapper svg"),
+  );
+}
+
 export type LegendItem = { label: string; color: string };
 
 export type ChartExportOptions = {
@@ -101,47 +116,62 @@ export async function exportChartAsPng(
   filename: string,
   opts: ChartExportOptions = {},
 ): Promise<void> {
-  const svg = findChartSvg(container);
-  if (!svg) throw new Error("No chart SVG found inside container.");
+  const svgs = findChartSvgs(container);
+  if (!svgs.length) throw new Error("No chart SVG found inside container.");
 
-  const chartW = svg.clientWidth || svg.viewBox.baseVal.width || 800;
-  const chartH = svg.clientHeight || svg.viewBox.baseVal.height || 400;
+  // Rasterise every chart inside the export container — parent plus any
+  // expanded stage drill-downs — and stack them vertically. Each chart is
+  // optionally preceded by its CardTitle text so the resulting PNG reads
+  // top-to-bottom: "Thrips", chart; "Thrips · Adult", chart; etc.
+  const sources = await Promise.all(
+    svgs.map(async (svg) => {
+      const w = svg.clientWidth || svg.viewBox.baseVal.width || 800;
+      const h = svg.clientHeight || svg.viewBox.baseVal.height || 400;
+      const inlined = inlineSvgStyles(svg);
+      inlined.setAttribute("width", String(w));
+      inlined.setAttribute("height", String(h));
+      const blob = new Blob([svgString(inlined)], {
+        type: "image/svg+xml;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () =>
+          reject(new Error("Failed to rasterise chart SVG."));
+        img.src = url;
+      });
+      return { img, url, w, h, title: chartTitleFor(svg) };
+    }),
+  );
 
-  const inlined = inlineSvgStyles(svg);
-  inlined.setAttribute("width", String(chartW));
-  inlined.setAttribute("height", String(chartH));
-  const svgBlob = new Blob([svgString(inlined)], {
-    type: "image/svg+xml;charset=utf-8",
-  });
-  const url = URL.createObjectURL(svgBlob);
-
-  const img = new Image();
-  await new Promise<void>((resolve, reject) => {
-    img.onload = () => resolve();
-    img.onerror = () =>
-      reject(new Error("Failed to rasterise chart SVG."));
-    img.src = url;
-  });
-
+  const chartW = Math.max(...sources.map((s) => s.w));
   // Layout in CSS pixels — scaled up by PNG_SCALE when committed to canvas.
   const hasTitle = !!opts.title;
   const headerH = hasTitle ? 56 : 0;
   const legendItems = opts.legend || [];
   const legendW = legendItems.length ? 180 : 0;
   const pad = 16;
+  const subTitleH = 22; // height of per-chart subtitle row (when present)
+  const chartGap = 16;
+  const subtitleRowsH = sources.reduce(
+    (sum, s) => sum + (s.title ? subTitleH : 0),
+    0,
+  );
+  const chartsH = sources.reduce((sum, s) => sum + s.h, 0);
+  const gapsH = chartGap * Math.max(0, sources.length - 1);
   const totalW = chartW + legendW + (legendW ? pad : 0);
-  const totalH = chartH + headerH;
+  const totalH = headerH + chartsH + subtitleRowsH + gapsH;
 
   const canvas = document.createElement("canvas");
   canvas.width = totalW * PNG_SCALE;
   canvas.height = totalH * PNG_SCALE;
   const ctx = canvas.getContext("2d");
   if (!ctx) {
-    URL.revokeObjectURL(url);
+    sources.forEach((s) => URL.revokeObjectURL(s.url));
     throw new Error("Canvas 2D context unavailable.");
   }
   ctx.scale(PNG_SCALE, PNG_SCALE);
-  // White paint underneath so the PNG isn't transparent.
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, totalW, totalH);
 
@@ -180,8 +210,23 @@ export async function exportChartAsPng(
     }
   }
 
-  ctx.drawImage(img, 0, headerH, chartW, chartH);
-  URL.revokeObjectURL(url);
+  // Per-chart row stack — subtitle (if present), then the chart image.
+  let cursorY = headerH;
+  for (let i = 0; i < sources.length; i++) {
+    const s = sources[i];
+    if (s.title) {
+      ctx.fillStyle = "#334155";
+      ctx.font =
+        "600 13px Inter, system-ui, -apple-system, Segoe UI, Arial, sans-serif";
+      ctx.textBaseline = "top";
+      ctx.fillText(s.title, 8, cursorY + 4);
+      cursorY += subTitleH;
+    }
+    ctx.drawImage(s.img, 0, cursorY, s.w, s.h);
+    cursorY += s.h;
+    if (i < sources.length - 1) cursorY += chartGap;
+  }
+  sources.forEach((s) => URL.revokeObjectURL(s.url));
 
   if (legendItems.length) {
     const lx = chartW + pad;
@@ -210,6 +255,23 @@ export async function exportChartAsPng(
     ),
   );
   triggerDownload(pngBlob, filename.endsWith(".png") ? filename : `${filename}.png`);
+}
+
+/** Walk up from a chart SVG to find the nearest CardTitle text — used
+ *  by the multi-chart PNG export so each stacked chart gets a small
+ *  subtitle row above it. Returns "" if no title can be located. */
+function chartTitleFor(svg: SVGSVGElement): string {
+  // The recharts SVG lives inside a CardContent which sits inside a
+  // Card that has a CardHeader at the top. Walk up until we hit an
+  // element with a "CardTitle"-like h3/div, or bail.
+  let node: Element | null = svg.closest(
+    "[class*='card'], [class*='Card']",
+  );
+  if (!node) return "";
+  // The chart card uses <h3 class="font-semibold ...">{title}</h3> from
+  // CardTitle. Grab the first heading we can find.
+  const heading = node.querySelector("h3, h2, [data-card-title]");
+  return heading?.textContent?.trim() || "";
 }
 
 /** Resolve a CSS color string (including ``var(--foo)``) to a concrete
@@ -249,13 +311,20 @@ export function printChartAsPdf(
   title: string,
   opts: { badge?: string; legend?: LegendItem[] } = {},
 ): void {
-  const svg = findChartSvg(container);
-  if (!svg) return;
-  const inlined = inlineSvgStyles(svg);
-  const w = svg.clientWidth || svg.viewBox.baseVal.width || 800;
-  const h = svg.clientHeight || svg.viewBox.baseVal.height || 400;
-  inlined.setAttribute("width", String(w));
-  inlined.setAttribute("height", String(h));
+  const svgs = findChartSvgs(container);
+  if (!svgs.length) return;
+
+  // Inline + stamp each SVG with its own width/height, then collect a
+  // (subtitle, svgString) tuple per chart so the printed page can stack
+  // them top-to-bottom with the right Card title above each.
+  const chartBlocks = svgs.map((svg) => {
+    const inlined = inlineSvgStyles(svg);
+    const w = svg.clientWidth || svg.viewBox.baseVal.width || 800;
+    const h = svg.clientHeight || svg.viewBox.baseVal.height || 400;
+    inlined.setAttribute("width", String(w));
+    inlined.setAttribute("height", String(h));
+    return { svg: svgString(inlined), sub: chartTitleFor(svg) };
+  });
 
   const esc = (s: string) =>
     s.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -271,6 +340,15 @@ export function printChartAsPdf(
     ? `<aside class="legend"><ul>${legendItems.join("")}</ul></aside>`
     : "";
 
+  const chartsHtml = chartBlocks
+    .map(
+      (b, i) =>
+        `<section class="chart-row${i > 0 ? " break-soft" : ""}">${
+          b.sub ? `<h2>${esc(b.sub)}</h2>` : ""
+        }<div class="chart">${b.svg}</div></section>`,
+    )
+    .join("");
+
   const html = `<!doctype html>
 <html>
 <head>
@@ -280,10 +358,14 @@ export function printChartAsPdf(
     @page { margin: 18mm; }
     body { font: 13px Inter, Arial, sans-serif; color: #1f2937; margin: 0; padding: 16px; }
     h1 { font-size: 18px; margin: 0; display: inline-block; }
+    h2 { font-size: 14px; margin: 0 0 6px 0; color: #334155; font-weight: 600; }
     .badge { display: inline-block; background: #e2e8f0; color: #334155; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 9999px; margin-left: 8px; vertical-align: middle; }
     .meta { font-size: 11px; color: #6b7280; margin: 4px 0 16px 0; }
-    .layout { display: flex; gap: 16px; align-items: stretch; }
-    .chart { flex: 1; min-width: 0; }
+    .layout { display: flex; gap: 16px; align-items: flex-start; }
+    .charts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+    .chart-row { page-break-inside: avoid; }
+    .chart-row.break-soft { border-top: 1px dashed #e5e7eb; padding-top: 12px; }
+    .chart { width: 100%; }
     .chart svg { width: 100%; height: auto; }
     .legend { width: 180px; flex-shrink: 0; border-left: 1px solid #e5e7eb; padding-left: 12px; }
     .legend ul { list-style: none; margin: 0; padding: 0; }
@@ -296,7 +378,7 @@ export function printChartAsPdf(
   <div><h1>${safeTitle}</h1>${badgeHtml}</div>
   <div class="meta">Exported ${new Date().toLocaleString()}</div>
   <div class="layout">
-    <div class="chart">${svgString(inlined)}</div>
+    <div class="charts">${chartsHtml}</div>
     ${legendHtml}
   </div>
 </body>

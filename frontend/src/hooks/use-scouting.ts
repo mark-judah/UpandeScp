@@ -83,9 +83,12 @@ export function useScouting({
     ? greenhouses.slice().sort().join("|")
     : "";
 
-  // Shared filter+render — used by both effects below.
+  // Shared filter+render — used by both effects below. Flips ``loading``
+  // for the duration of the IDB read+rebuild so consumers see the orbit
+  // overlay on every filter change, not just the first cold load.
   const buildAndSet = async (token: number) => {
     if (tokenRef.current !== token) return;
+    setLoading(true);
     try {
       const processed = await loadAndProcess({
         from,
@@ -97,6 +100,8 @@ export function useScouting({
       if (tokenRef.current === token) setData(processed);
     } catch (e) {
       console.error("[scouting] processing failed", e);
+    } finally {
+      if (tokenRef.current === token) setLoading(false);
     }
   };
 
@@ -121,9 +126,10 @@ export function useScouting({
       if (tokenRef.current !== token) return;
 
       if (missing.length === 0) {
-        // Cached path — skip the hydrate spinner entirely. Effect B will
-        // re-render from IDB; the delta below picks up anything new.
-        setLoading(false);
+        // Cached path — skip the hydrate-progress counter, but DON'T
+        // touch ``loading`` here. Effect B owns the IDB-read+rebuild
+        // and toggles loading around that, so on warm-cache filter
+        // changes the orbit still shows for the brief rebuild window.
         setProgress(100);
         setWeeksLoaded(0);
         setWeeksTotal(0);

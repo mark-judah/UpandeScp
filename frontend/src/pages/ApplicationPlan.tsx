@@ -65,6 +65,7 @@ import {
   type CreatorBootstrap,
 } from "@/lib/spray-plan-creator-api";
 import { DraftBatchPanel } from "@/components/spray-plan/DraftBatchPanel";
+import { WeatherCard } from "@/components/WeatherCard";
 import {
   SprayTeamEditor,
   type TeamMemberRow,
@@ -201,6 +202,11 @@ export function ApplicationPlan() {
   // Empty by default; populated once at mount so the rate inputs can flag
   // out-of-range values inline as the operator types.
   const [rateLimits, setRateLimits] = useState<Record<string, RateLimit>>({});
+  // Farm filter: scopes the greenhouse picker (and everything downstream)
+  // to the chosen farm. ``""`` means "all my allowed farms"; the list comes
+  // from ``bootstrap.scope.farms`` which is already trimmed server-side to
+  // Spray Plan Settings.allowed_farms for the current user.
+  const [farmFilter, setFarmFilter] = useState<string>("");
   const [greenhouse, setGreenhouse] = useState<string>("");
   const [diag, setDiag] = useState<DiagnoseFilters>({
     pest: ALL,
@@ -606,10 +612,37 @@ export function ApplicationPlan() {
           ? "Light pressure — spot-treat the flagged zones"
           : "No observations match this filter";
 
-  const ghList = useMemo(
-    () => bootstrap?.greenhouses.map((g) => g.name) || [],
+  const allowedFarms = useMemo(
+    () => bootstrap?.scope.farms || [],
     [bootstrap],
   );
+  // Effective farm for the weather card: explicit filter > selected
+  // greenhouse's farm > single allowed farm. Stays empty when ambiguous
+  // (multiple farms allowed, no selection yet) so we don't pick wrong.
+  const weatherFarm = useMemo(() => {
+    if (farmFilter) return farmFilter;
+    if (greenhouse) {
+      const g = bootstrap?.greenhouses.find((x) => x.name === greenhouse);
+      if (g?.custom_farm) return g.custom_farm;
+    }
+    if (allowedFarms.length === 1) return allowedFarms[0];
+    return "";
+  }, [farmFilter, greenhouse, bootstrap, allowedFarms]);
+  const ghList = useMemo(
+    () =>
+      (bootstrap?.greenhouses || [])
+        .filter((g) => !farmFilter || g.custom_farm === farmFilter)
+        .map((g) => g.name),
+    [bootstrap, farmFilter],
+  );
+
+  // If the user flips farms while a greenhouse from the old farm is still
+  // selected, drop the stale pick so downstream calcs don't run on a GH
+  // the user can no longer see in the picker.
+  useEffect(() => {
+    if (!greenhouse) return;
+    if (!ghList.includes(greenhouse)) setGreenhouse("");
+  }, [ghList, greenhouse]);
   const derivedCostCenter = useMemo(() => {
     if (!greenhouse) return null;
     const match = bootstrap?.greenhouses.find((g) => g.name === greenhouse);
@@ -910,6 +943,27 @@ export function ApplicationPlan() {
         </div>
 
         <div className="flex flex-wrap items-end gap-2">
+          {allowedFarms.length > 1 && (
+            <div className="flex flex-col gap-1 min-w-44">
+              <Label>Farm</Label>
+              <Select
+                value={farmFilter || "__all__"}
+                onValueChange={(v) => setFarmFilter(v === "__all__" ? "" : v)}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All my farms</SelectItem>
+                  {allowedFarms.map((f) => (
+                    <SelectItem key={f} value={f}>
+                      {f}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="flex flex-col gap-1 min-w-56">
             <Label>Greenhouse</Label>
             <Select value={greenhouse || ""} onValueChange={setGreenhouse}>
@@ -1018,6 +1072,8 @@ export function ApplicationPlan() {
             </div>
           )}
         </div>
+
+        {weatherFarm ? <WeatherCard farm={weatherFarm} /> : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="relative">

@@ -430,7 +430,7 @@ export function Heatmaps() {
               until you narrow the scope.
             </CardDescription>
           </Card>
-        ) : gridState.loading && !gridState.data ? (
+        ) : gridState.loading ? (
           <ProgressOverlay progress={gridState.progress} />
         ) : !visibleCards.length ? (
           <Card className="p-12 text-center">

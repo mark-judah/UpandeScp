@@ -57,10 +57,11 @@ export function shapeForStage(stage: string | null | undefined): MarkerShape {
 }
 
 export function MarkerDefs() {
-  // ``vector-effect=non-scaling-stroke`` keeps the outline width visually
-  // stable even when the parent SVG scales (BedSvg shrinks markers as the
-  // viewBox shrinks). Without it, dense maps look smudgy.
-  const sw = 1.3;
+  // Markers are now filled — the caller passes the pest's legend colour
+  // as ``fill``. We keep a hairline same-colour stroke for crisp edges
+  // when the marker overlaps a bed line. ``non-scaling-stroke`` so dense
+  // maps don't get smudgy as the SVG zooms.
+  const sw = 0.4;
   const ve = "non-scaling-stroke";
 
   return (
@@ -72,13 +73,12 @@ export function MarkerDefs() {
     >
       <defs>
         <symbol id={MARKER_ID.circle} viewBox="-5 -5 10 10">
-          <circle r="3.8" fill="none" strokeWidth={sw} vectorEffect={ve} />
+          <circle r="4" strokeWidth={sw} vectorEffect={ve} />
         </symbol>
 
         <symbol id={MARKER_ID.triangle} viewBox="-5 -5 10 10">
           <polygon
             points="0,-4 3.6,2.6 -3.6,2.6"
-            fill="none"
             strokeWidth={sw}
             strokeLinejoin="round"
             vectorEffect={ve}
@@ -88,7 +88,6 @@ export function MarkerDefs() {
         <symbol id={MARKER_ID.pentagon} viewBox="-5 -5 10 10">
           <polygon
             points="0,-4 3.8,-1.2 2.4,3.2 -2.4,3.2 -3.8,-1.2"
-            fill="none"
             strokeWidth={sw}
             strokeLinejoin="round"
             vectorEffect={ve}
@@ -98,18 +97,20 @@ export function MarkerDefs() {
         <symbol id={MARKER_ID.diamond} viewBox="-5 -5 10 10">
           <polygon
             points="0,-4 4,0 0,4 -4,0"
-            fill="none"
             strokeWidth={sw}
             strokeLinejoin="round"
             vectorEffect={ve}
           />
         </symbol>
 
+        {/* Cross/plus stay outlined-only — a filled stroke shape is just
+            the stroke. We thicken the stroke a touch so they read at the
+            new smaller marker size. */}
         <symbol id={MARKER_ID.cross} viewBox="-5 -5 10 10">
           <path
             d="M-3.2 -3.2 L3.2 3.2 M3.2 -3.2 L-3.2 3.2"
             fill="none"
-            strokeWidth={sw}
+            strokeWidth={1.6}
             strokeLinecap="round"
             vectorEffect={ve}
           />
@@ -119,7 +120,7 @@ export function MarkerDefs() {
           <path
             d="M0 -3.8 L0 3.8 M-3.8 0 L3.8 0"
             fill="none"
-            strokeWidth={sw}
+            strokeWidth={1.6}
             strokeLinecap="round"
             vectorEffect={ve}
           />

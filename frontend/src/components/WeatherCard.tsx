@@ -123,8 +123,6 @@ export function WeatherCard({
   if (!farm) return null;
   if (!data?.days?.length && !loading) return null;
 
-  const tempUnit = data?.units?.temp || "°C";
-
   return (
     <Card className={cn("p-3", className)}>
       <CardHeader className="p-0 pb-2 flex flex-row items-center justify-between gap-2">
@@ -185,9 +183,6 @@ export function WeatherCard({
             })}
           </div>
         )}
-        <div className="mt-2 text-[0.6rem] text-muted-foreground/60 text-right">
-          Source: Open-Meteo · temp in {tempUnit}
-        </div>
       </CardContent>
     </Card>
   );

@@ -59,7 +59,7 @@ const LABEL_COLOR = "rgba(0,0,0,0.7)";
 export function BedSvg({
   geometry,
   markers,
-  markerSize = 10,
+  markerSize = 4,
   labelFontSize = 3,
   labelEvery = 7,
   className,
@@ -108,15 +108,17 @@ export function BedSvg({
           ))}
       </g>
 
-      {/* Marker layer. Outlined symbols — stroke carries the pest colour,
-          fill stays transparent so overlapping markers don't blob. */}
-      <g>
+      {/* Marker layer. Filled symbols — fill + same-colour stroke carry
+          the pest colour. ``saturate(1.5)`` punches up the legend hex so
+          markers pop against the bed lines without us touching the data. */}
+      <g style={{ filter: "saturate(1.5)" }}>
         {markers.map((m, i) => {
           const c = geometry.zoneCentroids[m.zone];
           if (!c) return null;
           const shape =
             m.shape || (m.kind ? shapeForKind(m.kind) : "circle");
           const ref = MARKER_ID[shape];
+          const isLineShape = shape === "cross" || shape === "plus";
           return (
             <use
               key={`${m.zone}-${i}-${shape}`}
@@ -126,7 +128,7 @@ export function BedSvg({
               width={markerSize}
               height={markerSize}
               stroke={m.color}
-              fill="none"
+              fill={isLineShape ? "none" : m.color}
             >
               <title>
                 {m.zone}

@@ -57,7 +57,11 @@ export const ChartContainer = React.forwardRef<
           "[&_.recharts-cartesian-grid_line]:stroke-[var(--sd-line)]",
           "[&_.recharts-polar-grid_line]:stroke-[var(--sd-line)]",
           "[&_.recharts-radial-bar-background-sector]:fill-[var(--sd-bg-soft)]",
-          "[&_.recharts-reference-line_line]:stroke-[var(--sd-line)]",
+          // NOTE: do NOT force a global stroke on .recharts-reference-line —
+          // the Trends threshold lines pass their own coloured stroke and a
+          // Tailwind class on the wrapper would override the SVG attribute,
+          // making the lines invisible. Reference lines that want the muted
+          // theme tone can pass ``stroke="var(--sd-line)"`` themselves.
           "[&_.recharts-tooltip-cursor]:stroke-[var(--sd-line)]",
           "[&_.recharts-sector]:outline-none",
           "[&_.recharts-surface]:outline-none",

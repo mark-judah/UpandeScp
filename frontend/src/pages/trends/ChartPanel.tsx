@@ -1,5 +1,12 @@
 import { useMemo, useRef, useState } from "react";
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Download, FileText } from "lucide-react";
 import {
   ChartContainer,
@@ -76,6 +83,17 @@ const PALETTE = [
   "var(--sd-data-red)",
 ];
 
+export interface ThresholdBand {
+  low?: number;
+  moderate?: number;
+  high?: number;
+}
+
+export interface ThresholdLookup {
+  /** kind→name→stage→band. Empty stage key = aggregate fallback. */
+  (kind: "pest" | "disease", name: string, stage: string): ThresholdBand | null;
+}
+
 export function ChartPanel({
   payload,
   index,
@@ -83,6 +101,8 @@ export function ChartPanel({
   obs,
   stages,
   child,
+  thresholdLookup,
+  showThresholds,
 }: {
   payload: TrendsPayload;
   index: MatrixIndex;
@@ -90,6 +110,8 @@ export function ChartPanel({
   obs: ObsKey | null;
   stages: string[];
   child?: { stage: string };
+  thresholdLookup?: ThresholdLookup;
+  showThresholds?: boolean;
 }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   // Hover highlight: while a line is under the cursor we thicken it and dim
@@ -144,6 +166,15 @@ export function ChartPanel({
       })),
     [selections],
   );
+
+  // Resolve the threshold band for this panel: stage child uses the
+  // stage's band, the parent panel uses the aggregate band. No band
+  // when the user is on "All Observations" (mixed) — averaging
+  // thresholds across pests would be misleading.
+  const band: ThresholdBand | null = useMemo(() => {
+    if (!showThresholds || !thresholdLookup || !obs) return null;
+    return thresholdLookup(obs.kind, obs.name, child?.stage || "");
+  }, [showThresholds, thresholdLookup, obs, child?.stage]);
 
   const onPng = async () => {
     const node = exportRef.current;
@@ -279,6 +310,51 @@ export function ChartPanel({
                     />
                   }
                 />
+                {band && band.low ? (
+                  <ReferenceLine
+                    y={band.low}
+                    stroke="var(--sd-data-green, #16a34a)"
+                    strokeDasharray="4 3"
+                    strokeWidth={1.2}
+                    ifOverflow="extendDomain"
+                    label={{
+                      value: `Low ${band.low}%`,
+                      position: "right",
+                      fill: "var(--sd-data-green, #16a34a)",
+                      fontSize: 10,
+                    }}
+                  />
+                ) : null}
+                {band && band.moderate ? (
+                  <ReferenceLine
+                    y={band.moderate}
+                    stroke="var(--sd-target, #d97706)"
+                    strokeDasharray="4 3"
+                    strokeWidth={1.2}
+                    ifOverflow="extendDomain"
+                    label={{
+                      value: `Mod ${band.moderate}%`,
+                      position: "right",
+                      fill: "var(--sd-target, #d97706)",
+                      fontSize: 10,
+                    }}
+                  />
+                ) : null}
+                {band && band.high ? (
+                  <ReferenceLine
+                    y={band.high}
+                    stroke="var(--sd-data-red, #dc2626)"
+                    strokeDasharray="4 3"
+                    strokeWidth={1.4}
+                    ifOverflow="extendDomain"
+                    label={{
+                      value: `High ${band.high}%`,
+                      position: "right",
+                      fill: "var(--sd-data-red, #dc2626)",
+                      fontSize: 10,
+                    }}
+                  />
+                ) : null}
                 {selections.map((s, i) => {
                   const isHover = hovered === s.label;
                   const dim = hovered != null && !isHover;
@@ -327,6 +403,8 @@ export function ChartPanel({
               obs={obs}
               stages={[]}
               child={{ stage }}
+              thresholdLookup={thresholdLookup}
+              showThresholds={showThresholds}
             />
           </div>
         ))}

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, MapPin, Sparkles, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDown, MapPin, Sparkles, RefreshCw, Gauge } from "lucide-react";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { fetchCrops, DEFAULT_CROP } from "@/lib/scouting-api";
+import { getThresholds, type ThresholdsBundle } from "@/lib/thresholds-api";
 import {
   Select,
   SelectContent,
@@ -32,6 +33,10 @@ import {
   parseSelection,
 } from "./trends/aggregate";
 import type { TrendsPayload } from "./trends/trends-types";
+import type {
+  ThresholdBand,
+  ThresholdLookup,
+} from "./trends/ChartPanel";
 
 function defaultRange() {
   const today = new Date();
@@ -48,6 +53,9 @@ export function Trends() {
   >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
   const [stationChecks, setStationChecks] = useState<Set<string>>(new Set());
   const [obsChecks, setObsChecks] = useState<Set<string>>(new Set());
+  const [showThresholds, setShowThresholds] = useState(true);
+  const [thresholdBundle, setThresholdBundle] =
+    useState<ThresholdsBundle | null>(null);
 
   useEffect(() => {
     fetchCrops().then((r) => {
@@ -95,6 +103,77 @@ export function Trends() {
         .map(parseObs)
         .filter((o): o is NonNullable<typeof o> => !!o),
     [obsChecks],
+  );
+
+  // Load the per-stage / aggregate thresholds for the chosen crop so the
+  // ChartPanel can draw the Low / Mod / High reference lines. We deliberately
+  // fetch here (not bundled into the trends aggregator) so editing
+  // thresholds via Settings → Thresholds re-renders chart bands without
+  // invalidating the 30-day trends payload cache.
+  useEffect(() => {
+    const c = crop === DEFAULT_CROP ? "" : crop;
+    if (!c) {
+      setThresholdBundle(null);
+      return;
+    }
+    let cancelled = false;
+    getThresholds(c)
+      .then((b) => {
+        if (!cancelled) setThresholdBundle(b);
+      })
+      .catch(() => {
+        if (!cancelled) setThresholdBundle(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [crop]);
+
+  // Flat lookup keyed by ``${kind}::${name}::${stage}`` (stage="" = aggregate).
+  // Per-stage row wins over aggregate; both rejected if all three are zero.
+  const thresholdMap = useMemo(() => {
+    const m = new Map<string, ThresholdBand>();
+    if (!thresholdBundle) return m;
+    const nonZero = (b: { low: number; moderate: number; high: number }) =>
+      (b.low || 0) > 0 || (b.moderate || 0) > 0 || (b.high || 0) > 0;
+    for (const p of thresholdBundle.pests) {
+      if (nonZero(p)) {
+        m.set(`pest::${p.pest}::`, {
+          low: p.low, moderate: p.moderate, high: p.high,
+        });
+      }
+      for (const s of p.stages) {
+        if (nonZero(s)) {
+          m.set(`pest::${p.pest}::${s.stage}`, {
+            low: s.low, moderate: s.moderate, high: s.high,
+          });
+        }
+      }
+    }
+    for (const d of thresholdBundle.diseases) {
+      if (nonZero(d)) {
+        m.set(`disease::${d.disease}::`, {
+          low: d.low, moderate: d.moderate, high: d.high,
+        });
+      }
+      for (const s of d.stages) {
+        if (nonZero(s)) {
+          m.set(`disease::${d.disease}::${s.stage}`, {
+            low: s.low, moderate: s.moderate, high: s.high,
+          });
+        }
+      }
+    }
+    return m;
+  }, [thresholdBundle]);
+
+  const thresholdLookup: ThresholdLookup = useCallback(
+    (kind, name, stage) => {
+      const stageBand = thresholdMap.get(`${kind}::${name}::${stage}`);
+      if (stageBand) return stageBand;
+      return thresholdMap.get(`${kind}::${name}::`) || null;
+    },
+    [thresholdMap],
   );
 
   // Heavy index built once per payload — every ChartPanel reuses it.
@@ -200,6 +279,21 @@ export function Trends() {
             </Popover>
 
             <Button
+              variant={showThresholds ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowThresholds((v) => !v)}
+              className="h-9 gap-2"
+              title={
+                showThresholds
+                  ? "Hide threshold reference lines"
+                  : "Show threshold reference lines from Settings"
+              }
+            >
+              <Gauge className="h-3.5 w-3.5" />
+              Thresholds
+            </Button>
+
+            <Button
               variant="default"
               size="sm"
               onClick={() => reload({ force: true })}
@@ -240,6 +334,8 @@ export function Trends() {
                 selections={selections}
                 obs={null}
                 stages={[]}
+                thresholdLookup={thresholdLookup}
+                showThresholds={showThresholds}
               />
             ) : (
               observations.map((o) => {
@@ -252,6 +348,8 @@ export function Trends() {
                     selections={selections}
                     obs={o}
                     stages={stagesByObsId[key] || []}
+                    thresholdLookup={thresholdLookup}
+                    showThresholds={showThresholds}
                   />
                 );
               })

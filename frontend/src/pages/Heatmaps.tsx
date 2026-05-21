@@ -13,7 +13,6 @@ import {
   Maximize2,
   ChevronDown,
   MapPin,
-  Sparkles,
   RefreshCw,
 } from "lucide-react";
 import {
@@ -68,10 +67,11 @@ import {
 import { TristateTree } from "./trends/TristateTree";
 import {
   buildStationTree,
-  buildObsTree,
   parseSelection,
   parseObs,
 } from "./trends/aggregate";
+import { WeatherCard } from "@/components/WeatherCard";
+import { cn } from "@/lib/utils";
 
 function ghOf(zoneName: string): string {
   const i = zoneName.indexOf(" - Bed ");
@@ -264,26 +264,52 @@ export function Heatmaps() {
     return buildStationTree(farmStations);
   }, [farmsByGh, cards]);
 
-  // Observation tree is built from the returned cards (so it surfaces only
-  // pests/diseases that actually appear in the current scope). Empty until
-  // the first server response comes back.
-  const obsTree = useMemo(() => {
-    const pestCounts: Record<string, number> = {};
-    const diseaseCounts: Record<string, number> = {};
-    for (const c of cards) {
-      if (c.obsKind === "pest")
-        pestCounts[c.obsName] = (pestCounts[c.obsName] || 0) + c.totalObs;
-      else
-        diseaseCounts[c.obsName] =
-          (diseaseCounts[c.obsName] || 0) + c.totalObs;
-    }
-    return buildObsTree(pestCounts, diseaseCounts);
-  }, [cards]);
-
   // Counters strip
   const totalObs = visibleCards.reduce((s, c) => s + c.totalObs, 0);
   const totalZones = visibleCards.reduce((s, c) => s + c.zonesAffected, 0);
   const distinctGh = new Set(visibleCards.map((c) => c.greenhouse)).size;
+
+  // Right-column obs chip list, derived from the cards in scope. Single-
+  // select model: clicking a chip swaps the obsChecks set to just that
+  // observation; clicking "All" clears it. Keeps the tristate state model
+  // around (other places still use it) but exposes a simpler UI.
+  const obsChipOptions = useMemo(() => {
+    const byKey: Record<
+      string,
+      { id: string; label: string; color: string; count: number }
+    > = {};
+    for (const c of cards) {
+      const id = `obs:${c.obsKind}:${c.obsName}`;
+      if (!byKey[id]) {
+        byKey[id] = {
+          id,
+          label: c.obsName,
+          color: c.color,
+          count: 0,
+        };
+      }
+      byKey[id].count += c.totalObs;
+    }
+    return Object.values(byKey).sort((a, b) => b.count - a.count);
+  }, [cards]);
+
+  const selectedObs = useMemo(() => {
+    const ids = Array.from(obsChecks).filter(
+      (id) => id.startsWith("obs:") && !id.startsWith("obs:group:"),
+    );
+    return ids.length === 1 ? ids[0] : null;
+  }, [obsChecks]);
+
+  // Pick a farm for the weather card. Use the first farm-typed selection;
+  // otherwise infer from the first station-typed selection via farmsByGh.
+  const weatherFarm = useMemo(() => {
+    for (const s of selections) {
+      if (s.kind === "farm") return s.farm;
+      const f = farmsByGh[s.station];
+      if (f) return f;
+    }
+    return "";
+  }, [selections, farmsByGh]);
 
   return (
     <div className="flex flex-col min-h-svh">
@@ -358,36 +384,6 @@ export function Heatmaps() {
               </PopoverContent>
             </Popover>
 
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-2">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Observations
-                  <span className="text-muted-foreground tabular-nums">
-                    {obsChecks.size
-                      ? Array.from(obsChecks).filter((id) =>
-                          id.startsWith("obs:") && !id.startsWith("obs:group:"),
-                        ).length || "—"
-                      : "—"}
-                  </span>
-                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80">
-                <TristateTree
-                  nodes={obsTree}
-                  checked={obsChecks}
-                  onChange={setObsChecks}
-                  emptyHint={
-                    hasScope
-                      ? "No observations in date range"
-                      : "Pick farms first"
-                  }
-                  searchPlaceholder="Search observations…"
-                />
-              </PopoverContent>
-            </Popover>
-
             <Button
               variant="outline"
               size="sm"
@@ -415,7 +411,9 @@ export function Heatmaps() {
         </span>
       </div>
 
-      <div className="flex-1 px-4 md:px-6 py-4 md:py-6">
+      <div className="flex-1 px-4 md:px-6 py-4 md:py-6 grid gap-3 lg:grid-cols-[1fr_20rem]">
+        {/* Left column — heatmap cards (taller). */}
+        <div className="min-w-0">
         {!hasScope ? (
           <Card className="p-12 flex flex-col items-center justify-center text-center gap-2">
             <div className="h-10 w-10 rounded-full bg-[var(--sd-pistachio)] flex items-center justify-center">
@@ -441,7 +439,7 @@ export function Heatmaps() {
             </CardDescription>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {visibleCards.map((c) => {
               const geom = geometryByGh[c.greenhouse];
               const kind: MarkerKind =
@@ -487,10 +485,10 @@ export function Heatmaps() {
                       <BedSvg
                         geometry={geom}
                         markers={markers}
-                        className="w-full h-auto min-h-[200px] max-h-[260px]"
+                        className="w-full h-auto min-h-[340px] max-h-[480px]"
                       />
                     ) : (
-                      <div className="text-[0.72rem] text-muted-foreground border rounded-md p-3 bg-[var(--sd-bg-soft)] min-h-[200px] flex items-center justify-center">
+                      <div className="text-[0.72rem] text-muted-foreground border rounded-md p-3 bg-[var(--sd-bg-soft)] min-h-[340px] flex items-center justify-center">
                         {zonesByGh[c.greenhouse]
                           ? "Projecting…"
                           : "Zone geometry not available for this greenhouse."}
@@ -512,10 +510,53 @@ export function Heatmaps() {
             })}
           </div>
         )}
+        </div>
+
+        {/* Right column — contextual weather + obs chip filter. */}
+        <aside className="flex flex-col gap-3 min-w-0">
+          {weatherFarm ? <WeatherCard farm={weatherFarm} /> : null}
+          <Card className="p-3">
+            <CardHeader className="p-0 pb-2">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Observation filter
+              </CardTitle>
+              <CardDescription className="text-[0.7rem]">
+                {obsChipOptions.length
+                  ? "Pick one, or 'All' to see every observation."
+                  : hasScope
+                    ? "No observations in date range."
+                    : "Pick farms first."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="flex flex-wrap gap-1.5">
+                <ObsChip
+                  label="All"
+                  active={!selectedObs}
+                  onClick={() => setObsChecks(new Set())}
+                />
+                {obsChipOptions.map((opt) => (
+                  <ObsChip
+                    key={opt.id}
+                    label={opt.label}
+                    color={opt.color}
+                    count={opt.count}
+                    active={selectedObs === opt.id}
+                    onClick={() =>
+                      setObsChecks(
+                        selectedObs === opt.id ? new Set() : new Set([opt.id]),
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </aside>
       </div>
 
       <Dialog open={!!picked} onOpenChange={(o) => !o && setPicked(null)}>
-        <DialogContent className="max-w-[min(98vw,1600px)] max-h-[92vh] overflow-y-auto">
+        <DialogContent className="max-w-[min(92vw,1080px)] max-h-[80vh] overflow-y-auto">
           {picked && (
             <>
               <DialogHeader>
@@ -691,5 +732,52 @@ export function Heatmaps() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/** Single-select chip used in the right-column observation filter.
+ *  When ``color`` is set it tints the indicator dot and (for active
+ *  chips) the chip's border so the legend matches the map markers. */
+function ObsChip({
+  label,
+  color,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  color?: string;
+  count?: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[0.7rem] transition-colors",
+        active
+          ? "bg-primary text-primary-foreground border-primary"
+          : "bg-card text-muted-foreground hover:bg-muted",
+      )}
+      style={
+        active && color
+          ? { borderColor: color, background: color, color: "white" }
+          : undefined
+      }
+    >
+      {color ? (
+        <span
+          className="h-2 w-2 rounded-full border"
+          style={{ background: color }}
+          aria-hidden
+        />
+      ) : null}
+      <span className="font-medium">{label}</span>
+      {typeof count === "number" ? (
+        <span className="tabular-nums opacity-80">{count}</span>
+      ) : null}
+    </button>
   );
 }

@@ -251,57 +251,46 @@ export function Dashboard() {
           />
 
           <TabsContent value="overview" className="mt-0">
-            {overview.loading && !overview.data ? (
+            <OverviewTab
+              data={overview.data}
+              scoutLookup={scoutLookup}
+              fromDate={from}
+              toDate={to}
+              crop={base.crop}
+            />
+            {overview.loading && (
               <ProgressOverlay progress={overview.progress} />
-            ) : (
-              <OverviewTab
-                data={overview.data}
-                scoutLookup={scoutLookup}
-                fromDate={from}
-                toDate={to}
-                crop={base.crop}
-              />
             )}
           </TabsContent>
           <TabsContent value="pests" className="mt-0">
-            {pests.loading && !pests.data ? (
-              <ProgressOverlay progress={pests.progress} />
-            ) : (
-              <PestsTab
-                data={pests.data}
-                pestName={pestFilters.observation}
-                section={pestFilters.section}
-                stage={pestFilters.stage}
-                onFiltersChange={setPestFilters}
-              />
-            )}
+            <PestsTab
+              data={pests.data}
+              pestName={pestFilters.observation}
+              section={pestFilters.section}
+              stage={pestFilters.stage}
+              onFiltersChange={setPestFilters}
+            />
+            {pests.loading && <ProgressOverlay progress={pests.progress} />}
           </TabsContent>
           <TabsContent value="diseases" className="mt-0">
-            {diseases.loading && !diseases.data ? (
+            <DiseasesTab
+              data={diseases.data}
+              diseaseName={diseaseFilters.observation}
+              section={diseaseFilters.section}
+              stage={diseaseFilters.stage}
+              onFiltersChange={setDiseaseFilters}
+            />
+            {diseases.loading && (
               <ProgressOverlay progress={diseases.progress} />
-            ) : (
-              <DiseasesTab
-                data={diseases.data}
-                diseaseName={diseaseFilters.observation}
-                section={diseaseFilters.section}
-                stage={diseaseFilters.stage}
-                onFiltersChange={setDiseaseFilters}
-              />
             )}
           </TabsContent>
           <TabsContent value="traps" className="mt-0">
-            {traps.loading && !traps.data ? (
-              <ProgressOverlay progress={traps.progress} />
-            ) : (
-              <TrapsTab data={traps.data} />
-            )}
+            <TrapsTab data={traps.data} />
+            {traps.loading && <ProgressOverlay progress={traps.progress} />}
           </TabsContent>
           <TabsContent value="fcm" className="mt-0">
-            {fcm.loading && !fcm.data ? (
-              <ProgressOverlay progress={fcm.progress} />
-            ) : (
-              <FcmTab data={fcm.data} />
-            )}
+            <FcmTab data={fcm.data} />
+            {fcm.loading && <ProgressOverlay progress={fcm.progress} />}
           </TabsContent>
         </Tabs>
       </div>

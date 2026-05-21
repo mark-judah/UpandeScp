@@ -33,22 +33,38 @@ interface WeatherPayload {
   days: WeatherDay[];
 }
 
-// Open-Meteo WMO codes → icon + short label.
+// Open-Meteo WMO codes → icon + short label + colour.
 // https://open-meteo.com/en/docs#weathervariables
-function weatherInfo(code: number | null): { icon: LucideIcon; label: string } {
+// Colours map to weather mood: amber=sun, slate=cloud, sky=rain, indigo=fog,
+// purple=thunder, cyan=snow. Stroke colour only — keeps lucide line-art look.
+function weatherInfo(code: number | null): {
+  icon: LucideIcon;
+  label: string;
+  color: string;
+} {
   if (code === null || code === undefined)
-    return { icon: Cloud, label: "—" };
-  if (code === 0) return { icon: Sun, label: "Clear" };
-  if (code <= 2) return { icon: Sun, label: "Mostly sunny" };
-  if (code === 3) return { icon: Cloud, label: "Overcast" };
-  if (code === 45 || code === 48) return { icon: CloudFog, label: "Fog" };
-  if (code >= 51 && code <= 57) return { icon: CloudDrizzle, label: "Drizzle" };
-  if (code >= 61 && code <= 67) return { icon: CloudRain, label: "Rain" };
-  if (code >= 71 && code <= 77) return { icon: CloudSnow, label: "Snow" };
-  if (code >= 80 && code <= 82) return { icon: CloudRain, label: "Showers" };
-  if (code >= 85 && code <= 86) return { icon: CloudSnow, label: "Snow showers" };
-  if (code >= 95) return { icon: CloudLightning, label: "Thunderstorm" };
-  return { icon: Cloud, label: "Cloudy" };
+    return { icon: Cloud, label: "—", color: "text-muted-foreground" };
+  if (code === 0)
+    return { icon: Sun, label: "Clear", color: "text-amber-500" };
+  if (code <= 2)
+    return { icon: Sun, label: "Mostly sunny", color: "text-amber-400" };
+  if (code === 3)
+    return { icon: Cloud, label: "Overcast", color: "text-slate-500" };
+  if (code === 45 || code === 48)
+    return { icon: CloudFog, label: "Fog", color: "text-indigo-400" };
+  if (code >= 51 && code <= 57)
+    return { icon: CloudDrizzle, label: "Drizzle", color: "text-sky-400" };
+  if (code >= 61 && code <= 67)
+    return { icon: CloudRain, label: "Rain", color: "text-sky-600" };
+  if (code >= 71 && code <= 77)
+    return { icon: CloudSnow, label: "Snow", color: "text-cyan-400" };
+  if (code >= 80 && code <= 82)
+    return { icon: CloudRain, label: "Showers", color: "text-sky-500" };
+  if (code >= 85 && code <= 86)
+    return { icon: CloudSnow, label: "Snow showers", color: "text-cyan-500" };
+  if (code >= 95)
+    return { icon: CloudLightning, label: "Thunderstorm", color: "text-purple-500" };
+  return { icon: Cloud, label: "Cloudy", color: "text-slate-400" };
 }
 
 function dayLabel(iso: string, idx: number): string {
@@ -134,7 +150,7 @@ export function WeatherCard({
         ) : (
           <div className="grid grid-cols-5 gap-2">
             {(data?.days || []).map((d, i) => {
-              const { icon: Icon, label } = weatherInfo(d.weatherCode);
+              const { icon: Icon, label, color } = weatherInfo(d.weatherCode);
               return (
                 <div
                   key={d.date}
@@ -144,7 +160,7 @@ export function WeatherCard({
                   <span className="font-medium text-muted-foreground">
                     {dayLabel(d.date, i)}
                   </span>
-                  <Icon className="h-5 w-5 text-foreground" />
+                  <Icon className={cn("h-5 w-5", color)} />
                   <span className="tabular-nums font-semibold">
                     {d.tempMax !== null ? Math.round(d.tempMax) : "—"}°
                     <span className="ml-0.5 font-normal text-muted-foreground">

@@ -260,7 +260,7 @@ export function Trends() {
         ) : null}
       </div>
       <LoadingOverlay
-        open={loading && !data}
+        open={loading}
         progress={progress?.percent ?? 0}
       />
     </div>

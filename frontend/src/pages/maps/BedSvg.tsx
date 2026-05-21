@@ -8,13 +8,25 @@
  */
 
 import type { ProjectedGeometry } from "@/pages/maps/bed-projection";
-import { MARKER_ID, type MarkerKind } from "@/pages/maps/MarkerDefs";
+import {
+  MARKER_ID,
+  shapeForKind,
+  type MarkerKind,
+  type MarkerShape,
+} from "@/pages/maps/MarkerDefs";
 
 export interface BedMarker {
   zone: string;
   count?: number;
-  kind: MarkerKind;
+  /** Either pass an explicit ``shape`` (stage-driven, e.g. triangle for
+   *  Larva) or fall back to ``kind`` (pest = circle, disease = triangle). */
+  kind?: MarkerKind;
+  shape?: MarkerShape;
+  /** Stroke colour — derived from the pest / disease doctype. Markers
+   *  are outlined (no fill) so overlapping markers stay distinguishable. */
   color: string;
+  /** Stage label used in the tooltip. */
+  stage?: string;
 }
 
 export interface BedSvgProps {
@@ -96,24 +108,29 @@ export function BedSvg({
           ))}
       </g>
 
-      {/* Marker layer. */}
+      {/* Marker layer. Outlined symbols — stroke carries the pest colour,
+          fill stays transparent so overlapping markers don't blob. */}
       <g>
         {markers.map((m, i) => {
           const c = geometry.zoneCentroids[m.zone];
           if (!c) return null;
-          const ref = MARKER_ID[m.kind];
+          const shape =
+            m.shape || (m.kind ? shapeForKind(m.kind) : "circle");
+          const ref = MARKER_ID[shape];
           return (
             <use
-              key={`${m.zone}-${i}`}
+              key={`${m.zone}-${i}-${shape}`}
               href={`#${ref}`}
               x={c.cx - markerSize / 2}
               y={c.cy - markerSize / 2}
               width={markerSize}
               height={markerSize}
-              fill={m.color}
+              stroke={m.color}
+              fill="none"
             >
               <title>
                 {m.zone}
+                {m.stage ? ` · ${m.stage}` : ""}
                 {typeof m.count === "number" && m.count > 0
                   ? ` · ${m.count}`
                   : ""}

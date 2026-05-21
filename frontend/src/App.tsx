@@ -142,12 +142,18 @@ export function App() {
   }, []);
 
   // Store Keepers land on Spray Plan Transfers (not the scouting
-  // Dashboard they don't have access to anyway). Only redirect once,
-  // on the very first mount when no explicit hash was set.
+  // Dashboard they don't have access to anyway). Only redirect when
+  // Store Keeper is the user's *exclusive* elevated role — a System
+  // Manager who happens to also hold Store Keeper still lands on the
+  // normal dashboard. Only redirect once, on the first mount when no
+  // explicit hash was set.
   useEffect(() => {
     const roles = bootstrap().roles || [];
-    const isStoreKeeper = roles.includes(STORE_KEEPER_ROLE);
-    if (!isStoreKeeper) return;
+    const elevated = ["System Manager", "Administrator", "General Manager"];
+    const exclusive =
+      roles.includes(STORE_KEEPER_ROLE) &&
+      !elevated.some((r) => roles.includes(r));
+    if (!exclusive) return;
     const hash = window.location.hash || "";
     if (!hash || hash === "#" || hash === "#/" || hash === "#/dashboard") {
       navigate("spray-plan-transfers");

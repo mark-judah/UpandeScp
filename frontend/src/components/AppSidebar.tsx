@@ -162,11 +162,32 @@ function userHasAnyRole(required: string[] | undefined, userRoles: string[]): bo
   return required.some((r) => userRoles.includes(r));
 }
 
+// Roles that override Store-Keeper-only lockdown — a person who's BOTH a
+// Store Keeper AND a System Manager / Administrator / General Manager
+// stays a full user; only somebody whose elevated access is exclusively
+// "Store Keeper" gets the trimmed two-page sidebar.
+const ELEVATED_ROLES = ["System Manager", "Administrator", "General Manager"];
+
+function isStoreKeeperExclusive(userRoles: string[]): boolean {
+  if (!userRoles.includes(STORE_KEEPER_ROLE)) return false;
+  return !ELEVATED_ROLES.some((r) => userRoles.includes(r));
+}
+
 function isHiddenForUser(
   hideForRoles: string[] | undefined,
   userRoles: string[],
 ): boolean {
   if (!hideForRoles || hideForRoles.length === 0) return false;
+  // ``hideForRoles: [Store Keeper]`` is special — it only kicks in when
+  // the user holds Store Keeper *exclusively* (no elevated override
+  // role). That way a System Manager who also has Store Keeper still
+  // sees every section.
+  if (
+    hideForRoles.length === 1 &&
+    hideForRoles[0] === STORE_KEEPER_ROLE
+  ) {
+    return isStoreKeeperExclusive(userRoles);
+  }
   return hideForRoles.some((r) => userRoles.includes(r));
 }
 

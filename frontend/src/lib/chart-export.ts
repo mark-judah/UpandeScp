@@ -82,6 +82,27 @@ function findChartSvg(container: HTMLElement): SVGSVGElement | null {
   return svg && svg.tagName.toLowerCase() === "svg" ? svg : null;
 }
 
+/** Trace a rounded-rectangle path so the caller can choose to ``fill()``
+ *  or ``stroke()`` it. Used to draw the per-chart card boundaries in
+ *  the multi-chart PNG export. */
+function roundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
 function findChartSvgs(container: HTMLElement): SVGSVGElement[] {
   // Every recharts chart inside the export container — the parent plus
   // any expanded stage-drill children — so the export can stack them.
@@ -145,23 +166,37 @@ export async function exportChartAsPng(
     }),
   );
 
-  const chartW = Math.max(...sources.map((s) => s.w));
   // Layout in CSS pixels — scaled up by PNG_SCALE when committed to canvas.
+  // Each chart becomes a bordered "card" with its own subtitle + chart +
+  // legend column, so a multi-chart export reads as a stack of mini-
+  // reports instead of one shared legend at the side.
+  const chartW = Math.max(...sources.map((s) => s.w));
   const hasTitle = !!opts.title;
-  const headerH = hasTitle ? 56 : 0;
+  const pageMargin = 32;        // outer margin around the whole image
+  const titleBarH = hasTitle ? 64 : 0;
   const legendItems = opts.legend || [];
-  const legendW = legendItems.length ? 180 : 0;
-  const pad = 16;
-  const subTitleH = 22; // height of per-chart subtitle row (when present)
-  const chartGap = 16;
-  const subtitleRowsH = sources.reduce(
-    (sum, s) => sum + (s.title ? subTitleH : 0),
-    0,
-  );
-  const chartsH = sources.reduce((sum, s) => sum + s.h, 0);
-  const gapsH = chartGap * Math.max(0, sources.length - 1);
-  const totalW = chartW + legendW + (legendW ? pad : 0);
-  const totalH = headerH + chartsH + subtitleRowsH + gapsH;
+  const hasLegend = legendItems.length > 0;
+  const legendW = hasLegend ? 200 : 0;
+  const innerPad = 16;          // padding inside each chart card
+  const subTitleH = 24;         // per-chart subtitle row
+  const cardGap = 20;           // gap between stacked chart cards
+  const legendRowH = 20;
+  const legendBlockH = hasLegend
+    ? legendItems.length * legendRowH + 8
+    : 0;
+
+  // Each card height = innerPad + subtitle + max(chart, legend) + innerPad.
+  const cardHeights = sources.map((s) => {
+    const inner = Math.max(s.h, legendBlockH);
+    return innerPad + (s.title ? subTitleH : 0) + inner + innerPad;
+  });
+  const cardsBlockH =
+    cardHeights.reduce((a, b) => a + b, 0) +
+    cardGap * Math.max(0, sources.length - 1);
+
+  const cardW = chartW + (hasLegend ? legendW + innerPad : 0) + innerPad * 2;
+  const totalW = cardW + pageMargin * 2;
+  const totalH = pageMargin + titleBarH + cardsBlockH + pageMargin;
 
   const canvas = document.createElement("canvas");
   canvas.width = totalW * PNG_SCALE;
@@ -175,13 +210,14 @@ export async function exportChartAsPng(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, totalW, totalH);
 
+  // ── Outer title bar ───────────────────────────────────────────
   if (hasTitle) {
     ctx.fillStyle = "#0f172a";
     ctx.font =
-      "600 18px Inter, system-ui, -apple-system, Segoe UI, Arial, sans-serif";
+      "600 20px Inter, system-ui, -apple-system, Segoe UI, Arial, sans-serif";
     ctx.textBaseline = "top";
-    const titleX = 8;
-    const titleY = 14;
+    const titleX = pageMargin;
+    const titleY = pageMargin + 12;
     ctx.fillText(opts.title!, titleX, titleY);
     if (opts.badge) {
       const titleW = ctx.measureText(opts.title!).width;
@@ -190,7 +226,7 @@ export async function exportChartAsPng(
       const badgeText = opts.badge;
       const tw = ctx.measureText(badgeText).width;
       const bx = titleX + titleW + 10;
-      const by = titleY + 2;
+      const by = titleY + 4;
       const bw = tw + 12;
       const bh = 18;
       ctx.fillStyle = "#e2e8f0";
@@ -210,43 +246,72 @@ export async function exportChartAsPng(
     }
   }
 
-  // Per-chart row stack — subtitle (if present), then the chart image.
-  let cursorY = headerH;
+  // ── Per-chart bordered cards ─────────────────────────────────
+  let cursorY = pageMargin + titleBarH;
+  const cardX = pageMargin;
   for (let i = 0; i < sources.length; i++) {
     const s = sources[i];
+    const cardH = cardHeights[i];
+
+    // Card boundary + soft drop shadow line.
+    ctx.fillStyle = "#ffffff";
+    roundedRect(ctx, cardX, cursorY, cardW, cardH, 8);
+    ctx.fill();
+    ctx.strokeStyle = "#e5e7eb";
+    ctx.lineWidth = 1;
+    roundedRect(ctx, cardX, cursorY, cardW, cardH, 8);
+    ctx.stroke();
+
+    let innerY = cursorY + innerPad;
     if (s.title) {
-      ctx.fillStyle = "#334155";
+      ctx.fillStyle = "#0f172a";
       ctx.font =
-        "600 13px Inter, system-ui, -apple-system, Segoe UI, Arial, sans-serif";
+        "600 14px Inter, system-ui, -apple-system, Segoe UI, Arial, sans-serif";
       ctx.textBaseline = "top";
-      ctx.fillText(s.title, 8, cursorY + 4);
-      cursorY += subTitleH;
+      ctx.fillText(s.title, cardX + innerPad, innerY);
+      innerY += subTitleH;
     }
-    ctx.drawImage(s.img, 0, cursorY, s.w, s.h);
-    cursorY += s.h;
-    if (i < sources.length - 1) cursorY += chartGap;
+
+    // Chart on the left.
+    ctx.drawImage(s.img, cardX + innerPad, innerY, s.w, s.h);
+
+    // Per-chart legend column on the right (same selections for every
+    // panel — repeated so each card stands on its own).
+    if (hasLegend) {
+      const lx = cardX + innerPad + chartW + innerPad;
+      // Vertical divider between chart and legend.
+      ctx.strokeStyle = "#e5e7eb";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(lx - innerPad / 2, innerY);
+      ctx.lineTo(
+        lx - innerPad / 2,
+        innerY + Math.max(s.h, legendBlockH),
+      );
+      ctx.stroke();
+
+      ctx.font =
+        "500 12px Inter, system-ui, -apple-system, Segoe UI, Arial, sans-serif";
+      ctx.textBaseline = "middle";
+      let ly = innerY + 4;
+      for (const item of legendItems) {
+        ctx.fillStyle = resolveCssColor(item.color, container);
+        ctx.beginPath();
+        ctx.arc(lx + 5, ly + 8, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#475569";
+        const maxLabelW = legendW - 20;
+        const label = ellipsize(ctx, item.label, maxLabelW);
+        ctx.fillText(label, lx + 16, ly + 8);
+        ly += legendRowH;
+      }
+      ctx.textBaseline = "top";
+    }
+
+    cursorY += cardH;
+    if (i < sources.length - 1) cursorY += cardGap;
   }
   sources.forEach((s) => URL.revokeObjectURL(s.url));
-
-  if (legendItems.length) {
-    const lx = chartW + pad;
-    let ly = headerH + 8;
-    ctx.font =
-      "500 12px Inter, system-ui, -apple-system, Segoe UI, Arial, sans-serif";
-    ctx.textBaseline = "middle";
-    for (const item of legendItems) {
-      ctx.fillStyle = resolveCssColor(item.color, container);
-      ctx.beginPath();
-      ctx.arc(lx + 5, ly + 7, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#475569";
-      const maxLabelW = legendW - 18;
-      const label = ellipsize(ctx, item.label, maxLabelW);
-      ctx.fillText(label, lx + 14, ly + 7);
-      ly += 18;
-    }
-    ctx.textBaseline = "top";
-  }
 
   const pngBlob: Blob = await new Promise((resolve, reject) =>
     canvas.toBlob(
@@ -332,20 +397,24 @@ export function printChartAsPdf(
   const badgeHtml = opts.badge
     ? `<span class="badge">${esc(opts.badge)}</span>`
     : "";
-  const legendItems = (opts.legend || []).map((it) => {
+  // Each chart becomes a bordered "card" containing its subtitle + chart
+  // + its own legend column. Repeating the legend per card means each
+  // chart stands on its own in the printed output instead of leaning on
+  // a single column at the side of the page.
+  const cardLegendHtml = (opts.legend || []).map((it) => {
     const color = resolveCssColor(it.color, container);
     return `<li><span class="swatch" style="background:${esc(color)}"></span><span>${esc(it.label)}</span></li>`;
   });
-  const legendHtml = legendItems.length
-    ? `<aside class="legend"><ul>${legendItems.join("")}</ul></aside>`
+  const cardLegendBlock = cardLegendHtml.length
+    ? `<aside class="legend"><ul>${cardLegendHtml.join("")}</ul></aside>`
     : "";
 
   const chartsHtml = chartBlocks
     .map(
-      (b, i) =>
-        `<section class="chart-row${i > 0 ? " break-soft" : ""}">${
+      (b) =>
+        `<section class="chart-card">${
           b.sub ? `<h2>${esc(b.sub)}</h2>` : ""
-        }<div class="chart">${b.svg}</div></section>`,
+        }<div class="card-body"><div class="chart">${b.svg}</div>${cardLegendBlock}</div></section>`,
     )
     .join("");
 
@@ -355,21 +424,20 @@ export function printChartAsPdf(
   <meta charset="utf-8" />
   <title>${safeTitle}</title>
   <style>
-    @page { margin: 18mm; }
-    body { font: 13px Inter, Arial, sans-serif; color: #1f2937; margin: 0; padding: 16px; }
-    h1 { font-size: 18px; margin: 0; display: inline-block; }
-    h2 { font-size: 14px; margin: 0 0 6px 0; color: #334155; font-weight: 600; }
+    @page { margin: 24mm; }
+    body { font: 13px Inter, Arial, sans-serif; color: #1f2937; margin: 0; padding: 28px; }
+    h1 { font-size: 20px; margin: 0; display: inline-block; }
+    h2 { font-size: 14px; margin: 0 0 10px 0; color: #0f172a; font-weight: 600; }
     .badge { display: inline-block; background: #e2e8f0; color: #334155; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 9999px; margin-left: 8px; vertical-align: middle; }
-    .meta { font-size: 11px; color: #6b7280; margin: 4px 0 16px 0; }
-    .layout { display: flex; gap: 16px; align-items: flex-start; }
-    .charts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
-    .chart-row { page-break-inside: avoid; }
-    .chart-row.break-soft { border-top: 1px dashed #e5e7eb; padding-top: 12px; }
-    .chart { width: 100%; }
+    .meta { font-size: 11px; color: #6b7280; margin: 6px 0 20px 0; }
+    .charts { display: flex; flex-direction: column; gap: 20px; }
+    .chart-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; page-break-inside: avoid; background: #fff; }
+    .card-body { display: flex; gap: 16px; align-items: stretch; }
+    .chart { flex: 1; min-width: 0; }
     .chart svg { width: 100%; height: auto; }
-    .legend { width: 180px; flex-shrink: 0; border-left: 1px solid #e5e7eb; padding-left: 12px; }
+    .legend { width: 200px; flex-shrink: 0; border-left: 1px solid #e5e7eb; padding-left: 14px; }
     .legend ul { list-style: none; margin: 0; padding: 0; }
-    .legend li { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #475569; padding: 3px 0; }
+    .legend li { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #475569; padding: 4px 0; }
     .swatch { width: 8px; height: 8px; border-radius: 9999px; flex-shrink: 0; }
     @media print { body { padding: 0; } }
   </style>
@@ -377,10 +445,7 @@ export function printChartAsPdf(
 <body>
   <div><h1>${safeTitle}</h1>${badgeHtml}</div>
   <div class="meta">Exported ${new Date().toLocaleString()}</div>
-  <div class="layout">
-    <div class="charts">${chartsHtml}</div>
-    ${legendHtml}
-  </div>
+  <div class="charts">${chartsHtml}</div>
 </body>
 </html>`;
 

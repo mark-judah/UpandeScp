@@ -89,6 +89,44 @@ export interface ThresholdBand {
   high?: number;
 }
 
+/** Render a Recharts ReferenceLine label as a small SVG ``<g>`` with a
+ *  native ``<title>`` child — that gives the user a hover tooltip
+ *  reading "<Tier> threshold for <Pest>: <pct>%" without having to
+ *  build a custom tooltip overlay. Positioned at the right edge of the
+ *  reference line just inside the chart area. */
+function renderThresholdLabel(
+  tier: "Low" | "Moderate" | "High",
+  value: number,
+  obsLabel: string,
+  stage: string | undefined,
+  color: string,
+) {
+  const tip = stage
+    ? `${tier} threshold · ${obsLabel} · ${stage}: ${value}%`
+    : `${tier} threshold · ${obsLabel}: ${value}%`;
+  // Recharts passes the line's viewBox via the ``props`` arg.
+  return (props: { viewBox?: { x?: number; y?: number; width?: number } }) => {
+    const vb = props.viewBox || {};
+    const x = (vb.x || 0) + (vb.width || 0) - 4;
+    const y = (vb.y || 0) - 2;
+    return (
+      <g style={{ pointerEvents: "all" }}>
+        <title>{tip}</title>
+        <text
+          x={x}
+          y={y}
+          textAnchor="end"
+          fill={color}
+          fontSize={10}
+          fontWeight={600}
+        >
+          {tier === "Moderate" ? "Mod" : tier} {value}%
+        </text>
+      </g>
+    );
+  };
+}
+
 export interface ThresholdLookup {
   /** kind→name→stage→band. Empty stage key = aggregate fallback. */
   (kind: "pest" | "disease", name: string, stage: string): ThresholdBand | null;
@@ -273,8 +311,8 @@ export function ChartPanel({
         )}
       </CardHeader>
       <CardContent className="p-0">
+        <div ref={exportRef} className="flex flex-col gap-3">
         <div
-          ref={exportRef}
           className="flex flex-col md:flex-row gap-3 items-stretch"
         >
           <div className="flex-1 min-w-0">
@@ -317,12 +355,13 @@ export function ChartPanel({
                     strokeDasharray="4 3"
                     strokeWidth={1.2}
                     ifOverflow="extendDomain"
-                    label={{
-                      value: `Low ${band.low}%`,
-                      position: "right",
-                      fill: "var(--sd-data-green, #16a34a)",
-                      fontSize: 10,
-                    }}
+                    label={renderThresholdLabel(
+                      "Low",
+                      band.low,
+                      obs?.label || title,
+                      child?.stage,
+                      "var(--sd-data-green, #16a34a)",
+                    )}
                   />
                 ) : null}
                 {band && band.moderate ? (
@@ -332,12 +371,13 @@ export function ChartPanel({
                     strokeDasharray="4 3"
                     strokeWidth={1.2}
                     ifOverflow="extendDomain"
-                    label={{
-                      value: `Mod ${band.moderate}%`,
-                      position: "right",
-                      fill: "var(--sd-target, #d97706)",
-                      fontSize: 10,
-                    }}
+                    label={renderThresholdLabel(
+                      "Moderate",
+                      band.moderate,
+                      obs?.label || title,
+                      child?.stage,
+                      "var(--sd-target, #d97706)",
+                    )}
                   />
                 ) : null}
                 {band && band.high ? (
@@ -347,12 +387,13 @@ export function ChartPanel({
                     strokeDasharray="4 3"
                     strokeWidth={1.4}
                     ifOverflow="extendDomain"
-                    label={{
-                      value: `High ${band.high}%`,
-                      position: "right",
-                      fill: "var(--sd-data-red, #dc2626)",
-                      fontSize: 10,
-                    }}
+                    label={renderThresholdLabel(
+                      "High",
+                      band.high,
+                      obs?.label || title,
+                      child?.stage,
+                      "var(--sd-data-red, #dc2626)",
+                    )}
                   />
                 ) : null}
                 {selections.map((s, i) => {
@@ -392,22 +433,23 @@ export function ChartPanel({
             />
           </div>
         </div>
+        {!child &&
+          Array.from(picked).map((stage) => (
+            <div key={stage} className="mt-3">
+              <ChartPanel
+                payload={payload}
+                index={index}
+                selections={selections}
+                obs={obs}
+                stages={[]}
+                child={{ stage }}
+                thresholdLookup={thresholdLookup}
+                showThresholds={showThresholds}
+              />
+            </div>
+          ))}
+        </div>
       </CardContent>
-      {!child &&
-        Array.from(picked).map((stage) => (
-          <div key={stage} className="mt-3">
-            <ChartPanel
-              payload={payload}
-              index={index}
-              selections={selections}
-              obs={obs}
-              stages={[]}
-              child={{ stage }}
-              thresholdLookup={thresholdLookup}
-              showThresholds={showThresholds}
-            />
-          </div>
-        ))}
     </Card>
   );
 }

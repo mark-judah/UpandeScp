@@ -2089,7 +2089,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     };
 
-    const createChemicalRow = (itemName = "", rate = "", uom = "") => {
+    const createChemicalRow = (itemName = "", rate = "", uom = "", bomRate = null) => {
         const row = document.createElement("div");
         row.className = "chemical-row";
         row.style.display = "grid";
@@ -2122,7 +2122,15 @@ document.addEventListener("DOMContentLoaded", () => {
         rateInput.min = "0";
         rateInput.step = "0.01";
         rateInput.placeholder = "Rate/1000 L";
+        // Stash the immutable per-1000-L BOM rate so the water-volume
+        // listener can rescale this row later. ``override`` flips to "1"
+        // the moment the operator types a manual value — that row then
+        // stops auto-recalculating until the BOM is re-selected.
+        const initialBomRate = bomRate !== null ? bomRate : parseFloat(rate) || 0;
+        rateInput.dataset.bomRate = String(initialBomRate);
+        rateInput.dataset.override = "0";
         rateInput.addEventListener("input", () => {
+            rateInput.dataset.override = "1";
             applyRateLimitState(row);
             updateStockBalances();
         });
@@ -2264,12 +2272,41 @@ document.addEventListener("DOMContentLoaded", () => {
             els.waterHardness.value = selectedBom.custom_water_hardness || "";
             const chemicals = state.bomItems.filter(i => i.parent === bomName);
             chemicals.forEach(item => {
-                const rate = parseFloat(item.qty) || 0;
-                const row = createChemicalRow(item.item_name, rate, item.uom);
+                const bomRate = parseFloat(item.qty) || 0;
+                // Seed each row with the BOM's per-1000-L rate; the
+                // recalc below scales it to whatever water-volume is
+                // currently in the form.
+                const row = createChemicalRow(item.item_name, bomRate, item.uom, bomRate);
                 els.bomChemicalsList.appendChild(row);
             });
+            // Initial scale-down: if a scope is already picked the water
+            // volume is non-1000, so reflect that in every row's qty.
+            recalcChemicalQtysFromWater();
             updateStockBalances();
         } else { els.bomDetailsContainer.classList.add("tw-hidden"); }
+    };
+
+    /**
+     * Rescale every main-form chemical row's qty input from its stored
+     * BOM rate × (waterVolume / 1000). Rows tagged with
+     * ``dataset.override = '1'`` are left alone — once the operator
+     * types a manual value, that row sticks until the BOM is reselected.
+     */
+    const recalcChemicalQtysFromWater = () => {
+        const wv = parseFloat(els.waterVolume.value) || 0;
+        if (wv <= 0) return;
+        const ratio = wv / WATER_VOLUME_RATE;
+        document.querySelectorAll(".chemical-row .tw-chemical-qty-input").forEach((inp) => {
+            if (inp.dataset.override === "1") return;
+            const bomRate = parseFloat(inp.dataset.bomRate || "0");
+            if (!bomRate) return;
+            const next = Math.round(bomRate * ratio * 10000) / 10000;
+            if (parseFloat(inp.value) !== next) {
+                inp.value = String(next);
+                applyRateLimitState(inp.closest(".chemical-row"));
+            }
+        });
+        updateStockBalances();
     };
 
     const calculateAreaToSpray = () => {
@@ -2313,6 +2350,10 @@ document.addEventListener("DOMContentLoaded", () => {
         els.areaToSpray.value = totalAreaHectares > 0 ? totalAreaHectares.toFixed(4) : 0;
         const waterVolume = totalAreaHectares * WATER_VOLUME_RATE;
         els.waterVolume.value = waterVolume > 0 ? waterVolume.toFixed(2) : 0;
+        // Cascade: area → water volume → chemical qty. Any chem row
+        // whose ``override`` flag is set stays put; the rest scale
+        // to ``BOM rate × waterVolume / 1000``.
+        recalcChemicalQtysFromWater();
     };
 
     const getFinalChemicals = () => {
@@ -2793,6 +2834,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     els.bedNumbers.addEventListener("input", calculateAreaToSpray);
+
+    // Manual water-volume edits also rescale every chem row. Debounced
+    // so a multi-digit type doesn't hammer the recalc on every keystroke.
+    els.waterVolume.addEventListener("input", () => {
+        clearTimeout(els.waterVolume._recalcDebounce);
+        els.waterVolume._recalcDebounce = setTimeout(recalcChemicalQtysFromWater, 150);
+    });
 
     els.bom.addEventListener("change", (e) => { populateBomDetails(e.target.value); updateStockBalances(); });
 

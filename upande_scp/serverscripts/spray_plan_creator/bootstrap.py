@@ -96,13 +96,16 @@ def fetch_creator_bootstrap() -> dict:
             as_dict=True,
         )
 
+    # BOMs are NOT farm-scoped in the picker. The www form has always
+    # shown every active Chemical Mix BOM regardless of farm, so the
+    # React creator does the same — the operator can pick any BOM and
+    # the per-row chemical-warehouse selector handles the actual
+    # source restriction farm-side.
     bom_filters = {
         "custom_item_group": "Chemical Mix",
         "is_active": 1,
         "docstatus": 1,
     }
-    if frappe.db.has_column("BOM", "custom_farm"):
-        bom_filters["custom_farm"] = ["in", farms]
     tank_mixes = frappe.get_all(
         "BOM",
         filters=bom_filters,

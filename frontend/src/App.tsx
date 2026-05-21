@@ -5,6 +5,9 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { primeBedsAndZones, primeMapSettings } from "@/lib/scouting-api";
 import { loadObservationColors } from "@/lib/observation-colors";
+import { bootstrap } from "@/lib/frappe";
+
+const STORE_KEEPER_ROLE = "Store Keeper";
 
 // Each page imports its own heavy deps (recharts, leaflet, react-day-picker).
 // React.lazy + Suspense splits them into separate bundles so first paint of
@@ -53,6 +56,16 @@ const Settings = lazy(() =>
 );
 const ApplicationPlan = lazy(() =>
   import("@/pages/ApplicationPlan").then((m) => ({ default: m.ApplicationPlan })),
+);
+const ChemicalDashboard = lazy(() =>
+  import("@/pages/ChemicalDashboard").then((m) => ({
+    default: m.ChemicalDashboard,
+  })),
+);
+const SprayPlanTransfers = lazy(() =>
+  import("@/pages/SprayPlanTransfers").then((m) => ({
+    default: m.SprayPlanTransfers,
+  })),
 );
 // Throwaway POC route — gated on a hash that the normal router doesn't
 // recognise so it never appears in the sidebar. Open with
@@ -128,6 +141,20 @@ export function App() {
     void loadObservationColors();
   }, []);
 
+  // Store Keepers land on Spray Plan Transfers (not the scouting
+  // Dashboard they don't have access to anyway). Only redirect once,
+  // on the very first mount when no explicit hash was set.
+  useEffect(() => {
+    const roles = bootstrap().roles || [];
+    const isStoreKeeper = roles.includes(STORE_KEEPER_ROLE);
+    if (!isStoreKeeper) return;
+    const hash = window.location.hash || "";
+    if (!hash || hash === "#" || hash === "#/" || hash === "#/dashboard") {
+      navigate("spray-plan-transfers");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <SidebarProvider>
       <AppSidebar view={view} onNavigate={navigate} />
@@ -171,6 +198,10 @@ export function App() {
             <SprayPlanAccess />
           ) : view === "application-plan" ? (
             <ApplicationPlan />
+          ) : view === "chemical-dashboard" ? (
+            <ChemicalDashboard />
+          ) : view === "spray-plan-transfers" ? (
+            <SprayPlanTransfers />
           ) : (
             <Dashboard />
           )}

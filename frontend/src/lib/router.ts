@@ -15,7 +15,9 @@ export type View =
   | "approvals"
   | "settings"
   | "spray-plan-access"
-  | "application-plan";
+  | "application-plan"
+  | "chemical-dashboard"
+  | "spray-plan-transfers";
 
 const DEFAULT: View = "dashboard";
 const KNOWN_VIEWS: ReadonlySet<View> = new Set([
@@ -34,6 +36,8 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set([
   "settings",
   "spray-plan-access",
   "application-plan",
+  "chemical-dashboard",
+  "spray-plan-transfers",
 ]);
 
 function viewFromHash(): View {

@@ -13,6 +13,8 @@ import {
   FileText,
   GitFork,
   Settings,
+  Beaker,
+  Truck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -42,6 +44,10 @@ type InAppItem = {
   icon: IconType;
   hint?: string;
   requireRoles?: string[];
+  /** Inverse of ``requireRoles``: hide this item when the user holds any
+   *  of these roles. Used to keep store-keeper-only pages hidden from
+   *  everyone else. */
+  hideForRoles?: string[];
 };
 
 type ExternalItem = {
@@ -51,6 +57,7 @@ type ExternalItem = {
   icon: IconType;
   hint?: string;
   requireRoles?: string[];
+  hideForRoles?: string[];
 };
 
 type NavItem = InAppItem | ExternalItem;
@@ -58,11 +65,40 @@ type NavItem = InAppItem | ExternalItem;
 interface NavSection {
   label: string;
   items: NavItem[];
+  /** Hide the whole section when the user holds one of these roles —
+   *  used to give Store Keepers an exclusive, two-item sidebar
+   *  regardless of their other Frappe permissions. */
+  hideForRoles?: string[];
 }
 
+const STORE_KEEPER_ROLE = "Store Keeper";
+
 const NAV: NavSection[] = [
+  // Store-Keeper exclusive section — only role that sees it, and the
+  // ONLY section visible when the user holds the Store Keeper role
+  // (every other section sets hideForRoles=[STORE_KEEPER_ROLE]).
+  {
+    label: "Stores",
+    items: [
+      {
+        kind: "view",
+        view: "spray-plan-transfers",
+        label: "Spray Plan Transfers",
+        icon: Truck,
+        requireRoles: [STORE_KEEPER_ROLE],
+      },
+      {
+        kind: "view",
+        view: "chemical-dashboard",
+        label: "Chemical Dashboard",
+        icon: Beaker,
+        requireRoles: [STORE_KEEPER_ROLE],
+      },
+    ],
+  },
   {
     label: "Overview",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
       { kind: "view", view: "trends", label: "Trends", icon: LineChart },
@@ -70,6 +106,7 @@ const NAV: NavSection[] = [
   },
   {
     label: "Scouting",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "rose", label: "Rose Scouting", icon: Flower },
       { kind: "view", view: "avocado", label: "Avocado", icon: Sprout },
@@ -80,6 +117,7 @@ const NAV: NavSection[] = [
   },
   {
     label: "Crop Protection",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       {
         kind: "view",
@@ -111,6 +149,7 @@ const NAV: NavSection[] = [
   },
   {
     label: "Reports",
+    hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
       { kind: "view", view: "varieties", label: "Varieties", icon: GitFork },
@@ -121,6 +160,14 @@ const NAV: NavSection[] = [
 function userHasAnyRole(required: string[] | undefined, userRoles: string[]): boolean {
   if (!required || required.length === 0) return true;
   return required.some((r) => userRoles.includes(r));
+}
+
+function isHiddenForUser(
+  hideForRoles: string[] | undefined,
+  userRoles: string[],
+): boolean {
+  if (!hideForRoles || hideForRoles.length === 0) return false;
+  return hideForRoles.some((r) => userRoles.includes(r));
 }
 
 export function AppSidebar({
@@ -158,8 +205,11 @@ export function AppSidebar({
       <SidebarSeparator />
       <SidebarContent>
         {NAV.map((section) => {
-          const visibleItems = section.items.filter((item) =>
-            userHasAnyRole(item.requireRoles, roles),
+          if (isHiddenForUser(section.hideForRoles, roles)) return null;
+          const visibleItems = section.items.filter(
+            (item) =>
+              userHasAnyRole(item.requireRoles, roles) &&
+              !isHiddenForUser(item.hideForRoles, roles),
           );
           if (visibleItems.length === 0) return null;
           return (

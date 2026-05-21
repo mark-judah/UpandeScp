@@ -59,7 +59,7 @@ const LABEL_COLOR = "rgba(0,0,0,0.7)";
 export function BedSvg({
   geometry,
   markers,
-  markerSize = 4.6,
+  markerSize = 5.5,
   labelFontSize = 3,
   labelEvery = 7,
   className,
@@ -79,7 +79,7 @@ export function BedSvg({
             d={b.d}
             fill="none"
             stroke={STROKE_COLOR}
-            strokeWidth={0.9}
+            strokeWidth={0.72}
           />
         ))}
       </g>

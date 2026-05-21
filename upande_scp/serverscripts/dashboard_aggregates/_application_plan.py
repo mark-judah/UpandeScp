@@ -47,7 +47,10 @@ def _empty() -> dict:
     return {
         "zoneObs":     {},
         "latestDate":  None,
-        "filterOpts":  {"pests": [], "sections": [], "stages": []},
+        "filterOpts":  {
+            "pests": [], "sections": [], "stages": [],
+            "stagesByObs": {}, "sectionsByObs": {},
+        },
         "totalRows":   0,
         "targets":     [],
     }
@@ -67,6 +70,23 @@ def _build(filters: dict, job_id: str = "") -> dict:
         {r["section"] for r in all_rows if r.get("section")}
     )
     stages = sorted({r["stage"] for r in all_rows if r.get("stage")})
+
+    # Cascading menus — when the operator picks a specific pest/disease,
+    # the Stage and Plant Section chips narrow to only the values seen
+    # for that observation. Keyed by the obs_name as it appears in the
+    # client-facing Pest filter chip.
+    stages_by_obs: dict = {}
+    sections_by_obs: dict = {}
+    for r in all_rows:
+        obs = r.get("obs_name") or ""
+        if not obs:
+            continue
+        st = r.get("stage") or ""
+        if st:
+            stages_by_obs.setdefault(obs, set()).add(st)
+        sc = r.get("section") or ""
+        if sc:
+            sections_by_obs.setdefault(obs, set()).add(sc)
 
     pest_color_map = {
         r["name"]: r.get("pests_legend_color")
@@ -130,6 +150,8 @@ def _build(filters: dict, job_id: str = "") -> dict:
             "pests":    pests_avail,
             "sections": sections,
             "stages":   stages,
+            "stagesByObs":   {k: sorted(v) for k, v in stages_by_obs.items()},
+            "sectionsByObs": {k: sorted(v) for k, v in sections_by_obs.items()},
         },
         "totalRows":   total_rows,
         # Distinct obs names present after applying section/stage/pest

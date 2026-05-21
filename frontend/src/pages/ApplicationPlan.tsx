@@ -86,7 +86,13 @@ interface ZoneObs {
 interface DiagnosePayload {
   zoneObs: Record<string, ZoneObs>;
   latestDate: string | null;
-  filterOpts: { pests: string[]; sections: string[]; stages: string[] };
+  filterOpts: {
+    pests: string[];
+    sections: string[];
+    stages: string[];
+    stagesByObs?: Record<string, string[]>;
+    sectionsByObs?: Record<string, string[]>;
+  };
   totalRows: number;
   targets: string[];
 }
@@ -598,6 +604,32 @@ export function ApplicationPlan() {
     };
   }, [diagnose]);
 
+  // Stage / Plant Section chips narrow to whatever's seen for the
+  // currently picked Pest. ``ALL`` = show every stage / section in scope.
+  const stagesForPest = useMemo(() => {
+    if (diag.pest === ALL) return filterOpts.stages;
+    const map = diagnose?.filterOpts.stagesByObs;
+    return map?.[diag.pest] || [];
+  }, [diag.pest, diagnose, filterOpts.stages]);
+
+  const sectionsForPest = useMemo(() => {
+    if (diag.pest === ALL) return filterOpts.sections;
+    const map = diagnose?.filterOpts.sectionsByObs;
+    return map?.[diag.pest] || [];
+  }, [diag.pest, diagnose, filterOpts.sections]);
+
+  // If the user switches pests and the previously-picked stage/section
+  // doesn't exist for the new pest, drop the stale filter so the user
+  // isn't silently looking at zero zones.
+  useEffect(() => {
+    if (diag.stage !== ALL && !stagesForPest.includes(diag.stage)) {
+      setDiag((d) => ({ ...d, stage: ALL }));
+    }
+    if (diag.section !== ALL && !sectionsForPest.includes(diag.section)) {
+      setDiag((d) => ({ ...d, section: ALL }));
+    }
+  }, [diag.pest, diag.stage, diag.section, stagesForPest, sectionsForPest]);
+
   const totalZones = greenhouse ? zonesByGh[greenhouse] || 0 : 0;
   const affectedZones = Object.values(zoneObs).filter((o) => o.count > 0).length;
   const coveragePct = totalZones
@@ -1085,7 +1117,7 @@ export function ApplicationPlan() {
                 <BedSvg
                   geometry={geometry}
                   markers={bedMarkers}
-                  className="w-full h-auto min-h-[420px] max-h-[560px] hover:ring-2 hover:ring-[var(--sd-accent)]/30 transition-shadow rounded-md border bg-card p-2"
+                  className="w-full h-auto min-h-[640px] max-h-[820px] hover:ring-2 hover:ring-[var(--sd-accent)]/30 transition-shadow rounded-md border bg-card p-2"
                 />
                 <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-md bg-card/90 backdrop-blur border px-2 py-1 text-[0.65rem] text-muted-foreground">
                   <Maximize2 className="h-3 w-3" />
@@ -1093,7 +1125,7 @@ export function ApplicationPlan() {
                 </span>
               </button>
             ) : (
-              <Card className="p-8 flex flex-col items-center justify-center text-center min-h-[420px]">
+              <Card className="p-8 flex flex-col items-center justify-center text-center min-h-[640px]">
                 <CardTitle className="text-sm">
                   {greenhouse ? "Loading geometry…" : "No greenhouse selected"}
                 </CardTitle>
@@ -1108,10 +1140,10 @@ export function ApplicationPlan() {
             )}
           </div>
 
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 min-h-0">
             {weatherFarm ? <WeatherCard farm={weatherFarm} /> : null}
 
-            <Card className="p-3">
+            <Card className="p-3 flex-1 flex flex-col">
               <CardHeader className="p-0 pb-2">
                 <CardTitle className="text-sm">Filters</CardTitle>
                 <CardDescription>
@@ -1150,7 +1182,7 @@ export function ApplicationPlan() {
                       active={diag.stage === ALL}
                       onClick={() => setDiag({ ...diag, stage: ALL })}
                     />
-                    {filterOpts.stages.map((s) => (
+                    {stagesForPest.map((s) => (
                       <DiagChip
                         key={s}
                         label={s}
@@ -1158,6 +1190,11 @@ export function ApplicationPlan() {
                         onClick={() => setDiag({ ...diag, stage: s })}
                       />
                     ))}
+                    {!stagesForPest.length && diag.pest !== ALL ? (
+                      <span className="text-[0.7rem] text-muted-foreground italic">
+                        No stages recorded for {diag.pest}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1171,7 +1208,7 @@ export function ApplicationPlan() {
                       active={diag.section === ALL}
                       onClick={() => setDiag({ ...diag, section: ALL })}
                     />
-                    {filterOpts.sections.map((s) => (
+                    {sectionsForPest.map((s) => (
                       <DiagChip
                         key={s}
                         label={s}
@@ -1179,6 +1216,11 @@ export function ApplicationPlan() {
                         onClick={() => setDiag({ ...diag, section: s })}
                       />
                     ))}
+                    {!sectionsForPest.length && diag.pest !== ALL ? (
+                      <span className="text-[0.7rem] text-muted-foreground italic">
+                        No sections recorded for {diag.pest}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
 

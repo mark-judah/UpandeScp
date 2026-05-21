@@ -34,6 +34,7 @@ export const CardTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
+    data-card-title=""
     className={cn(
       "text-sm font-semibold leading-tight tracking-tight",
       className,

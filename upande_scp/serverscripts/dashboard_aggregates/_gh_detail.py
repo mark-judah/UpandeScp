@@ -2,11 +2,12 @@
 
 import frappe
 
+from upande_scp.serverscripts import scouting_metrics
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
-    disease_severity,
     parent_filter_conditions,
     publish_progress,
+    severity_for,
 )
 
 
@@ -40,7 +41,7 @@ def _build(filters: dict, job_id: str = "") -> dict:
 
     publish_progress(job_id, 25, "loading pest rows")
     pests = frappe.db.sql(f"""
-        SELECT se.name, se.date_of_capture, p.pest, p.count
+        SELECT se.name, se.date_of_capture, se.zone, p.pest, p.stage, p.count
         FROM `tabScouting Entry` se
         JOIN `tabPests Scouting Entry` p ON p.parent = se.name
         WHERE {where}
@@ -48,7 +49,7 @@ def _build(filters: dict, job_id: str = "") -> dict:
 
     publish_progress(job_id, 50, "loading disease rows")
     diseases = frappe.db.sql(f"""
-        SELECT se.name, se.date_of_capture, d.disease, d.stage
+        SELECT se.name, se.date_of_capture, se.zone, d.disease, d.stage
         FROM `tabScouting Entry` se
         JOIN `tabDiseases Scouting Entry` d ON d.parent = se.name
         WHERE {where}
@@ -72,19 +73,29 @@ def _build(filters: dict, job_id: str = "") -> dict:
     trap_map = {}
     daily = {}
     alerts = 0
+    # (kind, obs_name, stage) → set of zones, single greenhouse.
+    cells: dict = {}
 
     for r in pests:
         n = int(r.count or 0)
         pest_map[r.pest] = pest_map.get(r.pest, 0) + (n if n else 1)
         d = str(r.date_of_capture)[:10]
         daily.setdefault(d, {"date": d, "pests": 0, "diseases": 0, "traps": 0})["pests"] += 1
-        if n > 15:
-            alerts += 1
+        zone = (r.zone or "").strip()
+        if zone:
+            cells.setdefault(
+                ("pest", r.pest or "", (r.stage or "").strip()), set(),
+            ).add(zone)
 
     for r in diseases:
         disease_map[r.disease] = disease_map.get(r.disease, 0) + 1
         d = str(r.date_of_capture)[:10]
         daily.setdefault(d, {"date": d, "pests": 0, "diseases": 0, "traps": 0})["diseases"] += 1
+        zone = (r.zone or "").strip()
+        if zone:
+            cells.setdefault(
+                ("disease", r.disease or "", (r.stage or "").strip()), set(),
+            ).add(zone)
 
     for r in traps:
         pname = r.pest or "Unknown"
@@ -94,9 +105,18 @@ def _build(filters: dict, job_id: str = "") -> dict:
         if (int(r.count or 0)) > 10:
             alerts += 1
 
-    for r in diseases:
-        if disease_severity(r.stage) == "high":
-            alerts += 1
+    # Pest + disease alerts now come from % of zones in THIS greenhouse
+    # against the per-stage thresholds (with aggregate fallback) on
+    # Crop Scouted. Traps stay count-based until trap thresholds get
+    # the same treatment.
+    zones_by_gh = scouting_metrics.get_zone_counts_by_greenhouse() or {}
+    total_zones = zones_by_gh.get(filters["greenhouse"]) or 0
+    if total_zones > 0:
+        for (kind, obs_name, stage), zones in cells.items():
+            pct = len(zones) / total_zones * 100
+            sev = severity_for(filters["crop"], kind, obs_name, stage, pct)
+            if sev == "high":
+                alerts += 1
 
     def _top(d, n=6):
         return sorted(

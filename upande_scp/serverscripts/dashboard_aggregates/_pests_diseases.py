@@ -6,11 +6,10 @@ from upande_scp.serverscripts import scouting_metrics
 from upande_scp.serverscripts.scouting_metrics import get_zone_counts_by_greenhouse
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
-    disease_severity,
     parent_filter_conditions,
-    pest_severity,
     publish_progress,
     resolve_greenhouse_scope,
+    severity_for,
 )
 
 
@@ -81,7 +80,7 @@ def _build(kind: str, filters: dict, scope, job_id: str = "") -> dict:
     publish_progress(job_id, 75, "computing zone metrics")
     zones_by_gh = get_zone_counts_by_greenhouse() or {}
 
-    ranking = _ranking(kind, rows)
+    ranking = _ranking(kind, rows, filters["crop"], zones_by_gh)
     fo = _filter_options(rows)
     fo[kind + "s"] = fo.pop("items")
 
@@ -98,25 +97,49 @@ def _build(kind: str, filters: dict, scope, job_id: str = "") -> dict:
     return payload
 
 
-def _ranking(kind: str, rows: list) -> list:
-    by_name = {}
+def _ranking(kind: str, rows: list, crop: str, zones_by_gh: dict) -> list:
+    """Per-observation ranking with severity buckets driven by the
+    per-stage thresholds (with aggregate fallback) configured on
+    ``Crop Scouted``. One cell = one (greenhouse, obs_name, stage)
+    combination; ``high / moderate / low`` count the number of cells
+    that classify into each band. ``total`` sums the observation
+    counts (pest count for pests, row count for diseases) the same way
+    the old function did so the totals column doesn't shift unrelated."""
+    by_name: dict = {}
+    # (gh, obs_name, stage) → set of zones
+    cells: dict = {}
     for r in rows:
-        bucket = by_name.setdefault(r.obs_name,
-                                    {"name": r.obs_name, "total": 0,
-                                     "high": 0, "moderate": 0, "low": 0})
+        bucket = by_name.setdefault(
+            r.obs_name,
+            {"name": r.obs_name, "total": 0, "high": 0, "moderate": 0, "low": 0},
+        )
         if kind == "pest":
-            n = int(r.count or 0)
-            bucket["total"] += n
-            sev = pest_severity(n)
-            bucket["high" if sev == "high" else
-                   "moderate" if sev == "moderate" else
-                   "low"] += 1
+            bucket["total"] += int(r.count or 0)
         else:
             bucket["total"] += 1
-            sev = disease_severity(r.stage)
-            bucket["high" if sev == "high" else
-                   "moderate" if sev == "moderate" else
-                   "low"] += 1
+        zone = (r.zone or "").strip()
+        if not zone:
+            continue
+        gh = r.greenhouse or r.block or ""
+        if not gh:
+            continue
+        key = (gh, r.obs_name or "", (r.stage or "").strip())
+        cells.setdefault(key, set()).add(zone)
+
+    for (gh, obs_name, stage), zones in cells.items():
+        total = zones_by_gh.get(gh) or 0
+        if total <= 0:
+            continue
+        pct = len(zones) / total * 100
+        sev = severity_for(crop, kind, obs_name, stage, pct)
+        if not sev:
+            continue
+        bucket = by_name.setdefault(
+            obs_name,
+            {"name": obs_name, "total": 0, "high": 0, "moderate": 0, "low": 0},
+        )
+        bucket[sev] += 1
+
     return sorted(by_name.values(), key=lambda x: x["total"], reverse=True)
 
 

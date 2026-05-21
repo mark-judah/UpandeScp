@@ -47,11 +47,12 @@ def _build(from_date, to_date, crop, scope, job_id: str = "") -> dict:
 
     publish_progress(job_id, 35, "loading observations")
     obs     = _observation_rows(where, params)
+    zones_by_gh = scouting_metrics.get_zone_counts_by_greenhouse() or {}
 
     publish_progress(job_id, 85, "computing summaries")
     daily, range_totals = _daily_and_totals(obs)
-    gh_health, alerts_total = _gh_health(obs)
-    active = _active_alerts(obs)
+    gh_health, cells, alerts_total = _classify_cells(obs, crop, zones_by_gh)
+    active = _active_alerts_from_cells(cells)
     top_scouts, scouts_per_day, scout_perf = _scout_aggs(obs)
 
     publish_progress(job_id, 95, "loading recent activity")
@@ -166,72 +167,117 @@ def _daily_and_totals(obs: list) -> tuple:
     return sorted(by_date.values(), key=lambda x: x["date"]), totals
 
 
-def _gh_health(obs: list) -> tuple:
-    """Per-greenhouse counts + alert count. Alert rule:
-       - pest count > 15 → +1 alert
-       - disease severity high/active/severe → +1 alert
-       - trap count > 10 → +1 alert (matches greenhouseDetail in aggregate.ts)"""
-    from upande_scp.serverscripts.dashboard_aggregates._common import (
-        pest_severity, disease_severity,
-    )
-    by_gh = {}
+def _classify_cells(obs: list, crop: str, zones_by_gh: dict) -> tuple:
+    """Single pass over ``obs`` produces:
+
+      * ``by_gh``        — per-greenhouse counts + scouts + alerts
+      * ``cells``        — one row per (gh, kind, obs_name, stage) with the
+                           pct-of-zones value and severity classification,
+                           the latest scouting date in that cell, and the
+                           summed pest/trap count
+      * ``total_alerts`` — Σ alerts across greenhouses
+
+    Severity uses the per-stage thresholds (with aggregate fallback) from
+    the Crop Scouted doc — see ``_common.severity_for``. Traps keep the
+    legacy ``count > 10`` rule because trap thresholds aren't part of the
+    Crop Scouted threshold model yet."""
+    from upande_scp.serverscripts.dashboard_aggregates._common import severity_for
+
+    by_gh: dict = {}
+    scouts_by_gh: dict = {}
+    # (gh, kind, obs_name, stage) → {zones: set, count_sum, latest_date}
+    cells: dict = {}
     total_alerts = 0
-    scouts_by_gh = {}
+
     for r in obs:
         gh = r.greenhouse or r.block or "—"
-        bucket = by_gh.setdefault(gh, {"name": gh, "pests": 0, "diseases": 0,
-                                       "traps": 0, "scoutCount": 0, "alerts": 0})
+        bucket = by_gh.setdefault(gh, {
+            "name": gh, "pests": 0, "diseases": 0, "traps": 0,
+            "scoutCount": 0, "alerts": 0,
+        })
         scouts_by_gh.setdefault(gh, set()).add(r.scouts_name or "")
-        if r.kind == "pest":
-            bucket["pests"] += 1
-            if pest_severity(r.count) == "high":
-                bucket["alerts"] += 1
-                total_alerts += 1
-        elif r.kind == "disease":
-            bucket["diseases"] += 1
-            if disease_severity(r.stage) == "high":
-                bucket["alerts"] += 1
-                total_alerts += 1
-        elif r.kind == "trap":
+        date = str(r.date_of_capture)[:10]
+        if r.kind == "trap":
             bucket["traps"] += 1
+            # Trap alerts stay count-based until trap thresholds get the
+            # same treatment — single-row check, no zone aggregation.
             if (r.count or 0) > 10:
                 bucket["alerts"] += 1
                 total_alerts += 1
+            continue
+        if r.kind == "pest":
+            bucket["pests"] += 1
+        elif r.kind == "disease":
+            bucket["diseases"] += 1
+
+        zone = (r.zone or "").strip()
+        if not zone:
+            continue
+        key = (gh, r.kind, r.obs_name or "", (r.stage or "").strip())
+        cell = cells.setdefault(key, {
+            "zones": set(),
+            "count_sum": 0,
+            "latest_date": "",
+        })
+        cell["zones"].add(zone)
+        cell["count_sum"] += int(r.count or 0)
+        if date > (cell["latest_date"] or ""):
+            cell["latest_date"] = date
+
+    out_cells: list = []
+    for (gh, kind, obs_name, stage), cell in cells.items():
+        total = zones_by_gh.get(gh) or 0
+        if total <= 0:
+            continue
+        pct = round(len(cell["zones"]) / total * 100, 1)
+        sev = severity_for(crop, kind, obs_name, stage, pct)
+        if sev == "high":
+            by_gh[gh]["alerts"] += 1
+            total_alerts += 1
+        out_cells.append({
+            "greenhouse": gh,
+            "kind":       kind,
+            "obs_name":   obs_name,
+            "stage":      stage,
+            "zones":      len(cell["zones"]),
+            "total":      total,
+            "pct":        pct,
+            "severity":   sev,
+            "count":      cell["count_sum"],
+            "date":       cell["latest_date"],
+        })
+
     for gh, bucket in by_gh.items():
         bucket["scoutCount"] = len([s for s in scouts_by_gh[gh] if s])
         a = bucket["alerts"]
         bucket["status"] = "critical" if a > 2 else "warning" if a > 0 else "good"
-    out = sorted(
+
+    gh_out = sorted(
         by_gh.values(),
         key=lambda x: x["pests"] + x["diseases"] + x["traps"],
         reverse=True,
     )
-    return out, total_alerts
+    return gh_out, out_cells, total_alerts
 
 
-def _active_alerts(obs: list, n: int = 8) -> list:
-    from upande_scp.serverscripts.dashboard_aggregates._common import (
-        pest_severity, disease_severity,
-    )
-    out = []
-    for r in obs:
-        gh   = r.greenhouse or r.block or "—"
-        zone = r.zone or r.tree or ""
-        date = str(r.date_of_capture)[:10]
-        if r.kind == "pest":
-            sev = pest_severity(r.count)
-            if sev:
-                out.append({"name": r.obs_name, "kind": "pest", "severity": sev,
-                            "count": int(r.count or 0),
-                            "greenhouse": gh, "zone": zone, "date": date})
-        elif r.kind == "disease":
-            sev = disease_severity(r.stage)
-            if sev:
-                out.append({"name": r.obs_name, "kind": "disease", "severity": sev,
-                            "count": 1,
-                            "greenhouse": gh, "zone": zone, "date": date})
-    # JS comparator: high-first, then date desc. Python list.sort is stable,
-    # so sort by date desc first (secondary key), then by severity (primary).
+def _active_alerts_from_cells(cells: list, n: int = 8) -> list:
+    """Pick the top ``n`` cells with non-None severity, high-first then
+    by latest date desc. One row per (gh, obs, stage) instead of one per
+    raw observation, so the alerts list reflects the threshold model."""
+    flagged = [c for c in cells if c.get("severity")]
+    out = [
+        {
+            "name":       c["obs_name"],
+            "kind":       c["kind"],
+            "severity":   c["severity"],
+            "count":      c["count"],
+            "greenhouse": c["greenhouse"],
+            "zone":       f"{c['zones']}/{c['total']} zones ({c['pct']}%)",
+            "date":       c["date"],
+            "stage":      c["stage"],
+        }
+        for c in flagged
+    ]
     out.sort(key=lambda a: a["date"], reverse=True)
     out.sort(key=lambda a: a["severity"] != "high")
     return out[:n]

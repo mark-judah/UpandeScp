@@ -1073,8 +1073,6 @@ export function ApplicationPlan() {
           )}
         </div>
 
-        {weatherFarm ? <WeatherCard farm={weatherFarm} /> : null}
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="relative">
             {greenhouse && geometry ? (
@@ -1087,7 +1085,7 @@ export function ApplicationPlan() {
                 <BedSvg
                   geometry={geometry}
                   markers={bedMarkers}
-                  className="w-full h-auto min-h-[260px] max-h-[360px] hover:ring-2 hover:ring-[var(--sd-accent)]/30 transition-shadow rounded-md border bg-card p-2"
+                  className="w-full h-auto min-h-[420px] max-h-[560px] hover:ring-2 hover:ring-[var(--sd-accent)]/30 transition-shadow rounded-md border bg-card p-2"
                 />
                 <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-md bg-card/90 backdrop-blur border px-2 py-1 text-[0.65rem] text-muted-foreground">
                   <Maximize2 className="h-3 w-3" />
@@ -1095,7 +1093,7 @@ export function ApplicationPlan() {
                 </span>
               </button>
             ) : (
-              <Card className="p-8 flex flex-col items-center justify-center text-center min-h-[320px]">
+              <Card className="p-8 flex flex-col items-center justify-center text-center min-h-[420px]">
                 <CardTitle className="text-sm">
                   {greenhouse ? "Loading geometry…" : "No greenhouse selected"}
                 </CardTitle>
@@ -1110,97 +1108,106 @@ export function ApplicationPlan() {
             )}
           </div>
 
-          <Card className="p-3">
-            <CardHeader className="p-0 pb-2">
-              <CardTitle className="text-sm">Filters</CardTitle>
-              <CardDescription>
-                Same controls as the legacy spray-plan page · pest / stage / section.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0 grid grid-cols-2 gap-2">
-              <div className="flex flex-col gap-1 col-span-2">
-                <Label>Pest / Disease</Label>
-                <Select
-                  value={diag.pest}
-                  onValueChange={(v) => setDiag({ ...diag, pest: v })}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>All</SelectItem>
-                    {filterOpts.pests.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {p}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label>Stage</Label>
-                <Select
-                  value={diag.stage}
-                  onValueChange={(v) => setDiag({ ...diag, stage: v })}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>All stages (cumulative)</SelectItem>
-                    {filterOpts.stages.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label>Plant Section</Label>
-                <Select
-                  value={diag.section}
-                  onValueChange={(v) => setDiag({ ...diag, section: v })}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>All sections</SelectItem>
-                    {filterOpts.sections.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="flex flex-col gap-3">
+            {weatherFarm ? <WeatherCard farm={weatherFarm} /> : null}
 
-              <div className="col-span-2 rounded-md border bg-[var(--sd-bg-soft)] p-2.5">
-                <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground mb-1">
-                  Chemical Requirements
+            <Card className="p-3">
+              <CardHeader className="p-0 pb-2">
+                <CardTitle className="text-sm">Filters</CardTitle>
+                <CardDescription>
+                  Pest / Stage / Section · click a chip to focus, "All" to clear.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0 flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
+                    Pest / Disease
+                  </Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    <DiagChip
+                      label="All"
+                      active={diag.pest === ALL}
+                      onClick={() => setDiag({ ...diag, pest: ALL })}
+                    />
+                    {filterOpts.pests.map((p) => (
+                      <DiagChip
+                        key={p}
+                        label={p}
+                        active={diag.pest === p}
+                        onClick={() => setDiag({ ...diag, pest: p })}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div className="text-xs text-foreground">{recommendation}</div>
-                <div className="mt-2 h-2 rounded-full bg-[var(--sd-line)] overflow-hidden">
-                  <div
-                    className="h-full"
-                    style={{
-                      width: `${Math.min(100, coveragePct)}%`,
-                      background:
-                        coveragePct >= 30
-                          ? "var(--sd-data-red)"
-                          : coveragePct >= 10
-                            ? "var(--sd-target)"
-                            : "var(--sd-data-green)",
-                    }}
-                  />
+
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
+                    Stage
+                  </Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    <DiagChip
+                      label="All stages"
+                      active={diag.stage === ALL}
+                      onClick={() => setDiag({ ...diag, stage: ALL })}
+                    />
+                    {filterOpts.stages.map((s) => (
+                      <DiagChip
+                        key={s}
+                        label={s}
+                        active={diag.stage === s}
+                        onClick={() => setDiag({ ...diag, stage: s })}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div className="text-[0.65rem] text-muted-foreground mt-1 tabular-nums">
-                  {coveragePct}% of zones flagged
+
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
+                    Plant Section
+                  </Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    <DiagChip
+                      label="All sections"
+                      active={diag.section === ALL}
+                      onClick={() => setDiag({ ...diag, section: ALL })}
+                    />
+                    {filterOpts.sections.map((s) => (
+                      <DiagChip
+                        key={s}
+                        label={s}
+                        active={diag.section === s}
+                        onClick={() => setDiag({ ...diag, section: s })}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+
+                <div className="rounded-md border bg-[var(--sd-bg-soft)] p-2.5">
+                  <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground mb-1">
+                    Chemical Requirements
+                  </div>
+                  <div className="text-xs text-foreground">{recommendation}</div>
+                  <div className="mt-2 h-2 rounded-full bg-[var(--sd-line)] overflow-hidden">
+                    <div
+                      className="h-full"
+                      style={{
+                        width: `${Math.min(100, coveragePct)}%`,
+                        background:
+                          coveragePct >= 30
+                            ? "var(--sd-data-red)"
+                            : coveragePct >= 10
+                              ? "var(--sd-target)"
+                              : "var(--sd-data-green)",
+                      }}
+                    />
+                  </div>
+                  <div className="text-[0.65rem] text-muted-foreground mt-1 tabular-nums">
+                    {coveragePct}% of zones flagged
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </section>
 
@@ -1675,7 +1682,7 @@ export function ApplicationPlan() {
 
       {/* Fullscreen heatmap modal */}
       <Dialog open={heatmapModal} onOpenChange={setHeatmapModal}>
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>{greenhouse}</DialogTitle>
             <DialogDescription>
@@ -1686,7 +1693,7 @@ export function ApplicationPlan() {
             <BedSvg
               geometry={geometry}
               markers={bedMarkers}
-              className="w-full h-auto min-h-[420px] [&_svg]:max-h-[640px] [&_svg]:w-full"
+              className="w-full h-auto min-h-[360px] [&_svg]:max-h-[520px] [&_svg]:w-full"
             />
           ) : (
             <div className="text-xs text-muted-foreground p-4">
@@ -1922,5 +1929,30 @@ function NumInput({
         className="h-8 text-xs tabular-nums"
       />
     </div>
+  );
+}
+
+function DiagChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.7rem] transition-colors " +
+        (active
+          ? "bg-primary text-primary-foreground border-primary"
+          : "bg-card text-muted-foreground hover:bg-muted")
+      }
+    >
+      <span className="font-medium">{label}</span>
+    </button>
   );
 }

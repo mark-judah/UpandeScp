@@ -135,6 +135,146 @@ _AFP_TYPE = "Application Floor Plan"
 
 
 @frappe.whitelist()
+def get_transfer_items(name: str) -> dict:
+    """Items on a single draft Stock Entry — used by the Transfers page
+    chemical drop-down. Trimmed to the columns the UI actually shows so
+    the round-trip stays small even when a SE has 30 line items."""
+    _check_perm()
+    name = (name or "").strip()
+    if not name:
+        return {"items": []}
+    rows = frappe.db.sql(
+        """
+        SELECT it.item_code, it.item_name, it.qty, it.uom, it.s_warehouse,
+               it.t_warehouse
+        FROM   `tabStock Entry Detail` it
+        WHERE  it.parent = %(name)s
+        ORDER  BY it.idx
+        """,
+        {"name": name},
+        as_dict=True,
+    )
+    return {"items": [
+        {
+            "item_code":     r["item_code"],
+            "item_name":     r["item_name"] or r["item_code"],
+            "qty":           float(r["qty"] or 0),
+            "uom":           r["uom"] or "",
+            "from_warehouse": r["s_warehouse"] or "",
+            "to_warehouse":   r["t_warehouse"] or "",
+        }
+        for r in rows
+    ]}
+
+
+@frappe.whitelist()
+def search_employees(query: str = "", limit: int = 12) -> list:
+    """Employee autocomplete for the Transfers bulk-assign picker.
+    Matches against employee id, name, or designation. Returns up to
+    ``limit`` rows sorted by relevance (id startswith > name contains)."""
+    _check_perm()
+    q = (query or "").strip()
+    try:
+        limit = max(1, min(int(limit or 12), 50))
+    except (TypeError, ValueError):
+        limit = 12
+    if not q:
+        rows = frappe.db.sql(
+            """
+            SELECT name AS employee, employee_name, designation, department
+            FROM   `tabEmployee`
+            WHERE  status = 'Active'
+            ORDER  BY employee_name
+            LIMIT  %(limit)s
+            """,
+            {"limit": limit},
+            as_dict=True,
+        )
+        return rows
+    like = f"%{q}%"
+    rows = frappe.db.sql(
+        """
+        SELECT name AS employee, employee_name, designation, department,
+               CASE WHEN name LIKE %(prefix)s THEN 0
+                    WHEN employee_name LIKE %(prefix)s THEN 1
+                    ELSE 2 END AS score
+        FROM   `tabEmployee`
+        WHERE  status = 'Active'
+          AND  (name LIKE %(like)s
+                OR employee_name LIKE %(like)s
+                OR designation LIKE %(like)s)
+        ORDER  BY score, employee_name
+        LIMIT  %(limit)s
+        """,
+        {"like": like, "prefix": f"{q}%", "limit": limit},
+        as_dict=True,
+    )
+    return rows
+
+
+@frappe.whitelist()
+def bulk_assign_employee(names: str | list, employee: str) -> dict:
+    """Set ``custom_employee_data`` on every Stock Entry in ``names`` to
+    a single row pointing at ``employee``. Replaces whatever was there
+    so multiple bulk-assigns don't pile up duplicates.
+
+    The submit step expects exactly one employee row per SE, so this
+    is the deliberate side door the operator uses to prepare a batch
+    for one biometric scan."""
+    _check_perm()
+    employee = (employee or "").strip()
+    if not employee:
+        frappe.throw("Missing employee.", frappe.ValidationError)
+    if isinstance(names, str):
+        try:
+            names = json.loads(names)
+        except (ValueError, TypeError):
+            names = [n.strip() for n in names.split(",") if n.strip()]
+    if not isinstance(names, list) or not names:
+        frappe.throw("No Stock Entries selected.", frappe.ValidationError)
+
+    emp_doc = frappe.db.get_value(
+        "Employee", employee, ["name", "employee_name"], as_dict=True,
+    )
+    if not emp_doc:
+        frappe.throw(f"Employee {employee!r} not found.", frappe.ValidationError)
+
+    ok_count = 0
+    failed_count = 0
+    results: list = []
+    for name in names:
+        try:
+            doc = frappe.get_doc("Stock Entry", name)
+            if doc.docstatus != 0:
+                raise frappe.ValidationError(
+                    f"{name}: already submitted or cancelled.",
+                )
+            doc.set("custom_employee_data", [])
+            doc.append(
+                "custom_employee_data",
+                {
+                    "employee":      emp_doc["name"],
+                    "employee_name": emp_doc["employee_name"],
+                },
+            )
+            doc.save(ignore_permissions=False)
+            ok_count += 1
+            results.append({"name": name, "ok": True, "error": None})
+        except Exception as e:
+            failed_count += 1
+            results.append({"name": name, "ok": False, "error": str(e)})
+            frappe.db.rollback()
+
+    frappe.db.commit()
+    return {
+        "ok":      ok_count,
+        "failed":  failed_count,
+        "results": results,
+        "employee": emp_doc,
+    }
+
+
+@frappe.whitelist()
 def list_draft_transfers(
     farm: str | None = None,
     from_date: str | None = None,

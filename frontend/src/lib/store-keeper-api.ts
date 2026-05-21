@@ -109,3 +109,63 @@ export async function verifyEmployeeScan(): Promise<{
   const r = await call("verify_employee");
   return unwrap(r);
 }
+
+export interface TransferItem {
+  item_code: string;
+  item_name: string;
+  qty: number;
+  uom: string;
+  from_warehouse: string;
+  to_warehouse: string;
+}
+
+export async function fetchTransferItems(name: string): Promise<TransferItem[]> {
+  const r = await call(
+    "upande_scp.serverscripts.store_keeper_api.get_transfer_items",
+    { name },
+  );
+  const m = unwrap<{ items: TransferItem[] }>(r);
+  return m?.items || [];
+}
+
+export interface EmployeeHit {
+  employee: string;
+  employee_name: string;
+  designation?: string;
+  department?: string;
+}
+
+export async function searchEmployees(
+  query: string,
+  limit = 12,
+): Promise<EmployeeHit[]> {
+  const r = await call(
+    "upande_scp.serverscripts.store_keeper_api.search_employees",
+    { query, limit },
+  );
+  return unwrap<EmployeeHit[]>(r) || [];
+}
+
+export interface BulkAssignResult {
+  name: string;
+  ok: boolean;
+  error: string | null;
+}
+
+export interface BulkAssignResp {
+  ok: number;
+  failed: number;
+  results: BulkAssignResult[];
+  employee: { name: string; employee_name: string };
+}
+
+export async function bulkAssignEmployee(
+  names: string[],
+  employee: string,
+): Promise<BulkAssignResp> {
+  const r = await call(
+    "upande_scp.serverscripts.store_keeper_api.bulk_assign_employee",
+    { names: JSON.stringify(names), employee },
+  );
+  return unwrap<BulkAssignResp>(r);
+}

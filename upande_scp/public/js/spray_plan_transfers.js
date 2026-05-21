@@ -15,7 +15,11 @@
 
 const SK_ROLE = "Store Keeper";
 const TRANSFERS_URL = "/scp_app/#/spray-plan-transfers";
-const STAR = '<span aria-hidden="true" style="display:inline-block;margin-right:6px;color:#f59e0b;">★</span>';
+// Inline SVG keeps the icon present even when Frappe is offline / asset
+// CDNs are blocked, which is the whole point of shipping this button
+// out of public/js (and not as a database Client Script that can vanish).
+const FLASK_ICON =
+	'<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px;margin-right:6px;color:#0ea5e9;"><path d="M9 3h6"/><path d="M10 3v6.5L4.5 19a2 2 0 0 0 1.7 3h11.6a2 2 0 0 0 1.7-3L14 9.5V3"/><path d="M6.5 14h11"/></svg>';
 
 (function () {
 	const existing = frappe.listview_settings["Stock Entry"] || {};
@@ -37,8 +41,8 @@ const STAR = '<span aria-hidden="true" style="display:inline-block;margin-right:
 			});
 			if (btn && btn.length) {
 				const html = btn.html();
-				if (html && !html.includes(STAR)) {
-					btn.html(`${STAR}${html}`);
+				if (html && !html.includes("svg")) {
+					btn.html(`${FLASK_ICON}${html}`);
 				}
 				btn.attr(
 					"title",

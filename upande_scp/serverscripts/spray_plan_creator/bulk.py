@@ -14,6 +14,59 @@ def _user_has_role(user: str, role: str) -> bool:
     return bool(frappe.db.exists("Has Role", {"parent": user, "role": role}))
 
 
+def _recalc_required_qty_from_water_volume(wo_name: str) -> None:
+    """Rebase a Work Order's required_items quantities to the formula
+    ``bom_rate × water_volume / 1000``. Same math the watchdog Server
+    Script runs on After Save; inlined here because bulk submit uses
+    raw SQL UPDATE and never fires document hooks.
+
+    Idempotent — rows already within 0.5% of the target are skipped.
+    No-op if the WO isn't an Application Floor Plan or has no BOM /
+    water volume."""
+    wo = frappe.db.get_value(
+        "Work Order", wo_name,
+        ["custom_type", "bom_no", "custom_water_volume"],
+        as_dict=True,
+    )
+    if not wo:
+        return
+    if (wo["custom_type"] or "") != "Application Floor Plan":
+        return
+    bom_no = wo["bom_no"]
+    wv = float(wo["custom_water_volume"] or 0)
+    if not bom_no or wv <= 0:
+        return
+
+    bom_rates = {
+        r["item_code"]: float(r["stock_qty"] or 0)
+        for r in frappe.db.sql(
+            "SELECT item_code, stock_qty FROM `tabBOM Item` WHERE parent = %s",
+            (bom_no,),
+            as_dict=True,
+        )
+    }
+    ratio = wv / 1000.0
+    rows = frappe.db.sql(
+        """SELECT name, item_code, required_qty FROM `tabWork Order Item`
+           WHERE parent = %s""",
+        (wo_name,),
+        as_dict=True,
+    )
+    for row in rows:
+        bom_rate = bom_rates.get(row["item_code"], 0.0)
+        if bom_rate <= 0:
+            continue
+        target = round(bom_rate * ratio, 4)
+        if target <= 0:
+            continue
+        current = float(row["required_qty"] or 0)
+        diff_pct = abs(target - current) / max(target, 0.0001) * 100
+        if diff_pct >= 0.5:
+            frappe.db.set_value(
+                "Work Order Item", row["name"], "required_qty", target,
+            )
+
+
 @frappe.whitelist()
 def submit_drafts_for_approval(wo_names) -> dict:
     user = frappe.session.user
@@ -53,6 +106,14 @@ def submit_drafts_for_approval(wo_names) -> dict:
             if gh_farm not in scope["farms"]:
                 skipped.append({"name": name, "reason": "lost farm access"})
                 continue
+        # Pre-flight: rebase each Work Order Item's required_qty so the
+        # downstream Material Transfer for Manufacture inherits the
+        # water-volume-driven ceiling. Legacy drafts created before the
+        # frontend fix often hold a flat BOM line value; bulk-submit
+        # uses raw SQL and bypasses the watchdog Server Script, so we
+        # inline the same recalc here.
+        _recalc_required_qty_from_water_volume(name)
+
         # Bypass ERPNext's Work Order on_submit hook (which enforces wip_warehouse
         # and other manufacturing fields) since spray plans don't use those fields.
         # We only need to set docstatus=1 and workflow_state atomically.

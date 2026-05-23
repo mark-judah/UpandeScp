@@ -15,14 +15,19 @@ def _user_has_role(user: str, role: str) -> bool:
 
 
 def _recalc_required_qty_from_water_volume(wo_name: str) -> None:
-    """Rebase a Work Order's required_items quantities to the formula
-    ``bom_rate × water_volume / 1000``. Same math the watchdog Server
-    Script runs on After Save; inlined here because bulk submit uses
-    raw SQL UPDATE and never fires document hooks.
+    """Rebase legacy (unscaled) ``required_qty`` rows on a Work Order to the
+    formula ``bom_rate × water_volume / 1000``.
 
-    Idempotent — rows already within 0.5% of the target are skipped.
-    No-op if the WO isn't an Application Floor Plan or has no BOM /
-    water volume."""
+    Only rows whose current ``required_qty`` is still equal to the raw BOM
+    line ``stock_qty`` (the unscaled, per-1000-L value) get rebased — i.e.
+    the signature of a draft created by the pre-fix frontend that didn't
+    multiply through by water volume. Rows already scaled or carrying an
+    operator override (a per-1000-L rate manually edited in the form) are
+    left alone, because clobbering them with the BOM default silently
+    discards what the operator actually asked for.
+
+    Idempotent. No-op if the WO isn't an Application Floor Plan or has no
+    BOM / water volume."""
     wo = frappe.db.get_value(
         "Work Order", wo_name,
         ["custom_type", "bom_no", "custom_water_volume"],
@@ -60,8 +65,15 @@ def _recalc_required_qty_from_water_volume(wo_name: str) -> None:
         if target <= 0:
             continue
         current = float(row["required_qty"] or 0)
-        diff_pct = abs(target - current) / max(target, 0.0001) * 100
-        if diff_pct >= 0.5:
+        # Legacy-draft signature: stored qty is the raw BOM line value,
+        # never multiplied through by water volume. Anything else — already
+        # scaled, or operator-overridden — we leave alone.
+        looks_unscaled = (
+            abs(current - bom_rate) / max(bom_rate, 0.0001) * 100 < 0.5
+        )
+        if not looks_unscaled:
+            continue
+        if abs(target - current) / max(target, 0.0001) * 100 >= 0.5:
             frappe.db.set_value(
                 "Work Order Item", row["name"], "required_qty", target,
             )

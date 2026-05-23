@@ -67,6 +67,9 @@ const SprayPlanTransfers = lazy(() =>
     default: m.SprayPlanTransfers,
   })),
 );
+const Labels = lazy(() =>
+  import("@/pages/Labels").then((m) => ({ default: m.Labels })),
+);
 // Throwaway POC route — gated on a hash that the normal router doesn't
 // recognise so it never appears in the sidebar. Open with
 // ``#/poc-heatmap?gh=<Greenhouse>&obs=<Name>&kind=pest|disease``.
@@ -208,6 +211,8 @@ export function App() {
             <ChemicalDashboard />
           ) : view === "spray-plan-transfers" ? (
             <SprayPlanTransfers />
+          ) : view === "labels" ? (
+            <Labels />
           ) : (
             <Dashboard />
           )}

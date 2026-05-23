@@ -15,6 +15,7 @@ import {
   Settings,
   Beaker,
   Truck,
+  QrCode,
 } from "lucide-react";
 import {
   Sidebar,
@@ -92,6 +93,13 @@ const NAV: NavSection[] = [
         view: "chemical-dashboard",
         label: "Chemical Dashboard",
         icon: Beaker,
+        requireRoles: [STORE_KEEPER_ROLE],
+      },
+      {
+        kind: "view",
+        view: "labels",
+        label: "Labels",
+        icon: QrCode,
         requireRoles: [STORE_KEEPER_ROLE],
       },
     ],

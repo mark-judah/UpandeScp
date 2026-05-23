@@ -363,6 +363,114 @@ def list_draft_transfers(
 
 
 # ----------------------------------------------------------------------
+# Labels page — submitted transfers + their QR attachments
+# ----------------------------------------------------------------------
+
+
+@frappe.whitelist()
+def list_submitted_transfers(
+    farm: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> dict:
+    """Submitted Material-Transfer-for-Manufacture Stock Entries — the
+    dataset the Labels page picks from to print QR stickers.
+
+    Shape mirrors ``list_draft_transfers`` (same row columns + farms
+    list) so the React selection tree and filter bar can reuse the
+    existing types. The only behavioural difference: we filter for
+    docstatus=1 and surface an ``has_qr`` flag derived from whether
+    each SE has at least one image attachment — printing a label for
+    an SE without a QR file is meaningless, so the UI dims those rows.
+
+    Optional ``farm`` filters to one farm. Date filters use posting_date."""
+    _check_perm()
+
+    where = ["se.docstatus = 1", "se.purpose = %(purpose)s", "se.work_order IS NOT NULL"]
+    params: dict = {"purpose": _SE_PURPOSE}
+    if from_date:
+        where.append("se.posting_date >= %(from_date)s")
+        params["from_date"] = from_date
+    if to_date:
+        where.append("se.posting_date <= %(to_date)s")
+        params["to_date"] = to_date
+
+    sql_where = " AND ".join(where)
+    rows = frappe.db.sql(
+        f"""
+        SELECT se.name, se.posting_date, se.work_order,
+               se.from_warehouse, se.to_warehouse,
+               COALESCE(tw.custom_farm, fw.custom_farm, '') AS farm,
+               wo.custom_greenhouse AS greenhouse,
+               wo.custom_spray_type AS spray_type,
+               (SELECT SUM(it.qty)
+                FROM   `tabStock Entry Detail` it
+                WHERE  it.parent = se.name)                    AS total_qty,
+               (SELECT COUNT(*)
+                FROM   `tabStock Entry Detail` it
+                WHERE  it.parent = se.name)                    AS item_count
+        FROM   `tabStock Entry` se
+        JOIN   `tabWork Order`  wo ON wo.name = se.work_order
+        LEFT   JOIN `tabWarehouse` tw ON tw.name = se.to_warehouse
+        LEFT   JOIN `tabWarehouse` fw ON fw.name = se.from_warehouse
+        WHERE  {sql_where}
+          AND  wo.custom_type = %(afp)s
+        ORDER  BY se.posting_date DESC, se.creation DESC
+        """,
+        {**params, "afp": _AFP_TYPE},
+        as_dict=True,
+    )
+
+    if farm:
+        rows = [r for r in rows if (r.get("farm") or "") == farm]
+
+    # QR availability flag + a representative URL the Labels page can
+    # render in the live preview. One query for every SE in the result
+    # set, joined to ``tabFile`` so we don't fire N round-trips.
+    qr_counts: dict = {}
+    qr_urls: dict = {}
+    names = [r["name"] for r in rows]
+    if names:
+        img_rows = frappe.db.sql(
+            """
+            SELECT attached_to_name AS se_name,
+                   file_url,
+                   file_name,
+                   creation
+            FROM   `tabFile`
+            WHERE  attached_to_doctype = 'Stock Entry'
+              AND  attached_to_name IN %(names)s
+              AND  (file_name LIKE %(jpg)s OR file_name LIKE %(jpeg)s
+                    OR file_name LIKE %(png)s OR file_name LIKE %(webp)s
+                    OR file_name LIKE %(gif)s OR file_name LIKE %(bmp)s)
+            ORDER  BY attached_to_name, creation
+            """,
+            {
+                "names": names,
+                "jpg": "%.jpg", "jpeg": "%.jpeg", "png": "%.png",
+                "webp": "%.webp", "gif": "%.gif", "bmp": "%.bmp",
+            },
+            as_dict=True,
+        )
+        for ir in img_rows:
+            se_name = ir["se_name"]
+            qr_counts[se_name] = qr_counts.get(se_name, 0) + 1
+            # First-seen URL per SE wins. Earliest by creation order, so
+            # the preview shows whichever QR was generated first.
+            qr_urls.setdefault(se_name, ir["file_url"])
+
+    for r in rows:
+        r["total_qty"] = float(r["total_qty"] or 0)
+        r["item_count"] = int(r["item_count"] or 0)
+        r["qr_count"] = qr_counts.get(r["name"], 0)
+        r["has_qr"] = r["qr_count"] > 0
+        r["qr_image_url"] = qr_urls.get(r["name"], "")
+
+    farms = sorted({r["farm"] for r in rows if r.get("farm")})
+    return {"rows": rows, "farms": farms}
+
+
+# ----------------------------------------------------------------------
 # Bulk biometric submit
 # ----------------------------------------------------------------------
 # The frontend has already called ``verify_employee`` (server script in

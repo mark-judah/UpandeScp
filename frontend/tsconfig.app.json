@@ -16,7 +16,11 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      "@shared/*": ["../upande_scp/shared/*"]
+    },
+    "resolveJsonModule": true
   },
-  "include": ["src"]
+  "include": ["src", "../upande_scp/shared/*.json"]
 }

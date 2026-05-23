@@ -11,7 +11,12 @@ const FRAPPE_URL = process.env.VITE_FRAPPE_URL || "http://localhost:8001";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: { "@": path.resolve(__dirname, "src") },
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+      // Canonical assets shared with the Python app (e.g. the label
+      // tier table both this preview and the PDF renderer read).
+      "@shared": path.resolve(__dirname, "../upande_scp/shared"),
+    },
   },
   base: "/assets/upande_scp/dist/",
   build: {

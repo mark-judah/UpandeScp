@@ -175,32 +175,31 @@ interface ChemRow extends BomChemical {
   /** Stable id so React doesn't re-mount unrelated rows when items change. */
   rowId: string;
   source?: string;
-  /** Source of truth from the BOM — the per-1000 L Tank-Mix rate. The
-   *  visible ``stock_qty`` field is auto-derived as
-   *  ``bom_rate × (waterVolumeL / 1000)`` whenever the water volume
-   *  changes (and area changes propagate to water volume). Once the
-   *  operator types a new ``stock_qty`` we set ``rate_override`` so
-   *  the auto-recalc stops touching this row. */
-  bom_rate?: number;
-  rate_override?: boolean;
+  /** Operator-editable per-1000 L Tank-Mix rate. Seeded from the BOM's
+   *  per-1000 L value and free for the operator to override. ``stock_qty``
+   *  (the total qty actually needed for this spray) is always derived
+   *  from this rate as ``rate × waterVolumeL / 1000`` and is never
+   *  edited directly. */
+  rate: number;
 }
 
-/** Return a human message when ``qty`` falls outside the limits for
- *  ``itemCode``, or ``null`` when it's in range / no limits are configured.
+/** Return a human message when ``rate`` (per 1000 L) falls outside the limits
+ *  for ``itemCode``, or ``null`` when it's in range / no limits are configured.
  *  Pure so the same function can drive both the inline warning under the
- *  rate input and the pre-submit guard. */
+ *  rate input and the pre-submit guard. Note: limits are per-1000 L, so the
+ *  caller must pass the rate value, not the computed total qty. */
 function rateLimitError(
   itemCode: string | undefined,
-  qty: number | undefined,
+  rate: number | undefined,
   limits: Record<string, RateLimit>,
 ): string | null {
-  if (!itemCode || !qty || qty <= 0) return null;
+  if (!itemCode || !rate || rate <= 0) return null;
   const lim = limits[itemCode];
   if (!lim) return null;
-  if (lim.lower != null && qty < lim.lower) {
+  if (lim.lower != null && rate < lim.lower) {
     return `Below lower limit of ${lim.lower} per 1000L.`;
   }
-  if (lim.upper != null && qty > lim.upper) {
+  if (lim.upper != null && rate > lim.upper) {
     return `Above upper limit of ${lim.upper} per 1000L.`;
   }
   return null;
@@ -390,15 +389,17 @@ export function ApplicationPlan() {
               ? d.fertilizer_warehouses
               : d.chemical_warehouses;
             // ``c.stock_qty`` from the BOM is the per-1000 L Tank-Mix rate.
-            // Store it as ``bom_rate`` so the water-volume recalc can scale
-            // ``stock_qty`` while preserving the master recipe.
+            // It becomes the row's editable ``rate``; the displayed total
+            // (``stock_qty``) is always derived from rate × waterVol / 1000
+            // by the effect below, so we seed it to 0 here and let that
+            // effect populate it on the next render.
             const bomRate = Number(c.stock_qty) || 0;
             return {
               ...c,
               rowId: `${c.item_code}-${i}`,
               source: first?.[0] || (fallback?.length ? fallback[0] : ""),
-              bom_rate: bomRate,
-              rate_override: false,
+              rate: bomRate,
+              stock_qty: 0,
             };
           }),
         );
@@ -544,21 +545,23 @@ export function ApplicationPlan() {
     setArea("");
   }, [scope, areaHa, waterVolumeL, bomDetails]);
 
-  // Auto-derive each chemical's stock_qty from the BOM's per-1000-L rate
-  // scaled by the current water volume. The chain is:
-  //   scope → areaHa → waterVolumeL → stock_qty
-  // Rows with ``rate_override = true`` are skipped — once the operator
-  // types a manual qty, that row sticks until the BOM is reloaded.
+  // Auto-derive each chemical's total ``stock_qty`` from its per-1000-L
+  // ``rate`` scaled by the current water volume. The chain is:
+  //   scope → areaHa → waterVolumeL → stock_qty (per row)
+  // The rate is the operator's source of truth; this effect just keeps
+  // the displayed total in sync whenever the water volume changes. When
+  // the operator edits the rate directly, ``updateChemRate`` writes both
+  // ``rate`` and ``stock_qty`` together so the matrix updates instantly
+  // without waiting for an effect.
   useEffect(() => {
     const wv = parseFloat(waterVolume) || 0;
     if (wv <= 0) return;
     const ratio = wv / WATER_VOLUME_RATE; // 1 = BOM batch is "per 1000 L"
     setChemRows((prev) =>
       prev.map((c) => {
-        if (c.rate_override) return c;
-        const bomRate = Number(c.bom_rate ?? 0);
-        if (!bomRate) return c;
-        const next = Math.round(bomRate * ratio * 10000) / 10000;
+        const rate = Number(c.rate ?? 0);
+        if (!rate) return c;
+        const next = Math.round(rate * ratio * 10000) / 10000;
         if (next === c.stock_qty) return c;
         return { ...c, stock_qty: next };
       }),
@@ -750,10 +753,58 @@ export function ApplicationPlan() {
     [bootstrap],
   );
 
+  /** Rows whose picked source warehouse has less stock than the computed
+   *  total. Drives the Submit-button disable, its tooltip, and the red
+   *  highlight on the TOTAL cell + Source picker in the Chemical Stock
+   *  matrix. A row with no source picked yet is treated as "short" so the
+   *  operator is reminded to pick one. */
+  const stockShortRows = useMemo(() => {
+    const out: { rowId: string; name: string; source: string; avail: number; need: number }[] = [];
+    for (const c of chemRows) {
+      if (!c.stock_qty || c.stock_qty <= 0) continue;
+      const source = c.source || "";
+      const avail = Number(c.balances?.[source] ?? 0);
+      if (!source || avail < c.stock_qty) {
+        out.push({
+          rowId: c.rowId,
+          name: c.item_name || c.item_code,
+          source,
+          avail,
+          need: c.stock_qty,
+        });
+      }
+    }
+    return out;
+  }, [chemRows]);
+  const stockShortById = useMemo(
+    () => new Set(stockShortRows.map((s) => s.rowId)),
+    [stockShortRows],
+  );
+
   const updateChem = (rowId: string, patch: Partial<ChemRow>) =>
     setChemRows((prev) =>
       prev.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r)),
     );
+  /** Operator-edited rate. Recomputes the derived total in the same
+   *  setState so the Chemical Stock matrix's TOTAL column updates without
+   *  waiting for the water-volume effect to flush on the next render. */
+  const updateChemRate = (rowId: string, nextRate: number) => {
+    const wv = parseFloat(waterVolume) || 0;
+    const ratio = wv > 0 ? wv / WATER_VOLUME_RATE : 0;
+    setChemRows((prev) =>
+      prev.map((r) =>
+        r.rowId === rowId
+          ? {
+              ...r,
+              rate: nextRate,
+              stock_qty: ratio
+                ? Math.round(nextRate * ratio * 10000) / 10000
+                : 0,
+            }
+          : r,
+      ),
+    );
+  };
   const removeChem = (rowId: string) =>
     setChemRows((prev) => prev.filter((r) => r.rowId !== rowId));
 
@@ -772,6 +823,7 @@ export function ApplicationPlan() {
         rowId: `${item.item_code}-${Date.now()}-${prev.length}`,
         source: fallbackList?.[0] || "",
         balances: {},
+        rate: 0,
         stock_qty: 0,
       },
     ]);
@@ -800,13 +852,28 @@ export function ApplicationPlan() {
         );
         return;
       }
-      if (!c.stock_qty || c.stock_qty <= 0) {
-        pushToast("err", `Set a quantity > 0 for ${c.item_name || c.item_code}.`);
+      if (!c.rate || c.rate <= 0) {
+        pushToast("err", `Set a rate > 0 for ${c.item_name || c.item_code}.`);
         return;
       }
-      const limitErr = rateLimitError(c.item_code, c.stock_qty, rateLimits);
+      if (!c.stock_qty || c.stock_qty <= 0) {
+        pushToast(
+          "err",
+          `Water volume not set — ${c.item_name || c.item_code} has no total qty.`,
+        );
+        return;
+      }
+      const limitErr = rateLimitError(c.item_code, c.rate, rateLimits);
       if (limitErr) {
         pushToast("err", `${c.item_name || c.item_code}: ${limitErr}`);
+        return;
+      }
+      const avail = Number(c.balances?.[c.source] ?? 0);
+      if (avail < c.stock_qty) {
+        pushToast(
+          "err",
+          `${c.item_name || c.item_code}: ${c.source} has ${avail} but needs ${c.stock_qty}.`,
+        );
         return;
       }
     }
@@ -1602,9 +1669,14 @@ export function ApplicationPlan() {
                     />
                   </div>
 
+                  {/* Block A: Chemicals (per 1000 L) — operator-editable rate
+                       is the source of truth. The total qty (rate × waterVol/
+                       1000) is derived and shown in the Chemical Stock matrix
+                       below; the matrix is the only place that displays totals
+                       and per-warehouse availability. */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <Label>Chemicals · pick source warehouse</Label>
+                      <Label>Chemicals (per 1000 L)</Label>
                       <Button
                         variant="outline"
                         size="sm"
@@ -1620,103 +1692,71 @@ export function ApplicationPlan() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Chemical</TableHead>
-                            <TableHead className="text-right">Qty</TableHead>
-                            <TableHead>Source</TableHead>
+                            <TableHead className="text-right">Rate / 1000 L</TableHead>
+                            <TableHead>UoM</TableHead>
                             <TableHead className="w-8" />
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {chemRows.map((c) => {
-                            const balances = c.balances || {};
-                            const whs = c.is_fertilizer
-                              ? bomDetails.fertilizer_warehouses
-                              : bomDetails.chemical_warehouses;
+                            const limitErr = rateLimitError(
+                              c.item_code,
+                              c.rate,
+                              rateLimits,
+                            );
+                            const lim = rateLimits[c.item_code || ""];
+                            const hintParts: string[] = [];
+                            if (lim?.lower != null) hintParts.push(`min ${lim.lower}`);
+                            if (lim?.upper != null) hintParts.push(`max ${lim.upper}`);
+                            const hint = hintParts.length ? hintParts.join(" · ") : "";
                             return (
                               <TableRow key={c.rowId}>
                                 <TableCell className="text-xs">
-                                  <div className="font-medium">
+                                  <div className="font-medium flex items-center gap-1.5">
                                     {c.item_name || c.item_code}
+                                    <Badge
+                                      variant="outline"
+                                      className={
+                                        c.is_fertilizer
+                                          ? "h-4 px-1.5 text-[0.6rem] uppercase border-[var(--sd-data-green)] text-[var(--sd-data-green)]"
+                                          : "h-4 px-1.5 text-[0.6rem] uppercase border-[var(--sd-data-cyan)] text-[var(--sd-data-cyan)]"
+                                      }
+                                    >
+                                      {c.is_fertilizer ? "Fertilizer" : "Chemical"}
+                                    </Badge>
                                   </div>
                                   <div className="text-[0.65rem] text-muted-foreground font-mono">
                                     {c.item_code}
-                                    {c.is_fertilizer ? (
-                                      <span className="ml-1 text-[var(--sd-data-green)]">
-                                        · Fertilizer Store
-                                      </span>
-                                    ) : (
-                                      <span className="ml-1 text-[var(--sd-data-cyan)]">
-                                        · Chemical Store
-                                      </span>
-                                    )}
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  {(() => {
-                                    const limitErr = rateLimitError(
-                                      c.item_code,
-                                      c.stock_qty,
-                                      rateLimits,
-                                    );
-                                    return (
-                                      <>
-                                        <Input
-                                          value={c.stock_qty?.toString() || ""}
-                                          onChange={(e) =>
-                                            updateChem(c.rowId, {
-                                              stock_qty: Number(e.target.value),
-                                              // Lock this row from the
-                                              // water-volume auto-recalc as
-                                              // soon as the operator types
-                                              // a manual override.
-                                              rate_override: true,
-                                            })
-                                          }
-                                          type="number"
-                                          step="any"
-                                          min={0}
-                                          aria-invalid={!!limitErr}
-                                          className={
-                                            limitErr
-                                              ? "h-7 text-xs text-right tabular-nums w-20 ml-auto border-[var(--sd-data-red)] focus-visible:ring-[var(--sd-data-red)]"
-                                              : "h-7 text-xs text-right tabular-nums w-20 ml-auto"
-                                          }
-                                        />
-                                        <div className="text-[0.65rem] text-muted-foreground mt-0.5">
-                                          {c.stock_uom || ""}
-                                        </div>
-                                        {limitErr && (
-                                          <div className="text-[0.65rem] text-[var(--sd-data-red)] mt-0.5 max-w-[10rem] ml-auto text-right">
-                                            {limitErr}
-                                          </div>
-                                        )}
-                                      </>
-                                    );
-                                  })()}
-                                </TableCell>
-                                <TableCell>
-                                  <Select
-                                    value={c.source || ""}
-                                    onValueChange={(v) =>
-                                      updateChem(c.rowId, { source: v })
+                                  <Input
+                                    value={c.rate?.toString() || ""}
+                                    onChange={(e) =>
+                                      updateChemRate(c.rowId, Number(e.target.value))
                                     }
-                                  >
-                                    <SelectTrigger className="h-7 text-xs min-w-44">
-                                      <SelectValue placeholder="Source" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {whs.map((w) => {
-                                        const bal = balances[w] || 0;
-                                        return (
-                                          <SelectItem key={w} value={w}>
-                                            <span className="truncate">{w}</span>{" "}
-                                            <span className="text-muted-foreground tabular-nums">
-                                              · {bal}
-                                            </span>
-                                          </SelectItem>
-                                        );
-                                      })}
-                                    </SelectContent>
-                                  </Select>
+                                    type="number"
+                                    step="any"
+                                    min={0}
+                                    aria-invalid={!!limitErr}
+                                    className={
+                                      limitErr
+                                        ? "h-7 text-xs text-right tabular-nums w-24 ml-auto border-[var(--sd-data-red)] focus-visible:ring-[var(--sd-data-red)]"
+                                        : "h-7 text-xs text-right tabular-nums w-24 ml-auto"
+                                    }
+                                  />
+                                  {limitErr ? (
+                                    <div className="text-[0.65rem] text-[var(--sd-data-red)] mt-0.5 max-w-[10rem] ml-auto text-right">
+                                      {limitErr}
+                                    </div>
+                                  ) : hint ? (
+                                    <div className="text-[0.6rem] text-muted-foreground mt-0.5 text-right tabular-nums">
+                                      {hint}
+                                    </div>
+                                  ) : null}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {c.stock_uom || ""}
                                 </TableCell>
                                 <TableCell>
                                   <Button
@@ -1740,6 +1780,132 @@ export function ApplicationPlan() {
                       </div>
                     )}
                   </div>
+
+                  {/* Block B: Chemical Stock — per-warehouse availability matrix
+                       with picked source and derived total. The TOTAL column
+                       (= rate × waterVol / 1000) is the read-only source of
+                       truth for what the spray will draw. Cells colour-coded:
+                       green ≥ total, red < total, neutral when the row has no
+                       total yet (water volume unset). */}
+                  {chemRows.length ? (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <Label>Chemical Stock</Label>
+                        {stockShortRows.length ? (
+                          <span className="text-[0.65rem] text-[var(--sd-data-red)] tabular-nums">
+                            {stockShortRows.length} row{stockShortRows.length === 1 ? "" : "s"} short — Submit disabled
+                          </span>
+                        ) : null}
+                      </div>
+                      {(["chemical", "fertilizer"] as const).map((group) => {
+                        const rows = chemRows.filter(
+                          (c) => !!c.is_fertilizer === (group === "fertilizer"),
+                        );
+                        if (!rows.length) return null;
+                        const whs =
+                          group === "fertilizer"
+                            ? bomDetails.fertilizer_warehouses
+                            : bomDetails.chemical_warehouses;
+                        return (
+                          <div key={group} className="mb-3 last:mb-0 overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="text-[0.65rem] uppercase">
+                                    {group === "fertilizer" ? "Fertilizer" : "Chemical"}
+                                  </TableHead>
+                                  {whs.map((w) => (
+                                    <TableHead
+                                      key={w}
+                                      className="text-center text-[0.65rem] uppercase tabular-nums whitespace-nowrap"
+                                      title={w}
+                                    >
+                                      {w.replace(/\s*-\s*[A-Z]{2,}\s*$/, "").split(/\s+/).slice(-1)[0]}
+                                    </TableHead>
+                                  ))}
+                                  <TableHead className="text-[0.65rem] uppercase">Source</TableHead>
+                                  <TableHead className="text-right text-[0.65rem] uppercase">Total</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {rows.map((c) => {
+                                  const balances = c.balances || {};
+                                  const need = c.stock_qty || 0;
+                                  const isShort = stockShortById.has(c.rowId);
+                                  return (
+                                    <TableRow key={c.rowId}>
+                                      <TableCell className="text-xs font-medium whitespace-nowrap">
+                                        {c.item_name || c.item_code}
+                                      </TableCell>
+                                      {whs.map((w) => {
+                                        const bal = Number(balances[w] || 0);
+                                        const sufficient = need > 0 && bal >= need;
+                                        const insufficient = need > 0 && bal < need;
+                                        const cls = sufficient
+                                          ? "text-[var(--sd-data-green)]"
+                                          : insufficient
+                                            ? "text-[var(--sd-data-red)]"
+                                            : "text-muted-foreground";
+                                        const picked = c.source === w;
+                                        return (
+                                          <TableCell
+                                            key={w}
+                                            className={`text-center text-xs tabular-nums ${cls} ${picked ? "bg-muted/60 font-semibold" : ""}`}
+                                          >
+                                            {bal.toFixed(2)}
+                                          </TableCell>
+                                        );
+                                      })}
+                                      <TableCell>
+                                        <Select
+                                          value={c.source || ""}
+                                          onValueChange={(v) =>
+                                            updateChem(c.rowId, { source: v })
+                                          }
+                                        >
+                                          <SelectTrigger
+                                            className={
+                                              isShort
+                                                ? "h-7 text-xs min-w-40 border-[var(--sd-data-red)]"
+                                                : "h-7 text-xs min-w-40"
+                                            }
+                                          >
+                                            <SelectValue placeholder="-- Select Source --" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {whs.map((w) => {
+                                              const bal = Number(balances[w] || 0);
+                                              return (
+                                                <SelectItem key={w} value={w}>
+                                                  <span className="truncate">{w}</span>{" "}
+                                                  <span className="text-muted-foreground tabular-nums">
+                                                    · {bal.toFixed(2)}
+                                                  </span>
+                                                </SelectItem>
+                                              );
+                                            })}
+                                          </SelectContent>
+                                        </Select>
+                                      </TableCell>
+                                      <TableCell
+                                        className={
+                                          isShort
+                                            ? "text-right text-xs tabular-nums font-semibold text-[var(--sd-data-red)]"
+                                            : "text-right text-xs tabular-nums font-semibold"
+                                        }
+                                      >
+                                        {need > 0 ? need.toFixed(2) : "—"}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </>
               )}
             </CardContent>
@@ -1750,8 +1916,38 @@ export function ApplicationPlan() {
           </div>
         </div>
 
-        <div className="flex justify-end">
-          <Button onClick={submit} disabled={busy || !greenhouse} size="lg">
+        <div className="flex justify-end items-center gap-3">
+          {stockShortRows.length ? (
+            <span
+              className="text-xs text-[var(--sd-data-red)] tabular-nums max-w-md text-right"
+              title={stockShortRows
+                .map((s) =>
+                  s.source
+                    ? `${s.name}: ${s.source} has ${s.avail} but needs ${s.need}`
+                    : `${s.name}: no source warehouse picked (needs ${s.need})`,
+                )
+                .join("\n")}
+            >
+              {stockShortRows.length} chemical
+              {stockShortRows.length === 1 ? " is" : "s are"} short on stock
+            </span>
+          ) : null}
+          <Button
+            onClick={submit}
+            disabled={busy || !greenhouse || stockShortRows.length > 0}
+            size="lg"
+            title={
+              stockShortRows.length
+                ? stockShortRows
+                    .map((s) =>
+                      s.source
+                        ? `${s.name}: ${s.source} has ${s.avail} but needs ${s.need}`
+                        : `${s.name}: pick a source warehouse`,
+                    )
+                    .join("\n")
+                : undefined
+            }
+          >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Add to batch
           </Button>

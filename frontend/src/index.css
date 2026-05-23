@@ -1,4 +1,11 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap");
+
+/* ─── Global UI scale ───────────────────────────────────────────────
+   Drop the root font-size to 75% (12px from the 16px default).
+   Tailwind's spacing, text, border-radius, and most shadcn primitives
+   are rem-based, so this scales the whole frontend proportionally. */
+html { font-size: 85%; }
 
 /* ─── Kaitet design tokens (mirrors scouting_dashboard.css :root) ─── */
 :root {
@@ -37,7 +44,7 @@
   --sd-sev-low: #d9e2d2;
 
   /* Type */
-  --sd-font: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --sd-font: "Poppins", "Inter", "Helvetica Neue", Arial, sans-serif;
   --sd-font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas,
     monospace;
 

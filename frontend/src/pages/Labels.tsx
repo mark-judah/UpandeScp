@@ -47,8 +47,13 @@ import {
   fetchSubmittedTransfers,
   generateLabelPdf,
   downloadBase64Pdf,
+  FIELD_KEYS,
+  FIELD_LABELS,
+  type FieldKey,
+  type LayoutOverrides,
   type Orientation,
   type OutputMode,
+  type PerPage,
   type SubmittedTransferRow,
 } from "@/lib/labels-api";
 import { planLabel, MIN_DIM_FLOOR_MM } from "@/lib/label-tiers";
@@ -60,10 +65,14 @@ const CUSTOM = "__custom__";
 // Preset sizes — width × height in mm. Ordered roughly by use frequency.
 const PRESETS = [
   { id: "100x50", label: "100 × 50 mm (standard)", w: 100, h: 50 },
+  { id: "60x45",  label: "60 × 45 mm (ZQ520)",     w: 60,  h: 45 },
   { id: "50x25",  label: "50 × 25 mm (small)",     w: 50,  h: 25 },
   { id: "102x152", label: "102 × 152 mm (4×6 thermal)", w: 102, h: 152 },
   { id: "40x30",  label: "40 × 30 mm (bunch tag)",  w: 40,  h: 30 },
   { id: "70x40",  label: "70 × 40 mm",              w: 70,  h: 40 },
+  // A4 — for office printers / proofing. Combine with the "Tile onto
+  // A4" output mode to pack many labels onto one sheet.
+  { id: "a4",     label: "210 × 297 mm (A4 sheet)", w: 210, h: 297 },
 ];
 
 const DEFAULT_PRESET = PRESETS[0];
@@ -130,9 +139,10 @@ const SAMPLE = {
   chem_name: "Pyretone 40EC",
   qty: "1 L",
   source: "Chemical Store Kapkolia",
-  target: "Kapkolia GH 04",
+  target: "Kapkolia CSU Phase 1",
   scheduled: "31 May 2026 09:00",
   spray_type: "Full",
+  greenhouse: "Kapkolia GH 04",
 };
 
 function QrImage({ src, sideMm }: { src: string; sideMm: number }) {
@@ -156,26 +166,36 @@ function PreviewLabel({
   heightMm,
   fontScale,
   qrUrl,
+  overrides,
 }: {
   widthMm: number;
   heightMm: number;
   fontScale: number;
   qrUrl?: string;
+  overrides?: LayoutOverrides;
 }) {
   const rawPlan = useMemo(() => planLabel(widthMm, heightMm), [widthMm, heightMm]);
-  // Apply the user's font multiplier on top of the tier defaults so
-  // the preview stays in lockstep with what the PDF renderer does
-  // server-side (same clamp + same multiplication).
+  // Apply the user's font multiplier on top of the tier defaults, then
+  // any explicit per-field overrides — same order as generate_pdf on the
+  // server, so what's drawn here equals what wkhtmltopdf draws.
   const plan = useMemo(() => {
     const s = Math.max(0.5, Math.min(1.6, fontScale));
+    const ov = overrides ?? {};
     return {
       ...rawPlan,
-      basePt: Math.round(rawPlan.basePt * s * 100) / 100,
-      headPt: Math.round(rawPlan.headPt * s * 100) / 100,
+      basePt: ov.basePt ?? Math.round(rawPlan.basePt * s * 100) / 100,
+      headPt: ov.headPt ?? Math.round(rawPlan.headPt * s * 100) / 100,
+      qrSideMm: ov.qrSideMm ?? rawPlan.qrSideMm,
+      paddingTopMm: ov.paddingTopMm ?? rawPlan.paddingTopMm,
+      paddingRightMm: ov.paddingRightMm ?? rawPlan.paddingRightMm,
+      paddingBottomMm: ov.paddingBottomMm ?? rawPlan.paddingBottomMm,
+      paddingLeftMm: ov.paddingLeftMm ?? rawPlan.paddingLeftMm,
+      orientation: ov.layoutMode ?? rawPlan.orientation,
+      fields: ov.fields ?? rawPlan.fields,
     };
-  }, [rawPlan, fontScale]);
+  }, [rawPlan, fontScale, overrides]);
 
-  const isXs = plan.tier === "xs" || plan.fields.length === 0;
+  const isXs = plan.fields.length === 0;
 
   // The preview renders at real-world mm via inline styles. The parent
   // Card scales the whole block to fit the available width by setting a
@@ -184,7 +204,7 @@ function PreviewLabel({
     width: `${widthMm}mm`,
     height: `${heightMm}mm`,
     boxSizing: "border-box" as const,
-    padding: isXs ? "0.5mm" : "1.2mm",
+    padding: `${plan.paddingTopMm}mm ${plan.paddingRightMm}mm ${plan.paddingBottomMm}mm ${plan.paddingLeftMm}mm`,
     fontSize: `${plan.basePt}pt`,
     border: "1px solid hsl(var(--border))",
     background: "white",
@@ -212,6 +232,7 @@ function PreviewLabel({
 
   const kvRows: Array<[string, string]> = [];
   if (plan.fields.includes("qty")) kvRows.push(["Qty", SAMPLE.qty]);
+  if (plan.fields.includes("gh")) kvRows.push(["Greenhouse", SAMPLE.greenhouse]);
   if (plan.fields.includes("from")) kvRows.push(["From", SAMPLE.source]);
   if (plan.fields.includes("to")) kvRows.push(["To", SAMPLE.target]);
   if (plan.fields.includes("sched")) kvRows.push(["Scheduled", SAMPLE.scheduled]);
@@ -313,7 +334,12 @@ export function Labels() {
   const [heightMm, setHeightMm] = useState<number>(DEFAULT_PRESET.h);
   const [outputMode, setOutputMode] = useState<OutputMode>("thermal");
   const [orientation, setOrientation] = useState<Orientation>("portrait");
+  const [perPage, setPerPage] = useState<PerPage>(2);
   const [fontScaleId, setFontScaleId] = useState<string>(DEFAULT_FONT_SCALE.id);
+  // Legacy 4×6 is the Zebra-verified path — fixed 102×152mm sheet,
+  // N labels stacked. When it's on, the dynamic W×H / orientation /
+  // tier controls are inert; the backend ignores them.
+  const isLegacy = outputMode === "legacy_4x6";
   const fontScale =
     FONT_SCALES.find((f) => f.id === fontScaleId)?.value ?? 1.0;
 
@@ -325,6 +351,54 @@ export function Labels() {
   const shortDim = Math.min(widthMm, heightMm);
   const effWidthMm = orientation === "landscape" ? longDim : shortDim;
   const effHeightMm = orientation === "landscape" ? shortDim : longDim;
+
+  // Manual layout overrides. Each value, when non-null, replaces the
+  // tier default on both the preview and the server. Resetting back to
+  // tier defaults is one click — see resetOverrides() below.
+  const tierDefaults = useMemo(
+    () => planLabel(effWidthMm, effHeightMm),
+    [effWidthMm, effHeightMm],
+  );
+  const [padT, setPadT] = useState<number | "">("");
+  const [padR, setPadR] = useState<number | "">("");
+  const [padB, setPadB] = useState<number | "">("");
+  const [padL, setPadL] = useState<number | "">("");
+  const [qrSide, setQrSide] = useState<number | "">("");
+  const [basePtIn, setBasePtIn] = useState<number | "">("");
+  const [headPtIn, setHeadPtIn] = useState<number | "">("");
+  // "" = use tier's auto decision (row/stack based on aspect ratio).
+  const [layoutMode, setLayoutMode] = useState<"" | "row" | "stack">("");
+  // null = tier default fields; Set = manual selection (empty Set = QR only).
+  const [fieldsSel, setFieldsSel] = useState<Set<FieldKey> | null>(null);
+
+  const overrides: LayoutOverrides = {
+    paddingTopMm:    padT === "" ? undefined : padT,
+    paddingRightMm:  padR === "" ? undefined : padR,
+    paddingBottomMm: padB === "" ? undefined : padB,
+    paddingLeftMm:   padL === "" ? undefined : padL,
+    qrSideMm:        qrSide === "" ? undefined : qrSide,
+    basePt:          basePtIn === "" ? undefined : basePtIn,
+    headPt:          headPtIn === "" ? undefined : headPtIn,
+    layoutMode:      layoutMode === "" ? undefined : layoutMode,
+    fields:          fieldsSel === null ? undefined : Array.from(fieldsSel),
+  };
+
+  const resetOverrides = () => {
+    setPadT(""); setPadR(""); setPadB(""); setPadL("");
+    setQrSide(""); setBasePtIn(""); setHeadPtIn("");
+    setLayoutMode(""); setFieldsSel(null);
+  };
+
+  const toggleField = (k: FieldKey) => {
+    setFieldsSel((prev) => {
+      // Seed from tier defaults the first time the operator clicks a field.
+      const base = prev ?? new Set<FieldKey>(tierDefaults.fields as FieldKey[]);
+      const next = new Set(base);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
 
   const [busy, setBusy] = useState(false);
   const [lastResult, setLastResult] = useState<{
@@ -437,6 +511,10 @@ export function Labels() {
 
   // ── Validation ────────────────────────────────────────────────────
   const sizeError = useMemo(() => {
+    // Legacy mode hard-codes 102×152mm on the backend, so the W/H
+    // inputs are irrelevant — skip validation that would otherwise
+    // block Generate if the operator typed a too-small custom size.
+    if (isLegacy) return null;
     if (widthMm < MIN_DIM_FLOOR_MM || heightMm < MIN_DIM_FLOOR_MM) {
       return `Width and height must each be at least ${MIN_DIM_FLOOR_MM}mm.`;
     }
@@ -444,7 +522,7 @@ export function Labels() {
       return "Width and height must each be 500mm or less.";
     }
     return null;
-  }, [widthMm, heightMm]);
+  }, [widthMm, heightMm, isLegacy]);
 
   // ── Generate ──────────────────────────────────────────────────────
   const generate = async () => {
@@ -470,6 +548,8 @@ export function Labels() {
         outputMode,
         orientation,
         fontScale,
+        perPage,
+        overrides,
       });
       setLastResult({
         label_count: resp.label_count,
@@ -792,8 +872,208 @@ export function Labels() {
                   >
                     Tile onto A4
                   </Button>
+                  <Button
+                    type="button"
+                    variant={outputMode === "legacy_4x6" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setOutputMode("legacy_4x6")}
+                    className="flex-1"
+                    title="Fixed 4&quot;×6&quot; (102×152mm) portrait sheet with N labels stacked — the format the Zebra ZQ520 prints cleanly."
+                  >
+                    4×6 (Zebra)
+                  </Button>
                 </div>
               </div>
+
+              {isLegacy && (
+                <div className="grid gap-2">
+                  <Label className="text-xs">Labels per page</Label>
+                  <Select
+                    value={String(perPage)}
+                    onValueChange={(v) => setPerPage(Number(v) as PerPage)}
+                  >
+                    <SelectTrigger className="h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 label (4" × 6")</SelectItem>
+                      <SelectItem value="2">2 labels (4" × 3" each)</SelectItem>
+                      <SelectItem value="3">3 labels (4" × 2" each)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    Fixed 102 × 152 mm portrait sheet. Width / height /
+                    orientation above are ignored in this mode.
+                  </p>
+                </div>
+              )}
+
+              {!isLegacy && (
+                <>
+                  <Separator className="my-1" />
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Manual layout</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetOverrides}
+                      className="h-6 text-[11px]"
+                    >
+                      Reset to tier
+                    </Button>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground -mt-1">
+                    Empty = tier default. Preview mirrors the PDF exactly.
+                  </div>
+
+                  <div className="grid gap-1.5">
+                    <Label className="text-[10px]">QR placement</Label>
+                    <Select
+                      value={layoutMode === "" ? "auto" : layoutMode}
+                      onValueChange={(v) =>
+                        setLayoutMode(v === "auto" ? "" : (v as "row" | "stack"))
+                      }
+                    >
+                      <SelectTrigger className="h-7 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">
+                          Auto ({tierDefaults.orientation === "row" ? "side" : "center"})
+                        </SelectItem>
+                        <SelectItem value="row">QR on the side</SelectItem>
+                        <SelectItem value="stack">QR centered on top</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[10px]">Fields shown</Label>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setFieldsSel(new Set<FieldKey>(FIELD_KEYS))}
+                          className="text-[10px] text-muted-foreground hover:text-foreground"
+                        >
+                          all
+                        </button>
+                        <span className="text-[10px] text-muted-foreground">·</span>
+                        <button
+                          type="button"
+                          onClick={() => setFieldsSel(new Set<FieldKey>())}
+                          className="text-[10px] text-muted-foreground hover:text-foreground"
+                        >
+                          QR only
+                        </button>
+                        <span className="text-[10px] text-muted-foreground">·</span>
+                        <button
+                          type="button"
+                          onClick={() => setFieldsSel(null)}
+                          className="text-[10px] text-muted-foreground hover:text-foreground"
+                        >
+                          tier
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                      {FIELD_KEYS.map((k) => {
+                        const effective = fieldsSel ?? new Set<FieldKey>(tierDefaults.fields as FieldKey[]);
+                        const checked = effective.has(k);
+                        return (
+                          <label
+                            key={k}
+                            className="flex items-center gap-1.5 text-[11px] cursor-pointer"
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={() => toggleField(k)}
+                              className="h-3.5 w-3.5"
+                            />
+                            {FIELD_LABELS[k]}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { lbl: "Pad ↑", val: padT, set: setPadT, def: tierDefaults.paddingTopMm },
+                      { lbl: "Pad →", val: padR, set: setPadR, def: tierDefaults.paddingRightMm },
+                      { lbl: "Pad ↓", val: padB, set: setPadB, def: tierDefaults.paddingBottomMm },
+                      { lbl: "Pad ←", val: padL, set: setPadL, def: tierDefaults.paddingLeftMm },
+                    ].map((f) => (
+                      <div key={f.lbl} className="grid gap-0.5">
+                        <Label className="text-[10px]">{f.lbl} mm</Label>
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.1"
+                          min={0}
+                          max={50}
+                          value={f.val}
+                          placeholder={String(f.def)}
+                          onChange={(e) =>
+                            f.set(e.target.value === "" ? "" : Number(e.target.value))
+                          }
+                          className="h-7 px-2 text-xs"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <div className="grid gap-0.5">
+                      <Label className="text-[10px]">QR mm</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.5"
+                        min={5}
+                        max={500}
+                        value={qrSide}
+                        placeholder={String(tierDefaults.qrSideMm)}
+                        onChange={(e) =>
+                          setQrSide(e.target.value === "" ? "" : Number(e.target.value))
+                        }
+                        className="h-7 px-2 text-xs"
+                      />
+                    </div>
+                    <div className="grid gap-0.5">
+                      <Label className="text-[10px]">Base pt</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.5"
+                        min={4}
+                        max={48}
+                        value={basePtIn}
+                        placeholder={String(tierDefaults.basePt)}
+                        onChange={(e) =>
+                          setBasePtIn(e.target.value === "" ? "" : Number(e.target.value))
+                        }
+                        className="h-7 px-2 text-xs"
+                      />
+                    </div>
+                    <div className="grid gap-0.5">
+                      <Label className="text-[10px]">Head pt</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.5"
+                        min={4}
+                        max={48}
+                        value={headPtIn}
+                        placeholder={String(tierDefaults.headPt)}
+                        onChange={(e) =>
+                          setHeadPtIn(e.target.value === "" ? "" : Number(e.target.value))
+                        }
+                        className="h-7 px-2 text-xs"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -824,6 +1104,7 @@ export function Labels() {
                     heightMm={effHeightMm}
                     fontScale={fontScale}
                     qrUrl={previewQrUrl}
+                    overrides={overrides}
                   />
                 </div>
               </div>

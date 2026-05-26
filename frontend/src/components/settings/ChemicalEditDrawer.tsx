@@ -70,6 +70,7 @@ export function ChemicalEditDrawer({
   const [reentry, setReentry] = useState<string>("");
   const [lower, setLower] = useState<string>("");
   const [upper, setUpper] = useState<string>("");
+  const [lowStock, setLowStock] = useState<string>("");
   const [iracMoa, setIracMoa] = useState("");
   const [fracMoa, setFracMoa] = useState("");
   const [ghsDescription, setGhsDescription] = useState("");
@@ -102,6 +103,12 @@ export function ChemicalEditDrawer({
     setUpper(
       chemical.custom_upper_rate_limit != null
         ? String(chemical.custom_upper_rate_limit)
+        : "",
+    );
+    setLowStock(
+      chemical.custom_low_stock_threshold != null &&
+        chemical.custom_low_stock_threshold > 0
+        ? String(chemical.custom_low_stock_threshold)
         : "",
     );
     setIracMoa(chemical.custom_irac_moa || "");
@@ -173,6 +180,7 @@ export function ChemicalEditDrawer({
       const reentryNum = parseFloat(reentry) || 0;
       const lowerNum = parseFloat(lower) || 0;
       const upperNum = parseFloat(upper) || 0;
+      const lowStockNum = parseFloat(lowStock) || 0;
 
       // Only send chemical-only keys when we actually showed the editor
       // for them. For fertilizers, omitting these leaves the underlying
@@ -194,6 +202,7 @@ export function ChemicalEditDrawer({
         reentry_interval_hrs: reentryNum,
         lower_rate_limit: lowerNum,
         upper_rate_limit: upperNum,
+        low_stock_threshold: lowStockNum,
         ghs_description: ghsDescription,
         ghs,
         active_ingredients: actives,
@@ -207,6 +216,7 @@ export function ChemicalEditDrawer({
         custom_reentry_interval_hrs: reentryNum,
         custom_lower_rate_limit: lowerNum,
         custom_upper_rate_limit: upperNum,
+        custom_low_stock_threshold: lowStockNum || null,
         custom_ghs_description: ghsDescription,
         ghs,
         active_ingredients: actives,
@@ -329,7 +339,7 @@ export function ChemicalEditDrawer({
           </section>
 
           {/* Rate range */}
-          <section className="grid grid-cols-2 gap-3">
+          <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <RateField
               label="Lower rate limit (per 1000L)"
               value={lower}
@@ -339,6 +349,11 @@ export function ChemicalEditDrawer({
               label="Upper rate limit (per 1000L)"
               value={upper}
               onChange={setUpper}
+            />
+            <RateField
+              label={`Low-stock threshold (${chemical.stock_uom || "qty"})`}
+              value={lowStock}
+              onChange={setLowStock}
             />
           </section>
 

@@ -16,6 +16,7 @@ import {
   Beaker,
   Truck,
   QrCode,
+  Warehouse,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,6 +32,7 @@ import {
   SidebarSeparator,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarUser } from "@/components/SidebarUser";
 import { viewHash, type View } from "@/lib/router";
 import { bootstrap } from "@/lib/frappe";
@@ -135,9 +137,17 @@ const NAV: NavSection[] = [
       },
       {
         kind: "view",
+        view: "creator-stock",
+        label: "Chemical Stock",
+        icon: Warehouse,
+        requireRoles: ["Spray Plan Creator"],
+      },
+      {
+        kind: "view",
         view: "approvals",
         label: "Approvals",
         icon: CheckSquare,
+        requireRoles: ["General Manager", "Spray Plan Approver"],
       },
       {
         kind: "view",
@@ -232,57 +242,61 @@ export function AppSidebar({
         </div>
       </SidebarHeader>
       <SidebarSeparator />
-      <SidebarContent>
-        {NAV.map((section) => {
-          if (isHiddenForUser(section.hideForRoles, roles)) return null;
-          const visibleItems = section.items.filter(
-            (item) =>
-              userHasAnyRole(item.requireRoles, roles) &&
-              !isHiddenForUser(item.hideForRoles, roles),
-          );
-          if (visibleItems.length === 0) return null;
-          return (
-            <SidebarGroup key={section.label}>
-              <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {visibleItems.map((item) => {
-                    const Icon = item.icon;
-                    const active =
-                      item.kind === "view" ? view === item.view : false;
-                    return (
-                      <SidebarMenuItem key={`${item.kind}:${item.label}`}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={active}
-                          title={item.hint || item.label}
-                        >
-                          {item.kind === "view" ? (
-                            <a
-                              href={viewHash(item.view)}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                onNavigate(item.view);
-                              }}
+      <SidebarContent className="overflow-hidden p-0 group-data-[collapsible=icon]:p-0">
+        <ScrollArea className="h-full w-full">
+          <div className="flex flex-col gap-1 p-2 group-data-[collapsible=icon]:p-1">
+            {NAV.map((section) => {
+              if (isHiddenForUser(section.hideForRoles, roles)) return null;
+              const visibleItems = section.items.filter(
+                (item) =>
+                  userHasAnyRole(item.requireRoles, roles) &&
+                  !isHiddenForUser(item.hideForRoles, roles),
+              );
+              if (visibleItems.length === 0) return null;
+              return (
+                <SidebarGroup key={section.label}>
+                  <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      {visibleItems.map((item) => {
+                        const Icon = item.icon;
+                        const active =
+                          item.kind === "view" ? view === item.view : false;
+                        return (
+                          <SidebarMenuItem key={`${item.kind}:${item.label}`}>
+                            <SidebarMenuButton
+                              asChild
+                              isActive={active}
+                              title={item.hint || item.label}
                             >
-                              <Icon className="h-4 w-4" />
-                              <span>{item.label}</span>
-                            </a>
-                          ) : (
-                            <a href={item.href}>
-                              <Icon className="h-4 w-4" />
-                              <span>{item.label}</span>
-                            </a>
-                          )}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          );
-        })}
+                              {item.kind === "view" ? (
+                                <a
+                                  href={viewHash(item.view)}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    onNavigate(item.view);
+                                  }}
+                                >
+                                  <Icon className="h-4 w-4" />
+                                  <span>{item.label}</span>
+                                </a>
+                              ) : (
+                                <a href={item.href}>
+                                  <Icon className="h-4 w-4" />
+                                  <span>{item.label}</span>
+                                </a>
+                              )}
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        );
+                      })}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+              );
+            })}
+          </div>
+        </ScrollArea>
       </SidebarContent>
       <SidebarFooter>
         <SidebarUser />

@@ -702,6 +702,26 @@ export async function searchChemicalItems(
   }
 }
 
+/** Per-warehouse stock balances for ad-hoc item codes. Same shape as the
+ *  ``balances`` field on a BOM-loaded chemical: ``{warehouse: qty}``. Used
+ *  when the operator adds a chemical that isn't already exploded into the
+ *  BOM, so the Chemical Stock matrix shows real stock instead of zeros. */
+export async function fetchChemicalBalances(
+  itemCodes: string[],
+): Promise<Record<string, Record<string, number>>> {
+  if (!itemCodes.length) return {};
+  try {
+    return (
+      (await call<Record<string, Record<string, number>>>(
+        "upande_scp.serverscripts.scouting_metrics_api.get_chemical_stock_balances",
+        { item_codes: itemCodes },
+      )) || {}
+    );
+  } catch {
+    return {};
+  }
+}
+
 /** Per-chemical application-rate limits keyed by ``item_code``. Chemicals
  *  whose Item has neither limit set are omitted, so callers can treat an
  *  absent entry as "no bound". */

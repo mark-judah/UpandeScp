@@ -129,6 +129,7 @@ export interface ChemicalRow {
   kind: ChemicalKind;
   custom_lower_rate_limit: number | null;
   custom_upper_rate_limit: number | null;
+  custom_low_stock_threshold: number | null;
   custom_type: ChemicalType | null;
   custom_toxicity: ToxicityClass | null;
   custom_reentry_interval_hrs: number | null;
@@ -169,6 +170,7 @@ export interface SaveChemicalPayload {
   enabled?: boolean;
   lower_rate_limit?: number;
   upper_rate_limit?: number;
+  low_stock_threshold?: number;
   type?: ChemicalType;
   toxicity?: ToxicityClass;
   reentry_interval_hrs?: number;

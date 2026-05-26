@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Plus, Trash2, Maximize2, FilePlus2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Loader2, Plus, Trash2, Maximize2, FilePlus2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -50,6 +50,7 @@ import {
   fetchBedsAndZones,
   fetchBedsByGreenhouse,
   fetchBomDetails,
+  fetchChemicalBalances,
   fetchZonesByGreenhouse,
   searchChemicalItems,
   type BedAreaRow,
@@ -276,6 +277,7 @@ export function ApplicationPlan() {
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [addResults, setAddResults] = useState<ChemicalItem[]>([]);
+  const [addNotice, setAddNotice] = useState<string>("");
   const addTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // BOM creation dialog
@@ -753,11 +755,35 @@ export function ApplicationPlan() {
     [bootstrap],
   );
 
+  /** Farm of the picked greenhouse — drives the "wrong store" amber
+   *  warning on the Chemical Stock matrix. Empty when no greenhouse is
+   *  selected, in which case the mismatch check is skipped entirely. */
+  const greenhouseFarm = useMemo(() => {
+    if (!greenhouse) return "";
+    return (
+      bootstrap?.greenhouses.find((g) => g.name === greenhouse)?.custom_farm ||
+      ""
+    );
+  }, [greenhouse, bootstrap]);
+
+  /** Same heuristic as the www page's ``warehouseMatchesFarm``: a source
+   *  warehouse "belongs" to a farm if its name contains the farm name
+   *  (case-insensitive). Used to soft-warn the operator when the picked
+   *  source isn't from the greenhouse's farm — submission still goes
+   *  through. */
+  const warehouseMatchesFarm = useCallback(
+    (wh: string) => {
+      if (!greenhouseFarm) return true;
+      return (wh || "").toLowerCase().includes(greenhouseFarm.toLowerCase());
+    },
+    [greenhouseFarm],
+  );
+
   /** Rows whose picked source warehouse has less stock than the computed
    *  total. Drives the Submit-button disable, its tooltip, and the red
-   *  highlight on the TOTAL cell + Source picker in the Chemical Stock
-   *  matrix. A row with no source picked yet is treated as "short" so the
-   *  operator is reminded to pick one. */
+   *  highlight on the TOTAL cell in the Chemical Stock matrix. A row with
+   *  no source picked yet is treated as "short" so submission is blocked
+   *  until the operator picks one. */
   const stockShortRows = useMemo(() => {
     const out: { rowId: string; name: string; source: string; avail: number; need: number }[] = [];
     for (const c of chemRows) {
@@ -780,6 +806,34 @@ export function ApplicationPlan() {
     () => new Set(stockShortRows.map((s) => s.rowId)),
     [stockShortRows],
   );
+
+  /** Per-row visual warning level for the Chemical Stock matrix:
+   *   - "red"   = source picked AND avail < need. Hard error; blocks Submit.
+   *   - "amber" = source not picked yet, OR source is from a different
+   *               farm than the greenhouse. Soft warning; visual cue only,
+   *               doesn't block submission on its own (but the "no source"
+   *               case is also covered by stockShortRows so it still blocks).
+   *   - null    = no warning. */
+  const rowWarnById = useMemo(() => {
+    const out = new Map<string, "amber" | "red">();
+    for (const c of chemRows) {
+      const need = c.stock_qty || 0;
+      const source = c.source || "";
+      if (!source) {
+        out.set(c.rowId, "amber");
+        continue;
+      }
+      const avail = Number(c.balances?.[source] ?? 0);
+      if (need > 0 && avail < need) {
+        out.set(c.rowId, "red");
+        continue;
+      }
+      if (!warehouseMatchesFarm(source)) {
+        out.set(c.rowId, "amber");
+      }
+    }
+    return out;
+  }, [chemRows, warehouseMatchesFarm]);
 
   const updateChem = (rowId: string, patch: Partial<ChemRow>) =>
     setChemRows((prev) =>
@@ -808,27 +862,46 @@ export function ApplicationPlan() {
   const removeChem = (rowId: string) =>
     setChemRows((prev) => prev.filter((r) => r.rowId !== rowId));
 
-  const addChemical = (item: ChemicalItem) => {
+  const addChemical = async (item: ChemicalItem) => {
+    if (chemRows.some((r) => r.item_code === item.item_code)) {
+      // Inline notice inside the dialog instead of a floating toast — the
+      // operator's eye is already on the modal, so the feedback has to land
+      // there, not at the page edge.
+      setAddNotice(
+        `${item.item_name || item.item_code} is already in your chemical plan.`,
+      );
+      return;
+    }
+    setAddNotice("");
     const fallbackList = item.is_fertilizer
       ? bomDetails?.fertilizer_warehouses
       : bomDetails?.chemical_warehouses;
-    setChemRows((prev) => [
-      ...prev,
-      {
-        item_code: item.item_code,
-        item_name: item.item_name,
-        stock_uom: item.stock_uom,
-        item_group: item.item_group,
-        is_fertilizer: item.is_fertilizer,
-        rowId: `${item.item_code}-${Date.now()}-${prev.length}`,
-        source: fallbackList?.[0] || "",
-        balances: {},
-        rate: 0,
-        stock_qty: 0,
-      },
-    ]);
     setAddOpen(false);
     setAddQuery("");
+    // Pull real per-warehouse balances so the Chemical Stock matrix doesn't
+    // render zeros for an item that's actually in stock. The BOM-load path
+    // gets this from ``get_bom_details``; ad-hoc adds need an explicit fetch.
+    const balancesByCode = await fetchChemicalBalances([item.item_code]);
+    const balances = balancesByCode[item.item_code] || {};
+    const firstWithStock = Object.entries(balances).find(([, v]) => v > 0);
+    setChemRows((prev) => {
+      if (prev.some((r) => r.item_code === item.item_code)) return prev;
+      return [
+        ...prev,
+        {
+          item_code: item.item_code,
+          item_name: item.item_name,
+          stock_uom: item.stock_uom,
+          item_group: item.item_group,
+          is_fertilizer: item.is_fertilizer,
+          rowId: `${item.item_code}-${Date.now()}-${prev.length}`,
+          source: firstWithStock?.[0] || fallbackList?.[0] || "",
+          balances,
+          rate: 0,
+          stock_qty: 0,
+        },
+      ];
+    });
   };
 
   const submit = async () => {
@@ -950,18 +1023,33 @@ export function ApplicationPlan() {
       for (const w of r?.warnings || []) {
         pushToast("warn", w, 8000);
       }
-      // Reset form so the user can build the next plan in the batch.
-      // The spray team + roster intentionally persist — the same crew is
-      // usually on the ground across multiple plans in one batch, so we
-      // keep it around to save the operator from re-picking each time.
+      // Full reset — operator explicitly asked for a clean slate after
+      // every Add-to-batch so the next plan starts from scratch (incl.
+      // farm/greenhouse). Anything tied to the previous greenhouse would
+      // mislead the operator if it lingered.
+      setFarmFilter("");
+      setGreenhouse("");
+      setSprayDate(ymd(new Date()));
+      setSprayType("");
+      setScope("");
+      setBom("");
+      setBomDetails(null);
+      setKit("");
       setClassification("");
       setPreventiveReason("");
-      setSelectedTargets(new Set());
+      setWaterPh("");
+      setWaterHardness("");
+      setWaterVolume("");
       setChemRows([]);
-      setBom("");
+      setSelectedVarieties(new Set());
+      setBedNumbers("");
+      setArea("");
+      setSprayTeam("");
+      setTeamMembers([]);
+      setSelectedTargets(new Set());
       setCostCenterOverride("");
       setCostCenterEditing(false);
-      // Notify the draft batch panel (mounted in Task 5) to refresh
+      // Notify the draft batch panel (mounted below) to refresh
       window.dispatchEvent(new CustomEvent("spray-plan:draft-added"));
     } catch (e: any) {
       dismissToast(loaderId);
@@ -973,7 +1061,13 @@ export function ApplicationPlan() {
 
   // ── BOM creation ────────────────────────────────────────────────
   const addNewBomChem = (it: ChemicalItem) => {
-    if (newBomChems.some((c) => c.item_code === it.item_code)) return;
+    if (newBomChems.some((c) => c.item_code === it.item_code)) {
+      pushToast(
+        "warn",
+        `${it.item_name || it.item_code} is already in this BOM.`,
+      );
+      return;
+    }
     setNewBomChems((prev) => [...prev, it]);
     setNewBomSearch("");
   };
@@ -1369,7 +1463,7 @@ export function ApplicationPlan() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr_18rem] gap-3">
+        <div className="grid grid-cols-1 xl:grid-cols-[35fr_65fr] gap-3">
           <Card className="p-4">
             <CardHeader className="p-0 pb-2">
               <CardTitle className="text-sm">Spray Details</CardTitle>
@@ -1832,10 +1926,54 @@ export function ApplicationPlan() {
                                   const balances = c.balances || {};
                                   const need = c.stock_qty || 0;
                                   const isShort = stockShortById.has(c.rowId);
+                                  const warn = rowWarnById.get(c.rowId);
+                                  // Soft amber: source not picked yet, or
+                                  // picked source isn't from the greenhouse's
+                                  // farm. Tints the whole row so the operator
+                                  // can spot the row at a glance without
+                                  // hunting through the warehouse columns.
+                                  const rowClass =
+                                    warn === "red"
+                                      ? "bg-[var(--sd-data-red)]/5"
+                                      : warn === "amber"
+                                        ? "bg-amber-50 dark:bg-amber-950/30"
+                                        : "";
+                                  const triggerClass =
+                                    warn === "red"
+                                      ? "h-7 text-xs min-w-40 border-[var(--sd-data-red)]"
+                                      : warn === "amber"
+                                        ? "h-7 text-xs min-w-40 border-amber-500"
+                                        : "h-7 text-xs min-w-40";
+                                  const sourceMismatch =
+                                    !!c.source && !warehouseMatchesFarm(c.source);
                                   return (
-                                    <TableRow key={c.rowId}>
+                                    <TableRow key={c.rowId} className={rowClass}>
                                       <TableCell className="text-xs font-medium whitespace-nowrap">
-                                        {c.item_name || c.item_code}
+                                        <div className="flex items-center gap-1.5">
+                                          {warn === "amber" && (
+                                            <span
+                                              title={
+                                                !c.source
+                                                  ? "Pick a source warehouse"
+                                                  : `Source isn't in ${greenhouseFarm}`
+                                              }
+                                              className="inline-flex"
+                                            >
+                                              <AlertTriangle className="h-3 w-3 text-amber-500" />
+                                            </span>
+                                          )}
+                                          <span>{c.item_name || c.item_code}</span>
+                                        </div>
+                                        {sourceMismatch && (
+                                          <div className="text-[0.6rem] text-amber-700 dark:text-amber-300 mt-0.5">
+                                            Source not in {greenhouseFarm}
+                                          </div>
+                                        )}
+                                        {!c.source && need > 0 && (
+                                          <div className="text-[0.6rem] text-amber-700 dark:text-amber-300 mt-0.5">
+                                            Pick a chemical store
+                                          </div>
+                                        )}
                                       </TableCell>
                                       {whs.map((w) => {
                                         const bal = Number(balances[w] || 0);
@@ -1864,11 +2002,7 @@ export function ApplicationPlan() {
                                           }
                                         >
                                           <SelectTrigger
-                                            className={
-                                              isShort
-                                                ? "h-7 text-xs min-w-40 border-[var(--sd-data-red)]"
-                                                : "h-7 text-xs min-w-40"
-                                            }
+                                            className={triggerClass}
                                           >
                                             <SelectValue placeholder="-- Select Source --" />
                                           </SelectTrigger>
@@ -1908,54 +2042,57 @@ export function ApplicationPlan() {
                   ) : null}
                 </>
               )}
+              {/* Add-to-batch lives at the foot of the BOM card so it sits
+                   right next to the chemicals it'll commit. Disabled when
+                   any row is short on stock; an inline summary line above
+                   explains why so the operator doesn't hunt the tooltip. */}
+              {bomDetails && (
+                <div className="flex items-center justify-end gap-3 pt-2 border-t">
+                  {stockShortRows.length ? (
+                    <span
+                      className="text-xs text-[var(--sd-data-red)] tabular-nums max-w-md text-right"
+                      title={stockShortRows
+                        .map((s) =>
+                          s.source
+                            ? `${s.name}: ${s.source} has ${s.avail} but needs ${s.need}`
+                            : `${s.name}: no source warehouse picked (needs ${s.need})`,
+                        )
+                        .join("\n")}
+                    >
+                      {stockShortRows.length} chemical
+                      {stockShortRows.length === 1 ? " is" : "s are"} short on stock
+                    </span>
+                  ) : null}
+                  <Button
+                    onClick={submit}
+                    disabled={busy || !greenhouse || stockShortRows.length > 0}
+                    size="sm"
+                    title={
+                      stockShortRows.length
+                        ? stockShortRows
+                            .map((s) =>
+                              s.source
+                                ? `${s.name}: ${s.source} has ${s.avail} but needs ${s.need}`
+                                : `${s.name}: pick a source warehouse`,
+                            )
+                            .join("\n")
+                        : undefined
+                    }
+                  >
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Add to batch
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
-
-          <div className="hidden xl:block">
-            <DraftBatchPanel onToast={pushToast} onDismiss={dismissToast} />
-          </div>
         </div>
 
-        <div className="flex justify-end items-center gap-3">
-          {stockShortRows.length ? (
-            <span
-              className="text-xs text-[var(--sd-data-red)] tabular-nums max-w-md text-right"
-              title={stockShortRows
-                .map((s) =>
-                  s.source
-                    ? `${s.name}: ${s.source} has ${s.avail} but needs ${s.need}`
-                    : `${s.name}: no source warehouse picked (needs ${s.need})`,
-                )
-                .join("\n")}
-            >
-              {stockShortRows.length} chemical
-              {stockShortRows.length === 1 ? " is" : "s are"} short on stock
-            </span>
-          ) : null}
-          <Button
-            onClick={submit}
-            disabled={busy || !greenhouse || stockShortRows.length > 0}
-            size="lg"
-            title={
-              stockShortRows.length
-                ? stockShortRows
-                    .map((s) =>
-                      s.source
-                        ? `${s.name}: ${s.source} has ${s.avail} but needs ${s.need}`
-                        : `${s.name}: pick a source warehouse`,
-                    )
-                    .join("\n")
-                : undefined
-            }
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Add to batch
-          </Button>
-        </div>
-
-        <div className="xl:hidden mt-3">
-          <DraftBatchPanel onToast={pushToast} onDismiss={dismissToast} />
-        </div>
+        {/* Draft batch sits below the two top blocks at full width so the
+             operator sees the running list of drafts after they hit
+             Add-to-batch, instead of in a narrow side rail that gets
+             pushed off-screen on smaller monitors. */}
+        <DraftBatchPanel onToast={pushToast} onDismiss={dismissToast} />
       </section>
 
       {/* Fullscreen heatmap modal */}
@@ -1982,7 +2119,16 @@ export function ApplicationPlan() {
       </Dialog>
 
       {/* Add-chemical popup */}
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+      <Dialog
+        open={addOpen}
+        onOpenChange={(open) => {
+          setAddOpen(open);
+          // Clear the inline "already added" notice every time the modal
+          // (re)opens or closes — stale messages from a previous attempt
+          // would confuse the operator on the next add.
+          setAddNotice("");
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Add chemical</DialogTitle>
@@ -1993,10 +2139,19 @@ export function ApplicationPlan() {
           </DialogHeader>
           <Input
             value={addQuery}
-            onChange={(e) => setAddQuery(e.target.value)}
+            onChange={(e) => {
+              setAddQuery(e.target.value);
+              if (addNotice) setAddNotice("");
+            }}
             placeholder="Search…"
             autoFocus
           />
+          {addNotice && (
+            <div className="rounded-md border border-amber-500/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 mt-[1px] shrink-0" />
+              <span>{addNotice}</span>
+            </div>
+          )}
           <div className="max-h-72 overflow-auto flex flex-col gap-1">
             {addResults.map((it) => (
               <button

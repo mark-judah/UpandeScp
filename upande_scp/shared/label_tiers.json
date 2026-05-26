@@ -49,7 +49,7 @@
       "min_dim_lt": 100,
       "qr_pct": 45,
       "qr_min_mm": 24,
-      "fields": ["chem", "qty", "se", "from", "to"],
+      "fields": ["chem", "qty", "gh", "to"],
       "base_pt": 8,
       "head_pt": 10,
       "orientation": "row"
@@ -59,7 +59,7 @@
       "min_dim_lt": null,
       "qr_pct": 45,
       "qr_min_mm": 28,
-      "fields": ["chem", "qty", "se", "from", "to", "sched", "type"],
+      "fields": ["chem", "qty", "gh", "from", "to", "sched", "type"],
       "base_pt": 11,
       "head_pt": 14,
       "orientation": "row"

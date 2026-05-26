@@ -442,6 +442,55 @@ def list_chemical_items(q=None, limit=50):
 
 
 @frappe.whitelist()
+def get_chemical_stock_balances(item_codes):
+    """Per-warehouse stock balances for ad-hoc item codes.
+
+    Used by the React Application Plan when the operator adds a chemical
+    that isn't part of the BOM's exploded items — without this the row
+    would render with empty ``balances`` and every warehouse cell would
+    show 0.00 even though the item has real stock.
+
+    Returns ``{item_code: {warehouse: qty}}`` keyed exactly like the
+    ``balances`` field inside ``get_bom_details``.
+    """
+    import json as _json
+
+    if isinstance(item_codes, str):
+        try:
+            item_codes = _json.loads(item_codes)
+        except (TypeError, ValueError):
+            item_codes = [c.strip() for c in item_codes.split(",") if c.strip()]
+    item_codes = [c for c in (item_codes or []) if c]
+    if not item_codes:
+        return {}
+
+    from upande_scp.serverscripts.get_bom_stock_balances import (
+        _FERTILIZER_GROUP,
+        _fill_balances,
+        get_allowed_chemical_store_warehouses,
+        get_allowed_fertilizer_unit_warehouses,
+    )
+
+    groups = dict(
+        frappe.db.sql(
+            "SELECT name, item_group FROM `tabItem` WHERE name IN %(codes)s",
+            {"codes": tuple(item_codes)},
+        )
+    )
+    chem_codes = [c for c in item_codes if groups.get(c) != _FERTILIZER_GROUP]
+    fert_codes = [c for c in item_codes if groups.get(c) == _FERTILIZER_GROUP]
+
+    out: dict[str, dict[str, float]] = {}
+    if chem_codes:
+        out.update(_fill_balances(chem_codes, get_allowed_chemical_store_warehouses()))
+    if fert_codes:
+        out.update(_fill_balances(fert_codes, get_allowed_fertilizer_unit_warehouses()))
+    for code in item_codes:
+        out.setdefault(code, {})
+    return out
+
+
+@frappe.whitelist()
 def get_bom_details(name):
     """Single BOM with its exploded chemicals + stock balances per warehouse.
 

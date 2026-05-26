@@ -18,7 +18,8 @@ export type View =
   | "application-plan"
   | "chemical-dashboard"
   | "spray-plan-transfers"
-  | "labels";
+  | "labels"
+  | "creator-stock";
 
 const DEFAULT: View = "dashboard";
 const KNOWN_VIEWS: ReadonlySet<View> = new Set([
@@ -40,6 +41,7 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set([
   "chemical-dashboard",
   "spray-plan-transfers",
   "labels",
+  "creator-stock",
 ]);
 
 function viewFromHash(): View {

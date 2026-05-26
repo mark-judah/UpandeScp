@@ -343,8 +343,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
             option.addEventListener("click", (e) => {
                 e.preventDefault();
-                inputElement.value = item;
                 const row = inputElement.closest(".chemical-row, .bom-chemical-row");
+                // Reject duplicates: a chemical already picked in another row
+                // of the same group (spray-plan list, or new-BOM modal list)
+                // is a no-op. Surfacing this with a toast prevents the silent
+                // "second row of the same item shows 0 in every warehouse"
+                // bug the React side also guards against.
+                if (row) {
+                    const groupSelector = row.classList.contains("bom-chemical-row")
+                        ? ".bom-chemical-row .bom-chemical-name-input"
+                        : ".chemical-row .tw-chemical-name-input";
+                    const nameSelector = row.classList.contains("bom-chemical-row")
+                        ? ".bom-chemical-name-input"
+                        : ".tw-chemical-name-input";
+                    const dup = Array.from(document.querySelectorAll(groupSelector)).some(
+                        (inp) => inp !== row.querySelector(nameSelector) && inp.value.trim() === item,
+                    );
+                    if (dup) {
+                        showToast(`${item} is already added.`, "error");
+                        els.popupOverlay.classList.remove('active');
+                        els.popupSearch.value = '';
+                        return;
+                    }
+                }
+                inputElement.value = item;
                 if (row) {
                     updateRowTypeBadge(row, item);
                     const uomSelector = row.classList.contains("bom-chemical-row")

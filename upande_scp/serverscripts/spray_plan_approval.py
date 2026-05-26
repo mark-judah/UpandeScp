@@ -15,7 +15,7 @@ from frappe.utils import add_days, cstr, flt, now_datetime, today
 
 AFP_TYPE = "Application Floor Plan"
 
-APPROVAL_ROLES = ("Spray Plan Approver", "General Manager", "System Manager")
+APPROVAL_ROLES = ("Spray Plan Approver", "General Manager")
 
 
 def _ensure_approval_role():
@@ -28,9 +28,68 @@ def _ensure_approval_role():
     user_roles = set(frappe.get_roles(user))
     if not user_roles.intersection(APPROVAL_ROLES):
         frappe.throw(
-            "Spray plan approval requires the Spray Plan Approver role.",
+            "Spray plan approval requires the General Manager or Spray Plan Approver role.",
             frappe.PermissionError,
         )
+
+
+def _ensure_wo_in_approver_scope(wo_name: str) -> None:
+    """Reject approve/stop calls on Work Orders whose greenhouse is not in
+    the approver's farm roster. GMs / System Managers pass through."""
+    allowed = _approver_allowed_greenhouses(frappe.session.user)
+    if allowed is None:
+        return
+    if not allowed:
+        frappe.throw(
+            "You are not assigned to any farm. Ask the General Manager to "
+            "roster you on the Settings → Access tab.",
+            frappe.PermissionError,
+        )
+    gh = frappe.db.get_value("Work Order", wo_name, "custom_greenhouse")
+    if gh and gh not in allowed:
+        frappe.throw(
+            f"You are not authorised to approve work orders for {gh}.",
+            frappe.PermissionError,
+        )
+
+
+def _approver_allowed_greenhouses(user: str) -> list[str] | None:
+    """Return the list of greenhouse warehouse names this user can act on,
+    or ``None`` for unscoped access (General Manager / Administrator).
+
+    Spray Plan Approvers are limited to the farms the GM has rostered them
+    on via the Settings → Access tab. An approver with no farms returns
+    ``[]`` and the calling endpoint short-circuits to an empty result.
+    """
+    if user == "Administrator":
+        return None
+    roles = set(frappe.get_roles(user))
+    if "General Manager" in roles or "System Manager" in roles:
+        return None
+    if "Spray Plan Approver" not in roles:
+        # Defence in depth — _ensure_approval_role already rejected this.
+        return []
+    if not frappe.db.table_exists("Farm Spray Plan Approver"):
+        return []
+    farms = [
+        row.parent for row in frappe.get_all(
+            "Farm Spray Plan Approver",
+            filters={"user": user, "parenttype": "Farm"},
+            fields=["parent"],
+        )
+    ]
+    if not farms:
+        return []
+    greenhouses = frappe.get_all(
+        "Warehouse",
+        filters={
+            "custom_farm": ["in", farms],
+            "warehouse_type": "Greenhouse",
+            "disabled": 0,
+        },
+        fields=["name"],
+    )
+    return [g["name"] for g in greenhouses]
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -69,6 +128,16 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
     elif farm:
         where.append("custom_greenhouse LIKE %(farm_prefix)s")
         params["farm_prefix"] = farm + " GH%"
+
+    # Approver farm scoping — GMs / System Managers / Administrator pass
+    # ``None`` and see everything. A Spray Plan Approver only sees WOs
+    # whose greenhouse belongs to a farm they've been rostered on.
+    allowed_ghs = _approver_allowed_greenhouses(frappe.session.user)
+    if allowed_ghs is not None:
+        if not allowed_ghs:
+            return {"work_orders": [], "farms": []}
+        where.append("custom_greenhouse IN %(allowed_ghs)s")
+        params["allowed_ghs"] = tuple(allowed_ghs)
 
     wos = frappe.db.sql(
         """
@@ -140,13 +209,20 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
 def get_farms_and_greenhouses():
     """Return distinct farms and their greenhouse lists (from open WOs)."""
     _ensure_approval_role()
+    wo_filters: list = [
+        ["custom_type", "=", AFP_TYPE],
+        ["status",      "=", "Not Started"],
+        ["docstatus",   "=", 1],
+    ]
+    allowed_ghs = _approver_allowed_greenhouses(frappe.session.user)
+    if allowed_ghs is not None:
+        if not allowed_ghs:
+            return {"farms": [], "greenhouses_by_farm": {}}
+        wo_filters.append(["custom_greenhouse", "in", allowed_ghs])
+
     wos = frappe.get_all(
         "Work Order",
-        filters=[
-            ["custom_type", "=", AFP_TYPE],
-            ["status",      "=", "Not Started"],
-            ["docstatus",   "=", 1],
-        ],
+        filters=wo_filters,
         fields=["custom_greenhouse"],
         group_by="custom_greenhouse",
         limit=0,
@@ -177,6 +253,7 @@ def approve_single_work_order(wo_name):
     Returns a dict with keys: wo, status, se, warehouse, qr_labels, message.
     """
     _ensure_approval_role()
+    _ensure_wo_in_approver_scope(wo_name)
     from upande_scp.serverscripts.qr_generator import (
         attach_qr_to_document,
         build_chemical_qr_payload,
@@ -265,10 +342,9 @@ def approve_single_work_order(wo_name):
         try:
             tgt_wh = item.t_warehouse or wip_warehouse
             payload = build_chemical_qr_payload(
-                wo_name, se_doc.name,
                 item.item_name or item.item_code,
-                item.qty, item.stock_uom, greenhouse,
-                farm=farm, target_warehouse=tgt_wh,
+                item.qty,
+                item.stock_uom,
             )
             png_b64 = generate_qr_base64(payload)
             if png_b64:
@@ -316,6 +392,7 @@ def approve_single_work_order(wo_name):
 def stop_single_work_order(wo_name):
     """Stop (cancel) a single Work Order. Returns {wo, status, message}."""
     _ensure_approval_role()
+    _ensure_wo_in_approver_scope(wo_name)
     try:
         from erpnext.manufacturing.doctype.work_order.work_order import stop_unstop
         stop_unstop(wo_name, "Stopped")

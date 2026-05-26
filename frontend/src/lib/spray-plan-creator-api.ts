@@ -171,6 +171,47 @@ export async function listMyDraftPlans(): Promise<DraftSummary[]> {
   );
 }
 
+export interface DraftPlanChemical {
+  item_code: string;
+  item_name?: string;
+  stock_uom?: string;
+  source_warehouse?: string;
+  application_rate?: number;
+}
+
+export interface DraftPlanDetail {
+  name: string;
+  custom_greenhouse: string;
+  custom_classification: string;
+  custom_preventive_reason?: string | null;
+  custom_spray_type: string;
+  custom_scope: string;
+  custom_scope_details?: string;
+  custom_kit?: string | null;
+  custom_spray_team?: string | null;
+  custom_water_ph?: number;
+  custom_water_hardness?: number;
+  custom_water_volume?: number;
+  custom_area?: number;
+  custom_targets: string[];
+  production_item?: string;
+  custom_cost_center?: string;
+  custom_scheduled_application_time?: string | null;
+  chemicals: DraftPlanChemical[];
+  custom_spray_plan_team_members: {
+    employee: string;
+    employee_name?: string;
+    role: string;
+  }[];
+}
+
+export async function fetchDraftPlan(name: string): Promise<DraftPlanDetail> {
+  return call<DraftPlanDetail>(
+    "upande_scp.serverscripts.spray_plan_creator.drafts.get_draft_plan",
+    { name },
+  );
+}
+
 export async function deleteDraftPlan(name: string): Promise<{ deleted: string }> {
   return call(
     "upande_scp.serverscripts.spray_plan_creator.drafts.delete_draft_plan",
@@ -262,5 +303,79 @@ export async function getApprovalReview(woName: string): Promise<ApprovalReview>
   return call<ApprovalReview>(
     "upande_scp.serverscripts.spray_plan_creator.approval_review.get_approval_review",
     { wo_name: woName },
+  );
+}
+
+// ---------- Stock dashboard ----------
+
+/** Chemical Store items carry a low-stock signal (qty vs. threshold). */
+export interface ChemicalStoreItem {
+  item_code: string;
+  item_name: string;
+  group: string;
+  uom: string;
+  qty: number;
+  threshold: number;
+  low: boolean;
+}
+
+/** CSU items carry an aged-stock signal (sitting > csu_max_age_days),
+ *  plus a FIFO cohort breakdown so the UI can show "X expired / Y fresh"
+ *  even when fresh and expired stock of the same chemical sit in the
+ *  same CSU. */
+export interface CsuCohort {
+  /** Original deposit timestamp (ISO, server-side ``now_datetime``). */
+  added_on: string;
+  qty: number;
+  age_days: number;
+  expired: boolean;
+  /** Destination greenhouse this batch was staged for — null when the
+   *  inward movement isn't tied to a Work Order (manual stock entry,
+   *  purchase receipt, opening balance, or pre-horizon stock). */
+  greenhouse: string | null;
+}
+
+export interface CsuItem {
+  item_code: string;
+  item_name: string;
+  group: string;
+  uom: string;
+  qty: number;
+  threshold: number;
+  aged: boolean;
+  expired_qty: number;
+  fresh_qty: number;
+  oldest_age_days: number;
+  cohorts: CsuCohort[];
+}
+
+export interface CreatorStockWarehouseStore {
+  warehouse: string;
+  farm: string;
+  total_qty: number;
+  items: ChemicalStoreItem[];
+}
+
+export interface CreatorStockWarehouseCsu {
+  warehouse: string;
+  farm: string;
+  total_qty: number;
+  aged_count: number;
+  items: CsuItem[];
+}
+
+export interface CreatorStockOverview {
+  csus: CreatorStockWarehouseCsu[];
+  chemical_stores: CreatorStockWarehouseStore[];
+  farms: string[];
+  low_stock_count: number;
+  aged_csu_count: number;
+  csu_max_age_days: number;
+  as_of: string;
+}
+
+export async function fetchCreatorStockOverview(): Promise<CreatorStockOverview> {
+  return call<CreatorStockOverview>(
+    "upande_scp.serverscripts.spray_plan_creator.stock.creator_stock_overview",
   );
 }

@@ -49,8 +49,12 @@ export async function fetchSubmittedTransfers(opts: {
   return unwrap<SubmittedTransfersResp>(r);
 }
 
-export type OutputMode = "thermal" | "a4_tile";
+export type OutputMode = "thermal" | "a4_tile" | "legacy_4x6";
 export type Orientation = "portrait" | "landscape";
+/** Labels stacked on a 102×152mm (4"×6") portrait sheet — the legacy
+ *  geometry the Stock Entry list-view client script has always used,
+ *  and the only one verified to print cleanly on the Zebra ZQ520. */
+export type PerPage = 1 | 2 | 3;
 
 export interface SkippedLabel {
   se: string;
@@ -64,6 +68,40 @@ export interface GeneratePdfResp {
   skipped: SkippedLabel[];
 }
 
+/** Operator-supplied overrides — when present, the backend applies them
+ *  verbatim to the plan, replacing the tier defaults. Pass undefined for
+ *  any field you want the tier to decide. */
+export interface LayoutOverrides {
+  paddingTopMm?: number;
+  paddingRightMm?: number;
+  paddingBottomMm?: number;
+  paddingLeftMm?: number;
+  qrSideMm?: number;
+  basePt?: number;
+  headPt?: number;
+  /** "row" = QR on the side, "stack" = QR on top centered, undefined =
+   *  let the tier's aspect-ratio rule decide. */
+  layoutMode?: "row" | "stack";
+  /** Subset of ["chem","qty","se","from","to","sched","type"]. Empty
+   *  array means "QR only, no text". Undefined keeps the tier default. */
+  fields?: string[];
+}
+
+export const FIELD_KEYS = [
+  "se", "chem", "qty", "gh", "from", "to", "sched", "type",
+] as const;
+export type FieldKey = typeof FIELD_KEYS[number];
+export const FIELD_LABELS: Record<FieldKey, string> = {
+  se: "SE name",
+  chem: "Chemical",
+  qty: "Quantity",
+  gh: "Greenhouse",
+  from: "From",
+  to: "To",
+  sched: "Scheduled",
+  type: "Spray type",
+};
+
 export async function generateLabelPdf(opts: {
   seNames: string[];
   widthMm: number;
@@ -71,17 +109,41 @@ export async function generateLabelPdf(opts: {
   outputMode: OutputMode;
   orientation: Orientation;
   fontScale: number;
+  /** Only consulted when ``outputMode === "legacy_4x6"``. Backend
+   *  routes the call through ``_render_legacy_html`` instead of the
+   *  dynamic-size renderer when ``per_page`` is set. */
+  perPage?: PerPage;
+  overrides?: LayoutOverrides;
 }): Promise<GeneratePdfResp> {
+  const ov = opts.overrides ?? {};
+  const args: Record<string, unknown> =
+    opts.outputMode === "legacy_4x6"
+      ? {
+          se_names: JSON.stringify(opts.seNames),
+          per_page: opts.perPage ?? 2,
+        }
+      : {
+          se_names: JSON.stringify(opts.seNames),
+          width_mm: opts.widthMm,
+          height_mm: opts.heightMm,
+          output_mode: opts.outputMode,
+          orientation: opts.orientation,
+          font_scale: opts.fontScale,
+          padding_top_mm:    ov.paddingTopMm,
+          padding_right_mm:  ov.paddingRightMm,
+          padding_bottom_mm: ov.paddingBottomMm,
+          padding_left_mm:   ov.paddingLeftMm,
+          qr_side_mm:        ov.qrSideMm,
+          base_pt:           ov.basePt,
+          head_pt:           ov.headPt,
+          layout_mode:       ov.layoutMode,
+          // ``fields`` arrives as a list — JSON-encode so Frappe's form
+          // parser doesn't collapse it to the last value or to a CSV.
+          fields:            ov.fields ? JSON.stringify(ov.fields) : undefined,
+        };
   const r = await call(
     "upande_scp.serverscripts.spray_plan_labels.generate_pdf",
-    {
-      se_names: JSON.stringify(opts.seNames),
-      width_mm: opts.widthMm,
-      height_mm: opts.heightMm,
-      output_mode: opts.outputMode,
-      orientation: opts.orientation,
-      font_scale: opts.fontScale,
-    },
+    args,
   );
   return unwrap<GeneratePdfResp>(r);
 }

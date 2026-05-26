@@ -20,6 +20,7 @@ the scan freshness server-side and write the result into each SE's
 """
 
 import json
+import os
 from datetime import timedelta
 
 import frappe
@@ -425,39 +426,53 @@ def list_submitted_transfers(
         rows = [r for r in rows if (r.get("farm") or "") == farm]
 
     # QR availability flag + a representative URL the Labels page can
-    # render in the live preview. One query for every SE in the result
-    # set, joined to ``tabFile`` so we don't fire N round-trips.
+    # render in the live preview. Pull every File attached to these SEs
+    # and filter to images in Python — mirrors what
+    # ``spray_plan_labels._collect_labels`` does when picking QRs for
+    # the PDF, so the listing never disagrees with the renderer. A
+    # SQL ``file_name LIKE '%.png'`` filter misses rows where the File
+    # has only ``file_url`` populated (or odd casing), even though the
+    # renderer would still pick them up.
     qr_counts: dict = {}
     qr_urls: dict = {}
     names = [r["name"] for r in rows]
     if names:
-        img_rows = frappe.db.sql(
-            """
-            SELECT attached_to_name AS se_name,
-                   file_url,
-                   file_name,
-                   creation
-            FROM   `tabFile`
-            WHERE  attached_to_doctype = 'Stock Entry'
-              AND  attached_to_name IN %(names)s
-              AND  (file_name LIKE %(jpg)s OR file_name LIKE %(jpeg)s
-                    OR file_name LIKE %(png)s OR file_name LIKE %(webp)s
-                    OR file_name LIKE %(gif)s OR file_name LIKE %(bmp)s)
-            ORDER  BY attached_to_name, creation
-            """,
-            {
-                "names": names,
-                "jpg": "%.jpg", "jpeg": "%.jpeg", "png": "%.png",
-                "webp": "%.webp", "gif": "%.gif", "bmp": "%.bmp",
+        image_exts = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")
+        public_root = frappe.get_site_path("public", "files")
+        private_root = frappe.get_site_path("private", "files")
+        file_rows = frappe.get_all(
+            "File",
+            filters={
+                "attached_to_doctype": "Stock Entry",
+                "attached_to_name": ("in", names),
             },
-            as_dict=True,
+            fields=["attached_to_name", "file_url", "file_name", "creation"],
+            order_by="attached_to_name, creation",
         )
-        for ir in img_rows:
-            se_name = ir["se_name"]
+        for fr in file_rows:
+            # Fall back to the URL when ``file_name`` is missing — some
+            # File docs only persist ``file_url``, and the renderer
+            # tolerates that, so the listing should too.
+            name_for_ext = (fr.get("file_name") or fr.get("file_url") or "").lower()
+            if not name_for_ext.endswith(image_exts):
+                continue
+            # File doc can exist without the underlying bytes on disk —
+            # the PDF renderer skips those, so the listing must too, or
+            # the operator picks a row that looks printable but isn't.
+            file_url = fr.get("file_url") or ""
+            if file_url.startswith("/private/files/"):
+                disk_path = os.path.join(private_root, file_url[len("/private/files/"):])
+            elif file_url.startswith("/files/"):
+                disk_path = os.path.join(public_root, file_url[len("/files/"):])
+            else:
+                disk_path = ""
+            if not disk_path or not os.path.isfile(disk_path):
+                continue
+            se_name = fr["attached_to_name"]
             qr_counts[se_name] = qr_counts.get(se_name, 0) + 1
             # First-seen URL per SE wins. Earliest by creation order, so
             # the preview shows whichever QR was generated first.
-            qr_urls.setdefault(se_name, ir["file_url"])
+            qr_urls.setdefault(se_name, file_url)
 
     for r in rows:
         r["total_qty"] = float(r["total_qty"] or 0)

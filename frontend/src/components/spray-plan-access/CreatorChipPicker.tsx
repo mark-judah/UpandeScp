@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, X, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
+  listApproverCandidates,
   listCreatorCandidates,
   type CreatorCandidate,
   type FarmCreatorRow,
@@ -24,9 +25,21 @@ interface Props {
   value: FarmCreatorRow[];
   onChange: (next: FarmCreatorRow[]) => void;
   disabled?: boolean;
+  /** Which role's candidate list to search. Defaults to "creator" so the
+   *  existing AccessTab callsites keep working unchanged. */
+  kind?: "creator" | "approver";
 }
 
-export function CreatorChipPicker({ value, onChange, disabled }: Props) {
+export function CreatorChipPicker({
+  value,
+  onChange,
+  disabled,
+  kind = "creator",
+}: Props) {
+  const fetchCandidates =
+    kind === "approver" ? listApproverCandidates : listCreatorCandidates;
+  const roleLabel =
+    kind === "approver" ? "Spray Plan Approver" : "Spray Plan Creator";
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CreatorCandidate[]>([]);
@@ -38,7 +51,7 @@ export function CreatorChipPicker({ value, onChange, disabled }: Props) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setSearching(true);
     debounceRef.current = setTimeout(() => {
-      listCreatorCandidates(query)
+      fetchCandidates(query)
         .then((rows) => {
           setResults(
             rows.filter((r) => !value.find((v) => v.user === r.user)),
@@ -134,7 +147,7 @@ export function CreatorChipPicker({ value, onChange, disabled }: Props) {
           {open && !searching && results.length === 0 && query && (
             <div className="absolute top-8 left-0 z-50 min-w-56 rounded-md border bg-popover px-3 py-2 text-xs text-muted-foreground shadow-md">
               No users found. Only enabled accounts with the
-              {" "}"Spray Plan Creator"{" "}role appear here. Grant the
+              {" "}&quot;{roleLabel}&quot;{" "}role appear here. Grant the
               role in Frappe Desk first if you need to give a user access.
             </div>
           )}

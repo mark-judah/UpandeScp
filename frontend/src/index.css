@@ -9,23 +9,24 @@ html { font-size: 85%; }
 
 /* ─── Kaitet design tokens (mirrors scouting_dashboard.css :root) ─── */
 :root {
-  /* Surfaces */
+  /* Surfaces — bumped one step darker (2026-05-25) so muted backgrounds
+     and outline-button borders read with more contrast against cards. */
   --sd-bg: #f5f7fa;
-  --sd-bg-soft: #f3f4f6;
+  --sd-bg-soft: #d1d5db;
   --sd-card: #ffffff;
-  --sd-ink: #374151;
-  --sd-text: #374151;
-  --sd-muted: #6b7280;
-  --sd-quiet: #9ca3af;
-  --sd-line: #e5e7eb;
-  --sd-line-soft: #f3f4f6;
+  --sd-ink: #1f2937;
+  --sd-text: #1f2937;
+  --sd-muted: #4b5563;
+  --sd-quiet: #6b7280;
+  --sd-line: #d1d5db;
+  --sd-line-soft: #e5e7eb;
 
   /* Brand accents */
-  --sd-accent: #4b5563;
+  --sd-accent: #374151;
   --sd-accent-fg: #ffffff;
-  --sd-accent-2: #374151;
-  --sd-pistachio: #f3f4f6;
-  --sd-pistachio-2: #e5e7eb;
+  --sd-accent-2: #1f2937;
+  --sd-pistachio: #e5e7eb;
+  --sd-pistachio-2: #d1d5db;
   --sd-target: #f59e0b;
 
   /* Chart palette */
@@ -67,7 +68,7 @@ html { font-size: 85%; }
   --card-foreground: var(--sd-ink);
   --popover: var(--sd-card);
   --popover-foreground: var(--sd-ink);
-  --primary: var(--sd-accent);
+  --primary: var(--sd-accent-2);
   --primary-foreground: var(--sd-accent-fg);
   --secondary: var(--sd-pistachio);
   --secondary-foreground: var(--sd-ink);
@@ -174,6 +175,26 @@ html { font-size: 85%; }
   }
   ::selection {
     background: rgba(75, 85, 99, 0.18);
+  }
+
+  /* Native scrollbars — thin and translucent to match the Radix ScrollArea */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(107, 114, 128, 0.35) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(107, 114, 128, 0.35);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(107, 114, 128, 0.55);
   }
 }
 

@@ -17,6 +17,10 @@ export interface LabelPlan {
   basePt: number;
   headPt: number;
   orientation: Orientation;
+  paddingTopMm: number;
+  paddingRightMm: number;
+  paddingBottomMm: number;
+  paddingLeftMm: number;
 }
 
 interface TierRow {
@@ -72,6 +76,10 @@ export function planLabel(widthMm: number, heightMm: number): LabelPlan {
     fields = fields.filter((f) => f !== "from" && f !== "to");
   }
 
+  // xs is QR-only edge-to-edge; other tiers need a small uniform pad so
+  // text doesn't hug the cut-line. Mirrors plan_label() in spray_plan_labels.py.
+  const pad = tier.tier === "xs" ? 0.5 : 1.2;
+
   return {
     tier: tier.tier,
     qrSideMm: Math.round(qrSide * 1000) / 1000,
@@ -79,5 +87,9 @@ export function planLabel(widthMm: number, heightMm: number): LabelPlan {
     basePt: tier.base_pt,
     headPt: tier.head_pt,
     orientation,
+    paddingTopMm: pad,
+    paddingRightMm: pad,
+    paddingBottomMm: pad,
+    paddingLeftMm: pad,
   };
 }

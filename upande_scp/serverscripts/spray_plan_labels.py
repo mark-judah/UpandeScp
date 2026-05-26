@@ -29,10 +29,20 @@ from functools import lru_cache
 from typing import List
 
 import frappe
+import pdfkit
 from frappe.utils import escape_html
-from frappe.utils.pdf import get_pdf
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")
+
+# wkhtmltopdf 0.12.x (unpatched Qt) silently applies a 0.768x scale to
+# every CSS dimension inside the page (the page itself is sized via
+# --page-width/--page-height, which works correctly). Empirically a 100mm
+# CSS box renders at 76.81mm on paper. We compensate by pre-multiplying
+# every CSS mm/pt value by the inverse, so what's written reaches paper
+# at its intended physical size — and the preview (which uses real CSS in
+# the browser, no scale bug) matches the PDF mm-for-mm.
+_WK_SCALE = 0.768
+_WK_INV = 1.0 / _WK_SCALE  # ≈ 1.3021
 
 # Matches `QR_<anything>_<item_code>.<ext>` — item_code is the trailing
 # segment before the extension. Lenient to accommodate other naming.
@@ -105,6 +115,10 @@ def plan_label(width_mm: float, height_mm: float) -> dict:
 	if orientation == "stack":
 		fields = [f for f in fields if f not in ("from", "to")]
 
+	# xs is QR-only and goes edge-to-edge with minimal padding; other tiers
+	# get a slightly larger uniform pad so text doesn't hug the cut-line.
+	pad = 0.5 if tier["tier"] == "xs" else 1.2
+
 	return {
 		"tier": tier["tier"],
 		"qr_side_mm": round(qr_side, 3),
@@ -112,6 +126,10 @@ def plan_label(width_mm: float, height_mm: float) -> dict:
 		"base_pt": tier["base_pt"],
 		"head_pt": tier["head_pt"],
 		"orientation": orientation,
+		"padding_top_mm": pad,
+		"padding_right_mm": pad,
+		"padding_bottom_mm": pad,
+		"padding_left_mm": pad,
 	}
 
 
@@ -236,7 +254,12 @@ def _collect_labels(se_names: List[str], prefer_simple_qr: bool = False):
 		for row in frappe.get_all(
 			"Work Order",
 			filters={"name": ("in", list(wo_names))},
-			fields=["name", "custom_scheduled_application_time", "custom_spray_type"],
+			fields=[
+				"name",
+				"custom_scheduled_application_time",
+				"custom_spray_type",
+				"custom_greenhouse",
+			],
 		):
 			wo_sched[row.name] = row
 
@@ -268,6 +291,7 @@ def _collect_labels(se_names: List[str], prefer_simple_qr: bool = False):
 		wo = wo_sched.get(se.work_order) if se.work_order else None
 		scheduled = _fmt_date(wo.custom_scheduled_application_time) if wo else ""
 		spray_type = (wo.custom_spray_type if wo else "") or ""
+		greenhouse = (wo.custom_greenhouse if wo else "") or ""
 
 		# One label per chemical row, not one per image — the previous
 		# loop walked images and looked up the item, which dropped any
@@ -304,6 +328,7 @@ def _collect_labels(se_names: List[str], prefer_simple_qr: bool = False):
 					"target": tgt_wh,
 					"scheduled": scheduled,
 					"spray_type": spray_type,
+					"greenhouse": greenhouse,
 				}
 			)
 			added += 1
@@ -348,6 +373,8 @@ def _field_row(field: str, lbl: dict) -> str:
 		return row("Scheduled", lbl["scheduled"])
 	if field == "type":
 		return row("Type", lbl["spray_type"])
+	if field == "gh":
+		return row("Greenhouse", lbl["greenhouse"])
 	return ""
 
 
@@ -406,21 +433,34 @@ def _css_common(width_mm: float, height_mm: float, plan: dict) -> str:
 	browser-stack default (sans-serif) is used and the PDF still renders.
 	"""
 	orientation = plan["orientation"]
-	qr_side = plan["qr_side_mm"]
-	base_pt = plan["base_pt"]
-	head_pt = plan["head_pt"]
+	# Pre-scale every dimension by 1/0.768 so wkhtmltopdf's silent 0.768x
+	# shrink lands back at the values the operator typed.
+	def s(mm):  # mm helper
+		return mm * _WK_INV
+	def sp(pt):  # pt helper — same scale (wkhtmltopdf shrinks pt too)
+		return pt * _WK_INV
+	width_s  = s(width_mm)
+	height_s = s(height_mm)
+	qr_side  = s(plan["qr_side_mm"])
+	pt_pad   = s(plan["padding_top_mm"])
+	pr_pad   = s(plan["padding_right_mm"])
+	pb_pad   = s(plan["padding_bottom_mm"])
+	pl_pad   = s(plan["padding_left_mm"])
+	base_pt_s = sp(plan["base_pt"])
+	head_pt_s = sp(plan["head_pt"])
+
 	# The qr-fill class (xs tier) makes the QR fill the label; the
 	# non-xs tiers use ``qr_side`` to constrain the QR image.
 	if orientation == "row":
 		qr_layout = (
 			f".label-row {{ display: flex; flex-direction: row; align-items: center; }}\n"
-			f".label-row .qr {{ flex: 0 0 {qr_side:.2f}mm; padding-right: 1.5mm; }}\n"
+			f".label-row .qr {{ flex: 0 0 {qr_side:.3f}mm; padding-right: {s(1.5):.3f}mm; }}\n"
 			f".label-row .info {{ flex: 1 1 auto; min-width: 0; }}\n"
 		)
 	else:
 		qr_layout = (
 			f".label-stack {{ display: flex; flex-direction: column; align-items: center; }}\n"
-			f".label-stack .qr {{ flex: 0 0 auto; padding-bottom: 0.8mm; }}\n"
+			f".label-stack .qr {{ flex: 0 0 auto; padding-bottom: {s(0.8):.3f}mm; }}\n"
 			f".label-stack .info {{ flex: 1 1 auto; text-align: center; min-width: 0; }}\n"
 		)
 
@@ -429,32 +469,31 @@ def _css_common(width_mm: float, height_mm: float, plan: dict) -> str:
 html, body {{ margin: 0; padding: 0; }}
 body {{ font-family: 'Poppins', Helvetica, Arial, sans-serif; color: #000; background: #fff; }}
 .label {{
-  width: {width_mm:.2f}mm;
-  height: {height_mm:.2f}mm;
-  padding: 1.2mm;
+  width: {width_s:.3f}mm;
+  height: {height_s:.3f}mm;
+  padding: {pt_pad:.3f}mm {pr_pad:.3f}mm {pb_pad:.3f}mm {pl_pad:.3f}mm;
   box-sizing: border-box;
-  font-size: {base_pt}pt;
+  font-size: {base_pt_s:.2f}pt;
   overflow: hidden;
 }}
 .label-xs {{
   display: flex; align-items: center; justify-content: center;
-  padding: 0.5mm;
 }}
 .label-xs .qr-fill {{
   max-width: 100%; max-height: 100%;
 }}
 .qr {{ text-align: center; }}
 .qr img {{
-  width: {qr_side:.2f}mm;
-  height: {qr_side:.2f}mm;
+  width: {qr_side:.3f}mm;
+  height: {qr_side:.3f}mm;
   display: block;
   margin: 0 auto;
 }}
-.info .se {{ font-weight: bold; font-size: {head_pt}pt; line-height: 1.1; }}
-.info .chem {{ font-weight: bold; font-size: {max(head_pt - 1, 6)}pt; margin: 0.5mm 0 1mm; line-height: 1.15; }}
-table.kv {{ width: 100%; border-collapse: collapse; font-size: {base_pt}pt; }}
-table.kv td {{ padding: 0.3mm 0; vertical-align: top; line-height: 1.2; }}
-table.kv td.k {{ width: 38%; color: #444; font-weight: 600; padding-right: 1mm; }}
+.info .se {{ font-weight: bold; font-size: {head_pt_s:.2f}pt; line-height: 1.1; }}
+.info .chem {{ font-weight: bold; font-size: {max(head_pt_s - sp(1), sp(6)):.2f}pt; margin: {s(0.5):.3f}mm 0 {s(1):.3f}mm; line-height: 1.15; }}
+table.kv {{ width: 100%; border-collapse: collapse; font-size: {base_pt_s:.2f}pt; }}
+table.kv td {{ padding: {s(0.3):.3f}mm 0; vertical-align: top; line-height: 1.2; }}
+table.kv td.k {{ width: 38%; color: #444; font-weight: 600; padding-right: {s(1):.3f}mm; }}
 table.kv td.v {{ word-break: break-word; }}
 {qr_layout}
 """
@@ -577,6 +616,15 @@ def generate_pdf(
 	output_mode: str = "thermal",
 	orientation: str = "portrait",
 	font_scale: float | int | str = 1.0,
+	padding_top_mm=None,
+	padding_right_mm=None,
+	padding_bottom_mm=None,
+	padding_left_mm=None,
+	qr_side_mm=None,
+	base_pt=None,
+	head_pt=None,
+	layout_mode=None,
+	fields=None,
 	per_page=None,
 ):
 	"""Build a label PDF for the given Stock Entry names.
@@ -659,6 +707,49 @@ def generate_pdf(
 	plan = plan_label(width_mm, height_mm)
 	plan["base_pt"] = round(plan["base_pt"] * font_scale_f, 2)
 	plan["head_pt"] = round(plan["head_pt"] * font_scale_f, 2)
+
+	# Per-call overrides — operator-supplied values replace tier defaults so
+	# what the preview shows is exactly what wkhtmltopdf draws. ``_coerce``
+	# accepts strings (Frappe HTTP form-encoded params arrive as strings).
+	def _coerce(v):
+		if v is None or v == "":
+			return None
+		try:
+			return float(v)
+		except (TypeError, ValueError):
+			return None
+
+	for key, raw in (
+		("padding_top_mm",    padding_top_mm),
+		("padding_right_mm",  padding_right_mm),
+		("padding_bottom_mm", padding_bottom_mm),
+		("padding_left_mm",   padding_left_mm),
+		("qr_side_mm",        qr_side_mm),
+		("base_pt",           base_pt),
+		("head_pt",           head_pt),
+	):
+		v = _coerce(raw)
+		if v is not None:
+			plan[key] = round(v, 3)
+
+	# QR placement override — "auto" keeps the tier's aspect-ratio decision,
+	# "row" forces QR-on-side, "stack" forces QR-on-top-centered.
+	if layout_mode in ("row", "stack"):
+		plan["orientation"] = layout_mode
+
+	# Field-visibility override. Accepts a JSON-encoded list (HTTP form
+	# encoding flattens lists to strings) or a Python list. Empty list is a
+	# legitimate "QR only" instruction, so we distinguish None from [].
+	if fields is not None:
+		if isinstance(fields, str):
+			try:
+				fields = json.loads(fields)
+			except (TypeError, ValueError):
+				fields = None
+		if isinstance(fields, list):
+			allowed = {"chem", "qty", "se", "from", "to", "sched", "type", "gh"}
+			plan["fields"] = [f for f in fields if f in allowed]
+
 	# At the smaller tiers we prefer a low-density QR when one was
 	# generated alongside the regular one (see ``_pick_qr_for_item``).
 	prefer_simple = plan["tier"] in _SIMPLE_QR_TIERS
@@ -685,7 +776,13 @@ def generate_pdf(
 		html = _render_thermal_html(labels, width_mm, height_mm, plan)
 		page_w, page_h = width_mm, height_mm
 
-	pdf_bytes = get_pdf(
+	# Call pdfkit directly. frappe.utils.pdf.get_pdf wraps wkhtmltopdf with
+	# print-format defaults (forced 15mm top/bottom margins when no header/
+	# footer div is present, automatic page-orientation flips) that break
+	# bleed-edge label printing — a 50x25mm page ends up rotated to 25x50mm
+	# with the label content split across two pages. We need exact mm-for-mm
+	# output, so we skip the wrapper.
+	pdf_bytes = pdfkit.from_string(
 		html,
 		options={
 			"page-width": f"{page_w}mm",
@@ -694,7 +791,8 @@ def generate_pdf(
 			"margin-bottom": "0mm",
 			"margin-left": "0mm",
 			"margin-right": "0mm",
-			"disable-smart-shrinking": "",
+			"encoding": "UTF-8",
+			"quiet": "",
 			"enable-local-file-access": "",
 		},
 	)

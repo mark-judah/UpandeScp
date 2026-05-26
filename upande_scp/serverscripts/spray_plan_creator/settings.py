@@ -305,6 +305,7 @@ def list_chemicals(
                    disabled,
                    custom_lower_rate_limit,
                    custom_upper_rate_limit,
+                   custom_low_stock_threshold,
                    custom_type,
                    custom_toxicity,
                    custom_reentry_interval_hrs,
@@ -414,7 +415,12 @@ def save_chemical(item_code: str, payload) -> dict:
 
     if "enabled" in payload:
         item.disabled = 0 if payload.get("enabled") else 1
-    for fld in ("lower_rate_limit", "upper_rate_limit", "reentry_interval_hrs"):
+    for fld in (
+        "lower_rate_limit",
+        "upper_rate_limit",
+        "reentry_interval_hrs",
+        "low_stock_threshold",
+    ):
         if fld in payload:
             item.set(f"custom_{fld}", payload[fld] or 0)
     for fld in ("frac_moa", "irac_moa", "ghs_description", "type", "toxicity"):

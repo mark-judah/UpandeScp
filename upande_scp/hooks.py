@@ -185,7 +185,10 @@ doc_events = {
     "Warehouse": _SCP_CACHE_EVENTS,
     "Farm": {
         **_SCP_CACHE_EVENTS,
-        "validate": "upande_scp.upande_scp.doctype.farm_spray_plan_creator.farm_spray_plan_creator.validate_farm_spray_plan_creators",
+        "validate": [
+            "upande_scp.upande_scp.doctype.farm_spray_plan_creator.farm_spray_plan_creator.validate_farm_spray_plan_creators",
+            "upande_scp.upande_scp.doctype.farm_spray_plan_approver.farm_spray_plan_approver.validate_farm_spray_plan_approvers",
+        ],
     },
     "Spray Equipment Details": _SCP_CACHE_EVENTS,
     "Item": _SCP_CACHE_EVENTS,

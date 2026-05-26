@@ -9,10 +9,10 @@ def get_context(context):
         frappe.throw("Please log in to access this page.", frappe.PermissionError)
 
     roles = set(frappe.get_roles(frappe.session.user))
-    allowed = {"Spray Plan Approver", "General Manager", "System Manager"}
+    allowed = {"Spray Plan Approver", "General Manager"}
     if not roles.intersection(allowed):
         frappe.throw(
-            "This page requires the Spray Plan Approver role.",
+            "This page requires the General Manager or Spray Plan Approver role.",
             frappe.PermissionError,
         )
 

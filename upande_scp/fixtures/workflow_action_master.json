@@ -1,4 +1,16 @@
 [
- {"doctype": "Workflow Action Master", "name": "Submit for Approval", "workflow_action_name": "Submit for Approval"},
- {"doctype": "Workflow Action Master", "name": "Approve Plan",        "workflow_action_name": "Approve Plan"}
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-26 12:12:44.067316",
+  "name": "Submit for Approval",
+  "workflow_action_name": "Submit for Approval"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow Action Master",
+  "modified": "2026-05-26 12:12:44.084783",
+  "name": "Approve Plan",
+  "workflow_action_name": "Approve Plan"
+ }
 ]

@@ -1,9 +1,65 @@
 [
- {"doctype": "Workflow State", "name": "Pending Submission",    "workflow_state_name": "Pending Submission",    "style": "Inverse", "icon": "edit"},
- {"doctype": "Workflow State", "name": "Awaiting Approval",     "workflow_state_name": "Awaiting Approval",     "style": "Warning", "icon": "hourglass"},
- {"doctype": "Workflow State", "name": "Approved",              "workflow_state_name": "Approved",              "style": "Success", "icon": "check"},
- {"doctype": "Workflow State", "name": "Chemical Issued",       "workflow_state_name": "Chemical Issued",       "style": "Primary", "icon": "share-square"},
- {"doctype": "Workflow State", "name": "Tank Mix Manufactured", "workflow_state_name": "Tank Mix Manufactured", "style": "Primary", "icon": "flask"},
- {"doctype": "Workflow State", "name": "Spraying In Progress",  "workflow_state_name": "Spraying In Progress",  "style": "Primary", "icon": "refresh"},
- {"doctype": "Workflow State", "name": "Completed",             "workflow_state_name": "Completed",             "style": "Success", "icon": "thumbs-up"}
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "edit",
+  "modified": "2026-05-26 12:12:44.119896",
+  "name": "Pending Submission",
+  "style": "Inverse",
+  "workflow_state_name": "Pending Submission"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "hourglass",
+  "modified": "2026-05-26 12:12:44.137770",
+  "name": "Awaiting Approval",
+  "style": "Warning",
+  "workflow_state_name": "Awaiting Approval"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "check",
+  "modified": "2026-05-26 12:12:44.153422",
+  "name": "Approved",
+  "style": "Success",
+  "workflow_state_name": "Approved"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "share-square",
+  "modified": "2026-05-26 12:12:44.175668",
+  "name": "Chemical Issued",
+  "style": "Primary",
+  "workflow_state_name": "Chemical Issued"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "flask",
+  "modified": "2026-05-26 12:12:44.205392",
+  "name": "Tank Mix Manufactured",
+  "style": "Primary",
+  "workflow_state_name": "Tank Mix Manufactured"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "refresh",
+  "modified": "2026-05-26 12:12:44.224396",
+  "name": "Spraying In Progress",
+  "style": "Primary",
+  "workflow_state_name": "Spraying In Progress"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "thumbs-up",
+  "modified": "2026-05-26 12:12:44.247017",
+  "name": "Completed",
+  "style": "Success",
+  "workflow_state_name": "Completed"
+ }
 ]

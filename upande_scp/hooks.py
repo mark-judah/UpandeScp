@@ -207,11 +207,12 @@ doc_events = {
     "Pests Scouting Entry": _SCP_SCOUTING_EVENTS,
     "Diseases Scouting Entry": _SCP_SCOUTING_EVENTS,
     "Trap Scouting Entry": _SCP_SCOUTING_EVENTS,
-    # Auto-create + submit the Material Issue when a Manufacture Stock Entry
-    # for an Application Floor Plan Work Order is submitted. Runs in the same
-    # transaction as the submit — any throw rolls the submit back.
+    # Stamp Application Floor Plan Work Orders with their lifecycle state when
+    # related Stock Entries are submitted (e.g. Material Transfer for
+    # Manufacture -> "Chemical Issued"). Material Issue is fired later from
+    # end_spray_session, not from this hook.
     "Stock Entry": {
-        "on_submit": "upande_scp.serverscripts.spray_plan_creator.auto_material_issue.on_manufacture_submit",
+        "on_submit": "upande_scp.serverscripts.spray_plan_creator.stock_entry_state.on_submit",
     },
 }
 
@@ -289,6 +290,10 @@ scheduler_events = {
 # ----------------
 # before_request = ["upande_scp.utils.before_request"]
 # after_request = ["upande_scp.utils.after_request"]
+
+# TEMP: diagnose mobile 403s on the spray-session/start path.
+before_request = ["upande_scp.diagnostics.request_log.before_request"]
+after_request = ["upande_scp.diagnostics.request_log.after_request"]
 
 # Job Events
 # ----------
@@ -485,6 +490,18 @@ fixtures = [
     {
         "doctype": "Workflow Action Master",
         "filters": [["name", "in", ["Submit for Approval", "Approve Plan"]]]
+    },
+    # Role definitions owned by this app. Mobile chemical/spray-application
+    # flow runs as Spray Supervisor.
+    {
+        "doctype": "Role",
+        "filters": [["name", "in", ["Spray Supervisor"]]]
+    },
+    # Custom permission grid for that role. Filtering by role keeps us
+    # from accidentally exporting unrelated custom perms on this site.
+    {
+        "doctype": "Custom DocPerm",
+        "filters": [["role", "=", "Spray Supervisor"]]
     }
     # {
     #     "doctype": "Insights Workbook",

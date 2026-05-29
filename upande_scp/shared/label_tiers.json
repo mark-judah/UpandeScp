@@ -39,7 +39,7 @@
       "min_dim_lt": 60,
       "qr_pct": 50,
       "qr_min_mm": 22,
-      "fields": ["chem", "qty", "se"],
+      "fields": ["chem", "qty", "gh"],
       "base_pt": 7.5,
       "head_pt": 9,
       "orientation": "row"

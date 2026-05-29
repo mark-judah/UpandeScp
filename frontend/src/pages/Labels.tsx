@@ -232,12 +232,12 @@ function PreviewLabel({
 
   const kvRows: Array<[string, string]> = [];
   if (plan.fields.includes("qty")) kvRows.push(["Qty", SAMPLE.qty]);
-  if (plan.fields.includes("gh")) kvRows.push(["Greenhouse", SAMPLE.greenhouse]);
   if (plan.fields.includes("from")) kvRows.push(["From", SAMPLE.source]);
   if (plan.fields.includes("to")) kvRows.push(["To", SAMPLE.target]);
   if (plan.fields.includes("sched")) kvRows.push(["Scheduled", SAMPLE.scheduled]);
   if (plan.fields.includes("type")) kvRows.push(["Type", SAMPLE.spray_type]);
 
+  const showGh = plan.fields.includes("gh");
   const showSe = plan.fields.includes("se");
   const showChem = plan.fields.includes("chem");
 
@@ -264,6 +264,11 @@ function PreviewLabel({
           textAlign: plan.orientation === "stack" ? "center" : "left",
         }}
       >
+        {showGh && (
+          <div style={{ fontWeight: 700, fontSize: `${plan.headPt}pt`, lineHeight: 1.1 }}>
+            {SAMPLE.greenhouse}
+          </div>
+        )}
         {showSe && (
           <div style={{ fontWeight: 700, fontSize: `${plan.headPt}pt`, lineHeight: 1.1 }}>
             {SAMPLE.se_name}

@@ -1,0 +1,91 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-19 15:10:58.797118",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "pesticide_name",
+  "flo_hml",
+  "active_ingredients",
+  "toxicity_class",
+  "percent_ai",
+  "rate",
+  "water_volume",
+  "pesticide_quantity",
+  "total_ai"
+ ],
+ "fields": [
+  {
+   "fieldname": "pesticide_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Pesticide Name / Biological Agent",
+   "reqd": 1
+  },
+  {
+   "fieldname": "flo_hml",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "FLO HML Yellow/Orange"
+  },
+  {
+   "fieldname": "active_ingredients",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Active Ingredient(s)"
+  },
+  {
+   "fieldname": "toxicity_class",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Toxicity Class"
+  },
+  {
+   "fieldname": "percent_ai",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "% a.i"
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Rate"
+  },
+  {
+   "fieldname": "water_volume",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Water Volume"
+  },
+  {
+   "fieldname": "pesticide_quantity",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Pesticide Quantity"
+  },
+  {
+   "fieldname": "total_ai",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Total a.i"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-02-19 15:10:58.797118",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Spray Application Pesticide",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

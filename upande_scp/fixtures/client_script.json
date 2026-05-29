@@ -37,7 +37,7 @@
   "doctype": "Client Script",
   "dt": "Warehouse",
   "enabled": 1,
-  "modified": "2026-05-20 00:00:00.000000",
+  "modified": "2026-05-20 00:00:00",
   "module": "Upande Scp",
   "name": "Warehouse Cost Center Query",
   "script": "frappe.ui.form.on('Warehouse', {\n    refresh(frm) {\n        frm.set_query('custom_cost_center', () => ({\n            filters: {\n                company: frm.doc.company || '',\n                disabled: 0,\n                is_group: 0,\n            }\n        }));\n    },\n    company(frm) {\n        if (frm.doc.custom_cost_center) {\n            frm.set_value('custom_cost_center', null);\n        }\n    }\n});\n",

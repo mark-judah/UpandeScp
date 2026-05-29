@@ -1,16 +1,11 @@
-"""Auto-issue tank-mix on Manufacture Stock Entry submit.
+"""Material-Issue helpers for the Application Floor Plan spray flow.
 
-When the Manufacture SE for an Application Floor Plan Work Order is submitted,
-this handler atomically creates + submits a Material Issue SE that consumes
-the manufactured tank-mix from the greenhouse warehouse. Workflow state advances
-to ``Completed``.
-
-The handler is registered on the ``on_submit`` doc-event so that it fires
-*after* the Manufacture SE's Stock Ledger Entry has been written — the
-greenhouse now holds the manufactured FG stock that the Material Issue will
-consume. Any ``frappe.throw`` here propagates out of ``doc.submit()`` and
-Frappe rolls back the entire transaction, unwinding both the Manufacture
-docstatus=1 write and any partial Material Issue state.
+Part B moved the Material Issue trigger off the Manufacture SE on_submit and
+onto the end-of-spray endpoint (``end_spray_session``). This module now exposes
+``build_and_submit_material_issue(wo, manufacture_se)`` as the helper that
+endpoint calls. The original ``on_manufacture_submit`` hook has been retained
+as a deprecated no-op so existing import sites and the stock-entry hook patch
+window do not break — actual dispatch lives in ``stock_entry_state.on_submit``.
 """
 from __future__ import annotations
 
@@ -186,47 +181,27 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
     }
 
 
-def on_manufacture_submit(doc, method):
-    """Stock Entry on_submit hook. No-op unless this is a Manufacture SE for
-    an Application Floor Plan Work Order. On match, create + submit a Material
-    Issue SE in the same transaction. Any throw propagates out of submit() and
-    Frappe rolls back the whole transaction, including the Manufacture
-    docstatus=1 write and all Material Issue state."""
-    if getattr(doc, "purpose", None) != "Manufacture":
-        return None
-    work_order_name = getattr(doc, "work_order", None)
-    if not work_order_name:
-        return None
+def build_and_submit_material_issue(wo, manufacture_se):
+    """Create + submit the Material Issue SE that consumes the tank-mix.
 
-    wo_type = frappe.db.get_value("Work Order", work_order_name, "custom_type")
-    if wo_type != AFP_TYPE:
-        return None
-
-    wo = frappe.get_doc("Work Order", work_order_name)
+    Called from ``end_spray_session`` once the supervisor closes the spray.
+    Both inputs are loaded docs (callers already have them). Returns the new
+    Material Issue's name. Any throw propagates so the caller's transaction
+    rolls back.
+    """
     supervisor = resolve_supervisor_employee(wo)
-    payload = build_material_issue(doc, wo, supervisor)
+    payload = build_material_issue(manufacture_se, wo, supervisor)
 
     mi = frappe.get_doc(payload)
     mi.flags.ignore_permissions = True
     mi.flags.ignore_links = True
     mi.insert()
     mi.submit()
-
-    frappe.db.set_value(
-        "Work Order", work_order_name, "workflow_state", "Completed",
-        update_modified=True,
-    )
-    try:
-        wo.add_comment(
-            "Workflow",
-            f"Auto Material Issue {mi.name} submitted by {frappe.session.user}. "
-            "State: Tank Mix Manufactured -> Completed.",
-        )
-    except Exception:
-        # Comment failures must not block the submission chain. Log so we can
-        # diagnose any silent breakage in production.
-        frappe.log_error(
-            frappe.get_traceback(),
-            "auto_material_issue: add_comment failed",
-        )
     return mi.name
+
+
+def on_manufacture_submit(doc, method):
+    """Deprecated. Material Issue now fires from ``end_spray_session``; this
+    hook entry-point is retained only so previously-cached references resolve.
+    The active dispatch lives in ``stock_entry_state.on_submit``."""
+    return None

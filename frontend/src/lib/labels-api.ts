@@ -95,7 +95,7 @@ export const FIELD_LABELS: Record<FieldKey, string> = {
   se: "SE name",
   chem: "Chemical",
   qty: "Quantity",
-  gh: "Greenhouse",
+  gh: "GH",
   from: "From",
   to: "To",
   sched: "Scheduled",

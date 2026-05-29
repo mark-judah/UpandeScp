@@ -374,7 +374,7 @@ def _field_row(field: str, lbl: dict) -> str:
 	if field == "type":
 		return row("Type", lbl["spray_type"])
 	if field == "gh":
-		return row("Greenhouse", lbl["greenhouse"])
+		return ""  # GH renders as a heading, not as a kv row.
 	return ""
 
 
@@ -392,8 +392,14 @@ def _render_label_html(lbl: dict, plan: dict) -> str:
 			f'</div>'
 		)
 
-	# Heading block — SE name shown only if "se" is in fields.
+	# Heading block — GH first (it's the destination, most useful at a
+	# glance), then SE name if requested, then chem name. Any field that
+	# resolves to an empty string falls out so the layout stays tight.
 	heading_parts = []
+	if "gh" in fields and lbl["greenhouse"]:
+		heading_parts.append(
+			f'<div class="gh">{escape_html(lbl["greenhouse"])}</div>'
+		)
 	if "se" in fields and lbl["se_name"]:
 		heading_parts.append(
 			f'<div class="se">{escape_html(lbl["se_name"])}</div>'
@@ -489,6 +495,7 @@ body {{ font-family: 'Poppins', Helvetica, Arial, sans-serif; color: #000; backg
   display: block;
   margin: 0 auto;
 }}
+.info .gh {{ font-weight: bold; font-size: {head_pt_s:.2f}pt; line-height: 1.1; }}
 .info .se {{ font-weight: bold; font-size: {head_pt_s:.2f}pt; line-height: 1.1; }}
 .info .chem {{ font-weight: bold; font-size: {max(head_pt_s - sp(1), sp(6)):.2f}pt; margin: {s(0.5):.3f}mm 0 {s(1):.3f}mm; line-height: 1.15; }}
 table.kv {{ width: 100%; border-collapse: collapse; font-size: {base_pt_s:.2f}pt; }}

@@ -320,29 +320,28 @@ def _ensure_crop_scouted(
                 doc.append("farms", {"farm": farm})
                 _log(log, f"  + linked farm: {farm}")
 
-    # ── Remove unwanted pest filter rows ───────────────────────────────
+    # ── Existing Pest Filter docs for this crop (standalone) ───────────
+    existing_filters = frappe.get_all(
+        "Pest Filter",
+        filters={"crop_scouted": crop_name},
+        fields=["name", "pest"],
+    )
+    rows_by_pest = {r.pest: r.name for r in existing_filters}
+
+    # ── Remove unwanted Pest Filter docs ───────────────────────────────
     if pests_to_remove:
         remove_set = set(pests_to_remove)
-        original_rows = list(doc.pests or [])
-        rows_to_drop = [r for r in original_rows if r.pest in remove_set]
-        if rows_to_drop:
+        to_drop = [(pest, name) for pest, name in rows_by_pest.items() if pest in remove_set]
+        if to_drop:
             if dry_run:
-                _log(log, f"  [dry-run] would remove pest filter rows: {[r.pest for r in rows_to_drop]}")
+                _log(log, f"  [dry-run] would remove pest filters: {[p for p, _ in to_drop]}")
             else:
-                # Drop their stages first, then rebuild doc.pests without them.
-                for r in rows_to_drop:
-                    frappe.db.delete(
-                        "Pests Stages",
-                        {"parent": r.name, "parenttype": "Pest Filter"},
-                    )
-                kept = [r for r in original_rows if r.pest not in remove_set]
-                doc.set("pests", [])
-                for r in kept:
-                    doc.append("pests", {"pest": r.pest})
-                _log(log, f"  - removed pest filter rows: {[r.pest for r in rows_to_drop]}")
+                for pest, name in to_drop:
+                    frappe.delete_doc("Pest Filter", name, ignore_permissions=True, force=True)
+                    rows_by_pest.pop(pest, None)
+                _log(log, f"  - removed pest filters: {[p for p, _ in to_drop]}")
 
-    # ── Add any missing Pest Filter rows (no stages yet — set after save) ─
-    rows_by_pest = {row.pest: row for row in (doc.pests or [])}
+    # ── Add any missing Pest Filter docs (stages set in the next block) ─
     pests_needing_addition = []
     for spec in pest_specs:
         pest_name = spec["common_name"]
@@ -350,31 +349,31 @@ def _ensure_crop_scouted(
             if dry_run:
                 _log(log, f"  [dry-run] would add pest filter {pest_name} with stages {[s['stage'] for s in spec['stages']]}")
             else:
-                doc.append("pests", {"pest": pest_name})
+                pf = frappe.get_doc({
+                    "doctype": "Pest Filter",
+                    "crop_scouted": crop_name,
+                    "pest": pest_name,
+                })
+                pf.insert(ignore_permissions=True)
+                rows_by_pest[pest_name] = pf.name
                 pests_needing_addition.append(pest_name)
+                _log(log, f"  + added pest filter: {pest_name}")
 
-    if not dry_run:
-        doc.save(ignore_permissions=True)
-        _log(log, f"  + saved Crop Scouted '{crop_name}'")
-        # Re-load so any newly-appended rows have their assigned names.
-        doc = frappe.get_doc("Crop Scouted", crop_name)
-        rows_by_pest = {row.pest: row for row in (doc.pests or [])}
-
-    # ── Reconcile stages on each Pest Filter row (separate cascade) ────
+    # ── Reconcile stages on each Pest Filter doc (separate cascade) ────
     for spec in pest_specs:
         pest_name = spec["common_name"]
         desired = spec["stages"]
-        row = rows_by_pest.get(pest_name)
-        if not row:
-            # Dry-run path: row wasn't actually added.
+        filter_name = rows_by_pest.get(pest_name)
+        if not filter_name:
+            # Dry-run path: filter wasn't actually added.
             continue
-        if _stages_match_db(row.name, desired):
+        if _stages_match_db(filter_name, desired):
             _log(log, f"  stages up-to-date: {pest_name}")
             continue
         if dry_run:
             _log(log, f"  [dry-run] would set stages for {pest_name}: {[s['stage'] for s in desired]}")
             continue
-        _replace_pest_filter_stages(row.name, desired)
+        _replace_pest_filter_stages(filter_name, desired)
         verb = "added" if pest_name in pests_needing_addition else "updated"
         _log(log, f"  ~ {verb} stages for {pest_name}: {[s['stage'] for s in desired]}")
 

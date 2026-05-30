@@ -35,13 +35,14 @@ def list_crops() -> list:
     Crop Scouted docs don't show up as targets with nothing to edit."""
     rows = frappe.db.sql(
         """
-        SELECT DISTINCT parent AS crop
+        SELECT DISTINCT crop
         FROM (
-            SELECT parent FROM `tabPest Filter` WHERE parenttype = 'Crop Scouted'
+            SELECT crop_scouted AS crop FROM `tabPest Filter` WHERE crop_scouted IS NOT NULL
             UNION
-            SELECT parent FROM `tabDisease Filter` WHERE parenttype = 'Crop Scouted'
+            SELECT crop_scouted AS crop FROM `tabDisease Filter` WHERE crop_scouted IS NOT NULL
         ) t
-        ORDER BY parent
+        WHERE crop != ''
+        ORDER BY crop
         """,
         as_dict=True,
     )
@@ -66,7 +67,7 @@ def get_thresholds(crop: str) -> dict:
         SELECT name, pest, unit,
                low_threshold, moderate_threshold, high_threshold
         FROM `tabPest Filter`
-        WHERE parent = %(crop)s AND parenttype = 'Crop Scouted'
+        WHERE crop_scouted = %(crop)s
         ORDER BY idx
         """,
         {"crop": crop},
@@ -114,7 +115,7 @@ def get_thresholds(crop: str) -> dict:
         SELECT name, disease, unit,
                low_threshold, moderate_threshold, high_threshold
         FROM `tabDisease Filter`
-        WHERE parent = %(crop)s AND parenttype = 'Crop Scouted'
+        WHERE crop_scouted = %(crop)s
         ORDER BY idx
         """,
         {"crop": crop},

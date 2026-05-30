@@ -129,7 +129,7 @@ def load_thresholds(crop: str) -> dict:
         SELECT pf.name AS row_name, pf.pest, pf.low_threshold,
                pf.moderate_threshold, pf.high_threshold
         FROM `tabPest Filter` pf
-        WHERE pf.parent = %(crop)s AND pf.parenttype = 'Crop Scouted'
+        WHERE pf.crop_scouted = %(crop)s
         """,
         {"crop": crop},
         as_dict=True,
@@ -165,7 +165,7 @@ def load_thresholds(crop: str) -> dict:
         SELECT df.name AS row_name, df.disease, df.low_threshold,
                df.moderate_threshold, df.high_threshold
         FROM `tabDisease Filter` df
-        WHERE df.parent = %(crop)s AND df.parenttype = 'Crop Scouted'
+        WHERE df.crop_scouted = %(crop)s
         """,
         {"crop": crop},
         as_dict=True,

@@ -245,17 +245,17 @@ def get_severity_thresholds():
     """
     pests = frappe.db.sql(
         """
-        SELECT parent AS crop, pest, unit, low_threshold, moderate_threshold, high_threshold
+        SELECT crop_scouted AS crop, pest, unit, low_threshold, moderate_threshold, high_threshold
         FROM   `tabPest Filter`
-        WHERE  parenttype = 'Crop Scouted' AND pest IS NOT NULL AND pest != ''
+        WHERE  crop_scouted IS NOT NULL AND crop_scouted != '' AND pest IS NOT NULL AND pest != ''
         """,
         as_dict=True,
     )
     diseases = frappe.db.sql(
         """
-        SELECT parent AS crop, disease, unit, low_threshold, moderate_threshold, high_threshold
+        SELECT crop_scouted AS crop, disease, unit, low_threshold, moderate_threshold, high_threshold
         FROM   `tabDisease Filter`
-        WHERE  parenttype = 'Crop Scouted' AND disease IS NOT NULL AND disease != ''
+        WHERE  crop_scouted IS NOT NULL AND crop_scouted != '' AND disease IS NOT NULL AND disease != ''
         """,
         as_dict=True,
     )

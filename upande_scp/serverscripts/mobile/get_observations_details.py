@@ -102,8 +102,7 @@ def getObservationsDetails(crop=None):
             "pest": ["in", pest_names],
         }
         if crop:
-            filter_row_filters["parent"] = crop
-            filter_row_filters["parenttype"] = "Crop Scouted"
+            filter_row_filters["crop_scouted"] = crop
         filter_rows = frappe.get_all(
             "Pest Filter",
             filters=filter_row_filters,

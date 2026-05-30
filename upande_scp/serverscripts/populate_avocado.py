@@ -6,19 +6,16 @@ What this script does, in order:
      (`Pest`, `Pest Filter`, `Crop Scouted`). This is the same work that
      `bench migrate` would do, but isolated to just our changes — useful
      when migrate is blocked by an unrelated data issue elsewhere.
-  2. Runs the `Pest.stages → Pest Filter.stages` migration patch (idempotent),
-     so existing crops keep their stages after the schema move.
-  3. Ensures the Avocado-related Pest master records exist (no stages — those
+  2. Ensures the Avocado-related Pest master records exist (no stages — those
      now live per-crop on Pest Filter).
-  4. Reconciles the Avocado `Crop Scouted` record's Pest Filter rows with
+  3. Reconciles the Avocado `Crop Scouted` record's Pest Filter rows with
      the desired pest list and per-row stages, removing pests no longer
      scouted on Avocado (e.g. CSR).
-  5. Seeds one of each `TRAPS_PER_BLOCK` trap type under every Lokitela block.
+  4. Seeds one of each `TRAPS_PER_BLOCK` trap type under every Lokitela block.
 
 Safe to re-run. All steps check before they write.
 
-NOTE — code-level changes (the new whitelisted `pest_filter_api`, the
-`crop_scouted.js` dialog editor, `cache_utils`/`get_scouting_report`/
+NOTE — code-level changes (`cache_utils`/`get_scouting_report`/
 `mobile/get_observations_details` queries, the `hooks.py` cache invalidator,
 the updated `getPestsData` server-script fixture) ship with the app code,
 not via this populate script. Deploy the app, then run this.
@@ -36,7 +33,7 @@ Limit to one farm (default Lokitela):
     bench --site SITENAME execute upande_scp.serverscripts.populate_avocado.run \\
         --kwargs '{"farm": "Lokitela"}'
 
-Skip schema reload + migration patch (e.g. if you've already run migrate):
+Skip schema reload (e.g. if you've already run migrate):
     bench --site SITENAME execute upande_scp.serverscripts.populate_avocado.run \\
         --kwargs '{"skip_schema": True}'
 
@@ -463,8 +460,6 @@ _DOCTYPES_TO_RELOAD: list[tuple[str, str]] = [
     ("upande_scp", "crop_scouted"),
 ]
 
-_PEST_STAGES_PATCH = "upande_scp.patches.v1_0.migrate_pest_stages_to_pest_filter"
-
 
 def _reload_changed_doctypes(dry_run: bool, log: list[str]) -> None:
     """Reload the doctypes touched by the per-crop stages refactor."""
@@ -479,34 +474,6 @@ def _reload_changed_doctypes(dry_run: bool, log: list[str]) -> None:
             _log(log, f"  ! failed to reload doctype '{dt}': {e}")
     if not dry_run:
         frappe.clear_cache()
-
-
-def _run_pest_stages_patch(dry_run: bool, log: list[str]) -> None:
-    """Run the Pest.stages → Pest Filter.stages migration if not already done.
-
-    The patch is idempotent — it skips Pest Filter rows that already have
-    stages — but we also gate on the Patch Log so re-runs don't re-import
-    the module unnecessarily.
-    """
-    already_run = frappe.db.exists("Patch Log", {"patch": _PEST_STAGES_PATCH})
-    if already_run:
-        _log(log, f"  patch already executed: {_PEST_STAGES_PATCH}")
-        return
-    if dry_run:
-        _log(log, f"  [dry-run] would execute patch: {_PEST_STAGES_PATCH}")
-        return
-    try:
-        from upande_scp.patches.v1_0 import migrate_pest_stages_to_pest_filter
-        migrate_pest_stages_to_pest_filter.execute()
-        # Record it in Patch Log so future `bench migrate` skips it.
-        pl = frappe.new_doc("Patch Log")
-        pl.patch = _PEST_STAGES_PATCH
-        pl.insert(ignore_permissions=True)
-        frappe.db.commit()
-        _log(log, f"  + executed patch: {_PEST_STAGES_PATCH}")
-    except Exception as e:
-        _log(log, f"  ! patch '{_PEST_STAGES_PATCH}' failed: {e}")
-        raise
 
 
 # ---------------------------------------------------------------------------
@@ -525,7 +492,7 @@ def run(
     Args:
         dry_run: If True, no DB writes happen — returned log shows what would change.
         farm: Farm name to seed traps under (default "Lokitela").
-        skip_schema: If True, skip the doctype reload + migration patch steps
+        skip_schema: If True, skip the doctype reload step
             (use when `bench migrate` has already been run successfully).
 
     Returns:
@@ -544,22 +511,18 @@ def run(
     )
 
     if skip_schema:
-        _log(log, "[1/7] SKIPPED doctype reload (skip_schema=True)")
-        _log(log, "[2/7] SKIPPED pest stages migration patch (skip_schema=True)")
+        _log(log, "[1/6] SKIPPED doctype reload (skip_schema=True)")
     else:
-        _log(log, "[1/7] reloading changed doctypes (Pest, Pest Filter, Crop Scouted)")
+        _log(log, "[1/6] reloading changed doctypes (Pest, Pest Filter, Crop Scouted)")
         _reload_changed_doctypes(dry_run, log)
 
-        _log(log, "[2/7] running Pest.stages → Pest Filter.stages migration patch")
-        _run_pest_stages_patch(dry_run, log)
-
-    _log(log, "[3/7] checking Trap.type Select options")
+    _log(log, "[2/6] checking Trap.type Select options")
     _check_trap_type_options(log)
 
-    _log(log, "[4/7] checking Pest Filter has per-crop stages table")
+    _log(log, "[3/6] checking Pest Filter has per-crop stages table")
     has_per_crop_stages = _check_pest_filter_has_stages(log)
 
-    _log(log, "[5/7] ensuring Pest master records (no stages — those are per-crop now)")
+    _log(log, "[4/6] ensuring Pest master records (no stages — those are per-crop now)")
     pest_names: list[str] = []
     for pest_def in AVOCADO_PESTS:
         pest_names.append(_ensure_pest(pest_def, dry_run, log))
@@ -567,7 +530,7 @@ def run(
     if has_per_crop_stages:
         _log(
             log,
-            f"[6/7] reconciling Crop Scouted '{CROP_NAME}' "
+            f"[5/6] reconciling Crop Scouted '{CROP_NAME}' "
             f"({len(pest_names)} pests, removing {AVOCADO_PESTS_TO_REMOVE})",
         )
         _ensure_crop_scouted(
@@ -579,9 +542,9 @@ def run(
             log,
         )
     else:
-        _log(log, "[6/7] SKIPPED Crop Scouted reconciliation — schema not ready")
+        _log(log, "[5/6] SKIPPED Crop Scouted reconciliation — schema not ready")
 
-    _log(log, f"[7/7] ensuring Trap records under each block of farm '{farm}'")
+    _log(log, f"[6/6] ensuring Trap records under each block of farm '{farm}'")
     _ensure_traps_for_blocks(farm, dry_run, log)
 
     if not dry_run:

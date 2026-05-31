@@ -1,13 +1,15 @@
 import frappe
 
-# Maps a category key -> (filter child doctype, link field on that child)
+# Maps a category key -> (filter doctype, link field, field linking to the crop).
+# Pest Filter / Disease Filter are standalone DocTypes linked via `crop_scouted`;
+# the other four are still child tables of Crop Scouted, linked via `parent`.
 _CROP_FILTER_MAP = {
-    "pests":                   ("Pest Filter",                   "pest"),
-    "diseases":                ("Disease Filter",                "disease"),
-    "predators":               ("Predator Filter",               "predator"),
-    "weeds":                   ("Weed Filter",                   "weed"),
-    "incidents":               ("Incident Filter",               "incident"),
-    "physiological_disorders": ("Physiological Disorder Filter", "physiological_disorder"),
+    "pests":                   ("Pest Filter",                   "pest",                   "crop_scouted"),
+    "diseases":                ("Disease Filter",                "disease",                "crop_scouted"),
+    "predators":               ("Predator Filter",               "predator",               "parent"),
+    "weeds":                   ("Weed Filter",                   "weed",                   "parent"),
+    "incidents":               ("Incident Filter",               "incident",               "parent"),
+    "physiological_disorders": ("Physiological Disorder Filter", "physiological_disorder", "parent"),
 }
 
 
@@ -20,10 +22,10 @@ def _allowed_names(crop, category):
     """
     if not crop:
         return None
-    filter_doctype, link_field = _CROP_FILTER_MAP[category]
+    filter_doctype, link_field, crop_field = _CROP_FILTER_MAP[category]
     return frappe.get_all(
         filter_doctype,
-        filters={"parent": crop},
+        filters={crop_field: crop},
         pluck=link_field,
     )
 

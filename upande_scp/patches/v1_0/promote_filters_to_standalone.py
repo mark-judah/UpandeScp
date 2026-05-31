@@ -27,9 +27,12 @@ def execute():
         if "crop_scouted" in columns and "parent" not in columns:
             continue
 
-        # Add the column while the table is still a child table.
+        # Add the column while the table is still a child table. Use sql_ddl:
+        # a plain frappe.db.sql ALTER raises ImplicitCommitError once the
+        # transaction already has writes (e.g. the UPDATE from a prior table in
+        # this loop), and DDL implicitly commits anyway.
         if "crop_scouted" not in columns:
-            frappe.db.sql(
+            frappe.db.sql_ddl(
                 f"ALTER TABLE `{table}` ADD COLUMN `crop_scouted` VARCHAR(140)"
             )
 

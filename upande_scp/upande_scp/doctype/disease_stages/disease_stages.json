@@ -21,8 +21,11 @@
  "fields": [
   {
    "fieldname": "stage",
-   "fieldtype": "Data",
-   "label": "Stage"
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Stage",
+   "options": "Stage",
+   "reqd": 1
   },
   {
    "fieldname": "image",

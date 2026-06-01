@@ -15,3 +15,4 @@ upande_scp.patches.v1_0.clear_non_spray_work_order_workflow_state
 upande_scp.patches.v1_0.delete_application_floor_plan_workflow
 upande_scp.patches.v1_0.delete_legacy_submit_for_approval_client_script
 upande_scp.patches.v1_0.setup_spray_supervisor_role
+upande_scp.patches.v1_0.seed_stage_catalog

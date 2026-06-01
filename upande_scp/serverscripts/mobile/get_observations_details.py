@@ -94,6 +94,12 @@ def getObservationsDetails(crop=None):
     disease_names = [d.name for d in diseases]
     predator_names = [p.name for p in predators]
 
+    # Each stage's icon lives once on the Stage catalog; resolve key by stage name.
+    icon_by_stage = {
+        s.name: (s.icon_key or "")
+        for s in frappe.get_all("Stage", fields=["name", "icon_key"], limit_page_length=0)
+    }
+
     # Fetch pest stages with reading_type and plant_sections for EACH stage.
     # Stages now live on Pest Filter rows per crop. When `crop` is supplied
     # we pull stages from that crop's filter rows only; otherwise we
@@ -135,7 +141,8 @@ def getObservationsDetails(crop=None):
                 pest_stages.setdefault(pest_name, []).append({
                     "stage": stage.stage,
                     "reading_type": (stage.reading_type or "Count").lower(),
-                    "plant_sections": _parse_plant_sections(stage.plant_sections)
+                    "plant_sections": _parse_plant_sections(stage.plant_sections),
+                    "icon_key": icon_by_stage.get(stage.stage, "")
                 })
 
     # Fetch disease stages with reading_type, plant_sections, range_min, and range_max for EACH stage
@@ -155,7 +162,8 @@ def getObservationsDetails(crop=None):
                 "reading_type": (stage.reading_type or "Count").lower(),
                 "plant_sections": _parse_plant_sections(stage.plant_sections),
                 "range_min": _to_float(stage.range_min),
-                "range_max": _to_float(stage.range_max)
+                "range_max": _to_float(stage.range_max),
+                "icon_key": icon_by_stage.get(stage.stage, "")
             })
 
     # Fetch predator stages with reading_type and plant_sections for EACH stage
@@ -203,6 +211,7 @@ def getObservationsDetails(crop=None):
                 "stage": stage_info['stage'],
                 "readingType": stage_info['reading_type'],
                 "plantSections": stage_info['plant_sections'],
+                "iconKey": stage_info['icon_key'],
                 "stages": None
             })
     
@@ -225,6 +234,7 @@ def getObservationsDetails(crop=None):
                 "plantSections": stage_info['plant_sections'],
                 "rangeMin": stage_info['range_min'],
                 "rangeMax": stage_info['range_max'],
+                "iconKey": stage_info['icon_key'],
                 "stages": None
             })
     

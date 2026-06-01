@@ -117,6 +117,32 @@ def _save_group(rows: list, filter_doctype: str) -> int:
     return saved
 
 
+def _validate_unique_ranks(rows: list, label: str) -> None:
+    """A rank must be unique within a plant-part column for the group — two
+    pests can't both be #1 on Buds. Raises if violated."""
+    seen: dict = {}
+    for row in rows or []:
+        name = row.get("name") or row.get("row")
+        for section, rank in (row.get("priorities") or {}).items():
+            try:
+                rank_val = int(rank)
+            except (TypeError, ValueError):
+                continue
+            if rank_val <= 0:
+                continue
+            seen.setdefault(section, {}).setdefault(rank_val, []).append(name)
+    dups = []
+    for section, ranks in seen.items():
+        for rank_val, names in ranks.items():
+            if len(names) > 1:
+                dups.append(f"{label} · {section}: #{rank_val} → {', '.join(map(str, names))}")
+    if dups:
+        frappe.throw(
+            "Each rank must be unique per plant part. Conflicts: " + "; ".join(dups),
+            frappe.ValidationError,
+        )
+
+
 @frappe.whitelist()
 def save_priorities(crop: str, payload) -> dict:
     """Persist the ordering matrix. ``payload`` is the shape get_priorities
@@ -127,6 +153,9 @@ def save_priorities(crop: str, payload) -> dict:
         frappe.throw("Missing crop", frappe.ValidationError)
     if isinstance(payload, str):
         payload = json.loads(payload)
+
+    _validate_unique_ranks(payload.get("pests"), "Pests")
+    _validate_unique_ranks(payload.get("diseases"), "Diseases")
 
     updated = {
         "pests": _save_group(payload.get("pests"), "Pest Filter"),

@@ -97,6 +97,12 @@ export function OrderingTab() {
 
   const onSave = async () => {
     if (!bundle || !crop) return;
+    if (conflicts.length) {
+      setError(
+        "Each rank must be unique per plant part. Fix: " + conflicts.join("; "),
+      );
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -117,6 +123,32 @@ export function OrderingTab() {
       ranked: count(bundle.pests) + count(bundle.diseases),
       sections: bundle.sections.length,
     };
+  }, [bundle]);
+
+  // A rank must be unique within a plant-part column for each group — you
+  // can't have two pests both at #1 on Buds. Diseases are checked separately.
+  const conflicts = useMemo(() => {
+    if (!bundle) return [] as string[];
+    const out: string[] = [];
+    const check = (rows: OrderingRow[], label: string) => {
+      bundle.sections.forEach((section) => {
+        const byRank: Record<number, string[]> = {};
+        rows.forEach((r) => {
+          const v = r.priorities[section];
+          if (typeof v === "number" && v > 0) {
+            (byRank[v] = byRank[v] || []).push(r.name);
+          }
+        });
+        Object.entries(byRank).forEach(([rank, names]) => {
+          if (names.length > 1) {
+            out.push(`${label} · ${section}: #${rank} → ${names.join(", ")}`);
+          }
+        });
+      });
+    };
+    check(bundle.pests, "Pests");
+    check(bundle.diseases, "Diseases");
+    return out;
   }, [bundle]);
 
   return (
@@ -149,7 +181,7 @@ export function OrderingTab() {
           <Button
             type="button"
             onClick={onSave}
-            disabled={saving || loading || !bundle}
+            disabled={saving || loading || !bundle || conflicts.length > 0}
             className="h-9 gap-2"
           >
             {saving ? (
@@ -163,6 +195,16 @@ export function OrderingTab() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {error && <div className="text-xs text-destructive">{error}</div>}
+        {conflicts.length > 0 && (
+          <div className="text-xs text-destructive flex flex-col gap-0.5 border border-destructive/40 rounded-md p-2">
+            <span className="font-semibold">
+              Duplicate ranks — fix before saving:
+            </span>
+            {conflicts.map((c) => (
+              <span key={c}>• {c}</span>
+            ))}
+          </div>
+        )}
         {savedAt && !error && !saving && (
           <div className="text-[0.7rem] text-muted-foreground">
             Saved at {savedAt}.

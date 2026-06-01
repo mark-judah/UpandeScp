@@ -21,9 +21,27 @@ export const MARKER_ID = {
   diamond:  "scp-m-diamond",  // tilted square
   cross:    "scp-m-cross",    // X
   plus:     "scp-m-plus",     // +
+  square:   "scp-m-square",
+  hexagon:  "scp-m-hexagon",
+  star:     "scp-m-star",
+  chevron:  "scp-m-chevron",  // ^ (line shape)
 } as const;
 
 export type MarkerShape = keyof typeof MARKER_ID;
+
+/** Resolve a Stage catalog ``icon_key`` (which IS a shape name) to a marker
+ * shape. Unknown / empty keys fall back to circle, so the heatmap always
+ * renders something even for a stage whose icon_key wasn't curated yet. */
+export function iconKeyToShape(iconKey: string | null | undefined): MarkerShape {
+  const k = (iconKey || "").trim().toLowerCase();
+  return ((k in MARKER_ID ? k : "circle")) as MarkerShape;
+}
+
+/** Outline-only shapes (stroke, no fill); the rest are filled with the
+ * observation's legend colour. */
+export function isLineShape(shape: MarkerShape): boolean {
+  return shape === "cross" || shape === "plus" || shape === "chevron";
+}
 
 // Back-compat aliases — callers that still think in pest/disease/etc.
 // pass a ``MarkerKind`` and we resolve it to a default shape here.
@@ -122,6 +140,45 @@ export function MarkerDefs() {
             fill="none"
             strokeWidth={1.6}
             strokeLinecap="round"
+            vectorEffect={ve}
+          />
+        </symbol>
+
+        <symbol id={MARKER_ID.square} viewBox="-5 -5 10 10">
+          <rect
+            x="-3.4" y="-3.4" width="6.8" height="6.8"
+            strokeWidth={sw}
+            strokeLinejoin="round"
+            vectorEffect={ve}
+          />
+        </symbol>
+
+        <symbol id={MARKER_ID.hexagon} viewBox="-5 -5 10 10">
+          <polygon
+            points="0,-4 3.5,-2 3.5,2 0,4 -3.5,2 -3.5,-2"
+            strokeWidth={sw}
+            strokeLinejoin="round"
+            vectorEffect={ve}
+          />
+        </symbol>
+
+        <symbol id={MARKER_ID.star} viewBox="-5 -5 10 10">
+          <polygon
+            points="0,-4 1.18,-1.29 3.9,-1.24 1.7,0.49 2.35,3.24 0,1.6 -2.35,3.24 -1.7,0.49 -3.9,-1.24 -1.18,-1.29"
+            strokeWidth={sw}
+            strokeLinejoin="round"
+            vectorEffect={ve}
+          />
+        </symbol>
+
+        {/* Chevron is outline-only, like cross/plus. */}
+        <symbol id={MARKER_ID.chevron} viewBox="-5 -5 10 10">
+          <path
+            d="M-3.6 -1.6 L0 2.2 L3.6 -1.6"
+            fill="none"
+            strokeWidth={1.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
             vectorEffect={ve}
           />
         </symbol>

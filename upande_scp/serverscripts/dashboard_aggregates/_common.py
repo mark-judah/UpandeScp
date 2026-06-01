@@ -12,6 +12,17 @@ import frappe
 
 
 
+def stage_icon_map() -> dict:
+    """{stage_name: icon_key} from the Stage catalog. The icon_key IS a marker
+    shape name (see frontend MarkerDefs), so the same stage renders the same
+    shape across every pest/disease. Unknown stages resolve to "" -> the
+    frontend falls back to a circle."""
+    return {
+        s["name"]: (s.get("icon_key") or "")
+        for s in frappe.get_all("Stage", fields=["name", "icon_key"], limit_page_length=0)
+    }
+
+
 def resolve_greenhouse_scope(
     greenhouse: str,
     farm: str,

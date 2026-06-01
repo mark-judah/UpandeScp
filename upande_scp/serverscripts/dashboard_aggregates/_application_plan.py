@@ -13,6 +13,7 @@ import frappe
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     publish_progress,
+    stage_icon_map,
 )
 from upande_scp.serverscripts.get_complete_scouting_entries import (
     _cached_disease_colors,
@@ -111,6 +112,7 @@ def _build(filters: dict, job_id: str = "") -> dict:
             return False
         return True
 
+    icons = stage_icon_map()
     zone_obs: dict = {}
     latest: str | None = None
     total_rows = 0
@@ -135,12 +137,22 @@ def _build(filters: dict, job_id: str = "") -> dict:
                 or disease_color_map.get(obs_name)
                 or "#888888"
             )
-            bucket = {"count": 0, "color": color, "kind": r.get("kind") or "pest"}
+            bucket = {"count": 0, "color": color, "kind": r.get("kind") or "pest", "_stages": {}}
             zone_obs[z] = bucket
         bucket["count"] += n
+        stg = (r.get("stage") or "").strip()
+        s_entry = bucket["_stages"].get(stg)
+        if s_entry is None:
+            s_entry = {"stage": stg, "icon_key": icons.get(stg, ""), "count": 0}
+            bucket["_stages"][stg] = s_entry
+        s_entry["count"] += n
         d = str(r.get("d") or "")[:10]
         if d and (latest is None or d > latest):
             latest = d
+
+    # Materialise the per-zone stage list (shape markers) and drop the scratch dict.
+    for bucket in zone_obs.values():
+        bucket["stages"] = list(bucket.pop("_stages").values())
 
     publish_progress(job_id, 100, "")
     return {

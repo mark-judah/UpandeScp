@@ -15,6 +15,7 @@ from upande_scp.serverscripts.get_complete_scouting_entries import (
 )
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
+    stage_icon_map,
 )
 
 
@@ -84,11 +85,12 @@ def _build(greenhouse: str, obs_name: str, obs_kind: str) -> dict:
         return {"greenhouse": greenhouse, "obsName": obs_name, "obsKind": obs_kind,
                 "color": color, "recent": []}
 
-    # Step 2: per-zone counts for each of those three dates.
+    # Step 2: per-zone, per-stage counts for each of those three dates.
     zone_rows = frappe.db.sql(
         f"""
         SELECT DATE_FORMAT(se.date_of_capture, '%%Y-%%m-%%d') AS d,
                se.zone,
+               c.stage AS stage,
                COUNT(*) AS n
         FROM `tabScouting Entry` se
         JOIN `{table}` c ON c.parent = se.name
@@ -96,19 +98,35 @@ def _build(greenhouse: str, obs_name: str, obs_kind: str) -> dict:
           AND c.{col} = %(obs)s
           AND se.date_of_capture IN %(dates)s
           AND se.zone IS NOT NULL AND se.zone != ''
-        GROUP BY se.date_of_capture, se.zone
+        GROUP BY se.date_of_capture, se.zone, c.stage
         """,
         {"gh": greenhouse, "obs": obs_name, "dates": tuple(dates)},
         as_dict=True,
     )
 
-    # Bucket per date.
+    icons = stage_icon_map()
+
+    # Bucket per date: zoneObs = {zone: total count} (unchanged),
+    # zoneStages = {zone: [{stage, icon_key, count}]} for stage-shaped markers.
     by_date = {d: {} for d in dates}
+    by_date_stages = {d: {} for d in dates}
     for r in zone_rows:
         d = r["d"]
-        if d in by_date:
-            by_date[d][r["zone"]] = int(r["n"] or 0)
+        if d not in by_date:
+            continue
+        zone = r["zone"]
+        n = int(r["n"] or 0)
+        by_date[d][zone] = by_date[d].get(zone, 0) + n
+        stage = (r.get("stage") or "").strip()
+        by_date_stages[d].setdefault(zone, []).append({
+            "stage": stage,
+            "icon_key": icons.get(stage, ""),
+            "count": n,
+        })
 
-    recent = [{"date": d, "zoneObs": by_date[d]} for d in dates]
+    recent = [
+        {"date": d, "zoneObs": by_date[d], "zoneStages": by_date_stages[d]}
+        for d in dates
+    ]
     return {"greenhouse": greenhouse, "obsName": obs_name, "obsKind": obs_kind,
             "color": color, "recent": recent}

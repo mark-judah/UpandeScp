@@ -18,6 +18,7 @@ from upande_scp.serverscripts.dashboard_aggregates._common import (
     parent_filter_conditions,
     publish_progress,
     resolve_greenhouse_scope,
+    stage_icon_map,
 )
 from upande_scp.serverscripts.get_complete_scouting_entries import (
     _cached_disease_colors,
@@ -117,12 +118,13 @@ def _query_kind(where: str, params: dict, mode: str) -> list:
             c.{col}                                         AS obs_name,
             DATE_FORMAT(se.date_of_capture, '%%Y-%%m-%%d')  AS d,
             se.zone                                         AS zone,
+            c.stage                                         AS stage,
             {count_expr}                                    AS n
         FROM `tabScouting Entry` se
         JOIN `{table}` c ON c.parent = se.name
         WHERE {where}
           AND se.zone IS NOT NULL AND se.zone != ''
-        GROUP BY 1, 2, 3, 4
+        GROUP BY 1, 2, 3, 4, 5
         """,
         params,
         as_dict=True,
@@ -133,8 +135,11 @@ def _build_cards(rows: list, mode: str, color_map: dict) -> list:
     """Walk the per-(gh, obs, date, zone) rows once; emit one card per
     (gh, obs) with aggregate totals + the 3 most-recent distinct dates."""
     # by_gh_obs[gh][obs] = {
-    #   total: int, zones: set, by_date: { date: { zone: count, ... } }
+    #   total, zones: set,
+    #   by_date: { date: { zone: count } },
+    #   stages_by_date: { date: { zone: [{stage, icon_key, count}] } },
     # }
+    icons = stage_icon_map()
     by_gh_obs: dict = {}
     for r in rows:
         gh = r.get("greenhouse") or ""
@@ -146,12 +151,19 @@ def _build_cards(rows: list, mode: str, color_map: dict) -> list:
             continue
         by_obs = by_gh_obs.setdefault(gh, {})
         bucket = by_obs.setdefault(obs, {
-            "total": 0, "zones": set(), "by_date": {},
+            "total": 0, "zones": set(), "by_date": {}, "stages_by_date": {},
         })
         bucket["total"] += n
         bucket["zones"].add(z)
         day = bucket["by_date"].setdefault(d, {})
         day[z] = day.get(z, 0) + n
+        stage = (r.get("stage") or "").strip()
+        sday = bucket["stages_by_date"].setdefault(d, {})
+        sday.setdefault(z, []).append({
+            "stage": stage,
+            "icon_key": icons.get(stage, ""),
+            "count": n,
+        })
 
     cards = []
     for gh, by_obs in by_gh_obs.items():
@@ -159,7 +171,12 @@ def _build_cards(rows: list, mode: str, color_map: dict) -> list:
             # 3 most-recent dates, ISO strings sort lexicographically.
             dates = sorted(bucket["by_date"].keys(), reverse=True)[:3]
             recent = [
-                {"date": d, "zoneObs": bucket["by_date"][d]} for d in dates
+                {
+                    "date": d,
+                    "zoneObs": bucket["by_date"][d],
+                    "zoneStages": bucket["stages_by_date"].get(d, {}),
+                }
+                for d in dates
             ]
             cards.append({
                 "greenhouse":    gh,

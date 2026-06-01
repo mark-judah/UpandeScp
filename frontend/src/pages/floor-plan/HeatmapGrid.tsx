@@ -182,7 +182,8 @@ function CellView({ cell }: { cell: Cell }) {
     ...(cell.observations.length === 0
       ? ["No observations reported"]
       : cell.observations.map(
-          (o) => `${o.name} (${o.count}${o.symbol ? " " + o.symbol : ""}) — ${o.plant_section}`,
+          (o) =>
+            `${o.name} (${o.count}${o.stage && o.stage !== "N/A" ? " " + o.stage : ""}) — ${o.plant_section}`,
         )),
   ]
 

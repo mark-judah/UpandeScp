@@ -292,8 +292,11 @@ scheduler_events = {
 # after_request = ["upande_scp.utils.after_request"]
 
 # TEMP: diagnose mobile 403s on the spray-session/start path.
-before_request = ["upande_scp.diagnostics.request_log.before_request"]
-after_request = ["upande_scp.diagnostics.request_log.after_request"]
+# Disabled: the upande_scp.diagnostics module was never committed (local-only),
+# so these references 500 every request on any environment that lacks it. Restore
+# the module first, then re-enable.
+# before_request = ["upande_scp.diagnostics.request_log.before_request"]
+# after_request = ["upande_scp.diagnostics.request_log.after_request"]
 
 # Job Events
 # ----------

@@ -13,7 +13,8 @@
   "low_threshold",
   "moderate_threshold",
   "high_threshold",
-  "stages"
+  "stages",
+  "priorities"
  ],
  "fields": [
   {
@@ -73,6 +74,13 @@
    "fieldtype": "Table",
    "label": "Stages",
    "options": "Disease Stages"
+  },
+  {
+   "description": "Per-plant-part display order on mobile. Lower priority shows first within each plant part.",
+   "fieldname": "priorities",
+   "fieldtype": "Table",
+   "label": "Priorities",
+   "options": "Filter Priority"
   }
  ],
  "grid_page_length": 50,

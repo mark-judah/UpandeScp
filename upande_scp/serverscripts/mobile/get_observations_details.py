@@ -105,6 +105,7 @@ def getObservationsDetails(crop=None):
     # we pull stages from that crop's filter rows only; otherwise we
     # aggregate across all crops, deduplicated by (pest, stage).
     pest_stages = {}
+    pest_priorities = {}
     if pest_names:
         filter_row_filters = {
             "pest": ["in", pest_names],
@@ -118,6 +119,7 @@ def getObservationsDetails(crop=None):
             limit_page_length=0,
         )
         row_to_pest = {r.name: r.pest for r in filter_rows}
+        pest_priorities = _priorities_by_obs("Pest Filter", row_to_pest)
         if row_to_pest:
             stages_data = frappe.get_all(
                 "Pests Stages",
@@ -149,6 +151,7 @@ def getObservationsDetails(crop=None):
     # pests). When `crop` is supplied we pull from that crop's filter rows only;
     # otherwise we aggregate across crops, deduplicated by (disease, stage).
     disease_stages = {}
+    disease_priorities = {}
     if disease_names:
         df_filters = {"disease": ["in", disease_names]}
         if crop:
@@ -160,6 +163,7 @@ def getObservationsDetails(crop=None):
             limit_page_length=0,
         )
         row_to_disease = {r.name: r.disease for r in disease_filter_rows}
+        disease_priorities = _priorities_by_obs("Disease Filter", row_to_disease)
         if row_to_disease:
             stages_data = frappe.get_all(
                 "Disease Stages",
@@ -235,6 +239,7 @@ def getObservationsDetails(crop=None):
                 "readingType": stage_info['reading_type'],
                 "plantSections": stage_info['plant_sections'],
                 "iconKey": stage_info['icon_key'],
+                "priorities": pest_priorities.get(pest.name, {}),
                 "stages": None
             })
     
@@ -258,6 +263,7 @@ def getObservationsDetails(crop=None):
                 "rangeMin": stage_info['range_min'],
                 "rangeMax": stage_info['range_max'],
                 "iconKey": stage_info['icon_key'],
+                "priorities": disease_priorities.get(disease.name, {}),
                 "stages": None
             })
     
@@ -358,6 +364,26 @@ def getObservationsDetails(crop=None):
     }
 
     return frappe.response["message"]
+
+
+def _priorities_by_obs(filter_doctype, row_to_obs):
+    """{obs_name: {plant_section_lower: priority}} from the filters' Filter
+    Priority children. Lets the mobile app order pests/diseases per plant part.
+    Plant-section keys are lowercased to match the app's tab values."""
+    out = {}
+    if not row_to_obs:
+        return out
+    for p in frappe.get_all(
+        "Filter Priority",
+        filters={"parent": ["in", list(row_to_obs.keys())], "parenttype": filter_doctype},
+        fields=["parent", "plant_section", "priority"],
+        limit_page_length=0,
+    ):
+        obs = row_to_obs.get(p.parent)
+        if not obs or not p.plant_section or p.priority is None:
+            continue
+        out.setdefault(obs, {})[p.plant_section.strip().lower()] = p.priority
+    return out
 
 
 def _parse_plant_sections(plant_sections_str):

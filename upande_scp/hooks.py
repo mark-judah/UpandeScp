@@ -352,6 +352,8 @@ website_route_rules = [
 ]
 
 fixtures = [
+    # Stage catalog — ships the per-stage icon_key mapping to every site.
+    {"doctype": "Stage"},
     {
         "doctype": "Custom Field",
         "filters": [

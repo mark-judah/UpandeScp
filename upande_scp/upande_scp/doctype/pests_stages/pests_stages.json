@@ -7,8 +7,6 @@
  "engine": "InnoDB",
  "field_order": [
   "stage",
-  "image",
-  "symbol",
   "reading_type",
   "plant_sections",
   "thresholds_section",
@@ -24,16 +22,6 @@
    "label": "Stage",
    "options": "Stage",
    "reqd": 1
-  },
-  {
-   "fieldname": "image",
-   "fieldtype": "Attach Image",
-   "label": "Image"
-  },
-  {
-   "fieldname": "symbol",
-   "fieldtype": "Data",
-   "label": "Symbol"
   },
   {
    "fieldname": "reading_type",

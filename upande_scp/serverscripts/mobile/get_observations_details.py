@@ -145,26 +145,49 @@ def getObservationsDetails(crop=None):
                     "icon_key": icon_by_stage.get(stage.stage, "")
                 })
 
-    # Fetch disease stages with reading_type, plant_sections, range_min, and range_max for EACH stage
+    # Fetch disease stages from the per-crop Disease Filter rows (parity with
+    # pests). When `crop` is supplied we pull from that crop's filter rows only;
+    # otherwise we aggregate across crops, deduplicated by (disease, stage).
     disease_stages = {}
     if disease_names:
-        stages_data = frappe.get_all(
-            "Disease Stages",
-            filters={"parent": ["in", disease_names]},
-            fields=["parent", "stage", "reading_type", "plant_sections", "range_min", "range_max", "idx"],
-            order_by="parent, idx"
+        df_filters = {"disease": ["in", disease_names]}
+        if crop:
+            df_filters["crop_scouted"] = crop
+        disease_filter_rows = frappe.get_all(
+            "Disease Filter",
+            filters=df_filters,
+            fields=["name", "disease"],
+            limit_page_length=0,
         )
-        for stage in stages_data:
-            if stage.parent not in disease_stages:
-                disease_stages[stage.parent] = []
-            disease_stages[stage.parent].append({
-                "stage": stage.stage,
-                "reading_type": (stage.reading_type or "Count").lower(),
-                "plant_sections": _parse_plant_sections(stage.plant_sections),
-                "range_min": _to_float(stage.range_min),
-                "range_max": _to_float(stage.range_max),
-                "icon_key": icon_by_stage.get(stage.stage, "")
-            })
+        row_to_disease = {r.name: r.disease for r in disease_filter_rows}
+        if row_to_disease:
+            stages_data = frappe.get_all(
+                "Disease Stages",
+                filters={
+                    "parent": ["in", list(row_to_disease.keys())],
+                    "parenttype": "Disease Filter",
+                },
+                fields=["parent", "stage", "reading_type", "plant_sections", "range_min", "range_max", "idx"],
+                order_by="parent, idx",
+                limit_page_length=0,
+            )
+            seen_disease_stage = set()
+            for stage in stages_data:
+                disease_name = row_to_disease.get(stage.parent)
+                if not disease_name:
+                    continue
+                key = (disease_name, stage.stage)
+                if key in seen_disease_stage:
+                    continue
+                seen_disease_stage.add(key)
+                disease_stages.setdefault(disease_name, []).append({
+                    "stage": stage.stage,
+                    "reading_type": (stage.reading_type or "Count").lower(),
+                    "plant_sections": _parse_plant_sections(stage.plant_sections),
+                    "range_min": _to_float(stage.range_min),
+                    "range_max": _to_float(stage.range_max),
+                    "icon_key": icon_by_stage.get(stage.stage, "")
+                })
 
     # Fetch predator stages with reading_type and plant_sections for EACH stage
     predator_stages = {}

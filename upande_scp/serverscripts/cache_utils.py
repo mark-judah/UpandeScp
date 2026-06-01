@@ -215,6 +215,15 @@ def invalidate_farm_bundle_for_doc(doc):
 # ── Builders (canonical queries used across endpoints) ─────────────────────
 
 
+def _stage_icon_map():
+    """{stage_name: icon_key} from the Stage catalog. Each stage's symbol is
+    defined once on Stage; readers resolve it by the stage name they link to."""
+    return {
+        s.name: (s.icon_key or "")
+        for s in frappe.get_all("Stage", fields=["name", "icon_key"], limit_page_length=0)
+    }
+
+
 def _build_pests_group():
     """Pests with stages aggregated from every Crop Scouted's Pest Filter rows.
 
@@ -222,6 +231,7 @@ def _build_pests_group():
     de-duplicate by stage name across crops so the heatmap legend keeps
     showing every stage a pest may carry on any crop.
     """
+    icons = _stage_icon_map()
     pests = frappe.get_all(
         "Pest",
         fields=["name", "common_name", "pests_legend_color"],
@@ -251,7 +261,7 @@ def _build_pests_group():
             "parent": ["in", list(row_to_pest.keys())],
             "parenttype": "Pest Filter",
         },
-        fields=["parent", "stage", "symbol", "reading_type"],
+        fields=["parent", "stage", "reading_type"],
         limit_page_length=0,
     )
 
@@ -265,10 +275,12 @@ def _build_pests_group():
         if key in seen:
             continue
         seen.add(key)
+        icon = icons.get(s.stage, "")
         stages_by_pest.setdefault(pest_name, []).append({
             "stage": s.stage,
             "reading_type": s.reading_type,
-            "symbol": s.get("symbol", "") or "",
+            "icon_key": icon,
+            "symbol": icon,  # legacy alias; value is now the Stage icon_key
         })
 
     return {
@@ -277,6 +289,57 @@ def _build_pests_group():
             "stages": stages_by_pest.get(p.name, []),
         }
         for p in pests
+    }
+
+
+def _build_diseases_group():
+    """Diseases with stages aggregated from every Crop Scouted's Disease Filter
+    rows (parity with pests). De-duplicated by stage name across crops."""
+    icons = _stage_icon_map()
+    diseases = frappe.get_all(
+        "Plant Disease",
+        fields=["name", "common_name", "disease_legend_color"],
+    )
+    if not diseases:
+        return {}
+
+    filter_rows = frappe.get_all(
+        "Disease Filter",
+        fields=["name", "disease"],
+        limit_page_length=0,
+    )
+    row_to_disease = {r.name: r.disease for r in filter_rows}
+
+    stages_by_disease = {}
+    if row_to_disease:
+        seen = set()  # (disease_name, stage_name) — dedupe across crops
+        for s in frappe.get_all(
+            "Disease Stages",
+            filters={"parent": ["in", list(row_to_disease.keys())], "parenttype": "Disease Filter"},
+            fields=["parent", "stage", "reading_type"],
+            limit_page_length=0,
+        ):
+            disease_name = row_to_disease.get(s.parent)
+            if not disease_name or not s.stage:
+                continue
+            key = (disease_name, s.stage)
+            if key in seen:
+                continue
+            seen.add(key)
+            icon = icons.get(s.stage, "")
+            stages_by_disease.setdefault(disease_name, []).append({
+                "stage": s.stage,
+                "reading_type": s.reading_type,
+                "icon_key": icon,
+                "symbol": icon,  # legacy alias; value is now the Stage icon_key
+            })
+
+    return {
+        (d.common_name or d.name): {
+            "color": d.disease_legend_color or "#999999",
+            "stages": stages_by_disease.get(d.name, []),
+        }
+        for d in diseases
     }
 
 
@@ -317,7 +380,7 @@ def build_observation_types():
 
     observation_types = {
         "pests": _build_pests_group(),
-        "diseases": _build_group("Plant Disease", "disease_legend_color", "Disease Stages", True),
+        "diseases": _build_diseases_group(),
         "predators": _build_group("Predator", None, "Predator Stages", False),
         "weeds": {},
         "incidents": {},

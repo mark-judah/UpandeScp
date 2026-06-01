@@ -13,7 +13,6 @@
   "damage_symptoms",
   "disease_legend_color",
   "section_break_npdf",
-  "stages",
   "severity_scale"
  ],
  "fields": [
@@ -31,12 +30,6 @@
   {
    "fieldname": "section_break_npdf",
    "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "stages",
-   "fieldtype": "Table",
-   "label": "Disease Stages",
-   "options": "Disease Stages"
   },
   {
    "fieldname": "identification_guideline",

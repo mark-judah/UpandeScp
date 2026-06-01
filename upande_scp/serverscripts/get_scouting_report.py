@@ -163,6 +163,10 @@ def getScoutingData():
                 limit_page_length=0,
             )
             row_to_pest = {r.name: r.pest for r in pest_filter_rows}
+            stage_icons = {
+                s.name: (s.icon_key or "")
+                for s in frappe.get_all("Stage", fields=["name", "icon_key"], limit_page_length=0)
+            }
             if row_to_pest:
                 seen_pest_stage = set()
                 for stage in frappe.get_all(
@@ -171,7 +175,7 @@ def getScoutingData():
                         "parent": ["in", list(row_to_pest.keys())],
                         "parenttype": "Pest Filter",
                     },
-                    fields=["parent", "stage", "symbol"],
+                    fields=["parent", "stage"],
                     limit_page_length=0,
                 ):
                     pest_name = row_to_pest.get(stage.parent)
@@ -184,7 +188,7 @@ def getScoutingData():
                     pests_map[pest_name]["stages"].append({
                         "parent": pest_name,
                         "stage": stage.stage,
-                        "symbol": stage.symbol,
+                        "symbol": stage_icons.get(stage.stage, ""),
                     })
 
             items_in_data_all = {}  # key → {name: color}

@@ -15,16 +15,35 @@ Idempotent: skips names that already have a Stage doc.
 
 import frappe
 
-# Stage name (case-insensitive substring) -> bundled marker icon key. Mirrors
-# the frontend MarkerDefs.shapeForStage vocabulary so the catalog value is a
-# real, renderable icon key. Unknown stages fall back to "circle".
+# Stage name (case-insensitive substring) -> bundled marker icon key. The key
+# IS the frontend MarkerDefs shape name, so the same life-stage gets the same
+# shape across every pest/disease (Adult -> circle everywhere, Nymph ->
+# pentagon everywhere, ...). Order matters: the first matching needle wins, so
+# life-stage needles ("adult") precede modifier needles ("single"). Unknown
+# stages fall back to "circle".
 _ICON_RULES = (
-    ("adult", "circle"),
-    ("larv", "triangle"),
-    ("nymph", "pentagon"),
     ("egg", "diamond"),
+    ("caterpillar", "triangle"),
+    ("larv", "triangle"),
     ("pupa", "plus"),
+    ("nymph", "pentagon"),
     ("instar", "cross"),
+    ("adult", "circle"),
+    ("moth", "circle"),
+    ("weevil", "circle"),
+    ("colon", "square"),
+    ("single", "square"),
+    ("scale", "square"),
+    ("motile", "square"),
+    ("damage", "cross"),
+    ("ragged", "cross"),
+    ("web", "cross"),
+    ("active", "hexagon"),
+    ("head", "hexagon"),
+    ("latent", "star"),
+    ("dry", "star"),
+    ("stem", "star"),
+    ("fresh", "chevron"),
 )
 
 

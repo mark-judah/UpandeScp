@@ -35,7 +35,7 @@
   "default_reading_type": "Count",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "square",
   "name": "Colonies",
   "stage_name": "Colonies"
  },
@@ -43,7 +43,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "cross",
   "name": "Damage",
   "stage_name": "Damage"
  },
@@ -51,7 +51,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "cross",
   "name": "Damages",
   "stage_name": "Damages"
  },
@@ -59,7 +59,7 @@
   "default_reading_type": "Range",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "hexagon",
   "name": "Downy Active",
   "stage_name": "Downy Active"
  },
@@ -67,7 +67,7 @@
   "default_reading_type": "Count",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "star",
   "name": "Downy Dry",
   "stage_name": "Downy Dry"
  },
@@ -75,7 +75,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "hexagon",
   "name": "Downy Head",
   "stage_name": "Downy Head"
  },
@@ -83,7 +83,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "star",
   "name": "Downy Latent",
   "stage_name": "Downy Latent"
  },
@@ -91,7 +91,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "star",
   "name": "Downy Stem",
   "stage_name": "Downy Stem"
  },
@@ -99,7 +99,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "star",
   "name": "Dry",
   "stage_name": "Dry"
  },
@@ -123,7 +123,7 @@
   "default_reading_type": "Count",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "triangle",
   "name": "FCM Caterpillars",
   "stage_name": "FCM Caterpillars"
  },
@@ -131,7 +131,7 @@
   "default_reading_type": "Count",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "cross",
   "name": "FCM Damage",
   "stage_name": "FCM Damage"
  },
@@ -163,7 +163,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "chevron",
   "name": "Fresh",
   "stage_name": "Fresh"
  },
@@ -171,7 +171,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "hexagon",
   "name": "Head Botrytis",
   "stage_name": "Head Botrytis"
  },
@@ -187,7 +187,7 @@
   "default_reading_type": "Count",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "square",
   "name": "Motiles",
   "stage_name": "Motiles"
  },
@@ -203,7 +203,7 @@
   "default_reading_type": "Range",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "hexagon",
   "name": "Powdery Active",
   "stage_name": "Powdery Active"
  },
@@ -211,7 +211,7 @@
   "default_reading_type": "Count",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "star",
   "name": "Powdery Dry",
   "stage_name": "Powdery Dry"
  },
@@ -219,7 +219,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "hexagon",
   "name": "Powdery Head",
   "stage_name": "Powdery Head"
  },
@@ -227,7 +227,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "star",
   "name": "Powdery Latent",
   "stage_name": "Powdery Latent"
  },
@@ -243,7 +243,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "cross",
   "name": "Ragged Margins",
   "stage_name": "Ragged Margins"
  },
@@ -251,7 +251,7 @@
   "default_reading_type": "Range",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "hexagon",
   "name": "Rust Active",
   "stage_name": "Rust Active"
  },
@@ -259,7 +259,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "hexagon",
   "name": "Rust Head",
   "stage_name": "Rust Head"
  },
@@ -267,7 +267,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "star",
   "name": "Rust Latent",
   "stage_name": "Rust Latent"
  },
@@ -275,7 +275,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "square",
   "name": "Scale Insects",
   "stage_name": "Scale Insects"
  },
@@ -283,7 +283,7 @@
   "default_reading_type": "Count",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "square",
   "name": "Scales",
   "stage_name": "Scales"
  },
@@ -291,7 +291,7 @@
   "default_reading_type": "Count",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "square",
   "name": "Singles",
   "stage_name": "Singles"
  },
@@ -299,7 +299,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "star",
   "name": "Stem Botrytis",
   "stage_name": "Stem Botrytis"
  },
@@ -307,7 +307,7 @@
   "default_reading_type": "Checkbox",
   "docstatus": 0,
   "doctype": "Stage",
-  "icon_key": "circle",
+  "icon_key": "cross",
   "name": "Web",
   "stage_name": "Web"
  },

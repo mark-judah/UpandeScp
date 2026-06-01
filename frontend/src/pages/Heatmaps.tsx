@@ -58,7 +58,12 @@ import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
 import { ymd } from "@/lib/utils";
 import { ProgressOverlay } from "./dashboard/ProgressOverlay";
 import { MarkerDefs, type MarkerKind } from "./maps/MarkerDefs";
-import { BedSvg, type BedMarker } from "./maps/BedSvg";
+import {
+  BedSvg,
+  markersFromZoneStages,
+  type BedMarker,
+  type ZoneStage,
+} from "./maps/BedSvg";
 import {
   projectGeometry,
   type ProjectedGeometry,
@@ -96,7 +101,11 @@ interface HeatmapCard {
   totalObs: number;
   zonesAffected: number;
   lastDate: string;
-  recent: Array<{ date: string; zoneObs: Record<string, number> }>;
+  recent: Array<{
+    date: string;
+    zoneObs: Record<string, number>;
+    zoneStages?: Record<string, ZoneStage[]>;
+  }>;
 }
 
 interface HeatmapsGridPayload {
@@ -444,7 +453,9 @@ export function Heatmaps() {
               const geom = geometryByGh[c.greenhouse];
               const kind: MarkerKind =
                 c.obsKind === "disease" ? "disease" : "pest";
-              const markers: BedMarker[] = c.recent[0]?.zoneObs
+              const markers: BedMarker[] = c.recent[0]?.zoneStages
+                ? markersFromZoneStages(c.recent[0].zoneStages, c.color)
+                : c.recent[0]?.zoneObs
                 ? Object.entries(c.recent[0].zoneObs).map(([zone, count]) => ({
                     zone,
                     count,
@@ -593,7 +604,9 @@ export function Heatmaps() {
                     const geom = geometryByGh[picked.greenhouse];
                     const kind: MarkerKind =
                       picked.obsKind === "disease" ? "disease" : "pest";
-                    const dayMarkers: BedMarker[] = slice
+                    const dayMarkers: BedMarker[] = slice?.zoneStages
+                      ? markersFromZoneStages(slice.zoneStages, picked.color)
+                      : slice
                       ? Object.entries(slice.zoneObs).map(([zone, count]) => ({
                           zone,
                           count,

@@ -25,14 +25,23 @@ import {
   type ProjectedGeometry,
 } from "@/pages/maps/bed-projection";
 import { MarkerDefs, type MarkerKind } from "@/pages/maps/MarkerDefs";
-import { BedSvg, type BedMarker } from "@/pages/maps/BedSvg";
+import {
+  BedSvg,
+  markersFromZoneStages,
+  type BedMarker,
+  type ZoneStage,
+} from "@/pages/maps/BedSvg";
 
 interface PocResponse {
   greenhouse: string;
   obsName: string;
   obsKind: "pest" | "disease";
   color: string;
-  recent: Array<{ date: string; zoneObs: Record<string, number> }>;
+  recent: Array<{
+    date: string;
+    zoneObs: Record<string, number>;
+    zoneStages?: Record<string, ZoneStage[]>;
+  }>;
 }
 
 interface HashParams {
@@ -271,14 +280,14 @@ export function HeatmapPoc() {
                   </div>
                 ) : (
                   resp.recent.map((day, i) => {
-                    const markers: BedMarker[] = Object.entries(day.zoneObs).map(
-                      ([zone, count]) => ({
-                        zone,
-                        count,
-                        kind,
-                        color: resp.color,
-                      }),
-                    );
+                    const markers: BedMarker[] = day.zoneStages
+                      ? markersFromZoneStages(day.zoneStages, resp.color)
+                      : Object.entries(day.zoneObs).map(([zone, count]) => ({
+                          zone,
+                          count,
+                          kind,
+                          color: resp.color,
+                        }));
                     return (
                       <div key={day.date} className="flex flex-col gap-1 border rounded-md bg-[var(--sd-bg-soft)] p-2">
                         <div className="flex items-center justify-between text-[10px]">

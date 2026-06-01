@@ -38,8 +38,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
-import { MarkerDefs } from "./maps/MarkerDefs";
-import { BedSvg, type BedMarker } from "./maps/BedSvg";
+import { MarkerDefs, iconKeyToShape } from "./maps/MarkerDefs";
+import { BedSvg, type BedMarker, type ZoneStage } from "./maps/BedSvg";
 import {
   projectGeometry,
   type ProjectedGeometry,
@@ -82,6 +82,7 @@ interface ZoneObs {
   count: number;
   color: string;
   kind?: "pest" | "disease";
+  stages?: ZoneStage[];
 }
 
 interface DiagnosePayload {
@@ -603,23 +604,39 @@ export function ApplicationPlan() {
         count: obs.count,
         color: obs.color, // already resolved from the doctype legend server-side
         kind: obs.kind,
+        stages: obs.stages,
       };
     }
     return out;
   }, [diagnose]);
 
-  // Markers for the BedSvg layer. One per affected zone, color +
-  // shape inherited from the diagnose result.
+  // Markers for the BedSvg layer. One marker per (zone, stage), shaped by the
+  // stage's catalog icon_key (same stage => same shape across pests), coloured
+  // by the zone's observation legend. Falls back to one kind-shaped marker per
+  // zone when a zone has no per-stage breakdown.
   const bedMarkers: BedMarker[] = useMemo(
     () =>
-      Object.entries(zoneObs).map(([zone, obs]) => ({
-        zone,
-        count: obs.count,
-        kind: (obs.kind === "disease" ? "disease" : "pest") as
-          | "pest"
-          | "disease",
-        color: obs.color,
-      })),
+      Object.entries(zoneObs).flatMap(([zone, obs]): BedMarker[] => {
+        if (obs.stages && obs.stages.length) {
+          return obs.stages.map((s) => ({
+            zone,
+            count: s.count,
+            color: obs.color,
+            shape: iconKeyToShape(s.icon_key),
+            stage: s.stage,
+          }));
+        }
+        return [
+          {
+            zone,
+            count: obs.count,
+            kind: (obs.kind === "disease" ? "disease" : "pest") as
+              | "pest"
+              | "disease",
+            color: obs.color,
+          },
+        ];
+      }),
     [zoneObs],
   );
 

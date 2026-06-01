@@ -11,9 +11,42 @@ import type { ProjectedGeometry } from "@/pages/maps/bed-projection";
 import {
   MARKER_ID,
   shapeForKind,
+  iconKeyToShape,
+  isLineShape,
   type MarkerKind,
   type MarkerShape,
 } from "@/pages/maps/MarkerDefs";
+
+/** One per-stage observation in a zone, as returned by the heatmap endpoints
+ *  (``zoneStages``). ``icon_key`` is the Stage catalog's shape name. */
+export interface ZoneStage {
+  stage: string;
+  icon_key: string;
+  count: number;
+}
+
+/** Build stage-shaped markers from a ``zoneStages`` map: one marker per
+ *  (zone, stage), shaped by the stage's catalog icon_key (same stage → same
+ *  shape across every pest), coloured by the observation's legend colour. */
+export function markersFromZoneStages(
+  zoneStages: Record<string, ZoneStage[]> | undefined | null,
+  color: string,
+): BedMarker[] {
+  if (!zoneStages) return [];
+  const out: BedMarker[] = [];
+  for (const [zone, stages] of Object.entries(zoneStages)) {
+    for (const s of stages) {
+      out.push({
+        zone,
+        count: s.count,
+        color,
+        shape: iconKeyToShape(s.icon_key),
+        stage: s.stage,
+      });
+    }
+  }
+  return out;
+}
 
 export interface BedMarker {
   zone: string;
@@ -118,7 +151,7 @@ export function BedSvg({
           const shape =
             m.shape || (m.kind ? shapeForKind(m.kind) : "circle");
           const ref = MARKER_ID[shape];
-          const isLineShape = shape === "cross" || shape === "plus";
+          const lineShape = isLineShape(shape);
           return (
             <use
               key={`${m.zone}-${i}-${shape}`}
@@ -128,7 +161,7 @@ export function BedSvg({
               width={markerSize}
               height={markerSize}
               stroke={m.color}
-              fill={isLineShape ? "none" : m.color}
+              fill={lineShape ? "none" : m.color}
             >
               <title>
                 {m.zone}

@@ -64,6 +64,7 @@ import {
   type BedMarker,
   type ZoneStage,
 } from "./maps/BedSvg";
+import { StageLegend } from "./maps/StageLegend";
 import {
   projectGeometry,
   type ProjectedGeometry,
@@ -652,6 +653,7 @@ export function Heatmaps() {
                               markers={dayMarkers}
                               className="min-h-[420px] [&_svg]:max-h-[520px] [&_svg]:w-full"
                             />
+                            <StageLegend markers={dayMarkers} className="px-1" />
                             <div className="text-[0.7rem] text-muted-foreground">
                               {Object.keys(slice.zoneObs).length} affected zone
                               {Object.keys(slice.zoneObs).length === 1

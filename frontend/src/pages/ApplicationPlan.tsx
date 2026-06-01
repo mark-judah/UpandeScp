@@ -40,6 +40,7 @@ import {
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { MarkerDefs, iconKeyToShape } from "./maps/MarkerDefs";
 import { BedSvg, type BedMarker, type ZoneStage } from "./maps/BedSvg";
+import { StageLegend } from "./maps/StageLegend";
 import {
   projectGeometry,
   type ProjectedGeometry,
@@ -1351,6 +1352,9 @@ export function ApplicationPlan() {
                 </CardDescription>
               </Card>
             )}
+            {greenhouse && geometry && (
+              <StageLegend markers={bedMarkers} className="mt-2 px-1" />
+            )}
           </div>
 
           <div className="flex flex-col gap-3 min-h-0">
@@ -2122,11 +2126,14 @@ export function ApplicationPlan() {
             </DialogDescription>
           </DialogHeader>
           {geometry ? (
-            <BedSvg
-              geometry={geometry}
-              markers={bedMarkers}
-              className="w-full h-auto min-h-[360px] [&_svg]:max-h-[520px] [&_svg]:w-full"
-            />
+            <>
+              <BedSvg
+                geometry={geometry}
+                markers={bedMarkers}
+                className="w-full h-auto min-h-[360px] [&_svg]:max-h-[520px] [&_svg]:w-full"
+              />
+              <StageLegend markers={bedMarkers} className="mt-2 px-1" />
+            </>
           ) : (
             <div className="text-xs text-muted-foreground p-4">
               Zone geometry not available for this greenhouse.

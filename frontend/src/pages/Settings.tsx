@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import {
   Beaker,
   Gauge,
+  ListOrdered,
   Loader2,
   MapPin,
   Settings as SettingsIcon,
@@ -32,13 +33,14 @@ import { ChemicalsTab } from "@/components/settings/ChemicalsTab";
 import { FarmMapTab } from "@/components/settings/FarmMapTab";
 import { SprayPlanTab } from "@/components/settings/SprayPlanTab";
 import { ThresholdsTab } from "@/components/settings/ThresholdsTab";
+import { OrderingTab } from "@/components/settings/OrderingTab";
 import { FrappeError } from "@/lib/frappe";
 import {
   fetchSettingsBundle,
   type SettingsBundle,
 } from "@/lib/settings-api";
 
-const TABS = ["access", "spray-plan", "thresholds", "farms", "chemicals"] as const;
+const TABS = ["access", "spray-plan", "thresholds", "ordering", "farms", "chemicals"] as const;
 type TabId = (typeof TABS)[number];
 
 function getInitialTab(): TabId {
@@ -166,6 +168,10 @@ export function Settings() {
                 <Gauge />
                 Thresholds
               </TabsTrigger>
+              <TabsTrigger value="ordering">
+                <ListOrdered />
+                Ordering
+              </TabsTrigger>
               <TabsTrigger value="farms">
                 <MapPin />
                 Farms & Map
@@ -190,6 +196,9 @@ export function Settings() {
             </TabsContent>
             <TabsContent value="thresholds">
               <ThresholdsTab />
+            </TabsContent>
+            <TabsContent value="ordering">
+              <OrderingTab />
             </TabsContent>
             <TabsContent value="farms">
               <FarmMapTab

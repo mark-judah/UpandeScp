@@ -32,6 +32,7 @@ from upande_scp.serverscripts.spray_plan_creator.auto_material_issue import (
     build_and_submit_material_issue,
     resolve_supervisor_employee,
 )
+from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
 
 AFP_TYPE = "Application Floor Plan"
 
@@ -239,10 +240,25 @@ def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
     if not getattr(se_doc, "to_warehouse", None):
         se_doc.to_warehouse = wo.fg_warehouse or wo.custom_greenhouse
 
+    # Stamp the greenhouse cost center on every SE row (raw consumption + FG)
+    # so the per-chemical manufacture GL postings attribute to the greenhouse
+    # rather than the company default (Main). Prefer the WO's derived cost
+    # center; fall back to deriving it from the greenhouse warehouse.
+    cost_center = getattr(wo, "custom_cost_center", None) or match_cost_center(
+        wo.custom_greenhouse
+    )
+    if cost_center:
+        for it in se_doc.items or []:
+            it.cost_center = cost_center
+
     se_doc.flags.ignore_permissions = True
     se_doc.flags.ignore_links = True
     se_doc.insert()
     _patch_zero_rates(se_doc)
+    # Re-stamp: ERPNext's validate can reset item cost_center on insert.
+    if cost_center:
+        for it in se_doc.items or []:
+            it.cost_center = cost_center
     se_doc.save(ignore_permissions=True)
     se_doc.submit()
 

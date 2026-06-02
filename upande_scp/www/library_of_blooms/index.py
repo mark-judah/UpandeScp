@@ -18,81 +18,122 @@ def get_context(context):
     return context
 
 
+# Plain (free-text / select) fields copied straight through to the Lead.
+_EOI_PLAIN = [
+    "custom_request", "custom_business_unit", "first_name", "last_name", "job_title",
+    "email_id", "mobile_no", "whatsapp_no", "custom_type_of_entity", "company_name",
+    "custom_business_registration_number", "city", "custom_facebook", "custom_instagram", "website",
+    "custom_billing_street_address", "custom_billing_street_address_2", "custom_billing_state_",
+    "custom_billing_city", "custom_billing_postal_code",
+    "custom_shipping_street_address", "custom_shipping_street_address_2", "custom_shipping_state",
+    "custom_shipping_city", "custom_shipping_postal_code",
+]
+# Link fields set only if the linked record exists.
+_EOI_LINKS = {
+    "market_segment": "Market Segment", "territory": "Territory", "country": "Country",
+    "custom_billing_country": "Country", "custom_shipping_country": "Country",
+}
+
+
+@frappe.whitelist(allow_guest=True)
+def eoi_options():
+    """Link-field choices for the Expression-of-Interest form (guest-safe)."""
+
+    def names(dt):
+        try:
+            return frappe.get_all(dt, pluck="name", order_by="name asc")
+        except Exception:
+            return []
+
+    return {
+        "country": names("Country"),
+        "market_segment": names("Market Segment"),
+        "territory": names("Territory"),
+    }
+
+
 @frappe.whitelist(allow_guest=True)
 def submit_interest(payload):
-    """Create a Lead from the catalogue's Expression-of-Interest popup.
+    """Create/update a Lead from the catalogue's Expression-of-Interest form.
 
-    Mirrors where the 'expression-of-interest' Web Form lands (doctype Lead),
-    but captures only the essentials + the roses the visitor liked, so the
-    experience stays light and on-brand. Bypasses the Web Form's long list of
-    mandatory fields on purpose.
+    Captures the full set of Web Form fields (the 'expression-of-interest' form
+    lands on Lead) plus the roses the visitor liked, on-brand and guest-safe.
     """
     data = json.loads(payload) if isinstance(payload, str) else (payload or {})
+    meta = frappe.get_meta("Lead")
+    has = lambda f: bool(meta.get_field(f))  # noqa: E731
 
     first = (data.get("first_name") or "").strip()
     last = (data.get("last_name") or "").strip()
     email = (data.get("email_id") or "").strip()
-    phone = (data.get("mobile_no") or "").strip()
-    country = (data.get("country") or "").strip()
-    full_name = (first + " " + last).strip() or email or "Library of Blooms enquiry"
+    mobile = (data.get("mobile_no") or "").strip()
 
-    # Compose the message, appending the liked varieties as a tidy list.
-    msg = (data.get("message") or "").strip()
+    msg = (data.get("custom_message") or data.get("message") or "").strip()
     flowers = data.get("flowers") or []
     if isinstance(flowers, str):
         flowers = [f.strip() for f in flowers.split(",") if f.strip()]
     if flowers:
-        liked = "\n".join("  • " + f for f in flowers)
-        msg = (msg + "\n\n" if msg else "") + "Roses of interest:\n" + liked
+        msg = (msg + "\n\n" if msg else "") + "Roses of interest:\n" + "\n".join("  • " + f for f in flowers)
 
-    meta = frappe.get_meta("Lead")
-    has = lambda f: bool(meta.get_field(f))  # noqa: E731
+    def truthy(v):
+        return 1 if v in (1, "1", True, "true", "on") else 0
 
     try:
-        # If this email already expressed interest, append to that Lead instead
-        # of failing on the unique-email constraint (Leads come back to us).
         existing = frappe.db.get_value("Lead", {"email_id": email}, "name") if email else None
+        doc = frappe.get_doc("Lead", existing) if existing else frappe.new_doc("Lead")
 
-        if existing:
-            doc = frappe.get_doc("Lead", existing)
-            if has("custom_message"):
-                prev = (doc.get("custom_message") or "").strip()
-                doc.custom_message = (prev + "\n\n— New enquiry —\n" + msg).strip() if prev else msg
-            if phone and not doc.get("mobile_no"):
-                doc.mobile_no = phone
-            if data.get("custom_request") and has("custom_request"):
-                doc.custom_request = data["custom_request"]
-            if country and has("country") and not doc.get("country") and frappe.db.exists("Country", country):
-                doc.country = country
-        else:
-            doc = frappe.new_doc("Lead")
-            doc.lead_name = full_name
-            if has("first_name") and first:
-                doc.first_name = first
-            if has("last_name") and last:
-                doc.last_name = last
-            if email:
-                doc.email_id = email
-            if phone:
-                doc.mobile_no = phone
-                if has("whatsapp_no"):
-                    doc.whatsapp_no = phone
-            if data.get("company_name") and has("company_name"):
-                doc.company_name = data["company_name"]
-            if data.get("custom_request") and has("custom_request"):
-                doc.custom_request = data["custom_request"]
-            if has("custom_business_unit"):
-                doc.custom_business_unit = "Roses"
-            if has("custom_message"):
+        for f in _EOI_PLAIN:
+            if has(f) and (data.get(f) not in (None, "")):
+                doc.set(f, data.get(f))
+        for f, dt in _EOI_LINKS.items():
+            if has(f) and data.get(f) and frappe.db.exists(dt, data.get(f)):
+                doc.set(f, data.get(f))
+
+        # Shipping == billing convenience (mirrors the Web Form client script).
+        same = truthy(data.get("custom_same_as_billing"))
+        if has("custom_same_as_billing"):
+            doc.custom_same_as_billing = same
+        if same:
+            for b, s in [
+                ("custom_billing_street_address", "custom_shipping_street_address"),
+                ("custom_billing_street_address_2", "custom_shipping_street_address_2"),
+                ("custom_billing_city", "custom_shipping_city"),
+                ("custom_billing_state_", "custom_shipping_state"),
+                ("custom_billing_postal_code", "custom_shipping_postal_code"),
+            ]:
+                if has(s) and doc.get(b):
+                    doc.set(s, doc.get(b))
+            if has("custom_shipping_country") and doc.get("custom_billing_country"):
+                doc.custom_shipping_country = doc.get("custom_billing_country")
+
+        # Computed / hidden fields.
+        doc.lead_name = (first + " " + last).strip() or email or "Library of Blooms enquiry"
+        if has("phone") and mobile:
+            doc.phone = mobile
+        if has("whatsapp_no") and not doc.get("whatsapp_no") and mobile:
+            doc.whatsapp_no = mobile
+        if has("custom_billing_address") and doc.get("custom_billing_street_address"):
+            doc.custom_billing_address = doc.get("custom_billing_street_address")
+        if has("custom_shipping_address") and doc.get("custom_shipping_street_address"):
+            doc.custom_shipping_address = doc.get("custom_shipping_street_address")
+        if has("custom_billing_street_address_type"):
+            doc.custom_billing_street_address_type = "Billing"
+        if has("custom_shipping_street_address_type"):
+            doc.custom_shipping_street_address_type = "Shipping"
+        if has("custom_business_unit") and not doc.get("custom_business_unit"):
+            doc.custom_business_unit = "Roses"
+
+        if has("custom_message"):
+            if existing and (doc.get("custom_message") or "").strip():
+                doc.custom_message = (doc.get("custom_message").strip() + "\n\n— New enquiry —\n" + msg).strip()
+            else:
                 doc.custom_message = msg
-            if country and has("country") and frappe.db.exists("Country", country):
-                doc.country = country
-            # Tag these enquiries with their own source so they're easy to filter.
-            if has("source"):
-                if frappe.db.exists("Lead Source", "Library of Blooms"):
-                    doc.source = "Library of Blooms"
-                elif frappe.db.exists("Lead Source", "Webform"):
-                    doc.source = "Webform"
+
+        if has("source"):
+            if frappe.db.exists("Lead Source", "Library of Blooms"):
+                doc.source = "Library of Blooms"
+            elif frappe.db.exists("Lead Source", "Webform"):
+                doc.source = "Webform"
 
         doc.flags.ignore_mandatory = True
         doc.save(ignore_permissions=True)

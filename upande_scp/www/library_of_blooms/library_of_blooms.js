@@ -542,11 +542,17 @@
 
 	// ── Expression-of-Interest modal ──
 	var REQUESTS = ["Product Inquiry", "Partnership Inquiry", "General Inquiry", "Product Sample Request", "Quotation Request"];
+	var ENTITIES = ["Company", "Partnership", "Sole Proprietor"];
+	var BUSINESS_UNITS = ["Roses", "Endebess Coffee"];
+	var eoiOptionsCache = null;
+	function sel(name, list, def, dyn) {
+		var dattr = dyn ? ' data-dyn="' + dyn + '"' : "";
+		var o = (dyn ? '<option value="">Loading…</option>' : list.map(function (v) {
+			return '<option value="' + v + '"' + (v === def ? " selected" : "") + ">" + v + "</option>";
+		}).join(""));
+		return '<select name="' + name + '"' + dattr + ">" + o + "</select>";
+	}
 	function buildModal() {
-		var opts = REQUESTS.map(function (r) { return '<option value="' + r + '">' + r + "</option>"; }).join("");
-		var cOpts = COUNTRIES.slice().sort(function (a, b) { return a[0] < b[0] ? -1 : 1; }).map(function (c) {
-			return '<option value="' + c[0] + '" data-iso="' + c[1] + '" data-dial="' + c[2] + '"' + (c[0] === "Kenya" ? " selected" : "") + ">" + c[0] + "</option>";
-		}).join("");
 		var m = el(
 			'<div class="lob-modal" hidden>' +
 				'<div class="lob-modal-veil"></div>' +
@@ -555,21 +561,97 @@
 					'<svg class="lob-modal-crest" viewBox="263 356 215 215" aria-hidden="true"><use href="#lob-crest"/></svg>' +
 					'<p class="lob-eyebrow gold">We\'d love to hear from you</p>' +
 					'<h3 class="lob-modal-title">Express your Interest</h3>' +
-					'<p class="lob-modal-intro">Tell us a little about you and our team will be in touch about the blooms you love.</p>' +
-					'<div class="lob-modal-chips" hidden></div>' +
+					'<p class="lob-modal-intro">Please fill in the form below and our team will be in touch with you soon. Fields marked * are required.</p>' +
 					'<form class="lob-eoi" novalidate>' +
-						'<div class="lob-eoi-row">' +
-							'<label>First name*<input name="first_name" required autocomplete="given-name"></label>' +
-							'<label>Last name*<input name="last_name" required autocomplete="family-name"></label>' +
+						'<div class="lob-stepper">' +
+							'<div class="lob-stepper-pips"><span class="lob-pip active"></span><span class="lob-pip"></span><span class="lob-pip"></span><span class="lob-pip"></span><span class="lob-pip"></span></div>' +
+							'<div class="lob-stepper-bar"><span class="lob-stepper-fill"></span></div>' +
 						"</div>" +
-						'<label>Email*<input name="email_id" type="email" required autocomplete="email"></label>' +
-						'<div class="lob-eoi-row">' +
-							'<label>Country<select name="country">' + cOpts + "</select></label>" +
-							'<label>Phone / WhatsApp*<span class="lob-phone"><span class="lob-flag">' + flagEmoji("KE") + '</span><input name="mobile_no" required inputmode="tel" autocomplete="tel" placeholder="+254 …"></span></label>' +
+
+						'<div class="lob-step" data-step="1">' +
+							'<div class="lob-step-head"><span class="lob-step-count">Step 1 of 5</span><h4>What brings you here?</h4><p>A warm hello to begin.</p></div>' +
+							'<div class="lob-eoi-row">' +
+								'<label>Request type*' + sel("custom_request", REQUESTS, "Product Inquiry") + "</label>" +
+								'<label>Business unit*' + sel("custom_business_unit", BUSINESS_UNITS, "Roses") + "</label>" +
+							"</div>" +
 						"</div>" +
-						'<label>I\'m interested in<select name="custom_request">' + opts + "</select></label>" +
-						'<label>Message<textarea name="message" rows="3" placeholder="Anything you\'d like us to know…"></textarea></label>' +
-						'<button class="lob-eoi-submit" type="submit">Send my interest</button>' +
+
+						'<div class="lob-step" data-step="2" hidden>' +
+							'<div class="lob-step-head"><span class="lob-step-count">Step 2 of 5</span><h4>About you</h4><p>So we know who we\'re speaking with.</p></div>' +
+							'<div class="lob-eoi-row">' +
+								'<label>First name*<input name="first_name" required autocomplete="given-name"></label>' +
+								'<label>Last name*<input name="last_name" required autocomplete="family-name"></label>' +
+							"</div>" +
+							'<div class="lob-eoi-row">' +
+								'<label>Job title*<input name="job_title" required autocomplete="organization-title"></label>' +
+								'<label>Email*<input name="email_id" type="email" required autocomplete="email"></label>' +
+							"</div>" +
+							'<div class="lob-eoi-row">' +
+								'<label>Phone*<span class="lob-phone"><span class="lob-flag">' + flagEmoji("KE") + '</span><input name="mobile_no" required inputmode="tel" autocomplete="tel" placeholder="+254 …"></span></label>' +
+								'<label>WhatsApp*<input name="whatsapp_no" required inputmode="tel" placeholder="+254 …"></label>' +
+							"</div>" +
+						"</div>" +
+
+						'<div class="lob-step" data-step="3" hidden>' +
+							'<div class="lob-step-head"><span class="lob-step-count">Step 3 of 5</span><h4>Your organisation</h4><p>A few details about your business.</p></div>' +
+							'<div class="lob-eoi-row">' +
+								'<label>Type of entity*' + sel("custom_type_of_entity", ENTITIES, "Company") + "</label>" +
+								'<label>Trading entity name*<input name="company_name" required autocomplete="organization"></label>' +
+							"</div>" +
+							'<div class="lob-eoi-row">' +
+								'<label>Business reg. number*<input name="custom_business_registration_number" required></label>' +
+								'<label>Market segment*' + sel("market_segment", [], "", "market_segment") + "</label>" +
+							"</div>" +
+							'<div class="lob-eoi-row">' +
+								'<label>Territory*' + sel("territory", [], "", "territory") + "</label>" +
+								'<label>Country*' + sel("country", [], "", "country") + "</label>" +
+							"</div>" +
+							'<label>City*<input name="city" required></label>' +
+							'<div class="lob-eoi-row">' +
+								'<label>Facebook<input name="custom_facebook"></label>' +
+								'<label>Instagram<input name="custom_instagram"></label>' +
+							"</div>" +
+							'<label>Website<input name="website" inputmode="url"></label>' +
+						"</div>" +
+
+						'<div class="lob-step" data-step="4" hidden>' +
+							'<div class="lob-step-head"><span class="lob-step-count">Step 4 of 5</span><h4>Delivery details</h4><p>Where should we send things?</p></div>' +
+							'<label>Billing street address*<input name="custom_billing_street_address" required></label>' +
+							'<label>Billing street address 2<input name="custom_billing_street_address_2"></label>' +
+							'<div class="lob-eoi-row">' +
+								'<label>Billing country*' + sel("custom_billing_country", [], "", "country") + "</label>" +
+								'<label>Billing city*<input name="custom_billing_city" required></label>' +
+							"</div>" +
+							'<div class="lob-eoi-row">' +
+								'<label>Billing state<input name="custom_billing_state_"></label>' +
+								'<label>Billing postal code<input name="custom_billing_postal_code"></label>' +
+							"</div>" +
+							'<label class="lob-eoi-check"><input type="checkbox" name="custom_same_as_billing" checked> Shipping address is the same as billing</label>' +
+							'<div class="lob-eoi-ship" hidden>' +
+								'<label>Shipping street address*<input name="custom_shipping_street_address"></label>' +
+								'<label>Shipping street address 2<input name="custom_shipping_street_address_2"></label>' +
+								'<div class="lob-eoi-row">' +
+									'<label>Shipping country*' + sel("custom_shipping_country", [], "", "country") + "</label>" +
+									'<label>Shipping city*<input name="custom_shipping_city"></label>' +
+								"</div>" +
+								'<div class="lob-eoi-row">' +
+									'<label>Shipping state<input name="custom_shipping_state"></label>' +
+									'<label>Shipping postal code<input name="custom_shipping_postal_code"></label>' +
+								"</div>" +
+							"</div>" +
+						"</div>" +
+
+						'<div class="lob-step" data-step="5" hidden>' +
+							'<div class="lob-step-head"><span class="lob-step-count">Step 5 of 5</span><h4>One last touch</h4><p>Your message — and the blooms you love.</p></div>' +
+							'<div class="lob-modal-chips" hidden></div>' +
+							'<label>Message*<textarea name="custom_message" rows="3" required placeholder="Tell us what you\'re looking for…"></textarea></label>' +
+						"</div>" +
+
+						'<div class="lob-step-nav">' +
+							'<button class="lob-step-back" type="button" hidden>← Back</button>' +
+							'<button class="lob-step-next" type="button">Continue</button>' +
+							'<button class="lob-eoi-submit" type="submit" hidden>Send my interest</button>' +
+						"</div>" +
 						'<p class="lob-eoi-status" role="status"></p>' +
 					"</form>" +
 					'<div class="lob-modal-done" hidden>' +
@@ -586,22 +668,93 @@
 		m.querySelector(".lob-modal-done-close").addEventListener("click", closeModal);
 		m.querySelector(".lob-eoi").addEventListener("submit", submitEoi);
 
-		// Country ⇄ phone-flag interplay
-		var cSel = m.querySelector('select[name="country"]');
+		// phone flag + WhatsApp mirror (Web Form sets whatsapp = mobile)
 		var pInp = m.querySelector('input[name="mobile_no"]');
+		var wInp = m.querySelector('input[name="whatsapp_no"]');
 		var flag = m.querySelector(".lob-flag");
-		cSel.addEventListener("change", function () {
-			var c = countryByName(cSel.value); if (!c) return;
-			flag.textContent = flagEmoji(c[1]);
-			var v = pInp.value.trim();
-			if (!v || /^\+?\d{0,4}\s*$/.test(v)) pInp.value = "+" + c[2] + " ";
-		});
 		pInp.addEventListener("input", function () {
+			if (wInp) wInp.value = pInp.value;
 			var digits = pInp.value.replace(/[^\d]/g, "");
 			if (!digits) return;
 			var c = countryByDial(digits);
-			if (c) { flag.textContent = flagEmoji(c[1]); cSel.value = c[0]; }
+			if (c) flag.textContent = flagEmoji(c[1]);
 		});
+		// territory → country (if the territory name is also a country)
+		var terr = m.querySelector('select[name="territory"]');
+		var ctry = m.querySelector('select[name="country"]');
+		terr.addEventListener("change", function () {
+			var v = terr.value; if (!v) return;
+			Array.prototype.forEach.call(ctry.options, function (o) { if (o.value === v) ctry.value = v; });
+		});
+		// same-as-billing toggle
+		m.querySelector('input[name="custom_same_as_billing"]').addEventListener("change", function () { updateShipping(m); });
+		updateShipping(m);
+
+		// ── Multi-step wizard ──
+		var card = m.querySelector(".lob-modal-card");
+		var steps = Array.prototype.slice.call(m.querySelectorAll(".lob-step"));
+		var pips = Array.prototype.slice.call(m.querySelectorAll(".lob-pip"));
+		var fillBar = m.querySelector(".lob-stepper-fill");
+		var backBtn = m.querySelector(".lob-step-back");
+		var nextBtn = m.querySelector(".lob-step-next");
+		var submitBtn = m.querySelector(".lob-eoi-submit");
+		var total = steps.length, cur = 1;
+		function showStep(n) {
+			cur = Math.max(1, Math.min(n, total));
+			steps.forEach(function (s, i) { s.hidden = (i + 1) !== cur; });
+			pips.forEach(function (p, i) { p.classList.toggle("done", i + 1 < cur); p.classList.toggle("active", i + 1 === cur); });
+			fillBar.style.width = (cur / total * 100) + "%";
+			backBtn.hidden = cur === 1;
+			nextBtn.hidden = cur === total;
+			submitBtn.hidden = cur !== total;
+			if (card) card.scrollTop = 0;
+		}
+		function validateStep() {
+			var f = steps[cur - 1].querySelectorAll("input, select, textarea");
+			for (var i = 0; i < f.length; i++) {
+				if (f[i].offsetParent === null) continue;     // skip hidden (e.g. shipping when same)
+				if (!f[i].checkValidity()) { f[i].reportValidity(); return false; }
+			}
+			return true;
+		}
+		function goNext() { if (validateStep()) showStep(cur + 1); }
+		nextBtn.addEventListener("click", goNext);
+		backBtn.addEventListener("click", function () { showStep(cur - 1); });
+		m._goStep = showStep;
+		m._validateStep = validateStep;
+		m._next = goNext;
+		m._isLast = function () { return cur === total; };
+		showStep(1);
+	}
+
+	function updateShipping(m) {
+		var same = m.querySelector('input[name="custom_same_as_billing"]').checked;
+		var ship = m.querySelector(".lob-eoi-ship");
+		if (ship) ship.hidden = same;
+		["custom_shipping_street_address", "custom_shipping_city", "custom_shipping_country"].forEach(function (n) {
+			var f = m.querySelector('[name="' + n + '"]');
+			if (f) { if (same) f.removeAttribute("required"); else f.setAttribute("required", ""); }
+		});
+	}
+
+	function fillEoiOptions(m, data) {
+		m.querySelectorAll("select[data-dyn]").forEach(function (s) {
+			var key = s.getAttribute("data-dyn");
+			var list = (data && data[key]) || [];
+			var isCountry = key === "country";
+			var cur = s.value;
+			s.innerHTML = '<option value="">— select —</option>' + list.map(function (n) {
+				return '<option value="' + n + '"' + ((isCountry && n === "Kenya") ? " selected" : "") + ">" + n + "</option>";
+			}).join("");
+			if (cur) s.value = cur;
+		});
+	}
+	function loadEoiOptions(m) {
+		if (eoiOptionsCache) { fillEoiOptions(m, eoiOptionsCache); return; }
+		fetch("/api/method/upande_scp.www.library_of_blooms.index.eoi_options", { headers: { "X-Requested-With": "XMLHttpRequest" } })
+			.then(function (r) { return r.json(); })
+			.then(function (j) { eoiOptionsCache = (j && j.message) || {}; fillEoiOptions(m, eoiOptionsCache); })
+			.catch(function () {});
 	}
 	function openModal() {
 		var m = document.querySelector(".lob-modal"); if (!m) return;
@@ -614,6 +767,10 @@
 		} else { chips.hidden = true; chips.innerHTML = ""; }
 		m.querySelector(".lob-eoi").hidden = false;
 		m.querySelector(".lob-modal-done").hidden = true;
+		var sb = m.querySelector(".lob-eoi-submit"); if (sb) sb.disabled = false;
+		var st = m.querySelector(".lob-eoi-status"); if (st) { st.textContent = ""; st.className = "lob-eoi-status"; }
+		loadEoiOptions(m);
+		if (m._goStep) m._goStep(1);
 		m.hidden = false; document.body.classList.add("lob-locked");
 	}
 	function closeModal() { var m = document.querySelector(".lob-modal"); if (m) { m.hidden = true; document.body.classList.remove("lob-locked"); } }
@@ -623,40 +780,15 @@
 		var form = e.currentTarget, m = form.closest(".lob-modal");
 		var status = form.querySelector(".lob-eoi-status");
 		var btn = form.querySelector(".lob-eoi-submit");
-		var payload = {
-			first_name: form.first_name.value.trim(),
-			last_name: form.last_name.value.trim(),
-			email_id: form.email_id.value.trim(),
-			mobile_no: form.mobile_no.value.trim(),
-			country: form.country ? form.country.value : "",
-			custom_request: form.custom_request.value,
-			message: form.message.value.trim(),
-			flowers: getLikes().map(function (x) { return x.name; })
-		};
-		function fail(msg, field) {
-			status.textContent = msg; status.className = "lob-eoi-status err";
-			if (field && field.focus) field.focus();
-			return false;
-		}
-		// Tell them exactly what's missing, and jump them to it.
-		var missing = [];
-		if (!payload.first_name) missing.push("first name");
-		if (!payload.last_name) missing.push("last name");
-		if (!payload.email_id) missing.push("email");
-		if (!payload.mobile_no) missing.push("phone number");
-		if (missing.length) {
-			var list = missing.length === 1 ? missing[0]
-				: missing.slice(0, -1).join(", ") + " and " + missing[missing.length - 1];
-			var f = !payload.first_name ? form.first_name : !payload.last_name ? form.last_name
-				: !payload.email_id ? form.email_id : form.mobile_no;
-			return fail("Please add your " + list + " so we can reach you.", f);
-		}
-		if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(payload.email_id)) {
-			return fail("That email address doesn't look complete — please double-check it (e.g. name@example.com).", form.email_id);
-		}
-		if (payload.mobile_no.replace(/[^\d]/g, "").length < 7) {
-			return fail("Please enter a phone number we can reach you on, including the country code.", form.mobile_no);
-		}
+		// Enter pressed before the last step → behave like "Continue", don't submit.
+		if (m._isLast && !m._isLast()) { if (m._next) m._next(); return; }
+		// Validate the final step before sending (earlier steps were validated to reach here).
+		if (m._validateStep && !m._validateStep()) return;
+		var payload = { flowers: getLikes().map(function (x) { return x.name; }) };
+		Array.prototype.forEach.call(form.elements, function (elm) {
+			if (!elm.name) return;
+			payload[elm.name] = elm.type === "checkbox" ? (elm.checked ? 1 : 0) : (elm.value || "").trim();
+		});
 		btn.disabled = true; status.textContent = "Sending…"; status.className = "lob-eoi-status";
 		var token = (document.querySelector('meta[name="csrf_token"]') || {}).content || "";
 		fetch("/api/method/upande_scp.www.library_of_blooms.index.submit_interest", {

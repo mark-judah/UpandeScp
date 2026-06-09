@@ -24,13 +24,27 @@ import { cn } from "@/lib/utils";
 
 type Status = { kind: "ok" | "err"; text: string } | null;
 
+interface FarmOption {
+  farm: string;
+  display: string;
+  kephis_farm_id?: string;
+  abbreviation?: string;
+}
+
+interface WeekOption {
+  week: number;
+  label: string;
+  from?: string;
+  to?: string;
+}
+
 interface ReportSpec {
   key: string;
   title: string;
   description: string;
   emailMethod: string;
   /** When set, downloads via window.location to a streaming endpoint. */
-  downloadUrl?: (args: { farm?: string }) => string;
+  downloadUrl?: (args: { farm?: string; week?: string }) => string;
   /** When set, page renders a farm picker before enabling actions. */
   needsFarm?: boolean;
 }
@@ -63,31 +77,55 @@ const REPORTS: ReportSpec[] = [
       "Per-farm FCM monitoring template for KEPHIS submission. Pick a farm before sending or downloading.",
     emailMethod:
       "upande_scp.serverscripts.send_fcm_weekly_excel_report.trigger_fcm_email",
-    downloadUrl: ({ farm }) =>
-      `/api/method/upande_scp.serverscripts.send_fcm_weekly_excel_report.download_fcm_xlsx?farm=${encodeURIComponent(farm || "")}`,
+    downloadUrl: ({ farm, week }) =>
+      `/api/method/upande_scp.serverscripts.send_fcm_weekly_excel_report.download_fcm_xlsx?farm=${encodeURIComponent(farm || "")}&week=${encodeURIComponent(week || "")}`,
     needsFarm: true,
   },
 ];
 
 export function Reports() {
-  const [farms, setFarms] = useState<string[]>([]);
+  const [farms, setFarms] = useState<FarmOption[]>([]);
   const [farm, setFarm] = useState<string>("");
+  const [weeks, setWeeks] = useState<WeekOption[]>([]);
+  const [week, setWeek] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>(null);
 
   useEffect(() => {
-    call<string[] | { message: string[] }>(
+    call<FarmOption[]>(
       "upande_scp.serverscripts.send_fcm_weekly_excel_report.list_farms_with_data",
       {},
     )
       .then((r: any) => {
-        const arr = Array.isArray(r) ? r : Array.isArray(r?.message) ? r.message : [];
-        setFarms(arr.map((x: any) => String(x)));
-        if (arr.length && !farm) setFarm(arr[0]);
+        const arr: FarmOption[] = Array.isArray(r) ? r : Array.isArray(r?.message) ? r.message : [];
+        setFarms(arr);
+        if (arr.length && !farm) setFarm(arr[0].farm);
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load the weeks that have data whenever the selected farm changes.
+  useEffect(() => {
+    if (!farm) {
+      setWeeks([]);
+      setWeek("");
+      return;
+    }
+    call<WeekOption[]>(
+      "upande_scp.serverscripts.send_fcm_weekly_excel_report.list_report_weeks",
+      { farm },
+    )
+      .then((r: any) => {
+        const arr: WeekOption[] = Array.isArray(r) ? r : Array.isArray(r?.message) ? r.message : [];
+        setWeeks(arr);
+        setWeek(arr.length ? String(arr[0].week) : "");
+      })
+      .catch(() => {
+        setWeeks([]);
+        setWeek("");
+      });
+  }, [farm]);
 
   const sendEmail = async (spec: ReportSpec) => {
     if (spec.needsFarm && !farm) {
@@ -97,7 +135,7 @@ export function Reports() {
     setBusy(`${spec.key}:email`);
     setStatus(null);
     try {
-      await call(spec.emailMethod, spec.needsFarm ? { farm } : {});
+      await call(spec.emailMethod, spec.needsFarm ? { farm, week } : {});
       setStatus({ kind: "ok", text: `${spec.title} emailed.` });
     } catch (e: any) {
       setStatus({ kind: "err", text: e?.message || "Email failed." });
@@ -112,7 +150,7 @@ export function Reports() {
       return;
     }
     if (!spec.downloadUrl) return;
-    window.location.href = spec.downloadUrl({ farm });
+    window.location.href = spec.downloadUrl({ farm, week });
     setStatus({ kind: "ok", text: `${spec.title} download started.` });
   };
 
@@ -165,25 +203,55 @@ export function Reports() {
             </CardHeader>
             <CardContent className="p-0 flex flex-col gap-2 mt-auto">
               {r.needsFarm && (
-                <div className="flex flex-col gap-1">
-                  <Label>Farm</Label>
-                  <Select
-                    value={farm}
-                    onValueChange={setFarm}
-                    disabled={!farms.length}
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder={farms.length ? "Pick a farm" : "Loading…"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {farms.map((f) => (
-                        <SelectItem key={f} value={f}>
-                          {f}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <>
+                  <div className="flex flex-col gap-1">
+                    <Label>Farm</Label>
+                    <Select
+                      value={farm}
+                      onValueChange={setFarm}
+                      disabled={!farms.length}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder={farms.length ? "Pick a farm" : "Loading…"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {farms.map((f) => (
+                          <SelectItem key={f.farm} value={f.farm}>
+                            {f.display}
+                            {f.kephis_farm_id ? ` — ${f.kephis_farm_id}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label>ISO week (Mon–Sun)</Label>
+                    <Select
+                      value={week}
+                      onValueChange={setWeek}
+                      disabled={!weeks.length}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue
+                          placeholder={
+                            !farm
+                              ? "Pick a farm first"
+                              : weeks.length
+                                ? "Pick a week"
+                                : "No weeks with data"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {weeks.map((w) => (
+                          <SelectItem key={w.week} value={String(w.week)}>
+                            {w.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
               )}
               <div className="flex gap-2">
                 <Button

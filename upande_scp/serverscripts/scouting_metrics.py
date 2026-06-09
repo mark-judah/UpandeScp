@@ -456,17 +456,30 @@ def get_fcm_trap_counts_weekly(year, farm=None):
     return frappe.db.sql(
         f"""
         SELECT
-            tse.trap,
-            COALESCE(tse.location, t.location, 'Indoor') AS location,
-            SUM(tse.count)                                AS cnt,
-            WEEK(se.date_of_capture, 1)                   AS wk
-        FROM  `tabTrap Scouting Entry` tse
-        JOIN  `tabScouting Entry` se ON se.name = tse.parent
-        LEFT JOIN `tabTrap` t ON t.name = tse.trap
-        WHERE YEAR(se.date_of_capture) = %s
-          AND tse.pest = 'FCM'
-          {cond}
-        GROUP BY tse.trap, location, WEEK(se.date_of_capture, 1)
+            d.trap,
+            d.location,
+            SUM(d.cnt)                  AS cnt,
+            d.wk
+        FROM (
+            SELECT
+                tse.trap,
+                COALESCE(tse.location, t.location, 'Indoor') AS location,
+                WEEK(se.date_of_capture, 1)                  AS wk,
+                MAX(tse.count)                               AS cnt
+            FROM  `tabTrap Scouting Entry` tse
+            JOIN  `tabScouting Entry` se ON se.name = tse.parent
+            LEFT JOIN `tabTrap` t ON t.name = tse.trap
+            WHERE YEAR(se.date_of_capture) = %s
+              AND tse.pest = 'FCM'
+              {cond}
+            -- Collapse exact-duplicate observations (same scout, trap, day and
+            -- minute) to one count *before* summing, so re-submissions don't
+            -- inflate the weekly totals.
+            GROUP BY tse.trap, location, WEEK(se.date_of_capture, 1),
+                     se.scouts_name, se.date_of_capture,
+                     TIME_FORMAT(se.time_of_capture, '%%H:%%i')
+        ) d
+        GROUP BY d.trap, d.location, d.wk
         """,
         tuple(params),
         as_dict=True,
@@ -488,18 +501,28 @@ def get_weekly_trap_pest_totals_indoor(year, farm=None):
     return frappe.db.sql(
         f"""
         SELECT
-            tse.pest,
-            SUM(tse.count)              AS cnt,
-            WEEK(se.date_of_capture, 1) AS wk
-        FROM  `tabTrap Scouting Entry` tse
-        JOIN  `tabScouting Entry` se ON se.name = tse.parent
-        LEFT JOIN `tabTrap` t ON t.name = tse.trap
-        WHERE YEAR(se.date_of_capture) = %s
-          AND tse.count > 0
-          AND tse.pest IS NOT NULL AND tse.pest != ''
-          AND COALESCE(tse.location, t.location, 'Indoor') = 'Indoor'
-          {cond}
-        GROUP BY tse.pest, WEEK(se.date_of_capture, 1)
+            d.pest,
+            SUM(d.cnt)                  AS cnt,
+            d.wk
+        FROM (
+            SELECT
+                tse.pest,
+                WEEK(se.date_of_capture, 1) AS wk,
+                MAX(tse.count)              AS cnt
+            FROM  `tabTrap Scouting Entry` tse
+            JOIN  `tabScouting Entry` se ON se.name = tse.parent
+            LEFT JOIN `tabTrap` t ON t.name = tse.trap
+            WHERE YEAR(se.date_of_capture) = %s
+              AND tse.count > 0
+              AND tse.pest IS NOT NULL AND tse.pest != ''
+              AND COALESCE(tse.location, t.location, 'Indoor') = 'Indoor'
+              {cond}
+            -- One row per (scout, trap, pest, day, minute) before summing.
+            GROUP BY tse.pest, WEEK(se.date_of_capture, 1),
+                     tse.trap, se.scouts_name, se.date_of_capture,
+                     TIME_FORMAT(se.time_of_capture, '%%H:%%i')
+        ) d
+        GROUP BY d.pest, d.wk
         """,
         tuple(params),
         as_dict=True,
@@ -516,18 +539,33 @@ def get_plant_pests_weekly(year, farm=None):
     return frappe.db.sql(
         f"""
         SELECT
-            pse.pest,
-            pse.stage,
-            SUM(pse.count)              AS cnt,
-            se.greenhouse,
-            WEEK(se.date_of_capture, 1) AS wk
-        FROM  `tabPests Scouting Entry` pse
-        JOIN  `tabScouting Entry` se ON se.name = pse.parent
-        LEFT JOIN `tabWarehouse` gh ON gh.name = se.greenhouse
-        WHERE YEAR(se.date_of_capture) = %s
-          AND pse.count > 0
-          {cond}
-        GROUP BY pse.pest, pse.stage, se.greenhouse, WEEK(se.date_of_capture, 1)
+            d.pest,
+            d.stage,
+            SUM(d.cnt)                  AS cnt,
+            d.greenhouse,
+            d.wk
+        FROM (
+            SELECT
+                pse.pest,
+                pse.stage,
+                se.greenhouse,
+                WEEK(se.date_of_capture, 1) AS wk,
+                MAX(pse.count)              AS cnt
+            FROM  `tabPests Scouting Entry` pse
+            JOIN  `tabScouting Entry` se ON se.name = pse.parent
+            LEFT JOIN `tabWarehouse` gh ON gh.name = se.greenhouse
+            WHERE YEAR(se.date_of_capture) = %s
+              AND pse.count > 0
+              {cond}
+            -- Collapse the same pest/stage logged twice on the same plant by
+            -- the same scout at the same minute before summing.
+            GROUP BY pse.pest, pse.stage, se.greenhouse,
+                     WEEK(se.date_of_capture, 1),
+                     se.scouts_name, se.date_of_capture,
+                     TIME_FORMAT(se.time_of_capture, '%%H:%%i'),
+                     se.bed, se.zone, se.block, se.`row`, se.tree
+        ) d
+        GROUP BY d.pest, d.stage, d.greenhouse, d.wk
         """,
         tuple(params),
         as_dict=True,
@@ -544,17 +582,28 @@ def get_fcm_larvae_weekly(year, farm=None):
     return frappe.db.sql(
         f"""
         SELECT
-            SUM(pse.count)              AS cnt,
-            se.greenhouse,
-            WEEK(se.date_of_capture, 1) AS wk
-        FROM  `tabPests Scouting Entry` pse
-        JOIN  `tabScouting Entry` se ON se.name = pse.parent
-        LEFT JOIN `tabWarehouse` gh ON gh.name = se.greenhouse
-        WHERE YEAR(se.date_of_capture) = %s
-          AND pse.pest = 'FCM'
-          AND LOWER(pse.stage) REGEXP 'egg|larva|larvae|nymph'
-          {cond}
-        GROUP BY se.greenhouse, WEEK(se.date_of_capture, 1)
+            SUM(d.cnt)                  AS cnt,
+            d.greenhouse,
+            d.wk
+        FROM (
+            SELECT
+                se.greenhouse,
+                WEEK(se.date_of_capture, 1) AS wk,
+                MAX(pse.count)              AS cnt
+            FROM  `tabPests Scouting Entry` pse
+            JOIN  `tabScouting Entry` se ON se.name = pse.parent
+            LEFT JOIN `tabWarehouse` gh ON gh.name = se.greenhouse
+            WHERE YEAR(se.date_of_capture) = %s
+              AND pse.pest = 'FCM'
+              AND LOWER(pse.stage) REGEXP 'egg|larva|larvae|nymph'
+              {cond}
+            -- De-duplicate identical egg/larvae observations before summing.
+            GROUP BY se.greenhouse, WEEK(se.date_of_capture, 1),
+                     pse.stage, se.scouts_name, se.date_of_capture,
+                     TIME_FORMAT(se.time_of_capture, '%%H:%%i'),
+                     se.bed, se.zone, se.block, se.`row`, se.tree
+        ) d
+        GROUP BY d.greenhouse, d.wk
         """,
         tuple(params),
         as_dict=True,
@@ -637,7 +686,46 @@ def get_scouting_records_weekly(year, farm=None):
     )
 
     combined = list(plant) + list(trap)
-    combined.sort(
+
+    # Collapse exact-duplicate observations — same scout, same place, same
+    # pest, recorded on the same day at the same minute (e.g. the mobile app
+    # saving the same trap count three times). Keeps the first occurrence so
+    # the audit trail reconciles with the de-duplicated summary sheets above.
+    def _minute(t):
+        s = str(t or "")
+        parts = s.split(":")
+        if len(parts) >= 2:
+            try:
+                return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+            except (TypeError, ValueError):
+                return s
+        return s
+
+    seen = set()
+    deduped = []
+    for r in combined:
+        if r.get("entry_type") == "Trap":
+            key = (
+                "Trap",
+                r.get("date_of_capture"), _minute(r.get("time_of_capture")),
+                r.get("scout_employee"), r.get("greenhouse"),
+                r.get("trap"), r.get("pest"), r.get("stage_or_location"),
+            )
+        else:
+            key = (
+                "Plant",
+                r.get("date_of_capture"), _minute(r.get("time_of_capture")),
+                r.get("scout_employee"), r.get("greenhouse"),
+                r.get("bed"), r.get("zone"), r.get("block"),
+                r.get("row"), r.get("tree"),
+                r.get("pest"), r.get("stage_or_location"),
+            )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(r)
+
+    deduped.sort(
         key=lambda r: (
             r.get("wk") or 0,
             r.get("date_of_capture") or "",
@@ -645,4 +733,4 @@ def get_scouting_records_weekly(year, farm=None):
             r.get("greenhouse") or "",
         )
     )
-    return combined
+    return deduped

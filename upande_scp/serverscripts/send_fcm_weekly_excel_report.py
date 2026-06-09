@@ -110,8 +110,13 @@ def _farms_with_data(year):
 # Internal: workbook builder (shared by email and download)
 # ---------------------------------------------------------------------------
 
-def _build_workbook_bytes(farm):
+def _build_workbook_bytes(farm, week=None, year=None):
     """Build the KEPHIS FCM Excel workbook for a single farm.
+
+    ``week`` selects the ISO week (1-53) the report targets — the week
+    highlighted green and named in the filename, with data shown cumulatively
+    from the start of the year through it. When omitted, the last completed
+    week is used (original scheduler behaviour).
 
     Returns (excel_bytes, fname, current_year, week_range_str, last_week_num,
              farm_display).
@@ -128,17 +133,29 @@ def _build_workbook_bytes(farm):
     farm_display, kephis_id, abbrev = _resolve_farm(farm)
 
     today = date.today()
-    current_year = today.year
+    current_year = int(year) if year else today.year
     weekday = today.weekday()          # 0 = Monday
-
-    # Last week: previous Monday → Sunday
-    last_week_mon = today - timedelta(days=weekday + 7)
-    last_week_sun = last_week_mon + timedelta(days=6)
-    last_week_num = int(last_week_mon.isocalendar()[1])
     current_week_num = int(today.isocalendar()[1])
 
+    # The report targets one ISO week (Mon → Sun). Honour the caller's choice
+    # when given, otherwise default to the last completed week.
+    default_week_mon = today - timedelta(days=weekday + 7)
+    default_week_num = int(default_week_mon.isocalendar()[1])
+    report_week_num = int(week) if week else default_week_num
+
+    # ``last_week_num`` keeps its original name (used for the green highlight
+    # and the filename) but now points at the selected report week.
+    last_week_num = report_week_num
+
+    try:
+        rw_mon = date.fromisocalendar(current_year, report_week_num, 1)
+        rw_sun = date.fromisocalendar(current_year, report_week_num, 7)
+    except ValueError:
+        rw_mon = default_week_mon
+        rw_sun = default_week_mon + timedelta(days=6)
+
     week_range_str = (
-        last_week_mon.strftime("%d %b") + " - " + last_week_sun.strftime("%d %b %Y")
+        rw_mon.strftime("%d %b") + " - " + rw_sun.strftime("%d %b %Y")
     )
 
     # -----------------------------------------------------------------------
@@ -253,7 +270,7 @@ def _build_workbook_bytes(farm):
     for r in plant_pests:
         all_wk_nums.add(r.wk)
 
-    all_weeks = sorted(w for w in all_wk_nums if 1 <= w <= current_week_num)
+    all_weeks = sorted(w for w in all_wk_nums if 1 <= w <= report_week_num)
 
     if not all_weeks:
         return None, None, current_year, week_range_str, last_week_num, farm_display
@@ -597,7 +614,7 @@ def _build_workbook_bytes(farm):
     ws4["E1"] = "Year";                 ws4["E1"].font = bold_fnt
     ws4["F1"] = current_year
     ws4["A2"] = farm_title;             ws4["A2"].font = mk_font(bold=True, size=14)
-    ws4["A4"] = "Intake QC data will appear here once AI-based intake inspection is integrated."
+    ws4["A4"] = "To be populated in the next update."
     ws4["A4"].font = italic_note_fnt
 
     # ===================================================================
@@ -610,7 +627,7 @@ def _build_workbook_bytes(farm):
     ws5["E1"] = "Year";                 ws5["E1"].font = bold_fnt
     ws5["F1"] = current_year
     ws5["A2"] = farm_title;             ws5["A2"].font = mk_font(bold=True, size=14)
-    ws5["A4"] = "Variety-per-greenhouse data will appear here once integrated with the live farm records."
+    ws5["A4"] = "To be populated in the next update."
     ws5["A4"].font = italic_note_fnt
 
     # ===================================================================
@@ -623,7 +640,7 @@ def _build_workbook_bytes(farm):
     ws6["C1"] = farm_title
     ws6["D1"] = "Month/Year";           ws6["D1"].font = bold_fnt
     ws6["E1"] = today.strftime("%B").upper()
-    ws6["A4"] = "FCM risk profiling will appear here once AI-based risk scoring is integrated."
+    ws6["A4"] = "To be populated in the next update."
     ws6["A4"].font = italic_note_fnt
 
     # ===================================================================
@@ -784,15 +801,15 @@ def _build_email_html(week_range_str, current_year, farm_display, kephis_id):
         </tr>
         <tr>
           <td style="padding:7px 12px;border-bottom:1px solid #dde;">Intake QC Report</td>
-          <td style="padding:7px 12px;border-bottom:1px solid #dde;"><em>Empty — pending AI integration</em></td>
+          <td style="padding:7px 12px;border-bottom:1px solid #dde;"><em>To be populated in the next update</em></td>
         </tr>
         <tr style="background:#f4f6fb;">
           <td style="padding:7px 12px;border-bottom:1px solid #dde;">Variety List</td>
-          <td style="padding:7px 12px;border-bottom:1px solid #dde;"><em>Empty — pending live variety integration</em></td>
+          <td style="padding:7px 12px;border-bottom:1px solid #dde;"><em>To be populated in the next update</em></td>
         </tr>
         <tr>
           <td style="padding:7px 12px;border-bottom:1px solid #dde;">FCM Risk profiling</td>
-          <td style="padding:7px 12px;border-bottom:1px solid #dde;"><em>Empty — pending AI integration</em></td>
+          <td style="padding:7px 12px;border-bottom:1px solid #dde;"><em>To be populated in the next update</em></td>
         </tr>
         <tr style="background:#f4f6fb;">
           <td style="padding:7px 12px;">Scouting Records</td>
@@ -851,15 +868,16 @@ def send_fcm_weekly_excel_report():
 
 
 @frappe.whitelist()
-def trigger_fcm_email(farm=None):
+def trigger_fcm_email(farm=None, week=None):
     """On-demand 'Send now' trigger from the Scouting Reports page.
 
     When ``farm`` is provided the email is limited to that farm; otherwise
-    every farm with data is sent (same behaviour as the scheduler).
+    every farm with data is sent (same behaviour as the scheduler). ``week``
+    optionally selects which ISO week the report targets.
     """
     if farm:
         current_year = date.today().year
-        excel_bytes, fname, _, week_range_str, _, farm_display = _build_workbook_bytes(farm)
+        excel_bytes, fname, _, week_range_str, _, farm_display = _build_workbook_bytes(farm, week=week)
         if excel_bytes is None:
             _send_no_data_email(current_year, week_range_str, farm_display=farm_display)
             return {"ok": False, "farm": farm_display, "reason": "no data"}
@@ -898,11 +916,15 @@ def save_fcm_xlsx_to_path(path, farm):
 
 
 @frappe.whitelist()
-def download_fcm_xlsx(farm):
-    """Stream the freshly-built xlsx back as a browser download."""
+def download_fcm_xlsx(farm, week=None):
+    """Stream the freshly-built xlsx back as a browser download.
+
+    ``week`` optionally selects which ISO week the report targets; when
+    omitted the last completed week is used.
+    """
     if not farm:
         frappe.throw("A farm must be supplied to download the FCM weekly report.")
-    excel_bytes, fname, current_year, _, _, farm_display = _build_workbook_bytes(farm)
+    excel_bytes, fname, current_year, _, _, farm_display = _build_workbook_bytes(farm, week=week)
     if excel_bytes is None:
         frappe.throw(
             f"No scouting data found for {farm_display or farm} in {current_year}. "
@@ -930,6 +952,51 @@ def list_farms_with_data(year=None):
             "display": display,
             "kephis_farm_id": kephis,
             "abbreviation": abbrev,
+        })
+    return out
+
+
+@frappe.whitelist()
+def list_report_weeks(farm, year=None):
+    """Return the ISO weeks (Mon → Sun) that have scouting data for ``farm``.
+
+    Powers the week selector on the Reports page. Weeks are returned newest
+    first, capped at the current week, each with a human label and the
+    Monday/Sunday bounds.
+    """
+    if not farm:
+        return []
+    current_year = int(year) if year else date.today().year
+    current_week = int(date.today().isocalendar()[1])
+
+    rows = frappe.db.sql(
+        """
+        SELECT DISTINCT WEEK(se.date_of_capture, 1) AS wk
+        FROM  `tabScouting Entry` se
+        JOIN  `tabWarehouse` gh ON gh.name = se.greenhouse
+        WHERE YEAR(se.date_of_capture) = %s
+          AND gh.custom_farm = %s
+        ORDER BY wk DESC
+        """,
+        (current_year, farm),
+        as_dict=True,
+    )
+
+    out = []
+    for r in rows:
+        wk = r.wk
+        if wk is None or wk < 1 or wk > current_week:
+            continue
+        try:
+            mon = date.fromisocalendar(current_year, wk, 1)
+            sun = date.fromisocalendar(current_year, wk, 7)
+        except ValueError:
+            continue
+        out.append({
+            "week": wk,
+            "label": f"Week {wk:02d} ({mon.strftime('%d %b')} – {sun.strftime('%d %b')})",
+            "from": mon.isoformat(),
+            "to": sun.isoformat(),
         })
     return out
 

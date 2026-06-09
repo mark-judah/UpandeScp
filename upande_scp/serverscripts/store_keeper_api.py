@@ -9,13 +9,14 @@ Manager / Administrator still allowed for support / debugging). The
 React sidebar gates the pages, but we re-check here so a curl call
 from another session can't sneak past.
 
-Biometric model mirrors the existing Material-Issue client script the
-team already trusts: ``verify_employee`` (a server-side API script)
-reads the most recent ``Biometric Logs`` row from the last minute and
+Biometric model mirrors the existing Material-Issue flow the team
+already trusts, but scp owns its own copy so it does not depend on the
+site-stored Desk Server Script: ``verify_employee`` reads the most
+recent ``Biometric Logs`` row from the last couple of minutes and
 returns ``{employee, employee_name, biometric_id}``. The frontend
-calls that once, then calls ``submit_with_biometric`` with the scanned
-identity + the list of Stock Entry names to authorise. We re-validate
-the scan freshness server-side and write the result into each SE's
+calls that once (UX prompt), then calls ``submit_with_biometric`` with
+the list of Stock Entry names to authorise. We re-validate the scan
+freshness server-side and write the result into each SE's
 ``custom_biometric_data`` child table before submitting.
 """
 
@@ -488,28 +489,48 @@ def list_submitted_transfers(
 # ----------------------------------------------------------------------
 # Bulk biometric submit
 # ----------------------------------------------------------------------
-# The frontend has already called ``verify_employee`` (server script in
-# Upande Kaitet) to get the scanned employee identity. We re-fetch the
-# latest Biometric Logs row here as a freshness check — a curl-only
-# attacker can't forge a scan because the row has to exist in the last
-# minute, and the device hardware is the only source that writes it.
-_SCAN_FRESHNESS_SEC = 120  # be a touch more generous than the verify script
+# The frontend has already called ``verify_employee`` (below) to get the
+# scanned employee identity. We re-fetch the latest Biometric Logs row
+# here as a freshness check — a curl-only attacker can't forge a scan
+# because the row has to exist in the last couple of minutes, and the
+# device hardware is the only source that writes it.
+#
+# The doctype's scan-time field is ``time`` (label "Timestamp"). Any
+# ``log_type`` counts as a scan — the newest row in the window wins.
+_SCAN_FRESHNESS_SEC = 120
 
 
 def _latest_biometric_log() -> dict | None:
     threshold = add_to_date(now_datetime(), seconds=-_SCAN_FRESHNESS_SEC)
     rows = frappe.db.sql(
         """
-        SELECT employee, employee_name, biometric_id, timestamp
+        SELECT employee, employee_name, biometric_id, `time`
         FROM   `tabBiometric Logs`
-        WHERE  timestamp > %(t)s
-        ORDER  BY timestamp DESC
+        WHERE  `time` > %(t)s
+        ORDER  BY `time` DESC
         LIMIT  1
         """,
         {"t": threshold},
         as_dict=True,
     )
     return rows[0] if rows else None
+
+
+@frappe.whitelist()
+def verify_employee() -> dict:
+    """Return the most recent biometric scan for the 'place your finger'
+    UX prompt the frontend shows before ``submit_with_biometric``.
+
+    scp's own copy of the verify step — the logic lives here in code
+    instead of in a site-stored Desk Server Script, so the page has no
+    external dependency. Mirrors that script's response shape so the
+    frontend treats it as a drop-in: the log row on success, or
+    ``{"error": ...}`` when no fresh scan exists."""
+    _check_perm()
+    scan = _latest_biometric_log()
+    if scan:
+        return scan
+    return {"error": "Please place finger on the Biometric Device"}
 
 
 @frappe.whitelist()

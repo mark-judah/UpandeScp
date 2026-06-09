@@ -95,18 +95,21 @@ export async function submitWithBiometric(
   return unwrap<BiometricSubmitResp>(r);
 }
 
-/** The existing Material-Issue biometric flow's first step — server
- *  script ``verify_employee`` reads the latest Biometric Logs row from
- *  the last minute. Used here just as a UX prompt before we call
+/** First step of the biometric flow — scp's own ``verify_employee``
+ *  endpoint reads the latest Biometric Logs row from the last couple of
+ *  minutes. Used here just as a UX prompt before we call
  *  ``submit_with_biometric``, so the operator gets immediate feedback
- *  on whether the scan was picked up. */
+ *  on whether the scan was picked up. Lives in scp code (not a Desk
+ *  Server Script), so the page has no external dependency. */
 export async function verifyEmployeeScan(): Promise<{
   employee?: string;
   employee_name?: string;
   biometric_id?: string;
   error?: string;
 }> {
-  const r = await call("verify_employee");
+  const r = await call(
+    "upande_scp.serverscripts.store_keeper_api.verify_employee",
+  );
   return unwrap(r);
 }
 

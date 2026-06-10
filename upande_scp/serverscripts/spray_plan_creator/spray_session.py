@@ -199,19 +199,13 @@ def register_csu_scan(
         "scanned": sorted(scanned),
     }
 
-    # The last-scan promotion only fires from Chemical Issued. Anything else
-    # is a no-op for state — the row was still upserted (audit log).
-    if all_scanned and current_state == STATE_CHEMICAL_ISSUED:
-        manu_se_name, sal_name = _promote_to_tank_mix_manufactured(
-            wo, csu_warehouse
-        )
-        response["workflow_state"] = STATE_TANK_MIX_MANUFACTURED
-        response["manufacture_se"] = manu_se_name
-        response["sal"] = sal_name
-    elif all_scanned and current_state != STATE_CHEMICAL_ISSUED:
-        # WO has already been promoted. Surface the existing Manufacture SE
-        # and SAL so the mobile can converge to the right state without
-        # needing a separate fetch.
+    # Manufacture is now an EXPLICIT step (see ``manufacture_tank_mix``), not a
+    # side effect of the last scan. Decoupling the two means there is exactly
+    # one manufacture trigger — eliminating the double-manufacture risk — and
+    # lets the supervisor confirm the spray team before confirming the tank
+    # mix. Scanning here only records the audit row. If the WO has *already*
+    # been manufactured, surface the existing SE/SAL so the mobile converges.
+    if all_scanned and current_state != STATE_CHEMICAL_ISSUED:
         existing_se = _find_submitted_manufacture_se(wo.name)
         if existing_se:
             response["manufacture_se"] = existing_se
@@ -286,6 +280,81 @@ def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
             "register_csu_scan: add_comment failed",
         )
     return se_doc.name, sal_name
+
+
+# ──────────────────────────── manufacture_tank_mix ───────────────────────────
+
+
+@frappe.whitelist()
+def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
+    """Explicitly manufacture the tank mix for a fully-scanned WO.
+
+    This is the deliberate replacement for the old auto-promote-on-last-scan:
+    the supervisor confirms the spray team and then presses "Confirm Tank Mix",
+    which calls this. Decoupling manufacture from scanning gives exactly one
+    trigger.
+
+    Idempotent and double-manufacture-safe: the WO row is locked, and if a
+    Manufacture SE already exists (or the WO is already past Chemical Issued)
+    we converge to the existing one instead of creating a second.
+    """
+    if not work_order:
+        frappe.throw("work_order is required.")
+
+    current_state = _lock_wo(work_order)
+    wo = frappe.get_doc("Work Order", work_order)
+    _ensure_afp(wo)
+
+    # Already manufactured (or beyond) — return the existing SE/SAL, no-op.
+    if current_state in (
+        STATE_TANK_MIX_MANUFACTURED,
+        STATE_SPRAYING_IN_PROGRESS,
+        STATE_COMPLETED,
+    ):
+        return {
+            "workflow_state": current_state,
+            "manufacture_se": _find_submitted_manufacture_se(wo.name),
+            "sal": wo.get("custom_spray_application_logsheet"),
+            "already": True,
+        }
+
+    if current_state != STATE_CHEMICAL_ISSUED:
+        frappe.throw(
+            f"Cannot manufacture tank mix: Work Order is in {current_state!r}, "
+            f"expected {STATE_CHEMICAL_ISSUED!r}."
+        )
+
+    required = _required_chemical_codes(wo)
+    scanned = _scanned_codes(wo)
+    if not required or not required.issubset(scanned):
+        missing = sorted(required - scanned)
+        frappe.throw(
+            "Cannot manufacture tank mix: not all chemicals have been scanned."
+            + (f" Missing: {', '.join(missing)}." if missing else "")
+        )
+
+    # Defensive double-manufacture guard: if a submitted Manufacture SE somehow
+    # already exists while state is still Chemical Issued, converge to it rather
+    # than creating a second one.
+    existing_se = _find_submitted_manufacture_se(wo.name)
+    if existing_se:
+        frappe.db.set_value(
+            "Work Order", wo.name, "workflow_state",
+            STATE_TANK_MIX_MANUFACTURED, update_modified=True,
+        )
+        return {
+            "workflow_state": STATE_TANK_MIX_MANUFACTURED,
+            "manufacture_se": existing_se,
+            "sal": wo.get("custom_spray_application_logsheet"),
+            "already": True,
+        }
+
+    manu_se_name, sal_name = _promote_to_tank_mix_manufactured(wo, None)
+    return {
+        "workflow_state": STATE_TANK_MIX_MANUFACTURED,
+        "manufacture_se": manu_se_name,
+        "sal": sal_name,
+    }
 
 
 # ───────────────────────────── SAL draft builder ─────────────────────────────

@@ -4,10 +4,9 @@ import {
   getMissingWeeks,
   hydrateRange,
   invalidateMonth,
-  invalidateRecentWeeks,
   primeAndDelta,
   readEntries,
-  runDelta,
+  refreshRecentWeeks,
 } from "@/lib/scouting-sync";
 import { useRealtime } from "./use-realtime";
 import type {
@@ -86,9 +85,13 @@ export function useScouting({
   // Shared filter+render — used by both effects below. Flips ``loading``
   // for the duration of the IDB read+rebuild so consumers see the orbit
   // overlay on every filter change, not just the first cold load.
-  const buildAndSet = async (token: number) => {
+  const buildAndSet = async (
+    token: number,
+    opts: { silent?: boolean } = {},
+  ) => {
     if (tokenRef.current !== token) return;
-    setLoading(true);
+    const silent = opts.silent ?? false;
+    if (!silent) setLoading(true);
     try {
       const processed = await loadAndProcess({
         from,
@@ -101,35 +104,33 @@ export function useScouting({
     } catch (e) {
       console.error("[scouting] processing failed", e);
     } finally {
-      if (tokenRef.current === token) setLoading(false);
+      if (!silent && tokenRef.current === token) setLoading(false);
     }
   };
 
   // Effect A — Hydration. Runs only when the date range (or a manual reload)
-  // changes. Owns loading / progress / weeks counters. Skips the loading
-  // state entirely when everything is already cached so greenhouse switches
-  // (handled by Effect B) never flash a loading indicator.
+  // changes. Owns loading / progress / weeks counters. Blocks ONLY on weeks
+  // genuinely never loaded into IDB; recent weeks that are already cached are
+  // refreshed in the background so opening a map never waits on the network
+  // once the cache is warm.
   useEffect(() => {
     if (!from || !to || from > to) return;
     const token = ++tokenRef.current;
     setError(null);
 
     (async () => {
-      // Force re-hydration of ISO weeks touching the last 14 days so any
-      // entries that landed on the server with an older modified timestamp
-      // (typical for offline-created mobile rows that sync days later) are
-      // refetched on every mount. The watermark-based runDelta below misses
-      // those rows by definition. Server caches the per-week payload so the
-      // extra fetches stay cheap.
-      await invalidateRecentWeeks(14);
+      // Cold weeks only — those never loaded into IDB. We deliberately do NOT
+      // invalidate recent weeks up front: that used to make already-cached
+      // weeks look "missing" and forced the loading overlay over an otherwise
+      // instant cached paint (Effect B reads IDB on mount). Freshness for
+      // recent weeks now happens in the non-blocking refresh below.
       const missing = await getMissingWeeks(from, to);
       if (tokenRef.current !== token) return;
 
       if (missing.length === 0) {
-        // Cached path — skip the hydrate-progress counter, but DON'T
-        // touch ``loading`` here. Effect B owns the IDB-read+rebuild
-        // and toggles loading around that, so on warm-cache filter
-        // changes the orbit still shows for the brief rebuild window.
+        // Warm cache — don't touch ``loading``. Effect B owns the IDB
+        // read+rebuild and toggles loading around that, so warm-cache filter
+        // changes still show the orbit for the brief rebuild window.
         setProgress(100);
         setWeeksLoaded(0);
         setWeeksTotal(0);
@@ -159,19 +160,19 @@ export function useScouting({
         }
       }
 
-      // Background delta — runs on BOTH paths. New entries created since
-      // our watermark land in IDB and the rebuild surfaces them. Without
-      // this on the cached path, return visits stayed pinned to the rows
-      // that existed at first hydrate; realtime pushes were the only way
-      // new entries showed up, and in self-hosted Frappe that channel is
-      // often silent.
-      void runDelta()
-        .then(async ({ added }) => {
-          if (added > 0 && tokenRef.current === token) {
-            await buildAndSet(token);
+      // Background freshness — never toggles ``loading``, so the cached paint
+      // stays on screen. Re-fetches the ISO weeks touching the last 14 days
+      // that this range actually views (catches offline mobile rows whose
+      // ``modified`` predates our delta watermark — the reason this refresh
+      // exists) and advances the watermark via delta. Re-renders SILENTLY,
+      // only when rows actually changed, so there's no overlay flash.
+      void refreshRecentWeeks(from, to, 14)
+        .then(async (changed) => {
+          if (changed && tokenRef.current === token) {
+            await buildAndSet(token, { silent: true });
           }
         })
-        .catch((e) => console.error("[scouting] delta failed", e));
+        .catch((e) => console.error("[scouting] background refresh failed", e));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to, tick]);

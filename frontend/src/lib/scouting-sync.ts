@@ -269,6 +269,64 @@ export async function invalidateRecentWeeks(daysBack: number): Promise<void> {
 }
 
 /**
+ * Background freshness pass for the maps/dashboards. Re-fetches the ISO weeks
+ * that are BOTH within the last ``daysBack`` days AND inside [from, to],
+ * upserting whatever the server returns, then advances the delta watermark.
+ *
+ * Crucially it does NOT touch the loaded-weeks registry — unlike
+ * ``invalidateRecentWeeks`` + ``hydrateRange``. The registry is what the
+ * blocking hydrate path keys off; leaving recent weeks marked "loaded" means
+ * a map that opens mid-refresh still renders straight from IDB instead of
+ * flashing the loading overlay. Callers run this fire-and-forget after first
+ * paint.
+ *
+ * Returns true when any rows were (re)fetched or the delta added rows, so the
+ * caller can decide whether a silent re-render is worth it. By the time this
+ * runs, every in-range week is already present in IDB (the blocking path
+ * hydrates genuinely-missing weeks first), so we only ever *refresh* here.
+ */
+export async function refreshRecentWeeks(
+  from: string,
+  to: string,
+  daysBack: number,
+): Promise<boolean> {
+  let touched = false;
+  if (Number.isFinite(daysBack) && daysBack > 0 && from && to && from <= to) {
+    const today = new Date();
+    const start = new Date(today);
+    start.setDate(today.getDate() - daysBack);
+    const recentKeys = new Set(
+      weeksBetween(ymd(start), ymd(today)).map((w) => w.key),
+    );
+    const weeks = weeksBetween(from, to).filter((w) => recentKeys.has(w.key));
+    await Promise.all(
+      weeks.map(async (w) => {
+        try {
+          const resp = await call<ChunkResp>(
+            "upande_scp.serverscripts.get_complete_scouting_entries.getScoutingEntriesChunk",
+            { from_date: w.from, to_date: w.to, include_meta: 0 },
+          );
+          const entries = resp?.entries || [];
+          if (entries.length) {
+            await putEntries(entries);
+            touched = true;
+          }
+        } catch (err) {
+          console.error("[scouting-sync] recent refresh failed", w.key, err);
+        }
+      }),
+    );
+  }
+  try {
+    const { added } = await runDelta();
+    if (added > 0) touched = true;
+  } catch (err) {
+    console.error("[scouting-sync] delta failed", err);
+  }
+  return touched;
+}
+
+/**
  * Drop the loaded-weeks pointer for everything touched by ``month`` so the
  * next hydrate re-fetches those weeks. ``month`` is a "YYYY-MM" string;
  * passing ``null`` clears the entire week registry. Used by the realtime

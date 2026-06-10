@@ -104,6 +104,66 @@ def invalidate_scouting_payload():
     cache.set_value(K_SCOUTING_PAYLOAD_VERSION, int(v) + 1)
 
 
+def _resolve_scouting_date(doc):
+    """Best-effort ``datetime.date`` of capture for a scouting-related doc.
+
+    Parent rows carry ``date_of_capture`` directly; child rows walk to their
+    parent. Returns ``None`` when it can't be resolved (e.g. the parent was
+    deleted in the same transaction) so callers can fall back to a global bump.
+    """
+    from datetime import date, datetime
+
+    dt = getattr(doc, "doctype", None)
+    raw = None
+    if dt == "Scouting Entry":
+        raw = getattr(doc, "date_of_capture", None)
+    elif dt in ("Pests Scouting Entry", "Diseases Scouting Entry", "Trap Scouting Entry"):
+        parent = getattr(doc, "parent", None)
+        if parent:
+            raw = frappe.db.get_value("Scouting Entry", parent, "date_of_capture")
+    if not raw:
+        return None
+    if isinstance(raw, datetime):
+        return raw.date()
+    if isinstance(raw, date):
+        return raw
+    try:
+        return datetime.strptime(str(raw)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def invalidate_scouting_week(iso_year, iso_week):
+    """Delete the cached payload for a single ISO week at the current version."""
+    v = scouting_payload_version()
+    key = f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{iso_year:04d}-W{iso_week:02d}"
+    invalidate(key)
+
+
+def invalidate_scouting_week_for_doc(doc):
+    """Bust only the ISO week a scouting write touches, not the whole cache.
+
+    The previous behaviour bumped a global version stamp on every Scouting
+    Entry write, which cold-cached *every* week at once. During active
+    scouting that meant the next map open rebuilt a full week (~100k rows on
+    the live site) from SQL. Here we delete only the affected week's key so
+    historical weeks stay warm and only the week being scouted ever rebuilds.
+
+    Falls back to the global version bump when the week can't be resolved.
+
+    Note: editing a Scouting Entry's ``date_of_capture`` across an ISO-week
+    boundary only busts the new week here; the old week's slice self-heals on
+    its TTL (TTL_MEDIUM). Such edits are rare, so we don't pay the cost of
+    resolving the pre-save date on every write.
+    """
+    d = _resolve_scouting_date(doc)
+    if not d:
+        invalidate_scouting_payload()
+        return
+    iso = d.isocalendar()
+    invalidate_scouting_week(iso[0], iso[1])
+
+
 def _resolve_scouting_month(doc):
     """Best-effort YYYY-MM string for a scouting-related doc.
 
@@ -468,14 +528,19 @@ _DOC_INVALIDATIONS = {
 }
 
 
-_SCOUTING_PAYLOAD_INVALIDATORS = {
+# High-frequency scouting writes — bust only the affected ISO week.
+_SCOUTING_ENTRY_FAMILY = {
     "Scouting Entry",
     "Pests Scouting Entry",
     "Diseases Scouting Entry",
     "Trap Scouting Entry",
-    # Master data that changes the denominator (zone/tree counts) or the
-    # farm/station mapping should also bust the payload cache so derived
-    # percentages stay correct.
+}
+
+# Master data that changes the denominator (zone/tree counts) or the
+# farm/station mapping. These are rare and can shift many weeks at once, so
+# they keep the cheap global version bump.
+_SCOUTING_PAYLOAD_INVALIDATORS = {
+    *_SCOUTING_ENTRY_FAMILY,
     "Zone",
     "Bed",
     "Warehouse",
@@ -498,7 +563,10 @@ def invalidate_on_change(doc, method=None):
     # Drop the per-farm Tank & Valve bundle when assets move or get edited.
     if doc.doctype == "Tank And Valve":
         invalidate_tanks_valves_for_doc(doc)
-    # Bump the scouting payload version on any change that could shift the
-    # cached entries response or its derived denominators.
-    if doc.doctype in _SCOUTING_PAYLOAD_INVALIDATORS:
+    # Scouting writes: bust only the affected ISO week so other weeks stay
+    # warm during active scouting. Master-data changes that shift derived
+    # denominators across many weeks fall through to the global version bump.
+    if doc.doctype in _SCOUTING_ENTRY_FAMILY:
+        invalidate_scouting_week_for_doc(doc)
+    elif doc.doctype in _SCOUTING_PAYLOAD_INVALIDATORS:
         invalidate_scouting_payload()

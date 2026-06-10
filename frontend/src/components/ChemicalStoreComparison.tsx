@@ -72,28 +72,7 @@ export function ChemicalStoreComparison() {
     return m;
   }, [data]);
 
-  // Farms (sorted), for the chart x-axis. Stores within a farm are summed.
-  const farms = useMemo(
-    () => Array.from(new Set((data?.stores || []).map((s) => s.farm))).sort(),
-    [data],
-  );
-  const warehouseFarm = useMemo(() => {
-    const m = new Map<string, string>();
-    (data?.stores || []).forEach((s) => m.set(s.warehouse, s.farm));
-    return m;
-  }, [data]);
-
-  // qty[item][farm] and qty[item][warehouse]
-  const byFarm = useMemo(() => {
-    const map: Record<string, Record<string, number>> = {};
-    for (const c of data?.matrix || []) {
-      const farm = warehouseFarm.get(c.warehouse);
-      if (!farm) continue;
-      (map[c.item_code] ||= {})[farm] = (map[c.item_code]?.[farm] || 0) + c.qty;
-    }
-    return map;
-  }, [data, warehouseFarm]);
-
+  // qty[item][warehouse] — used by both the chart (x-axis = store) and table.
   const byWarehouse = useMemo(() => {
     const map: Record<string, Record<string, number>> = {};
     for (const c of data?.matrix || []) {
@@ -102,16 +81,17 @@ export function ChemicalStoreComparison() {
     return map;
   }, [data]);
 
+  // One bar group per chemical store; series = each selected chemical.
   const chartData = useMemo(
     () =>
-      farms.map((farm) => {
-        const row: Record<string, number | string> = { farm };
+      (data?.stores || []).map((s) => {
+        const row: Record<string, number | string> = { store: s.label };
         selected.forEach((code) => {
-          row[code] = Math.round((byFarm[code]?.[farm] || 0) * 100) / 100;
+          row[code] = Math.round((byWarehouse[code]?.[s.warehouse] || 0) * 100) / 100;
         });
         return row;
       }),
-    [farms, selected, byFarm],
+    [data, selected, byWarehouse],
   );
 
   const chartConfig: ChartConfig = useMemo(() => {
@@ -182,10 +162,10 @@ export function ChemicalStoreComparison() {
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <BarChart3 className="h-4 w-4" />
-            Compare chemical levels across farms
+            Compare chemical levels across stores
           </CardTitle>
           <CardDescription>
-            Pick up to {MAX_SELECT} chemicals to compare their levels per farm.
+            Pick up to {MAX_SELECT} chemicals to compare their levels per chemical store.
             {selected.length >= MAX_SELECT && " Max reached — deselect one to swap."}
           </CardDescription>
         </CardHeader>
@@ -260,7 +240,7 @@ export function ChemicalStoreComparison() {
                 >
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
                   <XAxis
-                    dataKey="farm"
+                    dataKey="store"
                     tickLine={false}
                     axisLine={false}
                     interval={0}

@@ -37,6 +37,7 @@ import {
   fetchChemicalOverview,
   type ChemicalOverview,
 } from "@/lib/store-keeper-api";
+import { ChemicalStoreComparison } from "@/components/ChemicalStoreComparison";
 import { cn } from "@/lib/utils";
 
 const ALL_WAREHOUSE = "__all__";
@@ -283,6 +284,8 @@ export function ChemicalDashboard() {
             )}
           </CardContent>
         </Card>
+
+        <ChemicalStoreComparison />
 
         <Card>
           <CardHeader className="pb-1">

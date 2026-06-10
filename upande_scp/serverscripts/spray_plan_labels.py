@@ -807,9 +807,44 @@ def generate_pdf(
 	today = frappe.utils.nowdate()
 	filename = f"spray_labels_{today}.pdf"
 
+	# Stamp the print marker on every SE that actually produced ≥1 label. A PDF
+	# only comes back when rendering succeeded, so this is the reliable "it was
+	# printed" signal. Non-blocking / informational — reprints are always
+	# allowed and just bump the count. db.set_value (no docstatus change).
+	_stamp_labels_printed({l["se_name"] for l in labels})
+
 	return {
 		"data": base64.b64encode(pdf_bytes).decode("ascii"),
 		"filename": filename,
 		"label_count": len(labels),
 		"skipped": skipped,
 	}
+
+
+def _stamp_labels_printed(se_names) -> None:
+	"""Mark each SE as printed: set the flag, stamp who/when, bump the count."""
+	if not se_names:
+		return
+	who = frappe.utils.get_fullname(frappe.session.user) or frappe.session.user
+	when = frappe.utils.now_datetime()
+	for se_name in se_names:
+		try:
+			prev = frappe.db.get_value(
+				"Stock Entry", se_name, "custom_labels_print_count"
+			) or 0
+			frappe.db.set_value(
+				"Stock Entry",
+				se_name,
+				{
+					"custom_labels_printed": 1,
+					"custom_labels_print_count": int(prev) + 1,
+					"custom_labels_printed_on": when,
+					"custom_labels_printed_by": who,
+				},
+				update_modified=False,
+			)
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				f"_stamp_labels_printed failed for {se_name}",
+			)

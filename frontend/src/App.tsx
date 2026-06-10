@@ -73,6 +73,16 @@ const Labels = lazy(() =>
 const CreatorStock = lazy(() =>
   import("@/pages/CreatorStock").then((m) => ({ default: m.CreatorStock })),
 );
+const ChemicalProgress = lazy(() =>
+  import("@/pages/ChemicalProgress").then((m) => ({
+    default: m.ChemicalProgress,
+  })),
+);
+const ChemicalLoaning = lazy(() =>
+  import("@/pages/ChemicalLoaning").then((m) => ({
+    default: m.ChemicalLoaning,
+  })),
+);
 // Throwaway POC route — gated on a hash that the normal router doesn't
 // recognise so it never appears in the sidebar. Open with
 // ``#/poc-heatmap?gh=<Greenhouse>&obs=<Name>&kind=pest|disease``.
@@ -218,6 +228,10 @@ export function App() {
             <Labels />
           ) : view === "creator-stock" ? (
             <CreatorStock />
+          ) : view === "chemical-progress" ? (
+            <ChemicalProgress />
+          ) : view === "chemical-loaning" ? (
+            <ChemicalLoaning />
           ) : (
             <Dashboard />
           )}

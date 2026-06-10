@@ -56,6 +56,22 @@ import {
   type PerPage,
   type SubmittedTransferRow,
 } from "@/lib/labels-api";
+import { fetchTransferItems, type TransferItem } from "@/lib/store-keeper-api";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { planLabel, MIN_DIM_FLOOR_MM } from "@/lib/label-tiers";
 import { cn } from "@/lib/utils";
 
@@ -411,6 +427,21 @@ export function Labels() {
     skipped_count: number;
   } | null>(null);
 
+  // Chemicals modal — opened by clicking a transfer's SE name.
+  const [detailSe, setDetailSe] = useState<string | null>(null);
+  const [detailItems, setDetailItems] = useState<TransferItem[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const openDetail = (name: string) => {
+    setDetailSe(name);
+    setDetailItems([]);
+    setDetailLoading(true);
+    fetchTransferItems(name)
+      .then(setDetailItems)
+      .catch(() => setDetailItems([]))
+      .finally(() => setDetailLoading(false));
+  };
+
   const load = () => {
     setLoading(true);
     setError(null);
@@ -562,6 +593,8 @@ export function Labels() {
       });
       if (resp.data && resp.filename) {
         downloadBase64Pdf(resp.data, resp.filename);
+        // Reload so the freshly-stamped "Printed" badges show up.
+        load();
       } else {
         setError(
           "No labels generated — none of the selected transfers had a QR image attached.",
@@ -726,9 +759,18 @@ export function Labels() {
                                   !dimmed && toggleOne(r.name)
                                 }
                               />
-                              <span className="font-mono text-xs flex-1">
+                              <button
+                                type="button"
+                                className="font-mono text-xs flex-1 text-left hover:underline hover:text-primary"
+                                title="View chemicals on this transfer"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openDetail(r.name);
+                                }}
+                              >
                                 {r.name}
-                              </span>
+                              </button>
                               {r.spray_type && (
                                 <Badge variant="outline" className="text-[10px]">
                                   {r.spray_type}
@@ -737,6 +779,20 @@ export function Labels() {
                               <Badge variant="secondary" className="text-[10px]">
                                 {r.qr_count} QR
                               </Badge>
+                              {r.labels_printed && (
+                                <Badge
+                                  className="bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/15 text-[10px] gap-1"
+                                  title={
+                                    `Printed${r.labels_print_count > 1 ? ` ${r.labels_print_count}×` : ""}` +
+                                    (r.labels_printed_on ? ` · ${r.labels_printed_on.slice(0, 16)}` : "") +
+                                    (r.labels_printed_by ? ` · ${r.labels_printed_by}` : "")
+                                  }
+                                >
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Printed
+                                  {r.labels_print_count > 1 ? ` ×${r.labels_print_count}` : ""}
+                                </Badge>
+                              )}
                               <span className="text-xs text-muted-foreground">
                                 {r.posting_date}
                               </span>
@@ -1156,6 +1212,64 @@ export function Labels() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={!!detailSe}
+        onOpenChange={(o) => {
+          if (!o) setDetailSe(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-mono text-sm">{detailSe}</DialogTitle>
+            <DialogDescription>
+              {detailLoading
+                ? "Loading chemicals…"
+                : `${detailItems.length} chemical${detailItems.length !== 1 ? "s" : ""} on this transfer`}
+            </DialogDescription>
+          </DialogHeader>
+          {detailLoading ? (
+            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading…
+            </div>
+          ) : detailItems.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              No chemicals found on this transfer.
+            </div>
+          ) : (
+            <div className="rounded-md border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Chemical</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead>UoM</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {detailItems.map((it, i) => (
+                    <TableRow key={`${it.item_code}-${i}`}>
+                      <TableCell className="text-xs">
+                        <div className="font-medium">
+                          {it.item_name || it.item_code}
+                        </div>
+                        <div className="text-muted-foreground font-mono text-[0.65rem]">
+                          {it.item_code}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-xs font-semibold">
+                        {it.qty}
+                      </TableCell>
+                      <TableCell className="text-xs">{it.uom}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

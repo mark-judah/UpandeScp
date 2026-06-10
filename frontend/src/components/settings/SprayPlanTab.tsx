@@ -385,6 +385,181 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
         </CardContent>
       </Card>
 
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle className="text-base">Auto-cancel dormant plans</CardTitle>
+          <CardDescription>
+            Automatically stop plans submitted for approval but left unapproved.
+            Stopping is reversible (un-stop in Desk).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+            <Checkbox
+              id="auto_cancel_enabled"
+              checked={!!draft.auto_cancel_enabled}
+              onCheckedChange={(v) => set("auto_cancel_enabled", v ? 1 : 0)}
+            />
+            <div className="flex flex-col gap-1">
+              <Label
+                htmlFor="auto_cancel_enabled"
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Enable the daily auto-cancel job
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                When off, no plan is ever auto-stopped.
+                {draft.auto_cancel_activated_on
+                  ? ` Going-forward cutoff: ${draft.auto_cancel_activated_on.slice(0, 16)}.`
+                  : ""}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+            <Checkbox
+              id="auto_cancel_apply_to_backlog"
+              checked={!!draft.auto_cancel_apply_to_backlog}
+              disabled={!draft.auto_cancel_enabled}
+              onCheckedChange={(v) =>
+                set("auto_cancel_apply_to_backlog", v ? 1 : 0)
+              }
+            />
+            <div className="flex flex-col gap-1">
+              <Label
+                htmlFor="auto_cancel_apply_to_backlog"
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Apply to historical backlog
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                Off = only plans created after enabling are eligible (going
+                forward). On = every existing dormant plan is stopped too.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-[0.7rem]">Dormant window (days)</Label>
+            <Input
+              type="number"
+              min={1}
+              value={draft.auto_cancel_dormant_days}
+              disabled={!draft.auto_cancel_enabled}
+              onChange={(e) =>
+                set("auto_cancel_dormant_days", Number(e.target.value) || 0)
+              }
+              className="h-9 w-32"
+            />
+            <p className="mt-1 text-[0.65rem] text-muted-foreground leading-snug">
+              Days since creation after which an unapproved plan is stopped.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle className="text-base">Farm-to-farm chemical loaning</CardTitle>
+          <CardDescription>
+            Let a depleted farm request a chemical from a sibling farm; the source
+            farm's creator approves and the stock transfers across.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3 md:col-span-2">
+            <Checkbox
+              id="loaning_enabled"
+              checked={!!draft.loaning_enabled}
+              onCheckedChange={(v) => set("loaning_enabled", v ? 1 : 0)}
+            />
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="loaning_enabled" className="text-xs font-semibold cursor-pointer">
+                Enable chemical loaning
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                When off, the Chemical Loaning page is inert and no cross-farm
+                availability is shown.
+              </p>
+            </div>
+          </div>
+          <div>
+            <Label className="text-[0.7rem]">Depletion threshold (%)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={100}
+              value={draft.loaning_depletion_pct}
+              disabled={!draft.loaning_enabled}
+              onChange={(e) => set("loaning_depletion_pct", Number(e.target.value) || 0)}
+              className="h-9 w-32"
+            />
+            <p className="mt-1 text-[0.65rem] text-muted-foreground leading-snug">
+              Cross-farm availability unlocks when on-hand drops below this % of
+              the captured baseline.
+            </p>
+          </div>
+          <div>
+            <Label className="text-[0.7rem]">Request timeout (hours)</Label>
+            <Input
+              type="number"
+              min={1}
+              value={draft.loaning_timeout_hours}
+              disabled={!draft.loaning_enabled}
+              onChange={(e) => set("loaning_timeout_hours", Number(e.target.value) || 0)}
+              className="h-9 w-32"
+            />
+            <p className="mt-1 text-[0.65rem] text-muted-foreground leading-snug">
+              Pending requests auto-expire after this many hours.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle className="text-base">Daily progress email</CardTitle>
+          <CardDescription>
+            A black-and-white "Chemical Planning Progress Update" digest of
+            today's scheduled plans and their progress, per farm — to the GM,
+            approvers and creators (their farms only).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+            <Checkbox
+              id="progress_email_enabled"
+              checked={!!draft.progress_email_enabled}
+              onCheckedChange={(v) => set("progress_email_enabled", v ? 1 : 0)}
+            />
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="progress_email_enabled" className="text-xs font-semibold cursor-pointer">
+                Send the daily progress email
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                Sent once a day at the hour below. Farms with no plans that day
+                are skipped.
+              </p>
+            </div>
+          </div>
+          <div>
+            <Label className="text-[0.7rem]">Send hour (0–23, EAT)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={23}
+              value={draft.progress_email_hour}
+              disabled={!draft.progress_email_enabled}
+              onChange={(e) => set("progress_email_hour", Number(e.target.value) || 0)}
+              className="h-9 w-32"
+            />
+            <p className="mt-1 text-[0.65rem] text-muted-foreground leading-snug">
+              18 = 6pm / end of day. The job checks hourly and sends at this hour.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="lg:col-span-2 flex items-center justify-end gap-3 pt-1">
         {error && (
           <span className="text-xs text-destructive max-w-sm text-right">

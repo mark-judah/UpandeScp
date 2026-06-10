@@ -126,6 +126,71 @@ def chemical_stock_overview() -> dict:
     }
 
 
+@frappe.whitelist()
+def chemical_store_levels() -> dict:
+    """Comparative chemical levels across each farm's chemical-store warehouse.
+
+    Powers the Chemical Dashboard's farm-comparison view:
+      * ``stores``  — one per ``Chemical Store *`` warehouse, with its farm and a
+                      short display label.
+      * ``items``   — chemicals in stock anywhere, with their grand total.
+      * ``matrix``  — [{item_code, warehouse, qty}] for per-store / per-farm
+                      aggregation client-side.
+
+    Only the per-farm chemical stores are considered (greenhouse bins are
+    excluded), so the comparison is store-to-store / farm-to-farm."""
+    _check_perm()
+
+    stores = frappe.get_all(
+        "Warehouse",
+        filters={
+            "is_group": 0,
+            "disabled": 0,
+            "name": ("like", "Chemical Store%"),
+            "custom_farm": ("is", "set"),
+        },
+        fields=["name", "custom_farm"],
+        order_by="custom_farm, name",
+    )
+    if not stores:
+        return {"stores": [], "items": [], "matrix": []}
+
+    names = [s.name for s in stores]
+    rows = frappe.db.sql(
+        """SELECT b.item_code, b.warehouse, b.actual_qty AS qty,
+                  i.item_name, COALESCE(i.stock_uom, '') AS uom
+           FROM `tabBin` b JOIN `tabItem` i ON i.name = b.item_code
+           WHERE b.warehouse IN %(w)s AND i.item_group IN %(g)s AND b.actual_qty > 0""",
+        {"w": tuple(names), "g": _CHEMICAL_GROUPS},
+        as_dict=True,
+    )
+
+    items: dict = {}
+    matrix = []
+    for r in rows:
+        bucket = items.setdefault(r.item_code, {
+            "item_code": r.item_code,
+            "item_name": r.item_name or r.item_code,
+            "uom": r.uom,
+            "total": 0.0,
+        })
+        bucket["total"] += float(r.qty)
+        matrix.append({"item_code": r.item_code, "warehouse": r.warehouse, "qty": float(r.qty)})
+
+    def _label(name: str) -> str:
+        # "Chemical Store Kapkolia - KR" -> "Kapkolia - KR"
+        return name.replace("Chemical Store", "").strip(" -") or name
+
+    return {
+        "stores": [
+            {"warehouse": s.name, "farm": s.custom_farm, "label": _label(s.name)}
+            for s in stores
+        ],
+        "items": sorted(items.values(), key=lambda x: -x["total"]),
+        "matrix": matrix,
+    }
+
+
 # ----------------------------------------------------------------------
 # Spray Plan Transfers
 # ----------------------------------------------------------------------
@@ -402,6 +467,10 @@ def list_submitted_transfers(
         f"""
         SELECT se.name, se.posting_date, se.work_order,
                se.from_warehouse, se.to_warehouse,
+               se.custom_labels_printed AS labels_printed,
+               se.custom_labels_print_count AS labels_print_count,
+               se.custom_labels_printed_on AS labels_printed_on,
+               se.custom_labels_printed_by AS labels_printed_by,
                COALESCE(tw.custom_farm, fw.custom_farm, '') AS farm,
                wo.custom_greenhouse AS greenhouse,
                wo.custom_spray_type AS spray_type,
@@ -481,6 +550,10 @@ def list_submitted_transfers(
         r["qr_count"] = qr_counts.get(r["name"], 0)
         r["has_qr"] = r["qr_count"] > 0
         r["qr_image_url"] = qr_urls.get(r["name"], "")
+        r["labels_printed"] = bool(r.get("labels_printed"))
+        r["labels_print_count"] = int(r.get("labels_print_count") or 0)
+        r["labels_printed_on"] = str(r["labels_printed_on"]) if r.get("labels_printed_on") else ""
+        r["labels_printed_by"] = r.get("labels_printed_by") or ""
 
     farms = sorted({r["farm"] for r in rows if r.get("farm")})
     return {"rows": rows, "farms": farms}

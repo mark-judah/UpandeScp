@@ -39,6 +39,13 @@ import {
 import { call } from "@/lib/frappe";
 import { ymd } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { LifecycleTimeline } from "@/components/spray-plan/LifecycleTimeline";
+import {
+  fetchLifecycle,
+  fetchLifecycleSummary,
+  type Lifecycle,
+} from "@/lib/lifecycle-api";
+import { AlertTriangle } from "lucide-react";
 
 const ALL = "__all__";
 
@@ -85,6 +92,8 @@ export function Historical() {
   }>({ work_orders: [], greenhouses: [], farms: [] });
   const [loading, setLoading] = useState(true);
   const [openName, setOpenName] = useState<string | null>(null);
+  // Names whose scheduled spray window passed without spraying starting.
+  const [missed, setMissed] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -103,6 +112,20 @@ export function Historical() {
         if (!cancelled) setData(r);
       })
       .finally(() => !cancelled && setLoading(false));
+    // Pull the lifecycle summary in parallel so we can flag plans whose
+    // scheduled window elapsed without spraying. Best-effort — a failure
+    // just means no markers, not a broken page.
+    fetchLifecycleSummary({
+      from_date: from,
+      to_date: to,
+      farm: farm === ALL ? undefined : farm,
+      greenhouse: greenhouse === ALL ? undefined : greenhouse,
+    })
+      .then((rows) => {
+        if (!cancelled)
+          setMissed(new Set(rows.filter((r) => r.missed).map((r) => r.name)));
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -251,15 +274,23 @@ export function Historical() {
                       : "—"}
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "text-[0.6rem] capitalize",
-                        STATUS_TONE[w.status_state],
+                    <div className="flex flex-col items-start gap-1">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[0.6rem] capitalize",
+                          STATUS_TONE[w.status_state],
+                        )}
+                      >
+                        {w.status_label}
+                      </Badge>
+                      {missed.has(w.name) && (
+                        <span className="inline-flex items-center gap-1 text-[0.6rem] font-medium text-[var(--sd-data-red)]">
+                          <AlertTriangle className="h-3 w-3" />
+                          Missed window
+                        </span>
                       )}
-                    >
-                      {w.status_label}
-                    </Badge>
+                    </div>
                   </TableCell>
                   <TableCell>
                     <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -299,10 +330,13 @@ function WorkOrderDialog({
 }) {
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
+  const [lifecycle, setLifecycle] = useState<Lifecycle | null>(null);
+  const [lcLoading, setLcLoading] = useState(false);
 
   useEffect(() => {
     if (!name) {
       setData(null);
+      setLifecycle(null);
       return;
     }
     setLoading(true);
@@ -312,6 +346,12 @@ function WorkOrderDialog({
     )
       .then(setData)
       .finally(() => setLoading(false));
+    setLcLoading(true);
+    setLifecycle(null);
+    fetchLifecycle(name)
+      .then(setLifecycle)
+      .catch(() => setLifecycle(null))
+      .finally(() => setLcLoading(false));
   }, [name]);
 
   const wo = data?.work_order;
@@ -393,6 +433,18 @@ function WorkOrderDialog({
                 {loading ? "Loading…" : "No chemicals on this BOM."}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="p-3 shadow-none border">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle className="text-sm">Lifecycle</CardTitle>
+            <CardDescription>
+              Full progress from creation through spraying
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <LifecycleTimeline lifecycle={lifecycle} loading={lcLoading} />
           </CardContent>
         </Card>
 

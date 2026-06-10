@@ -74,6 +74,15 @@ def get_settings_bundle() -> dict:
             "weather_temp_red_min_c": settings.weather_temp_red_min_c or 0,
             "default_chemical_expense_account": settings.default_chemical_expense_account or "",
             "bypass_owner_check": int(settings.bypass_owner_check or 0),
+            "auto_cancel_enabled": int(settings.auto_cancel_enabled or 0),
+            "auto_cancel_apply_to_backlog": int(settings.auto_cancel_apply_to_backlog or 0),
+            "auto_cancel_dormant_days": settings.auto_cancel_dormant_days or 3,
+            "auto_cancel_activated_on": str(settings.auto_cancel_activated_on or ""),
+            "loaning_enabled": int(settings.loaning_enabled or 0),
+            "loaning_depletion_pct": settings.loaning_depletion_pct or 15,
+            "loaning_timeout_hours": settings.loaning_timeout_hours or 72,
+            "progress_email_enabled": int(settings.progress_email_enabled or 0),
+            "progress_email_hour": settings.progress_email_hour if settings.progress_email_hour is not None else 18,
             "allowed_farms": allowed_farms,
             "exclude_keywords": exclude_keywords,
         },
@@ -113,10 +122,25 @@ def save_spray_plan_settings(payload) -> dict:
         "weather_temp_red_max_c", "weather_temp_red_min_c",
         "default_chemical_expense_account",
         "bypass_owner_check",
+        "auto_cancel_enabled",
+        "auto_cancel_apply_to_backlog",
+        "auto_cancel_dormant_days",
+        "loaning_enabled",
+        "loaning_depletion_pct",
+        "loaning_timeout_hours",
+        "progress_email_enabled",
+        "progress_email_hour",
     ]
     for f in scalar_fields:
         if f in payload:
             settings.set(f, payload[f])
+
+    # Stamp the going-forward cutoff the first time auto-cancel is enabled.
+    # Once stamped it never moves, so toggling the feature off and on again
+    # keeps the original cutoff (plans created before first-enable stay in the
+    # "backlog" bucket).
+    if settings.auto_cancel_enabled and not settings.auto_cancel_activated_on:
+        settings.auto_cancel_activated_on = frappe.utils.now_datetime()
 
     # Rebuild child tables from scratch — simpler than diffing and the
     # set is small. The cache invalidator hooked to "Spray Plan Allowed

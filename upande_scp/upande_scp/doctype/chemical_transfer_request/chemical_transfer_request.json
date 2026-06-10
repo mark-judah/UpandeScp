@@ -1,0 +1,148 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "CTR-.#####",
+ "creation": "2026-06-10 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "requesting_farm",
+  "requesting_warehouse",
+  "workflow_state",
+  "column_break_1",
+  "item_code",
+  "item_name",
+  "uom",
+  "requested_qty",
+  "sources_section",
+  "sources",
+  "meta_section",
+  "reason",
+  "expires_on",
+  "rejected_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "requesting_farm",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Requesting Farm",
+   "options": "Farm",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "requesting_warehouse",
+   "fieldtype": "Link",
+   "label": "Requesting Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "default": "Draft",
+   "fieldname": "workflow_state",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "State",
+   "options": "Draft\nPending Approval\nApproved\nFulfilled\nRejected\nExpired",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Chemical",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "item_code.item_name",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Chemical Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Data",
+   "label": "UoM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Requested Qty",
+   "non_negative": 1,
+   "precision": "4",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sources_section",
+   "fieldtype": "Section Break",
+   "label": "Sources"
+  },
+  {
+   "description": "Up to two source farms; each split is approved by that farm's Spray Plan Creator.",
+   "fieldname": "sources",
+   "fieldtype": "Table",
+   "label": "Sources",
+   "options": "Chemical Transfer Request Source"
+  },
+  {
+   "fieldname": "meta_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "expires_on",
+   "fieldtype": "Datetime",
+   "label": "Expires On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rejected_reason",
+   "fieldtype": "Small Text",
+   "label": "Rejected Reason",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-06-10 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Chemical Transfer Request",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1, "delete": 1, "email": 1, "export": 1, "print": 1,
+   "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1
+  },
+  {
+   "create": 1, "delete": 1, "export": 1, "print": 1,
+   "read": 1, "report": 1, "role": "General Manager", "share": 1, "write": 1
+  },
+  {
+   "create": 1, "delete": 0, "export": 1, "print": 1,
+   "read": 1, "report": 1, "role": "Spray Plan Creator", "share": 1, "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "item_name"
+}

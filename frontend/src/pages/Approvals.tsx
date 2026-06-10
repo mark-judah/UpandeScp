@@ -74,9 +74,29 @@ import {
 } from "@/lib/spray-plan-api";
 import { approveDraftsBulk } from "@/lib/spray-plan-creator-api";
 import { ApprovalChemicalsTable } from "@/components/spray-plan/ApprovalChemicalsTable";
+import { LifecycleTimelineFor } from "@/components/spray-plan/LifecycleTimeline";
+import {
+  fetchLifecycleSummary,
+  type LifecycleSummaryRow,
+} from "@/lib/lifecycle-api";
 
 const ALL = "__all__";
-type StatusFilter = "pending" | "forwarded" | "all";
+// Pending/forwarded come from the approval feed; the four post-approval
+// stages come from the lifecycle summary so the GM sees the whole journey.
+type StatusFilter =
+  | "pending"
+  | "forwarded"
+  | "Chemical Issued"
+  | "Tank Mix Manufactured"
+  | "Spraying In Progress"
+  | "Completed";
+
+const STAGE_TABS: { key: StatusFilter; label: string }[] = [
+  { key: "Chemical Issued", label: "Chemical Issued" },
+  { key: "Tank Mix Manufactured", label: "Tank Mix" },
+  { key: "Spraying In Progress", label: "Spraying" },
+  { key: "Completed", label: "Completed" },
+];
 
 function defaultRange(): { from: string; to: string } {
   // Legacy default = today / today.
@@ -129,6 +149,8 @@ export function Approvals() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [stopConfirm, setStopConfirm] = useState(false);
   const [progress, setProgress] = useState<ProgressState>(INITIAL_PROGRESS);
+  const [summary, setSummary] = useState<LifecycleSummaryRow[]>([]);
+  const [stageExpanded, setStageExpanded] = useState<string | null>(null);
   const reloadTimerRef = useRef<number | null>(null);
 
   // ── Data loading ──────────────────────────────────────────────────
@@ -151,6 +173,16 @@ export function Approvals() {
       setAllWos(r.work_orders || []);
       setChecked(new Set());
       setExpanded(new Set());
+      // Post-approval stages come from the lifecycle summary. Best-effort —
+      // a failure just leaves the stage tabs empty, it doesn't break approvals.
+      fetchLifecycleSummary({
+        from_date: from || undefined,
+        to_date: to || undefined,
+        farm: farm === ALL ? undefined : farm,
+        greenhouse: greenhouse === ALL ? undefined : greenhouse,
+      })
+        .then(setSummary)
+        .catch(() => setSummary([]));
     } catch (e: any) {
       setAllWos([]);
       setErrorMsg(
@@ -194,10 +226,25 @@ export function Approvals() {
     [allWos],
   );
 
+  const stageCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    summary.forEach((r) => {
+      c[r.current_state] = (c[r.current_state] || 0) + 1;
+    });
+    return c;
+  }, [summary]);
+
+  const isStageTab = STAGE_TABS.some((t) => t.key === statusFilter);
+  const stageRows = useMemo(
+    () => summary.filter((r) => r.current_state === statusFilter),
+    [summary, statusFilter],
+  );
+
   const visibleWos = useMemo(() => {
     if (statusFilter === "pending") return allWos.filter((w) => !w.is_forwarded);
     if (statusFilter === "forwarded") return allWos.filter((w) => w.is_forwarded);
-    return allWos;
+    // Stage tabs render from the lifecycle summary, not the approval feed.
+    return [];
   }, [allWos, statusFilter]);
 
   // Drop checked WOs that are no longer visible after filter changes.
@@ -533,7 +580,7 @@ export function Approvals() {
           value={statusFilter}
           onValueChange={(v) => setStatusFilter(v as StatusFilter)}
         >
-          <TabsList>
+          <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="pending">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-500 mr-1.5" />
               Pending · {pendingCount}
@@ -542,7 +589,11 @@ export function Approvals() {
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 mr-1.5" />
               Forwarded · {forwardedCount}
             </TabsTrigger>
-            <TabsTrigger value="all">All · {allWos.length}</TabsTrigger>
+            {STAGE_TABS.map((t) => (
+              <TabsTrigger key={t.key} value={t.key}>
+                {t.label} · {stageCounts[t.key] || 0}
+              </TabsTrigger>
+            ))}
           </TabsList>
         </Tabs>
 
@@ -554,15 +605,13 @@ export function Approvals() {
           </Card>
         )}
 
-        {!errorMsg && !visibleWos.length && !loading && (
+        {!isStageTab && !errorMsg && !visibleWos.length && !loading && (
           <Card>
             <CardContent className="p-10 flex flex-col items-center gap-3 text-sm text-muted-foreground">
               <p>
                 {statusFilter === "pending"
                   ? "No pending spray plans — all have been forwarded."
-                  : statusFilter === "forwarded"
-                    ? "No forwarded plans in this selection."
-                    : "No work orders match the current filters."}
+                  : "No forwarded plans in this selection."}
               </p>
               <Button variant="outline" size="sm" onClick={clearFilters}>
                 Show All Dates
@@ -571,7 +620,18 @@ export function Approvals() {
           </Card>
         )}
 
-        {!errorMsg && visibleWos.length > 0 && (
+        {isStageTab && !errorMsg && (
+          <StageTable
+            rows={stageRows}
+            loading={loading}
+            expanded={stageExpanded}
+            onToggle={(name) =>
+              setStageExpanded((prev) => (prev === name ? null : name))
+            }
+          />
+        )}
+
+        {!isStageTab && !errorMsg && visibleWos.length > 0 && (
           <Card className="p-0">
             <CardContent className="p-0">
               <div className="flex items-center gap-2 px-3 py-2 border-b text-xs">
@@ -695,8 +755,10 @@ export function Approvals() {
                           <TableRow className="bg-muted/30 hover:bg-muted/30">
                             <TableCell colSpan={8} className="p-0">
                               <ApprovalChemicalsTable woName={w.name} />
-                              <div className="p-4">
+                              <div className="p-4 flex flex-col gap-4">
                                 <DetailPanel wo={w} />
+                                <Separator />
+                                <LifecycleTimelineFor workOrder={w.name} />
                               </div>
                             </TableCell>
                           </TableRow>
@@ -889,6 +951,104 @@ function DetailPanel({ wo }: { wo: PendingWorkOrder }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Stage table (post-approval lifecycle tabs) ─────────────────────
+function StageTable({
+  rows,
+  loading,
+  expanded,
+  onToggle,
+}: {
+  rows: LifecycleSummaryRow[];
+  loading: boolean;
+  expanded: string | null;
+  onToggle: (name: string) => void;
+}) {
+  if (!rows.length && !loading) {
+    return (
+      <Card>
+        <CardContent className="p-10 text-center text-sm text-muted-foreground">
+          No plans at this stage in the current selection.
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card className="p-0">
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Work Order</TableHead>
+              <TableHead>Greenhouse</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Scheduled</TableHead>
+              <TableHead className="w-10" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => {
+              const open = expanded === r.name;
+              return (
+                <Fragment key={r.name}>
+                  <TableRow className="cursor-pointer" onClick={() => onToggle(r.name)}>
+                    <TableCell className="text-xs font-medium">
+                      <a
+                        href={`/app/work-order/${encodeURIComponent(r.name)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {r.name}
+                      </a>
+                    </TableCell>
+                    <TableCell className="text-xs">{r.greenhouse || "—"}</TableCell>
+                    <TableCell className="text-xs">
+                      {r.spray_type ? (
+                        <Badge variant="outline" className="text-[0.65rem]">
+                          {r.spray_type}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums">
+                      <div className="flex items-center gap-2">
+                        {r.scheduled ? r.scheduled.slice(0, 16) : "—"}
+                        {r.missed && (
+                          <span className="inline-flex items-center gap-1 text-[0.6rem] font-medium text-[var(--sd-data-red)]">
+                            <XCircle className="h-3 w-3" />
+                            Missed
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 transition-transform text-muted-foreground",
+                          open && "rotate-180",
+                        )}
+                      />
+                    </TableCell>
+                  </TableRow>
+                  {open && (
+                    <TableRow className="bg-muted/30 hover:bg-muted/30">
+                      <TableCell colSpan={5} className="p-4">
+                        <LifecycleTimelineFor workOrder={r.name} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 

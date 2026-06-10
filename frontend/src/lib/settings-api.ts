@@ -25,6 +25,16 @@ export interface SprayPlanSettings {
   weather_temp_red_min_c: number;
   default_chemical_expense_account: string;
   bypass_owner_check: number;
+  auto_cancel_enabled: number;
+  auto_cancel_apply_to_backlog: number;
+  auto_cancel_dormant_days: number;
+  /** Read-only — stamped server-side when auto-cancel is first enabled. */
+  auto_cancel_activated_on: string;
+  loaning_enabled: number;
+  loaning_depletion_pct: number;
+  loaning_timeout_hours: number;
+  progress_email_enabled: number;
+  progress_email_hour: number;
   allowed_farms: { farm: string }[];
   exclude_keywords: { keyword: string }[];
 }

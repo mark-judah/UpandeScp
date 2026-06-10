@@ -17,6 +17,8 @@ import {
   Truck,
   QrCode,
   Warehouse,
+  Activity,
+  ArrowRightLeft,
 } from "lucide-react";
 import {
   Sidebar,
@@ -104,6 +106,13 @@ const NAV: NavSection[] = [
         icon: QrCode,
         requireRoles: [STORE_KEEPER_ROLE],
       },
+      {
+        kind: "view",
+        view: "chemical-progress",
+        label: "Chemical Progress",
+        icon: Activity,
+        requireRoles: [STORE_KEEPER_ROLE],
+      },
     ],
   },
   {
@@ -141,6 +150,13 @@ const NAV: NavSection[] = [
         label: "Chemical Stock",
         icon: Warehouse,
         requireRoles: ["Spray Plan Creator"],
+      },
+      {
+        kind: "view",
+        view: "chemical-loaning",
+        label: "Chemical Loaning",
+        icon: ArrowRightLeft,
+        requireRoles: ["Spray Plan Creator", "General Manager"],
       },
       {
         kind: "view",

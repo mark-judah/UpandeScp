@@ -212,7 +212,15 @@ doc_events = {
     # Manufacture -> "Chemical Issued"). Material Issue is fired later from
     # end_spray_session, not from this hook.
     "Stock Entry": {
-        "on_submit": "upande_scp.serverscripts.spray_plan_creator.stock_entry_state.on_submit",
+        "on_submit": [
+            "upande_scp.serverscripts.spray_plan_creator.stock_entry_state.on_submit",
+            # Capture chemical-store baselines when stock is received in.
+            "upande_scp.serverscripts.spray_plan_creator.loaning.capture_baseline_on_receipt",
+        ],
+    },
+    # Purchase Receipts into a farm chemical store also refresh the baseline.
+    "Purchase Receipt": {
+        "on_submit": "upande_scp.serverscripts.spray_plan_creator.loaning.capture_baseline_on_receipt",
     },
 }
 
@@ -237,6 +245,15 @@ scheduler_events = {
     },
     "daily": [
         "upande_scp.serverscripts.scouting_prewarm.daily_prewarm",
+        # Cancel AFP spray plans left unapproved for more than 3 days.
+        "upande_scp.serverscripts.spray_plan_creator.maintenance.auto_cancel_dormant_plans",
+    ],
+    "hourly": [
+        # Expire chemical loan requests that sat unanswered past their timeout.
+        "upande_scp.serverscripts.spray_plan_creator.loaning.expire_dormant_requests",
+        # Daily Chemical Planning Progress Update — sends at the GM-configured
+        # EAT hour (self-gated; once per day).
+        "upande_scp.serverscripts.send_chemical_progress_email.send_chemical_progress_email",
     ],
 }
 

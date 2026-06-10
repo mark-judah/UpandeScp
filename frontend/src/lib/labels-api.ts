@@ -26,6 +26,12 @@ export interface SubmittedTransferRow {
   /** First QR attachment URL — used by the live preview so the
    *  operator sees the real code, not a placeholder. */
   qr_image_url: string;
+  /** Print tracking — set the first time labels for this SE are generated.
+   *  Informational only; reprinting is always allowed and bumps the count. */
+  labels_printed: boolean;
+  labels_print_count: number;
+  labels_printed_on: string;
+  labels_printed_by: string;
 }
 
 export interface SubmittedTransfersResp {

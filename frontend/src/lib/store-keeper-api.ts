@@ -73,6 +73,30 @@ export async function fetchChemicalOverview(): Promise<ChemicalOverview> {
   return unwrap<ChemicalOverview>(r);
 }
 
+export interface StoreLevelStore {
+  warehouse: string;
+  farm: string;
+  label: string;
+}
+export interface StoreLevelItem {
+  item_code: string;
+  item_name: string;
+  uom: string;
+  total: number;
+}
+export interface ChemicalStoreLevels {
+  stores: StoreLevelStore[];
+  items: StoreLevelItem[];
+  matrix: ChemicalMatrixCell[];
+}
+
+export async function fetchChemicalStoreLevels(): Promise<ChemicalStoreLevels> {
+  const r = await call(
+    "upande_scp.serverscripts.store_keeper_api.chemical_store_levels",
+  );
+  return unwrap<ChemicalStoreLevels>(r);
+}
+
 export async function fetchDraftTransfers(opts: {
   farm?: string;
   from_date?: string;

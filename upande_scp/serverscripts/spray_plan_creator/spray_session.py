@@ -215,6 +215,81 @@ def register_csu_scan(
     return response
 
 
+def _transferred_into_csu(wo_name: str, wip: str) -> dict[str, float]:
+    """item_code -> qty actually transferred into the CSU for THIS Work Order
+    (from its submitted Material Transfer for Manufacture entries)."""
+    out: dict[str, float] = {}
+    rows = frappe.db.sql(
+        """SELECT sed.item_code AS item, SUM(sed.qty) AS qty
+           FROM `tabStock Entry Detail` sed
+           JOIN `tabStock Entry` se ON se.name = sed.parent
+           WHERE se.work_order = %s
+             AND se.purpose = 'Material Transfer for Manufacture'
+             AND se.docstatus = 1 AND sed.t_warehouse = %s
+           GROUP BY sed.item_code""",
+        (wo_name, wip),
+        as_dict=True,
+    )
+    for r in rows:
+        out[r.item] = flt(r.qty)
+    return out
+
+
+def _rebuild_manufacture_from_transfer(se_doc, wo_name: str, wip: str) -> None:
+    """Floor-plan-is-truth: replace the BOM-backflushed raw consumption lines
+    with the chemicals ACTUALLY transferred into the CSU for this WO.
+
+    The reused template BOM frequently disagrees with the spray plan — it can
+    demand chemicals that were never transferred (and only "succeed" because a
+    shared CSU happens to hold them from other WOs), producing the wrong recipe
+    and wrong quantities. The transfer == what was issued/scanned == the plan,
+    so we consume exactly that. The finished-good line(s) are preserved; raises
+    if the CSU received nothing for this WO.
+    """
+    tmap = _transferred_into_csu(wo_name, wip)
+    if not tmap:
+        frappe.throw(
+            f"Cannot manufacture {wo_name}: no chemicals were transferred into "
+            f"the CSU {wip!r}. Issue the chemicals first."
+        )
+    proto = None
+    for r in (se_doc.items or []):
+        if not r.get("is_finished_item"):
+            proto = r
+            break
+    keep = [r for r in (se_doc.items or []) if r.get("is_finished_item")]
+    se_doc.items = keep
+    for ic in tmap:
+        qty = flt(tmap[ic])
+        if qty <= 0:
+            continue
+        suom = frappe.db.get_value("Item", ic, "stock_uom")
+        val = flt(
+            frappe.db.get_value(
+                "Bin", {"item_code": ic, "warehouse": wip}, "valuation_rate"
+            )
+        )
+        row = se_doc.append("items", {})
+        row.item_code = ic
+        row.qty = qty
+        row.transfer_qty = qty
+        row.s_warehouse = wip
+        row.t_warehouse = None
+        row.uom = suom
+        row.stock_uom = suom
+        row.conversion_factor = 1.0
+        row.is_finished_item = 0
+        row.allow_zero_valuation_rate = 1
+        if val > 0:
+            row.basic_rate = val
+        if proto is not None and proto.get("expense_account"):
+            row.expense_account = proto.expense_account
+    idx = 1
+    for r in se_doc.items:
+        r.idx = idx
+        idx = idx + 1
+
+
 def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
     """Build Manufacture SE + SAL draft, flip WO to Tank Mix Manufactured.
 
@@ -233,6 +308,16 @@ def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
     se_doc = frappe.get_doc(se_data) if isinstance(se_data, dict) else se_data
     if not getattr(se_doc, "to_warehouse", None):
         se_doc.to_warehouse = wo.fg_warehouse or wo.custom_greenhouse
+
+    # Floor-plan-is-truth: rebuild the raw consumption from what was actually
+    # transferred into the CSU for this WO, instead of the template BOM's
+    # backflush (which can consume the wrong chemicals / quantities).
+    wip = getattr(wo, "wip_warehouse", None)
+    if not wip:
+        frappe.throw(
+            f"Cannot manufacture {wo.name}: no CSU (wip_warehouse) set."
+        )
+    _rebuild_manufacture_from_transfer(se_doc, wo.name, wip)
 
     # Stamp the greenhouse cost center on every SE row (raw consumption + FG)
     # so the per-chemical manufacture GL postings attribute to the greenhouse

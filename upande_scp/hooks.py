@@ -212,6 +212,11 @@ doc_events = {
     # Manufacture -> "Chemical Issued"). Material Issue is fired later from
     # end_spray_session, not from this hook.
     "Stock Entry": {
+        "before_validate": [
+            # Safety net: force any AFP Manufacture (desk, API, console, mobile)
+            # to consume what was transferred into the CSU, not the template BOM.
+            "upande_scp.serverscripts.spray_plan_creator.stock_entry_state.before_validate",
+        ],
         "on_submit": [
             "upande_scp.serverscripts.spray_plan_creator.stock_entry_state.on_submit",
             # Capture chemical-store baselines when stock is received in.

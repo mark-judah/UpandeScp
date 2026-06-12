@@ -433,6 +433,8 @@ def create_draft_spray_plan(payload):
     wo.custom_type = "Application Floor Plan"
     wo.workflow_state = "Pending Submission"
     wo.production_item = bom_meta["item"]
+    # bom_no is the picked tank-mix BOM only until we mint a per-plan BOM that
+    # actually matches this plan's chemicals (below).
     wo.bom_no = bom_meta["name"]
     wo.qty = 1
     wo.custom_cost_center = cost_center
@@ -440,6 +442,16 @@ def create_draft_spray_plan(payload):
     if wip_warehouse:
         wo.wip_warehouse = wip_warehouse
     _apply_payload(wo, payload)
+
+    # Mint a per-plan BOM (one per plan, for traceability + to keep bom_no in
+    # lockstep with the recipe). production_item stays the tank-mix FG item.
+    from upande_scp.serverscripts.spray_plan_creator.bom_resolver import (
+        create_bom_for_plan,
+    )
+    plan_bom = create_bom_for_plan(wo)
+    if plan_bom:
+        wo.bom_no = plan_bom
+
     wo.insert(ignore_permissions=True)
 
     warnings: list[str] = []
@@ -506,6 +518,7 @@ def update_draft_plan(name: str, payload):
     if isinstance(payload, str):
         payload = frappe.parse_json(payload)
     wo = _own_draft(name)
+    prev_bom = wo.bom_no  # superseded auto-BOM to retire after re-minting
     scope = _resolve_user_scope(user)
     _assert_in_scope(payload, scope)
     _validate_payload(payload, scope)
@@ -558,8 +571,22 @@ def update_draft_plan(name: str, payload):
     ])
 
     _apply_payload(wo, payload)
+
+    # Re-mint a per-plan BOM matching the (possibly edited) recipe, then retire
+    # the superseded auto-BOM if nothing else references it.
+    from upande_scp.serverscripts.spray_plan_creator.bom_resolver import (
+        cancel_orphan_plan_bom,
+        create_bom_for_plan,
+    )
+    plan_bom = create_bom_for_plan(wo)
+    if plan_bom:
+        wo.bom_no = plan_bom
+
     wo.flags.ignore_mandatory = True
     wo.save(ignore_permissions=True)
+
+    if plan_bom and prev_bom and prev_bom != plan_bom:
+        cancel_orphan_plan_bom(prev_bom, keep_wo=wo.name)
 
     warnings: list[str] = []
     gh_for_check = payload.get("custom_greenhouse") or wo.custom_greenhouse

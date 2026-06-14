@@ -102,6 +102,7 @@ def create_bom_for_plan(wo) -> str | None:
             "stock_uom": suom,
             "qty_consumed_per_unit": rate,
             "custom_application_rate": rate,
+            "custom_application_rateper_ha_": rate,
             "include_item_in_manufacturing": 1,
             "conversion_factor": 1,
         })

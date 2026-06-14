@@ -80,6 +80,12 @@ def create_bom_for_plan(wo) -> str | None:
     farm = _plan_farm(wo)
     if farm:
         bom.custom_farm = farm
+    # 1:1 backlink to the originating plan. On the draft-edit path the WO already
+    # has a name, so we can set it here; on the create path the WO is unsaved
+    # (no name yet) and the caller backfills it post-insert (see set_plan_bom_wo).
+    wo_name = getattr(wo, "name", None)
+    if wo_name:
+        bom.custom_work_order = wo_name
     bom.uom = TANK_MIX_UOM
     bom.quantity = 1
     bom.is_active = 1
@@ -114,6 +120,18 @@ def create_bom_for_plan(wo) -> str | None:
     bom.insert()
     bom.submit()
     return bom.name
+
+
+def set_plan_bom_wo(bom_name: str | None, wo_name: str | None) -> None:
+    """Backfill the BOM's plan backlink (``custom_work_order``).
+
+    Needed on the create path, where the BOM is minted before the Work Order is
+    inserted and thus before it has a name. ``set_value`` writes the field on the
+    already-submitted BOM directly (a backlink, not a recipe change).
+    """
+    if not bom_name or not wo_name:
+        return
+    frappe.db.set_value("BOM", bom_name, "custom_work_order", wo_name)
 
 
 def cancel_orphan_plan_bom(bom_name: str | None, keep_wo: str | None = None) -> bool:

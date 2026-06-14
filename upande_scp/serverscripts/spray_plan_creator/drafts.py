@@ -447,12 +447,17 @@ def create_draft_spray_plan(payload):
     # lockstep with the recipe). production_item stays the tank-mix FG item.
     from upande_scp.serverscripts.spray_plan_creator.bom_resolver import (
         create_bom_for_plan,
+        set_plan_bom_wo,
     )
     plan_bom = create_bom_for_plan(wo)
     if plan_bom:
         wo.bom_no = plan_bom
 
     wo.insert(ignore_permissions=True)
+
+    # The plan BOM was minted before the WO had a name; backfill the 1:1 backlink.
+    if plan_bom:
+        set_plan_bom_wo(plan_bom, wo.name)
 
     warnings: list[str] = []
     dup_warning = _build_duplicate_warning(

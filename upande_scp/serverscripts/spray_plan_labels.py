@@ -32,6 +32,8 @@ import frappe
 import pdfkit
 from frappe.utils import escape_html
 
+from upande_scp.serverscripts.qr_generator import build_chemical_qr_payload
+
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")
 
 # wkhtmltopdf 0.12.x (unpatched Qt) silently applies a 0.768x scale to
@@ -329,6 +331,11 @@ def _collect_labels(se_names: List[str], prefer_simple_qr: bool = False):
 					"scheduled": scheduled,
 					"spray_type": spray_type,
 					"greenhouse": greenhouse,
+					"qr_payload": build_chemical_qr_payload(
+						chem_name,
+						item.qty if item else None,
+						(item.stock_uom or "") if item else "",
+					),
 				}
 			)
 			added += 1

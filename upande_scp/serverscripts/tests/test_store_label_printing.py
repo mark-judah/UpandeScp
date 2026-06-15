@@ -39,5 +39,23 @@ class TestToPrintJob(unittest.TestCase):
         self.assertEqual(job["spray_type"], "")
 
 
+class TestRecentDates(unittest.TestCase):
+    def test_dedupes_and_sorts_desc(self):
+        from upande_scp.serverscripts.store_label_printing import _distinct_dates
+        rows = [{"posting_date": "2026-06-10"}, {"posting_date": "2026-06-12"},
+                {"posting_date": "2026-06-10"}]
+        self.assertEqual(_distinct_dates(rows), ["2026-06-12", "2026-06-10"])
+
+    def test_stringifies_date_objects(self):
+        import datetime
+        from upande_scp.serverscripts.store_label_printing import _distinct_dates
+        rows = [{"posting_date": datetime.date(2026, 6, 9)}]
+        self.assertEqual(_distinct_dates(rows), ["2026-06-09"])
+
+    def test_empty(self):
+        from upande_scp.serverscripts.store_label_printing import _distinct_dates
+        self.assertEqual(_distinct_dates([]), [])
+
+
 if __name__ == "__main__":
     unittest.main()

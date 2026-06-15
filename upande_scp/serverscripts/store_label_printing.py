@@ -88,3 +88,49 @@ def mark_labels_printed(se_names) -> dict:
     _stamp_labels_printed(set(se_names))
     frappe.db.commit()
     return {"stamped": len(set(se_names))}
+
+
+@frappe.whitelist()
+def get_label_config() -> dict:
+    """Canonical label tier table (shared/label_tiers.json) for the app's
+    live preview + ZPL, kept in lockstep with the web preview and PDF."""
+    store_keeper_api._check_perm()
+    from upande_scp.serverscripts.spray_plan_labels import _load_tiers
+    return _load_tiers()
+
+
+def _distinct_dates(rows) -> list:
+    """Distinct posting_date strings (YYYY-MM-DD), newest first."""
+    seen = []
+    for r in rows:
+        d = r.get("posting_date")
+        if not d:
+            continue
+        s = str(d)
+        if s not in seen:
+            seen.append(s)
+    return sorted(seen, reverse=True)
+
+
+@frappe.whitelist()
+def get_label_farms() -> dict:
+    """Farm list for the store Labels farm dropdown."""
+    listing = store_keeper_api.list_submitted_transfers()
+    return {"farms": listing.get("farms", [])}
+
+
+@frappe.whitelist()
+def get_label_dates(farm: str | None = None, days: int = 60) -> dict:
+    """Recent posting dates (within ``days``) that have printable labels for
+    ``farm`` — i.e. submitted transfers that actually carry a QR. Used to
+    highlight dates in the store calendar."""
+    if not farm:
+        frappe.throw("farm is required")
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        days = 60
+    cutoff = frappe.utils.add_days(frappe.utils.nowdate(), -abs(days))
+    listing = store_keeper_api.list_submitted_transfers(farm=farm, from_date=cutoff)
+    rows = [r for r in listing.get("rows", []) if r.get("has_qr")]
+    return {"dates": _distinct_dates(rows)}

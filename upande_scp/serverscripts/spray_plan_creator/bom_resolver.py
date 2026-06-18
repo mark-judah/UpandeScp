@@ -87,8 +87,9 @@ def bom_item_payload(item_code, qty, rate, stock_uom) -> dict:
 
 
 def create_bom_for_plan(wo) -> str | None:
-    """Create + submit a NEW BOM whose per-1000L rates equal the WO's recipe.
+    """Create + submit a NEW BOM whose item stock_qty equal the WO's absolute required_qty.
 
+    Per-1000L rates are stored in ``custom_application_rate`` for display.
     Returns the new BOM name, or None if the plan has no FG item / no chemicals.
     Always creates a fresh BOM (no reuse). ``is_default`` is left 0 so the FG
     item's default BOM is untouched.

@@ -33,5 +33,24 @@ class TestBuildBomRows(unittest.TestCase):
         self.assertEqual(set(rows), {"X"})
 
 
+class TestBomItemPayload(unittest.TestCase):
+    def test_stock_qty_is_absolute_not_rate(self):
+        from upande_scp.serverscripts.spray_plan_creator.bom_resolver import (
+            bom_item_payload,
+        )
+        row = bom_item_payload("1114009", 0.006, 1.0, "Kilogram")
+        # The fix: physical consumption fields hold the ABSOLUTE qty...
+        self.assertEqual(row["qty"], 0.006)
+        self.assertEqual(row["stock_qty"], 0.006)
+        self.assertEqual(row["qty_consumed_per_unit"], 0.006)
+        # ...and the per-1000L rate only lands on the display fields.
+        self.assertEqual(row["custom_application_rate"], 1.0)
+        self.assertEqual(row["custom_application_rateper_ha_"], 1.0)
+        self.assertEqual(row["uom"], "Kilogram")
+        self.assertEqual(row["stock_uom"], "Kilogram")
+        self.assertEqual(row["include_item_in_manufacturing"], 1)
+        self.assertEqual(row["conversion_factor"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

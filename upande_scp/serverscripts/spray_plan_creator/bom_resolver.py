@@ -62,6 +62,27 @@ def build_bom_rows(pairs, water_volume) -> dict[str, dict[str, float]]:
     return rows
 
 
+def bom_item_payload(item_code, qty, rate, stock_uom) -> dict:
+    """One ``bom.items`` row for a per-plan BOM.
+
+    ``qty``/``stock_qty``/``qty_consumed_per_unit`` all carry the ABSOLUTE plan
+    quantity so a BOM backflush at ``fg_completed_qty == BOM.quantity`` equals
+    the transfer; the per-1000L ``rate`` lands only on the display fields.
+    """
+    return {
+        "item_code": item_code,
+        "qty": qty,
+        "stock_qty": qty,
+        "uom": stock_uom,
+        "stock_uom": stock_uom,
+        "qty_consumed_per_unit": qty,
+        "custom_application_rate": rate,
+        "custom_application_rateper_ha_": rate,
+        "include_item_in_manufacturing": 1,
+        "conversion_factor": 1,
+    }
+
+
 def create_bom_for_plan(wo) -> str | None:
     """Create + submit a NEW BOM whose per-1000L rates equal the WO's recipe.
 

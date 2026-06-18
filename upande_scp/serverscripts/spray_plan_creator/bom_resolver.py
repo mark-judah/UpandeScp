@@ -37,22 +37,29 @@ def _plan_farm(wo) -> str | None:
     return None
 
 
-def rate_recipe_from_wo(wo) -> dict[str, float]:
-    """item_code -> per-1000L rate, derived from required_items + water volume.
+def build_bom_rows(pairs, water_volume) -> dict[str, dict[str, float]]:
+    """item_code -> {"qty": absolute, "rate": per-1000L}, from (code, required_qty) pairs.
 
-    ``required_qty`` is the absolute amount for this plan's water volume, so the
-    rate is ``required_qty / (water_volume / 1000)``. With no water volume we
-    treat the entered qty as the rate.
+    ``qty`` is the absolute amount for this plan (== the WO ``required_qty`` ==
+    the transfer); it becomes the BOM item ``stock_qty`` so a guard-down BOM
+    backflush at ``fg_completed_qty == wo.qty == BOM.quantity == 1`` consumes
+    exactly the transfer. ``rate`` is the per-1000L recipe rate
+    (``required_qty / (water_volume/1000)``), kept for display in
+    ``custom_application_rate``. With no water volume the rate equals the qty
+    (factor 1). Blank codes are skipped; duplicate codes are summed.
     """
-    wv = flt(getattr(wo, "custom_water_volume", 0))
+    wv = flt(water_volume)
     factor = (wv / 1000.0) if wv > 0 else 1.0
-    recipe: dict[str, float] = {}
-    for r in (wo.required_items or []):
-        if not r.item_code:
+    rows: dict[str, dict[str, float]] = {}
+    for code, required_qty in pairs:
+        if not code:
             continue
-        rate = flt(r.required_qty) / factor if factor else flt(r.required_qty)
-        recipe[r.item_code] = flt(recipe.get(r.item_code, 0.0)) + rate
-    return recipe
+        rq = flt(required_qty)
+        rate = rq / factor if factor else rq
+        agg = rows.setdefault(code, {"qty": 0.0, "rate": 0.0})
+        agg["qty"] = flt(agg["qty"]) + rq
+        agg["rate"] = flt(agg["rate"]) + rate
+    return rows
 
 
 def create_bom_for_plan(wo) -> str | None:

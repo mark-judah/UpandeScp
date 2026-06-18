@@ -8,9 +8,12 @@ plan).
 Design (see docs/superpowers/specs/2026-06-12-per-recipe-tank-mix-bom-design.md):
   * The tank mix is the FG item (``pm`` / ``dm`` / ``th`` / …).
   * We ALWAYS create a fresh BOM (no dedup) — 1:1 plan↔BOM traceability.
-  * The BOM stores per-1000L rates (``quantity = 1 Tank Mix (1000L)``); the WO's
-    ``required_items`` carry the water-scaled absolute qtys, so
-    ``rate = required_qty × 1000 / water_volume``.
+  * The BOM stores the ABSOLUTE per-plan qtys as ``stock_qty`` (== the WO's
+    ``required_items`` == the transfer), with ``quantity = 1 Tank Mix (1000L)``
+    and ``wo.qty = 1``, so a BOM backflush reproduces the transfer even with the
+    ``before_validate`` guard down. The per-1000L recipe rate
+    (``required_qty × 1000 / water_volume``) is kept in ``custom_application_rate``
+    for display.
   * On a draft re-edit the previously auto-assigned BOM is cancelled if nothing
     real references it (see ``cancel_orphan_plan_bom``).
 
@@ -91,8 +94,9 @@ def create_bom_for_plan(wo) -> str | None:
     item's default BOM is untouched.
     """
     fg_item = getattr(wo, "production_item", None)
-    recipe = rate_recipe_from_wo(wo)
-    if not fg_item or not recipe:
+    pairs = [(r.item_code, r.required_qty) for r in (wo.required_items or [])]
+    rows = build_bom_rows(pairs, getattr(wo, "custom_water_volume", 0))
+    if not fg_item or not rows:
         return None
 
     bom = frappe.new_doc("BOM")
@@ -123,23 +127,12 @@ def create_bom_for_plan(wo) -> str | None:
     if getattr(wo, "custom_water_hardness", None):
         bom.custom_water_hardness = wo.custom_water_hardness
 
-    for code in recipe:
-        rate = flt(recipe[code])
-        if rate <= 0:
+    for code, agg in rows.items():
+        qty = flt(agg["qty"])
+        if qty <= 0:
             continue
         suom = frappe.db.get_value("Item", code, "stock_uom")
-        bom.append("items", {
-            "item_code": code,
-            "qty": rate,
-            "stock_qty": rate,
-            "uom": suom,
-            "stock_uom": suom,
-            "qty_consumed_per_unit": rate,
-            "custom_application_rate": rate,
-            "custom_application_rateper_ha_": rate,
-            "include_item_in_manufacturing": 1,
-            "conversion_factor": 1,
-        })
+        bom.append("items", bom_item_payload(code, qty, flt(agg["rate"]), suom))
 
     if not bom.items:
         return None

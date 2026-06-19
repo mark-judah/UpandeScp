@@ -26,6 +26,8 @@ from __future__ import annotations
 import frappe
 from frappe.utils import flt
 
+from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
+
 TANK_MIX_UOM = "Tank Mix (1000L)"
 CHEMICAL_MIX = "Chemical Mix"
 
@@ -51,17 +53,14 @@ def build_bom_rows(pairs, water_volume) -> dict[str, dict[str, float]]:
     ``custom_application_rate``. With no water volume the rate equals the qty
     (factor 1). Blank codes are skipped; duplicate codes are summed.
     """
-    wv = flt(water_volume)
-    factor = (wv / 1000.0) if wv > 0 else 1.0
     rows: dict[str, dict[str, float]] = {}
     for code, required_qty in pairs:
         if not code:
             continue
         rq = flt(required_qty)
-        rate = rq / factor if factor else rq
         agg = rows.setdefault(code, {"qty": 0.0, "rate": 0.0})
         agg["qty"] = flt(agg["qty"]) + rq
-        agg["rate"] = flt(agg["rate"]) + rate
+        agg["rate"] = flt(agg["rate"]) + absolute_to_rate(rq, water_volume)
     return rows
 
 

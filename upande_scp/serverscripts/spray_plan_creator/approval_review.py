@@ -4,6 +4,8 @@ from __future__ import annotations
 import frappe
 from frappe.utils import add_days, get_datetime, now_datetime
 
+from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
+
 # Table MultiSelect child doctypes for Item IRAC/FRAC codes
 _IRAC_CHILD_TABLE = "IRAC Code Filter"
 _FRAC_CHILD_TABLE = "FRAC Code Filter"
@@ -32,7 +34,9 @@ def get_approval_review(wo_name: str) -> dict:
         # Fetch FRAC codes for this item via child table (live DB col: frac_code)
         frac_codes = _get_item_codes(r.item_code, _FRAC_CHILD_TABLE, "custom_frac", "frac_code") if item_exists else []
 
-        rate = r.required_qty
+        # Rate limits (custom_lower_rate_limit/custom_upper_rate_limit) are
+        # per-1000 L; required_qty is the absolute, so derive the rate to compare.
+        rate = absolute_to_rate(r.required_qty, wo.custom_water_volume)
         rate_status = "ok"
         if rate is not None:
             if lower is not None and rate < lower:

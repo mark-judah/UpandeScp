@@ -32,6 +32,7 @@ from upande_scp.serverscripts.spray_plan_creator.auto_material_issue import (
     build_and_submit_material_issue,
     resolve_supervisor_employee,
 )
+from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
 from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
 
 AFP_TYPE = "Application Floor Plan"
@@ -549,7 +550,10 @@ def _create_sal_draft(wo, manufacture_se) -> str:
         sal_payload["pesticides"].append(
             {
                 "pesticide_name": r.item_name or r.item_code,
-                "rate": str(r.required_qty) if r.required_qty else None,
+                "rate": (
+                    str(absolute_to_rate(r.required_qty, wo.custom_water_volume))
+                    if r.required_qty else None
+                ),
                 "pesticide_quantity": flt(r.required_qty) if r.required_qty else None,
             }
         )

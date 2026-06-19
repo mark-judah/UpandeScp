@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 import frappe
+from frappe.utils import flt
 
 from .scope import _resolve_user_scope
 from .validation import (
@@ -367,6 +368,8 @@ def _validate_payload(payload: dict, scope: dict) -> None:
     chems = payload.get("chemicals") or []
     if not chems and not payload.get("_allow_zero_chems"):
         frappe.throw("Add at least one chemical to the plan.")
+    if flt(payload.get("custom_water_volume")) <= 0:
+        frappe.throw("Water volume (L) is required and must be greater than zero.")
     limits = {}
     for c in chems:
         validate_rate_in_limits(

@@ -371,6 +371,72 @@ def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
 # ──────────────────────────── manufacture_tank_mix ───────────────────────────
 
 
+def build_manufacture_reconciliation(wo, manufacture_se) -> dict[str, Any]:
+    """Per-chemical consumed/transferred/required + scanned, with match flags.
+
+    Drives the mobile post-manufacture modal: did the quantities that went into
+    the tank mix add up to what was transferred/required, and was every required
+    chemical scanned? ``quantities_match`` is True only when, for every required
+    item, consumed == transferred == required (tol 1e-6); ``all_scanned`` is True
+    when every required chemical has a scan row.
+    """
+    consumed: dict[str, float] = {}
+    produced = 0.0
+    for it in (manufacture_se.items or []):
+        if it.s_warehouse and not it.t_warehouse:
+            consumed[it.item_code] = consumed.get(it.item_code, 0.0) + flt(it.qty)
+        if it.t_warehouse and not it.s_warehouse:
+            produced += flt(it.qty)
+    scanned_codes = _scanned_codes(wo)
+    chemicals = []
+    quantities_match = True
+    for r in (wo.required_items or []):
+        c, t, rq = flt(consumed.get(r.item_code, 0.0)), flt(r.transferred_qty), flt(r.required_qty)
+        if abs(c - t) > 1e-6 or abs(c - rq) > 1e-6:
+            quantities_match = False
+        chemicals.append({
+            "item_code": r.item_code, "item_name": r.item_name,
+            "consumed": c, "transferred": t, "required": rq,
+            "scanned": r.item_code in scanned_codes,
+        })
+    return {
+        "manufactured": True,
+        "produced_qty": produced,
+        "chemicals": chemicals,
+        "all_scanned": _required_chemical_codes(wo).issubset(scanned_codes),
+        "quantities_match": quantities_match,
+    }
+
+
+@frappe.whitelist()
+def get_manufacture_reconciliation(work_order: str) -> dict[str, Any]:
+    """Reconciliation block for a WO's tank-mix manufacture (modal data).
+
+    Same shape as the ``reconciliation`` key in ``manufacture_tank_mix``'s
+    response, but callable any time (e.g. when the app re-opens the screen).
+    Returns ``manufactured: False`` with progress rows if no Manufacture SE yet.
+    """
+    if not work_order:
+        frappe.throw("work_order is required.")
+    wo = frappe.get_doc("Work Order", work_order)
+    _ensure_afp(wo)
+    se_name = _find_submitted_manufacture_se(wo.name)
+    if se_name:
+        return build_manufacture_reconciliation(wo, frappe.get_doc("Stock Entry", se_name))
+    scanned_codes = _scanned_codes(wo)
+    return {
+        "manufactured": False,
+        "produced_qty": 0.0,
+        "chemicals": [{
+            "item_code": r.item_code, "item_name": r.item_name,
+            "consumed": 0.0, "transferred": flt(r.transferred_qty),
+            "required": flt(r.required_qty), "scanned": r.item_code in scanned_codes,
+        } for r in (wo.required_items or [])],
+        "all_scanned": _required_chemical_codes(wo).issubset(scanned_codes),
+        "quantities_match": False,
+    }
+
+
 @frappe.whitelist()
 def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
     """Explicitly manufacture the tank mix for a fully-scanned WO.
@@ -397,11 +463,16 @@ def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
         STATE_SPRAYING_IN_PROGRESS,
         STATE_COMPLETED,
     ):
+        manu = _find_submitted_manufacture_se(wo.name)
         return {
             "workflow_state": current_state,
-            "manufacture_se": _find_submitted_manufacture_se(wo.name),
+            "manufacture_se": manu,
             "sal": wo.get("custom_spray_application_logsheet"),
             "already": True,
+            "reconciliation": (
+                build_manufacture_reconciliation(wo, frappe.get_doc("Stock Entry", manu))
+                if manu else None
+            ),
         }
 
     if current_state != STATE_CHEMICAL_ISSUED:
@@ -433,13 +504,20 @@ def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
             "manufacture_se": existing_se,
             "sal": wo.get("custom_spray_application_logsheet"),
             "already": True,
+            "reconciliation": build_manufacture_reconciliation(
+                wo, frappe.get_doc("Stock Entry", existing_se)
+            ),
         }
 
     manu_se_name, sal_name = _promote_to_tank_mix_manufactured(wo, None)
+    wo = frappe.get_doc("Work Order", work_order)   # reload post-manufacture
     return {
         "workflow_state": STATE_TANK_MIX_MANUFACTURED,
         "manufacture_se": manu_se_name,
         "sal": sal_name,
+        "reconciliation": build_manufacture_reconciliation(
+            wo, frappe.get_doc("Stock Entry", manu_se_name)
+        ),
     }
 
 
@@ -720,6 +798,15 @@ def end_spray_session(work_order: str) -> dict[str, Any]:
     wo = frappe.get_doc("Work Order", work_order)
     _ensure_afp(wo)
 
+    # Idempotent: a double-tap / retry on an already-finished plan returns
+    # success instead of throwing, so the app's Stop "just works".
+    if current_state == STATE_COMPLETED:
+        return {
+            "workflow_state": STATE_COMPLETED,
+            "sal_submitted": wo.custom_spray_application_logsheet,
+            "already": True,
+        }
+
     if current_state != STATE_SPRAYING_IN_PROGRESS:
         frappe.throw(
             f"Cannot end spray: Work Order is in {current_state!r}, expected "
@@ -746,7 +833,10 @@ def end_spray_session(work_order: str) -> dict[str, Any]:
             f"Work Order {wo.name}."
         )
     manu_se = frappe.get_doc("Stock Entry", manu_name)
-    supervisor_emp = _resolve_employee_from_session()
+    # Resolve the supervisor from the WO's spray team (not the session user) so
+    # Stop never throws just because the person pressing it has no linked
+    # Employee — the same robust resolution the Material Issue already uses.
+    supervisor_emp = resolve_supervisor_employee(wo)
     now = now_datetime()
 
     # Fill SAL closing fields, then submit.

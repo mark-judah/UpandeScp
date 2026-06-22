@@ -482,6 +482,7 @@ export function RoseScouting() {
         subtitle="Single-day · zones scouted form the scout's walking path"
         value={filters}
         onChange={setFilters}
+        showCrop={false}
       />
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[3fr_1fr]">

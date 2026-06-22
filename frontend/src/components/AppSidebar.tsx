@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/sidebar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarUser } from "@/components/SidebarUser";
-import { viewHash, type View } from "@/lib/router";
+import { routeHash, type View } from "@/lib/router";
 import { bootstrap } from "@/lib/frappe";
 import upandeLogo from "@/assets/Upande_logo.png";
 
@@ -78,7 +78,7 @@ interface NavSection {
 
 const STORE_KEEPER_ROLE = "Store Keeper";
 
-const NAV: NavSection[] = [
+const ROSE_NAV: NavSection[] = [
   // Store-Keeper exclusive section — only role that sees it, and the
   // ONLY section visible when the user holds the Store Keeper role
   // (every other section sets hideForRoles=[STORE_KEEPER_ROLE]).
@@ -127,8 +127,7 @@ const NAV: NavSection[] = [
     label: "Scouting",
     hideForRoles: [STORE_KEEPER_ROLE],
     items: [
-      { kind: "view", view: "rose", label: "Rose Scouting", icon: Flower },
-      { kind: "view", view: "avocado", label: "Avocado", icon: Sprout },
+      { kind: "view", view: "scouting-map", label: "Rose Scouting", icon: Flower },
       { kind: "view", view: "observations", label: "Observations", icon: Search },
       { kind: "view", view: "heatmaps", label: "Heatmaps", icon: Flame },
       { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
@@ -191,6 +190,63 @@ const NAV: NavSection[] = [
   },
 ];
 
+// Avocado is its own app: a parallel sidebar reached via the crop switcher.
+// It reuses the rose page components forced to crop = Avocado, so avocado
+// gets its own dashboards/trends/scouting scoped to avocado farms.
+// It reuses the rose page components forced to the crop in the route, so the
+// crop gets its own dashboards/trends/scouting scoped to its farms.
+const AVOCADO_NAV: NavSection[] = [
+  {
+    label: "Overview",
+    items: [
+      { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
+      { kind: "view", view: "trends", label: "Trends", icon: LineChart },
+    ],
+  },
+  {
+    label: "Scouting",
+    items: [
+      { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
+      { kind: "view", view: "observations", label: "Observations", icon: Search },
+      { kind: "view", view: "heatmaps", label: "Heatmaps", icon: Flame },
+      { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
+    ],
+  },
+  {
+    label: "Crop Protection",
+    items: [
+      { kind: "view", view: "jobsheets", label: "Job Sheets", icon: ClipboardList },
+    ],
+  },
+];
+
+// Generic scouting nav for any crop that isn't rose and has no bespoke nav
+// yet — so a newly-scouted crop appears with a working sidebar automatically.
+const DEFAULT_CROP_NAV: NavSection[] = [
+  {
+    label: "Overview",
+    items: [
+      { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
+      { kind: "view", view: "trends", label: "Trends", icon: LineChart },
+    ],
+  },
+  {
+    label: "Scouting",
+    items: [
+      { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
+      { kind: "view", view: "observations", label: "Observations", icon: Search },
+      { kind: "view", view: "heatmaps", label: "Heatmaps", icon: Flame },
+      { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
+    ],
+  },
+];
+
+function navForCrop(crop: string): NavSection[] {
+  if (crop === "rose") return ROSE_NAV;
+  if (crop === "avocado") return AVOCADO_NAV;
+  return DEFAULT_CROP_NAV;
+}
+
 function userHasAnyRole(required: string[] | undefined, userRoles: string[]): boolean {
   if (!required || required.length === 0) return true;
   return required.some((r) => userRoles.includes(r));
@@ -226,15 +282,19 @@ function isHiddenForUser(
 }
 
 export function AppSidebar({
+  crop,
   view,
   onNavigate,
 }: {
+  crop: string;
   view: View;
   onNavigate: (next: View) => void;
 }) {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const roles = bootstrap().roles || [];
+
+  const nav = navForCrop(crop);
 
   return (
     <Sidebar collapsible="icon">
@@ -261,7 +321,7 @@ export function AppSidebar({
       <SidebarContent className="overflow-hidden p-0 group-data-[collapsible=icon]:p-0">
         <ScrollArea className="h-full w-full">
           <div className="flex flex-col gap-1 p-2 group-data-[collapsible=icon]:p-1">
-            {NAV.map((section) => {
+            {nav.map((section) => {
               if (isHiddenForUser(section.hideForRoles, roles)) return null;
               const visibleItems = section.items.filter(
                 (item) =>
@@ -287,7 +347,7 @@ export function AppSidebar({
                             >
                               {item.kind === "view" ? (
                                 <a
-                                  href={viewHash(item.view)}
+                                  href={routeHash({ crop, view: item.view })}
                                   onClick={(e) => {
                                     e.preventDefault();
                                     onNavigate(item.view);

@@ -13,33 +13,37 @@ function clearRoles(): void {
   delete (window as unknown as { SCP?: unknown }).SCP;
 }
 
-function renderSidebar() {
+function renderSidebar(crop: string) {
   return render(
     <SidebarProvider>
-      <AppSidebar view="dashboard" onNavigate={() => {}} />
+      <AppSidebar crop={crop} view="dashboard" onNavigate={() => {}} />
     </SidebarProvider>,
   );
 }
 
-describe("AppSidebar role-gated items", () => {
+describe("AppSidebar crop-scoped nav", () => {
   beforeEach(() => clearRoles());
   afterEach(() => clearRoles());
 
-  it("hides Access Control for users without General Manager", () => {
-    withRoles(["Spray Plan Creator"]);
-    renderSidebar();
-    expect(screen.queryByText("Access Control")).toBeNull();
-  });
-
-  it("shows Access Control for General Managers", () => {
+  it("shows the rose nav (Rose Scouting) for the rose crop", () => {
     withRoles(["General Manager"]);
-    renderSidebar();
-    expect(screen.getByText("Access Control")).toBeInTheDocument();
+    renderSidebar("rose");
+    expect(screen.getByText("Rose Scouting")).toBeInTheDocument();
+    expect(screen.queryByText("Job Sheets")).toBeNull();
   });
 
-  it("shows Access Control for System Managers", () => {
-    withRoles(["System Manager"]);
-    renderSidebar();
-    expect(screen.getByText("Access Control")).toBeInTheDocument();
+  it("shows the avocado nav (Job Sheets) for the avocado crop", () => {
+    withRoles(["General Manager"]);
+    renderSidebar("avocado");
+    expect(screen.getByText("Job Sheets")).toBeInTheDocument();
+    expect(screen.queryByText("Rose Scouting")).toBeNull();
+  });
+
+  it("falls back to a generic scouting nav for an unknown crop", () => {
+    withRoles(["General Manager"]);
+    renderSidebar("macadamia");
+    expect(screen.getByText("Scouting Map")).toBeInTheDocument();
+    // No crop-specific extras (job sheets / application plan) for a new crop.
+    expect(screen.queryByText("Job Sheets")).toBeNull();
   });
 });

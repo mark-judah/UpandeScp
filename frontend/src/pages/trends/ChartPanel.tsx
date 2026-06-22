@@ -132,6 +132,17 @@ export interface ThresholdLookup {
   (kind: "pest" | "disease", name: string, stage: string): ThresholdBand | null;
 }
 
+/** Adaptive Y-axis ceiling (a percentage). Picks the smallest "nice" value
+ *  above the data max plus ~15% headroom, so a chart that tops out at ~6%
+ *  zooms to a 10% axis instead of wasting the 0–100% range. Capped at 100. */
+const NICE_PCT_STEPS = [1, 2, 3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 100];
+export function niceCeilPercent(v: number): number {
+  if (!Number.isFinite(v) || v <= 0) return 1;
+  const withHeadroom = v * 1.15;
+  for (const step of NICE_PCT_STEPS) if (step >= withHeadroom) return step;
+  return 100;
+}
+
 export function ChartPanel({
   payload,
   index,
@@ -214,6 +225,25 @@ export function ChartPanel({
     return thresholdLookup(obs.kind, obs.name, child?.stage || "");
   }, [showThresholds, thresholdLookup, obs, child?.stage]);
 
+  // Adaptive Y-axis ceiling: fit the data (and any visible threshold band)
+  // with headroom instead of a fixed 0–100%. Applies to every trends chart
+  // uniformly, so low-coverage crops (avocado) and high-coverage ones (roses)
+  // each get a readable scale.
+  const yMax = useMemo(() => {
+    let max = 0;
+    for (const point of seriesData) {
+      for (const k in point) {
+        if (k === "date") continue;
+        const v = point[k];
+        if (typeof v === "number" && v > max) max = v;
+      }
+    }
+    if (band) {
+      max = Math.max(max, band.high ?? 0, band.moderate ?? 0, band.low ?? 0);
+    }
+    return niceCeilPercent(max);
+  }, [seriesData, band]);
+
   const onPng = async () => {
     const node = exportRef.current;
     if (!node) return;
@@ -243,8 +273,8 @@ export function ChartPanel({
           </Badge>
           <CardDescription className="ml-auto">
             {selections.length} selection
-            {selections.length !== 1 ? "s" : ""} · % zones with matching
-            observations
+            {selections.length !== 1 ? "s" : ""} · %{" "}
+            {payload.unitLabelPlural || "zones"} with matching observations
           </CardDescription>
           <div className="flex items-center gap-1">
             <Button
@@ -338,6 +368,8 @@ export function ChartPanel({
                   tickLine={false}
                   axisLine={false}
                   width={36}
+                  domain={[0, yMax]}
+                  allowDecimals={yMax <= 5}
                   tickFormatter={(v: number) => `${v}%`}
                 />
                 <ChartTooltip

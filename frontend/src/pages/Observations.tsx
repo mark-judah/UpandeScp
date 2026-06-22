@@ -76,9 +76,9 @@ function intensityToOpacity(count: number, maxCount: number): number {
   return 0.15 + (count / maxCount) * 0.75;
 }
 
-export function Observations() {
+export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
   const [filters, setFilters] = useState<SingleDayFilterValue>(() => ({
-    crop: "Rose",
+    crop: initialCrop ?? "Rose",
     farm: ALL,
     greenhouse: ALL,
     date: ymd(new Date()),
@@ -356,6 +356,7 @@ export function Observations() {
         subtitle="Scouted zones · single-day · canonical pest / disease colour"
         value={filters}
         onChange={setFilters}
+        showCrop={false}
       />
 
       {/* Kind pills with live observation counts. */}

@@ -40,6 +40,8 @@ export interface SingleDayHeaderProps {
   value: SingleDayFilterValue;
   onChange: (next: SingleDayFilterValue) => void;
   showGreenhouse?: boolean;
+  /** Hide the crop picker — the crop is fixed by the route. */
+  showCrop?: boolean;
   rightSlot?: ReactNode;
 }
 
@@ -49,6 +51,7 @@ export function SingleDayHeader({
   value,
   onChange,
   showGreenhouse = true,
+  showCrop = true,
   rightSlot,
 }: SingleDayHeaderProps) {
   const [crops, setCrops] = useState<
@@ -100,26 +103,28 @@ export function SingleDayHeader({
         </div>
 
         <div className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1 min-w-32">
-            <Label>Crop</Label>
-            <Select
-              value={value.crop}
-              onValueChange={(v) =>
-                onChange({ ...value, crop: v, farm: ALL, greenhouse: ALL })
-              }
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {crops.map((c) => (
-                  <SelectItem key={c.crop_name} value={c.crop_name}>
-                    {c.crop_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {showCrop && (
+            <div className="flex flex-col gap-1 min-w-32">
+              <Label>Crop</Label>
+              <Select
+                value={value.crop}
+                onValueChange={(v) =>
+                  onChange({ ...value, crop: v, farm: ALL, greenhouse: ALL })
+                }
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {crops.map((c) => (
+                    <SelectItem key={c.crop_name} value={c.crop_name}>
+                      {c.crop_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1 min-w-32">
             <Label>Farm</Label>

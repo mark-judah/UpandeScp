@@ -45,8 +45,8 @@ function defaultRange() {
   return { from: ymd(from), to: ymd(today) };
 }
 
-export function Trends() {
-  const [crop, setCrop] = useState<string>(DEFAULT_CROP);
+export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
+  const [crop, setCrop] = useState<string>(initialCrop ?? DEFAULT_CROP);
   const [{ from, to }, setRange] = useState(defaultRange);
   const [crops, setCrops] = useState<
     Array<{ name: string; crop_name: string; farms?: string[] }>
@@ -201,21 +201,23 @@ export function Trends() {
           </div>
 
           <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1 min-w-32">
-              <Label htmlFor="t-crop">Crop</Label>
-              <Select value={crop} onValueChange={setCrop}>
-                <SelectTrigger id="t-crop" className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {crops.map((c) => (
-                    <SelectItem key={c.crop_name} value={c.crop_name}>
-                      {c.crop_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {!initialCrop && (
+              <div className="flex flex-col gap-1 min-w-32">
+                <Label htmlFor="t-crop">Crop</Label>
+                <Select value={crop} onValueChange={setCrop}>
+                  <SelectTrigger id="t-crop" className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {crops.map((c) => (
+                      <SelectItem key={c.crop_name} value={c.crop_name}>
+                        {c.crop_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="flex flex-col gap-1">
               <Label>From</Label>

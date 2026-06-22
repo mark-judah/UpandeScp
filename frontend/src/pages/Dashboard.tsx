@@ -39,8 +39,8 @@ function defaultRange() {
 
 type TabId = "overview" | "pests" | "diseases" | "traps" | "fcm";
 
-export function Dashboard() {
-  const [crop, setCrop] = useState<string>(DEFAULT_CROP);
+export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
+  const [crop, setCrop] = useState<string>(initialCrop ?? DEFAULT_CROP);
   const [farm, setFarm] = useState<string>(ALL_FARMS);
   const [greenhouse, setGreenhouse] = useState<string>(ALL_GH);
   const [{ from, to }, setRange] = useState(defaultRange);
@@ -124,21 +124,23 @@ export function Dashboard() {
           </div>
 
           <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1 min-w-32">
-              <Label htmlFor="crop">Crop</Label>
-              <Select value={crop} onValueChange={setCrop}>
-                <SelectTrigger id="crop" className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {crops.map((c) => (
-                    <SelectItem key={c.crop_name} value={c.crop_name}>
-                      {c.crop_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {!initialCrop && (
+              <div className="flex flex-col gap-1 min-w-32">
+                <Label htmlFor="crop">Crop</Label>
+                <Select value={crop} onValueChange={setCrop}>
+                  <SelectTrigger id="crop" className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {crops.map((c) => (
+                      <SelectItem key={c.crop_name} value={c.crop_name}>
+                        {c.crop_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="flex flex-col gap-1 min-w-32">
               <Label htmlFor="farm">Farm</Label>

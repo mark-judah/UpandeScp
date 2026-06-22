@@ -56,8 +56,28 @@ def _build(from_date: str, to_date: str, crop: str, job_id: str = "") -> dict:
     publish_progress(job_id, 70, "aggregating")
     payload = _aggregate(rows)
 
-    publish_progress(job_id, 95, "loading zone counts")
-    payload["zonesByGreenhouse"] = scouting_metrics.get_zone_counts_by_greenhouse() or {}
+    publish_progress(job_id, 95, "loading unit counts")
+    # Structural denominator per station, inferred from the warehouse type:
+    # Greenhouse → Zones, Block → Orchard Trees (and a future type → Triads
+    # for coffee). This is the total scouting units that *exist*, not the ones
+    # that happened to be observed, so coverage % is correct for every crop.
+    units = scouting_metrics.get_units_by_warehouse() or {}
+    payload["unitTotalsByStation"] = {
+        k: int((v or {}).get("count") or 0) for k, v in units.items()
+    }
+
+    # Dynamic unit label for the chart, from the warehouse types of the
+    # stations actually present in this (crop-scoped) payload.
+    type_label = {"greenhouse": "zone", "block": "tree", "triad": "triad"}
+    type_tally: dict[str, int] = {}
+    for s in payload.get("vocab", {}).get("stations", []):
+        t = (units.get(s) or {}).get("type")
+        if t:
+            type_tally[t] = type_tally.get(t, 0) + 1
+    dominant = max(type_tally, key=type_tally.get) if type_tally else "greenhouse"
+    label = type_label.get(dominant, dominant)
+    payload["unitLabel"] = label
+    payload["unitLabelPlural"] = label + "s"
 
     publish_progress(job_id, 100, "")
     return payload

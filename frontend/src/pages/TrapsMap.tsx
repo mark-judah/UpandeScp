@@ -236,9 +236,9 @@ function MultiPicker({
   );
 }
 
-export function TrapsMap() {
+export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
   const [filters, setFilters] = useState<MapFilterValue>(() => ({
-    crop: DEFAULT_CROP,
+    crop: initialCrop ?? DEFAULT_CROP,
     farm: ALL,
     greenhouse: ALL,
     ...defaultRange(),
@@ -507,6 +507,7 @@ export function TrapsMap() {
         subtitle="Per-trap catches · color = total count"
         value={filters}
         onChange={setFilters}
+        showCrop={false}
       />
 
       <div className="flex flex-wrap items-center gap-2 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b bg-card/50">

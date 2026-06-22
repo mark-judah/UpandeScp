@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { useView } from "@/lib/router";
+import { useRoute, cropDisplayName } from "@/lib/router";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { LoadingStrip } from "@/components/LoadingStrip";
@@ -32,6 +32,11 @@ const RoseScouting = lazy(() =>
 );
 const AvocadoMap = lazy(() =>
   import("@/pages/AvocadoMap").then((m) => ({ default: m.AvocadoMap })),
+);
+const AvocadoJobSheets = lazy(() =>
+  import("@/pages/avocado/AvocadoJobSheets").then((m) => ({
+    default: m.AvocadoJobSheets,
+  })),
 );
 const Varieties = lazy(() =>
   import("@/pages/Varieties").then((m) => ({ default: m.Varieties })),
@@ -144,7 +149,8 @@ function usePocHashMatch(): boolean {
 }
 
 export function App() {
-  const [view, navigate] = useView();
+  const [{ crop, view }, navigate] = useRoute();
+  const cropName = cropDisplayName(crop);
   const isPoc = usePocHashMatch();
 
   // Warm long-lived reference caches once per session. Heatmaps and the
@@ -171,15 +177,25 @@ export function App() {
       !elevated.some((r) => roles.includes(r));
     if (!exclusive) return;
     const hash = window.location.hash || "";
-    if (!hash || hash === "#" || hash === "#/" || hash === "#/dashboard") {
-      navigate("spray-plan-transfers");
+    if (
+      !hash ||
+      hash === "#" ||
+      hash === "#/" ||
+      hash === "#/dashboard" ||
+      hash === "#/rose/dashboard"
+    ) {
+      navigate({ view: "spray-plan-transfers" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <SidebarProvider>
-      <AppSidebar view={view} onNavigate={navigate} />
+      <AppSidebar
+        crop={crop}
+        view={view}
+        onNavigate={(v) => navigate({ view: v })}
+      />
       <SidebarInset>
         <Suspense
           fallback={
@@ -193,17 +209,17 @@ export function App() {
           {isPoc ? (
             <HeatmapPoc />
           ) : view === "trends" ? (
-            <Trends />
+            <Trends initialCrop={cropName} />
           ) : view === "observations" ? (
-            <Observations />
+            <Observations initialCrop={cropName} />
           ) : view === "traps" ? (
-            <TrapsMap />
+            <TrapsMap initialCrop={cropName} />
           ) : view === "heatmaps" ? (
-            <Heatmaps />
-          ) : view === "rose" ? (
-            <RoseScouting />
-          ) : view === "avocado" ? (
-            <AvocadoMap />
+            <Heatmaps initialCrop={cropName} />
+          ) : view === "scouting-map" ? (
+            crop === "rose" ? <RoseScouting /> : <AvocadoMap />
+          ) : view === "jobsheets" ? (
+            <AvocadoJobSheets />
           ) : view === "varieties" ? (
             <Varieties />
           ) : view === "reports" ? (
@@ -233,7 +249,7 @@ export function App() {
           ) : view === "chemical-loaning" ? (
             <ChemicalLoaning />
           ) : (
-            <Dashboard />
+            <Dashboard initialCrop={cropName} />
           )}
         </Suspense>
       </SidebarInset>

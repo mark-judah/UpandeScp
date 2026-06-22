@@ -325,6 +325,7 @@ export function AvocadoMap() {
         value={filters}
         onChange={setFilters}
         showGreenhouse={false}
+        showCrop={false}
       />
 
       <div className="flex items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b">

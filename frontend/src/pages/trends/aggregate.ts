@@ -105,10 +105,12 @@ export function parseObs(id: string): ObsKey | null {
 /* =============================================================
  * Series builder
  *
- * The chart shows ``% zones with the matching observation`` per day,
- * per selection. The numerator is the count of distinct unit keys that
- * matched on that day; the denominator is the structural total zones
- * of the selection (sum of zonesByGreenhouse across covered stations).
+ * The chart shows ``% units with the matching observation`` per day, per
+ * selection — where a "unit" is the crop's scouting unit (zone for roses,
+ * orchard tree for avocado, triad for coffee). The numerator is the count of
+ * distinct unit keys that matched on that day; the denominator is the
+ * structural total units of the selection (sum of unitTotalsByStation across
+ * covered stations).
  *
  * Unit keys are station-prefixed on the server (``block::tree::Tx``
  * or ``zone::Zy``) so summing the per-station ``n`` from a row stays
@@ -209,24 +211,31 @@ function stationsForSelection(
   stationsByFarm: Record<string, string[]>,
 ): string[] {
   if (sel.kind === "station") return [sel.station];
-  return stationsByFarm[sel.farm] || [];
+  return (stationsByFarm ?? {})[sel.farm] || [];
 }
 
 function denomForSelection(
   sel: Selection,
   stationsByFarm: Record<string, string[]>,
-  zonesByGreenhouse: Record<string, number>,
-  unitsByStation: Record<string, number>,
+  unitTotalsByStation: Record<string, number> | undefined,
+  unitsByStation: Record<string, number> | undefined,
 ): number {
   const stations = stationsForSelection(sel, stationsByFarm);
+  // Default to empty maps so an older/partial payload (e.g. a cached one from
+  // before unitTotalsByStation existed) degrades to the observed-unit fallback
+  // instead of throwing and blanking the page.
+  const totals = unitTotalsByStation ?? {};
+  const observed = unitsByStation ?? {};
   let total = 0;
   for (const stn of stations) {
-    const fromMap = zonesByGreenhouse[stn];
+    // Structural total units for the station (zones / trees / triads per
+    // warehouse type). Falls back to observed units when the station has no
+    // structural count yet.
+    const fromMap = totals[stn];
     if (typeof fromMap === "number" && fromMap > 0) {
       total += fromMap;
     } else {
-      // Fallback — same rule the prior client-side aggregate.ts used.
-      total += unitsByStation[stn] || 0;
+      total += observed[stn] || 0;
     }
   }
   return total;
@@ -310,7 +319,7 @@ export function buildSeries(
     denomForSelection(
       sel,
       payload.stationsByFarm,
-      payload.zonesByGreenhouse,
+      payload.unitTotalsByStation,
       payload.unitsByStation,
     ),
   );

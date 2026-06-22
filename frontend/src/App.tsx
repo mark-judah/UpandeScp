@@ -30,6 +30,9 @@ const Heatmaps = lazy(() =>
 const RoseScouting = lazy(() =>
   import("@/pages/RoseScouting").then((m) => ({ default: m.RoseScouting })),
 );
+const Spraying = lazy(() =>
+  import("@/pages/Spraying").then((m) => ({ default: m.Spraying })),
+);
 const AvocadoMap = lazy(() =>
   import("@/pages/AvocadoMap").then((m) => ({ default: m.AvocadoMap })),
 );
@@ -218,6 +221,8 @@ export function App() {
             <Heatmaps initialCrop={cropName} />
           ) : view === "scouting-map" ? (
             crop === "rose" ? <RoseScouting /> : <AvocadoMap />
+          ) : view === "spraying" ? (
+            <Spraying />
           ) : view === "jobsheets" ? (
             <AvocadoJobSheets />
           ) : view === "varieties" ? (

@@ -617,6 +617,62 @@ export async function fetchScoutLookup(): Promise<Record<string, string>> {
   });
 }
 
+/**
+ * One sprayer GPS fix as stored by the mobile app. The server already maps each
+ * point to the nearest Zone (no bed filter), so `zone` is populated for us.
+ */
+export interface SprayerGpsLog {
+  name: string;
+  session: string;
+  employee: string;
+  greenhouse: string;
+  work_order: string;
+  captured_at: string;
+  latitude: string;
+  longitude: string;
+  zone: string | null;
+  gps_accuracy: string | null;
+}
+
+/**
+ * Sprayer GPS logs for one day (optionally one greenhouse), oldest-first.
+ * Read straight off the `Sprayer GPS Log` doctype via the generic list API —
+ * no bespoke server method needed. Not cached: the Spraying map is a live,
+ * day-scoped view.
+ */
+export async function fetchSprayerGpsLogs(
+  date: string,
+  greenhouse?: string,
+): Promise<SprayerGpsLog[]> {
+  const filters: unknown[] = [
+    ["captured_at", "between", [`${date} 00:00:00`, `${date} 23:59:59`]],
+  ];
+  if (greenhouse) filters.push(["greenhouse", "=", greenhouse]);
+  try {
+    const r = await call<SprayerGpsLog[]>("frappe.client.get_list", {
+      doctype: "Sprayer GPS Log",
+      filters,
+      fields: [
+        "name",
+        "session",
+        "employee",
+        "greenhouse",
+        "work_order",
+        "captured_at",
+        "latitude",
+        "longitude",
+        "zone",
+        "gps_accuracy",
+      ],
+      order_by: "captured_at asc",
+      limit_page_length: 0,
+    });
+    return Array.isArray(r) ? r : [];
+  } catch {
+    return [];
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Geometry helpers — used by the map-based pages.                    */
 /* ------------------------------------------------------------------ */

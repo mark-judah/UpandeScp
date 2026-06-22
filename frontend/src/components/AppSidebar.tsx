@@ -6,6 +6,7 @@ import {
   Search,
   Flame,
   Crosshair,
+  Droplets,
   ClipboardList,
   CheckSquare,
   History,
@@ -127,7 +128,8 @@ const ROSE_NAV: NavSection[] = [
     label: "Scouting",
     hideForRoles: [STORE_KEEPER_ROLE],
     items: [
-      { kind: "view", view: "scouting-map", label: "Rose Scouting", icon: Flower },
+      { kind: "view", view: "scouting-map", label: "Scouting", icon: Flower },
+      { kind: "view", view: "spraying", label: "Spraying", icon: Droplets },
       { kind: "view", view: "observations", label: "Observations", icon: Search },
       { kind: "view", view: "heatmaps", label: "Heatmaps", icon: Flame },
       { kind: "view", view: "traps", label: "Traps", icon: Crosshair },

@@ -20,10 +20,20 @@ export interface ChemicalMatrixCell {
   qty: number;
 }
 
+/** A CSU warehouse, listed regardless of whether it currently holds stock,
+ *  so the UI can show the full CSU roster (and disable the empty ones). */
+export interface CsuWarehouse {
+  warehouse: string;
+  farm: string;
+}
+
 export interface ChemicalOverview {
   items: ChemicalItemRow[];
   warehouses: ChemicalWarehouseRow[];
   matrix: ChemicalMatrixCell[];
+  /** Full CSU roster (all enabled, non-group CSU warehouses) — optional so the
+   *  client degrades gracefully against an older backend. */
+  csus?: CsuWarehouse[];
   as_of: string;
 }
 

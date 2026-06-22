@@ -118,10 +118,26 @@ def chemical_stock_overview() -> dict:
             {"item_code": ik, "warehouse": wh, "qty": qty},
         )
 
+    # Full CSU roster (every enabled, non-group CSU warehouse), independent of
+    # whether it currently holds stock — lets the dashboard show all CSUs and
+    # disable the empty ones. Pre-filtered to names containing "CSU"; the client
+    # applies the exact whole-word rule.
+    csus = frappe.db.sql(
+        """
+        SELECT name AS warehouse, COALESCE(custom_farm, '') AS farm
+        FROM   `tabWarehouse`
+        WHERE  is_group = 0 AND disabled = 0 AND name LIKE %(p)s
+        ORDER  BY name
+        """,
+        {"p": "%CSU%"},
+        as_dict=True,
+    )
+
     return {
         "items":      sorted(items.values(), key=lambda x: -x["total_qty"]),
         "warehouses": sorted(warehouses.values(), key=lambda x: -x["total_qty"]),
         "matrix":     matrix,
+        "csus":       csus,
         "as_of":      now_datetime().isoformat(timespec="seconds"),
     }
 

@@ -38,6 +38,7 @@ import {
   type ChemicalOverview,
 } from "@/lib/store-keeper-api";
 import { ChemicalStoreComparison } from "@/components/ChemicalStoreComparison";
+import { CsuLevels } from "@/components/CsuLevels";
 import { cn } from "@/lib/utils";
 
 const ALL_WAREHOUSE = "__all__";
@@ -284,6 +285,8 @@ export function ChemicalDashboard() {
             )}
           </CardContent>
         </Card>
+
+        <CsuLevels data={data} loading={loading} />
 
         <ChemicalStoreComparison />
 

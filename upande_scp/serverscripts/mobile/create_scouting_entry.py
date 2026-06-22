@@ -166,8 +166,10 @@ def createScoutingEntry():
                 # re-creating the document.
                 existing_entry = _is_duplicate_by_client_id(client_id)
                 if existing_entry:
+                    # Structured "duplicate" status (not a generic error) so the
+                    # client can mark the local row synced without string-matching.
                     results.append({
-                        "status": "error",
+                        "status": "duplicate",
                         "message": f"Duplicate scouting entry: client_id already synced as {existing_entry}.",
                         "name": existing_entry,
                     })
@@ -428,4 +430,51 @@ def createScoutingEntry():
     except Exception as e:
         frappe.response.http_status_code = 500
         frappe.log_error("Fatal error in createScoutingEntry", str(e))
+        frappe.response["data"] = {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def reconcileScoutingEntries():
+    """Reconcile a list of client_ids against what the server already stored.
+
+    The mobile app sends the client_ids of its un-synced (pending/stuck) rows;
+    we return the subset that already exist as Scouting Entries (mapped to their
+    docname). The app marks those rows synced locally — recovering entries the
+    server saved but never acked (network dropped after the save) — and re-pushes
+    only the ones genuinely missing. Read-only; never writes.
+
+    Request body: {"client_ids": ["...", "..."]}  (JSON list or JSON string)
+    Response:     {"existing": {client_id: scouting_entry_name, ...}}
+    """
+    try:
+        raw = frappe.form_dict.get("client_ids")
+        if isinstance(raw, str):
+            try:
+                client_ids = frappe.parse_json(raw)
+            except Exception:
+                client_ids = [raw]
+        else:
+            client_ids = raw or []
+
+        # Dedupe + drop blanks; cap the batch so a huge queue can't build a
+        # pathological IN (...) clause.
+        client_ids = [c for c in dict.fromkeys(client_ids) if c][:500]
+
+        existing = {}
+        if client_ids:
+            rows = frappe.get_all(
+                "Scouting Entry Metadata",
+                filters={"client_id": ["in", client_ids]},
+                fields=["client_id", "scouting_entry"],
+            )
+            for r in rows:
+                if r.get("client_id") and r.get("scouting_entry"):
+                    existing[r["client_id"]] = r["scouting_entry"]
+
+        frappe.response.http_status_code = 200
+        frappe.response["data"] = {"existing": existing}
+
+    except Exception as e:
+        frappe.response.http_status_code = 500
+        frappe.log_error("Error in reconcileScoutingEntries", str(e))
         frappe.response["data"] = {"status": "error", "message": str(e)}

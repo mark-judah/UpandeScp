@@ -35,8 +35,10 @@ _STORE_RE = re.compile(r"^\s*chemical store\b", re.IGNORECASE)
 # Hard ceiling on how long chemicals are allowed to sit unused in a CSU
 # before they're flagged as aged. The user-facing label on every aged
 # badge says ">= N days" so this number is also part of the contract
-# with the React page — keep them in sync.
-CSU_MAX_AGE_DAYS = 3
+# with the React page — keep them in sync. Aligned with the CSU-drain
+# runbook's STALE_DAYS (5) so the dashboard's "expired" agrees with what
+# the drain scripts (doc references/fixes/spray_plan_issue/new) act on.
+CSU_MAX_AGE_DAYS = 5
 
 # How far back to walk SLE history when reconstructing CSU cohorts.
 # Anything older than this collapses into a single "pre-horizon" cohort
@@ -86,6 +88,31 @@ def _csu_age_cohorts(
         return {}
 
     horizon = add_to_date(now_datetime(), days=-_CSU_AGE_HORIZON_DAYS)
+
+    # Opening balance carried INTO the window (stock that pre-dates the horizon),
+    # seeded as the OLDEST cohort so in-window outwards consume it FIRST (true
+    # FIFO). Without this seed, a large in-window issue that actually drew down
+    # pre-horizon stock instead eats the recent in-window RECEIPTS, leaving the
+    # genuinely-fresh survivors to be mis-stamped as pre-horizon/expired.
+    queues: dict[tuple[str, str], deque] = defaultdict(deque)
+    for o in frappe.db.sql(
+        """
+        SELECT item_code, warehouse, SUM(actual_qty) AS bal
+        FROM   `tabStock Ledger Entry`
+        WHERE  item_code IN %(items)s
+          AND  warehouse IN %(warehouses)s
+          AND  is_cancelled = 0
+          AND  posting_datetime < %(horizon)s
+        GROUP  BY item_code, warehouse
+        """,
+        {"items": tuple(item_codes), "warehouses": tuple(csu_warehouses),
+         "horizon": horizon},
+        as_dict=True,
+    ):
+        bal = float(o["bal"] or 0)
+        if bal > _QTY_EPS:
+            queues[(o["item_code"], o["warehouse"])].append([horizon, bal, None])
+
     # Join SLE -> Stock Entry -> Work Order so each inward cohort can
     # carry the destination greenhouse — that's the operator-facing
     # answer to "what was this batch staged for?". The join uses LEFT
@@ -122,7 +149,7 @@ def _csu_age_cohorts(
         as_dict=True,
     )
 
-    queues: dict[tuple[str, str], deque] = defaultdict(deque)
+    # queues seeded above with each pair's pre-horizon opening balance.
     for row in rows:
         key = (row["item_code"], row["warehouse"])
         q = queues[key]

@@ -36,3 +36,13 @@ export function parseYmd(s: string): Date {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, (m || 1) - 1, d || 1);
 }
+
+/** {from, to} for the current ISO week (Monday → Sunday). */
+export function currentWeekRange(): { from: string; to: string } {
+  const mon = new Date();
+  const wd = (mon.getDay() + 6) % 7; // 0 = Monday … 6 = Sunday
+  mon.setDate(mon.getDate() - wd);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  return { from: ymd(mon), to: ymd(sun) };
+}

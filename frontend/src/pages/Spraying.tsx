@@ -27,16 +27,16 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ALL,
-  SingleDayHeader,
-  type SingleDayFilterValue,
-} from "./maps/SingleDayHeader";
+  RangeHeader,
+  type RangeFilterValue,
+} from "./maps/RangeHeader";
 import {
   fetchBedsAndZones,
   fetchSprayerGpsLogs,
   type SprayerGpsLog,
 } from "@/lib/scouting-api";
 import { flyToFarm, useMapSettings } from "@/hooks/use-map-settings";
-import { ymd } from "@/lib/utils";
+import { currentWeekRange } from "@/lib/utils";
 import {
   flattenZones,
   geometryCentroid,
@@ -93,17 +93,24 @@ interface Pt {
 interface ZoneRoll {
   zone: string;
   sprayerPoints: Map<string, number>;
+  days: Set<string>;
   totalPoints: number;
   lastTs: string;
 }
 
 export function Spraying() {
-  const [filters, setFilters] = useState<SingleDayFilterValue>(() => ({
+  const [filters, setFilters] = useState<RangeFilterValue>(() => ({
     crop: "Rose",
     farm: ALL,
     greenhouse: ALL,
-    date: ymd(new Date()),
+    ...currentWeekRange(),
   }));
+  const isSingleDay = filters.from === filters.to;
+  const rangeDayCount = useMemo(() => {
+    const a = new Date(`${filters.from}T00:00:00`).getTime();
+    const b = new Date(`${filters.to}T00:00:00`).getTime();
+    return Math.max(1, Math.round((b - a) / 86_400_000) + 1);
+  }, [filters.from, filters.to]);
   const [zones, setZones] = useState<ZoneFeature[]>([]);
   const [logs, setLogs] = useState<SprayerGpsLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -122,7 +129,7 @@ export function Spraying() {
     let alive = true;
     setLoading(true);
     const gh = filters.greenhouse === ALL ? undefined : filters.greenhouse;
-    fetchSprayerGpsLogs(filters.date, gh)
+    fetchSprayerGpsLogs(filters.from, filters.to, gh)
       .then((rows) => {
         if (alive) setLogs(rows);
       })
@@ -132,7 +139,7 @@ export function Spraying() {
     return () => {
       alive = false;
     };
-  }, [filters.date, filters.greenhouse]);
+  }, [filters.from, filters.to, filters.greenhouse]);
 
   const farmNeedle = filters.farm === ALL ? "" : filters.farm.toLowerCase();
 
@@ -165,10 +172,17 @@ export function Spraying() {
       if (hiddenSprayers.has(p.sprayer)) continue;
       let row = out.get(p.zone);
       if (!row) {
-        row = { zone: p.zone, sprayerPoints: new Map(), totalPoints: 0, lastTs: "" };
+        row = {
+          zone: p.zone,
+          sprayerPoints: new Map(),
+          days: new Set(),
+          totalPoints: 0,
+          lastTs: "",
+        };
         out.set(p.zone, row);
       }
       row.totalPoints += 1;
+      if (p.ts) row.days.add(p.ts.slice(0, 10));
       if (p.ts > row.lastTs) row.lastTs = p.ts;
       row.sprayerPoints.set(p.sprayer, (row.sprayerPoints.get(p.sprayer) || 0) + 1);
     }
@@ -377,9 +391,9 @@ export function Spraying() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <SingleDayHeader
+      <RangeHeader
         title="Spraying"
-        subtitle="Single-day · each sprayer's GPS track and the zones they covered"
+        subtitle="Up to one week · each sprayer's GPS track and the zones they covered"
         value={filters}
         onChange={setFilters}
         showCrop={false}
@@ -399,7 +413,7 @@ export function Spraying() {
             <CardHeader className="p-0 pb-2">
               <CardTitle className="text-sm">Spraying summary</CardTitle>
               <CardDescription className="text-[0.7rem] tabular-nums">
-                {filters.date}
+                {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
               </CardDescription>
             </CardHeader>
 
@@ -490,6 +504,9 @@ export function Spraying() {
                 <CardTitle className="text-sm">{detail.zone}</CardTitle>
                 <CardDescription className="text-[0.7rem]">
                   {detail.totalPoints} ping{detail.totalPoints === 1 ? "" : "s"}
+                  {!isSingleDay
+                    ? ` · sprayed ${detail.days.size} of ${rangeDayCount} days`
+                    : ""}
                   {detail.lastTs ? ` · last ${detail.lastTs.slice(11)}` : ""}
                 </CardDescription>
               </CardHeader>

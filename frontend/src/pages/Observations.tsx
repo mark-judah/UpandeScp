@@ -22,13 +22,13 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ALL,
-  SingleDayHeader,
-  type SingleDayFilterValue,
-} from "./maps/SingleDayHeader";
+  RangeHeader,
+  type RangeFilterValue,
+} from "./maps/RangeHeader";
 import { fetchBedsAndZones } from "@/lib/scouting-api";
 import { flyToFarm, useMapSettings } from "@/hooks/use-map-settings";
 import { useObservationColors } from "@/lib/observation-colors";
-import { ymd } from "@/lib/utils";
+import { currentWeekRange } from "@/lib/utils";
 import {
   flattenZones,
   type ZoneFeature,
@@ -77,12 +77,13 @@ function intensityToOpacity(count: number, maxCount: number): number {
 }
 
 export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
-  const [filters, setFilters] = useState<SingleDayFilterValue>(() => ({
+  const [filters, setFilters] = useState<RangeFilterValue>(() => ({
     crop: initialCrop ?? "Rose",
     farm: ALL,
     greenhouse: ALL,
-    date: ymd(new Date()),
+    ...currentWeekRange(),
   }));
+  const isSingleDay = filters.from === filters.to;
   const [kind, setKind] = useState<Kind>("pest");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
 
@@ -91,8 +92,8 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
   const ghForCall =
     filters.greenhouse === ALL ? undefined : filters.greenhouse;
   const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
-    from: filters.date,
-    to: filters.date,
+    from: filters.from,
+    to: filters.to,
     greenhouse: ghForCall,
     crop: filters.crop,
   });
@@ -125,9 +126,13 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
   const dayEntries = useMemo(() => {
     if (!data) return [];
     return data.entries.filter(
-      (e) => e.date_of_capture === filters.date && inFarm(e),
+      (e) =>
+        !!e.date_of_capture &&
+        e.date_of_capture >= filters.from &&
+        e.date_of_capture <= filters.to &&
+        inFarm(e),
     );
-  }, [data, filters.date, farmNeedle]);
+  }, [data, filters.from, filters.to, farmNeedle]);
 
   // Per-zone observation map: zone -> { name -> count } under the active kind.
   const zoneObs = useMemo(() => {
@@ -351,9 +356,9 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <SingleDayHeader
+      <RangeHeader
         title="Observations"
-        subtitle="Scouted zones · single-day · canonical pest / disease colour"
+        subtitle="Scouted zones · up to one week · canonical pest / disease colour"
         value={filters}
         onChange={setFilters}
         showCrop={false}
@@ -412,7 +417,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
           <CardHeader className="p-0 pb-2">
             <CardTitle className="text-sm">{KIND_LABEL[kind]} summary</CardTitle>
             <CardDescription className="text-[0.7rem] tabular-nums">
-              {filters.date}
+              {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
             </CardDescription>
           </CardHeader>
 
@@ -461,7 +466,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
 
           {legendRows.length === 0 ? (
             <div className="text-[0.72rem] text-muted-foreground py-3 text-center">
-              No {KIND_LABEL[kind].toLowerCase()} on this date.
+              No {KIND_LABEL[kind].toLowerCase()} in this range.
             </div>
           ) : (
             <div className="flex flex-col gap-0.5">

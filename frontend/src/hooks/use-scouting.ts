@@ -166,7 +166,7 @@ export function useScouting({
       // ``modified`` predates our delta watermark — the reason this refresh
       // exists) and advances the watermark via delta. Re-renders SILENTLY,
       // only when rows actually changed, so there's no overlay flash.
-      void refreshRecentWeeks(from, to, 14)
+      void refreshRecentWeeks(from, to, 7)
         .then(async (changed) => {
           if (changed && tokenRef.current === token) {
             await buildAndSet(token, { silent: true });

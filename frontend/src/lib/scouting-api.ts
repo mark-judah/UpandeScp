@@ -635,17 +635,17 @@ export interface SprayerGpsLog {
 }
 
 /**
- * Sprayer GPS logs for one day (optionally one greenhouse), oldest-first.
+ * Sprayer GPS logs for a date range (optionally one greenhouse), oldest-first.
  * Read straight off the `Sprayer GPS Log` doctype via the generic list API —
- * no bespoke server method needed. Not cached: the Spraying map is a live,
- * day-scoped view.
+ * no bespoke server method needed. The Spraying map caps the range to a week.
  */
 export async function fetchSprayerGpsLogs(
-  date: string,
+  fromDate: string,
+  toDate: string,
   greenhouse?: string,
 ): Promise<SprayerGpsLog[]> {
   const filters: unknown[] = [
-    ["captured_at", "between", [`${date} 00:00:00`, `${date} 23:59:59`]],
+    ["captured_at", "between", [`${fromDate} 00:00:00`, `${toDate} 23:59:59`]],
   ];
   if (greenhouse) filters.push(["greenhouse", "=", greenhouse]);
   try {

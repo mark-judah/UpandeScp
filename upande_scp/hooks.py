@@ -254,6 +254,9 @@ scheduler_events = {
         "upande_scp.serverscripts.spray_plan_creator.maintenance.auto_cancel_dormant_plans",
     ],
     "hourly": [
+        # Keep the current + previous ISO week of scouting payload warm in Redis
+        # all day (per-week cache TTL is 1h; writes bust the active week).
+        "upande_scp.serverscripts.scouting_prewarm.hourly_prewarm",
         # Expire chemical loan requests that sat unanswered past their timeout.
         "upande_scp.serverscripts.spray_plan_creator.loaning.expire_dormant_requests",
         # Daily Chemical Planning Progress Update — sends at the GM-configured

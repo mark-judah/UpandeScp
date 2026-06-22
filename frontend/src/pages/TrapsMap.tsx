@@ -11,7 +11,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { ALL, MapHeader, type MapFilterValue } from "./maps/MapHeader";
+import { ALL, RangeHeader, type RangeFilterValue } from "./maps/RangeHeader";
 import { DEFAULT_CROP, fetchFarmsAndWarehouses } from "@/lib/scouting-api";
 import { flyToFarm, useMapSettings } from "@/hooks/use-map-settings";
 import {
@@ -19,15 +19,9 @@ import {
   readableInk,
   useObservationColors,
 } from "@/lib/observation-colors";
-import { ymd } from "@/lib/utils";
+import { currentWeekRange } from "@/lib/utils";
 import type { ScoutingEntry } from "@/lib/scouting-types";
 
-function defaultRange(): { from: string; to: string } {
-  const today = new Date();
-  const from = new Date(today);
-  from.setDate(today.getDate() - 14);
-  return { from: ymd(from), to: ymd(today) };
-}
 
 /** Severity ramp — used as a thin outer ring on each trap marker so the
  *  pest colour reads as the primary signal but operators still see catch
@@ -237,11 +231,11 @@ function MultiPicker({
 }
 
 export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
-  const [filters, setFilters] = useState<MapFilterValue>(() => ({
+  const [filters, setFilters] = useState<RangeFilterValue>(() => ({
     crop: initialCrop ?? DEFAULT_CROP,
     farm: ALL,
     greenhouse: ALL,
-    ...defaultRange(),
+    ...currentWeekRange(),
   }));
   const [locFilter, setLocFilter] = useState<LocationFilter>("all");
   const [pestSel, setPestSel] = useState<Set<string> | null>(null);
@@ -351,7 +345,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     );
   }, [farmOptions]);
 
-  // Keep the multi-select Farms picker in sync with the MapHeader's single
+  // Keep the multi-select Farms picker in sync with the header's single
   // Farm dropdown — picking a farm at the top narrows the multi-select to
   // just that farm; switching back to "All Farms" restores everything.
   useEffect(() => {
@@ -502,9 +496,9 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <MapHeader
+      <RangeHeader
         title="Traps"
-        subtitle="Per-trap catches · color = total count"
+        subtitle="Per-trap catches · up to one week · color = total count"
         value={filters}
         onChange={setFilters}
         showCrop={false}

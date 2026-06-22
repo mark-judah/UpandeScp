@@ -17,7 +17,7 @@
  * + filter popovers always paint above the map.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
@@ -33,17 +33,17 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ALL,
-  SingleDayHeader,
-  type SingleDayFilterValue,
-} from "./maps/SingleDayHeader";
-import { fetchBedsAndZones } from "@/lib/scouting-api";
+  RangeHeader,
+  type RangeFilterValue,
+} from "./maps/RangeHeader";
+import { fetchBedsAndZones, fetchScoutLookup } from "@/lib/scouting-api";
 import { flyToFarm, useMapSettings } from "@/hooks/use-map-settings";
 import {
   pestColor,
   diseaseColor,
   useObservationColors,
 } from "@/lib/observation-colors";
-import { ymd } from "@/lib/utils";
+import { currentWeekRange } from "@/lib/utils";
 import {
   flattenZones,
   geometryCentroid,
@@ -97,17 +97,25 @@ interface ZoneRoll {
   pests: Record<string, number>;
   diseases: Record<string, number>;
   beds: Set<string>;
+  days: Set<string>;
   totalEntries: number;
   lastTs: string;
 }
 
 export function RoseScouting() {
-  const [filters, setFilters] = useState<SingleDayFilterValue>(() => ({
+  const [filters, setFilters] = useState<RangeFilterValue>(() => ({
     crop: "Rose",
     farm: ALL,
     greenhouse: ALL,
-    date: ymd(new Date()),
+    ...currentWeekRange(),
   }));
+  const isSingleDay = filters.from === filters.to;
+  // Distinct days in the selected range (denominator for "covered N of M days").
+  const rangeDayCount = useMemo(() => {
+    const a = new Date(`${filters.from}T00:00:00`).getTime();
+    const b = new Date(`${filters.to}T00:00:00`).getTime();
+    return Math.max(1, Math.round((b - a) / 86_400_000) + 1);
+  }, [filters.from, filters.to]);
   const [zones, setZones] = useState<ZoneFeature[]>([]);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [hiddenScouts, setHiddenScouts] = useState<Set<string>>(new Set());
@@ -116,8 +124,8 @@ export function RoseScouting() {
     filters.greenhouse === ALL ? undefined : filters.greenhouse;
   // Single-day query: from === to. Cache is day-precise.
   const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
-    from: filters.date,
-    to: filters.date,
+    from: filters.from,
+    to: filters.to,
     greenhouse: ghForCall,
     crop: filters.crop || "Rose",
   });
@@ -132,6 +140,17 @@ export function RoseScouting() {
     fetchBedsAndZones().then((vs) => setZones(flattenZones(vs)));
   }, []);
 
+  // Employee-id → readable name, so the summary shows the scout's name rather
+  // than their payroll number when scouts_name is a numeric employee id.
+  const [scoutNames, setScoutNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    fetchScoutLookup().then(setScoutNames);
+  }, []);
+  const nameOf = useCallback(
+    (key: string) => scoutNames[key] || scoutLabel(key),
+    [scoutNames],
+  );
+
   const farmNeedle = filters.farm === ALL ? "" : filters.farm.toLowerCase();
   const inFarm = (e: ScoutingEntry): boolean => {
     if (!farmNeedle) return true;
@@ -140,18 +159,24 @@ export function RoseScouting() {
       .includes(farmNeedle);
   };
 
-  // Day's entries with zone, narrowed by farm + greenhouse selectors.
+  // Entries in the selected range with zone, narrowed by farm + greenhouse.
+  // Trap-check entries are excluded — a trap visit is a fixed-point check, not
+  // part of the scout's walking path, and it has its own Traps map. Leaving
+  // them in pulled the movement trail off to trap posts.
   const dayEntries = useMemo(() => {
     if (!data) return [];
     return data.entries.filter(
       (e) =>
-        e.date_of_capture === filters.date &&
+        !!e.date_of_capture &&
+        e.date_of_capture >= filters.from &&
+        e.date_of_capture <= filters.to &&
         e.zone &&
+        !(e.trap_scouting_entry && e.trap_scouting_entry.length > 0) &&
         inFarm(e) &&
         (filters.greenhouse === ALL ||
           e.zone.startsWith(filters.greenhouse)),
     );
-  }, [data, filters.date, farmNeedle, filters.greenhouse]);
+  }, [data, filters.from, filters.to, farmNeedle, filters.greenhouse]);
 
   // ── Per-zone aggregate (only zones actually scouted today). ──
   const aggByZone = useMemo(() => {
@@ -165,6 +190,7 @@ export function RoseScouting() {
           pests: {},
           diseases: {},
           beds: new Set(),
+          days: new Set(),
           totalEntries: 0,
           lastTs: "",
         };
@@ -172,6 +198,7 @@ export function RoseScouting() {
       }
       row.totalEntries += 1;
       if (e.bed) row.beds.add(e.bed);
+      if (e.date_of_capture) row.days.add(e.date_of_capture);
       const ts = `${e.date_of_capture} ${e.time_of_capture || ""}`.trim();
       if (ts > row.lastTs) row.lastTs = ts;
       const sk = e.scouts_name || "";
@@ -222,7 +249,7 @@ export function RoseScouting() {
     const list = Object.entries(totals)
       .map(([key, v]) => ({
         key,
-        label: scoutLabel(key),
+        label: nameOf(key),
         entries: v.entries,
         zones: v.zones.size,
       }))
@@ -235,7 +262,7 @@ export function RoseScouting() {
       colorMap.set(s.key, SCOUT_PALETTE[i % SCOUT_PALETTE.length]);
     });
     return { list, colorMap };
-  }, [aggByZone]);
+  }, [aggByZone, nameOf]);
 
   // ── Visits in time order — drives the per-scout flow polyline. ──
   const visitsByScout = useMemo(() => {
@@ -342,7 +369,7 @@ export function RoseScouting() {
         `<div style="font:11px Inter,Arial,sans-serif">
            <b>${zoneName}</b><br/>
            ${row.totalEntries} entr${row.totalEntries === 1 ? "y" : "ies"} ·
-           ${scoutLabel(scoutKey)}
+           ${nameOf(scoutKey)}
          </div>`,
         { sticky: true },
       );
@@ -354,58 +381,71 @@ export function RoseScouting() {
       }
     });
 
-    // 2. Per-scout flow polylines — centroids of visited zones in time
-    //    order. This is the actual walking-path trace.
+    // 2. Per-scout flow polylines — the scout's walking path, drawn ONE
+    //    SEGMENT PER DAY. A multi-day range must not connect the end of one
+    //    day to the start of the next (that produced cross-field spaghetti),
+    //    so we split each scout's visits by capture day and draw a line per
+    //    day. On a single-day view this is just one segment, as before.
     visitsByScout.forEach((visits, scout) => {
-      if (visits.length < 2) return;
       const color = scoutInfo.colorMap.get(scout) || "#5BB45D";
-      const points = visits.map((v) => v.centroid as L.LatLngExpression);
-      const polyline = L.polyline(points, {
-        color,
-        weight: 3,
-        opacity: 0.85,
-        lineJoin: "round",
-        lineCap: "round",
-      });
-      polyline.bindTooltip(
-        `<div style="font:11px Inter,Arial,sans-serif">
-           <b>${scoutLabel(scout)}</b><br/>
-           ${visits.length} zone${visits.length === 1 ? "" : "s"} visited
-         </div>`,
-        { sticky: true },
-      );
-      polyline.addTo(layer);
-
-      // Numbered start / end markers so the direction of the walk is
-      // obvious without animation.
-      const first = visits[0].centroid;
-      const last = visits[visits.length - 1].centroid;
-      L.circleMarker(first, {
-        radius: 6,
-        color: "#ffffff",
-        weight: 2,
-        fillColor: color,
-        fillOpacity: 1,
-      })
-        .bindTooltip(
-          `Start · ${visits[0].zone} · ${(visits[0].ts || "").slice(11) || "—"}`,
-          { sticky: true },
-        )
-        .addTo(layer);
-      if (visits.length > 1) {
-        L.circleMarker(last, {
+      const byDay = new Map<string, ScoutVisit[]>();
+      for (const v of visits) {
+        const day = (v.ts || "").slice(0, 10);
+        const arr = byDay.get(day);
+        if (arr) arr.push(v);
+        else byDay.set(day, [v]);
+      }
+      byDay.forEach((dayVisits) => {
+        if (dayVisits.length >= 2) {
+          const points = dayVisits.map(
+            (v) => v.centroid as L.LatLngExpression,
+          );
+          L.polyline(points, {
+            color,
+            weight: 3,
+            opacity: 0.85,
+            lineJoin: "round",
+            lineCap: "round",
+          })
+            .bindTooltip(
+              `<div style="font:11px Inter,Arial,sans-serif">
+                 <b>${nameOf(scout)}</b><br/>
+                 ${dayVisits.length} zones · ${(dayVisits[0].ts || "").slice(0, 10)}
+               </div>`,
+              { sticky: true },
+            )
+            .addTo(layer);
+        }
+        // Start / end markers so the direction of each day's walk is clear.
+        const first = dayVisits[0].centroid;
+        L.circleMarker(first, {
           radius: 6,
-          color: color,
+          color: "#ffffff",
           weight: 2,
-          fillColor: "#ffffff",
+          fillColor: color,
           fillOpacity: 1,
         })
           .bindTooltip(
-            `End · ${visits[visits.length - 1].zone} · ${(visits[visits.length - 1].ts || "").slice(11) || "—"}`,
+            `Start · ${dayVisits[0].zone} · ${(dayVisits[0].ts || "").slice(11) || "—"}`,
             { sticky: true },
           )
           .addTo(layer);
-      }
+        if (dayVisits.length > 1) {
+          const lastV = dayVisits[dayVisits.length - 1];
+          L.circleMarker(lastV.centroid, {
+            radius: 6,
+            color,
+            weight: 2,
+            fillColor: "#ffffff",
+            fillOpacity: 1,
+          })
+            .bindTooltip(
+              `End · ${lastV.zone} · ${(lastV.ts || "").slice(11) || "—"}`,
+              { sticky: true },
+            )
+            .addTo(layer);
+        }
+      });
     });
 
     if (bounds.isValid()) {
@@ -419,7 +459,7 @@ export function RoseScouting() {
         { animate: false },
       );
     }
-  }, [aggByZone, zoneByName, visitsByScout, scoutInfo, mapSettings, filters.farm]);
+  }, [aggByZone, zoneByName, visitsByScout, scoutInfo, mapSettings, filters.farm, nameOf]);
 
   // Fly to the farm whenever the operator changes the Farm dropdown.
   const farmFlyMounted = useRef(false);
@@ -461,7 +501,7 @@ export function RoseScouting() {
         .sort(([, a], [, b]) => b - a)
         .map(([k, n]) => ({
           key: k,
-          label: scoutLabel(k),
+          label: nameOf(k),
           count: n,
           color: scoutInfo.colorMap.get(k) || "#9ca3af",
         }))
@@ -477,16 +517,16 @@ export function RoseScouting() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <SingleDayHeader
-        title="Rose Scouting"
-        subtitle="Single-day · zones scouted form the scout's walking path"
+      <RangeHeader
+        title="Scouting"
+        subtitle="Up to one week · zones scouted, with repeat-day overlap"
         value={filters}
         onChange={setFilters}
         showCrop={false}
       />
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[3fr_1fr]">
-        <div className="relative">
+        <div className="relative min-h-[55vh] lg:min-h-0">
           <div className="absolute inset-0 isolate z-0">
             <MapBase
               onReady={(m) => {
@@ -494,108 +534,22 @@ export function RoseScouting() {
               }}
             />
           </div>
-
-          {/* Bottom-right summary panel — KPIs + scout legend, exactly
-              the role the legacy ``scout-summary`` div played. */}
-          <Card className="absolute bottom-4 right-4 z-10 w-72 max-h-[70vh] overflow-y-auto bg-card/95 backdrop-blur shadow-md p-3">
-            <CardHeader className="p-0 pb-2">
-              <CardTitle className="text-sm">Coverage summary</CardTitle>
-              <CardDescription className="text-[0.7rem] tabular-nums">
-                {filters.date}
-              </CardDescription>
-            </CardHeader>
-
-            <div className="grid grid-cols-4 gap-2 mb-3">
-              {[
-                ["Scouts", stats.scouts],
-                ["Beds", stats.beds],
-                ["Zones", stats.zones],
-                ["Entries", stats.entries],
-              ].map(([label, v]) => (
-                <div
-                  key={label as string}
-                  className="rounded border bg-[var(--sd-bg-soft)] px-1.5 py-1 text-center"
-                >
-                  <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
-                    {label}
-                  </div>
-                  <div className="text-sm font-semibold tabular-nums">{v}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground">
-                Scouts in view
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  className="text-[0.65rem] px-2 py-0.5 rounded border bg-card hover:bg-muted"
-                  onClick={() => setHiddenScouts(new Set())}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  className="text-[0.65rem] px-2 py-0.5 rounded border bg-card hover:bg-muted"
-                  onClick={() =>
-                    setHiddenScouts(
-                      new Set(scoutInfo.list.map((s) => s.key)),
-                    )
-                  }
-                >
-                  None
-                </button>
-              </div>
-            </div>
-
-            {scoutInfo.list.length === 0 ? (
-              <div className="text-[0.72rem] text-muted-foreground py-3 text-center">
-                No scouting on this date.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-0.5">
-                {scoutInfo.list.map((s) => {
-                  const off = hiddenScouts.has(s.key);
-                  const color = scoutInfo.colorMap.get(s.key) || "#9ca3af";
-                  return (
-                    <label
-                      key={s.key}
-                      className={`flex items-center gap-2 px-1.5 py-1 rounded hover:bg-muted cursor-pointer transition-opacity ${off ? "opacity-50" : ""}`}
-                    >
-                      <Checkbox
-                        checked={!off}
-                        onCheckedChange={() => toggleScout(s.key)}
-                      />
-                      <span
-                        className="h-3 w-3 rounded-full border shrink-0"
-                        style={{ background: color }}
-                        aria-hidden
-                      />
-                      <span className="text-[0.72rem] flex-1 truncate">
-                        {s.label}
-                      </span>
-                      <span className="text-[0.65rem] tabular-nums px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
-                        {s.zones}z · {s.entries}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
         </div>
 
-        {/* Right rail — clicked-zone detail. */}
-        <div className="border-l bg-card p-3 overflow-auto">
+        {/* Right rail — clicked-zone detail, then the coverage summary below
+            it. Scrolls on its own; capped height on small screens so the map
+            above stays usable. */}
+        <div className="border-l bg-card p-3 overflow-auto flex flex-col gap-3 max-h-[45vh] lg:max-h-none">
           {detail ? (
-            <Card className="p-3 shadow-none border-0">
+            <Card className="p-3 shadow-none border">
               <CardHeader className="p-0 pb-2">
                 <CardTitle className="text-sm">{detail.zone}</CardTitle>
                 <CardDescription className="text-[0.7rem]">
                   {detail.totalEntries} entr
                   {detail.totalEntries === 1 ? "y" : "ies"}
+                  {!isSingleDay
+                    ? ` · covered ${detail.days.size} of ${rangeDayCount} days`
+                    : ""}
                   {detail.lastTs ? ` · last ${detail.lastTs.slice(11)}` : ""}
                 </CardDescription>
               </CardHeader>
@@ -697,6 +651,95 @@ export function RoseScouting() {
               </CardContent>
             </Card>
           )}
+
+          {/* Coverage summary — KPIs + scout legend. Now lives under the
+              zone detail in the rail (was a floating map overlay). */}
+          <Card className="p-3 shadow-none border">
+            <CardHeader className="p-0 pb-2">
+              <CardTitle className="text-sm">Coverage summary</CardTitle>
+              <CardDescription className="text-[0.7rem] tabular-nums">
+                {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
+              </CardDescription>
+            </CardHeader>
+
+            <div className="grid grid-cols-4 gap-2 mb-3">
+              {[
+                ["Scouts", stats.scouts],
+                ["Beds", stats.beds],
+                ["Zones", stats.zones],
+                ["Entries", stats.entries],
+              ].map(([label, v]) => (
+                <div
+                  key={label as string}
+                  className="rounded border bg-[var(--sd-bg-soft)] px-1.5 py-1 text-center"
+                >
+                  <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
+                    {label}
+                  </div>
+                  <div className="text-sm font-semibold tabular-nums">{v}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground">
+                Scouts in view
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="text-[0.65rem] px-2 py-0.5 rounded border bg-card hover:bg-muted"
+                  onClick={() => setHiddenScouts(new Set())}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  className="text-[0.65rem] px-2 py-0.5 rounded border bg-card hover:bg-muted"
+                  onClick={() =>
+                    setHiddenScouts(new Set(scoutInfo.list.map((s) => s.key)))
+                  }
+                >
+                  None
+                </button>
+              </div>
+            </div>
+
+            {scoutInfo.list.length === 0 ? (
+              <div className="text-[0.72rem] text-muted-foreground py-3 text-center">
+                No scouting in this range.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                {scoutInfo.list.map((s) => {
+                  const off = hiddenScouts.has(s.key);
+                  const color = scoutInfo.colorMap.get(s.key) || "#9ca3af";
+                  return (
+                    <label
+                      key={s.key}
+                      className={`flex items-center gap-2 px-1.5 py-1 rounded hover:bg-muted cursor-pointer transition-opacity ${off ? "opacity-50" : ""}`}
+                    >
+                      <Checkbox
+                        checked={!off}
+                        onCheckedChange={() => toggleScout(s.key)}
+                      />
+                      <span
+                        className="h-3 w-3 rounded-full border shrink-0"
+                        style={{ background: color }}
+                        aria-hidden
+                      />
+                      <span className="text-[0.72rem] flex-1 truncate">
+                        {s.label}
+                      </span>
+                      <span className="text-[0.65rem] tabular-nums px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+                        {s.zones}z · {s.entries}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
         </div>
       </div>
 

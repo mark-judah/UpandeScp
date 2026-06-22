@@ -183,7 +183,11 @@ def _fetch_week_entries(iso_year, iso_week):
     entries = _build_month_entries(monday.isoformat(), sunday.isoformat())
 
     if _is_recent_week(iso_year, iso_week):
-        cache.set_value(cache_key, entries, expires_in_sec=TTL_MEDIUM)
+        # 24h TTL so a recent week stays hot all day without depending on the
+        # hourly prewarm. Safe: every scouting write busts the exact ISO week it
+        # touches (invalidate_scouting_week_for_doc), so the active week never
+        # serves stale data and historical weeks rarely change.
+        cache.set_value(cache_key, entries, expires_in_sec=TTL_LONG)
     return entries
 
 

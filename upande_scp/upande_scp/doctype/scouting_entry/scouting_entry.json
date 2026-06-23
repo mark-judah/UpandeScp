@@ -33,6 +33,8 @@
   "incidents_scouting_entry",
   "section_break_betj",
   "physiological_disorders_entry",
+  "section_break_chp",
+  "crop_husbandry_practices_entry",
   "section_break_hidu",
   "trap_scouting_entry",
   "section_break_crop_modelling",
@@ -207,6 +209,16 @@
    "fieldtype": "Table",
    "label": "Physiological Disorders",
    "options": "Physiological Disorders Entry"
+  },
+  {
+   "fieldname": "section_break_chp",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "crop_husbandry_practices_entry",
+   "fieldtype": "Table",
+   "label": "Crop Husbandry Practices",
+   "options": "Crop Husbandry Practices Entry"
   },
   {
    "fieldname": "section_break_hidu",

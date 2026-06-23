@@ -1,57 +1,62 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
-interface KpiProps {
-  label: string
-  value: string
-  hint?: string
-  accent?:
-    | "chart-1"
-    | "chart-2"
-    | "chart-3"
-    | "chart-4"
-    | "chart-5"
-    | "severity-low"
-    | "severity-mod"
-    | "severity-high"
+export interface KpiProps {
+  label: string;
+  value: string | number;
+  hint?: string;
+  tone?: "default" | "warning" | "critical" | "good";
+  className?: string;
 }
 
-const accentVar: Record<NonNullable<KpiProps["accent"]>, string> = {
-  "chart-1": "var(--chart-1)",
-  "chart-2": "var(--chart-2)",
-  "chart-3": "var(--chart-3)",
-  "chart-4": "var(--chart-4)",
-  "chart-5": "var(--chart-5)",
-  "severity-low": "var(--severity-low)",
-  "severity-mod": "var(--severity-mod)",
-  "severity-high": "var(--severity-high)",
-}
+const TONE: Record<NonNullable<KpiProps["tone"]>, string> = {
+  default: "text-foreground",
+  warning: "text-[var(--sd-target)]",
+  critical: "text-[var(--sd-data-red)]",
+  good: "text-[var(--sd-data-green)]",
+};
 
-export function Kpi({ label, value, hint, accent }: KpiProps) {
-  const color = accent ? accentVar[accent] : undefined
+export function Kpi({ label, value, hint, tone = "default", className }: KpiProps) {
   return (
-    <Card className="relative overflow-hidden">
-      {color && (
-        <span
-          aria-hidden
-          className="absolute inset-x-0 top-0 h-1"
-          style={{ background: color }}
-        />
+    <Card className={cn("p-4 flex flex-col gap-1", className)}>
+      <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "text-2xl font-semibold leading-tight tracking-tight tabular-nums",
+          TONE[tone],
+        )}
+      >
+        {value}
+      </div>
+      {hint && (
+        <div className="text-xs text-muted-foreground line-clamp-2">{hint}</div>
       )}
-      <CardHeader className="pb-2">
-        <CardDescription className="text-xs uppercase tracking-wide">
-          {label}
-        </CardDescription>
-        <CardTitle className="text-3xl tabular-nums">{value}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </CardContent>
     </Card>
-  )
+  );
+}
+
+export function KpiGrid({
+  children,
+  cols = 4,
+  className,
+}: {
+  children: React.ReactNode;
+  cols?: 2 | 3 | 4;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "grid gap-3",
+        cols === 4 && "grid-cols-2 lg:grid-cols-4",
+        cols === 3 && "grid-cols-1 sm:grid-cols-3",
+        cols === 2 && "grid-cols-1 sm:grid-cols-2",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
 }

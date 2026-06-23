@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:greenhouse",
  "creation": "2025-09-02 20:58:21.513804",
@@ -33,8 +34,8 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-10 23:18:07.873116",
- "modified_by": "Administrator",
+ "modified": "2026-02-04 17:28:28.975653",
+ "modified_by": "stephene@upande.com",
  "module": "Upande Scp",
  "name": "Bed And Zone Automation",
  "naming_rule": "By fieldname",

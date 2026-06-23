@@ -1,30 +1,18 @@
-import { useMemo } from "react"
+import { useState } from "react";
 import {
-  Area,
   AreaChart,
+  Area,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
+  LineChart,
   Pie,
   PieChart,
-  PolarAngleAxis,
-  PolarGrid,
-  Radar,
-  RadarChart,
   XAxis,
   YAxis,
-} from "recharts"
-import { Sprout } from "lucide-react"
-
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+} from "recharts";
 import {
   ChartContainer,
   ChartLegend,
@@ -32,328 +20,452 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@/components/ui/chart"
+} from "@/components/ui/chart";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Kpi, KpiGrid } from "./Kpi";
+import { EmptyHint } from "./EmptyHint";
+import { GreenhouseModal } from "./GreenhouseModal";
+import type { OverviewPayload } from "./overview-types";
+import { weekTickFormatter } from "@/lib/iso-week";
 
-import { EmptyHint } from "./EmptyHint"
-import { Kpi } from "./Kpi"
-import type { AggregatedScouting } from "./aggregate"
+const series: ChartConfig = {
+  pests: { label: "Pests", color: "var(--sd-data-cyan)" },
+  diseases: { label: "Diseases", color: "var(--sd-data-pink)" },
+  traps: { label: "Traps", color: "var(--sd-data-purple)" },
+};
 
-interface Props {
-  data: AggregatedScouting
-  loading: boolean
-}
+const STATUS_DOT: Record<string, string> = {
+  good: "bg-[var(--sd-data-green)]",
+  warning: "bg-[var(--sd-target)]",
+  critical: "bg-[var(--sd-data-red)]",
+};
 
-export function OverviewTab({ data, loading }: Props) {
-  const timelineData = useMemo(
-    () =>
-      data.daily.map((d) => ({
-        date: d.date.slice(5),
-        Pests: d.pests,
-        Diseases: d.diseases,
-        Traps: d.traps,
-      })),
-    [data.daily],
-  )
-
-  const timelineConfig = {
-    Pests: { label: "Pests", color: "var(--chart-1)" },
-    Diseases: { label: "Diseases", color: "var(--chart-3)" },
-    Traps: { label: "Traps", color: "var(--chart-2)" },
-  } satisfies ChartConfig
-
-  const donut = useMemo(
-    () =>
-      [
-        { key: "pests", label: "Pests", count: data.totalPestObservations, fill: "var(--chart-1)" },
-        { key: "diseases", label: "Diseases", count: data.totalDiseaseObservations, fill: "var(--chart-3)" },
-        { key: "traps", label: "Traps", count: data.totalTrapObservations, fill: "var(--chart-2)" },
-      ].filter((d) => d.count > 0),
-    [data.totalPestObservations, data.totalDiseaseObservations, data.totalTrapObservations],
-  )
-  const donutTotal = donut.reduce((s, d) => s + d.count, 0)
-  const donutConfig = {
-    count: { label: "Observations" },
-    pests: { label: "Pests", color: "var(--chart-1)" },
-    diseases: { label: "Diseases", color: "var(--chart-3)" },
-    traps: { label: "Traps", color: "var(--chart-2)" },
-  } satisfies ChartConfig
-
-  const topPests = useMemo(
-    () => data.pests.slice(0, 6).map((p) => ({ name: p.name, total: p.total })),
-    [data.pests],
-  )
-  const topDiseases = useMemo(
-    () => data.diseases.slice(0, 6).map((d) => ({ name: d.name, total: d.total })),
-    [data.diseases],
-  )
-  const topPestsConfig = {
-    total: { label: "Observations", color: "var(--chart-1)" },
-  } satisfies ChartConfig
-  const topDiseasesConfig = {
-    total: { label: "Observations", color: "var(--chart-3)" },
-  } satisfies ChartConfig
-
-  const topGreenhouses = useMemo(
-    () =>
-      data.greenhouses.slice(0, 8).map((g) => ({
-        greenhouse: g.name,
-        observations: g.pests + g.diseases + g.traps,
-        alerts: g.alerts,
-      })),
-    [data.greenhouses],
-  )
-  const ghConfig = {
-    observations: { label: "Observations", color: "var(--chart-1)" },
-  } satisfies ChartConfig
-
-  const topScouts = useMemo(() => data.scouts.slice(0, 8), [data.scouts])
+export function OverviewTab({
+  data,
+  scoutLookup,
+  fromDate,
+  toDate,
+  crop = "",
+}: {
+  data: OverviewPayload | null;
+  scoutLookup: Record<string, string>;
+  fromDate: string;
+  toDate: string;
+  crop?: string;
+}) {
+  const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, blockCount: 0, highAlerts: 0 };
+  // Avocado scouting uses Blocks (open-field), everything else uses Greenhouses.
+  // Fall back to data shape too, so the label tracks reality even if the
+  // crop string ever drifts (case/whitespace) or a new block-crop is added.
+  const showBlocks =
+    (crop || "").trim().toLowerCase() === "avocado" ||
+    (k.blockCount > 0 && k.greenhouseCount === 0);
+  const unitLabel = showBlocks ? "Blocks" : "Greenhouses";
+  const unitValue = showBlocks ? k.blockCount : k.greenhouseCount;
+  const daily = data?.daily ?? [];
+  const totals = data
+    ? [
+        { name: "pests", value: data.rangeTotals.pests },
+        { name: "diseases", value: data.rangeTotals.diseases },
+        { name: "traps", value: data.rangeTotals.traps },
+      ]
+    : [
+        { name: "pests", value: 0 },
+        { name: "diseases", value: 0 },
+        { name: "traps", value: 0 },
+      ];
+  const totalsMax = Math.max(1, totals.reduce((s, t) => s + t.value, 0));
+  const ghs = data?.ghHealth ?? [];
+  const scouts = (data?.topScouts ?? []).map((s) => ({
+    ...s,
+    name: s.scoutId,
+    displayName: scoutLookup[s.scoutId] || s.scoutId,
+  }));
+  const recent = (data?.recentActivity ?? []).map((r) => ({
+    ...r,
+    scout: scoutLookup[r.scoutId] || r.scoutId,
+  }));
+  const alerts = data?.activeAlerts ?? [];
+  const scoutsDaily = data?.scoutsPerDay ?? [];
+  const perf = (data?.scoutPerformance ?? []).map((p) => ({
+    ...p,
+    name: scoutLookup[p.scoutId] || p.scoutId,
+  }));
+  const [openGh, setOpenGh] = useState<string | null>(null);
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <Kpi label="Entries" value={data.totalEntries.toString()} hint="this period" />
+    <div className="flex flex-col gap-4">
+      <KpiGrid cols={4}>
         <Kpi
-          label="Pest observations"
-          value={data.totalPestObservations.toString()}
-          hint={`${data.pests.length} unique`}
-          accent="chart-1"
+          label="Total Scouts"
+          value={k.totalScouts}
+          hint={
+            scouts.length
+              ? scouts.length > 4
+                ? `${scouts.slice(0, 3).map((s) => s.displayName).join(", ")} + ${scouts.length - 3} more`
+                : scouts.map((s) => s.displayName).join(", ")
+              : "no scouts in range"
+          }
+        />
+        <Kpi label="Zones Scouted" value={k.zonesScouted} hint="zone visits" />
+        <Kpi
+          label={unitLabel}
+          value={unitValue}
+          hint="monitored"
         />
         <Kpi
-          label="Disease observations"
-          value={data.totalDiseaseObservations.toString()}
-          hint={`${data.diseases.length} unique`}
-          accent="chart-3"
+          label="High Alerts"
+          value={k.highAlerts}
+          tone={k.highAlerts > 0 ? "critical" : "default"}
+          hint="critical levels"
         />
-        <Kpi
-          label="Trap counts"
-          value={data.totalTrapObservations.toString()}
-          hint={`${data.traps.length} traps`}
-          accent="chart-2"
-        />
-        <Kpi
-          label="Alerts"
-          value={data.totalAlerts.toString()}
-          hint="trap > 10"
-          accent="severity-high"
-        />
-      </div>
+      </KpiGrid>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Daily timeline</CardTitle>
-            <CardDescription>Pests, diseases, traps by capture date</CardDescription>
+      <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-3">
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Activity Timeline</CardTitle>
+            <CardDescription>Daily observations</CardDescription>
           </CardHeader>
-          <CardContent>
-            {timelineData.length === 0 ? (
-              <EmptyHint loading={loading}>No entries in the selected range.</EmptyHint>
-            ) : (
-              <ChartContainer config={timelineConfig} className="aspect-[16/6] w-full">
-                <AreaChart
-                  data={timelineData}
-                  margin={{ left: 8, right: 8, top: 12, bottom: 0 }}
-                >
-                  <defs>
-                    {(["Pests", "Diseases", "Traps"] as const).map((k) => (
-                      <linearGradient key={k} id={`fill${k}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={`var(--color-${k})`} stopOpacity={0.45} />
-                        <stop offset="95%" stopColor={`var(--color-${k})`} stopOpacity={0} />
-                      </linearGradient>
-                    ))}
-                  </defs>
+          <CardContent className="p-0">
+            {daily.length ? (
+              <ChartContainer config={series} className="h-64">
+                <AreaChart data={daily} margin={{ left: 4, right: 8, top: 8 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                    minTickGap={0}
+                    tickFormatter={weekTickFormatter}
+                  />
                   <YAxis tickLine={false} axisLine={false} width={32} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
                   <ChartLegend content={<ChartLegendContent />} />
                   <Area
-                    dataKey="Pests"
-                    type="monotone"
-                    fill="url(#fillPests)"
-                    stroke="var(--color-Pests)"
-                    strokeWidth={2}
-                    stackId="a"
+                    type="linear"
+                    dataKey="pests"
+                    stackId="1"
+                    stroke="var(--color-pests)"
+                    fill="var(--color-pests)"
+                    fillOpacity={0.18}
                   />
                   <Area
-                    dataKey="Diseases"
-                    type="monotone"
-                    fill="url(#fillDiseases)"
-                    stroke="var(--color-Diseases)"
-                    strokeWidth={2}
-                    stackId="a"
+                    type="linear"
+                    dataKey="diseases"
+                    stackId="1"
+                    stroke="var(--color-diseases)"
+                    fill="var(--color-diseases)"
+                    fillOpacity={0.18}
                   />
                   <Area
-                    dataKey="Traps"
-                    type="monotone"
-                    fill="url(#fillTraps)"
-                    stroke="var(--color-Traps)"
-                    strokeWidth={2}
-                    stackId="a"
+                    type="linear"
+                    dataKey="traps"
+                    stackId="1"
+                    stroke="var(--color-traps)"
+                    fill="var(--color-traps)"
+                    fillOpacity={0.18}
                   />
                 </AreaChart>
               </ChartContainer>
+            ) : (
+              <EmptyHint title="No timeline data" hint="No observations recorded in this range." />
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Observations split</CardTitle>
-            <CardDescription>
-              Total {donutTotal.toLocaleString()} observations
-            </CardDescription>
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Range Totals</CardTitle>
+            <CardDescription>Category split</CardDescription>
           </CardHeader>
-          <CardContent>
-            {donutTotal === 0 ? (
-              <EmptyHint loading={loading}>No observations in this period.</EmptyHint>
+          <CardContent className="p-0 relative">
+            {totalsMax > 1 ? (
+              <>
+                <ChartContainer config={series} className="h-56">
+                  <PieChart>
+                    <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+                    <Pie
+                      data={totals}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius="58%"
+                      outerRadius="90%"
+                      stroke="var(--sd-card)"
+                      strokeWidth={2}
+                    >
+                      {totals.map((t) => (
+                        <Cell key={t.name} fill={`var(--color-${t.name})`} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ChartContainer>
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="flex flex-col items-center">
+                    <span className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
+                      Total
+                    </span>
+                    <span className="text-2xl font-semibold tabular-nums">
+                      {totals.reduce((s, t) => s + t.value, 0)}
+                    </span>
+                  </div>
+                </div>
+              </>
             ) : (
-              <ChartContainer config={donutConfig} className="mx-auto aspect-square max-h-[260px]">
-                <PieChart>
-                  <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                  <Pie data={donut} dataKey="count" nameKey="label" innerRadius={60} strokeWidth={4}>
-                    {donut.map((entry, i) => (
-                      <Cell key={i} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <ChartLegend content={<ChartLegendContent nameKey="label" />} />
-                </PieChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Top pests</CardTitle>
-            <CardDescription>Top 6 by observation count</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {topPests.length === 0 ? (
-              <EmptyHint loading={loading}>No pest observations.</EmptyHint>
-            ) : (
-              <ChartContainer
-                config={topPestsConfig}
-                className="mx-auto aspect-square max-h-[300px]"
-              >
-                <RadarChart data={topPests}>
-                  <PolarGrid />
-                  <PolarAngleAxis dataKey="name" />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Radar
-                    dataKey="total"
-                    fill="var(--color-total)"
-                    fillOpacity={0.5}
-                    stroke="var(--color-total)"
-                    strokeWidth={2}
-                  />
-                </RadarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Top diseases</CardTitle>
-            <CardDescription>Top 6 by observation count</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {topDiseases.length === 0 ? (
-              <EmptyHint loading={loading}>No disease observations.</EmptyHint>
-            ) : (
-              <ChartContainer
-                config={topDiseasesConfig}
-                className="mx-auto aspect-square max-h-[300px]"
-              >
-                <RadarChart data={topDiseases}>
-                  <PolarGrid />
-                  <PolarAngleAxis dataKey="name" />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Radar
-                    dataKey="total"
-                    fill="var(--color-total)"
-                    fillOpacity={0.5}
-                    stroke="var(--color-total)"
-                    strokeWidth={2}
-                  />
-                </RadarChart>
-              </ChartContainer>
+              <EmptyHint />
             )}
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Greenhouse activity</CardTitle>
-            <CardDescription>Top 8 by total observations</CardDescription>
+      <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-3">
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Scouts Active Per Day</CardTitle>
+            <CardDescription>Unique scouts contributing each day</CardDescription>
           </CardHeader>
-          <CardContent>
-            {topGreenhouses.length === 0 ? (
-              <EmptyHint loading={loading}>No greenhouse data.</EmptyHint>
-            ) : (
-              <ChartContainer config={ghConfig} className="aspect-[16/8] w-full">
-                <BarChart data={topGreenhouses} layout="vertical" margin={{ left: 8 }}>
-                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                  <XAxis type="number" tickLine={false} axisLine={false} />
-                  <YAxis
-                    dataKey="greenhouse"
-                    type="category"
+          <CardContent className="p-0">
+            {scoutsDaily.length ? (
+              <ChartContainer
+                config={{ scouts: { label: "Scouts", color: "var(--sd-data-indigo)" } }}
+                className="h-48"
+              >
+                <LineChart data={scoutsDaily} margin={{ left: 4, right: 8, top: 8 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
                     tickLine={false}
                     axisLine={false}
-                    width={120}
+                    interval={0}
+                    minTickGap={0}
+                    tickFormatter={weekTickFormatter}
                   />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar
-                    dataKey="observations"
-                    fill="var(--color-observations)"
-                    radius={[0, 6, 6, 0]}
+                  <YAxis tickLine={false} axisLine={false} width={28} />
+                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                  <Line
+                    type="linear"
+                    dataKey="scouts"
+                    stroke="var(--sd-data-indigo)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                    isAnimationActive={false}
                   />
-                </BarChart>
+                </LineChart>
               </ChartContainer>
+            ) : (
+              <EmptyHint />
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Top scouts</CardTitle>
-            <CardDescription>By number of submitted entries</CardDescription>
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Active Alerts</CardTitle>
+            <CardDescription>{alerts.length} flagged</CardDescription>
           </CardHeader>
-          <CardContent>
-            {topScouts.length === 0 ? (
-              <EmptyHint loading={loading}>No scout data.</EmptyHint>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {topScouts.map((s) => {
-                  const obs =
-                    s.pestObservations + s.diseaseObservations + s.trapObservations
-                  return (
-                    <li
-                      key={s.key}
-                      className="flex items-center gap-3 rounded-md border bg-card px-3 py-2"
+          <CardContent className="p-0 flex flex-col gap-1.5">
+            {alerts.length ? (
+              alerts.map((a, i) => (
+                <div
+                  key={`${a.name}-${a.greenhouse}-${a.date}-${i}`}
+                  className="flex flex-col gap-1 px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">{a.name}</span>
+                    <Badge
+                      variant={a.severity === "high" ? "destructive" : "secondary"}
+                      className="text-[0.6rem]"
                     >
-                      <Sprout className="size-4 text-muted-foreground" />
-                      <div className="flex-1">
-                        <div className="font-medium">{s.label}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {s.entries} entries · {obs} observations
-                        </div>
-                      </div>
-                      <Badge variant="secondary" className="font-normal">
-                        {obs}
-                      </Badge>
-                    </li>
-                  )
-                })}
-              </ul>
+                      {a.severity}
+                    </Badge>
+                  </div>
+                  <div className="text-[0.7rem] text-muted-foreground truncate">
+                    {a.greenhouse}
+                    {a.zone ? ` · ${a.zone}` : ""}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <EmptyHint title="No active alerts" hint="No high-severity observations." />
             )}
           </CardContent>
         </Card>
       </div>
+
+      <Card className="p-4">
+        <CardHeader className="p-0 pb-2">
+          <CardTitle>Scout Performance</CardTitle>
+          <CardDescription>Zones · pests · diseases per scout</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {perf.length ? (
+            <ChartContainer
+              config={{
+                zones: { label: "Zones", color: "var(--sd-data-cyan)" },
+                pests: { label: "Pests", color: "var(--sd-data-amber)" },
+                diseases: { label: "Diseases", color: "var(--sd-data-pink)" },
+              }}
+              className="h-64"
+            >
+              <BarChart data={perf} margin={{ left: 12, right: 12, top: 8 }}>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="name"
+                  tickLine={false}
+                  axisLine={false}
+                  interval={0}
+                  height={48}
+                  tick={{ fontSize: 10 }}
+                />
+                <YAxis tickLine={false} axisLine={false} width={32} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <ChartLegend content={<ChartLegendContent />} />
+                <Bar dataKey="zones" fill="var(--sd-data-cyan)" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="pests" fill="var(--sd-data-amber)" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="diseases" fill="var(--sd-data-pink)" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ChartContainer>
+          ) : (
+            <EmptyHint />
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Greenhouse Health</CardTitle>
+            <CardDescription>{ghs.length} monitored · click for details</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0 flex flex-col gap-1.5">
+            {ghs.length ? (
+              ghs.slice(0, 12).map((g) => (
+                <button
+                  type="button"
+                  key={g.name}
+                  onClick={() => setOpenGh(g.name)}
+                  className="flex items-center justify-between gap-3 px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)] hover:bg-[var(--sd-pistachio)] transition-colors text-left"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`h-2 w-2 rounded-full ${STATUS_DOT[g.status]}`} />
+                    <span className="font-medium text-sm text-foreground truncate">
+                      {g.name}
+                    </span>
+                    {g.alerts > 0 && (
+                      <Badge variant="destructive" className="ml-1 text-[0.65rem]">
+                        {g.alerts} alert{g.alerts !== 1 ? "s" : ""}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground tabular-nums">
+                    <span>{g.pests}p</span>
+                    <span>{g.diseases}d</span>
+                    <span>{g.traps}t</span>
+                    <span>{g.scoutCount}s</span>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <EmptyHint title="No greenhouses" />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Recent Zone Activity</CardTitle>
+            <CardDescription>Most recent zone visits</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0 flex flex-col gap-1.5">
+            {recent.length ? (
+              recent.map((r) => (
+                <div
+                  key={r.name}
+                  className="flex items-center justify-between gap-3 px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-foreground truncate">
+                      {r.greenhouse}
+                      {r.zone && (
+                        <span className="text-muted-foreground"> · {r.zone}</span>
+                      )}
+                    </div>
+                    <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
+                      {r.kind}
+                      {r.scout && <span className="ml-1">· {r.scout}</span>}
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground font-mono tabular-nums">
+                    {r.date}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <EmptyHint />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="p-4">
+        <CardHeader className="p-0 pb-2">
+          <CardTitle>Top Scouts</CardTitle>
+          <CardDescription>By zone visits</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {scouts.length ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              {scouts.map((s, i) => (
+                <div
+                  key={s.name}
+                  className="flex items-center gap-3 px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]"
+                >
+                  <div
+                    className={`h-7 w-7 rounded-full flex items-center justify-center text-[0.72rem] font-semibold tabular-nums ${
+                      i === 0
+                        ? "bg-[var(--sd-target)] text-white"
+                        : i === 1
+                          ? "bg-[var(--sd-data-cyan)] text-white"
+                          : i === 2
+                            ? "bg-[var(--sd-data-purple)] text-white"
+                            : "bg-secondary text-secondary-foreground"
+                    }`}
+                  >
+                    {i + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      {s.displayName}
+                    </div>
+                    <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
+                      {s.entries} zones
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyHint />
+          )}
+        </CardContent>
+      </Card>
+
+      <GreenhouseModal
+        greenhouse={openGh}
+        fromDate={fromDate}
+        toDate={toDate}
+        crop={crop}
+        onClose={() => setOpenGh(null)}
+      />
     </div>
-  )
+  );
 }

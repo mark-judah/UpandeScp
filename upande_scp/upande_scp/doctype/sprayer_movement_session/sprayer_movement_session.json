@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
+  "session_tag",
   "work_order",
   "employee",
   "greenhouse",
@@ -31,6 +32,14 @@
    "print_hide": 1,
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "description": "Client-generated tag from the mobile app (e.g. GH17-02042026-W14)",
+   "fieldname": "session_tag",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Session Tag",
+   "search_index": 1
   },
   {
    "fieldname": "work_order",
@@ -110,7 +119,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-31 00:00:00.000000",
+ "modified": "2026-04-01 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Sprayer Movement Session",

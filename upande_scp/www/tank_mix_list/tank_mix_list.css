@@ -1,0 +1,338 @@
+/* ────────────────────────────────────────────────────────
+   Tank Mix List — BOMs filtered to Chemical Mix
+   Scoped under #tml-root, matches Scouting Reports theme.
+   ──────────────────────────────────────────────────────── */
+
+#tml-root {
+	font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+	background: #f5f7fa;
+	min-height: 100vh;
+	color: #374151;
+}
+
+#tml-root .tml-page {
+	max-width: 1280px;
+	margin: 0 auto;
+	padding: 28px 24px 48px;
+}
+
+/* ── Header ── */
+#tml-root .tml-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 24px;
+	flex-wrap: wrap;
+	margin-bottom: 20px;
+	padding-bottom: 20px;
+	border-bottom: 1px solid #e5e7eb;
+}
+#tml-root .tml-title {
+	font-size: 1.125rem;
+	font-weight: 700;
+	color: #374151;
+	margin: 0 0 4px 0;
+}
+#tml-root .tml-subtitle {
+	font-size: 0.85rem;
+	color: #6b7280;
+}
+
+/* ── Buttons ── */
+#tml-root .tml-btn {
+	font-family: inherit;
+	font-size: 0.78rem;
+	font-weight: 600;
+	padding: 7px 14px;
+	border-radius: 6px;
+	border: 1px solid transparent;
+	cursor: pointer;
+	transition: background 0.15s, border-color 0.15s, color 0.15s;
+	white-space: nowrap;
+	text-decoration: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+}
+#tml-root .tml-btn-primary {
+	background: #4b5563;
+	color: #ffffff;
+	border-color: #4b5563;
+}
+#tml-root .tml-btn-primary:hover {
+	background: #374151;
+	border-color: #374151;
+}
+#tml-root .tml-btn-ghost {
+	background: #ffffff;
+	color: #374151;
+	border-color: #d1d5db;
+}
+#tml-root .tml-btn-ghost:hover {
+	background: #f9fafb;
+}
+
+/* ── Filters ── */
+#tml-root .tml-filters {
+	background: #ffffff;
+	border: 1px solid #e5e7eb;
+	border-radius: 10px;
+	padding: 16px 20px;
+	margin-bottom: 16px;
+}
+#tml-root .filter-group {
+	display: flex;
+	gap: 12px;
+	flex-wrap: wrap;
+	align-items: flex-end;
+}
+#tml-root .filter-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 140px;
+}
+#tml-root .filter-field label {
+	font-size: 0.66rem;
+	font-weight: 600;
+	color: #6b7280;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+#tml-root .filter-input {
+	height: 36px;
+	padding: 0 10px;
+	border: 1px solid #d1d5db;
+	border-radius: 6px;
+	font-size: 0.82rem;
+	color: #374151;
+	background: #ffffff;
+	outline: none;
+	font-family: inherit;
+	min-width: 200px;
+}
+#tml-root .filter-input:focus { border-color: #4b5563; }
+#tml-root .tml-filter-actions { min-width: 0; }
+#tml-root .tml-action-row { display: flex; gap: 6px; }
+
+/* ── Results meta ── */
+#tml-root .tml-results-meta {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-size: 0.78rem;
+	color: #6b7280;
+	margin: 0 4px 12px;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+#tml-root .tml-results-meta strong { color: #374151; font-weight: 700; }
+#tml-root .tml-results-cap { font-size: 0.74rem; color: #9ca3af; }
+
+/* ── Card grid ── */
+#tml-root .tml-grid {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 14px;
+}
+@media (min-width: 1024px) {
+	#tml-root .tml-grid { grid-template-columns: 1fr 1fr; }
+}
+
+#tml-root .tml-card {
+	background: #ffffff;
+	border: 1px solid #e5e7eb;
+	border-radius: 10px;
+	padding: 18px 20px;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+/* ── Card header ── */
+#tml-root .tml-card-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+#tml-root .tml-card-title-wrap { min-width: 0; }
+#tml-root .tml-card-title {
+	margin: 0 0 4px;
+	font-size: 0.95rem;
+	font-weight: 700;
+	color: #374151;
+	word-break: break-word;
+}
+#tml-root .tml-card-meta {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+#tml-root .tml-bom-name {
+	font-size: 0.74rem;
+	color: #4b5563;
+	text-decoration: none;
+	font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+	border-bottom: 1px dotted #9ca3af;
+}
+#tml-root .tml-bom-name:hover { color: #111827; border-bottom-color: #6b7280; }
+#tml-root .tml-meta-pill {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px 8px;
+	font-size: 0.7rem;
+	color: #4b5563;
+	background: #f4f5f6;
+	border: 1px solid #e5e7eb;
+	border-radius: 10px;
+	font-weight: 500;
+}
+
+/* ── Status pills ── */
+#tml-root .tml-card-status {
+	display: flex;
+	gap: 6px;
+	flex-shrink: 0;
+}
+#tml-root .tml-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 9px;
+	border-radius: 6px;
+	font-size: 0.7rem;
+	font-weight: 600;
+	background: #f4f5f6;
+	color: #4b5563;
+	border: 1px solid #e5e7eb;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+#tml-root .tml-status-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	flex-shrink: 0;
+	background: #9ca3af;
+}
+#tml-root .tml-status-active   .tml-status-dot { background: #047857; }
+#tml-root .tml-status-inactive .tml-status-dot { background: #9ca3af; }
+#tml-root .tml-status-default  .tml-status-dot { background: #4b5563; }
+
+/* ── Stats strip ── */
+#tml-root .tml-card-stats {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+	gap: 10px;
+	padding: 10px 0;
+	border-top: 1px solid #f3f4f6;
+	border-bottom: 1px solid #f3f4f6;
+}
+#tml-root .tml-stat {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+#tml-root .tml-stat-label {
+	font-size: 0.62rem;
+	font-weight: 600;
+	color: #9ca3af;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+#tml-root .tml-stat-value {
+	font-size: 1rem;
+	font-weight: 700;
+	color: #374151;
+	line-height: 1.1;
+}
+#tml-root .tml-stat-meta {
+	font-size: 0.7rem;
+	color: #9ca3af;
+	font-weight: 500;
+}
+
+/* ── Chemicals table ── */
+#tml-root .tml-table-wrap {
+	border: 1px solid #e5e7eb;
+	border-radius: 6px;
+	overflow: hidden;
+}
+#tml-root .tml-table {
+	width: 100%;
+	border-collapse: collapse;
+	background: #ffffff;
+	font-size: 0.8rem;
+}
+#tml-root .tml-table thead tr {
+	background: #fafbfc;
+	border-bottom: 1px solid #e5e7eb;
+}
+#tml-root .tml-table th {
+	padding: 8px 12px;
+	text-align: left;
+	font-size: 0.64rem;
+	font-weight: 600;
+	color: #6b7280;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+#tml-root .tml-table td {
+	padding: 8px 12px;
+	border-bottom: 1px solid #f3f4f6;
+	color: #374151;
+}
+#tml-root .tml-table tbody tr:last-child td { border-bottom: none; }
+#tml-root .tml-table .tml-num { text-align: right; font-variant-numeric: tabular-nums; }
+#tml-root .tml-chem-name { font-weight: 600; color: #374151; margin-bottom: 1px; }
+#tml-root .tml-chem-code {
+	font-size: 0.7rem;
+	color: #9ca3af;
+	font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+}
+
+#tml-root .tml-empty-inline {
+	font-size: 0.78rem;
+	color: #9ca3af;
+	margin: 0;
+	padding: 12px;
+	background: #fafbfc;
+	border: 1px dashed #e5e7eb;
+	border-radius: 6px;
+	text-align: center;
+}
+
+/* ── Card footer ── */
+#tml-root .tml-card-foot {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-size: 0.74rem;
+	color: #6b7280;
+}
+#tml-root .tml-card-link {
+	color: #4b5563;
+	text-decoration: none;
+	font-weight: 600;
+}
+#tml-root .tml-card-link:hover { color: #111827; }
+
+/* ── Empty state ── */
+#tml-root .tml-empty {
+	background: #ffffff;
+	border: 1px dashed #d1d5db;
+	border-radius: 10px;
+	padding: 48px 24px;
+	text-align: center;
+	color: #6b7280;
+	font-size: 0.85rem;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	align-items: center;
+}
+#tml-root .tml-empty p { margin: 0; }

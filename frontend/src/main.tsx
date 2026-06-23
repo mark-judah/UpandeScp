@@ -1,15 +1,13 @@
-import { StrictMode } from "react"
-import { createRoot } from "react-dom/client"
-import "./index.css"
-import App from "./App.tsx"
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import "./index.css";
+import { App } from "./App";
 
-const container = document.getElementById("scp-root")
-if (!container) {
-  throw new Error("scp-root element not found")
+const el = document.getElementById("scp-root");
+if (el) {
+  createRoot(el).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
 }
-
-createRoot(container).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)

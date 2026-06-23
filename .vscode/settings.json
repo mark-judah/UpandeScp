@@ -1,1 +1,29 @@
-{}
+{
+  "workbench.colorCustomizations": {
+    "titleBar.activeBackground": "#0d0c5a",
+    "titleBar.activeForeground": "#ffffff",
+    "titleBar.inactiveBackground": "#0d0c5a",
+    "titleBar.inactiveForeground": "#ffffff90",
+    "statusBarItem.warningBackground": "#0d0c5a",
+    "statusBarItem.warningForeground": "#ffffff",
+    "statusBarItem.warningHoverBackground": "#0d0c5a",
+    "statusBarItem.warningHoverForeground": "#ffffff90",
+    "statusBarItem.remoteBackground": "#1a1967",
+    "statusBarItem.remoteForeground": "#ffffff",
+    "statusBarItem.remoteHoverBackground": "#272674",
+    "statusBarItem.remoteHoverForeground": "#ffffff90",
+    "statusBar.background": "#0d0c5a",
+    "statusBar.foreground": "#ffffff",
+    "statusBar.border": "#0d0c5a",
+    "statusBar.debuggingBackground": "#0d0c5a",
+    "statusBar.debuggingForeground": "#ffffff",
+    "statusBar.debuggingBorder": "#0d0c5a",
+    "statusBar.noFolderBackground": "#0d0c5a",
+    "statusBar.noFolderForeground": "#ffffff",
+    "statusBar.noFolderBorder": "#0d0c5a",
+    "statusBar.prominentBackground": "#0d0c5a",
+    "statusBar.prominentForeground": "#ffffff",
+    "statusBar.prominentHoverBackground": "#0d0c5a",
+    "statusBar.prominentHoverForeground": "#ffffff90"
+  }
+}

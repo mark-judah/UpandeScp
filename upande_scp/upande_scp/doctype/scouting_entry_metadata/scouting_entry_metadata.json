@@ -2,7 +2,7 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "SEM-.#####",
+ "autoname": "format:SEM-{###}",
  "creation": "2025-10-24 16:16:17.229191",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -39,10 +39,10 @@
    "search_index": 1
   },
   {
+   "description": "Mobile app version/build string that sent this entry",
    "fieldname": "app",
    "fieldtype": "Data",
-   "label": "App",
-   "read_only": 1
+   "label": "App"
   },
   {
    "fieldname": "latitude",
@@ -112,7 +112,7 @@
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting Entry Metadata",
- "naming_rule": "Expression (old style)",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {

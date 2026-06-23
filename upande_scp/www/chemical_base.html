@@ -1,89 +1,265 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{% block title %}Applications{% endblock %}</title>
+		<link rel="stylesheet" href="/assets/frappe/css/frappe-web.css" />
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Applications{% endblock %}</title>
-    <link rel="stylesheet" href="/assets/frappe/css/frappe-web.css">
+		<script src="/assets/frappe/js/frappe-web.min.js"></script>
 
-    <script src="/assets/frappe/js/frappe-web.min.js"></script>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<script>
+			tailwind.config = {
+				prefix: "tw-",
+			};
+		</script>
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            prefix: 'tw-',
-        }
-    </script>
+		<!-- Flatpickr (custom calendar) -->
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" />
+		<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
 
-    <style>
-        .navbar.navbar-light {
-            display: none !important;
-        }
+		<style>
+			.navbar.navbar-light {
+				display: none !important;
+			}
 
-        .web-footer {
-            display: none !important;
-        }
+			.web-footer {
+				display: none !important;
+			}
 
-        /* ✅ Import Poppins font (replacing Inter) */
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+			:root {
+				--bg: var(--bg-color, #f5f7fa);
+				--panel-bg: var(--fg-color, #ffffff);
+				--sidebar-bg: var(--fg-color, #ffffff);
 
-        /* ✅ Apply Poppins globally */
-        body {
-            font-family: 'Poppins', sans-serif;
-            @apply tw-bg-background-light;
-        }
+				--text: var(--heading-color, #374151);
+				--text-muted: var(--text-color, #6b7280);
+				--border: var(--border-color, #e5e7eb);
+				--accent: var(--primary, #030303);
 
-        #map-loader {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(255, 255, 255, 0.9);
-            z-index: 2000;
-            display: none;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-            color: #555;
-            font-family: 'Poppins', sans-serif; /* keep consistent */
-        }
+				--radius-card: 8px;
+				--radius-input: 6px;
+				--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+				--shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+				--hover: var(--gray-100, #f3f4f6);
+			}
 
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin-bottom: 10px;
-        }
+			html,
+			body {
+				height: 100%;
+				width: 100%;
+				overflow: hidden;
+				font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+				font-size: 0.875rem;
+				line-height: 1.5;
+				background: var(--bg);
+				color: #374151;
+			}
 
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
+			/* === Global enforced style: Inter font, no shadows, no hovers === */
+			html, body, body *, body *::before, body *::after {
+				font-family: "Inter", "Helvetica Neue", Arial, sans-serif !important;
+			}
+			body *, body *::before, body *::after {
+				box-shadow: none !important;
+			}
+			body *:hover {
+				transform: none !important;
+				filter: none !important;
+				text-decoration: none !important;
+			}
 
-            100% {
-                transform: rotate(360deg);
-            }
-        }
-    </style>
-    
-    {% block head %}{% endblock %}
-</head>
+			.page-content {
+				flex: 1;
+				min-width: 0;
+				height: 100vh;
+				overflow: auto;
+				position: relative;
+			}
 
-<body>
-    <header class="custom-navbar">
-        {% include "upande_scp/templates/chemical_navbar.html" %}
-    </header>
+			#map-loader {
+				position: absolute;
+				inset: 0;
+				width: 100%;
+				height: 100%;
+				background-color: rgba(255, 255, 255, 0.92);
+				z-index: 2000;
+				display: none;
+				justify-content: center;
+				align-items: center;
+				flex-direction: column;
+				color: var(--text-muted);
+			}
 
-    <main class="page-content">
-        {% block page_content %}{% endblock %}
-    </main>
+			[data-theme="dark"] #map-loader {
+				background-color: rgba(22, 26, 31, 0.92);
+			}
 
-    {% block script %}{% endblock %}
-</body>
+			.spinner {
+				border: 3px solid var(--border);
+				border-top-color: var(--accent);
+				border-radius: 999px;
+				width: 40px;
+				height: 40px;
+				animation: spin 1s linear infinite;
+				margin-bottom: 10px;
+			}
 
+			@keyframes spin {
+				0% {
+					transform: rotate(0deg);
+				}
+
+				100% {
+					transform: rotate(360deg);
+				}
+			}
+
+			/* === Date input chrome (hide native indicator, show our calendar icon) === */
+			.form-group input[type="date"]::-webkit-calendar-picker-indicator,
+			.form-group input[type="week"]::-webkit-calendar-picker-indicator {
+				display: none;
+			}
+			.form-group input[type="date"]::-webkit-inner-spin-button,
+			.form-group input[type="week"]::-webkit-inner-spin-button {
+				display: none;
+			}
+			.form-group input[type="date"],
+			.form-group input[type="week"] {
+				background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");
+				background-repeat: no-repeat;
+				background-position: right 10px center;
+				background-size: 16px 16px;
+				padding-right: 36px;
+			}
+
+			/* === Flatpickr theme overrides (matches map_base) === */
+			.flatpickr-calendar {
+				font-family: "Inter", "Helvetica Neue", Arial, sans-serif !important;
+				border-radius: 12px !important;
+				border: 1px solid #e5e7eb !important;
+				box-shadow: 0 8px 24px rgba(17, 24, 39, 0.10), 0 1px 2px rgba(17, 24, 39, 0.04) !important;
+				background: #ffffff !important;
+				width: 280px !important;
+				padding: 6px !important;
+			}
+			.flatpickr-calendar.arrowTop:before,
+			.flatpickr-calendar.arrowTop:after,
+			.flatpickr-calendar.arrowBottom:before,
+			.flatpickr-calendar.arrowBottom:after { display: none !important; }
+			.flatpickr-month {
+				color: #374151 !important;
+				background: transparent !important;
+				border-radius: 8px !important;
+				height: 36px !important;
+			}
+			.flatpickr-current-month {
+				font-size: 0.85rem !important;
+				font-weight: 600 !important;
+				color: #374151 !important;
+				padding: 6px 0 !important;
+			}
+			.flatpickr-weekday {
+				color: #9ca3af !important;
+				font-size: 0.66rem !important;
+				font-weight: 600 !important;
+				text-transform: uppercase !important;
+				letter-spacing: 0.04em !important;
+				background: transparent !important;
+			}
+			.flatpickr-day {
+				color: #374151 !important;
+				font-size: 0.78rem !important;
+				font-weight: 500 !important;
+				border-radius: 8px !important;
+				border: 1px solid transparent !important;
+				max-width: 36px !important;
+				height: 32px !important;
+				line-height: 32px !important;
+				margin: 1px !important;
+			}
+			.flatpickr-day:hover { background: #f4f5f6 !important; border-color: transparent !important; color: #374151 !important; }
+			.flatpickr-day.today { border-color: #d1d5db !important; color: #374151 !important; font-weight: 600 !important; }
+			.flatpickr-day.selected,
+			.flatpickr-day.selected:hover,
+			.flatpickr-day.startRange,
+			.flatpickr-day.endRange {
+				background: #4b5563 !important;
+				border-color: #4b5563 !important;
+				color: #ffffff !important;
+				font-weight: 600 !important;
+			}
+			.flatpickr-day.disabled,
+			.flatpickr-day.disabled:hover { color: #e5e7eb !important; background: transparent !important; }
+
+			/* Native <select> styling for form fields — same chrome as inputs. */
+			.form-group select {
+				width: 100%;
+				min-height: 42px;
+				padding: 10px 36px 10px 12px;
+				border: 1.5px solid #d1d5db;
+				border-radius: 8px;
+				background: #ffffff;
+				font-size: 0.875rem;
+				color: #374151;
+				font-family: inherit;
+				cursor: pointer;
+				outline: none;
+				appearance: none;
+				-webkit-appearance: none;
+				-moz-appearance: none;
+				background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 8 10 12 14 8'/%3E%3C/svg%3E");
+				background-repeat: no-repeat;
+				background-position: right 12px center;
+				background-size: 16px 16px;
+			}
+			.form-group select:focus { border-color: #3b82f6; }
+			.form-group select:disabled {
+				background-color: #f3f4f6;
+				color: #9ca3af;
+				cursor: not-allowed;
+			}
+		</style>
+
+		{% block head %}{% endblock %}
+	</head>
+
+	<body style="display: flex; flex-direction: row; height: 100vh">
+		{% include "upande_scp/templates/scp_sidebar.html" %}
+
+		<main class="page-content">{% block page_content %}{% endblock %}</main>
+
+		{% block script %}{% endblock %}
+
+		<script>
+			// Auto-attach Flatpickr to date/week inputs inside form-groups. Selects use
+			// native <select> chrome — see the .form-group select rules in <style> above.
+			(function () {
+				var dateSel = '.form-group input[type="date"]:not([data-fp-init])';
+				var weekSel = '.form-group input[type="week"]:not([data-fp-init])';
+
+				function initFlatpickr() {
+					if (typeof flatpickr === "undefined") return;
+					document.querySelectorAll(dateSel).forEach(function (el) {
+						el.setAttribute("data-fp-init", "1");
+						flatpickr(el, { dateFormat: "Y-m-d", allowInput: true, disableMobile: true });
+					});
+					document.querySelectorAll(weekSel).forEach(function (el) {
+						el.setAttribute("data-fp-init", "1");
+						flatpickr(el, { dateFormat: "Y-\\WW", allowInput: true, disableMobile: true, weekNumbers: true });
+					});
+				}
+
+				if (document.readyState === "complete") {
+					setTimeout(initFlatpickr, 0);
+				} else {
+					window.addEventListener("load", function () { setTimeout(initFlatpickr, 0); });
+				}
+				window.scpInitFlatpickr = initFlatpickr;
+				// Compatibility shim: pages that called scpInitChoices before now get a no-op.
+				window.scpInitChoices = function () {};
+			})();
+		</script>
+	</body>
 </html>

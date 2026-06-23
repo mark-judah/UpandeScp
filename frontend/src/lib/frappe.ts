@@ -1,89 +1,88 @@
-// Thin Frappe API client for SCP.
-//
-// In production (served by Frappe), the page bridges session info via
-// window.__SCP__. In Vite dev mode (`npm run dev`), the same API is reached
-// through the proxy in vite.config.ts; CSRF is fetched from the proxied site.
-
 export interface ScpBootstrap {
-  greenhouses: { name: string; custom_farm?: string | null }[]
-  sprayEquipment: { kit: string; warehouse?: string | null }[]
+  user: string;
+  full_name: string;
+  user_image: string;
+  site_name: string;
+  roles: string[];
 }
 
 declare global {
   interface Window {
-    __SCP__?: {
-      csrf_token?: string
-      user?: string
-      bootstrap?: ScpBootstrap
-    }
-    csrf_token?: string
+    SCP?: {
+      csrf_token?: string;
+      bootstrap?: Partial<ScpBootstrap> & Record<string, unknown>;
+    };
+    csrf_token?: string;
   }
 }
-
-export const bootstrap = (): ScpBootstrap =>
-  window.__SCP__?.bootstrap ?? { greenhouses: [], sprayEquipment: [] }
-
-const getCsrfToken = (): string | undefined =>
-  window.__SCP__?.csrf_token || window.csrf_token
 
 export class FrappeError extends Error {
-  status: number
-  data: unknown
-  constructor(message: string, status: number, data: unknown) {
-    super(message)
-    this.name = "FrappeError"
-    this.status = status
-    this.data = data
+  status: number;
+  payload: unknown;
+  constructor(message: string, status: number, payload?: unknown) {
+    super(message);
+    this.status = status;
+    this.payload = payload;
   }
 }
 
-type CallArgs = Record<string, unknown>
+function csrf(): string {
+  return (
+    window.SCP?.csrf_token ||
+    window.csrf_token ||
+    ""
+  );
+}
 
-/**
- * Call a Frappe @whitelist'd Python method.
- * Matches Frappe's convention: returns the payload under `message`.
- */
-export async function call<T = unknown>(method: string, args: CallArgs = {}): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-Frappe-CSRF-Token": getCsrfToken() ?? "",
-    "X-Requested-With": "XMLHttpRequest",
-    Accept: "application/json",
-  }
+export function bootstrap(): ScpBootstrap {
+  const raw = window.SCP?.bootstrap || {};
+  return {
+    user: typeof raw.user === "string" ? raw.user : "",
+    full_name: typeof raw.full_name === "string" ? raw.full_name : "",
+    user_image: typeof raw.user_image === "string" ? raw.user_image : "",
+    site_name: typeof raw.site_name === "string" ? raw.site_name : "",
+    roles: Array.isArray(raw.roles) ? (raw.roles as string[]) : [],
+  };
+}
 
+export async function call<T = unknown>(
+  method: string,
+  args: Record<string, unknown> = {},
+): Promise<T> {
   const res = await fetch(`/api/method/${method}`, {
     method: "POST",
     credentials: "include",
-    headers,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Frappe-CSRF-Token": csrf(),
+      "X-Requested-With": "XMLHttpRequest",
+    },
     body: JSON.stringify(args),
-  })
+  });
 
-  let body: unknown = null
-  const text = await res.text()
-  if (text) {
-    try {
-      body = JSON.parse(text)
-    } catch {
-      // non-JSON response (HTML error page) — keep as text
-      body = text
-    }
+  let body: unknown = null;
+  const text = await res.text();
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
   }
 
   if (!res.ok) {
-    const exc =
-      body && typeof body === "object" && "exception" in body
-        ? String((body as { exception: unknown }).exception)
-        : ""
-    throw new FrappeError(exc || `Frappe call failed: ${method}`, res.status, body)
+    const msg =
+      (body && typeof body === "object" && "exception" in body
+        ? String((body as Record<string, unknown>).exception)
+        : null) ||
+      (body && typeof body === "object" && "message" in body
+        ? String((body as Record<string, unknown>).message)
+        : null) ||
+      res.statusText ||
+      "Request failed";
+    throw new FrappeError(msg, res.status, body);
   }
 
-  // Frappe whitelisted methods can either `return value` (→ { message: value })
-  // or write to `frappe.response["data"] = value` (→ { data: value }). Handle both.
-  if (body && typeof body === "object") {
-    if ("message" in body) return (body as { message: T }).message
-    if ("data" in body) return (body as { data: T }).data
+  if (body && typeof body === "object" && "message" in body) {
+    return (body as { message: T }).message;
   }
-  return body as T
+  return body as T;
 }
-
-export const currentUser = (): string => window.__SCP__?.user ?? "Guest"

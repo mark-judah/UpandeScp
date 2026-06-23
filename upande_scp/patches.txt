@@ -1,7 +1,19 @@
 [pre_model_sync]
 # Patches added in this section will be executed before doctypes are migrated
 # Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
+upande_scp.patches.v1_0.export_sal_fixtures
+upande_scp.patches.v1_0.promote_filters_to_standalone
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
-upande_scp.patches.v1_0.fix_scouting_entry_metadata_series
+upande_scp.patches.v1_0.seed_spray_plan_settings
+upande_scp.patches.v1_0.add_scouting_indexes
+upande_scp.patches.v1_0.create_spray_plan_creator_role
+upande_scp.patches.v1_0.backfill_spray_team_farm
+upande_scp.patches.v1_0.seed_spray_plan_thresholds
+upande_scp.patches.v1_0.clear_non_spray_work_order_workflow_state
+upande_scp.patches.v1_0.delete_application_floor_plan_workflow
+upande_scp.patches.v1_0.delete_legacy_submit_for_approval_client_script
+upande_scp.patches.v1_0.setup_spray_supervisor_role
+upande_scp.patches.v1_0.seed_stage_catalog
+upande_scp.patches.v1_0.consolidate_disease_stages

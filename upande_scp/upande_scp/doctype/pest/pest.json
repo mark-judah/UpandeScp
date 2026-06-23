@@ -12,7 +12,6 @@
   "identification_guideline",
   "damage_symptoms",
   "pests_legend_color",
-  "stages",
   "severity"
  ],
  "fields": [
@@ -40,14 +39,7 @@
   {
    "fieldname": "pests_legend_color",
    "fieldtype": "Color",
-   "label": "Pests Legend Color",
-   "read_only": 1
-  },
-  {
-   "fieldname": "stages",
-   "fieldtype": "Table",
-   "label": "Stages",
-   "options": "Pests Stages"
+   "label": "Pest Legend Color"
   },
   {
    "fieldname": "severity",
@@ -59,7 +51,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-27 01:00:16.965015",
+ "modified": "2026-05-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Pest",

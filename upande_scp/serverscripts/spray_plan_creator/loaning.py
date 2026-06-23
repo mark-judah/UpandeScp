@@ -1,0 +1,626 @@
+"""Farm-to-farm chemical loaning.
+
+A depleted farm's Spray Plan Creator requests a chemical from another farm; the
+source farm's creator approves, which raises a Material Transfer Stock Entry that
+moves the stock (and its valuation) between the two farms' chemical-store
+warehouses. Not a repayable loan — an attributed internal transfer.
+
+Spec: docs/superpowers/specs/2026-06-10-chemical-loaning-design.md
+
+Visibility gate: a requester only sees other farms' quantities of a chemical
+once its own on-hand drops below ``loaning_depletion_pct`` of the captured
+baseline (Chemical Stock Baseline). Enforced server-side in get_sources_for /
+create_request, not just in the UI.
+
+Cost centers are derived from the warehouses via
+``validation.match_cost_center`` (explicit ``Warehouse.custom_cost_center``
+first, then the whitespace/case-tolerant name match) — when none resolves we
+leave it unset and the company default applies.
+"""
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import frappe
+from frappe.utils import add_to_date, flt, get_datetime, now_datetime
+
+from upande_scp.serverscripts.spray_plan_creator.scope import _resolve_user_scope
+from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
+
+CHEMICAL_GROUPS = ("CHEMICALS", "Fertilizer")
+ELEVATED = {"General Manager", "System Manager", "Administrator"}
+CREATOR_ROLES = {"Spray Plan Creator"} | ELEVATED
+MAX_SOURCES = 2
+QTY_TOL = 0.001
+
+
+# ───────────────────────────── guards / scope ────────────────────────────────
+
+
+def _settings():
+    return frappe.get_single("Spray Plan Settings")
+
+
+def _ensure_enabled():
+    s = _settings()
+    if not s.loaning_enabled:
+        frappe.throw(
+            "Chemical loaning is not enabled. Ask the General Manager to turn "
+            "it on in Settings → Spray Plan.",
+        )
+    return s
+
+
+def _ensure_creator():
+    if not (set(frappe.get_roles(frappe.session.user)) & CREATOR_ROLES):
+        frappe.throw(
+            "Chemical loaning requires the Spray Plan Creator role.",
+            frappe.PermissionError,
+        )
+
+
+def _user_farms(user: str | None = None) -> set[str] | None:
+    """Farms the user may act for, or None for unscoped (GM / admin)."""
+    user = user or frappe.session.user
+    if set(frappe.get_roles(user)) & ELEVATED:
+        return None
+    return set(_resolve_user_scope(user).get("farms") or [])
+
+
+def _assert_farm_access(farm: str) -> None:
+    allowed = _user_farms()
+    if allowed is None:
+        return
+    if farm not in allowed:
+        frappe.throw(
+            f"You are not assigned to {farm}.", frappe.PermissionError
+        )
+
+
+# ───────────────────────────── stock primitives ──────────────────────────────
+
+
+def _farm_chemical_stores(farm: str) -> list[str]:
+    if not farm:
+        return []
+    return frappe.get_all(
+        "Warehouse",
+        filters={
+            "custom_farm": farm,
+            "is_group": 0,
+            "disabled": 0,
+            "name": ("like", "Chemical Store%"),
+        },
+        pluck="name",
+    )
+
+
+def _primary_store(farm: str) -> str | None:
+    stores = _farm_chemical_stores(farm)
+    if not stores:
+        return None
+    prefix = f"chemical store {farm.lower()}"
+    preferred = [s for s in stores if s.lower().startswith(prefix)]
+    return (preferred or stores)[0]
+
+
+def _on_hand(farm: str, item_code: str) -> float:
+    stores = _farm_chemical_stores(farm)
+    if not stores:
+        return 0.0
+    row = frappe.db.sql(
+        """SELECT COALESCE(SUM(actual_qty), 0) AS q FROM `tabBin`
+           WHERE item_code = %s AND warehouse IN %s""",
+        (item_code, tuple(stores)),
+        as_dict=True,
+    )
+    return flt(row[0]["q"]) if row else 0.0
+
+
+def _baseline(farm: str, item_code: str) -> float | None:
+    val = frappe.db.get_value(
+        "Chemical Stock Baseline", f"{farm}::{item_code}", "baseline_qty"
+    )
+    return flt(val) if val is not None else None
+
+
+def _is_depleted(on_hand: float, baseline: float | None, pct: float) -> bool:
+    return bool(baseline and baseline > 0 and on_hand < (pct / 100.0) * baseline)
+
+
+def _lendable(on_hand: float, baseline: float | None, pct: float) -> float:
+    # A lender won't go below its own depletion floor. No baseline → no floor.
+    if baseline and baseline > 0:
+        return max(0.0, on_hand - (pct / 100.0) * baseline)
+    return max(0.0, on_hand)
+
+
+def _all_chemical_farms() -> list[str]:
+    rows = frappe.get_all(
+        "Warehouse",
+        filters={
+            "is_group": 0,
+            "disabled": 0,
+            "name": ("like", "Chemical Store%"),
+            "custom_farm": ("is", "set"),
+        },
+        fields=["custom_farm"],
+        distinct=True,
+    )
+    return sorted({r.custom_farm for r in rows if r.custom_farm})
+
+
+# ───────────────────────────────── reads ─────────────────────────────────────
+
+
+@frappe.whitelist()
+def my_farms() -> dict:
+    """Farms the current user may request for + feature flag, for the page."""
+    _ensure_creator()
+    allowed = _user_farms()
+    farms = _all_chemical_farms() if allowed is None else sorted(allowed)
+    return {"farms": farms, "enabled": bool(_settings().loaning_enabled)}
+
+
+@frappe.whitelist()
+def get_loanable_chemicals(farm: str) -> list[dict]:
+    """Depleted chemicals on ``farm`` — the only ones whose cross-farm
+    availability the requester is allowed to see."""
+    _ensure_enabled()
+    _ensure_creator()
+    _assert_farm_access(farm)
+    pct = flt(_settings().loaning_depletion_pct or 15)
+
+    stores = _farm_chemical_stores(farm)
+    # Candidate items: anything with stock in the farm's chemical stores, plus
+    # anything with a baseline (covers depleted-to-zero items with no Bin row).
+    items: dict[str, dict] = {}
+    if stores:
+        for r in frappe.db.sql(
+            """SELECT b.item_code, i.item_name, COALESCE(i.stock_uom,'') uom,
+                      COALESCE(SUM(b.actual_qty),0) on_hand
+               FROM `tabBin` b JOIN `tabItem` i ON i.name=b.item_code
+               WHERE b.warehouse IN %s AND i.item_group IN %s
+               GROUP BY b.item_code""",
+            (tuple(stores), CHEMICAL_GROUPS),
+            as_dict=True,
+        ):
+            items[r.item_code] = {
+                "item_code": r.item_code,
+                "item_name": r.item_name or r.item_code,
+                "uom": r.uom,
+                "on_hand": flt(r.on_hand),
+            }
+    for b in frappe.get_all(
+        "Chemical Stock Baseline",
+        filters={"farm": farm},
+        fields=["item_code", "item_name", "baseline_qty"],
+    ):
+        items.setdefault(b.item_code, {
+            "item_code": b.item_code,
+            "item_name": b.item_name or b.item_code,
+            "uom": frappe.db.get_value("Item", b.item_code, "stock_uom") or "",
+            "on_hand": _on_hand(farm, b.item_code),
+        })
+
+    out = []
+    for it in items.values():
+        baseline = _baseline(farm, it["item_code"])
+        if _is_depleted(it["on_hand"], baseline, pct):
+            out.append({**it, "baseline_qty": baseline, "depleted": True})
+    out.sort(key=lambda x: x["item_name"].lower())
+    return out
+
+
+@frappe.whitelist()
+def get_sources_for(farm: str, item_code: str) -> list[dict]:
+    """Ranked source farms that can lend ``item_code`` to a depleted ``farm``."""
+    _ensure_enabled()
+    _ensure_creator()
+    _assert_farm_access(farm)
+    pct = flt(_settings().loaning_depletion_pct or 15)
+
+    # Visibility gate — only unlocks when the requester is genuinely depleted.
+    if not _is_depleted(_on_hand(farm, item_code), _baseline(farm, item_code), pct):
+        frappe.throw(
+            "Cross-farm availability is only visible once your farm is below "
+            "the depletion threshold for this chemical.",
+            frappe.PermissionError,
+        )
+
+    out = []
+    for src in _all_chemical_farms():
+        if src == farm:
+            continue
+        on_hand = _on_hand(src, item_code)
+        lend = _lendable(on_hand, _baseline(src, item_code), pct)
+        if lend > 0:
+            out.append({
+                "source_farm": src,
+                "source_warehouse": _primary_store(src),
+                "lendable": lend,
+                "on_hand": on_hand,
+            })
+    out.sort(key=lambda x: x["lendable"], reverse=True)
+    return out
+
+
+@frappe.whitelist()
+def list_requests(box: str = "mine") -> list[dict]:
+    """``box='mine'`` — requests my farms raised. ``box='incoming'`` — requests
+    pending my farms' approval."""
+    _ensure_creator()
+    farms = _user_farms()
+
+    if box == "incoming":
+        filters: dict[str, Any] = {"workflow_state": "Pending Approval"}
+        names = frappe.get_all("Chemical Transfer Request", filters=filters, pluck="name")
+        rows = [_request_dict(n) for n in names]
+        if farms is not None:
+            rows = [
+                r for r in rows
+                if any(s["source_farm"] in farms and not s["approved"] for s in r["sources"])
+            ]
+        return rows
+
+    filters = {}
+    if farms is not None:
+        filters["requesting_farm"] = ("in", list(farms) or [""])
+    names = frappe.get_all(
+        "Chemical Transfer Request",
+        filters=filters,
+        order_by="creation desc",
+        limit_page_length=200,
+        pluck="name",
+    )
+    return [_request_dict(n) for n in names]
+
+
+def _request_dict(name: str) -> dict:
+    doc = frappe.get_doc("Chemical Transfer Request", name)
+    return {
+        "name": doc.name,
+        "requesting_farm": doc.requesting_farm,
+        "requesting_warehouse": doc.requesting_warehouse,
+        "item_code": doc.item_code,
+        "item_name": doc.item_name,
+        "uom": doc.uom,
+        "requested_qty": flt(doc.requested_qty),
+        "workflow_state": doc.workflow_state,
+        "reason": doc.reason,
+        "rejected_reason": doc.rejected_reason,
+        "expires_on": str(doc.expires_on) if doc.expires_on else None,
+        "creation": str(doc.creation),
+        "sources": [
+            {
+                "source_farm": s.source_farm,
+                "source_warehouse": s.source_warehouse,
+                "qty": flt(s.qty),
+                "approved": bool(s.approved),
+                "approved_by": s.approved_by,
+                "approved_on": str(s.approved_on) if s.approved_on else None,
+                "stock_entry": s.stock_entry,
+            }
+            for s in doc.sources
+        ],
+    }
+
+
+# ──────────────────────────────── writes ─────────────────────────────────────
+
+
+@frappe.whitelist()
+def create_request(payload) -> dict:
+    """Create + open a Chemical Transfer Request."""
+    s = _ensure_enabled()
+    _ensure_creator()
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+
+    farm = payload.get("requesting_farm")
+    item_code = payload.get("item_code")
+    requested_qty = flt(payload.get("requested_qty"))
+    sources = payload.get("sources") or []
+    _assert_farm_access(farm)
+
+    if not farm or not item_code or requested_qty <= 0:
+        frappe.throw("requesting_farm, item_code and a positive requested_qty are required.")
+    pct = flt(s.loaning_depletion_pct or 15)
+    if not _is_depleted(_on_hand(farm, item_code), _baseline(farm, item_code), pct):
+        frappe.throw("Your farm is not depleted in this chemical — no request needed.")
+    if not (1 <= len(sources) <= MAX_SOURCES):
+        frappe.throw(f"Pick between 1 and {MAX_SOURCES} source farm(s).")
+
+    total = 0.0
+    for src in sources:
+        sf = src.get("source_farm")
+        sq = flt(src.get("qty"))
+        if not sf or sq <= 0:
+            frappe.throw("Each source needs a farm and a positive qty.")
+        if sf == farm:
+            frappe.throw("A farm cannot loan to itself.")
+        lend = _lendable(_on_hand(sf, item_code), _baseline(sf, item_code), pct)
+        if sq > lend + QTY_TOL:
+            frappe.throw(
+                f"{sf} can only lend {lend:g} {payload.get('uom') or ''} of this chemical."
+            )
+        total += sq
+    if abs(total - requested_qty) > QTY_TOL:
+        frappe.throw(
+            f"Source split ({total:g}) must add up to the requested qty ({requested_qty:g})."
+        )
+
+    timeout_h = int(s.loaning_timeout_hours or 72)
+    doc = frappe.new_doc("Chemical Transfer Request")
+    doc.requesting_farm = farm
+    doc.requesting_warehouse = _primary_store(farm)
+    doc.item_code = item_code
+    doc.item_name = frappe.db.get_value("Item", item_code, "item_name")
+    doc.uom = payload.get("uom") or frappe.db.get_value("Item", item_code, "stock_uom")
+    doc.requested_qty = requested_qty
+    doc.reason = payload.get("reason")
+    doc.workflow_state = "Pending Approval"
+    doc.expires_on = add_to_date(now_datetime(), hours=timeout_h)
+    for src in sources:
+        sf = src.get("source_farm")
+        doc.append("sources", {
+            "source_farm": sf,
+            "source_warehouse": _primary_store(sf),
+            "qty": flt(src.get("qty")),
+        })
+    doc.insert(ignore_permissions=True)
+
+    for src in doc.sources:
+        _notify_farm_creators(
+            src.source_farm,
+            f"Chemical loan request {doc.name} — {doc.item_name}",
+            f"{farm} requests {flt(src.qty):g} {doc.uom} of {doc.item_name}. Approve in Chemical Loaning.",
+            doc.name,
+        )
+    return {"name": doc.name}
+
+
+@frappe.whitelist()
+def approve_source(request: str, source_farm: str) -> dict:
+    """Source-side approval of one split row. On full approval, raise the
+    Material Transfer Stock Entry(s) and mark the request Fulfilled."""
+    _ensure_enabled()
+    _ensure_creator()
+    _assert_farm_access(source_farm)
+
+    doc = frappe.get_doc("Chemical Transfer Request", request)
+    if doc.workflow_state not in ("Pending Approval", "Approved"):
+        frappe.throw(f"Request is {doc.workflow_state} — cannot approve.")
+
+    row = next((s for s in doc.sources if s.source_farm == source_farm), None)
+    if not row:
+        frappe.throw(f"{source_farm} is not a source on this request.")
+    if not row.approved:
+        row.approved = 1
+        row.approved_by = frappe.utils.get_fullname(frappe.session.user)
+        row.approved_on = now_datetime()
+
+    if all(s.approved for s in doc.sources):
+        doc.workflow_state = "Approved"
+        doc.save(ignore_permissions=True)
+        for s in doc.sources:
+            if not s.stock_entry:
+                s.stock_entry = _make_transfer_se(doc, s)
+        doc.workflow_state = "Fulfilled"
+        doc.save(ignore_permissions=True)
+        _notify_user(
+            frappe.db.get_value("Chemical Transfer Request", doc.name, "owner"),
+            f"Chemical loan {doc.name} fulfilled",
+            f"Your request for {doc.item_name} was approved and transferred.",
+            doc.name,
+        )
+    else:
+        doc.save(ignore_permissions=True)
+
+    return _request_dict(doc.name)
+
+
+@frappe.whitelist()
+def reject_request(request: str, reason: str | None = None) -> dict:
+    _ensure_enabled()
+    _ensure_creator()
+    doc = frappe.get_doc("Chemical Transfer Request", request)
+    # Caller must own at least one source farm on the request.
+    farms = _user_farms()
+    if farms is not None and not any(s.source_farm in farms for s in doc.sources):
+        frappe.throw("You cannot reject this request.", frappe.PermissionError)
+    if doc.workflow_state not in ("Pending Approval", "Approved"):
+        frappe.throw(f"Request is {doc.workflow_state} — cannot reject.")
+    doc.workflow_state = "Rejected"
+    doc.rejected_reason = reason
+    doc.save(ignore_permissions=True)
+    _notify_user(
+        frappe.db.get_value("Chemical Transfer Request", doc.name, "owner"),
+        f"Chemical loan {doc.name} rejected",
+        f"Your request for {doc.item_name} was rejected." + (f" Reason: {reason}" if reason else ""),
+        doc.name,
+    )
+    return _request_dict(doc.name)
+
+
+def _make_transfer_se(doc, src_row) -> str:
+    """Material Transfer SE moving src_row.qty from the source farm's chemical
+    store to the requesting farm's store. Valuation moves with the stock."""
+    src_wh = src_row.source_warehouse
+    tgt_wh = doc.requesting_warehouse
+    if not src_wh or not tgt_wh:
+        frappe.throw(
+            f"Missing chemical-store warehouse for the transfer "
+            f"({src_row.source_farm} → {doc.requesting_farm})."
+        )
+    company = frappe.db.get_value("Warehouse", src_wh, "company")
+    # Cost center via the existing fuzzy derivation; target's first, else source.
+    cc = match_cost_center(tgt_wh) or match_cost_center(src_wh)
+
+    se = frappe.new_doc("Stock Entry")
+    se.stock_entry_type = "Material Transfer"
+    se.purpose = "Material Transfer"
+    se.company = company
+    se.from_warehouse = src_wh
+    se.to_warehouse = tgt_wh
+    se.append("items", {
+        "item_code": doc.item_code,
+        "qty": flt(src_row.qty),
+        "uom": doc.uom,
+        "s_warehouse": src_wh,
+        "t_warehouse": tgt_wh,
+        "cost_center": cc,
+    })
+    se.flags.ignore_permissions = True
+    se.insert()
+    se.submit()
+    return se.name
+
+
+# ───────────────────────────── baselines / restock ───────────────────────────
+
+
+def capture_baseline_on_receipt(doc, method=None):
+    """Hooked on inbound stock movements. When chemicals are received into a
+    farm's chemical store, set that (farm, chemical) baseline to the new
+    on-hand. Tolerant of doc shape (Stock Entry / Purchase Receipt)."""
+    try:
+        if not _settings().loaning_enabled:
+            return
+    except Exception:
+        return
+
+    # Collect (warehouse, item_code) pairs that received stock.
+    pairs: set[tuple[str, str]] = set()
+    for it in (getattr(doc, "items", None) or []):
+        wh = getattr(it, "t_warehouse", None) or getattr(it, "warehouse", None)
+        code = getattr(it, "item_code", None)
+        if wh and code:
+            pairs.add((wh, code))
+
+    for wh, code in pairs:
+        farm = frappe.db.get_value("Warehouse", wh, "custom_farm")
+        if not farm:
+            continue
+        if not str(wh).lower().startswith("chemical store"):
+            continue
+        group = frappe.db.get_value("Item", code, "item_group")
+        if group not in CHEMICAL_GROUPS:
+            continue
+        _upsert_baseline(farm, code, _on_hand(farm, code), "restock")
+
+
+def _upsert_baseline(farm: str, item_code: str, qty: float, via: str) -> None:
+    name = f"{farm}::{item_code}"
+    if frappe.db.exists("Chemical Stock Baseline", name):
+        frappe.db.set_value("Chemical Stock Baseline", name, {
+            "baseline_qty": qty,
+            "captured_on": now_datetime(),
+            "captured_via": via,
+        }, update_modified=True)
+    else:
+        b = frappe.new_doc("Chemical Stock Baseline")
+        b.farm = farm
+        b.item_code = item_code
+        b.item_name = frappe.db.get_value("Item", item_code, "item_name")
+        b.baseline_qty = qty
+        b.captured_on = now_datetime()
+        b.captured_via = via
+        b.insert(ignore_permissions=True)
+
+
+@frappe.whitelist()
+def bulk_restock(farm: str | None = None) -> dict:
+    """GM utility: set every (farm, chemical) baseline to current on-hand."""
+    if not (set(frappe.get_roles(frappe.session.user)) & ELEVATED):
+        frappe.throw("Only the General Manager can bulk-restock.", frappe.PermissionError)
+
+    farms = [farm] if farm else _all_chemical_farms()
+    updated = 0
+    for f in farms:
+        stores = _farm_chemical_stores(f)
+        if not stores:
+            continue
+        rows = frappe.db.sql(
+            """SELECT b.item_code, COALESCE(SUM(b.actual_qty),0) q
+               FROM `tabBin` b JOIN `tabItem` i ON i.name=b.item_code
+               WHERE b.warehouse IN %s AND i.item_group IN %s AND b.actual_qty > 0
+               GROUP BY b.item_code""",
+            (tuple(stores), CHEMICAL_GROUPS),
+            as_dict=True,
+        )
+        for r in rows:
+            _upsert_baseline(f, r.item_code, flt(r.q), "bulk_restock")
+            updated += 1
+    frappe.db.commit()
+    return {"farms": len(farms), "baselines_set": updated}
+
+
+# ───────────────────────────────── timeout job ───────────────────────────────
+
+
+def expire_dormant_requests() -> dict:
+    """Hourly: expire Pending Approval requests past their timeout."""
+    try:
+        if not _settings().loaning_enabled:
+            return {"enabled": False, "expired": []}
+    except Exception:
+        return {"enabled": False, "expired": []}
+
+    now = now_datetime()
+    pending = frappe.get_all(
+        "Chemical Transfer Request",
+        filters={"workflow_state": "Pending Approval"},
+        fields=["name", "expires_on", "owner", "item_name"],
+    )
+    expired = []
+    for r in pending:
+        if r.expires_on and get_datetime(r.expires_on) < now:
+            try:
+                frappe.db.set_value(
+                    "Chemical Transfer Request", r.name, "workflow_state", "Expired"
+                )
+                _notify_user(
+                    r.owner,
+                    f"Chemical loan {r.name} expired",
+                    f"Your request for {r.item_name} expired with no response.",
+                    r.name,
+                )
+                frappe.db.commit()
+                expired.append(r.name)
+            except Exception:
+                frappe.db.rollback()
+                frappe.log_error(frappe.get_traceback(), f"expire_dormant_requests: {r.name}")
+    return {"enabled": True, "expired": expired}
+
+
+# ───────────────────────────────── notifications ─────────────────────────────
+
+
+def _notify_farm_creators(farm: str, subject: str, content: str, ref: str) -> None:
+    users = frappe.get_all(
+        "Farm Spray Plan Creator",
+        filters={"parent": farm, "parenttype": "Farm"},
+        pluck="user",
+    )
+    for u in set(users):
+        _notify_user(u, subject, content, ref)
+    frappe.publish_realtime("chemical_loaning", {"request": ref}, after_commit=True)
+
+
+def _notify_user(user: str | None, subject: str, content: str, ref: str) -> None:
+    if not user or user in ("Administrator", "Guest"):
+        return
+    try:
+        frappe.get_doc({
+            "doctype": "Notification Log",
+            "for_user": user,
+            "type": "Alert",
+            "subject": subject,
+            "email_content": content,
+            "document_type": "Chemical Transfer Request",
+            "document_name": ref,
+        }).insert(ignore_permissions=True)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "loaning notify failed")

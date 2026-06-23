@@ -1,0 +1,256 @@
+[
+ {
+  "crop_name": "Avocado",
+  "docstatus": 0,
+  "doctype": "Crop Scouted",
+  "farms": [
+   {
+    "farm": "Lokitela",
+    "parent": "Avocado",
+    "parentfield": "farms",
+    "parenttype": "Crop Scouted"
+   }
+  ],
+  "image": null,
+  "incidents": [],
+  "modified": "2026-04-27 10:01:21.064423",
+  "name": "Avocado",
+  "physiological_disorders": [],
+  "plant_sections_scouted": [
+   {
+    "parent": "Avocado",
+    "parentfield": "plant_sections_scouted",
+    "parenttype": "Crop Scouted",
+    "plant_section": "Stem"
+   },
+   {
+    "parent": "Avocado",
+    "parentfield": "plant_sections_scouted",
+    "parenttype": "Crop Scouted",
+    "plant_section": "Fruit"
+   },
+   {
+    "parent": "Avocado",
+    "parentfield": "plant_sections_scouted",
+    "parenttype": "Crop Scouted",
+    "plant_section": "Leaf"
+   }
+  ],
+  "predators": [],
+  "variety": null,
+  "weeds": []
+ },
+ {
+  "crop_name": "Rose",
+  "docstatus": 0,
+  "doctype": "Crop Scouted",
+  "farms": [
+   {
+    "farm": "Chepsito",
+    "parent": "Rose",
+    "parentfield": "farms",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "farm": "Simotwo",
+    "parent": "Rose",
+    "parentfield": "farms",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "farm": "Kaptumbo",
+    "parent": "Rose",
+    "parentfield": "farms",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "farm": "Torongo",
+    "parent": "Rose",
+    "parentfield": "farms",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "farm": "Karen",
+    "parent": "Rose",
+    "parentfield": "farms",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "farm": "SIMO",
+    "parent": "Rose",
+    "parentfield": "farms",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "farm": "Vale",
+    "parent": "Rose",
+    "parentfield": "farms",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "farm": "Kapkolia",
+    "parent": "Rose",
+    "parentfield": "farms",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "farm": "Eldama",
+    "parent": "Rose",
+    "parentfield": "farms",
+    "parenttype": "Crop Scouted"
+   }
+  ],
+  "image": null,
+  "incidents": [
+   {
+    "incident": "Double Doors",
+    "parent": "Rose",
+    "parentfield": "incidents",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "incident": "Permanent Sheets",
+    "parent": "Rose",
+    "parentfield": "incidents",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "incident": "Side Netting",
+    "parent": "Rose",
+    "parentfield": "incidents",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "incident": "Side Curtain",
+    "parent": "Rose",
+    "parentfield": "incidents",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "incident": "Skirting/Bottom Cover",
+    "parent": "Rose",
+    "parentfield": "incidents",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "incident": "Greenhouse Cover",
+    "parent": "Rose",
+    "parentfield": "incidents",
+    "parenttype": "Crop Scouted"
+   },
+   {
+    "incident": "Puddles",
+    "parent": "Rose",
+    "parentfield": "incidents",
+    "parenttype": "Crop Scouted"
+   }
+  ],
+  "modified": "2026-05-04 08:52:06.641088",
+  "name": "Rose",
+  "physiological_disorders": [
+   {
+    "parent": "Rose",
+    "parentfield": "physiological_disorders",
+    "parenttype": "Crop Scouted",
+    "physiological_disorder": "Hollow Stems"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "physiological_disorders",
+    "parenttype": "Crop Scouted",
+    "physiological_disorder": "Missed Buds"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "physiological_disorders",
+    "parenttype": "Crop Scouted",
+    "physiological_disorder": "Open Flowers"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "physiological_disorders",
+    "parenttype": "Crop Scouted",
+    "physiological_disorder": "Suckers"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "physiological_disorders",
+    "parenttype": "Crop Scouted",
+    "physiological_disorder": "Phytotoxicity"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "physiological_disorders",
+    "parenttype": "Crop Scouted",
+    "physiological_disorder": "Dry Spots"
+   }
+  ],
+  "plant_sections_scouted": [
+   {
+    "parent": "Rose",
+    "parentfield": "plant_sections_scouted",
+    "parenttype": "Crop Scouted",
+    "plant_section": "Buds"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "plant_sections_scouted",
+    "parenttype": "Crop Scouted",
+    "plant_section": "Top"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "plant_sections_scouted",
+    "parenttype": "Crop Scouted",
+    "plant_section": "Middle"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "plant_sections_scouted",
+    "parenttype": "Crop Scouted",
+    "plant_section": "Stem"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "plant_sections_scouted",
+    "parenttype": "Crop Scouted",
+    "plant_section": "Base"
+   }
+  ],
+  "predators": [
+   {
+    "parent": "Rose",
+    "parentfield": "predators",
+    "parenttype": "Crop Scouted",
+    "predator": "Phytoseiulus"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "predators",
+    "parenttype": "Crop Scouted",
+    "predator": "Carlifonicus"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "predators",
+    "parenttype": "Crop Scouted",
+    "predator": "Nymphs"
+   },
+   {
+    "parent": "Rose",
+    "parentfield": "predators",
+    "parenttype": "Crop Scouted",
+    "predator": "Eggs"
+   }
+  ],
+  "variety": null,
+  "weeds": [
+   {
+    "parent": "Rose",
+    "parentfield": "weeds",
+    "parenttype": "Crop Scouted",
+    "weed": "Weeds"
+   }
+  ]
+ }
+]

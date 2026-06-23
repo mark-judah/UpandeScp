@@ -1,298 +1,342 @@
-import { useMemo } from "react"
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts"
-
+import { useMemo } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { useObservationColors } from "@/lib/observation-colors";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+} from "@/components/ui/card";
+import { Kpi, KpiGrid } from "./Kpi";
+import { EmptyHint } from "./EmptyHint";
+import { DashFilterRow } from "./DashFilterRow";
+import type { DiseasesPayload } from "./pests-diseases-types";
+import { weekTickFormatter } from "@/lib/iso-week";
 
-import { EmptyHint } from "./EmptyHint"
-import { Kpi } from "./Kpi"
-import type { AggregatedScouting } from "./aggregate"
-
-interface Props {
-  data: AggregatedScouting
-  loading: boolean
+export interface DiseasesTabProps {
+  data: DiseasesPayload | null;
+  diseaseName: string;    // page-level filter (the "observation" filter)
+  section: string;
+  stage: string;
+  onFiltersChange: (next: { observation: string; section: string; stage: string }) => void;
 }
 
-export function DiseasesTab({ data, loading }: Props) {
-  const totalEntries = data.totalEntries
-  const totalDiseaseObs = data.totalDiseaseObservations
-  const activeDiseases = data.diseases.length
-  const severeCount = data.diseases.reduce((s, d) => s + d.severity.high, 0)
-  const top = data.diseases[0]
+export function DiseasesTab({
+  data,
+  diseaseName,
+  section,
+  stage,
+  onFiltersChange,
+}: DiseasesTabProps) {
+  const { disease: diseaseColor } = useObservationColors();
 
-  const topDiseasesBar = useMemo(
-    () => data.diseases.slice(0, 10).map((d) => ({ name: d.name, total: d.total })),
-    [data.diseases],
-  )
-  const topDiseasesConfig = {
-    total: { label: "Observations", color: "var(--chart-3)" },
-  } satisfies ChartConfig
+  const opts = data?.filterOptions ?? { diseases: [], sections: [], stages: [] };
+  const ranking = data?.ranking ?? [];
+  const trendRows = data?.dailyPercent ?? [];
+  const distribution = data?.distribution ?? [];
+  const sectionSplit = data?.sectionSplit ?? [];
+  const ghPressure = data?.greenhousePressure ?? [];
 
-  const stageData = useMemo(() => {
-    const totals: Record<string, number> = {}
-    for (const d of data.diseases) {
-      for (const [stage, n] of Object.entries(d.stages)) {
-        totals[stage] = (totals[stage] || 0) + n
-      }
-    }
-    return Object.entries(totals)
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-  }, [data.diseases])
-  const STAGE_COLORS = [
-    "var(--chart-3)",
-    "var(--chart-1)",
-    "var(--chart-5)",
-    "var(--chart-2)",
-    "var(--chart-4)",
-  ]
-  const stageConfig = {
-    count: { label: "Observations" },
-  } satisfies ChartConfig
+  const trend = { rows: trendRows, diseaseName: diseaseName || "All diseases" };
 
-  const severityData = useMemo(() => {
-    const sums = data.diseases.reduce(
-      (acc, d) => {
-        acc.low += d.severity.low
-        acc.moderate += d.severity.moderate
-        acc.high += d.severity.high
-        return acc
-      },
-      { low: 0, moderate: 0, high: 0 },
-    )
-    return [
-      { level: "Low", count: sums.low, fill: "var(--severity-low)" },
-      { level: "Moderate", count: sums.moderate, fill: "var(--severity-mod)" },
-      { level: "High", count: sums.high, fill: "var(--severity-high)" },
-    ].filter((d) => d.count > 0)
-  }, [data.diseases])
-  const severityConfig = {
-    count: { label: "Observations" },
-  } satisfies ChartConfig
+  const total = ranking.reduce((s, r) => s + r.total, 0);
+  const severe = ranking.reduce((s, r) => s + r.high, 0);
+  const top = ranking[0];
 
-  const ghPressure = useMemo(
-    () =>
-      data.greenhouses
-        .map((g) => ({ greenhouse: g.name, diseases: g.diseases }))
-        .filter((g) => g.diseases > 0)
-        .sort((a, b) => b.diseases - a.diseases)
-        .slice(0, 10),
-    [data.greenhouses],
-  )
-  const ghConfig = {
-    diseases: { label: "Disease obs", color: "var(--chart-3)" },
-  } satisfies ChartConfig
+  const lineConfig: ChartConfig = useMemo(
+    () => ({ value: { label: trend.diseaseName, color: "var(--sd-data-pink)" } }),
+    [trend.diseaseName],
+  );
+  const distConfig: ChartConfig = {
+    pct: { label: "% zones", color: "var(--sd-data-pink)" },
+  };
+
+  const filters = { observation: diseaseName, section, stage };
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi label="Total entries" value={totalEntries.toString()} accent="chart-2" />
+    <div className="flex flex-col gap-4">
+      <KpiGrid cols={4}>
+        <Kpi label="Disease Zones" value={ranking.length} hint="distinct diseases" />
+        <Kpi label="Active Diseases" value={total} hint="incidents" />
         <Kpi
-          label="Disease observations"
-          value={totalDiseaseObs.toString()}
-          accent="chart-3"
-          hint={`${activeDiseases} unique`}
+          label="Severe Cases"
+          value={severe}
+          tone={severe > 0 ? "critical" : "default"}
+          hint="high-severity"
         />
         <Kpi
-          label="Severe cases"
-          value={severeCount.toString()}
-          accent="severity-high"
-          hint="high severity"
+          label="Top Disease"
+          value={top?.name || "—"}
+          hint={top ? `${top.total} incidents` : "no diseases recorded"}
         />
-        <Kpi
-          label="Top disease"
-          value={top ? top.name : "—"}
-          hint={top ? `${top.total} cases` : "no data"}
-          accent="chart-1"
-        />
-      </div>
+      </KpiGrid>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Top diseases</CardTitle>
-          <CardDescription>Top 10 by observation count</CardDescription>
+      <Card className="p-4">
+        <CardHeader className="p-0 pb-3">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <CardTitle>Disease Trends</CardTitle>
+              <CardDescription>
+                {trend.diseaseName} · zones infected (%) · daily data points
+              </CardDescription>
+            </div>
+            <DashFilterRow
+              obsLabel="Disease"
+              obsOptions={opts.diseases}
+              sectionOptions={opts.sections}
+              stageOptions={opts.stages}
+              value={filters}
+              onChange={onFiltersChange}
+            />
+          </div>
         </CardHeader>
-        <CardContent>
-          {topDiseasesBar.length === 0 ? (
-            <EmptyHint loading={loading}>No disease observations.</EmptyHint>
-          ) : (
-            <ChartContainer config={topDiseasesConfig} className="aspect-[16/6] w-full">
-              <BarChart data={topDiseasesBar} margin={{ left: 8, right: 8 }}>
+        <CardContent className="p-0">
+          {trend.rows.length ? (
+            <ChartContainer config={lineConfig} className="h-64">
+              <LineChart data={trend.rows} margin={{ left: 4, right: 8, top: 8 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis
-                  dataKey="name"
+                  dataKey="date"
                   tickLine={false}
                   axisLine={false}
-                  tickMargin={8}
                   interval={0}
-                  angle={-25}
-                  height={70}
-                  textAnchor="end"
+                  minTickGap={0}
+                  tickFormatter={weekTickFormatter}
                 />
-                <YAxis tickLine={false} axisLine={false} width={32} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="total" fill="var(--color-total)" radius={[6, 6, 0, 0]} />
-              </BarChart>
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  width={36}
+                  tickFormatter={(v: number) => `${v}%`}
+                />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      indicator="line"
+                      formatter={(v) => `${v}%`}
+                    />
+                  }
+                />
+                <Line
+                  type="linear"
+                  dataKey="value"
+                  stroke="var(--sd-data-pink)"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              </LineChart>
             </ChartContainer>
+          ) : (
+            <EmptyHint title="Not observed in this range" hint="Try a wider date range or different filter." />
           )}
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Stage distribution</CardTitle>
-            <CardDescription>Across all diseases</CardDescription>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Disease Distribution</CardTitle>
+            <CardDescription>% of zones in scope with each disease</CardDescription>
           </CardHeader>
-          <CardContent>
-            {stageData.length === 0 ? (
-              <EmptyHint loading={loading}>No stage data.</EmptyHint>
-            ) : (
-              <ChartContainer
-                config={stageConfig}
-                className="mx-auto aspect-square max-h-[260px]"
-              >
-                <PieChart>
-                  <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                  <Pie
-                    data={stageData}
-                    dataKey="count"
-                    nameKey="name"
-                    innerRadius={50}
-                    strokeWidth={3}
-                  >
-                    {stageData.map((_, i) => (
-                      <Cell key={i} fill={STAGE_COLORS[i % STAGE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <ChartLegend content={<ChartLegendContent nameKey="name" />} />
-                </PieChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Severity levels</CardTitle>
-            <CardDescription>Inferred from stage keywords</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {severityData.length === 0 ? (
-              <EmptyHint loading={loading}>No severity data.</EmptyHint>
-            ) : (
-              <ChartContainer config={severityConfig} className="aspect-[16/9] w-full">
-                <BarChart data={severityData} margin={{ left: 8 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="level" tickLine={false} axisLine={false} />
-                  <YAxis tickLine={false} axisLine={false} width={32} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                    {severityData.map((entry, i) => (
-                      <Cell key={i} fill={entry.fill} />
+          <CardContent className="p-0">
+            {distribution.length ? (
+              <ChartContainer config={distConfig} className="h-72">
+                <BarChart
+                  data={distribution.slice(0, 12)}
+                  layout="vertical"
+                  margin={{ left: 12, right: 12 }}
+                >
+                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                  <XAxis
+                    type="number"
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v: number) => `${v}%`}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    tickLine={false}
+                    axisLine={false}
+                    width={120}
+                  />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        indicator="line"
+                        formatter={(v) => `${v}%`}
+                      />
+                    }
+                  />
+                  <Bar dataKey="pct" radius={[3, 3, 3, 3]}>
+                    {distribution.slice(0, 12).map((row) => (
+                      <Cell key={row.name} fill={diseaseColor(row.name)} />
                     ))}
                   </Bar>
                 </BarChart>
               </ChartContainer>
+            ) : (
+              <EmptyHint />
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Disease pressure by greenhouse</CardTitle>
-            <CardDescription>Top 10 greenhouses</CardDescription>
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Plant Section Split</CardTitle>
+            <CardDescription>
+              Where diseases are concentrated (% of disease zones)
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            {ghPressure.length === 0 ? (
-              <EmptyHint loading={loading}>No greenhouse data.</EmptyHint>
-            ) : (
-              <ChartContainer config={ghConfig} className="aspect-[16/9] w-full">
-                <BarChart data={ghPressure} layout="vertical" margin={{ left: 8 }}>
-                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                  <XAxis type="number" tickLine={false} axisLine={false} />
+          <CardContent className="p-0">
+            {sectionSplit.length ? (
+              <ChartContainer config={distConfig} className="h-72">
+                <BarChart data={sectionSplit} margin={{ left: 12, right: 12, top: 8 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} />
                   <YAxis
-                    dataKey="greenhouse"
-                    type="category"
                     tickLine={false}
                     axisLine={false}
-                    width={110}
+                    width={36}
+                    tickFormatter={(v: number) => `${v}%`}
                   />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="diseases" fill="var(--color-diseases)" radius={[0, 6, 6, 0]} />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        indicator="line"
+                        formatter={(v) => `${v}%`}
+                      />
+                    }
+                  />
+                  <Bar dataKey="pct" fill="var(--sd-data-purple)" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ChartContainer>
+            ) : (
+              <EmptyHint />
             )}
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Disease incidents</CardTitle>
-          <CardDescription>Stage breakdown for the top 10 diseases</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {data.diseases.length === 0 ? (
-            <EmptyHint loading={loading}>No disease incident data.</EmptyHint>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Disease</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead>Stages</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.diseases.slice(0, 10).map((d) => (
-                  <TableRow key={d.name}>
-                    <TableCell className="font-medium">{d.name}</TableCell>
-                    <TableCell className="text-right tabular-nums">{d.total}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {Object.entries(d.stages)
-                          .sort((a, b) => b[1] - a[1])
-                          .map(([stage, count]) => (
-                            <Badge
-                              key={stage}
-                              variant="secondary"
-                              className="font-normal"
-                            >
-                              {stage} · {count}
-                            </Badge>
-                          ))}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Severity Levels</CardTitle>
+            <CardDescription>Per disease · high · moderate · low</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {ranking.length ? (
+              <div className="flex flex-col gap-1.5">
+                {ranking.slice(0, 8).map((r) => {
+                  const tot = Math.max(1, r.high + r.moderate + r.low);
+                  return (
+                    <div
+                      key={r.name}
+                      className="grid grid-cols-[1fr_auto] gap-3 items-center px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full shrink-0 border"
+                            style={{ background: diseaseColor(r.name) }}
+                            aria-hidden
+                          />
+                          <span className="truncate">{r.name}</span>
+                        </div>
+                        <div className="mt-1.5 h-2 rounded-full overflow-hidden bg-[var(--sd-line)] flex">
+                          <div
+                            className="h-full bg-[var(--sd-data-red)]"
+                            style={{ width: `${(r.high / tot) * 100}%` }}
+                          />
+                          <div
+                            className="h-full bg-[var(--sd-target)]"
+                            style={{ width: `${(r.moderate / tot) * 100}%` }}
+                          />
+                          <div
+                            className="h-full bg-[var(--sd-data-green)]"
+                            style={{ width: `${(r.low / tot) * 100}%` }}
+                          />
+                        </div>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+                      <div className="text-xs text-muted-foreground tabular-nums flex gap-3">
+                        <span className="text-[var(--sd-data-red)]">{r.high}</span>
+                        <span className="text-[var(--sd-target)]">{r.moderate}</span>
+                        <span className="text-[var(--sd-data-green)]">{r.low}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyHint />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Disease Pressure by Greenhouse</CardTitle>
+            <CardDescription>% zones infected per greenhouse</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {ghPressure.length ? (
+              <ChartContainer config={distConfig} className="h-72">
+                <BarChart
+                  data={ghPressure.slice(0, 12)}
+                  layout="vertical"
+                  margin={{ left: 12, right: 12 }}
+                >
+                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                  <XAxis
+                    type="number"
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v: number) => `${v}%`}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    tickLine={false}
+                    axisLine={false}
+                    width={140}
+                    tick={{ fontSize: 10 }}
+                  />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        indicator="line"
+                        formatter={(v) => `${v}%`}
+                      />
+                    }
+                  />
+                  <Bar dataKey="pct" fill="var(--sd-data-amber)" radius={[3, 3, 3, 3]} />
+                </BarChart>
+              </ChartContainer>
+            ) : (
+              <EmptyHint />
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
-  )
+  );
 }

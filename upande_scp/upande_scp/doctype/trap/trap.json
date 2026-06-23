@@ -23,8 +23,8 @@
   {
    "fieldname": "greenhouse",
    "fieldtype": "Link",
-   "label": "Greenhouse",
-   "link_filters": "[[\"Warehouse\",\"warehouse_type\",\"=\",\"Greenhouse\"],[\"Warehouse\",\"custom_farm\",\"=\",\"eval:doc.farm\"]]",
+   "label": "Station",
+   "link_filters": "[[\"Warehouse\",\"warehouse_type\",\"in\",[\"Greenhouse\",\"Block\"]],[\"Warehouse\",\"custom_farm\",\"=\",\"eval:doc.farm\"]]",
    "options": "Warehouse"
   },
   {
@@ -42,7 +42,7 @@
    "fieldname": "type",
    "fieldtype": "Select",
    "label": "Type",
-   "options": "General\nFCM"
+   "options": "General\nFCM\nMcPhail\nDelta\nFemtrack Lure\nCrytrack Lure\nCSR Trap"
   }
  ],
  "grid_page_length": 50,

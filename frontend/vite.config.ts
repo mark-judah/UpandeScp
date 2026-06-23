@@ -1,49 +1,54 @@
-import path from "node:path"
-import { defineConfig, loadEnv } from "vite"
-import react from "@vitejs/plugin-react"
-import tailwindcss from "@tailwindcss/vite"
+// defineConfig is imported from "vitest/config" so the `test` block below
+// is typed correctly. vitest/config re-exports vite's defineConfig with the
+// extra `test` field on UserConfig.
+import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import path from "node:path";
 
-// Frappe serves <app>/<app>/public/ at /assets/<app>/, so the bundle
-// emitted to ../upande_scp/public/dist/ is reachable at /assets/upande_scp/dist/.
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "")
-  // Bench webserver_port is 8001 in this bench (see sites/common_site_config.json).
-  // Override with VITE_FRAPPE_URL to point at a specific site, e.g. http://mona.local:8001.
-  const frappeUrl = env.VITE_FRAPPE_URL || "http://localhost:8001"
+const FRAPPE_URL = process.env.VITE_FRAPPE_URL || "http://localhost:8001";
 
-  return {
-    base: "/assets/upande_scp/dist/",
-    plugins: [react(), tailwindcss()],
-    resolve: {
-      alias: {
-        "@": path.resolve(__dirname, "./src"),
-      },
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+      // Canonical assets shared with the Python app (e.g. the label
+      // tier table both this preview and the PDF renderer read).
+      "@shared": path.resolve(__dirname, "../upande_scp/shared"),
     },
-    server: {
-      port: 5173,
-      proxy: {
-        "/api": { target: frappeUrl, changeOrigin: true },
-        "/method": { target: frappeUrl, changeOrigin: true },
-        "/assets": { target: frappeUrl, changeOrigin: true },
-        "/files": { target: frappeUrl, changeOrigin: true },
-        "/private": { target: frappeUrl, changeOrigin: true },
-      },
-    },
-    build: {
-      outDir: path.resolve(__dirname, "../upande_scp/public/dist"),
-      emptyOutDir: true,
-      cssCodeSplit: false,
-      manifest: true,
-      rollupOptions: {
-        output: {
-          entryFileNames: "scp.js",
-          chunkFileNames: "chunks/[name]-[hash].js",
-          assetFileNames: (info) => {
-            if (info.name?.endsWith(".css")) return "scp.css"
-            return "assets/[name]-[hash][extname]"
-          },
+  },
+  base: "/assets/upande_scp/dist/",
+  build: {
+    outDir: "../upande_scp/public/dist",
+    emptyOutDir: true,
+    manifest: true,
+    cssCodeSplit: false,
+    rollupOptions: {
+      output: {
+        entryFileNames: "scp-[hash].js",
+        assetFileNames: (assetInfo) => {
+          const name = assetInfo.name || "";
+          if (name.endsWith(".css")) return "scp-[hash].css";
+          return "assets/[name]-[hash][extname]";
         },
+        chunkFileNames: "chunks/[name]-[hash].js",
       },
     },
-  }
-})
+  },
+  server: {
+    port: 5173,
+    proxy: {
+      "/api": { target: FRAPPE_URL, changeOrigin: true },
+      "/method": { target: FRAPPE_URL, changeOrigin: true },
+      "/assets": { target: FRAPPE_URL, changeOrigin: true },
+      "/files": { target: FRAPPE_URL, changeOrigin: true },
+      "/private": { target: FRAPPE_URL, changeOrigin: true },
+    },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test-setup.ts"],
+  },
+});

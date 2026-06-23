@@ -1,5 +1,8 @@
+import json
+
 import frappe
 from frappe.utils import time_diff_in_seconds
+
 
 @frappe.whitelist()
 def getScoutingAnalysis():
@@ -11,19 +14,53 @@ def getScoutingAnalysis():
 
         greenhouse = frappe.form_dict.get("greenhouse") or ""
 
-        # Build filters
-        se_filters = [["date_of_capture", "=", date_str]]
+        # Optional crop allow-list. Pages like /rose-scouting pass
+        # ["", "Rose"] to keep rose entries plus uncategorised ones; the
+        # avocado page doesn't go through this endpoint at all. JSON list or
+        # comma-separated both accepted for caller convenience.
+        crops_raw = frappe.form_dict.get("crops")
+        crop_allow = None
+        if crops_raw:
+            try:
+                if isinstance(crops_raw, str) and crops_raw.strip().startswith("["):
+                    crop_allow = json.loads(crops_raw)
+                elif isinstance(crops_raw, (list, tuple)):
+                    crop_allow = list(crops_raw)
+                else:
+                    crop_allow = [s.strip() for s in str(crops_raw).split(",")]
+            except (TypeError, ValueError):
+                crop_allow = None
+            if crop_allow is not None:
+                crop_allow = [c if c is not None else "" for c in crop_allow]
+
+        # The "greenhouse" param is actually a warehouse name — could be a
+        # Block or a Greenhouse — so match either field on the entry. Avocado
+        # entries carry the warehouse on `block`, rose entries on `greenhouse`.
+        se_filters = {"date_of_capture": date_str}
+        se_or_filters = None
         if greenhouse:
-            se_filters.append(["greenhouse", "=", greenhouse])
+            se_or_filters = [
+                ["greenhouse", "=", greenhouse],
+                ["block", "=", greenhouse],
+            ]
 
         # Fetch scouting entries for the given date (and optional greenhouse)
         scouting_entries = frappe.get_all(
             "Scouting Entry",
             fields=["name", "scouts_name", "greenhouse", "bed",
-                    "zone", "time_of_capture", "date_of_capture", "latitude", "longitude", "creation"],
+                    "zone", "time_of_capture", "date_of_capture", "latitude", "longitude", "creation",
+                    "crop_scouted", "tree", "block", "row"],
             filters=se_filters,
+            or_filters=se_or_filters,
             order_by="time_of_capture asc"
         )
+
+        if crop_allow is not None:
+            allow_set = {(c or "").strip().lower() for c in crop_allow}
+            scouting_entries = [
+                e for e in scouting_entries
+                if (e.get("crop_scouted") or "").strip().lower() in allow_set
+            ]
 
         scouting_summary = {
             "total_unique_scouts": 0,

@@ -7,23 +7,40 @@
  "field_order": [
   "lat",
   "lon",
-  "default_zoom"
+  "default_zoom",
+  "farm_coordinates_section",
+  "farm_coordinates"
  ],
  "fields": [
   {
    "fieldname": "lat",
    "fieldtype": "Float",
-   "label": "Lat"
+   "label": "Lat",
+   "precision": "6"
   },
   {
    "fieldname": "lon",
    "fieldtype": "Float",
-   "label": "Lon"
+   "label": "Lon",
+   "precision": "6"
   },
   {
    "fieldname": "default_zoom",
    "fieldtype": "Float",
-   "label": "Default Zoom"
+   "label": "Default Zoom",
+   "precision": "1"
+  },
+  {
+   "fieldname": "farm_coordinates_section",
+   "fieldtype": "Section Break",
+   "label": "Per-Farm Coordinates"
+  },
+  {
+   "description": "Coordinates the map pans/zooms to when a farm is selected. Falls back to the global Lat/Lon/Zoom above when a farm is missing.",
+   "fieldname": "farm_coordinates",
+   "fieldtype": "Table",
+   "label": "Farm Coordinates",
+   "options": "Farm Map Coordinate"
   }
  ],
  "grid_page_length": 50,

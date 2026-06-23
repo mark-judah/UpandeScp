@@ -1,0 +1,170 @@
+{% extends "upande_scp/www/map_base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="/spray_plan_approval/spray_plan_approval.css">
+{% endblock %}
+
+{% block page_content %}
+<div id="spa-root">
+<div class="spa-page">
+
+  <!-- ── Page header ─────────────────────────────────────────── -->
+  <div class="spa-page-header">
+    <div class="spa-page-header-left">
+      <h3 class="spa-title">Spray Plan Approval</h3>
+      <span class="spa-subtitle">Pending application work orders · review the chemical mix and approve or stop them in bulk.</span>
+    </div>
+    <div class="spa-page-header-right" id="spa-header-stats"></div>
+  </div>
+
+  <!-- ── Filters ─────────────────────────────────────────────── -->
+  <div class="spa-filters">
+    <div class="spa-filter-row">
+      <div class="spa-filter-item">
+        <label for="f-from">From</label>
+        <input type="date" id="f-from" class="spa-input">
+      </div>
+      <div class="spa-filter-item">
+        <label for="f-to">To</label>
+        <input type="date" id="f-to" class="spa-input">
+      </div>
+      <div class="spa-filter-item">
+        <label for="f-farm">Farm</label>
+        <select id="f-farm" class="spa-select">
+          <option value="">All Farms</option>
+        </select>
+      </div>
+      <div class="spa-filter-item">
+        <label for="f-gh">Greenhouse</label>
+        <select id="f-gh" class="spa-select" disabled>
+          <option value="">All</option>
+        </select>
+      </div>
+      <div class="spa-filter-actions">
+        <button id="btn-clear" class="spa-btn spa-btn-ghost">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Status tabs ─────────────────────────────────────────── -->
+  <div class="spa-tabs">
+    <button class="spa-tab active" data-filter="pending">
+      <span class="spa-tab-dot pending"></span>Pending
+      <span class="spa-tab-count" id="tab-count-pending">0</span>
+    </button>
+    <button class="spa-tab" data-filter="forwarded">
+      <span class="spa-tab-dot forwarded"></span>Forwarded
+      <span class="spa-tab-count" id="tab-count-forwarded">0</span>
+    </button>
+    <button class="spa-tab" data-filter="all">
+      All
+      <span class="spa-tab-count" id="tab-count-all">0</span>
+    </button>
+  </div>
+
+  <!-- ── Content area ────────────────────────────────────────── -->
+  <div class="spa-content" id="spa-content">
+
+    <!-- Loading -->
+    <div id="spa-state-loading" class="spa-state hidden">
+      <div class="spa-spinner"></div>
+      <p>Loading work orders...</p>
+    </div>
+
+    <!-- Empty -->
+    <div id="spa-state-empty" class="spa-state hidden">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5" width="48" height="48">
+        <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+      </svg>
+      <p id="spa-empty-msg">No spray plans found.</p>
+      <button id="btn-show-all" class="spa-btn spa-btn-ghost">Show All Dates</button>
+    </div>
+
+    <!-- Error -->
+    <div id="spa-state-error" class="spa-state hidden">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="1.5" width="40" height="40">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <p id="spa-error-msg">Failed to load work orders.</p>
+      <button id="btn-retry" class="spa-btn spa-btn-ghost">Retry</button>
+    </div>
+
+    <!-- Table -->
+    <div id="spa-state-table" class="hidden">
+      <div class="spa-table-toolbar">
+        <label class="spa-select-all-label">
+          <input type="checkbox" id="spa-select-all">
+          <span id="spa-count-label">0 work orders</span>
+        </label>
+      </div>
+      <div class="spa-table-wrap">
+        <table class="spa-table">
+          <thead>
+            <tr>
+              <th class="col-check"></th>
+              <th class="col-wo">Work Order</th>
+              <th class="col-gh">Greenhouse</th>
+              <th class="col-sched">Scheduled</th>
+              <th class="col-type">Type</th>
+              <th class="col-chems">Chemicals</th>
+              <th class="col-status">Status</th>
+              <th class="col-toggle"></th>
+            </tr>
+          </thead>
+          <tbody id="spa-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /spa-content -->
+
+</div><!-- /spa-page -->
+
+  <!-- ── Action bar ──────────────────────────────────────────── -->
+  <div class="spa-action-bar" id="spa-action-bar">
+    <div class="spa-action-info" id="spa-action-info">
+      <span id="spa-sel-count">0</span> selected
+    </div>
+    <div class="spa-action-right">
+      <!-- Inline stop confirm -->
+      <div class="spa-inline-confirm hidden" id="spa-stop-confirm">
+        <span class="spa-confirm-text">Stop selected work orders? This cannot be undone.</span>
+        <button id="btn-confirm-stop" class="spa-btn spa-btn-stop-sm">Confirm</button>
+        <button id="btn-dismiss-stop" class="spa-btn spa-btn-ghost-sm">Cancel</button>
+      </div>
+      <button id="btn-stop" class="spa-btn spa-btn-stop" disabled>Stop Selected</button>
+      <button id="btn-approve" class="spa-btn spa-btn-approve" disabled>Approve Selected</button>
+    </div>
+  </div>
+
+  <!-- ── Progress panel ─────────────────────────────────────── -->
+  <div id="spa-progress-panel" class="spa-progress-panel hidden">
+    <div class="spa-pp-header">
+      <div id="spa-pp-title" class="spa-pp-title">Processing...</div>
+      <button id="btn-pp-close" class="spa-pp-close hidden">Close</button>
+    </div>
+    <div class="spa-pp-track">
+      <div id="spa-pp-fill" class="spa-pp-fill"></div>
+    </div>
+    <div id="spa-pp-log" class="spa-pp-log"></div>
+    <div id="spa-pp-qr" class="spa-pp-qr hidden"></div>
+  </div>
+
+</div><!-- /spa-root -->
+
+<!-- ── Heatmap overlay (shown on demand) ───────────────────── -->
+<div id="hmv-overlay" class="hmv-overlay hidden">
+  <div class="hmv-modal" id="hmv-modal">
+    <div class="hmv-header" id="hmv-header"></div>
+    <div class="hmv-body" id="hmv-body"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block script %}
+<script>window._spaCSRF = "{{ csrf_token }}";</script>
+<script src="/spray_plan_approval/spray_plan_approval.js"></script>
+{% endblock %}

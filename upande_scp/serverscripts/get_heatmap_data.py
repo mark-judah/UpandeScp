@@ -1,3 +1,5 @@
+import re
+
 import frappe
 from frappe import _
 
@@ -6,6 +8,8 @@ from upande_scp.serverscripts.cache_utils import (
     K_FARMS_AND_GREENHOUSES,
     K_OBSERVATION_TYPES,
     K_ZONE_COUNT_BY_BED,
+    K_ZONES_GEOJSON,
+    TTL_LONG,
     TTL_MEDIUM,
     TTL_SHORT,
     build_bed_count_by_gh,
@@ -13,6 +17,19 @@ from upande_scp.serverscripts.cache_utils import (
     build_zone_count_by_bed,
     get_or_set,
 )
+
+
+def _build_zones_geojson():
+    """All zones with raw_geojson — cached, filtered per-greenhouse downstream."""
+    return frappe.get_all(
+        "Zone",
+        filters={"raw_geojson": ["is", "set"]},
+        fields=["name", "greenhouse", "raw_geojson"],
+        limit_page_length=0,
+    )
+
+
+_BED_NUM_RE = re.compile(r"Bed\s+(\d+)", re.IGNORECASE)
 
 
 # Maps Scouting Entry child-table → (doctype, item-field on row, extra fields, output key)
@@ -60,7 +77,28 @@ def getHeatmapData(date, greenhouse):
             default=0,
         )
 
+        # {bed_number: zone_count} — drives per-bed line lengths in the
+        # landscape view, so non-rectangular greenhouses render with their
+        # natural stepped silhouette instead of a forced rectangle.
+        zone_count_by_bed_num = {}
+        for b in gh_beds:
+            m = _BED_NUM_RE.search(b.name or "")
+            if not m:
+                continue
+            zone_count_by_bed_num[int(m.group(1))] = zone_count_by_bed.get(b.name, 0)
+
         observation_types = get_or_set(K_OBSERVATION_TYPES, build_observation_types, ttl=TTL_MEDIUM)
+
+        # Zone polygons drive the floor-plan rendering on the client. Cached
+        # once across all greenhouses; we filter to the active greenhouse here
+        # so the per-card payload stays small for irregular footprints
+        # (double-bed / split-aisle houses parse out as multi-line features).
+        all_zone_geojson = get_or_set(K_ZONES_GEOJSON, _build_zones_geojson, ttl=TTL_LONG)
+        zone_geojson = [
+            {"name": z["name"], "raw_geojson": z["raw_geojson"]}
+            for z in all_zone_geojson
+            if z.get("greenhouse") == greenhouse
+        ]
 
         if not scouting_entries:
             return {
@@ -68,6 +106,8 @@ def getHeatmapData(date, greenhouse):
                 "observation_types": observation_types,
                 "bed_count": bed_count,
                 "zone_count": max_zone_count,
+                "zone_count_by_bed": zone_count_by_bed_num,
+                "zone_geojson": zone_geojson,
                 "message": "No scouting entries found for this date and greenhouse",
             }
 
@@ -112,6 +152,8 @@ def getHeatmapData(date, greenhouse):
             "observation_types": observation_types,
             "bed_count": bed_count,
             "zone_count": max_zone_count,
+            "zone_count_by_bed": zone_count_by_bed_num,
+            "zone_geojson": zone_geojson,
             "date": date,
             "greenhouse": greenhouse,
         }
@@ -175,3 +217,98 @@ def getAllScoutedGreenhouses(date):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get All Scouted Greenhouses Error")
         frappe.throw(_("Error fetching scouted greenhouses: {0}").format(str(e)))
+
+
+@frappe.whitelist()
+def getRecentScoutingDates(date, limit=3):
+    """Most recent distinct dates with any scouting activity on or before `date`.
+
+    Drives the heatmap's "3-day comparison" so the columns line up with days
+    that actually had scouting — calendar gaps (weekends, downtime) collapse
+    instead of showing as empty cards.
+    """
+    try:
+        rows = frappe.db.sql(
+            """
+            SELECT DISTINCT date_of_capture
+            FROM `tabScouting Entry`
+            WHERE date_of_capture <= %s
+            ORDER BY date_of_capture DESC
+            LIMIT %s
+            """,
+            (date, int(limit)),
+            as_dict=True,
+        )
+        return {"dates": [str(r["date_of_capture"]) for r in rows]}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Get Recent Scouting Dates Error")
+        frappe.throw(_("Error fetching recent scouting dates: {0}").format(str(e)))
+
+
+@frappe.whitelist()
+def getRecentScoutingDatesPerGreenhouse(date, limit=3):
+    """For each recently-active greenhouse, its own last `limit` scouting dates.
+
+    "Recently active" = scouted on one of the last `limit` global scouting
+    dates ≤ `date`. Per-greenhouse dates may extend further back: a house last
+    scouted Mon, Wed, and last Fri shows those three — not the global Wed/Tue/Mon.
+    """
+    try:
+        global_dates = frappe.db.sql(
+            """
+            SELECT DISTINCT date_of_capture
+            FROM `tabScouting Entry`
+            WHERE date_of_capture <= %s
+            ORDER BY date_of_capture DESC
+            LIMIT %s
+            """,
+            (date, int(limit)),
+            as_dict=True,
+        )
+        if not global_dates:
+            return {"greenhouses": {}}
+
+        date_list = [r["date_of_capture"] for r in global_dates]
+
+        gh_rows = frappe.db.sql(
+            """
+            SELECT DISTINCT greenhouse
+            FROM `tabScouting Entry`
+            WHERE date_of_capture IN %(dates)s
+              AND greenhouse IS NOT NULL AND greenhouse != ''
+            """,
+            {"dates": tuple(date_list)},
+            as_dict=True,
+        )
+        greenhouses = [r["greenhouse"] for r in gh_rows]
+        if not greenhouses:
+            return {"greenhouses": {}}
+
+        rows = frappe.db.sql(
+            """
+            SELECT DISTINCT greenhouse, date_of_capture
+            FROM `tabScouting Entry`
+            WHERE date_of_capture <= %(date)s
+              AND greenhouse IN %(ghs)s
+            ORDER BY greenhouse ASC, date_of_capture DESC
+            """,
+            {"date": date, "ghs": tuple(greenhouses)},
+            as_dict=True,
+        )
+
+        per_gh = {}
+        cap = int(limit)
+        for r in rows:
+            gh = r["greenhouse"]
+            bucket = per_gh.setdefault(gh, [])
+            if len(bucket) < cap:
+                bucket.append(str(r["date_of_capture"]))
+        return {"greenhouses": per_gh}
+    except Exception as e:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "Get Recent Scouting Dates Per Greenhouse Error",
+        )
+        frappe.throw(
+            _("Error fetching per-greenhouse scouting dates: {0}").format(str(e))
+        )

@@ -11,6 +11,10 @@
 			src="/assets/frappe/dist/js/frappe-web.bundle.IFD3LIMJ.js"
 		></script>
 
+		<!-- Flatpickr (custom calendar) -->
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" />
+		<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+
 		<style>
 			/* ── Hide Frappe web chrome ── */
 			.navbar.navbar-light {
@@ -25,7 +29,7 @@
 				--panel-bg: var(--fg-color, #ffffff);
 				--sidebar-bg: var(--fg-color, #ffffff);
 
-				--text: var(--heading-color, #111827);
+				--text: var(--heading-color, #374151);
 				--text-muted: var(--text-color, #6b7280);
 				--border: var(--border-color, #e5e7eb);
 				--accent: var(--primary, #030303);
@@ -56,20 +60,391 @@
 				width: 100%;
 				overflow: hidden;
 				font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+				font-size: 0.875rem;
+				line-height: 1.5;
 				background: var(--bg);
-				color: var(--text);
+				color: #374151;
 			}
 
-			.custom-navbar {
-				flex-shrink: 0;
-				position: sticky;
-				top: 0;
-				z-index: 3000;
-				background: var(--bg);
+			/* === Floating panel typography (observations / scouts / traps) === */
+			#panel,
+			#panel *,
+			#sidebar,
+			#sidebar *,
+			.scout-filters,
+			.scout-filters *,
+			.scout-summary,
+			.scout-summary * {
+				font-size: 0.8rem;
+				font-weight: 400;
+				color: #374151;
+			}
+			#panel h1, #panel h2, #panel h3, #panel h4,
+			#sidebar h1, #sidebar h2, #sidebar h3, #sidebar h4,
+			#panel .panel-title, #sidebar .panel-title,
+			#panel .section-title, #sidebar .section-title,
+			.scout-filters .panel-title,
+			.scout-summary .panel-title {
+				font-size: 0.85rem;
+				font-weight: 600;
+				color: #4b5563;
+			}
+			#panel label, #sidebar label,
+			#panel .field-label, #sidebar .field-label,
+			.scout-filters label,
+			.scout-summary label {
+				font-size: 0.72rem;
+				font-weight: 500;
+				color: #6b7280;
+			}
+
+			/* === Shared scouting-page floating panels === */
+			.scout-filters {
+				position: absolute;
+				top: 14px;
+				left: 0;
+				right: 0;
+				margin: 0 auto;
+				z-index: 600;
+				width: max-content;
+				max-width: calc(100% - 24px);
+				background: #ffffff;
+				border: 1px solid #e5e7eb;
+				border-radius: 16px;
+				padding: 8px 14px;
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				gap: 14px;
+			}
+			.scout-filters .scout-filter-item {
+				display: flex;
+				flex-direction: column;
+				gap: 3px;
+				min-width: 0;
+			}
+			.scout-filters label {
+				font-size: 0.66rem;
+				font-weight: 500;
+				color: #6b7280;
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+			}
+			.scout-filters select,
+			.scout-filters input[type="date"],
+			.scout-filters input[type="week"],
+			.scout-filters input[type="text"] {
+				height: 32px;
+				padding: 0 10px;
+				border: 1px solid #d1d5db;
+				border-radius: 8px;
+				font-size: 0.78rem;
+				color: #374151;
+				background: #ffffff;
+				outline: none;
+				min-width: 140px;
+				font-family: inherit;
+				cursor: pointer;
+			}
+			.scout-filters select {
+				appearance: none;
+				-webkit-appearance: none;
+				-moz-appearance: none;
+				padding-right: 28px;
+				background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 8 10 12 14 8'/%3E%3C/svg%3E");
+				background-repeat: no-repeat;
+				background-position: right 8px center;
+				background-size: 14px 14px;
+			}
+			.scout-filters input[type="date"]::-webkit-calendar-picker-indicator,
+			.scout-filters input[type="week"]::-webkit-calendar-picker-indicator,
+			.filter-group input[type="date"]::-webkit-calendar-picker-indicator,
+			.filter-group input[type="week"]::-webkit-calendar-picker-indicator,
+			.spa-filter-row input[type="date"]::-webkit-calendar-picker-indicator,
+			.spa-filter-row input[type="week"]::-webkit-calendar-picker-indicator,
+			.chart-controls input[type="date"]::-webkit-calendar-picker-indicator,
+			.chart-controls input[type="week"]::-webkit-calendar-picker-indicator,
+			.sr-field input[type="date"]::-webkit-calendar-picker-indicator,
+			.sr-field input[type="week"]::-webkit-calendar-picker-indicator {
+				display: none;
+			}
+			.scout-filters input[type="date"]::-webkit-inner-spin-button,
+			.scout-filters input[type="week"]::-webkit-inner-spin-button,
+			.filter-group input[type="date"]::-webkit-inner-spin-button,
+			.filter-group input[type="week"]::-webkit-inner-spin-button,
+			.spa-filter-row input[type="date"]::-webkit-inner-spin-button,
+			.spa-filter-row input[type="week"]::-webkit-inner-spin-button,
+			.chart-controls input[type="date"]::-webkit-inner-spin-button,
+			.chart-controls input[type="week"]::-webkit-inner-spin-button,
+			.sr-field input[type="date"]::-webkit-inner-spin-button,
+			.sr-field input[type="week"]::-webkit-inner-spin-button {
+				display: none;
+			}
+			.scout-filters input[type="date"],
+			.scout-filters input[type="week"],
+			.filter-group input[type="date"],
+			.filter-group input[type="week"],
+			.spa-filter-row input[type="date"],
+			.spa-filter-row input[type="week"],
+			.chart-controls input[type="date"],
+			.chart-controls input[type="week"],
+			.sr-field input[type="date"],
+			.sr-field input[type="week"] {
+				background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");
+				background-repeat: no-repeat;
+				background-position: right 9px center;
+				background-size: 14px 14px;
+				padding-right: 32px;
+			}
+
+			/* === Flatpickr theme overrides (Frappe-15 inspired) === */
+			.flatpickr-calendar {
+				font-family: "Inter", "Helvetica Neue", Arial, sans-serif !important;
+				border-radius: 12px !important;
+				border: 1px solid #e5e7eb !important;
+				box-shadow: 0 8px 24px rgba(17, 24, 39, 0.10), 0 1px 2px rgba(17, 24, 39, 0.04) !important;
+				background: #ffffff !important;
+				width: 280px !important;
+				padding: 6px !important;
+			}
+			.flatpickr-calendar.arrowTop:before,
+			.flatpickr-calendar.arrowTop:after,
+			.flatpickr-calendar.arrowBottom:before,
+			.flatpickr-calendar.arrowBottom:after { display: none !important; }
+
+			.flatpickr-months {
+				padding: 6px 4px 4px;
+			}
+			.flatpickr-month {
+				color: #374151 !important;
+				background: transparent !important;
+				border-radius: 8px !important;
+				height: 36px !important;
+			}
+			.flatpickr-current-month {
+				font-size: 0.85rem !important;
+				font-weight: 600 !important;
+				color: #374151 !important;
+				padding: 6px 0 !important;
+			}
+			.flatpickr-current-month input.cur-year {
+				font-weight: 600 !important;
+				color: #374151 !important;
+			}
+			.flatpickr-monthDropdown-months {
+				font-size: 0.8rem !important;
+				font-weight: 600 !important;
+				color: #374151 !important;
+				background: transparent !important;
+			}
+			.flatpickr-monthDropdown-months:hover {
+				background: #f4f5f6 !important;
+			}
+			.flatpickr-prev-month,
+			.flatpickr-next-month {
+				fill: #6b7280 !important;
+				color: #6b7280 !important;
+				padding: 6px !important;
+				border-radius: 6px !important;
+			}
+			.flatpickr-prev-month svg,
+			.flatpickr-next-month svg {
+				width: 12px !important;
+				height: 12px !important;
+			}
+			.flatpickr-prev-month:hover,
+			.flatpickr-next-month:hover {
+				background: #f4f5f6 !important;
+				fill: #374151 !important;
+			}
+
+			.flatpickr-weekdays {
+				background: transparent !important;
+			}
+			.flatpickr-weekday {
+				color: #9ca3af !important;
+				font-size: 0.66rem !important;
+				font-weight: 600 !important;
+				text-transform: uppercase !important;
+				letter-spacing: 0.04em !important;
+				background: transparent !important;
+			}
+
+			.flatpickr-days {
+				width: 100% !important;
+			}
+			.dayContainer {
+				width: 100% !important;
+				min-width: 100% !important;
+				max-width: 100% !important;
+				padding: 4px 0 !important;
+			}
+			.flatpickr-day {
+				color: #374151 !important;
+				font-size: 0.78rem !important;
+				font-weight: 500 !important;
+				border-radius: 8px !important;
+				border: 1px solid transparent !important;
+				max-width: 36px !important;
+				height: 32px !important;
+				line-height: 32px !important;
+				margin: 1px !important;
+			}
+			.flatpickr-day:hover,
+			.flatpickr-day.prevMonthDay:hover,
+			.flatpickr-day.nextMonthDay:hover {
+				background: #f4f5f6 !important;
+				border-color: transparent !important;
+				color: #374151 !important;
+			}
+			.flatpickr-day.prevMonthDay,
+			.flatpickr-day.nextMonthDay {
+				color: #d1d5db !important;
+			}
+			.flatpickr-day.today {
+				border-color: #d1d5db !important;
+				color: #374151 !important;
+				font-weight: 600 !important;
+			}
+			.flatpickr-day.today:hover {
+				background: #f4f5f6 !important;
+				border-color: #d1d5db !important;
+			}
+			.flatpickr-day.selected,
+			.flatpickr-day.selected:hover,
+			.flatpickr-day.startRange,
+			.flatpickr-day.endRange {
+				background: #4b5563 !important;
+				border-color: #4b5563 !important;
+				color: #ffffff !important;
+				font-weight: 600 !important;
+			}
+			.flatpickr-day.disabled,
+			.flatpickr-day.disabled:hover {
+				color: #e5e7eb !important;
+				background: transparent !important;
+			}
+
+			/* Native <select> styling for filter containers — same look as inputs.
+			   Padding (no fixed height) so the select matches sibling inputs that may
+			   have their own height set via padding only (dashboard, spray approval). */
+			.filter-group select,
+			.spa-filter-row select,
+			.chart-controls select,
+			.sr-field select {
+				padding: 7px 28px 7px 10px;
+				border: 1px solid #d1d5db;
+				border-radius: 8px;
+				font-size: 0.78rem;
+				color: #374151;
+				background: #ffffff;
+				outline: none;
+				appearance: none;
+				-webkit-appearance: none;
+				-moz-appearance: none;
+				cursor: pointer;
+				font-family: inherit;
+				background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 8 10 12 14 8'/%3E%3C/svg%3E");
+				background-repeat: no-repeat;
+				background-position: right 8px center;
+				background-size: 14px 14px;
+				min-width: 140px;
+				line-height: 1.4;
+			}
+			.filter-group select:focus,
+			.spa-filter-row select:focus,
+			.chart-controls select:focus,
+			.sr-field select:focus {
+				border-color: #4b5563;
+			}
+			.filter-group select:disabled,
+			.spa-filter-row select:disabled,
+			.chart-controls select:disabled,
+			.sr-field select:disabled {
+				background-color: #f9fafb;
+				color: #9ca3af;
+				cursor: not-allowed;
+			}
+			.scout-filters select:focus,
+			.scout-filters input:focus {
+				border-color: #4b5563;
+			}
+			.scout-filters .scout-filter-spacer {
+				flex: 1;
+			}
+			.scout-filters .scout-filter-pills {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 6px;
+				align-items: center;
+			}
+
+			.scout-summary {
+				position: absolute;
+				right: 14px;
+				bottom: 14px;
+				z-index: 600;
+				background: #ffffff;
+				border: 1px solid #e5e7eb;
+				border-radius: 14px;
+				padding: 12px 14px;
+				min-width: 240px;
+				max-width: 360px;
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+			}
+			.scout-summary .panel-title {
+				margin: 0;
+				font-size: 0.72rem;
+				font-weight: 600;
+				color: #6b7280;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+			}
+			.scout-summary .scout-summary-grid {
+				display: grid;
+				grid-template-columns: repeat(2, 1fr);
+				gap: 8px;
+			}
+			.scout-summary .scout-stat {
+				display: flex;
+				flex-direction: column;
+				gap: 2px;
+				padding: 8px 10px;
+				background: #fafbfc;
+				border: 1px solid #e5e7eb;
+				border-radius: 10px;
+			}
+			.scout-summary .scout-stat-label {
+				font-size: 0.66rem;
+				font-weight: 500;
+				color: #6b7280;
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+			}
+			.scout-summary .scout-stat-value {
+				font-size: 1rem;
+				font-weight: 700;
+				color: #374151;
+				line-height: 1.1;
+			}
+
+			@media (max-width: 640px) {
+				.scout-summary {
+					left: 12px;
+					right: 12px;
+					max-width: none;
+				}
+				.scout-filters {
+					padding: 8px 10px;
+				}
 			}
 
 			.page-content {
-				height: calc(100vh - 52px);
+				flex: 1;
+				min-width: 0;
+				height: 100vh;
 				overflow: auto;
 				position: relative;
 				display: flex;
@@ -117,11 +492,62 @@
 		{% block head %}{% endblock %}
 	</head>
 
-	<body style="display: flex; flex-direction: column">
-		<header class="custom-navbar">{% include "upande_scp/templates/map_navbar.html" %}</header>
+	<body style="display: flex; flex-direction: row; height: 100vh">
+		{% include "upande_scp/templates/scp_sidebar.html" %}
 
 		<main class="page-content">{% block page_content %}{% endblock %}</main>
 
 		{% block script %}{% endblock %}
+
+		<script>
+			// Auto-attach Flatpickr to date/week inputs inside recognised filter containers.
+			// Selects are intentionally left as native <select> for reliability — the closed
+			// state is styled via CSS, the open dropdown uses the browser's native UI.
+			(function () {
+				var FILTER_CONTAINERS = [
+					".scout-filters",
+					".filter-group",
+					".spa-filter-row",
+					".chart-controls",
+					".sr-field",
+				];
+				var dateSel = FILTER_CONTAINERS.map(function (c) {
+					return c + ' input[type="date"]:not([data-fp-init])';
+				}).join(", ");
+				var weekSel = FILTER_CONTAINERS.map(function (c) {
+					return c + ' input[type="week"]:not([data-fp-init])';
+				}).join(", ");
+
+				function initFlatpickr() {
+					if (typeof flatpickr === "undefined") return;
+					document.querySelectorAll(dateSel).forEach(function (el) {
+						el.setAttribute("data-fp-init", "1");
+						flatpickr(el, {
+							dateFormat: "Y-m-d",
+							allowInput: true,
+							disableMobile: true,
+						});
+					});
+					document.querySelectorAll(weekSel).forEach(function (el) {
+						el.setAttribute("data-fp-init", "1");
+						flatpickr(el, {
+							dateFormat: "Y-\\WW",
+							allowInput: true,
+							disableMobile: true,
+							weekNumbers: true,
+						});
+					});
+				}
+
+				if (document.readyState === "complete") {
+					setTimeout(initFlatpickr, 0);
+				} else {
+					window.addEventListener("load", function () { setTimeout(initFlatpickr, 0); });
+				}
+				window.scpInitFlatpickr = initFlatpickr;
+				// Compatibility shim: pages that called scpInitChoices before now get a no-op.
+				window.scpInitChoices = function () {};
+			})();
+		</script>
 	</body>
 </html>

@@ -1,13 +1,13 @@
-import { useMemo } from "react"
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts"
-
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   ChartContainer,
   ChartLegend,
@@ -15,7 +15,14 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@/components/ui/chart"
+} from "@/components/ui/chart";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -23,223 +30,154 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@/components/ui/table";
+import { Kpi, KpiGrid } from "./Kpi";
+import { EmptyHint } from "./EmptyHint";
+import { TrendStrip } from "./TrendStrip";
+import type { TrapsPayload } from "./traps-types";
 
-import { EmptyHint } from "./EmptyHint"
-import { Kpi } from "./Kpi"
-import type { AggregatedScouting } from "./aggregate"
-import { focusKey } from "@/lib/scouting-api"
+const PALETTE = [
+  "var(--sd-data-purple)",
+  "var(--sd-data-cyan)",
+  "var(--sd-data-pink)",
+  "var(--sd-data-amber)",
+  "var(--sd-data-green)",
+  "var(--sd-data-indigo)",
+];
 
-interface Props {
-  data: AggregatedScouting
-  loading: boolean
-}
+export function TrapsTab({ data }: { data: TrapsPayload | null }) {
+  const ranking = data?.ranking ?? [];
+  const breakdown = data?.pestBreakdown ?? [];
+  const trend = data?.trendSeries ?? { rows: [], keys: [] };
+  const k = data?.kpis ?? { trapZones: 0, activeTraps: 0, fcmCount: 0, totalCatches: 0 };
 
-export function TrapsTab({ data, loading }: Props) {
-  const traps = data.traps
-  const totalCatches = data.totalTrapObservations
-  const fcmCount = useMemo(
-    () => traps.filter((t) => focusKey(t.pest)).reduce((s, t) => s + t.total, 0),
-    [traps],
-  )
-  const avgPerTrap =
-    traps.length > 0 ? Math.round(totalCatches / traps.length) : 0
-
-  // Top traps
-  const topTraps = useMemo(
-    () =>
-      traps
-        .slice(0, 12)
-        .map((t) => ({ trap: `${t.trap} · ${t.pest}`, total: t.total })),
-    [traps],
-  )
-  const topTrapsConfig = {
-    total: { label: "Catches", color: "var(--chart-2)" },
-  } satisfies ChartConfig
-
-  // Pest breakdown across traps
-  const pestBreakdown = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const t of traps) map.set(t.pest, (map.get(t.pest) || 0) + t.total)
-    return Array.from(map.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 8)
-  }, [traps])
-  const PEST_COLORS = [
-    "var(--chart-1)",
-    "var(--chart-2)",
-    "var(--chart-3)",
-    "var(--chart-4)",
-    "var(--chart-5)",
-  ]
-  const pestConfig = {
-    count: { label: "Catches" },
-  } satisfies ChartConfig
-
-  const ghTraps = useMemo(
-    () =>
-      data.greenhouses
-        .map((g) => ({ greenhouse: g.name, traps: g.traps }))
-        .filter((g) => g.traps > 0)
-        .sort((a, b) => b.traps - a.traps)
-        .slice(0, 10),
-    [data.greenhouses],
-  )
-  const ghConfig = {
-    traps: { label: "Catches", color: "var(--chart-2)" },
-  } satisfies ChartConfig
+  const barConfig: ChartConfig = {
+    total: { label: "Catches", color: "var(--sd-data-purple)" },
+  };
+  const pieConfig: ChartConfig = breakdown.reduce<ChartConfig>(
+    (a, b, i) => ({
+      ...a,
+      [b.name]: { label: b.name, color: PALETTE[i % PALETTE.length] },
+    }),
+    {},
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi label="Active traps" value={traps.length.toString()} accent="chart-2" />
-        <Kpi
-          label="Total catches"
-          value={totalCatches.toString()}
-          accent="chart-1"
-          hint={`avg ${avgPerTrap} / trap`}
-        />
-        <Kpi
-          label="FCM-class catches"
-          value={fcmCount.toString()}
-          accent="chart-5"
-          hint="focus pests this period"
-        />
-        <Kpi
-          label="Alerts"
-          value={data.totalAlerts.toString()}
-          accent="severity-high"
-          hint="trap > 10 in a session"
-        />
-      </div>
+    <div className="flex flex-col gap-4">
+      <KpiGrid cols={4}>
+        <Kpi label="Trap Zones" value={k.trapZones} hint="greenhouses with traps" />
+        <Kpi label="Active Traps" value={k.activeTraps} hint="distinct traps" />
+        <Kpi label="FCM Count" value={k.fcmCount} hint="false codling moth catches" />
+        <Kpi label="Total Catches" value={k.totalCatches} hint="across range" />
+      </KpiGrid>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Top traps</CardTitle>
-          <CardDescription>Top 12 trap × pest pairs by total catches</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {topTraps.length === 0 ? (
-            <EmptyHint loading={loading}>No trap data.</EmptyHint>
-          ) : (
-            <ChartContainer config={topTrapsConfig} className="aspect-[16/6] w-full">
-              <BarChart data={topTraps} margin={{ left: 8, right: 8 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="trap"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  interval={0}
-                  angle={-25}
-                  height={80}
-                  textAnchor="end"
-                />
-                <YAxis tickLine={false} axisLine={false} width={32} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="total" fill="var(--color-total)" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ChartContainer>
-          )}
-        </CardContent>
-      </Card>
+      <TrendStrip
+        title="Trap Trends"
+        description="Top pests by daily catches"
+        rows={trend.rows}
+        keys={trend.keys}
+      />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Pest breakdown in traps</CardTitle>
-            <CardDescription>By pest captured</CardDescription>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Trap Performance</CardTitle>
+            <CardDescription>Top traps by catches</CardDescription>
           </CardHeader>
-          <CardContent>
-            {pestBreakdown.length === 0 ? (
-              <EmptyHint loading={loading}>No pest breakdown.</EmptyHint>
-            ) : (
-              <ChartContainer
-                config={pestConfig}
-                className="mx-auto aspect-square max-h-[280px]"
-              >
-                <PieChart>
-                  <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                  <Pie
-                    data={pestBreakdown}
-                    dataKey="count"
-                    nameKey="name"
-                    innerRadius={50}
-                    strokeWidth={3}
-                  >
-                    {pestBreakdown.map((_, i) => (
-                      <Cell key={i} fill={PEST_COLORS[i % PEST_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <ChartLegend content={<ChartLegendContent nameKey="name" />} />
-                </PieChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Trap activity by greenhouse</CardTitle>
-            <CardDescription>Top 10 greenhouses by trap entries</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {ghTraps.length === 0 ? (
-              <EmptyHint loading={loading}>No greenhouse trap data.</EmptyHint>
-            ) : (
-              <ChartContainer config={ghConfig} className="aspect-[16/9] w-full">
-                <BarChart data={ghTraps} layout="vertical" margin={{ left: 8 }}>
+          <CardContent className="p-0">
+            {ranking.length ? (
+              <ChartContainer config={barConfig} className="h-72">
+                <BarChart
+                  data={ranking.slice(0, 10)}
+                  layout="vertical"
+                  margin={{ left: 12, right: 12 }}
+                >
                   <CartesianGrid horizontal={false} strokeDasharray="3 3" />
                   <XAxis type="number" tickLine={false} axisLine={false} />
                   <YAxis
-                    dataKey="greenhouse"
                     type="category"
+                    dataKey="trap"
                     tickLine={false}
                     axisLine={false}
                     width={120}
                   />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="traps" fill="var(--color-traps)" radius={[0, 6, 6, 0]} />
+                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                  <Bar dataKey="total" fill="var(--color-total)" radius={[4, 4, 4, 4]} />
                 </BarChart>
               </ChartContainer>
+            ) : (
+              <EmptyHint />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Pest Breakdown</CardTitle>
+            <CardDescription>Catches by pest</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {breakdown.length ? (
+              <ChartContainer config={pieConfig} className="h-72">
+                <PieChart>
+                  <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+                  <Pie
+                    data={breakdown}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius="55%"
+                    outerRadius="90%"
+                    stroke="var(--sd-card)"
+                    strokeWidth={2}
+                  >
+                    {breakdown.map((b, i) => (
+                      <Cell key={b.name} fill={PALETTE[i % PALETTE.length]} />
+                    ))}
+                  </Pie>
+                  <ChartLegend content={<ChartLegendContent />} />
+                </PieChart>
+              </ChartContainer>
+            ) : (
+              <EmptyHint />
             )}
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Trap details</CardTitle>
-          <CardDescription>Trap × pest with total catches and last location</CardDescription>
+      <Card className="p-4">
+        <CardHeader className="p-0 pb-2">
+          <CardTitle>Trap Details</CardTitle>
+          <CardDescription>{ranking.length} trap × pest pairs</CardDescription>
         </CardHeader>
-        <CardContent>
-          {traps.length === 0 ? (
-            <EmptyHint loading={loading}>No trap details.</EmptyHint>
-          ) : (
+        <CardContent className="p-0">
+          {ranking.length ? (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Trap</TableHead>
                   <TableHead>Pest</TableHead>
-                  <TableHead className="text-right">Total catches</TableHead>
-                  <TableHead>Location</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Avg / visit</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {traps.slice(0, 20).map((t) => (
-                  <TableRow key={`${t.trap}-${t.pest}`}>
-                    <TableCell className="font-medium">{t.trap}</TableCell>
-                    <TableCell>{t.pest}</TableCell>
-                    <TableCell className="text-right tabular-nums">{t.total}</TableCell>
-                    <TableCell className="text-muted-foreground">{t.location ?? "—"}</TableCell>
+                {ranking.slice(0, 30).map((r) => (
+                  <TableRow key={r.key}>
+                    <TableCell className="font-medium">{r.trap}</TableCell>
+                    <TableCell className="text-muted-foreground">{r.pest}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.total}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {r.avg}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+          ) : (
+            <EmptyHint />
           )}
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

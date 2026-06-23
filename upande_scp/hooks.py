@@ -43,8 +43,8 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
-# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_js = {"Work Order": "public/js/spray_plan_wo_form.js"}
+doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -83,8 +83,13 @@ app_license = "mit"
 # ------------
 
 # before_install = "upande_scp.install.before_install"
-after_install = "upande_scp.setup.after_install"
-after_migrate = "upande_scp.setup.after_migrate"
+# after_install = "upande_scp.install.after_install"
+
+# Run the canonical pest/disease colour seed on every migrate so a fresh
+# install (or a newly added pest doc) gets sensible defaults without manual
+# steps. The seed only fills empty colour fields, so operator-set overrides
+# are preserved.
+after_migrate = ["upande_scp.serverscripts.observation_colors.after_migrate"]
 
 # Uninstallation
 # ------------
@@ -146,8 +151,87 @@ after_migrate = "upande_scp.setup.after_migrate"
 # 	}
 # }
 
+# Invalidate cached dashboard/map payloads when underlying master data changes.
+_SCP_CACHE_INVALIDATOR = "upande_scp.serverscripts.cache_utils.invalidate_on_change"
+_SCP_REALTIME_DIRTY = "upande_scp.serverscripts.cache_utils.publish_scouting_dirty"
+_SCP_CACHE_EVENTS = {
+    "on_update": _SCP_CACHE_INVALIDATOR,
+    "on_trash": _SCP_CACHE_INVALIDATOR,
+}
+# Scouting docs also push a "dirty" realtime nudge so live clients can advance
+# their delta watermark without polling. on_update covers create + edit; the
+# dedicated on_trash entry below ensures deletes still fire even though the
+# parent on_update may not.
+_SCP_SCOUTING_EVENTS = {
+    "on_update": [_SCP_CACHE_INVALIDATOR, _SCP_REALTIME_DIRTY],
+    "on_trash": [_SCP_CACHE_INVALIDATOR, _SCP_REALTIME_DIRTY],
+    "after_insert": _SCP_REALTIME_DIRTY,
+}
+doc_events = {
+    "Employee": _SCP_CACHE_EVENTS,
+    "Pest": _SCP_CACHE_EVENTS,
+    "Plant Disease": _SCP_CACHE_EVENTS,
+    "Predator": _SCP_CACHE_EVENTS,
+    "Weed": _SCP_CACHE_EVENTS,
+    "Incident": _SCP_CACHE_EVENTS,
+    "Physiological Disorder": _SCP_CACHE_EVENTS,
+    "Pests Stages": _SCP_CACHE_EVENTS,
+    "Pest Filter": _SCP_CACHE_EVENTS,
+    "Disease Stages": _SCP_CACHE_EVENTS,
+    "Predator Stages": _SCP_CACHE_EVENTS,
+    "Zone": _SCP_CACHE_EVENTS,
+    "Bed": _SCP_CACHE_EVENTS,
+    "Trap": _SCP_CACHE_EVENTS,
+    "Warehouse": _SCP_CACHE_EVENTS,
+    "Farm": {
+        **_SCP_CACHE_EVENTS,
+        "validate": [
+            "upande_scp.upande_scp.doctype.farm_spray_plan_creator.farm_spray_plan_creator.validate_farm_spray_plan_creators",
+            "upande_scp.upande_scp.doctype.farm_spray_plan_approver.farm_spray_plan_approver.validate_farm_spray_plan_approvers",
+        ],
+    },
+    "Spray Equipment Details": _SCP_CACHE_EVENTS,
+    "Item": _SCP_CACHE_EVENTS,
+    "Orchard Tree": _SCP_CACHE_EVENTS,
+    "Crop Scouted": _SCP_CACHE_EVENTS,
+    "Tank And Valve": _SCP_CACHE_EVENTS,
+    "Spray Plan Settings": _SCP_CACHE_EVENTS,
+    "Spray Plan Allowed Farm": _SCP_CACHE_EVENTS,
+    "Spray Plan Exclude Keyword": _SCP_CACHE_EVENTS,
+    # Scouting payload cache invalidation + realtime "dirty" nudge.
+    # Child-table edits don't always touch the parent's `modified`, so each
+    # is hooked individually — the invalidator bumps the cache version stamp,
+    # and publish_scouting_dirty nudges live clients to re-sync the affected
+    # month (see docs/data_caching.md L4 section).
+    "Scouting Entry": _SCP_SCOUTING_EVENTS,
+    "Pests Scouting Entry": _SCP_SCOUTING_EVENTS,
+    "Diseases Scouting Entry": _SCP_SCOUTING_EVENTS,
+    "Trap Scouting Entry": _SCP_SCOUTING_EVENTS,
+    # Stamp Application Floor Plan Work Orders with their lifecycle state when
+    # related Stock Entries are submitted (e.g. Material Transfer for
+    # Manufacture -> "Chemical Issued"). Material Issue is fired later from
+    # end_spray_session, not from this hook.
+    "Stock Entry": {
+        "before_validate": [
+            # Safety net: force any AFP Manufacture (desk, API, console, mobile)
+            # to consume what was transferred into the CSU, not the template BOM.
+            "upande_scp.serverscripts.spray_plan_creator.stock_entry_state.before_validate",
+        ],
+        "on_submit": [
+            "upande_scp.serverscripts.spray_plan_creator.stock_entry_state.on_submit",
+            # Capture chemical-store baselines when stock is received in.
+            "upande_scp.serverscripts.spray_plan_creator.loaning.capture_baseline_on_receipt",
+        ],
+    },
+    # Purchase Receipts into a farm chemical store also refresh the baseline.
+    "Purchase Receipt": {
+        "on_submit": "upande_scp.serverscripts.spray_plan_creator.loaning.capture_baseline_on_receipt",
+    },
+}
+
 # Scheduled Tasks
 # ---------------
+
 
 scheduler_events = {
     "cron": {
@@ -163,8 +247,41 @@ scheduler_events = {
         "0 8 * * 2": [
             "upande_scp.serverscripts.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
         ],
-    }
+    },
+    "daily": [
+        "upande_scp.serverscripts.scouting_prewarm.daily_prewarm",
+        # Cancel AFP spray plans left unapproved for more than 3 days.
+        "upande_scp.serverscripts.spray_plan_creator.maintenance.auto_cancel_dormant_plans",
+    ],
+    "hourly": [
+        # Keep the current + previous ISO week of scouting payload warm in Redis
+        # all day (per-week cache TTL is 1h; writes bust the active week).
+        "upande_scp.serverscripts.scouting_prewarm.hourly_prewarm",
+        # Expire chemical loan requests that sat unanswered past their timeout.
+        "upande_scp.serverscripts.spray_plan_creator.loaning.expire_dormant_requests",
+        # Daily Chemical Planning Progress Update — sends at the GM-configured
+        # EAT hour (self-gated; once per day).
+        "upande_scp.serverscripts.send_chemical_progress_email.send_chemical_progress_email",
+    ],
 }
+
+# scheduler_events = {
+# 	"all": [
+# 		"upande_scp.tasks.all"
+# 	],
+# 	"daily": [
+# 		"upande_scp.tasks.daily"
+# 	],
+# 	"hourly": [
+# 		"upande_scp.tasks.hourly"
+# 	],
+# 	"weekly": [
+# 		"upande_scp.tasks.weekly"
+# 	],
+# 	"monthly": [
+# 		"upande_scp.tasks.monthly"
+# 	],
+# }
 
 # Testing
 # -------
@@ -198,6 +315,13 @@ scheduler_events = {
 # ----------------
 # before_request = ["upande_scp.utils.before_request"]
 # after_request = ["upande_scp.utils.after_request"]
+
+# TEMP: diagnose mobile 403s on the spray-session/start path.
+# Disabled: the upande_scp.diagnostics module was never committed (local-only),
+# so these references 500 every request on any environment that lacks it. Restore
+# the module first, then re-enable.
+# before_request = ["upande_scp.diagnostics.request_log.before_request"]
+# after_request = ["upande_scp.diagnostics.request_log.after_request"]
 
 # Job Events
 # ----------
@@ -242,7 +366,9 @@ scheduler_events = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 website_route_rules = [
-    {"from_route": "/scouts-map", "to_route": "/scouts_map"},
+    {"from_route": "/rose-scouting", "to_route": "/rose_scouting"},
+    {"from_route": "/rose-3d-map", "to_route": "/rose_3d_map"},
+    {"from_route": "/avocado-scouts-map", "to_route": "/avocado_scouts_map"},
     {"from_route": "/observations-map", "to_route": "/observations_map"},
     {"from_route": "/scouting-heatmaps", "to_route": "/scouting_heatmaps"},
     {"from_route": "/variety-map", "to_route": "/variety_map"},
@@ -251,6 +377,8 @@ website_route_rules = [
 ]
 
 fixtures = [
+    # Stage catalog — ships the per-stage icon_key mapping to every site.
+    {"doctype": "Stage"},
     {
         "doctype": "Custom Field",
         "filters": [
@@ -261,6 +389,8 @@ fixtures = [
                         "Warehouse-custom_bed_numbering",
                         "Warehouse-custom_raw_geojson",
                         "Warehouse-custom_location",
+                        "Warehouse-custom_area_ha",
+                        "Warehouse-custom_cost_center",
                         # Item fields
                         "Item-custom_ghs",
                         "Item-custom_irac",
@@ -275,6 +405,9 @@ fixtures = [
                         "Item-custom_targets",
                         "Item-custom_section_break_vuei1",
                         "Item-custom_chemical_intervention_threshhold",
+                        "Item-custom_scouting_and_crop_protection_tab",
+                        "Item-custom_lower_rate_limit",
+                        "Item-custom_upper_rate_limit",
                         # BOM fields
                         "BOM-custom_water_hardness",
                         "BOM-custom_water_ph",
@@ -300,7 +433,18 @@ fixtures = [
                         "Work Order-custom_greenhouse",
                         "Work Order-custom_application_floor_plan",
                         # Work Order Item fields
-                        "Work Order Item-custom_updated_required_qty"
+                        "Work Order Item-custom_updated_required_qty",
+                        # Farm fields
+                        "Farm-spray_plan_creators",
+                        # Spray Team fields
+                        "Spray Team-custom_farm",
+                        # Work Order spray-plan fields
+                        "Work Order-custom_classification",
+                        "Work Order-custom_preventive_reason",
+                        "Work Order-custom_cost_center",
+                        "Work Order-custom_rate_overridden",
+                        "Work Order-custom_weather_snapshot",
+                        "Work Order-custom_spray_plan_team_members",
                 ]
             ]
         ]
@@ -317,8 +461,12 @@ fixtures = [
                     "BOM Toggle Fields",
                     "Items Toggle Fields",
                     "Greenhouse Map",
+                    "Warehouse Cost Center Query",
                     "Pests Legend Color Toggle",
-                    "Refresh Greenhouse Rentry Time"
+                    "Refresh Greenhouse Rentry Time",
+                    "Hide Start Button On Work Order",
+                    "Spray Plan Approval v7",
+                    "Combined Script"  # to deactivate the script on deployment
                 ]
             ]
         ]
@@ -336,7 +484,10 @@ fixtures = [
                     "Get BOM Stock Balances",
                     "Get Greenhouse Reentry Status",
                     "Fetch Greenhouse Beds",
-                    "Fetch Scheduled Applications"
+                    "Fetch Scheduled Applications",
+                    "Check GM Role",
+                    "Check Store Keeper Role",
+                    "Delete Duplicate Scouting Entries"
                 ]
             ]
         ]
@@ -354,18 +505,33 @@ fixtures = [
         ]
     },
     {
-        "dt": "Custom HTML Block",
-        "filters": [
-            [
-                "name",
-                "in",
-                [
-                    "SCP Dashboard",
-                    "SCP Scout Map",
-                    "SCP Navigation"
-                ]
-            ]
-        ]
+        "dt": "Trap Report Settings"
+    },
+    {
+        "dt": "Crop Scouted"
+    },
+    {
+        "doctype": "Workflow State",
+        "filters": [["name", "in", [
+            "Pending Submission", "Awaiting Approval", "Approved",
+            "Chemical Issued", "Tank Mix Manufactured", "Spraying In Progress", "Completed"
+        ]]]
+    },
+    {
+        "doctype": "Workflow Action Master",
+        "filters": [["name", "in", ["Submit for Approval", "Approve Plan"]]]
+    },
+    # Role definitions owned by this app. Mobile chemical/spray-application
+    # flow runs as Spray Supervisor.
+    {
+        "doctype": "Role",
+        "filters": [["name", "in", ["Spray Supervisor"]]]
+    },
+    # Custom permission grid for that role. Filtering by role keeps us
+    # from accidentally exporting unrelated custom perms on this site.
+    {
+        "doctype": "Custom DocPerm",
+        "filters": [["role", "=", "Spray Supervisor"]]
     }
     # {
     #     "doctype": "Insights Workbook",

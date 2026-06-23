@@ -2,15 +2,19 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "naming_series:",
- "creation": "2025-08-08 15:07:40.257444",
+ "creation": "2026-04-20 06:38:28.859746",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
   "scouts_name",
+  "crop_scouted",
   "greenhouse",
   "bed",
   "zone",
+  "block",
+  "row",
+  "tree",
   "column_break_frpc",
   "time_of_capture",
   "date_of_capture",
@@ -29,10 +33,10 @@
   "incidents_scouting_entry",
   "section_break_betj",
   "physiological_disorders_entry",
-  "section_break_chp",
-  "crop_husbandry_practices_entry",
   "section_break_hidu",
-  "trap_scouting_entry"
+  "trap_scouting_entry",
+  "section_break_crop_modelling",
+  "crop_modelling_entry"
  ],
  "fields": [
   {
@@ -56,14 +60,23 @@
    "reqd": 1
   },
   {
+   "fieldname": "crop_scouted",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Crop Scouted",
+   "options": "Crop Scouted"
+  },
+  {
+   "depends_on": "eval:!doc.block",
    "fieldname": "greenhouse",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Greenhouse",
-   "options": "Warehouse",
-   "reqd": 1
+   "mandatory_depends_on": "eval:!doc.block",
+   "options": "Warehouse"
   },
   {
+   "depends_on": "eval:doc.greenhouse",
    "fieldname": "bed",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -71,12 +84,36 @@
    "options": "Bed"
   },
   {
+   "depends_on": "eval:doc.bed",
    "fieldname": "zone",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Zone",
-   "options": "Zone",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.bed",
+   "options": "Zone"
+  },
+  {
+   "depends_on": "eval:!doc.greenhouse",
+   "fieldname": "block",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Block",
+   "mandatory_depends_on": "eval:!doc.greenhouse",
+   "options": "Warehouse"
+  },
+  {
+   "depends_on": "eval:doc.block",
+   "fieldname": "row",
+   "fieldtype": "Link",
+   "label": "Row",
+   "options": "Bed"
+  },
+  {
+   "depends_on": "eval:doc.row",
+   "fieldname": "tree",
+   "fieldtype": "Link",
+   "label": "Tree",
+   "options": "Orchard Tree"
   },
   {
    "fieldname": "column_break_frpc",
@@ -172,16 +209,6 @@
    "options": "Physiological Disorders Entry"
   },
   {
-   "fieldname": "section_break_chp",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "crop_husbandry_practices_entry",
-   "fieldtype": "Table",
-   "label": "Crop Husbandry Practices",
-   "options": "Crop Husbandry Practices Entry"
-  },
-  {
    "fieldname": "section_break_hidu",
    "fieldtype": "Section Break"
   },
@@ -190,17 +217,30 @@
    "fieldtype": "Table",
    "label": "Traps",
    "options": "Trap Scouting Entry"
+  },
+  {
+   "depends_on": "eval:doc.block",
+   "fieldname": "section_break_crop_modelling",
+   "fieldtype": "Section Break",
+   "label": "Crop Modelling"
+  },
+  {
+   "depends_on": "eval:doc.block",
+   "fieldname": "crop_modelling_entry",
+   "fieldtype": "Table",
+   "label": "Crop Modelling",
+   "options": "Crop Modelling Entry"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-11-11 04:45:56.523372",
+ "modified": "2026-04-20 08:07:11.925347",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting Entry",
  "naming_rule": "By \"Naming Series\" field",
- "owner": "judah@upande.com",
+ "owner": "Administrator",
  "permissions": [
   {
    "create": 1,

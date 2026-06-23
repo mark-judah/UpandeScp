@@ -1,0 +1,229 @@
+{% extends "upande_scp/www/chemical_base.html" %}
+
+{% block title %}{{ work_order.name }} — Application Floor Plan{% endblock %}
+
+{% block head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+{# Inline the page's CSS to avoid Frappe's website-page cache returning a stale
+   404 for /application_work_order.css on first visit (CSS files are routed via
+   TemplatePage and the path is cached in Redis). #}
+<style>
+{% include "upande_scp/www/application_work_order/application_work_order.css" %}
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div id="awo-root">
+<div class="awo-page">
+
+	{# ─── HEADER ─── #}
+	<div class="awo-header">
+		<div class="awo-header-left">
+			<a href="/application_work_order_history" class="awo-back">← Application Floor Plans</a>
+			<div class="awo-header-titles">
+				<h3 class="awo-title">{{ work_order.name }}</h3>
+				<span class="awo-subtitle">{{ work_order.production_item or work_order.item_name or "" }}{% if work_order.custom_greenhouse %} · {{ work_order.custom_greenhouse }}{% endif %}</span>
+			</div>
+		</div>
+		<div class="awo-header-right">
+			<span class="awo-status awo-status-{{ status_state }}">
+				<span class="awo-status-dot"></span>{{ status_label }}
+			</span>
+			<button class="awo-btn awo-btn-ghost" type="button" id="awo-copy-id" title="Copy work order name">Copy ID</button>
+			<a class="awo-btn awo-btn-ghost" href="/app/work-order/{{ work_order.name }}" target="_blank" rel="noopener">Open in ERP</a>
+		</div>
+	</div>
+
+	{# ─── KEY METRICS ─── #}
+	<div class="awo-kpi-grid">
+		<div class="awo-kpi">
+			<div class="awo-kpi-label">{{ lbl("custom_scheduled_application_time", "Scheduled") }}</div>
+			<div class="awo-kpi-value">{{ frappe.utils.format_datetime(work_order.custom_scheduled_application_time, "d MMM yyyy") if work_order.custom_scheduled_application_time else "—" }}</div>
+			<div class="awo-kpi-meta">{{ frappe.utils.format_datetime(work_order.custom_scheduled_application_time, "HH:mm") if work_order.custom_scheduled_application_time else "" }}</div>
+		</div>
+		<div class="awo-kpi">
+			<div class="awo-kpi-label">{{ lbl("custom_area", "Area") }}</div>
+			<div class="awo-kpi-value">{{ "%.4f"|format(work_order.custom_area) if work_order.custom_area is not none else "—" }}</div>
+			<div class="awo-kpi-meta">hectares</div>
+		</div>
+		<div class="awo-kpi">
+			<div class="awo-kpi-label">{{ lbl("qty", "Tank Mix Qty") }}</div>
+			<div class="awo-kpi-value">{{ work_order.qty if work_order.qty is not none else "—" }}</div>
+			<div class="awo-kpi-meta">{{ work_order.stock_uom or "" }}</div>
+		</div>
+		<div class="awo-kpi">
+			<div class="awo-kpi-label">{{ lbl("custom_water_volume", "Water Volume") }}</div>
+			<div class="awo-kpi-value">{{ work_order.custom_water_volume if work_order.custom_water_volume is not none else "—" }}</div>
+			<div class="awo-kpi-meta">litres</div>
+		</div>
+		<div class="awo-kpi">
+			<div class="awo-kpi-label">{{ lbl("custom_water_ph", "Water pH") }}</div>
+			<div class="awo-kpi-value">{{ work_order.custom_water_ph or "—" }}</div>
+			<div class="awo-kpi-meta">pH</div>
+		</div>
+		<div class="awo-kpi">
+			<div class="awo-kpi-label">{{ lbl("custom_water_hardness", "Water Hardness") }}</div>
+			<div class="awo-kpi-value">{{ work_order.custom_water_hardness or "—" }}</div>
+			<div class="awo-kpi-meta">mg/L</div>
+		</div>
+	</div>
+
+	{# ─── DETAIL CARDS ─── #}
+	<div class="awo-cards">
+
+		<section class="awo-card">
+			<header class="awo-card-head">
+				<h4 class="awo-card-title">Greenhouse &amp; scope</h4>
+			</header>
+			<dl class="awo-dl">
+				<div><dt>{{ lbl("custom_greenhouse", "Greenhouse") }}</dt><dd>{{ work_order.custom_greenhouse or "—" }}</dd></div>
+				<div><dt>{{ lbl("custom_variety", "Variety") }}</dt><dd>{{ work_order.custom_variety or "—" }}</dd></div>
+				<div><dt>{{ lbl("custom_scope", "Scope") }}</dt><dd>{{ work_order.custom_scope or "—" }}</dd></div>
+				{% if work_order.custom_scope_details %}
+				<div><dt>{{ lbl("custom_scope_details", "Scope details") }}</dt><dd>{{ work_order.custom_scope_details }}</dd></div>
+				{% endif %}
+				<div><dt>{{ lbl("custom_spray_type", "Spray type") }}</dt><dd>{{ work_order.custom_spray_type or "—" }}</dd></div>
+				<div><dt>{{ lbl("custom_kit", "Kit") }}</dt><dd>{{ work_order.custom_kit or "—" }}</dd></div>
+				<div><dt>{{ lbl("custom_reentry_period_hrs", "Re-entry period") }}</dt><dd>{{ work_order.custom_reentry_period_hrs if work_order.custom_reentry_period_hrs is not none else "—" }}{% if work_order.custom_reentry_period_hrs %} hrs{% endif %}</dd></div>
+				<div><dt>{{ lbl("wip_warehouse", "WIP warehouse") }}</dt><dd>{{ work_order.wip_warehouse or "—" }}</dd></div>
+			</dl>
+		</section>
+
+		<section class="awo-card">
+			<header class="awo-card-head">
+				<h4 class="awo-card-title">{{ lbl("custom_targets", "Targets") }}</h4>
+			</header>
+			{% set targets = (work_order.custom_targets or "").splitlines() | reject("equalto", "") | list %}
+			{% if targets %}
+			<div class="awo-pills">
+				{% for t in targets %}
+				<span class="awo-pill">{{ t }}</span>
+				{% endfor %}
+			</div>
+			{% else %}
+			<p class="awo-empty">No targets recorded.</p>
+			{% endif %}
+
+			<header class="awo-card-head awo-card-head-secondary">
+				<h4 class="awo-card-title">{{ lbl("custom_spray_team", "Spray team") }}</h4>
+			</header>
+			{% set team = (work_order.custom_spray_team or "").splitlines() | reject("equalto", "") | list %}
+			{% if team %}
+			<ul class="awo-team">
+				{% for member in team %}
+				{% set parts = member.split(" - ", 1) %}
+				<li>
+					<span class="awo-team-name">{{ parts[0] }}</span>
+					{% if parts|length > 1 %}<span class="awo-team-role">{{ parts[1] }}</span>{% endif %}
+				</li>
+				{% endfor %}
+			</ul>
+			{% else %}
+			<p class="awo-empty">No team assigned.</p>
+			{% endif %}
+		</section>
+
+	</div>
+
+	{# ─── CHEMICAL MIX ─── #}
+	<section class="awo-card awo-card-wide">
+		<header class="awo-card-head">
+			<div>
+				<h4 class="awo-card-title">Chemical Mix items</h4>
+				<span class="awo-card-sub">
+					{% if bom %}
+					From BOM <a href="/app/bom/{{ bom.name }}" target="_blank" rel="noopener">{{ bom.name }}</a>
+					{% if bom.custom_item_group %} · Item group <strong>{{ bom.custom_item_group }}</strong>{% endif %}
+					{% else %}
+					Required items recorded against this work order.
+					{% endif %}
+				</span>
+			</div>
+		</header>
+
+		{% set rows = chemical_mix_items if chemical_mix_items else required_items %}
+		{% if rows %}
+		<div class="awo-table-wrap">
+			<table class="awo-table">
+				<thead>
+					<tr>
+						<th>#</th>
+						<th>Item</th>
+						<th class="awo-num">Qty</th>
+						<th>UOM</th>
+						<th class="awo-num">Rate</th>
+						<th class="awo-num">Amount</th>
+						<th>Source warehouse</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for r in rows %}
+					{% set qty = r.stock_qty if r.stock_qty is not none else r.required_qty %}
+					{% set uom = r.stock_uom %}
+					{% set rate = r.rate %}
+					{% set amount = r.amount %}
+					{% set warehouse = r.source_warehouse %}
+					<tr>
+						<td class="awo-mono awo-muted">{{ loop.index }}</td>
+						<td>
+							<div class="awo-item-name">{{ r.item_name or r.item_code }}</div>
+							<div class="awo-item-code">{{ r.item_code }}</div>
+						</td>
+						<td class="awo-num">{{ "%g"|format(qty) if qty is not none else "—" }}</td>
+						<td>{{ uom or "—" }}</td>
+						<td class="awo-num">{{ "{:,.2f}".format(rate) if rate else "—" }}</td>
+						<td class="awo-num">{{ "{:,.2f}".format(amount) if amount else "—" }}</td>
+						<td>{{ warehouse or "—" }}</td>
+					</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+		</div>
+		{% else %}
+		<p class="awo-empty">No chemical items linked to this work order.</p>
+		{% endif %}
+	</section>
+
+	{# ─── META ─── #}
+	<section class="awo-meta">
+		<div class="awo-meta-row">
+			<span class="awo-meta-label">{{ lbl("naming_series", "Naming series") }}</span>
+			<span>{{ work_order.naming_series or "—" }}</span>
+		</div>
+		<div class="awo-meta-row">
+			<span class="awo-meta-label">{{ lbl("company", "Company") }}</span>
+			<span>{{ work_order.company or "—" }}</span>
+		</div>
+		<div class="awo-meta-row">
+			<span class="awo-meta-label">{{ lbl("owner", "Created by") }}</span>
+			<span>{{ work_order.owner or "—" }} · {{ frappe.utils.format_datetime(work_order.creation, "d MMM yyyy HH:mm") if work_order.creation else "" }}</span>
+		</div>
+		<div class="awo-meta-row">
+			<span class="awo-meta-label">{{ lbl("modified_by", "Last modified") }}</span>
+			<span>{{ work_order.modified_by or "—" }} · {{ frappe.utils.format_datetime(work_order.modified, "d MMM yyyy HH:mm") if work_order.modified else "" }}</span>
+		</div>
+	</section>
+
+</div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+	(function () {
+		var copyBtn = document.getElementById("awo-copy-id");
+		if (copyBtn) {
+			copyBtn.addEventListener("click", function () {
+				var name = {{ work_order.name | tojson }};
+				navigator.clipboard.writeText(name).then(function () {
+					var prev = copyBtn.textContent;
+					copyBtn.textContent = "Copied";
+					setTimeout(function () { copyBtn.textContent = prev; }, 1200);
+				});
+			});
+		}
+	})();
+</script>
+{% endblock %}

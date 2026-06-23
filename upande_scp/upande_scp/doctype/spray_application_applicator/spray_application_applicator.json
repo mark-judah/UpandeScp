@@ -1,0 +1,68 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-19 15:11:37.292119",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "applicator_name",
+  "on_off",
+  "condition_of_equipment",
+  "condition_of_ppe",
+  "application_remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "applicator_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Name of Applicator",
+   "link_filters": "[[\"Employee\",\"designation\",\"=\",\"Spray Applicator\"]]",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fieldname": "on_off",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "On/Off",
+   "options": "\nOn\nOff"
+  },
+  {
+   "fieldname": "condition_of_equipment",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Condition of Equipment",
+   "options": "\nGood\nFair\nPoor"
+  },
+  {
+   "fieldname": "condition_of_ppe",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Condition of PPE",
+   "options": "\nGood\nFair\nPoor"
+  },
+  {
+   "fieldname": "application_remarks",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Application Remarks"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-02-19 15:11:37.292119",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Spray Application Applicator",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

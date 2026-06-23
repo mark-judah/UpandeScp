@@ -1,91 +1,197 @@
 import frappe
 
+# Maps a category key -> (filter doctype, link field, field linking to the crop).
+# Pest Filter / Disease Filter are standalone DocTypes linked via `crop_scouted`;
+# the other four are still child tables of Crop Scouted, linked via `parent`.
+_CROP_FILTER_MAP = {
+    "pests":                   ("Pest Filter",                   "pest",                   "crop_scouted"),
+    "diseases":                ("Disease Filter",                "disease",                "crop_scouted"),
+    "predators":               ("Predator Filter",               "predator",               "parent"),
+    "weeds":                   ("Weed Filter",                   "weed",                   "parent"),
+    "incidents":               ("Incident Filter",               "incident",               "parent"),
+    "physiological_disorders": ("Physiological Disorder Filter", "physiological_disorder", "parent"),
+}
+
+
+def _allowed_names(crop, category):
+    """Return the list of allowed master names for a category under the given crop.
+
+    None  => no crop supplied; caller should not filter.
+    []    => crop supplied but category is empty for this crop; caller should skip.
+    [..]  => crop supplied and category is populated; caller should filter.
+    """
+    if not crop:
+        return None
+    filter_doctype, link_field, crop_field = _CROP_FILTER_MAP[category]
+    return frappe.get_all(
+        filter_doctype,
+        filters={crop_field: crop},
+        pluck=link_field,
+    )
+
+
+def _in_filter(allowed):
+    """Build a name-in filter dict, or empty dict when allowed is None."""
+    return {"name": ["in", allowed]} if allowed is not None else {}
+
+
 @frappe.whitelist()
-def getObservationsDetails():
-    # Fetch all entities
-    pests = frappe.get_all(
+def getObservationsDetails(crop=None):
+    # Validate crop exists; otherwise fall back to unfiltered for backwards compat.
+    if crop and not frappe.db.exists("Crop Scouted", crop):
+        frappe.log_error(
+            message=f"Unknown Crop Scouted '{crop}', serving unfiltered observations",
+            title="getObservationsDetails",
+        )
+        crop = None
+
+    allowed = {cat: _allowed_names(crop, cat) for cat in _CROP_FILTER_MAP}
+
+    # Fetch masters, skipping categories the crop has explicitly emptied.
+    pests = [] if allowed["pests"] == [] else frappe.get_all(
         "Pest",
+        filters=_in_filter(allowed["pests"]),
         fields=["name", "common_name"],
-        order_by="idx"
+        order_by="idx",
     )
 
-    diseases = frappe.get_all(
+    diseases = [] if allowed["diseases"] == [] else frappe.get_all(
         "Plant Disease",
+        filters=_in_filter(allowed["diseases"]),
         fields=["name", "common_name"],
-        order_by="idx"
+        order_by="idx",
     )
 
-    disorders = frappe.get_all(
+    disorders = [] if allowed["physiological_disorders"] == [] else frappe.get_all(
         "Physiological Disorder",
+        filters=_in_filter(allowed["physiological_disorders"]),
         fields=["name", "disorder_name", "photo", "reading_type", "plant_sections"],
-        order_by="idx"
+        order_by="idx",
     )
 
-    practices = frappe.get_all(
-        "Crop Husbandry Practices",
-        fields=["name", "disorder_name", "photo", "reading_type", "plant_sections"],
-        order_by="idx"
-    )
-
-    weeds = frappe.get_all(
+    weeds = [] if allowed["weeds"] == [] else frappe.get_all(
         "Weed",
+        filters=_in_filter(allowed["weeds"]),
         fields=["name", "name1", "reading_type", "plant_sections"],
-        order_by="idx"
+        order_by="idx",
     )
 
-    incidents = frappe.get_all(
+    incidents = [] if allowed["incidents"] == [] else frappe.get_all(
         "Incident",
+        filters=_in_filter(allowed["incidents"]),
         fields=["name", "name1", "reading_type", "plant_sections"],
-        order_by="idx"
+        order_by="idx",
     )
 
-    predators = frappe.get_all(
+    predators = [] if allowed["predators"] == [] else frappe.get_all(
         "Predator",
+        filters=_in_filter(allowed["predators"]),
         fields=["name", "common_name"],
-        order_by="idx"
+        order_by="idx",
     )
 
     pest_names = [p.name for p in pests]
     disease_names = [d.name for d in diseases]
     predator_names = [p.name for p in predators]
 
-    # Fetch pest stages with reading_type and plant_sections for EACH stage
-    pest_stages = {}
-    if pest_names:
-        stages_data = frappe.get_all(
-            "Pests Stages",
-            filters={"parent": ["in", pest_names]},
-            fields=["parent", "stage", "reading_type", "plant_sections", "idx"],
-            order_by="parent, idx"
-        )
-        for stage in stages_data:
-            if stage.parent not in pest_stages:
-                pest_stages[stage.parent] = []
-            pest_stages[stage.parent].append({
-                "stage": stage.stage,
-                "reading_type": (stage.reading_type or "Count").lower(),
-                "plant_sections": _parse_plant_sections(stage.plant_sections)
-            })
+    # Each stage's icon lives once on the Stage catalog; resolve key by stage name.
+    icon_by_stage = {
+        s.name: (s.icon_key or "")
+        for s in frappe.get_all("Stage", fields=["name", "icon_key"], limit_page_length=0)
+    }
 
-    # Fetch disease stages with reading_type, plant_sections, range_min, and range_max for EACH stage
-    disease_stages = {}
-    if disease_names:
-        stages_data = frappe.get_all(
-            "Disease Stages",
-            filters={"parent": ["in", disease_names]},
-            fields=["parent", "stage", "reading_type", "plant_sections", "range_min", "range_max", "idx"],
-            order_by="parent, idx"
+    # Fetch pest stages with reading_type and plant_sections for EACH stage.
+    # Stages now live on Pest Filter rows per crop. When `crop` is supplied
+    # we pull stages from that crop's filter rows only; otherwise we
+    # aggregate across all crops, deduplicated by (pest, stage).
+    pest_stages = {}
+    pest_priorities = {}
+    if pest_names:
+        filter_row_filters = {
+            "pest": ["in", pest_names],
+        }
+        if crop:
+            filter_row_filters["crop_scouted"] = crop
+        filter_rows = frappe.get_all(
+            "Pest Filter",
+            filters=filter_row_filters,
+            fields=["name", "pest"],
+            limit_page_length=0,
         )
-        for stage in stages_data:
-            if stage.parent not in disease_stages:
-                disease_stages[stage.parent] = []
-            disease_stages[stage.parent].append({
-                "stage": stage.stage,
-                "reading_type": (stage.reading_type or "Count").lower(),
-                "plant_sections": _parse_plant_sections(stage.plant_sections),
-                "range_min": _to_float(stage.range_min),
-                "range_max": _to_float(stage.range_max)
-            })
+        row_to_pest = {r.name: r.pest for r in filter_rows}
+        pest_priorities = _priorities_by_obs("Pest Filter", row_to_pest)
+        if row_to_pest:
+            stages_data = frappe.get_all(
+                "Pests Stages",
+                filters={
+                    "parent": ["in", list(row_to_pest.keys())],
+                    "parenttype": "Pest Filter",
+                },
+                fields=["parent", "stage", "reading_type", "plant_sections", "idx"],
+                order_by="parent, idx",
+                limit_page_length=0,
+            )
+            seen_pest_stage = set()
+            for stage in stages_data:
+                pest_name = row_to_pest.get(stage.parent)
+                if not pest_name:
+                    continue
+                key = (pest_name, stage.stage)
+                if key in seen_pest_stage:
+                    continue
+                seen_pest_stage.add(key)
+                pest_stages.setdefault(pest_name, []).append({
+                    "stage": stage.stage,
+                    "reading_type": (stage.reading_type or "Count").lower(),
+                    "plant_sections": _parse_plant_sections(stage.plant_sections),
+                    "icon_key": icon_by_stage.get(stage.stage, "")
+                })
+
+    # Fetch disease stages from the per-crop Disease Filter rows (parity with
+    # pests). When `crop` is supplied we pull from that crop's filter rows only;
+    # otherwise we aggregate across crops, deduplicated by (disease, stage).
+    disease_stages = {}
+    disease_priorities = {}
+    if disease_names:
+        df_filters = {"disease": ["in", disease_names]}
+        if crop:
+            df_filters["crop_scouted"] = crop
+        disease_filter_rows = frappe.get_all(
+            "Disease Filter",
+            filters=df_filters,
+            fields=["name", "disease"],
+            limit_page_length=0,
+        )
+        row_to_disease = {r.name: r.disease for r in disease_filter_rows}
+        disease_priorities = _priorities_by_obs("Disease Filter", row_to_disease)
+        if row_to_disease:
+            stages_data = frappe.get_all(
+                "Disease Stages",
+                filters={
+                    "parent": ["in", list(row_to_disease.keys())],
+                    "parenttype": "Disease Filter",
+                },
+                fields=["parent", "stage", "reading_type", "plant_sections", "range_min", "range_max", "idx"],
+                order_by="parent, idx",
+                limit_page_length=0,
+            )
+            seen_disease_stage = set()
+            for stage in stages_data:
+                disease_name = row_to_disease.get(stage.parent)
+                if not disease_name:
+                    continue
+                key = (disease_name, stage.stage)
+                if key in seen_disease_stage:
+                    continue
+                seen_disease_stage.add(key)
+                disease_stages.setdefault(disease_name, []).append({
+                    "stage": stage.stage,
+                    "reading_type": (stage.reading_type or "Count").lower(),
+                    "plant_sections": _parse_plant_sections(stage.plant_sections),
+                    "range_min": _to_float(stage.range_min),
+                    "range_max": _to_float(stage.range_max),
+                    "icon_key": icon_by_stage.get(stage.stage, "")
+                })
 
     # Fetch predator stages with reading_type and plant_sections for EACH stage
     predator_stages = {}
@@ -132,6 +238,8 @@ def getObservationsDetails():
                 "stage": stage_info['stage'],
                 "readingType": stage_info['reading_type'],
                 "plantSections": stage_info['plant_sections'],
+                "iconKey": stage_info['icon_key'],
+                "priorities": pest_priorities.get(pest.name, {}),
                 "stages": None
             })
     
@@ -154,6 +262,8 @@ def getObservationsDetails():
                 "plantSections": stage_info['plant_sections'],
                 "rangeMin": stage_info['range_min'],
                 "rangeMax": stage_info['range_max'],
+                "iconKey": stage_info['icon_key'],
+                "priorities": disease_priorities.get(disease.name, {}),
                 "stages": None
             })
     
@@ -179,24 +289,6 @@ def getObservationsDetails():
                     "plantSections": _parse_plant_sections(disorder.plant_sections),
                 }
                 for disorder in disorders
-            ]
-        })
-
-    # CROP HUSBANDRY PRACTICES - Single field per practice (no range)
-    if practices:
-        observation_types.append({
-            "category": "Crop Husbandry Practices",
-            "type": "toggle",
-            "fields": [
-                {
-                    "name": practice.disorder_name,
-                    "stage": None,
-                    "stages": None,
-                    "photo": practice.photo,
-                    "readingType": (practice.reading_type or "Checkbox").lower(),
-                    "plantSections": _parse_plant_sections(practice.plant_sections),
-                }
-                for practice in practices
             ]
         })
 
@@ -255,11 +347,43 @@ def getObservationsDetails():
             "fields": predator_fields
         })
 
+    # Plant sections allowed for this crop (empty on the crop → no filter → None).
+    allowed_plant_sections = None
+    if crop:
+        tagged = frappe.get_all(
+            "Plant Section Filter",
+            filters={"parent": crop},
+            pluck="plant_section",
+        )
+        if tagged:
+            allowed_plant_sections = [s.lower() for s in tagged]
+
     frappe.response["message"] = {
-        "data": observation_types
+        "data": observation_types,
+        "allowed_plant_sections": allowed_plant_sections,
     }
 
     return frappe.response["message"]
+
+
+def _priorities_by_obs(filter_doctype, row_to_obs):
+    """{obs_name: {plant_section_lower: priority}} from the filters' Filter
+    Priority children. Lets the mobile app order pests/diseases per plant part.
+    Plant-section keys are lowercased to match the app's tab values."""
+    out = {}
+    if not row_to_obs:
+        return out
+    for p in frappe.get_all(
+        "Filter Priority",
+        filters={"parent": ["in", list(row_to_obs.keys())], "parenttype": filter_doctype},
+        fields=["parent", "plant_section", "priority"],
+        limit_page_length=0,
+    ):
+        obs = row_to_obs.get(p.parent)
+        if not obs or not p.plant_section or p.priority is None:
+            continue
+        out.setdefault(obs, {})[p.plant_section.strip().lower()] = p.priority
+    return out
 
 
 def _parse_plant_sections(plant_sections_str):

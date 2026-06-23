@@ -8,10 +8,9 @@
  "engine": "InnoDB",
  "field_order": [
   "naming_series",
+  "session",
   "client_id",
   "app",
-  "session_tag",
-  "session",
   "work_order",
   "employee",
   "greenhouse",
@@ -42,31 +41,25 @@
    "reqd": 1
   },
   {
-   "fieldname": "client_id",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Client ID",
-   "unique": 1
-  },
-  {
-   "fieldname": "app",
-   "fieldtype": "Data",
-   "label": "App",
-   "read_only": 1
-  },
-  {
-   "fieldname": "session_tag",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Session Tag"
-  },
-  {
    "fieldname": "session",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Session",
-   "options": "Sprayer Movement Session",
    "reqd": 1
+  },
+  {
+   "description": "Client-generated ID used for idempotency on re-sync",
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "Client ID",
+   "unique": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Mobile app version/build string that sent this entry",
+   "fieldname": "app",
+   "fieldtype": "Data",
+   "label": "App"
   },
   {
    "fieldname": "work_order",

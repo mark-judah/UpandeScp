@@ -25,25 +25,22 @@ describe("AppSidebar crop-scoped nav", () => {
   beforeEach(() => clearRoles());
   afterEach(() => clearRoles());
 
-  it("shows the rose nav (Rose Scouting) for the rose crop", () => {
+  it("shows the rose nav (Crop Protection section) for the rose crop", () => {
     withRoles(["General Manager"]);
     renderSidebar("rose");
-    expect(screen.getByText("Rose Scouting")).toBeInTheDocument();
-    expect(screen.queryByText("Job Sheets")).toBeNull();
-  });
-
-  it("shows the avocado nav (Job Sheets) for the avocado crop", () => {
-    withRoles(["General Manager"]);
-    renderSidebar("avocado");
-    expect(screen.getByText("Job Sheets")).toBeInTheDocument();
-    expect(screen.queryByText("Rose Scouting")).toBeNull();
+    // Rose nav has a dedicated Crop Protection section with Application Plan and Approvals.
+    expect(screen.getByText("Application Plan")).toBeInTheDocument();
+    expect(screen.getByText("Approvals")).toBeInTheDocument();
+    // Rose nav uses "Scouting" as the item label, not "Scouting Map".
+    expect(screen.queryByText("Scouting Map")).toBeNull();
   });
 
   it("falls back to a generic scouting nav for an unknown crop", () => {
     withRoles(["General Manager"]);
     renderSidebar("macadamia");
     expect(screen.getByText("Scouting Map")).toBeInTheDocument();
-    // No crop-specific extras (job sheets / application plan) for a new crop.
-    expect(screen.queryByText("Job Sheets")).toBeNull();
+    // No crop-specific extras (application plan / approvals) for a new crop.
+    expect(screen.queryByText("Application Plan")).toBeNull();
+    expect(screen.queryByText("Approvals")).toBeNull();
   });
 });

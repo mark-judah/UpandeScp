@@ -686,27 +686,6 @@ export interface GeoJsonFC {
   }>;
 }
 
-/**
- * Orchard trees as a GeoJSON FeatureCollection. Used by the Avocado map.
- * The endpoint already caches per-block + per-farm server-side.
- */
-export async function fetchOrchardTreesGeojson(
-  args: { block?: string; farm?: string } = {},
-): Promise<GeoJsonFC> {
-  const key = `orchard:${args.block || ""}:${args.farm || ""}`;
-  return cached(key, async () => {
-    try {
-      const r = await call<GeoJsonFC>(
-        "upande_scp.serverscripts.get_orchard_trees.get_orchard_trees_geojson",
-        args,
-      );
-      return r || { type: "FeatureCollection", features: [] };
-    } catch {
-      return { type: "FeatureCollection", features: [] };
-    }
-  });
-}
-
 export interface PlanBootstrap {
   warehouses: Array<{ name: string; custom_farm?: string }>;
   kits: Array<{ kit: string; warehouse?: string }>;

@@ -227,8 +227,8 @@ export function ChartPanel({
 
   // Adaptive Y-axis ceiling: fit the data (and any visible threshold band)
   // with headroom instead of a fixed 0–100%. Applies to every trends chart
-  // uniformly, so low-coverage crops (avocado) and high-coverage ones (roses)
-  // each get a readable scale.
+  // uniformly, so both low-coverage and high-coverage selections each get a
+  // readable scale.
   const yMax = useMemo(() => {
     let max = 0;
     for (const point of seriesData) {

@@ -38,9 +38,6 @@ export interface MapHeaderProps {
   /** Hide the crop picker — the crop is fixed by the route (one crop per
    *  section), so the picker would be redundant. */
   showCrop?: boolean;
-  /** When true, the farm picker only includes farms whose warehouses are
-   *  block-typed (avocado-style); used by the Avocado map. */
-  blocksOnly?: boolean;
   rightSlot?: React.ReactNode;
 }
 

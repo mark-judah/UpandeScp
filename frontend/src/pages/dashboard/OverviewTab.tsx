@@ -61,12 +61,10 @@ export function OverviewTab({
   crop?: string;
 }) {
   const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, blockCount: 0, highAlerts: 0 };
-  // Avocado scouting uses Blocks (open-field), everything else uses Greenhouses.
-  // Fall back to data shape too, so the label tracks reality even if the
-  // crop string ever drifts (case/whitespace) or a new block-crop is added.
-  const showBlocks =
-    (crop || "").trim().toLowerCase() === "avocado" ||
-    (k.blockCount > 0 && k.greenhouseCount === 0);
+  // Open-field (block) crops report Blocks; greenhouse crops report
+  // Greenhouses. Detect from the data shape so the label tracks reality
+  // for whatever crop is in view.
+  const showBlocks = k.blockCount > 0 && k.greenhouseCount === 0;
   const unitLabel = showBlocks ? "Blocks" : "Greenhouses";
   const unitValue = showBlocks ? k.blockCount : k.greenhouseCount;
   const daily = data?.daily ?? [];

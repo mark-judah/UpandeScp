@@ -4,13 +4,12 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { cn } from "@/lib/utils";
 
 /**
- * MapLibre-GL wrapper used by the 3D map pages (avocado, future rose-3D).
+ * MapLibre-GL wrapper used by the 3D map pages (future rose-3D).
  * Exposes the underlying ``maplibregl.Map`` via ``onReady`` so consumers
  * can attach GeoJSON sources, custom Three.js layers, click handlers, etc.
  *
- * Default style is OpenFreeMap "liberty" — same as the JS avocado_scouts_map
- * page, no API key needed. Pitch defaults to 60° because the canopy mesh
- * looks flat from straight overhead.
+ * Default style is OpenFreeMap "liberty", no API key needed. Pitch defaults
+ * to 60° because the canopy mesh looks flat from straight overhead.
  */
 export interface Map3DProps {
   className?: string;

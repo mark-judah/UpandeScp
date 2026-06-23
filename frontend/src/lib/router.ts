@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from "react";
  *
  * The crop is the first path segment, the page is the second:
  *   #/rose/dashboard          rose · dashboard
- *   #/avocado/traps           avocado · traps
+ *   #/rose/traps              rose · traps
  *
  * The crop scopes everything downstream (sidebar + page data), so adding a
  * new scouted crop needs no new view ids — it reuses the same pages under a
@@ -21,7 +21,6 @@ export type View =
   | "heatmaps"
   | "scouting-map"
   | "spraying"
-  | "jobsheets"
   | "varieties"
   | "reports"
   | "tank-mixes"
@@ -45,7 +44,6 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "heatmaps",
   "scouting-map",
   "spraying",
-  "jobsheets",
   "varieties",
   "reports",
   "tank-mixes",

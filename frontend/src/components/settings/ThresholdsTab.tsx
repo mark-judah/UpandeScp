@@ -2,7 +2,7 @@
  * Settings → Thresholds editor.
  *
  * Crop-scoped editor for the severity thresholds that drive the
- * dashboard alerts. The GM picks a crop (Rose, Avocado, …); the tab
+ * dashboard alerts. The GM picks a crop (Rose, …); the tab
  * loads every Pest Filter + Disease Filter row under it, plus the
  * per-stage children where they exist. Each row shows three Floats —
  * Low / Moderate / High — interpreted as ``% of zones in the

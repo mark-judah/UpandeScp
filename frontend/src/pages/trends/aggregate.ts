@@ -106,8 +106,8 @@ export function parseObs(id: string): ObsKey | null {
  * Series builder
  *
  * The chart shows ``% units with the matching observation`` per day, per
- * selection — where a "unit" is the crop's scouting unit (zone for roses,
- * orchard tree for avocado, triad for coffee). The numerator is the count of
+ * selection — where a "unit" is the crop's scouting unit (zone for roses).
+ * The numerator is the count of
  * distinct unit keys that matched on that day; the denominator is the
  * structural total units of the selection (sum of unitTotalsByStation across
  * covered stations).

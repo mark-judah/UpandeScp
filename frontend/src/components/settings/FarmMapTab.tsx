@@ -1,6 +1,6 @@
 /**
  * Map Settings editor: global default lat/lon/zoom + per-farm
- * coordinates. The avocado / scouting maps fly-to a farm based on
+ * coordinates. The scouting maps fly-to a farm based on
  * these coords when the operator picks one.
  */
 

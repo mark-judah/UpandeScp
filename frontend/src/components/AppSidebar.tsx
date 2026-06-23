@@ -192,36 +192,6 @@ const ROSE_NAV: NavSection[] = [
   },
 ];
 
-// Avocado is its own app: a parallel sidebar reached via the crop switcher.
-// It reuses the rose page components forced to crop = Avocado, so avocado
-// gets its own dashboards/trends/scouting scoped to avocado farms.
-// It reuses the rose page components forced to the crop in the route, so the
-// crop gets its own dashboards/trends/scouting scoped to its farms.
-const AVOCADO_NAV: NavSection[] = [
-  {
-    label: "Overview",
-    items: [
-      { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
-      { kind: "view", view: "trends", label: "Trends", icon: LineChart },
-    ],
-  },
-  {
-    label: "Scouting",
-    items: [
-      { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
-      { kind: "view", view: "observations", label: "Observations", icon: Search },
-      { kind: "view", view: "heatmaps", label: "Heatmaps", icon: Flame },
-      { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
-    ],
-  },
-  {
-    label: "Crop Protection",
-    items: [
-      { kind: "view", view: "jobsheets", label: "Job Sheets", icon: ClipboardList },
-    ],
-  },
-];
-
 // Generic scouting nav for any crop that isn't rose and has no bespoke nav
 // yet — so a newly-scouted crop appears with a working sidebar automatically.
 const DEFAULT_CROP_NAV: NavSection[] = [
@@ -245,7 +215,6 @@ const DEFAULT_CROP_NAV: NavSection[] = [
 
 function navForCrop(crop: string): NavSection[] {
   if (crop === "rose") return ROSE_NAV;
-  if (crop === "avocado") return AVOCADO_NAV;
   return DEFAULT_CROP_NAV;
 }
 

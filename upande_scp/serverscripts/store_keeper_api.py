@@ -31,14 +31,14 @@ from frappe.utils import now_datetime, add_to_date
 # ----------------------------------------------------------------------
 # Permission gate
 # ----------------------------------------------------------------------
-_WRITE_ROLES = {"Store Keeper", "System Manager", "Administrator"}
+_WRITE_ROLES = {"Store Keeper", "Stock Manager", "System Manager", "Administrator"}
 
 
 def _check_perm():
     roles = set(frappe.get_roles(frappe.session.user) or [])
     if not (roles & _WRITE_ROLES):
         frappe.throw(
-            "You need the Store Keeper role to access this endpoint.",
+            "You need the Store Keeper or Stock Manager role to access this endpoint.",
             frappe.PermissionError,
         )
 

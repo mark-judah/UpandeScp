@@ -62,6 +62,7 @@ ACCESS_ROLES = {
     "Spray Plan Approver",
     "Spray Plan Creator",
     "Store Keeper",
+    "Stock Manager",
     "System Manager",
     "Administrator",
 }

@@ -9,6 +9,9 @@ If the parent entry hasn't synced yet we return ``{"status": "pending"}`` so the
 phone retries later — the photo upload is fully decoupled from the data sync.
 """
 
+import os
+import re
+
 import frappe
 
 
@@ -52,7 +55,11 @@ def attach_unidentified_pest_image():
         return
 
     content = file_obj.stream.read()
-    fname = file_obj.filename or f"{client_id}.jpg"
+    # The client names the upload from the raw client_id (email|date|time), which
+    # carries ':' and '|' — illegal on some storage backends. Keep only safe
+    # characters so the on-disk name is portable.
+    raw_name = file_obj.filename or f"{client_id}.jpg"
+    fname = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_name).strip("_") or "pest.jpg"
 
     # Idempotent against client retries after a lost success response.
     existing = frappe.db.get_value(
@@ -67,6 +74,12 @@ def attach_unidentified_pest_image():
     if existing:
         frappe.response["data"] = {"status": "ok", "duplicate": True, "entry": entry}
         return
+
+    # Frappe's File.write_file() opens the target path directly and does NOT
+    # create the files directory. On a site that has never stored a private file
+    # the directory is missing and the write fails with FileNotFoundError, so
+    # ensure it exists first.
+    os.makedirs(frappe.get_site_path("private", "files"), exist_ok=True)
 
     from frappe.utils.file_manager import save_file
 

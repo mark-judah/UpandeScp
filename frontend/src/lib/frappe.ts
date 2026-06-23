@@ -74,7 +74,7 @@ export async function call<T = unknown>(
   const dbg = scpDebug();
   const t0 = now();
   const short = method.split(".").pop() || method;
-  if (dbg) console.debug(`%c[SCP] → fetching ${short}`, "color:#3b82f6", { method, args });
+  if (dbg) console.log(`%c[SCP] → fetching ${short}`, "color:#3b82f6", { method, args });
 
   let res: Response;
   try {
@@ -129,7 +129,7 @@ export async function call<T = unknown>(
     } catch {
       /* unserialisable — ignore */
     }
-    console.debug(
+    console.log(
       `%c[SCP] ✓ fetched ${short} (${ms}ms, ${size} bytes)`,
       "color:#10b981",
     );

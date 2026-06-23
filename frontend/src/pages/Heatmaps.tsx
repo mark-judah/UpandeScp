@@ -140,7 +140,7 @@ function useProjectedGeometries(
     if (scpDebug()) {
       const haveKeys = Object.keys(zonesByGh);
       const unmatched = needed.filter((gh) => !zonesByGh[gh]);
-      console.debug(
+      console.log(
         `[SCP] heatmap geometry: needed=${needed.length}, zonesByGh keys=${haveKeys.length}, unmatched needed GHs:`,
         unmatched,
         "| sample keys:",
@@ -153,7 +153,7 @@ function useProjectedGeometries(
     for (const gh of missing) {
       const g = projectGeometry(zonesByGh[gh]);
       if (scpDebug())
-        console.debug(
+        console.log(
           `[SCP] heatmap project "${gh}": ${zonesByGh[gh]?.length ?? 0} zones -> ${g ? "shape OK" : "NULL (no shape rendered)"}`,
         );
       next[gh] = g;
@@ -267,7 +267,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     fetchBedsAndZones().then((vs) => {
       const flat = flattenZones(vs);
       if (scpDebug())
-        console.debug(
+        console.log(
           `[SCP] heatmap: fetchBedsAndZones -> ${vs.length} varieties, ${flat.length} zones`,
         );
       setZones(flat);

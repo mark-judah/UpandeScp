@@ -113,9 +113,8 @@
   {
    "depends_on": "eval:doc.row",
    "fieldname": "tree",
-   "fieldtype": "Link",
-   "label": "Tree",
-   "options": "Orchard Tree"
+   "fieldtype": "Data",
+   "label": "Tree"
   },
   {
    "fieldname": "column_break_frpc",

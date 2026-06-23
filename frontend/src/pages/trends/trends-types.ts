@@ -47,9 +47,8 @@ export interface TrendsPayload {
   stationsByFarm: Record<string, string[]>;
   unitsByStation: Record<string, number>;
   allDates: string[];
-  /** Structural total scouting units per station — Zones for greenhouses,
-   *  Orchard Trees for blocks (and Triads for coffee). The coverage-%
-   *  denominator. */
+  /** Structural total scouting units per station — Zones for greenhouses.
+   *  The coverage-% denominator. */
   unitTotalsByStation: Record<string, number>;
   /** Crop's scouting-unit label inferred from warehouse type: "zone" |
    *  "tree" | "triad". */

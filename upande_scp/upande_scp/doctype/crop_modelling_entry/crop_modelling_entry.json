@@ -18,10 +18,9 @@
  "fields": [
   {
    "fieldname": "tree",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Tree",
-   "options": "Orchard Tree",
    "reqd": 1
   },
   {

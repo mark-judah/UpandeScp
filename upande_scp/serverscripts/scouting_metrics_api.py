@@ -81,6 +81,20 @@ def get_map_settings():
 
 
 @frappe.whitelist()
+def get_latest_scouting_date():
+    """Most recent ``Scouting Entry.date_of_capture`` (YYYY-MM-DD) or None.
+
+    Lets the map pages default their date range to where the data actually
+    is, instead of "today" — which is empty whenever scouting paused for a
+    while (e.g. a fresh/imported site whose latest data is weeks old).
+    """
+    row = frappe.db.sql(
+        "SELECT MAX(date_of_capture) FROM `tabScouting Entry`"
+    )
+    return str(row[0][0]) if row and row[0] and row[0][0] else None
+
+
+@frappe.whitelist()
 def get_farms_and_warehouses():
     """{farm: [greenhouse_name, ...]} — allowed greenhouses (active only).
 

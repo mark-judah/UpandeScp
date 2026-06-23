@@ -52,6 +52,7 @@ import {
   fetchBedsAndZones,
   fetchCrops,
   fetchFarmsAndWarehouses,
+  fetchLatestScoutingDate,
   DEFAULT_CROP,
 } from "@/lib/scouting-api";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
@@ -192,6 +193,20 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
         (ghs || []).forEach((g) => (ghToFarm[g] = farm));
       });
       setFarmsByGh(ghToFarm);
+    });
+  }, []);
+
+  // Anchor the default range on the most recent scouting date so the page
+  // opens on real data instead of an empty "last 7 days" window (the data
+  // can be weeks old on a fresh/imported site).
+  useEffect(() => {
+    fetchLatestScoutingDate().then((latest) => {
+      if (!latest) return;
+      const to = new Date(latest);
+      if (Number.isNaN(to.getTime())) return;
+      const from = new Date(to);
+      from.setDate(to.getDate() - 6);
+      setRange({ from: ymd(from), to: ymd(to) });
     });
   }, []);
 

@@ -15,9 +15,8 @@ def getScoutingAnalysis():
         greenhouse = frappe.form_dict.get("greenhouse") or ""
 
         # Optional crop allow-list. Pages like /rose-scouting pass
-        # ["", "Rose"] to keep rose entries plus uncategorised ones; the
-        # avocado page doesn't go through this endpoint at all. JSON list or
-        # comma-separated both accepted for caller convenience.
+        # ["", "Rose"] to keep rose entries plus uncategorised ones. JSON list
+        # or comma-separated both accepted for caller convenience.
         crops_raw = frappe.form_dict.get("crops")
         crop_allow = None
         if crops_raw:
@@ -33,15 +32,13 @@ def getScoutingAnalysis():
             if crop_allow is not None:
                 crop_allow = [c if c is not None else "" for c in crop_allow]
 
-        # The "greenhouse" param is actually a warehouse name — could be a
-        # Block or a Greenhouse — so match either field on the entry. Avocado
-        # entries carry the warehouse on `block`, rose entries on `greenhouse`.
+        # The "greenhouse" param is the warehouse name carried on the entry's
+        # `greenhouse` field.
         se_filters = {"date_of_capture": date_str}
         se_or_filters = None
         if greenhouse:
             se_or_filters = [
                 ["greenhouse", "=", greenhouse],
-                ["block", "=", greenhouse],
             ]
 
         # Fetch scouting entries for the given date (and optional greenhouse)

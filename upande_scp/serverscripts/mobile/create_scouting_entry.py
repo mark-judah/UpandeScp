@@ -1,6 +1,6 @@
 import frappe
 from datetime import datetime, timedelta
-from .geo_utils import get_zone_from_coordinates, get_tree_from_coordinates
+from .geo_utils import get_zone_from_coordinates
 
 
 @frappe.whitelist()
@@ -192,10 +192,6 @@ def createScoutingEntry():
                 if latitude and longitude and accuracy and bed_for_zone:
                     determined_zone, confidence, zone_message = get_zone_from_coordinates(
                         latitude, longitude, bed_for_zone, accuracy
-                    )
-                elif latitude and longitude and accuracy and row_for_tree:
-                    determined_tree, confidence, zone_message = get_tree_from_coordinates(
-                        latitude, longitude, row_for_tree, accuracy, block=block
                     )
 
                 # Normalize zone_message to a dict

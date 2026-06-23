@@ -1,46 +1,5 @@
 [
  {
-  "crop_name": "Avocado",
-  "docstatus": 0,
-  "doctype": "Crop Scouted",
-  "farms": [
-   {
-    "farm": "Lokitela",
-    "parent": "Avocado",
-    "parentfield": "farms",
-    "parenttype": "Crop Scouted"
-   }
-  ],
-  "image": null,
-  "incidents": [],
-  "modified": "2026-04-27 10:01:21.064423",
-  "name": "Avocado",
-  "physiological_disorders": [],
-  "plant_sections_scouted": [
-   {
-    "parent": "Avocado",
-    "parentfield": "plant_sections_scouted",
-    "parenttype": "Crop Scouted",
-    "plant_section": "Stem"
-   },
-   {
-    "parent": "Avocado",
-    "parentfield": "plant_sections_scouted",
-    "parenttype": "Crop Scouted",
-    "plant_section": "Fruit"
-   },
-   {
-    "parent": "Avocado",
-    "parentfield": "plant_sections_scouted",
-    "parenttype": "Crop Scouted",
-    "plant_section": "Leaf"
-   }
-  ],
-  "predators": [],
-  "variety": null,
-  "weeds": []
- },
- {
   "crop_name": "Rose",
   "docstatus": 0,
   "doctype": "Crop Scouted",

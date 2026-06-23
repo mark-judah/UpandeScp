@@ -192,9 +192,7 @@ doc_events = {
     },
     "Spray Equipment Details": _SCP_CACHE_EVENTS,
     "Item": _SCP_CACHE_EVENTS,
-    "Orchard Tree": _SCP_CACHE_EVENTS,
     "Crop Scouted": _SCP_CACHE_EVENTS,
-    "Tank And Valve": _SCP_CACHE_EVENTS,
     "Spray Plan Settings": _SCP_CACHE_EVENTS,
     "Spray Plan Allowed Farm": _SCP_CACHE_EVENTS,
     "Spray Plan Exclude Keyword": _SCP_CACHE_EVENTS,
@@ -368,7 +366,6 @@ scheduler_events = {
 website_route_rules = [
     {"from_route": "/rose-scouting", "to_route": "/rose_scouting"},
     {"from_route": "/rose-3d-map", "to_route": "/rose_3d_map"},
-    {"from_route": "/avocado-scouts-map", "to_route": "/avocado_scouts_map"},
     {"from_route": "/observations-map", "to_route": "/observations_map"},
     {"from_route": "/scouting-heatmaps", "to_route": "/scouting_heatmaps"},
     {"from_route": "/variety-map", "to_route": "/variety_map"},

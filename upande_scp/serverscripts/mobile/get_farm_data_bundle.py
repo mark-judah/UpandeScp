@@ -92,13 +92,11 @@ def _build_farm_bundle(farm: str) -> dict:
         order_by="lft asc",
     )
 
-    # Stations are the warehouses that beds and traps link to. Leaf
-    # warehouses (is_group=0) plus Block group-warehouses — orchard blocks
-    # often carry row sub-warehouses underneath, so the block itself is
-    # is_group=1 even though it is the station beds and traps reference.
+    # Stations are the warehouses that beds and traps link to: the leaf
+    # warehouses (is_group=0) that greenhouse beds and traps reference.
     station_names = [
         w.name for w in warehouses
-        if (not w.is_group) or w.warehouse_type == "Block"
+        if not w.is_group
     ]
     sections = [
         {"name": w.name, "warehouse_name": w.warehouse_name}

@@ -6,7 +6,7 @@ farm for 30 minutes so a Dashboard refresh doesn't hammer the upstream
 on every reload.
 
 Coordinates source: ``Farm Map Coordinate`` child of ``Map Settings``,
-the same table the avocado/heatmap pages already use to centre their
+the same table the heatmap pages already use to centre their
 maps. If the farm has no coordinate row we return an empty payload —
 the UI hides the card rather than guessing.
 """

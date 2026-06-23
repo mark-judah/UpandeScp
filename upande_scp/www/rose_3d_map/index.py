@@ -1,6 +1,6 @@
 """3D rose map — one rose-shaped object per Zone, grouped by Greenhouse.
 
-Mirrors the avocado_scouts_map structure but for greenhouses + zones. Each
+Built for greenhouses + zones. Each
 zone's centroid is precomputed server-side so the client only has to place
 InstancedMesh instances at fixed lng/lat anchors.
 """

@@ -82,10 +82,9 @@ def get_map_settings():
 
 @frappe.whitelist()
 def get_farms_and_warehouses():
-    """{farm: [warehouse_name, ...]} — greenhouses *and* blocks (active only).
+    """{farm: [greenhouse_name, ...]} — allowed greenhouses (active only).
 
-    Used by the scouting dashboard so block-based farms (orchards) appear
-    alongside greenhouse-based farms in the Farm dropdown.
+    Used by the scouting dashboard to populate the Farm dropdown.
     """
     return get_or_set(
         K_SM_FARMS_AND_WHS,
@@ -96,7 +95,7 @@ def get_farms_and_warehouses():
 
 @frappe.whitelist()
 def get_units_by_warehouse():
-    """{warehouse: {type: greenhouse|block, count, farm}} — pressure denominator."""
+    """{warehouse: {type: greenhouse, count, farm}} — pressure denominator."""
     return get_or_set(
         K_SM_UNITS_BY_WH,
         scouting_metrics.get_units_by_warehouse,
@@ -634,20 +633,6 @@ def get_application_plan_bootstrap():
         ),
         "spray_teams": spray_teams,
     }
-
-
-@frappe.whitelist()
-def get_blocks_geojson():
-    """Block-warehouse polygons for the 3D avocado map. Wraps the existing
-    K_BLOCKS_GEOJSON cache so the React page can pull it without a server-
-    rendered context injection."""
-    from upande_scp.serverscripts.cache_utils import (
-        K_BLOCKS_GEOJSON,
-        TTL_LONG,
-    )
-    from upande_scp.www.avocado_scouts_map.index import _build_blocks_geojson
-
-    return get_or_set(K_BLOCKS_GEOJSON, _build_blocks_geojson, ttl=TTL_LONG)
 
 
 @frappe.whitelist()

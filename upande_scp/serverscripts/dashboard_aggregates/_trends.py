@@ -57,10 +57,9 @@ def _build(from_date: str, to_date: str, crop: str, job_id: str = "") -> dict:
     payload = _aggregate(rows)
 
     publish_progress(job_id, 95, "loading unit counts")
-    # Structural denominator per station, inferred from the warehouse type:
-    # Greenhouse → Zones, Block → Orchard Trees (and a future type → Triads
-    # for coffee). This is the total scouting units that *exist*, not the ones
-    # that happened to be observed, so coverage % is correct for every crop.
+    # Structural denominator per station: Greenhouse → Zones. This is the
+    # total scouting units that *exist*, not the ones that happened to be
+    # observed, so coverage % is correct.
     units = scouting_metrics.get_units_by_warehouse() or {}
     payload["unitTotalsByStation"] = {
         k: int((v or {}).get("count") or 0) for k, v in units.items()
@@ -117,15 +116,9 @@ def _station_of(row) -> str:
 
 
 def _unit_key(row) -> str:
-    """Same logic as aggregate.ts/unitKey — block.tree path for avocado,
-    zone for greenhouse, bed as final fallback. Empty string drops the row
-    from the index (no usable unit identifier)."""
-    block = (row.block or "").strip()
-    if block:
-        tree = (row.tree or "").strip()
-        if not tree:
-            return ""
-        return f"{block}::tree::{tree}"
+    """Same logic as aggregate.ts/unitKey — zone for greenhouse, bed as final
+    fallback. Empty string drops the row from the index (no usable unit
+    identifier)."""
     zone = (row.zone or "").strip()
     if zone:
         return f"zone::{zone}"

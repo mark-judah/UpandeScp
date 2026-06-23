@@ -4,9 +4,9 @@ Run via:
     bench --site <your-site> execute upande_scp.serverscripts.populate_severity_defaults.run
 
 Sets sensible default low/moderate/high thresholds on Pest Filter and Disease
-Filter rows for the Rose and Avocado Crop Scouted records. Idempotent — only
-writes a value when the existing field is empty or zero, so admin overrides
-won't be clobbered if the script is run twice.
+Filter rows for the Rose Crop Scouted record. Idempotent — only writes a value
+when the existing field is empty or zero, so admin overrides won't be clobbered
+if the script is run twice.
 """
 
 import frappe
@@ -38,22 +38,6 @@ ROSE_DISEASE_DEFAULTS = {
     "Agrobacterium":  {"unit": "Per Warehouse", "low": 1, "moderate": 3, "high": 6},
     "Botrytis":       {"unit": "Per Warehouse", "low": 1, "moderate": 3, "high": 6},
     "Rust":           {"unit": "Per Warehouse", "low": 1, "moderate": 3, "high": 6},
-}
-
-# Avocado is block-based (orchards), so per-hectare thresholds line up better
-# with how field scouting reports counts. Numbers are placeholders; revisit
-# with the agronomy team.
-AVOCADO_PEST_DEFAULTS = {
-    "FCM":               {"unit": "Per Hectare", "low": 1, "moderate": 3,  "high": 6},
-    "Helicoverpa":       {"unit": "Per Hectare", "low": 1, "moderate": 3,  "high": 6},
-    "Spodoptera":        {"unit": "Per Hectare", "low": 1, "moderate": 3,  "high": 6},
-    "Thrips":            {"unit": "Per Hectare", "low": 5, "moderate": 15, "high": 30},
-    "Mealybugs":         {"unit": "Per Hectare", "low": 3, "moderate": 8,  "high": 16},
-}
-
-AVOCADO_DISEASE_DEFAULTS = {
-    "Anthracnose":  {"unit": "Per Hectare", "low": 1, "moderate": 3, "high": 6},
-    "Phytophthora": {"unit": "Per Hectare", "low": 1, "moderate": 3, "high": 6},
 }
 
 
@@ -102,4 +86,3 @@ def _populate_one(crop_name, pests, diseases):
 def run():
     """Bench-callable entrypoint."""
     _populate_one("Rose", ROSE_PEST_DEFAULTS, ROSE_DISEASE_DEFAULTS)
-    _populate_one("Avocado", AVOCADO_PEST_DEFAULTS, AVOCADO_DISEASE_DEFAULTS)

@@ -1,7 +1,6 @@
 """Rose-only scouting map (renamed from scouts_map).
 
-The page filters scouting entries to crop_scouted in ('', 'Rose'/'Roses') so
-avocado data is excluded — that view lives on /avocado-scouts-map.
+The page filters scouting entries to crop_scouted in ('', 'Rose'/'Roses').
 """
 
 import json

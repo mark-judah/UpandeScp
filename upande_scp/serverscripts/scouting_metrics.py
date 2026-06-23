@@ -170,21 +170,20 @@ def get_zone_counts_by_greenhouse():
 
 
 def get_units_by_warehouse():
-    """Return {warehouse_name: {"type": "greenhouse"|"block", "count": N, "farm": str, "area_ha": float}}.
+    """Return {warehouse_name: {"type": "greenhouse", "count": N, "farm": str, "area_ha": float}}.
 
-    Greenhouses → number of Zones; blocks → number of Orchard Trees. ``area_ha``
-    comes from ``Warehouse.custom_area_ha`` and is the denominator for
-    Per-Hectare severity thresholds. Drives the "Zone Coverage %" / "Tree
-    Coverage %" denominator on the scouting dashboard so pressure metrics
-    match the right unit per warehouse type.
+    Greenhouses → number of Zones. ``area_ha`` comes from
+    ``Warehouse.custom_area_ha`` and is the denominator for Per-Hectare
+    severity thresholds. Drives the "Zone Coverage %" denominator on the
+    scouting dashboard.
     """
-    # Single warehouse pass: type, farm, and area_ha for every active GH/Block.
+    # Single warehouse pass: type, farm, and area_ha for every active greenhouse.
     wh_rows = frappe.db.sql(
         """
-        SELECT name, warehouse_type, custom_farm AS farm,
+        SELECT name, custom_farm AS farm,
                COALESCE(custom_area_ha, 0) AS area_ha
         FROM   `tabWarehouse`
-        WHERE  warehouse_type IN ('Greenhouse', 'Block')
+        WHERE  warehouse_type = 'Greenhouse'
           AND  disabled = 0
           AND  is_group = 0
         """,
@@ -193,7 +192,7 @@ def get_units_by_warehouse():
     out = {}
     for r in wh_rows:
         out[r.name] = {
-            "type": "block" if r.warehouse_type == "Block" else "greenhouse",
+            "type": "greenhouse",
             "count": 0,
             "farm": r.farm or "",
             "area_ha": float(r.area_ha or 0),
@@ -216,21 +215,6 @@ def get_units_by_warehouse():
             # rather than silently dropping; assume greenhouse-type.
             out[r.wh] = {"type": "greenhouse", "count": int(r.cnt or 0), "farm": "", "area_ha": 0.0}
 
-    tree_counts = frappe.db.sql(
-        """
-        SELECT block AS wh, COUNT(*) AS cnt
-        FROM   `tabOrchard Tree`
-        WHERE  block IS NOT NULL AND block != ''
-        GROUP  BY block
-        """,
-        as_dict=True,
-    )
-    for r in tree_counts:
-        if r.wh in out:
-            out[r.wh]["type"] = "block"
-            out[r.wh]["count"] = int(r.cnt or 0)
-        else:
-            out[r.wh] = {"type": "block", "count": int(r.cnt or 0), "farm": "", "area_ha": 0.0}
     return out
 
 
@@ -280,19 +264,14 @@ def get_severity_thresholds():
 
 
 def get_farms_and_warehouses():
-    """Return {farm: [warehouse_name, ...]} including both greenhouses and blocks.
-
-    Companion to ``get_farms_and_greenhouses`` which only lists greenhouses;
-    block-based farms (avocado orchards etc.) need to show up so the dashboard
-    can scope to them.
+    """Return {farm: [greenhouse_name, ...]} for every allowed greenhouse.
 
     Greenhouses (warehouse_type='Greenhouse') are filtered to the same
     invariant the Application Floor Plan + spray planner already use:
     must belong to an allowed farm (Spray Plan Settings.allowed_farms),
     match the ``GH <N>`` naming convention, and avoid the exclude
     keywords (``tunnel``, ``phase``, ``ipm``, ``wetland``, ``csu``).
-    Orphans (no ``custom_farm``) drop out. Block-type warehouses bypass
-    the greenhouse filter — orchards don't follow the GH convention.
+    Orphans (no ``custom_farm``) drop out.
     """
     from upande_scp.serverscripts.warehouse_filter import (
         is_greenhouse_allowed,
@@ -301,9 +280,9 @@ def get_farms_and_warehouses():
 
     rows = frappe.db.sql(
         """
-        SELECT name, warehouse_type, custom_farm AS farm
+        SELECT name, custom_farm AS farm
         FROM   `tabWarehouse`
-        WHERE  warehouse_type IN ('Greenhouse', 'Block')
+        WHERE  warehouse_type = 'Greenhouse'
           AND  disabled = 0
           AND  is_group = 0
         ORDER  BY custom_farm, name
@@ -317,11 +296,10 @@ def get_farms_and_warehouses():
         farm = r.farm
         if not farm:
             continue  # orphan — there is no policy for unparented warehouses
-        if r.warehouse_type == "Greenhouse":
-            if not is_greenhouse_allowed(
-                r.name, allowed_lower, exclude, has_farm=True
-            ):
-                continue
+        if not is_greenhouse_allowed(
+            r.name, allowed_lower, exclude, has_farm=True
+        ):
+            continue
         grouped[farm].append(r.name)
     return dict(grouped)
 

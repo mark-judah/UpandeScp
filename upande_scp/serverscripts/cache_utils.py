@@ -37,7 +37,6 @@ K_ZONE_COUNT_BY_BED = "scp:zone_count_by_bed_v1"
 K_BED_COUNT_BY_GH = "scp:bed_count_by_gh_v1"
 K_BEDS_AND_ZONES = "scp:beds_and_zones_payload_v1"
 K_GREENHOUSES_GEOJSON = "scp:greenhouses_geojson_v1"
-K_BLOCKS_GEOJSON = "scp:blocks_geojson_v1"
 K_FARMS_AND_GREENHOUSES = "scp:farms_and_greenhouses_v1"
 K_AFP_WAREHOUSES = "scp:afp_warehouses_v3"
 K_AFP_SPRAY_EQUIPMENT = "scp:afp_spray_equipment_v1"
@@ -55,12 +54,6 @@ K_SM_TRAPS_BY_GH = "scp:sm_traps_by_gh_v1"
 # beds + traps + sections for a farm so the mobile app can populate its
 # offline cache in a single request instead of per-block round-trips.
 K_SM_FARM_BUNDLE_PREFIX = "scp:sm_farm_bundle_v1"
-# Per-block Orchard Tree FeatureCollection used by the avocado view of the
-# scouts map. Key suffix is the block (Warehouse) name.
-K_ORCHARD_TREES_PREFIX = "scp:orchard_trees_v1"
-# Per-farm Tank & Valve FeatureCollection for the avocado 3D map. Suffix is
-# the farm name (or '__all__' for the unfiltered bundle).
-K_TANKS_VALVES_PREFIX = "scp:tanks_valves_v1"
 K_CROPS_SCOUTED = "scp:crops_scouted_v1"
 # Pest / Plant Disease legend colours (the per-name hex stored on the
 # doctype). Cached separately from the heavy scouting payload so a colour
@@ -169,7 +162,7 @@ def _resolve_scouting_month(doc):
 
     Parent rows carry ``date_of_capture`` directly. Child rows (Pests/Diseases/
     Trap Scouting Entry) walk to their parent. Other doctypes that bust the
-    payload cache (Zone, Bed, Warehouse, Farm, Orchard Tree) don't have a
+    payload cache (Zone, Bed, Warehouse, Farm) don't have a
     natural month — return ``None`` so the client treats them as a global
     invalidation."""
     dt = getattr(doc, "doctype", None)
@@ -215,39 +208,6 @@ def invalidate_farm_bundle(farm):
     if not farm:
         return
     invalidate(f"{K_SM_FARM_BUNDLE_PREFIX}:{farm}")
-
-
-def invalidate_orchard_trees_for_block(block):
-    if not block:
-        return
-    invalidate(f"{K_ORCHARD_TREES_PREFIX}:{block}")
-
-
-def invalidate_tanks_valves_for_doc(doc):
-    """Drop both the doc's farm key and the unfiltered bundle."""
-    farm = getattr(doc, "farm", None)
-    invalidate(f"{K_TANKS_VALVES_PREFIX}:__all__")
-    if farm:
-        invalidate(f"{K_TANKS_VALVES_PREFIX}:{farm}")
-
-
-def invalidate_orchard_trees_for_doc(doc):
-    """Invalidate the cached tree FeatureCollection for the doc's block.
-
-    Resolves the block from `doc.block` first, then via the row's greenhouse
-    when block is missing (e.g. on insert before before_save fires). Also
-    drops the per-farm key so the farm-wide tree map rebuilds.
-    """
-    block = getattr(doc, "block", None)
-    if not block:
-        row = getattr(doc, "row", None)
-        if row:
-            block = frappe.db.get_value("Bed", row, "greenhouse")
-    invalidate_orchard_trees_for_block(block)
-    if block:
-        farm = frappe.db.get_value("Warehouse", block, "custom_farm")
-        if farm:
-            invalidate(f"{K_ORCHARD_TREES_PREFIX}:farm:{farm}")
 
 
 def invalidate_farm_bundle_for_doc(doc):
@@ -505,16 +465,14 @@ _DOC_INVALIDATIONS = {
     "Predator Stages": (K_OBSERVATION_TYPES,),
     "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH, K_SM_UNITS_BY_WH, K_ZONE_CENTROIDS),
     "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_SM_BEDS_BY_GH, K_ZONE_CENTROIDS),
-    "Warehouse": (K_GREENHOUSES_GEOJSON, K_BLOCKS_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_SM_UNITS_BY_WH, K_FARM_HIERARCHY, K_ZONE_CENTROIDS),
+    "Warehouse": (K_GREENHOUSES_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_SM_UNITS_BY_WH, K_FARM_HIERARCHY, K_ZONE_CENTROIDS),
     "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_FARM_HIERARCHY),
-    "Orchard Tree": (K_SM_UNITS_BY_WH,),
     "Trap": (K_SM_TRAPS_BY_GH,),
     "Spray Equipment Details": (K_AFP_SPRAY_EQUIPMENT,),
     "Item": (K_CHEMICALS_LIST,),
     "Crop Scouted": (K_CROPS_SCOUTED, K_SM_SEVERITY_THRESHOLDS),
     "Pest Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS),
     "Disease Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS),
-    "Tank And Valve": (),
     "Spray Plan Settings": (K_AFP_WAREHOUSES,),
     "Spray Plan Allowed Farm": (K_AFP_WAREHOUSES,),
     "Spray Plan Exclude Keyword": (K_AFP_WAREHOUSES,),
@@ -536,7 +494,7 @@ _SCOUTING_ENTRY_FAMILY = {
     "Trap Scouting Entry",
 }
 
-# Master data that changes the denominator (zone/tree counts) or the
+# Master data that changes the denominator (zone counts) or the
 # farm/station mapping. These are rare and can shift many weeks at once, so
 # they keep the cheap global version bump.
 _SCOUTING_PAYLOAD_INVALIDATORS = {
@@ -545,7 +503,6 @@ _SCOUTING_PAYLOAD_INVALIDATORS = {
     "Bed",
     "Warehouse",
     "Farm",
-    "Orchard Tree",
 }
 
 
@@ -557,12 +514,6 @@ def invalidate_on_change(doc, method=None):
     # the mobile bundle endpoint rebuilds on next request.
     if doc.doctype in ("Bed", "Trap", "Warehouse", "Farm"):
         invalidate_farm_bundle_for_doc(doc)
-    # Drop the per-block Orchard Tree FeatureCollection when trees move.
-    if doc.doctype == "Orchard Tree":
-        invalidate_orchard_trees_for_doc(doc)
-    # Drop the per-farm Tank & Valve bundle when assets move or get edited.
-    if doc.doctype == "Tank And Valve":
-        invalidate_tanks_valves_for_doc(doc)
     # Scouting writes: bust only the affected ISO week so other weeks stay
     # warm during active scouting. Master-data changes that shift derived
     # denominators across many weeks fall through to the global version bump.

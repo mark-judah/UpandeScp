@@ -16,6 +16,8 @@ import frappe
 def execute() -> None:
     if not frappe.db.has_column("Work Order", "custom_type"):
         return
+    if not frappe.db.has_column("Work Order", "workflow_state"):
+        return
     frappe.db.sql(
         """
         UPDATE `tabWork Order`

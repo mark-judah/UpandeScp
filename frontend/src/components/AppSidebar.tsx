@@ -78,6 +78,9 @@ interface NavSection {
 }
 
 const STORE_KEEPER_ROLE = "Store Keeper";
+// mona.local names the store role "Stock Manager"; kaitet uses "Store Keeper".
+// Honour both wherever store-keeper access is gated.
+const STORE_KEEPER_ROLES = ["Store Keeper", "Stock Manager"];
 
 const ROSE_NAV: NavSection[] = [
   // Store-Keeper exclusive section — only role that sees it, and the
@@ -91,28 +94,28 @@ const ROSE_NAV: NavSection[] = [
         view: "spray-plan-transfers",
         label: "Spray Plan Transfers",
         icon: Truck,
-        requireRoles: [STORE_KEEPER_ROLE],
+        requireRoles: STORE_KEEPER_ROLES,
       },
       {
         kind: "view",
         view: "chemical-dashboard",
         label: "Chemical Dashboard",
         icon: Beaker,
-        requireRoles: [STORE_KEEPER_ROLE],
+        requireRoles: STORE_KEEPER_ROLES,
       },
       {
         kind: "view",
         view: "labels",
         label: "Labels",
         icon: QrCode,
-        requireRoles: [STORE_KEEPER_ROLE],
+        requireRoles: STORE_KEEPER_ROLES,
       },
       {
         kind: "view",
         view: "chemical-progress",
         label: "Chemical Progress",
         icon: Activity,
-        requireRoles: [STORE_KEEPER_ROLE],
+        requireRoles: STORE_KEEPER_ROLES,
       },
     ],
   },
@@ -230,7 +233,7 @@ function userHasAnyRole(required: string[] | undefined, userRoles: string[]): bo
 const ELEVATED_ROLES = ["System Manager", "Administrator", "General Manager"];
 
 function isStoreKeeperExclusive(userRoles: string[]): boolean {
-  if (!userRoles.includes(STORE_KEEPER_ROLE)) return false;
+  if (!STORE_KEEPER_ROLES.some((r) => userRoles.includes(r))) return false;
   return !ELEVATED_ROLES.some((r) => userRoles.includes(r));
 }
 

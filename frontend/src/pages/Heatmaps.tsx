@@ -56,6 +56,7 @@ import {
 } from "@/lib/scouting-api";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
 import { ymd } from "@/lib/utils";
+import { scpDebug } from "@/lib/frappe";
 import { ProgressOverlay } from "./dashboard/ProgressOverlay";
 import { MarkerDefs, type MarkerKind } from "./maps/MarkerDefs";
 import {
@@ -136,11 +137,26 @@ function useProjectedGeometries(
     {},
   );
   useEffect(() => {
+    if (scpDebug()) {
+      const haveKeys = Object.keys(zonesByGh);
+      const unmatched = needed.filter((gh) => !zonesByGh[gh]);
+      console.debug(
+        `[SCP] heatmap geometry: needed=${needed.length}, zonesByGh keys=${haveKeys.length}, unmatched needed GHs:`,
+        unmatched,
+        "| sample keys:",
+        haveKeys.slice(0, 6),
+      );
+    }
     const missing = needed.filter((gh) => !(gh in cache) && zonesByGh[gh]);
     if (!missing.length) return;
     const next: Record<string, ProjectedGeometry | null> = { ...cache };
     for (const gh of missing) {
-      next[gh] = projectGeometry(zonesByGh[gh]);
+      const g = projectGeometry(zonesByGh[gh]);
+      if (scpDebug())
+        console.debug(
+          `[SCP] heatmap project "${gh}": ${zonesByGh[gh]?.length ?? 0} zones -> ${g ? "shape OK" : "NULL (no shape rendered)"}`,
+        );
+      next[gh] = g;
     }
     setCache(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -248,7 +264,14 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   // Bed/zone geometry: fetched once, projected per greenhouse on demand.
   const [zones, setZones] = useState<ZoneFeature[]>([]);
   useEffect(() => {
-    fetchBedsAndZones().then((vs) => setZones(flattenZones(vs)));
+    fetchBedsAndZones().then((vs) => {
+      const flat = flattenZones(vs);
+      if (scpDebug())
+        console.debug(
+          `[SCP] heatmap: fetchBedsAndZones -> ${vs.length} varieties, ${flat.length} zones`,
+        );
+      setZones(flat);
+    });
   }, []);
   const zonesByGh = useMemo(() => indexZonesByGh(zones), [zones]);
   const neededGhs = useMemo(

@@ -2,7 +2,7 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "format:SEM-{###}",
+ "autoname": "SEM-.#####",
  "creation": "2025-10-24 16:16:17.229191",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -112,7 +112,7 @@
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting Entry Metadata",
- "naming_rule": "Expression",
+ "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [
   {

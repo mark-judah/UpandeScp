@@ -9,7 +9,7 @@ def get_context(context):
         frappe.throw("Please log in to access this page.", frappe.PermissionError)
 
     roles = frappe.get_roles(frappe.session.user)
-    if "General Manager" not in roles and "System Manager" not in roles:
+    if "General Manager" not in roles and "System Manager" not in roles and "Spray Plan Manager" not in roles:
         frappe.throw(
             "This page requires General Manager access.",
             frappe.PermissionError,

@@ -145,7 +145,11 @@ def _build_cards(rows: list, mode: str, color_map: dict) -> list:
         gh = r.get("greenhouse") or ""
         obs = r.get("obs_name") or ""
         d = r.get("d") or ""
-        z = r.get("zone") or ""
+        # Some sites (mona) imported zone names wrapped in literal double-quotes
+        # (e.g. '"Main GH 01 - MFK - Bed 1 - Zone 1"'). Strip them so the marker
+        # zone keys match the (also-normalised) geometry zone names from
+        # get_beds_and_zones and the greenhouse parse in the client.
+        z = (r.get("zone") or "").strip('"')
         n = int(r.get("n") or 0)
         if not gh or not obs or not z or n <= 0:
             continue

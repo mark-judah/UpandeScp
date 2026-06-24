@@ -20,7 +20,14 @@ def _build_beds_and_zones():
     for z in zones:
         bed = bed_map.get(z["bed"])
         if bed is not None:
-            bed["zones"].append({"name": z["name"], "raw_geojson": z["raw_geojson"]})
+            # Some sites (mona) imported zone names wrapped in literal
+            # double-quotes (e.g. '"Main GH 01 - MFK - Bed 1 - Zone 1"'). Strip
+            # them so the client's greenhouse parse (slice before " - Bed ")
+            # matches the clean greenhouse/warehouse name, and so the zone names
+            # line up with the (also-normalised) heatmap marker keys.
+            bed["zones"].append(
+                {"name": (z["name"] or "").strip('"'), "raw_geojson": z["raw_geojson"]}
+            )
 
     variety_map = {}
     for bed in bed_map.values():

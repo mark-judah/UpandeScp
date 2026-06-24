@@ -30,7 +30,12 @@ from .scope import _resolve_user_scope
 _CHEMICAL_GROUPS = ("CHEMICALS", "Fertilizer")
 
 _CSU_RE = re.compile(r"\bcsu\b", re.IGNORECASE)
-_STORE_RE = re.compile(r"^\s*chemical store\b", re.IGNORECASE)
+# The chemical store warehouse. Named "Chemical Store - <farm>" on some sites
+# and "Chemical Main Store - <farm>" on mona, so match "chemical" ... "store"
+# anywhere rather than anchoring on a literal "chemical store" prefix. CSUs
+# ("Main CSU - MFK") and greenhouses have no "store" token, so this stays
+# distinct from _CSU_RE.
+_STORE_RE = re.compile(r"\bchemical\b.*\bstore\b", re.IGNORECASE)
 
 # Hard ceiling on how long chemicals are allowed to sit unused in a CSU
 # before they're flagged as aged. The user-facing label on every aged

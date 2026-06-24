@@ -246,14 +246,33 @@ def _build_duplicate_warning(wo_names: list[str], greenhouse: str, scheduled_iso
 
 
 def _resolve_kit_warehouse(kit_name: str | None) -> str | None:
-    """Look up the warehouse linked to a spray kit. Returns None if the kit
-    isn't recognised — the WO will still insert (wip_warehouse stays empty)
-    and the operator can fix the kit/warehouse mapping later."""
+    """Look up the warehouse (CSU) linked to a spray kit via Spray Equipment.
+    Returns None if the kit isn't recognised."""
     if not kit_name:
         return None
     return frappe.db.get_value(
         "Spray Equipment Details", {"kit": kit_name}, "warehouse"
     )
+
+
+def _apply_kit_warehouse(wo, payload: dict) -> None:
+    """Set ``wo.wip_warehouse`` (the chemical destination CSU) from the selected
+    kit. The kit IS the destination: the chemicals are transferred into the CSU
+    where that spray equipment lives. If a kit is picked but isn't mapped to a
+    warehouse in Spray Equipment, fail loudly rather than silently leaving
+    ERPNext's default WIP warehouse (which sends chemicals to the wrong place).
+    No kit picked -> leave wip_warehouse untouched."""
+    kit = payload.get("custom_kit") if "custom_kit" in payload else getattr(wo, "custom_kit", None)
+    if not kit:
+        return
+    wh = _resolve_kit_warehouse(kit)
+    if not wh:
+        frappe.throw(
+            f"Spray kit {kit!r} is not mapped to a warehouse in Spray Equipment. "
+            "Set its warehouse there before creating the plan.",
+            title="Kit warehouse missing",
+        )
+    wo.wip_warehouse = wh
 
 
 def _derive_plan_company(payload: dict) -> str:
@@ -426,10 +445,6 @@ def create_draft_spray_plan(payload):
         *[(f"Chemical source {i + 1}", w) for i, w in enumerate(chem_sources)],
     ])
 
-    # Derive WIP warehouse from the picked kit (Spray Equipment Details.warehouse)
-    # so ERPNext's make_stock_entry has a target for the Material Transfer.
-    wip_warehouse = _resolve_kit_warehouse(payload.get("custom_kit"))
-
     wo = frappe.new_doc("Work Order")
     wo.flags.ignore_mandatory = True
     wo.company = company
@@ -442,9 +457,10 @@ def create_draft_spray_plan(payload):
     wo.qty = 1
     wo.custom_cost_center = cost_center
     wo.fg_warehouse = payload["custom_greenhouse"]
-    if wip_warehouse:
-        wo.wip_warehouse = wip_warehouse
     _apply_payload(wo, payload)
+    # Destination CSU (wip_warehouse) is derived from the selected kit so the
+    # Material Transfer targets the right CSU. Throws if the kit is unmapped.
+    _apply_kit_warehouse(wo, payload)
 
     # Mint a per-plan BOM (one per plan, for traceability + to keep bom_no in
     # lockstep with the recipe). production_item stays the tank-mix FG item.
@@ -579,6 +595,8 @@ def update_draft_plan(name: str, payload):
     ])
 
     _apply_payload(wo, payload)
+    # Re-derive the destination CSU if the kit changed (or was set) on edit.
+    _apply_kit_warehouse(wo, payload)
 
     # Re-mint a per-plan BOM matching the (possibly edited) recipe, then retire
     # the superseded auto-BOM if nothing else references it.

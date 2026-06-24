@@ -40,6 +40,22 @@ def _normalise_name_key(name: str) -> str:
     return _TRAILING_DUP_SUFFIX_RE.sub(r"\1", no_zeros)
 
 
+# Greenhouse-number extraction for the mona naming convention, where the
+# warehouse ("Main GH 10 - MFK") and its Cost Center ("GH010 - MFK") share
+# only the greenhouse number — the farm prefix is dropped and the number is
+# zero-padded, so the whitespace/zero-normalised keys don't line up. We pull
+# the integer after "GH" and match on that. ``0*(\d+)`` collapses the padding
+# ("010" -> 10) and int() comparison avoids "GH 10" matching "GH 100". The
+# ``(?<![a-z])`` guard stops the "gh" inside words like "High"/"Weighbridge"
+# from being read as a greenhouse token.
+_GH_NUMBER_RE = re.compile(r"(?<![a-z])gh\s*0*(\d+)", re.IGNORECASE)
+
+
+def _greenhouse_number(name: str) -> int | None:
+    m = _GH_NUMBER_RE.search(name or "")
+    return int(m.group(1)) if m else None
+
+
 def match_cost_center(greenhouse_warehouse: str) -> str | None:
     """Return the Cost Center for a greenhouse warehouse, or None.
 
@@ -47,10 +63,13 @@ def match_cost_center(greenhouse_warehouse: str) -> str | None:
       1. ``Warehouse.custom_cost_center`` — explicit, authoritative.
       2. Exact-name match against ``Cost Center`` (legacy).
       3. Whitespace-, leading-zero-, and case-insensitive name match (legacy).
+      4. Greenhouse-number match — mona convention, where warehouse
+         "Main GH 10 - MFK" maps to Cost Center "GH010 - MFK". Only used when
+         it resolves to exactly one Cost Center (ambiguity returns None).
 
-    The fallback exists so warehouses where the new field hasn't been set
-    yet keep resolving via the original name convention. Set
-    ``custom_cost_center`` on the warehouse to opt out of the fallback.
+    The fallbacks exist so warehouses where the new field hasn't been set
+    yet keep resolving via the name convention. Set ``custom_cost_center``
+    on the warehouse to opt out of the fallbacks.
     """
     if not greenhouse_warehouse:
         return None
@@ -71,6 +90,12 @@ def match_cost_center(greenhouse_warehouse: str) -> str | None:
     for candidate in candidates:
         if _normalise_name_key(candidate) == target_key:
             return candidate
+    # Mona greenhouse-number fallback (e.g. "Main GH 10 - MFK" -> "GH010 - MFK").
+    gh_num = _greenhouse_number(greenhouse_warehouse)
+    if gh_num is not None:
+        gh_matches = [c for c in candidates if _greenhouse_number(c) == gh_num]
+        if len(gh_matches) == 1:
+            return gh_matches[0]
     return None
 
 

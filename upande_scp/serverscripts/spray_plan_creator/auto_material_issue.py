@@ -100,13 +100,6 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
 
     Throws (rolling back the triggering transaction) on any missing input.
     """
-    if not getattr(wo, "custom_cost_center", None):
-        frappe.throw(
-            f"Cannot auto-issue tank-mix: Work Order {wo.name} has no "
-            "custom_cost_center. Re-derive the cost center on the WO.",
-            title="Auto Material Issue",
-        )
-
     greenhouse = manufacture_se.to_warehouse
     if not greenhouse:
         frappe.throw(
@@ -114,6 +107,21 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
             "to_warehouse (greenhouse).",
             title="Auto Material Issue",
         )
+
+    # Cost center: prefer the WO's derived value, but fall back to resolving it
+    # from the greenhouse warehouse (mirrors spray_session). WOs created via
+    # createApplicationWorkOrder don't set custom_cost_center, so the fallback
+    # is what keeps the auto-issue working without per-WO data.
+    from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
+    cost_center = getattr(wo, "custom_cost_center", None) or match_cost_center(greenhouse)
+    if not cost_center:
+        frappe.throw(
+            f"Cannot auto-issue tank-mix: could not resolve a cost center for "
+            f"Work Order {wo.name} — set custom_cost_center on the WO, or "
+            f"custom_cost_center on greenhouse warehouse {greenhouse}.",
+            title="Auto Material Issue",
+        )
+
     farm = frappe.db.get_value("Warehouse", greenhouse, "custom_farm")
     if not farm:
         frappe.throw(
@@ -143,7 +151,7 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
             "conversion_factor": getattr(r, "conversion_factor", 1) or 1,
             "s_warehouse": greenhouse,
             "expense_account": resolve_expense_account(r.item_code, manufacture_se.company),
-            "cost_center": wo.custom_cost_center,
+            "cost_center": cost_center,
             "farm": farm,
         })
 
@@ -168,16 +176,16 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
         "letter_head": manufacture_se.letter_head or "",
         "custom_farm": farm,
         "custom_location": manufacture_se.custom_location or "",
-        "custom_biometric_verified": 0,
-        "custom_biometric_data": [],
+        # Record the supervisor in mona's native biometric fields for
+        # traceability. This issue is system-built and auto-submitted, so
+        # it is NOT gated on a scan: requires_biometric=0, status Pending —
+        # mirroring kaitet's old ``custom_biometric_verified=0``.
+        "requires_biometric": 0,
+        "bio_employee": supervisor_employee,
+        "bio_employee_name": emp_meta.get("employee_name") or supervisor_employee,
+        "department": emp_meta.get("department") or "",
+        "biometric_status": "Pending",
         "items": items,
-        "custom_employee_data": [{
-            "employee": supervisor_employee,
-            "employee_name": emp_meta.get("employee_name") or supervisor_employee,
-            "department": emp_meta.get("department") or "",
-            "location": emp_meta.get("location") or "",
-            "farm": farm,
-        }],
     }
 
 

@@ -405,12 +405,18 @@ fixtures = [
                         "Item-custom_scouting_and_crop_protection_tab",
                         "Item-custom_lower_rate_limit",
                         "Item-custom_upper_rate_limit",
+                        "Item-custom_low_stock_threshold",
+                        "Item-custom_application_rate",
+                        "Item-custom_greenhouse",
                         # BOM fields
                         "BOM-custom_water_hardness",
                         "BOM-custom_water_ph",
                         "BOM-custom_item_group",
                         # BOM Item fields
                         "BOM Item-custom_application_rate",
+                        "BOM Item-custom_application_rateper_ha_",
+                        # Material Request fields
+                        "Material Request-custom_farm",
                         # Work Order fields
                         "Work Order-custom_spray_team",
                         "Work Order-custom_reentry_time",
@@ -431,6 +437,22 @@ fixtures = [
                         "Work Order-custom_application_floor_plan",
                         # Work Order Item fields
                         "Work Order Item-custom_updated_required_qty",
+                        # Stock Entry biometric fields (mona-native, used by
+                        # store_keeper_api / auto_material_issue / lifecycle)
+                        "Stock Entry-custom_biometric_verification",
+                        "Stock Entry-custom_requires_biometric_verification",
+                        "Stock Entry-custom_employee_receiving",
+                        "Stock Entry-custom_employee_name",
+                        "Stock Entry-custom_department",
+                        "Stock Entry-custom_verification_status",
+                        "Stock Entry-custom_verified_at",
+                        "Stock Entry-custom_matched_biometric_log",
+                        # Stock Entry label-printing fields (lifecycle / Labels page)
+                        "Stock Entry-custom_labels_printed",
+                        "Stock Entry-custom_labels_print_count",
+                        "Stock Entry-custom_labels_printed_on",
+                        "Stock Entry-custom_labels_printed_by",
+                        "Stock Entry-custom_location",
                         # Farm fields
                         "Farm-spray_plan_creators",
                         # Spray Team fields

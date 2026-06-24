@@ -9,15 +9,19 @@ Manager / Administrator still allowed for support / debugging). The
 React sidebar gates the pages, but we re-check here so a curl call
 from another session can't sneak past.
 
-Biometric model mirrors the existing Material-Issue flow the team
-already trusts, but scp owns its own copy so it does not depend on the
-site-stored Desk Server Script: ``verify_employee`` reads the most
-recent ``Biometric Logs`` row from the last couple of minutes and
-returns ``{employee, employee_name, biometric_id}``. The frontend
-calls that once (UX prompt), then calls ``submit_with_biometric`` with
-the list of Stock Entry names to authorise. We re-validate the scan
-freshness server-side and write the result into each SE's
-``custom_biometric_data`` child table before submitting.
+Biometric model uses mona's native flat Stock Entry fields
+(``bio_employee`` / ``bio_employee_name`` / ``biometric_status`` /
+``biometric_verified_at`` / ``matched_biometric_log``) rather than the
+kaitet ``custom_employee_data`` / ``custom_biometric_data`` child tables
+(those live in the unported ``upande_kaitet`` app). ``verify_employee``
+reads the most recent ``Biometric Logs`` row from the last couple of
+minutes and returns ``{employee, employee_name, biometric_id}``. The
+frontend calls that once (UX prompt), then calls
+``submit_with_biometric`` with the list of Stock Entry names to
+authorise. We re-validate the scan freshness server-side, confirm the
+scanned employee matches each SE's assigned ``bio_employee``, then mark
+``biometric_status = Verified`` (with ``matched_biometric_log``) and
+submit.
 """
 
 import json
@@ -297,13 +301,15 @@ def search_employees(query: str = "", limit: int = 12) -> list:
 
 @frappe.whitelist()
 def bulk_assign_employee(names: str | list, employee: str) -> dict:
-    """Set ``custom_employee_data`` on every Stock Entry in ``names`` to
-    a single row pointing at ``employee``. Replaces whatever was there
-    so multiple bulk-assigns don't pile up duplicates.
+    """Assign ``employee`` as the receiving employee on every Stock Entry
+    in ``names`` using mona's native biometric fields (``bio_employee`` /
+    ``bio_employee_name`` / ``department``). Flags each SE as requiring
+    biometric verification and resets its status to ``Pending`` so a
+    stale prior verification can't carry over.
 
-    The submit step expects exactly one employee row per SE, so this
-    is the deliberate side door the operator uses to prepare a batch
-    for one biometric scan."""
+    The submit step matches the scanned identity against ``bio_employee``,
+    so this is the deliberate side door the operator uses to prepare a
+    batch for one biometric scan."""
     _check_perm()
     employee = (employee or "").strip()
     if not employee:
@@ -317,7 +323,7 @@ def bulk_assign_employee(names: str | list, employee: str) -> dict:
         frappe.throw("No Stock Entries selected.", frappe.ValidationError)
 
     emp_doc = frappe.db.get_value(
-        "Employee", employee, ["name", "employee_name"], as_dict=True,
+        "Employee", employee, ["name", "employee_name", "department"], as_dict=True,
     )
     if not emp_doc:
         frappe.throw(f"Employee {employee!r} not found.", frappe.ValidationError)
@@ -332,14 +338,13 @@ def bulk_assign_employee(names: str | list, employee: str) -> dict:
                 raise frappe.ValidationError(
                     f"{name}: already submitted or cancelled.",
                 )
-            doc.set("custom_employee_data", [])
-            doc.append(
-                "custom_employee_data",
-                {
-                    "employee":      emp_doc["name"],
-                    "employee_name": emp_doc["employee_name"],
-                },
-            )
+            doc.requires_biometric = 1
+            doc.bio_employee = emp_doc["name"]
+            doc.bio_employee_name = emp_doc["employee_name"]
+            doc.department = emp_doc.get("department") or ""
+            doc.biometric_status = "Pending"
+            doc.biometric_verified_at = None
+            doc.matched_biometric_log = None
             doc.save(ignore_permissions=False)
             ok_count += 1
             results.append({"name": name, "ok": True, "error": None})
@@ -391,6 +396,7 @@ def list_draft_transfers(
         f"""
         SELECT se.name, se.posting_date, se.work_order,
                se.from_warehouse, se.to_warehouse,
+               se.bio_employee, se.bio_employee_name,
                COALESCE(tw.custom_farm, fw.custom_farm, '') AS farm,
                (SELECT SUM(it.qty)
                 FROM   `tabStock Entry Detail` it
@@ -413,31 +419,19 @@ def list_draft_transfers(
     if farm:
         rows = [r for r in rows if (r.get("farm") or "") == farm]
 
-    # Employee assignment (custom_employee_data) is the only thing the
-    # bulk submit needs server-side to validate the biometric. Pull it
-    # in one query so a 50-draft list doesn't fire 50 sub-queries.
-    names = [r["name"] for r in rows]
-    emp_by_se: dict = {}
-    if names:
-        emp_rows = frappe.db.sql(
-            """
-            SELECT parent, employee, employee_name
-            FROM   `tabEmployee Request`
-            WHERE  parenttype = 'Stock Entry'
-              AND  parentfield = 'custom_employee_data'
-              AND  parent IN %(names)s
-            ORDER  BY parent, idx
-            """,
-            {"names": names},
-            as_dict=True,
-        )
-        for er in emp_rows:
-            emp_by_se.setdefault(er["parent"], []).append(
-                {"employee": er["employee"], "employee_name": er["employee_name"]},
-            )
-
+    # Employee assignment now lives in mona's native flat fields on the
+    # Stock Entry itself (``bio_employee`` / ``bio_employee_name``) rather
+    # than a ``custom_employee_data`` child table. There is at most one
+    # assigned employee per SE; surface it as a 0-or-1-element ``employees``
+    # list so the React table's contract is unchanged.
     for r in rows:
-        r["employees"] = emp_by_se.get(r["name"], [])
+        bio_emp = r.pop("bio_employee", None)
+        bio_name = r.pop("bio_employee_name", None)
+        r["employees"] = (
+            [{"employee": bio_emp, "employee_name": bio_name or bio_emp}]
+            if bio_emp
+            else []
+        )
         r["total_qty"] = float(r["total_qty"] or 0)
         r["item_count"] = int(r["item_count"] or 0)
 
@@ -593,7 +587,7 @@ def _latest_biometric_log() -> dict | None:
     threshold = add_to_date(now_datetime(), seconds=-_SCAN_FRESHNESS_SEC)
     rows = frappe.db.sql(
         """
-        SELECT employee, employee_name, biometric_id, `time`
+        SELECT name, employee, employee_name, biometric_id, `time`
         FROM   `tabBiometric Logs`
         WHERE  `time` > %(t)s
         ORDER  BY `time` DESC
@@ -629,9 +623,10 @@ def submit_with_biometric(names: str | list) -> dict:
 
     Per-SE validation:
       * SE must exist and be a draft Material Transfer for Manufacture.
-      * SE's ``custom_employee_data`` must contain exactly one row.
-      * The scanned employee must match that row.
-      * Write the scanned identity to ``custom_biometric_data``.
+      * SE must have an assigned ``bio_employee``.
+      * The scanned employee must match ``bio_employee``.
+      * Record the match in mona's native fields (``biometric_status`` =
+        ``Verified``, ``biometric_verified_at``, ``matched_biometric_log``).
       * Save, then submit.
 
     Returns ``{ok: int, failed: int, results: [{name, ok, error}]}``.
@@ -673,29 +668,23 @@ def submit_with_biometric(names: str | list) -> dict:
                 raise frappe.ValidationError(
                     f"{name}: purpose is not {_SE_PURPOSE}.",
                 )
-            emp_rows = doc.get("custom_employee_data") or []
-            if len(emp_rows) != 1:
+            expected = doc.bio_employee
+            expected_name = doc.bio_employee_name or expected
+            if not expected:
                 raise frappe.ValidationError(
-                    f"{name}: needs exactly one Employee Data row "
-                    f"(found {len(emp_rows)}).",
+                    f"{name}: no receiving employee assigned — assign one "
+                    f"before scanning.",
                 )
-            expected = emp_rows[0].employee
-            expected_name = emp_rows[0].employee_name
             if expected != scanned_emp:
                 raise frappe.ValidationError(
                     f"{name}: biometric belongs to {scanned_name} but "
                     f"the entry is assigned to {expected_name}.",
                 )
 
-            doc.set("custom_biometric_data", [])
-            doc.append(
-                "custom_biometric_data",
-                {
-                    "employee":      scanned_emp,
-                    "employee_name": scanned_name,
-                    "biometric_id":  biometric_id,
-                },
-            )
+            doc.requires_biometric = 1
+            doc.biometric_status = "Verified"
+            doc.biometric_verified_at = now_datetime()
+            doc.matched_biometric_log = scan["name"]
             doc.save(ignore_permissions=False)
             doc.submit()
             ok_count += 1

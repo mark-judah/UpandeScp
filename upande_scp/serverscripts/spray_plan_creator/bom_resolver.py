@@ -103,12 +103,16 @@ def create_bom_for_plan(wo) -> str | None:
     bom.item = fg_item
     bom.custom_item_group = CHEMICAL_MIX
     bom.company = wo.company
-    # custom_business_unit is mandatory on BOM (mirror create_bom.createBOM);
-    # carry the value from an existing BOM for this FG item, else "Roses".
-    bom.custom_business_unit = (
-        frappe.db.get_value("BOM", {"item": fg_item}, "custom_business_unit")
-        or "Roses"
-    )
+    # custom_business_unit is mandatory on BOM on kaitet (mirror
+    # create_bom.createBOM); carry the value from an existing BOM for this FG
+    # item, else "Roses". Guarded by has_field because the mona/roses port has
+    # no "Business Unit" doctype (single business unit), so the field is absent
+    # there — reading it would 1054 and it's not a concept on that site.
+    if frappe.get_meta("BOM").has_field("custom_business_unit"):
+        bom.custom_business_unit = (
+            frappe.db.get_value("BOM", {"item": fg_item}, "custom_business_unit")
+            or "Roses"
+        )
     farm = _plan_farm(wo)
     if farm:
         bom.custom_farm = farm

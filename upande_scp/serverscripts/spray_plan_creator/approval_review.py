@@ -29,10 +29,10 @@ def get_approval_review(wo_name: str) -> dict:
         lower = lower or None
         upper = upper or None
 
-        # Fetch IRAC codes for this item via child table (live DB col: irac_code)
-        irac_codes = _get_item_codes(r.item_code, _IRAC_CHILD_TABLE, "custom_irac", "irac_code") if item_exists else []
-        # Fetch FRAC codes for this item via child table (live DB col: frac_code)
-        frac_codes = _get_item_codes(r.item_code, _FRAC_CHILD_TABLE, "custom_frac", "frac_code") if item_exists else []
+        # Fetch IRAC/FRAC codes for this item via child table. The Code Filter
+        # child doctypes store the value in the ``code`` column (Link).
+        irac_codes = _get_item_codes(r.item_code, _IRAC_CHILD_TABLE, "custom_irac", "code") if item_exists else []
+        frac_codes = _get_item_codes(r.item_code, _FRAC_CHILD_TABLE, "custom_frac", "code") if item_exists else []
 
         # Rate limits (custom_lower_rate_limit/custom_upper_rate_limit) are
         # per-1000 L; required_qty is the absolute, so derive the rate to compare.
@@ -107,10 +107,10 @@ def _get_item_codes(item_code: str, child_table: str, parent_field: str,
                     code_col: str) -> list[str]:
     """Return the list of code values from a Table MultiSelect child table for an Item.
 
-    ``code_col`` is the actual DB column that holds the code value.  This differs
-    between the two child tables:
-      - ``tabIRAC Code Filter``: column ``irac_code``
-      - ``tabFRAC Code Filter``: column ``frac_code``
+    ``code_col`` is the actual DB column that holds the code value. Both Code
+    Filter child doctypes (``IRAC Code Filter`` / ``FRAC Code Filter``) store it
+    in the ``code`` column (Link). (Kaitet additionally has a legacy
+    ``irac_code``/``frac_code`` column; the app's canonical field is ``code``.)
     """
     rows = frappe.db.sql(
         f"SELECT `{code_col}` AS code"
@@ -134,11 +134,11 @@ def _detect_resistance_warnings(
     if code_kind == "irac":
         child_table = _IRAC_CHILD_TABLE
         parent_field = "custom_irac"
-        code_col = "irac_code"
+        code_col = "code"
     else:
         child_table = _FRAC_CHILD_TABLE
         parent_field = "custom_frac"
-        code_col = "frac_code"
+        code_col = "code"
 
     cutoff = add_days(now_datetime(), -window_days)
     rows = frappe.db.sql(

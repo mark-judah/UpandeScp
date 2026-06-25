@@ -23,6 +23,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sliders,
+  Workflow,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -32,6 +33,7 @@ import { AccessTab } from "@/components/settings/AccessTab";
 import { ChemicalsTab } from "@/components/settings/ChemicalsTab";
 import { FarmMapTab } from "@/components/settings/FarmMapTab";
 import { SprayPlanTab } from "@/components/settings/SprayPlanTab";
+import { ProcessesTab } from "@/components/settings/ProcessesTab";
 import { ThresholdsTab } from "@/components/settings/ThresholdsTab";
 import { OrderingTab } from "@/components/settings/OrderingTab";
 import { FrappeError } from "@/lib/frappe";
@@ -40,7 +42,7 @@ import {
   type SettingsBundle,
 } from "@/lib/settings-api";
 
-const TABS = ["access", "spray-plan", "thresholds", "ordering", "farms", "chemicals"] as const;
+const TABS = ["access", "spray-plan", "processes", "thresholds", "ordering", "farms", "chemicals"] as const;
 type TabId = (typeof TABS)[number];
 
 function getInitialTab(): TabId {
@@ -164,6 +166,10 @@ export function Settings() {
                 <Sliders />
                 Spray Plan
               </TabsTrigger>
+              <TabsTrigger value="processes">
+                <Workflow />
+                Processes
+              </TabsTrigger>
               <TabsTrigger value="thresholds">
                 <Gauge />
                 Thresholds
@@ -189,6 +195,14 @@ export function Settings() {
               <SprayPlanTab
                 initial={bundle.spray_plan}
                 farms={bundle.farms}
+                onSaved={(saved) =>
+                  setBundle({ ...bundle, spray_plan: saved })
+                }
+              />
+            </TabsContent>
+            <TabsContent value="processes">
+              <ProcessesTab
+                initial={bundle.spray_plan}
                 onSaved={(saved) =>
                   setBundle({ ...bundle, spray_plan: saved })
                 }

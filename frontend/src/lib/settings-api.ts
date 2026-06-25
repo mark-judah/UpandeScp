@@ -24,6 +24,8 @@ export interface SprayPlanSettings {
   weather_temp_red_max_c: number;
   weather_temp_red_min_c: number;
   default_chemical_expense_account: string;
+  /** GM-approved CSU scan confirmation method: "Scan Labels" | "Tick Confirmation". */
+  scan_verification_method: string;
   bypass_owner_check: number;
   auto_cancel_enabled: number;
   auto_cancel_apply_to_backlog: number;

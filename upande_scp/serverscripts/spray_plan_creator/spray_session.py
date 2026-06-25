@@ -105,6 +105,27 @@ def _scanned_codes(wo) -> set[str]:
 # ───────────────────────────── register_csu_scan ─────────────────────────────
 
 
+def _scan_verification_method() -> str:
+    """GM-configured CSU scan confirmation method, from Spray Plan Settings.
+
+    Returns ``"tick"`` when the GM has approved tick-confirmation as a substitute
+    for scanning the QR/label, else ``"labels"`` (the default — an actual scan is
+    required). Unset / any other value is treated as ``"labels"``.
+    """
+    val = (
+        frappe.db.get_single_value("Spray Plan Settings", "scan_verification_method")
+        or ""
+    ).strip()
+    return "tick" if val == "Tick Confirmation" else "labels"
+
+
+@frappe.whitelist()
+def get_scan_verification_method() -> dict[str, Any]:
+    """Read-only: the current GM-approved CSU scan method, for the mobile app to
+    decide whether to show a scan control or a tick-to-confirm control."""
+    return {"method": _scan_verification_method()}
+
+
 @frappe.whitelist()
 def register_csu_scan(
     work_order: str,
@@ -113,6 +134,7 @@ def register_csu_scan(
     csu_warehouse: str | None = None,
     gps_lat: float | None = None,
     gps_lon: float | None = None,
+    via_tick: int | str | None = None,
 ) -> dict[str, Any]:
     """Upsert one chemical's scan row on a Work Order.
 
@@ -129,6 +151,22 @@ def register_csu_scan(
     """
     if not work_order or not item_code:
         frappe.throw("work_order and item_code are required.")
+
+    # Round-trip guard for the tick substitute: the mobile app may confirm a scan
+    # with a tick INSTEAD of scanning the QR/label, but only when the GM has
+    # approved that method. If the GM is on "Scan Labels", reject the tick so a
+    # stale app is forced back to scanning the label.
+    via_tick = str(via_tick or "").strip().lower() in ("1", "true", "yes")
+    if via_tick:
+        if _scan_verification_method() != "tick":
+            frappe.throw(
+                "Tick confirmation is not enabled by the General Manager — "
+                "please scan the chemical label/QR instead.",
+                title="Scan required",
+            )
+        # Reuse the existing scan concept: a tick records the same scan row.
+        if not qr_payload:
+            qr_payload = "TICK"
 
     current_state = _lock_wo(work_order)
     wo = frappe.get_doc("Work Order", work_order)

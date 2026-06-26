@@ -73,6 +73,7 @@ import {
   type TeamMemberRow,
 } from "@/components/spray-plan/SprayTeamEditor";
 import { computeAreaHa } from "@/lib/application-plan-area";
+import { filterTeamsByFarm } from "@/lib/spray-team-filter";
 import { FrappeError } from "@/lib/frappe";
 import { ymd } from "@/lib/utils";
 import {
@@ -758,6 +759,10 @@ export function ApplicationPlan() {
       ""
     );
   }, [greenhouse, bootstrap]);
+  const scopedTeams = useMemo(
+    () => filterTeamsByFarm(bootstrap?.spray_teams || [], greenhouseFarm),
+    [bootstrap, greenhouseFarm],
+  );
 
   /** Same heuristic as the www page's ``warehouseMatchesFarm``: a source
    *  warehouse "belongs" to a farm if its name contains the farm name
@@ -1617,7 +1622,7 @@ export function ApplicationPlan() {
               </div>
               <div className="col-span-2">
                 <SprayTeamEditor
-                  teams={bootstrap?.spray_teams || []}
+                  teams={scopedTeams}
                   team={sprayTeam}
                   onTeamChange={setSprayTeam}
                   members={teamMembers}

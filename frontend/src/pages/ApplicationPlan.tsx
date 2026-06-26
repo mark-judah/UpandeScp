@@ -763,6 +763,10 @@ export function ApplicationPlan() {
       })),
     [bootstrap],
   );
+  const kitWarehouse = useMemo(
+    () => kitList.find((k) => k.kit === kit)?.warehouse || "",
+    [kitList, kit],
+  );
 
   /** Farm of the picked greenhouse — drives the "wrong store" amber
    *  warning on the Chemical Stock matrix. Empty when no greenhouse is
@@ -1660,6 +1664,13 @@ export function ApplicationPlan() {
                     ))}
                   </SelectContent>
                 </Select>
+                {kit ? (
+                  <span className="text-xs text-muted-foreground">
+                    {kitWarehouse
+                      ? `Chemicals go to ${kitWarehouse}`
+                      : "This kit has no destination CSU mapped — submission will be blocked."}
+                  </span>
+                ) : null}
               </div>
               <div className="col-span-2">
                 <Label className="flex items-center justify-between">

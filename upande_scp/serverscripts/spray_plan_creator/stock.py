@@ -16,7 +16,6 @@ render them with different semantics.
 """
 from __future__ import annotations
 
-import re
 from collections import defaultdict, deque
 from datetime import datetime
 
@@ -25,17 +24,10 @@ from frappe.utils import add_to_date, get_datetime, now_datetime
 
 from .bulk import _user_has_role
 from .scope import _resolve_user_scope
+from upande_scp.serverscripts.warehouse_classify import is_chemical_store, is_csu
 
 
 _CHEMICAL_GROUPS = ("CHEMICALS", "Fertilizer")
-
-_CSU_RE = re.compile(r"\bcsu\b", re.IGNORECASE)
-# The chemical store warehouse. Named "Chemical Store - <farm>" on some sites
-# and "Chemical Main Store - <farm>" on mona, so match "chemical" ... "store"
-# anywhere rather than anchoring on a literal "chemical store" prefix. CSUs
-# ("Main CSU - MFK") and greenhouses have no "store" token, so this stays
-# distinct from _CSU_RE.
-_STORE_RE = re.compile(r"\bchemical\b.*\bstore\b", re.IGNORECASE)
 
 # Hard ceiling on how long chemicals are allowed to sit unused in a CSU
 # before they're flagged as aged. The user-facing label on every aged
@@ -59,9 +51,9 @@ _QTY_EPS = 1e-9
 
 
 def _classify(warehouse_name: str) -> str | None:
-    if _STORE_RE.match(warehouse_name or ""):
+    if is_chemical_store(warehouse_name):
         return "chemical_store"
-    if _CSU_RE.search(warehouse_name or ""):
+    if is_csu(warehouse_name):
         return "csu"
     return None
 

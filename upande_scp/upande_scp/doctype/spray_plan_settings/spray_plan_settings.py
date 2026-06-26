@@ -24,27 +24,6 @@ def get_allowed_farms():
     return [f for f in farms if f]
 
 
-def _allowed_warehouses_by_prefix(prefix):
-    """Return non-disabled Warehouse names whose ``custom_farm`` is in the
-    Spray Plan Settings allowed-farms list and whose name begins with
-    ``prefix``. Empty when no farms are configured.
-    """
-    farms = get_allowed_farms()
-    if not farms:
-        return []
-    rows = frappe.get_all(
-        "Warehouse",
-        filters={
-            "name": ("like", f"{prefix} %"),
-            "custom_farm": ("in", farms),
-            "disabled": 0,
-        },
-        pluck="name",
-        order_by="name asc",
-    )
-    return list(rows)
-
-
 def _allowed_warehouses_matching(predicate):
     """Non-disabled Warehouse names whose ``custom_farm`` is in the allowed-
     farms list and whose name satisfies ``predicate``. Empty when no farms

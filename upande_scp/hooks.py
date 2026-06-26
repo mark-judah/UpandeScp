@@ -89,6 +89,12 @@ doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # install (or a newly added pest doc) gets sensible defaults without manual
 # steps. The seed only fills empty colour fields, so operator-set overrides
 # are preserved.
+# Rebuild the React SPA before every migrate so each deploy serves the latest
+# UI. public/dist is gitignored and `bench build` does not run this app's Vite
+# build, so without this the live site freezes on a hand-built bundle and new
+# pages never ship. Set UPANDE_SCP_SKIP_FRONTEND_BUILD=1 to skip locally.
+before_migrate = ["upande_scp.serverscripts.frontend_build.before_migrate"]
+
 after_migrate = ["upande_scp.serverscripts.observation_colors.after_migrate"]
 
 # Uninstallation

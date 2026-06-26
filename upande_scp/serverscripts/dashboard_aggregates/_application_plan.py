@@ -194,7 +194,14 @@ def _query_kind(filters: dict, kind: str) -> list:
     }
     crop_clause = ""
     if filters["crop"]:
-        crop_clause = "AND se.crop_scouted = %(crop)s"
+        # Roses-only sites (e.g. mona) leave crop_scouted unset on every
+        # Scouting Entry, so a strict equality filter drops every row and the
+        # diagnose plot / curative targets come back empty. Treat unset crop as
+        # a match: the filter only EXCLUDES rows tagged to a *different* crop.
+        crop_clause = (
+            "AND (se.crop_scouted = %(crop)s "
+            "OR se.crop_scouted IS NULL OR se.crop_scouted = '')"
+        )
         params["crop"] = filters["crop"]
 
     rows = frappe.db.sql(

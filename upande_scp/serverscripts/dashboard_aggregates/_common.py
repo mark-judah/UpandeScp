@@ -339,7 +339,13 @@ def parent_filter_conditions(
     params = {"from_date": from_date, "to_date": to_date}
 
     if crop:
-        parts.append("se.crop_scouted = %(crop)s")
+        # Roses-only sites (e.g. mona) leave crop_scouted unset on every
+        # Scouting Entry, so a strict equality filter drops every row. Treat
+        # unset crop as a match: only EXCLUDE rows tagged to a different crop.
+        parts.append(
+            "(se.crop_scouted = %(crop)s "
+            "OR se.crop_scouted IS NULL OR se.crop_scouted = '')"
+        )
         params["crop"] = crop
 
     if greenhouse_scope is not None:

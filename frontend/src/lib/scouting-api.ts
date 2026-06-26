@@ -395,11 +395,13 @@ export async function fetchFarmsAndWarehouses(): Promise<
 
 /** Most recent scouting date (YYYY-MM-DD) or null — lets map pages anchor
  *  their default date range on where the data actually is, not "today". */
-export async function fetchLatestScoutingDate(): Promise<string | null> {
+export async function fetchLatestScoutingDate(
+  greenhouse?: string,
+): Promise<string | null> {
   try {
     const r = await call<string | null>(
       "upande_scp.serverscripts.scouting_metrics_api.get_latest_scouting_date",
-      {},
+      greenhouse ? { greenhouse } : {},
     );
     return r || null;
   } catch {

@@ -52,6 +52,7 @@ import {
   fetchBedsByGreenhouse,
   fetchBomDetails,
   fetchChemicalBalances,
+  fetchLatestScoutingDate,
   fetchZonesByGreenhouse,
   searchChemicalItems,
   type BedAreaRow,
@@ -226,6 +227,7 @@ export function ApplicationPlan() {
   // Spray Plan Settings.allowed_farms for the current user.
   const [farmFilter, setFarmFilter] = useState<string>("");
   const [greenhouse, setGreenhouse] = useState<string>("");
+  const [lastScoutDate, setLastScoutDate] = useState<string | null>(null);
   const [diag, setDiag] = useState<DiagnoseFilters>({
     pest: ALL,
     stage: ALL,
@@ -442,6 +444,22 @@ export function ApplicationPlan() {
     };
   }, [newBomSearch, bomDialogOpen]);
 
+  // True absolute last scouted day for the picked greenhouse — independent
+  // of the diagnose date window / pest filters (which can hide it).
+  useEffect(() => {
+    let cancelled = false;
+    if (!greenhouse) {
+      setLastScoutDate(null);
+      return;
+    }
+    fetchLatestScoutingDate(greenhouse).then((d) => {
+      if (!cancelled) setLastScoutDate(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [greenhouse]);
+
   // Reset scope-detail extras when the scope or greenhouse changes.
   useEffect(() => {
     setSelectedVarieties(new Set());
@@ -617,10 +635,7 @@ export function ApplicationPlan() {
     [zoneObs],
   );
 
-  const latestScoutingDate = useMemo(
-    () => diagnose?.latestDate ?? null,
-    [diagnose],
-  );
+  const latestScoutingDate = lastScoutDate;
 
   const filterOpts = useMemo(() => {
     const pests = new Set<string>();
@@ -1211,7 +1226,7 @@ export function ApplicationPlan() {
               {loading && !latestScoutingDate
                 ? "Loading…"
                 : latestScoutingDate ||
-                  (greenhouse ? "No entries in 60 days" : "—")}
+                  (greenhouse ? "No scouting entries" : "—")}
             </span>
           </div>
           {greenhouse && (

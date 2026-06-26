@@ -120,7 +120,11 @@ def _build(filters: dict, job_id: str = "") -> dict:
     for r in all_rows:
         if not matches(r):
             continue
-        z = r.get("zone")
+        # Some sites (mona) imported zone names wrapped in literal double-quotes
+        # in tabScouting Entry.zone. The client matches these keys against zone
+        # geometry whose names are quote-stripped at the get_beds_and_zones
+        # boundary, so strip here too or no marker ever lands on the plot.
+        z = (r.get("zone") or "").strip('"')
         if not z:
             continue
         n = int(r.get("n") or 0)

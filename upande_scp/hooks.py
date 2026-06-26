@@ -470,6 +470,13 @@ fixtures = [
                         "Work Order-custom_rate_overridden",
                         "Work Order-custom_weather_snapshot",
                         "Work Order-custom_spray_plan_team_members",
+                        # Farm scoping backbone + spray-execution fields
+                        # needed by the Application Plan flow.
+                        "Warehouse-custom_farm",
+                        "BOM-custom_farm",
+                        "Cost Center-custom_farm",
+                        "Work Order-custom_chemical_scans",
+                        "Work Order-custom_spray_application_logsheet",
                 ]
             ]
         ]

@@ -81,16 +81,24 @@ def get_map_settings():
 
 
 @frappe.whitelist()
-def get_latest_scouting_date():
+def get_latest_scouting_date(greenhouse=None):
     """Most recent ``Scouting Entry.date_of_capture`` (YYYY-MM-DD) or None.
 
-    Lets the map pages default their date range to where the data actually
-    is, instead of "today" — which is empty whenever scouting paused for a
-    while (e.g. a fresh/imported site whose latest data is weeks old).
+    With ``greenhouse`` set, returns that greenhouse's absolute latest scout
+    date — independent of any dashboard date window or observation filter, so
+    the Application Plan header shows the true last scouted day. Without it,
+    returns the site-wide latest (used by the map pages to seed date ranges).
     """
-    row = frappe.db.sql(
-        "SELECT MAX(date_of_capture) FROM `tabScouting Entry`"
-    )
+    greenhouse = (greenhouse or "").strip()
+    if greenhouse:
+        row = frappe.db.sql(
+            "SELECT MAX(date_of_capture) FROM `tabScouting Entry` WHERE greenhouse=%s",
+            (greenhouse,),
+        )
+    else:
+        row = frappe.db.sql(
+            "SELECT MAX(date_of_capture) FROM `tabScouting Entry`"
+        )
     return str(row[0][0]) if row and row[0] and row[0][0] else None
 
 

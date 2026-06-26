@@ -72,6 +72,7 @@ import {
   SprayTeamEditor,
   type TeamMemberRow,
 } from "@/components/spray-plan/SprayTeamEditor";
+import { computeAreaHa } from "@/lib/application-plan-area";
 import { FrappeError } from "@/lib/frappe";
 import { ymd } from "@/lib/utils";
 import {
@@ -484,36 +485,10 @@ export function ApplicationPlan() {
   const { areaHa, waterVolumeL } = useMemo(() => {
     if (!greenhouse || !scope) return { areaHa: 0, waterVolumeL: 0 };
     const beds = bedsByGh[greenhouse] || [];
-    let sqm = 0;
-    if (scope === "Full Greenhouse") {
-      sqm = beds.reduce((s, b) => s + (b.bed__area || 0), 0);
-    } else if (scope === "Specific Variety") {
-      const accounted = new Set<string>();
-      for (const b of beds) {
-        if (
-          b.variety &&
-          selectedVarieties.has(b.variety) &&
-          !accounted.has(b.variety)
-        ) {
-          // Sum the variety's full footprint in this greenhouse on first
-          // encounter, then mark it accounted so a multi-bed variety
-          // doesn't double-count.
-          const total = beds
-            .filter((x) => x.variety === b.variety)
-            .reduce((s, x) => s + (x.bed__area || 0), 0);
-          sqm += total;
-          accounted.add(b.variety);
-        }
-      }
-    } else if (scope === "Specific Bed(s)") {
-      const wanted = parseBedRanges(bedNumbers);
-      if (wanted.size) {
-        for (const b of beds) {
-          if (b.bed && wanted.has(String(b.bed))) sqm += b.bed__area || 0;
-        }
-      }
-    }
-    const ha = sqm > 0 ? sqm / 10000 : 0;
+    const selectedBeds = parseBedRanges(bedNumbers);
+    // mona rule: full greenhouse = 1 ha; partial scope scaled by bed-count
+    // share. See @/lib/application-plan-area.
+    const ha = computeAreaHa(scope, beds, selectedVarieties, selectedBeds);
     return {
       areaHa: ha,
       waterVolumeL: ha > 0 ? ha * WATER_VOLUME_RATE : 0,

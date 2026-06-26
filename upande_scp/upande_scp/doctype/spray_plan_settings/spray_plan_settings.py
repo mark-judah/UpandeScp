@@ -4,6 +4,11 @@
 import frappe
 from frappe.model.document import Document
 
+from upande_scp.serverscripts.warehouse_classify import (
+    is_chemical_store,
+    is_fertilizer_store,
+)
+
 
 class SprayPlanSettings(Document):
     pass
@@ -40,15 +45,27 @@ def _allowed_warehouses_by_prefix(prefix):
     return list(rows)
 
 
+def _allowed_warehouses_matching(predicate):
+    """Non-disabled Warehouse names whose ``custom_farm`` is in the allowed-
+    farms list and whose name satisfies ``predicate``. Empty when no farms
+    are configured."""
+    farms = get_allowed_farms()
+    if not farms:
+        return []
+    rows = frappe.get_all(
+        "Warehouse",
+        filters={"custom_farm": ("in", farms), "disabled": 0},
+        pluck="name",
+        order_by="name asc",
+    )
+    return [name for name in rows if predicate(name)]
+
+
 def get_allowed_chemical_store_warehouses():
     """Chemical-store warehouses scoped to allowed farms."""
-    return _allowed_warehouses_by_prefix("Chemical Store")
+    return _allowed_warehouses_matching(is_chemical_store)
 
 
 def get_allowed_fertilizer_unit_warehouses():
-    """Fertilizer-store warehouses scoped to allowed farms.
-
-    Named ``..._unit_...`` for caller readability — the underlying
-    Warehouse names use the ``Fertilizer Store`` prefix.
-    """
-    return _allowed_warehouses_by_prefix("Fertilizer Store")
+    """Fertilizer-store warehouses scoped to allowed farms."""
+    return _allowed_warehouses_matching(is_fertilizer_store)

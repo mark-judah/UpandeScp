@@ -538,9 +538,10 @@ fixtures = [
     {
         "dt": "Trap Report Settings"
     },
-    {
-        "dt": "Crop Scouted"
-    },
+    # NOTE: "Crop Scouted" is intentionally NOT shipped. Its records (e.g.
+    # "Rose") already exist on live sites and autoname independently of
+    # crop_name, so importing the fixture violates the unique crop_name key
+    # ("Duplicate entry 'Rose'"). Crop catalog is site-owned data, not shipped.
     {
         "doctype": "Workflow State",
         "filters": [["name", "in", [

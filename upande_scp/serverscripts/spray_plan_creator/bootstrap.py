@@ -57,44 +57,7 @@ def fetch_creator_bootstrap() -> dict:
             r["custom_farm"] = frappe.db.get_value("Warehouse", r["warehouse"], "custom_farm")
             kits.append(r)
 
-    # Spray teams are matched by farm-name substring on the team_name —
-    # custom_farm is unreliable (not all teams have it populated; the
-    # backfill only covered teams with a clean WO history). Convention
-    # at Upande is to prefix the team name with the farm (e.g.
-    # "CHEPSITO CSU 1" belongs to the "Chepsito" farm).
-    spray_teams = []
-    if farms:
-        name_clauses = " OR ".join(["LOWER(name) LIKE %s"] * len(farms))
-        like_params = [f"%{(f or '').lower()}%" for f in farms]
-        rows = frappe.db.sql(
-            f"""SELECT name, custom_farm FROM `tabSpray Team`
-                WHERE enabled = 1 AND ({name_clauses})""",
-            like_params,
-            as_dict=True,
-        )
-        # De-dupe in case a team name matches multiple allowed farms.
-        seen = set()
-        for row in rows:
-            if row["name"] in seen:
-                continue
-            seen.add(row["name"])
-            spray_teams.append(row)
-    for t in spray_teams:
-        # JOIN onto Employee so the picker can show real names alongside the
-        # Employee ID (== payroll number). Coalesce avoids dropping rows when
-        # the Employee row was renamed or deleted out from under the team.
-        t["members"] = frappe.db.sql(
-            """SELECT std.name1 AS employee,
-                      COALESCE(emp.employee_name, std.name1) AS employee_name,
-                      emp.designation AS designation,
-                      std.role AS role
-                 FROM `tabSpray Team Details` std
-                 LEFT JOIN `tabEmployee` emp ON emp.name = std.name1
-                WHERE std.parent = %s
-                ORDER BY std.idx""",
-            (t["name"],),
-            as_dict=True,
-        )
+    spray_teams = _fetch_spray_teams(farms)
 
     # BOMs are NOT farm-scoped in the picker. The www form has always
     # shown every active Chemical Mix BOM regardless of farm, so the
@@ -154,6 +117,67 @@ def fetch_creator_bootstrap() -> dict:
         "irac_window_days": settings.irac_rotation_window_days or 14,
         "frac_window_days": settings.frac_rotation_window_days or 21,
     }
+
+
+def _fetch_spray_teams(farms: list) -> list:
+    """Spray teams visible to a user whose allowed farms are ``farms``.
+
+    A team matches when its ``custom_farm`` is one of the allowed farms, OR it
+    has no ``custom_farm`` set (treated as global/unscoped), OR — legacy
+    convention — an allowed farm name appears in the team name (e.g.
+    "CHEPSITO CSU 1" belongs to the "Chepsito" farm). Older code matched ONLY
+    by name substring, which silently dropped farm-tagged teams whose name
+    didn't contain the farm (e.g. mona's "Team A" on farm "Main"). The
+    frontend narrows further to the *selected greenhouse's* farm; this returns
+    the full candidate set so farm-tagged and unfarmed teams both reach it.
+    Each team carries its members joined from Employee.
+    """
+    if not farms:
+        return []
+
+    params: dict = {"farms": tuple(farms)}
+    name_parts = []
+    for i, f in enumerate(farms):
+        key = f"name{i}"
+        name_parts.append(f"LOWER(name) LIKE %({key})s")
+        params[key] = f"%{(f or '').lower()}%"
+    where = " OR ".join(
+        ["custom_farm IN %(farms)s", "custom_farm IS NULL", "custom_farm = ''"]
+        + name_parts
+    )
+    rows = frappe.db.sql(
+        f"""SELECT name, custom_farm FROM `tabSpray Team`
+            WHERE enabled = 1 AND ({where})
+            ORDER BY name""",
+        params,
+        as_dict=True,
+    )
+
+    spray_teams = []
+    seen = set()
+    for row in rows:
+        if row["name"] in seen:
+            continue
+        seen.add(row["name"])
+        spray_teams.append(row)
+
+    for t in spray_teams:
+        # JOIN onto Employee so the picker can show real names alongside the
+        # Employee ID (== payroll number). Coalesce avoids dropping rows when
+        # the Employee row was renamed or deleted out from under the team.
+        t["members"] = frappe.db.sql(
+            """SELECT std.name1 AS employee,
+                      COALESCE(emp.employee_name, std.name1) AS employee_name,
+                      emp.designation AS designation,
+                      std.role AS role
+                 FROM `tabSpray Team Details` std
+                 LEFT JOIN `tabEmployee` emp ON emp.name = std.name1
+                WHERE std.parent = %s
+                ORDER BY std.idx""",
+            (t["name"],),
+            as_dict=True,
+        )
+    return spray_teams
 
 
 def _empty_bootstrap() -> dict:

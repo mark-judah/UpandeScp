@@ -443,16 +443,15 @@ fixtures = [
                         "Work Order-custom_application_floor_plan",
                         # Work Order Item fields
                         "Work Order Item-custom_updated_required_qty",
-                        # Stock Entry biometric fields (mona-native, used by
-                        # store_keeper_api / auto_material_issue / lifecycle)
+                        # SCP's own biometric-section container. The actual
+                        # biometric fields (requires_biometric / bio_employee /
+                        # bio_employee_name / department / biometric_status /
+                        # biometric_verified_at / matched_biometric_log) are
+                        # mona-NATIVE — store_keeper_api consumes them but they
+                        # already exist on the site, so shipping them as fixtures
+                        # collides on migrate ("field already exists"). Do NOT
+                        # add them here.
                         "Stock Entry-custom_biometric_verification",
-                        "Stock Entry-custom_requires_biometric_verification",
-                        "Stock Entry-custom_employee_receiving",
-                        "Stock Entry-custom_employee_name",
-                        "Stock Entry-custom_department",
-                        "Stock Entry-custom_verification_status",
-                        "Stock Entry-custom_verified_at",
-                        "Stock Entry-custom_matched_biometric_log",
                         # Stock Entry label-printing fields (lifecycle / Labels page)
                         "Stock Entry-custom_labels_printed",
                         "Stock Entry-custom_labels_print_count",

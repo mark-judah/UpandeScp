@@ -31,6 +31,8 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime, add_to_date, flt
 
+from upande_scp.serverscripts.warehouse_classify import is_chemical_store
+
 
 # ----------------------------------------------------------------------
 # Permission gate
@@ -161,17 +163,17 @@ def chemical_store_levels() -> dict:
     excluded), so the comparison is store-to-store / farm-to-farm."""
     _check_perm()
 
-    stores = frappe.get_all(
+    # Match chemical-store warehouses with the shared name classifier (regex
+    # "chemical … store"), not a literal "Chemical Store%" prefix — mona's store
+    # is "Chemical Main Store - MFK". custom_farm is NOT required (mona's store
+    # is untagged); a blank farm just groups under "" in the comparison.
+    candidates = frappe.get_all(
         "Warehouse",
-        filters={
-            "is_group": 0,
-            "disabled": 0,
-            "name": ("like", "Chemical Store%"),
-            "custom_farm": ("is", "set"),
-        },
+        filters={"is_group": 0, "disabled": 0},
         fields=["name", "custom_farm"],
         order_by="custom_farm, name",
     )
+    stores = [w for w in candidates if is_chemical_store(w.name)]
     if not stores:
         return {"stores": [], "items": [], "matrix": []}
 
@@ -203,7 +205,7 @@ def chemical_store_levels() -> dict:
 
     return {
         "stores": [
-            {"warehouse": s.name, "farm": s.custom_farm, "label": _label(s.name)}
+            {"warehouse": s.name, "farm": s.custom_farm or "", "label": _label(s.name)}
             for s in stores
         ],
         "items": sorted(items.values(), key=lambda x: -x["total"]),

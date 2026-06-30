@@ -239,13 +239,21 @@ def validate_targets_in_scope(
 def _observed_targets(greenhouse: str | None, cutoff, kind: str) -> Iterable[str]:
     if not greenhouse:
         return []
+    greenhouse = greenhouse.strip()
     table = "tabPests Scouting Entry" if kind == "pest" else "tabDiseases Scouting Entry"
     field = "pest" if kind == "pest" else "disease"
+    # mona imported zone names wrapped in literal double-quotes
+    # (e.g. `"Main GH 08 - MFK - Bed 131 - Zone 8"`), so a plain
+    # `zone LIKE 'Main GH 08 - MFK%'` prefix never matched and curative targets
+    # looked "not observed" even with same-day scouting. Strip the wrapping
+    # quotes before matching — mirrors the quote handling already done at the
+    # geometry / heatmap / diagnose boundaries. TRIM is a no-op on unquoted
+    # sites, so this stays correct everywhere.
     rows = frappe.db.sql(
         f"""SELECT DISTINCT child.{field} AS target
             FROM `{table}` AS child
             INNER JOIN `tabScouting Entry` AS parent ON parent.name = child.parent
-            WHERE parent.zone LIKE %s
+            WHERE TRIM(BOTH '"' FROM parent.zone) LIKE %s
               AND parent.date_of_capture >= %s""",
         (f"{greenhouse}%", cutoff),
         as_dict=True,

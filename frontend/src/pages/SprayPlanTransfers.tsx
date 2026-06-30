@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Truck,
+  Warehouse,
+  Sprout,
   RefreshCw,
   Fingerprint,
   CheckCircle2,
@@ -10,6 +12,9 @@ import {
   ChevronRight,
   UserPlus,
   Search,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldOff,
 } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -44,6 +49,7 @@ import {
   fetchTransferItems,
   searchEmployees,
   submitWithBiometric,
+  verifyEmployeeScan,
   type BiometricSubmitResp,
   type BulkAssignResp,
   type EmployeeHit,
@@ -69,6 +75,15 @@ export function SprayPlanTransfers() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<BiometricSubmitResp | null>(null);
+
+  // Biometric gating: `bypassBio` comes from Spray Plan Settings (set by the
+  // GM in Settings → Processes). When false we poll the device so the operator
+  // sees readiness BEFORE submitting instead of only hitting the error after.
+  const [bypassBio, setBypassBio] = useState(false);
+  const [scan, setScan] = useState<{
+    ready: boolean;
+    employeeName?: string;
+  } | null>(null);
 
   // Per-row chemical expansion — fetched on demand the first time a row
   // is opened, cached in this map so subsequent opens are instant.
@@ -96,6 +111,7 @@ export function SprayPlanTransfers() {
       .then((r) => {
         setRows(r.rows);
         setFarms(r.farms);
+        setBypassBio(!!r.bypass_biometric);
         // Drop any selections that no longer exist after a reload.
         setSelected((prev) => {
           const live = new Set(r.rows.map((x) => x.name));
@@ -111,6 +127,35 @@ export function SprayPlanTransfers() {
   // Re-fetch on date-range change. (Farm filter is client-side because
   // the cost is tiny once the rows are in memory.)
   useEffect(load, [fromDate, toDate]);
+
+  // Live biometric readiness: poll the device every 5s while the page is open
+  // so the banner shows whether a fresh scan exists before the operator
+  // submits. Skipped when bypass is on (scan isn't required, so don't poll).
+  useEffect(() => {
+    if (bypassBio) {
+      setScan(null);
+      return;
+    }
+    let cancelled = false;
+    const tick = () => {
+      verifyEmployeeScan()
+        .then((r) => {
+          if (cancelled) return;
+          setScan(
+            r && !r.error
+              ? { ready: true, employeeName: r.employee_name }
+              : { ready: false },
+          );
+        })
+        .catch(() => !cancelled && setScan({ ready: false }));
+    };
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [bypassBio]);
 
   // Debounced employee search: type → wait 200ms → query backend.
   useEffect(() => {
@@ -189,6 +234,36 @@ export function SprayPlanTransfers() {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name);
       else next.add(name);
+      return next;
+    });
+  };
+
+  // Group the visible transfers by the CSU (destination warehouse) they're
+  // bound for, so the store keeper packs one CSU at a time. Sorted by CSU name.
+  const groups = useMemo(() => {
+    const m = new Map<string, TransferRow[]>();
+    for (const r of visibleRows) {
+      const csu = r.csu || r.to_warehouse || "—";
+      const arr = m.get(csu);
+      if (arr) arr.push(r);
+      else m.set(csu, [r]);
+    }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [visibleRows]);
+
+  // Distinct spray-target greenhouses a CSU group is feeding — highlighted in
+  // the group header so it's obvious where the chemicals end up.
+  const groupGreenhouses = (rs: TransferRow[]) =>
+    Array.from(new Set(rs.map((r) => r.greenhouse).filter(Boolean))) as string[];
+
+  const groupAllSelected = (rs: TransferRow[]) =>
+    rs.length > 0 && rs.every((r) => selected.has(r.name));
+
+  const toggleGroup = (rs: TransferRow[]) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const all = rs.every((r) => next.has(r.name));
+      rs.forEach((r) => (all ? next.delete(r.name) : next.add(r.name)));
       return next;
     });
   };
@@ -418,8 +493,52 @@ export function SprayPlanTransfers() {
           </Button>
         </div>
 
+        {/* Biometric readiness banner — always visible so the operator knows
+            the device/bypass state before submitting. */}
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-md border px-3 py-2 text-xs",
+            bypassBio
+              ? "border-[var(--sd-data-cyan,#06b6d4)]/40 bg-[var(--sd-data-cyan,#06b6d4)]/5"
+              : scan?.ready
+                ? "border-[var(--sd-data-green,#16a34a)]/40 bg-[var(--sd-data-green,#16a34a)]/5"
+                : "border-amber-500/40 bg-amber-500/5",
+          )}
+        >
+          {bypassBio ? (
+            <>
+              <ShieldOff className="h-4 w-4 shrink-0 text-[var(--sd-data-cyan,#06b6d4)]" />
+              <span>
+                <strong>Biometric optional.</strong> Issue-without-biometric is
+                enabled in Settings → Processes — transfers can be assigned and
+                submitted without a scan (recorded as Bypassed).
+              </span>
+            </>
+          ) : scan?.ready ? (
+            <>
+              <ShieldCheck className="h-4 w-4 shrink-0 text-[var(--sd-data-green,#16a34a)]" />
+              <span>
+                <strong>Biometric ready.</strong> Last scan:{" "}
+                {scan.employeeName || "—"}. Select entries assigned to that
+                person, then submit.
+              </span>
+            </>
+          ) : (
+            <>
+              <ShieldAlert className="h-4 w-4 shrink-0 text-amber-500" />
+              <span>
+                <strong>No recent biometric scan.</strong> Place a finger on the
+                device — checked every few seconds — then submit.
+              </span>
+            </>
+          )}
+        </div>
+
         {error && (
-          <div className="text-xs text-destructive">{error}</div>
+          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <ShieldAlert className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
         )}
       </header>
 
@@ -518,8 +637,14 @@ export function SprayPlanTransfers() {
                 {result.ok} submitted · {result.failed} failed
               </CardTitle>
               <CardDescription>
-                Scanned: <strong>{result.scanned.employee_name}</strong>{" "}
-                ({result.scanned.employee})
+                {result.scanned.bypassed || !result.scanned.employee ? (
+                  <>Submitted without biometric (bypass enabled) — recorded as Bypassed.</>
+                ) : (
+                  <>
+                    Scanned: <strong>{result.scanned.employee_name}</strong>{" "}
+                    ({result.scanned.employee})
+                  </>
+                )}
               </CardDescription>
             </CardHeader>
             {result.failed > 0 && (
@@ -569,14 +694,53 @@ export function SprayPlanTransfers() {
                     <th className="text-left px-3 py-2">Date</th>
                     <th className="text-left px-3 py-2">Farm</th>
                     <th className="text-left px-3 py-2">Work Order</th>
-                    <th className="text-left px-3 py-2">From → To</th>
+                    <th className="text-left px-3 py-2">Greenhouse</th>
+                    <th className="text-left px-3 py-2">From store</th>
                     <th className="text-left px-3 py-2">Employee</th>
                     <th className="text-right px-3 py-2">Items</th>
                     <th className="text-right px-3 py-2">Qty</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleRows.map((r) => {
+                  {groups.map(([csu, csuRows]) => {
+                    const ghs = groupGreenhouses(csuRows);
+                    const groupQty = csuRows.reduce((s, r) => s + r.total_qty, 0);
+                    return (
+                      <Fragment key={csu}>
+                        <tr className="bg-muted/60 border-y">
+                          <td className="px-3 py-2">
+                            <Checkbox
+                              checked={groupAllSelected(csuRows)}
+                              onCheckedChange={() => toggleGroup(csuRows)}
+                              aria-label={`Select all transfers to ${csu}`}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </td>
+                          <td colSpan={10} className="px-2 py-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Warehouse className="h-4 w-4 text-primary shrink-0" />
+                              <span className="font-semibold">{csu}</span>
+                              <span className="text-[0.7rem] text-muted-foreground">
+                                · {csuRows.length} transfer
+                                {csuRows.length === 1 ? "" : "s"} · {fmt(groupQty)} total
+                              </span>
+                              {ghs.length > 0 && (
+                                <span className="flex items-center gap-1 flex-wrap">
+                                  <Sprout className="h-3.5 w-3.5 text-[var(--sd-data-green,#16a34a)] shrink-0" />
+                                  {ghs.map((g) => (
+                                    <Badge
+                                      key={g}
+                                      className="bg-amber-400/20 text-foreground border-amber-500/50 font-semibold text-[0.65rem]"
+                                    >
+                                      {g}
+                                    </Badge>
+                                  ))}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {csuRows.map((r) => {
                     const isSel = selected.has(r.name);
                     const isOpen = expanded.has(r.name);
                     const emp = r.employees[0];
@@ -626,12 +790,14 @@ export function SprayPlanTransfers() {
                           <td className="px-3 py-2 font-mono text-[0.7rem] text-muted-foreground">
                             {r.work_order}
                           </td>
+                          <td className="px-3 py-2">
+                            <Badge className="bg-amber-400/20 text-foreground border-amber-500/50 font-semibold text-[0.65rem]">
+                              {r.greenhouse || "—"}
+                            </Badge>
+                          </td>
                           <td className="px-3 py-2 text-[0.7rem] text-muted-foreground">
                             <div className="truncate max-w-56">
                               {r.from_warehouse}
-                            </div>
-                            <div className="truncate max-w-56">
-                              → {r.to_warehouse}
                             </div>
                           </td>
                           <td className="px-3 py-2">
@@ -659,7 +825,7 @@ export function SprayPlanTransfers() {
                         </tr>
                         {isOpen && (
                           <tr className="border-b last:border-0 bg-muted/30">
-                            <td colSpan={10} className="px-6 py-3">
+                            <td colSpan={11} className="px-6 py-3">
                               {itemsState === "loading" ? (
                                 <div className="text-xs text-muted-foreground flex items-center gap-2">
                                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -720,11 +886,14 @@ export function SprayPlanTransfers() {
                         )}
                       </>
                     );
+                        })}
+                      </Fragment>
+                    );
                   })}
                   {!visibleRows.length && (
                     <tr>
                       <td
-                        colSpan={10}
+                        colSpan={11}
                         className="px-4 py-6 text-center text-xs text-muted-foreground"
                       >
                         {loading

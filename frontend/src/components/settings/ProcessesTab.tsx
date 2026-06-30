@@ -6,8 +6,9 @@
  */
 
 import { useMemo, useState } from "react";
-import { Loader2, Save, ScanLine, CheckSquare } from "lucide-react";
+import { Loader2, Save, ScanLine, CheckSquare, Fingerprint } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -44,15 +45,27 @@ export function ProcessesTab({ initial, onSaved }: Props) {
   const [ok, setOk] = useState(false);
 
   const method = draft.scan_verification_method || SCAN_LABELS;
+  const bypassBio = !!draft.bypass_biometric_on_issue;
   const dirty = useMemo(
     () =>
       (draft.scan_verification_method || SCAN_LABELS) !==
-      (initial.scan_verification_method || SCAN_LABELS),
-    [draft.scan_verification_method, initial.scan_verification_method],
+        (initial.scan_verification_method || SCAN_LABELS) ||
+      !!draft.bypass_biometric_on_issue !== !!initial.bypass_biometric_on_issue,
+    [
+      draft.scan_verification_method,
+      initial.scan_verification_method,
+      draft.bypass_biometric_on_issue,
+      initial.bypass_biometric_on_issue,
+    ],
   );
 
   const setMethod = (value: string) => {
     setDraft((d) => ({ ...d, scan_verification_method: value }));
+    setOk(false);
+  };
+
+  const setBypassBio = (on: boolean) => {
+    setDraft((d) => ({ ...d, bypass_biometric_on_issue: on ? 1 : 0 }));
     setOk(false);
   };
 
@@ -118,24 +131,60 @@ export function ProcessesTab({ initial, onSaved }: Props) {
             </span>
           </div>
 
-          <div className="flex items-center gap-3 pt-1">
-            <Button onClick={save} disabled={!dirty || saving} className="gap-2">
-              {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              Save
-            </Button>
-            {ok && (
-              <span className="text-xs text-[var(--sd-data-green)]">Saved.</span>
-            )}
-            {error && (
-              <span className="text-xs text-destructive">{error}</span>
-            )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Fingerprint className="h-4 w-4" />
+            Biometric authorisation
+          </CardTitle>
+          <CardDescription>
+            Whether the Spray Plan Transfers page requires a live biometric scan
+            to assign and submit chemical issues. When allowed, a fresh matching
+            scan is still recorded; otherwise the issue is submitted and audited
+            as “Bypassed” against the signed-in store keeper.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 max-w-md">
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+            <Checkbox
+              id="bypass_biometric_on_issue"
+              checked={bypassBio}
+              onCheckedChange={(v) => setBypassBio(!!v)}
+            />
+            <div className="flex flex-col gap-1">
+              <Label
+                htmlFor="bypass_biometric_on_issue"
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Allow chemical issue without biometric
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                On: store keepers can assign and submit transfers without a
+                finger scan (recorded as Bypassed). Off: a matching scan in the
+                last 2 minutes is required to submit.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
+
+      <div className="flex items-center gap-3">
+        <Button onClick={save} disabled={!dirty || saving} className="gap-2">
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          Save
+        </Button>
+        {ok && (
+          <span className="text-xs text-[var(--sd-data-green)]">Saved.</span>
+        )}
+        {error && <span className="text-xs text-destructive">{error}</span>}
+      </div>
     </div>
   );
 }

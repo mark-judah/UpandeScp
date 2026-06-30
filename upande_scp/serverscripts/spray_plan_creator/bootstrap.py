@@ -21,7 +21,6 @@ def fetch_creator_bootstrap() -> dict:
         return _empty_bootstrap()
 
     farms = scope["farms"]
-    warehouse_names = [w["name"] for w in scope["warehouses"]]
 
     # Apply the Spray Plan Settings exclude-keyword filter on top of the
     # farm-scoped greenhouses so CSU / IPM / phase / tunnel rooms don't
@@ -39,23 +38,39 @@ def fetch_creator_bootstrap() -> dict:
     greenhouses = _enrich_greenhouses(filtered_ghs)
 
     # Kits live in `Spray Equipment Details` (child table), NOT `Spray Kit` (which doesn't exist here).
-    # The source data has literal duplicate rows (same kit + same warehouse repeated 3x), so we
+    # A kit's warehouse (the destination CSU) is in scope when it belongs to one of the user's farms
+    # OR is untagged (NULL/blank custom_farm = global) — the same convention chemical stores and spray
+    # teams use. mona's CSUs ("Main CSU A - MFK") carry no custom_farm, so the old strict
+    # ``warehouse IN <farm-scoped>`` filter dropped every kit; CSUs tagged to a *different* farm stay
+    # hidden. The source data has literal duplicate rows (same kit + same warehouse repeated 3x), so we
     # deduplicate by (kit, warehouse) tuple before returning.
     kits = []
-    if frappe.db.table_exists("Spray Equipment Details") and warehouse_names:
+    if frappe.db.table_exists("Spray Equipment Details"):
         rows = frappe.get_all(
             "Spray Equipment Details",
-            filters={"warehouse": ["in", warehouse_names]},
             fields=["kit", "warehouse"],
         )
+        farms_set = set(farms)
         seen: set[tuple[str, str]] = set()
+        wh_cache: dict[str, dict | None] = {}
         for r in rows:
             key = (r.get("kit") or "", r.get("warehouse") or "")
-            if key in seen or not key[0]:
+            if not key[0] or not key[1] or key in seen:
+                continue
+            wh = key[1]
+            if wh not in wh_cache:
+                wh_cache[wh] = frappe.db.get_value(
+                    "Warehouse", wh, ["custom_farm", "disabled"], as_dict=True
+                )
+            info = wh_cache[wh]
+            if not info or info.get("disabled"):
+                continue
+            farm = info.get("custom_farm")
+            # NULL/blank farm = global; otherwise it must be one of the user's farms.
+            if farm and farm not in farms_set:
                 continue
             seen.add(key)
-            r["custom_farm"] = frappe.db.get_value("Warehouse", r["warehouse"], "custom_farm")
-            kits.append(r)
+            kits.append({"kit": key[0], "warehouse": wh, "custom_farm": farm})
 
     spray_teams = _fetch_spray_teams(farms)
 

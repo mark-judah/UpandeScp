@@ -454,10 +454,16 @@ def create_draft_spray_plan(payload):
     # bom_no is the picked tank-mix BOM only until we mint a per-plan BOM that
     # actually matches this plan's chemicals (below).
     wo.bom_no = bom_meta["name"]
-    wo.qty = 1
     wo.custom_cost_center = cost_center
     wo.fg_warehouse = payload["custom_greenhouse"]
     _apply_payload(wo, payload)
+    # qty_to_manufacture = number of 1000 L tanks, so the Work Order quantity
+    # reflects the chosen water volume (2000 L -> qty 2). The per-plan BOM is the
+    # per-1000 L recipe (see bom_resolver), so required = recipe x qty stays the
+    # absolute plan amount, while the manufactured / issued tank mix now scales
+    # with the volume. Falls back to 1 if no volume (validate_payload requires
+    # > 0, so this is just a floor).
+    wo.qty = round(flt(wo.custom_water_volume) / 1000.0, 2) or 1
     # Destination CSU (wip_warehouse) is derived from the selected kit so the
     # Material Transfer targets the right CSU. Throws if the kit is unmapped.
     _apply_kit_warehouse(wo, payload)

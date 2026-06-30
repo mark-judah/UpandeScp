@@ -26,6 +26,7 @@
   "default_chemical_expense_account",
   "scan_process_section",
   "scan_verification_method",
+  "bypass_biometric_on_issue",
   "submission_gating_section",
   "bypass_owner_check",
   "auto_cancel_section",
@@ -177,6 +178,13 @@
    "options": "Scan Labels\nTick Confirmation",
    "default": "Scan Labels",
    "description": "How CSU chemical scans are confirmed on the mobile app. 'Scan Labels' requires scanning the QR/label; 'Tick Confirmation' lets the operator tick to confirm instead of scanning."
+  },
+  {
+   "default": "0",
+   "fieldname": "bypass_biometric_on_issue",
+   "fieldtype": "Check",
+   "label": "Allow chemical issue without biometric",
+   "description": "When ON, the Spray Plan Transfers page can assign and submit chemical issues without a live biometric scan. If a fresh matching scan is present it is still recorded (status Verified); otherwise the submit proceeds and is recorded as Bypassed against the logged-in store keeper. Audited override — leave OFF where biometric authorisation is required."
   },
   {
    "fieldname": "submission_gating_section",

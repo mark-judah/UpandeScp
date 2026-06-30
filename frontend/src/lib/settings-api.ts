@@ -26,6 +26,9 @@ export interface SprayPlanSettings {
   default_chemical_expense_account: string;
   /** GM-approved CSU scan confirmation method: "Scan Labels" | "Tick Confirmation". */
   scan_verification_method: string;
+  /** When 1, Spray Plan Transfers may assign+submit chemical issues without a
+   *  live biometric scan (recorded as Bypassed). 0 = biometric required. */
+  bypass_biometric_on_issue: number;
   bypass_owner_check: number;
   auto_cancel_enabled: number;
   auto_cancel_apply_to_backlog: number;

@@ -1,5 +1,11 @@
 # Per-recipe tank-mix BOMs (find-or-create) — design
 
+> **Current model (2026-06-30):** the per-1000 L *rate* BOM basis described here
+> (§Recipe basis) is live again, paired with `wo.qty = water_volume/1000`. The
+> intervening absolute-qty/`wo.qty=1` model from
+> `2026-06-18-per-plan-bom-transfer-alignment-design.md` was reverted — see that
+> file's **Addendum (2026-06-30)**.
+
 ## Problem
 A spray plan carries two recipes that can diverge: `required_items` (the
 chemicals the operator picks, scaled by water volume) and `bom_no` (a reused

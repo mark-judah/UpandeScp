@@ -8,12 +8,12 @@ plan).
 Design (see docs/superpowers/specs/2026-06-12-per-recipe-tank-mix-bom-design.md):
   * The tank mix is the FG item (``pm`` / ``dm`` / ``th`` / …).
   * We ALWAYS create a fresh BOM (no dedup) — 1:1 plan↔BOM traceability.
-  * The BOM stores the ABSOLUTE per-plan qtys as ``stock_qty`` (== the WO's
-    ``required_items`` == the transfer), with ``quantity = 1 Tank Mix (1000L)``
-    and ``wo.qty = 1``, so a BOM backflush reproduces the transfer even with the
-    ``before_validate`` guard down. The per-1000L recipe rate
-    (``required_qty × 1000 / water_volume``) is kept in ``custom_application_rate``
-    for display.
+  * The BOM stores the per-1000 L recipe rate as ``stock_qty`` with
+    ``quantity = 1 Tank Mix (1000L)``. ``wo.qty = water_volume / 1000`` (the
+    number of 1000 L tanks), so ``required = recipe × qty`` reproduces the
+    absolute plan amount (== the transfer) while the manufactured / issued tank
+    mix scales with the chosen water volume. ``custom_application_rate`` mirrors
+    the rate for display.
   * On a draft re-edit the previously auto-assigned BOM is cancelled if nothing
     real references it (see ``cancel_orphan_plan_bom``).
 
@@ -67,9 +67,10 @@ def build_bom_rows(pairs, water_volume) -> dict[str, dict[str, float]]:
 def bom_item_payload(item_code, qty, rate, stock_uom) -> dict:
     """One ``bom.items`` row for a per-plan BOM.
 
-    ``qty``/``stock_qty``/``qty_consumed_per_unit`` all carry the ABSOLUTE plan
-    quantity so a BOM backflush at ``fg_completed_qty == BOM.quantity`` equals
-    the transfer; the per-1000L ``rate`` lands only on the display fields.
+    ``qty``/``stock_qty``/``qty_consumed_per_unit`` carry the per-1000 L recipe
+    rate; with ``BOM.quantity = 1`` and ``wo.qty = water_volume/1000`` a backflush
+    consumes ``recipe × qty`` = the absolute plan amount = the transfer. The same
+    rate is mirrored onto the display fields.
     """
     return {
         "item_code": item_code,
@@ -132,11 +133,15 @@ def create_bom_for_plan(wo) -> str | None:
         bom.custom_water_hardness = wo.custom_water_hardness
 
     for code, agg in rows.items():
-        qty = flt(agg["qty"])
-        if qty <= 0:
+        # Skip chemicals with no absolute amount, but store the per-1000 L
+        # recipe rate as the BOM item qty: BOM.quantity = 1 (one 1000 L tank)
+        # and wo.qty = water_volume/1000, so required = recipe x qty reproduces
+        # the absolute plan amount and the manufacture/issue scales with volume.
+        if flt(agg["qty"]) <= 0:
             continue
+        recipe_qty = flt(agg["rate"])
         suom = frappe.db.get_value("Item", code, "stock_uom")
-        bom.append("items", bom_item_payload(code, qty, flt(agg["rate"]), suom))
+        bom.append("items", bom_item_payload(code, recipe_qty, recipe_qty, suom))
 
     if not bom.items:
         return None

@@ -29,7 +29,7 @@ import os
 from datetime import timedelta
 
 import frappe
-from frappe.utils import now_datetime, add_to_date
+from frappe.utils import now_datetime, add_to_date, flt
 
 
 # ----------------------------------------------------------------------
@@ -380,7 +380,16 @@ def list_draft_transfers(
     ``posting_date``."""
     _check_perm()
 
-    where = ["se.docstatus = 0", "se.purpose = %(purpose)s", "se.work_order IS NOT NULL"]
+    where = [
+        "se.docstatus = 0",
+        "se.purpose = %(purpose)s",
+        "se.work_order IS NOT NULL",
+        # Hide duplicate/stale drafts for Work Orders already fully transferred
+        # (a submitted Material Transfer exists). Submitting another would push
+        # cumulative transferred past planned — ERPNext rejects it with
+        # "Material Transferred for Manufacturing cannot be greater than planned".
+        "COALESCE(wo.material_transferred_for_manufacturing, 0) < wo.qty",
+    ]
     params: dict = {"purpose": _SE_PURPOSE}
     if from_date:
         where.append("se.posting_date >= %(from_date)s")
@@ -397,6 +406,8 @@ def list_draft_transfers(
         SELECT se.name, se.posting_date, se.work_order,
                se.from_warehouse, se.to_warehouse,
                se.bio_employee, se.bio_employee_name,
+               wo.custom_greenhouse AS greenhouse,
+               COALESCE(NULLIF(wo.wip_warehouse, ''), se.to_warehouse) AS csu,
                COALESCE(tw.custom_farm, fw.custom_farm, '') AS farm,
                (SELECT SUM(it.qty)
                 FROM   `tabStock Entry Detail` it
@@ -436,7 +447,10 @@ def list_draft_transfers(
         r["item_count"] = int(r["item_count"] or 0)
 
     farms = sorted({r["farm"] for r in rows if r.get("farm")})
-    return {"rows": rows, "farms": farms}
+    bypass = bool(
+        frappe.db.get_single_value("Spray Plan Settings", "bypass_biometric_on_issue")
+    )
+    return {"rows": rows, "farms": farms, "bypass_biometric": bypass}
 
 
 # ----------------------------------------------------------------------
@@ -616,6 +630,25 @@ def verify_employee() -> dict:
     return {"error": "Please place finger on the Biometric Device"}
 
 
+def _resolve_biometric_outcome(scan, bio_employee, bypass):
+    """Pure decision for one SE's biometric authorisation.
+
+    Returns ``(outcome, matched_log)`` where ``outcome`` is one of:
+      * ``"verified"`` — a fresh scan matches the assignee (``matched_log`` is
+        the Biometric Logs row name);
+      * ``"bypassed"`` — bypass is ON and there's no matching fresh scan, so
+        the issue proceeds and is recorded as Bypassed (scan-optional /
+        prefer-if-present);
+      * ``"mismatch"`` — bypass is OFF and there's no matching scan; the caller
+        raises a per-row error.
+    """
+    if scan and scan.get("employee") == bio_employee:
+        return "verified", scan.get("name")
+    if bypass:
+        return "bypassed", None
+    return "mismatch", None
+
+
 @frappe.whitelist()
 def submit_with_biometric(names: str | list) -> dict:
     """Authorise + submit each Stock Entry in ``names`` against the
@@ -627,6 +660,11 @@ def submit_with_biometric(names: str | list) -> dict:
       * The scanned employee must match ``bio_employee``.
       * Record the match in mona's native fields (``biometric_status`` =
         ``Verified``, ``biometric_verified_at``, ``matched_biometric_log``).
+      * When ``Spray Plan Settings.bypass_biometric_on_issue`` is ON, a missing
+        or non-matching scan no longer hard-fails: the issue is recorded as
+        ``biometric_status='Bypassed'`` (authoriser = the logged-in store
+        keeper, no ``matched_biometric_log``). A fresh matching scan is still
+        recorded ``Verified``. An employee must still be assigned either way.
       * Save, then submit.
 
     Returns ``{ok: int, failed: int, results: [{name, ok, error}]}``.
@@ -642,17 +680,20 @@ def submit_with_biometric(names: str | list) -> dict:
     if not isinstance(names, list) or not names:
         frappe.throw("No Stock Entries selected.", frappe.ValidationError)
 
+    bypass = bool(
+        frappe.db.get_single_value("Spray Plan Settings", "bypass_biometric_on_issue")
+    )
     scan = _latest_biometric_log()
-    if not scan:
+    if not scan and not bypass:
         frappe.throw(
             "No biometric scan in the last 2 minutes — please place "
             "your finger on the device and try again.",
             frappe.ValidationError,
         )
 
-    scanned_emp = scan["employee"]
-    scanned_name = scan["employee_name"]
-    biometric_id = scan["biometric_id"]
+    scanned_emp = scan["employee"] if scan else None
+    scanned_name = scan["employee_name"] if scan else None
+    biometric_id = scan["biometric_id"] if scan else None
     results: list = []
     ok_count = 0
     failed_count = 0
@@ -668,6 +709,24 @@ def submit_with_biometric(names: str | list) -> dict:
                 raise frappe.ValidationError(
                     f"{name}: purpose is not {_SE_PURPOSE}.",
                 )
+            # Reject duplicate transfers: if the Work Order is already fully
+            # transferred (a submitted Material Transfer exists), submitting this
+            # one would exceed the planned qty. Skip with a clear message rather
+            # than letting ERPNext throw its cumulative-qty error.
+            if doc.work_order:
+                wo_qty, wo_mtfm = (
+                    frappe.db.get_value(
+                        "Work Order",
+                        doc.work_order,
+                        ["qty", "material_transferred_for_manufacturing"],
+                    )
+                    or (0, 0)
+                )
+                if flt(wo_qty) > 0 and flt(wo_mtfm) >= flt(wo_qty):
+                    raise frappe.ValidationError(
+                        f"{name}: Work Order {doc.work_order} is already fully "
+                        f"transferred — this looks like a duplicate transfer.",
+                    )
             expected = doc.bio_employee
             expected_name = doc.bio_employee_name or expected
             if not expected:
@@ -675,16 +734,19 @@ def submit_with_biometric(names: str | list) -> dict:
                     f"{name}: no receiving employee assigned — assign one "
                     f"before scanning.",
                 )
-            if expected != scanned_emp:
+            outcome, matched_log = _resolve_biometric_outcome(
+                scan, expected, bypass
+            )
+            if outcome == "mismatch":
                 raise frappe.ValidationError(
                     f"{name}: biometric belongs to {scanned_name} but "
                     f"the entry is assigned to {expected_name}.",
                 )
 
             doc.requires_biometric = 1
-            doc.biometric_status = "Verified"
+            doc.biometric_status = "Verified" if outcome == "verified" else "Bypassed"
             doc.biometric_verified_at = now_datetime()
-            doc.matched_biometric_log = scan["name"]
+            doc.matched_biometric_log = matched_log
             doc.save(ignore_permissions=False)
             doc.submit()
             ok_count += 1
@@ -705,5 +767,6 @@ def submit_with_biometric(names: str | list) -> dict:
             "employee":      scanned_emp,
             "employee_name": scanned_name,
             "biometric_id":  biometric_id,
+            "bypassed":      scan is None,
         },
     }

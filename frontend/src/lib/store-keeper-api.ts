@@ -48,6 +48,11 @@ export interface TransferRow {
   work_order: string;
   from_warehouse: string;
   to_warehouse: string;
+  /** Spray-target greenhouse from the work order (Work Order.custom_greenhouse). */
+  greenhouse: string | null;
+  /** Destination CSU the chemical is staged to — Work Order.wip_warehouse
+   *  (falls back to the Stock Entry's to_warehouse). Used to group the list. */
+  csu: string | null;
   farm: string;
   total_qty: number;
   item_count: number;
@@ -57,6 +62,9 @@ export interface TransferRow {
 export interface DraftTransfersResp {
   rows: TransferRow[];
   farms: string[];
+  /** When true, Spray Plan Settings allows assigning + submitting transfers
+   *  without a live biometric scan (issues recorded as Bypassed). */
+  bypass_biometric?: boolean;
 }
 
 export interface BiometricSubmitResult {
@@ -69,7 +77,13 @@ export interface BiometricSubmitResp {
   ok: number;
   failed: number;
   results: BiometricSubmitResult[];
-  scanned: { employee: string; employee_name: string; biometric_id: string };
+  scanned: {
+    employee: string | null;
+    employee_name: string | null;
+    biometric_id: string | null;
+    /** True when submitted with no scan under the bypass setting. */
+    bypassed?: boolean;
+  };
 }
 
 function unwrap<T>(resp: any): T {

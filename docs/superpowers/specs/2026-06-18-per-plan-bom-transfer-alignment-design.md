@@ -1,7 +1,11 @@
 # Per-plan BOM ↔ transfer alignment (guard-down safety) — Layer 1
 
 **Date:** 2026-06-18
-**Status:** Design — approved for spec, pending implementation plan
+**Status:** SUPERSEDED (2026-06-30). Approach A shipped as designed, then was
+replaced by **Approach B** (`wo.qty = water_volume/1000`, per-1000L BOM) at the
+product owner's request — the Work Order / manufacture / issue must visibly
+reflect the chosen water volume (2000 L → qty 2), not always read 1. See the
+**Addendum (2026-06-30)** at the end of this file for the implemented change.
 **Related:** `2026-06-12-per-recipe-tank-mix-bom-design.md`, commit `a101ac1`
 (`fix(spray): guard all manufacture paths to consume the transfer, not the BOM`)
 
@@ -168,4 +172,50 @@ the rate; the loop should also carry the originating `required_qty`.
 - Cleanup of stranded legacy (pre-`a101ac1`) CSU residuals.
 - The agronomic correctness of the scaling formula itself
   (`required_qty = application_rate × water_volume/1000`, area not applied).
-- Approach B (`wo.qty` = number of 1000L tanks).
+- Approach B (`wo.qty` = number of 1000L tanks). — **now implemented, see below.**
+
+---
+
+## Addendum — 2026-06-30: switched to Approach B
+
+**Why:** Approach A made BOM == transfer at `wo.qty = 1`, so raw consumption was
+correct — but the Work Order quantity (and therefore the manufactured / issued
+*tank-mix* quantity) always read **1** regardless of water volume. For a 2000 L
+spray the operator expects the WO to read **2** and 2× tank mix to be
+manufactured and issued, matching the legacy `create_application_work_order.py`
+(`wo_qty = water_volume/1000`). This is the "Approach B" deferred above.
+
+**What changed (implemented):**
+
+- `spray_plan_creator/drafts.py` — `create_draft_spray_plan` now sets
+  `wo.qty = round(custom_water_volume / 1000, 2)` (was hardcoded `1`), after
+  `_apply_payload` populates the water volume. Falls back to 1 when volume is 0.
+- `spray_plan_creator/bom_resolver.py` — `create_bom_for_plan` now stores the
+  **per-1000 L recipe rate** as each BOM item `qty`/`stock_qty`/
+  `qty_consumed_per_unit` (reverting Approach A's absolute value), with
+  `BOM.quantity = 1`. `custom_application_rate` still mirrors the rate.
+
+**Resulting invariant** (replaces the §66 invariant):
+
+```
+required_qty == bom_item.stock_qty (rate) × wo.qty (water_volume/1000)
+             == transfer == backflush at fg_completed_qty == wo.qty
+```
+
+So `planned == transferred == manufactured == issued` (all = the absolute
+amount), and `wo.qty` / `produced_qty` / FG tank-mix qty now scale with volume.
+This realigns with the original `2026-06-12` spec, whose BOM basis was always
+per-1000 L rates (§24-27).
+
+**Verified:** fresh 2000 L plan → `wo.qty = 2.0`, `required_qty = rate × 2`
+(absolute), BOM item `qty = rate`; `BOM × qty == required`. `test_bom_resolver`
+and `test_quantities` green.
+
+**Residual risk to watch** (the blast-radius this spec originally flagged for
+Approach B): `produced_qty` / FG-stock valuation-per-unit and Work Order status
+math now operate on `qty = N` rather than `1`. Raw-material *consumption*
+remains protected by the `before_validate` guard (consume == transfer), and the
+FG quantity is now physically coherent (N × 1000 L), but downstream
+valuation/status edge cases on multi-tank WOs were not exhaustively re-tested
+and should be watched. (Layer-2 hard-assert / Layer-3 reconciliation from the
+original "Out of scope" still apply.)

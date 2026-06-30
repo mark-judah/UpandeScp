@@ -649,6 +649,35 @@ def _resolve_biometric_outcome(scan, bio_employee, bypass):
     return "mismatch", None
 
 
+def _assert_stock_available(doc) -> None:
+    """Raise a clear per-row error if any item would drive its source warehouse
+    negative.
+
+    A defensive pre-check so the storekeeper sees "insufficient stock of X in
+    <store>" instead of ERPNext's raw negative-stock error. ERPNext's own guard
+    (Stock Settings → Allow Negative Stock is OFF on this site) remains the
+    authoritative backstop; this just fails earlier with a friendlier message
+    and — combined with the per-row savepoint — keeps one short row from
+    affecting the rest of the batch. Balances are read live, so rows earlier in
+    the same batch that already drew down the store are accounted for.
+    """
+    for it in (doc.items or []):
+        src = it.s_warehouse or doc.from_warehouse
+        if not src:
+            continue
+        available = flt(
+            frappe.db.get_value(
+                "Bin", {"item_code": it.item_code, "warehouse": src}, "actual_qty"
+            )
+        )
+        if flt(it.qty) > available + 1e-9:
+            raise frappe.ValidationError(
+                f"{doc.name}: insufficient stock — {it.item_code} needs "
+                f"{flt(it.qty)} {it.uom or ''} in {src} but only {available} "
+                f"available.",
+            )
+
+
 @frappe.whitelist()
 def submit_with_biometric(names: str | list) -> dict:
     """Authorise + submit each Stock Entry in ``names`` against the
@@ -665,11 +694,14 @@ def submit_with_biometric(names: str | list) -> dict:
         ``biometric_status='Bypassed'`` (authoriser = the logged-in store
         keeper, no ``matched_biometric_log``). A fresh matching scan is still
         recorded ``Verified``. An employee must still be assigned either way.
+      * The source store must hold enough of each chemical — a row that would
+        drive stock negative fails with a clear message (no negative stock).
       * Save, then submit.
 
     Returns ``{ok: int, failed: int, results: [{name, ok, error}]}``.
-    A single failure in the loop doesn't abort the others — the
-    operator sees a per-row outcome and retries only the failures."""
+    Each row runs inside its own savepoint, so a single failure rolls back only
+    that row and never the rows that already submitted — the operator sees a
+    per-row outcome and retries only the failures."""
     _check_perm()
 
     if isinstance(names, str):
@@ -698,7 +730,14 @@ def submit_with_biometric(names: str | list) -> dict:
     ok_count = 0
     failed_count = 0
 
-    for name in names:
+    for idx, name in enumerate(names):
+        # One savepoint per row: a failing row rolls back ONLY its own partial
+        # work, never the rows that already submitted in this batch. (Frappe's
+        # plain rollback() is transaction-wide, which would silently discard the
+        # earlier successes — the docstring's "one failure doesn't abort the
+        # others" promise was previously broken.)
+        savepoint = f"se_submit_{idx}"
+        frappe.db.savepoint(savepoint)
         try:
             doc = frappe.get_doc("Stock Entry", name)
             if doc.docstatus != 0:
@@ -743,6 +782,10 @@ def submit_with_biometric(names: str | list) -> dict:
                     f"the entry is assigned to {expected_name}.",
                 )
 
+            # Never post a transfer that would drive the chemical store
+            # negative — fail this row with a clear message instead.
+            _assert_stock_available(doc)
+
             doc.requires_biometric = 1
             doc.biometric_status = "Verified" if outcome == "verified" else "Bypassed"
             doc.biometric_verified_at = now_datetime()
@@ -754,9 +797,9 @@ def submit_with_biometric(names: str | list) -> dict:
         except Exception as e:
             failed_count += 1
             results.append({"name": name, "ok": False, "error": str(e)})
-            # Rollback the failed save attempt; the loop continues on
-            # the remaining SEs without leaving a half-saved doc behind.
-            frappe.db.rollback()
+            # Roll back ONLY this row's partial work; rows that already
+            # submitted in this batch are preserved.
+            frappe.db.rollback(save_point=savepoint)
 
     frappe.db.commit()
     return {

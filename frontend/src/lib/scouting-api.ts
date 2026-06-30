@@ -689,6 +689,36 @@ export async function fetchSprayerGpsLogs(
   }
 }
 
+/**
+ * Resolve Employee IDs (payroll numbers like "MFK-00526") to their real
+ * ``employee_name``. Returns a map keyed by the Employee ID. Used so the
+ * Spraying view shows the actual person, not the payroll code.
+ */
+export async function fetchEmployeeNames(
+  ids: string[],
+): Promise<Record<string, string>> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (!unique.length) return {};
+  try {
+    const r = await call<{ name: string; employee_name: string }[]>(
+      "frappe.client.get_list",
+      {
+        doctype: "Employee",
+        filters: [["name", "in", unique]],
+        fields: ["name", "employee_name"],
+        limit_page_length: 0,
+      },
+    );
+    const out: Record<string, string> = {};
+    for (const e of Array.isArray(r) ? r : []) {
+      if (e.employee_name) out[e.name] = e.employee_name;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Geometry helpers — used by the map-based pages.                    */
 /* ------------------------------------------------------------------ */

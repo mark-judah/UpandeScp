@@ -8,6 +8,7 @@ upande_scp.patches.v1_0.promote_filters_to_standalone
 # Patches added in this section will be executed after doctypes are migrated
 upande_scp.patches.v1_0.ensure_scp_custom_fields
 upande_scp.patches.v1_0.backfill_chemical_master
+upande_scp.patches.v1_0.prefill_chemical_metadata
 upande_scp.patches.v1_0.seed_spray_plan_settings
 upande_scp.patches.v1_0.add_scouting_indexes
 upande_scp.patches.v1_0.create_spray_plan_creator_role

@@ -34,7 +34,8 @@ export type View =
   | "labels"
   | "creator-stock"
   | "chemical-progress"
-  | "chemical-loaning";
+  | "chemical-loaning"
+  | "finances";
 
 const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "dashboard",
@@ -58,6 +59,7 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "creator-stock",
   "chemical-progress",
   "chemical-loaning",
+  "finances",
 ]);
 
 export const DEFAULT_CROP_SLUG = "rose";

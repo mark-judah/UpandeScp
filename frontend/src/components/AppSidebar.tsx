@@ -20,6 +20,7 @@ import {
   Warehouse,
   Activity,
   ArrowRightLeft,
+  Coins,
 } from "lucide-react";
 import {
   Sidebar,
@@ -125,6 +126,7 @@ const ROSE_NAV: NavSection[] = [
     items: [
       { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
       { kind: "view", view: "trends", label: "Trends", icon: LineChart },
+      { kind: "view", view: "finances", label: "Finances", icon: Coins },
     ],
   },
   {

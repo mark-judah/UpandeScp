@@ -382,104 +382,13 @@ website_route_rules = [
 fixtures = [
     # Stage catalog — ships the per-stage icon_key mapping to every site.
     {"doctype": "Stage"},
-    {
-        "doctype": "Custom Field",
-        "filters": [
-            [
-                "name", "in", [
-                        # Warehouse fields
-                        "Warehouse-custom_zone_numbering",
-                        "Warehouse-custom_bed_numbering",
-                        "Warehouse-custom_raw_geojson",
-                        "Warehouse-custom_location",
-                        "Warehouse-custom_area_ha",
-                        "Warehouse-custom_cost_center",
-                        # Item fields
-                        "Item-custom_ghs",
-                        "Item-custom_irac",
-                        "Item-custom_frac",
-                        "Item-custom_type",
-                        "Item-custom_ghs_description",
-                        "Item-custom_irac_moa",
-                        "Item-custom_frac_moa",
-                        "Item-custom_active_ingredients",
-                        "Item-custom_toxicity",
-                        "Item-custom_reentry_interval_hrs",
-                        "Item-custom_targets",
-                        "Item-custom_section_break_vuei1",
-                        "Item-custom_chemical_intervention_threshhold",
-                        "Item-custom_scouting_and_crop_protection_tab",
-                        "Item-custom_lower_rate_limit",
-                        "Item-custom_upper_rate_limit",
-                        "Item-custom_low_stock_threshold",
-                        "Item-custom_application_rate",
-                        "Item-custom_greenhouse",
-                        # BOM fields
-                        "BOM-custom_water_hardness",
-                        "BOM-custom_water_ph",
-                        "BOM-custom_item_group",
-                        # BOM Item fields
-                        "BOM Item-custom_application_rate",
-                        "BOM Item-custom_application_rateper_ha_",
-                        # Material Request fields
-                        "Material Request-custom_farm",
-                        # Work Order fields
-                        "Work Order-custom_spray_team",
-                        "Work Order-custom_reentry_time",
-                        "Work Order-custom_scheduled_application_time",
-                        "Work Order-custom_reentry_period_hrs",
-                        "Work Order-custom_scope_details",
-                        "Work Order-custom_water_hardness",
-                        "Work Order-custom_water_ph",
-                        "Work Order-custom_water_volume",
-                        "Work Order-custom_area",
-                        "Work Order-custom_type",
-                        "Work Order-custom_scope",
-                        "Work Order-custom_kit",
-                        "Work Order-custom_spray_type",
-                        "Work Order-custom_targets",
-                        "Work Order-custom_variety",
-                        "Work Order-custom_greenhouse",
-                        "Work Order-custom_application_floor_plan",
-                        # Work Order Item fields
-                        "Work Order Item-custom_updated_required_qty",
-                        # SCP's own biometric-section container. The actual
-                        # biometric fields (requires_biometric / bio_employee /
-                        # bio_employee_name / department / biometric_status /
-                        # biometric_verified_at / matched_biometric_log) are
-                        # mona-NATIVE — store_keeper_api consumes them but they
-                        # already exist on the site, so shipping them as fixtures
-                        # collides on migrate ("field already exists"). Do NOT
-                        # add them here.
-                        "Stock Entry-custom_biometric_verification",
-                        # Stock Entry label-printing fields (lifecycle / Labels page)
-                        "Stock Entry-custom_labels_printed",
-                        "Stock Entry-custom_labels_print_count",
-                        "Stock Entry-custom_labels_printed_on",
-                        "Stock Entry-custom_labels_printed_by",
-                        "Stock Entry-custom_location",
-                        # Farm fields
-                        "Farm-spray_plan_creators",
-                        # Spray Team fields
-                        "Spray Team-custom_farm",
-                        # Work Order spray-plan fields
-                        "Work Order-custom_classification",
-                        "Work Order-custom_preventive_reason",
-                        "Work Order-custom_cost_center",
-                        "Work Order-custom_rate_overridden",
-                        "Work Order-custom_weather_snapshot",
-                        "Work Order-custom_spray_plan_team_members",
-                        # Farm scoping backbone + spray-execution fields
-                        # needed by the Application Plan flow.
-                        "Warehouse-custom_farm",
-                        "BOM-custom_farm",
-                        "Cost Center-custom_farm",
-                        "Work Order-custom_chemical_scans",
-                        "Work Order-custom_spray_application_logsheet",
-                ]
-            ]
-        ]
-    },
+    # Custom Fields are created idempotently by the patch
+    # upande_scp.patches.v1_0.ensure_scp_custom_fields (it reads
+    # fixtures/custom_field.json). They are deliberately NOT shipped as a
+    # Custom Field fixture: fixture import aborts the whole migrate on the
+    # first already-existing field/column, which kept breaking deploys. The
+    # patch skips existing fields and isolates failures, so an existing field
+    # can never break a deploy.
     {
         "dt": "Client Script",
         "filters": [

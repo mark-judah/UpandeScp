@@ -155,6 +155,27 @@ export function ChemicalsTab() {
     }
   };
 
+  const toggleAllowed = async (row: ChemicalRow, next: boolean) => {
+    setSavingCode(row.item_code);
+    try {
+      await saveChemical(row.item_code, { allowed: next });
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              items: d.items.map((r) =>
+                r.item_code === row.item_code ? { ...r, allowed: next } : r,
+              ),
+            }
+          : d,
+      );
+    } catch (e) {
+      setError(e instanceof FrappeError ? e.message : String(e));
+    } finally {
+      setSavingCode(null);
+    }
+  };
+
   const onDrawerSaved = (updated: ChemicalRow) => {
     setData((d) =>
       d
@@ -262,6 +283,7 @@ export function ChemicalsTab() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-20 text-center">Enabled</TableHead>
+                  <TableHead className="w-20 text-center">Allowed</TableHead>
                   <TableHead>Chemical</TableHead>
                   <TableHead className="w-32">Class</TableHead>
                   <TableHead className="w-24 text-center">Hazard</TableHead>
@@ -285,6 +307,28 @@ export function ChemicalsTab() {
                           disabled={savingCode === r.item_code}
                         />
                       </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {r.kind === "fertilizer" ? (
+                        <span className="text-[0.65rem] text-muted-foreground">
+                          —
+                        </span>
+                      ) : (
+                        <div
+                          className="inline-flex items-center justify-center"
+                          title={
+                            r.allowed
+                              ? "Shown on the Application Floor Plan"
+                              : "Hidden from the Application Floor Plan"
+                          }
+                        >
+                          <Checkbox
+                            checked={r.allowed}
+                            onCheckedChange={(v) => toggleAllowed(r, !!v)}
+                            disabled={savingCode === r.item_code}
+                          />
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

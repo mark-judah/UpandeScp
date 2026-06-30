@@ -141,6 +141,11 @@ export interface ChemicalRow {
   stock_uom: string;
   disabled: number;
   enabled: boolean;
+  /** Chemical master `allowed` flag — un-allowed chemicals are hidden from the
+   *  Application Floor Plan picker. Always true for fertilizers (no master). */
+  allowed: boolean;
+  /** Crop Scouted names this chemical is used on (Chemical master). */
+  crops?: string[];
   kind: ChemicalKind;
   custom_lower_rate_limit: number | null;
   custom_upper_rate_limit: number | null;
@@ -183,6 +188,10 @@ export async function fetchChemicals(args: {
 
 export interface SaveChemicalPayload {
   enabled?: boolean;
+  /** Chemical master `allowed` flag (chemicals only). */
+  allowed?: boolean;
+  /** Crop Scouted names (chemicals only). */
+  crops?: string[];
   lower_rate_limit?: number;
   upper_rate_limit?: number;
   low_stock_threshold?: number;

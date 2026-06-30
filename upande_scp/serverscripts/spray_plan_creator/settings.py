@@ -325,21 +325,12 @@ def list_chemicals(
     offset = (page - 1) * page_size
     params["limit"] = page_size
     params["offset"] = offset
+    # Item row carries identity + stock state + the descriptive MoA/GHS text
+    # (those stay Item-side); chemical metadata comes from the Chemical master.
     rows = frappe.db.sql(
-        f"""SELECT name AS item_code,
-                   item_name,
-                   item_group,
-                   stock_uom,
-                   disabled,
-                   custom_lower_rate_limit,
-                   custom_upper_rate_limit,
+        f"""SELECT name AS item_code, item_name, item_group, stock_uom, disabled,
                    custom_low_stock_threshold,
-                   custom_type,
-                   custom_toxicity,
-                   custom_reentry_interval_hrs,
-                   custom_frac_moa,
-                   custom_irac_moa,
-                   custom_ghs_description
+                   custom_frac_moa, custom_irac_moa, custom_ghs_description
               FROM `tabItem`
              WHERE {where_clause}
              ORDER BY item_name ASC
@@ -347,70 +338,94 @@ def list_chemicals(
         params,
         as_dict=True,
     )
-
-    # Fetch child-table rows in one shot per table, keyed by item. The
-    # column on every Code Filter child table is literally ``code`` —
-    # mis-naming it caused saves to fail with a MandatoryError on
-    # ``code, code, code, code``.
-    codes = (
-        ("custom_irac", "IRAC Code Filter", "code"),
-        ("custom_frac", "FRAC Code Filter", "code"),
-        ("custom_ghs", "GHS Code Filter", "code"),
-    )
-    code_maps: dict[str, dict[str, list[str]]] = {f: {} for f, _, _ in codes}
-    targets_map: dict[str, list[dict]] = {}
-    actives_map: dict[str, list[dict]] = {}
-
     item_codes = [r["item_code"] for r in rows]
+
+    def _child(table, cols, parents, parenttype):
+        out: dict[str, list[dict]] = {}
+        if not parents:
+            return out
+        for cr in frappe.db.sql(
+            f"SELECT parent, {cols} FROM `tab{table}` "
+            "WHERE parent IN %(p)s AND parenttype = %(pt)s",
+            {"p": tuple(parents), "pt": parenttype},
+            as_dict=True,
+        ):
+            out.setdefault(cr["parent"], []).append(cr)
+        return out
+
+    # Scalar metadata from the Chemical master (source of truth).
+    chem: dict[str, dict] = {}
     if item_codes:
-        for fieldname, child_doctype, value_col in codes:
-            child_rows = frappe.db.sql(
-                f"""SELECT parent, {value_col} AS code
-                      FROM `tab{child_doctype}`
-                     WHERE parent IN %(parents)s""",
-                {"parents": tuple(item_codes)},
-                as_dict=True,
-            )
-            for cr in child_rows:
-                code_maps[fieldname].setdefault(cr["parent"], []).append(cr["code"])
+        for c in frappe.db.sql(
+            """SELECT item, allowed, type, toxicity, reentry_interval_hrs,
+                      lower_rate_limit, upper_rate_limit
+                 FROM `tabChemical` WHERE item IN %(p)s""",
+            {"p": tuple(item_codes)},
+            as_dict=True,
+        ):
+            chem[c["item"]] = c
+    with_chem = [c for c in item_codes if c in chem]
+    no_chem = [c for c in item_codes if c not in chem]
 
-        # Chemical Targets child rows — pest OR disease per row.
-        if frappe.db.table_exists("Chemical Targets"):
-            target_rows = frappe.db.sql(
-                """SELECT parent, pest, disease
-                     FROM `tabChemical Targets`
-                    WHERE parent IN %(parents)s""",
-                {"parents": tuple(item_codes)},
-                as_dict=True,
-            )
-            for tr in target_rows:
-                targets_map.setdefault(tr["parent"], []).append({
-                    "pest": tr["pest"] or "",
-                    "disease": tr["disease"] or "",
-                })
-
-        if frappe.db.table_exists("Active Ingredient"):
-            ai_rows = frappe.db.sql(
-                """SELECT parent, ingredient
-                     FROM `tabActive Ingredient`
-                    WHERE parent IN %(parents)s""",
-                {"parents": tuple(item_codes)},
-                as_dict=True,
-            )
-            for ar in ai_rows:
-                ing = (ar.get("ingredient") or "").strip()
-                if ing:
-                    actives_map.setdefault(ar["parent"], []).append(ing)
+    # Child rows — from Chemical for backfilled chemicals, from Item otherwise.
+    c_irac = _child("IRAC Code Filter", "code", with_chem, "Chemical")
+    c_frac = _child("FRAC Code Filter", "code", with_chem, "Chemical")
+    c_ghs = _child("GHS Code Filter", "code", with_chem, "Chemical")
+    c_tgt = _child("Chemical Targets", "pest, disease", with_chem, "Chemical")
+    c_ai = _child("Active Ingredient", "ingredient", with_chem, "Chemical")
+    c_crop = _child("Chemical Crop", "crop", with_chem, "Chemical")
+    i_irac = _child("IRAC Code Filter", "code", no_chem, "Item")
+    i_frac = _child("FRAC Code Filter", "code", no_chem, "Item")
+    i_ghs = _child("GHS Code Filter", "code", no_chem, "Item")
+    i_tgt = _child("Chemical Targets", "pest, disease", no_chem, "Item")
+    i_ai = _child("Active Ingredient", "ingredient", no_chem, "Item")
+    item_extra: dict[str, dict] = {}
+    if no_chem:
+        for it in frappe.db.sql(
+            """SELECT name, custom_type, custom_toxicity, custom_reentry_interval_hrs,
+                      custom_lower_rate_limit, custom_upper_rate_limit
+                 FROM `tabItem` WHERE name IN %(p)s""",
+            {"p": tuple(no_chem)},
+            as_dict=True,
+        ):
+            item_extra[it["name"]] = it
 
     for r in rows:
         code = r["item_code"]
         r["enabled"] = not r["disabled"]
         r["kind"] = _kind_of(r.get("item_group") or "")
-        r["irac"] = code_maps["custom_irac"].get(code, [])
-        r["frac"] = code_maps["custom_frac"].get(code, [])
-        r["ghs"] = code_maps["custom_ghs"].get(code, [])
-        r["targets"] = targets_map.get(code, [])
-        r["active_ingredients"] = actives_map.get(code, [])
+        if code in chem:
+            c = chem[code]
+            r["allowed"] = bool(c["allowed"])
+            r["custom_type"] = c["type"]
+            r["custom_toxicity"] = c["toxicity"]
+            r["custom_reentry_interval_hrs"] = c["reentry_interval_hrs"]
+            r["custom_lower_rate_limit"] = c["lower_rate_limit"]
+            r["custom_upper_rate_limit"] = c["upper_rate_limit"]
+            irac_m, frac_m, ghs_m, tgt_m, ai_m = c_irac, c_frac, c_ghs, c_tgt, c_ai
+            r["crops"] = [x["crop"] for x in c_crop.get(code, []) if x.get("crop")]
+        else:
+            it = item_extra.get(code, {})
+            r["allowed"] = True  # no Chemical row → ungated (e.g. fertilizers)
+            r["custom_type"] = it.get("custom_type")
+            r["custom_toxicity"] = it.get("custom_toxicity")
+            r["custom_reentry_interval_hrs"] = it.get("custom_reentry_interval_hrs")
+            r["custom_lower_rate_limit"] = it.get("custom_lower_rate_limit")
+            r["custom_upper_rate_limit"] = it.get("custom_upper_rate_limit")
+            irac_m, frac_m, ghs_m, tgt_m, ai_m = i_irac, i_frac, i_ghs, i_tgt, i_ai
+            r["crops"] = []
+        r["irac"] = [x["code"] for x in irac_m.get(code, [])]
+        r["frac"] = [x["code"] for x in frac_m.get(code, [])]
+        r["ghs"] = [x["code"] for x in ghs_m.get(code, [])]
+        r["targets"] = [
+            {"pest": x["pest"] or "", "disease": x["disease"] or ""}
+            for x in tgt_m.get(code, [])
+        ]
+        r["active_ingredients"] = [
+            x["ingredient"].strip()
+            for x in ai_m.get(code, [])
+            if (x.get("ingredient") or "").strip()
+        ]
 
     return {
         "items": rows,
@@ -440,54 +455,78 @@ def save_chemical(item_code: str, payload) -> dict:
         frappe.throw(f"Item '{item_code}' not found.", title="Unknown chemical")
 
     item = frappe.get_doc("Item", item_code)
-
+    # The Item (stock master) keeps only enable/disable + the descriptive
+    # MoA/GHS text; all chemical metadata lives on the Chemical master.
     if "enabled" in payload:
         item.disabled = 0 if payload.get("enabled") else 1
-    for fld in (
-        "lower_rate_limit",
-        "upper_rate_limit",
-        "reentry_interval_hrs",
-        "low_stock_threshold",
-    ):
-        if fld in payload:
-            item.set(f"custom_{fld}", payload[fld] or 0)
-    for fld in ("frac_moa", "irac_moa", "ghs_description", "type", "toxicity"):
+    if "low_stock_threshold" in payload:
+        item.set("custom_low_stock_threshold", payload["low_stock_threshold"] or 0)
+    for fld in ("frac_moa", "irac_moa", "ghs_description"):
         if fld in payload:
             item.set(f"custom_{fld}", payload[fld] or "")
-
-    # The link column on every Code Filter child table is named ``code`` —
-    # writing ``irac_code`` / ``frac_code`` / ``ghs_code`` here left the
-    # required field empty and triggered a MandatoryError on save.
-    for payload_key, fieldname in (
-        ("irac", "custom_irac"),
-        ("frac", "custom_frac"),
-        ("ghs",  "custom_ghs"),
-    ):
-        if payload_key in payload:
-            item.set(fieldname, [])
-            for code in payload.get(payload_key) or []:
-                if not code:
-                    continue
-                item.append(fieldname, {"code": code})
-
-    if "targets" in payload:
-        item.set("custom_targets", [])
-        for row in payload.get("targets") or []:
-            pest = (row.get("pest") or "").strip() if isinstance(row, dict) else ""
-            disease = (row.get("disease") or "").strip() if isinstance(row, dict) else ""
-            if not pest and not disease:
-                continue
-            item.append("custom_targets", {"pest": pest, "disease": disease})
-
-    if "active_ingredients" in payload:
-        item.set("custom_active_ingredients", [])
-        for row in payload.get("active_ingredients") or []:
-            ing = (row.strip() if isinstance(row, str)
-                   else (row.get("ingredient") or "").strip()) if row else ""
-            if not ing:
-                continue
-            item.append("custom_active_ingredients", {"ingredient": ing})
-
     item.flags.ignore_validate_update_after_submit = True
     item.save(ignore_permissions=True)
+
+    is_chemical = (item.item_group == "Chemicals")
+
+    def _apply_codes_targets(doc, prefix):
+        # prefix "" for Chemical (fields irac/frac/ghs/targets/active_ingredients),
+        # "custom_" for the legacy Item fields. The Code Filter link column is
+        # literally ``code``.
+        for key in ("irac", "frac", "ghs"):
+            if key in payload:
+                doc.set(f"{prefix}{key}", [])
+                for code in payload.get(key) or []:
+                    if code:
+                        doc.append(f"{prefix}{key}", {"code": code})
+        if "targets" in payload:
+            doc.set(f"{prefix}targets", [])
+            for row in payload.get("targets") or []:
+                pest = (row.get("pest") or "").strip() if isinstance(row, dict) else ""
+                disease = (row.get("disease") or "").strip() if isinstance(row, dict) else ""
+                if pest or disease:
+                    doc.append(f"{prefix}targets", {"pest": pest, "disease": disease})
+        if "active_ingredients" in payload:
+            doc.set(f"{prefix}active_ingredients", [])
+            for row in payload.get("active_ingredients") or []:
+                ing = (row.strip() if isinstance(row, str)
+                       else (row.get("ingredient") or "").strip()) if row else ""
+                if ing:
+                    doc.append(f"{prefix}active_ingredients", {"ingredient": ing})
+
+    if not is_chemical:
+        # Fertilizers etc. have no Chemical master row — keep legacy Item fields.
+        for fld in ("lower_rate_limit", "upper_rate_limit", "reentry_interval_hrs"):
+            if fld in payload:
+                item.set(f"custom_{fld}", payload[fld] or 0)
+        for fld in ("type", "toxicity"):
+            if fld in payload:
+                item.set(f"custom_{fld}", payload[fld] or "")
+        _apply_codes_targets(item, "custom_")
+        item.save(ignore_permissions=True)
+        return {"ok": True, "item_code": item_code}
+
+    chem = (
+        frappe.get_doc("Chemical", item_code)
+        if frappe.db.exists("Chemical", item_code)
+        else frappe.new_doc("Chemical")
+    )
+    chem.item = item_code
+    if "allowed" in payload:
+        chem.allowed = 1 if payload.get("allowed") else 0
+    for fld in ("lower_rate_limit", "upper_rate_limit", "reentry_interval_hrs"):
+        if fld in payload:
+            chem.set(fld, payload[fld] or 0)
+    for fld in ("type", "toxicity"):
+        if fld in payload:
+            chem.set(fld, payload[fld] or "")
+    _apply_codes_targets(chem, "")
+    if "crops" in payload:
+        chem.set("crop_scouted", [])
+        for crop in payload.get("crops") or []:
+            cv = crop.strip() if isinstance(crop, str) else (crop.get("crop") or "").strip()
+            if cv:
+                chem.append("crop_scouted", {"crop": cv})
+    chem.flags.ignore_permissions = True
+    chem.save()
     return {"ok": True, "item_code": item_code}

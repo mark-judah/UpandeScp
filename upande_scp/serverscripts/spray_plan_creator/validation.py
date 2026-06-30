@@ -183,10 +183,16 @@ def validate_rate_in_limits(
 ) -> None:
     if not item_code or not rate or rate <= 0:
         return
-    limits = limits or {}
-    lim = limits.get(item_code) or {}
-    lower = lim.get("lower")
-    upper = lim.get("upper")
+    lim = (limits or {}).get(item_code)
+    if lim is None:
+        # Not in the caller's prefetched map → resolve from the Chemical master
+        # (falls back to Item custom fields). This is the rate-limit "validator"
+        # reading the Chemical list, not the Item list.
+        from upande_scp.serverscripts import chemical_meta
+        lower, upper = chemical_meta.rate_limits(item_code)
+    else:
+        lower = lim.get("lower")
+        upper = lim.get("upper")
     if lower is not None and rate < lower:
         frappe.throw(
             f"{item_code}: rate {rate} is below the configured lower limit of {lower}.",

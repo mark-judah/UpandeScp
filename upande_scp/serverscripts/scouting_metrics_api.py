@@ -450,16 +450,29 @@ def list_chemical_items(q=None, limit=50):
         order_by="item_name asc",
         limit_page_length=int(limit) or 50,
     )
-    return [
-        {
-            "item_code": r["name"],
-            "item_name": r["item_name"],
-            "stock_uom": r["stock_uom"],
-            "item_group": r["item_group"],
-            "is_fertilizer": r["item_group"] == _FERTILIZER_GROUP,
-        }
-        for r in rows
-    ]
+    # Gate chemicals to those marked `allowed` in the Chemical master — an
+    # un-allowed chemical must not appear on the Application Floor Plan.
+    # Fertilizers and ungated sites (no Chemical master) are unaffected.
+    from upande_scp.serverscripts.chemical_meta import allowed_chemical_codes
+    allowed = allowed_chemical_codes()
+    out = []
+    for r in rows:
+        if (
+            r["item_group"] == "Chemicals"
+            and allowed is not None
+            and r["name"] not in allowed
+        ):
+            continue
+        out.append(
+            {
+                "item_code": r["name"],
+                "item_name": r["item_name"],
+                "stock_uom": r["stock_uom"],
+                "item_group": r["item_group"],
+                "is_fertilizer": r["item_group"] == _FERTILIZER_GROUP,
+            }
+        )
+    return out
 
 
 @frappe.whitelist()

@@ -1,16 +1,12 @@
 {
  "app": "upande_scp",
  "charts": [],
- "content": "[{\"id\": \"scp-dashboard-block\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"SCP Dashboard\", \"col\": 12}}, {\"id\": \"scp-nav-block\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"SCP Navigation\", \"col\": 12}}]",
+ "content": "[{\"id\": \"scpDash001\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"SCP Dashboard\", \"col\": 12}}, {\"id\": \"scpNav0001\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"SCP Navigation\", \"col\": 12}}]",
  "creation": "2025-08-08 15:31:19.092083",
  "custom_blocks": [
   {
    "custom_block_name": "SCP Dashboard",
    "label": "SCP Dashboard"
-  },
-  {
-   "custom_block_name": "SCP Scout Map",
-   "label": "SCP Scout Map"
   },
   {
    "custom_block_name": "SCP Navigation",
@@ -27,7 +23,7 @@
  "is_hidden": 0,
  "label": "Scouting & Crop Protection",
  "links": [],
- "modified": "2026-07-02 06:35:26.898322",
+ "modified": "2026-07-02 07:36:08.661087",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting & Crop Protection",

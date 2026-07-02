@@ -382,6 +382,14 @@ website_route_rules = [
 fixtures = [
     # Stage catalog — ships the per-stage icon_key mapping to every site.
     {"doctype": "Stage"},
+    # Scouting & Crop Protection workspace blocks — the scout-movement map and
+    # the role-gated navigation tiles that link into the /scp_app SPA.
+    {
+        "doctype": "Custom HTML Block",
+        "filters": [["name", "in", [
+            "SCP Dashboard", "SCP Navigation", "SCP Scout Map",
+        ]]],
+    },
     # Custom Fields are created idempotently by the patch
     # upande_scp.patches.v1_0.ensure_scp_custom_fields (it reads
     # fixtures/custom_field.json). They are deliberately NOT shipped as a

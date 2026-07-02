@@ -1,6 +1,7 @@
 {
+ "app": "upande_scp",
  "charts": [],
- "content": "[{\"id\":\"b0jehkP4MO\",\"type\":\"custom_block\",\"data\":{\"custom_block_name\":\"SCP Dashboard\",\"col\":12}},{\"id\":\"J3sH2PwKmB\",\"type\":\"custom_block\",\"data\":{\"custom_block_name\":\"SCP Scout Map\",\"col\":12}},{\"id\":\"tLZtS2J8WH\",\"type\":\"custom_block\",\"data\":{\"custom_block_name\":\"SCP Navigation\",\"col\":12}}]",
+ "content": "[{\"id\": \"scp-dashboard-block\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"SCP Dashboard\", \"col\": 12}}, {\"id\": \"scp-nav-block\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"SCP Navigation\", \"col\": 12}}]",
  "creation": "2025-08-08 15:31:19.092083",
  "custom_blocks": [
   {
@@ -21,13 +22,13 @@
  "for_user": "",
  "hide_custom": 0,
  "icon": "agriculture",
- "idx": 0,
+ "idx": 1,
  "indicator_color": "purple",
  "is_hidden": 0,
  "label": "Scouting & Crop Protection",
  "links": [],
- "modified": "2026-03-17 23:59:51.027077",
- "modified_by": "stephene@upande.com",
+ "modified": "2026-07-02 06:35:26.898322",
+ "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting & Crop Protection",
  "number_cards": [],
@@ -43,7 +44,269 @@
    "role": "System Manager"
   }
  ],
- "sequence_id": 48.0,
- "shortcuts": [],
- "title": "Scouting & Crop Protection"
+ "sequence_id": 46.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Map Settings",
+   "link_to": "Map Settings",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Incidents",
+   "link_to": "Incident",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Physiological Disorders",
+   "link_to": "Physiological Disorder",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Spray Pump Operators",
+   "link_to": "Employee",
+   "stats_filter": "[[\"Employee\",\"designation\",\"=\",\"Spray Pump Operator\",false]]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Spray Team",
+   "link_to": "Spray Team",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Application Floor Plans Report",
+   "link_to": "Application Floor Plans",
+   "report_ref_doctype": "Work Order",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Scouting Obeservations Report",
+   "link_to": "Scouting Obeservations",
+   "report_ref_doctype": "Scouting Entry",
+   "type": "Report"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "FRAC Codes",
+   "link_to": "FRAC Code",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "GHS Codes",
+   "link_to": "GHS Code",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Application Floor Plans",
+   "link_to": "Work Order",
+   "stats_filter": "[[\"Work Order\",\"custom_type\",\"=\",\"Application Floor Plan\",false]]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Traps",
+   "link_to": "Trap",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Crops",
+   "link_to": "Item",
+   "stats_filter": "[[\"Item\",\"item_group\",\"in\",[\"Standard Roses\",\"Spray Roses\",\"Summer Flowers\"],false]]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Spray Applicators",
+   "link_to": "Employee",
+   "stats_filter": "[[\"Employee\",\"designation\",\"=\",\"Spray Applicator\",false]]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "IRAC Guidelines",
+   "link_to": "IRAC Guideline",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Pests",
+   "link_to": "Pest",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Chemicals",
+   "link_to": "Item",
+   "stats_filter": "[[\"Item\",\"item_group\",\"in\",[\"CHEMICALS\",\"AVOCADO CHEMICALS\"],false]]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "FRAC Guidelines",
+   "link_to": "FRAC Guideline",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Scouting Activity Report",
+   "link_to": "Scouting Activity",
+   "report_ref_doctype": "Scouting Entry",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Add Application Floor Plan",
+   "type": "URL",
+   "url": "/new-application-floor-plan"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "IRAC Codes",
+   "link_to": "IRAC Code",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Maps",
+   "type": "URL",
+   "url": "/scouts-map"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Spray Supervisors",
+   "link_to": "Employee",
+   "stats_filter": "[[\"Employee\",\"designation\",\"=\",\"Spray Supervisor\",false]]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Chemical Details",
+   "link_to": "Chemical Details",
+   "report_ref_doctype": "Item",
+   "type": "Report"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Scouts",
+   "link_to": "Employee",
+   "stats_filter": "[[\"Employee\",\"designation\",\"=\",\"Scouter\",false]]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Chemical Requirements",
+   "link_to": "Chemical Requirements",
+   "report_ref_doctype": "Item",
+   "type": "Report"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Diseases",
+   "link_to": "Plant Disease",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Insights",
+   "type": "URL",
+   "url": "/insights/dashboards"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Weeds",
+   "link_to": "Weed",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Predators",
+   "link_to": "Predator",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Greenhouses",
+   "link_to": "Warehouse",
+   "stats_filter": "[[\"Warehouse\",\"warehouse_type\",\"=\",\"Greenhouse\",false]]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Beds",
+   "link_to": "Bed",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Zones",
+   "link_to": "Zone",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "Sprayers",
+   "link_to": "Employee",
+   "stats_filter": "[[\"Employee\",\"designation\",\"=\",\"Sprayer\",false]]",
+   "type": "DocType"
+  }
+ ],
+ "title": "Scouting & Crop Protection",
+ "type": "Workspace"
 }

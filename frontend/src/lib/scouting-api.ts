@@ -20,6 +20,14 @@ const toNumber = (v: any): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// mona imported scouting-entry zone names wrapped in literal double-quotes
+// (e.g. '"Main GH 01 - MFK - Bed 1 - Zone 1"'). Strip them so the zone matches
+// the already-normalised geometry names from getBedsAndZones (which strips them
+// too) and so the ``zone.startsWith(greenhouse)`` filter isn't defeated by a
+// leading quote. Without this the scout movement trail never draws.
+const cleanZone = (z: any): string =>
+  z == null ? "" : String(z).replace(/^"+|"+$/g, "");
+
 export function normalizeScoutingEntries(raw: RawEntry[]): ScoutingEntry[] {
   const byName: Record<string, ScoutingEntry> = {};
   const unnamed: RawEntry[] = [];
@@ -34,7 +42,7 @@ export function normalizeScoutingEntries(raw: RawEntry[]): ScoutingEntry[] {
         time_of_capture: row?.time_of_capture || "",
         greenhouse: row?.greenhouse || "",
         bed: row?.bed || "",
-        zone: row?.zone || "",
+        zone: cleanZone(row?.zone),
         block: row?.block || "",
         row: row?.row || "",
         tree: row?.tree || "",
@@ -57,7 +65,7 @@ export function normalizeScoutingEntries(raw: RawEntry[]): ScoutingEntry[] {
       fill("time_of_capture", row?.time_of_capture);
       fill("greenhouse", row?.greenhouse);
       fill("bed", row?.bed);
-      fill("zone", row?.zone);
+      fill("zone", cleanZone(row?.zone));
       fill("block", row?.block);
       fill("row", row?.row);
       fill("tree", row?.tree);
@@ -683,7 +691,11 @@ export async function fetchSprayerGpsLogs(
       order_by: "captured_at asc",
       limit_page_length: 0,
     });
-    return Array.isArray(r) ? r : [];
+    // mona stores Sprayer GPS Log.zone double-quoted too — strip so the zone
+    // roll-up and zone highlight match the (clean) geometry names.
+    return Array.isArray(r)
+      ? r.map((x) => ({ ...x, zone: cleanZone(x.zone) || null }))
+      : [];
   } catch {
     return [];
   }

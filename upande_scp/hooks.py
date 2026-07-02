@@ -382,12 +382,13 @@ website_route_rules = [
 fixtures = [
     # Stage catalog — ships the per-stage icon_key mapping to every site.
     {"doctype": "Stage"},
-    # Scouting & Crop Protection workspace blocks — the scout-movement map and
-    # the role-gated navigation tiles that link into the /scp_app SPA.
+    # Scouting & Crop Protection workspace blocks — one consolidated block
+    # (SCP Dashboard: Map + Summary tabs) plus the role-gated navigation tiles
+    # that link into the /scp_app SPA.
     {
         "doctype": "Custom HTML Block",
         "filters": [["name", "in", [
-            "SCP Dashboard", "SCP Navigation", "SCP Scout Map",
+            "SCP Dashboard", "SCP Navigation",
         ]]],
     },
     # Custom Fields are created idempotently by the patch

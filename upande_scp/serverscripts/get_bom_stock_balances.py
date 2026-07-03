@@ -1,12 +1,15 @@
 import frappe
 import json
 
+from upande_scp.serverscripts.spray_plan_creator.settings import _kind_of
 from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
     get_allowed_chemical_store_warehouses,
     get_allowed_fertilizer_unit_warehouses,
 )
 
 
+# Kept for backward-compatible imports; classification now goes through
+# ``_kind_of`` so the plural/case group-name variants ("Fertilizers") all match.
 _FERTILIZER_GROUP = "Fertilizer"
 
 
@@ -61,8 +64,8 @@ def getBomStockBalances():
                 item_uom_map[name] = item.get("stock_uom")
                 code_group_map[code] = item.get("item_group") or ""
 
-        chemical_codes = [c for c, g in code_group_map.items() if g != _FERTILIZER_GROUP]
-        fertilizer_codes = [c for c, g in code_group_map.items() if g == _FERTILIZER_GROUP]
+        fertilizer_codes = [c for c, g in code_group_map.items() if _kind_of(g) == "fertilizer"]
+        chemical_codes = [c for c, g in code_group_map.items() if _kind_of(g) != "fertilizer"]
 
         chemical_warehouses = get_allowed_chemical_store_warehouses()
         fertilizer_warehouses = get_allowed_fertilizer_unit_warehouses()

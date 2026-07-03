@@ -430,16 +430,37 @@ def cancel_application_work_order(name):
 
 
 @frappe.whitelist()
-def list_chemical_items(q=None, limit=50):
+def list_chemical_items(q=None, limit=50, kind=None):
     """Search Items the planner can add to a BOM — restricted to chemical /
-    fertilizer item groups so we don't surface every Item in the company."""
-    from upande_scp.serverscripts.get_bom_stock_balances import (
-        _FERTILIZER_GROUP,
+    fertilizer item groups AND to items actually carried in the configured
+    chemical / fertigation stores (Spray Plan Settings).
+
+    The Chemical master is dormant: chemicals are picked straight from Item
+    with no ``allowed`` gate. Presence is decided by a Bin in one of the
+    configured stores, so the picker only offers what those stores stock. When
+    no stores are configured (and the name heuristic finds none either), the
+    store filter is skipped so the picker still returns items rather than
+    nothing.
+
+    ``kind`` narrows the result to one side of the split: ``"foliar"`` (a.k.a.
+    fertilizer-group items sourced from the fertigation store) or ``"chemical"``.
+    Omitted / any other value returns both — the Add Foliar / Add Chemical
+    buttons pass the kind so each modal only offers its own items."""
+    from upande_scp.serverscripts.spray_plan_creator.settings import (
+        _CHEMICAL_GROUPS,
+        _kind_of,
+    )
+    from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
+        get_allowed_chemical_store_warehouses,
+        get_allowed_fertilizer_unit_warehouses,
     )
 
+    # ``_CHEMICAL_GROUPS`` tolerates the plural/case variants that differ per
+    # site ("Chemicals" / "CHEMICALS", "Fertilizer" / "Fertilizers"), so a
+    # foliar in the "Fertilizers" group isn't silently dropped.
     filters = [
         ["Item", "disabled", "=", 0],
-        ["Item", "item_group", "in", ["Chemicals", _FERTILIZER_GROUP]],
+        ["Item", "item_group", "in", list(_CHEMICAL_GROUPS)],
     ]
     if q:
         filters.append(["Item", "item_name", "like", f"%{q}%"])
@@ -448,20 +469,29 @@ def list_chemical_items(q=None, limit=50):
         filters=filters,
         fields=["name", "item_name", "stock_uom", "item_group"],
         order_by="item_name asc",
-        limit_page_length=int(limit) or 50,
     )
-    # Gate chemicals to those marked `allowed` in the Chemical master — an
-    # un-allowed chemical must not appear on the Application Floor Plan.
-    # Fertilizers and ungated sites (no Chemical master) are unaffected.
-    from upande_scp.serverscripts.chemical_meta import allowed_chemical_codes
-    allowed = allowed_chemical_codes()
+
+    # Restrict to items carried in the configured stores: a chemical must have a
+    # Bin in a chemical store; a foliar (fertilizer group) in a fertigation store.
+    chem_stores = get_allowed_chemical_store_warehouses()
+    fert_stores = get_allowed_fertilizer_unit_warehouses()
+    codes = [r["name"] for r in rows]
+    in_chem = _items_with_bin(codes, chem_stores)
+    in_fert = _items_with_bin(codes, fert_stores)
+
+    want = (kind or "").strip().lower()
+    want_fert = {"foliar": True, "fertilizer": True, "chemical": False}.get(want)
+
     out = []
     for r in rows:
-        if (
-            r["item_group"] == "Chemicals"
-            and allowed is not None
-            and r["name"] not in allowed
-        ):
+        is_fert = _kind_of(r["item_group"]) == "fertilizer"
+        if want_fert is not None and is_fert != want_fert:
+            continue
+        stores = fert_stores if is_fert else chem_stores
+        present = in_fert if is_fert else in_chem
+        # Skip the store filter only when no stores are configured for this kind,
+        # so an unconfigured site still gets results instead of an empty picker.
+        if stores and r["name"] not in present:
             continue
         out.append(
             {
@@ -469,10 +499,29 @@ def list_chemical_items(q=None, limit=50):
                 "item_name": r["item_name"],
                 "stock_uom": r["stock_uom"],
                 "item_group": r["item_group"],
-                "is_fertilizer": r["item_group"] == _FERTILIZER_GROUP,
+                "is_fertilizer": is_fert,
             }
         )
+        if len(out) >= (int(limit) or 50):
+            break
     return out
+
+
+def _items_with_bin(item_codes, warehouses):
+    """Set of item codes that have a Bin in any of the given warehouses. Empty
+    when either list is empty."""
+    if not item_codes or not warehouses:
+        return set()
+    return set(
+        frappe.get_all(
+            "Bin",
+            filters={
+                "item_code": ["in", item_codes],
+                "warehouse": ["in", warehouses],
+            },
+            pluck="item_code",
+        )
+    )
 
 
 @frappe.whitelist()
@@ -499,11 +548,11 @@ def get_chemical_stock_balances(item_codes):
         return {}
 
     from upande_scp.serverscripts.get_bom_stock_balances import (
-        _FERTILIZER_GROUP,
         _fill_balances,
         get_allowed_chemical_store_warehouses,
         get_allowed_fertilizer_unit_warehouses,
     )
+    from upande_scp.serverscripts.spray_plan_creator.settings import _kind_of
 
     groups = dict(
         frappe.db.sql(
@@ -511,8 +560,8 @@ def get_chemical_stock_balances(item_codes):
             {"codes": tuple(item_codes)},
         )
     )
-    chem_codes = [c for c in item_codes if groups.get(c) != _FERTILIZER_GROUP]
-    fert_codes = [c for c in item_codes if groups.get(c) == _FERTILIZER_GROUP]
+    fert_codes = [c for c in item_codes if _kind_of(groups.get(c)) == "fertilizer"]
+    chem_codes = [c for c in item_codes if _kind_of(groups.get(c)) != "fertilizer"]
 
     out: dict[str, dict[str, float]] = {}
     if chem_codes:
@@ -536,9 +585,7 @@ def get_bom_details(name):
     if not name:
         frappe.throw("name is required")
 
-    from upande_scp.serverscripts.get_bom_stock_balances import (
-        _FERTILIZER_GROUP,
-    )
+    from upande_scp.serverscripts.spray_plan_creator.settings import _kind_of
 
     bom = frappe.get_doc("BOM", name)
     chemicals = []
@@ -556,9 +603,9 @@ def get_bom_details(name):
             "idx": it.idx,
             "item_group": item_group,
             # Explicit flag so the React picker knows which warehouse list
-            # ("Chemical Store" vs "Fertilizer Store") to show. Source of
-            # truth lives in get_bom_stock_balances._FERTILIZER_GROUP.
-            "is_fertilizer": item_group == _FERTILIZER_GROUP,
+            # ("Chemical Store" vs "Fertigation Store") to show. Tolerant of the
+            # plural/case group-name variants that differ per site.
+            "is_fertilizer": _kind_of(item_group) == "fertilizer",
         })
 
     # Stock balances for every chemical the BOM explodes into.
@@ -569,7 +616,6 @@ def get_bom_details(name):
 
     if item_codes:
         from upande_scp.serverscripts.get_bom_stock_balances import (
-            _FERTILIZER_GROUP,
             _fill_balances,
             get_allowed_chemical_store_warehouses,
             get_allowed_fertilizer_unit_warehouses,
@@ -578,8 +624,8 @@ def get_bom_details(name):
         chem_warehouses = get_allowed_chemical_store_warehouses()
         fert_warehouses = get_allowed_fertilizer_unit_warehouses()
 
-        chem_codes = [c["item_code"] for c in chemicals if c.get("item_group") != _FERTILIZER_GROUP]
-        fert_codes = [c["item_code"] for c in chemicals if c.get("item_group") == _FERTILIZER_GROUP]
+        fert_codes = [c["item_code"] for c in chemicals if c.get("is_fertilizer")]
+        chem_codes = [c["item_code"] for c in chemicals if not c.get("is_fertilizer")]
 
         if chem_codes:
             balances_by_code.update(_fill_balances(chem_codes, chem_warehouses))
@@ -652,6 +698,13 @@ def get_application_plan_bootstrap():
         )
     ]
 
+    # Whether the GM has explicitly listed stores in Spray Plan Settings (the
+    # regex fallback is deliberately ignored here). The Application Plan disables
+    # its Add chemical / Add foliar buttons until the matching store is set.
+    from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
+        _configured_stores,
+    )
+
     return {
         "warehouses": get_or_set(K_AFP_WAREHOUSES, _build_warehouses, ttl=TTL_LONG),
         "kits": get_or_set(K_AFP_SPRAY_EQUIPMENT, _build_kits, ttl=TTL_LONG),
@@ -667,6 +720,8 @@ def get_application_plan_bootstrap():
             limit_page_length=200,
         ),
         "spray_teams": spray_teams,
+        "chemical_store_set": bool(_configured_stores("chemical_stores")),
+        "fertigation_store_set": bool(_configured_stores("fertigation_stores")),
     }
 
 

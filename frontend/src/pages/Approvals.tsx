@@ -3,7 +3,7 @@
  * `www/spray_plan_approval` page into a React route. The legacy page is
  * a bulk-ops console: select multiple Application Floor Plan work
  * orders, approve them in one pass (creating draft Material Transfer
- * Stock Entries + QR labels per chemical) or stop them, with a live
+ * Stock Entries + QR labels per chemical) or reject them, with a live
  * progress panel and a 30×40 mm QR print window.
  *
  * Server access is gated to "Spray Plan Approver" / "General Manager" /
@@ -377,7 +377,7 @@ export function Approvals() {
     setBusy(true);
     setProgress({
       open: true,
-      title: `Stopping ${woNames.length} work order${woNames.length !== 1 ? "s" : ""}...`,
+      title: `Rejecting ${woNames.length} spray plan${woNames.length !== 1 ? "s" : ""}...`,
       fillPct: 0,
       isStop: true,
       closable: false,
@@ -393,7 +393,7 @@ export function Approvals() {
         const res = await stopWorkOrder(name);
         if (res.status === "stopped") {
           ok++;
-          appendLog(`■ ${name} — stopped successfully.`, "warn");
+          appendLog(`■ ${name} — rejected.`, "warn");
         } else {
           err++;
           appendLog(`✗ ${name} — ${res.message || "Failed."}`, "err");
@@ -409,7 +409,7 @@ export function Approvals() {
     const color = err === 0 ? "#ef4444" : err === woNames.length ? "#ef4444" : "#f59e0b";
     setProgress((p) => ({
       ...p,
-      title: `Done — ${ok} stopped, ${err} failed.`,
+      title: `Done — ${ok} rejected, ${err} failed.`,
       fillPct: 100,
       doneColor: color,
       closable: true,
@@ -652,7 +652,7 @@ export function Approvals() {
                     <TableHead className="w-10" />
                     <TableHead>Work Order</TableHead>
                     <TableHead>Greenhouse</TableHead>
-                    <TableHead>Scheduled</TableHead>
+                    <TableHead>Created</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead className="text-right">Chems</TableHead>
                     <TableHead>Status</TableHead>
@@ -663,8 +663,12 @@ export function Approvals() {
                   {visibleWos.map((w) => {
                     const isChecked = checked.has(w.name);
                     const isOpen = expanded.has(w.name);
-                    const sched = w.custom_scheduled_application_time
-                      ? w.custom_scheduled_application_time.split(" ")[0]
+                    const created = w.creation
+                      ? new Date(w.creation).toLocaleDateString("en-GB", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })
                       : "—";
                     return (
                       <Fragment key={w.name}>
@@ -706,7 +710,7 @@ export function Approvals() {
                           </TableCell>
                           <TableCell className="text-xs tabular-nums">
                             <span className="rounded bg-muted px-1.5 py-0.5">
-                              {sched}
+                              {created}
                             </span>
                           </TableCell>
                           <TableCell className="text-xs">
@@ -784,7 +788,7 @@ export function Approvals() {
             {stopConfirm && (
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-muted-foreground">
-                  Stop {checked.size} WO{checked.size !== 1 ? "s" : ""}? This
+                  Reject {checked.size} plan{checked.size !== 1 ? "s" : ""}? This
                   cannot be undone.
                 </span>
                 <Button
@@ -815,7 +819,7 @@ export function Approvals() {
                   onClick={onStopSelected}
                 >
                   <XCircle className="h-3.5 w-3.5" />
-                  Stop Selected
+                  Reject Selected
                 </Button>
                 <Button
                   size="sm"

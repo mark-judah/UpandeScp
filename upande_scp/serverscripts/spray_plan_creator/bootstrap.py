@@ -109,8 +109,15 @@ def fetch_creator_bootstrap() -> dict:
     )
 
     settings = frappe.get_single("Spray Plan Settings")
+    from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
+        _configured_stores,
+    )
     return {
         "scope": {"farms": farms, "allowed_warehouses": scope["warehouses"]},
+        # Whether the GM has explicitly listed stores (regex fallback ignored):
+        # the Add chemical / Add foliar buttons stay disabled until each is set.
+        "chemical_store_set": bool(_configured_stores("chemical_stores")),
+        "fertigation_store_set": bool(_configured_stores("fertigation_stores")),
         "greenhouses": greenhouses,
         "kits": kits,
         "spray_teams": spray_teams,
@@ -198,6 +205,7 @@ def _fetch_spray_teams(farms: list) -> list:
 def _empty_bootstrap() -> dict:
     return {
         "scope": {"farms": [], "allowed_warehouses": []},
+        "chemical_store_set": False, "fertigation_store_set": False,
         "greenhouses": [], "kits": [], "spray_teams": [], "tank_mixes": [],
         "rate_limits": {}, "pest_catalog": [], "disease_catalog": [],
         "cost_centers": [],

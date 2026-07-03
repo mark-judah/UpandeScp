@@ -6,6 +6,9 @@
  "field_order": [
   "intro_section",
   "intro_note",
+  "stores_section",
+  "chemical_stores",
+  "fertigation_stores",
   "farms_section",
   "allowed_farms",
   "keywords_section",
@@ -55,6 +58,25 @@
    "fieldtype": "Small Text",
    "label": "Note",
    "read_only": 1
+  },
+  {
+   "fieldname": "stores_section",
+   "fieldtype": "Section Break",
+   "label": "Chemical & Fertigation Stores"
+  },
+  {
+   "description": "Warehouses that hold chemicals (e.g. 'Chemical Main Store'). The Application Floor Plan's chemical search and source-warehouse pickers draw from these. When empty, falls back to matching warehouse names containing 'chemical' and 'store'.",
+   "fieldname": "chemical_stores",
+   "fieldtype": "Table MultiSelect",
+   "label": "Chemical Stores",
+   "options": "Spray Plan Store Warehouse"
+  },
+  {
+   "description": "Warehouses that hold foliars / fertigation feeds (e.g. 'CFU : Fertigation Main Store'). Foliar (fertilizer-group) items are searched and sourced from these. When empty, falls back to matching warehouse names containing 'fertilizer' and 'store'.",
+   "fieldname": "fertigation_stores",
+   "fieldtype": "Table MultiSelect",
+   "label": "Fertigation / Foliar Stores",
+   "options": "Spray Plan Store Warehouse"
   },
   {
    "fieldname": "farms_section",

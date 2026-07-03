@@ -17,6 +17,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -214,6 +220,10 @@ function rateLimitError(
 export function ApplicationPlan() {
   const [bootstrap, setBootstrap] = useState<CreatorBootstrap | null>(null);
   const [bootstrapError, setBootstrapError] = useState<{ status: number; message: string } | null>(null);
+  // Add chemical / Add foliar are gated on the GM having configured the
+  // matching store in Spray Plan Settings (see Settings → Spray Plan).
+  const chemStoreSet = !!bootstrap?.chemical_store_set;
+  const foliarStoreSet = !!bootstrap?.fertigation_store_set;
   const [varietyTree, setVarietyTree] = useState<VarietyNode[]>([]);
   const [bedsByGh, setBedsByGh] = useState<Record<string, BedAreaRow[]>>({});
   const [zonesByGh, setZonesByGh] = useState<Record<string, number>>({});
@@ -281,6 +291,7 @@ export function ApplicationPlan() {
 
   // Add-chemical dialog
   const [addOpen, setAddOpen] = useState(false);
+  const [addKind, setAddKind] = useState<"chemical" | "foliar">("chemical");
   const [addQuery, setAddQuery] = useState("");
   const [addResults, setAddResults] = useState<ChemicalItem[]>([]);
   const [addNotice, setAddNotice] = useState<string>("");
@@ -418,17 +429,18 @@ export function ApplicationPlan() {
     };
   }, [bom]);
 
-  // Add-chemical search debounce.
+  // Add-chemical / add-foliar search debounce. ``addKind`` narrows the pool so
+  // each modal only offers its own items (chemicals vs foliars/fertigation).
   useEffect(() => {
     if (!addOpen) return;
     if (addTimerRef.current) clearTimeout(addTimerRef.current);
     addTimerRef.current = setTimeout(() => {
-      searchChemicalItems(addQuery).then(setAddResults);
+      searchChemicalItems(addQuery, addKind).then(setAddResults);
     }, 200);
     return () => {
       if (addTimerRef.current) clearTimeout(addTimerRef.current);
     };
-  }, [addQuery, addOpen]);
+  }, [addQuery, addOpen, addKind]);
 
   // BOM-creation chemical search debounce.
   useEffect(() => {
@@ -1798,15 +1810,32 @@ export function ApplicationPlan() {
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <Label>Chemicals (per 1000 L)</Label>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-[0.7rem]"
-                        onClick={() => setAddOpen(true)}
-                      >
-                        <Plus className="h-3 w-3" />
-                        Add chemical
-                      </Button>
+                      <div className="flex items-center gap-1.5">
+                        <AddStoreButton
+                          label="Add chemical"
+                          enabled={chemStoreSet}
+                          disabledTip="Set the chemical store in Settings → Spray Plan first."
+                          onClick={() => {
+                            setAddKind("chemical");
+                            setAddQuery("");
+                            setAddResults([]);
+                            setAddNotice("");
+                            setAddOpen(true);
+                          }}
+                        />
+                        <AddStoreButton
+                          label="Add foliar"
+                          enabled={foliarStoreSet}
+                          disabledTip="Set the fertigation store in Settings → Spray Plan first."
+                          onClick={() => {
+                            setAddKind("foliar");
+                            setAddQuery("");
+                            setAddResults([]);
+                            setAddNotice("");
+                            setAddOpen(true);
+                          }}
+                        />
+                      </div>
                     </div>
                     {chemRows.length ? (
                       <Table>
@@ -2161,10 +2190,13 @@ export function ApplicationPlan() {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add chemical</DialogTitle>
+            <DialogTitle>
+              {addKind === "foliar" ? "Add foliar" : "Add chemical"}
+            </DialogTitle>
             <DialogDescription>
-              Search by item name. Restricted to chemical and fertilizer item
-              groups so the source-warehouse picker stays valid.
+              {addKind === "foliar"
+                ? "Search by item name. Foliars are sourced from the configured fertigation stores."
+                : "Search by item name. Chemicals are sourced from the configured chemical stores."}
             </DialogDescription>
           </DialogHeader>
           <Input
@@ -2197,7 +2229,7 @@ export function ApplicationPlan() {
                   {it.item_code} · {it.stock_uom || ""}
                   {it.is_fertilizer ? (
                     <span className="ml-1 text-[var(--sd-data-green)]">
-                      · Fertilizer Store
+                      · Fertigation Store
                     </span>
                   ) : (
                     <span className="ml-1 text-[var(--sd-data-cyan)]">
@@ -2417,5 +2449,47 @@ function DiagChip({
     >
       <span className="font-medium">{label}</span>
     </button>
+  );
+}
+
+/** Add chemical / Add foliar button. When the matching store isn't configured
+ *  in Spray Plan Settings it renders disabled with a tooltip pointing the user
+ *  to Settings (a disabled button can't fire hover, so the trigger wraps a
+ *  span around it). */
+function AddStoreButton({
+  label,
+  enabled,
+  disabledTip,
+  onClick,
+}: {
+  label: string;
+  enabled: boolean;
+  disabledTip: string;
+  onClick: () => void;
+}) {
+  const btn = (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-7 text-[0.7rem]"
+      disabled={!enabled}
+      onClick={onClick}
+    >
+      <Plus className="h-3 w-3" />
+      {label}
+    </Button>
+  );
+  if (enabled) return btn;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span tabIndex={0} className="inline-flex cursor-not-allowed">
+            {btn}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{disabledTip}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

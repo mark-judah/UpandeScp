@@ -41,6 +41,20 @@ def get_settings_bundle() -> dict:
     exclude_keywords = [
         {"keyword": r.keyword} for r in (settings.exclude_keywords or [])
     ]
+    chemical_stores = [
+        {"warehouse": r.warehouse} for r in (settings.get("chemical_stores") or [])
+    ]
+    fertigation_stores = [
+        {"warehouse": r.warehouse} for r in (settings.get("fertigation_stores") or [])
+    ]
+
+    # Store-picker options: non-group, non-disabled warehouses.
+    warehouses = frappe.get_all(
+        "Warehouse",
+        filters={"disabled": 0, "is_group": 0},
+        pluck="name",
+        order_by="name asc",
+    )
 
     map_settings = frappe.get_single("Map Settings")
     farm_coords = [
@@ -87,7 +101,10 @@ def get_settings_bundle() -> dict:
             "progress_email_hour": settings.progress_email_hour if settings.progress_email_hour is not None else 18,
             "allowed_farms": allowed_farms,
             "exclude_keywords": exclude_keywords,
+            "chemical_stores": chemical_stores,
+            "fertigation_stores": fertigation_stores,
         },
+        "warehouses": warehouses,
         "map_settings": {
             "lat": map_settings.lat or 0,
             "lon": map_settings.lon or 0,
@@ -163,6 +180,14 @@ def save_spray_plan_settings(payload) -> dict:
             kw = (r.get("keyword") if isinstance(r, dict) else r) or ""
             if kw:
                 settings.append("exclude_keywords", {"keyword": kw})
+
+    for field in ("chemical_stores", "fertigation_stores"):
+        if field in payload:
+            settings.set(field, [])
+            for r in payload.get(field) or []:
+                wh = (r.get("warehouse") if isinstance(r, dict) else r) or ""
+                if wh:
+                    settings.append(field, {"warehouse": wh})
 
     settings.save(ignore_permissions=True)
     # Bust the AFP warehouse cache so the picker reflects the new

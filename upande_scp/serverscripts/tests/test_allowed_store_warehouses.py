@@ -19,16 +19,19 @@ WAREHOUSES = [
 
 
 def _patches(farms=("Main",)):
+    # ``_configured_stores`` patched empty so these exercise the name-heuristic
+    # fallback; the explicit-settings path has its own test below.
     return (
         mock.patch.object(sps, "get_allowed_farms", return_value=list(farms)),
+        mock.patch.object(sps, "_configured_stores", return_value=[]),
         mock.patch.object(sps.frappe, "get_all", return_value=[dict(w) for w in WAREHOUSES]),
     )
 
 
 class TestAllowedStoreWarehouses(unittest.TestCase):
     def test_chemical_store_includes_null_farm(self):
-        p1, p2 = _patches()
-        with p1, p2:
+        p1, p2, p3 = _patches()
+        with p1, p2, p3:
             self.assertEqual(
                 sps.get_allowed_chemical_store_warehouses(),
                 ["Chemical Main Store - MFK"],
@@ -37,21 +40,33 @@ class TestAllowedStoreWarehouses(unittest.TestCase):
     def test_other_farm_chemical_store_excluded(self):
         # A chemical store tagged to a farm the user can't see stays hidden,
         # even though NULL-farm stores are global.
-        p1, p2 = _patches(farms=("Main",))
-        with p1, p2:
+        p1, p2, p3 = _patches(farms=("Main",))
+        with p1, p2, p3:
             self.assertNotIn(
                 "Chemical Store - Chepsito",
                 sps.get_allowed_chemical_store_warehouses(),
             )
 
     def test_fertilizer_store_includes_null_farm(self):
-        p1, p2 = _patches()
-        with p1, p2:
+        p1, p2, p3 = _patches()
+        with p1, p2, p3:
             self.assertEqual(
                 sps.get_allowed_fertilizer_unit_warehouses(),
                 ["Fertilizer Main Store - MFK"],
             )
 
     def test_no_farms_returns_empty(self):
-        with mock.patch.object(sps, "get_allowed_farms", return_value=[]):
+        with mock.patch.object(sps, "_configured_stores", return_value=[]), \
+                mock.patch.object(sps, "get_allowed_farms", return_value=[]):
             self.assertEqual(sps.get_allowed_chemical_store_warehouses(), [])
+
+    def test_configured_stores_take_precedence(self):
+        # When the GM lists stores explicitly in Spray Plan Settings, that list
+        # wins as-is and the name heuristic is not consulted.
+        with mock.patch.object(
+            sps, "_configured_stores", return_value=["CFU : Fertigation Main Store - MFK"]
+        ):
+            self.assertEqual(
+                sps.get_allowed_fertilizer_unit_warehouses(),
+                ["CFU : Fertigation Main Store - MFK"],
+            )

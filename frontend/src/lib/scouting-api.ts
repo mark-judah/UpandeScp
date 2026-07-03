@@ -758,6 +758,11 @@ export interface PlanBootstrap {
    *  dropdown on the application plan page. Defaults to ``[]`` for
    *  older bootstrap responses that pre-date the field. */
   spray_teams?: string[];
+  /** Whether the GM has explicitly set chemical / fertigation stores in Spray
+   *  Plan Settings. The Add chemical / Add foliar buttons stay disabled until
+   *  the matching store is configured. */
+  chemical_store_set?: boolean;
+  fertigation_store_set?: boolean;
 }
 
 export interface BomChemical {
@@ -784,11 +789,12 @@ export interface ChemicalItem {
 
 export async function searchChemicalItems(
   q?: string,
+  kind?: "chemical" | "foliar",
 ): Promise<ChemicalItem[]> {
   try {
     return await call<ChemicalItem[]>(
       "upande_scp.serverscripts.scouting_metrics_api.list_chemical_items",
-      { q: q || undefined, limit: 50 },
+      { q: q || undefined, limit: 50, kind: kind || undefined },
     );
   } catch {
     return [];

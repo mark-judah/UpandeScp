@@ -42,6 +42,12 @@ export interface SprayPlanSettings {
   progress_email_hour: number;
   allowed_farms: { farm: string }[];
   exclude_keywords: { keyword: string }[];
+  /** Warehouses that hold chemicals — the Application Plan chemical picker
+   *  sources from these. */
+  chemical_stores: { warehouse: string }[];
+  /** Warehouses that hold foliars / fertigation feeds — the Application Plan
+   *  foliar picker sources from these. */
+  fertigation_stores: { warehouse: string }[];
 }
 
 export interface FarmCoord {
@@ -62,6 +68,8 @@ export interface SettingsBundle {
   spray_plan: SprayPlanSettings;
   map_settings: MapSettings;
   farms: string[];
+  /** Warehouse names for the store multi-selects (non-group, enabled). */
+  warehouses: string[];
 }
 
 export async function fetchSettingsBundle(): Promise<SettingsBundle> {

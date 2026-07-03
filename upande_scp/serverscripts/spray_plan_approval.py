@@ -101,8 +101,9 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
     """
     Return AFP Work Orders (Not Started, submitted) with child items
     and forwarding status (draft SE exists?).
-    Date range applies to COALESCE(custom_scheduled_application_time, planned_start_date)
-    so WOs without an explicit scheduled time still match against their planning time.
+    Date range applies to the WO's ``creation`` (the date the spray plan was
+    created), and results are ordered newest-created first — approvers work the
+    backlog starting with today's plans, regardless of when they're scheduled.
     """
     params = {"type": AFP_TYPE}
     where = [
@@ -112,14 +113,10 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
     ]
 
     if from_date:
-        where.append(
-            "COALESCE(custom_scheduled_application_time, planned_start_date) >= %(from_date)s"
-        )
+        where.append("creation >= %(from_date)s")
         params["from_date"] = from_date + " 00:00:00"
     if to_date:
-        where.append(
-            "COALESCE(custom_scheduled_application_time, planned_start_date) < %(to_date)s"
-        )
+        where.append("creation < %(to_date)s")
         params["to_date"] = str(add_days(to_date, 1)) + " 00:00:00"
 
     if greenhouse:
@@ -150,8 +147,7 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
             custom_targets
         FROM `tabWork Order`
         WHERE {where}
-        ORDER BY COALESCE(custom_scheduled_application_time, planned_start_date) DESC,
-                 creation DESC
+        ORDER BY creation DESC
         """.format(where=" AND ".join(where)),
         params,
         as_dict=1,

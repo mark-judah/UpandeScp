@@ -195,6 +195,7 @@ export function Settings() {
               <SprayPlanTab
                 initial={bundle.spray_plan}
                 farms={bundle.farms}
+                warehouses={bundle.warehouses}
                 onSaved={(saved) =>
                   setBundle({ ...bundle, spray_plan: saved })
                 }

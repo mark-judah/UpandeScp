@@ -59,11 +59,42 @@ def _allowed_warehouses_matching(predicate):
     return out
 
 
+def _configured_stores(fieldname):
+    """Non-disabled warehouses explicitly listed in the given Spray Plan Settings
+    child table (``chemical_stores`` / ``fertigation_stores``). The admin's
+    explicit choice wins as-is — no farm scoping — so a deliberately picked
+    global store (e.g. an untagged main store) is always honoured. Returns [] when
+    nothing is configured, so callers can fall back to the name heuristic."""
+    rows = frappe.get_all(
+        "Spray Plan Store Warehouse",
+        filters={"parenttype": "Spray Plan Settings", "parentfield": fieldname},
+        pluck="warehouse",
+    )
+    names = [w for w in rows if w]
+    if not names:
+        return []
+    live = set(
+        frappe.get_all(
+            "Warehouse",
+            filters={"name": ["in", names], "disabled": 0},
+            pluck="name",
+        )
+    )
+    # Preserve the configured order, drop any disabled/deleted ones.
+    return [w for w in names if w in live]
+
+
 def get_allowed_chemical_store_warehouses():
-    """Chemical-store warehouses scoped to allowed farms."""
-    return _allowed_warehouses_matching(is_chemical_store)
+    """Chemical-store warehouses. Prefers the explicit Spray Plan Settings list;
+    falls back to the ``chemical … store`` name heuristic when unset."""
+    return _configured_stores("chemical_stores") or _allowed_warehouses_matching(
+        is_chemical_store
+    )
 
 
 def get_allowed_fertilizer_unit_warehouses():
-    """Fertilizer-store warehouses scoped to allowed farms."""
-    return _allowed_warehouses_matching(is_fertilizer_store)
+    """Fertigation / foliar warehouses. Prefers the explicit Spray Plan Settings
+    list; falls back to the ``fertilizer … store`` name heuristic when unset."""
+    return _configured_stores("fertigation_stores") or _allowed_warehouses_matching(
+        is_fertilizer_store
+    )

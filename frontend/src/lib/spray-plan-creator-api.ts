@@ -79,6 +79,11 @@ export interface CreatorCostCenter {
 
 export interface CreatorBootstrap {
   scope: CreatorScope;
+  /** Whether the GM has explicitly set chemical / fertigation stores in Spray
+   *  Plan Settings. The Add chemical / Add foliar buttons stay disabled until
+   *  the matching store is configured. */
+  chemical_store_set?: boolean;
+  fertigation_store_set?: boolean;
   greenhouses: CreatorGreenhouse[];
   kits: CreatorKit[];
   spray_teams: CreatorSprayTeam[];

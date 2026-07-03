@@ -15,6 +15,7 @@ import {
   RotateCw,
   Building2,
   Ban,
+  Warehouse,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,12 +44,14 @@ import { FrappeError } from "@/lib/frappe";
 interface Props {
   initial: SprayPlanSettings;
   farms: string[];
+  warehouses: string[];
   onSaved?: (saved: SprayPlanSettings) => void;
 }
 
 const ALL_FARM_PICKER = "__pick__";
+const STORE_PICKER = "__store_pick__";
 
-export function SprayPlanTab({ initial, farms, onSaved }: Props) {
+export function SprayPlanTab({ initial, farms, warehouses, onSaved }: Props) {
   const [draft, setDraft] = useState<SprayPlanSettings>(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -340,6 +343,36 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
 
       <Card className="lg:col-span-2">
         <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Warehouse className="h-4 w-4 text-muted-foreground" />
+            Chemical & fertigation stores
+          </CardTitle>
+          <CardDescription>
+            The Application Plan sources chemicals and foliars from these
+            warehouses. Until a list is set, the matching Add button on the plan
+            page is disabled.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <StorePicker
+            title="Chemical stores"
+            description="Warehouses that hold chemicals (e.g. Chemical Main Store)."
+            options={warehouses}
+            value={draft.chemical_stores ?? []}
+            onChange={(next) => set("chemical_stores", next)}
+          />
+          <StorePicker
+            title="Fertigation / foliar stores"
+            description="Warehouses that hold foliars / fertigation feeds (e.g. CFU : Fertigation Main Store)."
+            options={warehouses}
+            value={draft.fertigation_stores ?? []}
+            onChange={(next) => set("fertigation_stores", next)}
+          />
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader>
           <CardTitle className="text-base">Defaults & gating</CardTitle>
           <CardDescription>
             Material issue defaults + submission-gating overrides.
@@ -578,6 +611,96 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
           Save settings
         </Button>
       </div>
+    </div>
+  );
+}
+
+function StorePicker({
+  title,
+  description,
+  options,
+  value,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  options: string[];
+  value: { warehouse: string }[];
+  onChange: (next: { warehouse: string }[]) => void;
+}) {
+  const [pick, setPick] = useState<string>("");
+  const available = options.filter(
+    (w) => !value.some((v) => v.warehouse === w),
+  );
+  const add = () => {
+    if (!pick || pick === STORE_PICKER) return;
+    if (value.some((v) => v.warehouse === pick)) return;
+    onChange([...value, { warehouse: pick }]);
+    setPick("");
+  };
+  const remove = (wh: string) =>
+    onChange(value.filter((v) => v.warehouse !== wh));
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div>
+        <div className="text-xs font-semibold">{title}</div>
+        <p className="text-[0.65rem] text-muted-foreground leading-snug">
+          {description}
+        </p>
+      </div>
+      <div className="flex gap-2 items-end">
+        <div className="flex-1">
+          <Select value={pick || STORE_PICKER} onValueChange={setPick}>
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="Pick a warehouse…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={STORE_PICKER} disabled>
+                Pick a warehouse…
+              </SelectItem>
+              {available.map((w) => (
+                <SelectItem key={w} value={w}>
+                  {w}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button
+          onClick={add}
+          size="sm"
+          className="h-9 gap-1"
+          disabled={!pick || pick === STORE_PICKER}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add
+        </Button>
+      </div>
+      {value.length === 0 ? (
+        <p className="text-xs text-amber-600 italic">
+          None set — the matching Add button is disabled until you add one.
+        </p>
+      ) : (
+        <ul className="flex flex-wrap gap-1.5">
+          {value.map((v) => (
+            <li
+              key={v.warehouse}
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 text-primary px-2.5 py-1 text-xs font-medium"
+            >
+              {v.warehouse}
+              <button
+                type="button"
+                onClick={() => remove(v.warehouse)}
+                className="text-primary/70 hover:text-destructive transition-colors"
+                title="Remove"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

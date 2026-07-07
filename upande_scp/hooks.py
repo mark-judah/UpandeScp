@@ -408,6 +408,7 @@ fixtures = [
                         "Item-custom_scouting_and_crop_protection_tab",
                         "Item-custom_lower_rate_limit",
                         "Item-custom_upper_rate_limit",
+                        "Item-custom_low_stock_threshold",
                         # BOM fields
                         "BOM-custom_water_hardness",
                         "BOM-custom_water_ph",

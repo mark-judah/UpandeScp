@@ -44,6 +44,47 @@ def _check_perm():
 
 
 # ----------------------------------------------------------------------
+# Farm scoping — a plain Store Keeper only sees stock for the farm(s)
+# they're assigned to (Farm.store_keepers child table); System Manager /
+# Administrator / General Manager see everything, unchanged.
+# ----------------------------------------------------------------------
+def _allowed_farms_for(user=None):
+    """``None`` => user sees all stores (admin/GM). Else the list of farms
+    where the user is an assigned store keeper (possibly empty)."""
+    user = user or frappe.session.user
+    roles = set(frappe.get_roles(user))
+    if roles & {"System Manager", "Administrator", "General Manager"}:
+        return None
+    return frappe.get_all(
+        "Farm Store Keeper",
+        filters={"user": user, "parenttype": "Farm"},
+        pluck="parent",
+    )
+
+
+def bucket_overview(items, warehouses, matrix, chem_group_items):
+    """Split overview rows into chemical vs fertilizer buckets with per-store,
+    per-item and grand totals. ``chem_group_items`` = set of item_codes in the
+    CHEMICALS item group; everything else falls into the fertilizer bucket.
+    Pure — no DB access, so it's covered by a plain unit test."""
+    def _bucket(is_chem):
+        pick = [m for m in matrix if (m["item_code"] in chem_group_items) == is_chem]
+        by_item, by_wh = {}, {}
+        for m in pick:
+            by_item[m["item_code"]] = by_item.get(m["item_code"], 0.0) + float(m["qty"] or 0)
+            w = by_wh.setdefault(m["warehouse"], {"warehouse": m["warehouse"], "total_qty": 0.0, "item_count": 0})
+            w["total_qty"] += float(m["qty"] or 0)
+            w["item_count"] += 1
+        return {
+            "stores": sorted(by_wh.values(), key=lambda x: -x["total_qty"]),
+            "items": sorted(({"item_code": k, "total_qty": v} for k, v in by_item.items()), key=lambda x: -x["total_qty"]),
+            "matrix": pick,
+            "total_qty": sum(by_item.values()),
+        }
+    return {"chemical": _bucket(True), "fertilizer": _bucket(False)}
+
+
+# ----------------------------------------------------------------------
 # Chemical Dashboard
 # ----------------------------------------------------------------------
 # Item groups treated as "chemicals" for the dashboard. Anything tagged
@@ -67,11 +108,45 @@ def chemical_stock_overview() -> dict:
 
     Only positive ``actual_qty`` rows are kept — out-of-stock /
     negative-qty bins clutter the table and the user explicitly asked
-    for "only show chemicals in stock"."""
+    for "only show chemicals in stock".
+
+    Scoped to the caller's assigned farms unless they hold an admin/GM
+    role (see ``_allowed_farms_for``)."""
     _check_perm()
 
+    allowed = _allowed_farms_for()
+    allowed_whs = None
+    if allowed is not None:
+        # ``allowed`` may be an empty list (no farms assigned) — don't let an
+        # empty IN-clause sentinel accidentally match warehouses whose
+        # ``custom_farm`` is itself an empty string/null.
+        allowed_whs = (
+            frappe.get_all("Warehouse", filters={"custom_farm": ("in", allowed)}, pluck="name")
+            if allowed
+            else []
+        )
+
+    if allowed_whs == []:
+        chem_items = set(frappe.get_all("Item", filters={"item_group": "CHEMICALS"}, pluck="name"))
+        buckets = bucket_overview([], [], [], chem_items)
+        return {
+            "items": [],
+            "warehouses": [],
+            "matrix": [],
+            "csus": [],
+            "as_of": now_datetime().isoformat(timespec="seconds"),
+            "buckets": buckets,
+            "allowed_farms": allowed,
+        }
+
+    bin_params = {"groups": _CHEMICAL_GROUPS}
+    wh_filter_sql = ""
+    if allowed_whs is not None:
+        wh_filter_sql = "AND  b.warehouse IN %(allowed_whs)s"
+        bin_params["allowed_whs"] = tuple(allowed_whs)
+
     rows = frappe.db.sql(
-        """
+        f"""
         SELECT b.item_code,
                i.item_name,
                i.item_group,
@@ -82,9 +157,10 @@ def chemical_stock_overview() -> dict:
         JOIN   `tabItem` i ON i.name = b.item_code
         WHERE  i.item_group IN %(groups)s
           AND  b.actual_qty > 0
+          {wh_filter_sql}
         ORDER  BY i.item_name, b.warehouse
         """,
-        {"groups": _CHEMICAL_GROUPS},
+        bin_params,
         as_dict=True,
     )
 
@@ -122,23 +198,37 @@ def chemical_stock_overview() -> dict:
     # whether it currently holds stock — lets the dashboard show all CSUs and
     # disable the empty ones. Pre-filtered to names containing "CSU"; the client
     # applies the exact whole-word rule.
+    csu_params = {"p": "%CSU%"}
+    csu_filter_sql = ""
+    if allowed_whs is not None:
+        csu_filter_sql = "AND  name IN %(allowed_whs)s"
+        csu_params["allowed_whs"] = tuple(allowed_whs)
+
     csus = frappe.db.sql(
-        """
+        f"""
         SELECT name AS warehouse, COALESCE(custom_farm, '') AS farm
         FROM   `tabWarehouse`
         WHERE  is_group = 0 AND disabled = 0 AND name LIKE %(p)s
+          {csu_filter_sql}
         ORDER  BY name
         """,
-        {"p": "%CSU%"},
+        csu_params,
         as_dict=True,
     )
 
+    items_list = sorted(items.values(), key=lambda x: -x["total_qty"])
+    warehouses_list = sorted(warehouses.values(), key=lambda x: -x["total_qty"])
+    chem_items = set(frappe.get_all("Item", filters={"item_group": "CHEMICALS"}, pluck="name"))
+    buckets = bucket_overview(items_list, warehouses_list, matrix, chem_items)
+
     return {
-        "items":      sorted(items.values(), key=lambda x: -x["total_qty"]),
-        "warehouses": sorted(warehouses.values(), key=lambda x: -x["total_qty"]),
-        "matrix":     matrix,
-        "csus":       csus,
-        "as_of":      now_datetime().isoformat(timespec="seconds"),
+        "items":         items_list,
+        "warehouses":    warehouses_list,
+        "matrix":        matrix,
+        "csus":          csus,
+        "as_of":         now_datetime().isoformat(timespec="seconds"),
+        "buckets":       buckets,
+        "allowed_farms": allowed,
     }
 
 
@@ -154,22 +244,43 @@ def chemical_store_levels() -> dict:
                       aggregation client-side.
 
     Only the per-farm chemical stores are considered (greenhouse bins are
-    excluded), so the comparison is store-to-store / farm-to-farm."""
+    excluded), so the comparison is store-to-store / farm-to-farm.
+
+    Scoped to the caller's assigned farms unless they hold an admin/GM
+    role (see ``_allowed_farms_for``)."""
     _check_perm()
+
+    allowed = _allowed_farms_for()
+    allowed_whs = None
+    if allowed is not None:
+        # ``allowed`` may be an empty list (no farms assigned) — don't let an
+        # empty IN-clause sentinel accidentally match warehouses whose
+        # ``custom_farm`` is itself an empty string/null.
+        allowed_whs = (
+            frappe.get_all("Warehouse", filters={"custom_farm": ("in", allowed)}, pluck="name")
+            if allowed
+            else []
+        )
+        if allowed_whs == []:
+            return {"stores": [], "items": [], "matrix": [], "allowed_farms": allowed}
+
+    store_filters = [
+        ["Warehouse", "is_group", "=", 0],
+        ["Warehouse", "disabled", "=", 0],
+        ["Warehouse", "name", "like", "Chemical Store%"],
+        ["Warehouse", "custom_farm", "is", "set"],
+    ]
+    if allowed_whs is not None:
+        store_filters.append(["Warehouse", "name", "in", allowed_whs])
 
     stores = frappe.get_all(
         "Warehouse",
-        filters={
-            "is_group": 0,
-            "disabled": 0,
-            "name": ("like", "Chemical Store%"),
-            "custom_farm": ("is", "set"),
-        },
+        filters=store_filters,
         fields=["name", "custom_farm"],
         order_by="custom_farm, name",
     )
     if not stores:
-        return {"stores": [], "items": [], "matrix": []}
+        return {"stores": [], "items": [], "matrix": [], "allowed_farms": allowed}
 
     names = [s.name for s in stores]
     rows = frappe.db.sql(
@@ -204,6 +315,7 @@ def chemical_store_levels() -> dict:
         ],
         "items": sorted(items.values(), key=lambda x: -x["total"]),
         "matrix": matrix,
+        "allowed_farms": allowed,
     }
 
 

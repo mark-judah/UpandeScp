@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { Beaker, RefreshCw, Search } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -16,12 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,11 +30,6 @@ import { StoreBucketPanel } from "@/components/StoreBucketPanel";
 import { cn } from "@/lib/utils";
 
 const ALL_WAREHOUSE = "__all__";
-const CHART_TOP_N = 12;
-
-const config: ChartConfig = {
-  qty: { label: "Stock", color: "var(--sd-data-cyan, #06b6d4)" },
-};
 
 function fmt(n: number): string {
   if (Math.abs(n) >= 1000) return n.toLocaleString(undefined, {
@@ -111,14 +93,10 @@ export function ChemicalDashboard() {
     );
   }, [filteredItems, query]);
 
-  const chartData = useMemo(
+  const itemNames = useMemo(
     () =>
-      filteredItems.slice(0, CHART_TOP_N).map((i) => ({
-        name: i.item_name,
-        qty: Math.round(i.total_qty * 100) / 100,
-        uom: i.uom,
-      })),
-    [filteredItems],
+      Object.fromEntries((data?.items || []).map((i) => [i.item_code, i.item_name])),
+    [data],
   );
 
   const overallTotals = useMemo(() => {
@@ -228,77 +206,20 @@ export function ChemicalDashboard() {
           />
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="flex flex-col gap-4">
           <StoreBucketPanel
             title="Chemical Stores"
             bucket={data?.buckets?.chemical}
             loading={loading}
+            itemNames={itemNames}
           />
           <StoreBucketPanel
             title="Fertilizer Stores"
             bucket={data?.buckets?.fertilizer}
             loading={loading}
+            itemNames={itemNames}
           />
         </div>
-
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Beaker className="h-4 w-4" />
-              Top {CHART_TOP_N} chemicals by quantity
-            </CardTitle>
-            <CardDescription>
-              {warehouseFilter === ALL_WAREHOUSE
-                ? "Summed across every warehouse holding stock."
-                : `Stock held in ${warehouseFilter}.`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {chartData.length ? (
-              <ChartContainer config={config} className="w-full h-72">
-                <BarChart
-                  data={chartData}
-                  margin={{ left: 12, right: 12, top: 8, bottom: 12 }}
-                >
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="name"
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                    tick={{ fontSize: 10 }}
-                    angle={-25}
-                    height={64}
-                    textAnchor="end"
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    width={56}
-                    tickFormatter={(v: number) => fmt(v)}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        formatter={(v, _name, item) => {
-                          const payload = (item as { payload?: { uom?: string } })
-                            ?.payload;
-                          const uom = payload?.uom || "";
-                          return `${fmt(Number(v))} ${uom}`.trim();
-                        }}
-                      />
-                    }
-                  />
-                  <Bar dataKey="qty" fill="var(--color-qty)" radius={4} />
-                </BarChart>
-              </ChartContainer>
-            ) : (
-              <div className="text-xs text-muted-foreground py-8 text-center">
-                {loading ? "Loading stock…" : "No chemicals in stock."}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         <CsuLevels data={data} loading={loading} />
 

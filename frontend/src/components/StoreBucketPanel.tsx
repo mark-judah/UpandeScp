@@ -3,11 +3,12 @@
  * ``chemical_stock_overview``'s ``buckets`` payload — already scoped
  * server-side to the caller's allowed farms.
  *
- * Renders a total-qty KPI, a per-store table and a bar chart (qty per
- * store). Degrades to an empty state (not a crash) when the bucket has no
- * stores — e.g. a Store Keeper with no assigned farm.
+ * Renders a total-qty KPI, a chemical selector, a bar chart (qty per store,
+ * for the selected chemical or all of them combined) and a chemical × store
+ * matrix table. Degrades to an empty state (not a crash) when the bucket has
+ * no stores — e.g. a Store Keeper with no assigned farm.
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -29,7 +30,17 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import type { StoreBucket } from "@/lib/store-keeper-api";
+
+const ALL_CHEMICALS = "__all__";
 
 // Same series palette used by ChemicalStoreComparison.tsx / CsuLevels.tsx.
 const PALETTE = [
@@ -52,21 +63,56 @@ export function StoreBucketPanel({
   title,
   bucket,
   loading,
+  itemNames,
 }: {
   title: string;
   bucket: StoreBucket | null | undefined;
   loading?: boolean;
+  itemNames?: Record<string, string>;
 }) {
+  const [selected, setSelected] = useState<string>(ALL_CHEMICALS);
+
+  const items = bucket?.items || [];
   const stores = bucket?.stores || [];
+  const matrix = bucket?.matrix || [];
+
+  const nameOf = (code: string) => itemNames?.[code] || code;
+
+  const qtyByItemStore = useMemo(() => {
+    const map: Record<string, Record<string, number>> = {};
+    for (const m of matrix) {
+      (map[m.item_code] ||= {})[m.warehouse] = m.qty;
+    }
+    return map;
+  }, [matrix]);
+
+  const options = useMemo(
+    () =>
+      [...items]
+        .sort((a, b) => b.total_qty - a.total_qty)
+        .map((i) => ({ value: i.item_code, label: nameOf(i.item_code) })),
+    [items, itemNames],
+  );
 
   const barData = useMemo(
     () =>
       stores.map((s) => ({
         warehouse: s.warehouse,
-        qty: Math.round(s.total_qty * 100) / 100,
+        qty:
+          selected === ALL_CHEMICALS
+            ? Math.round(s.total_qty * 100) / 100
+            : Math.round((qtyByItemStore[selected]?.[s.warehouse] || 0) * 100) / 100,
         item_count: s.item_count,
       })),
-    [stores],
+    [stores, selected, qtyByItemStore],
+  );
+
+  const matrixRows = useMemo(
+    () =>
+      selected === ALL_CHEMICALS
+        ? items
+        : items.filter((i) => i.item_code === selected),
+    [items, selected],
   );
 
   const chartConfig: ChartConfig = {
@@ -74,6 +120,7 @@ export function StoreBucketPanel({
   };
 
   const empty = !stores.length;
+  const selectId = `sbp-chemical-${title.toLowerCase().replace(/\s+/g, "-")}`;
 
   return (
     <Card>
@@ -99,6 +146,25 @@ export function StoreBucketPanel({
             {fmt(bucket?.total_qty || 0)}
           </div>
         </div>
+
+        {!empty && (
+          <div className="flex flex-col gap-1 max-w-72">
+            <Label htmlFor={selectId}>Chemical</Label>
+            <Select value={selected} onValueChange={setSelected}>
+              <SelectTrigger id={selectId} className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_CHEMICALS}>All chemicals</SelectItem>
+                {options.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {empty ? (
           <div className="text-xs text-muted-foreground py-8 text-center">
@@ -135,38 +201,59 @@ export function StoreBucketPanel({
           </div>
         )}
 
-        {/* Table: store · total qty · item count */}
+        {/* Matrix table: chemical × store, plus a total column */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-[0.7rem] uppercase tracking-wide text-muted-foreground border-b">
               <tr>
-                <th className="text-left px-4 py-2">Store</th>
-                <th className="text-right px-4 py-2">Total qty</th>
-                <th className="text-right px-4 py-2">Items</th>
+                <th className="text-left px-4 py-2">Chemical</th>
+                {stores.map((s) => (
+                  <th key={s.warehouse} className="text-right px-4 py-2">
+                    {s.warehouse}
+                  </th>
+                ))}
+                <th className="text-right px-4 py-2">Total</th>
               </tr>
             </thead>
             <tbody>
-              {stores.map((s) => (
+              {matrixRows.map((i) => (
                 <tr
-                  key={s.warehouse}
+                  key={i.item_code}
                   className="border-b last:border-0 hover:bg-muted/40"
                 >
-                  <td className="px-4 py-2 font-medium">{s.warehouse}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">
-                    {fmt(s.total_qty)}
+                  <td className="px-4 py-2">
+                    <div className="font-medium">{nameOf(i.item_code)}</div>
+                    <div className="text-[0.65rem] text-muted-foreground">
+                      {i.item_code}
+                    </div>
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                    {s.item_count}
+                  {stores.map((s) => {
+                    const qty = qtyByItemStore[i.item_code]?.[s.warehouse] || 0;
+                    return (
+                      <td
+                        key={s.warehouse}
+                        className="px-4 py-2 text-right tabular-nums"
+                      >
+                        {qty ? (
+                          fmt(qty)
+                        ) : (
+                          <span className="text-muted-foreground">·</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="px-4 py-2 text-right tabular-nums font-bold">
+                    {fmt(i.total_qty)}
                   </td>
                 </tr>
               ))}
-              {!stores.length && (
+              {!matrixRows.length && (
                 <tr>
                   <td
-                    colSpan={3}
+                    colSpan={stores.length + 2}
                     className="px-4 py-6 text-center text-xs text-muted-foreground"
                   >
-                    {loading ? "Loading…" : "No stores in scope."}
+                    {loading ? "Loading…" : "No chemicals in scope."}
                   </td>
                 </tr>
               )}

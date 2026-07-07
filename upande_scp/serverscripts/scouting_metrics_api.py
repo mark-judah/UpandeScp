@@ -491,13 +491,18 @@ def get_chemical_stock_balances(item_codes):
 
 
 @frappe.whitelist()
-def get_bom_details(name):
+def get_bom_details(name, greenhouse=None):
     """Single BOM with its exploded chemicals + stock balances per warehouse.
 
     Returned chemicals already carry ``balances`` (warehouse → qty) so the
     React Application Plan can render the source-warehouse pickers without
     a second round-trip. Falls back to chem warehouses only when fertilizer
     balances aren't relevant.
+
+    When ``greenhouse`` is given and its farm (``Warehouse.custom_farm``) has
+    mapped stores (``Farm.custom_chemical_store`` / ``custom_fertilizer_store``),
+    the warehouse lists (and therefore each chemical's balances) collapse to
+    just those stores. Unmapped farms / no greenhouse keep the full lists.
     """
     if not name:
         frappe.throw("name is required")
@@ -505,6 +510,17 @@ def get_bom_details(name):
     from upande_scp.serverscripts.get_bom_stock_balances import (
         _FERTILIZER_GROUP,
     )
+
+    restrict_chem = restrict_fert = None
+    if greenhouse:
+        farm = frappe.db.get_value("Warehouse", greenhouse, "custom_farm")
+        if farm:
+            stores = frappe.db.get_value(
+                "Farm", farm,
+                ["custom_chemical_store", "custom_fertilizer_store"], as_dict=True
+            ) or {}
+            restrict_chem = stores.get("custom_chemical_store")
+            restrict_fert = stores.get("custom_fertilizer_store")
 
     bom = frappe.get_doc("BOM", name)
     chemicals = []
@@ -543,6 +559,13 @@ def get_bom_details(name):
 
         chem_warehouses = get_allowed_chemical_store_warehouses()
         fert_warehouses = get_allowed_fertilizer_unit_warehouses()
+
+        # Farm-mapped store restriction (falls back to the full lists above
+        # when unset — most farms are still unmapped).
+        if restrict_chem:
+            chem_warehouses = [restrict_chem]
+        if restrict_fert:
+            fert_warehouses = [restrict_fert]
 
         chem_codes = [c["item_code"] for c in chemicals if c.get("item_group") != _FERTILIZER_GROUP]
         fert_codes = [c["item_code"] for c in chemicals if c.get("item_group") == _FERTILIZER_GROUP]

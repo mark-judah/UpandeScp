@@ -1,12 +1,15 @@
 /**
  * Unified Spray Plan Access tab.
  *
- * One row per Farm with two parallel rosters:
+ * One row per Farm with three parallel rosters plus two store mappings:
  *   • Spray Plan Creators — users who may draft plans for the farm.
  *   • Spray Plan Approvers — users who may approve those plans.
+ *   • Store Keepers — users who may action store-side steps for the farm.
+ *   • Chemical Store / Fertilizer Store — the warehouses that back the
+ *     farm's chemical and fertilizer issues.
  *
- * Each chip picker dirty-tracks independently so saving one column doesn't
- * blow away unsaved edits in the other.
+ * Each chip picker / select dirty-tracks independently so saving one
+ * column doesn't blow away unsaved edits in the others.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -27,15 +30,31 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { CreatorChipPicker } from "@/components/spray-plan-access/CreatorChipPicker";
 import {
   listFarmsWithCreators,
+  listStoreWarehouseCandidates,
   setFarmApprovers,
   setFarmCreators,
+  setFarmStoreKeepers,
+  setFarmStores,
   type FarmApproverRow,
   type FarmCreatorRow,
+  type FarmStoreKeeperRow,
+  type StoreWarehouseCandidate,
 } from "@/lib/spray-plan-admin-api";
 import { FrappeError } from "@/lib/frappe";
+
+/** Sentinel for "no warehouse selected" — Radix Select rejects an empty
+ *  string as an item value, so we need a non-empty placeholder value. */
+const NO_STORE = "__none__";
 
 interface RowState {
   farm: string;
@@ -44,6 +63,12 @@ interface RowState {
   creators_draft: FarmCreatorRow[];
   approvers_saved: FarmApproverRow[];
   approvers_draft: FarmApproverRow[];
+  store_keepers_saved: FarmStoreKeeperRow[];
+  store_keepers_draft: FarmStoreKeeperRow[];
+  chemical_store_saved: string | null;
+  chemical_store_draft: string | null;
+  fertilizer_store_saved: string | null;
+  fertilizer_store_draft: string | null;
   saving: boolean;
   error: string | null;
 }
@@ -61,6 +86,9 @@ export function AccessTab() {
     null,
   );
   const [loading, setLoading] = useState(true);
+  const [storeOptions, setStoreOptions] = useState<StoreWarehouseCandidate[]>(
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +105,12 @@ export function AccessTab() {
             creators_draft: f.creators,
             approvers_saved: f.approvers,
             approvers_draft: f.approvers,
+            store_keepers_saved: f.store_keepers,
+            store_keepers_draft: f.store_keepers,
+            chemical_store_saved: f.chemical_store,
+            chemical_store_draft: f.chemical_store,
+            fertilizer_store_saved: f.fertilizer_store,
+            fertilizer_store_draft: f.fertilizer_store,
             saving: false,
             error: null,
           })),
@@ -96,6 +130,20 @@ export function AccessTab() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    listStoreWarehouseCandidates()
+      .then((options) => {
+        if (!cancelled) setStoreOptions(options);
+      })
+      .catch(() => {
+        if (!cancelled) setStoreOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const updateRow = (farm: string, patch: Partial<RowState>) =>
     setRows((prev) =>
       prev ? prev.map((r) => (r.farm === farm ? { ...r, ...patch } : r)) : prev,
@@ -105,7 +153,16 @@ export function AccessTab() {
     !rosterEqual(r.creators_saved, r.creators_draft);
   const isApproversDirty = (r: RowState) =>
     !rosterEqual(r.approvers_saved, r.approvers_draft);
-  const isDirty = (r: RowState) => isCreatorsDirty(r) || isApproversDirty(r);
+  const isStoreKeepersDirty = (r: RowState) =>
+    !rosterEqual(r.store_keepers_saved, r.store_keepers_draft);
+  const isStoresDirty = (r: RowState) =>
+    r.chemical_store_saved !== r.chemical_store_draft ||
+    r.fertilizer_store_saved !== r.fertilizer_store_draft;
+  const isDirty = (r: RowState) =>
+    isCreatorsDirty(r) ||
+    isApproversDirty(r) ||
+    isStoreKeepersDirty(r) ||
+    isStoresDirty(r);
 
   const saveRow = async (farm: string) => {
     const row = rows?.find((r) => r.farm === farm);
@@ -129,6 +186,25 @@ export function AccessTab() {
         patch.approvers_saved = fresh.approvers;
         patch.approvers_draft = fresh.approvers;
       }
+      if (isStoreKeepersDirty(row)) {
+        const fresh = await setFarmStoreKeepers(
+          farm,
+          row.store_keepers_draft.map((d) => d.user),
+        );
+        patch.store_keepers_saved = fresh.store_keepers;
+        patch.store_keepers_draft = fresh.store_keepers;
+      }
+      if (isStoresDirty(row)) {
+        const fresh = await setFarmStores(
+          farm,
+          row.chemical_store_draft,
+          row.fertilizer_store_draft,
+        );
+        patch.chemical_store_saved = fresh.chemical_store;
+        patch.chemical_store_draft = fresh.chemical_store;
+        patch.fertilizer_store_saved = fresh.fertilizer_store;
+        patch.fertilizer_store_draft = fresh.fertilizer_store;
+      }
       updateRow(farm, patch);
     } catch (e) {
       const msg = e instanceof FrappeError ? e.message : String(e);
@@ -142,6 +218,9 @@ export function AccessTab() {
     updateRow(farm, {
       creators_draft: row.creators_saved,
       approvers_draft: row.approvers_saved,
+      store_keepers_draft: row.store_keepers_saved,
+      chemical_store_draft: row.chemical_store_saved,
+      fertilizer_store_draft: row.fertilizer_store_saved,
       error: null,
     });
   };
@@ -226,6 +305,9 @@ export function AccessTab() {
                 <TableHead className="w-1/8">Business Unit</TableHead>
                 <TableHead>Spray Plan Creators</TableHead>
                 <TableHead>Spray Plan Approvers</TableHead>
+                <TableHead>Store Keepers</TableHead>
+                <TableHead className="w-40">Chemical Store</TableHead>
+                <TableHead className="w-40">Fertilizer Store</TableHead>
                 <TableHead className="w-32 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -259,6 +341,64 @@ export function AccessTab() {
                         }
                         disabled={r.saving}
                       />
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <CreatorChipPicker
+                        kind="storekeeper"
+                        value={r.store_keepers_draft}
+                        onChange={(next) =>
+                          updateRow(r.farm, { store_keepers_draft: next })
+                        }
+                        disabled={r.saving}
+                      />
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <Select
+                        value={r.chemical_store_draft ?? NO_STORE}
+                        onValueChange={(v) =>
+                          updateRow(r.farm, {
+                            chemical_store_draft: v === NO_STORE ? null : v,
+                          })
+                        }
+                        disabled={r.saving}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="None" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NO_STORE}>None</SelectItem>
+                          {storeOptions.map((w) => (
+                            <SelectItem key={w.name} value={w.name}>
+                              {w.name}
+                              {w.custom_farm ? ` (${w.custom_farm})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <Select
+                        value={r.fertilizer_store_draft ?? NO_STORE}
+                        onValueChange={(v) =>
+                          updateRow(r.farm, {
+                            fertilizer_store_draft: v === NO_STORE ? null : v,
+                          })
+                        }
+                        disabled={r.saving}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="None" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NO_STORE}>None</SelectItem>
+                          {storeOptions.map((w) => (
+                            <SelectItem key={w.name} value={w.name}>
+                              {w.name}
+                              {w.custom_farm ? ` (${w.custom_farm})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       {r.error && (
                         <div className="text-[0.65rem] text-destructive mt-1 flex items-start gap-1">
                           <ShieldAlert className="h-3 w-3 mt-[1px] flex-shrink-0" />

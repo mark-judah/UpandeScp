@@ -44,12 +44,24 @@ def list_farms_with_creators() -> list[dict]:
             )
         else:
             approvers = []
+        store_keepers = frappe.get_all(
+            "Farm Store Keeper",
+            filters={"parent": f["name"], "parenttype": "Farm"},
+            fields=["user", "full_name"],
+        )
+        farm_stores = frappe.db.get_value(
+            "Farm", f["name"],
+            ["custom_chemical_store", "custom_fertilizer_store"], as_dict=True
+        ) or {}
         out.append({
             "farm": f["name"],
             "farm_name": f.get("farm"),
             "business_unit": f.get("custom_business_unit") or "",
             "creators": creators,
             "approvers": approvers,
+            "store_keepers": store_keepers,
+            "chemical_store": farm_stores.get("custom_chemical_store"),
+            "fertilizer_store": farm_stores.get("custom_fertilizer_store"),
         })
     return out
 
@@ -147,4 +159,49 @@ def _set_farm_roster(
             {"user": r.user, "full_name": r.full_name}
             for r in farm_doc.get(child_field) or []
         ] if child_field == "spray_plan_creators" else [],
+    }
+
+
+@frappe.whitelist()
+def list_store_keeper_candidates(q: str | None = None) -> list[dict]:
+    return _candidates_for_role("Store Keeper", q)
+
+
+@frappe.whitelist()
+def set_farm_store_keepers(farm: str, users: list[str] | str) -> dict:
+    return _set_farm_roster(
+        farm,
+        users,
+        role="Store Keeper",
+        child_field="store_keepers",
+    )
+
+
+@frappe.whitelist()
+def list_store_warehouse_candidates(q: str | None = None) -> list[dict]:
+    _require_admin()
+    filters = {
+        "is_group": 0,
+        "disabled": 0,
+        "warehouse_type": ("not in", ["Greenhouse", "Work In Progress"]),
+    }
+    if q:
+        filters["name"] = ("like", f"%{q}%")
+    return frappe.get_all(
+        "Warehouse", filters=filters, fields=["name", "custom_farm"],
+        order_by="custom_farm, name", limit_page_length=200,
+    )
+
+
+@frappe.whitelist()
+def set_farm_stores(farm: str, chemical_store: str | None = None, fertilizer_store: str | None = None) -> dict:
+    _require_admin()
+    doc = frappe.get_doc("Farm", farm)
+    doc.custom_chemical_store = chemical_store or None
+    doc.custom_fertilizer_store = fertilizer_store or None
+    doc.save(ignore_permissions=True)
+    return {
+        "farm": farm,
+        "chemical_store": doc.custom_chemical_store,
+        "fertilizer_store": doc.custom_fertilizer_store,
     }

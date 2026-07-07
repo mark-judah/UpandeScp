@@ -31,7 +31,7 @@ from frappe.utils import now_datetime, add_to_date
 # ----------------------------------------------------------------------
 # Permission gate
 # ----------------------------------------------------------------------
-_WRITE_ROLES = {"Store Keeper", "System Manager", "Administrator"}
+_WRITE_ROLES = {"Store Keeper", "System Manager", "Administrator", "General Manager"}
 
 
 def _check_perm():

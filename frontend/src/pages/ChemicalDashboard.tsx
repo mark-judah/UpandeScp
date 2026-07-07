@@ -10,26 +10,17 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
   fetchChemicalOverview,
   type ChemicalOverview,
+  type StoreBucket,
 } from "@/lib/store-keeper-api";
 import { ChemicalStoreComparison } from "@/components/ChemicalStoreComparison";
 import { CsuLevels } from "@/components/CsuLevels";
 import { StoreBucketPanel } from "@/components/StoreBucketPanel";
 import { cn } from "@/lib/utils";
-
-const ALL_WAREHOUSE = "__all__";
 
 function fmt(n: number): string {
   if (Math.abs(n) >= 1000) return n.toLocaleString(undefined, {
@@ -42,7 +33,6 @@ export function ChemicalDashboard() {
   const [data, setData] = useState<ChemicalOverview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [warehouseFilter, setWarehouseFilter] = useState<string>(ALL_WAREHOUSE);
   const [query, setQuery] = useState<string>("");
 
   const load = () => {
@@ -55,43 +45,6 @@ export function ChemicalDashboard() {
   };
 
   useEffect(load, []);
-
-  // Filtered totals respect the warehouse filter; the search query
-  // narrows the table but the chart always shows the chosen warehouse.
-  const filteredItems = useMemo(() => {
-    if (!data) return [];
-    if (warehouseFilter === ALL_WAREHOUSE) return data.items;
-    const byItem: Record<string, number> = {};
-    for (const c of data.matrix) {
-      if (c.warehouse !== warehouseFilter) continue;
-      byItem[c.item_code] = (byItem[c.item_code] || 0) + c.qty;
-    }
-    const lookup = new Map(data.items.map((i) => [i.item_code, i]));
-    return Object.entries(byItem)
-      .map(([code, qty]) => {
-        const base = lookup.get(code);
-        return base
-          ? { ...base, total_qty: qty }
-          : {
-              item_code: code,
-              item_name: code,
-              group: "",
-              uom: "",
-              total_qty: qty,
-            };
-      })
-      .sort((a, b) => b.total_qty - a.total_qty);
-  }, [data, warehouseFilter]);
-
-  const visibleRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return filteredItems;
-    return filteredItems.filter(
-      (i) =>
-        (i.item_name || "").toLowerCase().includes(q) ||
-        (i.item_code || "").toLowerCase().includes(q),
-    );
-  }, [filteredItems, query]);
 
   const itemNames = useMemo(
     () =>
@@ -126,25 +79,6 @@ export function ChemicalDashboard() {
           </div>
 
           <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1 min-w-44">
-              <Label htmlFor="cd-warehouse">Warehouse</Label>
-              <Select
-                value={warehouseFilter}
-                onValueChange={setWarehouseFilter}
-              >
-                <SelectTrigger id="cd-warehouse" className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_WAREHOUSE}>All warehouses</SelectItem>
-                  {(data?.warehouses || []).map((w) => (
-                    <SelectItem key={w.warehouse} value={w.warehouse}>
-                      {w.warehouse}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="flex flex-col gap-1 min-w-56">
               <Label htmlFor="cd-search">Search</Label>
               <div className="relative">
@@ -225,72 +159,143 @@ export function ChemicalDashboard() {
 
         <ChemicalStoreComparison />
 
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-base">Stock by chemical</CardTitle>
-            <CardDescription>
-              {visibleRows.length} chemical
-              {visibleRows.length === 1 ? "" : "s"} ·{" "}
-              {warehouseFilter === ALL_WAREHOUSE
-                ? "all warehouses"
-                : warehouseFilter}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-[0.7rem] uppercase tracking-wide text-muted-foreground border-b">
-                  <tr>
-                    <th className="text-left px-4 py-2">Chemical</th>
-                    <th className="text-left px-4 py-2">Group</th>
-                    <th className="text-right px-4 py-2">Qty</th>
-                    <th className="text-left px-4 py-2">UoM</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleRows.map((i) => (
-                    <tr
-                      key={i.item_code}
-                      className="border-b last:border-0 hover:bg-muted/40"
-                    >
-                      <td className="px-4 py-2">
-                        <div className="font-medium">{i.item_name}</div>
-                        <div className="text-[0.65rem] text-muted-foreground">
-                          {i.item_code}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 text-muted-foreground">
-                        <Badge variant="outline" className="text-[0.65rem]">
-                          {i.group || "—"}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums font-medium">
-                        {fmt(i.total_qty)}
-                      </td>
-                      <td className="px-4 py-2 text-muted-foreground">
-                        {i.uom || "—"}
-                      </td>
-                    </tr>
-                  ))}
-                  {!visibleRows.length && (
-                    <tr>
-                      <td
-                        colSpan={4}
-                        className="px-4 py-6 text-center text-xs text-muted-foreground"
-                      >
-                        {loading
-                          ? "Loading…"
-                          : "No chemicals match the current filter."}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+        <BucketMatrixTable
+          title="Chemicals by store"
+          bucket={data?.buckets?.chemical}
+          itemNames={itemNames}
+          query={query}
+          loading={loading}
+        />
+        <BucketMatrixTable
+          title="Fertilizers by store"
+          bucket={data?.buckets?.fertilizer}
+          itemNames={itemNames}
+          query={query}
+          loading={loading}
+        />
       </div>
     </div>
+  );
+}
+
+/** Chemical/fertilizer × store matrix for the assigned farms' mapped
+ *  stores, with a Total column across those stores. `bucket` is already
+ *  farm-scoped server-side. */
+function BucketMatrixTable({
+  title,
+  bucket,
+  itemNames,
+  query,
+  loading,
+}: {
+  title: string;
+  bucket: StoreBucket | null | undefined;
+  itemNames: Record<string, string>;
+  query: string;
+  loading?: boolean;
+}) {
+  const stores = bucket?.stores || [];
+  const items = bucket?.items || [];
+  const matrix = bucket?.matrix || [];
+
+  const nameOf = (code: string) => itemNames[code] || code;
+
+  const qtyByItemStore = useMemo(() => {
+    const map: Record<string, Record<string, number>> = {};
+    for (const m of matrix) {
+      (map[m.item_code] ||= {})[m.warehouse] = m.qty;
+    }
+    return map;
+  }, [matrix]);
+
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? items.filter(
+          (i) =>
+            nameOf(i.item_code).toLowerCase().includes(q) ||
+            i.item_code.toLowerCase().includes(q),
+        )
+      : items;
+    return [...filtered].sort((a, b) => b.total_qty - a.total_qty);
+  }, [items, itemNames, query]);
+
+  const empty = !stores.length;
+
+  return (
+    <Card>
+      <CardHeader className="pb-1">
+        <CardTitle className="text-base">{title}</CardTitle>
+        <CardDescription>
+          {rows.length} item{rows.length === 1 ? "" : "s"} · {stores.length}{" "}
+          store{stores.length === 1 ? "" : "s"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-[0.7rem] uppercase tracking-wide text-muted-foreground border-b">
+              <tr>
+                <th className="text-left px-4 py-2">Chemical</th>
+                {stores.map((s) => (
+                  <th key={s.warehouse} className="text-right px-4 py-2">
+                    {s.warehouse}
+                  </th>
+                ))}
+                <th className="text-right px-4 py-2">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((i) => (
+                <tr
+                  key={i.item_code}
+                  className="border-b last:border-0 hover:bg-muted/40"
+                >
+                  <td className="px-4 py-2">
+                    <div className="font-medium">{nameOf(i.item_code)}</div>
+                    <div className="text-[0.65rem] text-muted-foreground">
+                      {i.item_code}
+                    </div>
+                  </td>
+                  {stores.map((s) => {
+                    const qty = qtyByItemStore[i.item_code]?.[s.warehouse] || 0;
+                    return (
+                      <td
+                        key={s.warehouse}
+                        className="px-4 py-2 text-right tabular-nums"
+                      >
+                        {qty ? (
+                          fmt(qty)
+                        ) : (
+                          <span className="text-muted-foreground">·</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="px-4 py-2 text-right tabular-nums font-bold">
+                    {fmt(i.total_qty)}
+                  </td>
+                </tr>
+              ))}
+              {!rows.length && (
+                <tr>
+                  <td
+                    colSpan={stores.length + 2}
+                    className="px-4 py-6 text-center text-xs text-muted-foreground"
+                  >
+                    {loading
+                      ? "Loading…"
+                      : empty
+                        ? "No stores in scope."
+                        : "No chemicals match."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -27,6 +27,24 @@ export interface CsuWarehouse {
   farm: string;
 }
 
+/** One store-type bucket (chemical or fertilizer) of the overview, already
+ *  scoped server-side to the caller's allowed farms. */
+export interface StoreBucketStore {
+  warehouse: string;
+  total_qty: number;
+  item_count: number;
+}
+export interface StoreBucketItem {
+  item_code: string;
+  total_qty: number;
+}
+export interface StoreBucket {
+  stores: StoreBucketStore[];
+  items: StoreBucketItem[];
+  matrix: ChemicalMatrixCell[];
+  total_qty: number;
+}
+
 export interface ChemicalOverview {
   items: ChemicalItemRow[];
   warehouses: ChemicalWarehouseRow[];
@@ -35,6 +53,15 @@ export interface ChemicalOverview {
    *  client degrades gracefully against an older backend. */
   csus?: CsuWarehouse[];
   as_of: string;
+  /** Per-store-type (chemical / fertilizer) aggregates, farm-scoped
+   *  server-side for Store Keepers — optional so the client degrades
+   *  gracefully against an older backend. */
+  buckets?: {
+    chemical: StoreBucket;
+    fertilizer: StoreBucket;
+  };
+  /** Farms the caller is scoped to (null for admins, who see everything). */
+  allowed_farms?: string[] | null;
 }
 
 export interface TransferEmployee {

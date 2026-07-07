@@ -39,6 +39,7 @@ import {
 } from "@/lib/store-keeper-api";
 import { ChemicalStoreComparison } from "@/components/ChemicalStoreComparison";
 import { CsuLevels } from "@/components/CsuLevels";
+import { StoreBucketPanel } from "@/components/StoreBucketPanel";
 import { cn } from "@/lib/utils";
 
 const ALL_WAREHOUSE = "__all__";
@@ -224,6 +225,19 @@ export function ChemicalDashboard() {
             label="As of"
             value={data?.as_of ? data.as_of.replace("T", " ") : "—"}
             sublabel="latest sync"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <StoreBucketPanel
+            title="Chemical Stores"
+            bucket={data?.buckets?.chemical}
+            loading={loading}
+          />
+          <StoreBucketPanel
+            title="Fertilizer Stores"
+            bucket={data?.buckets?.fertilizer}
+            loading={loading}
           />
         </div>
 

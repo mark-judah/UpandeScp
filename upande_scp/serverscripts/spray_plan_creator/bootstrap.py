@@ -130,6 +130,18 @@ def fetch_creator_bootstrap() -> dict:
         order_by="name asc",
     )
 
+    farm_store_rows = frappe.get_all(
+        "Farm",
+        fields=["name", "custom_chemical_store", "custom_fertilizer_store"],
+    )
+    farm_stores = {
+        r["name"]: {
+            "chemical_store": r.get("custom_chemical_store"),
+            "fertilizer_store": r.get("custom_fertilizer_store"),
+        }
+        for r in farm_store_rows
+    }
+
     settings = frappe.get_single("Spray Plan Settings")
     return {
         "scope": {"farms": farms, "allowed_warehouses": scope["warehouses"]},
@@ -141,6 +153,7 @@ def fetch_creator_bootstrap() -> dict:
         "pest_catalog": pest_catalog,
         "disease_catalog": disease_catalog,
         "cost_centers": cost_centers,
+        "farm_stores": farm_stores,
         "weather_settings": {
             "wind_green_max_kmh": settings.weather_wind_green_max_kmh,
             "wind_red_min_kmh":   settings.weather_wind_red_min_kmh,
@@ -161,7 +174,7 @@ def _empty_bootstrap() -> dict:
         "scope": {"farms": [], "allowed_warehouses": []},
         "greenhouses": [], "kits": [], "spray_teams": [], "tank_mixes": [],
         "rate_limits": {}, "pest_catalog": [], "disease_catalog": [],
-        "cost_centers": [],
+        "cost_centers": [], "farm_stores": {},
         "weather_settings": {}, "irac_window_days": 14, "frac_window_days": 21,
     }
 

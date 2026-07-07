@@ -363,6 +363,23 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
               chemical-specific account configured.
             </p>
           </div>
+          <div>
+            <Label className="text-[0.7rem]">
+              Default Chemical Difference Account
+            </Label>
+            <Input
+              value={draft.default_chemical_difference_account}
+              onChange={(e) =>
+                set("default_chemical_difference_account", e.target.value)
+              }
+              placeholder="e.g. Stock Adjustment - KR"
+              className="h-9"
+            />
+            <p className="mt-1 text-[0.65rem] text-muted-foreground leading-snug">
+              Written as the Difference Account on the Manufacture Stock
+              Entry created when the tank mix is manufactured.
+            </p>
+          </div>
           <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
             <Checkbox
               id="bypass_owner_check"

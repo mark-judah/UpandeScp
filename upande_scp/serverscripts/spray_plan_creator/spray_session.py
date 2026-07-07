@@ -331,6 +331,12 @@ def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
         for it in se_doc.items or []:
             it.cost_center = cost_center
 
+    diff_account = frappe.db.get_single_value(
+        "Spray Plan Settings", "default_chemical_difference_account"
+    )
+    if diff_account and getattr(wo, "custom_type", None) == AFP_TYPE:
+        se_doc.difference_account = diff_account
+
     se_doc.flags.ignore_permissions = True
     se_doc.flags.ignore_links = True
     se_doc.insert()

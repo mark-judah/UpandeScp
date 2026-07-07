@@ -35,3 +35,38 @@ def aggregate_reservations(rows):
         out.setdefault(item, {})
         out[item][wh] = out[item].get(wh, 0.0) + qty
     return out
+
+
+import json
+
+import frappe
+
+
+@frappe.whitelist()
+def get_store_reservations(warehouse, item_codes=None):
+    """Reserved qty per item at one source warehouse, from AFP work orders that
+    are drafted/submitted but not yet material-issued."""
+    if isinstance(item_codes, str):
+        item_codes = json.loads(item_codes) if item_codes.strip().startswith("[") else [item_codes]
+    item_codes = [c for c in (item_codes or []) if c]
+    if not warehouse or not item_codes:
+        return {}
+
+    rows = frappe.db.sql(
+        """
+        SELECT woi.item_code, woi.source_warehouse, woi.required_qty
+        FROM `tabWork Order Item` woi
+        JOIN `tabWork Order` wo ON wo.name = woi.parent
+        WHERE wo.custom_type = 'Application Floor Plan'
+          AND wo.docstatus < 2
+          AND (wo.status IS NULL OR wo.status != 'Stopped')
+          AND COALESCE(wo.workflow_state, 'Pending Submission') NOT IN
+              ('Chemical Issued','Tank Mix Manufactured','Spraying In Progress','Completed')
+          AND woi.source_warehouse = %(warehouse)s
+          AND woi.item_code IN %(items)s
+        """,
+        {"warehouse": warehouse, "items": tuple(item_codes)},
+        as_dict=True,
+    )
+    agg = aggregate_reservations(rows)
+    return {item: agg.get(item, {}).get(warehouse, 0.0) for item in item_codes}

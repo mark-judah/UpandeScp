@@ -53,6 +53,7 @@ import {
   fetchBomDetails,
   fetchChemicalBalances,
   fetchZonesByGreenhouse,
+  getStoreReservations,
   searchChemicalItems,
   type BedAreaRow,
   type BomChemical,
@@ -61,6 +62,7 @@ import {
   type RateLimit,
   type VarietyNode,
 } from "@/lib/scouting-api";
+import { availableStock } from "@/lib/stock-availability";
 import {
   createDraftSprayPlan,
   fetchCreatorBootstrap,
@@ -365,6 +367,29 @@ export function ApplicationPlan() {
     };
   }, []);
 
+  /** Farm of the picked greenhouse — drives the "wrong store" amber
+   *  warning on the Chemical Stock matrix and the farm→store lookup below.
+   *  Empty when no greenhouse is selected, in which case both checks are
+   *  skipped entirely. Declared above the BOM loader (rather than near
+   *  its original home further down) because that effect needs
+   *  ``mappedStores`` to force each row's source. */
+  const greenhouseFarm = useMemo(() => {
+    if (!greenhouse) return "";
+    return (
+      bootstrap?.greenhouses.find((g) => g.name === greenhouse)?.custom_farm ||
+      ""
+    );
+  }, [greenhouse, bootstrap]);
+
+  /** The greenhouse's farm's mapped chemical/fertilizer store, if any
+   *  (Task 5/9). When set for a given chemical group, the source
+   *  warehouse for that group is LOCKED — no dropdown, single stock
+   *  column — instead of the free-choice picker used for unmapped farms. */
+  const mappedStores = useMemo(() => {
+    if (!greenhouseFarm) return null;
+    return bootstrap?.farm_stores?.[greenhouseFarm] || null;
+  }, [greenhouseFarm, bootstrap]);
+
   // BOM details loader. Note: waterVolume is owned by the area-calc
   // effect below — we deliberately don't seed it here so the BOM
   // loader (which runs whenever ``bom`` changes) can't race with the
@@ -379,7 +404,9 @@ export function ApplicationPlan() {
     }
     let cancelled = false;
     setBomLoading(true);
-    fetchBomDetails(bom)
+    // Pass the picked greenhouse so a farm-mapped store already collapses
+    // the returned warehouse lists (and balances) server-side (Task 6).
+    fetchBomDetails(bom, greenhouse)
       .then((d) => {
         if (cancelled || !d) return;
         setBomDetails(d);
@@ -398,10 +425,16 @@ export function ApplicationPlan() {
             // by the effect below, so we seed it to 0 here and let that
             // effect populate it on the next render.
             const bomRate = Number(c.stock_qty) || 0;
+            // Store lock (Task 9): when the farm has a mapped store for
+            // this chemical's group, the source isn't a free choice.
+            const forcedSource = c.is_fertilizer
+              ? mappedStores?.fertilizer_store
+              : mappedStores?.chemical_store;
             return {
               ...c,
               rowId: `${c.item_code}-${i}`,
-              source: first?.[0] || (fallback?.length ? fallback[0] : ""),
+              source:
+                forcedSource || first?.[0] || (fallback?.length ? fallback[0] : ""),
               rate: bomRate,
               stock_qty: 0,
             };
@@ -412,7 +445,27 @@ export function ApplicationPlan() {
     return () => {
       cancelled = true;
     };
-  }, [bom]);
+  }, [bom, greenhouse, mappedStores]);
+
+  // Safety net: if bootstrap resolves (or the greenhouse/farm mapping
+  // changes) after chemRows are already populated, snap any locked
+  // group's source back to the mapped store instead of leaving a stale
+  // pick from before the mapping was known.
+  useEffect(() => {
+    if (!mappedStores) return;
+    setChemRows((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        const forced = c.is_fertilizer
+          ? mappedStores.fertilizer_store
+          : mappedStores.chemical_store;
+        if (!forced || c.source === forced) return c;
+        changed = true;
+        return { ...c, source: forced };
+      });
+      return changed ? next : prev;
+    });
+  }, [mappedStores]);
 
   // Add-chemical search debounce.
   useEffect(() => {
@@ -773,17 +826,6 @@ export function ApplicationPlan() {
     [bootstrap],
   );
 
-  /** Farm of the picked greenhouse — drives the "wrong store" amber
-   *  warning on the Chemical Stock matrix. Empty when no greenhouse is
-   *  selected, in which case the mismatch check is skipped entirely. */
-  const greenhouseFarm = useMemo(() => {
-    if (!greenhouse) return "";
-    return (
-      bootstrap?.greenhouses.find((g) => g.name === greenhouse)?.custom_farm ||
-      ""
-    );
-  }, [greenhouse, bootstrap]);
-
   /** Same heuristic as the www page's ``warehouseMatchesFarm``: a source
    *  warehouse "belongs" to a farm if its name contains the farm name
    *  (case-insensitive). Used to soft-warn the operator when the picked
@@ -797,17 +839,129 @@ export function ApplicationPlan() {
     [greenhouseFarm],
   );
 
-  /** Rows whose picked source warehouse has less stock than the computed
-   *  total. Drives the Submit-button disable, its tooltip, and the red
-   *  highlight on the TOTAL cell in the Chemical Stock matrix. A row with
-   *  no source picked yet is treated as "short" so submission is blocked
-   *  until the operator picks one. */
+  // ── Draft-aware availability (Task 9) ──────────────────────────────
+  // ``reserved`` holds server-side reservations from *other* still-open
+  // Application Floor Plan work orders, keyed by "<source>::<item_code>"
+  // so two rows that happen to pick different stores for the same item
+  // aren't conflated. Refetched whenever the plan's (source, item) pairs
+  // change, or a draft is just added to the batch — the existing
+  // "spray-plan:draft-added" event (dispatched by ``submit`` below and
+  // already consumed by DraftBatchPanel) also bumps a tick here so the
+  // *next* plan in the session sees the shrinking number.
+  const [reserved, setReserved] = useState<Record<string, number>>({});
+  const [reservedRefreshTick, setReservedRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const handler = () => setReservedRefreshTick((t) => t + 1);
+    window.addEventListener("spray-plan:draft-added", handler);
+    return () => window.removeEventListener("spray-plan:draft-added", handler);
+  }, []);
+
+  // Stable string key so the reservation fetch only re-runs when the set
+  // of (source, item) pairs actually changes, not on every rate keystroke.
+  const sourceItemKey = useMemo(
+    () =>
+      chemRows
+        .filter((c) => c.source && c.item_code)
+        .map((c) => `${c.source}::${c.item_code}`)
+        .sort()
+        .join(","),
+    [chemRows],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const bySource = new Map<string, Set<string>>();
+    for (const pair of sourceItemKey ? sourceItemKey.split(",") : []) {
+      const [source, item] = pair.split("::");
+      if (!source || !item) continue;
+      if (!bySource.has(source)) bySource.set(source, new Set());
+      bySource.get(source)!.add(item);
+    }
+    if (!bySource.size) {
+      setReserved({});
+      return;
+    }
+    Promise.all(
+      Array.from(bySource.entries()).map(([source, codes]) =>
+        getStoreReservations(source, Array.from(codes)).then((res) => ({
+          source,
+          res,
+        })),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      const merged: Record<string, number> = {};
+      for (const { source, res } of results) {
+        for (const [item, qty] of Object.entries(res)) {
+          merged[`${source}::${item}`] = qty;
+        }
+      }
+      setReserved(merged);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceItemKey, reservedRefreshTick]);
+
+  /** Per-row "other rows in this form" usage of the same item+source —
+   *  catches double-adding the same chemical in one plan before it's
+   *  ever saved as a draft (the reservations query above only sees
+   *  *saved* work orders). */
+  const draftUsageByRowId = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const c of chemRows) {
+      if (!c.source || !c.item_code) {
+        out.set(c.rowId, 0);
+        continue;
+      }
+      let sum = 0;
+      for (const other of chemRows) {
+        if (other.rowId === c.rowId) continue;
+        if (other.item_code === c.item_code && other.source === c.source) {
+          sum += Number(other.stock_qty || 0);
+        }
+      }
+      out.set(c.rowId, sum);
+    }
+    return out;
+  }, [chemRows]);
+
+  /** Reservation- and draft-aware available qty for one row: on-hand
+   *  minus every other still-open work order's reservation at the same
+   *  store, minus other rows in *this* form drawing the same item from
+   *  the same store. This — not raw on-hand — is what gates Submit; raw
+   *  on-hand alone is what produced the "5kg on hand but 60kg planned"
+   *  bug when several plans queued against the same store in a row. */
+  const rowAvailable = useCallback(
+    (c: ChemRow): number => {
+      const source = c.source || "";
+      const onHand = Number(c.balances?.[source] ?? 0);
+      const reservedQty =
+        source && c.item_code
+          ? Number(reserved[`${source}::${c.item_code}`] ?? 0)
+          : 0;
+      const draftUsage = draftUsageByRowId.get(c.rowId) ?? 0;
+      return availableStock({
+        onHand,
+        reservedFromServer: reservedQty,
+        draftFormUsage: draftUsage,
+      });
+    },
+    [reserved, draftUsageByRowId],
+  );
+
+  /** Rows whose picked source warehouse has less *adjusted* availability
+   *  than the computed total. Drives the Submit-button disable, its
+   *  tooltip, and the red highlight on the TOTAL cell in the Chemical
+   *  Stock matrix. A row with no source picked yet is treated as "short"
+   *  so submission is blocked until the operator picks one. */
   const stockShortRows = useMemo(() => {
     const out: { rowId: string; name: string; source: string; avail: number; need: number }[] = [];
     for (const c of chemRows) {
       if (!c.stock_qty || c.stock_qty <= 0) continue;
       const source = c.source || "";
-      const avail = Number(c.balances?.[source] ?? 0);
+      const avail = rowAvailable(c);
       if (!source || avail < c.stock_qty) {
         out.push({
           rowId: c.rowId,
@@ -819,39 +973,46 @@ export function ApplicationPlan() {
       }
     }
     return out;
-  }, [chemRows]);
+  }, [chemRows, rowAvailable]);
   const stockShortById = useMemo(
     () => new Set(stockShortRows.map((s) => s.rowId)),
     [stockShortRows],
   );
 
   /** Per-row visual warning level for the Chemical Stock matrix:
-   *   - "red"   = source picked AND avail < need. Hard error; blocks Submit.
-   *   - "amber" = source not picked yet, OR source is from a different
-   *               farm than the greenhouse. Soft warning; visual cue only,
-   *               doesn't block submission on its own (but the "no source"
-   *               case is also covered by stockShortRows so it still blocks).
+   *   - "red"   = source picked AND avail < need (adjusted, draft-aware).
+   *               Hard error; blocks Submit.
+   *   - "amber" = source not picked yet, OR (unmapped farm only) source
+   *               is from a different farm than the greenhouse. Soft
+   *               warning; visual cue only, doesn't block submission on
+   *               its own (but the "no source" case is also covered by
+   *               stockShortRows so it still blocks). Locked (mapped)
+   *               rows skip the farm-mismatch heuristic entirely — the
+   *               mapped store is correct by definition.
    *   - null    = no warning. */
   const rowWarnById = useMemo(() => {
     const out = new Map<string, "amber" | "red">();
     for (const c of chemRows) {
       const need = c.stock_qty || 0;
       const source = c.source || "";
+      const locked = c.is_fertilizer
+        ? !!mappedStores?.fertilizer_store
+        : !!mappedStores?.chemical_store;
       if (!source) {
         out.set(c.rowId, "amber");
         continue;
       }
-      const avail = Number(c.balances?.[source] ?? 0);
+      const avail = rowAvailable(c);
       if (need > 0 && avail < need) {
         out.set(c.rowId, "red");
         continue;
       }
-      if (!warehouseMatchesFarm(source)) {
+      if (!locked && !warehouseMatchesFarm(source)) {
         out.set(c.rowId, "amber");
       }
     }
     return out;
-  }, [chemRows, warehouseMatchesFarm]);
+  }, [chemRows, warehouseMatchesFarm, mappedStores, rowAvailable]);
 
   const updateChem = (rowId: string, patch: Partial<ChemRow>) =>
     setChemRows((prev) =>
@@ -902,6 +1063,11 @@ export function ApplicationPlan() {
     const balancesByCode = await fetchChemicalBalances([item.item_code]);
     const balances = balancesByCode[item.item_code] || {};
     const firstWithStock = Object.entries(balances).find(([, v]) => v > 0);
+    // Store lock (Task 9): ad-hoc adds go through the same lock as
+    // BOM-exploded rows when the farm has a mapped store for this group.
+    const forcedSource = item.is_fertilizer
+      ? mappedStores?.fertilizer_store
+      : mappedStores?.chemical_store;
     setChemRows((prev) => {
       if (prev.some((r) => r.item_code === item.item_code)) return prev;
       return [
@@ -913,7 +1079,7 @@ export function ApplicationPlan() {
           item_group: item.item_group,
           is_fertilizer: item.is_fertilizer,
           rowId: `${item.item_code}-${Date.now()}-${prev.length}`,
-          source: firstWithStock?.[0] || fallbackList?.[0] || "",
+          source: forcedSource || firstWithStock?.[0] || fallbackList?.[0] || "",
           balances,
           rate: 0,
           stock_qty: 0,
@@ -959,11 +1125,15 @@ export function ApplicationPlan() {
         pushToast("err", `${c.item_name || c.item_code}: ${limitErr}`);
         return;
       }
-      const avail = Number(c.balances?.[c.source] ?? 0);
+      // Draft-aware re-check (Task 9): mirrors stockShortRows so a plan
+      // that slipped past the visual guard (e.g. a reservation landed
+      // between render and click) still can't submit over the real
+      // available qty.
+      const avail = rowAvailable(c);
       if (avail < c.stock_qty) {
         pushToast(
           "err",
-          `${c.item_name || c.item_code}: ${c.source} has ${avail} but needs ${c.stock_qty}.`,
+          `${c.item_name || c.item_code}: ${c.source} has ${avail.toFixed(2)} available but needs ${c.stock_qty}.`,
         );
         return;
       }
@@ -1921,6 +2091,15 @@ export function ApplicationPlan() {
                           group === "fertilizer"
                             ? bomDetails.fertilizer_warehouses
                             : bomDetails.chemical_warehouses;
+                        // Store lock (Task 9): when the greenhouse's farm
+                        // maps a store for this group, the source is fixed
+                        // — no dropdown, and (since get_bom_details already
+                        // restricted ``whs`` to just this store) a single
+                        // stock column. Unmapped farms keep the picker.
+                        const forcedStore =
+                          group === "fertilizer"
+                            ? mappedStores?.fertilizer_store || null
+                            : mappedStores?.chemical_store || null;
                         return (
                           <div key={group} className="mb-3 last:mb-0 overflow-x-auto">
                             <Table>
@@ -1965,8 +2144,15 @@ export function ApplicationPlan() {
                                       : warn === "amber"
                                         ? "h-7 text-xs min-w-40 border-amber-500"
                                         : "h-7 text-xs min-w-40";
+                                  // Locked (mapped-store) rows skip the
+                                  // farm-mismatch heuristic entirely — the
+                                  // mapped store is correct by definition,
+                                  // regardless of whether its name happens
+                                  // to contain the farm's name substring.
                                   const sourceMismatch =
-                                    !!c.source && !warehouseMatchesFarm(c.source);
+                                    !forcedStore &&
+                                    !!c.source &&
+                                    !warehouseMatchesFarm(c.source);
                                   return (
                                     <TableRow key={c.rowId} className={rowClass}>
                                       <TableCell className="text-xs font-medium whitespace-nowrap">
@@ -2012,35 +2198,49 @@ export function ApplicationPlan() {
                                             className={`text-center text-xs tabular-nums ${cls} ${picked ? "bg-muted/60 font-semibold" : ""}`}
                                           >
                                             {bal.toFixed(2)}
+                                            {picked && (
+                                              <div className="text-[0.6rem] font-normal text-muted-foreground">
+                                                {rowAvailable(c).toFixed(2)} avail
+                                              </div>
+                                            )}
                                           </TableCell>
                                         );
                                       })}
                                       <TableCell>
-                                        <Select
-                                          value={c.source || ""}
-                                          onValueChange={(v) =>
-                                            updateChem(c.rowId, { source: v })
-                                          }
-                                        >
-                                          <SelectTrigger
-                                            className={triggerClass}
+                                        {forcedStore ? (
+                                          <span
+                                            className="text-xs font-medium truncate block max-w-40"
+                                            title={`${forcedStore} — locked to this greenhouse's farm-mapped store`}
                                           >
-                                            <SelectValue placeholder="-- Select Source --" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {whs.map((w) => {
-                                              const bal = Number(balances[w] || 0);
-                                              return (
-                                                <SelectItem key={w} value={w}>
-                                                  <span className="truncate">{w}</span>{" "}
-                                                  <span className="text-muted-foreground tabular-nums">
-                                                    · {bal.toFixed(2)}
-                                                  </span>
-                                                </SelectItem>
-                                              );
-                                            })}
-                                          </SelectContent>
-                                        </Select>
+                                            {forcedStore}
+                                          </span>
+                                        ) : (
+                                          <Select
+                                            value={c.source || ""}
+                                            onValueChange={(v) =>
+                                              updateChem(c.rowId, { source: v })
+                                            }
+                                          >
+                                            <SelectTrigger
+                                              className={triggerClass}
+                                            >
+                                              <SelectValue placeholder="-- Select Source --" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {whs.map((w) => {
+                                                const bal = Number(balances[w] || 0);
+                                                return (
+                                                  <SelectItem key={w} value={w}>
+                                                    <span className="truncate">{w}</span>{" "}
+                                                    <span className="text-muted-foreground tabular-nums">
+                                                      · {bal.toFixed(2)}
+                                                    </span>
+                                                  </SelectItem>
+                                                );
+                                              })}
+                                            </SelectContent>
+                                          </Select>
+                                        )}
                                       </TableCell>
                                       <TableCell
                                         className={

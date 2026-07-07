@@ -77,6 +77,15 @@ export interface CreatorCostCenter {
   custom_farm: string | null;
 }
 
+/** Per-farm mapped chemical/fertilizer store, keyed by Farm name. When a
+ *  farm has a mapped store, ApplicationPlan locks the source warehouse to
+ *  it instead of offering the full-warehouse dropdown. Either field may be
+ *  ``null`` when that store type isn't mapped for the farm. */
+export interface CreatorFarmStores {
+  chemical_store: string | null;
+  fertilizer_store: string | null;
+}
+
 export interface CreatorBootstrap {
   scope: CreatorScope;
   greenhouses: CreatorGreenhouse[];
@@ -90,6 +99,7 @@ export interface CreatorBootstrap {
   weather_settings: Record<string, number>;
   irac_window_days: number;
   frac_window_days: number;
+  farm_stores: Record<string, CreatorFarmStores>;
 }
 
 export async function fetchCreatorBootstrap(): Promise<CreatorBootstrap> {

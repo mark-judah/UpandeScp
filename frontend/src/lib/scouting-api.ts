@@ -821,18 +821,43 @@ export interface BomDetails {
 
 export async function fetchBomDetails(
   name: string,
+  greenhouse?: string,
 ): Promise<BomDetails | null> {
   if (!name) return null;
-  return cached(`bom:${name}`, async () => {
+  // Keyed by greenhouse too — a farm-mapped store restricts the returned
+  // warehouse lists, so the same BOM fetched for two different greenhouses
+  // can legitimately return different ``chemical_warehouses``/balances.
+  return cached(`bom:${name}:${greenhouse || ""}`, async () => {
     try {
       return await call<BomDetails>(
         "upande_scp.serverscripts.scouting_metrics_api.get_bom_details",
-        { name },
+        { name, greenhouse: greenhouse || undefined },
       );
     } catch {
       return null as unknown as BomDetails;
     }
   });
+}
+
+/** Reserved qty per item at one source warehouse, from Application Floor
+ *  Plan work orders that are drafted/submitted but not yet material-issued.
+ *  Used to keep the Chemical Stock matrix's "available" figure honest
+ *  across successive plans in the same session (the "5kg→60kg" bug). */
+export async function getStoreReservations(
+  warehouse: string,
+  itemCodes: string[],
+): Promise<Record<string, number>> {
+  if (!warehouse || !itemCodes.length) return {};
+  try {
+    return (
+      (await call<Record<string, number>>(
+        "upande_scp.serverscripts.spray_plan_creator.reservations.get_store_reservations",
+        { warehouse, item_codes: itemCodes },
+      )) || {}
+    );
+  } catch {
+    return {};
+  }
 }
 
 export async function fetchApplicationPlanBootstrap(): Promise<PlanBootstrap> {

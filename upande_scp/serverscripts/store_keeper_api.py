@@ -62,13 +62,19 @@ def _allowed_farms_for(user=None):
     )
 
 
-def bucket_overview(items, warehouses, matrix, chem_group_items):
+def bucket_overview(matrix, chem_group_items, chem_stores, fert_stores):
     """Split overview rows into chemical vs fertilizer buckets with per-store,
     per-item and grand totals. ``chem_group_items`` = set of item_codes in the
     CHEMICALS item group; everything else falls into the fertilizer bucket.
+    Each bucket is ALSO restricted to its mapped-store warehouse set
+    (``chem_stores``/``fert_stores`` — a farm's ``custom_chemical_store`` /
+    ``custom_fertilizer_store``) so CSUs, WIP and general stores never show
+    up in the dashboard's totals, regardless of caller role.
     Pure — no DB access, so it's covered by a plain unit test."""
-    def _bucket(is_chem):
-        pick = [m for m in matrix if (m["item_code"] in chem_group_items) == is_chem]
+    def _bucket(is_chem, allowed_stores):
+        pick = [m for m in matrix
+                if (m["item_code"] in chem_group_items) == is_chem
+                and m["warehouse"] in allowed_stores]
         by_item, by_wh = {}, {}
         for m in pick:
             by_item[m["item_code"]] = by_item.get(m["item_code"], 0.0) + float(m["qty"] or 0)
@@ -81,7 +87,7 @@ def bucket_overview(items, warehouses, matrix, chem_group_items):
             "matrix": pick,
             "total_qty": sum(by_item.values()),
         }
-    return {"chemical": _bucket(True), "fertilizer": _bucket(False)}
+    return {"chemical": _bucket(True, chem_stores), "fertilizer": _bucket(False, fert_stores)}
 
 
 # ----------------------------------------------------------------------
@@ -115,6 +121,19 @@ def chemical_stock_overview() -> dict:
     _check_perm()
 
     allowed = _allowed_farms_for()
+
+    # Mapped chemical/fertilizer stores across the caller's IN-SCOPE farms —
+    # ALL farms for admin/GM (``allowed is None``), else only the farms the
+    # caller is assigned to. These are the only warehouses the "Chemical
+    # Stores"/"Fertilizer Stores" panels may total, for every role.
+    farm_filter = None if allowed is None else {"name": ("in", allowed or ["__no_farm__"])}
+    farm_rows = frappe.get_all(
+        "Farm", filters=farm_filter,
+        fields=["custom_chemical_store", "custom_fertilizer_store"],
+    )
+    chem_stores = {f.custom_chemical_store for f in farm_rows if f.custom_chemical_store}
+    fert_stores = {f.custom_fertilizer_store for f in farm_rows if f.custom_fertilizer_store}
+
     allowed_whs = None
     if allowed is not None:
         # ``allowed`` may be an empty list (no farms assigned) — don't let an
@@ -128,7 +147,7 @@ def chemical_stock_overview() -> dict:
 
     if allowed_whs == []:
         chem_items = set(frappe.get_all("Item", filters={"item_group": "CHEMICALS"}, pluck="name"))
-        buckets = bucket_overview([], [], [], chem_items)
+        buckets = bucket_overview([], chem_items, chem_stores, fert_stores)
         return {
             "items": [],
             "warehouses": [],
@@ -219,7 +238,7 @@ def chemical_stock_overview() -> dict:
     items_list = sorted(items.values(), key=lambda x: -x["total_qty"])
     warehouses_list = sorted(warehouses.values(), key=lambda x: -x["total_qty"])
     chem_items = set(frappe.get_all("Item", filters={"item_group": "CHEMICALS"}, pluck="name"))
-    buckets = bucket_overview(items_list, warehouses_list, matrix, chem_items)
+    buckets = bucket_overview(matrix, chem_items, chem_stores, fert_stores)
 
     return {
         "items":         items_list,

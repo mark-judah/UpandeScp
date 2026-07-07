@@ -1,10 +1,13 @@
 /**
- * Compare chemical levels across farms' chemical-store warehouses.
+ * Compare chemical/fertilizer levels across each ASSIGNED FARM's MAPPED
+ * store (Farm.custom_chemical_store / custom_fertilizer_store) — not
+ * name-matched warehouses. Farms without the relevant mapping show
+ * nothing; CSUs never appear since only mapped stores are ever queried.
  *
- * Two views off one ``chemical_store_levels`` fetch:
+ * Two views off one ``farm_store_levels`` fetch, rendered once per bucket:
  *   1. A grouped bar chart — pick up to 5 chemicals, compare their levels
  *      per farm (stores within a farm are summed).
- *   2. A level table — every chemical on rows, every chemical store on
+ *   2. A level table — every chemical on rows, every farm's store on
  *      columns, the quantity in each cell.
  */
 import { useEffect, useMemo, useState } from "react";
@@ -25,10 +28,10 @@ import {
 } from "@/components/ui/chart";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
-  fetchChemicalStoreLevels,
-  type ChemicalStoreLevels,
+  fetchFarmStoreLevels,
+  type FarmStoreLevels,
+  type StoreLevelBucket,
 } from "@/lib/store-keeper-api";
 import { cn } from "@/lib/utils";
 
@@ -47,51 +50,47 @@ function fmt(n: number): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-export function ChemicalStoreComparison() {
-  const [data, setData] = useState<ChemicalStoreLevels | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<string[]>([]);
+function StoreLevelComparison({
+  title,
+  emptyMessage,
+  bucket,
+}: {
+  title: string;
+  emptyMessage: string;
+  bucket: StoreLevelBucket;
+}) {
+  const [selected, setSelected] = useState<string[]>(
+    bucket.items.slice(0, 1).map((i) => i.item_code),
+  );
   const [pickQuery, setPickQuery] = useState("");
   const [tableQuery, setTableQuery] = useState("");
 
-  useEffect(() => {
-    setLoading(true);
-    fetchChemicalStoreLevels()
-      .then((d) => {
-        setData(d);
-        // Seed with the top chemical so the chart isn't empty on first paint.
-        setSelected(d.items.slice(0, 1).map((i) => i.item_code));
-      })
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
-  }, []);
-
   const itemName = useMemo(() => {
     const m = new Map<string, string>();
-    (data?.items || []).forEach((i) => m.set(i.item_code, i.item_name));
+    bucket.items.forEach((i) => m.set(i.item_code, i.item_name));
     return m;
-  }, [data]);
+  }, [bucket]);
 
   // qty[item][warehouse] — used by both the chart (x-axis = store) and table.
   const byWarehouse = useMemo(() => {
     const map: Record<string, Record<string, number>> = {};
-    for (const c of data?.matrix || []) {
+    for (const c of bucket.matrix) {
       (map[c.item_code] ||= {})[c.warehouse] = c.qty;
     }
     return map;
-  }, [data]);
+  }, [bucket]);
 
-  // One bar group per chemical store; series = each selected chemical.
+  // One bar group per farm's store; series = each selected chemical.
   const chartData = useMemo(
     () =>
-      (data?.stores || []).map((s) => {
+      bucket.stores.map((s) => {
         const row: Record<string, number | string> = { store: s.label };
         selected.forEach((code) => {
           row[code] = Math.round((byWarehouse[code]?.[s.warehouse] || 0) * 100) / 100;
         });
         return row;
       }),
-    [data, selected, byWarehouse],
+    [bucket, selected, byWarehouse],
   );
 
   const chartConfig: ChartConfig = useMemo(() => {
@@ -104,7 +103,7 @@ export function ChemicalStoreComparison() {
 
   const pickList = useMemo(() => {
     const q = pickQuery.trim().toLowerCase();
-    const items = data?.items || [];
+    const items = bucket.items;
     if (!q) return items.slice(0, 60);
     return items
       .filter(
@@ -113,18 +112,28 @@ export function ChemicalStoreComparison() {
           i.item_code.toLowerCase().includes(q),
       )
       .slice(0, 60);
-  }, [data, pickQuery]);
+  }, [bucket, pickQuery]);
 
   const tableRows = useMemo(() => {
     const q = tableQuery.trim().toLowerCase();
-    const items = data?.items || [];
+    const items = bucket.items;
     if (!q) return items;
     return items.filter(
       (i) =>
         i.item_name.toLowerCase().includes(q) ||
         i.item_code.toLowerCase().includes(q),
     );
-  }, [data, tableQuery]);
+  }, [bucket, tableQuery]);
+
+  // Sum of the selected chemical(s) across every farm in this bucket.
+  const totalSelected = useMemo(
+    () =>
+      bucket.matrix.reduce(
+        (sum, c) => (selected.includes(c.item_code) ? sum + c.qty : sum),
+        0,
+      ),
+    [bucket, selected],
+  );
 
   const toggle = (code: string) => {
     setSelected((prev) => {
@@ -134,23 +143,13 @@ export function ChemicalStoreComparison() {
     });
   };
 
-  const stores = data?.stores || [];
+  const stores = bucket.stores;
 
-  if (loading) {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading store levels…
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!data || !stores.length) {
+  if (!stores.length) {
     return (
       <Card>
         <CardContent className="py-8 text-center text-sm text-muted-foreground">
-          No chemical-store warehouses found to compare.
+          {emptyMessage}
         </CardContent>
       </Card>
     );
@@ -162,12 +161,18 @@ export function ChemicalStoreComparison() {
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <BarChart3 className="h-4 w-4" />
-            Compare chemical levels across stores
+            {title}
           </CardTitle>
           <CardDescription>
-            Pick up to {MAX_SELECT} chemicals to compare their levels per chemical store.
+            Pick up to {MAX_SELECT} chemicals to compare their levels per farm.
             {selected.length >= MAX_SELECT && " Max reached — deselect one to swap."}
           </CardDescription>
+          {selected.length > 0 && (
+            <div className="pt-1 text-xs">
+              <span className="text-muted-foreground">Total selected: </span>
+              <span className="font-semibold tabular-nums">{fmt(totalSelected)}</span>
+            </div>
+          )}
         </CardHeader>
         <CardContent className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Picker */}
@@ -277,12 +282,12 @@ export function ChemicalStoreComparison() {
         </CardContent>
       </Card>
 
-      {/* Level table — chemicals × chemical stores */}
+      {/* Level table — chemicals × farms */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Levels by chemical store</CardTitle>
+          <CardTitle className="text-base">Levels by farm</CardTitle>
           <CardDescription>
-            Every chemical on rows, each store a column.
+            Every chemical on rows, each farm's mapped store a column.
           </CardDescription>
           <div className="relative max-w-xs pt-1">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -349,6 +354,54 @@ export function ChemicalStoreComparison() {
           </div>
         </CardContent>
       </Card>
+    </>
+  );
+}
+
+export function ChemicalStoreComparison() {
+  const [data, setData] = useState<FarmStoreLevels | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchFarmStoreLevels()
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading store levels…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!data) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          No farm-mapped stores found to compare.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <StoreLevelComparison
+        title="Compare chemical levels across farms"
+        emptyMessage="No farms have a chemical store mapped."
+        bucket={data.chemical}
+      />
+      <StoreLevelComparison
+        title="Compare fertilizer levels across farms"
+        emptyMessage="No farms have a fertilizer store mapped."
+        bucket={data.fertilizer}
+      />
     </>
   );
 }

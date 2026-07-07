@@ -232,63 +232,22 @@ def chemical_stock_overview() -> dict:
     }
 
 
-@frappe.whitelist()
-def chemical_store_levels() -> dict:
-    """Comparative chemical levels across each farm's chemical-store warehouse.
-
-    Powers the Chemical Dashboard's farm-comparison view:
-      * ``stores``  — one per ``Chemical Store *`` warehouse, with its farm and a
-                      short display label.
-      * ``items``   — chemicals in stock anywhere, with their grand total.
-      * ``matrix``  — [{item_code, warehouse, qty}] for per-store / per-farm
-                      aggregation client-side.
-
-    Only the per-farm chemical stores are considered (greenhouse bins are
-    excluded), so the comparison is store-to-store / farm-to-farm.
-
-    Scoped to the caller's assigned farms unless they hold an admin/GM
-    role (see ``_allowed_farms_for``)."""
-    _check_perm()
-
-    allowed = _allowed_farms_for()
-    allowed_whs = None
-    if allowed is not None:
-        # ``allowed`` may be an empty list (no farms assigned) — don't let an
-        # empty IN-clause sentinel accidentally match warehouses whose
-        # ``custom_farm`` is itself an empty string/null.
-        allowed_whs = (
-            frappe.get_all("Warehouse", filters={"custom_farm": ("in", allowed)}, pluck="name")
-            if allowed
-            else []
-        )
-        if allowed_whs == []:
-            return {"stores": [], "items": [], "matrix": [], "allowed_farms": allowed}
-
-    store_filters = [
-        ["Warehouse", "is_group", "=", 0],
-        ["Warehouse", "disabled", "=", 0],
-        ["Warehouse", "name", "like", "Chemical Store%"],
-        ["Warehouse", "custom_farm", "is", "set"],
-    ]
-    if allowed_whs is not None:
-        store_filters.append(["Warehouse", "name", "in", allowed_whs])
-
-    stores = frappe.get_all(
-        "Warehouse",
-        filters=store_filters,
-        fields=["name", "custom_farm"],
-        order_by="custom_farm, name",
-    )
+def _store_level_bucket(stores: list, item_group: str) -> dict:
+    """Given ``stores`` = [{warehouse, farm, label}, ...] for one bucket
+    (chemical or fertilizer), aggregate Bin stock for ``item_group`` into
+    the ``items``/``matrix`` shape the comparison UI consumes. Only the
+    listed warehouses are ever queried, so anything not mapped as a farm's
+    store (e.g. a CSU) is inherently excluded."""
     if not stores:
-        return {"stores": [], "items": [], "matrix": [], "allowed_farms": allowed}
+        return {"stores": [], "items": [], "matrix": []}
 
-    names = [s.name for s in stores]
+    names = [s["warehouse"] for s in stores]
     rows = frappe.db.sql(
         """SELECT b.item_code, b.warehouse, b.actual_qty AS qty,
                   i.item_name, COALESCE(i.stock_uom, '') AS uom
            FROM `tabBin` b JOIN `tabItem` i ON i.name = b.item_code
-           WHERE b.warehouse IN %(w)s AND i.item_group IN %(g)s AND b.actual_qty > 0""",
-        {"w": tuple(names), "g": _CHEMICAL_GROUPS},
+           WHERE b.warehouse IN %(w)s AND i.item_group = %(grp)s AND b.actual_qty > 0""",
+        {"w": tuple(names), "grp": item_group},
         as_dict=True,
     )
 
@@ -304,17 +263,63 @@ def chemical_store_levels() -> dict:
         bucket["total"] += float(r.qty)
         matrix.append({"item_code": r.item_code, "warehouse": r.warehouse, "qty": float(r.qty)})
 
-    def _label(name: str) -> str:
-        # "Chemical Store Kapkolia - KR" -> "Kapkolia - KR"
-        return name.replace("Chemical Store", "").strip(" -") or name
-
     return {
-        "stores": [
-            {"warehouse": s.name, "farm": s.custom_farm, "label": _label(s.name)}
-            for s in stores
-        ],
+        "stores": stores,
         "items": sorted(items.values(), key=lambda x: -x["total"]),
         "matrix": matrix,
+    }
+
+
+@frappe.whitelist()
+def farm_store_levels() -> dict:
+    """Comparative chemical/fertilizer levels across each ASSIGNED FARM's
+    MAPPED store — ``Farm.custom_chemical_store`` / ``custom_fertilizer_store``
+    — not name-matched warehouses.
+
+    Powers the Chemical Dashboard's farm-comparison view. One farm = one
+    mapped store per bucket; farms without that mapping are omitted, and
+    since only mapped stores are ever queried, CSUs never appear.
+
+    Returns:
+      {
+        "chemical":    {stores, items, matrix},
+        "fertilizer":  {stores, items, matrix},
+        "allowed_farms": [...] | None,
+      }
+
+    Scoped to the caller's assigned farms unless they hold an admin/GM
+    role (see ``_allowed_farms_for``)."""
+    _check_perm()
+
+    allowed = _allowed_farms_for()
+    if allowed is None:
+        farms = frappe.get_all(
+            "Farm",
+            fields=["name", "custom_chemical_store", "custom_fertilizer_store"],
+        )
+    elif allowed:
+        farms = frappe.get_all(
+            "Farm",
+            filters={"name": ("in", allowed)},
+            fields=["name", "custom_chemical_store", "custom_fertilizer_store"],
+        )
+    else:
+        farms = []
+
+    chemical_stores = [
+        {"warehouse": f.custom_chemical_store, "farm": f.name, "label": f.name}
+        for f in farms
+        if f.custom_chemical_store
+    ]
+    fertilizer_stores = [
+        {"warehouse": f.custom_fertilizer_store, "farm": f.name, "label": f.name}
+        for f in farms
+        if f.custom_fertilizer_store
+    ]
+
+    return {
+        "chemical": _store_level_bucket(chemical_stores, "CHEMICALS"),
+        "fertilizer": _store_level_bucket(fertilizer_stores, "Fertilizer"),
         "allowed_farms": allowed,
     }
 

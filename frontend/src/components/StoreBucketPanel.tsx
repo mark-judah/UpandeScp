@@ -3,19 +3,15 @@
  * ``chemical_stock_overview``'s ``buckets`` payload — already scoped
  * server-side to the caller's allowed farms.
  *
- * Renders a total-qty KPI, a per-store table, a bar chart (qty per store)
- * and a pie chart (each store's share of the bucket total). Degrades to an
- * empty state (not a crash) when the bucket has no stores — e.g. a Store
- * Keeper with no assigned farm.
+ * Renders a total-qty KPI, a per-store table and a bar chart (qty per
+ * store). Degrades to an empty state (not a crash) when the bucket has no
+ * stores — e.g. a Store Keeper with no assigned farm.
  */
 import { useMemo } from "react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
   XAxis,
   YAxis,
 } from "recharts";
@@ -73,18 +69,6 @@ export function StoreBucketPanel({
     [stores],
   );
 
-  const pieData = useMemo(
-    () =>
-      stores
-        .filter((s) => s.total_qty > 0)
-        .map((s, i) => ({
-          name: s.warehouse,
-          value: Math.round(s.total_qty * 100) / 100,
-          fill: PALETTE[i % PALETTE.length],
-        })),
-    [stores],
-  );
-
   const chartConfig: ChartConfig = {
     qty: { label: "Stock", color: PALETTE[0] },
   };
@@ -121,63 +105,33 @@ export function StoreBucketPanel({
             {loading ? "Loading stock…" : "No stores in scope for this bucket."}
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Bar chart: qty per store */}
-            <div className="min-w-0">
-              <ChartContainer config={chartConfig} className="w-full h-64">
-                <BarChart
-                  data={barData}
-                  margin={{ left: 12, right: 12, top: 8, bottom: 24 }}
-                >
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="warehouse"
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                    tick={{ fontSize: 10 }}
-                    angle={-20}
-                    height={50}
-                    textAnchor="end"
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    width={52}
-                    tickFormatter={(v: number) => fmt(v)}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="qty" fill={PALETTE[0]} radius={4} />
-                </BarChart>
-              </ChartContainer>
-            </div>
-
-            {/* Pie chart: each store's share of the bucket total */}
-            <div className="min-w-0">
-              {pieData.length ? (
-                <ChartContainer config={chartConfig} className="w-full h-64">
-                  <PieChart margin={{ top: 8, bottom: 8 }}>
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Pie
-                      data={pieData}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={40}
-                      outerRadius={72}
-                      paddingAngle={2}
-                    >
-                      {pieData.map((entry) => (
-                        <Cell key={entry.name} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ChartContainer>
-              ) : (
-                <div className="flex items-center justify-center h-64 text-xs text-muted-foreground">
-                  No stock to chart.
-                </div>
-              )}
-            </div>
+          <div className="min-w-0">
+            <ChartContainer config={chartConfig} className="w-full h-64">
+              <BarChart
+                data={barData}
+                margin={{ left: 12, right: 12, top: 8, bottom: 24 }}
+              >
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="warehouse"
+                  tickLine={false}
+                  axisLine={false}
+                  interval={0}
+                  tick={{ fontSize: 10 }}
+                  angle={-20}
+                  height={50}
+                  textAnchor="end"
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  width={52}
+                  tickFormatter={(v: number) => fmt(v)}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="qty" fill={PALETTE[0]} radius={4} />
+              </BarChart>
+            </ChartContainer>
           </div>
         )}
 

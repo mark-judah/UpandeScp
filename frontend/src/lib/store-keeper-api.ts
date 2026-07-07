@@ -121,17 +121,22 @@ export interface StoreLevelItem {
   uom: string;
   total: number;
 }
-export interface ChemicalStoreLevels {
+export interface StoreLevelBucket {
   stores: StoreLevelStore[];
   items: StoreLevelItem[];
   matrix: ChemicalMatrixCell[];
 }
+export interface FarmStoreLevels {
+  chemical: StoreLevelBucket;
+  fertilizer: StoreLevelBucket;
+  allowed_farms: string[] | null;
+}
 
-export async function fetchChemicalStoreLevels(): Promise<ChemicalStoreLevels> {
+export async function fetchFarmStoreLevels(): Promise<FarmStoreLevels> {
   const r = await call(
-    "upande_scp.serverscripts.store_keeper_api.chemical_store_levels",
+    "upande_scp.serverscripts.store_keeper_api.farm_store_levels",
   );
-  return unwrap<ChemicalStoreLevels>(r);
+  return unwrap<FarmStoreLevels>(r);
 }
 
 export async function fetchDraftTransfers(opts: {

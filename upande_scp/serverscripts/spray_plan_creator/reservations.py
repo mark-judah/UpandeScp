@@ -58,6 +58,7 @@ def get_store_reservations(warehouse, item_codes=None):
         FROM `tabWork Order Item` woi
         JOIN `tabWork Order` wo ON wo.name = woi.parent
         WHERE wo.custom_type = 'Application Floor Plan'
+          AND DATE(wo.creation) = %(today)s
           AND wo.docstatus < 2
           AND (wo.status IS NULL OR wo.status != 'Stopped')
           AND COALESCE(wo.workflow_state, 'Pending Submission') NOT IN
@@ -65,7 +66,7 @@ def get_store_reservations(warehouse, item_codes=None):
           AND woi.source_warehouse = %(warehouse)s
           AND woi.item_code IN %(items)s
         """,
-        {"warehouse": warehouse, "items": tuple(item_codes)},
+        {"warehouse": warehouse, "items": tuple(item_codes), "today": frappe.utils.today()},
         as_dict=True,
     )
     agg = aggregate_reservations(rows)

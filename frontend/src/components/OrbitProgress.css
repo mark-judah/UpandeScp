@@ -14,7 +14,8 @@
 }
 
 .orbit-progress__track {
-  opacity: 0.18;
+  /* Very faint guide — the dark arc is the spinner; the track barely reads. */
+  opacity: 0.06;
 }
 
 .orbit-progress__orbit {

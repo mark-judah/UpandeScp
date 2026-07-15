@@ -8,7 +8,9 @@ import { Separator } from "@/components/ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const SIDEBAR_WIDTH = "16rem";
-const SIDEBAR_WIDTH_ICON = "3rem";
+// Slightly wider than stock (3rem) so the collapsed icon rail still clears
+// the button hit-area once the floating card's outer padding is subtracted.
+const SIDEBAR_WIDTH_ICON = "4rem";
 const SIDEBAR_COOKIE_NAME = "sidebar:state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 
@@ -92,7 +94,10 @@ export const SidebarProvider = React.forwardRef<
             } as React.CSSProperties
           }
           className={cn(
-            "group/sidebar-wrapper flex min-h-svh w-full",
+            // Paint the app's own paper backdrop so the region behind the
+            // floating sidebar matches the content and never depends on the
+            // host www page's background.
+            "group/sidebar-wrapper flex min-h-svh w-full bg-background",
             className,
           )}
           {...props}
@@ -162,14 +167,16 @@ export const Sidebar = React.forwardRef<
     }
 
     return (
+      // Detached, rounded, shadowed sidebar (reference `.side`): the outer
+      // column is transparent and sticky — it only reserves width and adds
+      // the margin that lets the inner card float on the paper background.
       <div
         ref={ref}
         data-state={state}
         data-collapsible={state === "collapsed" ? collapsible : ""}
         data-side={side}
         className={cn(
-          "group peer hidden md:flex sticky top-0 h-svh shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-linear",
-          side === "left" ? "border-r" : "border-l",
+          "group peer hidden md:flex sticky top-0 h-svh shrink-0 flex-col p-2.5 transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
           state === "expanded"
             ? "w-[var(--sidebar-width)]"
             : collapsible === "icon"
@@ -179,7 +186,9 @@ export const Sidebar = React.forwardRef<
         )}
         {...props}
       >
-        {children}
+        <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[20px] border bg-sidebar text-sidebar-foreground shadow-[var(--sd-shadow-1)]">
+          {children}
+        </div>
       </div>
     );
   },
@@ -321,7 +330,7 @@ export const SidebarGroupLabel = React.forwardRef<
       // staying parked below an empty 32px row. CSS-driven (no React state
       // toggle) so it stays in sync with the sidebar's width transition.
       className={cn(
-        "flex h-8 shrink-0 items-center px-2 text-[0.7rem] font-medium uppercase tracking-wider text-sidebar-foreground/60 whitespace-nowrap overflow-hidden transition-[margin,opacity] duration-200 ease-linear group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
+        "flex h-8 shrink-0 items-center px-2 text-[0.7rem] font-medium uppercase tracking-wider text-sidebar-foreground/60 whitespace-nowrap overflow-hidden transition-[margin,opacity] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
         className,
       )}
       {...props}
@@ -373,7 +382,7 @@ const sidebarMenuButtonVariants = cva(
   // [&>span:last-child]:truncate keeps the label on a single line during the
   // sidebar's width animation — otherwise text wraps to two rows at narrow
   // intermediate widths and the row visibly jumps. Mirrors mona's pattern.
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding] focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:font-medium data-[active=true]:text-sidebar-primary-foreground data-[state=open]:hover:bg-sidebar-accent group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>span:last-child]:truncate [&>span:last-child]:min-w-0",
+  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-lg group-data-[collapsible=icon]:rounded-full p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding,border-radius] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:font-medium data-[active=true]:text-sidebar-primary-foreground data-[state=open]:hover:bg-sidebar-accent group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>span:last-child]:truncate [&>span:last-child]:min-w-0",
   {
     variants: {
       size: {

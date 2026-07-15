@@ -2,7 +2,8 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { useRoute, cropDisplayName } from "@/lib/router";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { LoadingStrip } from "@/components/LoadingStrip";
+import { OrbitProgress } from "@/components/OrbitProgress";
+import { useSimulatedProgress } from "@/hooks/use-simulated-progress";
 import { primeBedsAndZones, primeMapSettings } from "@/lib/scouting-api";
 import { loadObservationColors } from "@/lib/observation-colors";
 import { bootstrap } from "@/lib/frappe";
@@ -99,7 +100,14 @@ const HeatmapPoc = lazy(() =>
 );
 
 function PageFallback() {
-  return <LoadingStrip active />;
+  // Route-chunk load: no real progress signal, so creep a simulated percent
+  // through the shared orbit loader.
+  const pct = useSimulatedProgress(true);
+  return (
+    <div className="flex min-h-svh items-center justify-center">
+      <OrbitProgress percent={Math.round(pct)} size={140} smooth />
+    </div>
+  );
 }
 
 /* Page-shaped skeleton for ApplicationPlan. Matches the real header + two-column

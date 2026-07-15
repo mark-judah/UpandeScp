@@ -301,19 +301,25 @@ export function AppSidebar({
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
-          <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background ring-1 ring-border/60 group-data-[collapsible=icon]:size-6">
+        {/* Brand — reference `.topbar__brand`: prominent logo, thin divider,
+            product name with an uppercase let-spaced eyebrow subtitle. */}
+        <div className="flex items-center gap-2.5 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:py-0">
+          <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background ring-1 ring-border/60 group-data-[collapsible=icon]:size-7">
             <img
               src={upandeLogo}
               alt="Upande"
               className="size-full object-contain"
             />
           </div>
+          {/* Thin divider, reference `.topbar__divider`. */}
+          <div className="h-6 w-px shrink-0 bg-border group-data-[collapsible=icon]:hidden" />
           {/* Always rendered, hidden via CSS so the width animation plays
               around it without React inserting/removing nodes mid-transition. */}
-          <div className="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="truncate font-semibold">Upande SCP</span>
-            <span className="truncate text-xs text-muted-foreground">
+          <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
+            <span className="truncate text-sm font-semibold tracking-[-0.01em] text-foreground">
+              Upande SCP
+            </span>
+            <span className="mt-0.5 truncate text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--sd-quiet)]">
               Scouting &amp; Crop Protection
             </span>
           </div>

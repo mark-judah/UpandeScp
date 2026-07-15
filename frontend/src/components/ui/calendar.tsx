@@ -57,16 +57,18 @@ export function Calendar({
         week_number:
           "w-7 text-[0.65rem] tabular-nums text-muted-foreground/60 font-medium flex items-center justify-center",
         day: "size-8 text-center text-sm p-0 relative focus-within:relative focus-within:z-20",
+        // Circular day cells (no squares) using the sidebar's neutral shade
+        // for hover; a selected date is the sidebar's ink pill with a bright
+        // (light) number, mirroring the active sidebar item.
         day_button: cn(
           buttonVariants({ variant: "ghost" }),
-          "size-8 p-0 font-normal aria-selected:opacity-100",
+          "size-8 rounded-full p-0 font-normal hover:bg-[var(--sidebar-accent)] aria-selected:bg-primary aria-selected:font-medium aria-selected:text-primary-foreground aria-selected:opacity-100 aria-selected:hover:bg-primary aria-selected:hover:text-primary-foreground",
         ),
-        range_start: "rounded-l-md bg-primary text-primary-foreground",
-        range_end: "rounded-r-md bg-primary text-primary-foreground",
-        range_middle: "bg-accent text-accent-foreground",
-        selected:
-          "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
-        today: "bg-accent text-accent-foreground rounded-md",
+        range_start: "rounded-l-full bg-primary text-primary-foreground",
+        range_end: "rounded-r-full bg-primary text-primary-foreground",
+        range_middle: "bg-[var(--sidebar-accent)] text-foreground",
+        selected: "rounded-full",
+        today: "rounded-full bg-[var(--sidebar-accent)] text-foreground",
         outside: "text-muted-foreground/40",
         disabled: "text-muted-foreground/40 cursor-not-allowed",
         hidden: "invisible",

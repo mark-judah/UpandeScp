@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./OrbitProgress.css";
 
 export interface OrbitProgressProps {
@@ -49,10 +49,9 @@ export function OrbitProgress({
   trackColor = "currentColor",
   arcColor = "var(--primary, currentColor)",
   arcFraction = 0.28,
-  thickness = 0.035,
+  thickness = 0.052,
   textColor,
-  baseDurationSec = 2,
-  maxSpeedPlus = 5,
+  baseDurationSec = 1.1,
   easing = "linear",
   label,
   className,
@@ -87,11 +86,9 @@ export function OrbitProgress({
 
   const pct = Math.round(eased);
 
-  const duration = useMemo(() => {
-    // Linear acceleration: speedFactor goes 1 → 1+maxSpeedPlus across 0→100.
-    const speed = 1 + (maxSpeedPlus * pct) / 100;
-    return baseDurationSec / speed;
-  }, [pct, baseDurationSec, maxSpeedPlus]);
+  // Constant cyclic motion — the spin rate is fixed and no longer driven by
+  // ``percent`` (the centre readout still counts up as data loads).
+  const duration = baseDurationSec;
 
   // SVG geometry: ring stroke is ``thickness`` (fraction of diameter);
   // the arc shares the track's radius and stroke width and is "drawn"

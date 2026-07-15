@@ -31,7 +31,7 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import PillNav from "@/components/PillNav";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
   CardContent,
@@ -348,7 +348,7 @@ export function CreatorStock() {
         )}
 
         {data && data.farms.length > 1 && (
-          <FarmPillNav
+          <FarmSwitcher
             farms={data.farms}
             selected={selectedFarm}
             allValue={ALL_FARMS}
@@ -1359,7 +1359,7 @@ function fmtAge(days: number): string {
 }
 
 
-function FarmPillNav({
+function FarmSwitcher({
   farms,
   selected,
   allValue,
@@ -1370,26 +1370,19 @@ function FarmPillNav({
   allValue: string;
   onSelect: (next: string) => void;
 }) {
-  const items = useMemo(
-    () => [
-      { label: "All Farms", href: `#${allValue}` },
-      ...farms.map((f) => ({ label: f, href: `#${f}` })),
-    ],
-    [farms, allValue],
-  );
   return (
     <div className="flex justify-start">
-      <PillNav
-        items={items}
-        activeHref={`#${selected}`}
-        onSelect={(item) => onSelect(item.href.slice(1))}
-        baseColor="var(--primary)"
-        pillColor="var(--card)"
-        pillTextColor="var(--foreground)"
-        hoveredPillTextColor="var(--primary-foreground)"
-        initialLoadAnimation={false}
-        className="creator-stock-farm-nav"
-      />
+      {/* Reference `.pillgroup` switcher (native shadcn Tabs). */}
+      <Tabs value={selected} onValueChange={onSelect} className="w-auto">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value={allValue}>All Farms</TabsTrigger>
+          {farms.map((f) => (
+            <TabsTrigger key={f} value={f}>
+              {f}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
     </div>
   );
 }

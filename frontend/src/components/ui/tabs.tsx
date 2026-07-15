@@ -11,7 +11,9 @@ export const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex items-center gap-1 rounded-full border bg-card p-1 text-muted-foreground",
+      // Reference `.pillgroup` (heatmaps greenhouse switcher): a rounded
+      // track with a subtle dark tint, no border.
+      "inline-flex items-center gap-0.5 rounded-full bg-[rgba(10,10,10,0.05)] p-1 text-muted-foreground",
       className,
     )}
     {...props}
@@ -26,7 +28,9 @@ export const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm [&_svg]:size-4 [&_svg]:shrink-0",
+      // Reference `.pillgroup button` + `.on`: 12px medium, muted resting,
+      // solid-ink active pill with a soft shadow.
+      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium text-[var(--sd-muted)] transition-all hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-[0_2px_8px_rgba(10,10,10,0.15)] data-[state=active]:hover:text-primary-foreground [&_svg]:size-4 [&_svg]:shrink-0",
       className,
     )}
     {...props}

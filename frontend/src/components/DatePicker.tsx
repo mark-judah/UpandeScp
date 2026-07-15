@@ -46,7 +46,9 @@ export function DatePicker({
           size="sm"
           disabled={disabled}
           className={cn(
-            "h-9 gap-2 font-normal tabular-nums",
+            // Reference `.datepill`: rounded pill on a surface with a soft
+            // shadow, 12px medium, muted calendar glyph.
+            "h-9 gap-2 rounded-full border-transparent bg-card px-4 text-xs font-medium tabular-nums text-foreground shadow-[var(--sd-shadow-1)] hover:bg-card hover:text-foreground hover:shadow-[var(--sd-shadow-2)] [&>svg]:text-[var(--sd-quiet)]",
             !date && "text-muted-foreground",
             className,
           )}

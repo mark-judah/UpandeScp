@@ -18,20 +18,33 @@ const TONE: Record<NonNullable<KpiProps["tone"]>, string> = {
 
 export function Kpi({ label, value, hint, tone = "default", className }: KpiProps) {
   return (
-    <Card className={cn("p-4 flex flex-col gap-1", className)}>
-      <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
+    <Card
+      className={cn(
+        // Reference .kpi: roomy padding, soft shadow (from Card), and a
+        // hover-lift so the metric tiles feel alive. No cursor-pointer —
+        // these aren't clickable in this app.
+        "relative flex flex-col overflow-hidden p-6 transition-all duration-200",
+        "hover:-translate-y-[3px] hover:shadow-[var(--sd-shadow-2)]",
+        className,
+      )}
+    >
+      {/* .kpi__label — 11px, uppercase, wide tracking */}
+      <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--sd-quiet)] pr-8">
         {label}
       </div>
+      {/* .kpi__value — hero 44px number, tight tracking, tabular */}
       <div
         className={cn(
-          "text-2xl font-semibold leading-tight tracking-tight tabular-nums",
+          "text-[36px] md:text-[44px] font-semibold leading-none tracking-[-0.03em] tabular-nums",
           TONE[tone],
         )}
       >
         {value}
       </div>
       {hint && (
-        <div className="text-xs text-muted-foreground line-clamp-2">{hint}</div>
+        <div className="mt-2 text-[13px] text-[var(--sd-quiet)] line-clamp-2">
+          {hint}
+        </div>
       )}
     </Card>
   );
@@ -49,7 +62,7 @@ export function KpiGrid({
   return (
     <div
       className={cn(
-        "grid gap-3",
+        "grid gap-4",
         cols === 4 && "grid-cols-2 lg:grid-cols-4",
         cols === 3 && "grid-cols-1 sm:grid-cols-3",
         cols === 2 && "grid-cols-1 sm:grid-cols-2",

@@ -1,16 +1,14 @@
 import { useEffect, useState } from "react";
 import { FileText, RefreshCw } from "lucide-react";
-import PillNav from "@/components/PillNav";
 import {
   fetchCrops, fetchFarmsAndWarehouses, fetchScoutLookup,
   fetchZonesByGreenhouse, DEFAULT_CROP,
 } from "@/lib/scouting-api";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -105,30 +103,55 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
     h.reload({ force: true });
   };
 
+  // Header controls, reference styling: pill-shaped dropdowns (like the
+  // `.datepill`) and circular icon-only tools (`.iconbtn`), all h-9 so they
+  // sit on one level with the pill switcher.
+  const pillSelect =
+    "h-9 w-auto min-w-[7rem] gap-2 rounded-full border-transparent bg-card px-4 text-xs font-medium shadow-[var(--sd-shadow-1)] hover:shadow-[var(--sd-shadow-2)] focus:ring-0";
+  const iconBtn =
+    "h-9 w-9 rounded-full bg-card text-[var(--sd-muted)] shadow-[var(--sd-shadow-1)] transition-all hover:-translate-y-px hover:text-foreground hover:shadow-[var(--sd-shadow-2)]";
+
   return (
     <div className="flex flex-col min-h-svh">
       {/* === Filter bar (same as before) === */}
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Scouting Dashboard
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Pest · Disease · Trap Monitoring
-              </p>
+      {/* Reference: no header bar — the page-head is text on the same paper
+          background as the rest of the workspace (transparent, not sticky). */}
+      <header className="flex flex-col gap-4 bg-transparent px-4 pt-5 pb-2 md:px-6 md:pt-6 md:pb-3">
+        {/* Reference `.pagehead`: uppercase eyebrow with a leading rule, then
+            a large editorial title. The switcher + filters live below on one
+            row (not in the header). */}
+        <div className="flex items-center gap-3">
+          <SidebarTrigger />
+          <Separator orientation="vertical" className="h-8" />
+          <div>
+            <div className="mb-2.5 flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--sd-quiet)]">
+              <span className="h-px w-[18px] bg-[var(--sd-text)]" />
+              Pest · Disease · Trap Monitoring
             </div>
+            <h1 className="text-[32px] md:text-[44px] font-semibold leading-[1.05] tracking-[-0.03em] text-foreground">
+              Scouting Dashboard
+            </h1>
           </div>
+        </div>
+      </header>
 
-          <div className="flex flex-wrap items-end gap-2">
-            {!initialCrop && (
-              <div className="flex flex-col gap-1 min-w-32">
-                <Label htmlFor="crop">Crop</Label>
+      <div className="flex-1 px-4 py-4 md:px-6 md:py-6">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="flex flex-col gap-4">
+          {/* Switcher + filters on one row. Switcher = reference `.pillgroup`
+              (native TabsList); filters = pill dropdowns + icon tools. */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="pests">Pests</TabsTrigger>
+              <TabsTrigger value="diseases">Diseases</TabsTrigger>
+              <TabsTrigger value="traps">Traps</TabsTrigger>
+              <TabsTrigger value="fcm">FCM &amp; Moths</TabsTrigger>
+            </TabsList>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {!initialCrop && (
                 <Select value={crop} onValueChange={setCrop}>
-                  <SelectTrigger id="crop" className="h-9">
+                  <SelectTrigger aria-label="Crop" className={pillSelect}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -139,11 +162,8 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-            )}
+              )}
 
-            <div className="flex flex-col gap-1 min-w-32">
-              <Label htmlFor="farm">Farm</Label>
               <Select
                 value={farm}
                 onValueChange={(v) => {
@@ -151,7 +171,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                   setGreenhouse(ALL_GH);
                 }}
               >
-                <SelectTrigger id="farm" className="h-9">
+                <SelectTrigger aria-label="Farm" className={pillSelect}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -163,16 +183,13 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
 
-            <div className="flex flex-col gap-1 min-w-40">
-              <Label htmlFor="gh">Greenhouse</Label>
               <Select
                 value={greenhouse}
                 onValueChange={setGreenhouse}
                 disabled={!greenhouseList.length}
               >
-                <SelectTrigger id="gh" className="h-9">
+                <SelectTrigger aria-label="Greenhouse" className={pillSelect}>
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
@@ -184,73 +201,44 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
 
-            <div className="flex flex-col gap-1">
-              <Label>From</Label>
               <DatePicker
                 value={from}
                 onChange={(v) => setRange({ from: v, to })}
               />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <Label>To</Label>
               <DatePicker
                 value={to}
                 onChange={(v) => setRange({ from, to: v })}
               />
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={reloadActive}
+                className={iconBtn}
+                title="Reload (force cache refresh)"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+
+              <Button asChild variant="ghost" size="icon" className={iconBtn}>
+                <a href="/scouting_reports" target="_self" title="Reports">
+                  <FileText className="h-4 w-4" />
+                </a>
+              </Button>
             </div>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={reloadActive}
-              className="h-9"
-              title="Reload (force cache refresh)"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Reload
-            </Button>
-
-            <Button asChild variant="outline" size="sm" className="h-9">
-              <a href="/scouting_reports" target="_self">
-                <FileText className="h-3.5 w-3.5" />
-                Reports
-              </a>
-            </Button>
           </div>
-        </div>
 
-        {(() => {
-          const active = ({ overview, pests, diseases, traps, fcm } as const)[tab];
-          return active.error ? (
-            <div className="text-xs text-[var(--sd-data-red)]">
-              Failed to load: {active.error}
-            </div>
-          ) : null;
-        })()}
-      </header>
-
-      <div className="flex-1 px-4 py-4 md:px-6 md:py-6">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="flex flex-col gap-4">
-          <PillNav
-            items={[
-              { label: "Overview",   href: "#overview" },
-              { label: "Pests",      href: "#pests" },
-              { label: "Diseases",   href: "#diseases" },
-              { label: "Traps",      href: "#traps" },
-              { label: "FCM & Moths", href: "#fcm" },
-            ]}
-            activeHref={`#${tab}`}
-            onSelect={(item) => setTab(item.href.slice(1) as TabId)}
-            baseColor="var(--primary)"
-            pillColor="var(--card)"
-            pillTextColor="var(--foreground)"
-            hoveredPillTextColor="var(--primary-foreground)"
-            initialLoadAnimation={false}
-            className="dashboard-pill-nav"
-          />
+          {(() => {
+            const active = ({ overview, pests, diseases, traps, fcm } as const)[
+              tab
+            ];
+            return active.error ? (
+              <div className="text-xs text-[var(--sd-data-red)]">
+                Failed to load: {active.error}
+              </div>
+            ) : null;
+          })()}
 
           <TabsContent value="overview" className="mt-0">
             <OverviewTab

@@ -20,6 +20,8 @@ import {
   Warehouse,
   Activity,
   ArrowRightLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import {
   Sidebar,
@@ -39,6 +41,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarUser } from "@/components/SidebarUser";
 import { routeHash, type View } from "@/lib/router";
 import { bootstrap } from "@/lib/frappe";
+import { cn } from "@/lib/utils";
+import { useEffect, useRef, useState } from "react";
 import upandeLogo from "@/assets/Upande_logo.png";
 
 type IconType = React.ComponentType<{ className?: string }>;
@@ -292,11 +296,33 @@ export function AppSidebar({
   view: View;
   onNavigate: (next: View) => void;
 }) {
-  const { state } = useSidebar();
+  const { state, toggle } = useSidebar();
   const collapsed = state === "collapsed";
   const roles = bootstrap().roles || [];
 
   const nav = navForCrop(crop);
+
+  // Show the footer "pocket" shadow only while nav items remain hidden below
+  // the fold; hide it once the list is scrolled to the end (or fully fits).
+  const navRef = useRef<HTMLDivElement>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
+  useEffect(() => {
+    const vp = navRef.current?.querySelector<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    );
+    if (!vp) return;
+    const update = () =>
+      setMoreBelow(vp.scrollHeight - vp.scrollTop - vp.clientHeight > 1);
+    update();
+    vp.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(vp);
+    if (vp.firstElementChild) ro.observe(vp.firstElementChild);
+    return () => {
+      vp.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, [crop, collapsed]);
 
   return (
     <Sidebar collapsible="icon">
@@ -304,13 +330,18 @@ export function AppSidebar({
         {/* Brand — reference `.topbar__brand`: prominent logo, thin divider,
             product name with an uppercase let-spaced eyebrow subtitle. */}
         <div className="flex items-center gap-2.5 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:py-0">
-          <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background ring-1 ring-border/60 group-data-[collapsible=icon]:size-7">
+          {/* Logo links back to the Frappe desk (/app). */}
+          <a
+            href="/app"
+            title="Open Frappe Desk"
+            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background ring-1 ring-border/60 transition hover:ring-2 hover:ring-border group-data-[collapsible=icon]:size-7"
+          >
             <img
               src={upandeLogo}
               alt="Upande"
               className="size-full object-contain"
             />
-          </div>
+          </a>
           {/* Thin divider, reference `.topbar__divider`. */}
           <div className="h-6 w-px shrink-0 bg-border group-data-[collapsible=icon]:hidden" />
           {/* Always rendered, hidden via CSS so the width animation plays
@@ -326,7 +357,10 @@ export function AppSidebar({
         </div>
       </SidebarHeader>
       <SidebarSeparator />
-      <SidebarContent className="overflow-hidden p-0 group-data-[collapsible=icon]:p-0">
+      <SidebarContent
+        ref={navRef}
+        className="overflow-hidden p-0 group-data-[collapsible=icon]:p-0"
+      >
         <ScrollArea className="h-full w-full">
           <div className="flex flex-col gap-1 p-2 group-data-[collapsible=icon]:p-1">
             {nav.map((section) => {
@@ -382,7 +416,33 @@ export function AppSidebar({
           </div>
         </ScrollArea>
       </SidebarContent>
-      <SidebarFooter>
+      {/* Boundary "pocket" cue — a subtle top shadow shown ONLY while nav
+          items remain hidden below the fold (moreBelow); it fades out once
+          the list is scrolled to the end or fully fits. Works collapsed too. */}
+      <SidebarFooter
+        className={cn(
+          "transition-shadow duration-200",
+          moreBelow &&
+            "border-t border-sidebar-border shadow-[0_-6px_14px_-10px_rgba(10,10,10,0.16)]",
+        )}
+      >
+        {/* Collapse — a normal sidebar item (icon + label), pinned here. */}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={toggle}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+              <span>{collapsed ? "Expand" : "Collapse"}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <SidebarSeparator />
         <SidebarUser />
       </SidebarFooter>
     </Sidebar>

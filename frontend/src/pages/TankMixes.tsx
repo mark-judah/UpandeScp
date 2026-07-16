@@ -9,7 +9,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -17,8 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageHeader } from "@/components/PageHeader";
+import { HEADER_PILL } from "@/components/header-controls";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import {
   Table,
@@ -94,68 +93,45 @@ export function TankMixes() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Tank Mixes
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Chemical Mix BOMs · {data.tank_mixes.length} loaded
-              </p>
-            </div>
+      <PageHeader
+        title="Tank Mixes"
+        eyebrow={<>Chemical Mix BOMs · {data.tank_mixes.length} loaded</>}
+      >
+          <div className="relative min-w-56">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search by item…"
+              className="h-9 pl-7"
+            />
           </div>
-
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1 min-w-56">
-              <Label>Search</Label>
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search by item…"
-                  className="h-9 pl-7"
-                />
-              </div>
-            </div>
-            <div className="flex flex-col gap-1 min-w-32">
-              <Label>Farm</Label>
-              <Select value={farm} onValueChange={setFarm}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_FARMS}>All Farms</SelectItem>
-                  {farms.map((f) => (
-                    <SelectItem key={f} value={f}>
-                      {f}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1 min-w-32">
-              <Label>Status</Label>
-              <Select
-                value={activeOnly ? "active" : "all"}
-                onValueChange={(v) => setActiveOnly(v === "active")}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active only</SelectItem>
-                  <SelectItem value="all">All mixes</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-      </header>
+          <Select value={farm} onValueChange={setFarm}>
+            <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_FARMS}>All Farms</SelectItem>
+              {farms.map((f) => (
+                <SelectItem key={f} value={f}>
+                  {f}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={activeOnly ? "active" : "all"}
+            onValueChange={(v) => setActiveOnly(v === "active")}
+          >
+            <SelectTrigger aria-label="Status" className={HEADER_PILL}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active only</SelectItem>
+              <SelectItem value="all">All mixes</SelectItem>
+            </SelectContent>
+          </Select>
+      </PageHeader>
 
       <div className="flex-1 px-4 md:px-6 py-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
         {data.tank_mixes.length === 0 && !loading && (

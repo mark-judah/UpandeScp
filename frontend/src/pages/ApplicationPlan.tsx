@@ -18,8 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/PageHeader";
 import { DatePicker } from "@/components/DatePicker";
 import { Toaster, type ToastItem } from "@/components/Toaster";
 import {
@@ -1319,28 +1318,17 @@ export function ApplicationPlan() {
   return (
     <div className="flex flex-col min-h-svh">
       <MarkerDefs />
-      <header className="sticky top-0 z-40 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                New Application Floor Plan
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Diagnose · Prescribe · Submit for approval
-              </p>
-            </div>
-          </div>
-          <a
-            href="/scp_app#/historical"
-            className="text-xs text-muted-foreground underline"
-          >
-            View past plans →
-          </a>
-        </div>
-      </header>
+      <PageHeader
+        title="New Application Floor Plan"
+        eyebrow="Diagnose · Prescribe · Submit for approval"
+      >
+        <a
+          href="/scp_app#/historical"
+          className="text-xs text-muted-foreground underline"
+        >
+          View past plans →
+        </a>
+      </PageHeader>
 
       <Toaster items={toasts} onDismiss={dismissToast} />
 

@@ -10,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/DatePicker";
 import { LoadingOverlay } from "@/components/LoadingOverlay";
@@ -20,8 +19,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Card } from "@/components/ui/card";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/PageHeader";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { ymd } from "@/lib/utils";
 import { TristateTree } from "./trends/TristateTree";
 import { ChartPanel } from "./trends/ChartPanel";
@@ -185,133 +184,94 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Scouting Trends
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Across farms, stations, pests &amp; stages
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-end gap-2">
-            {!initialCrop && (
-              <div className="flex flex-col gap-1 min-w-32">
-                <Label htmlFor="t-crop">Crop</Label>
-                <Select value={crop} onValueChange={setCrop}>
-                  <SelectTrigger id="t-crop" className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {crops.map((c) => (
-                      <SelectItem key={c.crop_name} value={c.crop_name}>
-                        {c.crop_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            <div className="flex flex-col gap-1">
-              <Label>From</Label>
-              <DatePicker
-                value={from}
-                onChange={(v) => setRange({ from: v, to })}
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <Label>To</Label>
-              <DatePicker
-                value={to}
-                onChange={(v) => setRange({ from, to: v })}
-              />
-            </div>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-2">
-                  <MapPin className="h-3.5 w-3.5" />
-                  Farms
-                  <span className="text-muted-foreground tabular-nums">
-                    {selections.length || "—"}
-                  </span>
-                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80">
-                <TristateTree
-                  nodes={stationTree}
-                  checked={stationChecks}
-                  onChange={setStationChecks}
-                  emptyHint="No farms in date range"
-                  searchPlaceholder="Search farms or greenhouses…"
-                />
-              </PopoverContent>
-            </Popover>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-2">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Observations
-                  <span className="text-muted-foreground tabular-nums">
-                    {observations.length || "—"}
-                  </span>
-                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80">
-                <TristateTree
-                  nodes={obsTree}
-                  checked={obsChecks}
-                  onChange={setObsChecks}
-                  emptyHint="No observations in date range"
-                  searchPlaceholder="Search observations…"
-                />
-              </PopoverContent>
-            </Popover>
-
-            <Button
-              variant={showThresholds ? "default" : "outline"}
-              size="sm"
-              onClick={() => setShowThresholds((v) => !v)}
-              className="h-9 gap-2"
-              title={
-                showThresholds
-                  ? "Hide threshold reference lines"
-                  : "Show threshold reference lines from Settings"
-              }
-            >
-              <Gauge className="h-3.5 w-3.5" />
-              Thresholds
-            </Button>
-
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => reload({ force: true })}
-              className="h-9"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Reload
-            </Button>
-          </div>
-        </div>
-
-        {error && (
-          <div className="text-xs text-[var(--sd-data-red)]">
-            Failed to load: {error}
-          </div>
+      <PageHeader
+        title="Scouting Trends"
+        eyebrow={<>Across farms, stations, pests &amp; stages</>}
+      >
+        {!initialCrop && (
+          <Select value={crop} onValueChange={setCrop}>
+            <SelectTrigger aria-label="Crop" className={HEADER_PILL}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {crops.map((c) => (
+                <SelectItem key={c.crop_name} value={c.crop_name}>
+                  {c.crop_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
-      </header>
+
+        <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
+        <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className={HEADER_PILL}>
+              <MapPin className="h-3.5 w-3.5" />
+              Farms
+              <span className="text-muted-foreground tabular-nums">
+                {selections.length || "—"}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80">
+            <TristateTree
+              nodes={stationTree}
+              checked={stationChecks}
+              onChange={setStationChecks}
+              emptyHint="No farms in date range"
+              searchPlaceholder="Search farms or greenhouses…"
+            />
+          </PopoverContent>
+        </Popover>
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className={HEADER_PILL}>
+              <Sparkles className="h-3.5 w-3.5" />
+              Observations
+              <span className="text-muted-foreground tabular-nums">
+                {observations.length || "—"}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80">
+            <TristateTree
+              nodes={obsTree}
+              checked={obsChecks}
+              onChange={setObsChecks}
+              emptyHint="No observations in date range"
+              searchPlaceholder="Search observations…"
+            />
+          </PopoverContent>
+        </Popover>
+
+        <HeaderIconButton
+          active={showThresholds}
+          onClick={() => setShowThresholds((v) => !v)}
+          title={
+            showThresholds
+              ? "Hide threshold reference lines"
+              : "Show threshold reference lines from Settings"
+          }
+        >
+          <Gauge className="h-4 w-4" />
+        </HeaderIconButton>
+
+        <HeaderIconButton onClick={() => reload({ force: true })} title="Reload">
+          <RefreshCw className="h-4 w-4" />
+        </HeaderIconButton>
+      </PageHeader>
+
+      {error && (
+        <div className="text-xs text-[var(--sd-data-red)]">
+          Failed to load: {error}
+        </div>
+      )}
 
       <div className="flex-1 px-4 py-4 md:px-6 md:py-6 flex flex-col gap-4">
         {!selections.length ? (

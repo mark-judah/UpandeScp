@@ -107,7 +107,8 @@ export function WeekPicker({
           size="sm"
           disabled={disabled}
           className={cn(
-            "h-9 gap-2 font-normal tabular-nums",
+            // Pill trigger — matches the DatePicker / header dropdowns.
+            "h-9 gap-2 rounded-full border-transparent bg-card px-4 text-xs font-medium tabular-nums text-foreground shadow-[var(--sd-shadow-1)] hover:bg-card hover:text-foreground hover:shadow-[var(--sd-shadow-2)] [&>svg]:text-[var(--sd-quiet)]",
             !value.from && "text-muted-foreground",
             className,
           )}

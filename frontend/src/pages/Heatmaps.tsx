@@ -36,7 +36,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -44,8 +43,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/PageHeader";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import {
@@ -324,99 +323,66 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   return (
     <div className="flex flex-col min-h-svh">
       <MarkerDefs />
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Heatmaps
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Per-greenhouse zone intensity · pest &amp; disease markers
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-end gap-2">
-            {!initialCrop && (
-              <div className="flex flex-col gap-1 min-w-32">
-                <Label htmlFor="hm-crop">Crop</Label>
-                <Select value={crop} onValueChange={setCrop}>
-                  <SelectTrigger id="hm-crop" className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {crops.map((c) => (
-                      <SelectItem key={c.crop_name} value={c.crop_name}>
-                        {c.crop_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            <div className="flex flex-col gap-1">
-              <Label>From</Label>
-              <DatePicker
-                value={from}
-                onChange={(v) => setRange({ from: v, to })}
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <Label>To</Label>
-              <DatePicker
-                value={to}
-                onChange={(v) => setRange({ from, to: v })}
-              />
-            </div>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-2">
-                  <MapPin className="h-3.5 w-3.5" />
-                  Farms
-                  <span className="text-muted-foreground tabular-nums">
-                    {selections.length || "—"}
-                  </span>
-                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80">
-                <TristateTree
-                  nodes={stationTree}
-                  checked={stationChecks}
-                  onChange={setStationChecks}
-                  emptyHint="No farms configured"
-                  searchPlaceholder="Search farms or greenhouses…"
-                />
-              </PopoverContent>
-            </Popover>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => gridState.reload({ force: true })}
-              className="h-9"
-              title="Reload (force cache refresh)"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Reload
-            </Button>
-          </div>
-        </div>
-
-        {gridState.error && (
-          <div className="text-xs text-[var(--sd-data-red)]">
-            Failed to load: {gridState.error}
-          </div>
+      <PageHeader
+        title="Heatmaps"
+        eyebrow={<>Per-greenhouse zone intensity · pest &amp; disease markers</>}
+      >
+        {!initialCrop && (
+          <Select value={crop} onValueChange={setCrop}>
+            <SelectTrigger aria-label="Crop" className={HEADER_PILL}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {crops.map((c) => (
+                <SelectItem key={c.crop_name} value={c.crop_name}>
+                  {c.crop_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
-      </header>
 
-      <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b bg-card/50">
+        <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
+        <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
+
+        {/* Multi-select: check any farms and/or greenhouses to plot. */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className={HEADER_PILL}>
+              <MapPin className="h-3.5 w-3.5" />
+              Farms
+              <span className="text-muted-foreground tabular-nums">
+                {selections.length || "—"}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80">
+            <TristateTree
+              nodes={stationTree}
+              checked={stationChecks}
+              onChange={setStationChecks}
+              emptyHint="No farms configured"
+              searchPlaceholder="Search farms or greenhouses…"
+            />
+          </PopoverContent>
+        </Popover>
+
+        <HeaderIconButton
+          onClick={() => gridState.reload({ force: true })}
+          title="Reload (force cache refresh)"
+        >
+          <RefreshCw className="h-4 w-4" />
+        </HeaderIconButton>
+      </PageHeader>
+
+      {gridState.error && (
+        <div className="text-xs text-[var(--sd-data-red)] px-4 md:px-6">
+          Failed to load: {gridState.error}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground">
         <span className="ml-auto tabular-nums">
           {distinctGh} greenhouses · {totalZones} zones · {totalObs}{" "}
           observation{totalObs === 1 ? "" : "s"}

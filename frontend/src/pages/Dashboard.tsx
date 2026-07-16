@@ -9,9 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
 import { OverviewTab }  from "./dashboard/OverviewTab";
 import { PestsTab }     from "./dashboard/PestsTab";
@@ -103,14 +101,6 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
     h.reload({ force: true });
   };
 
-  // Header controls, reference styling: pill-shaped dropdowns (like the
-  // `.datepill`) and circular icon-only tools (`.iconbtn`), all h-9 so they
-  // sit on one level with the pill switcher.
-  const pillSelect =
-    "h-9 w-auto min-w-[7rem] gap-2 rounded-full border-transparent bg-card px-4 text-xs font-medium shadow-[var(--sd-shadow-1)] hover:shadow-[var(--sd-shadow-2)] focus:ring-0";
-  const iconBtn =
-    "h-9 w-9 rounded-full bg-card text-[var(--sd-muted)] shadow-[var(--sd-shadow-1)] transition-all hover:-translate-y-px hover:text-foreground hover:shadow-[var(--sd-shadow-2)]";
-
   return (
     <div className="flex flex-col min-h-svh">
       {/* === Filter bar (same as before) === */}
@@ -120,18 +110,14 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
         {/* Reference `.pagehead`: uppercase eyebrow with a leading rule, then
             a large editorial title. The switcher + filters live below on one
             row (not in the header). */}
-        <div className="flex items-center gap-3">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-8" />
-          <div>
-            <div className="mb-2.5 flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--sd-quiet)]">
-              <span className="h-px w-[18px] bg-[var(--sd-text)]" />
-              Pest · Disease · Trap Monitoring
-            </div>
-            <h1 className="text-[32px] md:text-[44px] font-semibold leading-[1.05] tracking-[-0.03em] text-foreground">
-              Scouting Dashboard
-            </h1>
+        <div className="min-w-0">
+          <div className="mb-2.5 flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--sd-quiet)]">
+            <span className="h-px w-[18px] bg-[var(--sd-text)]" />
+            Pest · Disease · Trap Monitoring
           </div>
+          <h1 className="text-[32px] md:text-[44px] font-semibold leading-[1.05] tracking-[-0.03em] text-foreground">
+            Scouting Dashboard
+          </h1>
         </div>
       </header>
 
@@ -151,7 +137,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
             <div className="flex flex-wrap items-center gap-2">
               {!initialCrop && (
                 <Select value={crop} onValueChange={setCrop}>
-                  <SelectTrigger aria-label="Crop" className={pillSelect}>
+                  <SelectTrigger aria-label="Crop" className={HEADER_PILL}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -171,7 +157,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                   setGreenhouse(ALL_GH);
                 }}
               >
-                <SelectTrigger aria-label="Farm" className={pillSelect}>
+                <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -189,7 +175,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                 onValueChange={setGreenhouse}
                 disabled={!greenhouseList.length}
               >
-                <SelectTrigger aria-label="Greenhouse" className={pillSelect}>
+                <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
@@ -211,21 +197,18 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                 onChange={(v) => setRange({ from, to: v })}
               />
 
-              <Button
-                variant="ghost"
-                size="icon"
+              <HeaderIconButton
                 onClick={reloadActive}
-                className={iconBtn}
                 title="Reload (force cache refresh)"
               >
                 <RefreshCw className="h-4 w-4" />
-              </Button>
+              </HeaderIconButton>
 
-              <Button asChild variant="ghost" size="icon" className={iconBtn}>
-                <a href="/scouting_reports" target="_self" title="Reports">
+              <HeaderIconButton asChild title="Reports">
+                <a href="/scouting_reports" target="_self">
                   <FileText className="h-4 w-4" />
                 </a>
-              </Button>
+              </HeaderIconButton>
             </div>
           </div>
 

@@ -47,10 +47,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageHeader } from "@/components/PageHeader";
+import { HEADER_PILL } from "@/components/header-controls";
 import {
   Dialog,
   DialogContent,
@@ -486,94 +486,48 @@ export function Approvals() {
   // ── Render ────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Spray Plan Approval
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Pending application work orders · review and approve in bulk
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {pendingCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 text-amber-600 px-2.5 py-1 font-medium">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                {pendingCount} pending
-              </span>
-            )}
-            {forwardedCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 text-emerald-600 px-2.5 py-1 font-medium">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                {forwardedCount} forwarded
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <Label>From</Label>
-            <DatePicker value={from} onChange={setFrom} />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label>To</Label>
-            <DatePicker value={to} onChange={setTo} />
-          </div>
-          <div className="flex flex-col gap-1 min-w-32">
-            <Label>Farm</Label>
-            <Select value={farm} onValueChange={setFarm}>
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All Farms</SelectItem>
-                {farmsData.farms.map((f) => (
-                  <SelectItem key={f} value={f}>
-                    {f}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1 min-w-40">
-            <Label>Greenhouse</Label>
-            <Select
-              value={greenhouse}
-              onValueChange={setGreenhouse}
-              disabled={farm === ALL}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue
-                  placeholder={farm === ALL ? "Pick a farm first" : "All"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All</SelectItem>
-                {ghOptions.map((g) => (
-                  <SelectItem key={g} value={g}>
-                    {g}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9"
-            onClick={clearFilters}
-          >
-            Clear
-          </Button>
-        </div>
-      </header>
+      <PageHeader
+        title="Spray Plan Approval"
+        eyebrow="Pending application work orders · review and approve in bulk"
+      >
+        <DatePicker value={from} onChange={setFrom} />
+        <DatePicker value={to} onChange={setTo} />
+        <Select value={farm} onValueChange={setFarm}>
+          <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All Farms</SelectItem>
+            {farmsData.farms.map((f) => (
+              <SelectItem key={f} value={f}>
+                {f}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={greenhouse}
+          onValueChange={setGreenhouse}
+          disabled={farm === ALL}
+        >
+          <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
+            <SelectValue
+              placeholder={farm === ALL ? "Pick a farm first" : "All"}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All</SelectItem>
+            {ghOptions.map((g) => (
+              <SelectItem key={g} value={g}>
+                {g}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="ghost" size="sm" className="h-9" onClick={clearFilters}>
+          Clear
+        </Button>
+      </PageHeader>
 
       <div className="px-4 md:px-6 py-4 flex-1 flex flex-col gap-3">
         <Tabs

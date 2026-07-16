@@ -11,8 +11,8 @@ import {
   UserPlus,
   Search,
 } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/PageHeader";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import {
   Card,
   CardContent,
@@ -259,64 +259,41 @@ export function SprayPlanTransfers() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Spray Plan Transfers
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Material Transfer for Manufacture · biometric-authorised bulk submit
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1 min-w-40">
-              <Label htmlFor="spt-farm">Farm</Label>
-              <Select value={farm} onValueChange={setFarm}>
-                <SelectTrigger id="spt-farm" className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_FARMS}>All farms</SelectItem>
-                  {farms.map((f) => (
-                    <SelectItem key={f} value={f}>
-                      {f}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label>From</Label>
-              <DatePicker value={fromDate} onChange={setFromDate} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label>To</Label>
-              <DatePicker value={toDate} onChange={setToDate} />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
+      <PageHeader
+        title="Spray Plan Transfers"
+        eyebrow="Material Transfer for Manufacture · biometric-authorised bulk submit"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+            <Select value={farm} onValueChange={setFarm}>
+              <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_FARMS}>All farms</SelectItem>
+                {farms.map((f) => (
+                  <SelectItem key={f} value={f}>
+                    {f}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <DatePicker value={fromDate} onChange={setFromDate} />
+            <DatePicker value={toDate} onChange={setToDate} />
+            <HeaderIconButton
               onClick={load}
-              className="h-9 gap-2"
               disabled={loading || submitting}
+              title="Reload"
             >
               <RefreshCw
-                className={cn("h-3.5 w-3.5", loading && "animate-spin")}
+                className={cn("h-4 w-4", loading && "animate-spin")}
               />
-              Reload
-            </Button>
+            </HeaderIconButton>
           </div>
-        </div>
+      </PageHeader>
 
-        {/* Action row — bulk-assign + biometric submit live together so the
-            store keeper can see the whole flow in one place. */}
-        <div className="flex flex-wrap items-end gap-2 border-t pt-3">
+      {/* Action row — bulk-assign + biometric submit live together so the
+          store keeper can see the whole flow in one place. */}
+      <div className="flex flex-wrap items-end gap-2 border-t pt-3 px-4 md:px-6">
           <div className="flex flex-col gap-1 min-w-72">
             <Label htmlFor="spt-emp">Bulk-assign employee</Label>
             <Popover open={empOpen} onOpenChange={setEmpOpen}>
@@ -418,10 +395,9 @@ export function SprayPlanTransfers() {
           </Button>
         </div>
 
-        {error && (
-          <div className="text-xs text-destructive">{error}</div>
-        )}
-      </header>
+      {error && (
+        <div className="text-xs text-destructive px-4 md:px-6">{error}</div>
+      )}
 
       <div className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4">
         {/* Pre-flight panel */}

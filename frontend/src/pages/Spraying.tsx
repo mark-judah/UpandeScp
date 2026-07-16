@@ -305,9 +305,9 @@ export function Spraying() {
       path.forEach((pt) => bounds.extend(pt as L.LatLngExpression));
       if (path.length >= 2) {
         L.polyline(path as L.LatLngExpression[], {
-          color,
-          weight: 3,
-          opacity: 0.85,
+          color, // per-sprayer colour, drawn faint (subtle tint)
+          weight: 2,
+          opacity: 0.4,
           lineJoin: "round",
           lineCap: "round",
         })
@@ -390,7 +390,7 @@ export function Spraying() {
     });
 
   return (
-    <div className="flex flex-col min-h-svh">
+    <div className="flex flex-col h-svh overflow-hidden">
       <RangeHeader
         title="Spraying"
         subtitle="Up to one week · each sprayer's GPS track and the zones they covered"
@@ -401,7 +401,7 @@ export function Spraying() {
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[3fr_1fr]">
         <div className="relative">
-          <div className="absolute inset-0 isolate z-0">
+          <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
             <MapBase
               onReady={(m) => {
                 mapRef.current = m;
@@ -497,7 +497,7 @@ export function Spraying() {
           </Card>
         </div>
 
-        <div className="border-l bg-card p-3 overflow-auto">
+        <div className="m-4 md:m-6 lg:ml-0 rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] overflow-auto">
           {detail ? (
             <Card className="p-3 shadow-none border-0">
               <CardHeader className="p-0 pb-2">

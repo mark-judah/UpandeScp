@@ -17,6 +17,9 @@ const TONE: Record<NonNullable<KpiProps["tone"]>, string> = {
 };
 
 export function Kpi({ label, value, hint, tone = "default", className }: KpiProps) {
+  // Thousands separators for large counts (e.g. 648361 → 648,361).
+  const display =
+    typeof value === "number" ? value.toLocaleString("en-US") : value;
   return (
     <Card
       className={cn(
@@ -39,7 +42,7 @@ export function Kpi({ label, value, hint, tone = "default", className }: KpiProp
           TONE[tone],
         )}
       >
-        {value}
+        {display}
       </div>
       {hint && (
         <div className="mt-2 text-[13px] text-[var(--sd-quiet)] line-clamp-2">

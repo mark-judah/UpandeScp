@@ -21,7 +21,8 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageHeader } from "@/components/PageHeader";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { Separator } from "@/components/ui/separator";
 import {
   Card,
@@ -222,7 +223,7 @@ function PreviewLabel({
     boxSizing: "border-box" as const,
     padding: `${plan.paddingTopMm}mm ${plan.paddingRightMm}mm ${plan.paddingBottomMm}mm ${plan.paddingLeftMm}mm`,
     fontSize: `${plan.basePt}pt`,
-    border: "1px solid hsl(var(--border))",
+    border: "1px solid var(--border)",
     background: "white",
     color: "black",
     overflow: "hidden",
@@ -630,60 +631,42 @@ export function Labels() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-40 flex items-center gap-3 border-b bg-card/80 px-4 py-3 md:px-6 md:py-4 backdrop-blur">
-        <SidebarTrigger />
-        <Separator orientation="vertical" className="h-5" />
-        <div className="flex-1">
-          <h1 className="text-base font-semibold leading-tight">Labels</h1>
-          <p className="text-xs text-muted-foreground">
+      <PageHeader
+        title="Labels"
+        eyebrow={
+          <>
             Print QR labels for submitted spray-plan transfers. Pick any
             size — the layout adapts.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={load}
-          disabled={loading}
-          className="gap-1"
-        >
-          <RefreshCw
-            className={cn("h-3.5 w-3.5", loading && "animate-spin")}
-          />
-          Refresh
-        </Button>
-      </header>
+          </>
+        }
+      >
+        <Select value={farm} onValueChange={setFarm}>
+          <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
+            <SelectValue placeholder="All farms" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_FARMS}>All farms</SelectItem>
+            {farms.map((f) => (
+              <SelectItem key={f} value={f}>
+                {f}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <DatePicker value={fromDate} onChange={setFromDate} />
+        <DatePicker value={toDate} onChange={setToDate} />
+        <HeaderIconButton onClick={load} disabled={loading} title="Refresh">
+          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+        </HeaderIconButton>
+      </PageHeader>
 
       <div className="grid flex-1 grid-cols-1 lg:grid-cols-3 gap-4 p-4 md:p-6 lg:items-start">
         {/* ── Left: selection tree ─────────────────────────────── */}
         <Card className="lg:col-span-2 flex flex-col min-h-0">
           <CardHeader className="pb-3">
-            <div className="flex items-end gap-3 flex-wrap">
-              <div className="grid gap-1.5">
-                <Label className="text-xs">Farm</Label>
-                <Select value={farm} onValueChange={setFarm}>
-                  <SelectTrigger className="h-8 w-44">
-                    <SelectValue placeholder="All farms" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_FARMS}>All farms</SelectItem>
-                    {farms.map((f) => (
-                      <SelectItem key={f} value={f}>
-                        {f}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-1.5">
-                <Label className="text-xs">From</Label>
-                <DatePicker value={fromDate} onChange={setFromDate} />
-              </div>
-              <div className="grid gap-1.5">
-                <Label className="text-xs">To</Label>
-                <DatePicker value={toDate} onChange={setToDate} />
-              </div>
-              <div className="ml-auto text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-sm">Transfers</CardTitle>
+              <div className="text-xs text-muted-foreground tabular-nums">
                 {selectableSelectedCount} of {totalSelectable} selected
               </div>
             </div>
@@ -812,7 +795,7 @@ export function Labels() {
         {/* lg:sticky keeps the size picker + preview + Generate
             button in view even when the left selection tree scrolls
             far past the viewport. ``top`` accounts for the header. */}
-        <div className="flex flex-col gap-4 lg:sticky lg:top-[88px] lg:max-h-[calc(100svh-104px)] lg:overflow-y-auto">
+        <div className="flex flex-col gap-4 lg:sticky lg:top-6 lg:max-h-[calc(100svh-3rem)] lg:overflow-y-auto">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Label size</CardTitle>
@@ -1138,7 +1121,7 @@ export function Labels() {
             </CardContent>
           </Card>
 
-          <Card className="flex-1 min-h-0">
+          <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
                 <QrCode className="h-3.5 w-3.5" />

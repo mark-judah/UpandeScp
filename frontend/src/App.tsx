@@ -4,7 +4,11 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { OrbitProgress } from "@/components/OrbitProgress";
 import { useSimulatedProgress } from "@/hooks/use-simulated-progress";
-import { primeBedsAndZones, primeMapSettings } from "@/lib/scouting-api";
+import {
+  primeBedsAndZones,
+  primeMapSettings,
+  primeAvocadoGeo,
+} from "@/lib/scouting-api";
 import { loadObservationColors } from "@/lib/observation-colors";
 import { bootstrap } from "@/lib/frappe";
 
@@ -173,6 +177,13 @@ export function App() {
     primeMapSettings();
     void loadObservationColors();
   }, []);
+
+  // Warm the avocado 3D-map geometry as soon as the user is in the avocado
+  // section, so the map's own fetch finds it cached (or shares the in-flight
+  // request) instead of a cold round-trip on open.
+  useEffect(() => {
+    if (crop === "avocado") primeAvocadoGeo();
+  }, [crop]);
 
   // Store Keepers land on Spray Plan Transfers (not the scouting
   // Dashboard they don't have access to anyway). Only redirect when

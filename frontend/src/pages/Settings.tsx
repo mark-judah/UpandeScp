@@ -25,8 +25,7 @@ import {
   Sliders,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageHeader } from "@/components/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccessTab } from "@/components/settings/AccessTab";
 import { ChemicalsTab } from "@/components/settings/ChemicalsTab";
@@ -98,23 +97,15 @@ export function Settings() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-40 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight flex items-center gap-2">
-                <SettingsIcon className="h-4 w-4" />
-                Spray Plan Settings
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Access · Plan rules · Maps · Chemicals
-              </p>
-            </div>
-          </div>
-        </div>
-      </header>
+      <PageHeader
+        title={
+          <span className="inline-flex items-center gap-2">
+            <SettingsIcon className="h-4 w-4" />
+            Spray Plan Settings
+          </span>
+        }
+        eyebrow="Access · Plan rules · Maps · Chemicals"
+      />
 
       <section className="px-4 md:px-6 py-4">
         {loading && (

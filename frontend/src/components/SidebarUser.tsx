@@ -1,14 +1,9 @@
-import { LogOut } from "lucide-react";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/sidebar";
+import { SidebarMenu, SidebarMenuItem } from "@/components/ui/sidebar";
 import { bootstrap } from "@/lib/frappe";
 
 function initialsOf(name: string): string {
@@ -26,9 +21,8 @@ function initialsOf(name: string): string {
 
 /**
  * Bottom-of-sidebar profile chip. Renders the user's avatar (or initials
- * fallback) alongside their name and email, plus a small Exit icon that
- * matches the original "Exit to workspace" link. In collapsed sidebar
- * state name and email hide; avatar and exit icon remain stacked.
+ * fallback) alongside their name and email. In collapsed sidebar state the
+ * name and email hide, leaving just the avatar.
  */
 export function SidebarUser() {
   const { user, full_name, user_image } = bootstrap();
@@ -60,18 +54,6 @@ export function SidebarUser() {
               {user}
             </span>
           </div>
-          <SidebarMenuButton
-            asChild
-            title="Exit to workspace"
-            className={
-              "size-8 shrink-0 p-0 justify-center " +
-              "group-data-[collapsible=icon]:size-6"
-            }
-          >
-            <a href="/app/scouting-&-crop-protection" aria-label="Exit to workspace">
-              <LogOut className="h-4 w-4" />
-            </a>
-          </SidebarMenuButton>
         </div>
       </SidebarMenuItem>
     </SidebarMenu>

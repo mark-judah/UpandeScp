@@ -562,6 +562,20 @@ export function primeBedsAndZones(): void {
 }
 
 /**
+ * Warm the avocado 3D-map geometry (blocks / orchard trees / tanks) into the
+ * reference cache, the same way ``primeBedsAndZones`` warms the rose map.
+ * Call this when the avocado section is entered so the map's own fetch finds
+ * the payloads already cached (or shares the in-flight request) instead of
+ * paying a cold round-trip — the orchard-tree layer especially can be large.
+ */
+export function primeAvocadoGeo(): void {
+  // Blocks + tanks only. Orchard trees are per-farm (the unfiltered call
+  // returns nothing), so they're loaded lazily once a farm is picked.
+  void fetchBlocksGeojson().catch(() => {});
+  void fetchTanksValvesGeojson().catch(() => {});
+}
+
+/**
  * Reverse map of greenhouse → farm. Derived from
  * scouting_metrics_api.get_farms_and_warehouses (already cached server-side).
  */
@@ -703,6 +717,31 @@ export async function fetchOrchardTreesGeojson(
       return r || { type: "FeatureCollection", features: [] };
     } catch {
       return { type: "FeatureCollection", features: [] };
+    }
+  });
+}
+
+/** Lean orchard-tree payload for the 3D map: parallel ``names`` + flat
+ *  ``coords`` ([lng0,lat0,lng1,lat1,…]) arrays instead of a FeatureCollection
+ *  of ~50k nested features — several times smaller to transfer and parse. */
+export interface OrchardTreePoints {
+  names: string[];
+  coords: number[];
+}
+
+export async function fetchOrchardTreePoints(
+  args: { block?: string; farm?: string } = {},
+): Promise<OrchardTreePoints> {
+  const key = `orchard_pts:${args.block || ""}:${args.farm || ""}`;
+  return cached(key, async () => {
+    try {
+      const r = await call<OrchardTreePoints>(
+        "upande_scp.serverscripts.get_orchard_trees.get_orchard_tree_points",
+        args,
+      );
+      return r && Array.isArray(r.coords) ? r : { names: [], coords: [] };
+    } catch {
+      return { names: [], coords: [] };
     }
   });
 }

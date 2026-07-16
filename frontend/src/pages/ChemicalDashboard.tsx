@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/PageHeader";
 import {
   Card,
   CardContent,
@@ -10,8 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { HeaderIconButton } from "@/components/header-controls";
 import {
   fetchChemicalOverview,
   type ChemicalOverview,
@@ -63,50 +61,24 @@ export function ChemicalDashboard() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Chemical Dashboard
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                In-stock chemicals across all warehouses
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1 min-w-56">
-              <Label htmlFor="cd-search">Search</Label>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  id="cd-search"
-                  placeholder="Find a chemical…"
-                  className="h-9 pl-8"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={load}
-              className="h-9 gap-2"
-              disabled={loading}
-            >
-              <RefreshCw
-                className={cn("h-3.5 w-3.5", loading && "animate-spin")}
-              />
-              Reload
-            </Button>
-          </div>
+      <PageHeader
+        title="Chemical Dashboard"
+        eyebrow="In-stock chemicals across all warehouses"
+      >
+        <div className="relative min-w-56">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            aria-label="Search"
+            placeholder="Find a chemical…"
+            className="h-9 pl-8"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
-      </header>
+        <HeaderIconButton onClick={load} title="Reload" disabled={loading}>
+          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+        </HeaderIconButton>
+      </PageHeader>
 
       <div className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4">
         {error && (

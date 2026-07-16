@@ -221,6 +221,7 @@ def invalidate_orchard_trees_for_block(block):
     if not block:
         return
     invalidate(f"{K_ORCHARD_TREES_PREFIX}:{block}")
+    invalidate(f"{K_ORCHARD_TREES_PREFIX}:pts:{block}")
 
 
 def invalidate_tanks_valves_for_doc(doc):
@@ -248,6 +249,7 @@ def invalidate_orchard_trees_for_doc(doc):
         farm = frappe.db.get_value("Warehouse", block, "custom_farm")
         if farm:
             invalidate(f"{K_ORCHARD_TREES_PREFIX}:farm:{farm}")
+            invalidate(f"{K_ORCHARD_TREES_PREFIX}:pts:farm:{farm}")
 
 
 def invalidate_farm_bundle_for_doc(doc):

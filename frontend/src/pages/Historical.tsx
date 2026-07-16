@@ -23,9 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { PageHeader } from "@/components/PageHeader";
+import { HEADER_PILL } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
 import { Button } from "@/components/ui/button";
 import { LoadingStrip } from "@/components/LoadingStrip";
@@ -141,88 +140,59 @@ export function Historical() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Application Work Orders
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Historical · {data.work_orders.length} records
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1">
-              <Label>From</Label>
-              <DatePicker value={from} onChange={setFrom} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label>To</Label>
-              <DatePicker value={to} onChange={setTo} />
-            </div>
-            <div className="flex flex-col gap-1 min-w-32">
-              <Label>Farm</Label>
-              <Select
-                value={farm}
-                onValueChange={(v) => {
-                  setFarm(v);
-                  setGreenhouse(ALL);
-                }}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL}>All Farms</SelectItem>
-                  {data.farms.map((f) => (
-                    <SelectItem key={f} value={f}>
-                      {f}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1 min-w-40">
-              <Label>Greenhouse</Label>
-              <Select value={greenhouse} onValueChange={setGreenhouse}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL}>All Greenhouses</SelectItem>
-                  {ghOpts.map((g) => (
-                    <SelectItem key={g} value={g}>
-                      {g}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1 min-w-32">
-              <Label>Status</Label>
-              <Select
-                value={status || ALL}
-                onValueChange={(v) => setStatus(v === ALL ? "" : v)}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL}>All</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-      </header>
+      <PageHeader
+        title="Application Work Orders"
+        eyebrow={<>Historical · {data.work_orders.length} records</>}
+      >
+          <DatePicker value={from} onChange={setFrom} />
+          <DatePicker value={to} onChange={setTo} />
+          <Select
+            value={farm}
+            onValueChange={(v) => {
+              setFarm(v);
+              setGreenhouse(ALL);
+            }}
+          >
+            <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All Farms</SelectItem>
+              {data.farms.map((f) => (
+                <SelectItem key={f} value={f}>
+                  {f}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={greenhouse} onValueChange={setGreenhouse}>
+            <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All Greenhouses</SelectItem>
+              {ghOpts.map((g) => (
+                <SelectItem key={g} value={g}>
+                  {g}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={status || ALL}
+            onValueChange={(v) => setStatus(v === ALL ? "" : v)}
+          >
+            <SelectTrigger aria-label="Status" className={HEADER_PILL}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+      </PageHeader>
 
       <div className="flex-1 px-4 md:px-6 py-4">
         <Card className="p-0">

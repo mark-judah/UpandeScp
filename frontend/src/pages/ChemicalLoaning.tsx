@@ -18,9 +18,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { HEADER_PILL } from "@/components/header-controls";
+import { PageHeader } from "@/components/PageHeader";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -83,45 +82,34 @@ export function ChemicalLoaning() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-center gap-2">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-6" />
-          <div className="flex items-center gap-2">
-            <ArrowRightLeft className="h-4 w-4 text-primary" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Chemical Loaning
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Borrow a chemical you're short on from another farm
-              </p>
-            </div>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            {farms.length > 0 && (
-              <Select value={farm} onValueChange={setFarm}>
-                <SelectTrigger className="h-9 w-48">
-                  <SelectValue placeholder="Your farm" />
-                </SelectTrigger>
-                <SelectContent>
-                  {farms.map((f) => (
-                    <SelectItem key={f} value={f}>
-                      {f}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        </div>
+      <PageHeader
+        title="Chemical Loaning"
+        eyebrow="Borrow a chemical you're short on from another farm"
+      >
+        {farms.length > 0 && (
+          <Select value={farm} onValueChange={setFarm}>
+            <SelectTrigger aria-label="Your farm" className={HEADER_PILL}>
+              <SelectValue placeholder="Your farm" />
+            </SelectTrigger>
+            <SelectContent>
+              {farms.map((f) => (
+                <SelectItem key={f} value={f}>
+                  {f}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </PageHeader>
+
+      <div className="px-4 md:px-6 pt-2">
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
           <TabsList>
             <TabsTrigger value="request">Request</TabsTrigger>
             <TabsTrigger value="inbox">Inbox</TabsTrigger>
           </TabsList>
         </Tabs>
-      </header>
+      </div>
 
       <div className="px-4 md:px-6 py-4 flex-1">
         {booting ? (

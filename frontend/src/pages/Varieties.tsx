@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapBase } from "@/components/MapBase";
 import { LoadingStrip } from "@/components/LoadingStrip";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/PageHeader";
 import { fetchBedsAndZones } from "@/lib/scouting-api";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
 
@@ -87,22 +86,12 @@ export function Varieties() {
   }, [zones, varietyColor]);
 
   return (
-    <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex items-center gap-2 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <SidebarTrigger />
-        <Separator orientation="vertical" className="h-6" />
-        <div>
-          <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-            Varieties
-          </h1>
-          <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-            Zones colored by variety
-          </p>
-        </div>
+    <div className="flex flex-col h-svh overflow-hidden">
+      <PageHeader title="Varieties" eyebrow="Zones colored by variety">
         <div className="ml-auto text-xs text-muted-foreground tabular-nums">
           {varietyList.length} varieties · {zones.length} zones
         </div>
-      </header>
+      </PageHeader>
 
       <div className="flex flex-wrap items-center gap-2 px-4 md:px-6 py-2 text-xs border-b">
         {varietyList.map((v) => (
@@ -116,8 +105,9 @@ export function Varieties() {
         ))}
       </div>
 
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 px-4 pb-4 md:px-6 md:pb-6">
         <MapBase
+          className="overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]"
           onReady={(m) => {
             mapRef.current = m;
           }}

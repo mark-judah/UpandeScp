@@ -6,8 +6,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, ShieldCheck, ShieldAlert, RotateCcw, Check } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -134,35 +133,28 @@ export function SprayPlanAccess() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-40 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4" />
-                Spray Plan Access
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Assign Spray Plan Creators to farms
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            {rows && (
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {rows.length} farms · {totalCreators} creators
-              </span>
-            )}
-            {dirtyCount > 0 && (
-              <Button onClick={saveAll} size="sm" className="h-8">
-                Save all ({dirtyCount})
-              </Button>
-            )}
-          </div>
+      <PageHeader
+        title={
+          <span className="inline-flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4" />
+            Spray Plan Access
+          </span>
+        }
+        eyebrow="Assign Spray Plan Creators to farms"
+      >
+        <div className="flex items-center gap-4">
+          {rows && (
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {rows.length} farms · {totalCreators} creators
+            </span>
+          )}
+          {dirtyCount > 0 && (
+            <Button onClick={saveAll} size="sm" className="h-8">
+              Save all ({dirtyCount})
+            </Button>
+          )}
         </div>
-      </header>
+      </PageHeader>
 
       <section className="px-4 md:px-6 py-4">
         {loading && (

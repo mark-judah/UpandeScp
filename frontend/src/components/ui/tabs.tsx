@@ -13,7 +13,7 @@ export const TabsList = React.forwardRef<
     className={cn(
       // Reference `.pillgroup` (heatmaps greenhouse switcher): a rounded
       // track with a subtle dark tint, no border.
-      "inline-flex items-center gap-0.5 rounded-full bg-[rgba(10,10,10,0.05)] p-1 text-muted-foreground",
+      "inline-flex h-9 items-center gap-0.5 rounded-full bg-[rgba(10,10,10,0.05)] p-1 text-muted-foreground",
       className,
     )}
     {...props}

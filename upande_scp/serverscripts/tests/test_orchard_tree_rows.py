@@ -103,6 +103,36 @@ class TestRowsFromTrees(unittest.TestCase):
         out = g._rows_from_trees([bad])
         self.assertEqual(out["rows"], [])
 
+    def test_orders_by_integer_not_lexical(self):
+        g = self._mod()
+        # 10 trees, shuffled input incl. tree_number "10" before "2". A lexical
+        # (string) sort would order 1,10,2,... making the last tree T9 and
+        # breaking linear classification — so this pins the integer sort.
+        order = [10, 1, 5, 2, 9, 3, 8, 4, 7, 6]
+        trees = [_tree(f"B_R1_T{i}", "B", "R1", str(i), float(i), 0.0) for i in order]
+        out = g._rows_from_trees(trees)
+        self.assertEqual(len(out["rows"]), 1)
+        row = out["rows"][0]
+        self.assertEqual(row["k"], "l")
+        self.assertEqual(row["n"], 10)
+        self.assertEqual(row["a"], [1.0, 0.0])   # T1, integer-sorted first
+        self.assertEqual(row["b"], [10.0, 0.0])  # T10, integer-sorted last
+
+    def test_skips_bad_geojson_but_keeps_row(self):
+        g = self._mod()
+        good1 = _tree("B_R1_T1", "B", "R1", "1", 0.0, 0.0)
+        bad = SimpleNamespace(
+            name="B_R1_T2", block="B", row="R1", tree_number="2", raw_geojson="not json"
+        )
+        good3 = _tree("B_R1_T3", "B", "R1", "3", 0.002, 0.0)
+        out = g._rows_from_trees([good1, bad, good3])
+        self.assertEqual(len(out["rows"]), 1)  # row survives despite one bad tree
+        row = out["rows"][0]
+        self.assertEqual(row["n"], 2)
+        self.assertEqual(row["k"], "e")  # names T1,T3 don't fit <prefix>+2 -> explicit
+        self.assertEqual(row["names"], ["B_R1_T1", "B_R1_T3"])
+        self.assertEqual(row["c"], [0.0, 0.0, 0.002, 0.0])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -45,7 +45,15 @@ app_include_js = "/assets/upande_scp/js/scp_desk.js"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-doctype_js = {"Work Order": "public/js/spray_plan_wo_form.js"}
+# Desk form scripts (formerly Client Script fixtures, now versioned code).
+doctype_js = {
+    "Work Order": "public/js/spray_plan_wo_form.js",
+    "Item": "public/js/item.js",
+    "Warehouse": "public/js/warehouse.js",
+    "Pest": "public/js/pest.js",
+    "BOM": "public/js/bom.js",
+    "Bed And Zone Automation": "public/js/bed_and_zone_automation.js",
+}
 doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -452,28 +460,10 @@ fixtures = [
             ]
         ]
     },
-    {
-        "dt": "Client Script",
-        "filters": [
-            [
-                "name",
-                "in",
-                [
-                    "Bed And Zone Automation Tool",
-                    "Work Order Toggle Fields",
-                    "BOM Toggle Fields",
-                    "Items Toggle Fields",
-                    "Greenhouse Map",
-                    "Warehouse Cost Center Query",
-                    "Pests Legend Color Toggle",
-                    "Refresh Greenhouse Rentry Time",
-                    "Hide Start Button On Work Order",
-                    "Spray Plan Approval v7",
-                    "Combined Script"  # to deactivate the script on deployment
-                ]
-            ]
-        ]
-    },
+    # NOTE: Client Scripts are no longer shipped as fixtures. Desk form scripts
+    # now live in code under public/js/ wired via doctype_js above. The legacy
+    # "Spray Plan Approval v7" list-view approval UI was dropped (the React
+    # Approvals page replaces it).
     {
         # Only the Bed/Zone automation tool remains a Server Script — it is
         # driven by the "Bed And Zone Automation Tool" desk Client Script.

@@ -58,6 +58,11 @@ const AvocadoHeatMap = lazy(() =>
     default: m.AvocadoHeatMap,
   })),
 );
+const CoffeeTriadMap = lazy(() =>
+  import("@/pages/coffee/CoffeeTriadMap").then((m) => ({
+    default: m.CoffeeTriadMap,
+  })),
+);
 const Varieties = lazy(() =>
   import("@/pages/Varieties").then((m) => ({ default: m.Varieties })),
 );
@@ -129,6 +134,7 @@ const PREFETCH: Array<() => Promise<unknown>> = [
   () => import("@/pages/avocado/AvocadoObservations"),
   () => import("@/pages/avocado/AvocadoTraps"),
   () => import("@/pages/avocado/AvocadoHeatMap"),
+  () => import("@/pages/coffee/CoffeeTriadMap"),
   () => import("@/pages/Spraying"),
   () => import("@/pages/Varieties"),
   () => import("@/pages/Reports"),
@@ -190,7 +196,13 @@ function renderView(crop: string, view: View): ReactNode {
         <AvocadoHeatMap />
       );
     case "scouting-map":
-      return crop === "rose" ? <RoseScouting /> : <AvocadoScouting />;
+      return crop === "rose" ? (
+        <RoseScouting />
+      ) : crop === "coffee" ? (
+        <CoffeeTriadMap />
+      ) : (
+        <AvocadoScouting />
+      );
     case "spraying":
       return <Spraying />;
     case "varieties":

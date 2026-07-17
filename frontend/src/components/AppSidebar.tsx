@@ -225,6 +225,23 @@ const AVOCADO_NAV: NavSection[] = [
   },
 ];
 
+// Coffee — minimal nav for the triad tessellation test: Dashboard + the
+// (triad) Scouting map only.
+const COFFEE_NAV: NavSection[] = [
+  {
+    label: "Overview",
+    items: [
+      { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "Scouting",
+    items: [
+      { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
+    ],
+  },
+];
+
 // Generic scouting nav for any crop that isn't rose and has no bespoke nav
 // yet — so a newly-scouted crop appears with a working sidebar automatically.
 const DEFAULT_CROP_NAV: NavSection[] = [
@@ -249,6 +266,7 @@ const DEFAULT_CROP_NAV: NavSection[] = [
 function navForCrop(crop: string): NavSection[] {
   if (crop === "rose") return ROSE_NAV;
   if (crop === "avocado") return AVOCADO_NAV;
+  if (crop === "coffee") return COFFEE_NAV;
   return DEFAULT_CROP_NAV;
 }
 

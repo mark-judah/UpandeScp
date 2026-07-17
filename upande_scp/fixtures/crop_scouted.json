@@ -252,6 +252,20 @@
     "weed": "Weeds"
    }
   ]
+ },
+ {
+  "crop_name": "Coffee",
+  "doctype": "Crop Scouted",
+  "docstatus": 0,
+  "name": "Coffee",
+  "farms": [],
+  "incidents": [],
+  "physiological_disorders": [],
+  "plant_sections_scouted": [],
+  "predators": [],
+  "weeds": [],
+  "image": null,
+  "variety": null,
+  "modified": "2026-07-16 00:00:00.000000"
  }
-
 ]

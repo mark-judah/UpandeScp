@@ -721,11 +721,30 @@ def list_submitted_transfers(
 #
 # The doctype's scan-time field is ``time`` (label "Timestamp"). Any
 # ``log_type`` counts as a scan — the newest row in the window wins.
-_SCAN_FRESHNESS_SEC = 120
+#
+# The window is NOT hardcoded here — it honours upande_ta's single source
+# of truth, ``Biometric Setting.stock_verification_window_minutes``, so
+# scp's explicit store-keeper path and ta's background auto-verify path
+# agree on how fresh a scan must be. Falls back to ta's own default when
+# the setting is empty/zero.
+_DEFAULT_VERIFY_WINDOW_MINUTES = 1
+
+
+def _verify_window_seconds() -> int:
+    """Scan freshness window (seconds), read from Biometric Setting so it
+    stays coherent with upande_ta. Falls back to the ta default."""
+    try:
+        value = frappe.db.get_single_value(
+            "Biometric Setting", "stock_verification_window_minutes"
+        )
+    except Exception:
+        value = None
+    minutes = int(value) if value and int(value) > 0 else _DEFAULT_VERIFY_WINDOW_MINUTES
+    return minutes * 60
 
 
 def _latest_biometric_log() -> dict | None:
-    threshold = add_to_date(now_datetime(), seconds=-_SCAN_FRESHNESS_SEC)
+    threshold = add_to_date(now_datetime(), seconds=-_verify_window_seconds())
     rows = frappe.db.sql(
         """
         SELECT name, employee, employee_name, biometric_id, `time`
@@ -784,8 +803,10 @@ def submit_with_biometric(names: str | list) -> dict:
 
     scan = _latest_biometric_log()
     if not scan:
+        window_min = _verify_window_seconds() // 60
         frappe.throw(
-            "No biometric scan in the last 2 minutes — please place "
+            f"No biometric scan in the last {window_min} "
+            f"minute{'s' if window_min != 1 else ''} — please place "
             "your finger on the device and try again.",
             frappe.ValidationError,
         )

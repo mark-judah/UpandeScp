@@ -6,6 +6,7 @@ hooks.py wiring.
 """
 
 import json
+import math
 
 import frappe
 
@@ -14,6 +15,70 @@ from upande_scp.serverscripts.cache_utils import (
     TTL_LONG,
     get_or_set,
 )
+
+
+POS_TOL_M = 1.5  # a row is "linear" if even interpolation reproduces every tree within this many metres
+
+
+def _strip_trailing_int(name, n):
+    """``name`` with the trailing ``str(n)`` removed, or ``None`` if it doesn't end with it."""
+    suffix = str(n)
+    if name and name.endswith(suffix):
+        return name[: len(name) - len(suffix)]
+    return None
+
+
+def _interp_max_error_m(coords):
+    """Max distance (metres) between each tree and its even-interpolation along the
+    endpoint line. ``coords`` is ``[(lng, lat), …]`` in tree order, ``len >= 2``."""
+    a = coords[0]
+    b = coords[-1]
+    n = len(coords)
+    mlng = 111320.0 * math.cos(math.radians(a[1]))
+    mlat = 111320.0
+    bx = (b[0] - a[0]) * mlng
+    by = (b[1] - a[1]) * mlat
+    maxerr = 0.0
+    for i, p in enumerate(coords):
+        f = i / (n - 1)
+        ex = bx * f
+        ey = by * f
+        px = (p[0] - a[0]) * mlng
+        py = (p[1] - a[1]) * mlat
+        d = math.hypot(px - ex, py - ey)
+        if d > maxerr:
+            maxerr = d
+    return maxerr
+
+
+def _row_payload(names, coords):
+    """Build one row dict from parallel ``names`` + ``coords`` (tree order, 1..N).
+
+    LINEAR (``k="l"``) when the names fit the ``<prefix><n>`` pattern and even
+    interpolation reproduces the row within ``POS_TOL_M``; EXPLICIT (``k="e"``)
+    otherwise (obstacle rows, odd names, single tree).
+    """
+    n = len(coords)
+    if n == 0:
+        return None
+    if n == 1:
+        return {"k": "e", "c": [coords[0][0], coords[0][1]], "n": 1, "names": [names[0]]}
+    prefix = _strip_trailing_int(names[0], 1)
+    good_prefix = prefix is not None and names[-1] == f"{prefix}{n}"
+    if good_prefix and _interp_max_error_m(coords) <= POS_TOL_M:
+        a = coords[0]
+        b = coords[-1]
+        return {"k": "l", "p": prefix, "a": [a[0], a[1]], "b": [b[0], b[1]], "n": n}
+    flat = []
+    for c in coords:
+        flat.append(c[0])
+        flat.append(c[1])
+    row = {"k": "e", "c": flat, "n": n}
+    if good_prefix:
+        row["p"] = prefix
+    else:
+        row["names"] = list(names)
+    return row
 
 
 def _features_from_trees(tree_rows):

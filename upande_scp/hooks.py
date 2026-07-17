@@ -534,13 +534,9 @@ fixtures = [
     {
         "doctype": "Role",
         "filters": [["name", "in", ["Spray Supervisor"]]]
-    },
-    # Custom permission grid for that role. Filtering by role keeps us
-    # from accidentally exporting unrelated custom perms on this site.
-    {
-        "doctype": "Custom DocPerm",
-        "filters": [["role", "=", "Spray Supervisor"]]
     }
+    # NOTE: We deliberately do NOT export permissions (Custom DocPerm) from
+    # this app. Role permissions are managed per-site, not shipped as fixtures.
     # {
     #     "doctype": "Insights Workbook",
     #     "filters": [

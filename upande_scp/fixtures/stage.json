@@ -4,6 +4,16 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "circle",
+  "modified": "2026-06-01 22:56:54.343655",
+  "name": "Crawler",
+  "stage_name": "Crawler"
+ },
+ {
+  "default_reading_type": "Count",
+  "docstatus": 0,
+  "doctype": "Stage",
+  "icon_key": "circle",
+  "modified": "2026-07-17 17:38:48.321911",
   "name": "Adult",
   "stage_name": "Adult"
  },
@@ -12,6 +22,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "circle",
+  "modified": "2026-07-17 17:38:48.328706",
   "name": "Adult Cloud",
   "stage_name": "Adult Cloud"
  },
@@ -20,6 +31,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "circle",
+  "modified": "2026-07-17 17:38:48.334338",
   "name": "Adult Moth",
   "stage_name": "Adult Moth"
  },
@@ -28,6 +40,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "circle",
+  "modified": "2026-07-17 17:38:48.340284",
   "name": "Adult Singles",
   "stage_name": "Adult Singles"
  },
@@ -36,6 +49,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "square",
+  "modified": "2026-07-17 17:38:48.346266",
   "name": "Colonies",
   "stage_name": "Colonies"
  },
@@ -44,6 +58,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "cross",
+  "modified": "2026-07-17 17:38:48.352270",
   "name": "Damage",
   "stage_name": "Damage"
  },
@@ -52,6 +67,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "cross",
+  "modified": "2026-07-17 17:38:48.358725",
   "name": "Damages",
   "stage_name": "Damages"
  },
@@ -60,6 +76,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "hexagon",
+  "modified": "2026-07-17 17:38:48.364864",
   "name": "Downy Active",
   "stage_name": "Downy Active"
  },
@@ -68,6 +85,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "star",
+  "modified": "2026-07-17 17:38:48.371139",
   "name": "Downy Dry",
   "stage_name": "Downy Dry"
  },
@@ -76,6 +94,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "hexagon",
+  "modified": "2026-07-17 17:38:48.377376",
   "name": "Downy Head",
   "stage_name": "Downy Head"
  },
@@ -84,6 +103,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "star",
+  "modified": "2026-07-17 17:38:48.383205",
   "name": "Downy Latent",
   "stage_name": "Downy Latent"
  },
@@ -92,6 +112,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "star",
+  "modified": "2026-07-17 17:38:48.388943",
   "name": "Downy Stem",
   "stage_name": "Downy Stem"
  },
@@ -100,6 +121,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "star",
+  "modified": "2026-07-17 17:38:48.395166",
   "name": "Dry",
   "stage_name": "Dry"
  },
@@ -108,6 +130,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "diamond",
+  "modified": "2026-07-17 17:38:48.400800",
   "name": "Egg Sacs",
   "stage_name": "Egg Sacs"
  },
@@ -116,6 +139,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "diamond",
+  "modified": "2026-07-17 17:38:48.406634",
   "name": "Eggs",
   "stage_name": "Eggs"
  },
@@ -124,6 +148,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "triangle",
+  "modified": "2026-07-17 17:38:48.412273",
   "name": "FCM Caterpillars",
   "stage_name": "FCM Caterpillars"
  },
@@ -132,6 +157,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "cross",
+  "modified": "2026-07-17 17:38:48.417987",
   "name": "FCM Damage",
   "stage_name": "FCM Damage"
  },
@@ -140,6 +166,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "diamond",
+  "modified": "2026-07-17 17:38:48.423437",
   "name": "FCM Eggs",
   "stage_name": "FCM Eggs"
  },
@@ -148,6 +175,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "circle",
+  "modified": "2026-07-17 17:38:48.429269",
   "name": "FCM Moth",
   "stage_name": "FCM Moth"
  },
@@ -156,6 +184,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "plus",
+  "modified": "2026-07-17 17:38:48.435567",
   "name": "FCM Pupae",
   "stage_name": "FCM Pupae"
  },
@@ -164,6 +193,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "chevron",
+  "modified": "2026-07-17 17:38:48.441357",
   "name": "Fresh",
   "stage_name": "Fresh"
  },
@@ -172,6 +202,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "hexagon",
+  "modified": "2026-07-17 17:38:48.447937",
   "name": "Head Botrytis",
   "stage_name": "Head Botrytis"
  },
@@ -180,6 +211,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "triangle",
+  "modified": "2026-07-17 17:38:48.454258",
   "name": "Larvae",
   "stage_name": "Larvae"
  },
@@ -188,6 +220,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "square",
+  "modified": "2026-07-17 17:38:48.460137",
   "name": "Motiles",
   "stage_name": "Motiles"
  },
@@ -196,6 +229,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "pentagon",
+  "modified": "2026-07-17 17:38:48.466007",
   "name": "Nymph",
   "stage_name": "Nymph"
  },
@@ -204,6 +238,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "hexagon",
+  "modified": "2026-07-17 17:38:48.472111",
   "name": "Powdery Active",
   "stage_name": "Powdery Active"
  },
@@ -212,6 +247,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "star",
+  "modified": "2026-07-17 17:38:48.477885",
   "name": "Powdery Dry",
   "stage_name": "Powdery Dry"
  },
@@ -220,6 +256,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "hexagon",
+  "modified": "2026-07-17 17:38:48.483927",
   "name": "Powdery Head",
   "stage_name": "Powdery Head"
  },
@@ -228,6 +265,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "star",
+  "modified": "2026-07-17 17:38:48.489775",
   "name": "Powdery Latent",
   "stage_name": "Powdery Latent"
  },
@@ -236,6 +274,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "plus",
+  "modified": "2026-07-17 17:38:48.495794",
   "name": "Pupae",
   "stage_name": "Pupae"
  },
@@ -244,6 +283,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "cross",
+  "modified": "2026-07-17 17:38:48.501845",
   "name": "Ragged Margins",
   "stage_name": "Ragged Margins"
  },
@@ -252,6 +292,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "hexagon",
+  "modified": "2026-07-17 17:38:48.507852",
   "name": "Rust Active",
   "stage_name": "Rust Active"
  },
@@ -260,6 +301,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "hexagon",
+  "modified": "2026-07-17 17:38:48.513954",
   "name": "Rust Head",
   "stage_name": "Rust Head"
  },
@@ -268,6 +310,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "star",
+  "modified": "2026-07-17 17:38:48.520053",
   "name": "Rust Latent",
   "stage_name": "Rust Latent"
  },
@@ -276,6 +319,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "square",
+  "modified": "2026-07-17 17:38:48.526052",
   "name": "Scale Insects",
   "stage_name": "Scale Insects"
  },
@@ -284,6 +328,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "square",
+  "modified": "2026-07-17 17:38:48.531811",
   "name": "Scales",
   "stage_name": "Scales"
  },
@@ -292,6 +337,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "square",
+  "modified": "2026-07-17 17:38:48.538062",
   "name": "Singles",
   "stage_name": "Singles"
  },
@@ -300,6 +346,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "star",
+  "modified": "2026-07-17 17:38:48.543889",
   "name": "Stem Botrytis",
   "stage_name": "Stem Botrytis"
  },
@@ -308,6 +355,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "cross",
+  "modified": "2026-07-17 17:38:48.549964",
   "name": "Web",
   "stage_name": "Web"
  },
@@ -316,6 +364,7 @@
   "docstatus": 0,
   "doctype": "Stage",
   "icon_key": "circle",
+  "modified": "2026-07-17 17:38:48.555737",
   "name": "Weevils",
   "stage_name": "Weevils"
  }

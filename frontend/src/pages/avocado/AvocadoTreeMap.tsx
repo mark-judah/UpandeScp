@@ -23,6 +23,7 @@ import {
 } from "@/lib/scouting-api";
 import { currentWeekRange } from "@/lib/utils";
 import type { AvocadoView, MarkerPoint } from "./tree-map-types";
+import { SCOUT_PALETTE } from "./derive-scouts";
 
 /** Compute a polygon's bounds quickly for fitBounds. */
 function geometryBounds(
@@ -196,18 +197,6 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
     });
     const byScout = new Map<string, typeof ordered>();
     const scoutColor = new Map<string, string>();
-    const SCOUT_PALETTE = [
-      "#2BA6E0",
-      "#E66BAA",
-      "#8466C7",
-      "#E9A23B",
-      "#5BB45D",
-      "#3D54B0",
-      "#E63946",
-      "#10b981",
-      "#f97316",
-      "#a855f7",
-    ];
     for (const e of ordered) {
       if (!e.scouts_name || !e.tree || !treeCoords.has(e.tree)) continue;
       const arr = byScout.get(e.scouts_name) || [];

@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from "react";
-import { useRoute, cropDisplayName } from "@/lib/router";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { useRoute, cropDisplayName, type View } from "@/lib/router";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { OrbitProgress } from "@/components/OrbitProgress";
@@ -103,6 +103,105 @@ const HeatmapPoc = lazy(() =>
   import("@/pages/HeatmapPoc").then((m) => ({ default: m.HeatmapPoc })),
 );
 
+// Route chunks to warm after first paint. Prefetching them means navigating
+// never shows the Suspense chunk loader — you land on the page and only its
+// data loads. Vite dedupes these to the same chunks as the lazy() imports.
+const PREFETCH: Array<() => Promise<unknown>> = [
+  () => import("@/pages/Dashboard"),
+  () => import("@/pages/Trends"),
+  () => import("@/pages/Observations"),
+  () => import("@/pages/TrapsMap"),
+  () => import("@/pages/Heatmaps"),
+  () => import("@/pages/RoseScouting"),
+  () => import("@/pages/AvocadoMap"),
+  () => import("@/pages/Spraying"),
+  () => import("@/pages/avocado/AvocadoJobSheets"),
+  () => import("@/pages/Varieties"),
+  () => import("@/pages/Reports"),
+  () => import("@/pages/TankMixes"),
+  () => import("@/pages/Historical"),
+  () => import("@/pages/Approvals"),
+  () => import("@/pages/SprayPlanAccess"),
+  () => import("@/pages/Settings"),
+  () => import("@/pages/ApplicationPlan"),
+  () => import("@/pages/ChemicalDashboard"),
+  () => import("@/pages/SprayPlanTransfers"),
+  () => import("@/pages/Labels"),
+  () => import("@/pages/CreatorStock"),
+  () => import("@/pages/ChemicalProgress"),
+  () => import("@/pages/ChemicalLoaning"),
+];
+
+/**
+ * Keep-alive wrapper: a visited section mounts once and stays mounted, hidden
+ * with ``display:none`` when inactive instead of being unmounted. Revisiting is
+ * instant and only the page's data refetches — the maps' ResizeObservers
+ * (Map3D / MapBase) refire when the container is re-shown, so they repaint at
+ * the right size. ``display:contents`` when active keeps the page a layout-
+ * transparent child of SidebarInset (identical layout to rendering it directly).
+ */
+function KeepAlive({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: ReactNode;
+}) {
+  return <div style={{ display: active ? "contents" : "none" }}>{children}</div>;
+}
+
+/** The page component for a given crop + view. Crop is fixed per keep-alive
+ *  entry, so ``initialCrop`` is stable for the life of the mounted page. */
+function renderView(crop: string, view: View): ReactNode {
+  const cropName = cropDisplayName(crop);
+  switch (view) {
+    case "trends":
+      return <Trends initialCrop={cropName} />;
+    case "observations":
+      return <Observations initialCrop={cropName} />;
+    case "traps":
+      return <TrapsMap initialCrop={cropName} />;
+    case "heatmaps":
+      return <Heatmaps initialCrop={cropName} />;
+    case "scouting-map":
+      return crop === "rose" ? <RoseScouting /> : <AvocadoMap />;
+    case "spraying":
+      return <Spraying />;
+    case "jobsheets":
+      return <AvocadoJobSheets />;
+    case "varieties":
+      return <Varieties />;
+    case "reports":
+      return <Reports />;
+    case "tank-mixes":
+      return <TankMixes />;
+    case "historical":
+      return <Historical />;
+    case "approvals":
+      return <Approvals />;
+    case "settings":
+      return <Settings />;
+    case "spray-plan-access":
+      return <SprayPlanAccess />;
+    case "application-plan":
+      return <ApplicationPlan />;
+    case "chemical-dashboard":
+      return <ChemicalDashboard />;
+    case "spray-plan-transfers":
+      return <SprayPlanTransfers />;
+    case "labels":
+      return <Labels />;
+    case "creator-stock":
+      return <CreatorStock />;
+    case "chemical-progress":
+      return <ChemicalProgress />;
+    case "chemical-loaning":
+      return <ChemicalLoaning />;
+    default:
+      return <Dashboard initialCrop={cropName} />;
+  }
+}
+
 function PageFallback() {
   // Route-chunk load: no real progress signal, so creep a simulated percent
   // through the shared orbit loader.
@@ -165,8 +264,32 @@ function usePocHashMatch(): boolean {
 
 export function App() {
   const [{ crop, view }, navigate] = useRoute();
-  const cropName = cropDisplayName(crop);
   const isPoc = usePocHashMatch();
+
+  // Sections mount once and stay mounted (keep-alive), so revisiting is instant
+  // and only data reloads. Track which crop/view pairs have been opened.
+  const activeKey = `${crop}/${view}`;
+  const [mountedKeys, setMountedKeys] = useState<string[]>([activeKey]);
+  useEffect(() => {
+    setMountedKeys((keys) =>
+      keys.includes(activeKey) ? keys : [...keys, activeKey],
+    );
+  }, [activeKey]);
+
+  // Prefetch route chunks on idle so the Suspense chunk loader never shows on
+  // navigation (see PREFETCH above).
+  useEffect(() => {
+    let i = 0;
+    const ric: (fn: () => void) => void =
+      (window as unknown as { requestIdleCallback?: (fn: () => void) => void })
+        .requestIdleCallback || ((fn) => window.setTimeout(fn, 200));
+    const pump = () => {
+      if (i >= PREFETCH.length) return;
+      void PREFETCH[i++]().catch(() => {});
+      ric(pump);
+    };
+    ric(pump);
+  }, []);
 
   // Warm long-lived reference caches once per session. Heatmaps and the
   // Application Plan diagnose plot read straight from the IDB-backed
@@ -219,63 +342,31 @@ export function App() {
         onNavigate={(v) => navigate({ view: v })}
       />
       <SidebarInset>
-        <Suspense
-          fallback={
-            view === "application-plan" ? (
-              <ApplicationPlanSkeleton />
-            ) : (
-              <PageFallback />
-            )
-          }
-        >
-          {isPoc ? (
+        {isPoc ? (
+          <Suspense fallback={<PageFallback />}>
             <HeatmapPoc />
-          ) : view === "trends" ? (
-            <Trends initialCrop={cropName} />
-          ) : view === "observations" ? (
-            <Observations initialCrop={cropName} />
-          ) : view === "traps" ? (
-            <TrapsMap initialCrop={cropName} />
-          ) : view === "heatmaps" ? (
-            <Heatmaps initialCrop={cropName} />
-          ) : view === "scouting-map" ? (
-            crop === "rose" ? <RoseScouting /> : <AvocadoMap />
-          ) : view === "spraying" ? (
-            <Spraying />
-          ) : view === "jobsheets" ? (
-            <AvocadoJobSheets />
-          ) : view === "varieties" ? (
-            <Varieties />
-          ) : view === "reports" ? (
-            <Reports />
-          ) : view === "tank-mixes" ? (
-            <TankMixes />
-          ) : view === "historical" ? (
-            <Historical />
-          ) : view === "approvals" ? (
-            <Approvals />
-          ) : view === "settings" ? (
-            <Settings />
-          ) : view === "spray-plan-access" ? (
-            <SprayPlanAccess />
-          ) : view === "application-plan" ? (
-            <ApplicationPlan />
-          ) : view === "chemical-dashboard" ? (
-            <ChemicalDashboard />
-          ) : view === "spray-plan-transfers" ? (
-            <SprayPlanTransfers />
-          ) : view === "labels" ? (
-            <Labels />
-          ) : view === "creator-stock" ? (
-            <CreatorStock />
-          ) : view === "chemical-progress" ? (
-            <ChemicalProgress />
-          ) : view === "chemical-loaning" ? (
-            <ChemicalLoaning />
-          ) : (
-            <Dashboard initialCrop={cropName} />
-          )}
-        </Suspense>
+          </Suspense>
+        ) : (
+          mountedKeys.map((k) => {
+            const sep = k.indexOf("/");
+            const kCrop = k.slice(0, sep);
+            const kView = k.slice(sep + 1) as View;
+            const active = k === activeKey;
+            const fallback =
+              kView === "application-plan" ? (
+                <ApplicationPlanSkeleton />
+              ) : (
+                <PageFallback />
+              );
+            return (
+              <KeepAlive key={k} active={active}>
+                <Suspense fallback={active ? fallback : null}>
+                  {renderView(kCrop, kView)}
+                </Suspense>
+              </KeepAlive>
+            );
+          })
+        )}
       </SidebarInset>
     </SidebarProvider>
   );

@@ -161,13 +161,13 @@ export function buildTriadIndex(
   return { s, colStep, rowStep, angles, ringRot, minX, maxX, minY, maxY, cellSize, ncols, cellState, toWgs, toRot };
 }
 
-// ── row runs: the orchard-row analogue ─────────────────────────────────────
-// A "row" is a horizontal hex-row band. Within it, hexes whose centre is inside
-// the AOI form contiguous runs (a concave AOI yields several runs per row — the
+// ── bands: the orchard-row analogue ────────────────────────────────────────
+// A "band" is a horizontal hex-row. Within it, hexes whose centre is inside the
+// AOI form contiguous runs (a concave AOI yields several runs per band — the
 // obstacle-row case). Each run is stored as endpoints + count and reconstructs
 // its interior by stepping colStep; each hex → 6 triads analytically.
-export interface RowRun {
-  row: number;
+export interface Band {
+  band: number;
   firstCol: number;
   lastCol: number;
   hexCount: number; // hexes in this run
@@ -176,10 +176,10 @@ export interface RowRun {
   last: [number, number]; // lng,lat of last hex centre
 }
 
-export function deriveRows(idx: TriadIndex | null): RowRun[] {
+export function deriveBands(idx: TriadIndex | null): Band[] {
   if (!idx) return [];
   const { colStep, rowStep, minX, maxX, minY, maxY, ringRot } = idx;
-  const runs: RowRun[] = [];
+  const runs: Band[] = [];
   const jMax = Math.ceil((maxY - minY) / rowStep);
   for (let r = 0; r <= jMax; r++) {
     const y = minY + r * rowStep;
@@ -193,7 +193,7 @@ export function deriveRows(idx: TriadIndex | null): RowRun[] {
     const flush = () => {
       if (firstCol >= 0 && firstCentre && lastCentre) {
         runs.push({
-          row: r,
+          band: r,
           firstCol,
           lastCol,
           hexCount: count,

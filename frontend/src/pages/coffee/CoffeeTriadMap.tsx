@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import { Map3D } from "@/components/Map3D";
 import { Input } from "@/components/ui/input";
-import { buildTriadIndex, tessellate, deriveRows } from "@/lib/triad";
+import { buildTriadIndex, tessellate, deriveBands } from "@/lib/triad";
 import { ENDEBESS_AOI, ENDEBESS_CENTER } from "./endebess-aoi";
 
 // One flat colour for every unit — no palette.
@@ -28,10 +28,10 @@ export function CoffeeTriadMap() {
   const [side, setSide] = useState(10);
   const [rotation, setRotation] = useState(0);
   const [blockFactor, setBlockFactor] = useState(2); // 1 = off
-  const [showRows, setShowRows] = useState(true);
+  const [showBands, setShowBands] = useState(true);
   const [triadCount, setTriadCount] = useState(0);
   const [blockCount, setBlockCount] = useState(0);
-  const [rowStats, setRowStats] = useState({ rows: 0, endpoints: 0 });
+  const [bandStats, setBandStats] = useState({ bands: 0, endpoints: 0 });
 
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -65,9 +65,9 @@ export function CoffeeTriadMap() {
     if (blockSrc) blockSrc.setData(blocks.fc as never);
     setBlockCount(blocks.triadCount);
 
-    // Row "constellation": one line per run (first→last hex centre) + endpoints.
-    const runs = deriveRows(indexRef.current);
-    const rowLines = {
+    // Band "constellation": one line per run (first→last hex centre) + endpoints.
+    const runs = deriveBands(indexRef.current);
+    const bandLines = {
       type: "FeatureCollection",
       features: runs.map((r) => ({
         type: "Feature",
@@ -82,9 +82,9 @@ export function CoffeeTriadMap() {
         { type: "Feature", geometry: { type: "Point", coordinates: r.last }, properties: { end: "last" } },
       ]),
     };
-    (map.getSource("rows") as maplibregl.GeoJSONSource | undefined)?.setData(rowLines as never);
-    (map.getSource("row-ends") as maplibregl.GeoJSONSource | undefined)?.setData(endpoints as never);
-    setRowStats({ rows: runs.length, endpoints: runs.length * 2 });
+    (map.getSource("bands") as maplibregl.GeoJSONSource | undefined)?.setData(bandLines as never);
+    (map.getSource("band-ends") as maplibregl.GeoJSONSource | undefined)?.setData(endpoints as never);
+    setBandStats({ bands: runs.length, endpoints: runs.length * 2 });
   };
 
   const onMapReady = (map: maplibregl.Map) => {
@@ -157,28 +157,28 @@ export function CoffeeTriadMap() {
         "aoi-line",
       );
     }
-    // Row constellation: endpoint→endpoint lines + first/last hex markers.
-    if (!map.getSource("rows")) {
-      map.addSource("rows", {
+    // Band constellation: endpoint→endpoint lines + first/last hex markers.
+    if (!map.getSource("bands")) {
+      map.addSource("bands", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] } as never,
       });
       map.addLayer({
-        id: "rows-line",
+        id: "bands-line",
         type: "line",
-        source: "rows",
+        source: "bands",
         paint: { "line-color": "#1d4ed8", "line-width": 1, "line-opacity": 0.5 },
       });
     }
-    if (!map.getSource("row-ends")) {
-      map.addSource("row-ends", {
+    if (!map.getSource("band-ends")) {
+      map.addSource("band-ends", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] } as never,
       });
       map.addLayer({
-        id: "row-ends-dot",
+        id: "band-ends-dot",
         type: "circle",
-        source: "row-ends",
+        source: "band-ends",
         paint: {
           "circle-radius": 3,
           "circle-color": ["match", ["get", "end"], "first", "#16a34a", "#dc2626"],
@@ -206,20 +206,20 @@ export function CoffeeTriadMap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, blockIndex, mapReady]);
 
-  // Toggle the row constellation on/off.
+  // Toggle the band constellation on/off.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const vis = showRows ? "visible" : "none";
-    for (const id of ["rows-line", "row-ends-dot"]) {
+    const vis = showBands ? "visible" : "none";
+    for (const id of ["bands-line", "band-ends-dot"]) {
       if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis);
     }
-  }, [showRows, mapReady]);
+  }, [showBands, mapReady]);
 
   const ratio = blockFactor > 1 ? blockFactor * blockFactor : 6;
   const ratioLabel = blockFactor > 1 ? `1 : ${ratio} (bigger triangle)` : "1 : 6 (hexagon)";
   const compression =
-    rowStats.endpoints > 0 ? Math.round(triadCount / rowStats.endpoints) : 0;
+    bandStats.endpoints > 0 ? Math.round(triadCount / bandStats.endpoints) : 0;
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
@@ -268,18 +268,18 @@ export function CoffeeTriadMap() {
           <label className="flex items-center gap-1.5 pb-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
-              checked={showRows}
-              onChange={(e) => setShowRows(e.target.checked)}
+              checked={showBands}
+              onChange={(e) => setShowBands(e.target.checked)}
             />
-            Rows
+            Bands
           </label>
           <span className="pb-2 text-xs tabular-nums text-muted-foreground">
             {triadCount.toLocaleString()} triads
             {blockFactor > 1 && ` · ${blockCount.toLocaleString()} blocks`} · ratio {ratioLabel}
-            {showRows && rowStats.rows > 0 && (
+            {showBands && bandStats.bands > 0 && (
               <>
                 {" · "}
-                {rowStats.rows.toLocaleString()} rows → {rowStats.endpoints.toLocaleString()} endpoints
+                {bandStats.bands.toLocaleString()} bands → {bandStats.endpoints.toLocaleString()} endpoints
                 {compression > 0 && ` predict ${triadCount.toLocaleString()} triads (1:${compression})`}
               </>
             )}

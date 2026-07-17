@@ -750,21 +750,13 @@ def _build_workbook_bytes(farm, week=None, year=None):
 # ---------------------------------------------------------------------------
 
 def _recipients():
-    """Resolve recipients list from Trap Report Settings with sensible default."""
-    default = [
+    """FCM weekly Excel report recipients (Trap Report Settings retired)."""
+    return [
         "stephenechikoi@gmail.com",
         "echikoistephene@gmail.com",
         "vlabat@karenroses.com",
         "rbundotich@karenroses.com",
     ]
-    try:
-        s = frappe.get_single("Trap Report Settings")
-        raw = (s.fcm_excel_report_recipients or "").strip() or (s.weekly_report_recipients or "").strip()
-        if raw:
-            return [r.strip() for r in raw.split(",") if r.strip()]
-    except Exception:
-        pass
-    return default
 
 
 def _build_email_html(week_range_str, current_year, farm_display, kephis_id):
@@ -1014,18 +1006,7 @@ def _week_range_str_now():
 
 def _send_no_data_email(current_year, week_range_str, farm_display=None):
     """Send a brief notice when no scouting data exists."""
-    recipients = ["stephenechikoi@gmail.com"]
-    try:
-        report_settings = frappe.get_single("Trap Report Settings")
-        if report_settings and hasattr(report_settings, "weekly_report_recipients"):
-            if report_settings.weekly_report_recipients:
-                recipients = [
-                    r.strip()
-                    for r in report_settings.weekly_report_recipients.split(",")
-                    if r.strip()
-                ]
-    except Exception:
-        pass
+    recipients = _recipients()
 
     who = f" for {farm_display}" if farm_display else ""
     frappe.sendmail(

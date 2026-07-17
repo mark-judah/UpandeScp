@@ -497,7 +497,11 @@ fixtures = [
     # flow runs as Spray Supervisor.
     {
         "doctype": "Role",
-        "filters": [["name", "in", ["Spray Supervisor"]]]
+        "filters": [["name", "in", [
+            "SCP General Manager", "SCP Spray Supervisor", "SCP Spray Plan Creator",
+            "SCP Spray Plan Approver", "SCP Scout", "SCP Chemical Store Keeper",
+            "SCP Scouting User"
+        ]]]
     }
     # NOTE: We deliberately do NOT export permissions (Custom DocPerm) from
     # this app. Role permissions are managed per-site, not shipped as fixtures.

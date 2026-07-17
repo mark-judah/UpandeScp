@@ -369,16 +369,8 @@ def build_html(target_date=None):
 # ---------------------------------------------------------------------------
 
 def _recipients():
-    default = ["stephene@upande.com"]
-    try:
-        s = frappe.get_single("Trap Report Settings")
-        raw = getattr(s, "daily_report_recipients", None) or ""
-        raw = raw.strip()
-        if raw:
-            return [r.strip() for r in raw.split(",") if r.strip()]
-    except Exception:
-        pass
-    return default
+    """Daily scouting report recipients (Trap Report Settings retired)."""
+    return ["stephene@upande.com"]
 
 
 # ---------------------------------------------------------------------------

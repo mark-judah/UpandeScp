@@ -466,23 +466,10 @@ fixtures = [
     # now live in code under public/js/ wired via doctype_js above. The legacy
     # "Spray Plan Approval v7" list-view approval UI was dropped (the React
     # Approvals page replaces it).
-    {
-        # Only the Bed/Zone automation tool remains a Server Script — it is
-        # driven by the "Bed And Zone Automation Tool" desk Client Script.
-        # The other API server scripts were only ever called by the legacy
-        # desk www pages (now removed; React uses code endpoints), so they
-        # were dropped as dead code.
-        "dt": "Server Script",
-        "filters": [
-            [
-                "name",
-                "in",
-                [
-                    "Zone Atomation Tool"
-                ]
-            ]
-        ]
-    },
+    # NOTE: Server Scripts are no longer shipped as fixtures. The only live one
+    # ("Zone Atomation Tool" / createBedsAndZones) was moved into code at
+    # upande_scp.serverscripts.bed_zone_automation.create_beds_and_zones; the
+    # rest were dead (their callers were the removed www pages).
     {
         "dt": "Print Format",
         "filters": [

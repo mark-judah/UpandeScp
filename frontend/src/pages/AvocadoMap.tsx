@@ -267,20 +267,24 @@ export function AvocadoMap() {
 
     if (!map.getSource("blocks")) {
       map.addSource("blocks", { type: "geojson", data: blocks });
+      // Block boundaries in the page's warm-paper/ink palette (mirrors the
+      // --sd-* design tokens; MapLibre paint takes literal colors, not CSS
+      // vars). Kept subtle: a faint ink wash + a low-opacity ink hairline so
+      // the boundaries read as quiet guides, not a blue overlay.
       map.addLayer({
         id: "blocks-fill",
         type: "fill",
         source: "blocks",
-        paint: { "fill-color": "#3b82f6", "fill-opacity": 0.25 },
+        paint: { "fill-color": "#0a0a0a", "fill-opacity": 0.05 }, // --sd-ink
       });
       map.addLayer({
         id: "blocks-line",
         type: "line",
         source: "blocks",
         paint: {
-          "line-color": "#1d4ed8",
-          "line-width": 1.5,
-          "line-opacity": 0.85,
+          "line-color": "#2a2a26", // --sd-accent (ink-2)
+          "line-width": 1.25,
+          "line-opacity": 0.4,
         },
       });
       map.addLayer({
@@ -293,8 +297,8 @@ export function AvocadoMap() {
           "text-allow-overlap": false,
         },
         paint: {
-          "text-color": "#1e293b",
-          "text-halo-color": "#ffffff",
+          "text-color": "#2a2a26", // --sd-accent (ink-2)
+          "text-halo-color": "#f4f3ef", // --sd-bg (warm paper)
           "text-halo-width": 1.5,
         },
       });

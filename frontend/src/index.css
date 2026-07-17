@@ -1,5 +1,37 @@
 @import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap");
+
+/* Self-hosted Poppins (latin subset) — bundled by Vite from src/assets/fonts
+   and served same-origin. Local @font-face url()s survive the build; an
+   external @import does NOT (Tailwind v4 / Lightning CSS drops it), which is
+   why the webfont never loaded before. */
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/poppins-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/fonts/poppins-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/poppins-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./assets/fonts/poppins-700.woff2") format("woff2");
+}
 
 /* ─── Global UI scale ───────────────────────────────────────────────
    Drop the root font-size to 75% (12px from the 16px default).

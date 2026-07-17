@@ -53,9 +53,9 @@ const AvocadoTraps = lazy(() =>
     default: m.AvocadoTraps,
   })),
 );
-const AvocadoJobSheets = lazy(() =>
-  import("@/pages/avocado/AvocadoJobSheets").then((m) => ({
-    default: m.AvocadoJobSheets,
+const AvocadoHeatMap = lazy(() =>
+  import("@/pages/avocado/AvocadoHeatMap").then((m) => ({
+    default: m.AvocadoHeatMap,
   })),
 );
 const Varieties = lazy(() =>
@@ -128,8 +128,8 @@ const PREFETCH: Array<() => Promise<unknown>> = [
   () => import("@/pages/avocado/AvocadoScouting"),
   () => import("@/pages/avocado/AvocadoObservations"),
   () => import("@/pages/avocado/AvocadoTraps"),
+  () => import("@/pages/avocado/AvocadoHeatMap"),
   () => import("@/pages/Spraying"),
-  () => import("@/pages/avocado/AvocadoJobSheets"),
   () => import("@/pages/Varieties"),
   () => import("@/pages/Reports"),
   () => import("@/pages/TankMixes"),
@@ -184,13 +184,15 @@ function renderView(crop: string, view: View): ReactNode {
         <AvocadoTraps />
       );
     case "heatmaps":
-      return <Heatmaps initialCrop={cropName} />;
+      return crop === "rose" ? (
+        <Heatmaps initialCrop={cropName} />
+      ) : (
+        <AvocadoHeatMap />
+      );
     case "scouting-map":
       return crop === "rose" ? <RoseScouting /> : <AvocadoScouting />;
     case "spraying":
       return <Spraying />;
-    case "jobsheets":
-      return <AvocadoJobSheets />;
     case "varieties":
       return <Varieties />;
     case "reports":

@@ -214,14 +214,13 @@ const AVOCADO_NAV: NavSection[] = [
     items: [
       { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
       { kind: "view", view: "observations", label: "Observations", icon: Search },
-      { kind: "view", view: "heatmaps", label: "Heatmaps", icon: Flame },
       { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
     ],
   },
   {
     label: "Crop Protection",
     items: [
-      { kind: "view", view: "jobsheets", label: "Job Sheets", icon: ClipboardList },
+      { kind: "view", view: "heatmaps", label: "Heat maps", icon: Flame },
     ],
   },
 ];

@@ -382,8 +382,10 @@ scheduler_events = {
 website_route_rules = []
 
 fixtures = [
-    # Stage catalog — ships the per-stage icon_key mapping to every site.
-    {"doctype": "Stage"},
+    # NOTE: reference data no longer shipped as fixtures — populate per site:
+    #   * Stage catalog        -> patch seed_stage_catalog.py (+ docs/reference-data-seeding.md)
+    #   * Crop Scouted         -> docs/reference-data-seeding.md
+    # Trap Report Settings was removed entirely (feature retired).
     # Desk workspace custom blocks (SCP Dashboard / Scout Map / Navigation).
     {"doctype": "Custom HTML Block"},
     {
@@ -494,21 +496,15 @@ fixtures = [
         ]
     },
     {
-        "dt": "Trap Report Settings"
-    },
-    {
-        "dt": "Crop Scouted"
-    },
-    {
+        # Workflow State master data — the Frappe Workflow itself was deleted
+        # (see delete_application_floor_plan_workflow patch), but the
+        # workflow_state Custom Field on Work Order still holds these values,
+        # set/read by the spray-plan code. These records back that field.
         "doctype": "Workflow State",
         "filters": [["name", "in", [
             "Pending Submission", "Awaiting Approval", "Approved",
             "Chemical Issued", "Tank Mix Manufactured", "Spraying In Progress", "Completed"
         ]]]
-    },
-    {
-        "doctype": "Workflow Action Master",
-        "filters": [["name", "in", ["Submit for Approval", "Approve Plan"]]]
     },
     # Role definitions owned by this app. Mobile chemical/spray-application
     # flow runs as Spray Supervisor.

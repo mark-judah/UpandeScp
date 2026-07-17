@@ -117,6 +117,10 @@ export function useScouting({
     if (!from || !to || from > to) return;
     const token = ++tokenRef.current;
     setError(null);
+    // Scope the fetch to a single sparse crop (e.g. avocado) so long ranges
+    // pull only that crop's rows and cache all history; rose / unset keeps the
+    // shared all-crop path.
+    const scopedCrop = crop && crop !== "Rose" ? crop : undefined;
 
     (async () => {
       // Cold weeks only — those never loaded into IDB. We deliberately do NOT
@@ -124,7 +128,7 @@ export function useScouting({
       // weeks look "missing" and forced the loading overlay over an otherwise
       // instant cached paint (Effect B reads IDB on mount). Freshness for
       // recent weeks now happens in the non-blocking refresh below.
-      const missing = await getMissingWeeks(from, to);
+      const missing = await getMissingWeeks(from, to, scopedCrop);
       if (tokenRef.current !== token) return;
 
       if (missing.length === 0) {
@@ -147,7 +151,7 @@ export function useScouting({
             setWeeksTotal(total);
             setProgress(Math.round((100 * loaded) / Math.max(1, total)));
             console.log(`[scouting] hydrated week ${week} (${loaded}/${total})`);
-          });
+          }, scopedCrop);
           if (tokenRef.current !== token) return;
           setProgress(100);
         } catch (e: any) {
@@ -166,7 +170,7 @@ export function useScouting({
       // ``modified`` predates our delta watermark — the reason this refresh
       // exists) and advances the watermark via delta. Re-renders SILENTLY,
       // only when rows actually changed, so there's no overlay flash.
-      void refreshRecentWeeks(from, to, 7)
+      void refreshRecentWeeks(from, to, 7, scopedCrop)
         .then(async (changed) => {
           if (changed && tokenRef.current === token) {
             await buildAndSet(token, { silent: true });
@@ -175,7 +179,7 @@ export function useScouting({
         .catch((e) => console.error("[scouting] background refresh failed", e));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, tick]);
+  }, [from, to, tick, crop]);
 
   // Effect B — Render. Runs whenever filters change (and also after Effect A
   // mutates IDB, because `tick` and range are shared). Pure IDB-read +

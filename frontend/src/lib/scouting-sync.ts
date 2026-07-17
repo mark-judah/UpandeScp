@@ -89,30 +89,39 @@ function weeksBetween(from: string, to: string): WeekSlot[] {
   return out;
 }
 
-async function loadedWeeksSet(): Promise<Set<string>> {
-  const v = (await getMeta<string[]>(META_LOADED_WEEKS)) || [];
+/** Per-crop loaded-weeks registry key. Rose / all-crop uses the base key; a
+ *  scoped crop (e.g. avocado) tracks its own coverage separately because its
+ *  fetch pulls only that crop's rows. */
+function weeksMetaKey(crop?: string): string {
+  return crop ? `${META_LOADED_WEEKS}:${crop}` : META_LOADED_WEEKS;
+}
+
+async function loadedWeeksSet(crop?: string): Promise<Set<string>> {
+  const v = (await getMeta<string[]>(weeksMetaKey(crop))) || [];
   return new Set(v);
 }
 
 /**
  * The set of ISO weeks touching [from, to] that aren't yet recorded in the
  * loaded-weeks registry. Returns empty when everything is cached — callers
- * can use that to skip the loading state entirely.
+ * can use that to skip the loading state entirely. ``crop`` selects the
+ * per-crop registry for scoped fetches.
  */
 export async function getMissingWeeks(
   from: string,
   to: string,
+  crop?: string,
 ): Promise<WeekSlot[]> {
   const weeks = weeksBetween(from, to);
   if (!weeks.length) return [];
-  const known = await loadedWeeksSet();
+  const known = await loadedWeeksSet(crop);
   return weeks.filter((w) => !known.has(w.key));
 }
 
-async function markWeekLoaded(week: string): Promise<void> {
-  const set = await loadedWeeksSet();
+async function markWeekLoaded(week: string, crop?: string): Promise<void> {
+  const set = await loadedWeeksSet(crop);
   set.add(week);
-  await setMeta(META_LOADED_WEEKS, Array.from(set));
+  await setMeta(weeksMetaKey(crop), Array.from(set));
 }
 
 let legacyMonthsCleared = false;
@@ -142,9 +151,10 @@ export async function hydrateRange(
   from: string,
   to: string,
   onProgress?: (loaded: number, total: number, week: string) => void,
+  crop?: string,
 ): Promise<void> {
   await clearLegacyMonthsRegistry();
-  const missing = await getMissingWeeks(from, to);
+  const missing = await getMissingWeeks(from, to, crop);
 
   if (!missing.length) return;
 
@@ -158,11 +168,12 @@ export async function hydrateRange(
             from_date: w.from,
             to_date: w.to,
             include_meta: 0,
+            ...(crop ? { crop } : {}),
           },
         );
         const entries = resp?.entries || [];
         if (entries.length) await putEntries(entries);
-        await markWeekLoaded(w.key);
+        await markWeekLoaded(w.key, crop);
       } catch (err) {
         console.error("[scouting-sync] hydrate week failed", w.key, err);
         throw err;
@@ -289,6 +300,7 @@ export async function refreshRecentWeeks(
   from: string,
   to: string,
   daysBack: number,
+  crop?: string,
 ): Promise<boolean> {
   let touched = false;
   if (Number.isFinite(daysBack) && daysBack > 0 && from && to && from <= to) {
@@ -304,7 +316,7 @@ export async function refreshRecentWeeks(
         try {
           const resp = await call<ChunkResp>(
             "upande_scp.serverscripts.get_complete_scouting_entries.getScoutingEntriesChunk",
-            { from_date: w.from, to_date: w.to, include_meta: 0 },
+            { from_date: w.from, to_date: w.to, include_meta: 0, ...(crop ? { crop } : {}) },
           );
           const entries = resp?.entries || [];
           if (entries.length) {

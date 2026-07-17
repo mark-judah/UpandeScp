@@ -46,3 +46,13 @@ export function currentWeekRange(): { from: string; to: string } {
   sun.setDate(mon.getDate() + 6);
   return { from: ymd(mon), to: ymd(sun) };
 }
+
+/** [from, to] spanning the last ``months`` calendar months up to today. Used
+ *  by sparse crops (e.g. avocado) whose crop-scoped fetch is cheap enough to
+ *  default to a long window. */
+export function lastMonthsRange(months: number): { from: string; to: string } {
+  const to = new Date();
+  const from = new Date(to);
+  from.setMonth(from.getMonth() - months);
+  return { from: ymd(from), to: ymd(to) };
+}

@@ -21,7 +21,7 @@ import {
   type GeoJsonFC,
   type OrchardTreePoints,
 } from "@/lib/scouting-api";
-import { currentWeekRange } from "@/lib/utils";
+import { lastMonthsRange } from "@/lib/utils";
 import type { AvocadoView, MarkerPoint } from "./tree-map-types";
 import { SCOUT_PALETTE } from "./derive-scouts";
 
@@ -90,9 +90,9 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
     crop: "Avocado",
     farm: ALL,
     greenhouse: ALL,
-    // Default to the current ISO week (like the rose scouting map) so the
-    // first load hydrates a single week, not a fortnight of cold weeks.
-    ...currentWeekRange(),
+    // Avocado is sparse (~0.4% of all scouting) and fetched crop-scoped, so a
+    // long default window is cheap — default to the last 10 months.
+    ...lastMonthsRange(10),
   }));
   const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
     from: filters.from,

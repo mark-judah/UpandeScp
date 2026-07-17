@@ -133,11 +133,29 @@ def _resolve_scouting_date(doc):
         return None
 
 
-def invalidate_scouting_week(iso_year, iso_week):
-    """Delete the cached payload for a single ISO week at the current version."""
+def invalidate_scouting_week(iso_year, iso_week, crop=None):
+    """Delete the cached payload for a single ISO week at the current version.
+
+    ``crop`` targets a crop-scoped slice (see get_complete_scouting_entries
+    ._week_cache_key); omitted targets the all-crop slice.
+    """
     v = scouting_payload_version()
-    key = f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{iso_year:04d}-W{iso_week:02d}"
+    prefix = f"{crop}:" if crop else ""
+    key = f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{prefix}{iso_year:04d}-W{iso_week:02d}"
     invalidate(key)
+
+
+def _resolve_scouting_crop(doc):
+    """Best-effort ``crop_scouted`` for a scouting-related doc (child rows walk
+    to their parent). ``None`` when unresolvable."""
+    dt = getattr(doc, "doctype", None)
+    if dt == "Scouting Entry":
+        return getattr(doc, "crop_scouted", None)
+    if dt in ("Pests Scouting Entry", "Diseases Scouting Entry", "Trap Scouting Entry"):
+        parent = getattr(doc, "parent", None)
+        if parent:
+            return frappe.db.get_value("Scouting Entry", parent, "crop_scouted")
+    return None
 
 
 def invalidate_scouting_week_for_doc(doc):
@@ -161,7 +179,12 @@ def invalidate_scouting_week_for_doc(doc):
         invalidate_scouting_payload()
         return
     iso = d.isocalendar()
-    invalidate_scouting_week(iso[0], iso[1])
+    invalidate_scouting_week(iso[0], iso[1])  # all-crop slice
+    # Also bust the crop-scoped slice (avocado etc.) so single-crop fetches,
+    # which cache all history, don't serve stale data for the touched week.
+    crop = _resolve_scouting_crop(doc)
+    if crop and crop != "Rose":
+        invalidate_scouting_week(iso[0], iso[1], crop)
 
 
 def _resolve_scouting_month(doc):

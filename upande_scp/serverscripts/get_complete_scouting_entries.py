@@ -85,15 +85,19 @@ def _cached_severity_thresholds():
 CACHE_WINDOW_DAYS = 90  # months older than this serve uncached (see docs/data_caching.md)
 
 
-def _week_cache_key(iso_year, iso_week):
+def _week_cache_key(iso_year, iso_week, crop=None):
     """Per-ISO-week cache key.
 
     Mirrors the previous monthly key but is finer-grained. Filtering by
     greenhouse / block is still applied in-memory after the cache hit so
     we don't store the same source rows once per (greenhouse, all) shape.
+
+    ``crop`` namespaces the key for crop-scoped slices (e.g. avocado) so they
+    cache independently of the all-crop slice.
     """
     v = scouting_payload_version()
-    return f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{iso_year:04d}-W{iso_week:02d}"
+    prefix = f"{crop}:" if crop else ""
+    return f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{prefix}{iso_year:04d}-W{iso_week:02d}"
 
 
 def _weeks_in_range(from_date, to_date):
@@ -165,28 +169,32 @@ def _is_recent_week(iso_year, iso_week):
     return sunday >= cutoff
 
 
-def _fetch_week_entries(iso_year, iso_week):
+def _fetch_week_entries(iso_year, iso_week, crop=None):
     """Return the normalized entries for one ISO week.
 
-    Cached per-week, version-stamped, capped to the rolling
-    ``CACHE_WINDOW_DAYS`` window. Greenhouse/block filtering is the caller's
-    responsibility — keeping the cache key week-only avoids storing the same
-    source rows once per filter shape.
+    Cached per-week, version-stamped. Greenhouse/block filtering is the
+    caller's responsibility — keeping the cache key week-only (per crop) avoids
+    storing the same source rows once per filter shape.
+
+    All-crop slices are capped to the rolling ``CACHE_WINDOW_DAYS`` window (the
+    full dataset is rose-heavy, so caching all history would bloat Redis).
+    Crop-scoped slices are tiny (one sparse crop), so they cache for ALL history
+    — that's what makes long-range single-crop (e.g. avocado) fetches fast.
     """
     cache = frappe.cache()
-    cache_key = _week_cache_key(iso_year, iso_week)
+    cache_key = _week_cache_key(iso_year, iso_week, crop)
     cached = cache.get_value(cache_key)
     if cached is not None:
         return cached
 
     monday, sunday = _week_bounds(iso_year, iso_week)
-    entries = _build_month_entries(monday.isoformat(), sunday.isoformat())
+    entries = _build_month_entries(monday.isoformat(), sunday.isoformat(), crop)
 
-    if _is_recent_week(iso_year, iso_week):
-        # 24h TTL so a recent week stays hot all day without depending on the
-        # hourly prewarm. Safe: every scouting write busts the exact ISO week it
-        # touches (invalidate_scouting_week_for_doc), so the active week never
-        # serves stale data and historical weeks rarely change.
+    if crop or _is_recent_week(iso_year, iso_week):
+        # 24h TTL. Safe: every scouting write busts the exact ISO week it
+        # touches — both the all-crop key and the writing entry's crop key
+        # (invalidate_scouting_week_for_doc) — so the active week never serves
+        # stale data and historical weeks rarely change.
         cache.set_value(cache_key, entries, expires_in_sec=TTL_LONG)
     return entries
 
@@ -220,17 +228,19 @@ def _filter_entries(entries, from_date, to_date, greenhouse_filter):
     return out
 
 
-def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True):
+def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=True, crop=None):
     """Cached wrapper. Stitches ISO-week cache slices and applies the
     greenhouse / block filter in-memory.
 
     On a warm cache this is one Redis read per week covered by the range,
     plus a Python list filter. On a miss only the missing weeks are built.
+    ``crop`` scopes the whole stitch to a single crop's (cheap, all-history-
+    cached) slices.
     """
     weeks = _weeks_in_range(from_date, to_date)
     all_entries = []
     for (iy, iw) in weeks:
-        all_entries.extend(_fetch_week_entries(iy, iw))
+        all_entries.extend(_fetch_week_entries(iy, iw, crop))
 
     entries = _filter_entries(all_entries, from_date, to_date, greenhouse_filter)
     payload = {
@@ -252,16 +262,20 @@ def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=
     return payload
 
 
-def _build_month_entries(from_date, to_date):
+def _build_month_entries(from_date, to_date, crop=None):
     """Run the SQL join for one date range and return the entries list only.
 
     Identical to ``_build_scouting_payload`` minus the meta payload (meta has
     its own per-key caches; see _cached_* helpers above). Greenhouse filtering
     is intentionally NOT applied here — the cache is shared across all
-    consumers."""
+    consumers. ``crop`` (when given) restricts the query to that crop's rows at
+    the SQL level, so a sparse crop builds only its own slice."""
+    _filters = [["date_of_capture", "between", [from_date, to_date]]]
+    if crop:
+        _filters.append(["crop_scouted", "=", crop])
     scouting_entries = frappe.get_all(
         "Scouting Entry",
-        filters=[["date_of_capture", "between", [from_date, to_date]]],
+        filters=_filters,
         fields=[
             "name",
             "scouts_name",
@@ -341,16 +355,23 @@ def getCompleteScoutingEntries(from_date=None, to_date=None, greenhouse=None):
 
 
 @frappe.whitelist()
-def getScoutingEntriesChunk(from_date=None, to_date=None, greenhouse=None, include_meta=0):
+def getScoutingEntriesChunk(
+    from_date=None, to_date=None, greenhouse=None, include_meta=0, crop=None
+):
     """Lean monthly-chunk endpoint for the scouting dashboard.
 
     When include_meta is falsy, skips pest_colors/disease_colors/zones_by_greenhouse
     so background chunks don't re-ship shared metadata that the client fetched once.
+
+    ``crop`` scopes the fetch to a single crop server-side. Sparse crops (e.g.
+    avocado) then return only their own rows and cache all history, so a
+    long-range single-crop fetch stays fast. Omitted → the all-crop slice.
     """
     try:
         from_date = from_date or frappe.form_dict.get("from_date")
         to_date = to_date or frappe.form_dict.get("to_date")
         greenhouse_filter = greenhouse or frappe.form_dict.get("greenhouse")
+        crop = crop or frappe.form_dict.get("crop") or None
         include_meta_flag = str(include_meta).lower() in ("1", "true", "yes")
 
         if not from_date or not to_date:
@@ -361,6 +382,7 @@ def getScoutingEntriesChunk(from_date=None, to_date=None, greenhouse=None, inclu
             to_date,
             greenhouse_filter,
             include_meta=include_meta_flag,
+            crop=crop,
         )
     except Exception as e:
         frappe.log_error(f"Error in scouting chunk extraction: {str(e)}", "Scouting Entry API")

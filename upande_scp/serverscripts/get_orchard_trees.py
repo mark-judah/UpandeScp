@@ -81,6 +81,59 @@ def _row_payload(names, coords):
     return row
 
 
+def _coord_from_geojson(raw):
+    """Extract (lng, lat) from GeoJSON raw string, or None if unparseable."""
+    try:
+        feat = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if isinstance(feat, dict) and feat.get("type") == "FeatureCollection":
+        feat = (feat.get("features") or [None])[0]
+    if not isinstance(feat, dict):
+        return None
+    c = (feat.get("geometry") or {}).get("coordinates")
+    if isinstance(c, (list, tuple)) and len(c) >= 2:
+        return (c[0], c[1])
+    return None
+
+
+def _tree_num(t):
+    """Extract integer tree_number from a tree record, default 0 if invalid."""
+    try:
+        return int(t.tree_number)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _rows_from_trees(tree_rows):
+    """Group tree records by (block, row), order each by integer tree_number,
+    extract name+coord, call _row_payload, return {"rows": [...]}.
+
+    Skips trees with unparseable geojson.
+    """
+    from collections import defaultdict
+
+    groups = defaultdict(list)
+    for t in tree_rows:
+        groups[(t.block, t.row)].append(t)
+
+    out = []
+    for key in groups:
+        trees = sorted(groups[key], key=_tree_num)
+        names = []
+        coords = []
+        for t in trees:
+            c = _coord_from_geojson(t.raw_geojson)
+            if c is None:
+                continue
+            names.append(t.name)
+            coords.append(c)
+        row = _row_payload(names, coords)
+        if row:
+            out.append(row)
+    return {"rows": out}
+
+
 def _features_from_trees(tree_rows):
     features = []
     for t in tree_rows:

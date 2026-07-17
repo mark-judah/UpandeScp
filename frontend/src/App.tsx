@@ -38,8 +38,20 @@ const RoseScouting = lazy(() =>
 const Spraying = lazy(() =>
   import("@/pages/Spraying").then((m) => ({ default: m.Spraying })),
 );
-const AvocadoMap = lazy(() =>
-  import("@/pages/AvocadoMap").then((m) => ({ default: m.AvocadoMap })),
+const AvocadoScouting = lazy(() =>
+  import("@/pages/avocado/AvocadoScouting").then((m) => ({
+    default: m.AvocadoScouting,
+  })),
+);
+const AvocadoObservations = lazy(() =>
+  import("@/pages/avocado/AvocadoObservations").then((m) => ({
+    default: m.AvocadoObservations,
+  })),
+);
+const AvocadoTraps = lazy(() =>
+  import("@/pages/avocado/AvocadoTraps").then((m) => ({
+    default: m.AvocadoTraps,
+  })),
 );
 const AvocadoJobSheets = lazy(() =>
   import("@/pages/avocado/AvocadoJobSheets").then((m) => ({
@@ -113,7 +125,9 @@ const PREFETCH: Array<() => Promise<unknown>> = [
   () => import("@/pages/TrapsMap"),
   () => import("@/pages/Heatmaps"),
   () => import("@/pages/RoseScouting"),
-  () => import("@/pages/AvocadoMap"),
+  () => import("@/pages/avocado/AvocadoScouting"),
+  () => import("@/pages/avocado/AvocadoObservations"),
+  () => import("@/pages/avocado/AvocadoTraps"),
   () => import("@/pages/Spraying"),
   () => import("@/pages/avocado/AvocadoJobSheets"),
   () => import("@/pages/Varieties"),
@@ -158,13 +172,21 @@ function renderView(crop: string, view: View): ReactNode {
     case "trends":
       return <Trends initialCrop={cropName} />;
     case "observations":
-      return <Observations initialCrop={cropName} />;
+      return crop === "rose" ? (
+        <Observations initialCrop={cropName} />
+      ) : (
+        <AvocadoObservations />
+      );
     case "traps":
-      return <TrapsMap initialCrop={cropName} />;
+      return crop === "rose" ? (
+        <TrapsMap initialCrop={cropName} />
+      ) : (
+        <AvocadoTraps />
+      );
     case "heatmaps":
       return <Heatmaps initialCrop={cropName} />;
     case "scouting-map":
-      return crop === "rose" ? <RoseScouting /> : <AvocadoMap />;
+      return crop === "rose" ? <RoseScouting /> : <AvocadoScouting />;
     case "spraying":
       return <Spraying />;
     case "jobsheets":

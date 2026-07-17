@@ -367,16 +367,11 @@ scheduler_events = {
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-website_route_rules = [
-    {"from_route": "/rose-scouting", "to_route": "/rose_scouting"},
-    {"from_route": "/rose-3d-map", "to_route": "/rose_3d_map"},
-    {"from_route": "/avocado-scouts-map", "to_route": "/avocado_scouts_map"},
-    {"from_route": "/observations-map", "to_route": "/observations_map"},
-    {"from_route": "/scouting-heatmaps", "to_route": "/scouting_heatmaps"},
-    {"from_route": "/variety-map", "to_route": "/variety_map"},
-    {"from_route": "/new-application-floor-plan", "to_route": "/new_application_floor_plan"},
-    {"from_route": "/traps-map", "to_route": "/traps_map"}
-]
+# Clean-URL rewrites for the legacy desk www pages (rose_scouting,
+# avocado_scouts_map, observations_map, new_application_floor_plan, etc.)
+# were removed once the React app (/scp_app) became the sole UI. Kept as an
+# empty list so the hook stays declared.
+website_route_rules = []
 
 fixtures = [
     # Stage catalog — ships the per-stage icon_key mapping to every site.

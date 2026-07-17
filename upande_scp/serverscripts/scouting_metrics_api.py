@@ -614,14 +614,11 @@ def get_application_plan_bootstrap():
     )
 
     def _build_warehouses():
-        # Use the exact same filter as new_application_floor_plan/index.py:
         # Spray Plan Settings allowed_farms + the GH-name regex + exclude
-        # keywords. Keeps the React greenhouse list aligned with the JS one.
-        from upande_scp.www.new_application_floor_plan.index import (
-            _build_warehouses as _build_afp_warehouses,
-        )
+        # keywords, so the React greenhouse list stays in AFP scope.
+        from upande_scp.serverscripts.geo_builders import build_afp_warehouses
 
-        return _build_afp_warehouses()
+        return build_afp_warehouses()
 
     def _build_kits():
         return frappe.get_all(
@@ -668,9 +665,9 @@ def get_blocks_geojson():
         K_BLOCKS_GEOJSON,
         TTL_LONG,
     )
-    from upande_scp.www.avocado_scouts_map.index import _build_blocks_geojson
+    from upande_scp.serverscripts.geo_builders import build_blocks_geojson
 
-    return get_or_set(K_BLOCKS_GEOJSON, _build_blocks_geojson, ttl=TTL_LONG)
+    return get_or_set(K_BLOCKS_GEOJSON, build_blocks_geojson, ttl=TTL_LONG)
 
 
 @frappe.whitelist()

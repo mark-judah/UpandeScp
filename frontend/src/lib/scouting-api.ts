@@ -10,6 +10,7 @@ import type {
   ChunkResponse,
   ScoutingMeta,
 } from "./scouting-types";
+import { expandTreeRows, type OrchardTreeRow } from "./orchard-rows";
 
 export const DEFAULT_CROP = "Rose";
 
@@ -740,6 +741,29 @@ export async function fetchOrchardTreePoints(
         args,
       );
       return r && Array.isArray(r.coords) ? r : { names: [], coords: [] };
+    } catch {
+      return { names: [], coords: [] };
+    }
+  });
+}
+
+/** Row-interpolated orchard-tree payload for the 3D map: per-row endpoints
+ *  (or explicit coords for obstacle rows), expanded client-side into the same
+ *  ``{names, coords}`` shape as ``fetchOrchardTreePoints`` but a fraction of the
+ *  bytes. See ``get_orchard_tree_rows`` + ``expandTreeRows``. */
+export async function fetchOrchardTreeRows(
+  args: { block?: string; farm?: string } = {},
+): Promise<OrchardTreePoints> {
+  const key = `orchard_rows:${args.block || ""}:${args.farm || ""}`;
+  return cached(key, async () => {
+    try {
+      const r = await call<{ rows: OrchardTreeRow[] }>(
+        "upande_scp.serverscripts.get_orchard_trees.get_orchard_tree_rows",
+        args,
+      );
+      return r && Array.isArray(r.rows)
+        ? expandTreeRows(r.rows)
+        : { names: [], coords: [] };
     } catch {
       return { names: [], coords: [] };
     }

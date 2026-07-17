@@ -16,7 +16,7 @@ import { ALL, MapHeader, type MapFilterValue } from "./maps/MapHeader";
 import { TreesLayer } from "./maps/TreesLayer";
 import {
   fetchBlocksGeojson,
-  fetchOrchardTreePoints,
+  fetchOrchardTreeRows,
   fetchTanksValvesGeojson,
   type GeoJsonFC,
   type OrchardTreePoints,
@@ -160,7 +160,7 @@ export function AvocadoMap() {
     const farm = filters.farm === ALL ? undefined : filters.farm;
     let cancelled = false;
     setTreesPlacing(true);
-    fetchOrchardTreePoints({ farm }).then((p) => {
+    fetchOrchardTreeRows({ farm }).then((p) => {
       if (cancelled) return;
       // Nothing to place (e.g. "All farms" returns no trees) → clear the
       // loader immediately; otherwise the chunked build clears it on ready.

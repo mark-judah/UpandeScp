@@ -6,19 +6,39 @@
  *
  *   • Culling — only trees inside the (padded) visible bounds are packed into
  *     the instance buffers each frame; everything off-screen costs nothing.
- *   • Per-tree level of detail — within the view, trees far from the centre
- *     draw as a single cheap cube and trees near the centre draw with full
- *     trunk + canopy detail. As you zoom in, the detailed ring covers more.
+ *   • Zoom-responsive level of detail — each tree is sized in screen pixels at
+ *     the current zoom (meters-per-pixel). Zoomed out (a tree is only a couple
+ *     of pixels) every tree draws as one cheap cube, and the cube field is
+ *     thinned by a stride so the draw count stays bounded; zoomed in, trees
+ *     draw with full trunk + canopy detail. This is what makes a far-away
+ *     orchard render as low-poly blocks and sharpen as you approach.
  *
  * The visible set is repacked on every camera move (coalesced to one pass per
  * frame), so culling/LOD tracks the camera smoothly instead of snapping when
- * movement settles. Mercator positions are precomputed once so each repack is
- * just comparisons + matrix writes.
+ * movement settles. Mercator positions are precomputed once, and the repack
+ * loop is O(n / stride) ≤ O(n) with buffers sized once — no worse in time or
+ * space than a plain per-tree scan.
  */
 import maplibregl from "maplibre-gl";
 import * as THREE from "three";
 
 const UNSCOUTED_COLOR = "#7c8b6a";
+
+// LOD tuning. A tree's canopy apparent size (screen px) must reach DETAIL_PX
+// before it draws with full trunk+canopy detail; below that it's a single cube.
+// When trees shrink past ~1px, draw every ``stride``-th one (row-ordered, 5 m
+// apart → merges adjacent same-row trees) targeting FAR_TARGET_PX spacing,
+// capped at MAX_STRIDE so the cube field never inflates the draw count.
+const DETAIL_PX = 8;
+const FAR_TARGET_PX = 4;
+const MAX_STRIDE = 8;
+// Past the zoom gate, only trees within this ground radius (metres) of the view
+// centre draw in full detail; everything else stays a cube even if on screen, so
+// the high-res count is bounded no matter how much orchard is visible.
+const DETAIL_RADIUS_M = 120;
+// Web-Mercator earth circumference (m); MapLibre uses 512px tiles.
+const EARTH_CIRCUMFERENCE_M = 40075016.686;
+const TILE_SIZE = 512;
 
 export interface TreePoints {
   names: string[];
@@ -192,13 +212,30 @@ export class TreesLayer implements maplibregl.CustomLayerInterface {
     const south = b.getSouth() - padY;
     const north = b.getNorth() + padY;
 
+    // Zoom-responsive LOD in two stages. (1) Zoom gate: size a tree's canopy in
+    // screen pixels at the current zoom — when it's only a few px, detail is
+    // invisible, so every tree draws as a cheap cube (the field thinned by
+    // ``stride``). (2) Once trees are big enough, only those within a FIXED
+    // ground radius of the view centre draw with full trunk+canopy; trees past
+    // it — even if on screen — stay cubes, so the high-res count is bounded no
+    // matter how much orchard is visible.
     const c = map.getCenter();
     const centre = maplibregl.MercatorCoordinate.fromLngLat(c, 0);
-    const westM = maplibregl.MercatorCoordinate.fromLngLat([b.getWest(), c.lat], 0);
-    const eastM = maplibregl.MercatorCoordinate.fromLngLat([b.getEast(), c.lat], 0);
-    // Full detail within ~25% of the visible width from the centre; cubes past.
-    const lodR = Math.abs(eastM.x - westM.x) * 0.25;
-    const lodRSq = lodR * lodR;
+    const mpp =
+      (EARTH_CIRCUMFERENCE_M * Math.cos((c.lat * Math.PI) / 180)) /
+      (TILE_SIZE * Math.pow(2, map.getZoom()));
+    const treePx = (this.canopyR * 2) / mpp;
+    const detailEligible = treePx >= DETAIL_PX;
+    const radiusMerc = DETAIL_RADIUS_M * this.meter;
+    const radiusMercSq = radiusMerc * radiusMerc;
+    // Zoomed in, walk every tree (culling keeps the visible set small); zoomed
+    // out, step by ``stride`` so the cube field never inflates the draw count.
+    const stride = detailEligible
+      ? 1
+      : Math.min(
+          MAX_STRIDE,
+          Math.max(1, Math.round(FAR_TARGET_PX / Math.max(treePx, 1e-4))),
+        );
 
     const tmp = new THREE.Matrix4();
     const col = new THREE.Color();
@@ -207,27 +244,31 @@ export class TreesLayer implements maplibregl.CustomLayerInterface {
     let ni = 0;
     let fi = 0;
 
-    for (let i = 0; i < this.n; i++) {
+    for (let i = 0; i < this.n; i += stride) {
       const lng = this.coords[i * 2];
       const lat = this.coords[i * 2 + 1];
       if (lng < west || lng > east || lat < south || lat > north) continue; // cull
+      let near = false;
+      if (detailEligible) {
+        const ddx = this.mx[i] - centre.x;
+        const ddy = this.my[i] - centre.y;
+        near = ddx * ddx + ddy * ddy <= radiusMercSq;
+      }
       const dx = (this.mx[i] - this.anchor.x) * invMeter;
       const dz = (this.my[i] - this.anchor.y) * invMeter;
       tmp.makeTranslation(dx, 0, dz);
       const hex = this.treeColors.get(this.names[i]) || null;
       col.set(hex || (fallback as unknown as THREE.ColorRepresentation));
 
-      const ddx = this.mx[i] - centre.x;
-      const ddy = this.my[i] - centre.y;
-      if (ddx * ddx + ddy * ddy > lodRSq) {
-        this.cubeMesh.setMatrixAt(fi, tmp);
-        this.cubeMesh.setColorAt(fi, col);
-        fi++;
-      } else {
+      if (near) {
         this.trunkMesh.setMatrixAt(ni, tmp);
         this.canopyMesh.setMatrixAt(ni, tmp);
         this.canopyMesh.setColorAt(ni, col);
         ni++;
+      } else {
+        this.cubeMesh.setMatrixAt(fi, tmp);
+        this.cubeMesh.setColorAt(fi, col);
+        fi++;
       }
     }
 

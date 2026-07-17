@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import {
   Select,
@@ -84,6 +84,20 @@ export function MapHeader({
     const allowSet = new Set(cropAllow);
     return all.filter((f) => allowSet.has(f));
   })();
+
+  // Single-farm crop (e.g. avocado → Lokitela): auto-select that farm on load
+  // instead of leaving it on "All Farms" — several map layers (orchard trees,
+  // per-farm geometry) only load once a specific farm is chosen. Done once, and
+  // only while the picker is still untouched (ALL), so it never fights the user.
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (autoSelectedRef.current) return;
+    if (value.farm === ALL && farmList.length === 1) {
+      autoSelectedRef.current = true;
+      onChange({ ...value, farm: farmList[0], greenhouse: ALL });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [farmList.length]);
 
   const greenhouseList =
     value.farm === ALL

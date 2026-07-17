@@ -369,8 +369,10 @@ def build_html(target_date=None):
 # ---------------------------------------------------------------------------
 
 def _recipients():
-    """Daily scouting report recipients (Trap Report Settings retired)."""
-    return ["stephene@upande.com"]
+    """Daily scouting report recipients — resolved by role (no hardcoding)."""
+    from upande_scp.serverscripts.report_recipients import report_recipients
+
+    return report_recipients()
 
 
 # ---------------------------------------------------------------------------

@@ -750,13 +750,10 @@ def _build_workbook_bytes(farm, week=None, year=None):
 # ---------------------------------------------------------------------------
 
 def _recipients():
-    """FCM weekly Excel report recipients (Trap Report Settings retired)."""
-    return [
-        "stephenechikoi@gmail.com",
-        "echikoistephene@gmail.com",
-        "vlabat@karenroses.com",
-        "rbundotich@karenroses.com",
-    ]
+    """FCM weekly Excel report recipients — resolved by role (no hardcoding)."""
+    from upande_scp.serverscripts.report_recipients import report_recipients
+
+    return report_recipients()
 
 
 def _build_email_html(week_range_str, current_year, farm_display, kephis_id):

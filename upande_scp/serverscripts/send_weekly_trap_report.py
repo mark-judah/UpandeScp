@@ -596,13 +596,10 @@ def build_html():
 
 
 def _recipients():
-    """Weekly trap report recipients (Trap Report Settings retired)."""
-    return [
-        "stephenechikoi@gmail.com",
-        "echikoistephene@gmail.com",
-        "vlabat@karenroses.com",
-        "rbundotich@karenroses.com",
-    ]
+    """Weekly trap report recipients — resolved by role (no hardcoding)."""
+    from upande_scp.serverscripts.report_recipients import report_recipients
+
+    return report_recipients()
 
 
 def _subject():

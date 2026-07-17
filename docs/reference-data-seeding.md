@@ -87,3 +87,46 @@ Open each **Crop Scouted** record and set, per your site's data:
 
 These are intentionally left for per-site configuration because they reference
 records that only exist on the target site.
+
+---
+
+## Scheduled report recipients
+
+The daily-scouting / weekly-trap / FCM-weekly report scripts no longer carry
+hardcoded email addresses. Recipients resolve at send time via
+`upande_scp/serverscripts/report_recipients.py`:
+
+1. **Primary** — subscribed members of the **`SCP Reports`** Email Group.
+2. **Fallback** — if that group is empty or the lookup errors, an error is
+   logged and it falls back to users holding the **`SCP IT`** role, so a
+   misconfigured group surfaces to IT instead of the report going nowhere.
+
+### Set up per site
+
+```bash
+bench --site <site> console
+```
+
+```python
+import frappe
+
+# 1. Email Group for report recipients (created empty; add the real addresses)
+if not frappe.db.exists("Email Group", "SCP Reports"):
+    frappe.get_doc({"doctype": "Email Group", "title": "SCP Reports"}).insert(ignore_permissions=True)
+
+# 2. Add recipients (repeat per address)
+for addr in ["agronomist@example.com", "manager@example.com"]:
+    if not frappe.db.exists("Email Group Member", {"email_group": "SCP Reports", "email": addr}):
+        frappe.get_doc({"doctype": "Email Group Member",
+                        "email_group": "SCP Reports", "email": addr}).insert(ignore_permissions=True)
+
+# 3. (Fallback) ensure an SCP IT role exists and assign it to IT staff
+if not frappe.db.exists("Role", "SCP IT"):
+    frappe.get_doc({"doctype": "Role", "role_name": "SCP IT", "desk_access": 1}).insert(ignore_permissions=True)
+
+frappe.db.commit()
+```
+
+Members of `SCP Reports` are editable in the desk UI (Email Group → SCP Reports)
+without any code change.
+

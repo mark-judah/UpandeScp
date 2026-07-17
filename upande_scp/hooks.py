@@ -475,22 +475,18 @@ fixtures = [
         ]
     },
     {
+        # Only the Bed/Zone automation tool remains a Server Script — it is
+        # driven by the "Bed And Zone Automation Tool" desk Client Script.
+        # The other API server scripts were only ever called by the legacy
+        # desk www pages (now removed; React uses code endpoints), so they
+        # were dropped as dead code.
         "dt": "Server Script",
         "filters": [
             [
                 "name",
                 "in",
                 [
-                    "Get Pests Data",
-                    "Get Plant Diseases Data",
-                    "Zone Atomation Tool",
-                    "Get BOM Stock Balances",
-                    "Get Greenhouse Reentry Status",
-                    "Fetch Greenhouse Beds",
-                    "Fetch Scheduled Applications",
-                    "Check GM Role",
-                    "Check Store Keeper Role",
-                    "Delete Duplicate Scouting Entries"
+                    "Zone Atomation Tool"
                 ]
             ]
         ]

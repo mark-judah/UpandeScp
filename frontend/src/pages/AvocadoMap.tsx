@@ -17,6 +17,7 @@ import { TreesLayer } from "./maps/TreesLayer";
 import {
   fetchBlocksGeojson,
   fetchOrchardTreeRows,
+  fetchScoutLookup,
   fetchTanksValvesGeojson,
   type GeoJsonFC,
   type OrchardTreePoints,
@@ -121,9 +122,10 @@ export function AvocadoMap() {
   // loader stays up until every tree is in place.
   const [treesPlacing, setTreesPlacing] = useState(false);
   // Layer visibility toggles (Boundary/blocks + Tanks), like the greenhouse
-  // picker but as show/hide checkboxes.
-  const [showBlocks, setShowBlocks] = useState(true);
-  const [showTanks, setShowTanks] = useState(true);
+  // picker but as show/hide checkboxes. Both start hidden — the first view of
+  // the map is just the trees; boundaries/tanks are opt-in via the Layers menu.
+  const [showBlocks, setShowBlocks] = useState(false);
+  const [showTanks, setShowTanks] = useState(false);
 
   // Keep map + layer refs across renders so updateColors is cheap.
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -201,6 +203,42 @@ export function AvocadoMap() {
     }
     return m;
   }, [treePoints]);
+
+  // Scout roster for the side panel: each scout who logged a tree this week,
+  // their palette colour (same first-seen assignment as treeColors, so the
+  // swatches match the map) and how many distinct trees they visited — most
+  // active first.
+  const scoutRoster = useMemo(() => {
+    const out: Array<{ key: string; color: string; trees: number }> = [];
+    if (!data) return out;
+    const color = new Map<string, string>();
+    const trees = new Map<string, Set<string>>();
+    for (const e of data.entries) {
+      if (!e.tree || !e.scouts_name) continue;
+      if (!color.has(e.scouts_name))
+        color.set(
+          e.scouts_name,
+          SCOUT_PALETTE[color.size % SCOUT_PALETTE.length],
+        );
+      let s = trees.get(e.scouts_name);
+      if (!s) {
+        s = new Set();
+        trees.set(e.scouts_name, s);
+      }
+      s.add(e.tree);
+    }
+    for (const [key, col] of color)
+      out.push({ key, color: col, trees: trees.get(key)?.size || 0 });
+    out.sort((a, b) => b.trees - a.trees || a.key.localeCompare(b.key));
+    return out;
+  }, [data]);
+
+  // Readable scout names (employee-id → name), mirroring the rose map.
+  const [scoutNames, setScoutNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    fetchScoutLookup().then(setScoutNames);
+  }, []);
+  const nameOf = (k: string) => scoutNames[k] || k;
 
   // Scout movement tracks — per scout, tree-to-tree in time order, cut when
   // the day or block changes (so a line never jumps across the orchard). Each
@@ -497,24 +535,63 @@ export function AvocadoMap() {
         <span className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-[#7c8b6a]" /> Unscouted
         </span>
-        {Array.from(new Set(treeColors.values())).slice(0, 5).map((col) => (
-          <span key={col} className="flex items-center gap-1.5">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ background: col }}
-            />
-            Scout
-          </span>
-        ))}
         <span className="ml-auto tabular-nums">
           {blockCount} blocks · {treeCount} trees · {scoutedTreeCount} visited
         </span>
       </div>
 
-      <div className="flex-1 min-h-0 px-4 pb-4 md:px-6 md:pb-6">
-        <div className="h-full w-full overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4 px-4 pb-4 md:px-6 md:pb-6">
+        <div className="h-full w-full min-h-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
           <Map3D onReady={onMapReady} />
         </div>
+
+        {/* Scout detail — narrow docked panel mirroring the rose scouting map. */}
+        <aside className="hidden lg:flex flex-col min-h-0 overflow-hidden rounded-[20px] border border-border bg-card shadow-[var(--sd-shadow-1)]">
+          <div className="border-b px-3 py-2.5">
+            <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
+              Scouts
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 space-y-0.5 overflow-y-auto p-2">
+            <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs">
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full border"
+                style={{ background: "#7c8b6a" }}
+                aria-hidden
+              />
+              <span className="flex-1 truncate text-muted-foreground">
+                Unscouted
+              </span>
+            </div>
+            {scoutRoster.length ? (
+              scoutRoster.map((s) => (
+                <div
+                  key={s.key}
+                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-muted"
+                >
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full border"
+                    style={{ background: s.color }}
+                    aria-hidden
+                  />
+                  <span className="flex-1 truncate" title={nameOf(s.key)}>
+                    {nameOf(s.key)}
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {s.trees}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                No scouting this week
+              </div>
+            )}
+          </div>
+          <div className="border-t px-3 py-2 text-[0.7rem] tabular-nums text-muted-foreground">
+            {scoutedTreeCount} of {treeCount} trees visited
+          </div>
+        </aside>
       </div>
 
       <LoadingOverlay

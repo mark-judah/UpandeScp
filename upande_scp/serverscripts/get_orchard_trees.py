@@ -134,6 +134,56 @@ def _rows_from_trees(tree_rows):
     return {"rows": out}
 
 
+def _rows_for_block(block):
+    trees = frappe.get_all(
+        "Orchard Tree",
+        filters={"block": block, "geojson": ["is", "set"]},
+        fields=["name", "block", "row", "tree_number", "geojson as raw_geojson"],
+        limit_page_length=0,
+    )
+    return _rows_from_trees(trees)
+
+
+def _rows_for_farm(farm):
+    blocks = frappe.get_all(
+        "Warehouse",
+        filters={
+            "custom_farm": farm,
+            "warehouse_type": ["in", ["Block", "Greenhouse"]],
+            "disabled": 0,
+        },
+        pluck="name",
+    )
+    if not blocks:
+        return {"rows": []}
+    trees = frappe.get_all(
+        "Orchard Tree",
+        filters={"block": ["in", blocks], "geojson": ["is", "set"]},
+        fields=["name", "block", "row", "tree_number", "geojson as raw_geojson"],
+        limit_page_length=0,
+    )
+    return _rows_from_trees(trees)
+
+
+@frappe.whitelist()
+def get_orchard_tree_rows(block=None, farm=None):
+    block = block or frappe.form_dict.get("block")
+    farm = farm or frappe.form_dict.get("farm")
+    if block:
+        return get_or_set(
+            f"{K_ORCHARD_TREES_PREFIX}:rows:{block}",
+            lambda: _rows_for_block(block),
+            ttl=TTL_LONG,
+        )
+    if farm:
+        return get_or_set(
+            f"{K_ORCHARD_TREES_PREFIX}:rows:farm:{farm}",
+            lambda: _rows_for_farm(farm),
+            ttl=TTL_LONG,
+        )
+    return {"rows": []}
+
+
 def _features_from_trees(tree_rows):
     features = []
     for t in tree_rows:

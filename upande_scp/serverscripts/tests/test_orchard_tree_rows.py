@@ -134,5 +134,17 @@ class TestRowsFromTrees(unittest.TestCase):
         self.assertEqual(row["c"], [0.0, 0.0, 0.002, 0.0])
 
 
+from unittest.mock import patch
+
+
+class TestRowsInvalidation(unittest.TestCase):
+    def test_block_invalidation_includes_rows_key(self):
+        from upande_scp.serverscripts import cache_utils as cu
+        with patch.object(cu, "invalidate") as inv:
+            cu.invalidate_orchard_trees_for_block("BLK1")
+        called = [c.args[0] for c in inv.call_args_list]
+        self.assertIn(f"{cu.K_ORCHARD_TREES_PREFIX}:rows:BLK1", called)
+
+
 if __name__ == "__main__":
     unittest.main()

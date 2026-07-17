@@ -1,5 +1,5 @@
 import type { ProcessedData } from "@/lib/scouting-types";
-import { OBS_DEFAULT_COLOR, type ObsKind } from "@/lib/observation-colors";
+import { type ObsKind } from "@/lib/observation-colors";
 
 /** Observation names of the given kind on one entry, with a count (diseases
  *  carry no count, so each counts once). */
@@ -35,7 +35,7 @@ export function deriveObservationColors(
     let best = "";
     let bestN = -1;
     for (const [name, n] of names) if (n > bestN) { bestN = n; best = name; }
-    m.set(tree, best ? colorOf(best) : OBS_DEFAULT_COLOR);
+    m.set(tree, colorOf(best));
   }
   return m;
 }

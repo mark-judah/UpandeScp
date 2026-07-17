@@ -36,8 +36,8 @@ export function deriveTrapMarkers(data: ProcessedData | null): MarkerPoint[] {
         a = { latSum: 0, lngSum: 0, n: 0, count: 0 };
         agg.set(t.trap, a);
       }
-      a.count += t.count || 0;
       if (hasCoord) {
+        a.count += t.count || 0;
         a.latSum += lat as number;
         a.lngSum += lng as number;
         a.n++;

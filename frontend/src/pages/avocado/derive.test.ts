@@ -45,6 +45,15 @@ describe("deriveObservationColors", () => {
     expect(deriveObservationColors(d, "pest", colorOf).size).toBe(0);
     expect(deriveObservationColors(d, "disease", colorOf).get("T1")).toBe("#222222");
   });
+  it("rosters observations by total count, most frequent first", () => {
+    const d = data([
+      { tree: "T1", pests_scouting_entry: [{ pest: "Thrips", count: 2 }], diseases_scouting_entry: [] },
+      { tree: "T2", pests_scouting_entry: [{ pest: "Thrips", count: 3 }, { pest: "Mites", count: 1 }], diseases_scouting_entry: [] },
+    ]);
+    const r = deriveObservationRoster(d, "pest");
+    expect(r.map((x) => x.name)).toEqual(["Thrips", "Mites"]);
+    expect(r[0].count).toBe(5);
+  });
 });
 
 describe("deriveTrapMarkers", () => {
@@ -62,5 +71,21 @@ describe("deriveTrapMarkers", () => {
   it("drops trap catches with no usable coordinate", () => {
     const d = data([{ latitude: 0, longitude: 0, trap_scouting_entry: [{ trap: "TR1", count: 3 }] }]);
     expect(deriveTrapMarkers(d)).toEqual([]);
+  });
+  it("severityColor ramps by catch count", () => {
+    expect(severityColor(0)).toBe("#e5e7eb");
+    expect(severityColor(3)).toBe("#fde68a");
+    expect(severityColor(60)).toBe("#f97316");
+    expect(severityColor(1000)).toBe("#7c2d12");
+  });
+
+  it("counts only located catches for a trap (coord-less catch dropped)", () => {
+    const d = data([
+      { latitude: 1, longitude: 2, trap_scouting_entry: [{ trap: "TR1", count: 3 }] },
+      { latitude: 0, longitude: 0, trap_scouting_entry: [{ trap: "TR1", count: 7 }] },
+    ]);
+    const m = deriveTrapMarkers(d);
+    expect(m).toHaveLength(1);
+    expect(m[0]).toMatchObject({ label: "TR1", count: 3, lng: 2, lat: 1 });
   });
 });

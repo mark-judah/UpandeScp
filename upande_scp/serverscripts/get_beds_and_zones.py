@@ -11,8 +11,8 @@ def _build_beds_and_zones():
     beds = frappe.get_all("Bed", fields=["name", "variety"], limit_page_length=0)
     zones = frappe.get_all(
         "Zone",
-        filters={"raw_geojson": ["is", "set"]},
-        fields=["name", "raw_geojson", "bed"],
+        filters={"geojson": ["is", "set"]},
+        fields=["name", "geojson as raw_geojson", "bed"],
         limit_page_length=0,
     )
 

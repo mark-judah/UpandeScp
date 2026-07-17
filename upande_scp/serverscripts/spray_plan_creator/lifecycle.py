@@ -160,7 +160,7 @@ def _transfer_se(wo_name: str) -> dict | None:
             "owner",
             "creation",
             "docstatus",
-            "custom_biometric_verified",
+            "biometric_status",
             "custom_labels_printed",
             "custom_labels_printed_on",
             "custom_labels_printed_by",
@@ -175,15 +175,11 @@ def _transfer_se(wo_name: str) -> dict | None:
 def _biometric_issuer(se_name: str) -> str | None:
     """Full name of the employee whose biometric authorised the issue.
 
-    The biometric child table's doctype name varies by site, so read it off the
-    parent doc's ``custom_biometric_data`` field rather than hard-coding a
-    child doctype that may not exist."""
+    The employee who authorised the issue is stored directly on the Stock
+    Entry as ``bio_employee`` (new upande_ta model — no child table)."""
     try:
         se = frappe.get_doc("Stock Entry", se_name)
-        for row in (getattr(se, "custom_biometric_data", None) or []):
-            name = getattr(row, "employee_name", None) or getattr(row, "employee", None)
-            if name:
-                return name
+        return se.get("bio_employee_name") or se.get("bio_employee")
     except Exception:
         pass
     return None
@@ -283,7 +279,7 @@ def get_lifecycle(work_order: str) -> dict:
 
     # 3 — Chemical Issued (biometric)
     issuer = _biometric_issuer(se["name"]) if se else None
-    bio_ok = bool(se and se.get("custom_biometric_verified"))
+    bio_ok = bool(se and se.get("biometric_status") == "Verified")
     issued_detail = None
     if se:
         bits = []

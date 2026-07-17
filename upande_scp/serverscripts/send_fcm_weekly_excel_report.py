@@ -65,11 +65,11 @@ def _resolve_farm(farm_name):
         if farm_name and frappe.db.exists("Farm", farm_name):
             row = frappe.db.get_value(
                 "Farm", farm_name,
-                ["farm", "kephis_farm_id", "abbreviation"],
+                ["farm_name", "farm_code", "abbreviation"],
                 as_dict=True,
             ) or {}
-            display = row.get("farm") or farm_name
-            kephis  = row.get("kephis_farm_id") or ""
+            display = row.get("farm_name") or farm_name
+            kephis  = row.get("farm_code") or ""
             abbrev  = row.get("abbreviation") or ""
     except Exception:
         # Farm doctype not installed or query failed — keep defaults.

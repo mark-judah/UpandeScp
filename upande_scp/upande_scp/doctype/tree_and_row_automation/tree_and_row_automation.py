@@ -75,7 +75,7 @@ class TreeAndRowAutomation(Document):
 						"row": row_doc.name,
 						"block": block,
 						"tree_number": tree_number,
-						"raw_geojson": json.dumps(feature),
+						"geojson": json.dumps(feature),
 					}
 				).insert(ignore_permissions=True)
 				trees_created += 1

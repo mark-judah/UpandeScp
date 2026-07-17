@@ -17,7 +17,7 @@ returns ``{employee, employee_name, biometric_id}``. The frontend
 calls that once (UX prompt), then calls ``submit_with_biometric`` with
 the list of Stock Entry names to authorise. We re-validate the scan
 freshness server-side and write the result into each SE's
-``custom_biometric_data`` child table before submitting.
+``biometric_data`` child table before submitting.
 """
 
 import json
@@ -433,9 +433,9 @@ def search_employees(query: str = "", limit: int = 12) -> list:
 
 @frappe.whitelist()
 def bulk_assign_employee(names: str | list, employee: str) -> dict:
-    """Set ``custom_employee_data`` on every Stock Entry in ``names`` to
-    a single row pointing at ``employee``. Replaces whatever was there
-    so multiple bulk-assigns don't pile up duplicates.
+    """Set ``bio_employee`` on every Stock Entry in ``names`` to the given
+    ``employee`` (a single receiving employee per entry; the new upande_ta
+    model uses a direct field, not a child table).
 
     The submit step expects exactly one employee row per SE, so this
     is the deliberate side door the operator uses to prepare a batch
@@ -468,14 +468,14 @@ def bulk_assign_employee(names: str | list, employee: str) -> dict:
                 raise frappe.ValidationError(
                     f"{name}: already submitted or cancelled.",
                 )
-            doc.set("custom_employee_data", [])
-            doc.append(
-                "custom_employee_data",
-                {
-                    "employee":      emp_doc["name"],
-                    "employee_name": emp_doc["employee_name"],
-                },
-            )
+            # Assign the receiving employee directly (new upande_ta model:
+            # a single bio_employee field, not a child table). Reset any prior
+            # verification so a re-assign forces a fresh scan.
+            doc.bio_employee = emp_doc["name"]
+            doc.bio_employee_name = emp_doc["employee_name"]
+            doc.biometric_status = "Pending"
+            doc.biometric_verified_at = None
+            doc.matched_biometric_log = None
             doc.save(ignore_permissions=False)
             ok_count += 1
             results.append({"name": name, "ok": True, "error": None})
@@ -549,28 +549,27 @@ def list_draft_transfers(
     if farm:
         rows = [r for r in rows if (r.get("farm") or "") == farm]
 
-    # Employee assignment (custom_employee_data) is the only thing the
-    # bulk submit needs server-side to validate the biometric. Pull it
-    # in one query so a 50-draft list doesn't fire 50 sub-queries.
+    # Employee assignment (bio_employee) is the only thing the bulk submit
+    # needs server-side to validate the biometric. Pull it in one query so a
+    # 50-draft list doesn't fire 50 sub-queries.
     names = [r["name"] for r in rows]
     emp_by_se: dict = {}
     if names:
         emp_rows = frappe.db.sql(
             """
-            SELECT parent, employee, employee_name
-            FROM   `tabEmployee Request`
-            WHERE  parenttype = 'Stock Entry'
-              AND  parentfield = 'custom_employee_data'
-              AND  parent IN %(names)s
-            ORDER  BY parent, idx
+            SELECT name AS parent, bio_employee AS employee,
+                   bio_employee_name AS employee_name
+            FROM   `tabStock Entry`
+            WHERE  name IN %(names)s
+              AND  bio_employee IS NOT NULL AND bio_employee != ''
             """,
             {"names": names},
             as_dict=True,
         )
         for er in emp_rows:
-            emp_by_se.setdefault(er["parent"], []).append(
+            emp_by_se[er["parent"]] = [
                 {"employee": er["employee"], "employee_name": er["employee_name"]},
-            )
+            ]
 
     for r in rows:
         r["employees"] = emp_by_se.get(r["name"], [])
@@ -729,7 +728,7 @@ def _latest_biometric_log() -> dict | None:
     threshold = add_to_date(now_datetime(), seconds=-_SCAN_FRESHNESS_SEC)
     rows = frappe.db.sql(
         """
-        SELECT employee, employee_name, biometric_id, `time`
+        SELECT name, employee, employee_name, biometric_id, `time`
         FROM   `tabBiometric Logs`
         WHERE  `time` > %(t)s
         ORDER  BY `time` DESC
@@ -765,9 +764,9 @@ def submit_with_biometric(names: str | list) -> dict:
 
     Per-SE validation:
       * SE must exist and be a draft Material Transfer for Manufacture.
-      * SE's ``custom_employee_data`` must contain exactly one row.
-      * The scanned employee must match that row.
-      * Write the scanned identity to ``custom_biometric_data``.
+      * SE must have a ``bio_employee`` assigned.
+      * The scanned employee must match ``bio_employee``.
+      * Mark ``biometric_status = Verified`` (+ verified_at / matched log).
       * Save, then submit.
 
     Returns ``{ok: int, failed: int, results: [{name, ok, error}]}``.
@@ -809,29 +808,25 @@ def submit_with_biometric(names: str | list) -> dict:
                 raise frappe.ValidationError(
                     f"{name}: purpose is not {_SE_PURPOSE}.",
                 )
-            emp_rows = doc.get("custom_employee_data") or []
-            if len(emp_rows) != 1:
+            expected = doc.bio_employee
+            expected_name = doc.bio_employee_name or expected
+            if not expected:
                 raise frappe.ValidationError(
-                    f"{name}: needs exactly one Employee Data row "
-                    f"(found {len(emp_rows)}).",
+                    f"{name}: no receiving employee assigned — assign one first.",
                 )
-            expected = emp_rows[0].employee
-            expected_name = emp_rows[0].employee_name
             if expected != scanned_emp:
                 raise frappe.ValidationError(
                     f"{name}: biometric belongs to {scanned_name} but "
                     f"the entry is assigned to {expected_name}.",
                 )
 
-            doc.set("custom_biometric_data", [])
-            doc.append(
-                "custom_biometric_data",
-                {
-                    "employee":      scanned_emp,
-                    "employee_name": scanned_name,
-                    "biometric_id":  biometric_id,
-                },
-            )
+            # New upande_ta model: mark verified via direct fields (no
+            # biometric_data child table).
+            doc.bio_employee = scanned_emp
+            doc.biometric_status = "Verified"
+            doc.biometric_verified_at = now_datetime()
+            if scan.get("name"):
+                doc.matched_biometric_log = scan["name"]
             doc.save(ignore_permissions=False)
             doc.submit()
             ok_count += 1

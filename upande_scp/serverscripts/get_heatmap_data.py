@@ -23,8 +23,8 @@ def _build_zones_geojson():
     """All zones with raw_geojson — cached, filtered per-greenhouse downstream."""
     return frappe.get_all(
         "Zone",
-        filters={"raw_geojson": ["is", "set"]},
-        fields=["name", "greenhouse", "raw_geojson"],
+        filters={"geojson": ["is", "set"]},
+        fields=["name", "greenhouse", "geojson as raw_geojson"],
         limit_page_length=0,
     )
 
@@ -168,7 +168,7 @@ def getFarmsAndGreenhouses():
     """Farms grouped by greenhouse — cached, single pass."""
     try:
         def _build():
-            farms = frappe.get_all("Farm", fields=["name", "farm"], order_by="farm asc")
+            farms = frappe.get_all("Farm", fields=["name", "farm_name as farm"], order_by="farm_name asc")
             greenhouses = frappe.get_all(
                 "Warehouse",
                 filters={"warehouse_type": "Greenhouse"},

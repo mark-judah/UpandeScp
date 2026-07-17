@@ -53,7 +53,7 @@ def _build_zone_cache(utm_epsg: str, project_to_utm):
 
     This runs once per UTM zone per CACHE_TTL_SECONDS window.
     """
-    raw_zones = frappe.get_all("Zone", fields=["name", "bed", "raw_geojson"])
+    raw_zones = frappe.get_all("Zone", fields=["name", "bed", "geojson as raw_geojson"])
 
     built = []
     for zone in raw_zones:
@@ -99,7 +99,7 @@ def _build_tree_cache(utm_epsg: str, project_to_utm):
     """
     raw_trees = frappe.get_all(
         "Orchard Tree",
-        fields=["name", "row", "block", "raw_geojson"],
+        fields=["name", "row", "block", "geojson as raw_geojson"],
     )
 
     built = []

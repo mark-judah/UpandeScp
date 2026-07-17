@@ -22,7 +22,7 @@ def list_farms_with_creators() -> list[dict]:
     farms = frappe.get_all(
         "Farm",
         filters={"disabled": 0} if frappe.db.has_column("Farm", "disabled") else {},
-        fields=["name"] + (["farm"] if frappe.db.has_column("Farm", "farm") else [])
+        fields=["name"] + (["farm_name as farm"] if frappe.db.has_column("Farm", "farm_name") else [])
             + (["custom_business_unit"] if frappe.db.has_column("Farm", "custom_business_unit") else []),
         order_by="name",
     )

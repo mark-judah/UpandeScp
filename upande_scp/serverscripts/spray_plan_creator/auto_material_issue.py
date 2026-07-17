@@ -168,16 +168,11 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
         "letter_head": manufacture_se.letter_head or "",
         "custom_farm": farm,
         "custom_location": manufacture_se.custom_location or "",
-        "custom_biometric_verified": 0,
-        "custom_biometric_data": [],
         "items": items,
-        "custom_employee_data": [{
-            "employee": supervisor_employee,
-            "employee_name": emp_meta.get("employee_name") or supervisor_employee,
-            "department": emp_meta.get("department") or "",
-            "location": emp_meta.get("location") or "",
-            "farm": farm,
-        }],
+        # New upande_ta model: assign the receiving employee directly.
+        # System-generated (no live scan) -> biometric_status stays Pending.
+        "bio_employee": supervisor_employee,
+        "bio_employee_name": emp_meta.get("employee_name") or supervisor_employee,
     }
 
 

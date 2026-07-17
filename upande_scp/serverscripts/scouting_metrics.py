@@ -114,7 +114,7 @@ def get_beds_by_greenhouse(active_only=True):
         conditions.append("custom_active = 1")
     rows = frappe.db.sql(
         f"""
-        SELECT name, greenhouse, bed, unit_type, variety, bed__area
+        SELECT name, greenhouse, bed, unit_type, variety, bed_area AS bed__area
         FROM   `tabBed`
         WHERE  {" AND ".join(conditions)}
         ORDER  BY greenhouse, unit_type, bed

@@ -204,8 +204,8 @@ def getScoutingObservations():
         if all_zones_raw is None:
             all_zones_raw = frappe.get_all(
                 "Zone",
-                filters={"raw_geojson": ["is", "set"]},
-                fields=["name", "raw_geojson"]
+                filters={"geojson": ["is", "set"]},
+                fields=["name", "geojson as raw_geojson"]
             )
             frappe.cache().set_value(zone_cache_key, all_zones_raw, expires_in_sec=3600)
 

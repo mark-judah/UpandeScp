@@ -436,7 +436,15 @@ def getScoutingData():
         all_chemicals = bom_item_lookup["chemicals"]
         all_fertilizers = bom_item_lookup["fertilizers"]
         item_type_map = bom_item_lookup["item_type_map"]
-        bed_data     = frappe.get_all("Bed", filters={"greenhouse": greenhouse}, fields=["bed", "bed__area", "total_variety_area", "variety"])
+        bed_data     = frappe.get_all("Bed", filters={"greenhouse": greenhouse}, fields=["bed", "bed_area as bed__area", "variety"])
+        # total_variety_area is no longer a stored field: compute it as the sum
+        # of bed areas across all beds of the same variety in this greenhouse.
+        _variety_area: dict = {}
+        for _b in bed_data:
+            if _b.get("variety"):
+                _variety_area[_b["variety"]] = _variety_area.get(_b["variety"], 0) + (_b.get("bed__area") or 0)
+        for _b in bed_data:
+            _b["total_variety_area"] = _variety_area.get(_b.get("variety"), 0)
         spray_teams  = frappe.get_all("Spray Team", filters={"enabled": 1}, fields=["name"])
 
         # Per-bed zone count for the landscape view: lets the renderer draw

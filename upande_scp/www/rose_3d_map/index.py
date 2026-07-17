@@ -57,8 +57,8 @@ def _build_zone_centroids():
     """
     rows = frappe.get_all(
         "Zone",
-        filters={"raw_geojson": ["is", "set"]},
-        fields=["name", "greenhouse", "bed", "raw_geojson"],
+        filters={"geojson": ["is", "set"]},
+        fields=["name", "greenhouse", "bed", "geojson as raw_geojson"],
         limit_page_length=0,
     )
     out = []

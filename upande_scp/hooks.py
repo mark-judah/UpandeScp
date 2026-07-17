@@ -470,18 +470,9 @@ fixtures = [
     # ("Zone Atomation Tool" / createBedsAndZones) was moved into code at
     # upande_scp.serverscripts.bed_zone_automation.create_beds_and_zones; the
     # rest were dead (their callers were the removed www pages).
-    {
-        "dt": "Print Format",
-        "filters": [
-            [
-                "name",
-                "in",
-                [
-                    "Spray Plan"
-                ]
-            ]
-        ]
-    },
+    # NOTE: the "Spray Plan" Print Format is no longer a fixture — it's a
+    # standard app print format in code at
+    # upande_scp/upande_scp/print_format/spray_plan/spray_plan.json.
     {
         # Workflow State master data — the Frappe Workflow itself was deleted
         # (see delete_application_floor_plan_workflow patch), but the

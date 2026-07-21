@@ -917,10 +917,13 @@ def submit_without_biometric(names: str | list) -> dict:
     Gated behind ``Spray Plan Settings.allow_submit_without_biometric`` —
     throws if a manager has not enabled it. Shares eligibility validation
     with the biometric path via ``_transfer_submit_error`` but performs no
-    scan check: ``biometric_status`` is left at "Pending" and no
-    ``matched_biometric_log`` is set, so a submitted SE without biometric
-    is distinguishable from a verified one. The submitting user is captured
-    by Frappe's built-in ``modified_by``.
+    scan check and sets no verification fields itself. In the intended
+    device-down case no fresh scan exists, so ``biometric_status`` stays
+    "Pending" with no ``matched_biometric_log`` and the SE reads as manual.
+    (``doc.save()`` still runs upande_ta's ``auto_verify_biometric`` validate
+    hook; if a fresh matching scan happens to exist it will legitimately mark
+    the SE Verified — which is correct, that IS a biometric authorisation.)
+    The submitting user is captured by Frappe's built-in ``modified_by``.
 
     Returns ``{ok, failed, results, method}`` — same shape as the biometric
     path minus ``scanned`` (there was no scan), plus ``method="manual"``.
@@ -958,8 +961,8 @@ def submit_without_biometric(names: str | list) -> dict:
             if err:
                 raise frappe.ValidationError(err)
 
-            # No scan — leave biometric_status as-is (Pending); do not set
-            # matched_biometric_log / biometric_verified_at.
+            # No scan — set no verification fields here; the validate hook
+            # leaves biometric_status "Pending" absent a fresh matching scan.
             doc.save(ignore_permissions=False)
             doc.submit()
             ok_count += 1

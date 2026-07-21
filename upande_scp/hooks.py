@@ -162,8 +162,8 @@ after_migrate = ["upande_scp.serverscripts.scouting.observation_colors.after_mig
 # }
 
 # Invalidate cached dashboard/map payloads when underlying master data changes.
-_SCP_CACHE_INVALIDATOR = "upande_scp.serverscripts.cache_utils.invalidate_on_change"
-_SCP_REALTIME_DIRTY = "upande_scp.serverscripts.cache_utils.publish_scouting_dirty"
+_SCP_CACHE_INVALIDATOR = "upande_scp.serverscripts.common.cache_utils.invalidate_on_change"
+_SCP_REALTIME_DIRTY = "upande_scp.serverscripts.common.cache_utils.publish_scouting_dirty"
 _SCP_CACHE_EVENTS = {
     "on_update": _SCP_CACHE_INVALIDATOR,
     "on_trash": _SCP_CACHE_INVALIDATOR,

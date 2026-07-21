@@ -3,7 +3,7 @@ import re
 import frappe
 from frappe import _
 
-from upande_scp.serverscripts.cache_utils import (
+from upande_scp.serverscripts.common.cache_utils import (
     K_BED_COUNT_BY_GH,
     K_FARMS_AND_GREENHOUSES,
     K_OBSERVATION_TYPES,

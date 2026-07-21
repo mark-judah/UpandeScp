@@ -13,7 +13,7 @@ is mostly a safety net — edits flush immediately.
 import frappe
 
 from upande_scp.serverscripts.scouting import scouting_metrics
-from upande_scp.serverscripts.cache_utils import (
+from upande_scp.serverscripts.common.cache_utils import (
     K_CROPS_SCOUTED,
     K_MAP_SETTINGS,
     K_SM_BEDS_BY_GH,
@@ -158,7 +158,7 @@ def get_zones_by_greenhouse():
 @frappe.whitelist()
 def get_zone_counts_by_greenhouse():
     """{greenhouse: zone_count}. Denominator for trends/heatmap percentages."""
-    from upande_scp.serverscripts.cache_utils import K_SM_ZONE_COUNTS_BY_GH
+    from upande_scp.serverscripts.common.cache_utils import K_SM_ZONE_COUNTS_BY_GH
 
     return get_or_set(
         K_SM_ZONE_COUNTS_BY_GH,
@@ -607,7 +607,7 @@ def get_application_plan_bootstrap():
                       ``custom_spray_team`` dropdown in the React plan
                       page (legacy field on the Application Floor Plan).
     """
-    from upande_scp.serverscripts.cache_utils import (
+    from upande_scp.serverscripts.common.cache_utils import (
         K_AFP_WAREHOUSES,
         K_AFP_SPRAY_EQUIPMENT,
         TTL_LONG,
@@ -661,7 +661,7 @@ def get_blocks_geojson():
     """Block-warehouse polygons for the 3D avocado map. Wraps the existing
     K_BLOCKS_GEOJSON cache so the React page can pull it without a server-
     rendered context injection."""
-    from upande_scp.serverscripts.cache_utils import (
+    from upande_scp.serverscripts.common.cache_utils import (
         K_BLOCKS_GEOJSON,
         TTL_LONG,
     )

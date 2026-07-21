@@ -118,7 +118,7 @@ def wipe_all_fast():
     frappe.db.commit()
 
     # Nuke the Redis keys the doc_event hook would have cleared.
-    from upande_scp.serverscripts.cache_utils import K_ORCHARD_TREES_PREFIX, invalidate
+    from upande_scp.serverscripts.common.cache_utils import K_ORCHARD_TREES_PREFIX, invalidate
 
     keys = [f"{K_ORCHARD_TREES_PREFIX}:{b}" for b in blocks]
     keys += [f"{K_ORCHARD_TREES_PREFIX}:farm:{f}" for f in farms]

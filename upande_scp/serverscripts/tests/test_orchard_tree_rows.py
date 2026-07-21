@@ -139,7 +139,7 @@ from unittest.mock import patch
 
 class TestRowsInvalidation(unittest.TestCase):
     def test_block_invalidation_includes_rows_key(self):
-        from upande_scp.serverscripts import cache_utils as cu
+        from upande_scp.serverscripts.common import cache_utils as cu
         with patch.object(cu, "invalidate") as inv:
             cu.invalidate_orchard_trees_for_block("BLK1")
         called = [c.args[0] for c in inv.call_args_list]

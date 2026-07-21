@@ -1,7 +1,7 @@
 import frappe
 
 from upande_scp.serverscripts.scouting import scouting_metrics
-from upande_scp.serverscripts.cache_utils import (
+from upande_scp.serverscripts.common.cache_utils import (
     K_CROPS_SCOUTED,
     K_DISEASE_COLORS,
     K_PEST_COLORS,

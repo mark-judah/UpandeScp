@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import frappe
 
-from upande_scp.serverscripts.cache_utils import K_AFP_WAREHOUSES, invalidate
+from upande_scp.serverscripts.common.cache_utils import K_AFP_WAREHOUSES, invalidate
 
 from .admin import _require_admin
 

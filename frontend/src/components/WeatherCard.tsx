@@ -99,7 +99,7 @@ export function WeatherCard({
     let cancelled = false;
     setLoading(true);
     call<{ message?: WeatherPayload } | WeatherPayload>(
-      "upande_scp.serverscripts.weather.get_farm_weather",
+      "upande_scp.serverscripts.common.weather.get_farm_weather",
       { farm },
     )
       .then((resp) => {

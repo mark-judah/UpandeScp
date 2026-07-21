@@ -4,7 +4,7 @@ import frappe
 import hashlib
 from frappe.utils import flt
 
-from upande_scp.serverscripts.cache_utils import (
+from upande_scp.serverscripts.common.cache_utils import (
     K_CHEMICALS_LIST,
     K_ZONE_COUNT_BY_BED,
     TTL_MEDIUM,

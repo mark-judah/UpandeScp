@@ -648,6 +648,7 @@ def list_submitted_transfers(
                se.custom_labels_print_count AS labels_print_count,
                se.custom_labels_printed_on AS labels_printed_on,
                se.custom_labels_printed_by AS labels_printed_by,
+               se.biometric_status AS biometric_status,
                COALESCE(tw.custom_farm, fw.custom_farm, '') AS farm,
                wo.custom_greenhouse AS greenhouse,
                wo.custom_spray_type AS spray_type,
@@ -731,6 +732,7 @@ def list_submitted_transfers(
         r["labels_print_count"] = int(r.get("labels_print_count") or 0)
         r["labels_printed_on"] = str(r["labels_printed_on"]) if r.get("labels_printed_on") else ""
         r["labels_printed_by"] = r.get("labels_printed_by") or ""
+        r["biometric_status"] = r.get("biometric_status") or "Pending"
 
     farms = sorted({r["farm"] for r in rows if r.get("farm")})
     return {"rows": rows, "farms": farms}

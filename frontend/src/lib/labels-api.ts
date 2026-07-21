@@ -19,6 +19,9 @@ export interface SubmittedTransferRow {
   farm: string;
   greenhouse: string;
   spray_type: string;
+  /** Verification status of the underlying SE — "Verified" means the
+   *  transfer was biometric-authorised; anything else means manual. */
+  biometric_status: string;
   total_qty: number;
   item_count: number;
   qr_count: number;

@@ -185,6 +185,14 @@ def _biometric_issuer(se_name: str) -> str | None:
     return None
 
 
+def _issue_biometric_label(biometric_status: str | None) -> str:
+    """Human label for how a submitted transfer was authorised.
+
+    Canonical rule: "Verified" ⇒ biometric; anything else ⇒ manual.
+    """
+    return "Biometric ✓" if biometric_status == "Verified" else "No biometric"
+
+
 def _scan_progress(wo) -> dict:
     required = {
         r.item_code
@@ -277,14 +285,11 @@ def get_lifecycle(work_order: str) -> dict:
         "detail": f"Transfer {se['name']}" if se else None,
     })
 
-    # 3 — Chemical Issued (biometric)
+    # 3 — Chemical Issued (biometric or manual)
     issuer = _biometric_issuer(se["name"]) if se else None
-    bio_ok = bool(se and se.get("biometric_status") == "Verified")
     issued_detail = None
     if se:
-        bits = []
-        if bio_ok:
-            bits.append("Biometric ✓")
+        bits = [_issue_biometric_label(se.get("biometric_status"))]
         if issuer:
             bits.append(issuer)
         bits.append(se["name"])

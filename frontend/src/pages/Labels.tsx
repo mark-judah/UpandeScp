@@ -759,6 +759,21 @@ export function Labels() {
                                   {r.spray_type}
                                 </Badge>
                               )}
+                              {r.biometric_status === "Verified" ? (
+                                <Badge
+                                  className="bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/15 text-[10px]"
+                                  title="Submitted with biometric verification"
+                                >
+                                  Biometric ✓
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  className="bg-amber-500/15 text-amber-600 hover:bg-amber-500/15 text-[10px]"
+                                  title="Submitted without biometric"
+                                >
+                                  No biometric
+                                </Badge>
+                              )}
                               <Badge variant="secondary" className="text-[10px]">
                                 {r.qr_count} QR
                               </Badge>

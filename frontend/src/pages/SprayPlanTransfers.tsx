@@ -39,11 +39,19 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   bulkAssignEmployee,
   fetchDraftTransfers,
   fetchTransferItems,
   searchEmployees,
   submitWithBiometric,
+  submitWithoutBiometric,
   type BiometricSubmitResp,
   type BulkAssignResp,
   type EmployeeHit,
@@ -69,6 +77,8 @@ export function SprayPlanTransfers() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<BiometricSubmitResp | null>(null);
+  const [allowManual, setAllowManual] = useState(false);
+  const [confirmManual, setConfirmManual] = useState(false);
 
   // Per-row chemical expansion — fetched on demand the first time a row
   // is opened, cached in this map so subsequent opens are instant.
@@ -96,6 +106,7 @@ export function SprayPlanTransfers() {
       .then((r) => {
         setRows(r.rows);
         setFarms(r.farms);
+        setAllowManual(!!r.allow_submit_without_biometric);
         // Drop any selections that no longer exist after a reload.
         setSelected((prev) => {
           const live = new Set(r.rows.map((x) => x.name));
@@ -257,6 +268,30 @@ export function SprayPlanTransfers() {
     }
   };
 
+  const onSubmitManual = async () => {
+    setConfirmManual(false);
+    if (selected.size === 0 || submitting) return;
+    setSubmitting(true);
+    setResult(null);
+    setError(null);
+    try {
+      const r = await submitWithoutBiometric(Array.from(selected));
+      setResult(r);
+      if (r.ok > 0) {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          for (const item of r.results) if (item.ok) next.delete(item.name);
+          return next;
+        });
+        load();
+      }
+    } catch (e: any) {
+      setError(e?.message || "Submit failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-svh">
       <PageHeader
@@ -393,6 +428,18 @@ export function SprayPlanTransfers() {
             )}
             Submit {selected.size > 0 ? `(${selected.size})` : "selected"} with biometric
           </Button>
+          {allowManual && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmManual(true)}
+              className="h-9 gap-2"
+              disabled={selected.size === 0 || submitting}
+              title="Submit without a biometric scan (recorded against you)"
+            >
+              Submit {selected.size > 0 ? `(${selected.size})` : "selected"} without biometric
+            </Button>
+          )}
         </div>
 
       {error && (
@@ -494,8 +541,14 @@ export function SprayPlanTransfers() {
                 {result.ok} submitted · {result.failed} failed
               </CardTitle>
               <CardDescription>
-                Scanned: <strong>{result.scanned.employee_name}</strong>{" "}
-                ({result.scanned.employee})
+                {result.method === "manual" || !result.scanned ? (
+                  <>Submitted without biometric — recorded against your user.</>
+                ) : (
+                  <>
+                    Scanned: <strong>{result.scanned.employee_name}</strong>{" "}
+                    ({result.scanned.employee})
+                  </>
+                )}
               </CardDescription>
             </CardHeader>
             {result.failed > 0 && (
@@ -715,6 +768,27 @@ export function SprayPlanTransfers() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={confirmManual} onOpenChange={setConfirmManual}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Submit without biometric?</DialogTitle>
+            <DialogDescription>
+              {selected.size} transfer{selected.size === 1 ? "" : "s"} will be
+              submitted without a biometric scan. This is a device-down
+              fallback and is recorded against your user account. Continue?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setConfirmManual(false)}>
+              Cancel
+            </Button>
+            <Button onClick={onSubmitManual} disabled={submitting}>
+              Submit without biometric
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

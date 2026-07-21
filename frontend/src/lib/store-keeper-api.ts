@@ -84,6 +84,7 @@ export interface TransferRow {
 export interface DraftTransfersResp {
   rows: TransferRow[];
   farms: string[];
+  allow_submit_without_biometric: boolean;
 }
 
 export interface BiometricSubmitResult {
@@ -96,7 +97,8 @@ export interface BiometricSubmitResp {
   ok: number;
   failed: number;
   results: BiometricSubmitResult[];
-  scanned: { employee: string; employee_name: string; biometric_id: string };
+  method: "biometric" | "manual";
+  scanned?: { employee: string; employee_name: string; biometric_id: string };
 }
 
 function unwrap<T>(resp: any): T {
@@ -156,6 +158,16 @@ export async function submitWithBiometric(
 ): Promise<BiometricSubmitResp> {
   const r = await call(
     "upande_scp.serverscripts.store_keeper_api.submit_with_biometric",
+    { names: JSON.stringify(names) },
+  );
+  return unwrap<BiometricSubmitResp>(r);
+}
+
+export async function submitWithoutBiometric(
+  names: string[],
+): Promise<BiometricSubmitResp> {
+  const r = await call(
+    "upande_scp.serverscripts.store_keeper_api.submit_without_biometric",
     { names: JSON.stringify(names) },
   );
   return unwrap<BiometricSubmitResp>(r);

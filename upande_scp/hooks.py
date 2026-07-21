@@ -99,7 +99,10 @@ doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # install (or a newly added pest doc) gets sensible defaults without manual
 # steps. The seed only fills empty colour fields, so operator-set overrides
 # are preserved.
-after_migrate = ["upande_scp.serverscripts.scouting.observation_colors.after_migrate"]
+after_migrate = [
+	"upande_scp.serverscripts.scouting.observation_colors.after_migrate",
+	"upande_scp.serverscripts.common.scouting_tab_layout.enforce",
+]
 
 # Uninstallation
 # ------------

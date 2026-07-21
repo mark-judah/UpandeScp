@@ -151,6 +151,9 @@ after_migrate = [
 # override_doctype_class = {
 # 	"ToDo": "custom_app.overrides.CustomToDo"
 # }
+override_doctype_class = {
+	"Stock Entry": "upande_scp.serverscripts.store.spray_stock_entry.SprayStockEntry",
+}
 
 # Document Events
 # ---------------

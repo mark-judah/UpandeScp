@@ -12,12 +12,12 @@
 import { call } from "./frappe";
 
 const ENDPOINTS = {
-  GET_WO: "upande_scp.serverscripts.spray_plan_approval.get_pending_work_orders",
+  GET_WO: "upande_scp.serverscripts.spray_plan_ops.spray_plan_approval.get_pending_work_orders",
   GET_FARMS:
-    "upande_scp.serverscripts.spray_plan_approval.get_farms_and_greenhouses",
+    "upande_scp.serverscripts.spray_plan_ops.spray_plan_approval.get_farms_and_greenhouses",
   APPROVE:
-    "upande_scp.serverscripts.spray_plan_approval.approve_single_work_order",
-  STOP: "upande_scp.serverscripts.spray_plan_approval.stop_single_work_order",
+    "upande_scp.serverscripts.spray_plan_ops.spray_plan_approval.approve_single_work_order",
+  STOP: "upande_scp.serverscripts.spray_plan_ops.spray_plan_approval.stop_single_work_order",
 } as const;
 
 export interface RequiredItem {

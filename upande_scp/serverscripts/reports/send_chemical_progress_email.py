@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 
 import frappe
 
-from upande_scp.serverscripts.spray_plan_approval import _derive_farm
+from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import _derive_farm
 from upande_scp.serverscripts.spray_plan_creator.lifecycle import AFP_TYPE, get_lifecycle
 
 EAT = ZoneInfo("Africa/Nairobi")

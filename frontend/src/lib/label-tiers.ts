@@ -1,5 +1,5 @@
 /**
- * TS mirror of ``upande_scp.serverscripts.spray_plan_labels.plan_label``.
+ * TS mirror of ``upande_scp.serverscripts.spray_plan_ops.spray_plan_labels.plan_label``.
  *
  * The canonical tier table lives in ``upande_scp/upande_scp/shared/
  * label_tiers.json`` and is imported by both the Python PDF renderer

@@ -151,7 +151,7 @@ export async function generateLabelPdf(opts: {
           fields:            ov.fields ? JSON.stringify(ov.fields) : undefined,
         };
   const r = await call(
-    "upande_scp.serverscripts.spray_plan_labels.generate_pdf",
+    "upande_scp.serverscripts.spray_plan_ops.spray_plan_labels.generate_pdf",
     args,
   );
   return unwrap<GeneratePdfResp>(r);

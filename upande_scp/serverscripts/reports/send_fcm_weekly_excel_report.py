@@ -22,7 +22,7 @@ Sheets generated
 Hook in hooks.py:
     scheduler_events = {
         "weekly": [
-            "upande_scp.serverscripts.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
+            "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
         ]
     }
 """
@@ -751,7 +751,7 @@ def _build_workbook_bytes(farm, week=None, year=None):
 
 def _recipients():
     """FCM weekly Excel report recipients — resolved by role (no hardcoding)."""
-    from upande_scp.serverscripts.report_recipients import report_recipients
+    from upande_scp.serverscripts.reports.report_recipients import report_recipients
 
     return report_recipients()
 

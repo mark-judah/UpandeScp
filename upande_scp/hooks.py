@@ -247,15 +247,15 @@ scheduler_events = {
     "cron": {
         # Daily Scouting & Crop Protection Summary — 17:00 EAT (14:00 UTC)
         "0 14 * * *": [
-            "upande_scp.serverscripts.send_daily_scouting_report.send_daily_scouting_report"
+            "upande_scp.serverscripts.reports.send_daily_scouting_report.send_daily_scouting_report"
         ],
         # Weekly Trap Scouting Report — Mondays 08:00 EAT (05:00 UTC)
         "0 5 * * 1": [
-            "upande_scp.serverscripts.send_weekly_trap_report.send_weekly_trap_report"
+            "upande_scp.serverscripts.reports.send_weekly_trap_report.send_weekly_trap_report"
         ],
         # KEPHIS FCM Weekly Excel — Tuesdays 08:00
         "0 8 * * 2": [
-            "upande_scp.serverscripts.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
+            "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
         ],
     },
     "daily": [
@@ -271,7 +271,7 @@ scheduler_events = {
         "upande_scp.serverscripts.spray_plan_creator.loaning.expire_dormant_requests",
         # Daily Chemical Planning Progress Update — sends at the GM-configured
         # EAT hour (self-gated; once per day).
-        "upande_scp.serverscripts.send_chemical_progress_email.send_chemical_progress_email",
+        "upande_scp.serverscripts.reports.send_chemical_progress_email.send_chemical_progress_email",
     ],
 }
 

@@ -55,9 +55,9 @@ const REPORTS: ReportSpec[] = [
     description:
       "Yesterday's scouting roll-up emailed to recipients configured in Scouting & Crop Protection settings.",
     emailMethod:
-      "upande_scp.serverscripts.send_daily_scouting_report.trigger_daily_email",
+      "upande_scp.serverscripts.reports.send_daily_scouting_report.trigger_daily_email",
     downloadUrl: () =>
-      "/api/method/upande_scp.serverscripts.send_daily_scouting_report.download_daily_pdf",
+      "/api/method/upande_scp.serverscripts.reports.send_daily_scouting_report.download_daily_pdf",
   },
   {
     key: "weekly_trap",
@@ -65,9 +65,9 @@ const REPORTS: ReportSpec[] = [
     description:
       "Aggregated trap counts for the prior week — emailed every Monday morning, or trigger now.",
     emailMethod:
-      "upande_scp.serverscripts.send_weekly_trap_report.trigger_weekly_email",
+      "upande_scp.serverscripts.reports.send_weekly_trap_report.trigger_weekly_email",
     downloadUrl: () =>
-      "/api/method/upande_scp.serverscripts.send_weekly_trap_report.download_weekly_pdf",
+      "/api/method/upande_scp.serverscripts.reports.send_weekly_trap_report.download_weekly_pdf",
   },
   {
     key: "fcm",
@@ -75,9 +75,9 @@ const REPORTS: ReportSpec[] = [
     description:
       "Per-farm FCM monitoring template for KEPHIS submission. Pick a farm before sending or downloading.",
     emailMethod:
-      "upande_scp.serverscripts.send_fcm_weekly_excel_report.trigger_fcm_email",
+      "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.trigger_fcm_email",
     downloadUrl: ({ farm, week }) =>
-      `/api/method/upande_scp.serverscripts.send_fcm_weekly_excel_report.download_fcm_xlsx?farm=${encodeURIComponent(farm || "")}&week=${encodeURIComponent(week || "")}`,
+      `/api/method/upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.download_fcm_xlsx?farm=${encodeURIComponent(farm || "")}&week=${encodeURIComponent(week || "")}`,
     needsFarm: true,
   },
 ];
@@ -92,7 +92,7 @@ export function Reports() {
 
   useEffect(() => {
     call<FarmOption[]>(
-      "upande_scp.serverscripts.send_fcm_weekly_excel_report.list_farms_with_data",
+      "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.list_farms_with_data",
       {},
     )
       .then((r: any) => {
@@ -112,7 +112,7 @@ export function Reports() {
       return;
     }
     call<WeekOption[]>(
-      "upande_scp.serverscripts.send_fcm_weekly_excel_report.list_report_weeks",
+      "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.list_report_weeks",
       { farm },
     )
       .then((r: any) => {

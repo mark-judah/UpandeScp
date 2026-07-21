@@ -11,7 +11,7 @@ Exposes:
 
 Hook in hooks.py:
     scheduler_events = {"cron": {"0 14 * * *": [
-        "upande_scp.serverscripts.send_daily_scouting_report.send_daily_scouting_report"
+        "upande_scp.serverscripts.reports.send_daily_scouting_report.send_daily_scouting_report"
     ]}}
 """
 
@@ -370,7 +370,7 @@ def build_html(target_date=None):
 
 def _recipients():
     """Daily scouting report recipients — resolved by role (no hardcoding)."""
-    from upande_scp.serverscripts.report_recipients import report_recipients
+    from upande_scp.serverscripts.reports.report_recipients import report_recipients
 
     return report_recipients()
 

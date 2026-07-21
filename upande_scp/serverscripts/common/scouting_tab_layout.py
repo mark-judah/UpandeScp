@@ -40,6 +40,12 @@ SCP_FIELDS = {
         "custom_chemical_store", "custom_fertilizer_store", "spray_plan_creators",
         "store_keepers", "spray_plan_approvers",
     ],
+    # NOTE: Stock Entry deliberately excluded. Its 7 SCP-owned fields
+    # (greenhouse/location + store-label printing) are scattered among ~65
+    # foreign fields with dangling insert_after refs and foreign fields
+    # trailing at the very end, so this enforcer can't isolate a clean tab
+    # there without risking the other doctypes. Left ungrouped pending a
+    # Stock-Entry-specific approach.
 }
 
 

@@ -32,7 +32,7 @@ import frappe
 import pdfkit
 from frappe.utils import escape_html
 
-from upande_scp.serverscripts.qr_generator import build_chemical_qr_payload
+from upande_scp.serverscripts.qr.qr_generator import build_chemical_qr_payload
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")
 

@@ -1,8 +1,8 @@
 /**
- * Chemical Loaning — a depleted farm's Spray Plan Creator requests a chemical
- * from another farm; source farms approve from the Inbox. Reads/writes via
- * lib/loaning-api. Cross-farm availability only appears for chemicals the
- * selected farm is actually depleted in (enforced server-side too).
+ * Chemical Loaning — a farm's Spray Plan Creator builds a cart of chemicals
+ * (each split across up to 5 lender farms) and requests them from another
+ * farm; source farms approve from the Inbox. Reads/writes via
+ * lib/loaning-api.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   XCircle,
   PackageCheck,
+  ShoppingCart,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,14 +43,19 @@ import {
   fetchLoanableChemicals,
   fetchSourcesFor,
   listRequests,
-  createLoanRequest,
+  createRequests,
+  getCreditors,
   approveSource,
   rejectRequest,
   type LoanableChemical,
   type LoanSource,
   type LoanRequest,
+  type LoanCartItem,
+  type CreditorRow,
   type RequestState,
 } from "@/lib/loaning-api";
+
+const MAX_SOURCES = 5;
 
 const STATE_TONE: Record<RequestState, string> = {
   Draft: "bg-muted text-muted-foreground",
@@ -66,7 +72,7 @@ export function ChemicalLoaning() {
   const [farms, setFarms] = useState<string[]>([]);
   const [enabled, setEnabled] = useState(true);
   const [farm, setFarm] = useState<string>("");
-  const [tab, setTab] = useState<"request" | "inbox">("request");
+  const [tab, setTab] = useState<"request" | "inbox" | "creditors">("request");
   const [booting, setBooting] = useState(true);
 
   useEffect(() => {
@@ -107,6 +113,7 @@ export function ChemicalLoaning() {
           <TabsList>
             <TabsTrigger value="request">Request</TabsTrigger>
             <TabsTrigger value="inbox">Inbox</TabsTrigger>
+            <TabsTrigger value="creditors">Creditors</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -132,8 +139,10 @@ export function ChemicalLoaning() {
           </Card>
         ) : tab === "request" ? (
           <RequestTab farm={farm} />
-        ) : (
+        ) : tab === "inbox" ? (
           <InboxTab />
+        ) : (
+          <CreditorsTab farm={farm} />
         )}
       </div>
     </div>
@@ -142,20 +151,74 @@ export function ChemicalLoaning() {
 
 // ── Request tab ─────────────────────────────────────────────────────
 function RequestTab({ farm }: { farm: string }) {
-  const [low, setLow] = useState<LoanableChemical[]>([]);
+  const [chemicals, setChemicals] = useState<LoanableChemical[]>([]);
   const [loading, setLoading] = useState(true);
   const [picked, setPicked] = useState<LoanableChemical | null>(null);
+  const [cart, setCart] = useState<LoanCartItem[]>([]);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitErr, setSubmitErr] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    names: string[];
+    failed: { item_code: string; error: string }[];
+  } | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     setPicked(null);
     fetchLoanableChemicals(farm)
-      .then(setLow)
-      .catch(() => setLow([]))
+      .then(setChemicals)
+      .catch(() => setChemicals([]))
       .finally(() => setLoading(false));
   }, [farm]);
 
   useEffect(load, [load]);
+
+  // Cart is per-farm state — reset it whenever the acting farm changes.
+  useEffect(() => {
+    setCart([]);
+    setReason("");
+    setResult(null);
+    setSubmitErr(null);
+  }, [farm]);
+
+  const nameFor = (itemCode: string) =>
+    chemicals.find((c) => c.item_code === itemCode)?.item_name || itemCode;
+
+  const addToCart = (item: LoanCartItem) => {
+    setCart((prev) => [...prev, item]);
+    setPicked(null);
+    setResult(null);
+  };
+
+  const removeFromCart = (idx: number) =>
+    setCart((prev) => prev.filter((_, i) => i !== idx));
+
+  const submitCart = async () => {
+    setSubmitErr(null);
+    setResult(null);
+    if (!cart.length) return;
+    setSubmitting(true);
+    try {
+      const res = await createRequests({
+        requesting_farm: farm,
+        reason: reason.trim() || undefined,
+        items: cart,
+      });
+      setResult(res);
+      if (res.failed.length) {
+        const failedCodes = new Set(res.failed.map((f) => f.item_code));
+        setCart((prev) => prev.filter((c) => failedCodes.has(c.item_code)));
+      } else {
+        setCart([]);
+        setReason("");
+      }
+    } catch (e: any) {
+      setSubmitErr(e?.message || "Could not submit the request.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -171,63 +234,143 @@ function RequestTab({ farm }: { farm: string }) {
         farm={farm}
         chem={picked}
         onBack={() => setPicked(null)}
-        onDone={load}
+        onAdd={addToCart}
       />
     );
   }
 
   return (
-    <Card className="p-0">
-      <CardContent className="p-0">
-        <div className="flex items-center justify-between px-4 py-2 border-b">
-          <span className="text-sm font-medium">
-            Chemicals {farm} is low on ({low.length})
-          </span>
-          <Button variant="ghost" size="sm" onClick={load} className="h-7 gap-1">
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </Button>
-        </div>
-        {low.length === 0 ? (
-          <div className="p-10 text-center text-sm text-muted-foreground">
-            Nothing below the depletion threshold — no loan needed right now.
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Chemical</TableHead>
-                <TableHead className="text-right">On hand</TableHead>
-                <TableHead className="text-right">Baseline</TableHead>
-                <TableHead className="w-24" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {low.map((c) => (
-                <TableRow key={c.item_code}>
-                  <TableCell className="text-xs">
-                    <div className="font-medium">{c.item_name}</div>
-                    <div className="text-muted-foreground font-mono text-[0.65rem]">
-                      {c.item_code}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-xs">
-                    {fmt(c.on_hand)} {c.uom}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                    {c.baseline_qty != null ? fmt(c.baseline_qty) : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Button size="sm" className="h-7" onClick={() => setPicked(c)}>
-                      Request
-                    </Button>
-                  </TableCell>
-                </TableRow>
+    <div className="space-y-4">
+      {cart.length > 0 && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <ShoppingCart className="h-4 w-4 text-primary" />
+              Request cart ({cart.length})
+            </div>
+            <div className="rounded-md border divide-y">
+              {cart.map((item, idx) => (
+                <div
+                  key={`${item.item_code}-${idx}`}
+                  className="flex items-center justify-between gap-3 px-3 py-2"
+                >
+                  <div className="text-sm">
+                    <span className="font-medium">{nameFor(item.item_code)}</span>{" "}
+                    <span className="text-muted-foreground text-xs">
+                      · {fmt(item.requested_qty)} {item.uom} from{" "}
+                      {item.sources
+                        .map((s) => `${s.source_farm} (${fmt(s.qty)})`)
+                        .join(", ")}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-destructive hover:text-destructive"
+                    onClick={() => removeFromCart(idx)}
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                placeholder="Reason (optional)"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="h-8 flex-1 min-w-40"
+              />
+              <Button onClick={submitCart} disabled={submitting}>
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowRightLeft className="h-4 w-4" />
+                )}
+                Submit request
+              </Button>
+            </div>
+            {submitErr && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                {submitErr}
+              </div>
+            )}
+            {result && (
+              <div className="space-y-1 text-xs">
+                {result.names.length > 0 && (
+                  <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-emerald-700 flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Sent {result.names.length} request
+                    {result.names.length === 1 ? "" : "s"} for approval.
+                  </div>
+                )}
+                {result.failed.length > 0 && (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-destructive">
+                    {result.failed.map((f) => (
+                      <div key={f.item_code}>
+                        {nameFor(f.item_code)}: {f.error}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="p-0">
+        <CardContent className="p-0">
+          <div className="flex items-center justify-between px-4 py-2 border-b">
+            <span className="text-sm font-medium">
+              Chemicals available to request ({chemicals.length})
+            </span>
+            <Button variant="ghost" size="sm" onClick={load} className="h-7 gap-1">
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </Button>
+          </div>
+          {chemicals.length === 0 ? (
+            <div className="p-10 text-center text-sm text-muted-foreground">
+              No chemicals found.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Chemical</TableHead>
+                  <TableHead className="text-right">On hand</TableHead>
+                  <TableHead className="text-right">Baseline</TableHead>
+                  <TableHead className="w-24" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {chemicals.map((c) => (
+                  <TableRow key={c.item_code}>
+                    <TableCell className="text-xs">
+                      <div className="font-medium">{c.item_name}</div>
+                      <div className="text-muted-foreground font-mono text-[0.65rem]">
+                        {c.item_code}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-xs">
+                      {fmt(c.on_hand)} {c.uom}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
+                      {c.baseline_qty != null ? fmt(c.baseline_qty) : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Button size="sm" className="h-7" onClick={() => setPicked(c)}>
+                        Request
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -236,18 +379,16 @@ function SourcePicker({
   farm,
   chem,
   onBack,
-  onDone,
+  onAdd,
 }: {
   farm: string;
   chem: LoanableChemical;
   onBack: () => void;
-  onDone: () => void;
+  onAdd: (item: LoanCartItem) => void;
 }) {
   const [sources, setSources] = useState<LoanSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState<Record<string, number>>({});
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -270,7 +411,7 @@ function SourcePicker({
       if (s.source_farm in next) {
         delete next[s.source_farm];
       } else {
-        if (Object.keys(next).length >= 2) return prev; // max 2 sources
+        if (Object.keys(next).length >= MAX_SOURCES) return prev;
         next[s.source_farm] = 0;
       }
       return next;
@@ -280,9 +421,8 @@ function SourcePicker({
   const setQty = (sf: string, q: number) =>
     setSel((prev) => ({ ...prev, [sf]: q }));
 
-  const submit = async () => {
+  const addToCart = () => {
     setErr(null);
-    setMsg(null);
     if (!selectedFarms.length) {
       setErr("Pick at least one source farm.");
       return;
@@ -291,24 +431,12 @@ function SourcePicker({
       setErr("Enter the quantity to request from each source.");
       return;
     }
-    setBusy(true);
-    try {
-      const res = await createLoanRequest({
-        requesting_farm: farm,
-        item_code: chem.item_code,
-        uom: chem.uom,
-        requested_qty: total,
-        sources: selectedFarms.map((sf) => ({ source_farm: sf, qty: sel[sf] })),
-        reason: undefined,
-      });
-      setMsg(`Request ${res.name} sent for approval.`);
-      setSel({});
-      setTimeout(onDone, 1200);
-    } catch (e: any) {
-      setErr(e?.message || "Could not create request.");
-    } finally {
-      setBusy(false);
-    }
+    onAdd({
+      item_code: chem.item_code,
+      uom: chem.uom,
+      requested_qty: total,
+      sources: selectedFarms.map((sf) => ({ source_farm: sf, qty: sel[sf] })),
+    });
   };
 
   return (
@@ -336,8 +464,8 @@ function SourcePicker({
         ) : (
           <>
             <div className="text-xs text-muted-foreground">
-              Pick up to 2 source farms and split the quantity. Ranked by how much
-              each can spare.
+              Pick up to {MAX_SOURCES} source farms and split the quantity.
+              Ranked by how much each can spare.
             </div>
             <div className="rounded-md border divide-y">
               {sources.map((s) => {
@@ -355,7 +483,7 @@ function SourcePicker({
                       size="sm"
                       className="h-7 w-20"
                       onClick={() => toggle(s)}
-                      disabled={!on && selectedFarms.length >= 2}
+                      disabled={!on && selectedFarms.length >= MAX_SOURCES}
                     >
                       {on ? "Selected" : "Pick"}
                     </Button>
@@ -391,13 +519,9 @@ function SourcePicker({
                   {fmt(total)} {chem.uom}
                 </span>
               </div>
-              <Button onClick={submit} disabled={busy || total <= 0}>
-                {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowRightLeft className="h-4 w-4" />
-                )}
-                Send request
+              <Button onClick={addToCart} disabled={total <= 0}>
+                <ArrowRightLeft className="h-4 w-4" />
+                Add to request
               </Button>
             </div>
           </>
@@ -406,12 +530,6 @@ function SourcePicker({
         {err && (
           <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             {err}
-          </div>
-        )}
-        {msg && (
-          <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 flex items-center gap-1.5">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            {msg}
           </div>
         )}
       </CardContent>
@@ -574,5 +692,70 @@ function InboxTab() {
         )}
       </section>
     </div>
+  );
+}
+
+// ── Creditors tab ───────────────────────────────────────────────────
+function CreditorsTab({ farm }: { farm: string }) {
+  const [rows, setRows] = useState<CreditorRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    getCreditors(farm)
+      .then(setRows)
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [farm]);
+
+  useEffect(load, [load]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading creditors…
+      </div>
+    );
+  }
+
+  return (
+    <Card className="p-0">
+      <CardContent className="p-0">
+        <div className="flex items-center justify-between px-4 py-2 border-b">
+          <span className="text-sm font-medium">
+            Farms {farm} owes chemicals to ({rows.length})
+          </span>
+          <Button variant="ghost" size="sm" onClick={load} className="h-7 gap-1">
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        </div>
+        {rows.length === 0 ? (
+          <div className="p-10 text-center text-sm text-muted-foreground">
+            No outstanding chemical loans.
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Chemical</TableHead>
+                <TableHead>Received</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r, i) => (
+                <TableRow key={`${r.creditor_farm}-${r.item_code}-${i}`}>
+                  <TableCell className="text-xs font-medium">{r.item_name}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    received {fmt(r.qty)} {r.uom} of{" "}
+                    <span className="font-medium text-foreground">{r.item_name}</span> from{" "}
+                    <span className="font-medium text-foreground">{r.creditor_farm}</span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -12,7 +12,21 @@ export interface LoanableChemical {
   uom: string;
   on_hand: number;
   baseline_qty: number | null;
-  depleted: boolean;
+}
+
+export interface LoanCartItem {
+  item_code: string;
+  uom: string;
+  requested_qty: number;
+  sources: { source_farm: string; qty: number }[];
+}
+
+export interface CreditorRow {
+  creditor_farm: string;
+  item_code: string;
+  item_name: string;
+  uom: string;
+  qty: number;
 }
 
 export interface LoanSource {
@@ -83,6 +97,21 @@ export function createLoanRequest(payload: {
   return call<{ name: string }>(`${NS}.create_request`, {
     payload: JSON.stringify(payload),
   });
+}
+
+export function createRequests(payload: {
+  requesting_farm: string;
+  reason?: string;
+  items: LoanCartItem[];
+}) {
+  return call<{ names: string[]; failed: { item_code: string; error: string }[] }>(
+    `${NS}.create_requests`,
+    { payload: JSON.stringify(payload) },
+  );
+}
+
+export function getCreditors(farm: string) {
+  return call<CreditorRow[]>(`${NS}.get_creditors`, { farm });
 }
 
 export function approveSource(request: string, sourceFarm: string) {

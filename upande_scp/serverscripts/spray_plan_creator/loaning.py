@@ -1,16 +1,18 @@
 """Farm-to-farm chemical loaning.
 
-A depleted farm's Spray Plan Creator requests a chemical from another farm; the
-source farm's creator approves, which raises a Material Transfer Stock Entry that
+A farm's Spray Plan Creator requests a chemical from another farm; the source
+farm's creator approves, which raises a Material Transfer Stock Entry that
 moves the stock (and its valuation) between the two farms' chemical-store
 warehouses. Not a repayable loan — an attributed internal transfer.
 
 Spec: docs/superpowers/specs/2026-06-10-chemical-loaning-design.md
 
-Visibility gate: a requester only sees other farms' quantities of a chemical
-once its own on-hand drops below ``loaning_depletion_pct`` of the captured
-baseline (Chemical Stock Baseline). Enforced server-side in get_sources_for /
-create_request, not just in the UI.
+No depletion floor: a requester can request any chemical it stocks (including
+zero-stock items with a captured Chemical Stock Baseline) from any other farm,
+and a lending farm may lend down to zero of its own on-hand — there is no
+``loaning_depletion_pct`` gate on visibility or on how much a farm may lend.
+Each split is validated purely by ``validate_source_split`` against each
+source farm's on-hand.
 
 Cost centers are derived from the warehouses via
 ``validation.match_cost_center`` (explicit ``Warehouse.custom_cost_center``
@@ -32,8 +34,33 @@ from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_LOAN
 CHEMICAL_GROUPS = ("CHEMICALS", "Fertilizer")
 ELEVATED = {"SCP General Manager", "System Manager", "Administrator"}
 CREATOR_ROLES = {"SCP Spray Plan Creator"} | ELEVATED
-MAX_SOURCES = 2
+MAX_SOURCES = 5
 QTY_TOL = 0.001
+
+
+def validate_source_split(sources, requested_qty, requesting_farm,
+                          lendable_by_farm, max_sources=MAX_SOURCES):
+    """Pure validation of a chemical's lender split. Returns an error message
+    string, or None if valid. `lendable_by_farm` maps source_farm -> its
+    on-hand (the cap). No depletion floor — a lender may lend down to zero."""
+    from frappe.utils import flt as _flt
+    if not (1 <= len(sources) <= max_sources):
+        return f"Pick between 1 and {max_sources} source farm(s)."
+    total = 0.0
+    for src in sources:
+        sf = src.get("source_farm")
+        sq = _flt(src.get("qty"))
+        if not sf or sq <= 0:
+            return "Each source needs a farm and a positive qty."
+        if sf == requesting_farm:
+            return "A farm cannot loan to itself."
+        cap = _flt(lendable_by_farm.get(sf, 0))
+        if sq > cap + QTY_TOL:
+            return f"{sf} can only lend {cap:g} of this chemical."
+        total += sq
+    if abs(total - _flt(requested_qty)) > QTY_TOL:
+        return f"Source split ({total:g}) must add up to the requested qty ({_flt(requested_qty):g})."
+    return None
 
 
 # ───────────────────────────── guards / scope ────────────────────────────────
@@ -126,17 +153,6 @@ def _baseline(farm: str, item_code: str) -> float | None:
     return flt(val) if val is not None else None
 
 
-def _is_depleted(on_hand: float, baseline: float | None, pct: float) -> bool:
-    return bool(baseline and baseline > 0 and on_hand < (pct / 100.0) * baseline)
-
-
-def _lendable(on_hand: float, baseline: float | None, pct: float) -> float:
-    # A lender won't go below its own depletion floor. No baseline → no floor.
-    if baseline and baseline > 0:
-        return max(0.0, on_hand - (pct / 100.0) * baseline)
-    return max(0.0, on_hand)
-
-
 def _all_chemical_farms() -> list[str]:
     rows = frappe.get_all(
         "Warehouse",
@@ -166,12 +182,12 @@ def my_farms() -> dict:
 
 @frappe.whitelist()
 def get_loanable_chemicals(farm: str) -> list[dict]:
-    """Depleted chemicals on ``farm`` — the only ones whose cross-farm
-    availability the requester is allowed to see."""
+    """All candidate chemicals on ``farm`` that could be requested via loaning
+    (no depletion gate — any chemical the farm stocks, including zero-stock
+    items with a captured baseline)."""
     _ensure_enabled()
     _ensure_creator()
     _assert_farm_access(farm)
-    pct = flt(_settings().loaning_depletion_pct or 15)
 
     stores = _farm_chemical_stores(farm)
     # Candidate items: anything with stock in the farm's chemical stores, plus
@@ -208,34 +224,25 @@ def get_loanable_chemicals(farm: str) -> list[dict]:
     out = []
     for it in items.values():
         baseline = _baseline(farm, it["item_code"])
-        if _is_depleted(it["on_hand"], baseline, pct):
-            out.append({**it, "baseline_qty": baseline, "depleted": True})
+        out.append({**it, "baseline_qty": baseline})
     out.sort(key=lambda x: x["item_name"].lower())
     return out
 
 
 @frappe.whitelist()
 def get_sources_for(farm: str, item_code: str) -> list[dict]:
-    """Ranked source farms that can lend ``item_code`` to a depleted ``farm``."""
+    """Ranked source farms that can lend ``item_code`` to ``farm``. Capped
+    only at each candidate's on-hand — no depletion floor."""
     _ensure_enabled()
     _ensure_creator()
     _assert_farm_access(farm)
-    pct = flt(_settings().loaning_depletion_pct or 15)
-
-    # Visibility gate — only unlocks when the requester is genuinely depleted.
-    if not _is_depleted(_on_hand(farm, item_code), _baseline(farm, item_code), pct):
-        frappe.throw(
-            "Cross-farm availability is only visible once your farm is below "
-            "the depletion threshold for this chemical.",
-            frappe.PermissionError,
-        )
 
     out = []
     for src in _all_chemical_farms():
         if src == farm:
             continue
         on_hand = _on_hand(src, item_code)
-        lend = _lendable(on_hand, _baseline(src, item_code), pct)
+        lend = on_hand
         if lend > 0:
             out.append({
                 "source_farm": src,
@@ -278,6 +285,23 @@ def list_requests(box: str = "mine") -> list[dict]:
     return [_request_dict(n) for n in names]
 
 
+@frappe.whitelist()
+def get_creditors(farm) -> list[dict]:
+    """Read-only: for the borrowing `farm`, what it received and from whom —
+    approved loan sources grouped by (lending farm, chemical)."""
+    _ensure_creator(); _assert_farm_access(farm)
+    rows = frappe.db.sql(
+        """SELECT s.source_farm AS creditor_farm, r.item_code, r.item_name, r.uom,
+                  SUM(s.qty) AS qty
+           FROM `tabChemical Transfer Request Source` s
+           JOIN `tabChemical Transfer Request` r ON r.name = s.parent
+           WHERE r.requesting_farm = %(farm)s AND s.approved = 1
+           GROUP BY s.source_farm, r.item_code
+           ORDER BY r.item_name, s.source_farm""",
+        {"farm": farm}, as_dict=True)
+    return rows
+
+
 def _request_dict(name: str) -> dict:
     doc = frappe.get_doc("Chemical Transfer Request", name)
     return {
@@ -311,67 +335,39 @@ def _request_dict(name: str) -> dict:
 # ──────────────────────────────── writes ─────────────────────────────────────
 
 
-@frappe.whitelist()
-def create_request(payload) -> dict:
-    """Create + open a Chemical Transfer Request."""
-    s = _ensure_enabled()
-    _ensure_creator()
-    if isinstance(payload, str):
-        payload = json.loads(payload)
+def _create_one(farm, reason, item, settings):
+    """Create one Chemical Transfer Request for a single chemical. `item` =
+    {item_code, uom?, requested_qty, sources:[{source_farm, qty}]}. Returns name."""
+    item_code = item.get("item_code")
+    requested_qty = flt(item.get("requested_qty"))
+    sources = item.get("sources") or []
+    if not item_code or requested_qty <= 0:
+        frappe.throw("item_code and a positive requested_qty are required.")
+    # cap = each source farm's on-hand (no floor)
+    lendable = {s.get("source_farm"): _on_hand(s.get("source_farm"), item_code)
+                for s in sources if s.get("source_farm")}
+    err = validate_source_split(sources, requested_qty, farm, lendable)
+    if err:
+        frappe.throw(err)
 
-    farm = payload.get("requesting_farm")
-    item_code = payload.get("item_code")
-    requested_qty = flt(payload.get("requested_qty"))
-    sources = payload.get("sources") or []
-    _assert_farm_access(farm)
-
-    if not farm or not item_code or requested_qty <= 0:
-        frappe.throw("requesting_farm, item_code and a positive requested_qty are required.")
-    pct = flt(s.loaning_depletion_pct or 15)
-    if not _is_depleted(_on_hand(farm, item_code), _baseline(farm, item_code), pct):
-        frappe.throw("Your farm is not depleted in this chemical — no request needed.")
-    if not (1 <= len(sources) <= MAX_SOURCES):
-        frappe.throw(f"Pick between 1 and {MAX_SOURCES} source farm(s).")
-
-    total = 0.0
-    for src in sources:
-        sf = src.get("source_farm")
-        sq = flt(src.get("qty"))
-        if not sf or sq <= 0:
-            frappe.throw("Each source needs a farm and a positive qty.")
-        if sf == farm:
-            frappe.throw("A farm cannot loan to itself.")
-        lend = _lendable(_on_hand(sf, item_code), _baseline(sf, item_code), pct)
-        if sq > lend + QTY_TOL:
-            frappe.throw(
-                f"{sf} can only lend {lend:g} {payload.get('uom') or ''} of this chemical."
-            )
-        total += sq
-    if abs(total - requested_qty) > QTY_TOL:
-        frappe.throw(
-            f"Source split ({total:g}) must add up to the requested qty ({requested_qty:g})."
-        )
-
-    timeout_h = int(s.loaning_timeout_hours or 72)
+    timeout_h = int(settings.loaning_timeout_hours or 72)
     doc = frappe.new_doc("Chemical Transfer Request")
     doc.requesting_farm = farm
     doc.requesting_warehouse = _primary_store(farm)
     doc.item_code = item_code
     doc.item_name = frappe.db.get_value("Item", item_code, "item_name")
-    doc.uom = payload.get("uom") or frappe.db.get_value("Item", item_code, "stock_uom")
+    doc.uom = item.get("uom") or frappe.db.get_value("Item", item_code, "stock_uom")
     doc.requested_qty = requested_qty
-    doc.reason = payload.get("reason")
+    doc.reason = reason
     doc.workflow_state = "Pending Approval"
     doc.expires_on = add_to_date(now_datetime(), hours=timeout_h)
     for src in sources:
-        sf = src.get("source_farm")
         doc.append("sources", {
-            "source_farm": sf,
-            "source_warehouse": _primary_store(sf),
+            "source_farm": src.get("source_farm"),
+            "source_warehouse": _primary_store(src.get("source_farm")),
             "qty": flt(src.get("qty")),
         })
     doc.insert(ignore_permissions=True)
-
     for src in doc.sources:
         _notify_farm_creators(
             src.source_farm,
@@ -379,7 +375,48 @@ def create_request(payload) -> dict:
             f"{farm} requests {flt(src.qty):g} {doc.uom} of {doc.item_name}. Approve in Chemical Loaning.",
             doc.name,
         )
-    return {"name": doc.name}
+    return doc.name
+
+
+@frappe.whitelist()
+def create_request(payload) -> dict:
+    """Single-chemical request (kept for backward compat)."""
+    s = _ensure_enabled(); _ensure_creator()
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    farm = payload.get("requesting_farm")
+    _assert_farm_access(farm)
+    name = _create_one(farm, payload.get("reason"), {
+        "item_code": payload.get("item_code"),
+        "uom": payload.get("uom"),
+        "requested_qty": payload.get("requested_qty"),
+        "sources": payload.get("sources") or [],
+    }, s)
+    return {"name": name}
+
+
+@frappe.whitelist()
+def create_requests(payload) -> dict:
+    """Batch: one Chemical Transfer Request per chemical.
+    payload = {requesting_farm, reason, items: [{item_code, uom, requested_qty,
+    sources:[{source_farm, qty}]}]}. One bad chemical doesn't abort the rest."""
+    s = _ensure_enabled(); _ensure_creator()
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    farm = payload.get("requesting_farm")
+    _assert_farm_access(farm)
+    items = payload.get("items") or []
+    if not items:
+        frappe.throw("Add at least one chemical.")
+    names, failed = [], []
+    for it in items:
+        try:
+            names.append(_create_one(farm, payload.get("reason"), it, s))
+        except Exception as e:
+            failed.append({"item_code": it.get("item_code"), "error": str(e)})
+            frappe.db.rollback()
+    frappe.db.commit()
+    return {"names": names, "failed": failed}
 
 
 @frappe.whitelist()

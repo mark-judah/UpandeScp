@@ -19,3 +19,4 @@ upande_scp.patches.v1_0.setup_spray_supervisor_role
 upande_scp.patches.v1_0.seed_stage_catalog
 upande_scp.patches.v1_0.consolidate_disease_stages
 upande_scp.patches.v1_0.rebrand_workspace_upande_scp
+upande_scp.patches.v1_0.create_spray_stock_entry_types

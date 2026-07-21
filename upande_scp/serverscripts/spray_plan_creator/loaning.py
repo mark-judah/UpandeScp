@@ -27,6 +27,7 @@ from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
 from upande_scp.serverscripts.spray_plan_creator.scope import _resolve_user_scope
 from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
+from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_LOAN
 
 CHEMICAL_GROUPS = ("CHEMICALS", "Fertilizer")
 ELEVATED = {"SCP General Manager", "System Manager", "Administrator"}
@@ -459,7 +460,7 @@ def _make_transfer_se(doc, src_row) -> str:
     cc = match_cost_center(tgt_wh) or match_cost_center(src_wh)
 
     se = frappe.new_doc("Stock Entry")
-    se.stock_entry_type = "Material Transfer"
+    se.stock_entry_type = SE_TYPE_LOAN
     se.purpose = "Material Transfer"
     se.company = company
     se.from_warehouse = src_wh

@@ -34,6 +34,7 @@ from upande_scp.serverscripts.spray_plan_creator.auto_material_issue import (
 )
 from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
 from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
+from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_MIX
 
 AFP_TYPE = "Application Floor Plan"
 
@@ -307,6 +308,7 @@ def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
             f"Could not generate Manufacture Stock Entry for {wo.name}."
         )
     se_doc = frappe.get_doc(se_data) if isinstance(se_data, dict) else se_data
+    se_doc.stock_entry_type = SE_TYPE_MIX
     if not getattr(se_doc, "to_warehouse", None):
         se_doc.to_warehouse = wo.fg_warehouse or wo.custom_greenhouse
 

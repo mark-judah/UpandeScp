@@ -13,6 +13,8 @@ import re
 import frappe
 from frappe.utils import add_days, cstr, flt, now_datetime, today
 
+from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_TRANSFER
+
 AFP_TYPE = "Application Floor Plan"
 
 APPROVAL_ROLES = ("SCP Spray Plan Approver", "SCP General Manager")
@@ -318,6 +320,7 @@ def approve_single_work_order(wo_name):
             return {"wo": wo_name, "status": "error", "message": "Could not generate stock entry data."}
 
         se_doc = frappe.get_doc(se_data) if isinstance(se_data, dict) else se_data
+        se_doc.stock_entry_type = SE_TYPE_TRANSFER
         se_doc.insert(ignore_permissions=True)
         frappe.db.commit()
     except Exception:

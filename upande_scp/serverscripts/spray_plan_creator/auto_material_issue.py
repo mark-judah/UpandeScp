@@ -12,6 +12,8 @@ from __future__ import annotations
 import frappe
 from frappe.utils import now_datetime
 
+from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_SPRAY
+
 AFP_TYPE = "Application Floor Plan"
 
 
@@ -158,7 +160,7 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
     posting = now_datetime()
     return {
         "doctype": "Stock Entry",
-        "stock_entry_type": "Material Issue",
+        "stock_entry_type": SE_TYPE_SPRAY,
         "purpose": "Material Issue",
         "company": manufacture_se.company,
         "posting_date": posting.date().isoformat(),

@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime
 
+from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_TRANSFER
+
 @frappe.whitelist()
 def start_work_order(work_order_name, actual_start_date=None, actual_end_date=None):
     """
@@ -274,7 +276,7 @@ def create_material_transfer(work_order):
                 stock_entry.custom_farm = farm
         
         # Stock Entry Type and Work Order fields
-        stock_entry.stock_entry_type = "Material Transfer for Manufacture"
+        stock_entry.stock_entry_type = SE_TYPE_TRANSFER
         stock_entry.work_order = work_order.name
         
         # Save as draft - items and other fields will auto-populate

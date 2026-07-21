@@ -95,14 +95,14 @@ def _role_user_names(role: str) -> list[str]:
 def _recipient_farms(all_farms: set[str]) -> dict[str, set[str]]:
     """Map each entitled user (login) → the set of farms their email covers."""
     out: dict[str, set[str]] = {}
-    for u in set(_role_user_names("General Manager")) | set(_role_user_names("System Manager")):
+    for u in set(_role_user_names("SCP General Manager")) | set(_role_user_names("System Manager")):
         out.setdefault(u, set()).update(all_farms)
-    for u in _role_user_names("Spray Plan Approver"):
+    for u in _role_user_names("SCP Spray Plan Approver"):
         farms = frappe.get_all(
             "Farm Spray Plan Approver", {"user": u, "parenttype": "Farm"}, pluck="parent"
         )
         out.setdefault(u, set()).update(farms)
-    for u in _role_user_names("Spray Plan Creator"):
+    for u in _role_user_names("SCP Spray Plan Creator"):
         farms = frappe.get_all(
             "Farm Spray Plan Creator", {"user": u, "parenttype": "Farm"}, pluck="parent"
         )
@@ -304,8 +304,8 @@ def send_chemical_progress_email() -> dict:
 @frappe.whitelist()
 def trigger_chemical_progress_email(target_date: str | None = None) -> dict:
     """Manual send (ignores the time gate) — for testing from Desk / console."""
-    if not (set(frappe.get_roles(frappe.session.user)) & {"General Manager", "System Manager", "Administrator"}):
-        frappe.throw("Only the General Manager can trigger this email.", frappe.PermissionError)
+    if not (set(frappe.get_roles(frappe.session.user)) & {"SCP General Manager", "System Manager", "Administrator"}):
+        frappe.throw("Only the SCP General Manager can trigger this email.", frappe.PermissionError)
     target = frappe.utils.getdate(target_date) if target_date else datetime.now(EAT).date()
     return _build_and_send(target)
 
@@ -313,7 +313,7 @@ def trigger_chemical_progress_email(target_date: str | None = None) -> dict:
 @frappe.whitelist()
 def preview_chemical_progress_email(target_date: str | None = None, farm: str | None = None) -> str:
     """Return the HTML (all farms, or one) without sending — for a preview."""
-    if not (set(frappe.get_roles(frappe.session.user)) & {"General Manager", "System Manager", "Administrator", "Spray Plan Approver", "Spray Plan Creator"}):
+    if not (set(frappe.get_roles(frappe.session.user)) & {"SCP General Manager", "System Manager", "Administrator", "SCP Spray Plan Approver", "SCP Spray Plan Creator"}):
         frappe.throw("Not permitted.", frappe.PermissionError)
     target = frappe.utils.getdate(target_date) if target_date else datetime.now(EAT).date()
     farm_to_wos = _group_by_farm(_wos_scheduled_on(target))

@@ -2529,7 +2529,7 @@ function AccessGate({ error }: { error: { status: number; message: string } }) {
           </CardTitle>
           <CardDescription>
             {error.status === 403
-              ? "This page is restricted to users with the 'Spray Plan Creator' role. Ask a General Manager to grant you the role."
+              ? "This page is restricted to users with the 'SCP Spray Plan Creator' role. Ask a General Manager to grant you the role."
               : error.message}
           </CardDescription>
         </CardHeader>
@@ -2545,7 +2545,7 @@ function NoFarmsGate() {
         <CardHeader>
           <CardTitle className="text-base">No farms assigned yet</CardTitle>
           <CardDescription>
-            You hold the 'Spray Plan Creator' role but no farm has been assigned to you.
+            You hold the 'SCP Spray Plan Creator' role but no farm has been assigned to you.
             Ask a General Manager to add you on the Spray Plan Access page.
           </CardDescription>
         </CardHeader>

@@ -16,7 +16,7 @@ import json
 import frappe
 
 
-_WRITE_ROLES = {"System Manager", "Administrator", "General Manager"}
+_WRITE_ROLES = {"System Manager", "Administrator", "SCP General Manager"}
 
 
 def _check_write_perm():

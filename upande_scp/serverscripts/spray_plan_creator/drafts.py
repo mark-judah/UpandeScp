@@ -21,10 +21,10 @@ def _require_creator() -> str:
     # the same test session are visible immediately.
     has_role = frappe.db.exists(
         "Has Role",
-        {"parenttype": "User", "parent": user, "role": "Spray Plan Creator"},
+        {"parenttype": "User", "parent": user, "role": "SCP Spray Plan Creator"},
     )
     if not has_role:
-        frappe.throw("Only Spray Plan Creator can use this endpoint.", title="Forbidden")
+        frappe.throw("Only SCP Spray Plan Creator can use this endpoint.", title="Forbidden")
     return user
 
 

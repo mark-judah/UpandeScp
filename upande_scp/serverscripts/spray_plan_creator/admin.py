@@ -9,9 +9,9 @@ def _require_admin() -> None:
     if user == "Administrator":
         return
     roles = set(frappe.get_roles(user))
-    if not ({"General Manager", "System Manager"} & roles):
+    if not ({"SCP General Manager", "System Manager"} & roles):
         frappe.throw(
-            "Only General Manager or System Manager can manage Spray Plan access.",
+            "Only SCP General Manager or System Manager can manage Spray Plan access.",
             title="Forbidden",
         )
 
@@ -68,12 +68,12 @@ def list_farms_with_creators() -> list[dict]:
 
 @frappe.whitelist()
 def list_spray_plan_creator_candidates(q: str | None = None) -> list[dict]:
-    return _candidates_for_role("Spray Plan Creator", q)
+    return _candidates_for_role("SCP Spray Plan Creator", q)
 
 
 @frappe.whitelist()
 def list_spray_plan_approver_candidates(q: str | None = None) -> list[dict]:
-    return _candidates_for_role("Spray Plan Approver", q)
+    return _candidates_for_role("SCP Spray Plan Approver", q)
 
 
 def _candidates_for_role(role: str, q: str | None) -> list[dict]:
@@ -100,7 +100,7 @@ def set_farm_creators(farm: str, users: list[str] | str) -> dict:
     return _set_farm_roster(
         farm,
         users,
-        role="Spray Plan Creator",
+        role="SCP Spray Plan Creator",
         child_field="spray_plan_creators",
     )
 
@@ -110,7 +110,7 @@ def set_farm_approvers(farm: str, users: list[str] | str) -> dict:
     result = _set_farm_roster(
         farm,
         users,
-        role="Spray Plan Approver",
+        role="SCP Spray Plan Approver",
         child_field="spray_plan_approvers",
     )
     # Caller (AccessTab) expects ``approvers`` to mirror the ``creators``
@@ -164,7 +164,7 @@ def _set_farm_roster(
 
 @frappe.whitelist()
 def list_store_keeper_candidates(q: str | None = None) -> list[dict]:
-    return _candidates_for_role("Store Keeper", q)
+    return _candidates_for_role("SCP Chemical Store Keeper", q)
 
 
 @frappe.whitelist()
@@ -172,7 +172,7 @@ def set_farm_store_keepers(farm: str, users: list[str] | str) -> dict:
     return _set_farm_roster(
         farm,
         users,
-        role="Store Keeper",
+        role="SCP Chemical Store Keeper",
         child_field="store_keepers",
     )
 

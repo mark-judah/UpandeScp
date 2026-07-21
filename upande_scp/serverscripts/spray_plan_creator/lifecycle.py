@@ -58,10 +58,10 @@ STEP_FOR_STATE = {
 }
 
 ACCESS_ROLES = {
-    "General Manager",
-    "Spray Plan Approver",
-    "Spray Plan Creator",
-    "Store Keeper",
+    "SCP General Manager",
+    "SCP Spray Plan Approver",
+    "SCP Spray Plan Creator",
+    "SCP Chemical Store Keeper",
     "System Manager",
     "Administrator",
 }

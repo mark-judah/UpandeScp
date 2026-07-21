@@ -12,7 +12,7 @@ import {
 import { loadObservationColors } from "@/lib/observation-colors";
 import { bootstrap } from "@/lib/frappe";
 
-const STORE_KEEPER_ROLE = "Store Keeper";
+const STORE_KEEPER_ROLE = "SCP Chemical Store Keeper";
 
 // Each page imports its own heavy deps (recharts, leaflet, react-day-picker).
 // React.lazy + Suspense splits them into separate bundles so first paint of
@@ -352,7 +352,7 @@ export function App() {
   // explicit hash was set.
   useEffect(() => {
     const roles = bootstrap().roles || [];
-    const elevated = ["System Manager", "Administrator", "General Manager"];
+    const elevated = ["System Manager", "Administrator", "SCP General Manager"];
     const exclusive =
       roles.includes(STORE_KEEPER_ROLE) &&
       !elevated.some((r) => roles.includes(r));

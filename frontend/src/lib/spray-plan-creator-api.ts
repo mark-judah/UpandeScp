@@ -8,7 +8,7 @@
  *  - upande_scp.serverscripts.spray_plan_creator.approval_review
  *
  * Role gating is enforced server-side: every endpoint requires the
- * "Spray Plan Creator" role (or General Manager / Administrator). 403
+ * "SCP Spray Plan Creator" role (or General Manager / Administrator). 403
  * from the call helper means the user isn't permitted; we surface that
  * in the UI as an Access-Denied banner.
  */

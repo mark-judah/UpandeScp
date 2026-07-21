@@ -7,7 +7,7 @@
  *  - disabled: locks the picker (e.g. while saving)
  *
  * The Add input opens a server-side typeahead that filters Frappe Users
- * by name/email AND restricts to users who hold the "Spray Plan Creator"
+ * by name/email AND restricts to users who hold the "SCP Spray Plan Creator"
  * role (the backend SQL is in admin.list_spray_plan_creator_candidates).
  */
 
@@ -45,10 +45,10 @@ export function CreatorChipPicker({
         : listCreatorCandidates;
   const roleLabel =
     kind === "approver"
-      ? "Spray Plan Approver"
+      ? "SCP Spray Plan Approver"
       : kind === "storekeeper"
-        ? "Store Keeper"
-        : "Spray Plan Creator";
+        ? "SCP Chemical Store Keeper"
+        : "SCP Spray Plan Creator";
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CreatorCandidate[]>([]);

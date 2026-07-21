@@ -7,9 +7,9 @@ def _assert_spray_plan_approver_role(user: str) -> None:
     roles = {r.role for r in frappe.get_all(
         "Has Role", filters={"parent": user}, fields=["role"]
     )}
-    if "Spray Plan Approver" not in roles:
+    if "SCP Spray Plan Approver" not in roles:
         frappe.throw(
-            f"User {user} does not hold the 'Spray Plan Approver' role.",
+            f"User {user} does not hold the 'SCP Spray Plan Approver' role.",
             title="Role required",
         )
 

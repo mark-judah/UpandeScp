@@ -20,7 +20,7 @@ frappe.ui.form.on("Work Order", {
             __("Submit for Approval"),
             function () {
                 frappe.confirm(
-                    __("Submit this spray plan for General Manager approval?"),
+                    __("Submit this spray plan for SCP General Manager approval?"),
                     function () {
                         frappe.call({
                             method:

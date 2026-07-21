@@ -247,9 +247,9 @@ def creator_stock_overview() -> dict:
     meaningful ``aged`` value.
     """
     user = frappe.session.user
-    if not _user_has_role(user, "Spray Plan Creator"):
+    if not _user_has_role(user, "SCP Spray Plan Creator"):
         frappe.throw(
-            "Only Spray Plan Creator can use this endpoint.",
+            "Only SCP Spray Plan Creator can use this endpoint.",
             frappe.PermissionError,
         )
 

@@ -19,7 +19,7 @@ def _gm_recipients():
     """Email addresses of enabled users holding the General Manager role."""
     users = frappe.get_all(
         "Has Role",
-        filters={"role": "General Manager", "parenttype": "User"},
+        filters={"role": "SCP General Manager", "parenttype": "User"},
         pluck="parent",
     )
     out = []

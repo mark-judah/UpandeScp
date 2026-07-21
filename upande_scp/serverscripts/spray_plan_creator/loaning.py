@@ -29,8 +29,8 @@ from upande_scp.serverscripts.spray_plan_creator.scope import _resolve_user_scop
 from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
 
 CHEMICAL_GROUPS = ("CHEMICALS", "Fertilizer")
-ELEVATED = {"General Manager", "System Manager", "Administrator"}
-CREATOR_ROLES = {"Spray Plan Creator"} | ELEVATED
+ELEVATED = {"SCP General Manager", "System Manager", "Administrator"}
+CREATOR_ROLES = {"SCP Spray Plan Creator"} | ELEVATED
 MAX_SOURCES = 2
 QTY_TOL = 0.001
 
@@ -46,7 +46,7 @@ def _ensure_enabled():
     s = _settings()
     if not s.loaning_enabled:
         frappe.throw(
-            "Chemical loaning is not enabled. Ask the General Manager to turn "
+            "Chemical loaning is not enabled. Ask the SCP General Manager to turn "
             "it on in Settings → Spray Plan.",
         )
     return s
@@ -55,7 +55,7 @@ def _ensure_enabled():
 def _ensure_creator():
     if not (set(frappe.get_roles(frappe.session.user)) & CREATOR_ROLES):
         frappe.throw(
-            "Chemical loaning requires the Spray Plan Creator role.",
+            "Chemical loaning requires the SCP Spray Plan Creator role.",
             frappe.PermissionError,
         )
 
@@ -534,7 +534,7 @@ def _upsert_baseline(farm: str, item_code: str, qty: float, via: str) -> None:
 def bulk_restock(farm: str | None = None) -> dict:
     """GM utility: set every (farm, chemical) baseline to current on-hand."""
     if not (set(frappe.get_roles(frappe.session.user)) & ELEVATED):
-        frappe.throw("Only the General Manager can bulk-restock.", frappe.PermissionError)
+        frappe.throw("Only the SCP General Manager can bulk-restock.", frappe.PermissionError)
 
     farms = [farm] if farm else _all_chemical_farms()
     updated = 0

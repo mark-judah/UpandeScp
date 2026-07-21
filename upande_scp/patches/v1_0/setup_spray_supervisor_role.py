@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import frappe
 
-ROLE_NAME = "Spray Supervisor"
+ROLE_NAME = "SCP Spray Supervisor"
 DESC = (
     "Mobile spray-supervisor: starts and runs the spray application "
     "process on the field app. Granted Create + Submit on Stock Entry "

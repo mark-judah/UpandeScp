@@ -6,7 +6,7 @@
  * Stock Entries + QR labels per chemical) or stop them, with a live
  * progress panel and a 30×40 mm QR print window.
  *
- * Server access is gated to "Spray Plan Approver" / "General Manager" /
+ * Server access is gated to "SCP Spray Plan Approver" / "SCP General Manager" /
  * "System Manager" on the endpoint side
  * (see ``upande_scp/serverscripts/spray_plan_approval.py``);
  * non-privileged users will still see the route but every API call

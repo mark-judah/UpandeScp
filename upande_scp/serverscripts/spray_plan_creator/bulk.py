@@ -21,8 +21,8 @@ def submit_drafts_for_approval(wo_names) -> dict:
         wo_names = frappe.parse_json(wo_names)
     if not wo_names:
         frappe.throw("No drafts to submit.")
-    if not _user_has_role(user, "Spray Plan Creator"):
-        frappe.throw("Only Spray Plan Creator can submit drafts.", title="Forbidden")
+    if not _user_has_role(user, "SCP Spray Plan Creator"):
+        frappe.throw("Only SCP Spray Plan Creator can submit drafts.", title="Forbidden")
     scope = _resolve_user_scope(user)
     if not scope["farms"] and user != "Administrator":
         frappe.throw("You are not assigned to any farm.", title="No access")
@@ -102,11 +102,11 @@ def approve_drafts_bulk(wo_names) -> dict:
         # Use DB check (Redis cache may miss in tests)
         gm_or_sm = bool(frappe.db.sql(
             """SELECT 1 FROM `tabHas Role`
-               WHERE parent=%s AND role IN ('General Manager', 'System Manager') LIMIT 1""",
+               WHERE parent=%s AND role IN ('SCP General Manager', 'System Manager') LIMIT 1""",
             (user,),
         ))
         if not gm_or_sm:
-            raise frappe.PermissionError("Only General Manager / System Manager can bulk-approve.")
+            raise frappe.PermissionError("Only SCP General Manager / System Manager can bulk-approve.")
 
     approved: list[str] = []
     skipped: list[dict] = []

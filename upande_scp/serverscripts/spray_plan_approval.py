@@ -15,7 +15,7 @@ from frappe.utils import add_days, cstr, flt, now_datetime, today
 
 AFP_TYPE = "Application Floor Plan"
 
-APPROVAL_ROLES = ("Spray Plan Approver", "General Manager")
+APPROVAL_ROLES = ("SCP Spray Plan Approver", "SCP General Manager")
 
 
 def _ensure_approval_role():
@@ -28,7 +28,7 @@ def _ensure_approval_role():
     user_roles = set(frappe.get_roles(user))
     if not user_roles.intersection(APPROVAL_ROLES):
         frappe.throw(
-            "Spray plan approval requires the General Manager or Spray Plan Approver role.",
+            "Spray plan approval requires the SCP General Manager or SCP Spray Plan Approver role.",
             frappe.PermissionError,
         )
 
@@ -41,7 +41,7 @@ def _ensure_wo_in_approver_scope(wo_name: str) -> None:
         return
     if not allowed:
         frappe.throw(
-            "You are not assigned to any farm. Ask the General Manager to "
+            "You are not assigned to any farm. Ask the SCP General Manager to "
             "roster you on the Settings → Access tab.",
             frappe.PermissionError,
         )
@@ -64,9 +64,9 @@ def _approver_allowed_greenhouses(user: str) -> list[str] | None:
     if user == "Administrator":
         return None
     roles = set(frappe.get_roles(user))
-    if "General Manager" in roles or "System Manager" in roles:
+    if "SCP General Manager" in roles or "System Manager" in roles:
         return None
-    if "Spray Plan Approver" not in roles:
+    if "SCP Spray Plan Approver" not in roles:
         # Defence in depth — _ensure_approval_role already rejected this.
         return []
     if not frappe.db.table_exists("Farm Spray Plan Approver"):

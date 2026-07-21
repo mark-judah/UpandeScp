@@ -14,7 +14,7 @@ import json
 
 import frappe
 
-_WRITE_ROLES = {"System Manager", "Administrator", "General Manager"}
+_WRITE_ROLES = {"System Manager", "Administrator", "SCP General Manager"}
 
 # Preferred column order for the known plant parts; matches the mobile tab
 # order. Anything else follows alphabetically after these.

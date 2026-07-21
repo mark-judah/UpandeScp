@@ -31,14 +31,14 @@ from frappe.utils import now_datetime, add_to_date
 # ----------------------------------------------------------------------
 # Permission gate
 # ----------------------------------------------------------------------
-_WRITE_ROLES = {"Store Keeper", "System Manager", "Administrator", "General Manager"}
+_WRITE_ROLES = {"SCP Chemical Store Keeper", "System Manager", "Administrator", "SCP General Manager"}
 
 
 def _check_perm():
     roles = set(frappe.get_roles(frappe.session.user) or [])
     if not (roles & _WRITE_ROLES):
         frappe.throw(
-            "You need the Store Keeper role to access this endpoint.",
+            "You need the SCP Chemical Store Keeper role to access this endpoint.",
             frappe.PermissionError,
         )
 
@@ -53,7 +53,7 @@ def _allowed_farms_for(user=None):
     where the user is an assigned store keeper (possibly empty)."""
     user = user or frappe.session.user
     roles = set(frappe.get_roles(user))
-    if roles & {"System Manager", "Administrator", "General Manager"}:
+    if roles & {"System Manager", "Administrator", "SCP General Manager"}:
         return None
     return frappe.get_all(
         "Farm Store Keeper",

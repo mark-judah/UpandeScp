@@ -177,7 +177,7 @@ def dump_user_state(email: str = "stephene@upande.com"):
     role_names = [r.role for r in roles]
     print(f"  Roles ({len(role_names)}):")
     for r in role_names:
-        marker = "  *" if r in ("General Manager", "System Manager", "Spray Plan Approver", "Spray Plan Creator") else "   "
+        marker = "  *" if r in ("SCP General Manager", "System Manager", "SCP Spray Plan Approver", "SCP Spray Plan Creator") else "   "
         print(f"  {marker} {r}")
     print()
 

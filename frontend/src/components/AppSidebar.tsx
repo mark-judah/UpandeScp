@@ -81,7 +81,7 @@ interface NavSection {
   hideForRoles?: string[];
 }
 
-const STORE_KEEPER_ROLE = "Store Keeper";
+const STORE_KEEPER_ROLE = "SCP Chemical Store Keeper";
 
 const ROSE_NAV: NavSection[] = [
   // Store-Keeper exclusive section — only role that sees it, and the
@@ -154,28 +154,28 @@ const ROSE_NAV: NavSection[] = [
         view: "creator-stock",
         label: "Chemical Stock",
         icon: Warehouse,
-        requireRoles: ["Spray Plan Creator"],
+        requireRoles: ["SCP Spray Plan Creator"],
       },
       {
         kind: "view",
         view: "chemical-loaning",
         label: "Chemical Loaning",
         icon: ArrowRightLeft,
-        requireRoles: ["Spray Plan Creator", "General Manager"],
+        requireRoles: ["SCP Spray Plan Creator", "SCP General Manager"],
       },
       {
         kind: "view",
         view: "approvals",
         label: "Approvals",
         icon: CheckSquare,
-        requireRoles: ["General Manager", "Spray Plan Approver"],
+        requireRoles: ["SCP General Manager", "SCP Spray Plan Approver"],
       },
       {
         kind: "view",
         view: "settings",
         label: "Settings",
         icon: Settings,
-        requireRoles: ["General Manager", "System Manager", "Administrator"],
+        requireRoles: ["SCP General Manager", "System Manager", "Administrator"],
       },
       {
         kind: "view",
@@ -278,8 +278,8 @@ function userHasAnyRole(required: string[] | undefined, userRoles: string[]): bo
 // Roles that override Store-Keeper-only lockdown — a person who's BOTH a
 // Store Keeper AND a System Manager / Administrator / General Manager
 // stays a full user; only somebody whose elevated access is exclusively
-// "Store Keeper" gets the trimmed two-page sidebar.
-const ELEVATED_ROLES = ["System Manager", "Administrator", "General Manager"];
+// "SCP Chemical Store Keeper" gets the trimmed two-page sidebar.
+const ELEVATED_ROLES = ["System Manager", "Administrator", "SCP General Manager"];
 
 function isStoreKeeperExclusive(userRoles: string[]): boolean {
   if (!userRoles.includes(STORE_KEEPER_ROLE)) return false;

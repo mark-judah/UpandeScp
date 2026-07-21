@@ -21,7 +21,7 @@
 // idempotent: we tag the DOM node with ``data-spt-button`` and skip
 // re-injection if it's already present.
 
-const SK_ROLE = "Store Keeper";
+const SK_ROLE = "SCP Chemical Store Keeper";
 const TRANSFERS_URL = "/scp_app/#/spray-plan-transfers";
 const BTN_LABEL = "Spray Plan Transfers";
 const BTN_TAG = "spt-spray-plan-transfers-btn";

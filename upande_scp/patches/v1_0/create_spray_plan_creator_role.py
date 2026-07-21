@@ -6,11 +6,11 @@ import frappe
 
 
 def execute() -> None:
-    if frappe.db.exists("Role", "Spray Plan Creator"):
+    if frappe.db.exists("Role", "SCP Spray Plan Creator"):
         return
     frappe.get_doc({
         "doctype": "Role",
-        "role_name": "Spray Plan Creator",
+        "role_name": "SCP Spray Plan Creator",
         "desk_access": 0,
         "is_custom": 1,
     }).insert(ignore_permissions=True)

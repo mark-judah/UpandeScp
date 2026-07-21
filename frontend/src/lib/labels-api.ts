@@ -52,7 +52,7 @@ export async function fetchSubmittedTransfers(opts: {
   to_date?: string;
 } = {}): Promise<SubmittedTransfersResp> {
   const r = await call(
-    "upande_scp.serverscripts.store_keeper_api.list_submitted_transfers",
+    "upande_scp.serverscripts.store.store_keeper_api.list_submitted_transfers",
     opts,
   );
   return unwrap<SubmittedTransfersResp>(r);

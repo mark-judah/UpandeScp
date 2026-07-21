@@ -12,7 +12,7 @@ import json
 
 import frappe
 
-from upande_scp.serverscripts import store_keeper_api
+from upande_scp.serverscripts.store import store_keeper_api
 from upande_scp.serverscripts.spray_plan_ops.spray_plan_labels import (
     _collect_labels,
     _stamp_labels_printed,

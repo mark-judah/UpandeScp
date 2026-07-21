@@ -412,7 +412,7 @@ def cancel_application_work_order(name):
 def list_chemical_items(q=None, limit=50):
     """Search Items the planner can add to a BOM — restricted to chemical /
     fertilizer item groups so we don't surface every Item in the company."""
-    from upande_scp.serverscripts.get_bom_stock_balances import (
+    from upande_scp.serverscripts.store.get_bom_stock_balances import (
         _FERTILIZER_GROUP,
     )
 
@@ -464,7 +464,7 @@ def get_chemical_stock_balances(item_codes):
     if not item_codes:
         return {}
 
-    from upande_scp.serverscripts.get_bom_stock_balances import (
+    from upande_scp.serverscripts.store.get_bom_stock_balances import (
         _FERTILIZER_GROUP,
         _fill_balances,
         get_allowed_chemical_store_warehouses,
@@ -507,7 +507,7 @@ def get_bom_details(name, greenhouse=None):
     if not name:
         frappe.throw("name is required")
 
-    from upande_scp.serverscripts.get_bom_stock_balances import (
+    from upande_scp.serverscripts.store.get_bom_stock_balances import (
         _FERTILIZER_GROUP,
     )
 
@@ -550,7 +550,7 @@ def get_bom_details(name, greenhouse=None):
     balances_by_code = {}
 
     if item_codes:
-        from upande_scp.serverscripts.get_bom_stock_balances import (
+        from upande_scp.serverscripts.store.get_bom_stock_balances import (
             _FERTILIZER_GROUP,
             _fill_balances,
             get_allowed_chemical_store_warehouses,

@@ -1,5 +1,5 @@
 import unittest
-from upande_scp.serverscripts.store_keeper_api import bucket_overview
+from upande_scp.serverscripts.store.store_keeper_api import bucket_overview
 
 
 class TestBucketOverview(unittest.TestCase):

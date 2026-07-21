@@ -857,7 +857,7 @@ export async function fetchChemicalRateLimits(): Promise<
     try {
       return (
         (await call<Record<string, RateLimit>>(
-          "upande_scp.serverscripts.create_bom.get_chemical_rate_limits",
+          "upande_scp.serverscripts.store.create_bom.get_chemical_rate_limits",
           {},
         )) || {}
       );
@@ -999,7 +999,7 @@ export interface CreateBomResult {
 export async function createBom(args: CreateBomArgs): Promise<CreateBomResult> {
   try {
     const r = await call<CreateBomResult>(
-      "upande_scp.serverscripts.create_bom.createBOM",
+      "upande_scp.serverscripts.store.create_bom.createBOM",
       args as unknown as Record<string, unknown>,
     );
     return r || { status: "error", message: "No response from server" };

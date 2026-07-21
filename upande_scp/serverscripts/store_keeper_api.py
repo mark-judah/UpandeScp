@@ -350,6 +350,28 @@ def farm_store_levels() -> dict:
 # filters so we stay backwards-compatible with the data set the
 # operator already knows.
 _SE_PURPOSE = "Material Transfer for Manufacture"
+
+
+def _transfer_submit_error(row: dict) -> str | None:
+    """Return why this transfer SE cannot be submitted, or None if it can.
+
+    Pure — shared by both the biometric and the manual submit paths so
+    the eligibility rules (draft, correct purpose, receiving employee
+    assigned) never drift between them. Biometric identity matching is
+    NOT checked here; that is specific to the biometric path.
+
+    ``row`` keys: name, docstatus, purpose, bio_employee.
+    """
+    name = row.get("name")
+    if row.get("docstatus") != 0:
+        return f"{name}: already submitted or cancelled."
+    if (row.get("purpose") or "") != _SE_PURPOSE:
+        return f"{name}: purpose is not {_SE_PURPOSE}."
+    if not row.get("bio_employee"):
+        return f"{name}: no receiving employee assigned — assign one first."
+    return None
+
+
 _AFP_TYPE = "Application Floor Plan"
 
 
@@ -577,7 +599,11 @@ def list_draft_transfers(
         r["item_count"] = int(r["item_count"] or 0)
 
     farms = sorted({r["farm"] for r in rows if r.get("farm")})
-    return {"rows": rows, "farms": farms}
+    return {
+        "rows": rows,
+        "farms": farms,
+        "allow_submit_without_biometric": _allow_submit_without_biometric(),
+    }
 
 
 # ----------------------------------------------------------------------
@@ -821,20 +847,17 @@ def submit_with_biometric(names: str | list) -> dict:
     for name in names:
         try:
             doc = frappe.get_doc("Stock Entry", name)
-            if doc.docstatus != 0:
-                raise frappe.ValidationError(
-                    f"{name}: already submitted or cancelled.",
-                )
-            if (doc.purpose or "") != _SE_PURPOSE:
-                raise frappe.ValidationError(
-                    f"{name}: purpose is not {_SE_PURPOSE}.",
-                )
+            err = _transfer_submit_error({
+                "name": name,
+                "docstatus": doc.docstatus,
+                "purpose": doc.purpose,
+                "bio_employee": doc.bio_employee,
+            })
+            if err:
+                raise frappe.ValidationError(err)
+
             expected = doc.bio_employee
             expected_name = doc.bio_employee_name or expected
-            if not expected:
-                raise frappe.ValidationError(
-                    f"{name}: no receiving employee assigned — assign one first.",
-                )
             if expected != scanned_emp:
                 raise frappe.ValidationError(
                     f"{name}: biometric belongs to {scanned_name} but "
@@ -869,4 +892,85 @@ def submit_with_biometric(names: str | list) -> dict:
             "employee_name": scanned_name,
             "biometric_id":  biometric_id,
         },
+        "method": "biometric",
+    }
+
+
+def _allow_submit_without_biometric() -> bool:
+    """Whether the GM has enabled the biometric-bypass fallback."""
+    try:
+        return bool(
+            frappe.db.get_single_value(
+                "Spray Plan Settings", "allow_submit_without_biometric"
+            )
+        )
+    except Exception:
+        return False
+
+
+@frappe.whitelist()
+def submit_without_biometric(names: str | list) -> dict:
+    """Submit each transfer SE in ``names`` WITHOUT a biometric scan.
+
+    Gated behind ``Spray Plan Settings.allow_submit_without_biometric`` —
+    throws if a manager has not enabled it. Shares eligibility validation
+    with the biometric path via ``_transfer_submit_error`` but performs no
+    scan check: ``biometric_status`` is left at "Pending" and no
+    ``matched_biometric_log`` is set, so a submitted SE without biometric
+    is distinguishable from a verified one. The submitting user is captured
+    by Frappe's built-in ``modified_by``.
+
+    Returns ``{ok, failed, results, method}`` — same shape as the biometric
+    path minus ``scanned`` (there was no scan), plus ``method="manual"``.
+    """
+    _check_perm()
+
+    if not _allow_submit_without_biometric():
+        frappe.throw(
+            "Submitting without biometric is disabled. Ask a manager to "
+            "enable it in Spray Plan Settings → Submission Gating.",
+            frappe.ValidationError,
+        )
+
+    if isinstance(names, str):
+        try:
+            names = json.loads(names)
+        except (ValueError, TypeError):
+            names = [n.strip() for n in names.split(",") if n.strip()]
+    if not isinstance(names, list) or not names:
+        frappe.throw("No Stock Entries selected.", frappe.ValidationError)
+
+    results: list = []
+    ok_count = 0
+    failed_count = 0
+
+    for name in names:
+        try:
+            doc = frappe.get_doc("Stock Entry", name)
+            err = _transfer_submit_error({
+                "name": name,
+                "docstatus": doc.docstatus,
+                "purpose": doc.purpose,
+                "bio_employee": doc.bio_employee,
+            })
+            if err:
+                raise frappe.ValidationError(err)
+
+            # No scan — leave biometric_status as-is (Pending); do not set
+            # matched_biometric_log / biometric_verified_at.
+            doc.save(ignore_permissions=False)
+            doc.submit()
+            ok_count += 1
+            results.append({"name": name, "ok": True, "error": None})
+        except Exception as e:
+            failed_count += 1
+            results.append({"name": name, "ok": False, "error": str(e)})
+            frappe.db.rollback()
+
+    frappe.db.commit()
+    return {
+        "ok": ok_count,
+        "failed": failed_count,
+        "results": results,
+        "method": "manual",
     }

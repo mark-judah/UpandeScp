@@ -26,6 +26,7 @@ export interface SprayPlanSettings {
   default_chemical_expense_account: string;
   default_chemical_difference_account: string;
   bypass_owner_check: number;
+  allow_submit_without_biometric: number;
   auto_cancel_enabled: number;
   auto_cancel_apply_to_backlog: number;
   auto_cancel_dormant_days: number;

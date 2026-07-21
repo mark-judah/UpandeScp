@@ -399,6 +399,29 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
               </p>
             </div>
           </div>
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+            <Checkbox
+              id="allow_submit_without_biometric"
+              checked={!!draft.allow_submit_without_biometric}
+              onCheckedChange={(v) =>
+                set("allow_submit_without_biometric", v ? 1 : 0)
+              }
+            />
+            <div className="flex flex-col gap-1">
+              <Label
+                htmlFor="allow_submit_without_biometric"
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Allow submit without biometric (device-down fallback)
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                When on, the Spray Plan Transfers page also offers a “Submit
+                without biometric” action. Use only when the biometric device
+                is unavailable — the submitting user is recorded. Leave off in
+                normal operation.
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

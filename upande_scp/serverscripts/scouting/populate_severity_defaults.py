@@ -1,7 +1,7 @@
 """One-shot populator for Crop Scouted severity thresholds.
 
 Run via:
-    bench --site <your-site> execute upande_scp.serverscripts.populate_severity_defaults.run
+    bench --site <your-site> execute upande_scp.serverscripts.scouting.populate_severity_defaults.run
 
 Sets sensible default low/moderate/high thresholds on Pest Filter and Disease
 Filter rows for the Rose and Avocado Crop Scouted records. Idempotent — only

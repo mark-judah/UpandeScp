@@ -123,7 +123,7 @@ function emitLive() {
 export function loadObservationColors(force = false): Promise<ObsColorMap> {
   if (!force && liveColorsPromise) return liveColorsPromise;
   liveColorsPromise = call<ObsColorMap>(
-    "upande_scp.serverscripts.observation_colors.get_observation_colors",
+    "upande_scp.serverscripts.scouting.observation_colors.get_observation_colors",
     {},
   )
     .then((r) => {

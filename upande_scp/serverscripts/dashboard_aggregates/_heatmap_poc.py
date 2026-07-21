@@ -9,7 +9,7 @@ with a card-grid endpoint that follows the same shape.
 
 import frappe
 
-from upande_scp.serverscripts.get_complete_scouting_entries import (
+from upande_scp.serverscripts.scouting.get_complete_scouting_entries import (
     _cached_disease_colors,
     _cached_pest_colors,
 )

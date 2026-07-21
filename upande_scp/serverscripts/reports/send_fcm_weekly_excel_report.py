@@ -33,7 +33,7 @@ from datetime import date, timedelta
 
 import frappe
 
-from upande_scp.serverscripts.scouting_metrics import (
+from upande_scp.serverscripts.scouting.scouting_metrics import (
     MOTH_OTHERS,
     get_fcm_larvae_weekly,
     get_fcm_trap_counts_weekly,

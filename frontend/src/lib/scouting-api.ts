@@ -369,7 +369,7 @@ export async function fetchChunk(
   greenhouse?: string,
 ): Promise<ChunkResponse> {
   const r = await call<ChunkResponse>(
-    "upande_scp.serverscripts.get_complete_scouting_entries.getScoutingEntriesChunk",
+    "upande_scp.serverscripts.scouting.get_complete_scouting_entries.getScoutingEntriesChunk",
     {
       from_date: fromDate,
       to_date: toDate,
@@ -385,7 +385,7 @@ export async function fetchFarmsAndWarehouses(): Promise<
 > {
   try {
     const r = await call<Record<string, string[]>>(
-      "upande_scp.serverscripts.scouting_metrics_api.get_farms_and_warehouses",
+      "upande_scp.serverscripts.scouting.scouting_metrics_api.get_farms_and_warehouses",
       {},
     );
     return r || {};
@@ -400,7 +400,7 @@ export async function fetchCrops(): Promise<
   try {
     const r = await call<
       Array<{ name: string; crop_name: string; farms?: string[] }>
-    >("upande_scp.serverscripts.scouting_metrics_api.get_crops_with_farms", {});
+    >("upande_scp.serverscripts.scouting.scouting_metrics_api.get_crops_with_farms", {});
     return Array.isArray(r) ? r : [];
   } catch {
     return [];
@@ -604,7 +604,7 @@ export async function fetchZonesByGreenhouse(): Promise<
   return cached("zones_by_gh", async () => {
     try {
       const r = await call<Record<string, number>>(
-        "upande_scp.serverscripts.scouting_metrics_api.get_zone_counts_by_greenhouse",
+        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_zone_counts_by_greenhouse",
         {},
       );
       return r || {};
@@ -622,7 +622,7 @@ export async function fetchScoutLookup(): Promise<Record<string, string>> {
   return cached("scout_lookup", async () => {
     try {
       const r = await call<Record<string, string>>(
-        "upande_scp.serverscripts.scouting_metrics_api.get_scout_lookup",
+        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_scout_lookup",
         {},
       );
       return r || {};
@@ -813,7 +813,7 @@ export async function searchChemicalItems(
 ): Promise<ChemicalItem[]> {
   try {
     return await call<ChemicalItem[]>(
-      "upande_scp.serverscripts.scouting_metrics_api.list_chemical_items",
+      "upande_scp.serverscripts.scouting.scouting_metrics_api.list_chemical_items",
       { q: q || undefined, limit: 50 },
     );
   } catch {
@@ -832,7 +832,7 @@ export async function fetchChemicalBalances(
   try {
     return (
       (await call<Record<string, Record<string, number>>>(
-        "upande_scp.serverscripts.scouting_metrics_api.get_chemical_stock_balances",
+        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_chemical_stock_balances",
         { item_codes: itemCodes },
       )) || {}
     );
@@ -893,7 +893,7 @@ export async function fetchBomDetails(
   return cached(`bom:${name}:${greenhouse || ""}`, async () => {
     try {
       return await call<BomDetails>(
-        "upande_scp.serverscripts.scouting_metrics_api.get_bom_details",
+        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_bom_details",
         { name, greenhouse: greenhouse || undefined },
       );
     } catch {
@@ -927,7 +927,7 @@ export async function fetchApplicationPlanBootstrap(): Promise<PlanBootstrap> {
   return cached("plan_bootstrap", async () => {
     try {
       const r = await call<PlanBootstrap>(
-        "upande_scp.serverscripts.scouting_metrics_api.get_application_plan_bootstrap",
+        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_application_plan_bootstrap",
         {},
       );
       return r || { warehouses: [], kits: [], boms: [], spray_teams: [] };
@@ -961,7 +961,7 @@ export async function fetchBedsByGreenhouse(): Promise<
   return cached("beds_by_gh", async () => {
     try {
       const r = await call<Record<string, BedAreaRow[]>>(
-        "upande_scp.serverscripts.scouting_metrics_api.get_beds_by_greenhouse",
+        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_beds_by_greenhouse",
         { active_only: 1 },
       );
       return r || {};
@@ -1012,7 +1012,7 @@ export async function fetchBlocksGeojson(): Promise<GeoJsonFC> {
   return cached("blocks_geojson", async () => {
     try {
       const r = await call<GeoJsonFC>(
-        "upande_scp.serverscripts.scouting_metrics_api.get_blocks_geojson",
+        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_blocks_geojson",
         {},
       );
       return r || { type: "FeatureCollection", features: [] };
@@ -1081,7 +1081,7 @@ export async function fetchMapSettings(): Promise<MapSettings> {
 async function fetchMapSettingsFromServer(): Promise<MapSettings> {
   try {
     const r = await call<MapSettings>(
-      "upande_scp.serverscripts.scouting_metrics_api.get_map_settings",
+      "upande_scp.serverscripts.scouting.scouting_metrics_api.get_map_settings",
       {},
     );
     if (!r) return EMPTY_MAP_SETTINGS;
@@ -1154,7 +1154,7 @@ export async function fetchTrapsByGreenhouse(): Promise<
       const r = await call<
         Record<string, { indoor: TrapInfo[]; outdoor: TrapInfo[] }>
       >(
-        "upande_scp.serverscripts.scouting_metrics_api.get_traps_by_greenhouse",
+        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_traps_by_greenhouse",
         {},
       );
       return r || {};

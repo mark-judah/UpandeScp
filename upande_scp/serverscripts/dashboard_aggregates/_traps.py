@@ -3,7 +3,7 @@
 import re
 import frappe
 
-from upande_scp.serverscripts import scouting_metrics
+from upande_scp.serverscripts.scouting import scouting_metrics
 
 _FCM_RE = re.compile(r"fcm|moth", re.IGNORECASE)
 from upande_scp.serverscripts.dashboard_aggregates._common import (

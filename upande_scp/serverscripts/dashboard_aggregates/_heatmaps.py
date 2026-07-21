@@ -12,7 +12,7 @@ client-side. At 250k+ entries that was unworkable — see
 
 import frappe
 
-from upande_scp.serverscripts import scouting_metrics
+from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     parent_filter_conditions,
@@ -20,7 +20,7 @@ from upande_scp.serverscripts.dashboard_aggregates._common import (
     resolve_greenhouse_scope,
     stage_icon_map,
 )
-from upande_scp.serverscripts.get_complete_scouting_entries import (
+from upande_scp.serverscripts.scouting.get_complete_scouting_entries import (
     _cached_disease_colors,
     _cached_pest_colors,
 )

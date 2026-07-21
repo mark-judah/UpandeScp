@@ -42,7 +42,7 @@ def _build_prefetch():
 	``cached()`` keys in ``frontend/src/lib/scouting-api.ts`` — the client
 	seeds its in-memory cache from these on boot.
 	"""
-	from upande_scp.serverscripts import scouting_metrics_api as api
+	from upande_scp.serverscripts.scouting import scouting_metrics_api as api
 
 	return {
 		"plan_bootstrap": _safe_call(api.get_application_plan_bootstrap),

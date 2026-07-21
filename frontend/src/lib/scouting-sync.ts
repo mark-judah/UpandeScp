@@ -163,7 +163,7 @@ export async function hydrateRange(
     missing.map(async (w) => {
       try {
         const resp = await call<ChunkResp>(
-          "upande_scp.serverscripts.get_complete_scouting_entries.getScoutingEntriesChunk",
+          "upande_scp.serverscripts.scouting.get_complete_scouting_entries.getScoutingEntriesChunk",
           {
             from_date: w.from,
             to_date: w.to,
@@ -196,7 +196,7 @@ export async function runDelta(): Promise<{ added: number; advanced: string }> {
 
   for (;;) {
     const resp = await call<DeltaResp>(
-      "upande_scp.serverscripts.get_complete_scouting_entries.get_entries_since",
+      "upande_scp.serverscripts.scouting.get_complete_scouting_entries.get_entries_since",
       { since: watermark, limit: 2000 },
     );
     const entries = resp?.entries || [];
@@ -315,7 +315,7 @@ export async function refreshRecentWeeks(
       weeks.map(async (w) => {
         try {
           const resp = await call<ChunkResp>(
-            "upande_scp.serverscripts.get_complete_scouting_entries.getScoutingEntriesChunk",
+            "upande_scp.serverscripts.scouting.get_complete_scouting_entries.getScoutingEntriesChunk",
             { from_date: w.from, to_date: w.to, include_meta: 0, ...(crop ? { crop } : {}) },
           );
           const entries = resp?.entries || [];

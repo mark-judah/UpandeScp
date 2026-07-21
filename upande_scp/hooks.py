@@ -99,7 +99,7 @@ doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # install (or a newly added pest doc) gets sensible defaults without manual
 # steps. The seed only fills empty colour fields, so operator-set overrides
 # are preserved.
-after_migrate = ["upande_scp.serverscripts.observation_colors.after_migrate"]
+after_migrate = ["upande_scp.serverscripts.scouting.observation_colors.after_migrate"]
 
 # Uninstallation
 # ------------
@@ -259,14 +259,14 @@ scheduler_events = {
         ],
     },
     "daily": [
-        "upande_scp.serverscripts.scouting_prewarm.daily_prewarm",
+        "upande_scp.serverscripts.scouting.scouting_prewarm.daily_prewarm",
         # Cancel AFP spray plans left unapproved for more than 3 days.
         "upande_scp.serverscripts.spray_plan_creator.maintenance.auto_cancel_dormant_plans",
     ],
     "hourly": [
         # Keep the current + previous ISO week of scouting payload warm in Redis
         # all day (per-week cache TTL is 1h; writes bust the active week).
-        "upande_scp.serverscripts.scouting_prewarm.hourly_prewarm",
+        "upande_scp.serverscripts.scouting.scouting_prewarm.hourly_prewarm",
         # Expire chemical loan requests that sat unanswered past their timeout.
         "upande_scp.serverscripts.spray_plan_creator.loaning.expire_dormant_requests",
         # Daily Chemical Planning Progress Update — sends at the GM-configured

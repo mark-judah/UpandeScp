@@ -73,7 +73,7 @@ export function TankMixes() {
     let cancelled = false;
     setLoading(true);
     call<{ tank_mixes: TankMix[]; farms: string[] }>(
-      "upande_scp.serverscripts.scouting_metrics_api.list_tank_mixes",
+      "upande_scp.serverscripts.scouting.scouting_metrics_api.list_tank_mixes",
       {
         farm: farm === ALL_FARMS ? undefined : farm,
         q: q || undefined,

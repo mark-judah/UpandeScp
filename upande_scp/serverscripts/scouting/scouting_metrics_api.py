@@ -12,7 +12,7 @@ is mostly a safety net — edits flush immediately.
 
 import frappe
 
-from upande_scp.serverscripts import scouting_metrics
+from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.cache_utils import (
     K_CROPS_SCOUTED,
     K_MAP_SETTINGS,

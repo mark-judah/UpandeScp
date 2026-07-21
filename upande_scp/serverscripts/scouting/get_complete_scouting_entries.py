@@ -1,6 +1,6 @@
 import frappe
 
-from upande_scp.serverscripts import scouting_metrics
+from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.cache_utils import (
     K_CROPS_SCOUTED,
     K_DISEASE_COLORS,
@@ -464,7 +464,7 @@ def get_entries_since(since=None, greenhouse=None, farm=None, limit=2000):
         entries = entries[:limit]
 
     if farm_filter and entries:
-        from upande_scp.serverscripts import scouting_metrics
+        from upande_scp.serverscripts.scouting import scouting_metrics
 
         farms_map = scouting_metrics.get_farms_and_warehouses() or {}
         allowed = set(farms_map.get(farm_filter, []) or [])

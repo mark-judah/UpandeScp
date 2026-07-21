@@ -3,7 +3,7 @@ import unittest
 
 class TestRowPayload(unittest.TestCase):
     def _mod(self):
-        from upande_scp.serverscripts import get_orchard_trees as g
+        from upande_scp.serverscripts.geo import get_orchard_trees as g
         return g
 
     def test_strip_trailing_int(self):
@@ -66,7 +66,7 @@ def _tree(name, block, row, num, lng, lat):
 
 class TestRowsFromTrees(unittest.TestCase):
     def _mod(self):
-        from upande_scp.serverscripts import get_orchard_trees as g
+        from upande_scp.serverscripts.geo import get_orchard_trees as g
         return g
 
     def test_groups_and_orders_by_tree_number(self):

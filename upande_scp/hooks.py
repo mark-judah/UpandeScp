@@ -468,7 +468,7 @@ fixtures = [
     # Approvals page replaces it).
     # NOTE: Server Scripts are no longer shipped as fixtures. The only live one
     # ("Zone Atomation Tool" / createBedsAndZones) was moved into code at
-    # upande_scp.serverscripts.bed_zone_automation.create_beds_and_zones; the
+    # upande_scp.serverscripts.geo.bed_zone_automation.create_beds_and_zones; the
     # rest were dead (their callers were the removed www pages).
     # NOTE: the "Spray Plan" Print Format is no longer a fixture — it's a
     # standard app print format in code at

@@ -3,7 +3,7 @@
 Lets you trigger the automation against a block from the bench shell, e.g.
 
     bench --site kaitet.local execute \\
-        upande_scp.serverscripts.run_tree_automation.run_from_file \\
+        upande_scp.serverscripts.geo.run_tree_automation.run_from_file \\
         --kwargs '{"block":"DAIRY BLK 6 - KL","geojson_path":"/tmp/blk6.geojson"}'
 
 Reuses the existing `Tree And Row Automation` document for the block when one

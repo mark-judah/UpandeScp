@@ -11,7 +11,7 @@ frappe.ui.form.on('Bed And Zone Automation', {
                     __('This will create new Bed and Zone documents. Do you want to continue?'),
                     () => {
                         frappe.call({
-                            method: "upande_scp.serverscripts.bed_zone_automation.create_beds_and_zones",
+                            method: "upande_scp.serverscripts.geo.bed_zone_automation.create_beds_and_zones",
                             args: {
                                 doc_name: frm.doc.name
                             },

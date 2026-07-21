@@ -12,7 +12,7 @@ import json
 
 import frappe
 
-from upande_scp.serverscripts.warehouse_filter import (
+from upande_scp.serverscripts.geo.warehouse_filter import (
     gh_sort_key,
     is_greenhouse_allowed,
     load_settings,

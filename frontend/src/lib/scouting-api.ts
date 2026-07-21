@@ -524,7 +524,7 @@ export async function fetchBedsAndZones(): Promise<VarietyNode[]> {
 async function fetchBedsAndZonesFromServer(): Promise<VarietyNode[]> {
   try {
     const r = await call<{ data: VarietyNode[] } | VarietyNode[]>(
-      "upande_scp.serverscripts.get_beds_and_zones.getBedsAndZones",
+      "upande_scp.serverscripts.geo.get_beds_and_zones.getBedsAndZones",
       {},
     );
     if (Array.isArray(r)) return r;
@@ -712,7 +712,7 @@ export async function fetchOrchardTreesGeojson(
   return cached(key, async () => {
     try {
       const r = await call<GeoJsonFC>(
-        "upande_scp.serverscripts.get_orchard_trees.get_orchard_trees_geojson",
+        "upande_scp.serverscripts.geo.get_orchard_trees.get_orchard_trees_geojson",
         args,
       );
       return r || { type: "FeatureCollection", features: [] };
@@ -737,7 +737,7 @@ export async function fetchOrchardTreePoints(
   return cached(key, async () => {
     try {
       const r = await call<OrchardTreePoints>(
-        "upande_scp.serverscripts.get_orchard_trees.get_orchard_tree_points",
+        "upande_scp.serverscripts.geo.get_orchard_trees.get_orchard_tree_points",
         args,
       );
       return r && Array.isArray(r.coords) ? r : { names: [], coords: [] };
@@ -758,7 +758,7 @@ export async function fetchOrchardTreeRows(
   return cached(key, async () => {
     try {
       const r = await call<{ rows: OrchardTreeRow[] }>(
-        "upande_scp.serverscripts.get_orchard_trees.get_orchard_tree_rows",
+        "upande_scp.serverscripts.geo.get_orchard_trees.get_orchard_tree_rows",
         args,
       );
       return r && Array.isArray(r.rows)
@@ -1124,7 +1124,7 @@ export async function fetchTanksValvesGeojson(
   return cached(key, async () => {
     try {
       const r = await call<GeoJsonFC>(
-        "upande_scp.serverscripts.get_tanks_valves.get_tanks_valves_geojson",
+        "upande_scp.serverscripts.geo.get_tanks_valves.get_tanks_valves_geojson",
         args,
       );
       return r || { type: "FeatureCollection", features: [] };

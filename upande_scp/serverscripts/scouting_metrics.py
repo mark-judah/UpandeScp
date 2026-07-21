@@ -294,7 +294,7 @@ def get_farms_and_warehouses():
     Orphans (no ``custom_farm``) drop out. Block-type warehouses bypass
     the greenhouse filter — orchards don't follow the GH convention.
     """
-    from upande_scp.serverscripts.warehouse_filter import (
+    from upande_scp.serverscripts.geo.warehouse_filter import (
         is_greenhouse_allowed,
         load_settings,
     )

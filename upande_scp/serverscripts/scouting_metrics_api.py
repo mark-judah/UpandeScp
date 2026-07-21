@@ -616,7 +616,7 @@ def get_application_plan_bootstrap():
     def _build_warehouses():
         # Spray Plan Settings allowed_farms + the GH-name regex + exclude
         # keywords, so the React greenhouse list stays in AFP scope.
-        from upande_scp.serverscripts.geo_builders import build_afp_warehouses
+        from upande_scp.serverscripts.geo.geo_builders import build_afp_warehouses
 
         return build_afp_warehouses()
 
@@ -665,7 +665,7 @@ def get_blocks_geojson():
         K_BLOCKS_GEOJSON,
         TTL_LONG,
     )
-    from upande_scp.serverscripts.geo_builders import build_blocks_geojson
+    from upande_scp.serverscripts.geo.geo_builders import build_blocks_geojson
 
     return get_or_set(K_BLOCKS_GEOJSON, build_blocks_geojson, ttl=TTL_LONG)
 

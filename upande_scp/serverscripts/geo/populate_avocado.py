@@ -21,20 +21,20 @@ the updated `getPestsData` server-script fixture) ship with the app code,
 not via this populate script. Deploy the app, then run this.
 
 Run on local mimic site:
-    bench --site SITENAME execute upande_scp.serverscripts.populate_avocado.run
+    bench --site SITENAME execute upande_scp.serverscripts.geo.populate_avocado.run
 
 Run on the production "main site" (same command, different --site).
 
 Dry-run (no DB writes, returns what *would* change):
-    bench --site SITENAME execute upande_scp.serverscripts.populate_avocado.run \\
+    bench --site SITENAME execute upande_scp.serverscripts.geo.populate_avocado.run \\
         --kwargs '{"dry_run": True}'
 
 Limit to one farm (default Lokitela):
-    bench --site SITENAME execute upande_scp.serverscripts.populate_avocado.run \\
+    bench --site SITENAME execute upande_scp.serverscripts.geo.populate_avocado.run \\
         --kwargs '{"farm": "Lokitela"}'
 
 Skip schema reload (e.g. if you've already run migrate):
-    bench --site SITENAME execute upande_scp.serverscripts.populate_avocado.run \\
+    bench --site SITENAME execute upande_scp.serverscripts.geo.populate_avocado.run \\
         --kwargs '{"skip_schema": True}'
 
 The Trap doctype's `type` Select field has its options expanded by

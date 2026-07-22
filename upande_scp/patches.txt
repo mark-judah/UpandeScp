@@ -22,3 +22,4 @@ upande_scp.patches.v1_0.consolidate_disease_stages
 upande_scp.patches.v1_0.rebrand_workspace_upande_scp
 upande_scp.patches.v1_0.create_spray_stock_entry_types
 upande_scp.patches.v1_0.introduce_chemical_foliar_doctypes
+upande_scp.patches.v1_0.configure_fertilizer_as_foliar

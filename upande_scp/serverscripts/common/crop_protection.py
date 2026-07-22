@@ -185,22 +185,65 @@ def crop_protection_item_codes(kind=None):
 	return frappe.get_all("Item", filters={"item_group": ["in", groups]}, pluck="name")
 
 
+# Legacy Item custom_* fields copied into a new sidecar. Scalars first, then
+# child tables (source custom field -> sidecar field).
+_LEGACY_SCALARS = {
+	"custom_type": "type",
+	"custom_toxicity": "toxicity",
+	"custom_reentry_interval_hrs": "reentry_interval_hrs",
+	"custom_lower_rate_limit": "default_lower_rate_limit",
+	"custom_upper_rate_limit": "default_upper_rate_limit",
+	"custom_low_stock_threshold": "low_stock_threshold",
+	"custom_irac_moa": "irac_moa",
+	"custom_frac_moa": "frac_moa",
+	"custom_ghs_description": "ghs_description",
+}
+_LEGACY_CHILDREN = {
+	"custom_active_ingredients": "active_ingredients",
+	"custom_targets": "default_targets",
+	"custom_chemical_intervention_threshhold": "default_requirements",
+	"custom_irac": "irac",
+	"custom_frac": "frac",
+	"custom_ghs": "ghs",
+}
+_CHILD_STD = {
+	"name", "parent", "parenttype", "parentfield", "idx", "doctype",
+	"owner", "creation", "modified", "modified_by", "docstatus",
+}
+
+
+def _copy_legacy_fields(item, doc):
+	"""Copy an Item's chemical custom_* values into a new sidecar doc."""
+	for src, dst in _LEGACY_SCALARS.items():
+		val = item.get(src)
+		if val not in (None, ""):
+			doc.set(dst, val)
+	for src, dst in _LEGACY_CHILDREN.items():
+		for row in (item.get(src) or []):
+			d = row.as_dict()
+			doc.append(dst, {k: v for k, v in d.items()
+			                 if k not in _CHILD_STD and not str(k).startswith("_")})
+
+
 def ensure_product_record(item_code):
-	"""Create a stub Chemical/Foliar for an Item if its group is configured and
-	none exists. Returns (doctype, name) when created, else None."""
+	"""Create a Chemical/Foliar for an Item if its group is configured and none
+	exists, copying any legacy Item custom_* values. Returns (doctype, name)
+	when created, else None."""
 	item_group = frappe.db.get_value("Item", item_code, "item_group")
 	kind = classify_item_group(item_group)
+	target = None
 	if kind == "chemical" and not is_chemical(item_code):
-		doc = frappe.new_doc("Chemical")
-		doc.item = item_code
-		doc.insert(ignore_permissions=True)
-		return ("Chemical", doc.name)
-	if kind == "foliar" and not is_foliar(item_code):
-		doc = frappe.new_doc("Foliar")
-		doc.item = item_code
-		doc.insert(ignore_permissions=True)
-		return ("Foliar", doc.name)
-	return None
+		target = "Chemical"
+	elif kind == "foliar" and not is_foliar(item_code):
+		target = "Foliar"
+	if not target:
+		return None
+	item = frappe.get_doc("Item", item_code)
+	doc = frappe.new_doc(target)
+	doc.item = item_code
+	_copy_legacy_fields(item, doc)
+	doc.insert(ignore_permissions=True)
+	return (target, doc.name)
 
 
 def on_item_after_insert(doc, method=None):

@@ -21,7 +21,12 @@ from __future__ import annotations
 import frappe
 
 from upande_scp.serverscripts.common.cache_utils import K_AFP_WAREHOUSES, invalidate
-from upande_scp.serverscripts.common.crop_protection import get_chemical, get_foliar
+from upande_scp.serverscripts.common.crop_protection import (
+    chemical_groups,
+    foliar_groups,
+    get_chemical,
+    get_foliar,
+)
 
 from .admin import _require_admin
 
@@ -260,20 +265,10 @@ def list_codes() -> dict:
 # ──────────────────────────────────────────────────────────────────────
 
 
-# Item groups we treat as "chemicals" for spray-plan curation. Matches the
-# filter used by the chemical search in the spray-plan creator pages.
-_CHEMICAL_GROUPS = ("CHEMICALS", "Chemical", "Chemicals", "FERTILIZERS",
-                    "Fertilizer", "Fertilizers")
-
-# Item groups that classify as fertilizer — anything else in
-# ``_CHEMICAL_GROUPS`` is treated as a chemical. Used by the Settings UI
-# to badge each row and to hide the pest/disease target editor for
-# fertilizers (which don't treat pests, they feed plants).
-_FERTILIZER_GROUPS_LOWER = {"fertilizers", "fertilizer"}
-
-
 def _kind_of(item_group: str) -> str:
-    return "fertilizer" if (item_group or "").strip().lower() in _FERTILIZER_GROUPS_LOWER else "chemical"
+    # Foliar groups (fertilizers) are badged "fertilizer"; everything else
+    # configured is a chemical. Config-driven via the settings group lists.
+    return "fertilizer" if item_group in set(foliar_groups()) else "chemical"
 
 
 @frappe.whitelist()
@@ -303,17 +298,18 @@ def list_chemicals(
     params: dict = {"like": like}
     where = ["item_group IN %(groups)s"]
 
-    # Narrow the group set when the caller asked for one kind only —
-    # cheaper than fetching everything and filtering client-side.
+    # Group set is the configured chemical/foliar Item Groups (see the
+    # Scouting and Crop Protection Settings "Chemicals" tab).
     kind = (kind or "").lower()
     if kind == "fertilizer":
-        params["groups"] = tuple(g for g in _CHEMICAL_GROUPS
-                                 if g.lower() in _FERTILIZER_GROUPS_LOWER)
+        groups = foliar_groups()
     elif kind == "chemical":
-        params["groups"] = tuple(g for g in _CHEMICAL_GROUPS
-                                 if g.lower() not in _FERTILIZER_GROUPS_LOWER)
+        groups = chemical_groups()
     else:
-        params["groups"] = _CHEMICAL_GROUPS
+        groups = chemical_groups() + foliar_groups()
+    if not groups:
+        return {"items": [], "total": 0, "page": page, "page_size": page_size}
+    params["groups"] = tuple(groups)
 
     if q:
         where.append(

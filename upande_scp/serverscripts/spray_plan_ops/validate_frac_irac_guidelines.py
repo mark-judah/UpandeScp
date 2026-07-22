@@ -3,6 +3,8 @@ import json
 from frappe import _
 from frappe.utils import add_days, now_datetime, get_datetime
 
+from upande_scp.serverscripts.common.crop_protection import get_product_codes, get_product_type
+
 # --- GUIDELINE VALIDATION FUNCTIONS (Utility functions remain unchanged) ---
 
 def get_item_name(chemical_identifier):
@@ -40,36 +42,34 @@ def get_relevant_code(chemical_identifier, item_code_field, applicable_codes, ch
         return None
 
     item_name = get_item_name(item_code) # Get the display name
-    
-    # Get item type efficiently
-    item_custom_type = frappe.db.get_value("Item", item_code, "custom_type")
-    
+
+    # Type + codes resolved via the Chemical/Foliar sidecar (authoritative),
+    # falling back to the legacy Item custom fields.
+    item_custom_type = get_product_type(item_code)
+
     if not item_custom_type:
         return None
-    
+
     # --- Universal (Type-Based) Check ---
     if isinstance(applicable_codes, str):
         if item_custom_type == applicable_codes:
             # Code is the generic type, Item Name is for error reporting
             return (item_custom_type, item_name)
         return None
-    
+
     # --- Selective (Code-Based) Check ---
-    
+
     if chemical_type.lower() not in item_custom_type.lower():
         return None
-        
-    try:
-        item = frappe.get_doc("Item", item_code)
-    except frappe.DoesNotExistError:
-        return None
-    
+
+    # ``item_code_field`` is "custom_irac"/"custom_frac"; kind is "irac"/"frac".
+    kind = item_code_field.replace("custom_", "")
     # Find the FIRST matching code
-    for row in item.get(item_code_field, []):
-        if row.code in applicable_codes:
+    for code in get_product_codes(item_code, kind):
+        if code in applicable_codes:
             # Code is the specific IRAC/FRAC code, Item Name is for error reporting
-            return (row.code, item_name)
-    
+            return (code, item_name)
+
     return None
 
 

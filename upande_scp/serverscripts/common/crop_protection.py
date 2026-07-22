@@ -137,6 +137,38 @@ def get_product_targets(item_code, crop=None):
 	)
 
 
+def get_product_type(item_code):
+	"""Product type (Insecticide/Fungicide/...): sidecar first, else Item."""
+	m = _master_for(item_code)
+	if m:
+		master_dt, name, _, _ = m
+		return frappe.db.get_value(master_dt, name, "type")
+	return frappe.db.get_value("Item", item_code, "custom_type")
+
+
+def get_product_codes(item_code, kind):
+	"""IRAC/FRAC/GHS code values for a product: sidecar first, else Item.
+
+	kind: 'irac' | 'frac' | 'ghs'. Child doctype is e.g. 'IRAC Code Filter'.
+	"""
+	child_dt = f"{kind.upper()} Code Filter"
+	m = _master_for(item_code)
+	if m:
+		master_dt, name, _, _ = m
+		rows = frappe.get_all(
+			child_dt,
+			filters={"parent": name, "parenttype": master_dt, "parentfield": kind},
+			fields=["code"],
+		)
+		return [r.code for r in rows if r.code]
+	rows = frappe.get_all(
+		child_dt,
+		filters={"parent": item_code, "parenttype": "Item", "parentfield": f"custom_{kind}"},
+		fields=["code"],
+	)
+	return [r.code for r in rows if r.code]
+
+
 def crop_protection_item_codes(kind=None):
 	"""Item codes under the configured chemical/foliar groups.
 

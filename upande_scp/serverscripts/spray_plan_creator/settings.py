@@ -21,6 +21,7 @@ from __future__ import annotations
 import frappe
 
 from upande_scp.serverscripts.common.cache_utils import K_AFP_WAREHOUSES, invalidate
+from upande_scp.serverscripts.common.crop_protection import get_chemical, get_foliar
 
 from .admin import _require_admin
 
@@ -412,11 +413,36 @@ def list_chemicals(
         code = r["item_code"]
         r["enabled"] = not r["disabled"]
         r["kind"] = _kind_of(r.get("item_group") or "")
-        r["irac"] = code_maps["custom_irac"].get(code, [])
-        r["frac"] = code_maps["custom_frac"].get(code, [])
-        r["ghs"] = code_maps["custom_ghs"].get(code, [])
-        r["targets"] = targets_map.get(code, [])
-        r["active_ingredients"] = actives_map.get(code, [])
+        # Chemical/Foliar sidecar is authoritative; overlay its values so the
+        # editor never shows stale Item data after a save. Fertilizers (no
+        # sidecar) keep their Item-derived values.
+        sidecar = get_chemical(code) or get_foliar(code)
+        if sidecar:
+            r["custom_type"] = sidecar.type
+            r["custom_toxicity"] = sidecar.toxicity
+            r["custom_lower_rate_limit"] = sidecar.default_lower_rate_limit
+            r["custom_upper_rate_limit"] = sidecar.default_upper_rate_limit
+            r["custom_low_stock_threshold"] = sidecar.low_stock_threshold
+            r["custom_reentry_interval_hrs"] = sidecar.reentry_interval_hrs
+            r["custom_frac_moa"] = sidecar.frac_moa
+            r["custom_irac_moa"] = sidecar.irac_moa
+            r["custom_ghs_description"] = sidecar.ghs_description
+            r["irac"] = [x.code for x in (sidecar.irac or []) if x.code]
+            r["frac"] = [x.code for x in (sidecar.frac or []) if x.code]
+            r["ghs"] = [x.code for x in (sidecar.ghs or []) if x.code]
+            r["targets"] = [
+                {"pest": x.pest or "", "disease": x.disease or ""}
+                for x in (sidecar.default_targets or [])
+            ]
+            r["active_ingredients"] = [
+                x.ingredient for x in (sidecar.active_ingredients or []) if x.ingredient
+            ]
+        else:
+            r["irac"] = code_maps["custom_irac"].get(code, [])
+            r["frac"] = code_maps["custom_frac"].get(code, [])
+            r["ghs"] = code_maps["custom_ghs"].get(code, [])
+            r["targets"] = targets_map.get(code, [])
+            r["active_ingredients"] = actives_map.get(code, [])
 
     return {
         "items": rows,
@@ -445,25 +471,74 @@ def save_chemical(item_code: str, payload) -> dict:
     if not frappe.db.exists("Item", item_code):
         frappe.throw(f"Item '{item_code}' not found.", title="Unknown chemical")
 
-    item = frappe.get_doc("Item", item_code)
-
+    # enabled/disabled is a stock concern -> always stays on the Item.
     if "enabled" in payload:
-        item.disabled = 0 if payload.get("enabled") else 1
-    for fld in (
-        "lower_rate_limit",
-        "upper_rate_limit",
-        "reentry_interval_hrs",
-        "low_stock_threshold",
-    ):
+        frappe.db.set_value("Item", item_code, "disabled", 0 if payload.get("enabled") else 1)
+
+    # Write chemical metadata to the authoritative record: the Chemical/Foliar
+    # sidecar when present (chemicals/foliars), else the Item (fertilizers).
+    chem_name = frappe.db.get_value("Chemical", {"item": item_code}, "name")
+    fol_name = frappe.db.get_value("Foliar", {"item": item_code}, "name")
+    if chem_name:
+        _save_product_fields(frappe.get_doc("Chemical", chem_name), payload)
+    elif fol_name:
+        _save_product_fields(frappe.get_doc("Foliar", fol_name), payload)
+    else:
+        _save_legacy_item_fields(frappe.get_doc("Item", item_code), payload)
+
+    return {"ok": True, "item_code": item_code}
+
+
+def _save_product_fields(doc, payload):
+    """Write the editor payload to a Chemical/Foliar sidecar (rate limits map to
+    the master ``default_*`` fields; targets to ``default_targets``)."""
+    rate_map = {
+        "lower_rate_limit": "default_lower_rate_limit",
+        "upper_rate_limit": "default_upper_rate_limit",
+        "reentry_interval_hrs": "reentry_interval_hrs",
+        "low_stock_threshold": "low_stock_threshold",
+    }
+    for src, dst in rate_map.items():
+        if src in payload:
+            doc.set(dst, payload[src] or 0)
+    for fld in ("frac_moa", "irac_moa", "ghs_description", "type", "toxicity"):
+        if fld in payload:
+            doc.set(fld, payload[fld] or "")
+    for payload_key in ("irac", "frac", "ghs"):
+        if payload_key in payload:
+            doc.set(payload_key, [])
+            for code in payload.get(payload_key) or []:
+                if code:
+                    doc.append(payload_key, {"code": code})
+    if "targets" in payload:
+        doc.set("default_targets", [])
+        for row in payload.get("targets") or []:
+            if not isinstance(row, dict):
+                continue
+            pest = (row.get("pest") or "").strip()
+            disease = (row.get("disease") or "").strip()
+            if pest or disease:
+                doc.append("default_targets", {"pest": pest, "disease": disease})
+    if "active_ingredients" in payload:
+        doc.set("active_ingredients", [])
+        for row in payload.get("active_ingredients") or []:
+            ing = (row.strip() if isinstance(row, str)
+                   else (row.get("ingredient") or "").strip()) if row else ""
+            if ing:
+                doc.append("active_ingredients", {"ingredient": ing})
+    doc.save(ignore_permissions=True)
+
+
+def _save_legacy_item_fields(item, payload):
+    """Legacy write path for items with no sidecar (e.g. fertilizers)."""
+    for fld in ("lower_rate_limit", "upper_rate_limit",
+                "reentry_interval_hrs", "low_stock_threshold"):
         if fld in payload:
             item.set(f"custom_{fld}", payload[fld] or 0)
     for fld in ("frac_moa", "irac_moa", "ghs_description", "type", "toxicity"):
         if fld in payload:
             item.set(f"custom_{fld}", payload[fld] or "")
-
-    # The link column on every Code Filter child table is named ``code`` —
-    # writing ``irac_code`` / ``frac_code`` / ``ghs_code`` here left the
-    # required field empty and triggered a MandatoryError on save.
+    # The link column on every Code Filter child table is named ``code``.
     for payload_key, fieldname in (
         ("irac", "custom_irac"),
         ("frac", "custom_frac"),
@@ -472,28 +547,21 @@ def save_chemical(item_code: str, payload) -> dict:
         if payload_key in payload:
             item.set(fieldname, [])
             for code in payload.get(payload_key) or []:
-                if not code:
-                    continue
-                item.append(fieldname, {"code": code})
-
+                if code:
+                    item.append(fieldname, {"code": code})
     if "targets" in payload:
         item.set("custom_targets", [])
         for row in payload.get("targets") or []:
             pest = (row.get("pest") or "").strip() if isinstance(row, dict) else ""
             disease = (row.get("disease") or "").strip() if isinstance(row, dict) else ""
-            if not pest and not disease:
-                continue
-            item.append("custom_targets", {"pest": pest, "disease": disease})
-
+            if pest or disease:
+                item.append("custom_targets", {"pest": pest, "disease": disease})
     if "active_ingredients" in payload:
         item.set("custom_active_ingredients", [])
         for row in payload.get("active_ingredients") or []:
             ing = (row.strip() if isinstance(row, str)
                    else (row.get("ingredient") or "").strip()) if row else ""
-            if not ing:
-                continue
-            item.append("custom_active_ingredients", {"ingredient": ing})
-
+            if ing:
+                item.append("custom_active_ingredients", {"ingredient": ing})
     item.flags.ignore_validate_update_after_submit = True
     item.save(ignore_permissions=True)
-    return {"ok": True, "item_code": item_code}

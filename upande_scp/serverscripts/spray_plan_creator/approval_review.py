@@ -5,6 +5,7 @@ import frappe
 from frappe.utils import add_days, get_datetime, now_datetime
 
 from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
+from upande_scp.serverscripts.common.crop_protection import get_product_rate
 
 # Table MultiSelect child doctypes for Item IRAC/FRAC codes
 _IRAC_CHILD_TABLE = "IRAC Code Filter"
@@ -24,10 +25,12 @@ def get_approval_review(wo_name: str) -> dict:
     chemicals = []
     for r in (wo.required_items or []):
         item_exists = frappe.db.exists("Item", r.item_code)
-        lower = frappe.db.get_value("Item", r.item_code, "custom_lower_rate_limit") if item_exists else None
-        upper = frappe.db.get_value("Item", r.item_code, "custom_upper_rate_limit") if item_exists else None
-        lower = lower or None
-        upper = upper or None
+        if item_exists:
+            _lo, _up = get_product_rate(r.item_code)
+            lower = _lo or None
+            upper = _up or None
+        else:
+            lower = upper = None
 
         # Fetch IRAC codes for this item via child table (live DB col: irac_code)
         irac_codes = _get_item_codes(r.item_code, _IRAC_CHILD_TABLE, "custom_irac", "irac_code") if item_exists else []

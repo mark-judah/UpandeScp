@@ -89,11 +89,7 @@ def get_product_rate(item_code, crop=None):
 	"""
 	resolved = _master_for(item_code)
 	if not resolved:
-		d = frappe.db.get_value(
-			"Item", item_code,
-			["custom_lower_rate_limit", "custom_upper_rate_limit"], as_dict=True,
-		)
-		return (d.custom_lower_rate_limit, d.custom_upper_rate_limit) if d else (None, None)
+		return (None, None)
 	master_dt, name, profile_dt, link = resolved
 	if crop:
 		prof = frappe.db.get_value(
@@ -114,11 +110,7 @@ def get_product_targets(item_code, crop=None):
 	and non-empty, else master default_targets."""
 	resolved = _master_for(item_code)
 	if not resolved:
-		return frappe.get_all(
-			"Chemical Targets",
-			filters={"parent": item_code, "parenttype": "Item", "parentfield": "custom_targets"},
-			fields=["pest", "disease"],
-		)
+		return []
 	master_dt, name, profile_dt, link = resolved
 	if crop:
 		profile_name = frappe.db.get_value(profile_dt, {link: name, "crop": crop}, "name")
@@ -138,32 +130,26 @@ def get_product_targets(item_code, crop=None):
 
 
 def get_product_type(item_code):
-	"""Product type (Insecticide/Fungicide/...): sidecar first, else Item."""
+	"""Product type (Insecticide/Fungicide/...) from the sidecar, else None."""
 	m = _master_for(item_code)
-	if m:
-		master_dt, name, _, _ = m
-		return frappe.db.get_value(master_dt, name, "type")
-	return frappe.db.get_value("Item", item_code, "custom_type")
+	if not m:
+		return None
+	master_dt, name, _, _ = m
+	return frappe.db.get_value(master_dt, name, "type")
 
 
 def get_product_codes(item_code, kind):
-	"""IRAC/FRAC/GHS code values for a product: sidecar first, else Item.
+	"""IRAC/FRAC/GHS code values from the product's sidecar.
 
 	kind: 'irac' | 'frac' | 'ghs'. Child doctype is e.g. 'IRAC Code Filter'.
 	"""
-	child_dt = f"{kind.upper()} Code Filter"
 	m = _master_for(item_code)
-	if m:
-		master_dt, name, _, _ = m
-		rows = frappe.get_all(
-			child_dt,
-			filters={"parent": name, "parenttype": master_dt, "parentfield": kind},
-			fields=["code"],
-		)
-		return [r.code for r in rows if r.code]
+	if not m:
+		return []
+	master_dt, name, _, _ = m
 	rows = frappe.get_all(
-		child_dt,
-		filters={"parent": item_code, "parenttype": "Item", "parentfield": f"custom_{kind}"},
+		f"{kind.upper()} Code Filter",
+		filters={"parent": name, "parenttype": master_dt, "parentfield": kind},
 		fields=["code"],
 	)
 	return [r.code for r in rows if r.code]
@@ -278,6 +264,20 @@ def export_to_foliars():
 	"""Backfill: ensure a Foliar exists for every Item under the configured
 	foliar groups. Idempotent."""
 	return _export("foliar")
+
+
+def item_dashboard(data):
+	"""override_doctype_dashboards hook: link an Item to its Chemical/Foliar
+	sidecar (both linked via their ``item`` field)."""
+	data.setdefault("non_standard_fieldnames", {})
+	data["non_standard_fieldnames"]["Chemical"] = "item"
+	data["non_standard_fieldnames"]["Foliar"] = "item"
+	data.setdefault("transactions", [])
+	data["transactions"].append({
+		"label": "Crop Protection",
+		"items": ["Chemical", "Foliar"],
+	})
+	return data
 
 
 def _export(kind):

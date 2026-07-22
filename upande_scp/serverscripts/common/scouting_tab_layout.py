@@ -12,11 +12,9 @@ TAB_LABEL = "Scouting and Crop Protection"
 # Ordered SCP fields per doctype (display order under the tab).
 SCP_FIELDS = {
     "Item": [
-        "custom_type", "custom_frac", "custom_frac_moa", "custom_irac",
-        "custom_irac_moa", "custom_ghs", "custom_ghs_description", "custom_toxicity",
-        "custom_active_ingredients", "custom_targets", "custom_reentry_interval_hrs",
-        "custom_lower_rate_limit", "custom_upper_rate_limit", "custom_low_stock_threshold",
-        "custom_section_break_vuei1", "custom_chemical_intervention_threshhold",
+        # Chemical metadata moved to the Chemical/Foliar doctypes; only the
+        # per-variety intervention thresholds remain on the Item.
+        "custom_chemical_intervention_threshhold",
     ],
     "Work Order": [
         "custom_type", "custom_classification", "custom_preventive_reason",

@@ -157,6 +157,11 @@ override_doctype_class = {
 	"Stock Entry": "upande_scp.serverscripts.store.spray_stock_entry.SprayStockEntry",
 }
 
+# Link an Item to its Chemical / Foliar sidecar on the Item dashboard.
+override_doctype_dashboards = {
+	"Item": "upande_scp.serverscripts.common.crop_protection.item_dashboard",
+}
+
 # Document Events
 # ---------------
 # Hook on document methods and events
@@ -411,24 +416,10 @@ fixtures = [
                         "Warehouse-custom_location",
                         "Warehouse-custom_area_ha",
                         "Warehouse-custom_cost_center",
-                        # Item fields
-                        "Item-custom_ghs",
-                        "Item-custom_irac",
-                        "Item-custom_frac",
-                        "Item-custom_type",
-                        "Item-custom_ghs_description",
-                        "Item-custom_irac_moa",
-                        "Item-custom_frac_moa",
-                        "Item-custom_active_ingredients",
-                        "Item-custom_toxicity",
-                        "Item-custom_reentry_interval_hrs",
-                        "Item-custom_targets",
-                        "Item-custom_section_break_vuei1",
+                        # Item fields (chemical metadata moved to Chemical/Foliar;
+                        # only the per-variety intervention threshold remains)
                         "Item-custom_chemical_intervention_threshhold",
                         "Item-custom_scouting_and_crop_protection_tab",
-                        "Item-custom_lower_rate_limit",
-                        "Item-custom_upper_rate_limit",
-                        "Item-custom_low_stock_threshold",
                         # BOM fields
                         "BOM-custom_water_hardness",
                         "BOM-custom_water_ph",

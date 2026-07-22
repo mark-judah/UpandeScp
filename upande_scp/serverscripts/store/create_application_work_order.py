@@ -2,6 +2,8 @@ import frappe
 import json
 from frappe import _
 
+from upande_scp.serverscripts.common.crop_protection import get_product_rate
+
 
 def _validate_chemical_rate_limits(chemicals):
     """Reject the request if any chemical's ``application_rate`` falls
@@ -29,16 +31,17 @@ def _validate_chemical_rate_limits(chemicals):
     rows = frappe.get_all(
         "Item",
         filters={"item_name": ["in", list(by_name.keys())], "disabled": 0},
-        fields=["item_name", "custom_lower_rate_limit", "custom_upper_rate_limit"],
+        fields=["name", "item_name"],
     )
-    limits = {r.item_name: r for r in rows}
+    code_by_name = {r.item_name: r.name for r in rows}
 
     for name, rate in by_name.items():
-        info = limits.get(name)
-        if not info:
+        code = code_by_name.get(name)
+        if not code:
             continue
-        lower = float(info.get("custom_lower_rate_limit") or 0)
-        upper = float(info.get("custom_upper_rate_limit") or 0)
+        _lower, _upper = get_product_rate(code)
+        lower = float(_lower or 0)
+        upper = float(_upper or 0)
         if lower and rate < lower:
             frappe.throw(
                 _(

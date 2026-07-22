@@ -269,17 +269,13 @@ def get_chemical_rate_limits():
     rows = frappe.get_all(
         "Item",
         filters={"item_group": "CHEMICALS", "disabled": 0},
-        fields=[
-            "name",
-            "item_name",
-            "custom_lower_rate_limit",
-            "custom_upper_rate_limit",
-        ],
+        fields=["name", "item_name"],
     )
     out = {}
     for r in rows:
-        lower = float(r.get("custom_lower_rate_limit") or 0)
-        upper = float(r.get("custom_upper_rate_limit") or 0)
+        _lower, _upper = get_product_rate(r.name)
+        lower = float(_lower or 0)
+        upper = float(_upper or 0)
         if not lower and not upper:
             continue
         out[r.name] = {
@@ -296,14 +292,7 @@ def getAllChemicals():
     items = frappe.get_all(
         "Item",
         filters={"item_group": ["in", ["CHEMICALS", "Fertilizer"]], "disabled": 0},
-        fields=[
-            "name",
-            "item_name",
-            "stock_uom",
-            "item_group",
-            "custom_lower_rate_limit",
-            "custom_upper_rate_limit",
-        ],
+        fields=["name", "item_name", "stock_uom", "item_group"],
         order_by="item_name",
     )
 
@@ -327,8 +316,9 @@ def getAllChemicals():
         item_uom_map[display_name] = it.stock_uom
         item_code_map[display_name] = it.name
         item_type_map[display_name] = item_type
-        lower = float(it.get("custom_lower_rate_limit") or 0)
-        upper = float(it.get("custom_upper_rate_limit") or 0)
+        _lower, _upper = get_product_rate(it.name)
+        lower = float(_lower or 0)
+        upper = float(_upper or 0)
         if lower or upper:
             item_rate_limits_map[display_name] = {
                 "lower": lower or None,

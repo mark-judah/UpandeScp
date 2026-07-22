@@ -180,21 +180,18 @@ def _empty_bootstrap() -> dict:
 
 
 def _fetch_rate_limits() -> dict:
-    """Build {item_code: {lower, upper}} from Item custom fields."""
-    rows = frappe.db.sql(
-        """SELECT name AS item_code, custom_lower_rate_limit, custom_upper_rate_limit
-           FROM `tabItem`
-           WHERE (custom_lower_rate_limit IS NOT NULL AND custom_lower_rate_limit > 0)
-              OR (custom_upper_rate_limit IS NOT NULL AND custom_upper_rate_limit > 0)""",
-        as_dict=True,
-    )
-    return {
-        r["item_code"]: {
-            "lower": r["custom_lower_rate_limit"] or None,
-            "upper": r["custom_upper_rate_limit"] or None,
-        }
-        for r in rows
-    }
+    """Build {item_code: {lower, upper}} from the Chemical/Foliar sidecars."""
+    out: dict = {}
+    for doctype in ("Chemical", "Foliar"):
+        for r in frappe.get_all(
+            doctype,
+            fields=["item", "default_lower_rate_limit", "default_upper_rate_limit"],
+        ):
+            lower = r.default_lower_rate_limit or None
+            upper = r.default_upper_rate_limit or None
+            if lower or upper:
+                out[r.item] = {"lower": lower, "upper": upper}
+    return out
 
 
 def _enrich_greenhouses(greenhouses: list[dict]) -> list[dict]:

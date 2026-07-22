@@ -337,16 +337,7 @@ def list_chemicals(
                    item_name,
                    item_group,
                    stock_uom,
-                   disabled,
-                   custom_lower_rate_limit,
-                   custom_upper_rate_limit,
-                   custom_low_stock_threshold,
-                   custom_type,
-                   custom_toxicity,
-                   custom_reentry_interval_hrs,
-                   custom_frac_moa,
-                   custom_irac_moa,
-                   custom_ghs_description
+                   disabled
               FROM `tabItem`
              WHERE {where_clause}
              ORDER BY item_name ASC
@@ -355,94 +346,33 @@ def list_chemicals(
         as_dict=True,
     )
 
-    # Fetch child-table rows in one shot per table, keyed by item. The
-    # column on every Code Filter child table is literally ``code`` —
-    # mis-naming it caused saves to fail with a MandatoryError on
-    # ``code, code, code, code``.
-    codes = (
-        ("custom_irac", "IRAC Code Filter", "code"),
-        ("custom_frac", "FRAC Code Filter", "code"),
-        ("custom_ghs", "GHS Code Filter", "code"),
-    )
-    code_maps: dict[str, dict[str, list[str]]] = {f: {} for f, _, _ in codes}
-    targets_map: dict[str, list[dict]] = {}
-    actives_map: dict[str, list[dict]] = {}
-
-    item_codes = [r["item_code"] for r in rows]
-    if item_codes:
-        for fieldname, child_doctype, value_col in codes:
-            child_rows = frappe.db.sql(
-                f"""SELECT parent, {value_col} AS code
-                      FROM `tab{child_doctype}`
-                     WHERE parent IN %(parents)s AND parenttype = 'Item'""",
-                {"parents": tuple(item_codes)},
-                as_dict=True,
-            )
-            for cr in child_rows:
-                code_maps[fieldname].setdefault(cr["parent"], []).append(cr["code"])
-
-        # Chemical Targets child rows — pest OR disease per row.
-        if frappe.db.table_exists("Chemical Targets"):
-            target_rows = frappe.db.sql(
-                """SELECT parent, pest, disease
-                     FROM `tabChemical Targets`
-                    WHERE parent IN %(parents)s AND parenttype = 'Item'""",
-                {"parents": tuple(item_codes)},
-                as_dict=True,
-            )
-            for tr in target_rows:
-                targets_map.setdefault(tr["parent"], []).append({
-                    "pest": tr["pest"] or "",
-                    "disease": tr["disease"] or "",
-                })
-
-        if frappe.db.table_exists("Active Ingredient"):
-            ai_rows = frappe.db.sql(
-                """SELECT parent, ingredient
-                     FROM `tabActive Ingredient`
-                    WHERE parent IN %(parents)s AND parenttype = 'Item'""",
-                {"parents": tuple(item_codes)},
-                as_dict=True,
-            )
-            for ar in ai_rows:
-                ing = (ar.get("ingredient") or "").strip()
-                if ing:
-                    actives_map.setdefault(ar["parent"], []).append(ing)
-
+    # Chemical metadata comes entirely from the Chemical/Foliar sidecar — every
+    # chemical/fertilizer item has one (see the crop-protection migration).
     for r in rows:
         code = r["item_code"]
         r["enabled"] = not r["disabled"]
         r["kind"] = _kind_of(r.get("item_group") or "")
-        # Chemical/Foliar sidecar is authoritative; overlay its values so the
-        # editor never shows stale Item data after a save. Fertilizers (no
-        # sidecar) keep their Item-derived values.
+        # The Chemical/Foliar sidecar is authoritative for chemical metadata.
         sidecar = get_chemical(code) or get_foliar(code)
-        if sidecar:
-            r["custom_type"] = sidecar.type
-            r["custom_toxicity"] = sidecar.toxicity
-            r["custom_lower_rate_limit"] = sidecar.default_lower_rate_limit
-            r["custom_upper_rate_limit"] = sidecar.default_upper_rate_limit
-            r["custom_low_stock_threshold"] = sidecar.low_stock_threshold
-            r["custom_reentry_interval_hrs"] = sidecar.reentry_interval_hrs
-            r["custom_frac_moa"] = sidecar.frac_moa
-            r["custom_irac_moa"] = sidecar.irac_moa
-            r["custom_ghs_description"] = sidecar.ghs_description
-            r["irac"] = [x.code for x in (sidecar.irac or []) if x.code]
-            r["frac"] = [x.code for x in (sidecar.frac or []) if x.code]
-            r["ghs"] = [x.code for x in (sidecar.ghs or []) if x.code]
-            r["targets"] = [
-                {"pest": x.pest or "", "disease": x.disease or ""}
-                for x in (sidecar.default_targets or [])
-            ]
-            r["active_ingredients"] = [
-                x.ingredient for x in (sidecar.active_ingredients or []) if x.ingredient
-            ]
-        else:
-            r["irac"] = code_maps["custom_irac"].get(code, [])
-            r["frac"] = code_maps["custom_frac"].get(code, [])
-            r["ghs"] = code_maps["custom_ghs"].get(code, [])
-            r["targets"] = targets_map.get(code, [])
-            r["active_ingredients"] = actives_map.get(code, [])
+        r["custom_type"] = sidecar.type if sidecar else None
+        r["custom_toxicity"] = sidecar.toxicity if sidecar else None
+        r["custom_lower_rate_limit"] = sidecar.default_lower_rate_limit if sidecar else 0
+        r["custom_upper_rate_limit"] = sidecar.default_upper_rate_limit if sidecar else 0
+        r["custom_low_stock_threshold"] = sidecar.low_stock_threshold if sidecar else 0
+        r["custom_reentry_interval_hrs"] = sidecar.reentry_interval_hrs if sidecar else 0
+        r["custom_frac_moa"] = sidecar.frac_moa if sidecar else None
+        r["custom_irac_moa"] = sidecar.irac_moa if sidecar else None
+        r["custom_ghs_description"] = sidecar.ghs_description if sidecar else None
+        r["irac"] = [x.code for x in (sidecar.irac or []) if x.code] if sidecar else []
+        r["frac"] = [x.code for x in (sidecar.frac or []) if x.code] if sidecar else []
+        r["ghs"] = [x.code for x in (sidecar.ghs or []) if x.code] if sidecar else []
+        r["targets"] = [
+            {"pest": x.pest or "", "disease": x.disease or ""}
+            for x in (sidecar.default_targets or [])
+        ] if sidecar else []
+        r["active_ingredients"] = [
+            x.ingredient for x in (sidecar.active_ingredients or []) if x.ingredient
+        ] if sidecar else []
 
     return {
         "items": rows,

@@ -36,11 +36,13 @@ Run (from the bench directory):
 
 import csv
 import os
+import re
 
 import frappe
 import requests
 
 GBIF_SEARCH = "https://api.gbif.org/v1/occurrence/search"
+WIKIMEDIA_API = "https://commons.wikimedia.org/w/api.php"
 USER_AGENT = "upande_scp-pest-image-fetcher/1.0 (+https://upande.com)"
 
 # Doctypes to populate. Both share the same field shape.
@@ -123,13 +125,92 @@ def _find_safe_image(query):
             if not url:
                 continue
             return {
+                "provider": "gbif",
                 "url": url,
                 "license": media.get("license"),
                 "creator": media.get("creator") or media.get("rightsHolder") or "",
-                "rights_holder": media.get("rightsHolder") or "",
                 "source": media.get("references") or url,
-                "occurrence_key": occ.get("key"),
             }
+    return None
+
+
+# Wikimedia Commons content is all free-to-reuse; we still exclude the rare
+# non-commercial/no-derivatives edge cases and accept CC0, public domain,
+# CC-BY and CC-BY-SA (all permit commercial use; SA only binds derivatives).
+_WIKI_UNSAFE = ("by-nc", "by-nd", "noncommercial", "non-commercial",
+                "no derivative", "/nc", "/nd")
+_WIKI_SAFE = ("cc0", "public domain", "publicdomain", "pdm", "/by/", "by-sa",
+              "cc by", "attribution")
+
+
+def _strip_html(value):
+    return re.sub(r"<[^>]+>", "", value or "").strip()
+
+
+def _wikimedia_license_ok(ext):
+    """Judge a Commons file's licence from its extmetadata block."""
+    if (ext.get("NonFree", {}).get("value") or "") in ("1", "true", "True"):
+        return False
+    blob = " ".join([
+        (ext.get("LicenseShortName", {}).get("value") or ""),
+        (ext.get("License", {}).get("value") or ""),
+        (ext.get("LicenseUrl", {}).get("value") or ""),
+        (ext.get("UsageTerms", {}).get("value") or ""),
+    ]).lower()
+    if any(bad in blob for bad in _WIKI_UNSAFE):
+        return False
+    return any(good in blob for good in _WIKI_SAFE)
+
+
+def _find_wikimedia_image(query):
+    """Return the first commercial-safe Commons photo for a query, or None."""
+    try:
+        search = requests.get(WIKIMEDIA_API, headers={"User-Agent": USER_AGENT},
+            timeout=API_TIMEOUT, params={
+                "action": "query", "format": "json", "list": "search",
+                "srsearch": query, "srnamespace": 6, "srlimit": 12,
+            })
+        search.raise_for_status()
+        titles = [h["title"] for h in search.json().get("query", {}).get("search", [])]
+        if not titles:
+            return None
+        info = requests.get(WIKIMEDIA_API, headers={"User-Agent": USER_AGENT},
+            timeout=API_TIMEOUT, params={
+                "action": "query", "format": "json", "prop": "imageinfo",
+                "iiprop": "url|mime|extmetadata", "iiurlwidth": 1200,
+                "titles": "|".join(titles),
+            })
+        info.raise_for_status()
+        pages = info.json().get("query", {}).get("pages", {})
+    except (requests.RequestException, ValueError) as exc:
+        frappe.log_error(f"Wikimedia query failed for {query!r}: {exc}",
+                         "fetch_pest_disease_images")
+        return None
+
+    by_title = {p.get("title"): p for p in pages.values()}
+    for title in titles:  # preserve search-relevance order
+        page = by_title.get(title)
+        image_info = (page or {}).get("imageinfo")
+        if not image_info:
+            continue
+        meta = image_info[0]
+        mime = (meta.get("mime") or "").lower()
+        if mime not in ("image/jpeg", "image/png", "image/webp"):
+            continue  # skip SVG diagrams, tiffs, etc.
+        ext = meta.get("extmetadata", {})
+        if not _wikimedia_license_ok(ext):
+            continue
+        url = meta.get("thumburl") or meta.get("url")
+        if not url:
+            continue
+        return {
+            "provider": "wikimedia",
+            "url": url,
+            "license": _strip_html(ext.get("LicenseShortName", {}).get("value"))
+                       or "Wikimedia Commons",
+            "creator": _strip_html(ext.get("Artist", {}).get("value")),
+            "source": meta.get("descriptionurl") or url,
+        }
     return None
 
 
@@ -193,20 +274,30 @@ def run(dry_run=False, overwrite=False):
                 no_name.append(label)
                 continue
 
+            # GBIF first (rich taxon photos); fall back to Wikimedia Commons
+            # by scientific name then common name for the long-tail gaps.
             found = _find_safe_image(query)
+            if not found:
+                for wiki_query in dict.fromkeys([query, row.common_name or row.name]):
+                    if not wiki_query:
+                        continue
+                    found = _find_wikimedia_image(wiki_query)
+                    if found:
+                        break
             if not found:
                 no_image.append(f"{label} (searched {query!r})")
                 continue
 
             credit = {
                 "doctype": doctype, "record": row.name, "query": query,
-                "creator": found["creator"], "license": found["license"],
-                "source": found["source"], "image_url": found["url"],
+                "provider": found["provider"], "creator": found["creator"],
+                "license": found["license"], "source": found["source"],
+                "image_url": found["url"],
             }
 
             if dry_run:
                 credits.append(credit)
-                attached.append(f"[DRY] {label} <- {query} ({found['license']})")
+                attached.append(f"[DRY] {label} <- {found['provider']} ({found['license']})")
                 continue
 
             content = _download(found["url"])
@@ -217,7 +308,7 @@ def run(dry_run=False, overwrite=False):
             file_url = _attach(doctype, row.name, content, found["url"])
             credit["attached_file"] = file_url
             credits.append(credit)
-            attached.append(f"{label} <- {query} ({found['license']})")
+            attached.append(f"{label} <- {found['provider']} ({found['license']})")
 
     if not dry_run:
         frappe.db.commit()
@@ -242,7 +333,7 @@ def _write_manifest(credits, dry_run):
     suffix = "dry_run" if dry_run else "attached"
     path = frappe.get_site_path("public", "files",
                                 f"pest_disease_image_credits_{suffix}.csv")
-    fields = ["doctype", "record", "query", "creator", "license",
+    fields = ["doctype", "record", "query", "provider", "creator", "license",
               "source", "image_url", "attached_file"]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")

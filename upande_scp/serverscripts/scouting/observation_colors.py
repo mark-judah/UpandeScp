@@ -44,6 +44,34 @@ PEST_DEFAULTS = {
     # Moth observations seen in raw data but not formally listed —
     # share Spodoptera's moth-orange family so the marker remains readable.
     "Unidentified Moth": "#fb923c",
+    # --- multi-crop expansion (Rose / Avocado / Coffee) ---
+    "Scale Insects": "#78716b",
+    "Weevils": "#57534e",
+    "Caterpillars": "#84cc16",
+    "Coconut Bug": "#b45309",
+    "Fruit fly (Bactocera)": "#0891b2",
+    "Fruit fly (Ceratitis)": "#0e7490",
+    "Leaf Rollers": "#65a30d",
+    "Loopers": "#4d7c0f",
+    "Mosquito Bugs": "#be123c",
+    "Stinkbug": "#15803d",
+    "Unidentified Insects": "#9ca3af",
+    # Coffee pests
+    "Antestia Bug": "#7c3aed",
+    "Capsid Bug": "#db2777",
+    "Lace Bug": "#0d9488",
+    "Leaf Skeletonizer": "#ca8a04",
+    "Leaf Miner": "#a16207",
+    "Tailed Caterpillar": "#22c55e",
+    "Systates Weevil": "#78350f",
+    "Kenya Mealybug": "#facc15",
+    "Brown Scale": "#92400e",
+    "Yellow Termites": "#fde047",
+    "Green Scale": "#4ade80",
+    "Coffee Thrips": "#1d4ed8",
+    "Berry Moth": "#e11d48",
+    "Berry Borer": "#831843",
+    "Sting Caterpillar": "#a3e635",
 }
 
 DISEASE_DEFAULTS = {
@@ -54,6 +82,19 @@ DISEASE_DEFAULTS = {
     "Agrobacteria": "#eab308",    # Yellow
     "Agrobacterium": "#eab308",
     "Rust": "#c8a165",            # Tan
+    # --- multi-crop expansion (Rose / Avocado / Coffee) ---
+    "Bacterial Wilt": "#b91c1c",
+    # Coffee diseases
+    "Coffee Berry Disease": "#7f1d1d",
+    "Coffee Leaf Rust": "#ea580c",
+    "Coffee Wilt (Fusarium)": "#713f12",
+    "Brown Eye Spot": "#a16207",
+    "Bacterial Blight of Coffee": "#1e3a8a",
+    # Avocado diseases
+    "Anthracnose": "#292524",
+    "Cercospora Spot": "#6d28d9",
+    "Phytophthora Root Rot": "#365314",
+    "Avocado Scab": "#9a3412",
 }
 
 

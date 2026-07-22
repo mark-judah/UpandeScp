@@ -289,6 +289,7 @@ def list_requests(box: str = "mine") -> list[dict]:
 def get_creditors(farm) -> list[dict]:
     """Read-only: for the borrowing `farm`, what it received and from whom —
     approved loan sources grouped by (lending farm, chemical)."""
+    _ensure_enabled()
     _ensure_creator(); _assert_farm_access(farm)
     rows = frappe.db.sql(
         """SELECT s.source_farm AS creditor_farm, r.item_code, r.item_name, r.uom,
@@ -409,12 +410,14 @@ def create_requests(payload) -> dict:
     if not items:
         frappe.throw("Add at least one chemical.")
     names, failed = [], []
-    for it in items:
+    for idx, it in enumerate(items):
+        sp = f"loan_item_{idx}"
+        frappe.db.savepoint(sp)
         try:
             names.append(_create_one(farm, payload.get("reason"), it, s))
         except Exception as e:
+            frappe.db.rollback(save_point=sp)
             failed.append({"item_code": it.get("item_code"), "error": str(e)})
-            frappe.db.rollback()
     frappe.db.commit()
     return {"names": names, "failed": failed}
 

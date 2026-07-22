@@ -80,11 +80,20 @@ def _master_for(item_code):
 
 
 def get_product_rate(item_code, crop=None):
-	"""Effective (lower, upper) rate limits per 1000L: crop profile override if
-	present, else the master defaults. (None, None) if no product record."""
+	"""Effective (lower, upper) rate limits per 1000L.
+
+	Prefers the Chemical/Foliar sidecar (crop profile override -> master
+	default); falls back to the legacy Item custom fields when no sidecar
+	exists (e.g. fertilizers, or pre-migration items). This keeps behaviour
+	identical while making the sidecar authoritative for chemicals/foliars.
+	"""
 	resolved = _master_for(item_code)
 	if not resolved:
-		return (None, None)
+		d = frappe.db.get_value(
+			"Item", item_code,
+			["custom_lower_rate_limit", "custom_upper_rate_limit"], as_dict=True,
+		)
+		return (d.custom_lower_rate_limit, d.custom_upper_rate_limit) if d else (None, None)
 	master_dt, name, profile_dt, link = resolved
 	if crop:
 		prof = frappe.db.get_value(
@@ -105,7 +114,11 @@ def get_product_targets(item_code, crop=None):
 	and non-empty, else master default_targets."""
 	resolved = _master_for(item_code)
 	if not resolved:
-		return []
+		return frappe.get_all(
+			"Chemical Targets",
+			filters={"parent": item_code, "parenttype": "Item", "parentfield": "custom_targets"},
+			fields=["pest", "disease"],
+		)
 	master_dt, name, profile_dt, link = resolved
 	if crop:
 		profile_name = frappe.db.get_value(profile_dt, {link: name, "crop": crop}, "name")

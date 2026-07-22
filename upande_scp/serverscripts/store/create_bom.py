@@ -4,6 +4,7 @@ import json
 from upande_scp.upande_scp.doctype.scouting_and_crop_protection_settings.scouting_and_crop_protection_settings import (
     get_allowed_farms,
 )
+from upande_scp.serverscripts.common.crop_protection import get_product_rate
 
 
 def _resolve_bom_farm(data):
@@ -122,11 +123,13 @@ def createBOM():
             item = frappe.get_doc("Item", item_code)
 
             # === RATE LIMIT GUARD ===
-            # Block under/over-dosing when the item-level limits are set.
-            # Limits are stored per 1000L on the Item; ``rate`` is already in
+            # Block under/over-dosing when limits are set. Resolved via the
+            # Chemical/Foliar sidecar (authoritative), falling back to the
+            # legacy Item custom fields. Limits are per 1000L; ``rate`` is in
             # the same unit (see BOM Item.custom_application_rate convention).
-            lower = float(getattr(item, "custom_lower_rate_limit", 0) or 0)
-            upper = float(getattr(item, "custom_upper_rate_limit", 0) or 0)
+            _lower, _upper = get_product_rate(item_code)
+            lower = float(_lower or 0)
+            upper = float(_upper or 0)
             if lower and rate < lower:
                 return {
                     "status": "error",

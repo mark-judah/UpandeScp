@@ -268,7 +268,7 @@ def create_material_transfer(work_order):
         stock_entry.company = work_order.company
 
         # Resolve farm from the greenhouse warehouse's custom_farm link so
-        # any farm configured in Spray Plan Settings flows through unchanged.
+        # any farm configured in Scouting and Crop Protection Settings flows through unchanged.
         greenhouse = getattr(work_order, "custom_greenhouse", None)
         if greenhouse:
             farm = frappe.db.get_value("Warehouse", greenhouse, "custom_farm")

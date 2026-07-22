@@ -27,7 +27,7 @@ def submit_drafts_for_approval(wo_names) -> dict:
     if not scope["farms"] and user != "Administrator":
         frappe.throw("You are not assigned to any farm.", title="No access")
 
-    bypass_owner_check = bool(frappe.db.get_single_value("Spray Plan Settings", "bypass_owner_check"))
+    bypass_owner_check = bool(frappe.db.get_single_value("Scouting and Crop Protection Settings", "bypass_owner_check"))
 
     submitted: list[str] = []
     skipped: list[dict] = []

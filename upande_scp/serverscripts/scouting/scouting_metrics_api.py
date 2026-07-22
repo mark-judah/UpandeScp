@@ -614,7 +614,7 @@ def get_application_plan_bootstrap():
     )
 
     def _build_warehouses():
-        # Spray Plan Settings allowed_farms + the GH-name regex + exclude
+        # Scouting and Crop Protection Settings allowed_farms + the GH-name regex + exclude
         # keywords, so the React greenhouse list stays in AFP scope.
         from upande_scp.serverscripts.geo.geo_builders import build_afp_warehouses
 

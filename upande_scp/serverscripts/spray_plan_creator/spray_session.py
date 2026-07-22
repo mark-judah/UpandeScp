@@ -334,7 +334,7 @@ def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
             it.cost_center = cost_center
 
     diff_account = frappe.db.get_single_value(
-        "Spray Plan Settings", "default_chemical_difference_account"
+        "Scouting and Crop Protection Settings", "default_chemical_difference_account"
     )
     if diff_account and getattr(wo, "custom_type", None) == AFP_TYPE:
         se_doc.difference_account = diff_account

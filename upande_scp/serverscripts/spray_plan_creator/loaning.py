@@ -67,7 +67,7 @@ def validate_source_split(sources, requested_qty, requesting_farm,
 
 
 def _settings():
-    return frappe.get_single("Spray Plan Settings")
+    return frappe.get_single("Scouting and Crop Protection Settings")
 
 
 def _ensure_enabled():

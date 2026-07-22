@@ -288,7 +288,7 @@ def get_farms_and_warehouses():
 
     Greenhouses (warehouse_type='Greenhouse') are filtered to the same
     invariant the Application Floor Plan + spray planner already use:
-    must belong to an allowed farm (Spray Plan Settings.allowed_farms),
+    must belong to an allowed farm (Scouting and Crop Protection Settings.allowed_farms),
     match the ``GH <N>`` naming convention, and avoid the exclude
     keywords (``tunnel``, ``phase``, ``ipm``, ``wetland``, ``csu``).
     Orphans (no ``custom_farm``) drop out. Block-type warehouses bypass

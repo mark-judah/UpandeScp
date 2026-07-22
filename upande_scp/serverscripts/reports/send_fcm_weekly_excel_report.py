@@ -7,7 +7,7 @@ Mirrors the format of the official KEPHIS template.
 One workbook is produced **per farm**. Farm identity (display name,
 KEPHIS site id, abbreviation) is sourced from the Farm doctype — nothing
 is hard-coded here. The scheduler loops over every farm that has
-scouting data for the year and is enabled in Spray Plan Settings.
+scouting data for the year and is enabled in Scouting and Crop Protection Settings.
 
 Sheets generated
 ----------------
@@ -42,7 +42,7 @@ from upande_scp.serverscripts.scouting.scouting_metrics import (
     get_scouting_records_weekly,
     get_weekly_trap_pest_totals_indoor,
 )
-from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
+from upande_scp.upande_scp.doctype.scouting_and_crop_protection_settings.scouting_and_crop_protection_settings import (
     get_allowed_farms,
 )
 
@@ -79,10 +79,10 @@ def _resolve_farm(farm_name):
 
 def _farms_with_data(year):
     """Farms that have at least one scouting entry in ``year`` AND are
-    enabled in Spray Plan Settings.
+    enabled in Scouting and Crop Protection Settings.
 
     Uses ``Warehouse.custom_farm`` as the authoritative link from a
-    scouting entry's greenhouse to a farm. When Spray Plan Settings has
+    scouting entry's greenhouse to a farm. When Scouting and Crop Protection Settings has
     no allowed farms configured, every farm with scouting data is
     returned so existing setups keep working.
     """

@@ -16,7 +16,7 @@ AFP_TYPE = "Application Floor Plan"
 
 
 def _cfg(field):
-    return frappe.db.get_single_value("Spray Plan Settings", field) or None
+    return frappe.db.get_single_value("Scouting and Crop Protection Settings", field) or None
 
 
 def _swap(row, account):

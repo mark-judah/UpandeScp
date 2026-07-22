@@ -1,0 +1,213 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:item",
+ "creation": "2026-07-22 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "item",
+  "chemical_name",
+  "type",
+  "classification_section",
+  "active_ingredients",
+  "toxicity",
+  "reentry_interval_hrs",
+  "phi_days",
+  "formulation",
+  "registration_no",
+  "mrl",
+  "codes_section",
+  "irac",
+  "irac_moa",
+  "frac",
+  "frac_moa",
+  "ghs",
+  "ghs_description",
+  "rates_section",
+  "low_stock_threshold",
+  "default_lower_rate_limit",
+  "default_upper_rate_limit",
+  "default_targets",
+  "default_requirements"
+ ],
+ "fields": [
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Item",
+   "options": "Item",
+   "reqd": 1,
+   "unique": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "item.item_name",
+   "fieldname": "chemical_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Chemical Name"
+  },
+  {
+   "fieldname": "type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Type",
+   "options": "\nInsecticide\nFungicide\nAdjuvant\npH Buffer"
+  },
+  {
+   "fieldname": "classification_section",
+   "fieldtype": "Section Break",
+   "label": "Classification & Safety"
+  },
+  {
+   "fieldname": "active_ingredients",
+   "fieldtype": "Table",
+   "label": "Active Ingredient(s)",
+   "options": "Active Ingredient"
+  },
+  {
+   "fieldname": "toxicity",
+   "fieldtype": "Select",
+   "label": "Hazard Classification (WHO)",
+   "options": "\nI\nII\nIII\nIV"
+  },
+  {
+   "fieldname": "reentry_interval_hrs",
+   "fieldtype": "Float",
+   "label": "Re-entry Interval (Hrs)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "phi_days",
+   "fieldtype": "Float",
+   "label": "Pre-Harvest Interval (Days)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "formulation",
+   "fieldtype": "Data",
+   "label": "Formulation"
+  },
+  {
+   "fieldname": "registration_no",
+   "fieldtype": "Data",
+   "label": "Registration No."
+  },
+  {
+   "fieldname": "mrl",
+   "fieldtype": "Data",
+   "label": "MRL"
+  },
+  {
+   "fieldname": "codes_section",
+   "fieldtype": "Section Break",
+   "label": "Resistance & Hazard Codes"
+  },
+  {
+   "fieldname": "irac",
+   "fieldtype": "Table MultiSelect",
+   "label": "IRAC",
+   "options": "IRAC Code Filter"
+  },
+  {
+   "fieldname": "irac_moa",
+   "fieldtype": "Small Text",
+   "label": "IRAC MOA"
+  },
+  {
+   "fieldname": "frac",
+   "fieldtype": "Table MultiSelect",
+   "label": "FRAC",
+   "options": "FRAC Code Filter"
+  },
+  {
+   "fieldname": "frac_moa",
+   "fieldtype": "Small Text",
+   "label": "FRAC MOA"
+  },
+  {
+   "fieldname": "ghs",
+   "fieldtype": "Table MultiSelect",
+   "label": "GHS",
+   "options": "GHS Code Filter"
+  },
+  {
+   "fieldname": "ghs_description",
+   "fieldtype": "Data",
+   "label": "GHS Description"
+  },
+  {
+   "fieldname": "rates_section",
+   "fieldtype": "Section Break",
+   "label": "Default Rates & Targets"
+  },
+  {
+   "fieldname": "low_stock_threshold",
+   "fieldtype": "Float",
+   "label": "Low Stock Threshold",
+   "non_negative": 1
+  },
+  {
+   "description": "Default lower application rate; per-crop overrides live on Chemical Crop Profile.",
+   "fieldname": "default_lower_rate_limit",
+   "fieldtype": "Float",
+   "label": "Default Lower Rate Limit (per 1000L)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "default_upper_rate_limit",
+   "fieldtype": "Float",
+   "label": "Default Upper Rate Limit (per 1000L)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "default_targets",
+   "fieldtype": "Table",
+   "label": "Default Target(s)",
+   "options": "Chemical Targets"
+  },
+  {
+   "fieldname": "default_requirements",
+   "fieldtype": "Table",
+   "label": "Default Requirements",
+   "options": "Chemical Requirements"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [
+  {
+   "group": "Crop Configuration",
+   "link_doctype": "Chemical Crop Profile",
+   "link_fieldname": "chemical"
+  }
+ ],
+ "modified": "2026-07-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Chemical",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1, "delete": 1, "email": 1, "export": 1, "print": 1,
+   "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1
+  },
+  {
+   "create": 1, "delete": 1, "export": 1, "print": 1,
+   "read": 1, "report": 1, "role": "SCP General Manager", "share": 1, "write": 1
+  },
+  {
+   "create": 1, "delete": 1, "export": 1, "print": 1,
+   "read": 1, "report": 1, "role": "SCP Chemical Store Keeper", "share": 1, "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "chemical_name"
+}

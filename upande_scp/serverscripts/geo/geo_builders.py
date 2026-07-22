@@ -22,7 +22,7 @@ from upande_scp.serverscripts.geo.warehouse_filter import (
 def build_afp_warehouses():
     """Greenhouse warehouses in Application-Floor-Plan scope.
 
-    Uses Spray Plan Settings allowed_farms + the GH-name regex + exclude
+    Uses Scouting and Crop Protection Settings allowed_farms + the GH-name regex + exclude
     keywords, so the React greenhouse list matches the legacy JS one.
     Cost-center resolution stays lazy (see resolve_warehouse_cost_center).
     """

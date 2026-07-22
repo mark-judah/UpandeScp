@@ -542,7 +542,7 @@ _DOC_INVALIDATIONS = {
     "Pest Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS),
     "Disease Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS),
     "Tank And Valve": (),
-    "Spray Plan Settings": (K_AFP_WAREHOUSES,),
+    "Scouting and Crop Protection Settings": (K_AFP_WAREHOUSES,),
     "Spray Plan Allowed Farm": (K_AFP_WAREHOUSES,),
     "Spray Plan Exclude Keyword": (K_AFP_WAREHOUSES,),
     # The new_application_floor_plan greenhouse picker fuzzy-resolves the

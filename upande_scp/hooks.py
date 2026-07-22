@@ -49,6 +49,8 @@ app_include_js = "/assets/upande_scp/js/scp_desk.js"
 doctype_js = {
     "Work Order": "public/js/spray_plan_wo_form.js",
     "Item": "public/js/item.js",
+    "Chemical": "public/js/chemical.js",
+    "Foliar": "public/js/foliar.js",
     "Warehouse": "public/js/warehouse.js",
     "Pest": "public/js/pest.js",
     "BOM": "public/js/bom.js",
@@ -207,11 +209,14 @@ doc_events = {
         ],
     },
     "Spray Equipment Details": _SCP_CACHE_EVENTS,
-    "Item": _SCP_CACHE_EVENTS,
+    "Item": {
+        **_SCP_CACHE_EVENTS,
+        "after_insert": "upande_scp.serverscripts.common.crop_protection.on_item_after_insert",
+    },
     "Orchard Tree": _SCP_CACHE_EVENTS,
     "Crop Scouted": _SCP_CACHE_EVENTS,
     "Tank And Valve": _SCP_CACHE_EVENTS,
-    "Spray Plan Settings": _SCP_CACHE_EVENTS,
+    "Scouting and Crop Protection Settings": _SCP_CACHE_EVENTS,
     "Spray Plan Allowed Farm": _SCP_CACHE_EVENTS,
     "Spray Plan Exclude Keyword": _SCP_CACHE_EVENTS,
     # Scouting payload cache invalidation + realtime "dirty" nudge.

@@ -5,15 +5,23 @@ import frappe
 from frappe.model.document import Document
 
 
-class SprayPlanSettings(Document):
-    pass
+class ScoutingandCropProtectionSettings(Document):
+    def validate(self):
+        chem = {r.item_group for r in (self.chemical_item_groups or []) if r.item_group}
+        fol = {r.item_group for r in (self.foliar_item_groups or []) if r.item_group}
+        overlap = chem & fol
+        if overlap:
+            frappe.throw(
+                "An Item Group cannot be both a Chemical and a Foliar group: "
+                + ", ".join(sorted(overlap))
+            )
 
 
 def get_allowed_farms():
-    """Return the list of farm names enabled in Spray Plan Settings."""
+    """Return the list of farm names enabled in Scouting and Crop Protection Settings."""
     farms = frappe.get_all(
         "Spray Plan Allowed Farm",
-        filters={"parenttype": "Spray Plan Settings"},
+        filters={"parenttype": "Scouting and Crop Protection Settings"},
         pluck="farm",
     )
     return [f for f in farms if f]
@@ -21,7 +29,7 @@ def get_allowed_farms():
 
 def _allowed_warehouses_by_prefix(prefix):
     """Return non-disabled Warehouse names whose ``custom_farm`` is in the
-    Spray Plan Settings allowed-farms list and whose name begins with
+    Scouting and Crop Protection Settings allowed-farms list and whose name begins with
     ``prefix``. Empty when no farms are configured.
     """
     farms = get_allowed_farms()

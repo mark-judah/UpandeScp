@@ -268,7 +268,7 @@ def _build_and_send(target_date) -> dict:
                 recipients=[email],
                 subject=subject,
                 message=build_html(mine, target_date),
-                reference_doctype="Spray Plan Settings",
+                reference_doctype="Scouting and Crop Protection Settings",
             )
             sent.append(email)
         except Exception:
@@ -279,7 +279,7 @@ def _build_and_send(target_date) -> dict:
 def send_chemical_progress_email() -> dict:
     """Hourly scheduler entry — sends once/day at the configured EAT hour."""
     try:
-        s = frappe.get_single("Spray Plan Settings")
+        s = frappe.get_single("Scouting and Crop Protection Settings")
     except Exception:
         return {"enabled": False}
     if not getattr(s, "progress_email_enabled", 0):
@@ -296,7 +296,7 @@ def send_chemical_progress_email() -> dict:
         return {"enabled": True, "skipped": "already sent today"}
 
     result = _build_and_send(today)
-    frappe.db.set_value("Spray Plan Settings", None, "progress_email_last_sent", today)
+    frappe.db.set_value("Scouting and Crop Protection Settings", None, "progress_email_last_sent", today)
     frappe.db.commit()
     return {"enabled": True, **result}
 

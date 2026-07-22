@@ -4,6 +4,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "spray_plan_tab",
   "intro_section",
   "intro_note",
   "farms_section",
@@ -46,7 +47,13 @@
   "progress_email_section",
   "progress_email_enabled",
   "progress_email_hour",
-  "progress_email_last_sent"
+  "progress_email_last_sent",
+  "chemicals_tab",
+  "cp_groups_section",
+  "chemical_item_groups",
+  "foliar_item_groups",
+  "scouting_tab",
+  "scouting_note"
  ],
  "fields": [
   {
@@ -121,7 +128,14 @@
   {"fieldname": "progress_email_section", "fieldtype": "Section Break", "label": "Daily Progress Email"},
   {"default": "0", "fieldname": "progress_email_enabled", "fieldtype": "Check", "label": "Send daily Chemical Planning Progress Update", "description": "A black-and-white digest of today's scheduled spray plans and their progress (issued / printed / scanned / sprayed / done), per farm, to the GM, Spray Plan Approvers and Creators for their farms."},
   {"default": "18", "depends_on": "progress_email_enabled", "fieldname": "progress_email_hour", "fieldtype": "Int", "label": "Send hour (0-23, EAT)", "non_negative": 1, "description": "Hour of the day (East Africa Time) to send the digest. 18 = 6pm / end of day."},
-  {"fieldname": "progress_email_last_sent", "fieldtype": "Date", "label": "Progress email last sent", "read_only": 1}
+  {"fieldname": "progress_email_last_sent", "fieldtype": "Date", "label": "Progress email last sent", "read_only": 1},
+  {"fieldname": "spray_plan_tab", "fieldtype": "Tab Break", "label": "Spray Plan"},
+  {"fieldname": "chemicals_tab", "fieldtype": "Tab Break", "label": "Chemicals"},
+  {"fieldname": "cp_groups_section", "fieldtype": "Section Break", "label": "Crop Protection Item Groups"},
+  {"fieldname": "chemical_item_groups", "fieldtype": "Table MultiSelect", "label": "Chemical Item Groups", "options": "Crop Protection Item Group", "description": "Item Groups whose items are chemicals. New items in these groups auto-register as a Chemical."},
+  {"fieldname": "foliar_item_groups", "fieldtype": "Table MultiSelect", "label": "Foliar Item Groups", "options": "Crop Protection Item Group", "description": "Item Groups whose items are foliars. New items in these groups auto-register as a Foliar."},
+  {"fieldname": "scouting_tab", "fieldtype": "Tab Break", "label": "Scouting"},
+  {"fieldname": "scouting_note", "fieldtype": "Small Text", "label": "Scouting Settings", "description": "Scouting-related configuration lives here.", "read_only": 1}
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
@@ -129,7 +143,7 @@
  "modified": "2026-05-18 00:00:01.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
- "name": "Spray Plan Settings",
+ "name": "Scouting and Crop Protection Settings",
  "owner": "Administrator",
  "permissions": [
   {

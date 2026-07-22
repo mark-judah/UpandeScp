@@ -903,7 +903,7 @@ def _allow_submit_without_biometric() -> bool:
     try:
         return bool(
             frappe.db.get_single_value(
-                "Spray Plan Settings", "allow_submit_without_biometric"
+                "Scouting and Crop Protection Settings", "allow_submit_without_biometric"
             )
         )
     except Exception:
@@ -914,7 +914,7 @@ def _allow_submit_without_biometric() -> bool:
 def submit_without_biometric(names: str | list) -> dict:
     """Submit each transfer SE in ``names`` WITHOUT a biometric scan.
 
-    Gated behind ``Spray Plan Settings.allow_submit_without_biometric`` —
+    Gated behind ``Scouting and Crop Protection Settings.allow_submit_without_biometric`` —
     throws if a manager has not enabled it. Shares eligibility validation
     with the biometric path via ``_transfer_submit_error`` but performs no
     scan check and sets no verification fields itself. In the intended
@@ -933,7 +933,7 @@ def submit_without_biometric(names: str | list) -> dict:
     if not _allow_submit_without_biometric():
         frappe.throw(
             "Submitting without biometric is disabled. Ask a manager to "
-            "enable it in Spray Plan Settings → Submission Gating.",
+            "enable it in Scouting and Crop Protection Settings → Submission Gating.",
             frappe.ValidationError,
         )
 

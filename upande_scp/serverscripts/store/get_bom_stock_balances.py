@@ -1,7 +1,7 @@
 import frappe
 import json
 
-from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
+from upande_scp.upande_scp.doctype.scouting_and_crop_protection_settings.scouting_and_crop_protection_settings import (
     get_allowed_chemical_store_warehouses,
     get_allowed_fertilizer_unit_warehouses,
 )

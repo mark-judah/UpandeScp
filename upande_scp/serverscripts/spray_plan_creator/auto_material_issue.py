@@ -72,7 +72,7 @@ def resolve_expense_account(item_code: str, company: str) -> str:
     """Return the expense account to write on a Material Issue row.
 
     1. ``Item Default.expense_account`` for ``(item_code, company)`` if set.
-    2. Fallback: ``Spray Plan Settings.default_chemical_expense_account``.
+    2. Fallback: ``Scouting and Crop Protection Settings.default_chemical_expense_account``.
     3. Both missing -> throw with remediation guidance.
     """
     item_default = frappe.db.get_value(
@@ -84,14 +84,14 @@ def resolve_expense_account(item_code: str, company: str) -> str:
         return item_default
 
     fallback = frappe.db.get_single_value(
-        "Spray Plan Settings", "default_chemical_expense_account"
+        "Scouting and Crop Protection Settings", "default_chemical_expense_account"
     )
     if fallback:
         return fallback
 
     frappe.throw(
         f"Cannot auto-issue tank-mix: item {item_code} has no Item Default "
-        f"expense account for company {company}, and Spray Plan Settings has "
+        f"expense account for company {company}, and Scouting and Crop Protection Settings has "
         f"no Default Chemical Expense Account configured. Set one of the two.",
         title="Auto Material Issue",
     )

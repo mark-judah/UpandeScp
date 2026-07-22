@@ -23,7 +23,7 @@ def fetch_creator_bootstrap() -> dict:
     farms = scope["farms"]
     warehouse_names = [w["name"] for w in scope["warehouses"]]
 
-    # Apply the Spray Plan Settings exclude-keyword filter on top of the
+    # Apply the Scouting and Crop Protection Settings exclude-keyword filter on top of the
     # farm-scoped greenhouses so CSU / IPM / phase / tunnel rooms don't
     # appear in the picker. The "allowed farms" check is folded in below
     # by overriding with the user's actual farm scope.
@@ -142,7 +142,7 @@ def fetch_creator_bootstrap() -> dict:
         for r in farm_store_rows
     }
 
-    settings = frappe.get_single("Spray Plan Settings")
+    settings = frappe.get_single("Scouting and Crop Protection Settings")
     return {
         "scope": {"farms": farms, "allowed_warehouses": scope["warehouses"]},
         "greenhouses": greenhouses,

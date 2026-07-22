@@ -16,7 +16,7 @@ The contract:
     populated). Orphans get dropped — there is no policy for what farm
     they belong to.
 
-The Spray Plan Settings doctype is the single source of truth for the
+The Scouting and Crop Protection Settings doctype is the single source of truth for the
 ``allowed_farms`` and ``exclude_keywords`` lists; the regex is enforced
 in code because it's a structural invariant ("a greenhouse is named GH
 something") rather than a per-tenant preference.
@@ -32,18 +32,18 @@ _NUM_PATTERN = re.compile(r"(\d+)\s*(?:-\s*KR)?$")
 
 
 def load_settings() -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Read allowed farms + exclude keywords from Spray Plan Settings.
+    """Read allowed farms + exclude keywords from Scouting and Crop Protection Settings.
 
     Returns ``(allowed_farm_names, exclude_keywords_lowercased)``.
     """
     farms = frappe.get_all(
         "Spray Plan Allowed Farm",
-        filters={"parenttype": "Spray Plan Settings"},
+        filters={"parenttype": "Scouting and Crop Protection Settings"},
         pluck="farm",
     )
     keywords = frappe.get_all(
         "Spray Plan Exclude Keyword",
-        filters={"parenttype": "Spray Plan Settings"},
+        filters={"parenttype": "Scouting and Crop Protection Settings"},
         pluck="keyword",
     )
     allowed = tuple(f for f in farms if f)

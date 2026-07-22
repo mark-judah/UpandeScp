@@ -1,4 +1,4 @@
-"""Set sane defaults for the new Spray Plan Settings threshold fields.
+"""Set sane defaults for the new Scouting and Crop Protection Settings threshold fields.
 
 Idempotent - only writes a field if its current value is unset (None, 0,
 empty) AND the field is now present on the doctype.
@@ -21,9 +21,9 @@ DEFAULTS = {
 
 
 def execute() -> None:
-    if not frappe.db.exists("DocType", "Spray Plan Settings"):
+    if not frappe.db.exists("DocType", "Scouting and Crop Protection Settings"):
         return
-    settings = frappe.get_single("Spray Plan Settings")
+    settings = frappe.get_single("Scouting and Crop Protection Settings")
     dirty = False
     for field, default in DEFAULTS.items():
         if not hasattr(settings, field):

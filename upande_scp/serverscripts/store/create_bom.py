@@ -1,7 +1,7 @@
 import frappe
 import json
 
-from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
+from upande_scp.upande_scp.doctype.scouting_and_crop_protection_settings.scouting_and_crop_protection_settings import (
     get_allowed_farms,
 )
 
@@ -11,7 +11,7 @@ def _resolve_bom_farm(data):
 
     Priority: an explicit ``custom_farm`` from the caller, then the
     greenhouse warehouse's ``custom_farm``, then the first allowed farm
-    from Spray Plan Settings. Returns ``None`` if nothing resolves so the
+    from Scouting and Crop Protection Settings. Returns ``None`` if nothing resolves so the
     BOM is created without a farm rather than with a stale default.
     """
     farm = (data.get("custom_farm") or "").strip()

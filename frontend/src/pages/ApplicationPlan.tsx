@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/PageHeader";
 import { DatePicker } from "@/components/DatePicker";
+import { TimePicker } from "@/components/TimePicker";
 import { Toaster, type ToastItem } from "@/components/Toaster";
 import {
   Dialog,
@@ -74,7 +75,7 @@ import {
   type TeamMemberRow,
 } from "@/components/spray-plan/SprayTeamEditor";
 import { FrappeError } from "@/lib/frappe";
-import { ymd } from "@/lib/utils";
+import { mergeDateTime, splitDateTime, todayAt, ymd } from "@/lib/utils";
 import {
   pestColor,
   diseaseColor,
@@ -236,7 +237,8 @@ export function ApplicationPlan() {
   useObservationColors();
 
   // Spray + BOM state
-  const [sprayDate, setSprayDate] = useState<string>(ymd(new Date()));
+  // Holds a full datetime string ("YYYY-MM-DD HH:mm:ss"); defaults to today 06:00.
+  const [sprayDate, setSprayDate] = useState<string>(todayAt("06:00"));
   const [sprayType, setSprayType] = useState<string>("");
   const [scope, setScope] = useState<string>("");
   const [bom, setBom] = useState<string>("");
@@ -1216,7 +1218,7 @@ export function ApplicationPlan() {
       // mislead the operator if it lingered.
       setFarmFilter("");
       setGreenhouse("");
-      setSprayDate(ymd(new Date()));
+      setSprayDate(todayAt("06:00"));
       setSprayType("");
       setScope("");
       setBom("");
@@ -1688,8 +1690,21 @@ export function ApplicationPlan() {
               )}
 
               <div className="flex flex-col gap-1 col-span-2">
-                <Label>Scheduled Application Date</Label>
-                <DatePicker value={sprayDate} onChange={setSprayDate} />
+                <Label>Scheduled Application</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <DatePicker
+                    value={splitDateTime(sprayDate).date}
+                    onChange={(d) =>
+                      setSprayDate(mergeDateTime(d, splitDateTime(sprayDate).time))
+                    }
+                  />
+                  <TimePicker
+                    value={splitDateTime(sprayDate).time}
+                    onChange={(t) =>
+                      setSprayDate(mergeDateTime(splitDateTime(sprayDate).date, t))
+                    }
+                  />
+                </div>
               </div>
               <div className="flex flex-col gap-1">
                 <Label>Spray Type</Label>

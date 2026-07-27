@@ -5,6 +5,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Loader2,
   Plus,
   Save,
@@ -420,6 +421,39 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
                 is unavailable — the submitting user is recorded. Leave off in
                 normal operation.
               </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3 md:col-span-2">
+            <Checkbox
+              id="csu_scan_verification"
+              checked={draft.csu_scan_verification === "tick"}
+              onCheckedChange={(v) =>
+                set("csu_scan_verification", v ? "tick" : "labels")
+              }
+            />
+            <div className="flex flex-col gap-1">
+              <Label
+                htmlFor="csu_scan_verification"
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Allow tick-to-confirm instead of scanning CSU labels
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                Off (the default) requires the sprayer to scan each chemical's
+                printed QR label as it leaves the chemical store. On lets them
+                tick to confirm instead — for farms where label printing isn't
+                available.
+              </p>
+              {draft.csu_scan_verification === "tick" && (
+                <p className="mt-1 inline-flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[0.65rem] font-medium leading-snug text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                  <AlertTriangle className="h-3 w-3 shrink-0 mt-px" />
+                  <span>
+                    Sprayers can confirm chemicals without scanning, so there is
+                    no per-chemical check that what left the store matches the
+                    plan. Turn this back off once labels are printing again.
+                  </span>
+                </p>
+              )}
             </div>
           </div>
         </CardContent>

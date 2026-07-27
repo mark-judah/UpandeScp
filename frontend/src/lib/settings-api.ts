@@ -37,6 +37,13 @@ export interface SprayPlanSettings {
   loaning_timeout_hours: number;
   progress_email_enabled: number;
   progress_email_hour: number;
+  /**
+   * How a sprayer confirms each chemical taken from the CSU.
+   * "labels" requires scanning the printed QR; "tick" lets them tick to
+   * confirm instead. The server reads anything unset or unknown as "labels",
+   * so the scan check is never dropped by accident.
+   */
+  csu_scan_verification: "labels" | "tick";
   allowed_farms: { farm: string }[];
   exclude_keywords: { keyword: string }[];
 }

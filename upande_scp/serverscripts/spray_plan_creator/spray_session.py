@@ -103,6 +103,42 @@ def _scanned_codes(wo) -> set[str]:
     }
 
 
+# ──────────────────────── scan-verification method ───────────────────────────
+
+SCAN_METHOD_LABELS = "labels"
+SCAN_METHOD_TICK = "tick"
+
+_SETTINGS = "Scouting and Crop Protection Settings"
+
+
+@frappe.whitelist()
+def get_scan_verification_method() -> dict[str, str]:
+    """How a sprayer confirms each chemical taken from the CSU.
+
+    ``labels`` (the default) requires scanning the printed QR label; ``tick``
+    lets the sprayer tick to confirm instead, for farms where label printing
+    isn't available.
+
+    Read-only and callable by any signed-in user: every sprayer's chemical
+    screen needs it to decide which control to render. Anything unrecognised
+    or unset resolves to ``labels``, so a missing or garbled setting fails
+    closed — toward requiring the scan, never toward skipping it.
+
+    Writes go through the one existing path, ``settings.save_spray_plan_settings``
+    (Settings → Spray Plan), which is already gated to the GM / System Manager
+    and, because the field is a Select, has Frappe reject any value other than
+    the two valid ones. Deliberately no setter here: a second write path for one
+    field is how the two ends drift apart.
+    """
+    configured = frappe.db.get_single_value(_SETTINGS, "csu_scan_verification")
+    method = (
+        SCAN_METHOD_TICK
+        if (configured or "").strip().lower() == SCAN_METHOD_TICK
+        else SCAN_METHOD_LABELS
+    )
+    return {"method": method}
+
+
 # ───────────────────────────── register_csu_scan ─────────────────────────────
 
 

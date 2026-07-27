@@ -94,6 +94,14 @@ def get_settings_bundle() -> dict:
             "loaning_timeout_hours": settings.loaning_timeout_hours or 72,
             "progress_email_enabled": int(settings.progress_email_enabled or 0),
             "progress_email_hour": settings.progress_email_hour if settings.progress_email_hour is not None else 18,
+            # Blank/unknown reads back as "labels" so the editor shows the
+            # scan-required state whenever the setting isn't explicitly "tick",
+            # matching spray_session.get_scan_verification_method.
+            "csu_scan_verification": (
+                "tick"
+                if (settings.csu_scan_verification or "").strip().lower() == "tick"
+                else "labels"
+            ),
             "allowed_farms": allowed_farms,
             "exclude_keywords": exclude_keywords,
         },
@@ -146,6 +154,10 @@ def save_spray_plan_settings(payload) -> dict:
         "loaning_timeout_hours",
         "progress_email_enabled",
         "progress_email_hour",
+        # Only "labels" / "tick" are valid; the field is a Select, so Frappe
+        # rejects anything else on save rather than letting a bad value through
+        # and silently dropping the CSU scan check.
+        "csu_scan_verification",
     ]
     for f in scalar_fields:
         if f in payload:

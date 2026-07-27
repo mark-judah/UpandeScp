@@ -269,11 +269,14 @@ def create_material_transfer(work_order):
 
         # Resolve farm from the greenhouse warehouse's custom_farm link so
         # any farm configured in Scouting and Crop Protection Settings flows through unchanged.
+        # Warehouse.custom_farm is master data (which farm the greenhouse belongs
+        # to); Stock Entry.farm is the Farm accounting dimension. Different
+        # fields, deliberately — read the former, write the latter.
         greenhouse = getattr(work_order, "custom_greenhouse", None)
         if greenhouse:
             farm = frappe.db.get_value("Warehouse", greenhouse, "custom_farm")
             if farm:
-                stock_entry.custom_farm = farm
+                stock_entry.farm = farm
         
         # Stock Entry Type and Work Order fields
         stock_entry.stock_entry_type = SE_TYPE_TRANSFER

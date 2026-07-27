@@ -168,8 +168,10 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
         "set_posting_time": 1,
         "from_warehouse": greenhouse,
         "letter_head": manufacture_se.letter_head or "",
-        "custom_farm": farm,
-        "custom_location": manufacture_se.custom_location or "",
+        # `farm` is the Farm accounting dimension (ERPNext-owned, present on
+        # Stock Entry, Stock Entry Detail and GL Entry), not a bespoke field.
+        # The item rows above set the same dimension per line.
+        "farm": farm,
         "items": items,
         # New upande_ta model: assign the receiving employee directly.
         # System-generated (no live scan) -> biometric_status stays Pending.

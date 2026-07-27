@@ -103,7 +103,15 @@ doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # are preserved.
 after_migrate = [
 	"upande_scp.serverscripts.scouting.observation_colors.after_migrate",
+	# Declare SCP's Stock Entry fields before the layout pass, so the enforcer
+	# has something to place. Stock Entry is shared with three other installed
+	# apps, so these must be rebuilt rather than assumed to exist.
+	"upande_scp.serverscripts.store.stock_entry_fields.ensure_scp_stock_entry_fields",
 	"upande_scp.serverscripts.common.scouting_tab_layout.enforce",
+]
+
+before_uninstall = [
+	"upande_scp.serverscripts.store.stock_entry_fields.remove_scp_stock_entry_fields",
 ]
 
 # Uninstallation
@@ -460,6 +468,12 @@ fixtures = [
                         "Work Order-custom_rate_overridden",
                         "Work Order-custom_weather_snapshot",
                         "Work Order-custom_spray_plan_team_members",
+                        # NOTE: Stock Entry / Stock Entry Detail fields are NOT
+                        # fixtures. They are declared in
+                        # serverscripts/store/stock_entry_fields.py and rebuilt
+                        # on after_migrate, so a reset-to-defaults or a fresh
+                        # site converges without needing a re-export. One
+                        # mechanism only — see that module's docstring.
                 ]
             ]
         ]

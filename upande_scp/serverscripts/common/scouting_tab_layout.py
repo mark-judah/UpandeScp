@@ -6,6 +6,8 @@ Layout only (custom-field insert_after). Idempotent. Classification is fixed
 """
 import frappe
 
+from ..store.spray_stock_types import SE_TYPE_TRANSFER
+
 TAB = "custom_scouting_and_crop_protection_tab"
 TAB_LABEL = "Scouting and Crop Protection"
 
@@ -38,12 +40,52 @@ SCP_FIELDS = {
         "custom_chemical_store", "custom_fertilizer_store", "spray_plan_creators",
         "store_keepers", "spray_plan_approvers",
     ],
-    # NOTE: Stock Entry deliberately excluded. Its 7 SCP-owned fields
-    # (greenhouse/location + store-label printing) are scattered among ~65
-    # foreign fields with dangling insert_after refs and foreign fields
-    # trailing at the very end, so this enforcer can't isolate a clean tab
-    # there without risking the other doctypes. Left ungrouped pending a
-    # Stock-Entry-specific approach.
+    # Stock Entry carries exactly one SCP layout concern: the store-label print
+    # audit trail, written by `spray_plan_labels._stamp_labels_printed` and read
+    # back by `lifecycle` / `store_keeper_api`. The fields themselves are
+    # declared by `store.stock_entry_fields`; this list only orders them.
+    # `custom_farm` is deliberately absent — it is a document-level field that
+    # belongs next to posting_time, not inside a crop-protection tab.
+    "Stock Entry": [
+        "custom_labels_printed", "custom_labels_printed_by",
+        "custom_labels_printed_on", "custom_labels_print_count",
+    ],
+}
+
+# Optional per-doctype `depends_on` for the tab itself. Stock Entry is shared
+# with harvest, milking and biometric flows, so an always-on SCP tab would show
+# an irrelevant, permanently-empty tab on every receipt and issue. Labels are
+# only ever printed for the chemical transfer out of the store
+# (`spray_stock_types.SE_TYPE_TRANSFER`), so the tab appears for that type — plus
+# any entry already stamped as printed, so historical audit trails stay visible
+# even if an entry's type is later renamed.
+# Doctypes that get deterministic placement instead of the default
+# trailing-tab strategy: the tab is slotted immediately BEFORE a named standard
+# Tab Break, and no foreign field's insert_after is ever rewritten.
+#
+# The default strategy anchors the tab after the tail of every foreign "stray"
+# chain, which assumes Frappe's resolved field order agrees with the
+# insert_after graph. That assumption fails on a heavily-customised shared
+# doctype: Frappe resolves custom fields in a single insert_after pass, so a
+# field whose anchor hasn't been placed yet is laid down early. When Stock Entry
+# still carried 70 custom fields from four apps, the harvest chain rooted at
+# `custom_output_quantity` (itself resolved dead last) had its tail resolved
+# mid-form, so "after the stray tail" put our tab in the middle of the details
+# tab, swallowing the Items table. It never converged on re-run, because the
+# graph the enforcer reads and the order the form renders were two different
+# things.
+#
+# Stock Entry is clean now, so both strategies would work — but it is shared by
+# four apps and will accumulate fields again, so the deterministic placement
+# stays. It also reads better: Connections belongs last by Frappe convention,
+# which the default strategy would violate by anchoring past it.
+TAB_BEFORE = {"Stock Entry": "tab_connections"}
+
+TAB_DEPENDS_ON = {
+    "Stock Entry": (
+        f'eval:doc.stock_entry_type=="{SE_TYPE_TRANSFER}"'
+        ' || doc.custom_labels_printed'
+    ),
 }
 
 
@@ -93,8 +135,8 @@ def _chain_tail(root, children, scp):
         seen.add(node)
 
 
-def _set_after(name, new_ia):
-    """Set insert_after on one Custom Field only if it changed. Returns 1/0.
+def _set_field(name, prop, value):
+    """Set one property on one Custom Field only if it changed. Returns 1/0.
 
     ignore_validate skips Custom Field's on_update -> validate_fields_for_doctype,
     which revalidates *every* field on the doctype (standard fields included)
@@ -105,13 +147,18 @@ def _set_after(name, new_ia):
     insert_after change here. We only ever touch insert_after; nothing this
     flag skips is something we rely on.
     """
-    if frappe.db.get_value("Custom Field", name, "insert_after") == new_ia:
+    if (frappe.db.get_value("Custom Field", name, prop) or "") == (value or ""):
         return 0
     cf = frappe.get_doc("Custom Field", name)
-    cf.insert_after = new_ia
+    cf.set(prop, value)
     cf.flags.ignore_validate = True
     cf.save(ignore_permissions=True)
     return 1
+
+
+def _set_after(name, new_ia):
+    """Set insert_after on one Custom Field only if it changed. Returns 1/0."""
+    return _set_field(name, "insert_after", new_ia)
 
 
 def _intrinsic_roots(dt, scp, names, order_set):
@@ -157,7 +204,71 @@ def _pick(order, avoid):
     return order[-1] if order else None
 
 
+def _ensure_tab(dt, names, anchor):
+    """Create the tab break anchored at `anchor` if it's missing. Returns the
+    (possibly refreshed) fieldname -> Custom Field name map."""
+    if TAB in names:
+        return names
+    cf = frappe.new_doc("Custom Field")
+    cf.dt = dt
+    cf.fieldname = TAB
+    cf.label = TAB_LABEL
+    cf.fieldtype = "Tab Break"
+    cf.insert_after = anchor
+    cf.print_hide = 1
+    cf.depends_on = TAB_DEPENDS_ON.get(dt) or ""
+    cf.insert(ignore_permissions=True)
+    return _names(dt)
+
+
+def _enforce_before_tab(dt, scp_fields, before_tab):
+    """Place the tab immediately before the standard Tab Break `before_tab`, and
+    chain the SCP fields under it. Touches only our own Custom Fields."""
+    scp = set(scp_fields) | {TAB}
+    names = _names(dt)
+    # Resolved order with our own fields removed, so the anchor we pick is a
+    # position in the form as actually rendered, not in the insert_after graph.
+    order = [fn for fn in _order(dt) if fn not in scp]
+    if before_tab not in order:
+        raise ValueError(f"{dt}: anchor tab break {before_tab!r} not on doctype")
+
+    # Walk back from `before_tab` to the nearest field that no other custom
+    # field is already anchored on. Sharing an anchor forks Frappe's order
+    # resolution and could interleave that field's branch into our tab.
+    taken = {
+        c["insert_after"] for c in frappe.get_all(
+            "Custom Field", filters={"dt": dt}, fields=["insert_after", "fieldname"])
+        if c["fieldname"] not in scp and c["insert_after"]
+    }
+    idx = order.index(before_tab)
+    anchor = None
+    for fn in reversed(order[:idx]):
+        if fn not in taken:
+            anchor = fn
+            break
+    if anchor is None:
+        raise ValueError(f"{dt}: no free anchor before {before_tab!r}")
+
+    names = _ensure_tab(dt, names, anchor)
+
+    changed = _set_after(names[TAB], anchor)
+    changed += _set_field(names[TAB], "depends_on", TAB_DEPENDS_ON.get(dt) or "")
+    prev = TAB
+    for fn in scp_fields:
+        if fn in names:
+            changed += _set_after(names[fn], prev)
+            prev = fn
+
+    if changed:
+        frappe.clear_cache(doctype=dt)
+    return changed
+
+
 def _enforce_doctype(dt, scp_fields):
+    before_tab = TAB_BEFORE.get(dt)
+    if before_tab:
+        return _enforce_before_tab(dt, scp_fields, before_tab)
+
     scp = set(scp_fields) | {TAB}
     order = _order(dt)
     names = _names(dt)
@@ -169,15 +280,7 @@ def _enforce_doctype(dt, scp_fields):
 
     # 1. ensure the tab break exists, anchored at `anchor`
     if TAB not in names:
-        cf = frappe.new_doc("Custom Field")
-        cf.dt = dt
-        cf.fieldname = TAB
-        cf.label = TAB_LABEL
-        cf.fieldtype = "Tab Break"
-        cf.insert_after = anchor
-        cf.print_hide = 1
-        cf.insert(ignore_permissions=True)
-        names = _names(dt)
+        names = _ensure_tab(dt, names, anchor)
         order = _order(dt)
         children = _children_map(dt)
         roots = _intrinsic_roots(dt, scp, names, set(order))
@@ -211,6 +314,10 @@ def _enforce_doctype(dt, scp_fields):
 
     # 4. anchor the tab as a trailing tab (after `anchor` + any re-chained strays)
     changed += _set_after(names[TAB], prev)
+
+    #    ...and keep its visibility condition in sync (no-op where unset, so an
+    #    always-on tab stays always-on).
+    changed += _set_field(names[TAB], "depends_on", TAB_DEPENDS_ON.get(dt) or "")
 
     # 5. chain SCP fields under the tab (only those present on the site)
     prev = TAB

@@ -12,9 +12,12 @@ sidecar doctype (1:1 with the Item); per-crop overrides live on
 `default_*` values.
 """
 
+import json
+from datetime import timedelta
 from urllib.parse import quote
 
 import frappe
+from frappe.utils import flt, get_datetime
 
 # The settings Single. Kept as a constant so a future rename touches one place.
 SETTINGS = "Scouting and Crop Protection Settings"
@@ -153,6 +156,49 @@ def get_product_codes(item_code, kind):
 		fields=["code"],
 	)
 	return [r.code for r in rows if r.code]
+
+
+def get_reentry_interval_hrs(item_code):
+	"""Re-entry interval (hours) from the product's sidecar, or 0.
+
+	Lives on both Chemical and Foliar, so `_master_for` resolves either.
+	Replaces the deleted `Item.custom_reentry_interval_hrs`.
+	"""
+	m = _master_for(item_code)
+	if not m:
+		return 0.0
+	master_dt, name, _, _ = m
+	return flt(frappe.db.get_value(master_dt, name, "reentry_interval_hrs"))
+
+
+@frappe.whitelist()
+def max_reentry_interval_hrs(item_codes):
+	"""Longest re-entry interval across `item_codes` — the binding one for a
+	tank mix, since the block stands until the slowest chemical clears.
+
+	Whitelisted: the Work Order Desk form calls this directly. Accepts a JSON
+	string (from the client) or a list.
+	"""
+	if isinstance(item_codes, str):
+		item_codes = json.loads(item_codes)
+	if not item_codes:
+		return 0.0
+	return max(
+		(get_reentry_interval_hrs(c) for c in item_codes if c),
+		default=0.0,
+	)
+
+
+def reentry_time(scheduled, hours):
+	"""Scheduled application time + re-entry hours, as a Frappe datetime string.
+
+	Returns None when there's no scheduled time to offset from (an unscheduled
+	plan has no meaningful re-entry moment). `hours` of 0 is legitimate — a mix
+	with no re-entry restriction clears immediately.
+	"""
+	if not scheduled:
+		return None
+	return get_datetime(scheduled) + timedelta(hours=flt(hours))
 
 
 def crop_protection_item_codes(kind=None):

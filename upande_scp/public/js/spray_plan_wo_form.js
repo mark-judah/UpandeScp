@@ -154,9 +154,15 @@ function calculate_reentry_time(frm) {
             throw new Error('Invalid scheduled application time format');
         }
 
-        let current_utc_hours = scheduled_date.getUTCHours();
-        scheduled_date.setUTCHours(current_utc_hours + reentry_hours);
-        
+        // Add the offset in milliseconds and read it back with the same
+        // (local) getters used for formatting below. The previous version
+        // shifted via setUTCHours() but formatted with local getters, so any
+        // site not on UTC got a re-entry time skewed by its offset, and a
+        // fractional interval was silently truncated to whole hours.
+        scheduled_date = new Date(
+            scheduled_date.getTime() + reentry_hours * 60 * 60 * 1000
+        );
+
         if (isNaN(scheduled_date.getTime())) {
             throw new Error('Invalid reentry time calculation result');
         }
@@ -201,26 +207,17 @@ function calculate_reentry_period(frm) {
         return;
     }
 
+    // The interval lives on the Chemical/Foliar sidecar doctype. It used to be
+    // read off Item.custom_reentry_interval_hrs, which was deleted when the
+    // sidecars took ownership of product metadata — that query returned no
+    // usable field, so the period silently stayed at whatever was stored and
+    // the re-entry time stopped updating.
     frappe.call({
-        method: 'frappe.client.get_list',
-        args: {
-            doctype: 'Item',
-            filters: {
-                'name': ['in', item_codes]
-            },
-            fields: ['name', 'custom_reentry_interval_hrs']
-        },
+        method: 'upande_scp.serverscripts.common.crop_protection.max_reentry_interval_hrs',
+        args: { item_codes: item_codes },
         callback: function(r) {
-            if (r.message) {
-                let max_reentry = 0;
-                r.message.forEach(function(item) {
-                    let reentry_hrs = item.custom_reentry_interval_hrs || 0;
-                    reentry_hrs = parseFloat(reentry_hrs);
-                    if (reentry_hrs > max_reentry) {
-                        max_reentry = reentry_hrs;
-                    }
-                });
-                frm.set_value('custom_reentry_period_hrs', max_reentry);
+            if (r && r.message !== undefined) {
+                frm.set_value('custom_reentry_period_hrs', parseFloat(r.message) || 0);
             }
         }
     });

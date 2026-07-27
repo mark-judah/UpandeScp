@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe.utils import flt
 
+from ..common import crop_protection
 from .scope import _resolve_user_scope
 from .validation import (
     derive_cost_center, validate_preventive_reason, validate_rate_in_limits,
@@ -348,6 +349,22 @@ def _apply_payload(wo, payload: dict) -> None:
         if c.get("_rate_differs_from_bom"):
             rate_overridden = True
     wo.custom_rate_overridden = 1 if rate_overridden else 0
+
+    # Re-entry window. Computed here — server-side, on every write — because
+    # this is the only path that creates Application Floor Plan WOs. It used to
+    # be populated solely by the Desk form script, so a plan nobody opened in
+    # the Desk (i.e. nearly all of them) carried no re-entry data at all, and
+    # `spray_session.get_*` handed the mobile app a blank window.
+    #
+    # The interval comes from the Chemical/Foliar sidecar, not the old
+    # `Item.custom_reentry_interval_hrs` (deleted when the sidecars took over
+    # product metadata).
+    wo.custom_reentry_period_hrs = crop_protection.max_reentry_interval_hrs(
+        [r.item_code for r in wo.required_items if r.item_code]
+    )
+    wo.custom_reentry_time = crop_protection.reentry_time(
+        wo.custom_scheduled_application_time, wo.custom_reentry_period_hrs
+    )
 
 
 def _validate_payload(payload: dict, scope: dict) -> None:

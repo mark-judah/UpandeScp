@@ -498,6 +498,13 @@ def bulk_assign_employee(names: str | list, employee: str) -> dict:
             doc.biometric_status = "Pending"
             doc.biometric_verified_at = None
             doc.matched_biometric_log = None
+            # Stock Entry.department has fetch_from=bio_employee.department
+            # (upande_ta). On sites where the Department master is unrestored,
+            # Employee.department links dangle and that fetch pulls a
+            # non-existent Department, failing link validation on save. The
+            # department is incidental to CSU transfers, so skip link
+            # validation the same way auto_material_issue does.
+            doc.flags.ignore_links = True
             doc.save(ignore_permissions=False)
             ok_count += 1
             results.append({"name": name, "ok": True, "error": None})
@@ -873,6 +880,10 @@ def submit_with_biometric(names: str | list) -> dict:
             doc.biometric_verified_at = now_datetime()
             if scan.get("name"):
                 doc.matched_biometric_log = scan["name"]
+            # Skip link validation (dangling Employee.department fetched onto
+            # Stock Entry.department where the Department master is unrestored;
+            # see assign_biometric_employee).
+            doc.flags.ignore_links = True
             doc.save(ignore_permissions=False)
             doc.submit()
             ok_count += 1
@@ -908,6 +919,15 @@ def _allow_submit_without_biometric() -> bool:
         )
     except Exception:
         return False
+
+
+@frappe.whitelist()
+def get_submission_gating() -> dict:
+    """Lightweight poll target so the store-keeper page can reflect a GM's
+    biometric-gating toggle live, without a full page reload / re-fetch of
+    the whole draft list."""
+    _check_perm()
+    return {"allow_submit_without_biometric": _allow_submit_without_biometric()}
 
 
 @frappe.whitelist()
@@ -963,6 +983,9 @@ def submit_without_biometric(names: str | list) -> dict:
 
             # No scan — set no verification fields here; the validate hook
             # leaves biometric_status "Pending" absent a fresh matching scan.
+            # Skip link validation (dangling fetched department; see
+            # assign_biometric_employee).
+            doc.flags.ignore_links = True
             doc.save(ignore_permissions=False)
             doc.submit()
             ok_count += 1

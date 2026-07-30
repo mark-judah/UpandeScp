@@ -163,6 +163,17 @@ export async function submitWithBiometric(
   return unwrap<BiometricSubmitResp>(r);
 }
 
+/** Lightweight poll target: reflects a GM's biometric-gating toggle without
+ *  reloading the page / re-fetching the whole draft list. */
+export async function fetchSubmissionGating(): Promise<{
+  allow_submit_without_biometric: boolean;
+}> {
+  const r = await call(
+    "upande_scp.serverscripts.store.store_keeper_api.get_submission_gating",
+  );
+  return unwrap<{ allow_submit_without_biometric: boolean }>(r);
+}
+
 export async function submitWithoutBiometric(
   names: string[],
 ): Promise<BiometricSubmitResp> {

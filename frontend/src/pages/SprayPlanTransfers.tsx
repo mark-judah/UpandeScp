@@ -48,6 +48,7 @@ import {
 import {
   bulkAssignEmployee,
   fetchDraftTransfers,
+  fetchSubmissionGating,
   fetchTransferItems,
   searchEmployees,
   submitWithBiometric,
@@ -122,6 +123,36 @@ export function SprayPlanTransfers() {
   // Re-fetch on date-range change. (Farm filter is client-side because
   // the cost is tiny once the rows are in memory.)
   useEffect(load, [fromDate, toDate]);
+
+  // Keep the biometric-gating flag live without a page reload: a GM can
+  // toggle "submit without biometric" at any time, and the store keeper
+  // should see the manual-submit control appear/disappear on its own. Poll
+  // a tiny dedicated endpoint (not the full draft list, so selections and
+  // rows are never disturbed) every 30s and whenever the tab regains focus.
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => {
+      fetchSubmissionGating()
+        .then((g) => {
+          if (alive) setAllowManual(!!g.allow_submit_without_biometric);
+        })
+        .catch(() => {
+          /* transient — keep the last known value */
+        });
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    const id = window.setInterval(refresh, 30_000);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", refresh);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
 
   // Debounced employee search: type → wait 200ms → query backend.
   useEffect(() => {
@@ -449,7 +480,7 @@ export function SprayPlanTransfers() {
       <div className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4">
         {/* Pre-flight panel */}
         {selected.size > 0 && (
-          <Card className="border-l-4 border-l-primary/60">
+          <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Fingerprint className="h-4 w-4" />
@@ -484,14 +515,7 @@ export function SprayPlanTransfers() {
 
         {/* Bulk-assign result */}
         {assignResult && (
-          <Card
-            className={cn(
-              "border-l-4",
-              assignResult.failed > 0
-                ? "border-l-destructive"
-                : "border-l-[var(--sd-data-cyan,#06b6d4)]",
-            )}
-          >
+          <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <UserPlus className="h-4 w-4" />
@@ -523,14 +547,7 @@ export function SprayPlanTransfers() {
 
         {/* Submit result */}
         {result && (
-          <Card
-            className={cn(
-              "border-l-4",
-              result.failed > 0
-                ? "border-l-destructive"
-                : "border-l-[var(--sd-data-green,#16a34a)]",
-            )}
-          >
+          <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 {result.failed > 0 ? (

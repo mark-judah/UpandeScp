@@ -59,8 +59,9 @@ class TestFetchPayloadUsesWeeks(unittest.TestCase):
             mod._fetch_scouting_payload("2025-04-28", "2025-05-12", None, include_meta=False)
 
         # 2025-04-28..2025-05-12 spans ISO weeks 18 + 19 + 20 of 2025
-        called_args = sorted(c.args for c in wk.call_args_list)
-        self.assertEqual(called_args, [(2025, 18), (2025, 19), (2025, 20)])
+        # _fetch_week_entries takes (year, week, crop); the crop is None here.
+        called_weeks = sorted(c.args[:2] for c in wk.call_args_list)
+        self.assertEqual(called_weeks, [(2025, 18), (2025, 19), (2025, 20)])
 
 
 class TestFilterEntriesWholeWeek(unittest.TestCase):

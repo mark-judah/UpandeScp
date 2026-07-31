@@ -370,7 +370,19 @@ bins with stock 2,501 → 17,672, for **~100 MB** — in line with the 85–110 
 Real Stock Entries, not hand-written Bin rows: only a proper receipt produces consistent
 SLE + Bin + GL, which is what the transfer/mix/manufacture path validates against.
 
+Livestock's non-feed flows were seeded too: **595 `DRUGS` items x 4 stores @100** (Animal
+Drug Issue / Health Treatment) and **6 milk replacers x 4 stores @500** (Calf Rearing). Milk
+Recording needs no seed — it produces milk. `Stores - KR` is **disabled in production**, so it
+rejects receipts; that is prod's real state, not a failure. Final: **142 Stock Entries,
+18,070 ledger rows, 20,114 bins with stock**.
+
 kaitet.local was **not** seeded — it only needed the flocks and their processes.
+
+**The production dump was deleted on 2026-07-31**, after the seeding was proven and the
+reference samples banked. Disk went 2.4 GB -> **8.2 GB free**; kaitet15 1.17 GB,
+kaitet.local 1.20 GB, mona.local 0.79 GB. What is gone with it: production stock history,
+the 40 kaitet fixture-doctypes' data, and anything else never extracted. What survives:
+the `_ref_*` / `_mfg_*` sample tables on kaitet15.
 
 **Reference patterns were sampled from the dump first**, since they are unrecoverable once
 it is deleted. Two techniques, both avoiding the 2.9 GB staging that failed:

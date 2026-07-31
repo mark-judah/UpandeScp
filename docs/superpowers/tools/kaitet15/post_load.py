@@ -63,6 +63,13 @@ for u in missing:
 print(f"   created {len(missing)}")
 
 print("\n== 4. setup wizard + global defaults ==")
+# On v15 frappe.is_setup_complete() reads tabInstalled Application.is_setup_complete
+# for frappe+erpnext — NOT System Settings (that is the v16 shape). Set both.
+frappe.db.sql("""UPDATE `tabInstalled Application` SET is_setup_complete = 1
+                 WHERE app_name IN ('frappe','erpnext')""")
+# A fresh site records desktop:home_page = 'setup-wizard'; it survives the restore
+# and keeps sending the desk to the wizard even once setup IS complete.
+frappe.db.sql("DELETE FROM `tabDefaultValue` WHERE defkey='desktop:home_page'")
 frappe.db.set_single_value("System Settings", "setup_complete", 1)
 frappe.db.set_single_value("System Settings", "enable_onboarding", 0)
 frappe.db.set_single_value("System Settings", "time_zone", "Africa/Nairobi")

@@ -427,6 +427,22 @@ does not survive, because the dedupe prefers the non-empty row and puts `'Footer
 back. Also note `frappe.db.set_single_value` on a field that does not exist on the doctype
 throws and rolls back everything uncommitted in that script.
 
+### The desk — two v15-specific traps
+
+The desk boots and renders (`/app`, `/app/upande-scp`, and Item / Scouting Entry / Work
+Order list views all 200; `get_bootinfo` clean with five apps and 24 workspaces; the Upande
+SCP workspace returns its shortcuts). Getting there needed two fixes the v16 playbook does
+not cover:
+
+9. **`desktop:home_page` was still `setup-wizard`.** A fresh site records that default before
+   setup finishes, it survives the restore, and `load_home_page` reads it directly — so the
+   desk kept opening the ERPNext setup wizard even though setup *was* complete. Delete the
+   `tabDefaultValue` row; boot then falls back to `Workspaces`.
+10. **On v15, `frappe.is_setup_complete()` reads `tabInstalled Application.is_setup_complete`
+    for frappe and erpnext — not `System Settings.setup_complete`.** That is the v16 shape.
+    Set both; here the Installed Application flags happened to be right already, so the
+    symptom was purely the stale default above.
+
 ### Verification — results
 
 | Check | Result |
@@ -440,6 +456,8 @@ throws and rolls back everything uncommitted in that script.
 | `getCropsScouted` | 2 crops |
 | `chemical_stock_overview` | 174 items, 38 warehouses, 553 matrix rows, 12 CSUs |
 | `getAllChemicals` | 471 chemicals, 207 fertilizers |
+| Desk `/app`, `/app/upande-scp`, list views | 200; Scouting Entry list returns July rows |
+| `get_bootinfo` | clean, 5 apps, 24 workspaces, `home_page: Workspaces` |
 | `fetch_creator_bootstrap` as `festus.muasya@karenroses.com` | farms [Simotwo, Eldama], 32 warehouses, 20 greenhouses |
 | `creator_stock_overview` (same user) | 3 CSUs / 1 chemical store / 2 farms |
 | kaitet.local + mona.local unaffected | 200 |

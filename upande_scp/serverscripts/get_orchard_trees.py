@@ -137,8 +137,8 @@ def _rows_from_trees(tree_rows):
 def _rows_for_block(block):
     trees = frappe.get_all(
         "Orchard Tree",
-        filters={"block": block, "geojson": ["is", "set"]},
-        fields=["name", "block", "row", "tree_number", "geojson as raw_geojson"],
+        filters={"block": block, "raw_geojson": ["is", "set"]},
+        fields=["name", "block", "row", "tree_number", "raw_geojson"],
         limit_page_length=0,
     )
     return _rows_from_trees(trees)
@@ -158,8 +158,8 @@ def _rows_for_farm(farm):
         return {"rows": []}
     trees = frappe.get_all(
         "Orchard Tree",
-        filters={"block": ["in", blocks], "geojson": ["is", "set"]},
-        fields=["name", "block", "row", "tree_number", "geojson as raw_geojson"],
+        filters={"block": ["in", blocks], "raw_geojson": ["is", "set"]},
+        fields=["name", "block", "row", "tree_number", "raw_geojson"],
         limit_page_length=0,
     )
     return _rows_from_trees(trees)
@@ -212,8 +212,8 @@ def _features_from_trees(tree_rows):
 def _build_for_block(block):
     trees = frappe.get_all(
         "Orchard Tree",
-        filters={"block": block, "geojson": ["is", "set"]},
-        fields=["name", "tree_number", "row", "tree_code", "block", "geojson as raw_geojson"],
+        filters={"block": block, "raw_geojson": ["is", "set"]},
+        fields=["name", "tree_number", "row", "tree_code", "block", "raw_geojson"],
         order_by="row asc, tree_number asc",
         limit_page_length=0,
     )
@@ -234,8 +234,8 @@ def _build_for_farm(farm):
         return {"type": "FeatureCollection", "features": []}
     trees = frappe.get_all(
         "Orchard Tree",
-        filters={"block": ["in", blocks], "geojson": ["is", "set"]},
-        fields=["name", "tree_number", "row", "tree_code", "block", "geojson as raw_geojson"],
+        filters={"block": ["in", blocks], "raw_geojson": ["is", "set"]},
+        fields=["name", "tree_number", "row", "tree_code", "block", "raw_geojson"],
         order_by="block asc, row asc, tree_number asc",
         limit_page_length=0,
     )
@@ -293,8 +293,8 @@ def _points_from_trees(tree_rows):
 def _points_for_block(block):
     trees = frappe.get_all(
         "Orchard Tree",
-        filters={"block": block, "geojson": ["is", "set"]},
-        fields=["name", "geojson as raw_geojson"],
+        filters={"block": block, "raw_geojson": ["is", "set"]},
+        fields=["name", "raw_geojson"],
         order_by="row asc, tree_number asc",
         limit_page_length=0,
     )
@@ -315,8 +315,8 @@ def _points_for_farm(farm):
         return {"names": [], "coords": []}
     trees = frappe.get_all(
         "Orchard Tree",
-        filters={"block": ["in", blocks], "geojson": ["is", "set"]},
-        fields=["name", "geojson as raw_geojson"],
+        filters={"block": ["in", blocks], "raw_geojson": ["is", "set"]},
+        fields=["name", "raw_geojson"],
         order_by="block asc, row asc, tree_number asc",
         limit_page_length=0,
     )

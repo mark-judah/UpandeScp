@@ -331,6 +331,28 @@ Capitalization, Value Adjustment, Shift tables) and the invoice item children.
 stock movements**. Fine for flocks-as-assets and for reading accounting documents; not usable
 for stock-vs-GL reconciliation.
 
+**The same data was then mirrored into kaitet.local (v16)** — it had `tabAsset` (1,820, from
+the July restore) but nothing around it: Asset Category was empty, so even the flocks' own
+category link dangled, and there were no movements, activity, locations, invoices or journal
+entries.
+
+Because kaitet.local is **v16 against a v15 dump**, the kaitet15 method does not apply there:
+dropping and recreating from production DDL would replace v16 tables with v15 schema. Every
+table was staged and merged by column intersection with `INSERT IGNORE`
+(`load_assets_kaitet.sh`), so the existing 1,820 Assets and 10 Suppliers survived untouched —
+`tabAsset` merged **+0 rows**, exactly as intended. Landed: Asset Activity 22,702, Movement
+1,788 (+1,789 items), Maintenance Log 774, Repair 499, Depreciation Schedule 244, Finance
+Book 274, Asset Category 23 (+34 accounts), Location 13, Supplier 1,717, Journal Entry 3,190
+(+16,290 accounts), Purchase Invoice 4,073 (+8,380 items), Sales Invoice 13,780 (+62,544
+items), GL Entry 129,723. Flocks now resolve their category, with 13 movements and 65
+activity records.
+
+The merge log lists every column dropped on the way in. Two kinds, both expected: **v15→v16
+renames** (`gross_purchase_amount`, `is_existing_asset`, `is_composite_asset`) and **fields
+from apps this bench does not have** (csf_ke's `custom_etims_*`, lending's `loan*`). If a v16
+report needs `gross_purchase_amount`, read it from v16's replacement field rather than
+expecting the restore to have carried it.
+
 ### The frontend build
 
 Builds clean: `✓ built in 17.69s`, 3.6 MB into `upande_scp/public/dist`.

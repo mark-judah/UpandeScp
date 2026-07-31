@@ -1,0 +1,9 @@
+tabUser
+tabHas Role
+tabUser Permission
+tabDefaultValue
+tabRole
+tabSeries
+tabSingles
+tabCustom Field
+tabProperty Setter

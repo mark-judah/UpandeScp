@@ -1,0 +1,18 @@
+tabAnimal Event
+tabAnimal
+tabBreed
+tabMilk Recording
+tabAnimal Disposal
+tabLivestock Insurance Policy
+tabAnimal Diagnosis System Check
+tabLivestock Insurance Policy Animal
+tabAnimal Health Case
+tabAnimal Disease
+tabAnimal Diagnosis
+tabAnimal Drug Issue
+tabMilking Palour Checksheet
+tabHerds
+tabBreeders
+tabAnimal Health Treatment
+tabAnimal Weight Record
+tabCalf Rearing

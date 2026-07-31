@@ -1,0 +1,103 @@
+tabActive Ingredient
+tabBed
+tabBed And Zone Automation
+tabBlock Sectors
+tabChemical Equipment
+tabChemical Requirements
+tabChemical Stock Baseline
+tabChemical Targets
+tabChemical Transfer Request
+tabChemical Transfer Request Source
+tabCrop Modelling Entry
+tabCrop Scouted
+tabCustom Spray Plan Team Member
+tabDisease Filter
+tabDisease Stages
+tabFRAC Chemical Frequency
+tabFRAC Code
+tabFRAC Code Filter
+tabFRAC Guideline
+tabFarm Filter
+tabFarm Map Coordinate
+tabFarm Spray Plan Approver
+tabFarm Spray Plan Creator
+tabFarm Store Keeper
+tabFilter Priority
+tabGHS Code
+tabGHS Code Filter
+tabGreenhouse Sectors
+tabIRAC Code
+tabIRAC Code Filter
+tabIRAC Guideline
+tabIncident
+tabIncident Filter
+tabOrchard Tree
+tabPermitted Chemicals
+tabPest
+tabPest Filter
+tabPests Stages
+tabPhysiological Disorder
+tabPhysiological Disorder Filter
+tabPlant Disease
+tabPlant Section
+tabPlant Section Filter
+tabPredator
+tabPredator Filter
+tabPredator Stages
+tabPredator Targets
+tabScouting Severity Scale
+tabSpray Application Applicator
+tabSpray Application Logsheet
+tabSpray Application Pesticide
+tabSpray Equipment Details
+tabSpray Plan Allowed Farm
+tabSpray Plan Exclude Keyword
+tabSpray Team
+tabSpray Team Details
+tabSprayer GPS Log
+tabSprayer Movement Session
+tabStage
+tabTank And Valve
+tabTrap
+tabTrap Filter
+tabTree And Row Automation
+tabWeed
+tabWeed Filter
+tabWork Order Chemical Scan
+tabZone
+tabItem
+tabItem Group
+tabUOM
+tabUOM Category
+tabUOM Conversion Detail
+tabItem Default
+tabItem Price
+tabItem Barcode
+tabItem Reorder
+tabWarehouse
+tabWarehouse Type
+tabBOM
+tabBOM Item
+tabBOM Explosion Item
+tabBOM Operation
+tabBOM Scrap Item
+tabBin
+tabWork Order
+tabWork Order Item
+tabWork Order Operation
+tabEmployee
+tabDepartment
+tabDesignation
+tabBranch
+tabEmployee Group
+tabCompany
+tabCost Center
+tabAccount
+tabStock Entry Type
+tabPurchase Receipt
+tabPurchase Receipt Item
+tabFarm
+tabBlocks
+tabItems Greenhouses
+tabCFU Inspection Item
+tabFeeding Ration Item

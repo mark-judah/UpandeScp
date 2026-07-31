@@ -2,7 +2,11 @@
 
 **Date:** 2026-07-30
 **Author:** dev@upande.com (with Claude)
-**Status:** Design — pending review
+**Status:** **Built and serving, 2026-07-31** — https://kaitet15.132.145.21.55.nip.io.
+Five apps, `bench migrate` clean, frontend built, API smoke set and a farm-scoped flow both
+green. Stock tables are deliberately absent (see As built). Sections below are the design as
+agreed; **As built** records what actually happened, including four deviations and one
+addition.
 
 ## Goal
 
@@ -24,7 +28,8 @@ and the v16 transition is not finished.
 - A genuine v15 dump of that production database is on disk:
   `~/stive/code/frappe15/20260713_234519-stream-database.sql.gz` (5.8 GB gz, ~40 GB raw,
   1726 tables, taken 2026-07-13).
-- The retired shim survives at `_archive/upande_kaitet_shim-2026-07-27.tar.gz`.
+- The retired shim survives at `_archive/upande_kaitet_shim-2026-07-27.tar.gz`. **It turned
+  out to be an empty skeleton** — see As built.
 - Toolchain present: python3.12, node 18.20.8 (nvm), MariaDB 11.4, bench 5.29.1.
 - **Disk is the binding constraint**: 4.7 GB free of 45 GB (90 % used).
 
@@ -35,7 +40,9 @@ and the v16 transition is not finished.
 2. **Scouting window:** **July 2026 only** (297,131 of 1,740,340 rows). Everything else
    in the whitelist restores in full.
 3. **App set:** `frappe`, `erpnext`, `upande_kaitet_shim`, `upande_scp`. No hrms, no
-   livestock, no `upande_core`, no `upande_ta`.
+   livestock, no `upande_core`, no `upande_ta`. *(Built with the real `upande_kaitet`
+   instead of the shim — see As built, deviation 1. `upande_livestock` was added
+   afterwards on request — see As built, addition 5.)*
 4. **Base commit:** `d7edfea` (= `c7e2c99^`, "self-host Poppins via bundled @font-face").
 5. **No backports.** The branch starts clean; post-Jul-17 features are not replayed.
 6. **Serving:** bench at `~/stive/code/frappe15lts`, served like kaitet.local
@@ -217,6 +224,237 @@ was the bug that broke the frappe15 stack in July).
 - Scouting, heatmap and trends pages render July data; the workspace loads.
 - Final database ≈ 1.0 GB; free disk ≥ 3 GB.
 
+## As built (2026-07-31)
+
+Bench, site, branch and the July data are in place; `bench migrate` exits 0 with no errors.
+
+### Deviation 1 — the real `upande_kaitet`, not a shim
+
+`_archive/upande_kaitet_shim-2026-07-27.tar.gz` is an **empty app skeleton**: 24 files, not
+one doctype JSON. The five doctypes were only ever repointed at the shim's module *in the
+kaitet.local database*, so nothing was written to disk and the archive carries no schema.
+
+`_archive/upande_kaitet-2026-07-27.tar.gz` (6.1 MB) turned out to be the **real
+upande_kaitet source** — 159 doctypes, including all five. On v15 there is no strict Link
+validation to reject it (that was a v16 behaviour), which is exactly why production runs it
+today. So the site installs the real app, giving prod-identical fields with no shim gaps to
+discover later.
+
+Its only hrms coupling is one line — the `Leave Application` entry in
+`override_doctype_class`, whose module imports `hrms`. Removed and committed on the
+bench's copy; `grep -rn "from hrms"` then returns nothing. hrms is not installed.
+
+### Deviation 2 — `bench new-site --no-mariadb-socket` cannot work on this server
+
+That flag creates the site's DB user at host `%`. This MariaDB has anonymous
+`''@'localhost'` and `''@'arnie'` rows, which shadow any `user@'%'` for local connections,
+so `bench new-site` failed at its own restore step with `ERROR 1045 Access denied`. Dropped
+the half-made database and user and re-ran **without** the flag: the user is then created at
+`localhost`, matching kaitet.local and mona.local. Do not pass that flag on this box.
+
+### Deviation 3 — bench ports are 8002/9002/11002/13002
+
+`bench init` assigned these itself (the plan said 8005/9005). They do not collide with the
+v16 bench (8000/9000/13000/11000), so they were kept. Redis is not under supervisor yet and
+was started by hand: `redis-server config/redis_cache.conf --daemonize yes` (and
+`redis_queue.conf`). Without it, `install-app` dies with
+`redis.exceptions.ConnectionError: Error 111 connecting to 127.0.0.1:11002`.
+
+### Deviation 4 — one genuine v15 → v15 incompatibility
+
+`upande_kaitet`'s `Vehicle.employee` ships `link_filters` in an **old dict form**:
+
+```json
+{ "designation": ["in", ["Driver", "Truck Driver", "Tractor Driver", "Executive Driver"]] }
+```
+
+Production's older frappe accepted that. frappe 15.116 validates `link_filters` as a list of
+`[doctype, fieldname, operator, value]` rows (`doctype.py:validate_link_filters`) and throws
+inside `sync_customizations`, which aborts **every** `bench migrate` on the site. Rewritten
+as `[["Employee","designation","in",[...]]]` and committed (`ff32e80`). Worth reporting
+upstream to the kaitet app — production will hit this the moment it takes a v15 point-release
+update.
+
+### Addition 5 — `upande_livestock` on the same recipe
+
+Added on request, using the identical method: find the last commit that predates the v16
+work, branch it as `kaitet15`, install, restore its tables from the same dump.
+
+Cut point is **`a81b6a4` (2026-07-02)**, "optional treatment dosage; require positive milk
+yield". Everything later is v16-era — `c8e9fda` onward is the desk workspace / Desktop Icon
+/ native-custom-field sweep, and **`424fc3f` pins Frappe v16 outright** via
+`[tool.bench.frappe-dependencies]`, which alone would block installation on v15. `a81b6a4`
+has no frappe pin.
+
+All 19 livestock doctypes exist in the dump (18 tables + `Livestock Settings`, a Single)
+and total **0.6 MB**, so this pass carried no disk risk. Loaded in 3m04s:
+
+| | rows |
+| --- | ---: |
+| Animal / Animal Event / Herds | 366 / 576 / 9 |
+| Animal Health Case / Milk Recording / Breed | 22 / 2 / 0 |
+| `tabSingles` (Livestock Settings) | +48 |
+
+`Breed` at 0 and `Milk Recording` at 2 are production's real state, not a failed load.
+
+`tabSingles` had to be merged a second time: pass 1 restricted it to `doctype IN (SELECT
+name FROM tabDocType)`, and livestock's doctypes did not exist yet, so its settings were
+skipped. The re-merge is scoped to `doctype = 'Livestock Settings'` — a blanket re-merge
+would duplicate every Singles row already present, since that table has no unique key on
+(doctype, field).
+
+`installed_apps` must be re-set whenever an app is added — it is now the five-app list.
+
+### The frontend build
+
+Builds clean: `✓ built in 17.69s`, 3.6 MB into `upande_scp/public/dist`.
+
+Two traps, both mine: the app is an **npm** project (`package-lock.json`, no `yarn.lock`
+until `67cd0ef`, which postdates this branch), and one dependency
+(`@mapbox/jsonlint-lines-primitives`) requires **node ≥ 22**. Building with yarn on node 18
+aborts the install on the engine check, leaving `node_modules` incomplete — which then
+surfaces confusingly as `Cannot find native binding` from `@tailwindcss/oxide`. Use
+`npm ci && npm run build` on **node 24**. Node 18 is only needed for frappe's own asset
+build, not for this app.
+
+### Space — actual
+
+4.7 GB → **8.4 GB** free before building. Zero-risk reclaims came in at ~2.25 GB
+(hrms + banking `node_modules` 1.03 GB, `crm`+`insights` 623 MB, logs 249 MB, two old
+backups 340 MB). `crm`, `insights` and `print_designer` are re-clonable — their remote is
+named `upstream`, not `origin`, which is why a naive `git remote get-url origin` reported
+"NO-GIT" for every app in that directory. The four Upande apps there
+(`upande_avocado`, `kaitet_taskwork`, `coffee_harvest`, `upande_sensors`) really are **not
+git repositories** and exist nowhere else — they were left alone.
+
+The kaitet.local trim went as designed via swap-rebuild: **3.0 GB → 1.3 GB**, 297,131 July
+rows kept across all nine scouting tables (`2026-07-01 → 2026-07-13`), rollback backup
+`20260731_033514`. `tabCrop Modelling Entry` came out at 0 rows — checked against the backup
+before continuing, and it was already empty, so nothing was lost.
+
+### The restore — actual
+
+The whitelist was generated from the branch's own DocType JSONs rather than transcribed:
+80 SCP doctypes on `kaitet15`, **76 present in the dump** (`Map Settings`, `Spray Plan
+Settings`, `Trap Report Settings` are Singles with no table; `Spray Equipment` postdates the
+production deploy). Final lists: **103 full tables**, 9 scouting tables staged, 9 selective.
+
+Pass 1 streamed in **5m47s** and loaded:
+
+| | |
+| --- | ---: |
+| Scouting Entry (July) + Metadata | 297,131 + 297,131 |
+| Pests / Diseases / Weeds / Trap / Incidents / Predators / Physio | 153,771 / 48,965 / 53,295 / 10,784 / 1,255 / 224 / 6,555 |
+| Item / Warehouse / BOM / Work Order / Bin / Employee | 16,470 / 603 / 2,557 / 5,136 / 10,090 / 4,055 |
+| Zone / Bed / Farm | 154,341 / 20,668 / 16 |
+| User / Has Role / User Permission / DefaultValue / Role | 549 / 15,380 / 706 / 782 / 125 |
+| Series / Singles / Custom Field / Property Setter | 2,700 / 1,252 / 1,007 / 837 |
+
+**Three columns were dropped on load** — `station`, `week_number`, `data_rovl` on Scouting
+Entry (production-side fields absent from the DocType). Checked before deciding: they are in
+neither the `d7edfea` nor the `kaitet` DocType JSON, and nothing reads them — the weekly trap
+report computes `WEEK(se.date_of_capture, 1)` in SQL, and the frontend's "station" is a
+UI grouping. No backfill needed.
+
+**The stock tables are far larger than the design assumed.** Indexing the dump once (one awk
+pass recording per-table byte counts, kept at `dump_table_sizes.tsv`) showed
+`tabStock Entry` **2,466 MB**, `tabStock Ledger Entry` **1,925 MB**, `tabStock Entry Detail`
+**1,822 MB** of dump text — 6.2 GB combined, impossible to stage together on this disk. They
+therefore get **one pass each**: stage, keep the July window, drop the stage, check free
+space, next. `load_stock.sh` refuses to stage a table with under 3 GB free.
+
+For scale, the same index shows what the whitelist correctly excludes: `tabVersion`
+10.4 GB, `tabEmail Queue` 6.2 GB, `tabDeleted Document` 1.1 GB, `tabError Log` 998 MB.
+
+**The stock pass was attempted and abandoned — stock is NOT restored.** Staging
+`tabStock Entry` reached **2.88 GB** in InnoDB (against 2.47 GB of dump text) and was still
+growing, with free disk down to 2.0 GB on a volume shared with the live kaitet.local and
+mona.local databases. The pass was killed and the stage dropped, returning the site to
+**1,023 MB** and the disk to **5.0 GB free**. The July slice would have been worth roughly
+150 MB, which does not justify running the other two sites' database out of space.
+
+Consequence: `tabStock Entry`, `tabStock Entry Detail` and `tabStock Ledger Entry` are all
+empty. **`tabBin` is fully restored, so stock balances are real**; what is missing is the
+documents and the ledger behind them. This is how kaitet.local has run since July.
+
+To add stock later, do it when there is headroom — moving the 5.8 GB production gz off this
+volume first leaves ~10 GB, at which point `load_stock.sh` runs comfortably one table at a
+time. Note the script's own guard (refuse under 3 GB free) was not enough: it checks
+*before* staging, and a single table can consume more than 3 GB. Raise it to 4 GB, or add a
+mid-stage watchdog, before re-running.
+
+GOTCHA that cost a session kill, twice: **never `pkill -f <pattern>` where the pattern also
+appears in the killing command's own cmdline** (`pkill -f "20260713_234519-stream"`,
+`pkill -f "while pgrep"`). It matches your own shell and kills the session with exit 144 —
+the same trap as `pkill -f skip-grant-tables` during the v16 upgrade. Kill by explicit PID.
+
+### Post-load repairs — three more than planned
+
+Beyond the five in the section above:
+
+6. **`tabDefaultValue` dedupe must include `parent='__global'`.** That is where
+   `installed_apps` lives. Deduping only `__default`/`Administrator` left production's row
+   beside the corrected one, `get_global()` returned a list, and migrate kept trying to
+   import `fleet_management`. The repair script now deletes the `installed_apps` row before
+   re-setting it, and dedupes `__global` too.
+7. **Custom Fields with no backing column must be deleted** — 544 of them (print_designer on
+   Print Format, livestock fields, other uninstalled apps), or migrate dies with
+   `Unknown column 'print_designer_print_format'`. Exclude `frappe.model.no_value_fields`
+   (Section/Column/Tab Break, Table, HTML) — 289 such layout fields legitimately have no
+   column. Safe because anything an installed app really ships returns from its fixtures on
+   the next migrate.
+8. **`tabProperty Setter` keys its doctype as `doc_type`, not `dt`** (that is `tabCustom
+   Field`). The merge filter must differ per table.
+
+### Serving — as built
+
+Live at **https://kaitet15.132.145.21.55.nip.io** (Let's Encrypt, HTTP redirects to HTTPS).
+Supervisor group `frappe15lts` (7 programs: gunicorn 3 workers on 8002, schedule, short and
+long workers, both redis, socketio on node 18), nginx site `frappe15lts`,
+`sites/currentsite.txt` = `kaitet15.local`. The manually-started redis instances must be
+shut down (`redis-cli -p 13002 shutdown nosave`) before supervisor takes over the ports.
+
+**`tabSingles` duplicates broke website rendering.** Pass 1 merged production's Singles with
+`INSERT IGNORE`, but that table has **no unique key on (doctype, field)** — so every field
+ended up with two rows, 1,089 pairs in all. `/` and `/scp_app` then 500'd with
+`DoesNotExistError: Web Template Footer not found`, because `Website Settings.footer_template`
+resolved to production's value pointing at a Web Template this site does not have
+(`tabWeb Template` was not restored). Fixed by deduping every (doctype, field) pair — keeping
+the non-empty value — and then clearing `footer_template`.
+
+Order matters: dedupe **first**, clear the dangling reference **second**. Clearing it first
+does not survive, because the dedupe prefers the non-empty row and puts `'Footer'` straight
+back. Also note `frappe.db.set_single_value` on a field that does not exist on the doctype
+throws and rolls back everything uncommitted in that script.
+
+### Verification — results
+
+| Check | Result |
+| --- | --- |
+| `bench --site kaitet15.local migrate` | **exit 0**, no errors, five apps |
+| Frontend build | `✓ built in 17.69s`, 3.6 MB dist |
+| `bench build` (all apps) | clean |
+| `/`, `/api/method/ping` | 200, `{"message":"pong"}` |
+| `/app`, `/scp_app` logged in | 200, 200 |
+| `getFarmsAndGreenhouses` | 6 farms with greenhouses |
+| `getCropsScouted` | 2 crops |
+| `chemical_stock_overview` | 174 items, 38 warehouses, 553 matrix rows, 12 CSUs |
+| `getAllChemicals` | 471 chemicals, 207 fertilizers |
+| `fetch_creator_bootstrap` as `festus.muasya@karenroses.com` | farms [Simotwo, Eldama], 32 warehouses, 20 greenhouses |
+| `creator_stock_overview` (same user) | 3 CSUs / 1 chemical store / 2 farms |
+| kaitet.local + mona.local unaffected | 200 |
+
+`fetch_creator_bootstrap` returns empty scope for Administrator — expected, Administrator has
+no farm-creator mapping; drive it as a real user.
+
+### Outstanding
+
+- Stock tables, if wanted — see above; needs disk headroom first.
+- Supervisor + nginx on `kaitet15.132.145.21.55.nip.io` (templates read from the existing
+  `frappe15` configs; redis needs moving under supervisor at the same time).
+- API smoke set and one farm-scoped flow as a real creator user.
+- Optionally reclaim the 5.8 GB production gz once the site is signed off.
+
 ## Out of scope
 
 - Backporting any post-`d7edfea` feature.
@@ -231,9 +469,10 @@ was the bug that broke the frappe15 stack in July).
 - **Disk.** Every step is sequenced so the reclaim happens first and the prod gz is never
   decompressed. If the bench build overruns the estimate, `upande_scp/frontend/node_modules`
   on the v16 bench (405 MB) is the next reclaim, then `crm`'s remaining tree.
-- **Bin without full ledger.** Bin restores in full while the ledger is July-only, so
-  stock *balances* are real but do not reconcile against *history* before July. This is
-  the same tradeoff kaitet.local already runs with and does not affect spray/store work.
+- **Bin without any ledger.** Bin restores in full, so stock *balances* are real, but no
+  Stock Entry / Stock Ledger Entry rows exist at all (see As built). Spray and store flows
+  read Bin and create their own documents, so development works; anything that reads stock
+  *history* will show nothing.
 - **Shim completeness.** The shim was hand-cut to five doctypes; if production rows carry
   columns the shim's DocType JSONs lack, those columns are dropped on load. Detect by
   diffing the dump's DDL for `tabFarm`/`tabBlocks`/`tabItems Greenhouses` against the

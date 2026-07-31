@@ -1,0 +1,9 @@
+tabScouting Entry
+tabScouting Entry Metadata
+tabPests Scouting Entry
+tabDiseases Scouting Entry
+tabWeeds Scouting Entry
+tabTrap Scouting Entry
+tabIncidents Scouting Entry
+tabPredators Scouting Entry
+tabPhysiological Disorders Entry

@@ -83,7 +83,32 @@ print("   company:", company, "| currency KES | country Kenya")
 
 frappe.db.commit()
 
-print("\n== 5. sanity counts ==")
+print("\n== 5. fiscal years ==")
+# A restore brings GL/Stock rows stamped with production's fiscal years but not
+# tabFiscal Year itself, and the setup wizard never ran — so the site can have
+# NONE, and every posting fails with "Date X is not in any active Fiscal Year".
+# Production uses calendar years.
+made = []
+for y in range(2021, 2029):
+    if frappe.db.exists("Fiscal Year", str(y)):
+        continue
+    fy = frappe.new_doc("Fiscal Year")
+    fy.year = str(y)
+    fy.year_start_date = f"{y}-01-01"
+    fy.year_end_date = f"{y}-12-31"
+    fy.insert(ignore_permissions=True)
+    made.append(fy.name)
+frappe.db.commit()
+print("   created:", made or "none needed")
+
+print("\n== 6. server scripts ==")
+# upande_kaitet and upande_livestock ship Server Script fixtures that fire on
+# doc events (Stock Entry included). Without server_script_enabled every submit
+# dies with "Server Scripts are disabled". kaitet.local sets this bench-wide.
+print("   set `bench set-config -g server_script_enabled 1` if not already set;",
+      "Server Script docs here:", frappe.db.count("Server Script"))
+
+print("\n== 7. sanity counts ==")
 for dt in ("Scouting Entry", "Farm", "Item", "Warehouse", "BOM", "Work Order", "Bin",
            "Employee", "User", "Zone", "Bed", "Stock Entry"):
     try:

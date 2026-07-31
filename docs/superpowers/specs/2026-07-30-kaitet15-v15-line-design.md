@@ -353,6 +353,75 @@ from apps this bench does not have** (csf_ke's `custom_etims_*`, lending's `loan
 report needs `gross_purchase_amount`, read it from v16's replacement field rather than
 expecting the restore to have carried it.
 
+### Addition 7 — synthetic opening stock (instead of restoring the ledger)
+
+Historical stock was unaffordable (see above), so the flows were given **synthetic
+opening stock** rather than production history. Scope is deliberately targeted: seeding
+everything everywhere is 15,672 items × 507 farm warehouses ≈ **16 GB per site**, which
+does not fit. What the flows actually consume does:
+
+| | | |
+| --- | ---: | ---: |
+| SCP: items `CHEMICALS` + `Fertilizer` × the 11 Farm-mapped stores and 12 CSUs | 678 × 23 = **15,594** | 100 units each |
+| Livestock: the herd BOMs' raw materials × their own default warehouses | 13 × 5 = **65** | 1,000 units each (feed moves in bulk) |
+
+Result on kaitet15: **115 + 5 Material Receipt entries, zero failures**, 15,594 ledger rows,
+bins with stock 2,501 → 17,672, for **~100 MB** — in line with the 85–110 MB estimate.
+Real Stock Entries, not hand-written Bin rows: only a proper receipt produces consistent
+SLE + Bin + GL, which is what the transfer/mix/manufacture path validates against.
+
+kaitet.local was **not** seeded — it only needed the flocks and their processes.
+
+**Reference patterns were sampled from the dump first**, since they are unrecoverable once
+it is deleted. Two techniques, both avoiding the 2.9 GB staging that failed:
+`stream_sample.sh` takes the first N extended-INSERT statements of a table (position-based),
+and `stream_grep.sh` takes only statements matching a regex (content-based). 19 MB bought
+6,383 real Stock Entries, 9,051 details and 12,918 ledger rows — including
+`SE-2026-1000676`, a *Material Transfer for Manufacture* into `Chepsito CSU Phase 1 - KR`
+against `MFG-WO-2026-00788`. Kept as `_ref_*` / `_mfg_*` tables on kaitet15.
+
+### Four more things a fresh v15 site needs
+
+Found while making the seeding actually run — none is about the data:
+
+11. **`server_script_enabled` must be set bench-wide.** upande_kaitet and upande_livestock
+    ship Server Script fixtures bound to doc events; without the flag every Stock Entry
+    submit dies with "Server Scripts are disabled". kaitet.local has it; the new bench did
+    not.
+12. **The site had NO Fiscal Years at all** — the setup wizard never ran — so every posting
+    failed with "Date … is not in any active Fiscal Year". Production uses calendar years;
+    2021–2028 were created to match what the restored GL rows reference.
+13. **Custom Fields whose *link target* doctype does not exist must go** — a different class
+    from the missing-column sweep, and invisible to it, because `Table`/`Link` fields are in
+    `no_value_fields`. 67 of them, led by `Item.custom_present_greenhouses` → `Item
+    Greenhouses` (production has that doctype; the kaitet app never defined it, and its
+    production table is empty). Any Item load raised `DoesNotExistError` until it was
+    removed. Their **columns and data survive** — only the definitions are dropped.
+14. **`upande_kaitet` ships 40 doctypes as fixtures, but the DocType entry in its `fixtures`
+    hook is commented out**, so `Business Unit`, `Loss Reason` and 38 others never install
+    on a fresh site. This is why some restored Custom Fields (`Stock Entry.custom_business_
+    unit`, `Warehouse.custom_business_unit`) point at nothing. SCP already guards for the
+    absence of `custom_business_unit`; if a flow ever needs those doctypes, uncomment that
+    hook entry rather than hand-creating them.
+
+### The processes actually run
+
+Proof, not inference:
+
+- **Livestock feed manufacture**, end to end: `manufacture_herd_feed('0-2')` produced
+  Work Order `MFG-WO-2026-05198`, transfer entry `SE-2026-2562419` and manufacture entry
+  `SE-2026-2562420` — 45 kg TMR Calves Meal into `Feed Store - TMR Store - KR`. The same
+  shape as the sampled production pattern.
+- **SCP stock visibility** as a real scoped user (`festus.muasya@karenroses.com`):
+  `creator_stock_overview` shows Chemical Store Simotwo with 678 items at qty 100;
+  `chemical_stock_overview` returns 679 items and 15,724 matrix rows, all non-zero.
+
+**A find worth keeping:** the Livestock Settings *values* (`custom_milk_item = "Westwood
+Milk"`, `custom_milk_target_warehouse = "Westwood Milk - KR"`) were already present, carried
+in by the Singles restore. Production has the configuration and is missing only the field
+**definitions** — so production's milk recording is almost certainly failing the same way.
+Backported as fixtures in `upande_livestock` `68f40a8`.
+
 ### The frontend build
 
 Builds clean: `✓ built in 17.69s`, 3.6 MB into `upande_scp/public/dist`.

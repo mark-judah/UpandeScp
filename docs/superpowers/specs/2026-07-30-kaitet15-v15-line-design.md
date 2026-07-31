@@ -305,6 +305,32 @@ would duplicate every Singles row already present, since that table has no uniqu
 
 `installed_apps` must be re-set whenever an app is added — it is now the five-app list.
 
+### Addition 6 — assets (flocks) and the accounting documents
+
+Added on request. **Poultry flocks are ERPNext `Asset` records**, not a custom doctype:
+`asset_category = "Flocks"`, `item_code = "Flock"`, `location = "Torongo"`, named
+`Flock 4-332865` (asset_name + suffix), purchased 2024-10-24 at ~KES 80,595 each. There is
+no flock/poultry table anywhere in the dump — a scan of all 1,726 table names returns
+nothing (the one apparent hit, `tabPegged Currency Details`, matches on "egg").
+
+The Asset family was missing because it is not in the SCP dependency manifest. Restored in
+one 3m03s pass, 33 tables / 243 MB:
+
+| | rows |
+| --- | ---: |
+| Asset (of which **13 flocks** — 8 Sold, 4 Submitted, 1 Cancelled) | 1,820 |
+| Asset Category / Movement / Activity | 23 / 1,788 / 22,702 |
+| Location / Supplier | 13 / 1,707 |
+| GL Entry / Journal Entry | 129,370 / 3,190 |
+| Sales Invoice / Purchase Invoice | 13,780 / 4,073 |
+
+Plus the rest of the asset family (Finance Book, Depreciation Schedule, Repair, Maintenance,
+Capitalization, Value Adjustment, Shift tables) and the invoice item children.
+
+**Caveat:** `tabStock Ledger Entry` is still absent, so **the GL does not reconcile against
+stock movements**. Fine for flocks-as-assets and for reading accounting documents; not usable
+for stock-vs-GL reconciliation.
+
 ### The frontend build
 
 Builds clean: `✓ built in 17.69s`, 3.6 MB into `upande_scp/public/dist`.

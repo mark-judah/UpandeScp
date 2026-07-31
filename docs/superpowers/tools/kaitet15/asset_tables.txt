@@ -1,0 +1,33 @@
+tabAsset Activity
+tabAsset
+tabAsset Movement Item
+tabAsset Movement
+tabAsset Maintenance Log
+tabAsset Repair
+tabAsset Repair Material Request
+tabAsset Repair Consumed Item
+tabAsset Maintenance Task
+tabAsset Depreciation Schedule
+tabAsset Finance Book
+tabAsset Maintenance
+tabAsset Category Account
+tabAsset Category
+tabAsset Maintenance Team
+tabAsset Capitalization
+tabAsset Capitalization Stock Item
+tabAsset Value Adjustment
+tabAsset Capitalization Asset Item
+tabAsset Capitalization Service Item
+tabAsset Repair Material
+tabAsset Shift Allocation
+tabAsset Shift Factor
+tabLocation
+tabSupplier
+tabSupplier Group
+tabJournal Entry
+tabJournal Entry Account
+tabPurchase Invoice
+tabPurchase Invoice Item
+tabSales Invoice
+tabSales Invoice Item
+tabGL Entry

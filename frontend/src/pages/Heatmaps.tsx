@@ -47,6 +47,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
+import { call } from "@/lib/frappe";
 import {
   fetchBedsAndZones,
   fetchCrops,
@@ -93,6 +94,12 @@ function defaultRange(): { from: string; to: string } {
   return { from: ymd(from), to: ymd(today) };
 }
 
+type CardRecent = {
+  date: string;
+  zoneObs: Record<string, number>;
+  zoneStages?: Record<string, ZoneStage[]>;
+};
+
 interface HeatmapCard {
   greenhouse: string;
   obsName: string;
@@ -101,11 +108,7 @@ interface HeatmapCard {
   totalObs: number;
   zonesAffected: number;
   lastDate: string;
-  recent: Array<{
-    date: string;
-    zoneObs: Record<string, number>;
-    zoneStages?: Record<string, ZoneStage[]>;
-  }>;
+  recent: CardRecent[];
 }
 
 interface HeatmapsGridPayload {
@@ -157,6 +160,32 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   const [stationChecks, setStationChecks] = useState<Set<string>>(new Set());
   const [obsChecks, setObsChecks] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<HeatmapCard | null>(null);
+  const [pickedDetail, setPickedDetail] = useState<CardRecent[] | null>(null);
+
+  // The grid ships only recent[0] (~1/3 of the old payload); fetch the
+  // full 3-date history on demand when a card is opened. recent[0] falls
+  // back to what the grid already has so the thumbnail renders instantly
+  // with no flash while the other two dates load.
+  useEffect(() => {
+    if (!picked) { setPickedDetail(null); return; }
+    let cancelled = false;
+    setPickedDetail(null);
+    call<{ message?: { recent: CardRecent[] } }>(
+      "upande_scp.serverscripts.dashboard_aggregates.heatmap_card_detail",
+      {
+        from_date: from, to_date: to, crop,
+        greenhouse: picked.greenhouse,
+        obs_name: picked.obsName,
+        obs_kind: picked.obsKind,
+      },
+    )
+      .then((r) => {
+        if (cancelled) return;
+        setPickedDetail((r as any)?.message?.recent ?? (r as any)?.recent ?? []);
+      })
+      .catch(() => !cancelled && setPickedDetail(picked.recent));
+    return () => { cancelled = true; };
+  }, [picked, from, to, crop]);
 
   // Bootstrap data: crop list + farm→greenhouse map for the tree.
   useEffect(() => {
@@ -319,6 +348,11 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     }
     return "";
   }, [selections, farmsByGh]);
+
+  // The grid ships only recent[0]; the modal reads the on-demand-fetched
+  // 3-date detail once it lands, falling back to what the grid already
+  // has so the first date renders instantly with no flash.
+  const modalRecent: CardRecent[] = picked ? (pickedDetail ?? picked.recent) : [];
 
   return (
     <div className="flex flex-col min-h-svh">
@@ -557,14 +591,14 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                 </DialogDescription>
               </DialogHeader>
 
-              {picked.recent.length === 0 ? (
+              {modalRecent.length === 0 ? (
                 <div className="text-sm text-muted-foreground p-6 text-center border rounded-md bg-[var(--sd-bg-soft)]">
                   No dated scouting entries to plot.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {[0, 1, 2].map((i) => {
-                    const slice = picked.recent[i];
+                    const slice = modalRecent[i];
                     const labels = [
                       "Latest scouting",
                       "2nd latest scouting",
@@ -644,10 +678,10 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                 </div>
               )}
 
-              {picked.recent.length > 1 && (
+              {modalRecent.length > 1 && (
                 <div className="flex flex-wrap items-center gap-3 text-[0.72rem] text-muted-foreground border-t pt-2">
                   <span className="font-medium text-foreground">Trend</span>
-                  {picked.recent
+                  {modalRecent
                     .slice()
                     .reverse()
                     .map((s, i, arr) => {

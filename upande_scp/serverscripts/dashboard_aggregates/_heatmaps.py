@@ -90,8 +90,8 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
         r["name"]: r.get("disease_legend_color")
         for r in disease_colors if r.get("name")
     }
-    cards = _build_cards(pest_rows, "pest", pest_color_map)
-    cards.extend(_build_cards(disease_rows, "disease", disease_color_map))
+    cards = _build_cards(pest_rows, "pest", pest_color_map, dates_limit=1)
+    cards.extend(_build_cards(disease_rows, "disease", disease_color_map, dates_limit=1))
     # Most-active first across both kinds, then stable order. obsKind is
     # appended so a pest and a disease sharing a name in the same
     # greenhouse still resolve to a total order.
@@ -133,7 +133,7 @@ def _query_kind(where: str, params: dict, mode: str) -> list:
     )
 
 
-def _build_cards(rows: list, mode: str, color_map: dict) -> list:
+def _build_cards(rows: list, mode: str, color_map: dict, dates_limit: int = 3) -> list:
     """Walk the per-(gh, obs, date, zone) rows once; emit one card per
     (gh, obs) with aggregate totals + the 3 most-recent distinct dates."""
     # by_gh_obs[gh][obs] = {
@@ -181,7 +181,7 @@ def _build_cards(rows: list, mode: str, color_map: dict) -> list:
     for gh, by_obs in by_gh_obs.items():
         for obs, bucket in by_obs.items():
             # 3 most-recent dates, ISO strings sort lexicographically.
-            dates = sorted(bucket["by_date"].keys(), reverse=True)[:3]
+            dates = sorted(bucket["by_date"].keys(), reverse=True)[:dates_limit]
             recent = [
                 {
                     "date": d,
@@ -204,3 +204,39 @@ def _build_cards(rows: list, mode: str, color_map: dict) -> list:
     # Most-active first, then greenhouse / obs name for stable ordering.
     cards.sort(key=lambda c: (-c["totalObs"], c["greenhouse"], c["obsName"]))
     return cards
+
+
+def heatmap_card_detail(args: dict, force: bool = False) -> dict:
+    """The 3 most-recent dates for ONE (greenhouse, observation) card.
+
+    The grid ships only recent[0] — the thumbnail's date — because the full
+    three-date detail is 99% of a 13.65 MB payload and is read only when a
+    card is opened.
+    """
+    greenhouse = (args.get("greenhouse") or "").strip()
+    obs_name = (args.get("obs_name") or "").strip()
+    obs_kind = (args.get("obs_kind") or "pest").strip()
+    if not greenhouse or not obs_name or obs_kind not in _KIND_TABLE:
+        return {"recent": []}
+
+    filters = {
+        "from_date":  args.get("from_date", ""),
+        "to_date":    args.get("to_date", ""),
+        "crop":       (args.get("crop") or "").strip(),
+        "greenhouse": greenhouse,
+        "obs_name":   obs_name,
+        "obs_kind":   obs_kind,
+    }
+
+    def build():
+        where, params = parent_filter_conditions(
+            filters["from_date"], filters["to_date"], filters["crop"],
+            [greenhouse],
+        )
+        rows = _query_kind(where, params, obs_kind)
+        rows = [r for r in rows if (r.get("obs_name") or "") == obs_name]
+        color_map = {obs_name: ""}
+        cards = _build_cards(rows, obs_kind, color_map, dates_limit=3)
+        return {"recent": cards[0]["recent"] if cards else []}
+
+    return cached_aggregate("heatmap_card_detail", filters, build, force=force)

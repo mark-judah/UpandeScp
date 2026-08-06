@@ -10,6 +10,7 @@ export type Endpoint =
   | "fcm"
   | "greenhouse_detail"
   | "heatmaps_grid"
+  | "heatmap_card_detail"
   | "application_plan_diagnose"
   | "trends";
 
@@ -48,6 +49,8 @@ const METHOD: Record<Endpoint, string> = {
   fcm:                "upande_scp.serverscripts.dashboard_aggregates.fcm",
   greenhouse_detail:  "upande_scp.serverscripts.dashboard_aggregates.greenhouse_detail",
   heatmaps_grid:      "upande_scp.serverscripts.dashboard_aggregates.heatmaps_grid",
+  heatmap_card_detail:
+    "upande_scp.serverscripts.dashboard_aggregates.heatmap_card_detail",
   application_plan_diagnose:
     "upande_scp.serverscripts.dashboard_aggregates.application_plan_diagnose",
   trends:             "upande_scp.serverscripts.dashboard_aggregates.trends",

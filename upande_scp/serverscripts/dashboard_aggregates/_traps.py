@@ -42,7 +42,7 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
     publish_progress(job_id, 30, "loading trap rows")
     rows = frappe.db.sql(
         f"""
-        SELECT STRAIGHT_JOIN se.name, se.date_of_capture, se.greenhouse, se.block,
+        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
                t.trap, t.pest, t.location, t.count
         FROM `tabScouting Entry` se
         JOIN `tabTrap Scouting Entry` t ON t.parent = se.name

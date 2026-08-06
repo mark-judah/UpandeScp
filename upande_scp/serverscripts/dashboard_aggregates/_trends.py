@@ -91,7 +91,7 @@ def _fetch_observations(where: str, params: dict) -> list:
     """
     return frappe.db.sql(
         f"""
-        SELECT STRAIGHT_JOIN se.name, se.date_of_capture, se.greenhouse, se.block,
+        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
                se.bed, se.zone, se.tree,
                'pest' AS kind,
                p.pest AS obs_name, p.stage AS stage
@@ -99,7 +99,7 @@ def _fetch_observations(where: str, params: dict) -> list:
         JOIN `tabPests Scouting Entry` p ON p.parent = se.name
         WHERE {where}
         UNION ALL
-        SELECT STRAIGHT_JOIN se.name, se.date_of_capture, se.greenhouse, se.block,
+        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
                se.bed, se.zone, se.tree,
                'disease' AS kind,
                d.disease AS obs_name, d.stage AS stage

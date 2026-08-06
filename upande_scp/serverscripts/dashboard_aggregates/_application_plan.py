@@ -26,22 +26,40 @@ def application_plan_diagnose(args: dict, force: bool = False) -> dict:
     if not greenhouse:
         return _empty()
 
-    filters = {
+    # Rows depend only on scope + window. The chips are applied afterwards,
+    # so they must NOT be part of this cache key — otherwise every chip
+    # click recomputes identical SQL under a fresh key.
+    row_filters = {
         "greenhouse": greenhouse,
         "from_date":  args.get("from_date", ""),
         "to_date":    args.get("to_date", ""),
         "crop":       (args.get("crop") or "").strip(),
-        "pest":       (args.get("pest") or "").strip(),     # actually "obs_name" — kept named "pest" for parity with the old client state
-        "section":    (args.get("section") or "").strip(),
-        "stage":      (args.get("stage") or "").strip(),
     }
     job_id = (args.get("job_id") or "").strip()
-    return cached_aggregate(
-        "application_plan_diagnose",
-        filters,
-        lambda: _build(filters, job_id),
+    rows = cached_aggregate(
+        "application_plan_rows",
+        row_filters,
+        lambda: _load_rows(row_filters, job_id),
         force=force,
     )
+
+    chips = {
+        "pest":    (args.get("pest") or "").strip(),
+        "section": (args.get("section") or "").strip(),
+        "stage":   (args.get("stage") or "").strip(),
+    }
+    result = _shape(rows, chips)
+    publish_progress(job_id, 100, "")
+    return result
+
+
+def _load_rows(filters: dict, job_id: str = "") -> list:
+    publish_progress(job_id, 10, "loading pest rows")
+    pest_rows = _query_kind(filters, "pest")
+    publish_progress(job_id, 40, "loading disease rows")
+    disease_rows = _query_kind(filters, "disease")
+    publish_progress(job_id, 70, "")
+    return pest_rows + disease_rows
 
 
 def _empty() -> dict:
@@ -57,15 +75,7 @@ def _empty() -> dict:
     }
 
 
-def _build(filters: dict, job_id: str = "") -> dict:
-    publish_progress(job_id, 10, "loading pest rows")
-    pest_rows = _query_kind(filters, "pest")
-    publish_progress(job_id, 40, "loading disease rows")
-    disease_rows = _query_kind(filters, "disease")
-
-    publish_progress(job_id, 70, "deriving filter options")
-    all_rows = pest_rows + disease_rows
-
+def _shape(all_rows: list, chips: dict) -> dict:
     pests_avail = sorted({r["obs_name"] for r in all_rows if r.get("obs_name")})
     sections = sorted(
         {r["section"] for r in all_rows if r.get("section")}
@@ -98,10 +108,9 @@ def _build(filters: dict, job_id: str = "") -> dict:
         for r in _cached_disease_colors() if r.get("name")
     }
 
-    publish_progress(job_id, 85, "filtering + aggregating")
-    pest = filters["pest"]
-    section = filters["section"]
-    stage = filters["stage"]
+    pest = chips["pest"]
+    section = chips["section"]
+    stage = chips["stage"]
 
     def matches(r) -> bool:
         if pest and r.get("obs_name") != pest:
@@ -160,7 +169,6 @@ def _build(filters: dict, job_id: str = "") -> dict:
             bucket.pop("_stages").values(), key=lambda s: s["stage"],
         )
 
-    publish_progress(job_id, 100, "")
     return {
         "zoneObs":     zone_obs,
         "latestDate":  latest,

@@ -213,7 +213,7 @@ footer{margin-top:5rem;padding-top:1.6rem;border-top:1px solid var(--rule);
 </header>
 
 <div class="cols">
-  <nav class="toc" aria-label="Contents"><p class="toc-h">Contents</p><ol><li class="l2"><a href="#1-goal-and-the-invariant">1. Goal and the invariant</a></li><li class="l2"><a href="#2-what-we-have-today">2. What we have today</a></li><li class="l3"><a href="#2-1-the-four-layers">2.1 The four layers</a></li><li class="l3"><a href="#2-2-measurements">2.2 Measurements</a></li><li class="l2"><a href="#3-the-four-bottlenecks-named">3. The four bottlenecks, named</a></li><li class="l2"><a href="#4-how-we-change-the-bridge-without-changing-the-display">4. How we change the bridge without changing the display</a></li><li class="l2"><a href="#5-approaches">5. Approaches</a></li><li class="l3"><a href="#a0-keep-the-architecture-tune-it">A0 — Keep the architecture, tune it</a></li><li class="l3"><a href="#a1-slice-proportional-queries">A1 — Slice-proportional queries</a></li><li class="l3"><a href="#a2-aggregate-bridge-ship-answers-not-rows">A2 — Aggregate bridge: ship answers, not rows</a></li><li class="l3"><a href="#a3-rollup-fact-layer">A3 — Rollup / fact layer</a></li><li class="l3"><a href="#a4-push-deltas-instead-of-broadcasting-invalidation">A4 — Push deltas instead of broadcasting invalidation</a></li><li class="l3"><a href="#a5-columnar-offload">A5 — Columnar offload</a></li><li class="l3"><a href="#comparison">Comparison</a></li><li class="l2"><a href="#6-delivery-layer-concerns-sectional-loading-indexes-redis">6. Delivery-layer concerns — sectional loading, indexes, Redis</a></li><li class="l3"><a href="#6-1-sectional-loading-partially-implemented-and-capped">6.1 Sectional loading — partially implemented, and capped</a></li><li class="l3"><a href="#6-2-database-indexes-partially-implemented-silently-incomplete">6.2 Database indexes — partially implemented, silently incomplete</a></li><li class="l3"><a href="#6-3-our-own-redis-or-erpnext-s-a-real-choice">6.3 Our own Redis, or ERPNext&#x27;s? — a real choice</a></li><li class="l3"><a href="#6-4-two-free-wins-found-while-checking-the-above">6.4 Two free wins found while checking the above</a></li><li class="l3"><a href="#6-5-a-related-finding-every-api-call-is-a-post">6.5 A related finding: every API call is a POST</a></li><li class="l2"><a href="#7-caching-architecture">7. Caching architecture</a></li><li class="l3"><a href="#what-s-wrong-now">What&#x27;s wrong now</a></li><li class="l3"><a href="#proposed-tiers">Proposed tiers</a></li><li class="l2"><a href="#8-live-sync-the-target-behaviour">8. Live sync — the target behaviour</a></li><li class="l2"><a href="#9-scaling-to-30m-and-100m">9. Scaling to 30M and 100M</a></li><li class="l2"><a href="#10-recommended-path">10. Recommended path</a></li><li class="l2"><a href="#10a-zone-geometry-compression-built-54-80-mb-5-13-mb">10a. Zone geometry compression — BUILT. 54.80 MB → 5.13 MB</a></li><li class="l3"><a href="#what-was-actually-built-and-what-was-dropped">What was actually built — and what was dropped</a></li><li class="l3"><a href="#wire-format">Wire format</a></li><li class="l3"><a href="#why-this-mattered-more-than-compression">Why this mattered more than compression</a></li><li class="l3"><a href="#notes-for-whoever-touches-this-next">Notes for whoever touches this next</a></li><li class="l2"><a href="#10a-orig-the-original-measurement-that-justified-this">10a-orig. The original measurement that justified this</a></li><li class="l2"><a href="#10b-what-we-actually-built-results-failures-and-the-300m-projection">10b. What we actually built — results, failures, and the 300M projection</a></li><li class="l3"><a href="#the-architecture-as-implemented">The architecture as implemented</a></li><li class="l3"><a href="#what-worked">What worked</a></li><li class="l3"><a href="#what-failed">What failed</a></li><li class="l3"><a href="#the-bug-that-mattered-more-than-the-speed">The bug that mattered more than the speed</a></li><li class="l3"><a href="#sectional-loading-partially-and-capped">Sectional loading — partially, and capped</a></li><li class="l3"><a href="#does-one-user-s-fetch-warm-the-cache-for-everyone-yes">Does one user&#x27;s fetch warm the cache for everyone? — Yes</a></li><li class="l3"><a href="#will-compression-survive-a-deploy-now-yes-previously-no">Will compression survive a deploy? — Now yes; previously no</a></li><li class="l3"><a href="#measured-compression-per-endpoint-nginx-level-5">Measured compression, per endpoint (nginx level 5)</a></li><li class="l3"><a href="#end-to-end-what-happens-at-300m-scouting-entries">End-to-end: what happens at 300M scouting entries</a></li><li class="l3"><a href="#honest-scorecard">Honest scorecard</a></li><li class="l2"><a href="#11-explicitly-not-doing">11. Explicitly not doing</a></li><li class="l2"><a href="#12-decisions-needed-before-a-spec">12. Decisions needed before a spec</a></li></ol></nav>
+  <nav class="toc" aria-label="Contents"><p class="toc-h">Contents</p><ol><li class="l2"><a href="#1-goal-and-the-invariant">1. Goal and the invariant</a></li><li class="l2"><a href="#2-what-we-have-today">2. What we have today</a></li><li class="l3"><a href="#2-1-the-four-layers">2.1 The four layers</a></li><li class="l3"><a href="#2-2-measurements">2.2 Measurements</a></li><li class="l2"><a href="#3-the-four-bottlenecks-named">3. The four bottlenecks, named</a></li><li class="l2"><a href="#4-how-we-change-the-bridge-without-changing-the-display">4. How we change the bridge without changing the display</a></li><li class="l2"><a href="#5-approaches">5. Approaches</a></li><li class="l3"><a href="#a0-keep-the-architecture-tune-it">A0 — Keep the architecture, tune it</a></li><li class="l3"><a href="#a1-slice-proportional-queries">A1 — Slice-proportional queries</a></li><li class="l3"><a href="#a2-aggregate-bridge-ship-answers-not-rows">A2 — Aggregate bridge: ship answers, not rows</a></li><li class="l3"><a href="#a3-rollup-fact-layer">A3 — Rollup / fact layer</a></li><li class="l3"><a href="#a4-push-deltas-instead-of-broadcasting-invalidation">A4 — Push deltas instead of broadcasting invalidation</a></li><li class="l3"><a href="#a5-columnar-offload">A5 — Columnar offload</a></li><li class="l3"><a href="#comparison">Comparison</a></li><li class="l2"><a href="#6-delivery-layer-concerns-sectional-loading-indexes-redis">6. Delivery-layer concerns — sectional loading, indexes, Redis</a></li><li class="l3"><a href="#6-1-sectional-loading-partially-implemented-and-capped">6.1 Sectional loading — partially implemented, and capped</a></li><li class="l3"><a href="#6-2-database-indexes-partially-implemented-silently-incomplete">6.2 Database indexes — partially implemented, silently incomplete</a></li><li class="l3"><a href="#6-3-our-own-redis-or-erpnext-s-a-real-choice">6.3 Our own Redis, or ERPNext&#x27;s? — a real choice</a></li><li class="l3"><a href="#6-4-two-free-wins-found-while-checking-the-above">6.4 Two free wins found while checking the above</a></li><li class="l3"><a href="#6-5-a-related-finding-every-api-call-is-a-post">6.5 A related finding: every API call is a POST</a></li><li class="l2"><a href="#7-caching-architecture">7. Caching architecture</a></li><li class="l3"><a href="#what-s-wrong-now">What&#x27;s wrong now</a></li><li class="l3"><a href="#proposed-tiers">Proposed tiers</a></li><li class="l2"><a href="#8-live-sync-the-target-behaviour">8. Live sync — the target behaviour</a></li><li class="l2"><a href="#9-scaling-to-30m-and-100m">9. Scaling to 30M and 100M</a></li><li class="l2"><a href="#10-recommended-path">10. Recommended path</a></li><li class="l2"><a href="#10a-zone-geometry-compression-built-54-80-mb-5-13-mb">10a. Zone geometry compression — BUILT. 54.80 MB → 5.13 MB</a></li><li class="l3"><a href="#what-was-actually-built-and-what-was-dropped">What was actually built — and what was dropped</a></li><li class="l3"><a href="#wire-format">Wire format</a></li><li class="l3"><a href="#why-this-mattered-more-than-compression">Why this mattered more than compression</a></li><li class="l3"><a href="#notes-for-whoever-touches-this-next">Notes for whoever touches this next</a></li><li class="l2"><a href="#10a-orig-the-original-measurement-that-justified-this">10a-orig. The original measurement that justified this</a></li><li class="l2"><a href="#10b-what-we-actually-built-results-failures-and-the-300m-projection">10b. What we actually built — results, failures, and the 300M projection</a></li><li class="l3"><a href="#the-architecture-as-implemented">The architecture as implemented</a></li><li class="l3"><a href="#what-worked">What worked</a></li><li class="l3"><a href="#what-failed">What failed</a></li><li class="l3"><a href="#the-bug-that-mattered-more-than-the-speed">The bug that mattered more than the speed</a></li><li class="l3"><a href="#sectional-loading-partially-and-capped">Sectional loading — partially, and capped</a></li><li class="l3"><a href="#does-one-user-s-fetch-warm-the-cache-for-everyone-yes">Does one user&#x27;s fetch warm the cache for everyone? — Yes</a></li><li class="l3"><a href="#will-compression-survive-a-deploy-now-yes-previously-no">Will compression survive a deploy? — Now yes; previously no</a></li><li class="l3"><a href="#measured-compression-per-endpoint-nginx-level-5">Measured compression, per endpoint (nginx level 5)</a></li><li class="l3"><a href="#end-to-end-what-happens-at-300m-scouting-entries">End-to-end: what happens at 300M scouting entries</a></li><li class="l3"><a href="#honest-scorecard">Honest scorecard</a></li><li class="l2"><a href="#10c-end-to-end-verification-the-state-as-shipped">10c. End-to-end verification — the state as shipped</a></li><li class="l3"><a href="#measured-browser-observed-start-to-finish">Measured, browser-observed, start to finish</a></li><li class="l3"><a href="#what-did-not-improve-stated-plainly">What did NOT improve, stated plainly</a></li><li class="l2"><a href="#10d-recommendations-what-to-do-next-in-order">10d. Recommendations — what to do next, in order</a></li><li class="l3"><a href="#immediate-hours-no-new-machinery">Immediate (hours, no new machinery)</a></li><li class="l3"><a href="#near-term-days">Near term (days)</a></li><li class="l3"><a href="#the-real-remaining-work-weeks">The real remaining work (weeks)</a></li><li class="l3"><a href="#correctness-and-posture-found-along-the-way">Correctness and posture, found along the way</a></li><li class="l3"><a href="#what-not-to-spend-time-on">What NOT to spend time on</a></li><li class="l2"><a href="#11-explicitly-not-doing">11. Explicitly not doing</a></li><li class="l2"><a href="#12-decisions-needed-before-a-spec">12. Decisions needed before a spec</a></li></ol></nav>
   <main>
 <p><strong>Status:</strong> options paper, not a spec. Ends with the decisions needed before a spec.
 <strong>Companion to:</strong> <code>dataload.md</code> (the external research thread).
@@ -1751,6 +1751,201 @@ the two pieces that deliver it, <strong>A2</strong> and <strong>A3</strong>, are
 </tr>
 </tbody>
 </table></div>
+<hr>
+<h2 id="10c-end-to-end-verification-the-state-as-shipped">10c. End-to-end verification — the state as shipped</h2>
+<p>Everything below was re-run after the final <code>bench build --app upande_scp &amp;&amp; bench restart</code>.</p>
+<figure class="codeblock"><span class="blk-label">OUTPUT</span><pre>INFRASTRUCTURE
+  frappe15-web / node-socketio      RUNNING (restarted)
+  protocol                          HTTP/2
+  JS bundle                         content-encoding: gzip
+  docs page                         HTTP 200
+
+CHECKS  (all exit 0)
+  check_compression                 passed
+  check_agg_cache                   3 passed
+  equivalence.verify                14 passed, 0 failed, 0 missing
+  check_scope                       5 passed
+  check_diagnose_cache              1 passed
+  check_card_detail                 2 passed
+  check_zone_encoding               0 mismatches / 154 290 zones
+  check_zone_encoding (served)      0 mismatches / 1 500 zones, 1 440 beds
+</pre></figure>
+<h3 id="measured-browser-observed-start-to-finish">Measured, browser-observed, start to finish</h3>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>at the start</th>
+<th>now</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>page load, on the wire</td>
+<td><strong>59.6 MB</strong></td>
+<td><strong>1.14 MB</strong></td>
+</tr>
+<tr>
+<td><code>getBedsAndZones</code></td>
+<td>54.80 MB raw</td>
+<td><strong>1.08 MB wire / 5.13 MB raw</strong></td>
+</tr>
+<tr>
+<td><code>heatmaps_grid</code> payload</td>
+<td>13 981 KB</td>
+<td><strong>5 080 KB</strong></td>
+</tr>
+<tr>
+<td>slowest trivial API call</td>
+<td>5.08 s (queued)</td>
+<td><strong>425 ms</strong></td>
+</tr>
+<tr>
+<td>cumulative API time / page</td>
+<td>32.07 s</td>
+<td><strong>18.79 s</strong></td>
+</tr>
+<tr>
+<td><code>getBedsAndZones</code> parse</td>
+<td>245.4 ms</td>
+<td><strong>94.1 ms</strong></td>
+</tr>
+<tr>
+<td>chip click (ApplicationPlan)</td>
+<td>835 ms</td>
+<td><strong>12.9 ms</strong></td>
+</tr>
+<tr>
+<td>dashboard warm hit</td>
+<td>recomputed every 60 s</td>
+<td><strong>3.4 ms, held 30 min</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>~52× less data over the wire.</strong> Three of those wins came from things that were never about query optimisation at all: compression that was silently disabled, a protocol setting, and a payload full of fields nobody read.</p>
+<h3 id="what-did-not-improve-stated-plainly">What did NOT improve, stated plainly</h3>
+<p><strong>Dashboard cold query time is unchanged</strong> — <code>TOTAL COLD</code> 16 998 ms → 16 890 ms. The covering indexes and the <code>warehouse_type</code> predicate are correct groundwork, but kaitet holds 13 days and the benchmark window selects 100% of the table, so no date filter is selective and there was nothing for them to win. Forcing the join order (<code>STRAIGHT_JOIN</code>) was implemented, measured 25% <em>worse</em>, and reverted.</p>
+<p>The cold path is now <em>rare</em> (debounced invalidation, 30-min TTL) rather than <em>cheap</em>. Making it cheap is still open — see R4 below.</p>
+<hr>
+<h2 id="10d-recommendations-what-to-do-next-in-order">10d. Recommendations — what to do next, in order</h2>
+<h3 id="immediate-hours-no-new-machinery">Immediate (hours, no new machinery)</h3>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>action</th>
+<th>evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>R1</strong></td>
+<td><strong>Prewarm the aggregates after every deploy/restart.</strong> A <code>daily_prewarm</code>/<code>hourly_prewarm</code> pair already exists (<code>hooks.py:286,293</code>) but warms the <em>scouting week payloads</em>, not the dashboards. Add the aggregate endpoints.</td>
+<td>cold 4 856 ms vs warm 3.4 ms — <strong>1 400×</strong>. The first operator after a restart currently pays full price on every dashboard.</td>
+</tr>
+<tr>
+<td><strong>R2</strong></td>
+<td><strong>Repoint <code>redis_socketio</code> off port 13000.</strong> It currently shares the <code>allkeys-lru</code> cache instance with application payloads.</td>
+<td>Harmless at 7 MB of a 1.17 GB budget today; under live-sync it means cache pressure can evict socket state. One config line.</td>
+</tr>
+<tr>
+<td><strong>R3</strong></td>
+<td><strong>Re-run <code>check_compression</code> in the deploy pipeline.</strong> It exits 1 when compression is off.</td>
+<td>The fix lived only in <code>/etc/nginx/nginx.conf</code> for a day and would have vanished on the first deploy — 11× regression, no error, no log line.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="near-term-days">Near term (days)</h3>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>action</th>
+<th>evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>R4</strong></td>
+<td><strong>Push <code>overview</code>'s aggregation into SQL.</strong> It runs a <code>UNION ALL</code> with no <code>GROUP BY</code> and hauls raw rows into Python.</td>
+<td><strong>201 705 rows → 979 rows</strong>, and <code>COUNT(DISTINCT zone)</code> stays exact because it is computed in one pass. Expect ~4 856 → ~1 500–2 000 ms. Biggest single cold cost, ~a day, no new tables.</td>
+</tr>
+<tr>
+<td><strong>R5</strong></td>
+<td><strong>Same treatment for <code>heatmaps_grid</code></strong> (4 839 ms cold) if it shows the same shape.</td>
+<td>Second-largest cold cost.</td>
+</tr>
+<tr>
+<td><strong>R6</strong></td>
+<td><strong>Fix the patch trap.</strong> <code>add_scouting_indexes.py</code> was edited after its first run, so its <code>scouting_crop_idx</code> was never created and never will be.</td>
+<td>Frappe records patches in <code>tabPatchLog</code> and never re-runs one. Any index appended to that file today is dead code.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="the-real-remaining-work-weeks">The real remaining work (weeks)</h3>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>action</th>
+<th>evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>R7</strong></td>
+<td><strong>A2 — retire the client-side dataset replication.</strong> <code>scouting-sync.ts</code> still downloads <strong>83.5 MB per ISO week, site-wide, unfiltered</strong> into IndexedDB for five pages (<code>RoseScouting</code>, <code>Observations</code>, <code>TrapsMap</code>, <code>AvocadoHeatMap</code>, <code>AvocadoTreeMap</code>).</td>
+<td>Untouched by all of this work. It is the last unbounded thing in the system and the one that actually blocks 300M.</td>
+</tr>
+<tr>
+<td><strong>R8</strong></td>
+<td><strong>A4 — room-scoped realtime.</strong> <code>publish_scouting_dirty</code> broadcasts site-wide on every write; every client then refetches.</td>
+<td>O(writes × clients). At 600k/week with 50 users that is ~150 refetches/second. Frappe gives permission-checked rooms free via <code>doc_subscribe</code>.</td>
+</tr>
+<tr>
+<td><strong>R9</strong></td>
+<td><strong>A3 (rollup) — only for additive measures.</strong></td>
+<td><strong>Measured non-viable as originally scoped.</strong> Severity is <em>"% of zones affected"</em>, a <code>COUNT(DISTINCT zone)</code> over the window, and distinct counts are not additive: for Mealybugs in one greenhouse the true figure is <strong>2 001 zones</strong> while summing per-day distincts gives <strong>2 743</strong> (+37%). A dated rollup would inflate every severity band. Zone grain compresses only 1.21×, so the exact version buys nothing.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="correctness-and-posture-found-along-the-way">Correctness and posture, found along the way</h3>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>finding</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>R10</strong></td>
+<td><strong>The aggregate endpoints have no permission checks.</strong> Every <code>dashboard_aggregates</code> method is <code>@frappe.whitelist()</code> with scope taken purely from arguments, so any authenticated user can read any greenhouse's data. Pre-existing, unchanged by this work — but it is also <em>why</em> the shared Redis cache is safe, so the two must be decided together.</td>
+</tr>
+<tr>
+<td><strong>R11</strong></td>
+<td><strong>The published docs page is unauthenticated.</strong> <code>/scp-docs/</code> is served by nginx before Frappe's auth. Basic auth is two lines if that matters.</td>
+</tr>
+<tr>
+<td><strong>R12</strong></td>
+<td><strong>Data inconsistency: <code>zone_id</code> vs zone name.</strong> The GeoJSON <code>properties.zone_id</code> disagrees with the name-derived number on <strong>558 of 154 290 zones</strong>. Everything treats the name as truth; the codec does too. Worth reconciling at source.</td>
+</tr>
+<tr>
+<td><strong>R13</strong></td>
+<td><strong>Zone length is 4.0 m, not 3 m.</strong> All 18 472 beds have a 4.0 m modal segment. If 3 m is the documented spec, the field data has diverged from it.</td>
+</tr>
+<tr>
+<td><strong>R14</strong></td>
+<td><strong>Two open product questions on zone colour.</strong> Should it be the <em>dominant</em> observation by count — which <code>upright-svg.ts:19</code> already claims it is — and should pests outrank diseases at all? The latter is currently an accident of list concatenation order, not a decision. Affects 28.4% of diagnose-map zones.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="what-not-to-spend-time-on">What NOT to spend time on</h3>
+<ul>
+<li><strong>Sectional loading</strong>, until R7 lands. With <code>gunicorn -w 9</code>, fanning a page into 8 parallel calls lets one operator occupy 8 of 9 workers. HTTP/2 removed the <em>client</em> ceiling; the server one remains.</li>
+<li><strong>A rollup for severity</strong> — see R9. The arithmetic does not work.</li>
+<li><strong>Chasing dashboard query time on kaitet.</strong> The dataset is 13 days and every window selects 100% of it, so it cannot measure selectivity. Any conclusion drawn there will not transfer to production.</li>
+</ul>
 <hr>
 <h2 id="11-explicitly-not-doing">11. Explicitly not doing</h2>
 <div class="tw"><table>

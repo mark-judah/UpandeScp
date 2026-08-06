@@ -929,6 +929,95 @@ the two pieces that deliver it, **A2** and **A3**, are still unbuilt.
 
 ---
 
+## 10c. End-to-end verification — the state as shipped
+
+Everything below was re-run after the final `bench build --app upande_scp && bench restart`.
+
+```
+INFRASTRUCTURE
+  frappe15-web / node-socketio      RUNNING (restarted)
+  protocol                          HTTP/2
+  JS bundle                         content-encoding: gzip
+  docs page                         HTTP 200
+
+CHECKS  (all exit 0)
+  check_compression                 passed
+  check_agg_cache                   3 passed
+  equivalence.verify                14 passed, 0 failed, 0 missing
+  check_scope                       5 passed
+  check_diagnose_cache              1 passed
+  check_card_detail                 2 passed
+  check_zone_encoding               0 mismatches / 154 290 zones
+  check_zone_encoding (served)      0 mismatches / 1 500 zones, 1 440 beds
+```
+
+### Measured, browser-observed, start to finish
+
+| | at the start | now |
+|---|---|---|
+| page load, on the wire | **59.6 MB** | **1.14 MB** |
+| `getBedsAndZones` | 54.80 MB raw | **1.08 MB wire / 5.13 MB raw** |
+| `heatmaps_grid` payload | 13 981 KB | **5 080 KB** |
+| slowest trivial API call | 5.08 s (queued) | **425 ms** |
+| cumulative API time / page | 32.07 s | **18.79 s** |
+| `getBedsAndZones` parse | 245.4 ms | **94.1 ms** |
+| chip click (ApplicationPlan) | 835 ms | **12.9 ms** |
+| dashboard warm hit | recomputed every 60 s | **3.4 ms, held 30 min** |
+
+**~52× less data over the wire.** Three of those wins came from things that were never about query optimisation at all: compression that was silently disabled, a protocol setting, and a payload full of fields nobody read.
+
+### What did NOT improve, stated plainly
+
+**Dashboard cold query time is unchanged** — `TOTAL COLD` 16 998 ms → 16 890 ms. The covering indexes and the `warehouse_type` predicate are correct groundwork, but kaitet holds 13 days and the benchmark window selects 100% of the table, so no date filter is selective and there was nothing for them to win. Forcing the join order (`STRAIGHT_JOIN`) was implemented, measured 25% *worse*, and reverted.
+
+The cold path is now *rare* (debounced invalidation, 30-min TTL) rather than *cheap*. Making it cheap is still open — see R4 below.
+
+---
+
+## 10d. Recommendations — what to do next, in order
+
+### Immediate (hours, no new machinery)
+
+| | action | evidence |
+|---|---|---|
+| **R1** | **Prewarm the aggregates after every deploy/restart.** A `daily_prewarm`/`hourly_prewarm` pair already exists (`hooks.py:286,293`) but warms the *scouting week payloads*, not the dashboards. Add the aggregate endpoints. | cold 4 856 ms vs warm 3.4 ms — **1 400×**. The first operator after a restart currently pays full price on every dashboard. |
+| **R2** | **Repoint `redis_socketio` off port 13000.** It currently shares the `allkeys-lru` cache instance with application payloads. | Harmless at 7 MB of a 1.17 GB budget today; under live-sync it means cache pressure can evict socket state. One config line. |
+| **R3** | **Re-run `check_compression` in the deploy pipeline.** It exits 1 when compression is off. | The fix lived only in `/etc/nginx/nginx.conf` for a day and would have vanished on the first deploy — 11× regression, no error, no log line. |
+
+### Near term (days)
+
+| | action | evidence |
+|---|---|---|
+| **R4** | **Push `overview`'s aggregation into SQL.** It runs a `UNION ALL` with no `GROUP BY` and hauls raw rows into Python. | **201 705 rows → 979 rows**, and `COUNT(DISTINCT zone)` stays exact because it is computed in one pass. Expect ~4 856 → ~1 500–2 000 ms. Biggest single cold cost, ~a day, no new tables. |
+| **R5** | **Same treatment for `heatmaps_grid`** (4 839 ms cold) if it shows the same shape. | Second-largest cold cost. |
+| **R6** | **Fix the patch trap.** `add_scouting_indexes.py` was edited after its first run, so its `scouting_crop_idx` was never created and never will be. | Frappe records patches in `tabPatchLog` and never re-runs one. Any index appended to that file today is dead code. |
+
+### The real remaining work (weeks)
+
+| | action | evidence |
+|---|---|---|
+| **R7** | **A2 — retire the client-side dataset replication.** `scouting-sync.ts` still downloads **83.5 MB per ISO week, site-wide, unfiltered** into IndexedDB for five pages (`RoseScouting`, `Observations`, `TrapsMap`, `AvocadoHeatMap`, `AvocadoTreeMap`). | Untouched by all of this work. It is the last unbounded thing in the system and the one that actually blocks 300M. |
+| **R8** | **A4 — room-scoped realtime.** `publish_scouting_dirty` broadcasts site-wide on every write; every client then refetches. | O(writes × clients). At 600k/week with 50 users that is ~150 refetches/second. Frappe gives permission-checked rooms free via `doc_subscribe`. |
+| **R9** | **A3 (rollup) — only for additive measures.** | **Measured non-viable as originally scoped.** Severity is *"% of zones affected"*, a `COUNT(DISTINCT zone)` over the window, and distinct counts are not additive: for Mealybugs in one greenhouse the true figure is **2 001 zones** while summing per-day distincts gives **2 743** (+37%). A dated rollup would inflate every severity band. Zone grain compresses only 1.21×, so the exact version buys nothing. |
+
+### Correctness and posture, found along the way
+
+| | finding |
+|---|---|
+| **R10** | **The aggregate endpoints have no permission checks.** Every `dashboard_aggregates` method is `@frappe.whitelist()` with scope taken purely from arguments, so any authenticated user can read any greenhouse's data. Pre-existing, unchanged by this work — but it is also *why* the shared Redis cache is safe, so the two must be decided together. |
+| **R11** | **The published docs page is unauthenticated.** `/scp-docs/` is served by nginx before Frappe's auth. Basic auth is two lines if that matters. |
+| **R12** | **Data inconsistency: `zone_id` vs zone name.** The GeoJSON `properties.zone_id` disagrees with the name-derived number on **558 of 154 290 zones**. Everything treats the name as truth; the codec does too. Worth reconciling at source. |
+| **R13** | **Zone length is 4.0 m, not 3 m.** All 18 472 beds have a 4.0 m modal segment. If 3 m is the documented spec, the field data has diverged from it. |
+| **R14** | **Two open product questions on zone colour.** Should it be the *dominant* observation by count — which `upright-svg.ts:19` already claims it is — and should pests outrank diseases at all? The latter is currently an accident of list concatenation order, not a decision. Affects 28.4% of diagnose-map zones. |
+
+### What NOT to spend time on
+
+- **Sectional loading**, until R7 lands. With `gunicorn -w 9`, fanning a page into 8 parallel calls lets one operator occupy 8 of 9 workers. HTTP/2 removed the *client* ceiling; the server one remains.
+- **A rollup for severity** — see R9. The arithmetic does not work.
+- **Chasing dashboard query time on kaitet.** The dataset is 13 days and every window selects 100% of it, so it cannot measure selectivity. Any conclusion drawn there will not transfer to production.
+
+---
+
 ## 11. Explicitly not doing
 
 | | why |

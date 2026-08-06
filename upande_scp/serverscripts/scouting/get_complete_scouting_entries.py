@@ -269,7 +269,19 @@ def _build_month_entries(from_date, to_date, crop=None):
     its own per-key caches; see _cached_* helpers above). Greenhouse filtering
     is intentionally NOT applied here — the cache is shared across all
     consumers. ``crop`` (when given) restricts the query to that crop's rows at
-    the SQL level, so a sparse crop builds only its own slice."""
+    the SQL level, so a sparse crop builds only its own slice.
+
+    ``owner``/``modified_by``/``modified`` are deliberately NOT projected:
+    none of the five scouting-dashboard consumer pages (RoseScouting,
+    Observations, TrapsMap, AvocadoHeatMap, AvocadoTreeMap) read them off an
+    entry — the only reader was ``getScoutIdentity``'s owner/modified_by
+    fallback, itself only feeding the ``scouts``/``greenhouses`` aggregates
+    that Task 3 also found unused. ``modified`` here is unrelated to the
+    delta-sync watermark, which comes from ``get_entries_since`` (a separate
+    endpoint with its own field list) returning ``server_now``, not from
+    scanning this payload's rows. Dropping these three fields alone cut the
+    per-greenhouse weekly payload's raw size by roughly a fifth (measured
+    against kaitet.local)."""
     _filters = [["date_of_capture", "between", [from_date, to_date]]]
     if crop:
         _filters.append(["crop_scouted", "=", crop])
@@ -288,9 +300,6 @@ def _build_month_entries(from_date, to_date, crop=None):
             "crop_scouted",
             "time_of_capture",
             "date_of_capture",
-            "owner",
-            "modified_by",
-            "modified",
             "latitude",
             "longitude",
         ],

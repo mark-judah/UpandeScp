@@ -80,8 +80,11 @@ K_MAP_SETTINGS = "scp:map_settings_v1"
 K_FARM_HIERARCHY = "scp:farm_hierarchy_v1"
 # Versioned scouting payload cache. Keys use the prefix + version stamp +
 # args, so invalidation is O(1): bump the stamp and old keys orphan via TTL.
-K_SCOUTING_PAYLOAD_PREFIX  = "scp:scouting_payload_v2"
-K_SCOUTING_PAYLOAD_VERSION = "scp:scouting_payload_ver_v2"
+# v3: _build_month_entries dropped owner/modified_by/modified (R7 payload
+# trim) — bumped so a client expecting the narrower shape is never served a
+# v2 entry cached with the old fat fields.
+K_SCOUTING_PAYLOAD_PREFIX  = "scp:scouting_payload_v3"
+K_SCOUTING_PAYLOAD_VERSION = "scp:scouting_payload_ver_v3"
 # One-centroid-per-Zone payload for the rose 3D map. Invalidated by Zone
 # create/update/delete (the geometry source of truth) and Bed/Warehouse
 # changes (which can rename or reparent zones).

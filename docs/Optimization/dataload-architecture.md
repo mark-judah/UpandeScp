@@ -1024,7 +1024,8 @@ SQL total          3 635 ms
 
 | | action | evidence |
 |---|---|---|
-| **R7** | **A2 — retire the client-side dataset replication.** `scouting-sync.ts` still downloads **83.5 MB per ISO week, site-wide, unfiltered** into IndexedDB for five pages (`RoseScouting`, `Observations`, `TrapsMap`, `AvocadoHeatMap`, `AvocadoTreeMap`). | Untouched by all of this work. It is the last unbounded thing in the system and the one that actually blocks 300M. |
+| **R7** | ~~**A2 — retire the client-side dataset replication.**~~ **R7a DONE** — see §10e. Greenhouse-scoped views now filter server-side: **59.55 MB → 1.96 MB raw, 4 320 KB → 118 KB gzipped (30× / 36×)**. R7b (all-greenhouses mode) remains open. | *(original note below)* |
+| ~~R7-orig~~ | **A2 — retire the client-side dataset replication.** `scouting-sync.ts` still downloads **83.5 MB per ISO week, site-wide, unfiltered** into IndexedDB for five pages (`RoseScouting`, `Observations`, `TrapsMap`, `AvocadoHeatMap`, `AvocadoTreeMap`). | Untouched by all of this work. It is the last unbounded thing in the system and the one that actually blocks 300M. |
 | **R8** | **A4 — room-scoped realtime.** `publish_scouting_dirty` broadcasts site-wide on every write; every client then refetches. | O(writes × clients). At 600k/week with 50 users that is ~150 refetches/second. Frappe gives permission-checked rooms free via `doc_subscribe`. |
 | **R9** | **A3 (rollup) — only for additive measures.** | **Measured non-viable as originally scoped.** Severity is *"% of zones affected"*, a `COUNT(DISTINCT zone)` over the window, and distinct counts are not additive: for Mealybugs in one greenhouse the true figure is **2 001 zones** while summing per-day distincts gives **2 743** (+37%). A dated rollup would inflate every severity band. Zone grain compresses only 1.21×, so the exact version buys nothing. |
 
@@ -1043,6 +1044,39 @@ SQL total          3 635 ms
 - **Sectional loading**, until R7 lands. With `gunicorn -w 9`, fanning a page into 8 parallel calls lets one operator occupy 8 of 9 workers. HTTP/2 removed the *client* ceiling; the server one remains.
 - **A rollup for severity** — see R9. The arithmetic does not work.
 - **Chasing dashboard query time on kaitet.** The dataset is 13 days and every window selects 100% of it, so it cannot measure selectivity. Any conclusion drawn there will not transfer to production.
+
+---
+
+## 10e. R7a — server-side scouting filter (BUILT)
+
+**Status: implemented** (commits `9650f9d`, `e7e5760`, `88710d4`).
+
+```
+ISO week 2026-07-06..12
+  whole site (all-mode, unchanged)   59.55 MB raw   4 319.5 KB gz   154 640 entries
+  ONE greenhouse (the new path)       1.96 MB raw     118.5 KB gz     4 747 entries
+                                        30x raw          36x gz
+```
+
+### What it turned out to be
+
+Scoped as 2-3 weeks. It was three commits, because investigating it produced three findings:
+
+1. **One seam, not five.** All five consumer pages (`RoseScouting`, `Observations`, `TrapsMap`, `AvocadoHeatMap`, `AvocadoTreeMap`) go through a single hook, `useScouting()`. No per-page migration was needed.
+2. **The server already accepted the filter.** `getScoutingEntriesChunk(from_date, to_date, greenhouse=None, …)` has always taken a `greenhouse` argument; the client simply never sent it. Sending it is ~30× on its own.
+3. **Six aggregates nobody read.** `buildScoutingData` computed `pests`, `diseases`, `traps`, `greenhouses`, `scouts` and `daily` on every load. Re-grepped across the whole of `frontend/src`: **every consumer uses only `data.entries`.** Removing them cut client processing 518.7 → 376.4 ms site-wide and 18.8 → 9.8 ms for one greenhouse.
+
+Fields dropped from the payload: `owner`, `modified_by`, `modified`. `bed`, `tree` and `row` were checked and **kept** — they are actively read. `get_entries_since` is untouched; its watermark uses `server_now`, not row scanning.
+
+### The design that was changed, and why it was there
+
+`scouting-sync.ts:11` documented the original intent: filter after the IndexedDB read so one unfiltered store serves every page and filter combination. That was a real trade, not an oversight. Changing it required the loaded-weeks registry to be namespaced per greenhouse — following the precedent already set for crop (`weeksMetaKey(crop)`).
+
+**The risk this introduces** is a silent one: a week fetched for greenhouse A must never be treated as covering greenhouse B, or a page renders partial data with no error. Verified A→B→A: greenhouse A (1 fetch, 3 rows) → B (1 fetch, 1 row) → A again (**0 new fetches**, 3 rows, all A) → B again (0 fetches, 1 row, B). No over-claim.
+
+### Still open — R7b
+
+All-greenhouses mode (`greenhouse === "__all__"`) and multi-greenhouse lists still fetch site-wide, unchanged and deliberately so — forcing a selection would be a display change. That mode needs purpose-built per-page endpoints, which is the larger remaining piece.
 
 ---
 

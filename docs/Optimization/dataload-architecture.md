@@ -988,9 +988,37 @@ The cold path is now *rare* (debounced invalidation, 30-min TTL) rather than *ch
 
 | | action | evidence |
 |---|---|---|
-| **R4** | **Push `overview`'s aggregation into SQL.** It runs a `UNION ALL` with no `GROUP BY` and hauls raw rows into Python. | **201 705 rows → 979 rows**, and `COUNT(DISTINCT zone)` stays exact because it is computed in one pass. Expect ~4 856 → ~1 500–2 000 ms. Biggest single cold cost, ~a day, no new tables. |
+| **R4** | **Cold dashboard time — deprioritised after measurement.** See the correction below; the cheap wins here are not real. | Warm is 3.4 ms and the debounce makes cold rare. Only a genuine refactor of `_build` moves it, for ~2×. |
 | **R5** | **Same treatment for `heatmaps_grid`** (4 839 ms cold) if it shows the same shape. | Second-largest cold cost. |
 | **R6** | **Fix the patch trap.** `add_scouting_indexes.py` was edited after its first run, so its `scouting_crop_idx` was never created and never will be. | Frappe records patches in `tabPatchLog` and never re-runs one. Any index appended to that file today is dead code. |
+
+### Correction: where `overview`'s cold time really goes
+
+An earlier draft of R4 claimed `load_thresholds` was a 324.8 ms N+1 worth ~418×. **That measurement was wrong** — it was taken in a fresh `bench execute` process and was dominated by one-time `Crop Scouted` doctype-meta loading, not by the N+1. Measured correctly, with meta already warm:
+
+```
+load_thresholds (true per-request cost)    1.90 ms
+```
+
+The N+1 was fixed anyway (21 round trips → 3; `overview` 28 SQL statements → 7, commit `f34c55d`) because fewer round trips scale better — but it produced **no wall-clock improvement**, and the claim that it would was an artifact of the harness.
+
+The real distribution, measured per statement:
+
+```
+overview cold      4 894 ms   (7 SQL statements)
+SQL total          3 635 ms
+   1 395 ms  _observation_rows          — the 201k-row UNION
+   1 063 ms  COUNT(DISTINCT scouts_name) KPI
+   1 041 ms  _recent_activity
+     133 ms  zone counts
+  ~1 260 ms  Python
+```
+
+**Three independent heavy queries, each scanning the same date range.** There is no single hot spot and no plan pathology — it is three full passes over the same 200k joined rows. The only structural lever is merging them into one pass, which is a real refactor of `_build` with genuine risk of changing output, for an optimistic 4.9 s → ~2.5 s.
+
+**Deprioritised.** Warm is 3.4 ms; the debounced invalidation makes cold rare. Halving a rarely-hit path is poor value against R7.
+
+**Method note worth keeping:** never quote a timing taken in a cold `bench execute` process. Frappe loads doctype metadata lazily on first touch, and that one-time cost can dwarf the thing being measured. Warm the path once, then measure.
 
 ### The real remaining work (weeks)
 

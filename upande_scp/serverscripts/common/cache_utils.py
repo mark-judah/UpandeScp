@@ -222,6 +222,11 @@ def publish_scouting_dirty(doc, method=None):
     Channel ``scp:scouting:dirty`` is broadcast site-wide; permission scoping
     happens client-side because the message contains no row data — only a hint
     that *something* changed.
+
+    Also attempts a debounced bump of the dashboard-aggregate cache version
+    stamp (see dashboard_aggregates._common's DASH_AGG_TTL comment) so the
+    www dashboards pick up scouting writes within ~60s without recomputing
+    on every single write.
     """
     try:
         month = _resolve_scouting_month(doc)
@@ -234,6 +239,18 @@ def publish_scouting_dirty(doc, method=None):
         # Never let a realtime failure break the underlying write.
         frappe.log_error(
             f"publish_scouting_dirty failed for {getattr(doc, 'doctype', '?')}",
+            "SCP Realtime",
+        )
+
+    try:
+        from upande_scp.serverscripts.dashboard_aggregates._common import (
+            bump_dash_agg_version,
+        )
+        bump_dash_agg_version()
+    except Exception:
+        # Best-effort cache freshness nudge; never break the underlying write.
+        frappe.log_error(
+            f"bump_dash_agg_version failed for {getattr(doc, 'doctype', '?')}",
             "SCP Realtime",
         )
 

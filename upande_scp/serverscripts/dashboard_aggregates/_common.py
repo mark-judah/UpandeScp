@@ -274,15 +274,62 @@ K_DASH_AGG_PREFIX = "scp:dash_agg"
 # but every Scouting Entry insert/update bumps that stamp via
 # cache_utils.invalidate_on_change — on a busy site (mobile syncs) the
 # cache never warmed because the version flipped between cold compute and
-# warm read. Drop the version stamp; rely on TTL for staleness bounds, and
-# rely on the scp:scouting:dirty realtime channel for prompt invalidation
-# in the browser (frontend refetches, which hits a still-warm key but with
-# server-side recompute on TTL expiry).
-DASH_AGG_TTL = 60  # seconds — bound stale window when realtime push misses
+# warm read. That version stamp was dropped in favour of a bare TTL.
+#
+# Bare TTL has its own cost: on a quiet site the cache is discarded every
+# TTL seconds even though nothing changed, so most operators pay the cold
+# (multi-second) compute instead of the warm (millisecond) one.
+#
+# Fix: reinstate a version stamp, but *debounce* the bump instead of firing
+# it unconditionally on every write. ``cache_utils.publish_scouting_dirty``
+# calls ``bump_dash_agg_version()`` on every scouting write; that function
+# only actually increments the stamp for the first caller to win a
+# ``SET NX EX`` lock, and is a no-op for every other write inside the same
+# debounce window. Net effect:
+#   - quiet period: stamp never bumps, keys stay warm for the full TTL.
+#   - busy period: stamp bumps at most once per debounce window — same
+#     staleness bound as the old unconditional-bump design, just without
+#     the write amplification that kept the cache permanently cold.
+# Old keys under a stale version orphan and expire via TTL; nothing needs
+# to clean them up.
+K_DASH_AGG_VERSION = "scp:dash_agg:ver"
+K_DASH_AGG_BUMP_LOCK = "scp:dash_agg:bump_lock"
+DASH_AGG_BUMP_DEBOUNCE = 60  # seconds — matches the old unconditional-bump staleness bound
+DASH_AGG_TTL = 1800  # seconds — safe to raise now that the version stamp bounds staleness
+
+
+def dash_agg_version() -> int:
+    """Current version stamp for the dashboard aggregate cache namespace."""
+    cache = frappe.cache()
+    v = cache.get_value(K_DASH_AGG_VERSION)
+    if v is None:
+        v = 1
+        cache.set_value(K_DASH_AGG_VERSION, v)
+    return v
+
+
+def bump_dash_agg_version() -> None:
+    """Debounced version bump — see the DASH_AGG_TTL comment above.
+
+    Acquires a short-lived Redis lock with ``SET <lock> 1 EX <debounce> NX``
+    semantics: only the caller that wins the lock (the first one in the
+    window) increments the stamp. Every other caller inside the same window
+    returns immediately without touching Redis again. ``RedisWrapper`` (a
+    subclass of ``redis.Redis``) exposes the raw ``set`` command with its
+    native ``nx``/``ex`` kwargs, so this bypasses the higher-level
+    ``set_value`` wrapper on purpose.
+    """
+    cache = frappe.cache()
+    lock_key = cache.make_key(K_DASH_AGG_BUMP_LOCK)
+    acquired = cache.set(name=lock_key, value=b"1", ex=DASH_AGG_BUMP_DEBOUNCE, nx=True)
+    if not acquired:
+        return
+    v = cache.get_value(K_DASH_AGG_VERSION) or 1
+    cache.set_value(K_DASH_AGG_VERSION, int(v) + 1)
 
 
 def _build_key(endpoint: str, filters: dict) -> str:
-    return f"{K_DASH_AGG_PREFIX}:{endpoint}:{filter_hash(filters)}"
+    return f"{K_DASH_AGG_PREFIX}:v{dash_agg_version()}:{endpoint}:{filter_hash(filters)}"
 
 
 def cached_aggregate(endpoint: str, filters: dict, compute, force: bool = False):

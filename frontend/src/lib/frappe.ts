@@ -1,3 +1,5 @@
+import { recordCall } from "./perf";
+
 export interface ScpBootstrap {
   user: string;
   full_name: string;
@@ -49,6 +51,7 @@ export async function call<T = unknown>(
   method: string,
   args: Record<string, unknown> = {},
 ): Promise<T> {
+  const fetchStart = performance.now();
   const res = await fetch(`/api/method/${method}`, {
     method: "POST",
     credentials: "include",
@@ -62,11 +65,17 @@ export async function call<T = unknown>(
 
   let body: unknown = null;
   const text = await res.text();
+  const fetchMs = performance.now() - fetchStart;
+
+  const parseStart = performance.now();
   try {
     body = text ? JSON.parse(text) : null;
   } catch {
     body = text;
   }
+  const parseMs = performance.now() - parseStart;
+
+  recordCall(method, res.url, text, fetchStart, fetchMs, parseMs);
 
   if (!res.ok) {
     const msg =

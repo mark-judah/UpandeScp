@@ -3,6 +3,7 @@ import { useRoute, cropDisplayName, type View } from "@/lib/router";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { OrbitProgress } from "@/components/OrbitProgress";
+import { PerfClock } from "@/components/PerfClock";
 import { useSimulatedProgress } from "@/hooks/use-simulated-progress";
 import {
   primeBedsAndZones,
@@ -404,6 +405,7 @@ export function App() {
           })
         )}
       </SidebarInset>
+      <PerfClock />
     </SidebarProvider>
   );
 }

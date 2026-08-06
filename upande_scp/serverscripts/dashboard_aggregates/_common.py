@@ -151,81 +151,67 @@ def load_thresholds(crop: str) -> dict:
         return cache[crop]
 
     out: dict = {}
-
-    # Pests: walk Pest Filter → its Pests Stages children
-    pest_rows = frappe.db.sql(
-        """
-        SELECT pf.name AS row_name, pf.pest, pf.low_threshold,
-               pf.moderate_threshold, pf.high_threshold
-        FROM `tabPest Filter` pf
-        WHERE pf.crop_scouted = %(crop)s
-        """,
-        {"crop": crop},
-        as_dict=True,
+    _load_kind(
+        out, crop,
+        parent_table="Pest Filter", child_table="Pests Stages",
+        obs_col="pest", kind="pest",
     )
-    for pf in pest_rows:
-        if not _zero_band(pf["low_threshold"], pf["moderate_threshold"], pf["high_threshold"]):
-            out[("pest", pf["pest"], "")] = {
-                "low":  float(pf["low_threshold"] or 0),
-                "mod":  float(pf["moderate_threshold"] or 0),
-                "high": float(pf["high_threshold"] or 0),
-            }
-        stage_rows = frappe.db.sql(
-            """
-            SELECT stage, low_threshold, moderate_threshold, high_threshold
-            FROM `tabPests Stages`
-            WHERE parent = %(row)s AND parenttype = 'Pest Filter'
-            """,
-            {"row": pf["row_name"]},
-            as_dict=True,
-        )
-        for sr in stage_rows:
-            if _zero_band(sr["low_threshold"], sr["moderate_threshold"], sr["high_threshold"]):
-                continue
-            out[("pest", pf["pest"], (sr["stage"] or "").strip())] = {
-                "low":  float(sr["low_threshold"] or 0),
-                "mod":  float(sr["moderate_threshold"] or 0),
-                "high": float(sr["high_threshold"] or 0),
-            }
-
-    # Diseases: same shape via Disease Filter → Disease Stages
-    dis_rows = frappe.db.sql(
-        """
-        SELECT df.name AS row_name, df.disease, df.low_threshold,
-               df.moderate_threshold, df.high_threshold
-        FROM `tabDisease Filter` df
-        WHERE df.crop_scouted = %(crop)s
-        """,
-        {"crop": crop},
-        as_dict=True,
+    _load_kind(
+        out, crop,
+        parent_table="Disease Filter", child_table="Disease Stages",
+        obs_col="disease", kind="disease",
     )
-    for df in dis_rows:
-        if not _zero_band(df["low_threshold"], df["moderate_threshold"], df["high_threshold"]):
-            out[("disease", df["disease"], "")] = {
-                "low":  float(df["low_threshold"] or 0),
-                "mod":  float(df["moderate_threshold"] or 0),
-                "high": float(df["high_threshold"] or 0),
-            }
-        stage_rows = frappe.db.sql(
-            """
-            SELECT stage, low_threshold, moderate_threshold, high_threshold
-            FROM `tabDisease Stages`
-            WHERE parent = %(row)s AND parenttype = 'Disease Filter'
-            """,
-            {"row": df["row_name"]},
-            as_dict=True,
-        )
-        for sr in stage_rows:
-            if _zero_band(sr["low_threshold"], sr["moderate_threshold"], sr["high_threshold"]):
-                continue
-            out[("disease", df["disease"], (sr["stage"] or "").strip())] = {
-                "low":  float(sr["low_threshold"] or 0),
-                "mod":  float(sr["moderate_threshold"] or 0),
-                "high": float(sr["high_threshold"] or 0),
-            }
 
     cache[crop] = out
     return out
+
+
+def _load_kind(out: dict, crop: str, *, parent_table: str, child_table: str, obs_col: str, kind: str) -> None:
+    """Populate ``out`` for one kind (pest/disease) with a single LEFT JOIN
+    query instead of one parent query + one child query per parent row.
+
+    The LEFT JOIN means a filter row with no stage children comes back as
+    one row with every ``s_*`` column NULL — that must NOT be treated as a
+    stage="" entry (it would shadow/duplicate the aggregate fallback), so
+    it is skipped explicitly rather than relying on ``_zero_band`` (NULL,
+    NULL, NULL) happening to be falsy-zero.
+    """
+    rows = frappe.db.sql(
+        f"""
+        SELECT pf.name AS row_name, pf.`{obs_col}` AS obs,
+               pf.low_threshold, pf.moderate_threshold, pf.high_threshold,
+               s.stage AS s_stage, s.low_threshold AS s_low,
+               s.moderate_threshold AS s_mod, s.high_threshold AS s_high
+        FROM `tab{parent_table}` pf
+        LEFT JOIN `tab{child_table}` s
+            ON s.parent = pf.name AND s.parenttype = %(parent_table)s
+        WHERE pf.crop_scouted = %(crop)s
+        """,
+        {"crop": crop, "parent_table": parent_table},
+        as_dict=True,
+    )
+
+    seen_rows = set()
+    for r in rows:
+        obs = r["obs"]
+        if r["row_name"] not in seen_rows:
+            seen_rows.add(r["row_name"])
+            if not _zero_band(r["low_threshold"], r["moderate_threshold"], r["high_threshold"]):
+                out[(kind, obs, "")] = {
+                    "low":  float(r["low_threshold"] or 0),
+                    "mod":  float(r["moderate_threshold"] or 0),
+                    "high": float(r["high_threshold"] or 0),
+                }
+
+        if r["s_stage"] is None:
+            continue  # no stage child row (LEFT JOIN miss) -- not a real stage entry
+        if _zero_band(r["s_low"], r["s_mod"], r["s_high"]):
+            continue
+        out[(kind, obs, r["s_stage"].strip())] = {
+            "low":  float(r["s_low"] or 0),
+            "mod":  float(r["s_mod"] or 0),
+            "high": float(r["s_high"] or 0),
+        }
 
 
 def severity_from_pct(

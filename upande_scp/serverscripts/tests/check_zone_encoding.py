@@ -176,3 +176,97 @@ def run():
         raise SystemExit(1)
 
     print(f"\ncheck_zone_encoding: PASSED — 0 mismatches across {zone_count} zones")
+
+
+def run_served_endpoint():
+    """Safety net for Task 2 — no browser exists on this host to eyeball the
+    maps, so this is the closest thing to a visual check: call the *real*
+    ``getBedsAndZones`` endpoint (forcing a fresh build past the Redis
+    cache), decode its v2 payload, and assert it reconstructs the same zone
+    names + coordinates the old ``raw_geojson`` path produced, for a sample
+    of real zones spanning several beds.
+
+    Unlike ``run()`` above (which drives the codec directly), this exercises
+    the actual wiring: the new ``K_BEDS_AND_ZONES_V2`` cache key, the
+    variety/bed grouping in ``_build_beds_and_zones``, and the whitelisted
+    ``getBedsAndZones`` entrypoint the frontend actually calls. A mismatch
+    here means the endpoint's *wiring* is wrong even if the codec itself is
+    sound.
+
+    Read-only except for one Redis cache key it deliberately busts
+    (``K_BEDS_AND_ZONES_V2``) so the check exercises a real rebuild rather
+    than serving a stale cached payload — no `kaitet.local` DB writes.
+    """
+    import random
+
+    from upande_scp.serverscripts.common.cache_utils import K_BEDS_AND_ZONES_V2
+    from upande_scp.serverscripts.geo.get_beds_and_zones import getBedsAndZones
+
+    _, originals, _ = _load_zones()
+
+    # Force a real rebuild through the whitelisted endpoint, not a cache hit.
+    frappe.cache().delete_value(K_BEDS_AND_ZONES_V2)
+    frappe.response.pop("data", None)
+    getBedsAndZones()
+    payload = frappe.response.get("data")
+
+    assert isinstance(payload, dict), f"expected dict payload, got {type(payload)}"
+    assert payload.get("v") == 2, f"expected v=2 marker, got {payload.get('v')!r}"
+    assert "varieties" in payload, "payload missing 'varieties' key"
+
+    decoded_by_name = {}
+    bed_count = 0
+    for variety in payload["varieties"]:
+        for bed_entry in variety["beds"]:
+            bed_count += 1
+            for z in decode_bed(bed_entry):
+                decoded_by_name[z["name"]] = z
+
+    sample_size = min(1500, len(originals))
+    random.seed(20260806)  # deterministic sample across runs
+    sample_names = random.sample(list(originals), sample_size)
+
+    mismatches = []
+    sample_beds = set()
+    for name in sample_names:
+        orig = originals[name]
+        dec = decoded_by_name.get(name)
+        if dec is None:
+            mismatches.append((name, "MISSING from served payload", orig, None))
+            continue
+
+        sample_beds.add(name.rsplit(" - Zone ", 1)[0])
+
+        ox0, oy0 = orig["coords"][0]
+        ox1, oy1 = orig["coords"][1]
+        dx0, dy0 = dec["coords"][0]
+        dx1, dy1 = dec["coords"][1]
+        coord_ok = (
+            abs(ox0 - dx0) <= _COORD_TOL
+            and abs(oy0 - dy0) <= _COORD_TOL
+            and abs(ox1 - dx1) <= _COORD_TOL
+            and abs(oy1 - dy1) <= _COORD_TOL
+        )
+        line_ok = dec["lineId"] == orig["line_id"]
+        if not coord_ok or not line_ok:
+            mismatches.append((name, "coord/lineId mismatch", orig, dec))
+
+    print("check_zone_encoding.run_served_endpoint")
+    print(f"  served payload 'v':     {payload.get('v')}")
+    print(f"  varieties in payload:   {len(payload['varieties'])}")
+    print(f"  beds in payload:        {bed_count}")
+    print(f"  zones sampled:          {sample_size}")
+    print(f"  distinct beds sampled:  {len(sample_beds)}")
+
+    if mismatches:
+        print(f"\nFAILED: {len(mismatches)} mismatches out of {sample_size} sampled zones")
+        for name, reason, orig, dec in mismatches[:10]:
+            print(f"    {name}: {reason}")
+            print(f"        original: {orig}")
+            print(f"        decoded:  {dec}")
+        raise SystemExit(1)
+
+    print(
+        f"\ncheck_zone_encoding.run_served_endpoint: PASSED — 0 mismatches "
+        f"across {sample_size} sampled zones spanning {len(sample_beds)} beds"
+    )

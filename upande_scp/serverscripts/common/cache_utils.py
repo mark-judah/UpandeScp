@@ -36,6 +36,11 @@ K_ZONES_GEOJSON = "scp_zone_geojson"
 K_ZONE_COUNT_BY_BED = "scp:zone_count_by_bed_v1"
 K_BED_COUNT_BY_GH = "scp:bed_count_by_gh_v1"
 K_BEDS_AND_ZONES = "scp:beds_and_zones_payload_v1"
+# v1 is abandoned, not reused: a rolling deploy could otherwise serve a
+# stale v1 (raw_geojson) payload to a v2 (compact-encoded) frontend, or vice
+# versa, for up to TTL_LONG (24h). Both keys are still listed in the Zone/Bed
+# invalidation tuples below so a leftover v1 entry keeps getting cleared too.
+K_BEDS_AND_ZONES_V2 = "scp:beds_and_zones_payload_v2"
 K_GREENHOUSES_GEOJSON = "scp:greenhouses_geojson_v1"
 K_BLOCKS_GEOJSON = "scp:blocks_geojson_v1"
 K_FARMS_AND_GREENHOUSES = "scp:farms_and_greenhouses_v1"
@@ -530,8 +535,8 @@ _DOC_INVALIDATIONS = {
     "Pests Stages": (K_OBSERVATION_TYPES,),
     "Disease Stages": (K_OBSERVATION_TYPES,),
     "Predator Stages": (K_OBSERVATION_TYPES,),
-    "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH, K_SM_UNITS_BY_WH, K_ZONE_CENTROIDS),
-    "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_SM_BEDS_BY_GH, K_ZONE_CENTROIDS),
+    "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_BEDS_AND_ZONES_V2, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH, K_SM_UNITS_BY_WH, K_ZONE_CENTROIDS),
+    "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_BEDS_AND_ZONES_V2, K_SM_BEDS_BY_GH, K_ZONE_CENTROIDS),
     "Warehouse": (K_GREENHOUSES_GEOJSON, K_BLOCKS_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_SM_UNITS_BY_WH, K_FARM_HIERARCHY, K_ZONE_CENTROIDS),
     "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_FARM_HIERARCHY),
     "Orchard Tree": (K_SM_UNITS_BY_WH,),

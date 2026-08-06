@@ -9,14 +9,15 @@ import {
   shortMethod,
   formatBytes,
   formatMs,
-  formatElapsed,
   type MethodAgg,
 } from "@/lib/perf";
 
-// "Total" here is cumulative time spent waiting on `call()` (fetch + parse)
-// since page load — the number that actually moves when a query gets faster
-// or a payload gets fatter. A plain wall clock would drift past any threshold
-// within seconds and stay red forever, which would make the colour useless.
+// The headline figure is wall-clock time since page load — what the operator
+// actually experienced, and directly comparable to a DevTools load time. The
+// colour thresholds below are keyed to that figure. The cumulative
+// fetch+parse total (labelled "Σ api" alongside it) stays useful on its own:
+// it exposes an expensive endpoint even when requests overlap and their
+// wall-clock cost hides behind each other.
 const GREEN_MS = 2000;
 const AMBER_MS = 5000;
 
@@ -35,10 +36,12 @@ function ratioLabel(rawBytes: number, wireBytes: number): string {
  * Opt-in performance HUD. Hidden unless `?perf=1` was ever passed in the URL
  * (or `localStorage.setItem('scp:perf','1')`) — see `lib/perf.ts`.
  *
- * Collapsed: a small badge, bottom-left, showing cumulative request time
- * (coloured), request count, and total wire bytes. Click to expand a
- * per-endpoint breakdown, slowest first, with the compression ratio that
- * proves gzip + payload trimming are actually working.
+ * Collapsed: a small badge, bottom-left, showing wall-clock time since page
+ * load (coloured — the "felt speed" figure), the cumulative API fetch+parse
+ * time next to it (labelled "Σ … api", useful for spotting an expensive
+ * endpoint even when requests overlap), request count, and total wire bytes.
+ * Click to expand a per-endpoint breakdown, slowest first, with the
+ * compression ratio that proves gzip + payload trimming are actually working.
  */
 export function PerfClock() {
   const [enabled] = useState(() => isPerfEnabled());
@@ -79,9 +82,17 @@ export function PerfClock() {
           ⏱
         </span>
         <span
-          className={cn("font-semibold tabular-nums", totalColorClass(requestMs))}
+          className={cn("font-semibold tabular-nums", totalColorClass(sessionMs))}
+          title="Wall-clock time since page load — what you actually experienced"
         >
-          {formatMs(requestMs)}
+          {formatMs(sessionMs)}
+        </span>
+        <span className="text-[var(--sd-quiet)]">·</span>
+        <span
+          className="tabular-nums text-[var(--sd-muted)]"
+          title="Cumulative API fetch+parse time — sum across all calls, including overlapping ones"
+        >
+          Σ {formatMs(requestMs)} api
         </span>
         <span className="text-[var(--sd-quiet)]">·</span>
         <span className="tabular-nums text-[var(--sd-muted)]">
@@ -90,9 +101,6 @@ export function PerfClock() {
         <span className="text-[var(--sd-quiet)]">·</span>
         <span className="tabular-nums text-[var(--sd-muted)]">
           {formatBytes(totals.wireBytes)}
-        </span>
-        <span className="text-[var(--sd-quiet)]">
-          · {formatElapsed(sessionMs)} open
         </span>
       </button>
 

@@ -46,84 +46,17 @@ export interface ScoutingEntry {
   _hasAnyObs?: boolean;
 }
 
-export interface PestAgg {
-  name: string;
-  counts: Array<
-    PestObs & {
-      date: string;
-      greenhouse: string;
-      bed: string;
-      zone: string;
-      block: string;
-      row: string;
-      tree: string;
-    }
-  >;
-  stages: Record<string, number>;
-  sections: Record<string, number>;
-  severity: { low: number; moderate: number; high: number };
-}
-
-export interface DiseaseAgg {
-  name: string;
-  counts: Array<{
-    date: string;
-    stage?: string;
-    section?: string;
-    greenhouse: string;
-    bed: string;
-    zone: string;
-    block: string;
-    row: string;
-    tree: string;
-  }>;
-  stages: Record<string, number>;
-  severity: { low: number; moderate: number; high: number };
-}
-
-export interface TrapAgg {
-  trap: string;
-  pest: string;
-  location?: string;
-  counts: Array<{
-    date: string;
-    count: number;
-    location?: string;
-    greenhouse?: string;
-  }>;
-  total: number;
-}
-
-export interface GreenhouseAgg {
-  name: string;
-  pests: number;
-  diseases: number;
-  traps: number;
-  scouts: Set<string>;
-  scoutCount?: number;
-  alerts: number;
-}
-
-export interface ScoutAgg {
-  entries: number;
-  name: string;
-}
-
-export interface DailyAgg {
-  pests: number;
-  diseases: number;
-  traps: number;
-  total: number;
-}
-
+/**
+ * Used to also carry six aggregate structures (pests/diseases/traps/
+ * greenhouses/scouts/daily), computed on every ``buildScoutingData`` call.
+ * Removed (R7 Task 3): no page reads them — all five scouting-dashboard
+ * consumers derive their own views from ``entries`` alone. Re-verify with a
+ * repo-wide grep for ``.pests``/``.diseases``/``.traps``/``.greenhouses``/
+ * ``.scouts``/``.daily`` reached via a ``useScouting`` payload before
+ * reintroducing any of them.
+ */
 export interface ProcessedData {
   entries: ScoutingEntry[];
-  pests: Record<string, PestAgg>;
-  diseases: Record<string, DiseaseAgg>;
-  traps: Record<string, TrapAgg>;
-  greenhouses: Record<string, GreenhouseAgg>;
-  scouts: Record<string, ScoutAgg>;
-  daily: Record<string, DailyAgg>;
 }
 
 export interface ChunkResponse {

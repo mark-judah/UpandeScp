@@ -183,182 +183,19 @@ export function normalizeScoutingEntries(raw: RawEntry[]): ScoutingEntry[] {
     });
 }
 
-export function getEntryWarehouse(entry: ScoutingEntry): string {
-  return entry.greenhouse || entry.block || "Unknown";
-}
-
-export function getScoutIdentity(entry: ScoutingEntry): {
-  key: string;
-  label: string;
-} {
-  const candidates = [
-    entry.scouts_name,
-    entry.modified_by,
-    entry.owner,
-  ].filter(Boolean);
-  const labelFromEmail = (s: string) => {
-    if (!s.includes("@")) return s;
-    const prefix = s.split("@")[0];
-    return prefix
-      .split(/[._-]/g)
-      .filter(Boolean)
-      .map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase())
-      .join(" ");
-  };
-  const raw = candidates[0] || "";
-  return { key: raw, label: labelFromEmail(raw) };
-}
-
-const sevByMagnitude = (count: number): "low" | "moderate" | "high" => {
-  if (count > 15) return "high";
-  if (count > 5) return "moderate";
-  return "low";
-};
-
-const sevByDiseaseKeyword = (
-  s: string,
-): "low" | "moderate" | "high" => {
-  const t = (s || "").toLowerCase();
-  if (t.includes("high") || t.includes("severe") || t.includes("active"))
-    return "high";
-  if (t.includes("moderate") || t.includes("medium")) return "moderate";
-  return "low";
-};
-
+/**
+ * Normalize the raw server rows into ``ScoutingEntry`` records.
+ *
+ * Used to also build six aggregate structures here (pests/diseases/traps/
+ * greenhouses/scouts/daily) on every call, but none of the five scouting
+ * dashboard pages (RoseScouting, Observations, TrapsMap, AvocadoHeatMap,
+ * AvocadoTreeMap) ever read them — each derives its own view straight from
+ * ``data.entries``. Re-verified against the whole frontend/src tree before
+ * deleting: no consumer reaches ``.pests``/``.diseases``/``.traps``/
+ * ``.greenhouses``/``.scouts``/``.daily`` off a ``useScouting`` payload.
+ */
 export function buildScoutingData(rawEntries: RawEntry[]): ProcessedData {
-  const entries = normalizeScoutingEntries(rawEntries);
-  const data: ProcessedData = {
-    entries,
-    pests: {},
-    diseases: {},
-    traps: {},
-    greenhouses: {},
-    scouts: {},
-    daily: {},
-  };
-
-  entries.forEach((entry) => {
-    const date = entry.date_of_capture;
-    const wh = getEntryWarehouse(entry);
-    const { key: scoutKey, label: scoutLabel } = getScoutIdentity(entry);
-
-    if (!data.daily[date])
-      data.daily[date] = { pests: 0, diseases: 0, traps: 0, total: 0 };
-    data.daily[date].total++;
-    if (!data.greenhouses[wh])
-      data.greenhouses[wh] = {
-        name: wh,
-        pests: 0,
-        diseases: 0,
-        traps: 0,
-        scouts: new Set(),
-        alerts: 0,
-      };
-
-    const locMeta = {
-      greenhouse: entry.greenhouse,
-      bed: entry.bed,
-      zone: entry.zone,
-      block: entry.block,
-      row: entry.row,
-      tree: entry.tree,
-    };
-
-    entry.pests_scouting_entry.forEach((p) => {
-      const name = p.pest || "Unknown";
-      const stage = p.stage || "Unknown";
-      if (!data.pests[name])
-        data.pests[name] = {
-          name,
-          counts: [],
-          stages: {},
-          sections: {},
-          severity: { low: 0, moderate: 0, high: 0 },
-        };
-      const count = toNumber(p.count || 1);
-      data.pests[name].counts.push({
-        ...p,
-        date,
-        count,
-        stage,
-        section: p.plant_section,
-        ...locMeta,
-      } as any);
-      data.pests[name].stages[stage] =
-        (data.pests[name].stages[stage] || 0) + count;
-      if (p.plant_section)
-        data.pests[name].sections[p.plant_section] =
-          (data.pests[name].sections[p.plant_section] || 0) + count;
-      data.pests[name].severity[sevByMagnitude(count)]++;
-      data.daily[date].pests++;
-      data.greenhouses[wh].pests++;
-    });
-
-    entry.diseases_scouting_entry.forEach((d) => {
-      const name = d.disease || "Unknown";
-      const stage = d.stage || d.severity_level || "";
-      if (!data.diseases[name])
-        data.diseases[name] = {
-          name,
-          counts: [],
-          stages: {},
-          severity: { low: 0, moderate: 0, high: 0 },
-        };
-      data.diseases[name].counts.push({
-        date,
-        stage,
-        section: d.plant_section,
-        ...locMeta,
-      });
-      if (stage)
-        data.diseases[name].stages[stage] =
-          (data.diseases[name].stages[stage] || 0) + 1;
-      data.diseases[name].severity[
-        sevByDiseaseKeyword(d.severity_level || d.stage || "")
-      ]++;
-      data.daily[date].diseases++;
-      data.greenhouses[wh].diseases++;
-    });
-
-    entry.trap_scouting_entry.forEach((t) => {
-      const trapId = t.trap || "Unknown";
-      const pest = t.pest || "Unknown";
-      const key = `${trapId}-${pest}`;
-      const loc = t.location;
-      const count = toNumber(t.count || 0);
-      if (!data.traps[key])
-        data.traps[key] = {
-          trap: trapId,
-          pest,
-          location: loc,
-          counts: [],
-          total: 0,
-        };
-      data.traps[key].counts.push({
-        date,
-        count,
-        location: loc,
-        greenhouse: wh,
-      });
-      data.traps[key].total += count;
-      if (count > 10) data.greenhouses[wh].alerts++;
-      data.daily[date].traps++;
-      data.greenhouses[wh].traps++;
-    });
-
-    if (scoutKey) {
-      data.greenhouses[wh].scouts.add(scoutKey);
-      if (!data.scouts[scoutKey])
-        data.scouts[scoutKey] = { entries: 0, name: scoutLabel || scoutKey };
-      data.scouts[scoutKey].entries++;
-    }
-  });
-
-  Object.values(data.greenhouses).forEach((g) => {
-    g.scoutCount = g.scouts.size;
-  });
-
-  return data;
+  return { entries: normalizeScoutingEntries(rawEntries) };
 }
 
 /* ---------- API helpers ---------- */

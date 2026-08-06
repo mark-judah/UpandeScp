@@ -5,7 +5,7 @@ import { deriveObservationColors, deriveObservationRoster } from "./derive-obser
 import { deriveTrapMarkers, severityColor } from "./derive-traps";
 
 function data(entries: any[]): ProcessedData {
-  return { entries, pests: {}, diseases: {}, traps: {}, greenhouses: {}, scouts: {}, daily: {} } as ProcessedData;
+  return { entries } as ProcessedData;
 }
 
 describe("deriveScoutColors", () => {

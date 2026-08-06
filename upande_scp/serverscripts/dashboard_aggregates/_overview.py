@@ -121,7 +121,7 @@ def _observation_rows(where: str, params: dict) -> list:
     the Overview metrics."""
     return frappe.db.sql(
         f"""
-        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
+        SELECT STRAIGHT_JOIN se.name, se.date_of_capture, se.greenhouse, se.block,
                se.scouts_name, se.zone, se.bed, se.tree,
                'pest'    AS kind,
                p.pest    AS obs_name, p.count AS count,
@@ -130,7 +130,7 @@ def _observation_rows(where: str, params: dict) -> list:
         JOIN `tabPests Scouting Entry` p ON p.parent = se.name
         WHERE {where}
         UNION ALL
-        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
+        SELECT STRAIGHT_JOIN se.name, se.date_of_capture, se.greenhouse, se.block,
                se.scouts_name, se.zone, se.bed, se.tree,
                'disease' AS kind,
                d.disease AS obs_name, NULL AS count,
@@ -139,7 +139,7 @@ def _observation_rows(where: str, params: dict) -> list:
         JOIN `tabDiseases Scouting Entry` d ON d.parent = se.name
         WHERE {where}
         UNION ALL
-        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
+        SELECT STRAIGHT_JOIN se.name, se.date_of_capture, se.greenhouse, se.block,
                se.scouts_name, se.zone, se.bed, se.tree,
                'trap'    AS kind,
                t.trap    AS obs_name, t.count AS count,

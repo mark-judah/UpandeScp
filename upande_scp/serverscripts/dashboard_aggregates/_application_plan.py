@@ -205,7 +205,7 @@ def _query_kind(filters: dict, kind: str) -> list:
 
     rows = frappe.db.sql(
         f"""
-        SELECT se.zone                                  AS zone,
+        SELECT STRAIGHT_JOIN se.zone                    AS zone,
                c.{col}                                  AS obs_name,
                c.plant_section                          AS section,
                c.stage                                  AS stage,

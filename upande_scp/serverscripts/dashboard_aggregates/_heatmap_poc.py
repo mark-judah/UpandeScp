@@ -68,7 +68,7 @@ def _build(greenhouse: str, obs_name: str, obs_kind: str) -> dict:
     # before the per-zone join keeps the GROUP BY cheap on a busy table.
     date_rows = frappe.db.sql(
         f"""
-        SELECT DISTINCT se.date_of_capture
+        SELECT DISTINCT STRAIGHT_JOIN se.date_of_capture
         FROM `tabScouting Entry` se
         JOIN `{table}` c ON c.parent = se.name
         WHERE (se.greenhouse = %(gh)s OR se.block = %(gh)s)
@@ -88,7 +88,7 @@ def _build(greenhouse: str, obs_name: str, obs_kind: str) -> dict:
     # Step 2: per-zone, per-stage counts for each of those three dates.
     zone_rows = frappe.db.sql(
         f"""
-        SELECT DATE_FORMAT(se.date_of_capture, '%%Y-%%m-%%d') AS d,
+        SELECT STRAIGHT_JOIN DATE_FORMAT(se.date_of_capture, '%%Y-%%m-%%d') AS d,
                se.zone,
                c.stage AS stage,
                COUNT(*) AS n

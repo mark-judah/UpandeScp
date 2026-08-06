@@ -46,7 +46,7 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
     publish_progress(job_id, 25, "loading pest rows")
     pests = frappe.db.sql(
         f"""
-        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
+        SELECT STRAIGHT_JOIN se.name, se.date_of_capture, se.greenhouse, se.block,
                se.zone,
                p.pest, p.count
         FROM `tabScouting Entry` se
@@ -59,7 +59,7 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
     publish_progress(job_id, 60, "loading trap rows")
     traps = frappe.db.sql(
         f"""
-        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
+        SELECT STRAIGHT_JOIN se.name, se.date_of_capture, se.greenhouse, se.block,
                t.trap, t.pest, t.count
         FROM `tabScouting Entry` se
         JOIN `tabTrap Scouting Entry` t ON t.parent = se.name

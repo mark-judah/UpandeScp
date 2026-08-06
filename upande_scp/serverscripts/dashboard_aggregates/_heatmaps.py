@@ -115,7 +115,7 @@ def _query_kind(where: str, params: dict, mode: str) -> list:
     )
     return frappe.db.sql(
         f"""
-        SELECT
+        SELECT STRAIGHT_JOIN
             COALESCE(NULLIF(se.greenhouse, ''), se.block)   AS greenhouse,
             c.{col}                                         AS obs_name,
             DATE_FORMAT(se.date_of_capture, '%%Y-%%m-%%d')  AS d,

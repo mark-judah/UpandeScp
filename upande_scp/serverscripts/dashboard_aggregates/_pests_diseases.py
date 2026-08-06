@@ -64,7 +64,7 @@ def _build(kind: str, filters: dict, scope, job_id: str = "") -> dict:
     publish_progress(job_id, 20, f"loading {kind} observations")
     rows = frappe.db.sql(
         f"""
-        SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
+        SELECT STRAIGHT_JOIN se.name, se.date_of_capture, se.greenhouse, se.block,
                se.zone, se.bed, se.tree,
                c.{col} AS obs_name, c.plant_section AS plant_section,
                c.stage AS stage,

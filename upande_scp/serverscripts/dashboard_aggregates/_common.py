@@ -320,17 +320,48 @@ def publish_progress(job_id: str, percent: int, label: str = "") -> None:
         pass
 
 
+def partition_scope(names, units=None) -> tuple:
+    """Split warehouse names into (greenhouse-type, block-type).
+
+    The location column a Scouting Entry populates is decided by the
+    warehouse's type, not by the crop: on kaitet 293 769 entries resolve
+    via `greenhouse` (warehouse_type 'Greenhouse') and 3 362 via `block`
+    ('Block'), with zero rows carrying both or neither. Keying on type
+    rather than crop also means a new block-based crop needs no code change.
+
+    Unknown names default to greenhouse — 2 775 kaitet entries have a NULL
+    crop and use the greenhouse column, and dropping them would silently
+    change every dashboard number.
+    """
+    if units is None:
+        from upande_scp.serverscripts.scouting import scouting_metrics
+        units = scouting_metrics.get_units_by_warehouse() or {}
+    ghs, blocks = [], []
+    for n in names:
+        if (units.get(n) or {}).get("type") == "block":
+            blocks.append(n)
+        else:
+            ghs.append(n)
+    return ghs, blocks
+
+
 def parent_filter_conditions(
     from_date: str,
     to_date: str,
     crop: str,
     greenhouse_scope: list | None,
+    units=None,
 ) -> tuple:
     """Build a ``(sql_where, params_dict)`` pair restricting tabScouting Entry.
 
     Returns ('1=0', {}) if greenhouse_scope is an empty list (i.e. farm with
     no greenhouses — filter excludes everything). None means no greenhouse
     filter at all.
+
+    A single-column predicate is emitted whenever the scope is all one
+    warehouse type, which is what lets scouting_date_gh_idx /
+    scouting_date_block_idx drive the query. Mixed scopes keep the
+    disjunction; that is rare and correctness wins over the index.
     """
     if greenhouse_scope == []:
         return "1=0", {}
@@ -343,9 +374,17 @@ def parent_filter_conditions(
         params["crop"] = crop
 
     if greenhouse_scope is not None:
-        # MySQL/MariaDB: place-holder list expansion via frappe.db.escape
-        gh_list = ", ".join(frappe.db.escape(g) for g in greenhouse_scope)
-        parts.append(f"(se.greenhouse IN ({gh_list}) OR se.block IN ({gh_list}))")
+        ghs, blocks = partition_scope(greenhouse_scope, units=units)
+        gh_sql = ", ".join(frappe.db.escape(g) for g in ghs)
+        blk_sql = ", ".join(frappe.db.escape(b) for b in blocks)
+        if ghs and blocks:
+            parts.append(
+                f"(se.greenhouse IN ({gh_sql}) OR se.block IN ({blk_sql}))"
+            )
+        elif blocks:
+            parts.append(f"se.block IN ({blk_sql})")
+        else:
+            parts.append(f"se.greenhouse IN ({gh_sql})")
 
     return " AND ".join(parts), params
 

@@ -1,0 +1,1853 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Data bridge — options paper · upande_scp</title>
+<meta name="description" content="Measured options paper on speeding up the SCP data bridge: sectional loading, indexes, Redis, live sync.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#090d0f; --ink2:#0f1518; --ink3:#141c20;
+  --paper:#e9e5dd; --dim:#98a3a7; --faint:#6b7679;
+  --hot:#ff8f45; --cool:#63d2d9; --ok:#7ad98d; --bad:#ff6257; --new:#ffd166;
+  --rule:rgba(233,229,221,.13); --rule2:rgba(233,229,221,.07);
+  --mono:ui-monospace,"DejaVu Sans Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --serif:"Newsreader",Georgia,"Times New Roman",serif;
+  --disp:"Bricolage Grotesque","Chivo",Helvetica,sans-serif;
+  --measure:70ch;
+}
+[data-theme=light]{
+  --ink:#f5f2ec; --ink2:#fffdf8; --ink3:#eae5db;
+  --paper:#16191a; --dim:#4e585c; --faint:#78838700;
+  --faint:#787f82;
+  --hot:#b8480b; --cool:#0d6f78; --ok:#1c7a34; --bad:#b0271c; --new:#8a6200;
+  --rule:rgba(22,25,26,.16); --rule2:rgba(22,25,26,.08);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:2rem}
+body{
+  margin:0; background:var(--ink); color:var(--paper);
+  font-family:var(--serif); font-size:17.5px; line-height:1.62;
+  font-variation-settings:"opsz" 16;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{ /* grain */
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:99;opacity:.035;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 clamp(1rem,4vw,3rem) 8rem}
+
+/* ── masthead ─────────────────────────────────────────── */
+header.mast{
+  border-bottom:1px solid var(--rule); margin-bottom:3.5rem;
+  padding:clamp(2.5rem,7vw,5rem) 0 2rem; position:relative;
+}
+header.mast::after{
+  content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:linear-gradient(90deg,var(--hot),transparent 45%);
+}
+.eyebrow{
+  font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--hot);margin:0 0 1.4rem;display:flex;gap:1.2rem;flex-wrap:wrap;align-items:center;
+}
+.eyebrow .dot{width:5px;height:5px;background:var(--hot);border-radius:50%;display:inline-block}
+h1{
+  font-family:var(--disp);font-weight:800;font-size:clamp(2.3rem,6.2vw,4.3rem);
+  line-height:1.02;letter-spacing:-.032em;margin:0 0 1.5rem;max-width:16ch;
+}
+h1 em{font-style:normal;color:var(--hot)}
+.standfirst{font-size:1.12rem;color:var(--dim);max-width:62ch;margin:0 0 2rem}
+.facts{
+  display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--rule);
+  font-family:var(--mono);font-size:12px;
+}
+.facts div{padding:.75rem 1.1rem;border-right:1px solid var(--rule);flex:1 1 auto}
+.facts div:last-child{border-right:0}
+.facts b{display:block;color:var(--faint);font-weight:400;font-size:10px;
+  letter-spacing:.16em;text-transform:uppercase;margin-bottom:.3rem}
+.facts span{color:var(--paper)}
+.facts .hot span{color:var(--hot)}
+
+/* ── layout ───────────────────────────────────────────── */
+.cols{display:grid;grid-template-columns:1fr;gap:3rem}
+@media(min-width:1080px){
+  .cols{grid-template-columns:210px minmax(0,1fr);gap:4rem;align-items:start}
+  .toc{position:sticky;top:2rem;max-height:88vh;overflow-y:auto}
+}
+.toc{font-family:var(--mono);font-size:11.5px;line-height:1.5}
+.toc-h{color:var(--hot);letter-spacing:.2em;text-transform:uppercase;font-size:10px;
+  margin:0 0 .9rem;padding-bottom:.6rem;border-bottom:1px solid var(--rule)}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:.1rem 0}
+.toc li.l3{padding-left:1rem}
+.toc a{color:var(--dim);text-decoration:none;display:block;padding:.28rem .4rem;
+  border-left:1px solid transparent;transition:.16s}
+.toc a:hover{color:var(--paper);background:var(--ink2);border-left-color:var(--hot)}
+.toc a.on{color:var(--hot);border-left-color:var(--hot)}
+@media(max-width:1079px){.toc{display:none}}
+
+/* ── prose ────────────────────────────────────────────── */
+main{min-width:0}
+main > p, main > ul, main > ol, main > blockquote{max-width:var(--measure)}
+h2{
+  font-family:var(--disp);font-weight:800;font-size:clamp(1.55rem,3vw,2.15rem);
+  letter-spacing:-.022em;line-height:1.14;margin:4.5rem 0 1.4rem;
+  padding-top:1.6rem;border-top:1px solid var(--rule);position:relative;
+}
+h3{
+  font-family:var(--disp);font-weight:700;font-size:1.16rem;letter-spacing:-.012em;
+  margin:2.8rem 0 .9rem;color:var(--paper);
+}
+h3::before{content:"";display:inline-block;width:14px;height:2px;background:var(--hot);
+  vertical-align:middle;margin-right:.6rem;transform:translateY(-2px)}
+p{margin:0 0 1.15rem}
+strong{font-weight:700;color:var(--paper)}
+em{font-style:italic;color:var(--dim)}
+a{color:var(--cool);text-decoration:none;border-bottom:1px solid var(--rule)}
+a:hover{border-bottom-color:var(--cool)}
+ul,ol{padding-left:1.3rem;margin:0 0 1.3rem}
+li{margin:.42rem 0}
+li::marker{color:var(--hot)}
+blockquote{
+  margin:1.6rem 0;padding:.2rem 0 .2rem 1.4rem;border-left:2px solid var(--hot);
+  color:var(--dim);font-style:italic;
+}
+del{color:var(--faint);text-decoration-color:var(--bad)}
+hr{border:0;border-top:1px solid var(--rule2);margin:3rem 0}
+code{
+  font-family:var(--mono);font-size:.83em;background:var(--ink3);
+  padding:.13em .38em;border-radius:2px;color:var(--cool);
+  border:1px solid var(--rule2);
+}
+h2 code,h3 code{font-size:.8em}
+
+/* ── figures: diagrams + code ─────────────────────────── */
+figure{margin:1.9rem 0;position:relative;background:var(--ink2);
+  border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+figure.diagram{background:
+  linear-gradient(var(--ink2),var(--ink2)) padding-box,
+  linear-gradient(135deg,rgba(99,210,217,.34),rgba(255,143,69,.22)) border-box;
+  border:1px solid transparent;}
+.blk-label{
+  display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;
+  color:var(--faint);padding:.6rem .95rem .1rem;text-transform:uppercase;
+}
+figure.diagram .blk-label{color:var(--cool)}
+figure pre{
+  margin:0;padding:.5rem .95rem 1.05rem;overflow-x:auto;
+  font-family:var(--mono);font-size:12.6px;line-height:1.44;
+  color:var(--dim);white-space:pre;tab-size:2;
+  font-variant-ligatures:none;
+}
+figure.diagram pre{color:#a9c4c7;font-size:12.9px}
+figure pre::-webkit-scrollbar{height:7px}
+figure pre::-webkit-scrollbar-thumb{background:var(--rule);border-radius:4px}
+.m-new{color:var(--new);font-weight:700}
+.m-del{color:var(--bad);font-weight:700}
+.m-ok{color:var(--ok);font-weight:700}
+.m-arrow{color:var(--hot)}
+
+/* ── tables ───────────────────────────────────────────── */
+.tw{overflow-x:auto;margin:1.9rem 0;border:1px solid var(--rule);border-radius:3px}
+table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12.6px;
+  line-height:1.45;background:var(--ink2)}
+thead th{
+  text-align:left;font-weight:400;color:var(--hot);background:var(--ink3);
+  font-size:9.8px;letter-spacing:.15em;text-transform:uppercase;
+  padding:.72rem .85rem;border-bottom:1px solid var(--rule);white-space:nowrap;
+}
+td{padding:.6rem .85rem;border-bottom:1px solid var(--rule2);color:var(--dim);
+  vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--ink3)}
+td strong{color:var(--hot);font-weight:700}
+td code{background:transparent;border:0;padding:0;color:var(--cool)}
+td.ctr{text-align:center}
+table em{color:var(--faint)}
+
+/* ── controls ─────────────────────────────────────────── */
+.ctl{position:fixed;right:1rem;bottom:1rem;z-index:100;display:flex;gap:.4rem}
+.ctl button{
+  font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  background:var(--ink2);color:var(--dim);border:1px solid var(--rule);
+  padding:.55rem .8rem;border-radius:2px;cursor:pointer;transition:.16s;
+}
+.ctl button:hover{color:var(--hot);border-color:var(--hot)}
+
+footer{margin-top:5rem;padding-top:1.6rem;border-top:1px solid var(--rule);
+  font-family:var(--mono);font-size:11px;color:var(--faint);
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+
+/* ── reveal ───────────────────────────────────────────── */
+@media(prefers-reduced-motion:no-preference){
+  main > h2,main > figure,main > .tw{animation:rise .5s cubic-bezier(.2,.7,.3,1) both}
+  @keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+}
+
+@media print{
+  :root{--ink:#fff;--ink2:#fff;--ink3:#f4f2ee;--paper:#000;--dim:#222;--rule:#bbb}
+  body::before,.ctl,.toc{display:none}
+  .cols{grid-template-columns:1fr}
+  figure,.tw{break-inside:avoid}
+  h2{break-after:avoid}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow"><span class="dot"></span> Options paper &nbsp;·&nbsp; not a spec
+     <span>upande_scp</span><span>rendered 2026-08-06</span></p>
+  <h1>Making the data <em>bridge</em> fast</h1>
+  <p class="standfirst"></p>
+  <div class="facts">
+    <div class="hot"><b>One week, today</b><span>83.5 MB · uncompressed</span></div>
+    <div class="hot"><b>After A2</b><span>~80 KB</span></div>
+    <div><b>Measured on</b><span>kaitet.local · 297 131 entries</span></div>
+    <div><b>Target scale</b><span>30M – 100M</span></div>
+  </div>
+</header>
+
+<div class="cols">
+  <nav class="toc" aria-label="Contents"><p class="toc-h">Contents</p><ol><li class="l2"><a href="#1-goal-and-the-invariant">1. Goal and the invariant</a></li><li class="l2"><a href="#2-what-we-have-today">2. What we have today</a></li><li class="l3"><a href="#2-1-the-four-layers">2.1 The four layers</a></li><li class="l3"><a href="#2-2-measurements">2.2 Measurements</a></li><li class="l2"><a href="#3-the-four-bottlenecks-named">3. The four bottlenecks, named</a></li><li class="l2"><a href="#4-how-we-change-the-bridge-without-changing-the-display">4. How we change the bridge without changing the display</a></li><li class="l2"><a href="#5-approaches">5. Approaches</a></li><li class="l3"><a href="#a0-keep-the-architecture-tune-it">A0 — Keep the architecture, tune it</a></li><li class="l3"><a href="#a1-slice-proportional-queries">A1 — Slice-proportional queries</a></li><li class="l3"><a href="#a2-aggregate-bridge-ship-answers-not-rows">A2 — Aggregate bridge: ship answers, not rows</a></li><li class="l3"><a href="#a3-rollup-fact-layer">A3 — Rollup / fact layer</a></li><li class="l3"><a href="#a4-push-deltas-instead-of-broadcasting-invalidation">A4 — Push deltas instead of broadcasting invalidation</a></li><li class="l3"><a href="#a5-columnar-offload">A5 — Columnar offload</a></li><li class="l3"><a href="#comparison">Comparison</a></li><li class="l2"><a href="#6-delivery-layer-concerns-sectional-loading-indexes-redis">6. Delivery-layer concerns — sectional loading, indexes, Redis</a></li><li class="l3"><a href="#6-1-sectional-loading-partially-implemented-and-capped">6.1 Sectional loading — partially implemented, and capped</a></li><li class="l3"><a href="#6-2-database-indexes-partially-implemented-silently-incomplete">6.2 Database indexes — partially implemented, silently incomplete</a></li><li class="l3"><a href="#6-3-our-own-redis-or-erpnext-s-a-real-choice">6.3 Our own Redis, or ERPNext&#x27;s? — a real choice</a></li><li class="l3"><a href="#6-4-two-free-wins-found-while-checking-the-above">6.4 Two free wins found while checking the above</a></li><li class="l3"><a href="#6-5-a-related-finding-every-api-call-is-a-post">6.5 A related finding: every API call is a POST</a></li><li class="l2"><a href="#7-caching-architecture">7. Caching architecture</a></li><li class="l3"><a href="#what-s-wrong-now">What&#x27;s wrong now</a></li><li class="l3"><a href="#proposed-tiers">Proposed tiers</a></li><li class="l2"><a href="#8-live-sync-the-target-behaviour">8. Live sync — the target behaviour</a></li><li class="l2"><a href="#9-scaling-to-30m-and-100m">9. Scaling to 30M and 100M</a></li><li class="l2"><a href="#10-recommended-path">10. Recommended path</a></li><li class="l2"><a href="#10a-zone-geometry-compression-built-54-80-mb-5-13-mb">10a. Zone geometry compression — BUILT. 54.80 MB → 5.13 MB</a></li><li class="l3"><a href="#what-was-actually-built-and-what-was-dropped">What was actually built — and what was dropped</a></li><li class="l3"><a href="#wire-format">Wire format</a></li><li class="l3"><a href="#why-this-mattered-more-than-compression">Why this mattered more than compression</a></li><li class="l3"><a href="#notes-for-whoever-touches-this-next">Notes for whoever touches this next</a></li><li class="l2"><a href="#10a-orig-the-original-measurement-that-justified-this">10a-orig. The original measurement that justified this</a></li><li class="l2"><a href="#10b-what-we-actually-built-results-failures-and-the-300m-projection">10b. What we actually built — results, failures, and the 300M projection</a></li><li class="l3"><a href="#the-architecture-as-implemented">The architecture as implemented</a></li><li class="l3"><a href="#what-worked">What worked</a></li><li class="l3"><a href="#what-failed">What failed</a></li><li class="l3"><a href="#the-bug-that-mattered-more-than-the-speed">The bug that mattered more than the speed</a></li><li class="l3"><a href="#sectional-loading-partially-and-capped">Sectional loading — partially, and capped</a></li><li class="l3"><a href="#does-one-user-s-fetch-warm-the-cache-for-everyone-yes">Does one user&#x27;s fetch warm the cache for everyone? — Yes</a></li><li class="l3"><a href="#will-compression-survive-a-deploy-now-yes-previously-no">Will compression survive a deploy? — Now yes; previously no</a></li><li class="l3"><a href="#measured-compression-per-endpoint-nginx-level-5">Measured compression, per endpoint (nginx level 5)</a></li><li class="l3"><a href="#end-to-end-what-happens-at-300m-scouting-entries">End-to-end: what happens at 300M scouting entries</a></li><li class="l3"><a href="#honest-scorecard">Honest scorecard</a></li><li class="l2"><a href="#11-explicitly-not-doing">11. Explicitly not doing</a></li><li class="l2"><a href="#12-decisions-needed-before-a-spec">12. Decisions needed before a spec</a></li></ol></nav>
+  <main>
+<p><strong>Status:</strong> options paper, not a spec. Ends with the decisions needed before a spec.
+<strong>Companion to:</strong> <code>dataload.md</code> (the external research thread).
+<strong>Every number below was measured on <code>kaitet.local</code></strong> (297 131 Scouting Entries, 1–13 July 2026) unless labelled <em>projected</em>.</p>
+<hr>
+<h2 id="1-goal-and-the-invariant">1. Goal and the invariant</h2>
+<p><strong>Goal:</strong> make the bridge between MariaDB and the React frontend fast enough to hold at 30M–100M scouting entries, with many concurrent users on live-updating views.</p>
+<p><strong>Invariant — nothing on screen changes.</strong> Same pages, same numbers, same colours, same filters. This is a transport and serving change only. Section 4 describes how we <em>prove</em> that rather than hope for it.</p>
+<p>Two things follow from the invariant that are worth stating early, because they rule out a lot of otherwise-reasonable ideas:</p>
+<ul>
+<li>We cannot "just show less data" — no reducing the date window, no capping zones, no downsampling the heatmap. Those are display changes.</li>
+<li>We cannot change what a number <em>means</em>. If <code>Observations</code> currently counts an entry with three pest rows as three, the new path counts it as three, including the edge cases nobody documented.</li>
+</ul>
+<hr>
+<h2 id="2-what-we-have-today">2. What we have today</h2>
+<h3 id="2-1-the-four-layers">2.1 The four layers</h3>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>MariaDB  SERVER                                ║ BROWSER
+   │                                           ║
+   ├─<span class="m-arrow">►</span>[L1] getScoutingEntriesChunk             ║
+   │    per-ISO-week, whole site, unfiltered   ║
+   │    └ Redis scp:scouting_payload_v2:{ver}: ║
+   │      {year}-W{nn}  rows  TTL 24h ═════════╬═ 83.5 MB/wk UNCOMPRESSED ═<span class="m-arrow">►</span> scouting-sync.ts
+   ├─<span class="m-arrow">►</span>[L2] get_entries_since                   ║                                  │
+   │    delta by `modified` watermark ═════════╬══════════════════════════════<span class="m-arrow">►</span>   ▼
+   │                                           ║                          IndexedDB (idb.ts)
+   │                                           ║                                  ▼
+   │                                           ║                     readEntries() filters in JS
+   │                                           ║                                  ▼
+   │                                           ║    RoseScouting · Observations · TrapsMap ·
+   │                                           ║    AvocadoHeatMap · AvocadoTreeMap
+   ├─<span class="m-arrow">►</span>[L3] dashboard_aggregates <span class="m-arrow">◄</span> the good path║
+   │    └ Redis scp:dash_agg:{...}  TTL 60s ═══╬═ ~KB ═<span class="m-arrow">►</span> ApplicationPlan (already on L3)
+   └─<span class="m-arrow">►</span>[L4] scp:scouting:dirty broadcast ═══════╬═ nudge, site-wide ═<span class="m-arrow">►</span> every client refetches
+</pre></figure>
+<p><em>Legend — every diagram below redraws this same skeleton.</em> <code>─►</code> unchanged flow · <code>║ ╬</code> the
+browser boundary (the payload crossing it is annotated) · <code>═►</code> data crossing the boundary ·
+<code>╳</code> removed vs this baseline · <code>★</code> new vs this baseline.</p>
+<p>L1 is the problem. From its own header comment in <code>scouting-sync.ts:11</code>:</p>
+<blockquote>
+<p><em>Filtering by greenhouse / farm / crop happens </em><em>after</em><em> IDB reads, never on the server side.</em></p>
+</blockquote>
+<p>The browser downloads the entire site's scouting data week by week, stores it in IndexedDB, and filters it in JavaScript. This is a <strong>dataset replication</strong> architecture. It was a reasonable choice at 50k rows. It does not survive 30M.</p>
+<h3 id="2-2-measurements">2.2 Measurements</h3>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre> one L1 week crossing the ═╬═ boundary: 83.5 MB JSON · 154 640 entries · 566 B each
+ ┌────────────────┬──────────────────────────────┬──────────────────────────────────────┐
+ │ pests·diseases │ zone · greenhouse · lat/lng  │ owner · modified_by · modified · bed │
+ │ ~15% — this IS │ needed by some views         │ read by no page (bed: rarely) —      │
+ │ the payload    │ (lat/lng: maps only)         │ audit + sync bookkeeping             │
+ └────────────────┴──────────────────────────────┴──────────────────────────────────────┘
+   …and 53% of the entries carry zero observations at all
+</pre></figure>
+<p><strong>One ISO week, site-wide</strong> (<code>_build_month_entries('2026-07-06','2026-07-12')</code>):</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>entries returned</td>
+<td>154 640</td>
+</tr>
+<tr>
+<td>JSON payload</td>
+<td><strong>83.5 MB</strong></td>
+</tr>
+<tr>
+<td>gzip <em>potential</em> (measured, zlib level 6)</td>
+<td>5.5 MB — a 15.1× ratio</td>
+</tr>
+<tr>
+<td><strong>actually sent on the wire today</strong></td>
+<td><strong>83.5 MB, uncompressed</strong> — see §6.4</td>
+</tr>
+<tr>
+<td>server build time</td>
+<td>11.7 s</td>
+</tr>
+<tr>
+<td>bytes per entry</td>
+<td>566</td>
+</tr>
+<tr>
+<td>entries carrying <strong>zero</strong> observations</td>
+<td><strong>53%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Where those bytes go</strong> (sampled over 5 000 entries):</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>field</th>
+<th>KB</th>
+<th>needed by any view?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pests</code></td>
+<td>218</td>
+<td><strong>yes</strong> — this is the payload</td>
+</tr>
+<tr>
+<td><code>zone</code></td>
+<td>185</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>owner</code></td>
+<td>151</td>
+<td>no</td>
+</tr>
+<tr>
+<td><code>modified_by</code></td>
+<td>151</td>
+<td>no</td>
+</tr>
+<tr>
+<td><code>bed</code></td>
+<td>141</td>
+<td>rarely</td>
+</tr>
+<tr>
+<td><code>modified</code></td>
+<td>137</td>
+<td>no (sync bookkeeping only)</td>
+</tr>
+<tr>
+<td><code>greenhouse</code></td>
+<td>96</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>latitude</code> / <code>longitude</code></td>
+<td>170</td>
+<td>maps only</td>
+</tr>
+<tr>
+<td><code>diseases</code></td>
+<td>59</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table></div>
+<p>So roughly <strong>15% of the payload is the observation data</strong>, 53% of the rows carry none at all, and several of the largest fields are never read by any page.</p>
+<p><strong>The aggregate path (L3) has its own problem.</strong> <code>EXPLAIN</code> on the ApplicationPlan diagnose query:</p>
+<figure class="codeblock"><span class="blk-label">OUTPUT</span><pre>tabPests Scouting Entry   type=ALL    key=NULL   rows=156653
+tabScouting Entry         type=eq_ref key=PRIMARY
+</pre></figure>
+<p>The optimizer runs the join <strong>backwards</strong> — full-scans the child table, then does a primary-key lookup into the parent for every row, <em>then</em> applies the greenhouse and date filters. Cost is proportional to the whole child table, not to the slice requested. Proof:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>window</th>
+<th>grouped rows</th>
+<th>time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 day</td>
+<td>761</td>
+<td>0.07 s</td>
+</tr>
+<tr>
+<td>1 week</td>
+<td>3 053</td>
+<td><strong>0.42 s</strong></td>
+</tr>
+<tr>
+<td>60 days</td>
+<td>6 127</td>
+<td><strong>0.43 s</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>A 60× wider window costs the same. Forcing parent-first order takes the 60-day case from 423 ms → <strong>179 ms</strong>, and — the actual point — makes cost track the slice instead of the table.</p>
+<p>The <code>OR</code> in <code>WHERE (se.greenhouse = %s OR se.block = %s)</code> is what defeats the planner's selectivity estimate. Both <code>scouting_date_gh_idx</code> and <code>scouting_date_block_idx</code> exist and neither gets used.</p>
+<p><strong>Redis is over budget by design:</strong></p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>maxmemory</code></td>
+<td><strong>1.17 GB</strong></td>
+</tr>
+<tr>
+<td><code>maxmemory-policy</code></td>
+<td><strong>allkeys-lru</strong></td>
+</tr>
+<tr>
+<td>one week of L1 payload</td>
+<td>83.5 MB</td>
+</tr>
+<tr>
+<td>a 90-day window (13 weeks)</td>
+<td><strong>1.08 GB</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>At <em>current</em> volume, caching one quarter of one site consumes the entire Redis budget. Because the policy is <code>allkeys-lru</code>, that eviction pressure falls on <em>every other key in the instance</em> — sessions, rate limiting, document cache, the L3 aggregates. The scouting payload doesn't just fail to stay warm; it makes everything else cold too. At the projected 600k entries/week a single week is ~340 MB <em>(projected)</em> and three weeks evict the entire instance.</p>
+<p><strong>The realtime channel amplifies writes.</strong> <code>publish_scouting_dirty</code> (<code>cache_utils.py:211</code>) broadcasts <strong>site-wide</strong> on every scouting write, and every listening client responds by re-running a delta sync. Cost is O(writes × connected clients). At the projected 600k/week — roughly 3 inserts/second during scouting hours — with 50 users connected, that is ~150 client-initiated refetches per second. This is the layer that most needs redesigning for the live-sync goal, and it is currently the one that scales worst.</p>
+<hr>
+<h2 id="3-the-four-bottlenecks-named">3. The four bottlenecks, named</h2>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>MariaDB  SERVER                                ║ BROWSER
+   ├─<span class="m-arrow">►</span>[L1] week chunk ─ Redis rows <span class="m-arrow">◄</span> B3 ═══════╬═ 83.5 MB/wk ═<span class="m-arrow">►</span> JSON.parse + 154 640 IDB
+   ├─<span class="m-arrow">►</span>[L2] delta ══════════════════════════════╬═<span class="m-arrow">►</span>             writes <span class="m-arrow">◄</span> B1 (the minute)
+   ├─<span class="m-arrow">►</span>[L3] aggregates <span class="m-arrow">◄</span> B2  inverted join,     ║
+   │       cost ∝ whole child table ═══════════╬═ 0.42 s flat, any window ═<span class="m-arrow">►</span> ApplicationPlan
+   └─<span class="m-arrow">►</span>[L4] site-wide broadcast <span class="m-arrow">◄</span> B4 ═══════════╬═ O(writes × clients) ═<span class="m-arrow">►</span> refetch storm
+</pre></figure>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Bottleneck</th>
+<th>Evidence</th>
+<th>Scales with</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>B1</strong></td>
+<td>Client-side dataset replication</td>
+<td>83.5 MB/week parsed + 154 640 IDB writes</td>
+<td>total rows in window</td>
+</tr>
+<tr>
+<td><strong>B2</strong></td>
+<td>Inverted join plan in aggregates</td>
+<td><code>EXPLAIN</code> type=ALL; flat 0.42 s across windows</td>
+<td>total child table size</td>
+</tr>
+<tr>
+<td><strong>B3</strong></td>
+<td>Cache stores rows, not answers</td>
+<td>1.08 GB for 90 days vs 1.17 GB budget, <code>allkeys-lru</code></td>
+<td>total rows in window</td>
+</tr>
+<tr>
+<td><strong>B4</strong></td>
+<td>Broadcast invalidation, not deltas</td>
+<td>site-wide publish per write</td>
+<td>writes × clients</td>
+</tr>
+</tbody>
+</table></div>
+<p>The minute you see today is <strong>B1</strong> — <code>JSON.parse</code> of 83 MB and 154 640 IndexedDB transactions on the operator's machine.</p>
+<p>The network is <em>also</em> a bottleneck, but avoidably so: nginx is not compressing JSON at all (§6.4), so the full 83.5 MB crosses the wire uncompressed. That is a one-line fix worth 15×, and it is independent of everything else in this document.</p>
+<p>Note that B1, B3 and B4 all have the same root cause: <strong>we move rows across the bridge when we should be moving answers.</strong> B2 is independent and cheaper to fix.</p>
+<hr>
+<h2 id="4-how-we-change-the-bridge-without-changing-the-display">4. How we change the bridge without changing the display</h2>
+<p>The invariant is only credible if it's mechanically enforced. Proposal:</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>                 ┌─<span class="m-arrow">►</span> OLD  L1 rows <span class="m-arrow">►</span> IndexedDB <span class="m-arrow">►</span> JS aggregation ──┬─────<span class="m-arrow">►</span> renders (unchanged)
+ real operator ──┤                                               ▼
+ traffic         └─<span class="m-arrow">►</span><span class="m-new">★</span>NEW  server aggregate ─────────────────<span class="m-arrow">►</span> compare ──<span class="m-arrow">►</span> mismatch? → console
+ (page, filters)                                                 ▲
+                     golden fixtures, captured from today's JS output, gate every migration
+</pre></figure>
+<ol>
+<li><strong>Golden-output harness.</strong> For a fixed list of (page, filter-combination) cases, capture what the current JS pipeline computes — the exact <code>zoneObs</code> map, KPI numbers, chart series, list rows — as JSON fixtures.</li>
+<li><strong>Equivalence test.</strong> Each new server endpoint must reproduce its fixture byte-for-byte after normalisation (key order, float rounding). A migration is not "done" until its fixture matches.</li>
+<li><strong>Shadow mode.</strong> For one release, the page runs both paths and logs mismatches to the console without changing what renders. Real operator traffic, real filter combinations, zero risk.</li>
+<li><strong>Then</strong> delete the old path.</li>
+</ol>
+<p>This matters because the JS aggregation has accumulated behaviour nobody wrote down — how it treats <code>count</code> nulls, entries with no zone, <code>crop_scouted</code> defaulting to <code>"Rose"</code> (<code>scouting-sync.ts:240</code>). Re-implementing it server-side from reading the code will get some of those wrong. The fixtures catch it.</p>
+<p><strong>This harness is the first deliverable of any approach below.</strong> Without it we are guessing.</p>
+<hr>
+<h2 id="5-approaches">5. Approaches</h2>
+<h3 id="a0-keep-the-architecture-tune-it">A0 — Keep the architecture, tune it</h3>
+<p>Bigger Redis, more gunicorn workers, more RAM for the buffer pool, tighter <code>evictOldMonths</code>.</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>MariaDB  SERVER                                ║ BROWSER
+   ├─<span class="m-arrow">►</span>[L1] week chunk ─ Redis <span class="m-new">★</span>bigger ═════════╬═ still 83.5 MB/wk ═<span class="m-arrow">►</span> sync <span class="m-arrow">►</span> IDB <span class="m-arrow">►</span> 5 pages
+   ├─<span class="m-arrow">►</span>[L2] delta ══════════════════════════════╬═<span class="m-arrow">►</span>             (B1 untouched — still parsed)
+   ├─<span class="m-arrow">►</span>[L3] aggregates  <span class="m-new">★</span>more workers, RAM ═════╬═ ~KB ═<span class="m-arrow">►</span> ApplicationPlan
+   └─<span class="m-arrow">►</span>[L4] site-wide broadcast ════════════════╬═<span class="m-arrow">►</span> every client refetches  (B4 untouched)
+</pre></figure>
+<ul>
+<li><strong>Effort:</strong> days. <strong>Risk:</strong> none. <strong>Ceiling:</strong> low.</li>
+<li>Buys maybe 2× on B1 and nothing structural. The 83.5 MB still gets parsed by the browser. At 600k/week it fails; at 30M it is not on the table.</li>
+<li><strong>Worth doing anyway:</strong> the Redis <code>maxmemory</code> / policy issue (§7) is real and cheap to fix regardless of which approach wins.</li>
+<li><strong>Verdict:</strong> necessary hygiene, not a strategy.</li>
+</ul>
+<h3 id="a1-slice-proportional-queries">A1 — Slice-proportional queries</h3>
+<p>Fix B2 only. No schema change, no client change.</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>MariaDB  SERVER                                ║ BROWSER
+   ├─<span class="m-arrow">►</span>[L1] week chunk ═════════════════════════╬═ 83.5 MB/wk ═<span class="m-arrow">►</span> sync <span class="m-arrow">►</span> IDB <span class="m-arrow">►</span> 5 pages
+   ├─<span class="m-arrow">►</span>[L2] delta ══════════════════════════════╬═<span class="m-arrow">►</span>            (B1 untouched — that is A2)
+   ├─<span class="m-arrow">►</span>[L3] <span class="m-new">★</span>parent-first join  <span class="m-new">★</span>covering index ║
+   │       <span class="m-new">★</span>filter push-down  <span class="m-new">★</span>split cache key ║
+   │       cost now ∝ slice  423 ms <span class="m-arrow">►</span> 179 ms ══╬═ ~KB ═<span class="m-arrow">►</span> ApplicationPlan
+   └─<span class="m-arrow">►</span>[L4] site-wide broadcast ════════════════╬═<span class="m-arrow">►</span> every client refetches
+</pre></figure>
+<ul>
+<li>Force parent-first join order; replace the <code>greenhouse OR block</code> disjunction with a single equality predicate on whichever column the scope's <code>warehouse_type</code> selects (see §12.3 — <code>Block</code> → <code>se.block</code>, everything else → <code>se.greenhouse</code>). That is what lets <code>scouting_date_gh_idx</code> / <code>scouting_date_block_idx</code> drive the query at all.</li>
+<li>Composite index on child tables <code>(parent, pest, plant_section, stage, count)</code> so the join never leaves the index.</li>
+<li>Push <code>pest</code> / <code>section</code> / <code>stage</code> into <code>WHERE</code> — today <code>_application_plan.py:106</code> fetches all rows and filters in Python, so selecting one pest still costs all of them.</li>
+<li>Split the cache key: <code>filterOpts</code> depends only on <code>(greenhouse, window, crop)</code>, <code>zoneObs</code> on the full filter set. Today they share a key, so every chip click recomputes both.</li>
+</ul>
+<p><strong>Measured:</strong> 423 ms → 179 ms, and cost becomes proportional to the slice.
+<strong>Effort:</strong> ~3 days. <strong>Risk:</strong> low, reversible. <strong>Ceiling:</strong> medium — fixes L3, leaves B1 untouched.
+<strong>Verdict:</strong> do it first regardless. It is the cheapest real win and it unblocks A2.</p>
+<h3 id="a2-aggregate-bridge-ship-answers-not-rows">A2 — Aggregate bridge: ship answers, not rows</h3>
+<p>Fix B1. Migrate the five IDB pages onto server-side aggregation, then delete <code>scouting-sync.ts</code>, <code>idb.ts</code> and <code>getScoutingEntriesChunk</code>.</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>MariaDB  SERVER                                ║ BROWSER
+   ├─<span class="m-del">╳</span>[L1] week chunk ── deleted ──────────────╫─<span class="m-del">╳</span> scouting-sync.ts / idb.ts — deleted
+   ├─<span class="m-del">╳</span>[L2] delta ── deleted ───────────────────╫
+   ├─<span class="m-arrow">►</span><span class="m-new">★</span>S1 aggregate  farm/site-wide, no zone ══╬═ ~KB ═<span class="m-arrow">►</span> dashboards · KPIs · trends
+   ├─<span class="m-arrow">►</span><span class="m-new">★</span>S2 aggregate  one gh, zone grain (A1) ══╬═ ~80 KB (was 618 KB) ═<span class="m-arrow">►</span> maps · heatmaps
+   ├─<span class="m-arrow">►</span><span class="m-new">★</span>S3 narrow row projection ═══════════════╬═ packed arrays ═<span class="m-arrow">►</span> tracks · drill-down
+   └─<span class="m-arrow">►</span>[L4] broadcast  unchanged — A4's job ════╬═<span class="m-arrow">►</span> every client refetches
+</pre></figure>
+<p>Every read becomes one of three declared shapes. Nothing else is permitted:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>shape</th>
+<th>used by</th>
+<th>served from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>S1</strong> aggregate, farm/site-wide, no zone</td>
+<td>dashboards, KPIs, trends, counts</td>
+<td>rollup (A3) or live query</td>
+</tr>
+<tr>
+<td><strong>S2</strong> aggregate, one greenhouse, zone-grained</td>
+<td>bed maps, heatmaps, diagnose</td>
+<td>live query on raw, A1 access path</td>
+</tr>
+<tr>
+<td><strong>S3</strong> narrow row projection</td>
+<td>scouting tracks, entry drill-down</td>
+<td>direct, columns only</td>
+</tr>
+</tbody>
+</table></div>
+<p>S3 is the answer to "we need the actual rows sometimes" — a scouting track needs <code>(lat, lng, time)</code> as packed parallel arrays for one scout-day, not documents. It is still a row read; it is just not a <em>document</em> read.</p>
+<p><em>Projected</em> payload for the ApplicationPlan case: 618 KB → ~80 KB with S2 plus compact encoding (columnar arrays, a colour palette indexed by integer instead of a hex string repeated per zone).</p>
+<p><strong>Effort:</strong> ~2–3 weeks, one page at a time. <strong>Risk:</strong> medium — this is where the invariant can break, which is what §4 is for. <strong>Ceiling:</strong> high. Removes B1 entirely.
+<strong>Verdict:</strong> this is the one that makes the minute disappear.</p>
+<h3 id="a3-rollup-fact-layer">A3 — Rollup / fact layer</h3>
+<p>Fix B3 and give S1 a permanent home. A maintained summary table so dashboards never touch raw.</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>MariaDB  SERVER                                ║ BROWSER
+   │ raw (T4)                                  ║
+   ├─<span class="m-arrow">►</span><span class="m-new">★</span>incremental rollup ─<span class="m-arrow">►</span> <span class="m-new">★</span>T3 summary table ║
+   │    block grain 33×/29×  (zone grain <span class="m-del">╳</span>)    ║
+   │      └─<span class="m-arrow">►</span> S1 reads rollup, never raw ══════╬═ ~KB ═<span class="m-arrow">►</span> dashboards · KPIs · trends
+   ├─<span class="m-arrow">►</span> S2 stays a live query on raw (A1) ══════╬═ ~80 KB ═<span class="m-arrow">►</span> maps · heatmaps · diagnose
+   └─<span class="m-arrow">►</span>[L4] broadcast — A4's job ═══════════════╬═<span class="m-arrow">►</span>
+</pre></figure>
+<p><strong>The grain is the whole decision, and I measured it:</strong></p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>grain</th>
+<th>rows</th>
+<th>compression</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>raw pest child rows</td>
+<td>153 771</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>(date, gh, **zone**, pest, section, stage)</code></td>
+<td>127 318</td>
+<td><strong>1.21×</strong></td>
+</tr>
+<tr>
+<td><code>(date, gh, pest, section, stage)</code></td>
+<td>4 600</td>
+<td><strong>33×</strong></td>
+</tr>
+<tr>
+<td>raw disease child rows</td>
+<td>48 965</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>(date, gh, **zone**, disease, section, stage)</code></td>
+<td>41 824</td>
+<td><strong>1.17×</strong></td>
+</tr>
+<tr>
+<td><code>(date, gh, disease, section, stage)</code></td>
+<td>1 715</td>
+<td><strong>29×</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Zone grain does not compress.</strong> 3 756 distinct zones in a single greenhouse, 118 136 site-wide across 97 greenhouses — each scouting entry is essentially one zone-visit, so grouping by zone removes nothing. A zone-grained summary table would be a second table nearly as large as the first, with backfill cost, staleness, and no speed benefit.</p>
+<p>This is where <code>dataload.md</code> needs correcting: it assumed block grain (30M → 500k, ~30×), which is right for <em>its</em> question and wrong for our bed maps. The 33×/29× rows above are the block-grain equivalent and they are excellent — but only for S1.</p>
+<p>So: <strong>rollup serves S1; S2 stays a live query forever.</strong> That is not a compromise, it is the correct decomposition — S2 is inherently bounded (one greenhouse × one window) once A1 makes the access path honest.</p>
+<p>The same rollup feeds <code>_overview</code>, <code>_pests_diseases</code>, <code>_trends</code>, <code>_gh_detail</code>, <code>_fcm</code> — all five carry the same join pattern today — and answers the exact-count question from <code>dataload.md</code> permanently.</p>
+<p><strong>Effort:</strong> ~1 week plus backfill. <strong>Risk:</strong> medium — dual-write correctness, backfill window. <strong>Ceiling:</strong> high for S1.
+<strong>Verdict:</strong> yes, but <strong>after</strong> A2, so the grain is chosen from endpoints in real use rather than guessed.</p>
+<h3 id="a4-push-deltas-instead-of-broadcasting-invalidation">A4 — Push deltas instead of broadcasting invalidation</h3>
+<p>Fix B4. This is the "live like a stock ticker" requirement, and it is a genuinely different model from what we have.</p>
+<p><strong>Today:</strong> write → site-wide broadcast → every client refetches everything. O(writes × clients), and each refetch is expensive.</p>
+<p><strong>Proposed:</strong> snapshot + delta stream + periodic reconcile.</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>MariaDB  SERVER                                ║ BROWSER
+ write ─<span class="m-arrow">►</span> doc event                            ║
+   │  <span class="m-del">╳</span> site-wide nudge to everyone — deleted  ║
+   └─<span class="m-arrow">►</span><span class="m-new">★</span>delta {zone, obs, stage, +n}            ║
+       └─<span class="m-arrow">►</span><span class="m-new">★</span>room per greenhouse, coalesced      ║
+          ≤1 publish/s/room ═══════════════════╬═ tens of bytes ═<span class="m-arrow">►</span> clients in that room only
+                                               ║                    └<span class="m-arrow">►</span> patch in-memory agg
+ A2 aggregate, now cheap ══════════════════════╬═ every 30–60 s ═<span class="m-arrow">►</span> <span class="m-new">★</span>reconcile — self-heals
+</pre></figure>
+<ol>
+<li><strong>Rooms scoped to what's on screen.</strong> A client viewing a greenhouse joins that greenhouse's room. Frappe already gives us this for free: <code>doc_subscribe("Warehouse", "&lt;greenhouse&gt;")</code> joins <code>doc_room</code>, and <code>realtime/handlers.js:58</code> permission-checks the subscribe. No Frappe patch, and permission scoping comes with it.</li>
+<li><strong>Publish the delta, not a nudge.</strong> The doc-event handler computes the aggregate change the write causes — <code>{zone, obs, stage, +n}</code> — and publishes it to the affected room via <code>publish_realtime(..., doctype="Warehouse", docname=greenhouse)</code>. Payload is tens of bytes.</li>
+<li><strong>Client applies the patch</strong> to its in-memory aggregate. No refetch, no re-render of anything but the changed zone.</li>
+<li><strong>Coalesce.</strong> A per-room Redis throttle (<code>SET room:tok 1 EX 1 NX</code>) caps publishes at ~1/second/room; writes inside the window set a dirty bit merged into the next publish.</li>
+<li><strong>Reconcile.</strong> Every 30–60 s the client refetches its (now cheap) aggregate and replaces state, so any dropped or mis-applied patch self-heals. This is what makes it robust rather than clever.</li>
+</ol>
+<p>Cost becomes O(writes), fanned out only to interested rooms, independent of user count within a room. A user watching greenhouse A is unaffected by writes in greenhouse B — which today is not true.</p>
+<p><strong>Effort:</strong> ~1 week. <strong>Risk:</strong> medium — delta arithmetic must match the aggregate exactly, which is why step 5 exists. <strong>Depends on:</strong> A2 (there must be a server-side aggregate to patch).
+<strong>Verdict:</strong> required for the live-sync goal. Not optional at many-users scale.</p>
+<h3 id="a5-columnar-offload">A5 — Columnar offload</h3>
+<p>Replicate to ClickHouse / DuckDB, dashboards read from there. <code>dataload.md</code> strategies 5–6.</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>MariaDB  SERVER                                ║ BROWSER
+   ├─<span class="m-arrow">►</span><span class="m-new">★</span>sync pipeline ─<span class="m-arrow">►</span> <span class="m-new">★</span>ClickHouse / DuckDB   ║
+   │     a second service to keep correct;     ║
+   │     30M rows <span class="m-arrow">►</span> 1–3 GB columnar ═══════════╬═ ad-hoc, full history, &lt;500 ms ═<span class="m-arrow">►</span> dashboards
+   └─<span class="m-arrow">►</span> S1/S2/S3 seam unchanged (A2) ═══════════╬═<span class="m-arrow">►</span> same pages — A5 slots in behind the seam
+</pre></figure>
+<ul>
+<li><strong>Effort:</strong> weeks, plus a second service, plus a sync pipeline to keep correct.</li>
+<li><strong>Ceiling:</strong> very high — 30M rows compress to 1–3 GB columnar, ad-hoc slicing over full history in &lt;500 ms.</li>
+<li><strong>But:</strong> A2 + A3 keep Frappe's native path viable well past 30M, because no query ever scans more than one greenhouse-window or a 33×-compressed rollup. A5 solves a problem we will not have until ad-hoc analytics over multi-year history becomes a product requirement.</li>
+<li><strong>Verdict:</strong> shelf it, revisit at ~100M or when analytics demands arrive. Note that A2's shape contract (S1/S2/S3) is exactly the seam you'd swap a columnar backend in behind — so doing A2 makes A5 <em>cheaper</em> later, not harder.</li>
+</ul>
+<h3 id="comparison">Comparison</h3>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>A0 tune</th>
+<th>A1 queries</th>
+<th>A2 aggregate</th>
+<th>A3 rollup</th>
+<th>A4 deltas</th>
+<th>A5 columnar</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fixes B1 (client replication)</td>
+<td>—</td>
+<td>—</td>
+<td><strong>✓</strong></td>
+<td>—</td>
+<td>—</td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+</tr>
+<tr>
+<td>Fixes B2 (join plan)</td>
+<td>—</td>
+<td><strong>✓</strong></td>
+<td>—</td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td>—</td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+</tr>
+<tr>
+<td>Fixes B3 (cache of rows)</td>
+<td>partial</td>
+<td>—</td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td><strong>✓</strong></td>
+<td>—</td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+</tr>
+<tr>
+<td>Fixes B4 (broadcast storm)</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td><strong>✓</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Display unchanged</td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td><span class="m-ok">✓</span> (§4)</td>
+<td><span class="m-ok">✓</span> (§4)</td>
+<td><span class="m-ok">✓</span> (§4)</td>
+<td><span class="m-ok">✓</span> (§4)</td>
+</tr>
+<tr>
+<td>Schema change</td>
+<td>no</td>
+<td>index only</td>
+<td>no</td>
+<td>new table</td>
+<td>no</td>
+<td>new service</td>
+</tr>
+<tr>
+<td>Reversible</td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-del">✗</span></td>
+</tr>
+<tr>
+<td>Effort</td>
+<td>days</td>
+<td>~3d</td>
+<td>2–3w</td>
+<td>~1w</td>
+<td>~1w</td>
+<td>weeks</td>
+</tr>
+<tr>
+<td>Holds at 30M</td>
+<td class="ctr"><span class="m-del">✗</span></td>
+<td class="ctr"><span class="m-del">✗</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+</tr>
+<tr>
+<td>Holds at 100M</td>
+<td class="ctr"><span class="m-del">✗</span></td>
+<td class="ctr"><span class="m-del">✗</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+</tr>
+</tbody>
+</table></div>
+<hr>
+<h2 id="6-delivery-layer-concerns-sectional-loading-indexes-redis">6. Delivery-layer concerns — sectional loading, indexes, Redis</h2>
+<p>Three concerns raised during review, each checked against what is actually deployed. The short version: <strong>one is half-built and capped by infrastructure, one is half-built and silently incomplete, one is a genuine choice — and while checking them I found two free wins bigger than any of the three.</strong></p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>MariaDB  SERVER                                ║ BROWSER
+   │                              ┌────────────╫────────────┐
+   │   gunicorn -w 9 <span class="m-arrow">◄</span> 6.1 ceiling│  HTTP/1.1  ║  ~6 conns  │<span class="m-arrow">◄</span> 6.1 ceiling
+   ├─<span class="m-arrow">►</span>[L1/L2/L3] ─────────────────┤  no gzip   ║  40 ms per │
+   │    ▲ 6.2 indexes:            │  on JSON   ║  call      │
+   │      parent <span class="m-ok">✓</span>(3 of 4)        │  <span class="m-arrow">◄</span> 6.4     ║  POST = no │
+   │      child  <span class="m-del">╳</span> none           └────────────╫─ cache <span class="m-arrow">◄</span>6.4│
+   └─<span class="m-arrow">►</span>[L4] ── redis 13000 ── shared with socketio <span class="m-arrow">◄</span> 6.3 ────┘
+              maxmemory 1199mb · allkeys-lru
+</pre></figure>
+<h3 id="6-1-sectional-loading-partially-implemented-and-capped">6.1 Sectional loading — <em>partially implemented, and capped</em></h3>
+<p><strong>Status: half-built.</strong> Parallel fan-out already happens in two places — <code>ApplicationPlan.tsx:347-369</code> fires four bootstrap endpoints concurrently, and <code>hydrateRange</code> (<code>scouting-sync.ts:162</code>) fetches all missing weeks through one <code>Promise.all</code>. So the <em>pattern</em> exists. What does not exist is per-section endpoints for the dashboard and map pages; those still take one giant payload and slice it in JS.</p>
+<p>The idea is sound — split a page into sections that each fetch their own narrow endpoint, so no single request carries the whole page and the first section paints early. But it runs into two hard ceilings that must be raised first, or the fan-out makes things <em>worse</em>:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>ceiling</th>
+<th>measured</th>
+<th>consequence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Browser connections per origin</td>
+<td><strong>HTTP/1.1</strong> — no <code>http2</code> on <code>listen 443 ssl</code></td>
+<td>~6 concurrent requests; a 7th section queues</td>
+</tr>
+<tr>
+<td>Server worker pool</td>
+<td><strong><code>gunicorn -w 9</code></strong></td>
+<td>9 concurrent requests <strong>for the entire site, all users</strong></td>
+</tr>
+<tr>
+<td>Fixed cost per call</td>
+<td><strong>~40 ms</strong> (<code>frappe.ping</code>, warm)</td>
+<td>8 sections = ~320 ms of pure overhead</td>
+</tr>
+<tr>
+<td>Cold connection</td>
+<td><strong>706 ms</strong> TLS handshake</td>
+<td>paid per new connection on a cold page load</td>
+</tr>
+</tbody>
+</table></div>
+<p>The worker pool is the dangerous one. Fanning one page load out to 8 parallel calls means <strong>a single operator can occupy 8 of the 9 workers</strong>. Two operators opening dashboards simultaneously saturate the pool, and every other user — including the mobile scouts posting entries — queues behind them. Sectional loading converts a latency problem into a concurrency problem.</p>
+<p><strong>Verdict: worth doing, but strictly after A2, and with limits.</strong> Once endpoints return KB instead of MB (A2), sections are cheap and fan-out is safe. Doing it <em>first</em>, against today's payloads, multiplies the strain rather than splitting it. When we do it: cap concurrent sections at 4–6, raise <code>-w</code> in step with it, and enable HTTP/2 (§6.4) so the connection limit stops binding.</p>
+<h3 id="6-2-database-indexes-partially-implemented-silently-incomplete">6.2 Database indexes — <em>partially implemented, silently incomplete</em></h3>
+<p><strong>Status: parent table mostly covered, child tables not at all.</strong></p>
+<p>A patch already exists — <code>upande_scp/patches/v1_0/add_scouting_indexes.py</code>, registered at <code>patches.txt:12</code>. It declares four indexes. Three are present on <code>kaitet.local</code>; the fourth is not:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>index</th>
+<th>declared in patch</th>
+<th>on <code>kaitet.local</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scouting_date_gh_idx</code> (date, greenhouse)</td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td><strong>✓ present</strong></td>
+</tr>
+<tr>
+<td><code>scouting_date_block_idx</code> (date, block)</td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td><strong>✓ present</strong></td>
+</tr>
+<tr>
+<td><code>scouting_modified_idx</code> (modified)</td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td><strong>✓ present</strong></td>
+</tr>
+<tr>
+<td><code>scouting_crop_idx</code> (crop_scouted)</td>
+<td class="ctr"><span class="m-ok">✓</span></td>
+<td><strong>╳ MISSING</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>The patch is also absent from <code>tabPatchLog</code>. Frappe runs each patch once and records it; a patch edited after its first run never re-executes. So <code>scouting_crop_idx</code> was almost certainly appended to the tuple after the original run and will never be created by <code>bench migrate</code>. <strong>Any index added to that file from now on is dead code unless the patch is renamed or made re-runnable.</strong> That is a trap worth fixing before we add more.</p>
+<p>The bigger gap — the child tables carry no useful index at all:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>table</th>
+<th>indexes present</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tabPests Scouting Entry</code></td>
+<td><code>PRIMARY(name)</code>, <code>parent</code></td>
+</tr>
+<tr>
+<td><code>tabDiseases Scouting Entry</code></td>
+<td><code>PRIMARY(name)</code>, <code>parent</code></td>
+</tr>
+<tr>
+<td><code>tabTrap Scouting Entry</code></td>
+<td><code>PRIMARY(name)</code>, <code>parent</code></td>
+</tr>
+<tr>
+<td><code>tabWeeds Scouting Entry</code></td>
+<td><code>PRIMARY(name)</code>, <code>parent</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>No <code>search_index</code> is set on any child field (<code>pests_scouting_entry.json</code> → <code>plant_section</code>, <code>pest</code>, <code>stage</code>, <code>count</code> all <code>0</code>). This is exactly why the planner full-scans the child table (§2.2): with only <code>parent</code> available and no covering index, driving from the child and probing the parent by primary key looks cheap to the optimizer.</p>
+<p><strong>Effect on data load:</strong> A1's composite index <code>(parent, pest, plant_section, stage, count)</code> is the missing piece that makes the join covering — the query never leaves the index, so no clustered-index lookup per child row. Note the ordering trap from <code>dataload.md</code>: an index on <code>pest</code> <em>alone</em> is worse than useless here, because our filter is on <code>parent</code>. Lead with <code>parent</code>.</p>
+<p><strong>Verdict: not implemented for the path that matters. Highest-value index work in this document, and it belongs in A1.</strong></p>
+<h3 id="6-3-our-own-redis-or-erpnext-s-a-real-choice">6.3 Our own Redis, or ERPNext's? — <em>a real choice</em></h3>
+<p><strong>Status: currently sharing, and sharing more than you would expect.</strong></p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>127.0.0.1:13000 ── redis_cache     ── maxmemory 1199mb · allkeys-lru
+                └─ redis_socketio  ── SAME INSTANCE  <span class="m-arrow">◄</span> the surprise
+127.0.0.1:11000 ── redis_queue     ── background jobs
+127.0.0.1:6379  ── system redis    ── running, unused by any bench
+</pre></figure>
+<p><code>common_site_config.json</code> points <code>redis_socketio</code> at <strong>13000 — the same instance as <code>redis_cache</code></strong>. So the realtime layer shares an <code>allkeys-lru</code> pool with application payloads. Today that is harmless because usage is 7 MB of a 1.17 GB budget. Under the live-sync design (§8), where realtime becomes load-bearing, it means cache pressure and socket delivery compete for the same memory and the same eviction policy.</p>
+<p>The options:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>option</th>
+<th>pros</th>
+<th>cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Keep sharing ERPNext's cache</strong></td>
+<td>zero setup; one thing to operate</td>
+<td>app payloads evict sessions/socketio; single policy for very different data; no isolation</td>
+</tr>
+<tr>
+<td><strong>Separate DB index on 13000</strong> (<code>redis://…/2</code>)</td>
+<td>free; namespaced; one-line config</td>
+<td><strong>no isolation of memory or eviction</strong> — <code>maxmemory</code> is per <em>instance</em>, not per DB. Cosmetic only</td>
+</tr>
+<tr>
+<td><strong>Own Redis instance for SCP</strong> ★</td>
+<td>own <code>maxmemory</code>, own policy, own persistence; app load cannot evict sessions or socketio; can be tuned/restarted independently</td>
+<td>one more process to supervise; a second thing to monitor</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Recommendation: our own instance, but only once T2 (§7) exists.</strong> The reason is not capacity — §7's rule 2 keeps every entry small enough to live within 1.17 GB. The reason is <strong>blast radius</strong>: aggregate payloads should not be able to evict a user's session or starve socket delivery, and <code>allkeys-lru</code> on a shared pool makes that possible by design. A separate instance also lets us pick <code>allkeys-lru</code> for aggregates (where eviction is safe — it just recomputes) while ERPNext's own cache keeps whatever policy it needs.</p>
+<p>Cheap intermediate step available today: <strong>repoint <code>redis_socketio</code> off 13000</strong>, so realtime stops sharing an evicting pool with cached payloads. That is a config line plus a restart, and it de-risks §8 before we build it.</p>
+<h3 id="6-4-two-free-wins-found-while-checking-the-above">6.4 Two free wins found while checking the above</h3>
+<p>Neither is in any approach above. Both are configuration, not code, and both are larger than most of what this document proposes.</p>
+<p><strong>JSON is not compressed. At all.</strong></p>
+<p><code>/etc/nginx/nginx.conf:46</code> has <code>gzip on;</code> — but <code>gzip_types</code> is <strong>commented out</strong> on line 53, so nginx falls back to its default of <code>text/html</code> only. Verified against the live host:</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>$ curl -I -H &quot;Accept-Encoding: gzip&quot; .../api/method/frappe.ping
+HTTP/1.1 200 OK
+Content-Type: application/json
+                                  <span class="m-arrow">◄</span> no Content-Encoding header — NOT compressed
+
+$ curl -I -H &quot;Accept-Encoding: gzip&quot; .../assets/...   (text/html 404 page)
+Content-Encoding: gzip            <span class="m-arrow">◄</span> HTML is compressed, JSON is not
+</pre></figure>
+<p>So the 83.5 MB week crosses the wire <strong>uncompressed</strong>, and every aggregate endpoint we build will too. Uncommenting one line to include <code>application/json</code> yields a measured <strong>15.1×</strong> reduction on exactly the payloads this document is about. This is the single highest return-on-effort item found anywhere in this analysis.</p>
+<p><strong>HTTP/1.1, no HTTP/2.</strong> <code>listen 443 ssl;</code> has no <code>http2</code> token (nginx 1.18 supports it). This is what caps the browser at ~6 concurrent connections and forces a 706 ms handshake per new one. Enabling it is one token per server block, and it is a precondition for §6.1 paying off.</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>change</th>
+<th>effort</th>
+<th>effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>W1</strong></td>
+<td><code>gzip_types … application/json;</code></td>
+<td>one line</td>
+<td><strong>15.1×</strong> less bytes on every API response</td>
+</tr>
+<tr>
+<td><strong>W2</strong></td>
+<td><code>listen 443 ssl http2;</code></td>
+<td>one token</td>
+<td>lifts the ~6-connection cap that bounds §6.1</td>
+</tr>
+<tr>
+<td><strong>W3</strong></td>
+<td>repoint <code>redis_socketio</code> off 13000</td>
+<td>config line</td>
+<td>realtime stops sharing an evicting pool (§6.3)</td>
+</tr>
+</tbody>
+</table></div>
+<p>One caveat on W1/W2: both edit the nginx config that also serves live <code>kaitet.132.145.21.55.nip.io</code>. Test with <code>nginx -t</code> and reload rather than restart.</p>
+<h3 id="6-5-a-related-finding-every-api-call-is-a-post">6.5 A related finding: every API call is a POST</h3>
+<p><code>frontend/src/lib/frappe.ts:52</code> issues every request as <code>POST</code>. POST responses are uncacheable by the browser, by nginx, and by any CDN — so a section that has not changed is re-fetched and re-serialised in full, every time.</p>
+<p>Moving the <strong>read-only</strong> aggregate endpoints to <code>GET</code> with <code>Cache-Control</code> and an <code>ETag</code> would let an unchanged section cost a <code>304 Not Modified</code> with no body at all. That composes especially well with §6.1: sectional loading plus per-section ETags means a dashboard refresh re-downloads only the sections that actually changed.</p>
+<p>Not free — it needs CSRF handling reviewed for GET and a check that no endpoint mutates. Worth scoping alongside A2, since A2 is already rewriting these endpoints.</p>
+<hr>
+<h2 id="7-caching-architecture">7. Caching architecture</h2>
+<p>The current cache stores <strong>rows</strong>. The new cache stores <strong>answers</strong>. That single change is what makes the Redis budget work.</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>          BROWSER <span class="m-arrow">◄</span>══ answers only, bounded shapes ══╗       (rows never cross again)
+ ┌───────────────────────────────────────────────────────────────────────────┐
+ │ T0  in-process  masters per request (frappe.local)                  KB    │  ▲ hotter
+ │ T1  Redis       masters: pests · diseases · zones · geometry     ~10 MB   │
+ │ T2  Redis       S1/S2 answers  97 gh × 13 wk × ~100 KB ≈        ~126 MB   │ <span class="m-arrow">◄</span> 1.17 GB
+ │ T3  MariaDB     rollup table (A3)           ~180k rows/yr (projected)     │    budget
+ │ T4  MariaDB     raw entries + children           grows with history       │  ▼ colder
+ └───────────────────────────────────────────────────────────────────────────┘
+  <span class="m-del">╳</span> today instead: rows in Redis — 83.5 MB/key, one 90-day window = 1.08 GB, LRU thrash
+</pre></figure>
+<h3 id="what-s-wrong-now">What's wrong now</h3>
+<ul>
+<li>83.5 MB per cached week — one 90-day window is 1.08 GB against a 1.17 GB <code>maxmemory</code>.</li>
+<li><code>allkeys-lru</code> means that pressure evicts sessions, document cache and the L3 aggregates too.</li>
+<li>The key is <code>{version}:{year}-W{nn}</code> — site-wide, so a viewer of one greenhouse pays to warm all 97.</li>
+<li><code>scouting_payload_version()</code> bumps globally on writes, orphaning every week at once.</li>
+</ul>
+<h3 id="proposed-tiers">Proposed tiers</h3>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>tier</th>
+<th>contents</th>
+<th>key</th>
+<th>size</th>
+<th>TTL</th>
+<th>invalidation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>T0</strong> in-process</td>
+<td>master data per request (stage icons, colours)</td>
+<td><code>frappe.local</code></td>
+<td>KB</td>
+<td>request</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td><strong>T1</strong> Redis: masters</td>
+<td>pests, diseases, zones, geometry, thresholds</td>
+<td>existing <code>K_*</code> keys</td>
+<td>~10 MB</td>
+<td>1–24 h</td>
+<td>doc events (already correct)</td>
+</tr>
+<tr>
+<td><strong>T2</strong> Redis: hot aggregates</td>
+<td>S1/S2 answers per <code>(endpoint, scope, window, filters)</code></td>
+<td><code>scp:agg:v1:{endpoint}:{gh}:{week}:{hash}</code></td>
+<td>~100 KB each</td>
+<td>15 min</td>
+<td>room-scoped delta or event</td>
+</tr>
+<tr>
+<td><strong>T3</strong> MariaDB: rollup</td>
+<td>A3 summary table</td>
+<td>table</td>
+<td>~180k rows/yr <em>(projected)</em></td>
+<td>permanent</td>
+<td>incremental on write</td>
+</tr>
+<tr>
+<td><strong>T4</strong> raw</td>
+<td>Scouting Entry + children</td>
+<td>tables</td>
+<td>grows</td>
+<td>permanent</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Sizing T2:</strong> 97 greenhouses × 13 weeks × ~100 KB ≈ <strong>126 MB</strong>. The same Redis budget that today holds <em>one quarter of one site, thrashing</em>, would hold <em>every greenhouse for a quarter</em> with 90% headroom.</p>
+<p><strong>Three rules that make it robust:</strong></p>
+<ol>
+<li><strong>Scope the key to the query, not the dataset.</strong> A greenhouse-scoped key means a viewer warms only what they look at, and a write to greenhouse A cannot invalidate greenhouse B.</li>
+<li><strong>Never cache anything unbounded.</strong> A cache entry whose size grows with the dataset is a time bomb — that is precisely how we got 83.5 MB keys. Every T2 entry has a bounded shape (zones in one greenhouse × observations × stages).</li>
+<li><strong>Separate the instances, or at least the budget.</strong> Large application payloads should not share an <code>allkeys-lru</code> pool with sessions. Either move aggregates to their own Redis DB with its own policy, or keep every entry small enough that LRU pressure never becomes structural. The second is preferable and falls out of rule 2 for free.</li>
+</ol>
+<p><strong>Prewarming.</strong> <code>scouting_prewarm.py</code> already exists. Under T2 it becomes genuinely useful: after the nightly rollup, warm the current week for every active greenhouse — ~97 entries, a few seconds, and the morning's first operator hits a warm cache instead of paying the cold build.</p>
+<hr>
+<h2 id="8-live-sync-the-target-behaviour">8. Live sync — the target behaviour</h2>
+<p>What "live like stock" actually means, and what we'd guarantee:</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre> TODAY <span class="m-del">╳</span> broadcast storm                     │ TARGET <span class="m-new">★</span> snapshot + delta + reconcile
+ write ─<span class="m-arrow">►</span> site-wide nudge ─<span class="m-arrow">►</span> ALL clients     │ write ─<span class="m-arrow">►</span> delta {zone, obs, stage, +n}
+          each refetches the whole week      │        └─<span class="m-arrow">►</span> room(gh) ═ tens of bytes ═<span class="m-arrow">►</span>
+ O(writes × all clients)                     │            clients patch in place, &lt; 1 s
+ dropped message → silently stale            │ every 30–60 s: cheap snapshot <span class="m-arrow">►</span> self-heals
+</pre></figure>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>property</th>
+<th>today</th>
+<th>target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>latency, write → screen</td>
+<td>full refetch, seconds–minutes</td>
+<td>&lt; 1 s</td>
+</tr>
+<tr>
+<td>bytes per update</td>
+<td>whole week re-fetched</td>
+<td>tens of bytes</td>
+</tr>
+<tr>
+<td>cost model</td>
+<td>O(writes × all clients)</td>
+<td>O(writes × clients <em>in that room</em>)</td>
+</tr>
+<tr>
+<td>cross-greenhouse isolation</td>
+<td>none</td>
+<td>complete</td>
+</tr>
+<tr>
+<td>behaviour on dropped message</td>
+<td>silently stale</td>
+<td>self-heals within 60 s</td>
+</tr>
+<tr>
+<td>behaviour on reconnect</td>
+<td>full re-hydrate</td>
+<td>one snapshot fetch</td>
+</tr>
+</tbody>
+</table></div>
+<p>The reconcile pass (A4 step 5) is what turns this from a demo into something we can put in front of a big client. Delta streams drift — from dropped sockets, from races between a patch and a snapshot, from a delta computed against a row that was later amended. A cheap periodic re-snapshot means drift has a bounded lifetime, and it is only affordable <em>because</em> A2 made the snapshot cheap. The two are a package.</p>
+<hr>
+<h2 id="9-scaling-to-30m-and-100m">9. Scaling to 30M and 100M</h2>
+<p><em>All projections from the measured per-unit figures above.</em></p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre> bytes crossing the ═╬═ boundary for one week's view          (log scale, schematic)
+ ~340 MB ┤             current ●━━━━━━━━━━━━━━● grows with data volume (×13 for 90 days)
+         │            ╱
+ 83.5 MB ┤ current ●
+         │
+  ~80 KB ┤ A2 <span class="m-new">★</span>    ●━━━━━━━━━━━●━━━━━━━━━━━━━━● flat — sized by zones per gh, not history
+         └─────────┴───────────┴──────────────┴──
+                 today        30M            100M
+</pre></figure>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>today (300k)</th>
+<th>30M (~1 yr at 600k/wk)</th>
+<th>100M (~3 yr)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>raw parent table</td>
+<td>147 MB</td>
+<td>~15 GB</td>
+<td>~50 GB</td>
+</tr>
+<tr>
+<td>pest child table</td>
+<td>72 MB</td>
+<td>~7.6 GB</td>
+<td>~25 GB</td>
+</tr>
+<tr>
+<td><strong>current bridge:</strong> one week to browser</td>
+<td>83.5 MB</td>
+<td>~340 MB</td>
+<td>~340 MB</td>
+</tr>
+<tr>
+<td><strong>A2 bridge:</strong> one greenhouse-week</td>
+<td>—</td>
+<td>~80 KB</td>
+<td>~80 KB</td>
+</tr>
+<tr>
+<td>T3 rollup rows</td>
+<td>6 315 / 13 days</td>
+<td>~180k/yr</td>
+<td>~600k total</td>
+</tr>
+<tr>
+<td>S2 live query (one gh × week)</td>
+<td>179 ms</td>
+<td>~180 ms</td>
+<td>~180 ms</td>
+</tr>
+</tbody>
+</table></div>
+<p>The two rows that matter: the current bridge's payload <strong>grows with the client's total data volume</strong>, while A2's payload is <strong>flat</strong> — it depends on how many zones are in one greenhouse, which is a property of the farm, not of history. That is the difference between an architecture with a shelf life and one without.</p>
+<p>Hardware still matters for T4 (§<code>dataload.md</code> on buffer pool sizing, and 32 GB being the meaningful threshold), but under A2+A3 no user-facing request depends on the raw table fitting in RAM.</p>
+<hr>
+<h2 id="10-recommended-path">10. Recommended path</h2>
+<p><strong>W → A1 → A2 → A4 → A3</strong>, with A5 shelved.</p>
+<p>The free wins (§6.4) come first because they are configuration, take an afternoon, and their benefit applies to every payload every later step produces.</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre> baseline ─W─<span class="m-arrow">►</span> <span class="m-new">★</span>gzip JSON · <span class="m-new">★</span>http2 · <span class="m-new">★</span>socketio off 13000   15.1× fewer bytes, day one
+          ─0─<span class="m-arrow">►</span> <span class="m-new">★</span>golden harness (§4) + Redis hygiene        nothing deleted yet — safety first
+          ─1─<span class="m-arrow">►</span> A1  <span class="m-new">★</span>join order · <span class="m-new">★</span>child index · key split  L3: 423 ms <span class="m-arrow">►</span> 179 ms, cost ∝ slice
+          ─2─<span class="m-arrow">►</span> A2  <span class="m-new">★</span>S1/S2/S3   <span class="m-del">╳</span>L1 <span class="m-del">╳</span>L2 <span class="m-del">╳</span>sync <span class="m-del">╳</span>idb          boundary: 83.5 MB/wk <span class="m-arrow">►</span> ~80 KB
+          ─3─<span class="m-arrow">►</span> A4  <span class="m-new">★</span>rooms · deltas · reconcile  <span class="m-del">╳</span>L4         O(writes × clients) <span class="m-arrow">►</span> O(writes)
+          ─4─<span class="m-arrow">►</span> A3  <span class="m-new">★</span>T3 rollup feeds S1                      dashboards never touch raw again
+          ─5─<span class="m-arrow">►</span> §6.1 sectional loading · §6.5 GET+ETag        safe only once payloads are KB
+</pre></figure>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>step</th>
+<th>work</th>
+<th>why here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>W</strong></td>
+<td><strong>§6.4 free wins</strong> — <code>gzip_types</code> for <code>application/json</code>, <code>http2</code> on the listen directive, repoint <code>redis_socketio</code>.</td>
+<td>An afternoon of config for 15.1× on the wire. Nothing later is worth doing while JSON ships uncompressed.</td>
+</tr>
+<tr>
+<td><strong>0</strong></td>
+<td>Golden-output harness (§4). Fix Redis <code>maxmemory</code>/policy. Make <code>add_scouting_indexes</code> re-runnable (§6.2) so the missing <code>scouting_crop_idx</code> — and every future index — actually applies.</td>
+<td>Nothing else is safe without the harness.</td>
+</tr>
+<tr>
+<td><strong>1</strong></td>
+<td><strong>A1</strong> — join order, <strong>child-table composite index (§6.2)</strong>, filter push-down, cache key split.</td>
+<td>3 days, reversible, unblocks A2. Converts L3 from unbounded to bounded.</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td><strong>A2</strong> — migrate the five IDB pages to S1/S2/S3, one at a time, shadow-mode each. Delete <code>scouting-sync.ts</code>, <code>idb.ts</code>, <code>getScoutingEntriesChunk</code>.</td>
+<td>This is where the minute disappears.</td>
+</tr>
+<tr>
+<td><strong>3</strong></td>
+<td><strong>A4</strong> — rooms, delta publish, coalescing, reconcile.</td>
+<td>Needs A2's aggregates to patch. Delivers the live-sync requirement.</td>
+</tr>
+<tr>
+<td><strong>4</strong></td>
+<td><strong>A3</strong> — rollup table, backfill, cut S1 over to it.</td>
+<td>Grain chosen from endpoints in real use, not guessed.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A4 before A3 is deliberate: live sync is a stated product requirement, and A3 is an optimisation of something A2 already made acceptable. If priorities shift, they swap without rework.</p>
+<p>Sectional loading (§6.1) is last, not first, and that ordering matters. Against today's multi-megabyte payloads and a 9-worker pool, fanning a page out to 8 endpoints lets one operator occupy the whole server. Against A2's KB-sized sections it is safe and genuinely improves perceived speed. Same idea, opposite outcome, depending only on what comes before it.</p>
+<hr>
+<h2 id="10a-zone-geometry-compression-built-54-80-mb-5-13-mb">10a. Zone geometry compression — <strong>BUILT.</strong> 54.80 MB → 5.13 MB</h2>
+<p><strong>Status: implemented and verified</strong> (commits <code>9904f3f</code>, <code>cff29a5</code>, <code>b4e1192</code>).</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>before</th>
+<th>after</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>getBedsAndZones</code> raw</td>
+<td><strong>54.80 MB</strong></td>
+<td><strong>5.13 MB</strong></td>
+<td><strong>10.7×</strong></td>
+</tr>
+<tr>
+<td><code>getBedsAndZones</code> gzipped</td>
+<td>5.10 MB</td>
+<td><strong>1.08 MB</strong></td>
+<td>4.7×</td>
+</tr>
+<tr>
+<td>full page load, raw</td>
+<td>61.2 MB</td>
+<td><strong>~11.5 MB</strong></td>
+<td>5.3×</td>
+</tr>
+<tr>
+<td>full page load, gzipped</td>
+<td>5.48 MB</td>
+<td><strong>~1.5 MB</strong></td>
+<td>3.7×</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Lossless, proven across every zone — not a sample:</strong></p>
+<figure class="codeblock"><span class="blk-label">OUTPUT</span><pre>check_zone_encoding             PASSED — 0 mismatches across 154 290 zones
+check_zone_encoding (served)    PASSED — 0 mismatches, 1 500 zones / 1 440 beds
+contiguous beds                 18 351 / 18 472  (99.34%)
+</pre></figure>
+<h3 id="what-was-actually-built-and-what-was-dropped">What was actually built — and what was dropped</h3>
+<p>The original proposal was to interpolate zone positions from a bed's endpoints. Measurement
+showed that was the wrong trade:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>encoding</th>
+<th>raw</th>
+<th>gzipped</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A. current (<code>raw_geojson</code> strings)</td>
+<td>54.80 MB</td>
+<td>5.10 MB</td>
+</tr>
+<tr>
+<td>B. drop the never-read GeoJSON wrapper</td>
+<td>17.86 MB</td>
+<td>3.47 MB</td>
+</tr>
+<tr>
+<td>C. + round to 7 dp (~1.1 cm)</td>
+<td>12.77 MB</td>
+<td>1.72 MB</td>
+</tr>
+<tr>
+<td><strong>D. + per-bed, contiguous, short names</strong></td>
+<td><strong>5.06 MB</strong></td>
+<td><strong>1.02 MB</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>D needs no interpolation.</strong> Contiguity alone — zone N ends exactly where N+1 begins, true
+for 99.34% of beds — means only each zone's <em>end</em> point need be sent. Adding
+start+delta+count interpolation on top would have gained ~30% more while requiring a
+fallback path for non-conforming beds and a validator to catch new beds drifting out of
+conformance. The simple encoding was chosen deliberately: same insight, none of the fragility.</p>
+<p>Three things made the payload big, and only one of them was geometry:</p>
+<ol>
+<li>Each zone shipped a full escaped GeoJSON <code>FeatureCollection</code>, of which the frontend reads
+   exactly two fields — <code>geometry.coordinates</code> and <code>properties.line_id</code>. <code>type</code>, <code>Feature</code>,
+   <code>fid</code>, <code>segment_id</code> and <code>zone_id</code> were never read by any page.</li>
+<li>Coordinates carried 17 significant figures — nanometre precision on a bed map.</li>
+<li>Zone names alone were <strong>5.84 MB</strong>, repeated in full per zone.</li>
+</ol>
+<h3 id="wire-format">Wire format</h3>
+<figure class="codeblock"><span class="blk-label">OUTPUT</span><pre>per bed: [bed_name, line_id, [x0,y0], ends_or_pairs, name_suffixes, contiguous]
+  contiguous=1 -&gt; zone i spans points[i-1] -&gt; points[i]   (points[-1] = the bed's start)
+  contiguous=0 -&gt; explicit [[xa,ya],[xb,yb]] pairs, that bed only
+</pre></figure>
+<p>Contiguity is detected <strong>per bed</strong>, so the 121 non-conforming beds (0.66%) fall back to
+explicit pairs without dragging the other 18 351 with them.</p>
+<h3 id="why-this-mattered-more-than-compression">Why this mattered more than compression</h3>
+<p>gzip fixed the wire and did nothing for the browser, which still had to parse 55 MB of
+escaped JSON strings. The five consumers now read <code>coords</code> and <code>lineId</code> directly and the
+string-parsing helpers (<code>parseGeo</code>, <code>parseRawGeo</code>) are deleted — so this removes the <em>data</em>,
+not just its transport.</p>
+<h3 id="notes-for-whoever-touches-this-next">Notes for whoever touches this next</h3>
+<ul>
+<li>Served under a <strong>new cache key</strong> (<code>K_BEDS_AND_ZONES_V2</code>) with a <code>"v": 2</code> marker. The v1 key
+  was abandoned rather than overwritten: with a 24 h TTL, a rolling deploy serving a v1
+  payload to a v2 frontend would break every map and could persist all day.</li>
+<li>The GeoJSON <code>properties.zone_id</code> <strong>disagrees with the name-derived zone number on 558 of
+  154 290 zones</strong>. The codec orders by name, which is what every consumer already treats as
+  truth. Do not reach for <code>zone_id</code>.</li>
+<li>Coordinates are rounded to 7 dp (~1.1 cm at the equator) — far below display resolution,
+  but it is a deliberate, bounded loss and the round-trip guard asserts against it.</li>
+</ul>
+<hr>
+<h2 id="10a-orig-the-original-measurement-that-justified-this">10a-orig. The original measurement that justified this</h2>
+<p>Raised during review and initially parked. A subsequent nginx access-log capture of a real
+operator page load promoted it to the top of the list.</p>
+<p><strong>Measured from <code>/var/log/nginx/access.log</code>, one real <code>/scp_app</code> session (192 requests, 59.6 MB total):</strong></p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>response</th>
+<th>size</th>
+<th>share of page load</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>getBedsAndZones</code></strong></td>
+<td><strong>54.80 MB</strong></td>
+<td><strong>92%</strong></td>
+</tr>
+<tr>
+<td><code>Map3D</code> JS chunk</td>
+<td>1.01 MB</td>
+<td>2%</td>
+</tr>
+<tr>
+<td><code>application_plan_diagnose</code> (×3)</td>
+<td>0.64 MB</td>
+<td>1%</td>
+</tr>
+<tr>
+<td>everything else (188 requests)</td>
+<td>~3.1 MB</td>
+<td>5%</td>
+</tr>
+</tbody>
+</table></div>
+<p>For scale: <code>heatmaps_grid</code> was 13.98 MB before optimisation and 5.08 MB after — a hard-won
+8.9 MB saving sitting next to a <strong>54.80 MB</strong> response six times larger, on the same page load.
+And per §6.4 nginx does not compress JSON, so all 54.80 MB crossed the wire uncompressed.</p>
+<p>Called by <code>ApplicationPlan.tsx:363</code>, <code>Heatmaps.tsx:279</code> and <code>HeatmapPoc.tsx:98</code> (client-cached
+after first fetch, so once per session rather than per page).</p>
+<p>Two independent fixes stack here:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>fix</th>
+<th>effort</th>
+<th>result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>W1</strong></td>
+<td><code>gzip_types … application/json</code> (§6.4)</td>
+<td>one nginx line</td>
+<td>54.80 MB → ~3–4 MB <em>(projected)</em> on the wire</td>
+</tr>
+<tr>
+<td><strong>Z1</strong></td>
+<td>zone encoding below</td>
+<td>a task</td>
+<td>40.2 MB source → ~3.5 MB; with W1, ~0.4 MB on the wire</td>
+</tr>
+</tbody>
+</table></div>
+<p>It targets the <strong>geometry</strong> layer, not the aggregation layer, so it is independent of everything above.</p>
+<p><strong>The observation:</strong> beds are straight lines, so zone positions could be derived rather than stored.</p>
+<p><strong>Measured on kaitet (154 290 zones with geometry, 17 914 beds):</strong></p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>property</th>
+<th>result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>zone N ends exactly where N+1 begins</td>
+<td><strong>99.2%</strong></td>
+</tr>
+<tr>
+<td>collinear with the bed's end-to-end line</td>
+<td><strong>99.2%</strong> (median deviation <strong>0.000 cm</strong>, p95 0.000 cm)</td>
+</tr>
+<tr>
+<td>bed modal zone length</td>
+<td><strong>4.0 m — all 17 914 beds</strong> (not the assumed 3 m)</td>
+</tr>
+<tr>
+<td>beds uniform ± one trailing remainder → encodable</td>
+<td><strong>17 455 (97.44%)</strong></td>
+</tr>
+<tr>
+<td>beds needing exact geometry retained</td>
+<td>459 (2.56%)</td>
+</tr>
+<tr>
+<td>total zone geojson at source</td>
+<td><strong>40.2 MB</strong> (273 B/zone)</td>
+</tr>
+<tr>
+<td><code>getBedsAndZones</code> cold</td>
+<td><strong>2.0 s</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Encoding</strong> (note: <em>not</em> first + last + count — that assumes even division and misplaces the remainder):</p>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>per bed:   start_point · end_point · unit_len (4.0) · zone_ids[] · remainder_len
+per zone:  nothing — position = start + direction × (index × unit_len)
+</pre></figure>
+<p><em>Projected</em> ~40.2 MB → ~3.5 MB (≈11×). Requires a build-time validator that checks each bed against its stored geometry and falls back to exact for any that fail, so new beds from <code>bed_zone_automation</code> can never be silently distorted.</p>
+<p><strong>Does not help the dashboards.</strong> The 13.65 MB <code>heatmaps_grid</code> payload is observation <em>counts</em> keyed by zone name — measured values, not positions, and not interpolable.</p>
+<hr>
+<h2 id="10b-what-we-actually-built-results-failures-and-the-300m-projection">10b. What we actually built — results, failures, and the 300M projection</h2>
+<p>Everything below was measured on <code>kaitet.local</code> after implementation. Eight commits on
+branch <code>kaitet</code>, plus one infrastructure change. Nothing is pushed.</p>
+<h3 id="the-architecture-as-implemented">The architecture as implemented</h3>
+<figure class="diagram"><span class="blk-label">ARCHITECTURE VIEW</span><pre>MariaDB  SERVER                                    ║ BROWSER
+   │                                               ║
+   ├─<span class="m-arrow">►</span>[L1] getScoutingEntriesChunk  UNCHANGED ═════╬═ 83.5 MB/wk ═<span class="m-arrow">►</span> scouting-sync.ts ─<span class="m-arrow">►</span> IDB
+   │        (A2 not attempted — 5 pages still here)║         <span class="m-arrow">◄</span> the big one, still open
+   │                                               ║
+   ├─<span class="m-arrow">►</span>[L3] dashboard_aggregates  <span class="m-new">★</span>REWORKED         ║
+   │    ├ <span class="m-new">★</span>covering child indexes (T2)             ║
+   │    ├ <span class="m-new">★</span>warehouse_type predicate, no OR (T3)    ║
+   │    ├ <span class="m-new">★</span>24 sorts given a total order (T2b)      ║
+   │    ├ <span class="m-new">★</span>row cache split from chip filters (T5)  ║
+   │    │   └ Redis scp:dash_agg:{ep}:{hash}       ║
+   │    │     SHARED across users · TTL 60s ═══════╬═ ~2-30 KB gz ═<span class="m-arrow">►</span> Dashboard · Trends
+   │    └ <span class="m-new">★</span>heatmaps grid/detail split (T6) ════════╬═ 301 KB gz ═<span class="m-arrow">►</span> Heatmaps grid
+   │         └ <span class="m-new">★</span>heatmap_card_detail ═══════════════╬═ on card open ═<span class="m-arrow">►</span> modal
+   │                                               ║
+   ├─<span class="m-del">╳</span>[T4] STRAIGHT_JOIN — IMPLEMENTED, REVERTED   ║  (made this dataset 25% slower)
+   │                                               ║
+   └─<span class="m-arrow">►</span>[geo] getBedsAndZones  UNTOUCHED ════════════╬═ 5.12 MB gz (55.4 MB raw) ═<span class="m-arrow">►</span> maps
+                                                   ║         <span class="m-arrow">◄</span> 92% of the page load
+   <span class="m-new">★</span> nginx gzip now covers application/json ───────╫─ applies to EVERY row above
+</pre></figure>
+<h3 id="what-worked">What worked</h3>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Change</th>
+<th>Measured result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>W1</strong></td>
+<td>nginx <code>gzip_types</code> now covers <code>application/json</code></td>
+<td><strong>61.2 MB → 5.48 MB</strong> per page load (<strong>11.2×</strong>)</td>
+</tr>
+<tr>
+<td><strong>T6</strong></td>
+<td>Heatmap grid ships 1 date, modal fetches 3</td>
+<td>13 981 KB → <strong>5 080 KB</strong> (−63.7%)</td>
+</tr>
+<tr>
+<td><strong>T5</strong></td>
+<td>Diagnose row cache split from chip filters</td>
+<td>chip click <strong>835 ms → 12.9 ms</strong> (<strong>65×</strong>)</td>
+</tr>
+<tr>
+<td><strong>T2b</strong></td>
+<td>24 sorts given a total order</td>
+<td><strong>a real production bug fixed</strong> — see below</td>
+</tr>
+<tr>
+<td><strong>T2/T3</strong></td>
+<td>Covering child indexes; <code>warehouse_type</code> predicate</td>
+<td>child scan <code>ALL</code>→<code>index</code>; correct groundwork, <strong>no measurable win here</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="what-failed">What failed</h3>
+<p><strong>T4 — forcing parent-first join order. Implemented, measured, reverted.</strong></p>
+<p><code>STRAIGHT_JOIN</code> flipped the plan exactly as intended, and made the benchmark <strong>25% worse</strong>
+(16 998 → 21 254 ms). The cause is a property of the test data, not the change:</p>
+<figure class="codeblock"><span class="blk-label">OUTPUT</span><pre>total_rows  in_window   pct     days_of_data
+297 131     297 131     100.0%  13
+</pre></figure>
+<p>kaitet holds 13 days, so the benchmark window selects <strong>100%</strong> of the table. With a
+zero-selectivity date filter, driving from the parent scans everything to find rows that
+all match anyway — worse than scanning the smaller child table. MariaDB's original
+child-first choice was correct <em>for this data</em>.</p>
+<p><strong>This also invalidated the original diagnosis.</strong> The paper's headline evidence — "1 week
+0.42 s, 60 days 0.43 s, so cost is independent of the window" — was confounded: both
+windows return every row in a 13-day dataset. The inverted join was real (<code>EXPLAIN type=ALL</code>)
+but not harmful here. That claim is withdrawn.</p>
+<p>What survives: <code>STRAIGHT_JOIN</code> <em>does</em> win where a filter genuinely narrows the parent —
+<strong>340 ms → 150 ms</strong> on a single-greenhouse query — and should win on production, where a
+13-day window is ~2% of the table rather than 100%. <strong>We cannot prove that on this dataset.</strong></p>
+<h3 id="the-bug-that-mattered-more-than-the-speed">The bug that mattered more than the speed</h3>
+<p>Adding an index changed the scan order and moved 9 of 14 equivalence cases. Root cause:
+<strong>24 sorts and truncations picked arbitrarily among tied rows.</strong></p>
+<figure class="codeblock"><span class="blk-label">OUTPUT</span><pre>out.sort(key=lambda a: a[&quot;date&quot;], reverse=True)
+out.sort(key=lambda a: a[&quot;severity&quot;] != &quot;high&quot;)
+return out[:n]                    # n = 8 — which 8? whichever the plan emitted first
+</pre></figure>
+<p>Distribution: <code>_overview</code> 10, <code>_pests_diseases</code> 7, <code>_gh_detail</code> 4, <code>_fcm</code>/<code>_common</code>/
+<code>_heatmaps</code>/<code>_traps</code> 3 each, plus zone <code>color</code>/<code>kind</code> (<strong>28.4% of diagnose-map zones carry
+≥2 observations</strong>) and <code>_trends</code>' vocabulary interning, where first-seen row order decided
+every integer ID in the payload.</p>
+<p><strong>This is a live production bug.</strong> MariaDB re-plans on its own as tables grow, so the top-8
+alert list and the map's colours could change with no deploy and no code change.</p>
+<p>Four of the 24 sites were invisible to grep. They were found by the acceptance test:
+run the harness with the indexes <strong>present, dropped, and restored</strong>, and require
+byte-identical output all three times. Enumeration would have missed a sixth of them.</p>
+<h3 id="sectional-loading-partially-and-capped">Sectional loading — partially, and capped</h3>
+<p><strong>Not implemented as sections.</strong> Parallel fan-out exists (<code>ApplicationPlan.tsx:347</code> fires four
+endpoints at once; <code>hydrateRange</code> fetches weeks concurrently), but pages still take one large
+payload and slice it client-side.</p>
+<p>Two ceilings must be raised before more fan-out helps, and neither has been:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>ceiling</th>
+<th>measured</th>
+<th>consequence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Browser connections/origin</td>
+<td><strong>HTTP/1.1</strong>, no <code>http2</code></td>
+<td>~6 concurrent; a 7th section queues</td>
+</tr>
+<tr>
+<td>Server worker pool</td>
+<td><strong><code>gunicorn -w 9</code></strong></td>
+<td>9 concurrent requests for the <strong>whole site</strong></td>
+</tr>
+<tr>
+<td>Per-call overhead</td>
+<td><strong>~40 ms</strong> warm</td>
+<td>8 sections ≈ 320 ms of pure overhead</td>
+</tr>
+</tbody>
+</table></div>
+<p>Fanning one page out to 8 calls lets a single operator occupy 8 of 9 workers. Sectional
+loading is safe <em>after</em> payloads are small, not before.</p>
+<h3 id="does-one-user-s-fetch-warm-the-cache-for-everyone-yes">Does one user's fetch warm the cache for everyone? — <strong>Yes</strong></h3>
+<figure class="codeblock"><span class="blk-label">OUTPUT</span><pre>cache key : scp:dash_agg:overview:e4ad4daad53a2eec0313
+user id in the key?  NO — shared across all users
+store     : Redis (per-site), TTL 60s
+</pre></figure>
+<p>The key is <code>(endpoint, filters)</code> only. User B calling the same dashboard within 60 s of user A
+gets a <strong>~3 ms</strong> Redis hit instead of a <strong>~5 000 ms</strong> cold rebuild. That is a ~1 600× difference
+and it is already live for every <code>dashboard_aggregates</code> endpoint.</p>
+<p>Two caveats. The 60 s TTL means a quiet site is nearly always cold — this is the single
+cheapest remaining tuning knob. And these endpoints carry <strong>no permission checks</strong>, so shared
+caching is safe only because every authenticated user may already read every greenhouse's
+aggregates (pre-existing posture, unchanged by this work).</p>
+<h3 id="will-compression-survive-a-deploy-now-yes-previously-no">Will compression survive a deploy? — <strong>Now yes; previously no</strong></h3>
+<p>The fix was applied by hand to <code>/etc/nginx/nginx.conf</code> and existed nowhere in the repo. A
+deploy to a new production server would have silently lost it — no error, no log line, just an
+11× slower site. Now shipped:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>artifact</th>
+<th>purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>deploy/nginx/scp-compression.conf</code></td>
+<td>drop-in for <code>/etc/nginx/conf.d/</code></td>
+</tr>
+<tr>
+<td><code>upande_scp/serverscripts/tests/check_compression.py</code></td>
+<td>post-deploy gate, <strong>exit 1</strong> when compression is off</td>
+</tr>
+</tbody>
+</table></div>
+<p>The check is verified against its negative case — with the directive removed it reports the
+asset at 315 407 B and exits 1; restored, 97 577 B and passes.</p>
+<h3 id="measured-compression-per-endpoint-nginx-level-5">Measured compression, per endpoint (nginx level 5)</h3>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>endpoint</th>
+<th>raw</th>
+<th>gzipped</th>
+<th>ratio</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>getBedsAndZones</code></td>
+<td>55.4 MB</td>
+<td><strong>5.12 MB</strong></td>
+<td>10.8×</td>
+</tr>
+<tr>
+<td><code>heatmaps_grid</code></td>
+<td>5 080 KB</td>
+<td><strong>301 KB</strong></td>
+<td>16.9×</td>
+</tr>
+<tr>
+<td><code>application_plan_diagnose</code></td>
+<td>618 KB</td>
+<td><strong>27.9 KB</strong></td>
+<td>22.1×</td>
+</tr>
+<tr>
+<td><code>trends</code></td>
+<td>145 KB</td>
+<td>31.0 KB</td>
+<td>4.7×</td>
+</tr>
+<tr>
+<td><code>overview</code></td>
+<td>17.1 KB</td>
+<td>2.3 KB</td>
+<td>7.4×</td>
+</tr>
+<tr>
+<td><strong>full page load</strong></td>
+<td><strong>61.2 MB</strong></td>
+<td><strong>5.48 MB</strong></td>
+<td><strong>11.2×</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Compression fixes the wire, not the CPU.</strong> The browser still parses 61.2 MB of JSON. That is
+why zone encoding (§10a) matters independently — it removes the data, not just its transport.</p>
+<h3 id="end-to-end-what-happens-at-300m-scouting-entries">End-to-end: what happens at 300M scouting entries</h3>
+<p>Measured cost per parent row, from two real window sizes:</p>
+<figure class="codeblock"><span class="blk-label">OUTPUT</span><pre>1 day    30 394 rows   overview 1 003 ms   33.0 us/row
+13 days 297 131 rows   overview 4 922 ms   16.6 us/row      &lt;- per-row cost falls (fixed overhead amortises)
+</pre></figure>
+<p>Extrapolating <strong>16.6 µs/row</strong> — optimistic, because at 300M the working set no longer fits in
+the buffer pool and per-row cost would rise:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>query shape at 300M (≈10 yrs at 600k/wk)</th>
+<th>rows touched</th>
+<th>projected</th>
+<th>verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Site-wide, all history</td>
+<td>300 000 000</td>
+<td><strong>~83 min</strong></td>
+<td>impossible — 40× past the 120 s HTTP timeout</td>
+</tr>
+<tr>
+<td>Site-wide, 13-day window</td>
+<td>~1 100 000</td>
+<td><strong>~18 s</strong></td>
+<td>unusable as a dashboard</td>
+</tr>
+<tr>
+<td><strong>One greenhouse, 13-day window</strong></td>
+<td>~11 500</td>
+<td><strong>~0.2 s</strong></td>
+<td><strong>fine — and flat as history grows</strong></td>
+</tr>
+<tr>
+<td>Site-wide 13-day <strong>via rollup</strong> (33×)</td>
+<td>~33 000</td>
+<td><strong>~0.5 s</strong></td>
+<td><strong>fine</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>The conclusion is the architecture, not the hardware.</strong> Nothing about 300M is survivable if a
+request's cost scales with total history; everything about it is fine if each request is bounded
+by one greenhouse-window or a rollup row count. That is exactly the S1/S2/S3 split in §5 — and
+the two pieces that deliver it, <strong>A2</strong> and <strong>A3</strong>, are still unbuilt.</p>
+<h3 id="honest-scorecard">Honest scorecard</h3>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Wire bytes</td>
+<td><strong>solved</strong> — 11.2× everywhere, deployable, self-checking</td>
+</tr>
+<tr>
+<td>Aggregate correctness</td>
+<td><strong>solved</strong> — 24 nondeterministic sites, a real production bug</td>
+</tr>
+<tr>
+<td>Heatmap payload</td>
+<td><strong>solved</strong> — −63.7%</td>
+</tr>
+<tr>
+<td>Chip interaction</td>
+<td><strong>solved</strong> — 65×</td>
+</tr>
+<tr>
+<td>Query time on this dataset</td>
+<td><strong>unchanged</strong> — and honestly unmeasurable here</td>
+</tr>
+<tr>
+<td>Geometry payload (54.8 MB)</td>
+<td><strong>untouched</strong> — now the largest single item</td>
+</tr>
+<tr>
+<td>Client-side replication (L1)</td>
+<td><strong>untouched</strong> — A2 not attempted</td>
+</tr>
+<tr>
+<td>300M readiness</td>
+<td><strong>not yet</strong> — needs A2 + A3</td>
+</tr>
+</tbody>
+</table></div>
+<hr>
+<h2 id="11-explicitly-not-doing">11. Explicitly not doing</h2>
+<div class="tw"><table>
+<thead>
+<tr>
+<th></th>
+<th>why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Zone-grained summary table</td>
+<td>Measured 1.21× compression. All the cost, none of the benefit.</td>
+</tr>
+<tr>
+<td>Denormalising <code>greenhouse</code>/<code>date</code> onto child tables</td>
+<td>Only needed if A1 underperforms. Don't pay for it speculatively.</td>
+</tr>
+<tr>
+<td>Columnar offload now</td>
+<td>A2+A3 hold past 30M. Revisit at ~100M.</td>
+</tr>
+<tr>
+<td>Postgres for parallel counts</td>
+<td><code>dataload.md</code> is right that it's the honest answer to "can counting go faster", and right that switching engines to fix counting is not worth it. A3 removes the question.</td>
+</tr>
+<tr>
+<td>Narrowing date windows / capping zones</td>
+<td>Violates the invariant — that's a display change.</td>
+</tr>
+</tbody>
+</table></div>
+<hr>
+<h2 id="12-decisions-needed-before-a-spec">12. Decisions needed before a spec</h2>
+<ol>
+<li><strong>Live sync scope</strong> — does every view get delta streaming, or only the heatmaps and dashboards a supervisor keeps open? This sets how much of A4 is in v1.</li>
+<li><strong>Freshness for non-live views</strong> — is a few minutes' lag acceptable on the dashboards, or must everything be sub-second? Decides T2 TTLs and whether A3 is incremental-on-write or scheduled.</li>
+<li>~~<strong><code>greenhouse</code> vs <code>block</code></strong>~~ — <strong>RESOLVED.</strong> The two columns are mutually exclusive across the entire table, and the discriminator is the scope's <code>warehouse_type</code>, not the crop:</li>
+</ol>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>filtered via</th>
+<th><code>warehouse_type</code></th>
+<th>distinct locations</th>
+<th>entries</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>se.greenhouse</code></td>
+<td>Greenhouse</td>
+<td>97</td>
+<td>293 769</td>
+</tr>
+<tr>
+<td><code>se.block</code></td>
+<td>Block</td>
+<td>55</td>
+<td>3 362</td>
+</tr>
+</tbody>
+</table></div>
+<p>Zero rows carry both columns, zero carry neither. <strong>Rule: <code>Block</code> → filter <code>se.block</code>; everything else → <code>se.greenhouse</code>.</strong> Deliberately keyed on warehouse type rather than crop, for two reasons: 2 775 entries have <code>crop_scouted = NULL</code> and use <code>greenhouse</code>, so a <code>crop == "Rose" ? gh : block</code> test would silently drop them; and Coffee then works the day it lands without touching the query layer. The lookup is free — <code>get_units_by_warehouse()</code> already builds this map and caches it under <code>K_SM_UNITS_BY_WH</code> for 24h, so it is a dict hit, not a query.
+4. <strong>Migration order for A2</strong> — which page hurts most in daily use: <code>Observations</code>, the Rose heatmap, or <code>TrapsMap</code>? First one migrated proves the pattern and the harness.
+5. <strong>Redis instance policy</strong> — is raising <code>maxmemory</code> above 1.17 GB available on the target hardware, or do we design strictly to the current budget? (§7 rule 2 means we can live within it either way; this only affects headroom.)
+6. <strong>Own Redis instance?</strong> (§6.3) — my recommendation is yes, but for blast-radius rather than capacity, and only once T2 exists. Do you want it provisioned up front instead, so there is one migration rather than two?
+7. <strong>Green light for the §6.4 config changes?</strong> They edit the nginx config that also serves live <code>kaitet.132.145.21.55.nip.io</code>. Low risk (<code>nginx -t</code> then reload, no restart), high payoff, but it touches a running production host — so your call, not mine.</p></main>
+</div>
+
+<footer>
+  <span>upande_scp · docs/Optimization/dataload-architecture.md</span>
+  <span>Figures measured on kaitet.local unless marked projected</span>
+</footer>
+</div>
+<div class="ctl">
+  <button id="theme">Light / Dark</button>
+  <button id="print">Print</button>
+</div>
+<script>
+const root=document.documentElement;
+const saved=localStorage.getItem('dl-theme');
+if(saved) root.setAttribute('data-theme',saved);
+document.getElementById('theme').onclick=()=>{
+  const next=root.getAttribute('data-theme')==='light'?'dark':'light';
+  root.setAttribute('data-theme',next);localStorage.setItem('dl-theme',next);
+};
+document.getElementById('print').onclick=()=>window.print();
+const links=[...document.querySelectorAll('.toc a')];
+const map=new Map(links.map(a=>[a.getAttribute('href').slice(1),a]));
+const obs=new IntersectionObserver(es=>{
+  es.forEach(e=>{if(e.isIntersecting){
+    links.forEach(a=>a.classList.remove('on'));
+    const a=map.get(e.target.id); if(a){a.classList.add('on');}
+  }});
+},{rootMargin:'0px 0px -75% 0px'});
+document.querySelectorAll('h2[id],h3[id]').forEach(h=>obs.observe(h));
+</script>
+</body>
+</html>

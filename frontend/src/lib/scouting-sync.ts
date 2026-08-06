@@ -8,8 +8,12 @@
  *  - Background: delta sync via L2 (get_entries_since) advances the watermark.
  *  - Realtime nudges from L4 invalidate the affected weeks and re-run delta.
  *
- * Filtering by greenhouse / farm / crop happens *after* IDB reads, never on
- * the server side — see docs/data_caching.md (L1 keys section).
+ * Greenhouse-scoped fetches ask the server to filter (``getScoutingEntriesChunk``'s
+ * ``greenhouse`` arg), and the loaded-weeks registry is namespaced per
+ * greenhouse (see ``weeksMetaKey``) so a week fetched for one greenhouse is
+ * never mistaken for coverage of another. All-greenhouses / multi-greenhouse
+ * callers still get the unfiltered, unscoped path — see docs/data_caching.md
+ * (L1 keys section).
  */
 
 import { call } from "./frappe";
@@ -89,15 +93,20 @@ function weeksBetween(from: string, to: string): WeekSlot[] {
   return out;
 }
 
-/** Per-crop loaded-weeks registry key. Rose / all-crop uses the base key; a
- *  scoped crop (e.g. avocado) tracks its own coverage separately because its
- *  fetch pulls only that crop's rows. */
-function weeksMetaKey(crop?: string): string {
-  return crop ? `${META_LOADED_WEEKS}:${crop}` : META_LOADED_WEEKS;
+/** Per-(crop, greenhouse) loaded-weeks registry key. Rose / all-crop uses the
+ *  base crop segment; a scoped crop (e.g. avocado) tracks its own coverage
+ *  separately because its fetch pulls only that crop's rows. ``greenhouse``
+ *  follows the same precedent: a greenhouse-scoped fetch pulls only that
+ *  greenhouse's rows server-side, so it must not be treated as covering any
+ *  other greenhouse (or the unscoped/all-greenhouses slice) — hence its own
+ *  registry key. Omitted greenhouse (all-greenhouses / multi-greenhouse
+ *  callers) keys off the ``__all__`` sentinel, same shape as today. */
+function weeksMetaKey(crop?: string, greenhouse?: string): string {
+  return `${META_LOADED_WEEKS}:${crop ?? ""}:${greenhouse ?? "__all__"}`;
 }
 
-async function loadedWeeksSet(crop?: string): Promise<Set<string>> {
-  const v = (await getMeta<string[]>(weeksMetaKey(crop))) || [];
+async function loadedWeeksSet(crop?: string, greenhouse?: string): Promise<Set<string>> {
+  const v = (await getMeta<string[]>(weeksMetaKey(crop, greenhouse))) || [];
   return new Set(v);
 }
 
@@ -105,23 +114,25 @@ async function loadedWeeksSet(crop?: string): Promise<Set<string>> {
  * The set of ISO weeks touching [from, to] that aren't yet recorded in the
  * loaded-weeks registry. Returns empty when everything is cached — callers
  * can use that to skip the loading state entirely. ``crop`` selects the
- * per-crop registry for scoped fetches.
+ * per-crop registry for scoped fetches; ``greenhouse`` further scopes it to
+ * one greenhouse's coverage.
  */
 export async function getMissingWeeks(
   from: string,
   to: string,
   crop?: string,
+  greenhouse?: string,
 ): Promise<WeekSlot[]> {
   const weeks = weeksBetween(from, to);
   if (!weeks.length) return [];
-  const known = await loadedWeeksSet(crop);
+  const known = await loadedWeeksSet(crop, greenhouse);
   return weeks.filter((w) => !known.has(w.key));
 }
 
-async function markWeekLoaded(week: string, crop?: string): Promise<void> {
-  const set = await loadedWeeksSet(crop);
+async function markWeekLoaded(week: string, crop?: string, greenhouse?: string): Promise<void> {
+  const set = await loadedWeeksSet(crop, greenhouse);
   set.add(week);
-  await setMeta(weeksMetaKey(crop), Array.from(set));
+  await setMeta(weeksMetaKey(crop, greenhouse), Array.from(set));
 }
 
 let legacyMonthsCleared = false;
@@ -152,9 +163,10 @@ export async function hydrateRange(
   to: string,
   onProgress?: (loaded: number, total: number, week: string) => void,
   crop?: string,
+  greenhouse?: string,
 ): Promise<void> {
   await clearLegacyMonthsRegistry();
-  const missing = await getMissingWeeks(from, to, crop);
+  const missing = await getMissingWeeks(from, to, crop, greenhouse);
 
   if (!missing.length) return;
 
@@ -169,11 +181,12 @@ export async function hydrateRange(
             to_date: w.to,
             include_meta: 0,
             ...(crop ? { crop } : {}),
+            ...(greenhouse ? { greenhouse } : {}),
           },
         );
         const entries = resp?.entries || [];
         if (entries.length) await putEntries(entries);
-        await markWeekLoaded(w.key, crop);
+        await markWeekLoaded(w.key, crop, greenhouse);
       } catch (err) {
         console.error("[scouting-sync] hydrate week failed", w.key, err);
         throw err;
@@ -301,6 +314,7 @@ export async function refreshRecentWeeks(
   to: string,
   daysBack: number,
   crop?: string,
+  greenhouse?: string,
 ): Promise<boolean> {
   let touched = false;
   if (Number.isFinite(daysBack) && daysBack > 0 && from && to && from <= to) {
@@ -316,7 +330,13 @@ export async function refreshRecentWeeks(
         try {
           const resp = await call<ChunkResp>(
             "upande_scp.serverscripts.scouting.get_complete_scouting_entries.getScoutingEntriesChunk",
-            { from_date: w.from, to_date: w.to, include_meta: 0, ...(crop ? { crop } : {}) },
+            {
+              from_date: w.from,
+              to_date: w.to,
+              include_meta: 0,
+              ...(crop ? { crop } : {}),
+              ...(greenhouse ? { greenhouse } : {}),
+            },
           );
           const entries = resp?.entries || [];
           if (entries.length) {

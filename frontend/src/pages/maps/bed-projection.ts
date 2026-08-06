@@ -10,10 +10,21 @@
 export interface ZoneGeoLike {
   /** Zone name as it appears in the Zone doctype and Scouting Entry.zone. */
   name: string;
-  /** A FeatureCollection where each feature is one bed-line LineString
-   *  with a ``line_id`` property. Matches what ``fetchBedsAndZones``
-   *  ships today. */
-  raw_geojson?: string | null;
+  /** The zone's 2-point bed-line segment, decoded from the compact
+   *  ``getBedsAndZones`` payload — what ``fetchBedsAndZones`` ships today. */
+  coords?: [[number, number], [number, number]];
+  /** Shared bed identifier for ``coords`` (``properties.line_id`` in the
+   *  old GeoJSON). */
+  lineId?: unknown;
+  /** Legacy escape hatch: an already-parsed FeatureCollection object (never
+   *  a JSON string — no consumer should be calling JSON.parse on this
+   *  payload anymore). Typed loosely (some call sites carry it through an
+   *  ``as unknown as string`` cast from older code) since it's read
+   *  defensively at runtime regardless. Used by pages that build
+   *  ``ZoneGeoLike`` from ``zone-utils.ts``'s synthesised
+   *  ``ZoneFeature.geometry`` instead of a raw ``coords``/``lineId`` pair
+   *  (e.g. the Heatmaps page). */
+  raw_geojson?: any;
 }
 
 export interface BedPath {
@@ -39,16 +50,6 @@ export interface ProjectedGeometry {
   zoneCentroids: Record<string, { cx: number; cy: number }>;
 }
 
-function parseGeo(raw: ZoneGeoLike["raw_geojson"]): any | null {
-  if (!raw) return null;
-  if (typeof raw !== "string") return raw;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
 interface RawRing {
   zoneName: string;
   bedId: string;
@@ -58,9 +59,23 @@ interface RawRing {
 function collectRings(zones: ZoneGeoLike[]): RawRing[] {
   const out: RawRing[] = [];
   for (const z of zones) {
-    const geo = parseGeo(z.raw_geojson);
+    // Fast path: coords/lineId decoded directly from the compact payload —
+    // no GeoJSON, no parsing.
+    if (Array.isArray(z.coords) && z.coords.length === 2) {
+      const lid = z.lineId;
+      if (lid == null || lid === "") continue;
+      out.push({
+        zoneName: z.name,
+        bedId: String(lid),
+        points: z.coords.map((p) => [p[0], p[1]]),
+      });
+      continue;
+    }
+    // Legacy path: an already-parsed FeatureCollection object (see
+    // ZoneGeoLike.raw_geojson) — still no JSON.parse here.
+    const geo = z.raw_geojson;
     if (!geo?.features) continue;
-    for (const f of geo.features as any[]) {
+    for (const f of geo.features) {
       const c = f?.geometry?.coordinates;
       const lid = f?.properties?.line_id;
       if (!Array.isArray(c) || !c.length) continue;

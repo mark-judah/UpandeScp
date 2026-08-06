@@ -80,7 +80,16 @@ interface RowState {
 export function HeatmapPoc() {
   const [params, setParams] = useState(parseHash);
   const [tree, setTree] = useState<
-    Array<{ beds: Array<{ name: string; zones: Array<{ name: string; raw_geojson?: string }> }> }> | null
+    Array<{
+      beds: Array<{
+        name: string;
+        zones: Array<{
+          name: string;
+          coords: [[number, number], [number, number]];
+          lineId: unknown;
+        }>;
+      }>;
+    }> | null
   >(null);
   const [rows, setRows] = useState<RowState[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -119,7 +128,11 @@ export function HeatmapPoc() {
 
           // Project this greenhouse's geometry from the cached tree.
           const ghPrefix = gh + " - ";
-          const zones: { name: string; raw_geojson?: string }[] = [];
+          const zones: {
+            name: string;
+            coords: [[number, number], [number, number]];
+            lineId: unknown;
+          }[] = [];
           for (const v of tree) {
             for (const bed of v.beds || []) {
               if (!bed.name?.startsWith(ghPrefix) && bed.name !== gh) continue;

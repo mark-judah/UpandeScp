@@ -462,14 +462,89 @@ export function hydrateFromPrefetch(): void {
 // already sees the seeded values — even if React hasn't rendered yet.
 hydrateFromPrefetch();
 
+export interface ZoneGeom {
+  name: string;
+  /** 2-point ``[[lng,lat],[lng,lat]]`` line — the zone's bed-line segment. */
+  coords: [[number, number], [number, number]];
+  /** Shared bed identifier (``properties.line_id`` in the old GeoJSON). */
+  lineId: unknown;
+}
+
 export interface BedZoneNode {
   name: string;
-  zones: Array<{ name: string; raw_geojson?: string }>;
+  zones: ZoneGeom[];
 }
 
 export interface VarietyNode {
   variety: string;
   beds: BedZoneNode[];
+}
+
+/**
+ * Compact per-bed wire entry from ``getBedsAndZones`` v2:
+ *   [bedName, lineId, [x0,y0], endsOrPairs, nameSuffixes, contiguous]
+ * Mirrors ``upande_scp.serverscripts.geo.zone_encoding.decode_bed`` — see
+ * that module for the full format writeup. Decoding happens once, here,
+ * so every consumer downstream reads plain ``coords``/``lineId`` and never
+ * touches a GeoJSON string.
+ */
+type EncodedBedEntry = [
+  string,
+  unknown,
+  [number, number],
+  Array<[number, number]> | Array<[[number, number], [number, number]]>,
+  string[],
+  0 | 1,
+];
+
+function decodeBedEntry(entry: EncodedBedEntry): ZoneGeom[] {
+  const [bedName, lineId, startPoint, endsOrPairs, nameSuffixes, contiguous] = entry;
+  const zones: ZoneGeom[] = [];
+  const isDigits = (s: string) => /^[0-9]+$/.test(s);
+
+  if (contiguous) {
+    let prev: [number, number] = startPoint;
+    const points = endsOrPairs as Array<[number, number]>;
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i];
+      const suffix = nameSuffixes[i];
+      const name = isDigits(suffix) ? `${bedName} - Zone ${suffix}` : suffix;
+      zones.push({ name, coords: [prev, point], lineId });
+      prev = point;
+    }
+  } else {
+    const pairs = endsOrPairs as Array<[[number, number], [number, number]]>;
+    for (let i = 0; i < pairs.length; i++) {
+      const [start, end] = pairs[i];
+      const suffix = nameSuffixes[i];
+      const name = isDigits(suffix) ? `${bedName} - Zone ${suffix}` : suffix;
+      zones.push({ name, coords: [start, end], lineId });
+    }
+  }
+  return zones;
+}
+
+interface BedsAndZonesV2 {
+  v: 2;
+  varieties: Array<{ variety: string; beds: EncodedBedEntry[] }>;
+}
+
+function decodeBedsAndZonesV2(payload: unknown): VarietyNode[] {
+  const p = payload as Partial<BedsAndZonesV2> | null | undefined;
+  if (!p || p.v !== 2 || !Array.isArray(p.varieties)) {
+    throw new Error(
+      `getBedsAndZones: unrecognised payload shape (expected v:2, got ${JSON.stringify(
+        (p as any)?.v,
+      )})`,
+    );
+  }
+  return p.varieties.map((v) => ({
+    variety: v.variety,
+    beds: (v.beds || []).map((entry) => ({
+      name: entry[0],
+      zones: decodeBedEntry(entry),
+    })),
+  }));
 }
 
 /**
@@ -485,7 +560,11 @@ export interface VarietyNode {
  * the payload shape changes server-side (e.g. a new field operators rely
  * on for filters).
  */
-const BEDS_ZONES_VERSION = 1;
+// v2: zones are now {name, coords, lineId} decoded from the compact
+// getBedsAndZones payload, not {name, raw_geojson}. Bumped so any IDB row
+// cached under the old shape is discarded rather than fed to consumers
+// that no longer know about raw_geojson.
+const BEDS_ZONES_VERSION = 2;
 const BEDS_ZONES_KEY = "beds_zones_v1";
 const BEDS_ZONES_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -522,17 +601,23 @@ export async function fetchBedsAndZones(): Promise<VarietyNode[]> {
 }
 
 async function fetchBedsAndZonesFromServer(): Promise<VarietyNode[]> {
+  let raw: unknown;
   try {
-    const r = await call<{ data: VarietyNode[] } | VarietyNode[]>(
+    const r = await call<{ data: unknown } | unknown>(
       "upande_scp.serverscripts.geo.get_beds_and_zones.getBedsAndZones",
       {},
     );
-    if (Array.isArray(r)) return r;
-    const wrapped = r as { data?: VarietyNode[] };
-    return wrapped?.data || [];
+    raw = (r as { data?: unknown })?.data !== undefined ? (r as { data: unknown }).data : r;
   } catch {
+    // Network/transport failure — no data to show, but not a shape problem;
+    // callers already treat an empty result as "geometry not ready yet".
     return [];
   }
+  if (!raw) return [];
+  // Shape mismatches (stale v1 cache leaking through, server rollback, a
+  // future v3) are NOT swallowed here — they throw, so a bad payload fails
+  // loudly (visible error) instead of silently rendering an empty map.
+  return decodeBedsAndZonesV2(raw);
 }
 
 let bgRefreshInFlight = false;

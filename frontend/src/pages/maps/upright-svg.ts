@@ -23,8 +23,11 @@ export interface ZoneObs {
 export interface ZoneGeo {
   /** Zone name as it appears in the Zone doctype (and on Scouting Entry.zone). */
   name: string;
-  /** A FeatureCollection where each feature is one bed-line LineString. */
-  raw_geojson: string | null | undefined;
+  /** The zone's 2-point bed-line segment, decoded from the compact
+   *  ``getBedsAndZones`` payload. */
+  coords: [[number, number], [number, number]];
+  /** Shared bed identifier (``properties.line_id`` in the old GeoJSON). */
+  lineId: string | number | null | undefined;
 }
 
 interface InternalZone {
@@ -84,16 +87,6 @@ export interface UprightSvgResult {
   svg: string;
   width: number;
   height: number;
-}
-
-function parseRawGeo(raw: ZoneGeo["raw_geojson"]): any | null {
-  if (!raw) return null;
-  if (typeof raw !== "string") return raw;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
 }
 
 /** Robust direction of bed lines (averaged over circular doubling so 0° and
@@ -162,20 +155,10 @@ function prepareGeometry(zones: ZoneGeo[]): CachedGeometry | null {
   const internal: InternalZone[] = [];
   const allPoints: number[][] = [];
   for (const z of zones) {
-    const geo = parseRawGeo(z.raw_geojson);
-    if (!geo?.features) continue;
-    const rings: number[][][] = [];
-    const lineIds: (string | number | null)[] = [];
-    for (const f of geo.features as any[]) {
-      const c = f?.geometry?.coordinates;
-      if (Array.isArray(c) && c.length) {
-        const ring = (c as number[][]).map((p) => [p[0], p[1]]);
-        rings.push(ring);
-        lineIds.push(f?.properties?.line_id ?? null);
-        for (const p of ring) allPoints.push(p);
-      }
-    }
-    if (rings.length) internal.push({ name: z.name, rings, lineIds });
+    if (!Array.isArray(z.coords) || z.coords.length !== 2) continue;
+    const ring = z.coords.map((p) => [p[0], p[1]]);
+    for (const p of ring) allPoints.push(p);
+    internal.push({ name: z.name, rings: [ring], lineIds: [z.lineId ?? null] });
   }
   if (!allPoints.length) return null;
 

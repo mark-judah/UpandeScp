@@ -9,13 +9,25 @@ export interface ZoneFeature {
   zoneName: string;
   bedName: string;
   variety: string;
-  /** raw_geojson is parsed lazily — many rows have it stored as a string. */
+  /** Synthesised directly from the decoded ``coords``/``lineId`` pair — a
+   *  FeatureCollection with the zone's single bed-line LineString feature,
+   *  the same shape ``raw_geojson`` used to carry (see below). No JSON
+   *  parsing happens here: it's built straight from already-typed arrays. */
   geometry: any | null;
 }
 
 /**
  * Flatten the variety→bed→zone tree into a list of zone features keyed by
  * zone name. Filters out zones missing geometry.
+ *
+ * Each zone arrives from ``fetchBedsAndZones`` as ``{name, coords, lineId}``
+ * (decoded client-side from the compact wire format — see
+ * ``upande_scp.serverscripts.geo.zone_encoding``). Consumers of
+ * ``ZoneFeature.geometry`` (Leaflet's ``L.geoJSON``, ``geometryCentroid``,
+ * ``zonePolygonFromGeometry``) still expect a GeoJSON shape, so this
+ * synthesises the equivalent single-feature FeatureCollection the old
+ * ``raw_geojson`` string decoded to — but directly from typed arrays,
+ * never via ``JSON.parse``.
  */
 export function flattenZones(varieties: VarietyNode[]): ZoneFeature[] {
   const out: ZoneFeature[] = [];
@@ -23,12 +35,17 @@ export function flattenZones(varieties: VarietyNode[]): ZoneFeature[] {
     for (const b of v.beds) {
       for (const z of b.zones) {
         let geometry: any = null;
-        if (z.raw_geojson) {
-          try {
-            geometry = typeof z.raw_geojson === "string" ? JSON.parse(z.raw_geojson) : z.raw_geojson;
-          } catch {
-            geometry = null;
-          }
+        if (Array.isArray(z.coords) && z.coords.length === 2) {
+          geometry = {
+            type: "FeatureCollection",
+            features: [
+              {
+                type: "Feature",
+                geometry: { type: "LineString", coordinates: z.coords },
+                properties: { line_id: z.lineId },
+              },
+            ],
+          };
         }
         out.push({
           zoneName: z.name,

@@ -633,7 +633,7 @@ export function ApplicationPlan() {
       for (const b of v.beds) {
         if (!b.name.startsWith(greenhouse)) continue;
         for (const z of b.zones) {
-          out.push({ name: z.name, raw_geojson: z.raw_geojson });
+          out.push({ name: z.name, coords: z.coords, lineId: z.lineId });
         }
       }
     }

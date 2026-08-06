@@ -11,6 +11,12 @@ from upande_scp.serverscripts.dashboard_aggregates._common import (
 )
 
 
+def _neg_date(d) -> str:
+    """Descending-date sort key for use inside an ascending tuple sort.
+    ISO dates sort lexicographically, so invert each character's ordinal."""
+    return "".join(chr(255 - ord(c)) for c in str(d or ""))
+
+
 def overview(args: dict, force: bool = False) -> dict:
     """Return the Overview tab payload (9 aggregations).
 
@@ -252,10 +258,12 @@ def _classify_cells(obs: list, crop: str, zones_by_gh: dict) -> tuple:
         a = bucket["alerts"]
         bucket["status"] = "critical" if a > 2 else "warning" if a > 0 else "good"
 
+    # Total order: total observations desc, then greenhouse name — by_gh is
+    # keyed by greenhouse so the name makes ties total. Without it, two
+    # greenhouses with equal counts swap places depending on scan order.
     gh_out = sorted(
         by_gh.values(),
-        key=lambda x: x["pests"] + x["diseases"] + x["traps"],
-        reverse=True,
+        key=lambda x: (-(x["pests"] + x["diseases"] + x["traps"]), x["name"]),
     )
     return gh_out, out_cells, total_alerts
 
@@ -278,8 +286,19 @@ def _active_alerts_from_cells(cells: list, n: int = 8) -> list:
         }
         for c in flagged
     ]
-    out.sort(key=lambda a: a["date"], reverse=True)
-    out.sort(key=lambda a: a["severity"] != "high")
+    # Total order: severity, then date, then (greenhouse, kind, name, stage) —
+    # the cell key is (gh, kind, obs_name, stage), so the trailing four keys
+    # make the ordering total. Without them the [:n] truncation below picks
+    # arbitrarily among tied alerts, so which alerts a supervisor sees
+    # depends on the query plan.
+    out.sort(key=lambda a: (
+        a.get("severity") != "high",
+        _neg_date(a.get("date")),
+        a.get("greenhouse") or "",
+        a.get("kind") or "",
+        a.get("name") or "",
+        a.get("stage") or "",
+    ))
     return out[:n]
 
 
@@ -304,13 +323,14 @@ def _scout_aggs(obs: list) -> tuple:
         elif r.kind == "disease":
             ob["diseases"] += 1
     top = [{"scoutId": s, "entries": n} for s, n in entries_by_scout.items()]
-    top.sort(key=lambda x: x["entries"], reverse=True)
+    # entries_by_scout is keyed by scoutId, so it's a total-order tie-break.
+    top.sort(key=lambda x: (-x["entries"], x["scoutId"]))
     perf = [
         {"scoutId": s, "zones": entries_by_scout.get(s, 0),
          "pests": ob["pests"], "diseases": ob["diseases"]}
         for s, ob in obs_by_scout.items()
     ]
-    perf.sort(key=lambda x: x["zones"], reverse=True)
+    perf.sort(key=lambda x: (-x["zones"], x["scoutId"]))
     spd = [{"date": d, "scouts": len(s)} for d, s in scouts_by_date.items()]
     spd.sort(key=lambda x: x["date"])
     return top[:6], spd, perf[:8]
@@ -327,7 +347,7 @@ def _recent_activity(where: str, params: dict, n: int = 8) -> list:
                EXISTS(SELECT 1 FROM `tabTrap Scouting Entry` t WHERE t.parent = se.name)     AS has_trap
         FROM `tabScouting Entry` se
         WHERE {where}
-        ORDER BY se.date_of_capture DESC, se.time_of_capture DESC
+        ORDER BY se.date_of_capture DESC, se.time_of_capture DESC, se.name DESC
         LIMIT %(limit)s
         """,
         {**params, "limit": n},

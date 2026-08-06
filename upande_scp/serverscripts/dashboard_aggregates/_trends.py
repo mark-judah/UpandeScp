@@ -133,23 +133,20 @@ def _unit_key(row) -> str:
     return f"bed::{bed}" if bed else ""
 
 
-def _intern(table: dict, key: str, vocab: list) -> int:
-    """Add ``key`` to ``vocab`` once and return its integer index. Reused
-    across the three lookup tables so they share a single vocabulary."""
-    idx = table.get(key)
-    if idx is None:
-        idx = len(vocab)
-        table[key] = idx
-        vocab.append(key)
-    return idx
-
-
 def _aggregate(rows: list) -> dict:
     """Single pass over the observation rows produces:
 
       * options bundle (farmStations, pests, diseases, stagesByObs)
       * three lookup tables of distinct-unit counts
       * the structural metadata (stationsByFarm, unitsByStation, allDates)
+
+    ``rows`` comes from a UNION ALL query with no ORDER BY, so its scan
+    order is not defined. The grouping pass below keys everything by the
+    actual date/station/obs/stage *strings* (not vocab indices), which
+    makes the grouping itself immune to row order. Vocab indices are then
+    assigned afterwards from sorted vocabularies, so which integer a given
+    date/station/obs/stage gets — and the row order of byAny/byKindName/
+    byKindNameStage — no longer depends on the database's scan order.
     """
     farms_map = scouting_metrics.get_farms_and_warehouses() or {}
     station_to_farm: dict[str, str] = {}
@@ -163,20 +160,11 @@ def _aggregate(rows: list) -> dict:
     diseases: dict[str, int] = {}
     stages_by_obs: dict[str, set] = {}
 
-    # Vocab + lookup index
-    vocab_dates:    list[str] = []
-    vocab_stations: list[str] = []
-    vocab_obs:      list[str] = []
-    vocab_stages:   list[str] = [""]  # index 0 reserved for "no stage"
-    idx_dates:    dict[str, int] = {}
-    idx_stations: dict[str, int] = {}
-    idx_obs:      dict[str, int] = {}
-    idx_stages:   dict[str, int] = {"": 0}
-
-    # Distinct-unit sets keyed by every dimension combination we serve
-    units_kns: dict[tuple, set] = {}  # (d, s, o, g) → {unit}
-    units_kn:  dict[tuple, set] = {}  # (d, s, o)    → {unit}
-    units_any: dict[tuple, set] = {}  # (d, s)       → {unit}
+    # Distinct-unit sets keyed by the actual string dimensions (not vocab
+    # indices) so the grouping never depends on row scan order.
+    units_kns: dict[tuple, set] = {}  # (date, station, obs_key, stage) → {unit}
+    units_kn:  dict[tuple, set] = {}  # (date, station, obs_key)       → {unit}
+    units_any: dict[tuple, set] = {}  # (date, station)                → {unit}
 
     # Structural metadata
     stations_by_farm: dict[str, set] = {}
@@ -210,28 +198,43 @@ def _aggregate(rows: list) -> dict:
         if stage:
             stages_by_obs.setdefault(obs_key, set()).add(stage)
 
-        # Resolve vocab indices
-        di = _intern(idx_dates,    date,    vocab_dates)
-        si = _intern(idx_stations, station, vocab_stations)
-        oi = _intern(idx_obs,      obs_key, vocab_obs)
-        gi = _intern(idx_stages,   stage,   vocab_stages) if stage else 0
-
-        units_any.setdefault((di, si), set()).add(unit)
-        units_kn .setdefault((di, si, oi), set()).add(unit)
-        units_kns.setdefault((di, si, oi, gi), set()).add(unit)
+        units_any.setdefault((date, station), set()).add(unit)
+        units_kn.setdefault((date, station, obs_key), set()).add(unit)
+        units_kns.setdefault((date, station, obs_key, stage), set()).add(unit)
 
         stations_by_farm.setdefault(farm, set()).add(station)
         units_by_station.setdefault(station, set()).add(unit)
 
-    by_any: list[list[int]] = [
-        [d, s, len(u)] for (d, s), u in units_any.items()
-    ]
-    by_kn: list[list[int]] = [
-        [d, s, o, len(u)] for (d, s, o), u in units_kn.items()
-    ]
-    by_kns: list[list[int]] = [
-        [d, s, o, g, len(u)] for (d, s, o, g), u in units_kns.items()
-    ]
+    # Vocabularies, sorted so index assignment doesn't depend on row scan
+    # order. Index 0 in vocab_stages stays reserved for "no stage", as before.
+    vocab_dates:    list[str] = sorted({d for (d, _s) in units_any})
+    vocab_stations: list[str] = sorted({s for (_d, s) in units_any})
+    vocab_obs:      list[str] = sorted({o for (_d, _s, o) in units_kn})
+    vocab_stages:   list[str] = [""] + sorted({g for *_, g in units_kns if g})
+
+    idx_dates    = {d: i for i, d in enumerate(vocab_dates)}
+    idx_stations = {s: i for i, s in enumerate(vocab_stations)}
+    idx_obs      = {o: i for i, o in enumerate(vocab_obs)}
+    idx_stages   = {g: i for i, g in enumerate(vocab_stages)}
+
+    by_any: list[list[int]] = sorted(
+        ([idx_dates[d], idx_stations[s], len(u)] for (d, s), u in units_any.items()),
+        key=lambda row: (row[0], row[1]),
+    )
+    by_kn: list[list[int]] = sorted(
+        (
+            [idx_dates[d], idx_stations[s], idx_obs[o], len(u)]
+            for (d, s, o), u in units_kn.items()
+        ),
+        key=lambda row: (row[0], row[1], row[2]),
+    )
+    by_kns: list[list[int]] = sorted(
+        (
+            [idx_dates[d], idx_stations[s], idx_obs[o], idx_stages[g], len(u)]
+            for (d, s, o, g), u in units_kns.items()
+        ),
+        key=lambda row: (row[0], row[1], row[2], row[3]),
+    )
 
     return {
         "options": {

@@ -104,13 +104,15 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
             "greenhouseCount": len(ghs),
         },
         "daily":         sorted(daily.values(), key=lambda x: x["date"]),
+        # breakdown / focus_pest_totals are keyed by pest name, so it's a
+        # total-order tie-break.
         "pestBreakdown": sorted(
             [{"name": n, "value": v} for n, v in breakdown.items()],
-            key=lambda x: x["value"], reverse=True,
+            key=lambda x: (-x["value"], x["name"]),
         ),
         "focusPests":    sorted(
             [{"name": n, "total": v} for n, v in focus_pest_totals.items()],
-            key=lambda x: x["total"], reverse=True,
+            key=lambda x: (-x["total"], x["name"]),
         )[:10],
     }
     publish_progress(job_id, 100, "")

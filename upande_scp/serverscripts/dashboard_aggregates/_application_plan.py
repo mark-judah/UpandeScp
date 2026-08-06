@@ -150,9 +150,15 @@ def _build(filters: dict, job_id: str = "") -> dict:
         if d and (latest is None or d > latest):
             latest = d
 
-    # Materialise the per-zone stage list (shape markers) and drop the scratch dict.
+    # Materialise the per-zone stage list (shape markers) and drop the scratch
+    # dict. _stages is keyed by stage name (unique per zone bucket) but was
+    # populated in row-scan order, which _query_kind's GROUP BY leaves
+    # undefined (no ORDER BY) — sort by stage, like every sibling list in
+    # this payload, so the order doesn't depend on the query plan.
     for bucket in zone_obs.values():
-        bucket["stages"] = list(bucket.pop("_stages").values())
+        bucket["stages"] = sorted(
+            bucket.pop("_stages").values(), key=lambda s: s["stage"],
+        )
 
     publish_progress(job_id, 100, "")
     return {

@@ -26,3 +26,4 @@ upande_scp.patches.v1_0.configure_fertilizer_as_foliar
 upande_scp.patches.v1_0.drop_item_chemical_custom_fields
 upande_scp.patches.v1_0.drop_orphan_item_chemical_columns
 upande_scp.patches.v1_0.remove_kaitet_stock_entry_fields
+upande_scp.patches.v1_0.add_scouting_child_indexes

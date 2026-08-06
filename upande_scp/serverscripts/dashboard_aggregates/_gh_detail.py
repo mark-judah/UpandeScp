@@ -119,9 +119,10 @@ def _build(filters: dict, job_id: str = "") -> dict:
                 alerts += 1
 
     def _top(d, n=6):
+        # d is keyed by name, so it's a total-order tie-break.
         return sorted(
             [{"name": k, "count": v} for k, v in d.items()],
-            key=lambda x: x["count"], reverse=True,
+            key=lambda x: (-x["count"], x["name"]),
         )[:n]
 
     payload = {
@@ -129,7 +130,7 @@ def _build(filters: dict, job_id: str = "") -> dict:
         "topDiseases": _top(disease_map),
         "traps":       sorted(
             [{"pest": k, "total": v} for k, v in trap_map.items()],
-            key=lambda x: x["total"], reverse=True,
+            key=lambda x: (-x["total"], x["pest"]),
         )[:6],
         "daily": sorted(daily.values(), key=lambda x: x["date"]),
         "scouts": len({(r.scouts_name or "").strip() for r in scout_rows

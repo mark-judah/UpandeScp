@@ -140,7 +140,8 @@ def _ranking(kind: str, rows: list, crop: str, zones_by_gh: dict) -> list:
         )
         bucket[sev] += 1
 
-    return sorted(by_name.values(), key=lambda x: x["total"], reverse=True)
+    # by_name is keyed by obs_name, so it's a total-order tie-break.
+    return sorted(by_name.values(), key=lambda x: (-x["total"], x["name"]))
 
 
 def _filter_options(rows: list) -> dict:
@@ -195,7 +196,8 @@ def _distribution(rows, filters, zones_by_gh) -> list:
     out = [{"name": n, "zones": len(s),
             "pct": round(len(s) / denom * 1000) / 10}
            for n, s in by_obs.items()]
-    out.sort(key=lambda x: x["zones"], reverse=True)
+    # by_obs is keyed by obs name, so it's a total-order tie-break.
+    out.sort(key=lambda x: (-x["zones"], x["name"]))
     return out
 
 
@@ -215,7 +217,8 @@ def _section_split(rows, filters) -> list:
     out = [{"name": n, "zones": len(s),
             "pct": round(len(s) / total * 1000) / 10}
            for n, s in sections.items()]
-    out.sort(key=lambda x: x["zones"], reverse=True)
+    # sections is keyed by section name, so it's a total-order tie-break.
+    out.sort(key=lambda x: (-x["zones"], x["name"]))
     return out
 
 
@@ -234,7 +237,8 @@ def _gh_pressure(rows, filters, zones_by_gh) -> list:
     out = [{"name": gh, "zones": len(s),
             "pct": round(len(s) / max(1, zones_by_gh.get(gh, 0)) * 1000) / 10}
            for gh, s in gh_to_zones.items()]
-    out.sort(key=lambda x: x["pct"], reverse=True)
+    # gh_to_zones is keyed by greenhouse name, so it's a total-order tie-break.
+    out.sort(key=lambda x: (-x["pct"], x["name"]))
     return out
 
 
@@ -271,7 +275,8 @@ def _trend_series(rows, kind: str, top_n: int = 5) -> dict:
         v = int(r.count or 0) if kind == "pest" else 1
         bucket["daily"][date] = bucket["daily"].get(date, 0) + v
         bucket["total"] += v
-    top = sorted(pairs.values(), key=lambda x: x["total"], reverse=True)[:top_n]
+    # pairs is keyed by obs name, so it's a total-order tie-break.
+    top = sorted(pairs.values(), key=lambda x: (-x["total"], x["name"]))[:top_n]
     if not top:
         return {"rows": [], "keys": []}
     dates = sorted({d for p in top for d in p["daily"]})

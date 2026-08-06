@@ -124,6 +124,14 @@ def _build(greenhouse: str, obs_name: str, obs_kind: str) -> dict:
             "count": n,
         })
 
+    # zone_rows is GROUP BY (date, zone, stage) with no ORDER BY, so each
+    # per-zone stage list was appended in scan order. Each (date, zone)
+    # bucket has at most one entry per stage, so sorting by stage alone
+    # gives a total order.
+    for zones in by_date_stages.values():
+        for zone_stages in zones.values():
+            zone_stages.sort(key=lambda s: s["stage"])
+
     recent = [
         {"date": d, "zoneObs": by_date[d], "zoneStages": by_date_stages[d]}
         for d in dates

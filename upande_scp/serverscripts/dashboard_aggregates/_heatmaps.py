@@ -92,8 +92,10 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
     }
     cards = _build_cards(pest_rows, "pest", pest_color_map)
     cards.extend(_build_cards(disease_rows, "disease", disease_color_map))
-    # Most-active first across both kinds, then stable order.
-    cards.sort(key=lambda c: (-c["totalObs"], c["greenhouse"], c["obsName"]))
+    # Most-active first across both kinds, then stable order. obsKind is
+    # appended so a pest and a disease sharing a name in the same
+    # greenhouse still resolve to a total order.
+    cards.sort(key=lambda c: (-c["totalObs"], c["greenhouse"], c["obsName"], c["obsKind"]))
 
     publish_progress(job_id, 100, "")
     return {"cards": cards}
@@ -164,6 +166,16 @@ def _build_cards(rows: list, mode: str, color_map: dict) -> list:
             "icon_key": icons.get(stage, ""),
             "count": n,
         })
+
+    # _query_kind groups by (gh, obs, date, zone, stage) with no ORDER BY, so
+    # each per-zone stage list was appended in scan order. Each (date, zone)
+    # bucket has at most one entry per stage, so sorting by stage alone
+    # gives a total order.
+    for by_obs in by_gh_obs.values():
+        for bucket in by_obs.values():
+            for sday in bucket["stages_by_date"].values():
+                for zone_stages in sday.values():
+                    zone_stages.sort(key=lambda s: s["stage"])
 
     cards = []
     for gh, by_obs in by_gh_obs.items():

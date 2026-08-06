@@ -141,14 +141,31 @@ def _shape(all_rows: list, chips: dict) -> dict:
             targets_in_scope.add(obs_name)
         bucket = zone_obs.get(z)
         if bucket is None:
-            color = (
-                pest_color_map.get(obs_name)
-                or disease_color_map.get(obs_name)
-                or "#888888"
-            )
-            bucket = {"count": 0, "color": color, "kind": r.get("kind") or "pest", "_stages": {}}
+            bucket = {
+                "count": 0,
+                "color": "#888888",
+                "kind": r.get("kind") or "pest",
+                "_stages": {},
+                "_rank": None,
+            }
             zone_obs[z] = bucket
         bucket["count"] += n
+        # color/kind must be deterministic, not first-row-wins over an
+        # unordered GROUP BY — but must also reproduce today's actual
+        # display rule, which is NOT "alphabetically smallest obs_name
+        # globally": _load_rows scans every pest row before any disease
+        # row, so a pest always outranks a disease sharing a zone, and
+        # alphabetical order only breaks ties within a kind. Rank each row
+        # by (0=pest/1=disease, obs_name) and keep the smallest, decided
+        # incrementally as rows are scanned (a later row can still
+        # displace the current winner) so the result stays plan-independent.
+        row_kind = r.get("kind") or "pest"
+        rank = (0 if row_kind == "pest" else 1, obs_name)
+        if obs_name and (bucket["_rank"] is None or rank < bucket["_rank"]):
+            bucket["_rank"] = rank
+            bucket["kind"] = row_kind
+            color_map = pest_color_map if row_kind == "pest" else disease_color_map
+            bucket["color"] = color_map.get(obs_name) or "#888888"
         stg = (r.get("stage") or "").strip()
         s_entry = bucket["_stages"].get(stg)
         if s_entry is None:
@@ -165,6 +182,7 @@ def _shape(all_rows: list, chips: dict) -> dict:
     # undefined (no ORDER BY) — sort by stage, like every sibling list in
     # this payload, so the order doesn't depend on the query plan.
     for bucket in zone_obs.values():
+        bucket.pop("_rank", None)
         bucket["stages"] = sorted(
             bucket.pop("_stages").values(), key=lambda s: s["stage"],
         )

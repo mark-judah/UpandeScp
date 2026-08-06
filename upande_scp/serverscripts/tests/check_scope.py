@@ -3,7 +3,8 @@ def run():
     _defaults_unknown_to_greenhouse()
     _greenhouse_only_emits_no_OR()
     _mixed_scope_covers_both()
-    print('check_scope: 4 passed')
+    _data_invariant_holds()
+    print('check_scope: 5 passed')
 
 
 def _splits_by_warehouse_type():
@@ -47,3 +48,56 @@ def _mixed_scope_covers_both():
     )
     assert "se.greenhouse IN" in sql, sql
     assert "se.block IN" in sql, sql
+
+def _data_invariant_holds():
+    """partition_scope routes on warehouse_type and defaults unknown names
+    to greenhouse; get_units_by_warehouse only sees non-disabled, non-group
+    warehouses. Nothing enforces that the invariant this all rests on
+    actually holds — e.g. disabling a Block warehouse would silently drop
+    it from get_units_by_warehouse, default it to the greenhouse column,
+    and the query would just return zero rows instead of erroring. Assert
+    the invariant directly against the live data instead of trusting it:
+
+        se.greenhouse populated -> warehouse_type Greenhouse : 100%
+        se.block      populated -> warehouse_type Block      : 100%
+        rows with BOTH columns set                           : 0
+        greenhouse/block names matching no Warehouse         : 0
+
+    Read-only (COUNT queries); asserts the invariant (zero violations), not
+    the absolute row counts, since the data grows.
+    """
+    import frappe
+
+    bad_gh = frappe.db.sql("""
+        SELECT COUNT(*) FROM `tabScouting Entry` se
+        JOIN `tabWarehouse` w ON w.name = se.greenhouse
+        WHERE se.greenhouse IS NOT NULL AND se.greenhouse != ''
+          AND w.warehouse_type != 'Greenhouse'
+    """)[0][0]
+    assert bad_gh == 0, f"{bad_gh} se.greenhouse rows point at a non-Greenhouse warehouse"
+
+    bad_block = frappe.db.sql("""
+        SELECT COUNT(*) FROM `tabScouting Entry` se
+        JOIN `tabWarehouse` w ON w.name = se.block
+        WHERE se.block IS NOT NULL AND se.block != ''
+          AND w.warehouse_type != 'Block'
+    """)[0][0]
+    assert bad_block == 0, f"{bad_block} se.block rows point at a non-Block warehouse"
+
+    both = frappe.db.sql("""
+        SELECT COUNT(*) FROM `tabScouting Entry`
+        WHERE greenhouse IS NOT NULL AND greenhouse != ''
+          AND block IS NOT NULL AND block != ''
+    """)[0][0]
+    assert both == 0, f"{both} Scouting Entry rows populate BOTH greenhouse and block"
+
+    orphaned = frappe.db.sql("""
+        SELECT COUNT(*) FROM `tabScouting Entry` se
+        LEFT JOIN `tabWarehouse` gw ON gw.name = se.greenhouse
+        LEFT JOIN `tabWarehouse` bw ON bw.name = se.block
+        WHERE (se.greenhouse IS NOT NULL AND se.greenhouse != '' AND gw.name IS NULL)
+           OR (se.block IS NOT NULL AND se.block != '' AND bw.name IS NULL)
+    """)[0][0]
+    assert orphaned == 0, (
+        f"{orphaned} Scouting Entry rows name a greenhouse/block with no matching Warehouse"
+    )

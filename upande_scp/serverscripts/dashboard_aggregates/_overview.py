@@ -83,8 +83,13 @@ def _build(from_date, to_date, crop, scope, job_id: str = "") -> dict:
 def _kpis(where: str, params: dict) -> dict:
     # Resolve each entry's production unit via Warehouse.warehouse_type, not by
     # which column it sits in: greenhouse-typed warehouses → "Greenhouses" KPI,
-    # block-typed → "Blocks" KPI. Some entries store a block in the greenhouse
-    # column (or vice-versa), so we LEFT JOIN both columns and classify by type.
+    # block-typed → "Blocks" KPI. In practice each entry populates exactly one
+    # of (greenhouse, block), matching its warehouse_type — see
+    # _common.partition_scope, verified on kaitet: 293769 greenhouse-column
+    # rows are all warehouse_type Greenhouse, 3362 block-column rows are all
+    # Block, zero rows carry both or neither. We still LEFT JOIN both columns
+    # and classify by type rather than assume which column is populated, so
+    # this keeps working if that invariant is ever violated.
     row = frappe.db.sql(
         f"""
         SELECT

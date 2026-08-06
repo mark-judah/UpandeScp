@@ -135,7 +135,9 @@ def _query_kind(where: str, params: dict, mode: str) -> list:
 
 def _build_cards(rows: list, mode: str, color_map: dict, dates_limit: int = 3) -> list:
     """Walk the per-(gh, obs, date, zone) rows once; emit one card per
-    (gh, obs) with aggregate totals + the 3 most-recent distinct dates."""
+    (gh, obs) with aggregate totals + the ``dates_limit`` most-recent
+    distinct dates (the grid path passes 1; ``heatmap_card_detail`` passes
+    the default 3 for the opened-card history)."""
     # by_gh_obs[gh][obs] = {
     #   total, zones: set,
     #   by_date: { date: { zone: count } },
@@ -180,7 +182,7 @@ def _build_cards(rows: list, mode: str, color_map: dict, dates_limit: int = 3) -
     cards = []
     for gh, by_obs in by_gh_obs.items():
         for obs, bucket in by_obs.items():
-            # 3 most-recent dates, ISO strings sort lexicographically.
+            # Most-recent `dates_limit` dates; ISO strings sort lexicographically.
             dates = sorted(bucket["by_date"].keys(), reverse=True)[:dates_limit]
             recent = [
                 {

@@ -12,15 +12,33 @@ import frappe
 
 
 
+K_STAGE_ICON_MAP = "scp:dash_agg:stage_icon_map"
+STAGE_ICON_MAP_TTL = 3600  # 1h — Stage is a small, rarely-edited catalog
+
+
 def stage_icon_map() -> dict:
     """{stage_name: icon_key} from the Stage catalog. The icon_key IS a marker
     shape name (see frontend MarkerDefs), so the same stage renders the same
     shape across every pest/disease. Unknown stages resolve to "" -> the
-    frontend falls back to a circle."""
-    return {
-        s["name"]: (s.get("icon_key") or "")
-        for s in frappe.get_all("Stage", fields=["name", "icon_key"], limit_page_length=0)
-    }
+    frontend falls back to a circle.
+
+    Cached the same way as ``_cached_pest_colors``/``_cached_disease_colors``
+    (get_complete_scouting_entries.py): this used to be a plain
+    ``frappe.get_all`` called on every ``_shape()`` invocation, including
+    warm-cache hits — the one query the endpoint should not have on a warm
+    path. TTL-only invalidation is fine; nothing bumps this key on Stage
+    edits, but the catalog changes rarely enough that the 1h staleness
+    window is a non-issue.
+    """
+    cache = frappe.cache()
+    value = cache.get_value(K_STAGE_ICON_MAP)
+    if value is None:
+        value = {
+            s["name"]: (s.get("icon_key") or "")
+            for s in frappe.get_all("Stage", fields=["name", "icon_key"], limit_page_length=0)
+        }
+        cache.set_value(K_STAGE_ICON_MAP, value, expires_in_sec=STAGE_ICON_MAP_TTL)
+    return value
 
 
 def resolve_greenhouse_scope(

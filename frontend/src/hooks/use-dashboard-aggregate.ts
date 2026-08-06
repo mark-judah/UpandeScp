@@ -41,7 +41,7 @@ export interface AggregateState<T> {
   reload: (opts?: { force?: boolean }) => void;
 }
 
-const METHOD: Record<Endpoint, string> = {
+export const METHOD: Record<Endpoint, string> = {
   overview:           "upande_scp.serverscripts.dashboard_aggregates.overview",
   pests:              "upande_scp.serverscripts.dashboard_aggregates.pests",
   diseases:           "upande_scp.serverscripts.dashboard_aggregates.diseases",

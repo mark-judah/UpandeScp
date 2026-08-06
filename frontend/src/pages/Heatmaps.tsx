@@ -46,7 +46,7 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
-import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
+import { METHOD, useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { call } from "@/lib/frappe";
 import {
   fetchBedsAndZones,
@@ -170,8 +170,8 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     if (!picked) { setPickedDetail(null); return; }
     let cancelled = false;
     setPickedDetail(null);
-    call<{ message?: { recent: CardRecent[] } }>(
-      "upande_scp.serverscripts.dashboard_aggregates.heatmap_card_detail",
+    call<{ recent: CardRecent[] }>(
+      METHOD.heatmap_card_detail,
       {
         from_date: from, to_date: to, crop,
         greenhouse: picked.greenhouse,
@@ -181,7 +181,10 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     )
       .then((r) => {
         if (cancelled) return;
-        setPickedDetail((r as any)?.message?.recent ?? (r as any)?.recent ?? []);
+        // A legitimate empty response must not blank the modal down to
+        // "no data" — fall back to the one date the grid already has.
+        const recent = r?.recent ?? [];
+        setPickedDetail(recent.length ? recent : picked.recent);
       })
       .catch(() => !cancelled && setPickedDetail(picked.recent));
     return () => { cancelled = true; };
@@ -353,6 +356,11 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   // 3-date detail once it lands, falling back to what the grid already
   // has so the first date renders instantly with no flash.
   const modalRecent: CardRecent[] = picked ? (pickedDetail ?? picked.recent) : [];
+  // True only during the in-flight fetch window — slots 2/3 render a
+  // loading state instead of asserting "No earlier scouting recorded",
+  // which would otherwise be a false statement of fact while the detail
+  // fetch (measured ~542ms cold) is still in flight.
+  const isLoadingDetail = picked !== null && pickedDetail === null;
 
   return (
     <div className="flex flex-col min-h-svh">
@@ -666,6 +674,10 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                         ) : slice ? (
                           <div className="flex-1 flex items-center justify-center min-h-[260px] text-[0.72rem] text-muted-foreground border-dashed border rounded-md bg-[var(--sd-bg-soft)]">
                             Projecting bed geometry…
+                          </div>
+                        ) : isLoadingDetail ? (
+                          <div className="flex-1 flex items-center justify-center min-h-[260px] text-[0.72rem] text-muted-foreground border-dashed border rounded-md bg-[var(--sd-bg-soft)]">
+                            Loading…
                           </div>
                         ) : (
                           <div className="flex-1 flex items-center justify-center min-h-[260px] text-[0.72rem] text-muted-foreground border-dashed border rounded-md bg-[var(--sd-bg-soft)]">

@@ -153,9 +153,15 @@ describe("playback week selection", () => {
     { date: "2026-W30", complete: true },
   ];
 
-  it("skips incomplete weeks", () => {
+  it("keeps partial weeks — the interpolation already smooths them", () => {
+    // Deliberately reversed: partial weeks used to be excluded, which threw
+    // away 101 of 229 greenhouse-weeks. The surface flows smoothly across beds
+    // a session skipped, so there is no trough to hide from; the week is shown
+    // with its sample size instead.
     expect(playableWeeks(weeks).map((w) => w.date)).toEqual([
+      "2026-W27",
       "2026-W28",
+      "2026-W29",
       "2026-W30",
     ]);
   });
@@ -164,11 +170,156 @@ describe("playback week selection", () => {
     expect(playableWeeks([{ date: "2026-W28" }])).toHaveLength(1);
   });
 
-  it("keeps skipped weeks in the timeline so gaps stay visible", () => {
-    // A jump from W28 to W30 must read as a data gap, not two quiet weeks.
+  it("gives every week a frame, and keeps them in order", () => {
     const t = timeline(weeks);
-    expect(t.map((e) => e.playable)).toEqual([false, true, false, true]);
-    expect(t.map((e) => e.frame)).toEqual([null, 0, null, 1]);
     expect(t).toHaveLength(weeks.length);
+    expect(t.map((e) => e.playable)).toEqual([true, true, true, true]);
+    expect(t.map((e) => e.frame)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("carries the sample size through, so partial weeks can be labelled", () => {
+    const sized = [
+      { date: "2026-W28", complete: true, bedsScouted: 29, zonesScouted: 43 },
+      { date: "2026-W29", complete: false, bedsScouted: 54, zonesScouted: 183 },
+    ];
+    expect(playableWeeks(sized).map((w) => w.bedsScouted)).toEqual([29, 54]);
+  });
+});
+
+describe("weightPaintColor — Blender-style weight ramp", () => {
+  it("hits the canonical stops", async () => {
+    const { weightPaintColor } = await import("../terrain-field");
+    expect(weightPaintColor(0)).toEqual({ r: 0, g: 0, b: 1 }); // blue
+    expect(weightPaintColor(0.25)).toEqual({ r: 0, g: 1, b: 1 }); // cyan
+    expect(weightPaintColor(0.5)).toEqual({ r: 0, g: 1, b: 0 }); // green
+    expect(weightPaintColor(0.75)).toEqual({ r: 1, g: 1, b: 0 }); // yellow
+    expect(weightPaintColor(1)).toEqual({ r: 1, g: 0, b: 0 }); // red
+  });
+
+  it("interpolates between stops", async () => {
+    const { weightPaintColor } = await import("../terrain-field");
+    const mid = weightPaintColor(0.125); // halfway blue → cyan
+    expect(mid.g).toBeCloseTo(0.5, 5);
+    expect(mid.b).toBeCloseTo(1, 5);
+  });
+
+  it("clamps out-of-range so an overshoot can't wrap back to blue", async () => {
+    const { weightPaintColor } = await import("../terrain-field");
+    expect(weightPaintColor(1.4)).toEqual({ r: 1, g: 0, b: 0 });
+    expect(weightPaintColor(-2)).toEqual({ r: 0, g: 0, b: 1 });
+    expect(weightPaintColor(NaN)).toEqual({ r: 0, g: 0, b: 1 });
+  });
+
+  it("produces a legend that starts blue and ends red", async () => {
+    const { weightPaintLegend } = await import("../terrain-field");
+    const l = weightPaintLegend(5);
+    expect(l).toHaveLength(5);
+    expect(l[0].css).toBe("rgb(0,0,255)");
+    expect(l[4].css).toBe("rgb(255,0,0)");
+  });
+});
+
+describe("buildLattice — bed × zone index space", () => {
+  const gh = "Torongo GH 07 - KR";
+  const z = (bed: number, zone: number, value: number) => ({
+    name: `${gh} - Bed ${bed} - Zone ${zone}`,
+    value,
+  });
+
+  it("parses the bed number after 'Bed', never the greenhouse's digits", async () => {
+    const { parseBedZone } = await import("../terrain-field");
+    expect(parseBedZone("Torongo GH 07 - KR - Bed 51 - Zone 9")).toEqual({
+      bed: 51,
+      zone: 9,
+    });
+    expect(parseBedZone("Torongo GH 07 - KR")).toBeNull();
+  });
+
+  it("gives contiguous axes from 1 to the maximum, not just observed beds", async () => {
+    const { buildLattice } = await import("../terrain-field");
+    // Only beds 1 and 5 seen — the axis must still run 1..5 so a bed keeps its
+    // position between weeks and the morph doesn't slide.
+    const l = buildLattice([z(1, 1, 4), z(5, 3, 8)]);
+    expect(l.bedNumbers).toEqual([1, 2, 3, 4, 5]);
+    expect(l.zoneNumbers).toEqual([1, 2, 3]);
+    expect(l.rows).toBe(5);
+    expect(l.cols).toBe(3);
+  });
+
+  it("maps a cell back to its bed and zone for the tooltip", async () => {
+    const { buildLattice, latticeCellAt } = await import("../terrain-field");
+    const l = buildLattice([z(1, 1, 4), z(3, 2, 9)], { smoothPasses: 0 });
+    const cell = latticeCellAt(l, 1, 2); // col=zone 2, row=bed 3
+    expect(cell?.bed).toBe(3);
+    expect(cell?.zone).toBe(2);
+    expect(cell?.value).toBeCloseTo(9);
+    expect(cell?.measured).toBe(true);
+  });
+
+  it("marks an interpolated cell as not measured", async () => {
+    const { buildLattice, latticeCellAt } = await import("../terrain-field");
+    const l = buildLattice([z(1, 1, 10), z(3, 1, 10)], { smoothPasses: 0 });
+    const gap = latticeCellAt(l, 0, 1); // bed 2, never scouted
+    expect(gap?.measured).toBe(false);
+    // ...and it rises to its neighbours rather than cutting a trough.
+    expect(gap!.value).toBeGreaterThan(1);
+  });
+
+  it("smooths odd/even bed alternation — the real scouting pattern", async () => {
+    const { buildLattice, latticeCellAt } = await import("../terrain-field");
+    const entries = [];
+    for (let bed = 1; bed <= 11; bed += 2)
+      for (let zone = 1; zone <= 6; zone++) entries.push(z(bed, zone, 8));
+    const l = buildLattice(entries);
+    const scouted = latticeCellAt(l, 2, 4)!.value; // bed 5
+    const skipped = latticeCellAt(l, 2, 5)!.value; // bed 6, unscouted
+    expect(skipped).toBeGreaterThan(scouted * 0.7);
+  });
+
+  it("returns an empty lattice for unparseable names rather than throwing", async () => {
+    const { buildLattice } = await import("../terrain-field");
+    const l = buildLattice([{ name: "no bed or zone here", value: 5 }]);
+    expect(l.rows).toBe(0);
+    expect(l.bedNumbers).toEqual([]);
+  });
+});
+
+describe("buildGroundLattice — real ground shape, identity preserved", () => {
+  const gh = "Torongo GH 07 - KR";
+  const nm = (bed: number, zone: number) => `${gh} - Bed ${bed} - Zone ${zone}`;
+
+  it("keeps bed identity per cell, so a U-shaped numbering still resolves", async () => {
+    const { buildGroundLattice, latticeCellAt } = await import("../terrain-field");
+    // Bed 10 physically adjacent to bed 140 — the U-shape case that bed-order
+    // layout deliberately cannot represent.
+    const positions = {
+      [nm(10, 1)]: { x: 0, y: 0 },
+      [nm(140, 1)]: { x: 1, y: 0 },
+    };
+    const l = buildGroundLattice(
+      [
+        { name: nm(10, 1), value: 5 },
+        { name: nm(140, 1), value: 20 },
+      ],
+      positions,
+      { resolution: 8 },
+    );
+    expect(l.identity).toBe("cell");
+    const left = latticeCellAt(l, 0, 0);
+    const right = latticeCellAt(l, l.cols - 1, 0);
+    expect(left?.bed).toBe(10);
+    expect(right?.bed).toBe(140);
+  });
+
+  it("bed-order layout tags identity as axis-indexed", async () => {
+    const { buildLattice } = await import("../terrain-field");
+    expect(buildLattice([{ name: nm(1, 1), value: 1 }]).identity).toBe("axis");
+  });
+
+  it("returns an empty lattice when no zone has a position", async () => {
+    const { buildGroundLattice } = await import("../terrain-field");
+    const l = buildGroundLattice([{ name: nm(1, 1), value: 5 }], {}, {});
+    expect(l.cols).toBe(0);
+    expect(l.identity).toBe("cell");
   });
 });

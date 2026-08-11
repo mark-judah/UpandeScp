@@ -639,7 +639,7 @@ export function ChartPanel({
                   return (
                     <Line
                       key={`${s.kind}:${s.label}`}
-                      type="linear"
+                      type="monotone"
                       dataKey={s.label}
                       name={s.kind === "farm" ? `${s.label} (farm)` : s.label}
                       stroke={PALETTE[i % PALETTE.length]}
@@ -712,7 +712,7 @@ export function ChartPanel({
                     return (
                       <Line
                         key={`pressure:${s.label}`}
-                        type="linear"
+                        type="monotone"
                         dataKey={s.label}
                         name={s.label}
                         stroke={PALETTE[i % PALETTE.length]}

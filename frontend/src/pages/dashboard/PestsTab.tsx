@@ -23,6 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { RevealLTR } from "@/components/RevealLTR";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { DashFilterRow } from "./DashFilterRow";
@@ -121,7 +122,7 @@ export function PestsTab({
         </CardHeader>
         <CardContent className="p-0">
           {trend.rows.length ? (
-            <ChartContainer config={lineConfig} className="h-64">
+            <RevealLTR><ChartContainer config={lineConfig} className="h-64">
               <LineChart data={trend.rows} margin={{ left: 4, right: 8, top: 8 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis
@@ -147,7 +148,7 @@ export function PestsTab({
                   }
                 />
                 <Line
-                  type="linear"
+                  type="monotone"
                   dataKey="value"
                   stroke="var(--sd-data-cyan)"
                   strokeWidth={2}
@@ -157,7 +158,7 @@ export function PestsTab({
                   isAnimationActive={false}
                 />
               </LineChart>
-            </ChartContainer>
+            </ChartContainer></RevealLTR>
           ) : (
             <EmptyHint title="Not observed in this range" hint="Try a wider date range or different filter." />
           )}
@@ -172,7 +173,7 @@ export function PestsTab({
           </CardHeader>
           <CardContent className="p-0">
             {distribution.length ? (
-              <ChartContainer config={distConfig} className="h-72">
+              <RevealLTR><ChartContainer config={distConfig} className="h-72">
                 <BarChart
                   data={distribution.slice(0, 12)}
                   layout="vertical"
@@ -200,13 +201,13 @@ export function PestsTab({
                       />
                     }
                   />
-                  <Bar dataKey="pct" radius={[3, 3, 3, 3]}>
+                  <Bar isAnimationActive={false} dataKey="pct" radius={[3, 3, 3, 3]}>
                     {distribution.slice(0, 12).map((row) => (
                       <Cell key={row.name} fill={pestColor(row.name)} />
                     ))}
                   </Bar>
                 </BarChart>
-              </ChartContainer>
+              </ChartContainer></RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -220,7 +221,7 @@ export function PestsTab({
           </CardHeader>
           <CardContent className="p-0">
             {sectionSplit.length ? (
-              <ChartContainer config={distConfig} className="h-72">
+              <RevealLTR><ChartContainer config={distConfig} className="h-72">
                 <BarChart
                   data={sectionSplit}
                   margin={{ left: 12, right: 12, top: 8 }}
@@ -241,9 +242,9 @@ export function PestsTab({
                       />
                     }
                   />
-                  <Bar dataKey="pct" fill="var(--sd-data-purple)" radius={[3, 3, 0, 0]} />
+                  <Bar isAnimationActive={false} dataKey="pct" fill="var(--sd-data-purple)" radius={[3, 3, 0, 0]} />
                 </BarChart>
-              </ChartContainer>
+              </ChartContainer></RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -313,7 +314,7 @@ export function PestsTab({
           </CardHeader>
           <CardContent className="p-0">
             {ghPressure.length ? (
-              <ChartContainer config={distConfig} className="h-72">
+              <RevealLTR><ChartContainer config={distConfig} className="h-72">
                 <BarChart
                   data={ghPressure.slice(0, 12)}
                   layout="vertical"
@@ -342,9 +343,9 @@ export function PestsTab({
                       />
                     }
                   />
-                  <Bar dataKey="pct" fill="var(--sd-data-amber)" radius={[3, 3, 3, 3]} />
+                  <Bar isAnimationActive={false} dataKey="pct" fill="var(--sd-data-amber)" radius={[3, 3, 3, 3]} />
                 </BarChart>
-              </ChartContainer>
+              </ChartContainer></RevealLTR>
             ) : (
               <EmptyHint />
             )}

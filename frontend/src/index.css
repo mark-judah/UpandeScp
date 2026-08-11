@@ -279,3 +279,27 @@ html { font-size: 85%; }
   }
 }
 
+
+/* Left-to-right chart reveal — see components/RevealLTR.tsx.
+   A clip-path wipe rather than per-series animation, because recharts grows
+   horizontal bars outward from the middle. */
+@keyframes scp-wipe-ltr {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.scp-reveal-ltr {
+  animation: scp-wipe-ltr var(--scp-reveal-duration, 700ms)
+    cubic-bezier(0.22, 0.61, 0.36, 1) var(--scp-reveal-delay, 0ms) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scp-reveal-ltr {
+    animation: none;
+    clip-path: none;
+  }
+}

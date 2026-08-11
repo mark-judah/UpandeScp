@@ -174,7 +174,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
                   <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
                   <ChartLegend content={<ChartLegendContent />} />
                   <Line
-                    type="linear"
+                    type="monotone"
                     dataKey="pests"
                     stroke="var(--sd-data-cyan)"
                     strokeWidth={2}
@@ -183,7 +183,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
                     isAnimationActive={false}
                   />
                   <Line
-                    type="linear"
+                    type="monotone"
                     dataKey="diseases"
                     stroke="var(--sd-data-pink)"
                     strokeWidth={2}
@@ -192,7 +192,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
                     isAnimationActive={false}
                   />
                   <Line
-                    type="linear"
+                    type="monotone"
                     dataKey="traps"
                     stroke="var(--sd-data-purple)"
                     strokeWidth={2}

@@ -327,7 +327,7 @@ function FilterEditor({
         />
       </div>
       {row.stages.length > 0 && (
-        <div className="mt-2 pl-3 border-l-2 border-muted flex flex-col gap-1.5">
+        <div className="mt-2 pl-3 flex flex-col gap-1.5">
           <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
             Per-stage overrides
           </div>

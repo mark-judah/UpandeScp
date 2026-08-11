@@ -30,6 +30,7 @@ bench --site <site> migrate
 To (re-)run just this seeder (safe/idempotent — skips names that already exist):
 
 ```bash
+
 bench --site <site> execute upande_scp.patches.v1_0.seed_stage_catalog.execute
 ```
 

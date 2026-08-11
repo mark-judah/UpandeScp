@@ -22,6 +22,7 @@ from upande_scp.serverscripts.dashboard_aggregates._heatmaps        import (
 )
 from upande_scp.serverscripts.dashboard_aggregates._heatmaps import (
     heatmap_card_detail as _heatmap_card_detail,
+    heatmap_terrain as _heatmap_terrain,
 )
 from upande_scp.serverscripts.dashboard_aggregates._application_plan import (
     application_plan_diagnose as _application_plan_diagnose,
@@ -84,6 +85,11 @@ def heatmaps_grid(**kwargs):
 @frappe.whitelist()
 def heatmap_card_detail(**kwargs):
     return _call(_heatmap_card_detail, **kwargs)
+
+
+@frappe.whitelist()
+def heatmap_terrain(**kwargs):
+    return _call(_heatmap_terrain, **kwargs)
 
 
 @frappe.whitelist()

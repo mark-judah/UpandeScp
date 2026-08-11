@@ -8,7 +8,7 @@
  *       when the user narrows obs or stations.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import {
   Maximize2,
   ChevronDown,
@@ -65,6 +65,13 @@ import {
   type ZoneStage,
 } from "./maps/BedSvg";
 import { StageLegend } from "./maps/StageLegend";
+import { hasWebGL } from "@/lib/webgl";
+import type { TerrainWeekData } from "./maps/Terrain3D";
+
+// Lazy: three.js is a ~508 kB chunk and the 2D heatmap must not pay for it.
+const Terrain3D = lazy(() =>
+  import("./maps/Terrain3D").then((m) => ({ default: m.Terrain3D })),
+);
 import {
   projectGeometry,
   type ProjectedGeometry,
@@ -78,6 +85,25 @@ import {
 } from "./trends/aggregate";
 import { WeatherCard } from "@/components/WeatherCard";
 import { cn } from "@/lib/utils";
+
+/** "2026-W29" -> "Week 29". The payload's `date` is an ISO-week label now. */
+function weekLabel(v: string): string {
+  const m = /^(\d{4})-W(\d{1,2})$/.exec(v || "");
+  return m ? `Week ${Number(m[2])}` : v || "";
+}
+
+/** Why a week is only half a picture, for the incomplete badge's tooltip. */
+function coverageNote(r: CardRecent): string {
+  const odd = r.oddZones ?? 0;
+  const even = r.evenZones ?? 0;
+  const missing = odd > even ? "even" : "odd";
+  return (
+    `Only ${missing === "even" ? "odd" : "even"}-numbered beds were scouted ` +
+    `this week (${r.sessions ?? 0} session${(r.sessions ?? 0) === 1 ? "" : "s"}` +
+    `${r.sessionDates?.length ? `: ${r.sessionDates.join(", ")}` : ""}). ` +
+    `The ${missing} beds were not visited — blank zones there mean "not looked at", not "clean".`
+  );
+}
 
 function ghOf(zoneName: string): string {
   const i = zoneName.indexOf(" - Bed ");
@@ -95,9 +121,22 @@ function defaultRange(): { from: string; to: string } {
 }
 
 type CardRecent = {
+  /** ISO-week label ("2026-W29"). Named `date` for contract continuity, but a
+   *  week now — a single session covers only the odd or only the even beds, so
+   *  a per-session heatmap drew half a greenhouse and showed the unvisited half
+   *  as clean. Merging a week's sessions reassembles the house. */
   date: string;
   zoneObs: Record<string, number>;
   zoneStages?: Record<string, ZoneStage[]>;
+  /** Scouting sessions that made up this week. */
+  sessions?: number;
+  sessionDates?: string[];
+  oddZones?: number;
+  evenZones?: number;
+  /** Both bed parities present in real proportion — i.e. the whole greenhouse
+   *  was actually seen. False for 101 of 229 greenhouse-weeks on this site, so
+   *  it must be shown, not assumed. */
+  complete?: boolean;
 };
 
 interface HeatmapCard {
@@ -161,6 +200,28 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   const [obsChecks, setObsChecks] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<HeatmapCard | null>(null);
   const [pickedDetail, setPickedDetail] = useState<CardRecent[] | null>(null);
+  const [show3D, setShow3D] = useState(false);
+  const [terrain, setTerrain] = useState<TerrainWeekData[] | null>(null);
+
+  // 3D is opt-in per card and needs its own (longer) week history, so it is
+  // fetched only when the toggle is switched on.
+  useEffect(() => {
+    if (!picked || !show3D) return;
+    let cancelled = false;
+    setTerrain(null);
+    call<{ weeks: TerrainWeekData[] }>(METHOD.heatmap_terrain, {
+      from_date: from, to_date: to, crop,
+      greenhouse: picked.greenhouse,
+      obs_name: picked.obsName,
+      obs_kind: picked.obsKind,
+    })
+      .then((r) => { if (!cancelled) setTerrain(r?.weeks ?? []); })
+      .catch(() => { if (!cancelled) setTerrain([]); });
+    return () => { cancelled = true; };
+  }, [picked, show3D, from, to, crop]);
+
+  // Reset the view whenever a different card is opened.
+  useEffect(() => { setShow3D(false); setTerrain(null); }, [picked]);
 
   // The grid ships only recent[0] (~1/3 of the old payload); fetch the
   // full 3-date history on demand when a card is opened. recent[0] falls
@@ -494,7 +555,15 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                         <CardDescription className="text-[0.7rem] truncate">
                           <span className="capitalize">{c.obsKind}</span> ·{" "}
                           {c.obsName}
-                          {c.lastDate ? ` · ${c.lastDate}` : ""}
+                          {c.lastDate ? ` · ${weekLabel(c.lastDate)}` : ""}
+                          {c.recent[0] && c.recent[0].complete === false ? (
+                            <span
+                              title={coverageNote(c.recent[0])}
+                              className="ml-1 text-[var(--sd-data-amber)]"
+                            >
+                              · half scouted
+                            </span>
+                          ) : null}
                         </CardDescription>
                       </div>
                       <Badge variant="outline" className="tabular-nums shrink-0">
@@ -589,17 +658,51 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                     aria-hidden
                   />
                   {picked.greenhouse} · {picked.obsName}
+                  {hasWebGL() && (
+                    <button
+                      type="button"
+                      onClick={() => setShow3D((v) => !v)}
+                      className="ml-auto rounded-md border px-2 py-0.5 text-[0.7rem] font-normal hover:bg-muted"
+                    >
+                      {show3D ? "2D" : "3D"}
+                    </button>
+                  )}
                 </DialogTitle>
                 <DialogDescription>
                   {picked.totalObs} observation
                   {picked.totalObs === 1 ? "" : "s"} across{" "}
                   {picked.zonesAffected} zone
-                  {picked.zonesAffected === 1 ? "" : "s"} · last 3 scouting
-                  dates shown left-to-right (most recent first)
+                  {picked.zonesAffected === 1 ? "" : "s"} · last 3 scouted
+                  weeks, oldest to latest (left to right)
                 </DialogDescription>
               </DialogHeader>
 
-              {modalRecent.length === 0 ? (
+              {show3D ? (
+                terrain === null ? (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    Building terrain…
+                  </div>
+                ) : (
+                  <Suspense
+                    fallback={
+                      <div className="p-6 text-center text-sm text-muted-foreground">
+                        Loading 3D…
+                      </div>
+                    }
+                  >
+                  <Terrain3D
+                    weeks={terrain}
+                    positions={Object.fromEntries(
+                      Object.entries(
+                        geometryByGh[picked.greenhouse]?.zoneCentroids ?? {},
+                      ).map(([zone, c]) => [zone, { x: c.cx, y: c.cy }]),
+                    )}
+                    color={picked.color}
+                    className="min-h-[420px]"
+                  />
+                  </Suspense>
+                )
+              ) : modalRecent.length === 0 ? (
                 <div className="text-sm text-muted-foreground p-6 text-center border rounded-md bg-[var(--sd-bg-soft)]">
                   No dated scouting entries to plot.
                 </div>
@@ -607,11 +710,15 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {[0, 1, 2].map((i) => {
                     const slice = modalRecent[i];
-                    const labels = [
-                      "Latest scouting",
-                      "2nd latest scouting",
-                      "3rd latest scouting",
-                    ];
+                    // recent[] is oldest-first, so the LAST slice is the
+                    // latest week — label by distance from the end.
+                    const fromEnd = modalRecent.length - 1 - i;
+                    const label =
+                      fromEnd === 0
+                        ? "Latest week"
+                        : fromEnd === 1
+                        ? "1 week earlier"
+                        : `${fromEnd} weeks earlier`;
                     const geom = geometryByGh[picked.greenhouse];
                     const kind: MarkerKind =
                       picked.obsKind === "disease" ? "disease" : "pest";
@@ -638,7 +745,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                       >
                         <div className="flex items-baseline justify-between gap-2">
                           <span className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground">
-                            {labels[i]}
+                            {label}
                           </span>
                           {slice ? (
                             <Badge
@@ -655,8 +762,16 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                         </div>
                         {slice && geom ? (
                           <>
-                            <div className="text-xs font-medium tabular-nums">
-                              {slice.date}
+                            <div className="flex items-center gap-2 text-xs font-medium tabular-nums">
+                              <span>{weekLabel(slice.date)}</span>
+                              {slice.complete === false && (
+                                <span
+                                  title={coverageNote(slice)}
+                                  className="rounded-full border border-[var(--sd-data-amber)] px-1.5 py-px text-[0.6rem] font-normal text-[var(--sd-data-amber)]"
+                                >
+                                  half scouted
+                                </span>
+                              )}
                             </div>
                             <BedSvg
                               geometry={geom}
@@ -715,8 +830,12 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                           key={s.date}
                           className="inline-flex items-center gap-1.5 tabular-nums"
                         >
-                          <span className="text-muted-foreground">
-                            {s.date}
+                          <span
+                            className="text-muted-foreground"
+                            title={s.complete === false ? coverageNote(s) : undefined}
+                          >
+                            {weekLabel(s.date)}
+                            {s.complete === false ? "*" : ""}
                           </span>
                           <span className="font-semibold text-foreground">
                             {total}

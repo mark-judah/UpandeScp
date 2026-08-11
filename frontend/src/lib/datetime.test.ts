@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { mergeDateTime, splitDateTime, stepTime } from "./utils";
+import {
+  format12h,
+  from12h,
+  mergeDateTime,
+  splitDateTime,
+  stepTime,
+  to12h,
+} from "./utils";
 
 describe("splitDateTime", () => {
   it("splits a full datetime into date and HH:mm", () => {
@@ -66,5 +73,39 @@ describe("stepTime", () => {
 
   it("keeps minutes unchanged when stepping the hour", () => {
     expect(stepTime("06:30", "hour", 1)).toBe("07:30");
+  });
+});
+
+describe("to12h / from12h", () => {
+  it("maps morning hours to AM", () => {
+    expect(to12h("06:30")).toEqual({ hour12: "06", minute: "30", meridiem: "AM" });
+  });
+
+  it("maps midnight to 12 AM", () => {
+    expect(to12h("00:15")).toEqual({ hour12: "12", minute: "15", meridiem: "AM" });
+  });
+
+  it("maps noon to 12 PM", () => {
+    expect(to12h("12:00")).toEqual({ hour12: "12", minute: "00", meridiem: "PM" });
+  });
+
+  it("maps afternoon hours to PM", () => {
+    expect(to12h("13:05")).toEqual({ hour12: "01", minute: "05", meridiem: "PM" });
+  });
+
+  it("round-trips through from12h", () => {
+    expect(from12h(12, 15, "AM")).toBe("00:15"); // 12 AM -> midnight
+    expect(from12h(12, 0, "PM")).toBe("12:00"); // 12 PM -> noon
+    expect(from12h(1, 5, "PM")).toBe("13:05");
+    expect(from12h(6, 30, "AM")).toBe("06:30");
+  });
+});
+
+describe("format12h", () => {
+  it("drops the leading zero on the hour and appends the meridiem", () => {
+    expect(format12h("06:30")).toBe("6:30 AM");
+    expect(format12h("13:05")).toBe("1:05 PM");
+    expect(format12h("00:00")).toBe("12:00 AM");
+    expect(format12h("12:45")).toBe("12:45 PM");
   });
 });

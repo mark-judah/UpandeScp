@@ -10,10 +10,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { cn, stepTime } from "@/lib/utils";
+import { cn, format12h, from12h, stepTime, to12h } from "@/lib/utils";
 
 export interface TimePickerProps {
-  value: string; // HH:mm
+  value: string; // HH:mm (24-hour)
   onChange: (next: string) => void;
   label?: string;
   className?: string;
@@ -24,15 +24,16 @@ export interface TimePickerProps {
  *  translate stays exact regardless of the app's 85% root font-size. */
 const CELL = 34;
 
-/** Same pill idiom as DatePicker so date + time read as one control family. */
-const PILL =
-  "h-9 gap-2 rounded-full border-transparent bg-card px-4 text-xs font-medium tabular-nums text-foreground shadow-[var(--sd-shadow-1)] hover:bg-card hover:text-foreground hover:shadow-[var(--sd-shadow-2)] [&>svg]:text-[var(--sd-quiet)]";
+/** Bordered box matching the Select dropdown triggers on form pages (and the
+ *  DatePicker `field` variant) so date + time read as one control family. */
+const FIELD_TRIGGER =
+  "h-9 gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium tabular-nums text-foreground shadow-sm hover:bg-background hover:text-foreground [&>svg]:text-[var(--sd-quiet)]";
 
 /**
  * A single odometer column. Renders every value in `values` stacked vertically
  * and slides the strip so the selected value sits centered in a 3-row window,
  * with faded neighbors above/below. Single-step changes animate; a wrap jump
- * (e.g. 23 -> 00) snaps instantly instead of sliding the long way. Respects
+ * (e.g. 11 -> 12) snaps instantly instead of sliding the long way. Respects
  * `prefers-reduced-motion`.
  */
 function DigitColumn({ values, value }: { values: string[]; value: string }) {
@@ -89,23 +90,23 @@ const CHEV =
   "flex size-7 items-center justify-center rounded-md text-[var(--sd-quiet)] transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function Stepper({
-  field,
+  name,
   values,
   value,
   onStep,
 }: {
-  field: "hour" | "minute";
+  name: string;
   values: string[];
   value: string;
-  onStep: (field: "hour" | "minute", dir: 1 | -1) => void;
+  onStep: (dir: 1 | -1) => void;
 }) {
   return (
     <div className="flex flex-col items-center gap-1">
       <button
         type="button"
         className={CHEV}
-        aria-label={`Increase ${field}`}
-        onClick={() => onStep(field, 1)}
+        aria-label={`Increase ${name}`}
+        onClick={() => onStep(1)}
       >
         <ChevronUp className="h-4 w-4" />
       </button>
@@ -113,8 +114,8 @@ function Stepper({
       <button
         type="button"
         className={CHEV}
-        aria-label={`Decrease ${field}`}
-        onClick={() => onStep(field, -1)}
+        aria-label={`Decrease ${name}`}
+        onClick={() => onStep(-1)}
       >
         <ChevronDown className="h-4 w-4" />
       </button>
@@ -122,16 +123,22 @@ function Stepper({
   );
 }
 
-const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+// 12-hour clock order: 12, 01, 02 … 11 (noon/midnight read as "12").
+const HOURS = [
+  "12",
+  ...Array.from({ length: 11 }, (_, i) => String(i + 1).padStart(2, "0")),
+];
 const MINUTES = Array.from({ length: 12 }, (_, i) =>
   String(i * 5).padStart(2, "0"),
 );
+const MERIDIEMS = ["AM", "PM"];
 
 /**
- * Themed time picker matching DatePicker's pill trigger. Opens a popover with
- * two odometer-roll columns (hours, minutes) driven by up/down chevrons.
- * Minutes step by 5 and carry into the hour; hours wrap 23 <-> 00. Value is a
- * plain ``HH:mm`` string.
+ * Themed time picker matching the DatePicker `field` trigger. Opens a popover
+ * with two odometer-roll columns (12-hour hours, minutes) plus an AM/PM toggle.
+ * Minutes step by 5 and carry into the hour; hours roll through the 12-hour
+ * clock and flip AM/PM at the noon/midnight boundary. The value stays a 24-hour
+ * ``HH:mm`` string; only the display is 12-hour.
  */
 export function TimePicker({
   value,
@@ -142,9 +149,14 @@ export function TimePicker({
 }: TimePickerProps) {
   const [open, setOpen] = useState(false);
   const time = value || "06:00";
-  const [hh, mm] = time.split(":");
+  const { hour12, minute, meridiem } = to12h(time);
+
+  // Hours/minutes step on the 24-hour value so the carry (and the AM/PM flip at
+  // noon/midnight) falls out for free; only the labels are 12-hour.
   const step = (field: "hour" | "minute", dir: 1 | -1) =>
     onChange(stepTime(time, field, dir));
+  const setMeridiem = (mer: "AM" | "PM") =>
+    onChange(from12h(Number(hour12), Number(minute), mer));
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -153,20 +165,36 @@ export function TimePicker({
           variant="outline"
           size="sm"
           disabled={disabled}
-          className={cn(PILL, className)}
+          className={cn(FIELD_TRIGGER, className)}
           aria-label={label}
         >
           <ClockIcon className="h-3.5 w-3.5" />
-          {time}
+          {format12h(time)}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-3" align="start">
         <div className="flex items-center gap-2">
-          <Stepper field="hour" values={HOURS} value={hh} onStep={step} />
+          <Stepper
+            name="hour"
+            values={HOURS}
+            value={hour12}
+            onStep={(dir) => step("hour", dir)}
+          />
           <span className="pb-1 text-lg font-semibold text-muted-foreground">
             :
           </span>
-          <Stepper field="minute" values={MINUTES} value={mm} onStep={step} />
+          <Stepper
+            name="minute"
+            values={MINUTES}
+            value={minute}
+            onStep={(dir) => step("minute", dir)}
+          />
+          <Stepper
+            name="AM/PM"
+            values={MERIDIEMS}
+            value={meridiem}
+            onStep={() => setMeridiem(meridiem === "AM" ? "PM" : "AM")}
+          />
         </div>
       </PopoverContent>
     </Popover>

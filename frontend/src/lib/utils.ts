@@ -68,6 +68,43 @@ export function todayAt(time: string): string {
 }
 
 /**
+ * Convert a 24h ``HH:mm`` into its 12-hour parts. ``hour12`` is zero-padded
+ * ("01".."12"); midnight/noon map to "12".
+ */
+export function to12h(hhmm: string): {
+  hour12: string;
+  minute: string;
+  meridiem: "AM" | "PM";
+} {
+  const [h, m] = (hhmm || "06:00").split(":").map(Number);
+  const hh = Number.isFinite(h) ? h : 6;
+  const mm = Number.isFinite(m) ? m : 0;
+  const meridiem: "AM" | "PM" = hh < 12 ? "AM" : "PM";
+  let h12 = hh % 12;
+  if (h12 === 0) h12 = 12;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return { hour12: pad(h12), minute: pad(mm), meridiem };
+}
+
+/** Build a 24h ``HH:mm`` from 12-hour parts. */
+export function from12h(
+  hour12: number,
+  minute: number,
+  meridiem: "AM" | "PM",
+): string {
+  let h = hour12 % 12; // 12 -> 0
+  if (meridiem === "PM") h += 12; // 12PM -> 12, 1PM -> 13
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(h)}:${pad(minute)}`;
+}
+
+/** Human 12-hour readout for a 24h ``HH:mm``, e.g. "6:30 AM", "1:05 PM". */
+export function format12h(hhmm: string): string {
+  const { hour12, minute, meridiem } = to12h(hhmm);
+  return `${Number(hour12)}:${minute} ${meridiem}`;
+}
+
+/**
  * Step an ``HH:mm`` time by one unit. Minutes move by ``minuteStep`` (default 5)
  * and carry into the hour like a real clock; hours wrap 23 <-> 00. ``dir`` is
  * ``+1`` (up) or ``-1`` (down). Returns a zero-padded ``HH:mm`` string.

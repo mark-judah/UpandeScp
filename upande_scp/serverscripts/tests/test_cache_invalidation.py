@@ -51,7 +51,12 @@ class TestInvalidateScoutingWeek(unittest.TestCase):
              patch.object(cu, "invalidate") as inv, \
              patch.object(cu, "invalidate_scouting_payload") as bump:
             cu.invalidate_scouting_week_for_doc(doc)
-            inv.assert_called_once_with("scp:scouting_payload_v2:7:2025-W18")
+            # Derive the prefix from the constant rather than spelling out the
+            # key version — bumping K_SCOUTING_PAYLOAD_PREFIX (v2 -> v3 -> …) is
+            # a routine cache-busting move and shouldn't fail this test.
+            inv.assert_called_once_with(
+                f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:2025-W18"
+            )
             bump.assert_not_called()
 
     def test_falls_back_to_global_bump_when_week_unknown(self):

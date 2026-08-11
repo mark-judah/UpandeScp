@@ -19,6 +19,12 @@ from upande_scp.serverscripts.dashboard_aggregates._trends import (
     _fetch_spray_events,
     week_key,
 )
+from upande_scp.serverscripts.common.cache_utils import (
+    K_BED_COUNT_BY_GH,
+    TTL_SHORT,
+    build_bed_count_by_gh,
+    get_or_set,
+)
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     parent_filter_conditions,
@@ -104,7 +110,26 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
     cards.sort(key=lambda c: (-c["totalObs"], c["greenhouse"], c["obsName"], c["obsKind"]))
 
     publish_progress(job_id, 100, "")
-    return {"cards": cards}
+    return {"cards": cards, "latestScoutingDate": _latest_scouting_date(filters["crop"])}
+
+
+def _latest_scouting_date(crop: str = "") -> str:
+    """Most recent date_of_capture, so a range with no data can say WHY.
+
+    The page defaults to the last seven days. When scouting data is older than
+    that — 2026-07-13 was 29 days before 2026-08-11 on this site — every card
+    disappears and the page reads as broken rather than as out of range.
+    """
+    where = "1=1"
+    params: dict = {}
+    if crop:
+        where = "crop_scouted = %(crop)s"
+        params["crop"] = crop
+    row = frappe.db.sql(
+        f"SELECT MAX(date_of_capture) AS d FROM `tabScouting Entry` WHERE {where}",
+        params,
+    )
+    return str(row[0][0])[:10] if row and row[0] and row[0][0] else ""
 
 
 def _query_kind(where: str, params: dict, mode: str) -> list:
@@ -140,6 +165,16 @@ def _query_kind(where: str, params: dict, mode: str) -> list:
 
 
 _BED_NUM_RE = re.compile(r"Bed\s+(\d+)", re.IGNORECASE)
+
+
+def bed_of_zone(zone_name: str):
+    """Bed number as an int from a zone name, or None.
+
+    Used for the per-week sample size — how many beds a week actually covered,
+    which is the number to show beside a partial week instead of hiding it.
+    """
+    m = _BED_NUM_RE.search(zone_name or "")
+    return int(m.group(1)) if m else None
 
 
 def bed_parity(zone_name: str):
@@ -227,12 +262,15 @@ def _build_cards(rows: list, mode: str, color_map: dict, weeks_limit: int = 3) -
             "count": n,
         })
         meta = bucket["meta"].setdefault(
-            wk, {"dates": set(), "odd": set(), "even": set()}
+            wk, {"dates": set(), "odd": set(), "even": set(), "beds": set()}
         )
         meta["dates"].add(d)
         parity = bed_parity(z)
         if parity:
             meta[parity].add(z)
+        bed = bed_of_zone(z)
+        if bed:
+            meta["beds"].add(bed)
 
     # _query_kind groups by (gh, obs, date, zone, stage) with no ORDER BY, so
     # each per-zone stage list was appended in scan order. Each (date, zone)
@@ -259,6 +297,7 @@ def _build_cards(rows: list, mode: str, color_map: dict, weeks_limit: int = 3) -
                 sessions = sorted(meta.get("dates") or [])
                 odd = len(meta.get("odd") or ())
                 even = len(meta.get("even") or ())
+                beds = len(meta.get("beds") or ())
                 recent.append({
                     # `date` keeps its name for the existing client contract,
                     # but now carries an ISO-week label ("2026-W29").
@@ -269,6 +308,10 @@ def _build_cards(rows: list, mode: str, color_map: dict, weeks_limit: int = 3) -
                     "sessionDates": sessions,
                     "oddZones": odd,
                     "evenZones": even,
+                    # Sample size, so a partial week can be shown WITH its
+                    # coverage rather than withheld.
+                    "bedsScouted": beds,
+                    "zonesScouted": odd + even,
                     "complete": parity_balanced(odd, even),
                 })
             cards.append({
@@ -318,7 +361,14 @@ def heatmap_card_detail(args: dict, force: bool = False) -> dict:
         rows = [r for r in rows if (r.get("obs_name") or "") == obs_name]
         color_map = {obs_name: ""}
         cards = _build_cards(rows, obs_kind, color_map, weeks_limit=3)
-        return {"recent": cards[0]["recent"] if cards else []}
+        recent = cards[0]["recent"] if cards else []
+        # Who walked the house that week, and how much of it they reached.
+        extra = scouts_and_coverage(
+            greenhouse, filters["from_date"], filters["to_date"], filters["crop"]
+        )
+        for w in recent:
+            w.update(extra.get(w["date"]) or {})
+        return {"recent": recent}
 
     return cached_aggregate("heatmap_card_detail", filters, build, force=force)
 
@@ -365,8 +415,12 @@ def heatmap_terrain(args: dict, force: bool = False) -> dict:
         sprays = _fetch_spray_events(
             filters["from_date"], filters["to_date"], [greenhouse]
         )
+        extra = scouts_and_coverage(
+            greenhouse, filters["from_date"], filters["to_date"], filters["crop"]
+        )
         for w in weeks:
             w["sprayEvents"] = sprays.get(f"{w['date']}|{greenhouse}", [])
+            w.update(extra.get(w["date"]) or {})
 
         return {
             "weeks": weeks,
@@ -376,3 +430,101 @@ def heatmap_terrain(args: dict, force: bool = False) -> dict:
         }
 
     return cached_aggregate("heatmap_terrain", filters, build, force=force)
+
+
+# ---------------------------------------------------------------------------
+# Who scouted, and how much of the house they covered
+# ---------------------------------------------------------------------------
+
+def scout_initials(full_name: str) -> str:
+    """"AUSTINE OTIENO" → "AO"; a single name → its first two letters.
+
+    A FALLBACK for when the Employee record carries no photo. The photo is the
+    intended presentation and callers must prefer `Employee.image` whenever it
+    is set. Only ~250 of 4,055 employees have one today, but that is a data gap
+    to be filled, not a reason to treat initials as the normal case.
+    """
+    parts = [p for p in (full_name or "").replace(".", " ").split() if p]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    # First and LAST, so "CHRISTINE JEPTOO CHERUIYOT" → "CC" rather than "CJ".
+    return (parts[0][0] + parts[-1][0]).upper()
+
+
+def _titleise(name: str) -> str:
+    """Employee names are stored upper-case; render them readably."""
+    return " ".join(w.capitalize() for w in (name or "").split())
+
+
+def scouts_and_coverage(greenhouse: str, from_date: str, to_date: str, crop: str = "") -> dict:
+    """``{week: {scouts: [...], bedsScouted, bedsTotal, coveragePct}}``.
+
+    Coverage is BEDS TOUCHED / BEDS THAT EXIST, counting a bed as covered once
+    it has at least one entry — that is the "did we walk the whole house"
+    question, distinct from the parity check (which asks whether both halves
+    were walked) and from zone-level incidence.
+    """
+    if not greenhouse:
+        return {}
+
+    where = ["se.greenhouse = %(gh)s", "se.date_of_capture BETWEEN %(f)s AND %(t)s"]
+    params = {"gh": greenhouse, "f": from_date, "t": to_date}
+    if crop:
+        where.append("se.crop_scouted = %(crop)s")
+        params["crop"] = crop
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT se.date_of_capture AS d, se.bed AS bed,
+               se.scouts_name AS emp,
+               e.employee_name AS emp_name, e.image AS emp_image
+        FROM `tabScouting Entry` se
+        LEFT JOIN `tabEmployee` e ON e.name = se.scouts_name
+        WHERE {' AND '.join(where)}
+          AND se.bed IS NOT NULL AND se.bed != ''
+        """,
+        params,
+        as_dict=True,
+    )
+
+    bed_totals = get_or_set(K_BED_COUNT_BY_GH, build_bed_count_by_gh, ttl=TTL_SHORT) or {}
+    total_beds = int(bed_totals.get(greenhouse) or 0)
+
+    by_week: dict = {}
+    for r in rows:
+        wk = week_key(r["d"])
+        if not wk:
+            continue
+        b = by_week.setdefault(wk, {"beds": set(), "scouts": {}})
+        bed = bed_of_zone(r["bed"])
+        if bed is not None:
+            b["beds"].add(bed)
+        emp = (r.get("emp") or "").strip()
+        if emp:
+            s = b["scouts"].setdefault(
+                emp,
+                {
+                    "employee": emp,
+                    "name": _titleise(r.get("emp_name") or emp),
+                    "image": r.get("emp_image") or "",
+                    "entries": 0,
+                },
+            )
+            s["entries"] += 1
+
+    out = {}
+    for wk, b in by_week.items():
+        scouts = sorted(b["scouts"].values(), key=lambda s: (-s["entries"], s["name"]))
+        for s in scouts:
+            s["initials"] = scout_initials(s["name"])
+        beds = len(b["beds"])
+        out[wk] = {
+            "scouts": scouts,
+            "bedsScouted": beds,
+            "bedsTotal": total_beds,
+            # 100% only when every bed in the house has at least one record.
+            "coveragePct": round(100.0 * beds / total_beds, 1) if total_beds else None,
+        }
+    return out

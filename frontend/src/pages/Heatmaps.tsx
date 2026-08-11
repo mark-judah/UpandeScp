@@ -51,7 +51,7 @@ import { call } from "@/lib/frappe";
 import {
   fetchBedsAndZones,
   fetchCrops,
-  fetchFarmsAndWarehouses,
+  fetchFarmsAndWarehousesResult,
   DEFAULT_CROP,
 } from "@/lib/scouting-api";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
@@ -84,6 +84,8 @@ import {
   parseObs,
 } from "./trends/aggregate";
 import { WeatherCard } from "@/components/WeatherCard";
+import { ScoutRow, type Scout } from "@/components/ScoutAvatar";
+import { WeatherHistory, useWeatherHistory } from "@/components/WeatherHistory";
 import { cn } from "@/lib/utils";
 
 /** "2026-W29" -> "Week 29". The payload's `date` is an ISO-week label now. */
@@ -133,6 +135,10 @@ type CardRecent = {
   sessionDates?: string[];
   oddZones?: number;
   evenZones?: number;
+  scouts?: Scout[];
+  coveragePct?: number | null;
+  bedsScouted?: number;
+  bedsTotal?: number;
   /** Both bed parities present in real proportion — i.e. the whole greenhouse
    *  was actually seen. False for 101 of 229 greenhouse-weeks on this site, so
    *  it must be shown, not assumed. */
@@ -152,6 +158,8 @@ interface HeatmapCard {
 
 interface HeatmapsGridPayload {
   cards: HeatmapCard[];
+  /** Newest date_of_capture on file, so an empty range can explain itself. */
+  latestScoutingDate?: string;
 }
 
 function indexZonesByGh(zones: ZoneFeature[]): Record<string, ZoneGeoLike[]> {
@@ -196,11 +204,30 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     Array<{ name: string; crop_name: string; farms?: string[] }>
   >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
   const [farmsByGh, setFarmsByGh] = useState<Record<string, string>>({});
+  // Distinguishes "this farm list is empty" from "we could not fetch it". The
+  // picker used to say "No farms configured" for both, which sent people
+  // looking for a configuration problem that didn't exist.
+  const [farmsError, setFarmsError] = useState<"stale-session" | "failed" | null>(
+    null,
+  );
   const [stationChecks, setStationChecks] = useState<Set<string>>(new Set());
   const [obsChecks, setObsChecks] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<HeatmapCard | null>(null);
   const [pickedDetail, setPickedDetail] = useState<CardRecent[] | null>(null);
+  /** Move the range to the week containing the newest scouting entry. */
+  const jumpToLatest = (iso: string) => {
+    const end = new Date(iso + "T00:00:00");
+    const start = new Date(end);
+    start.setDate(end.getDate() - 6);
+    setRange({ from: ymd(start), to: ymd(end) });
+  };
   const [show3D, setShow3D] = useState(false);
+  /** Farm of the opened card, for its weather history in the modal. */
+  const pickedFarm = picked ? farmsByGh[picked.greenhouse] || "" : "";
+  // Weather follows the weeks THIS greenhouse was scouted, not a trailing
+  // window from today — on this data the newest scouting is ~29 days old, so a
+  // "last 5 weeks" window barely overlaps what it's meant to explain.
+  const pickedWeather = useWeatherHistory(pickedFarm, from, to);
   const [terrain, setTerrain] = useState<TerrainWeekData[] | null>(null);
 
   // 3D is opt-in per card and needs its own (longer) week history, so it is
@@ -262,12 +289,13 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
           : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
       );
     });
-    fetchFarmsAndWarehouses().then((farms) => {
+    fetchFarmsAndWarehousesResult().then(({ farms, error }) => {
       const ghToFarm: Record<string, string> = {};
       Object.entries(farms).forEach(([farm, ghs]) => {
         (ghs || []).forEach((g) => (ghToFarm[g] = farm));
       });
       setFarmsByGh(ghToFarm);
+      setFarmsError(error ?? null);
     });
   }, []);
 
@@ -321,6 +349,11 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     hasScope,
   );
   const cards = gridState.data?.cards ?? [];
+  // Most recent scouting date on file. The page defaults to the last seven
+  // days, so once data is older than that every card vanishes and the page
+  // reads as broken rather than as out of range — say so instead.
+  const latestScouting = gridState.data?.latestScoutingDate || "";
+  const latestOutsideRange = !!latestScouting && latestScouting < from;
 
   // Client-side obs filter from the tristate selections. Empty = all.
   const obsFilter = useMemo(() => {
@@ -465,7 +498,13 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               nodes={stationTree}
               checked={stationChecks}
               onChange={setStationChecks}
-              emptyHint="No farms configured"
+              emptyHint={
+                farmsError === "stale-session"
+                  ? "This page is out of date — reload to sign the session back in."
+                  : farmsError === "failed"
+                  ? "Couldn't load the farm list. Check your connection and reload."
+                  : "No farms configured"
+              }
               searchPlaceholder="Search farms or greenhouses…"
             />
           </PopoverContent>
@@ -513,11 +552,35 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
           <ProgressOverlay progress={gridState.progress} />
         ) : !visibleCards.length ? (
           <Card className="p-12 text-center">
-            <CardTitle className="text-base">No matching observations</CardTitle>
+            <CardTitle className="text-base">
+              {latestOutsideRange
+                ? "No scouting in this date range"
+                : "No matching observations"}
+            </CardTitle>
             <CardDescription className="mt-1">
-              Widen the date range, pick more stations, or clear the
-              observation filter.
+              {latestOutsideRange ? (
+                <>
+                  Nothing was scouted between {from} and {to}. The most recent
+                  scouting entry is <strong>{latestScouting}</strong>.
+                </>
+              ) : (
+                <>
+                  Widen the date range, pick more stations, or clear the
+                  observation filter.
+                </>
+              )}
             </CardDescription>
+            {latestOutsideRange && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-3 mx-auto"
+                onClick={() => jumpToLatest(latestScouting)}
+              >
+                Show the week of {latestScouting}
+              </Button>
+            )}
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -677,6 +740,17 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                 </DialogDescription>
               </DialogHeader>
 
+              {pickedFarm && (
+                <WeatherHistory
+                  farm={pickedFarm}
+                  className="rounded-md border p-2"
+                  highlightWeek={picked.lastDate}
+                  fromDate={from}
+                  toDate={to}
+                  onlyWeeks={modalRecent.map((r) => r.date)}
+                />
+              )}
+
               {show3D ? (
                 terrain === null ? (
                   <div className="p-6 text-center text-sm text-muted-foreground">
@@ -692,12 +766,12 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                   >
                   <Terrain3D
                     weeks={terrain}
+                    weather={pickedWeather ?? undefined}
                     positions={Object.fromEntries(
                       Object.entries(
                         geometryByGh[picked.greenhouse]?.zoneCentroids ?? {},
                       ).map(([zone, c]) => [zone, { x: c.cx, y: c.cy }]),
                     )}
-                    color={picked.color}
                     className="min-h-[420px]"
                   />
                   </Suspense>
@@ -779,6 +853,12 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                               className="min-h-[420px] [&_svg]:max-h-[520px] [&_svg]:w-full"
                             />
                             <StageLegend markers={dayMarkers} className="px-1" />
+                            <ScoutRow
+                              scouts={slice.scouts}
+                              coveragePct={slice.coveragePct}
+                              bedsScouted={slice.bedsScouted}
+                              bedsTotal={slice.bedsTotal}
+                            />
                             <div className="text-[0.7rem] text-muted-foreground">
                               {Object.keys(slice.zoneObs).length} affected zone
                               {Object.keys(slice.zoneObs).length === 1

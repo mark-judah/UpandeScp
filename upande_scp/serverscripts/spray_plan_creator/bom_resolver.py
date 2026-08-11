@@ -103,12 +103,15 @@ def create_bom_for_plan(wo) -> str | None:
     bom.item = fg_item
     bom.custom_item_group = CHEMICAL_MIX
     bom.company = wo.company
-    # custom_business_unit is mandatory on BOM (mirror create_bom.createBOM);
-    # carry the value from an existing BOM for this FG item, else "Roses".
-    bom.custom_business_unit = (
-        frappe.db.get_value("BOM", {"item": fg_item}, "custom_business_unit")
-        or "Roses"
-    )
+    # custom_business_unit is an optional site-provided Custom Field (was
+    # supplied by the old upande_kaitet shim; not owned by any current app).
+    # Only touch it where the column actually exists, else the get_value/write
+    # throws "Unknown column" on sites without it (e.g. kaitet post-migration).
+    if frappe.db.has_column("BOM", "custom_business_unit"):
+        bom.custom_business_unit = (
+            frappe.db.get_value("BOM", {"item": fg_item}, "custom_business_unit")
+            or "Roses"
+        )
     farm = _plan_farm(wo)
     if farm:
         bom.custom_farm = farm

@@ -1,4 +1,4 @@
-import { call } from "./frappe";
+import { isStaleSession, call } from "./frappe";
 import { getPayload, setPayload } from "./idb";
 import type {
   RawEntry,
@@ -217,19 +217,36 @@ export async function fetchChunk(
   return (r || {}) as ChunkResponse;
 }
 
+/** Thrown-away errors here used to render as "No farms configured", which is a
+ *  claim about the data when the truth was "the request failed". Callers that
+ *  need to tell the difference should use `fetchFarmsAndWarehousesResult`. */
 export async function fetchFarmsAndWarehouses(): Promise<
   Record<string, string[]>
 > {
+  return (await fetchFarmsAndWarehousesResult()).farms;
+}
+
+export interface FarmsResult {
+  farms: Record<string, string[]>;
+  /** set when the request itself failed — distinct from "there are no farms" */
+  error?: "stale-session" | "failed";
+}
+
+export async function fetchFarmsAndWarehousesResult(): Promise<FarmsResult> {
   try {
     const r = await call<Record<string, string[]>>(
       "upande_scp.serverscripts.scouting.scouting_metrics_api.get_farms_and_warehouses",
       {},
     );
-    return r || {};
-  } catch {
-    return {};
+    return { farms: r || {} };
+  } catch (e) {
+    return {
+      farms: {},
+      error: isStaleSession(e) ? "stale-session" : "failed",
+    };
   }
 }
+
 
 export async function fetchCrops(): Promise<
   Array<{ name: string; crop_name: string; farms?: string[] }>
@@ -713,6 +730,9 @@ export interface BomChemical {
   item_name?: string;
   stock_qty?: number;
   stock_uom?: string;
+  /** ERPNext's allowed UOMs for the item, `conversion_factor` = stock-UOM qty
+   *  per 1 of that UOM. Empty/absent means only the stock UOM applies. */
+  uoms?: Array<{ uom: string; conversion_factor: number }>;
   rate?: number;
   amount?: number;
   idx?: number;
@@ -726,6 +746,8 @@ export interface ChemicalItem {
   item_code: string;
   item_name?: string;
   stock_uom?: string;
+  /** ERPNext's allowed UOMs for the item — see BomChemical.uoms. */
+  uoms?: Array<{ uom: string; conversion_factor: number }>;
   item_group?: string;
   is_fertilizer?: boolean;
 }

@@ -360,3 +360,55 @@ def _export(kind):
 			created += 1
 	frappe.db.commit()
 	return {"kind": kind, "scanned": len(codes), "created": created}
+
+
+def item_uom_options(item_code):
+	"""ERPNext's own allowed UOMs for an item: ``[{uom, conversion_factor}]``.
+
+	Read straight from the Item's `UOM Conversion Detail` rows (the standard
+	ERPNext mechanism), with the stock UOM guaranteed present at factor 1. No
+	conversion table lives in this app — a "1 bottle = 500 g" constant in code
+	would drift from whatever the user maintains on the Item, so the Item is the
+	only source of truth and the operator's choice is limited to what it allows.
+
+	`conversion_factor` follows the ERPNext convention: **stock-UOM quantity per
+	1 of this UOM**. So for a Bottle-stocked item where 1 bottle is 500 g, Gram
+	carries 0.002 and 1000 g resolves to 2 bottles.
+	"""
+	if not item_code:
+		return []
+	stock_uom = frappe.db.get_value("Item", item_code, "stock_uom")
+	if not stock_uom:
+		return []
+	rows = frappe.get_all(
+		"UOM Conversion Detail",
+		filters={"parent": item_code, "parenttype": "Item"},
+		fields=["uom", "conversion_factor"],
+		order_by="idx asc",
+	)
+	out = [{"uom": stock_uom, "conversion_factor": 1.0}]
+	seen = {stock_uom}
+	for r in rows:
+		uom = (r.get("uom") or "").strip()
+		cf = flt(r.get("conversion_factor"))
+		if not uom or uom in seen or cf <= 0:
+			continue
+		seen.add(uom)
+		out.append({"uom": uom, "conversion_factor": cf})
+	return out
+
+
+def to_stock_qty(item_code, qty, uom=None):
+	"""Convert `qty` expressed in `uom` into the item's stock UOM.
+
+	Uses the item's own ERPNext conversion factor. Falls back to a 1:1 pass
+	through when the UOM isn't one the item allows, so an unexpected value can't
+	silently scale a quantity by a guess.
+	"""
+	q = flt(qty)
+	if not item_code or not uom:
+		return q
+	for opt in item_uom_options(item_code):
+		if opt["uom"] == uom:
+			return q * flt(opt["conversion_factor"])
+	return q

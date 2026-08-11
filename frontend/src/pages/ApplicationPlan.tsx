@@ -64,6 +64,7 @@ import {
   type VarietyNode,
 } from "@/lib/scouting-api";
 import { availableStock } from "@/lib/stock-availability";
+import { fmtQty, fromStockQty } from "@/lib/uom";
 import {
   createDraftSprayPlan,
   fetchCreatorBootstrap,
@@ -1078,6 +1079,7 @@ export function ApplicationPlan() {
           item_code: item.item_code,
           item_name: item.item_name,
           stock_uom: item.stock_uom,
+          uoms: item.uoms,
           item_group: item.item_group,
           is_fertilizer: item.is_fertilizer,
           rowId: `${item.item_code}-${Date.now()}-${prev.length}`,
@@ -1972,6 +1974,7 @@ export function ApplicationPlan() {
                             <TableHead>Chemical</TableHead>
                             <TableHead className="text-right">Rate / 1000 L</TableHead>
                             <TableHead>UoM</TableHead>
+                            <TableHead className="text-right">Available</TableHead>
                             <TableHead className="w-8" />
                           </TableRow>
                         </TableHeader>
@@ -2033,8 +2036,74 @@ export function ApplicationPlan() {
                                     </div>
                                   ) : null}
                                 </TableCell>
-                                <TableCell className="text-xs text-muted-foreground">
-                                  {c.stock_uom || ""}
+                                <TableCell className="text-xs">
+                                  {/* UoM options come from ERPNext's own UOM
+                                      Conversion Detail rows on the Item, so an
+                                      operator can order in bottles or grams and
+                                      the factor is whatever the Item says — this
+                                      app holds no conversion table. Falls back
+                                      to plain text when only the stock UOM
+                                      applies. */}
+                                  {(c.uoms?.length ?? 0) > 1 ? (
+                                    <Select
+                                      value={c.stock_uom || ""}
+                                      onValueChange={(v) =>
+                                        setChemRows((rows) =>
+                                          rows.map((r) =>
+                                            r.rowId === c.rowId
+                                              ? { ...r, stock_uom: v }
+                                              : r,
+                                          ),
+                                        )
+                                      }
+                                    >
+                                      <SelectTrigger className="h-7 w-24 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {c.uoms!.map((u) => (
+                                          <SelectItem key={u.uom} value={u.uom}>
+                                            {u.uom}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
+                                    <span className="text-muted-foreground">
+                                      {c.stock_uom || ""}
+                                    </span>
+                                  )}
+                                </TableCell>
+                                {/* Available at the picked source, in the row's
+                                    CHOSEN unit — a bottle-stocked item shown
+                                    beside a gram rate would otherwise read as
+                                    50 when it is 25,000. Draft-aware: it nets
+                                    off other queued plans, which is what the
+                                    Submit gate uses. */}
+                                <TableCell className="text-right text-xs tabular-nums">
+                                  {c.source ? (
+                                    <span
+                                      className={
+                                        c.stock_qty && rowAvailable(c) < c.stock_qty
+                                          ? "font-medium text-[var(--sd-data-red)]"
+                                          : "text-muted-foreground"
+                                      }
+                                      title={`${fmtQty(rowAvailable(c))} ${c.uoms?.[0]?.uom ?? ""} on hand at ${c.source}, net of other draft plans`}
+                                    >
+                                      {fmtQty(
+                                        fromStockQty(
+                                          rowAvailable(c),
+                                          c.uoms,
+                                          c.stock_uom,
+                                        ),
+                                      )}
+                                      <span className="ml-1 text-[0.65rem] text-muted-foreground">
+                                        {c.stock_uom || ""}
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
                                 </TableCell>
                                 <TableCell>
                                   <Button

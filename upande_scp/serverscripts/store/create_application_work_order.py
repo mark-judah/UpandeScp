@@ -1,4 +1,6 @@
 import frappe
+
+from upande_scp.serverscripts.common.crop_protection import to_stock_qty
 import json
 from frappe import _
 
@@ -175,8 +177,15 @@ def createApplicationWorkOrder():
             if not item:
                 frappe.throw(f"Item not found: {name}")
 
-            # Calculate required quantity (rounded to 2dp to match wo_qty)
-            required_qty = round(application_rate * wo_qty, 2)
+            # Calculate required quantity (rounded to 2dp to match wo_qty).
+            #
+            # The operator may have entered the rate in an alternate UOM the Item
+            # allows (bottles, grams, ...). Convert to the stock UOM using the
+            # Item's OWN ERPNext conversion factor — never a constant in this
+            # app, which would drift from whatever the user maintains on the Item.
+            chosen_uom = (chem.get("uom") or "").strip()
+            rate_in_stock_uom = to_stock_qty(item.name, application_rate, chosen_uom)
+            required_qty = round(rate_in_stock_uom * wo_qty, 2)
             
             # Get valuation rate (use item's standard valuation rate)
             val_rate = item.valuation_rate or 0.0
@@ -185,7 +194,9 @@ def createApplicationWorkOrder():
                 "item_code": item.name,
                 "item_name": name,
                 "required_qty": required_qty,
-                "uom": chem.get("uom") or item.stock_uom,
+                # required_qty is now in the stock UOM, so the row must say so —
+                # labelling it with the entered UOM would misstate the quantity.
+                "uom": item.stock_uom,
                 "source_warehouse": source_wh,
                 "rate": val_rate,
                 "amount": round(required_qty * val_rate, 2),

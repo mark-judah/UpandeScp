@@ -414,6 +414,7 @@ def list_chemical_items(q=None, limit=50):
     chemical / foliar item groups so we don't surface every Item in the company."""
     from upande_scp.serverscripts.common.crop_protection import (
         is_foliar_group,
+        item_uom_options,
         product_groups,
     )
 
@@ -451,6 +452,9 @@ def list_chemical_items(q=None, limit=50):
             "stock_uom": r["stock_uom"],
             "item_group": r["item_group"],
             "is_fertilizer": is_foliar_group(r["item_group"]),
+            # ERPNext's own allowed UOMs, so the operator can order in bottles
+            # or grams without this app carrying a conversion table.
+            "uoms": item_uom_options(r["name"]),
         }
         for r in rows
     ]
@@ -554,6 +558,7 @@ def get_bom_details(name, greenhouse=None):
             # ("Chemical Store" vs "Fertilizer Store") to show. Source of
             # truth is the configured foliar groups (crop_protection).
             "is_fertilizer": is_foliar_group(item_group),
+            "uoms": item_uom_options(it.item_code),
         })
 
     # Stock balances for every chemical the BOM explodes into.

@@ -23,11 +23,11 @@ from datetime import datetime
 import frappe
 from frappe.utils import add_to_date, get_datetime, now_datetime
 
+from upande_scp.serverscripts.common.crop_protection import product_groups
+
 from .bulk import _user_has_role
 from .scope import _resolve_user_scope
 
-
-_CHEMICAL_GROUPS = ("CHEMICALS", "Fertilizer")
 
 _CSU_RE = re.compile(r"\bcsu\b", re.IGNORECASE)
 _STORE_RE = re.compile(r"^\s*chemical store\b", re.IGNORECASE)
@@ -264,7 +264,8 @@ def creator_stock_overview() -> dict:
         "csu_max_age_days": CSU_MAX_AGE_DAYS,
         "as_of": now_datetime().isoformat(timespec="seconds"),
     }
-    if not farms:
+    groups = product_groups()
+    if not farms or not groups:
         return empty
 
     rows = frappe.db.sql(
@@ -287,7 +288,7 @@ def creator_stock_overview() -> dict:
           AND  i.item_group IN %(groups)s
         ORDER  BY w.name, i.item_name
         """,
-        {"farms": tuple(farms), "groups": _CHEMICAL_GROUPS},
+        {"farms": tuple(farms), "groups": groups},
         as_dict=True,
     )
 

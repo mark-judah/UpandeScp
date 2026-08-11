@@ -567,7 +567,10 @@ _DOC_INVALIDATIONS = {
     "Pest Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS),
     "Disease Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS),
     "Tank And Valve": (),
-    "Scouting and Crop Protection Settings": (K_AFP_WAREHOUSES,),
+    # The chemical/foliar Item Groups configured here decide which Items count
+    # as chemicals, so editing the Chemicals tab has to bust the chemicals list
+    # too — otherwise a newly configured group stays invisible for the TTL.
+    "Scouting and Crop Protection Settings": (K_AFP_WAREHOUSES, K_CHEMICALS_LIST),
     "Spray Plan Allowed Farm": (K_AFP_WAREHOUSES,),
     "Spray Plan Exclude Keyword": (K_AFP_WAREHOUSES,),
     # The new_application_floor_plan greenhouse picker fuzzy-resolves the

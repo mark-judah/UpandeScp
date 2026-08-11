@@ -171,6 +171,54 @@ class TestCropProtection(unittest.TestCase):
 		self.assertTrue(match, "item should appear in the config-driven chemical list")
 		self.assertEqual(match[0]["custom_upper_rate_limit"], 9.0)
 
+	# -- the Application Plan honours the configured groups -------------
+	def test_application_plan_lists_configured_groups(self):
+		"""The plan's Add-chemical search and its BOM chemical list must resolve
+		the group set from config. Hardcoding "CHEMICALS"/"Fertilizer" made a
+		chemical added under any other configured group (kaitet: "Weeding
+		Solutions") invisible to the plan even though the settings Chemicals
+		tab listed it."""
+		from upande_scp.serverscripts.scouting import scouting_metrics_api as sma
+		from upande_scp.serverscripts.store import create_bom as cb
+
+		chem = _make_item(f"{_ITEM_PREFIX}CHEM-5", CHEM_GROUP)
+		fol = _make_item(f"{_ITEM_PREFIX}FOL-2", FOL_GROUP)
+
+		rows = {r["item_code"]: r for r in sma.list_chemical_items(q=_ITEM_PREFIX)}
+		self.assertIn(chem.name, rows, "chemical missing from the Add-chemical search")
+		self.assertIn(fol.name, rows, "foliar missing from the Add-chemical search")
+		self.assertFalse(rows[chem.name]["is_fertilizer"])
+		self.assertTrue(rows[fol.name]["is_fertilizer"])
+
+		payload = cb.getAllChemicals()
+		self.assertIn(chem.item_name, payload["chemicals"])
+		self.assertIn(fol.item_name, payload["fertilizers"])
+		self.assertEqual(payload["item_type_map"][fol.item_name], "fertilizer")
+
+	def test_add_chemical_search_matches_item_code(self):
+		"""The Add-chemical search takes a code as well as a name — operators who
+		work from item codes got an empty list before, which reads as the item
+		not existing. The item-group restriction must still hold."""
+		from upande_scp.serverscripts.scouting import scouting_metrics_api as sma
+
+		item = _make_item(f"{_ITEM_PREFIX}CHEM-6", CHEM_GROUP)
+		frappe.db.set_value("Item", item.name, "item_name", "Zzz Unsearchable Label")
+
+		by_code = [r["item_code"] for r in sma.list_chemical_items(q=item.name)]
+		self.assertIn(item.name, by_code, "searching by item code should find the item")
+
+		by_name = [r["item_code"] for r in sma.list_chemical_items(q="Zzz Unsearchable")]
+		self.assertIn(item.name, by_name, "searching by item name should still work")
+
+		# A code that matches an Item OUTSIDE the configured groups must not leak
+		# through the OR clause.
+		outside = frappe.db.get_value(
+			"Item", {"item_group": ("not in", list(cp.product_groups()))}, "name"
+		)
+		if outside:
+			leaked = [r["item_code"] for r in sma.list_chemical_items(q=outside)]
+			self.assertNotIn(outside, leaked, "group filter must still bound the search")
+
 	# -- Item no longer carries chemical metadata ----------------------
 	def test_item_has_no_chemical_columns(self):
 		meta = frappe.get_meta("Item")

@@ -27,11 +27,11 @@ from typing import Any
 import frappe
 from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
+from upande_scp.serverscripts.common.crop_protection import product_groups
 from upande_scp.serverscripts.spray_plan_creator.scope import _resolve_user_scope
 from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
 from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_LOAN
 
-CHEMICAL_GROUPS = ("CHEMICALS", "Fertilizer")
 ELEVATED = {"SCP General Manager", "System Manager", "Administrator"}
 CREATOR_ROLES = {"SCP Spray Plan Creator"} | ELEVATED
 MAX_SOURCES = 5
@@ -193,14 +193,15 @@ def get_loanable_chemicals(farm: str) -> list[dict]:
     # Candidate items: anything with stock in the farm's chemical stores, plus
     # anything with a baseline (covers depleted-to-zero items with no Bin row).
     items: dict[str, dict] = {}
-    if stores:
+    groups = product_groups()
+    if stores and groups:
         for r in frappe.db.sql(
             """SELECT b.item_code, i.item_name, COALESCE(i.stock_uom,'') uom,
                       COALESCE(SUM(b.actual_qty),0) on_hand
                FROM `tabBin` b JOIN `tabItem` i ON i.name=b.item_code
                WHERE b.warehouse IN %s AND i.item_group IN %s
                GROUP BY b.item_code""",
-            (tuple(stores), CHEMICAL_GROUPS),
+            (tuple(stores), groups),
             as_dict=True,
         ):
             items[r.item_code] = {
@@ -547,7 +548,7 @@ def capture_baseline_on_receipt(doc, method=None):
         if not str(wh).lower().startswith("chemical store"):
             continue
         group = frappe.db.get_value("Item", code, "item_group")
-        if group not in CHEMICAL_GROUPS:
+        if group not in product_groups():
             continue
         _upsert_baseline(farm, code, _on_hand(farm, code), "restock")
 
@@ -578,17 +579,18 @@ def bulk_restock(farm: str | None = None) -> dict:
         frappe.throw("Only the SCP General Manager can bulk-restock.", frappe.PermissionError)
 
     farms = [farm] if farm else _all_chemical_farms()
+    groups = product_groups()
     updated = 0
     for f in farms:
         stores = _farm_chemical_stores(f)
-        if not stores:
+        if not stores or not groups:
             continue
         rows = frappe.db.sql(
             """SELECT b.item_code, COALESCE(SUM(b.actual_qty),0) q
                FROM `tabBin` b JOIN `tabItem` i ON i.name=b.item_code
                WHERE b.warehouse IN %s AND i.item_group IN %s AND b.actual_qty > 0
                GROUP BY b.item_code""",
-            (tuple(stores), CHEMICAL_GROUPS),
+            (tuple(stores), groups),
             as_dict=True,
         )
         for r in rows:

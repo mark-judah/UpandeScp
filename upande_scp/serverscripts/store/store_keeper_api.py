@@ -27,6 +27,8 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime, add_to_date
 
+from upande_scp.serverscripts.common.crop_protection import product_groups
+
 
 # ----------------------------------------------------------------------
 # Permission gate
@@ -65,7 +67,8 @@ def _allowed_farms_for(user=None):
 def bucket_overview(matrix, chem_group_items, chem_stores, fert_stores):
     """Split overview rows into chemical vs fertilizer buckets with per-store,
     per-item and grand totals. ``chem_group_items`` = set of item_codes in the
-    CHEMICALS item group; everything else falls into the fertilizer bucket.
+    configured chemical item groups; everything else falls into the fertilizer
+    bucket.
     Each bucket is ALSO restricted to its mapped-store warehouse set
     (``chem_stores``/``fert_stores`` — a farm's ``custom_chemical_store`` /
     ``custom_fertilizer_store``) so CSUs, WIP and general stores never show
@@ -93,11 +96,15 @@ def bucket_overview(matrix, chem_group_items, chem_stores, fert_stores):
 # ----------------------------------------------------------------------
 # Chemical Dashboard
 # ----------------------------------------------------------------------
-# Item groups treated as "chemicals" for the dashboard. Anything tagged
-# with one of these (or having a descendant Item Group whose parent
-# chain hits one of these) is included. Keep this small + explicit;
-# adding new groups stays a deliberate config decision.
-_CHEMICAL_GROUPS = ("CHEMICALS", "Fertilizer")
+def _chemical_group_items():
+    """Item codes under the configured CHEMICAL groups — the set
+    ``bucket_overview`` uses to split chemical rows from fertilizer rows."""
+    groups = product_groups("chemical")
+    if not groups:
+        return set()
+    return set(
+        frappe.get_all("Item", filters={"item_group": ("in", list(groups))}, pluck="name")
+    )
 
 
 @frappe.whitelist()
@@ -145,9 +152,14 @@ def chemical_stock_overview() -> dict:
             else []
         )
 
-    if allowed_whs == []:
-        chem_items = set(frappe.get_all("Item", filters={"item_group": "CHEMICALS"}, pluck="name"))
-        buckets = bucket_overview([], chem_items, chem_stores, fert_stores)
+    # The chemical + foliar groups configured on Scouting and Crop Protection
+    # Settings, resolved per call so a group added on the settings Chemicals tab
+    # reaches this dashboard without a code change or a restart. Empty means
+    # nothing is configured — bail out rather than emit an `IN ()`.
+    dashboard_groups = product_groups()
+
+    if allowed_whs == [] or not dashboard_groups:
+        buckets = bucket_overview([], _chemical_group_items(), chem_stores, fert_stores)
         return {
             "items": [],
             "warehouses": [],
@@ -158,7 +170,7 @@ def chemical_stock_overview() -> dict:
             "allowed_farms": allowed,
         }
 
-    bin_params = {"groups": _CHEMICAL_GROUPS}
+    bin_params = {"groups": dashboard_groups}
     wh_filter_sql = ""
     if allowed_whs is not None:
         wh_filter_sql = "AND  b.warehouse IN %(allowed_whs)s"
@@ -237,7 +249,7 @@ def chemical_stock_overview() -> dict:
 
     items_list = sorted(items.values(), key=lambda x: -x["total_qty"])
     warehouses_list = sorted(warehouses.values(), key=lambda x: -x["total_qty"])
-    chem_items = set(frappe.get_all("Item", filters={"item_group": "CHEMICALS"}, pluck="name"))
+    chem_items = _chemical_group_items()
     buckets = bucket_overview(matrix, chem_items, chem_stores, fert_stores)
 
     return {
@@ -251,22 +263,23 @@ def chemical_stock_overview() -> dict:
     }
 
 
-def _store_level_bucket(stores: list, item_group: str) -> dict:
+def _store_level_bucket(stores: list, kind: str) -> dict:
     """Given ``stores`` = [{warehouse, farm, label}, ...] for one bucket
-    (chemical or fertilizer), aggregate Bin stock for ``item_group`` into
-    the ``items``/``matrix`` shape the comparison UI consumes. Only the
-    listed warehouses are ever queried, so anything not mapped as a farm's
-    store (e.g. a CSU) is inherently excluded."""
-    if not stores:
-        return {"stores": [], "items": [], "matrix": []}
+    (chemical or fertilizer), aggregate Bin stock for that ``kind``'s configured
+    item groups into the ``items``/``matrix`` shape the comparison UI consumes.
+    Only the listed warehouses are ever queried, so anything not mapped as a
+    farm's store (e.g. a CSU) is inherently excluded."""
+    groups = product_groups(kind)
+    if not stores or not groups:
+        return {"stores": stores, "items": [], "matrix": []}
 
     names = [s["warehouse"] for s in stores]
     rows = frappe.db.sql(
         """SELECT b.item_code, b.warehouse, b.actual_qty AS qty,
                   i.item_name, COALESCE(i.stock_uom, '') AS uom
            FROM `tabBin` b JOIN `tabItem` i ON i.name = b.item_code
-           WHERE b.warehouse IN %(w)s AND i.item_group = %(grp)s AND b.actual_qty > 0""",
-        {"w": tuple(names), "grp": item_group},
+           WHERE b.warehouse IN %(w)s AND i.item_group IN %(grp)s AND b.actual_qty > 0""",
+        {"w": tuple(names), "grp": groups},
         as_dict=True,
     )
 
@@ -337,8 +350,8 @@ def farm_store_levels() -> dict:
     ]
 
     return {
-        "chemical": _store_level_bucket(chemical_stores, "CHEMICALS"),
-        "fertilizer": _store_level_bucket(fertilizer_stores, "Fertilizer"),
+        "chemical": _store_level_bucket(chemical_stores, "chemical"),
+        "fertilizer": _store_level_bucket(fertilizer_stores, "foliar"),
         "allowed_farms": allowed,
     }
 

@@ -4,7 +4,11 @@ import json
 from upande_scp.upande_scp.doctype.scouting_and_crop_protection_settings.scouting_and_crop_protection_settings import (
     get_allowed_farms,
 )
-from upande_scp.serverscripts.common.crop_protection import get_product_rate
+from upande_scp.serverscripts.common.crop_protection import (
+    get_product_rate,
+    is_foliar_group,
+    product_groups,
+)
 
 
 def _resolve_bom_farm(data):
@@ -87,7 +91,10 @@ def createBOM():
         bom_farm = _resolve_bom_farm(data)
         if bom_farm:
             bom_doc.custom_farm = bom_farm
-        bom_doc.custom_business_unit = "Roses"
+        # Optional site-provided field (see bom_resolver) — only set it where
+        # the BOM column exists, so sites without it don't choke.
+        if frappe.db.has_column("BOM", "custom_business_unit"):
+            bom_doc.custom_business_unit = "Roses"
         bom_doc.uom = "Tank Mix (1000L)"
         bom_doc.quantity = 1
         bom_doc.custom_water_ph = water_ph
@@ -268,7 +275,7 @@ def get_chemical_rate_limits():
     to round-trip item_code → item_name."""
     rows = frappe.get_all(
         "Item",
-        filters={"item_group": "CHEMICALS", "disabled": 0},
+        filters={"item_group": ["in", list(product_groups("chemical"))], "disabled": 0},
         fields=["name", "item_name"],
     )
     out = {}
@@ -291,7 +298,7 @@ def getAllChemicals():
     # Fetch both chemicals and fertilizers in one query
     items = frappe.get_all(
         "Item",
-        filters={"item_group": ["in", ["CHEMICALS", "Fertilizer"]], "disabled": 0},
+        filters={"item_group": ["in", list(product_groups())], "disabled": 0},
         fields=["name", "item_name", "stock_uom", "item_group"],
         order_by="item_name",
     )
@@ -301,14 +308,14 @@ def getAllChemicals():
     item_uom_map = {}
     item_code_map = {}
     item_type_map = {}
-    # Rate limits are only ever set on CHEMICALS, but we publish them for
+    # Rate limits are only ever set on chemicals, but we publish them for
     # every row in the map so the client can look them up by display name
     # without branching on type.
     item_rate_limits_map = {}
 
     for it in items:
         display_name = it.item_name or it.name
-        item_type = "fertilizer" if it.item_group == "Fertilizer" else "chemical"
+        item_type = "fertilizer" if is_foliar_group(it.item_group) else "chemical"
         if item_type == "fertilizer":
             fertilizer_names.append(display_name)
         else:

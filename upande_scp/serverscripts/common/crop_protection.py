@@ -43,6 +43,26 @@ def foliar_groups():
 	return [r.item_group for r in (_settings().get("foliar_item_groups") or []) if r.item_group]
 
 
+def product_groups(kind=None):
+	"""Item Group names to filter Items by when listing crop-protection products.
+
+	kind: 'chemical' | 'foliar' | None (both). Use this for every
+	`item_group in (...)` filter instead of literal group names — a group added
+	on the settings Chemicals tab must reach the Application Plan, the store
+	dashboards and the reports without a code change.
+
+	Returns a tuple so it drops straight into a SQL `IN %s` placeholder. Callers
+	building raw SQL must still guard against the empty case (an unconfigured
+	site), since `IN ()` is a syntax error.
+	"""
+	groups = []
+	if kind in (None, "chemical"):
+		groups += chemical_groups()
+	if kind in (None, "foliar"):
+		groups += foliar_groups()
+	return tuple(groups)
+
+
 def classify_item_group(item_group):
 	"""Return 'chemical' | 'foliar' | None for an Item Group name."""
 	if not item_group:
@@ -52,6 +72,16 @@ def classify_item_group(item_group):
 	if item_group in foliar_groups():
 		return "foliar"
 	return None
+
+
+def is_foliar_group(item_group):
+	"""True when `item_group` is configured as a foliar (fertilizer) group.
+
+	The chemical-vs-fertilizer split decides which warehouse list a row gets
+	(Chemical Store vs Fertilizer Unit), so it has to follow config too —
+	this replaces the old `item_group == "Fertilizer"` tests.
+	"""
+	return classify_item_group(item_group) == "foliar"
 
 
 def is_chemical(item_code):
@@ -207,11 +237,7 @@ def crop_protection_item_codes(kind=None):
 	kind: 'chemical' | 'foliar' | None (both). Replaces the old
 	`{"item_group": "CHEMICALS"}` filters.
 	"""
-	groups = []
-	if kind in (None, "chemical"):
-		groups += chemical_groups()
-	if kind in (None, "foliar"):
-		groups += foliar_groups()
+	groups = product_groups(kind)
 	if not groups:
 		return []
 	return frappe.get_all("Item", filters={"item_group": ["in", groups]}, pluck="name")

@@ -410,21 +410,36 @@ def cancel_application_work_order(name):
 
 @frappe.whitelist()
 def list_chemical_items(q=None, limit=50):
-    """Search Items the planner can add to a BOM — restricted to chemical /
-    fertilizer item groups so we don't surface every Item in the company."""
-    from upande_scp.serverscripts.store.get_bom_stock_balances import (
-        _FERTILIZER_GROUP,
+    """Search Items the planner can add to a BOM — restricted to the configured
+    chemical / foliar item groups so we don't surface every Item in the company."""
+    from upande_scp.serverscripts.common.crop_protection import (
+        is_foliar_group,
+        product_groups,
     )
+
+    groups = product_groups()
+    if not groups:
+        return []
 
     filters = [
         ["Item", "disabled", "=", 0],
-        ["Item", "item_group", "in", ["Chemicals", _FERTILIZER_GROUP]],
+        ["Item", "item_group", "in", list(groups)],
     ]
-    if q:
-        filters.append(["Item", "item_name", "like", f"%{q}%"])
+    # Match the search term against the name OR the code — operators work from
+    # both. `or_filters` becomes a single parenthesised OR block ANDed with
+    # `filters`, so the item-group restriction still bounds the result set.
+    or_filters = (
+        [
+            ["Item", "item_name", "like", f"%{q}%"],
+            ["Item", "name", "like", f"%{q}%"],
+        ]
+        if q
+        else None
+    )
     rows = frappe.get_all(
         "Item",
         filters=filters,
+        or_filters=or_filters,
         fields=["name", "item_name", "stock_uom", "item_group"],
         order_by="item_name asc",
         limit_page_length=int(limit) or 50,
@@ -435,7 +450,7 @@ def list_chemical_items(q=None, limit=50):
             "item_name": r["item_name"],
             "stock_uom": r["stock_uom"],
             "item_group": r["item_group"],
-            "is_fertilizer": r["item_group"] == _FERTILIZER_GROUP,
+            "is_fertilizer": is_foliar_group(r["item_group"]),
         }
         for r in rows
     ]
@@ -464,8 +479,8 @@ def get_chemical_stock_balances(item_codes):
     if not item_codes:
         return {}
 
+    from upande_scp.serverscripts.common.crop_protection import is_foliar_group
     from upande_scp.serverscripts.store.get_bom_stock_balances import (
-        _FERTILIZER_GROUP,
         _fill_balances,
         get_allowed_chemical_store_warehouses,
         get_allowed_fertilizer_unit_warehouses,
@@ -477,8 +492,8 @@ def get_chemical_stock_balances(item_codes):
             {"codes": tuple(item_codes)},
         )
     )
-    chem_codes = [c for c in item_codes if groups.get(c) != _FERTILIZER_GROUP]
-    fert_codes = [c for c in item_codes if groups.get(c) == _FERTILIZER_GROUP]
+    chem_codes = [c for c in item_codes if not is_foliar_group(groups.get(c))]
+    fert_codes = [c for c in item_codes if is_foliar_group(groups.get(c))]
 
     out: dict[str, dict[str, float]] = {}
     if chem_codes:
@@ -507,9 +522,7 @@ def get_bom_details(name, greenhouse=None):
     if not name:
         frappe.throw("name is required")
 
-    from upande_scp.serverscripts.store.get_bom_stock_balances import (
-        _FERTILIZER_GROUP,
-    )
+    from upande_scp.serverscripts.common.crop_protection import is_foliar_group
 
     restrict_chem = restrict_fert = None
     if greenhouse:
@@ -539,8 +552,8 @@ def get_bom_details(name, greenhouse=None):
             "item_group": item_group,
             # Explicit flag so the React picker knows which warehouse list
             # ("Chemical Store" vs "Fertilizer Store") to show. Source of
-            # truth lives in get_bom_stock_balances._FERTILIZER_GROUP.
-            "is_fertilizer": item_group == _FERTILIZER_GROUP,
+            # truth is the configured foliar groups (crop_protection).
+            "is_fertilizer": is_foliar_group(item_group),
         })
 
     # Stock balances for every chemical the BOM explodes into.
@@ -551,7 +564,6 @@ def get_bom_details(name, greenhouse=None):
 
     if item_codes:
         from upande_scp.serverscripts.store.get_bom_stock_balances import (
-            _FERTILIZER_GROUP,
             _fill_balances,
             get_allowed_chemical_store_warehouses,
             get_allowed_fertilizer_unit_warehouses,
@@ -567,8 +579,8 @@ def get_bom_details(name, greenhouse=None):
         if restrict_fert:
             fert_warehouses = [restrict_fert]
 
-        chem_codes = [c["item_code"] for c in chemicals if c.get("item_group") != _FERTILIZER_GROUP]
-        fert_codes = [c["item_code"] for c in chemicals if c.get("item_group") == _FERTILIZER_GROUP]
+        chem_codes = [c["item_code"] for c in chemicals if not c.get("is_fertilizer")]
+        fert_codes = [c["item_code"] for c in chemicals if c.get("is_fertilizer")]
 
         if chem_codes:
             balances_by_code.update(_fill_balances(chem_codes, chem_warehouses))

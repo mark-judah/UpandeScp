@@ -12,6 +12,10 @@ from upande_scp.serverscripts.common.cache_utils import (
     build_zone_count_by_bed,
     get_or_set,
 )
+from upande_scp.serverscripts.common.crop_protection import (
+    is_foliar_group,
+    product_groups,
+)
 
 
 _BED_NUM_RE = re.compile(r"Bed\s+(\d+)", re.IGNORECASE)
@@ -21,7 +25,7 @@ def _cached_bom_items():
     def _build():
         rows = frappe.db.get_list(
             "Item",
-            filters={"item_group": ["in", ["CHEMICALS", "Fertilizer"]], "disabled": 0},
+            filters={"item_group": ["in", list(product_groups())], "disabled": 0},
             fields=["item_name", "item_group"],
             limit_page_length=0,
         )
@@ -31,7 +35,7 @@ def _cached_bom_items():
         for r in rows:
             if not r.item_name:
                 continue
-            if r.item_group == "Fertilizer":
+            if is_foliar_group(r.item_group):
                 fertilizers.add(r.item_name)
                 type_map[r.item_name] = "fertilizer"
             else:

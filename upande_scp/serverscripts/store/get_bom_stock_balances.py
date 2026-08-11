@@ -1,13 +1,11 @@
 import frappe
 import json
 
+from upande_scp.serverscripts.common.crop_protection import is_foliar_group
 from upande_scp.upande_scp.doctype.scouting_and_crop_protection_settings.scouting_and_crop_protection_settings import (
     get_allowed_chemical_store_warehouses,
     get_allowed_fertilizer_unit_warehouses,
 )
-
-
-_FERTILIZER_GROUP = "Fertilizer"
 
 
 def _zero_balances(codes, warehouses):
@@ -61,8 +59,8 @@ def getBomStockBalances():
                 item_uom_map[name] = item.get("stock_uom")
                 code_group_map[code] = item.get("item_group") or ""
 
-        chemical_codes = [c for c, g in code_group_map.items() if g != _FERTILIZER_GROUP]
-        fertilizer_codes = [c for c, g in code_group_map.items() if g == _FERTILIZER_GROUP]
+        chemical_codes = [c for c, g in code_group_map.items() if not is_foliar_group(g)]
+        fertilizer_codes = [c for c, g in code_group_map.items() if is_foliar_group(g)]
 
         chemical_warehouses = get_allowed_chemical_store_warehouses()
         fertilizer_warehouses = get_allowed_fertilizer_unit_warehouses()

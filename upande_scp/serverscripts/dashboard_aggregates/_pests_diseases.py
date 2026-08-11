@@ -147,11 +147,32 @@ def _ranking(kind: str, rows: list, crop: str, zones_by_gh: dict) -> list:
 def _filter_options(rows: list) -> dict:
     """Returns a dict with key 'items' (kind-agnostic). The caller renames
     'items' -> 'pests' or 'diseases' depending on the kind so the JS-facing
-    contract matches the existing client expectations."""
+    contract matches the existing client expectations.
+
+    ``stages`` is the flat union across every observation — correct only while
+    no specific pest/disease is picked. ``stagesByItem`` narrows it per
+    observation so the picker can stop offering, say, a disease's "Latent" stage
+    while a pest is selected. Same shape and purpose as the Trends payload's
+    ``stagesByObs``.
+    """
     obs       = sorted({r.obs_name for r in rows if r.obs_name})
     sections  = sorted({r.plant_section for r in rows if r.plant_section})
     stages    = sorted({(r.stage or "") for r in rows if (r.stage or "")})
-    return {"items": obs, "sections": sections, "stages": stages}
+
+    by_item: dict[str, set] = {}
+    for r in rows:
+        name = r.obs_name
+        stage = (r.stage or "").strip()
+        if not name or not stage:
+            continue
+        by_item.setdefault(name, set()).add(stage)
+
+    return {
+        "items": obs,
+        "sections": sections,
+        "stages": stages,
+        "stagesByItem": {k: sorted(v) for k, v in by_item.items()},
+    }
 
 
 # ---------------------------------------------------------------------------

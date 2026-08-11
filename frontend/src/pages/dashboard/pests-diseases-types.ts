@@ -7,8 +7,21 @@ export interface TrendSeries {
   keys: string[];
 }
 
+/** Stage options for the dashboard filter row.
+ *
+ *  `stages` is the flat union across every observation — right only while no
+ *  specific pest/disease is picked. `stagesByItem` narrows it per observation,
+ *  so choosing a pest stops the picker offering stages that pest never has.
+ *  Optional because a payload cached before the server emitted it will lack it;
+ *  consumers fall back to the flat list. */
+export interface StageFilterOptions {
+  sections: string[];
+  stages: string[];
+  stagesByItem?: Record<string, string[]>;
+}
+
 export interface PestsPayload {
-  filterOptions: { pests: string[]; sections: string[]; stages: string[] };
+  filterOptions: StageFilterOptions & { pests: string[] };
   ranking: RankingRow[];
   distribution: ItemPercent[];
   sectionSplit: ItemPercent[];
@@ -18,5 +31,19 @@ export interface PestsPayload {
 }
 
 export interface DiseasesPayload extends Omit<PestsPayload, "filterOptions"> {
-  filterOptions: { diseases: string[]; sections: string[]; stages: string[] };
+  filterOptions: StageFilterOptions & { diseases: string[] };
+}
+
+/** Stage options to offer for the currently-selected observation.
+ *
+ *  Falls back to the flat union when nothing is selected, when the payload
+ *  predates `stagesByItem`, or when the selected item has no recorded stages —
+ *  an empty picker would look broken. */
+export function stagesFor(
+  opts: StageFilterOptions,
+  selected: string | undefined,
+): string[] {
+  if (!selected) return opts.stages;
+  const narrowed = opts.stagesByItem?.[selected];
+  return narrowed && narrowed.length ? narrowed : opts.stages;
 }

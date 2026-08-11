@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -26,7 +26,7 @@ import {
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { DashFilterRow } from "./DashFilterRow";
-import type { PestsPayload } from "./pests-diseases-types";
+import { stagesFor, type PestsPayload } from "./pests-diseases-types";
 import { weekTickFormatter } from "@/lib/iso-week";
 
 export interface PestsTabProps {
@@ -67,7 +67,20 @@ export function PestsTab({
     pct: { label: "% zones", color: "var(--sd-data-cyan)" },
   };
 
-  const filters = { observation: pestName, section, stage };
+  // Offer only the stages the selected pest actually has. Picking a pest used
+  // to leave every stage in the dataset on the menu, including ones belonging
+  // to diseases.
+  const stageOptions = stagesFor(opts, pestName);
+  // A stage carried over from a previous pest may not exist for this one, which
+  // would silently filter the chart to nothing. Drop it back to "all".
+  const effectiveStage = stage && stageOptions.includes(stage) ? stage : "";
+  useEffect(() => {
+    if (stage && stage !== effectiveStage) {
+      onFiltersChange({ observation: pestName, section, stage: "" });
+    }
+  }, [stage, effectiveStage, pestName, section, onFiltersChange]);
+
+  const filters = { observation: pestName, section, stage: effectiveStage };
 
   return (
     <div className="flex flex-col gap-4">
@@ -100,7 +113,7 @@ export function PestsTab({
               obsLabel="Pest"
               obsOptions={opts.pests}
               sectionOptions={opts.sections}
-              stageOptions={opts.stages}
+              stageOptions={stageOptions}
               value={filters}
               onChange={onFiltersChange}
             />

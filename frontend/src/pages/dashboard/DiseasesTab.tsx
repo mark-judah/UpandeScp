@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -26,7 +26,7 @@ import {
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { DashFilterRow } from "./DashFilterRow";
-import type { DiseasesPayload } from "./pests-diseases-types";
+import { stagesFor, type DiseasesPayload } from "./pests-diseases-types";
 import { weekTickFormatter } from "@/lib/iso-week";
 
 export interface DiseasesTabProps {
@@ -67,7 +67,16 @@ export function DiseasesTab({
     pct: { label: "% zones", color: "var(--sd-data-pink)" },
   };
 
-  const filters = { observation: diseaseName, section, stage };
+  // Only the stages this disease actually has — see PestsTab.
+  const stageOptions = stagesFor(opts, diseaseName);
+  const effectiveStage = stage && stageOptions.includes(stage) ? stage : "";
+  useEffect(() => {
+    if (stage && stage !== effectiveStage) {
+      onFiltersChange({ observation: diseaseName, section, stage: "" });
+    }
+  }, [stage, effectiveStage, diseaseName, section, onFiltersChange]);
+
+  const filters = { observation: diseaseName, section, stage: effectiveStage };
 
   return (
     <div className="flex flex-col gap-4">
@@ -100,7 +109,7 @@ export function DiseasesTab({
               obsLabel="Disease"
               obsOptions={opts.diseases}
               sectionOptions={opts.sections}
-              stageOptions={opts.stages}
+              stageOptions={stageOptions}
               value={filters}
               onChange={onFiltersChange}
             />

@@ -26,6 +26,30 @@ export class FrappeError extends Error {
     this.status = status;
     this.payload = payload;
   }
+
+  /** A stale page: the CSRF token inlined into the HTML shell no longer matches
+   *  the session, or the session has gone.
+   *
+   *  Every `call()` is a POST carrying that token, so once it goes stale EVERY
+   *  data request 403s while the shell itself (a GET) still renders. Callers
+   *  that swallow errors into an empty value then show "nothing here" when the
+   *  truth is "we could not ask" — the fix is a reload, and the user has to be
+   *  told that rather than shown an empty page. */
+  get isStaleSession(): boolean {
+    if (this.status !== 403 && this.status !== 401) return false;
+    const m = `${this.message}`.toLowerCase();
+    return (
+      m.includes("csrf") ||
+      m.includes("session") ||
+      m.includes("not permitted") ||
+      this.status === 401
+    );
+  }
+}
+
+/** True when a thrown value is a Frappe error caused by a stale page/session. */
+export function isStaleSession(e: unknown): boolean {
+  return e instanceof FrappeError && e.isStaleSession;
 }
 
 function csrf(): string {

@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/PageHeader";
+import { BomPicker } from "@/components/BomPicker";
 import { DatePicker } from "@/components/DatePicker";
 import { TimePicker } from "@/components/TimePicker";
 import { Toaster, type ToastItem } from "@/components/Toaster";
@@ -1693,6 +1694,7 @@ export function ApplicationPlan() {
                 <Label>Scheduled Application</Label>
                 <div className="flex flex-wrap items-center gap-2">
                   <DatePicker
+                    variant="field"
                     value={splitDateTime(sprayDate).date}
                     onChange={(d) =>
                       setSprayDate(mergeDateTime(d, splitDateTime(sprayDate).time))
@@ -1908,19 +1910,7 @@ export function ApplicationPlan() {
               <div className="flex items-end gap-2">
                 <div className="flex-1 flex flex-col gap-1">
                   <Label>BOM</Label>
-                  <Select value={bom} onValueChange={setBom}>
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Select BOM" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {bomList.map((b) => (
-                        <SelectItem key={b.name} value={b.name}>
-                          {b.item_name || b.name}
-                          {b.custom_farm ? ` · ${b.custom_farm}` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <BomPicker boms={bomList} value={bom} onValueChange={setBom} />
                 </div>
                 <Button
                   type="button"
@@ -2360,8 +2350,8 @@ export function ApplicationPlan() {
           <DialogHeader>
             <DialogTitle>Add chemical</DialogTitle>
             <DialogDescription>
-              Search by item name. Restricted to chemical and fertilizer item
-              groups so the source-warehouse picker stays valid.
+              Search by item name or code. Restricted to chemical and fertilizer
+              item groups so the source-warehouse picker stays valid.
             </DialogDescription>
           </DialogHeader>
           <Input

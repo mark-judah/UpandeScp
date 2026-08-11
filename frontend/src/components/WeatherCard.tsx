@@ -1,15 +1,10 @@
 import { useEffect, useState } from "react";
 import {
-  Cloud,
-  CloudDrizzle,
-  CloudFog,
-  CloudLightning,
-  CloudRain,
-  CloudSnow,
-  Sun,
-  Wind,
-  type LucideIcon,
-} from "lucide-react";
+  DropletGlyph,
+  GustGlyph,
+  WeatherGlyph,
+  type WeatherGlyphKind,
+} from "@/components/WeatherGlyph";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { call } from "@/lib/frappe";
 import { cn } from "@/lib/utils";
@@ -33,38 +28,45 @@ interface WeatherPayload {
   days: WeatherDay[];
 }
 
-// Open-Meteo WMO codes → icon + short label + colour.
+// Open-Meteo WMO codes → glyph + short label + colour.
 // https://open-meteo.com/en/docs#weathervariables
-// Colours map to weather mood: amber=sun, slate=cloud, sky=rain, indigo=fog,
-// purple=thunder, cyan=snow. Stroke colour only — keeps lucide line-art look.
-function weatherInfo(code: number | null): {
-  icon: LucideIcon;
+//
+// Colours come from the app's --sd-data-* chart tokens rather than raw Tailwind
+// palette values, so the tile themes with the rest of the app (and with dark
+// mode) instead of sitting slightly outside it.
+export function weatherInfo(code: number | null): {
+  kind: WeatherGlyphKind;
   label: string;
   color: string;
 } {
+  const C = {
+    sun: "text-[var(--sd-data-amber)]",
+    cloud: "text-[var(--sd-quiet)]",
+    rain: "text-[var(--sd-data-cyan)]",
+    fog: "text-[var(--sd-data-indigo)]",
+    snow: "text-[var(--sd-data-cyan)]",
+    storm: "text-[var(--sd-data-violet)]",
+  };
   if (code === null || code === undefined)
-    return { icon: Cloud, label: "—", color: "text-muted-foreground" };
-  if (code === 0)
-    return { icon: Sun, label: "Clear", color: "text-amber-500" };
-  if (code <= 2)
-    return { icon: Sun, label: "Mostly sunny", color: "text-amber-400" };
-  if (code === 3)
-    return { icon: Cloud, label: "Overcast", color: "text-slate-500" };
+    return { kind: "unknown", label: "No forecast", color: C.cloud };
+  if (code === 0) return { kind: "clear", label: "Clear", color: C.sun };
+  if (code <= 2) return { kind: "partly", label: "Mostly sunny", color: C.sun };
+  if (code === 3) return { kind: "overcast", label: "Overcast", color: C.cloud };
   if (code === 45 || code === 48)
-    return { icon: CloudFog, label: "Fog", color: "text-indigo-400" };
+    return { kind: "fog", label: "Fog", color: C.fog };
   if (code >= 51 && code <= 57)
-    return { icon: CloudDrizzle, label: "Drizzle", color: "text-sky-400" };
+    return { kind: "drizzle", label: "Drizzle", color: C.rain };
   if (code >= 61 && code <= 67)
-    return { icon: CloudRain, label: "Rain", color: "text-sky-600" };
+    return { kind: "rain", label: "Rain", color: C.rain };
   if (code >= 71 && code <= 77)
-    return { icon: CloudSnow, label: "Snow", color: "text-cyan-400" };
+    return { kind: "snow", label: "Snow", color: C.snow };
   if (code >= 80 && code <= 82)
-    return { icon: CloudRain, label: "Showers", color: "text-sky-500" };
+    return { kind: "showers", label: "Showers", color: C.rain };
   if (code >= 85 && code <= 86)
-    return { icon: CloudSnow, label: "Snow showers", color: "text-cyan-500" };
+    return { kind: "snow", label: "Snow showers", color: C.snow };
   if (code >= 95)
-    return { icon: CloudLightning, label: "Thunderstorm", color: "text-purple-500" };
-  return { icon: Cloud, label: "Cloudy", color: "text-slate-400" };
+    return { kind: "thunder", label: "Thunderstorm", color: C.storm };
+  return { kind: "overcast", label: "Cloudy", color: C.cloud };
 }
 
 function dayLabel(iso: string, idx: number): string {
@@ -148,17 +150,31 @@ export function WeatherCard({
         ) : (
           <div className="grid grid-cols-5 gap-2">
             {(data?.days || []).map((d, i) => {
-              const { icon: Icon, label, color } = weatherInfo(d.weatherCode);
+              const { kind, label, color } = weatherInfo(d.weatherCode);
               return (
                 <div
                   key={d.date}
-                  className="flex flex-col items-center gap-1 rounded-md border bg-card px-1.5 py-2 text-[0.7rem]"
+                  className={cn(
+                    "flex flex-col items-center gap-1 rounded-lg border px-1.5 py-2 text-[0.7rem]",
+                    // Today reads as the anchor of the row, not a repeat of it.
+                    i === 0
+                      ? "border-[var(--sd-line)] bg-[var(--sd-bg-soft)]"
+                      : "border-[var(--sd-line-soft)] bg-card",
+                  )}
                   title={label}
                 >
-                  <span className="font-medium text-muted-foreground">
+                  <span
+                    className={cn(
+                      "font-medium",
+                      i === 0 ? "text-foreground" : "text-muted-foreground",
+                    )}
+                  >
                     {dayLabel(d.date, i)}
                   </span>
-                  <Icon className={cn("h-5 w-5", color)} />
+                  <WeatherGlyph
+                    kind={kind}
+                    className={cn("h-7 w-7 my-0.5", color)}
+                  />
                   <span className="tabular-nums font-semibold">
                     {d.tempMax !== null ? Math.round(d.tempMax) : "—"}°
                     <span className="ml-0.5 font-normal text-muted-foreground">
@@ -168,12 +184,12 @@ export function WeatherCard({
                   <span className="text-muted-foreground flex items-center gap-0.5">
                     {d.precipProb !== null && d.precipProb > 0 ? (
                       <>
-                        <CloudRain className="h-2.5 w-2.5" />
+                        <DropletGlyph className="text-[var(--sd-data-cyan)]" />
                         {d.precipProb}%
                       </>
                     ) : d.windMax !== null && d.windMax > 0 ? (
                       <>
-                        <Wind className="h-2.5 w-2.5" />
+                        <GustGlyph />
                         {Math.round(d.windMax)}
                       </>
                     ) : null}

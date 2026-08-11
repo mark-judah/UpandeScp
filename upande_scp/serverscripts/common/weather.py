@@ -132,3 +132,195 @@ def get_farm_weather(farm: str | None = None) -> dict:
     payload = {"farm": farm, "lat": lat, "lon": lon, **forecast}
     cache.set_value(key, payload, expires_in_sec=_TTL_SECONDS)
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Historical weekly weather — for correlating pest trend against conditions
+# ---------------------------------------------------------------------------
+# The forecast above answers "should we spray tomorrow". This answers a
+# different question: did the weather in the weeks leading up to now explain
+# the pest trend? That needs the PAST, aggregated to the same ISO weeks the
+# scouting data is bucketed into, so the two can be read side by side.
+
+_HISTORY_WEEKS = 5
+# Open-Meteo's forecast endpoint serves recent history via `past_days` (max 92),
+# which keeps this on the same host/params as the forecast call instead of
+# introducing the separate archive API. 5 weeks + the current partial week.
+_PAST_DAYS = _HISTORY_WEEKS * 7 + 7
+_HISTORY_TTL = 6 * 60 * 60  # 6h — past weather doesn't change
+
+
+def _history_cache_key(farm: str, frm: str = "", to: str = "") -> str:
+    return f"scp:weather_hist_v2:{farm}:{frm}:{to}"
+
+
+def _iso_week_label(date_str: str) -> str:
+    """``2026-07-13`` → ``2026-W29``, matching the scouting/terrain buckets."""
+    from datetime import datetime
+
+    try:
+        d = datetime.strptime(str(date_str)[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return ""
+    iso = d.isocalendar()
+    return f"{iso[0]:04d}-W{iso[1]:02d}"
+
+
+def _fetch_history(lat: float, lon: float, frm: str = "", to: str = "") -> list:
+    """Daily rows for an explicit date range, or the trailing default window.
+
+    An explicit range matters because the weeks worth showing are the weeks the
+    GREENHOUSE WAS SCOUTED, which may be well behind today — on this site the
+    newest scouting is ~29 days old, so a "last 5 weeks from now" window barely
+    overlaps the data it is meant to explain.
+
+    Open-Meteo's forecast endpoint serves history back ~92 days. Older ranges
+    would need the separate archive API; they return empty here rather than
+    silently reporting the wrong dates.
+    """
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "daily": ",".join([
+            "temperature_2m_max",
+            "temperature_2m_min",
+            "precipitation_sum",
+            "relative_humidity_2m_mean",
+            "windspeed_10m_max",
+        ]),
+        "timezone": "auto",
+    }
+    if frm and to:
+        params["start_date"] = frm
+        params["end_date"] = to
+    else:
+        params["past_days"] = _PAST_DAYS
+        params["forecast_days"] = 1
+    resp = requests.get(_OPEN_METEO_URL, params=params, timeout=_REQUEST_TIMEOUT)
+    resp.raise_for_status()
+    d = (resp.json().get("daily") or {})
+    out = []
+    for i, date in enumerate(d.get("time") or []):
+        out.append({
+            "date":     date,
+            "tempMax":  _safe_float(d.get("temperature_2m_max"), i),
+            "tempMin":  _safe_float(d.get("temperature_2m_min"), i),
+            "precipMm": _safe_float(d.get("precipitation_sum"), i),
+            "humidity": _safe_float(d.get("relative_humidity_2m_mean"), i),
+            "windMax":  _safe_float(d.get("windspeed_10m_max"), i),
+        })
+    return out
+
+
+def _weekly_from_daily(days: list) -> list:
+    """Fold daily rows into ISO weeks.
+
+    Rainfall SUMS (a week's total is the meaningful figure for pest pressure);
+    temperature, humidity and wind AVERAGE. Each week also carries the change
+    from the week before, which is what the 3D view highlights — "rain up 18mm
+    on last week" is the readable signal, not the absolute total.
+    """
+    buckets: dict = {}
+    for r in days:
+        wk = _iso_week_label(r["date"])
+        if not wk:
+            continue
+        b = buckets.setdefault(
+            wk, {"week": wk, "precipMm": 0.0, "_t": [], "_h": [], "_w": [], "days": 0}
+        )
+        b["days"] += 1
+        if r["precipMm"] is not None:
+            b["precipMm"] += r["precipMm"]
+        if r["tempMax"] is not None and r["tempMin"] is not None:
+            b["_t"].append((r["tempMax"] + r["tempMin"]) / 2)
+        if r["humidity"] is not None:
+            b["_h"].append(r["humidity"])
+        if r["windMax"] is not None:
+            b["_w"].append(r["windMax"])
+
+    def mean(xs):
+        return round(sum(xs) / len(xs), 1) if xs else None
+
+    weeks = []
+    for wk in sorted(buckets):
+        b = buckets[wk]
+        weeks.append({
+            "week":     wk,
+            "precipMm": round(b["precipMm"], 1),
+            "tempMean": mean(b["_t"]),
+            "humidity": mean(b["_h"]),
+            "windMean": mean(b["_w"]),
+            "days":     b["days"],
+            # A week with only a day or two of data (the range edges) would
+            # otherwise read as a drought next to a full week.
+            "partial":  b["days"] < 7,
+        })
+
+    # Week-on-week deltas, computed after sorting so "previous" is meaningful.
+    for i, w in enumerate(weeks):
+        prev = weeks[i - 1] if i else None
+        w["precipDelta"] = (
+            None if not prev else round(w["precipMm"] - prev["precipMm"], 1)
+        )
+        w["tempDelta"] = (
+            None
+            if not prev or w["tempMean"] is None or prev["tempMean"] is None
+            else round(w["tempMean"] - prev["tempMean"], 1)
+        )
+        w["humidityDelta"] = (
+            None
+            if not prev or w["humidity"] is None or prev["humidity"] is None
+            else round(w["humidity"] - prev["humidity"], 1)
+        )
+    return weeks
+
+
+@frappe.whitelist()
+def get_farm_weather_history(
+    farm: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> dict:
+    """``{farm, weeks[]}`` — weekly weather for the farm, each week with totals,
+    means and the change on the week before.
+
+    Pass ``from_date``/``to_date`` to cover the period actually being looked at
+    (the weeks a greenhouse was scouted). Without them it falls back to the
+    trailing ~5 weeks from today, which is only right when the data is current.
+
+    Never raises: an outage or a farm with no coordinates yields ``weeks: []``
+    and the UI hides the panel.
+    """
+    farm = (farm or "").strip()
+    frm = (from_date or "").strip()[:10]
+    to = (to_date or "").strip()[:10]
+    if not farm:
+        return {"farm": "", "weeks": []}
+
+    cache = frappe.cache()
+    key = _history_cache_key(farm, frm, to)
+    cached = cache.get_value(key, expires=True)
+    if cached is not None:
+        return cached
+
+    coords = _farm_coords(farm)
+    if not coords:
+        payload = {"farm": farm, "weeks": []}
+        cache.set_value(key, payload, expires_in_sec=300)
+        return payload
+
+    lat, lon = coords
+    try:
+        days = _fetch_history(lat, lon, frm, to)
+    except Exception:
+        frappe.log_error(title="open-meteo history fetch failed")
+        return {"farm": farm, "lat": lat, "lon": lon, "weeks": []}
+
+    weeks = _weekly_from_daily(days)
+    if not (frm and to):
+        # Trailing-window mode only: trim to the most recent N. With an explicit
+        # range the caller already said which weeks it wants.
+        weeks = weeks[-(_HISTORY_WEEKS + 1):]
+    payload = {"farm": farm, "lat": lat, "lon": lon, "weeks": weeks}
+    cache.set_value(key, payload, expires_in_sec=_HISTORY_TTL)
+    return payload

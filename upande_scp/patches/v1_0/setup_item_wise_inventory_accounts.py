@@ -18,8 +18,12 @@ directly sidesteps that pre-existing framework quirk."""
 import frappe
 
 STOCKED = ["Karen Roses", "Kaitet Ltd.", "Westwood Dairies Limited"]
-CHEM_GROUPS = {"CHEMICALS", "Fertilizer", "Chemical Mix"}
-MIX_GROUP = "Chemical Mix"
+# Chemicals and the mixes made from them share one inventory account so that
+# mixing (consume raw + produce mix) nets to zero, and one expense account so
+# both a raw-chemical issue and a sprayed-mix issue land on Chemicals Expense.
+CHEM_GROUPS = {"CHEMICALS", "Chemical Mix"}
+# Fertilizer is kept SEPARATE from chemicals — its own stock + expense accounts.
+FERT_GROUPS = {"Fertilizer"}
 SCP_COMPANY = "Karen Roses"
 
 
@@ -31,7 +35,9 @@ def _accounts(company):
     abbr = frappe.db.get_value("Company", company, "abbr")
     return {
         "chem": _acct_if_exists(f"1010010105 - Chemicals and sprays - {abbr}"),
-        "expense": _acct_if_exists(f"50100301 - Chemicals Expense - {abbr}"),
+        "chem_expense": _acct_if_exists(f"50100301 - Chemicals Expense - {abbr}"),
+        "fert": _acct_if_exists(f"1010010103 - Fertiliser - {abbr}"),
+        "fert_expense": _acct_if_exists(f"501002 - Fertilizer Expenses - {abbr}"),
         "stock": frappe.db.get_value("Company", company, "default_inventory_account"),
     }
 
@@ -86,18 +92,32 @@ def execute():
         changed = False
         for company in STOCKED:
             a = acc[company]
-            inv = a["chem"] if (gname in CHEM_GROUPS and a["chem"]) else a["stock"]
-            expense = a["expense"] if (gname == MIX_GROUP and a["expense"]) else None
+            if gname in CHEM_GROUPS and a["chem"]:
+                # Chemicals + Chemical Mix -> Chemicals and sprays / Chemicals
+                # Expense. Expensing raw chemicals matches a sprayed mix.
+                inv, expense = a["chem"], a["chem_expense"]
+            elif gname in FERT_GROUPS and a["fert"]:
+                # Fertilizer -> its own Fertiliser stock / Fertilizer Expenses.
+                inv, expense = a["fert"], a["fert_expense"]
+            else:
+                inv, expense = a["stock"], None
             if _upsert(gname, company, inv, expense):
                 changed = True
         if changed:
             saved += 1
     for company in STOCKED:
         frappe.db.set_value("Company", company, "enable_item_wise_inventory_account", 1)
-    exp_kr = acc[SCP_COMPANY]["expense"]
+    exp_kr = acc[SCP_COMPANY]["chem_expense"]
     if exp_kr:
         frappe.db.set_value("Scouting and Crop Protection Settings", "Scouting and Crop Protection Settings",
                             "default_chemical_expense_account", exp_kr)
     frappe.db.commit()
+    # The Item Default child rows are written straight to the DB (see module
+    # docstring), so the cached Item Group documents still hold the pre-patch
+    # defaults. get_item_group_defaults() reads that cache — without busting it,
+    # a Material Issue keeps resolving the OLD expense_account (falling back to
+    # Stock Adjustment) until the cache expires or the next migrate. Clear it so
+    # the new inventory/expense defaults take effect immediately.
+    frappe.clear_cache(doctype="Item Group")
     print(f"item-wise inventory accounts: mapped {saved} item groups, "
           f"toggled {STOCKED}, settings expense={exp_kr}")

@@ -14,7 +14,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { weekTickFormatter } from "@/lib/iso-week";
+import { weekLabelTickFormatter } from "@/lib/iso-week";
 import {
   Card,
   CardContent,
@@ -30,8 +30,18 @@ import {
   printChartAsPdf,
   slugifyForFile,
 } from "@/lib/chart-export";
-import type { ObsKey, Selection, TrendsPayload } from "./trends-types";
-import { buildSeries, type MatrixIndex } from "./aggregate";
+import type {
+  ObsKey,
+  Selection,
+  SprayEvent,
+  TrendsPayload,
+} from "./trends-types";
+import {
+  buildSeries,
+  cellStats,
+  type CellStats,
+  type MatrixIndex,
+} from "./aggregate";
 
 function SideLegend({
   items,
@@ -132,6 +142,103 @@ export interface ThresholdLookup {
   (kind: "pest" | "disease", name: string, stage: string): ThresholdBand | null;
 }
 
+interface SprayMark {
+  week: string;
+  events: SprayEvent[];
+  /** the work order declared the pest/disease currently charted */
+  onTarget: boolean;
+}
+
+/** One-line summary of a week's control actions, for the marker tooltip.
+ *  Active ingredient leads — it's the part that determines whether a rotation
+ *  is actually rotating, and two differently-branded chemicals can share one. */
+function describeSpray(e: SprayEvent): string {
+  const ai = e.ingredients.length ? e.ingredients.join(" + ") : "AI not recorded";
+  const chem = e.chemicals.join(" + ") || "—";
+  const target = e.targets.length ? ` → ${e.targets.join(", ")}` : "";
+  const type = e.sprayType ? ` · ${e.sprayType}` : "";
+  return `${ai} (${chem})${target}${type}`;
+}
+
+/** Tooltip for the incidence chart.
+ *
+ *  Shows the sample behind every percentage — `k / n` and the coverage that
+ *  sample represents. The old chart divided by every unit that exists, which
+ *  hid both numbers; making them visible is what lets a reader tell "62% of a
+ *  thin sample" from "62% of a thorough one" instead of trusting a bare figure.
+ */
+function IncidenceTooltip({
+  active,
+  payload: items,
+  label,
+  statsByWeek,
+  unitLabelPlural,
+  sprayByWeek,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; dataKey?: string; value?: number; color?: string }>;
+  label?: string;
+  statsByWeek: Map<string, Map<string, CellStats>>;
+  unitLabelPlural: string;
+  sprayByWeek?: Map<string, SprayMark>;
+}) {
+  if (!active || !items?.length || !label) return null;
+  const stats = statsByWeek.get(label);
+  return (
+    <div className="rounded-lg border bg-background px-2.5 py-2 text-xs shadow-md">
+      <div className="mb-1 font-medium">{label.replace("-W", " · Week ")}</div>
+      <div className="flex flex-col gap-1">
+        {items.map((it) => {
+          const key = String(it.dataKey ?? it.name ?? "");
+          const s = stats?.get(key);
+          return (
+            <div key={key} className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="h-2 w-2 shrink-0 rounded-[2px]"
+                  style={{ background: it.color }}
+                />
+                <span className="truncate">{key}</span>
+                <span className="ml-auto font-mono font-medium tabular-nums">
+                  {typeof it.value === "number" ? `${it.value}%` : "—"}
+                </span>
+              </div>
+              {s && (
+                <div className="pl-3.5 font-mono text-[0.65rem] text-muted-foreground tabular-nums">
+                  {s.affected} of {s.scouted} {unitLabelPlural} scouted
+                  {s.coveragePct != null
+                    ? ` · ${s.coveragePct.toFixed(0)}% coverage`
+                    : ""}
+                  {s.pressure != null
+                    ? ` · ${s.pressure.toFixed(2)}/${unitLabelPlural.replace(/s$/, "")}`
+                    : ""}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {(() => {
+        const mark = sprayByWeek?.get(label);
+        if (!mark) return null;
+        return (
+          <div className="mt-1.5 border-t pt-1.5">
+            <div className="mb-0.5 flex items-center gap-1 text-[0.65rem] font-medium text-[var(--sd-data-violet,#7c3aed)]">
+              Control action{mark.events.length > 1 ? "s" : ""}
+              {mark.onTarget ? " · on target" : ""}
+            </div>
+            {mark.events.map((e, i) => (
+              <div key={i} className="text-[0.65rem] text-muted-foreground">
+                {describeSpray(e)}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
 /** Adaptive Y-axis ceiling (a percentage). Picks the smallest "nice" value
  *  above the data max plus ~15% headroom, so a chart that tops out at ~6%
  *  zooms to a 10% axis instead of wasting the 0–100% range. Capped at 100. */
@@ -186,6 +293,80 @@ export function ChartPanel({
   const seriesData = useMemo(
     () => buildSeries(payload, index, selections, obs, child?.stage || null),
     [payload, index, selections, obs, child?.stage],
+  );
+
+  /** week → selection label → the audit numbers behind that plotted point.
+   *  Feeds the tooltip so a reader can check any percentage against the sample
+   *  it came from, and feeds the pest-pressure panel below. */
+  const statsByWeek = useMemo(() => {
+    const m = new Map<string, Map<string, CellStats>>();
+    for (const wk of payload.allWeeks) {
+      const inner = new Map<string, CellStats>();
+      for (const sel of selections) {
+        const s = cellStats(payload, index, sel, wk, obs, child?.stage || null);
+        if (s) inner.set(sel.label, s);
+      }
+      m.set(wk, inner);
+    }
+    return m;
+  }, [payload, index, selections, obs, child?.stage]);
+
+  /** Pest pressure — mean count per unit SCOUTED. A count, not a percentage, so
+   *  it gets its own panel and axis rather than a second line on the incidence
+   *  chart. Empty for diseases, which carry no count column. */
+  const isPest = obs?.kind === "pest";
+  const pressureData = useMemo(() => {
+    if (!isPest) return [];
+    return payload.allWeeks.map((wk) => {
+      const point: Record<string, number | string | null> = { date: wk };
+      const inner = statsByWeek.get(wk);
+      for (const sel of selections) {
+        const s = inner?.get(sel.label);
+        point[sel.label] =
+          s && !s.suppressed && s.pressure != null
+            ? Math.round(s.pressure * 100) / 100
+            : null;
+      }
+      return point;
+    });
+  }, [isPest, payload.allWeeks, statsByWeek, selections]);
+
+  /** Spray-plan markers for the charted weeks.
+   *
+   *  Only for a single-station (per-greenhouse) selection: a farm rollup covers
+   *  dozens of houses, and stacking every house's sprays onto one axis says
+   *  nothing about cause. `onTarget` means the work order declared the very
+   *  pest/disease on screen — those are drawn solid, the rest faint, so overall
+   *  spray load stays visible without drowning the causal signal. */
+  const sprayMarks = useMemo(() => {
+    if (selections.length !== 1 || selections[0].kind !== "station") return [];
+    const station = selections[0].station;
+    const events = payload.sprayEvents;
+    if (!events) return [];
+    const name = obs?.name?.toLowerCase();
+    return payload.allWeeks
+      .map((week) => {
+        const list = events[`${week}|${station}`];
+        if (!list?.length) return null;
+        const onTarget = name
+          ? list.some((e) => e.targets.some((t) => t.toLowerCase() === name))
+          : false;
+        return { week, events: list, onTarget };
+      })
+      .filter((m): m is SprayMark => m !== null);
+  }, [selections, payload.sprayEvents, payload.allWeeks, obs?.name]);
+
+  const sprayByWeek = useMemo(
+    () => new Map(sprayMarks.map((m) => [m.week, m])),
+    [sprayMarks],
+  );
+
+  const hasPressure = useMemo(
+    () =>
+      pressureData.some((p) =>
+        selections.some((s) => typeof p[s.label] === "number"),
+      ),
+    [pressureData, selections],
   );
   const config = useMemo<ChartConfig>(() => {
     const c: ChartConfig = {};
@@ -273,8 +454,9 @@ export function ChartPanel({
           </Badge>
           <CardDescription className="ml-auto">
             {selections.length} selection
-            {selections.length !== 1 ? "s" : ""} · %{" "}
-            {payload.unitLabelPlural || "zones"} with matching observations
+            {selections.length !== 1 ? "s" : ""} · % of{" "}
+            {payload.unitLabelPlural || "zones"} <strong>scouted</strong> with
+            matching observations, per week
           </CardDescription>
           <div className="flex items-center gap-1">
             <Button
@@ -362,7 +544,7 @@ export function ChartPanel({
                   axisLine={false}
                   interval={0}
                   minTickGap={0}
-                  tickFormatter={weekTickFormatter}
+                  tickFormatter={weekLabelTickFormatter}
                 />
                 <YAxis
                   tickLine={false}
@@ -374,12 +556,35 @@ export function ChartPanel({
                 />
                 <ChartTooltip
                   content={
-                    <ChartTooltipContent
-                      indicator="line"
-                      formatter={(v) => `${v}%`}
+                    <IncidenceTooltip
+                      statsByWeek={statsByWeek}
+                      unitLabelPlural={payload.unitLabelPlural || "zones"}
+                      sprayByWeek={sprayByWeek}
                     />
                   }
                 />
+                {/* Control actions. Solid + labelled when the spray targeted the
+                    charted observation; faint when it was for something else. */}
+                {sprayMarks.map((m) => (
+                  <ReferenceLine
+                    key={`spray:${m.week}`}
+                    x={m.week}
+                    stroke="var(--sd-data-violet, #7c3aed)"
+                    strokeWidth={m.onTarget ? 1.6 : 1}
+                    strokeDasharray={m.onTarget ? undefined : "2 4"}
+                    strokeOpacity={m.onTarget ? 0.75 : 0.3}
+                    label={
+                      m.onTarget
+                        ? {
+                            value: "spray",
+                            position: "insideTopLeft",
+                            fill: "var(--sd-data-violet, #7c3aed)",
+                            fontSize: 9,
+                          }
+                        : undefined
+                    }
+                  />
+                ))}
                 {band && band.low ? (
                   <ReferenceLine
                     y={band.low}
@@ -465,6 +670,69 @@ export function ChartPanel({
             />
           </div>
         </div>
+
+        {/* Pest pressure — mean count per unit SCOUTED. Separate panel because
+            it's a count, not a percentage, so it can't share the incidence
+            axis. Together they read as "how widespread" + "how heavy", and
+            pressure = incidence × severity exactly. */}
+        {isPest && hasPressure && (
+          <div className="flex flex-col md:flex-row gap-3 items-stretch">
+            <div className="flex-1 min-w-0">
+              <div className="mb-1 text-[0.7rem] text-muted-foreground">
+                Pest pressure — mean count per{" "}
+                {(payload.unitLabelPlural || "zones").replace(/s$/, "")} scouted
+              </div>
+              <ChartContainer config={config} className="w-full h-32">
+                <LineChart
+                  data={pressureData}
+                  margin={{ left: 4, right: 8, top: 4 }}
+                  onMouseLeave={leave}
+                >
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                    minTickGap={0}
+                    tickFormatter={weekLabelTickFormatter}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    width={36}
+                    allowDecimals
+                  />
+                  <ChartTooltip
+                    content={<ChartTooltipContent indicator="line" />}
+                  />
+                  {selections.map((s, i) => {
+                    const isHover = hovered === s.label;
+                    const dim = hovered != null && !isHover;
+                    return (
+                      <Line
+                        key={`pressure:${s.label}`}
+                        type="linear"
+                        dataKey={s.label}
+                        name={s.label}
+                        stroke={PALETTE[i % PALETTE.length]}
+                        strokeWidth={isHover ? 3 : 2}
+                        strokeOpacity={dim ? 0.25 : 1}
+                        dot={false}
+                        activeDot={{ r: isHover ? 5 : 3 }}
+                        connectNulls
+                        isAnimationActive={false}
+                        onMouseEnter={() => enter(s.label)}
+                        onMouseLeave={leave}
+                      />
+                    );
+                  })}
+                </LineChart>
+              </ChartContainer>
+            </div>
+            <div className="md:w-48 shrink-0" />
+          </div>
+        )}
         {!child &&
           Array.from(picked).map((stage) => (
             <div key={stage} className="mt-3">

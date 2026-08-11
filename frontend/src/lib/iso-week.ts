@@ -32,3 +32,24 @@ export function weekTickFormatter(value: string): string {
   const [y, m, d] = value.split("-").map(Number);
   return `Week ${isoWeek(new Date(y, m - 1, d))}`;
 }
+
+/** Tick formatter for an x-axis whose keys are already ISO-week LABELS
+ *  ("2026-W29" → "Week 29"), as the Trends payload emits.
+ *
+ *  Kept separate from `weekTickFormatter`, which takes YYYY-MM-DD and is still
+ *  used by seven daily-resolution dashboard charts. Feeding a week label to that
+ *  one silently returns "" for every tick (Number("W29") is NaN), i.e. a blank
+ *  axis rather than a visible error.
+ *
+ *  The year is dropped unless it differs from `refYear`, so a range spanning a
+ *  year boundary stays unambiguous without repeating the year on every tick. */
+export function weekLabelTickFormatter(value: string, refYear?: number): string {
+  if (!value || typeof value !== "string") return "";
+  const m = /^(\d{4})-W(\d{1,2})$/.exec(value);
+  if (!m) return "";
+  const year = Number(m[1]);
+  const week = Number(m[2]);
+  return refYear !== undefined && year !== refYear
+    ? `W${week} '${String(year).slice(2)}`
+    : `Week ${week}`;
+}

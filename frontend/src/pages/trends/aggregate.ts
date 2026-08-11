@@ -105,12 +105,19 @@ export function parseObs(id: string): ObsKey | null {
 /* =============================================================
  * Series builder
  *
- * The chart shows ``% units with the matching observation`` per day, per
- * selection — where a "unit" is the crop's scouting unit (zone for roses,
- * orchard tree for avocado, triad for coffee). The numerator is the count of
- * distinct unit keys that matched on that day; the denominator is the
- * structural total units of the selection (sum of unitTotalsByStation across
- * covered stations).
+ * The chart shows INCIDENCE: ``% of units SCOUTED that had the matching
+ * observation``, per ISO week, per selection — where a "unit" is the crop's
+ * scouting unit (zone for roses, orchard tree for avocado, triad for coffee).
+ *
+ *   numerator   = distinct units that matched in that week
+ *   denominator = distinct units actually scouted in that week (scoutedByStation)
+ *
+ * The denominator used to be the structural unit total — every unit that
+ * *exists* — so the plotted value was really ``incidence × coverage``. On real
+ * data that understated by 3.6–47.7×, and because it scaled with how much
+ * scouting happened, a week with fewer scouts read as an improvement. Coverage
+ * is now reported separately (see ``cellStats``) instead of being silently
+ * folded into the percentage.
  *
  * Unit keys are station-prefixed on the server (``block::tree::Tx``
  * or ``zone::Zy``) so summing the per-station ``n`` from a row stays
@@ -123,14 +130,18 @@ export interface DaySeriesPoint {
 }
 
 export interface MatrixIndex {
-  /** dateIdx → stationIdx → n (any obs) */
+  /** weekIdx → stationIdx → n (any obs) */
   any: Map<number, Map<number, number>>;
-  /** dateIdx → stationIdx → obsIdx → n */
+  /** weekIdx → stationIdx → obsIdx → n */
   kn: Map<number, Map<number, Map<number, number>>>;
-  /** dateIdx → stationIdx → obsIdx → stageIdx → n */
+  /** weekIdx → stationIdx → obsIdx → stageIdx → n */
   kns: Map<number, Map<number, Map<number, Map<number, number>>>>;
-  dateByIdx: string[];
-  dateIdxByDate: Map<string, number>;
+  /** weekIdx → stationIdx → units scouted (the incidence denominator) */
+  scouted: Map<number, Map<number, number>>;
+  /** weekIdx → stationIdx → obsIdx → Σ per-unit mean pest count */
+  intensity: Map<number, Map<number, Map<number, number>>>;
+  weekByIdx: string[];
+  weekIdxByWeek: Map<string, number>;
   stationIdxByName: Map<string, number>;
   obsIdxByKey: Map<string, number>;
   stageIdxByName: Map<string, number>;
@@ -185,7 +196,34 @@ export function buildMatrixIndex(payload: TrendsPayload): MatrixIndex {
     stageMap.set(g, n);
   }
 
-  const dateIdxByDate = new Map(payload.vocab.dates.map((d, i) => [d, i]));
+  // Incidence denominator: weekIdx → stationIdx → units scouted.
+  const scouted = new Map<number, Map<number, number>>();
+  for (const [w, s, n] of payload.scoutedByStation ?? []) {
+    let row = scouted.get(w);
+    if (!row) {
+      row = new Map();
+      scouted.set(w, row);
+    }
+    row.set(s, n);
+  }
+
+  // Pest intensity: weekIdx → stationIdx → obsIdx → Σ per-unit mean count.
+  const intensity = new Map<number, Map<number, Map<number, number>>>();
+  for (const [w, s, o, c] of payload.intensityByStation ?? []) {
+    let stnMap = intensity.get(w);
+    if (!stnMap) {
+      stnMap = new Map();
+      intensity.set(w, stnMap);
+    }
+    let obsMap = stnMap.get(s);
+    if (!obsMap) {
+      obsMap = new Map();
+      stnMap.set(s, obsMap);
+    }
+    obsMap.set(o, c);
+  }
+
+  const weekIdxByWeek = new Map(payload.vocab.weeks.map((w, i) => [w, i]));
   const stationIdxByName = new Map(
     payload.vocab.stations.map((s, i) => [s, i]),
   );
@@ -198,8 +236,10 @@ export function buildMatrixIndex(payload: TrendsPayload): MatrixIndex {
     any,
     kn,
     kns,
-    dateByIdx: payload.vocab.dates,
-    dateIdxByDate,
+    scouted,
+    intensity,
+    weekByIdx: payload.vocab.weeks,
+    weekIdxByWeek,
     stationIdxByName,
     obsIdxByKey,
     stageIdxByName,
@@ -214,29 +254,45 @@ function stationsForSelection(
   return (stationsByFarm ?? {})[sel.farm] || [];
 }
 
-function denomForSelection(
+/** Minimum units scouted before a bucket is allowed to produce a percentage.
+ *
+ *  2 affected out of 3 scouted is 67%, which plots identically to 683/843 and
+ *  reads as a crisis. A gap is more honest than a number built on three zones;
+ *  the chart's ``connectNulls`` already bridges it. */
+export const DEFAULT_MIN_SAMPLE = 10;
+
+/** Units actually scouted in this bucket for this selection — **the incidence
+ *  denominator**.
+ *
+ *  Unit keys are station-prefixed server-side, so summing per-station counts is
+ *  a correct distinct-unit count for a multi-station (farm) selection.
+ *
+ *  This replaced a sum of ``unitTotalsByStation`` (every unit that *exists*).
+ *  That made the charted value ``incidence × coverage``: understated 3.6–47.7×
+ *  on real data and — far worse — it moved with scouting effort, so a week with
+ *  fewer scouts looked like an improvement. */
+function scoutedForCell(
+  index: MatrixIndex,
+  weekIdx: number,
+  stationIdxs: number[],
+): number {
+  const row = index.scouted.get(weekIdx);
+  if (!row) return 0;
+  let total = 0;
+  for (const sIdx of stationIdxs) total += row.get(sIdx) || 0;
+  return total;
+}
+
+/** Structural units in the selection — the COVERAGE denominator. */
+export function structuralUnitsForSelection(
   sel: Selection,
   stationsByFarm: Record<string, string[]>,
   unitTotalsByStation: Record<string, number> | undefined,
-  unitsByStation: Record<string, number> | undefined,
 ): number {
-  const stations = stationsForSelection(sel, stationsByFarm);
-  // Default to empty maps so an older/partial payload (e.g. a cached one from
-  // before unitTotalsByStation existed) degrades to the observed-unit fallback
-  // instead of throwing and blanking the page.
   const totals = unitTotalsByStation ?? {};
-  const observed = unitsByStation ?? {};
   let total = 0;
-  for (const stn of stations) {
-    // Structural total units for the station (zones / trees / triads per
-    // warehouse type). Falls back to observed units when the station has no
-    // structural count yet.
-    const fromMap = totals[stn];
-    if (typeof fromMap === "number" && fromMap > 0) {
-      total += fromMap;
-    } else {
-      total += observed[stn] || 0;
-    }
+  for (const stn of stationsForSelection(sel, stationsByFarm)) {
+    total += totals[stn] || 0;
   }
   return total;
 }
@@ -292,56 +348,54 @@ export function buildSeries(
   selections: Selection[],
   obs: ObsKey | null,
   stage: string | null,
+  minSample: number = DEFAULT_MIN_SAMPLE,
 ): DaySeriesPoint[] {
-  if (!selections.length || !payload.allDates.length) return [];
+  if (!selections.length || !payload.allWeeks.length) return [];
 
   const obsKey = obs ? `${obs.kind}:${obs.name}` : null;
   const obsIdx = obsKey ? index.obsIdxByKey.get(obsKey) ?? null : null;
   const stageIdx = stage ? index.stageIdxByName.get(stage) ?? null : null;
 
   // The server never indexed this (obs, stage) pair, so nothing matches
-  // — every day point becomes null and the chart shows a flat empty line.
+  // — every point becomes null and the chart shows a flat empty line.
   if (obs && obsIdx === null) {
-    return payload.allDates.map((date) => {
+    return payload.allWeeks.map((date) => {
       const point: DaySeriesPoint = { date };
       for (const sel of selections) point[sel.label] = null;
       return point;
     });
   }
 
-  // Per-selection: station-index list and structural denominator.
   const selStationIdxs: number[][] = selections.map((sel) =>
     stationsForSelection(sel, payload.stationsByFarm)
       .map((stn) => index.stationIdxByName.get(stn))
       .filter((i): i is number => typeof i === "number"),
   );
-  const selDenoms: number[] = selections.map((sel) =>
-    denomForSelection(
-      sel,
-      payload.stationsByFarm,
-      payload.unitTotalsByStation,
-      payload.unitsByStation,
-    ),
-  );
 
-  return payload.allDates.map((date) => {
-    const point: DaySeriesPoint = { date };
-    const dateIdx = index.dateIdxByDate.get(date);
-    if (typeof dateIdx !== "number") {
+  return payload.allWeeks.map((week) => {
+    const point: DaySeriesPoint = { date: week };
+    const weekIdx = index.weekIdxByWeek.get(week);
+    if (typeof weekIdx !== "number") {
       for (const sel of selections) point[sel.label] = null;
       return point;
     }
     selections.forEach((sel, i) => {
-      const denom = selDenoms[i];
+      // Denominator is per-BUCKET, not a constant: how many units were actually
+      // scouted in this week for this selection.
+      const denom = scoutedForCell(index, weekIdx, selStationIdxs[i]);
       const num = numeratorForCell(
         index,
-        dateIdx,
+        weekIdx,
         selStationIdxs[i],
         obsIdx,
         stageIdx,
       );
-      if (num === 0 || denom <= 0) {
-        // Treat a "no match" day as a gap — connectNulls bridges it.
+      if (denom < minSample) {
+        // Too small a sample to state a percentage — a gap, not a spike.
+        point[sel.label] = null;
+      } else if (num === 0) {
+        // Genuinely zero on a real sample. Kept as a gap (not 0) to preserve the
+        // existing connectNulls look rather than dropping the line to the axis.
         point[sel.label] = null;
       } else {
         point[sel.label] = Math.round(((num / denom) * 100) * 10) / 10;
@@ -349,4 +403,79 @@ export function buildSeries(
     });
     return point;
   });
+}
+
+/** Per-bucket audit numbers behind one plotted point: the numerator, the sample
+ *  size, and how much of the selection that sample represents. Drives the
+ *  tooltip so every percentage on the page can be checked by eye. */
+export interface CellStats {
+  affected: number;
+  scouted: number;
+  structural: number;
+  /** 100 × scouted / structural, or null when the structural count is unknown */
+  coveragePct: number | null;
+  /** Σ per-unit mean pest count; null for diseases (no count column) */
+  intensitySum: number | null;
+  /** intensitySum / scouted — mean pests per unit scouted */
+  pressure: number | null;
+  /** intensitySum / affected — mean pests where present */
+  severity: number | null;
+  suppressed: boolean;
+}
+
+export function cellStats(
+  payload: TrendsPayload,
+  index: MatrixIndex,
+  sel: Selection,
+  week: string,
+  obs: ObsKey | null,
+  stage: string | null,
+  minSample: number = DEFAULT_MIN_SAMPLE,
+): CellStats | null {
+  const weekIdx = index.weekIdxByWeek.get(week);
+  if (typeof weekIdx !== "number") return null;
+
+  const stationIdxs = stationsForSelection(sel, payload.stationsByFarm)
+    .map((stn) => index.stationIdxByName.get(stn))
+    .filter((i): i is number => typeof i === "number");
+
+  const obsKey = obs ? `${obs.kind}:${obs.name}` : null;
+  const obsIdx = obsKey ? index.obsIdxByKey.get(obsKey) ?? null : null;
+  const stageIdx = stage ? index.stageIdxByName.get(stage) ?? null : null;
+
+  const scouted = scoutedForCell(index, weekIdx, stationIdxs);
+  const affected = numeratorForCell(index, weekIdx, stationIdxs, obsIdx, stageIdx);
+  const structural = structuralUnitsForSelection(
+    sel,
+    payload.stationsByFarm,
+    payload.unitTotalsByStation,
+  );
+
+  let intensitySum: number | null = null;
+  if (obsIdx !== null && obs?.kind === "pest") {
+    const stnMap = index.intensity.get(weekIdx);
+    if (stnMap) {
+      let sum = 0;
+      let seen = false;
+      for (const sIdx of stationIdxs) {
+        const v = stnMap.get(sIdx)?.get(obsIdx);
+        if (typeof v === "number") {
+          sum += v;
+          seen = true;
+        }
+      }
+      if (seen) intensitySum = sum;
+    }
+  }
+
+  return {
+    affected,
+    scouted,
+    structural,
+    coveragePct: structural > 0 ? (scouted / structural) * 100 : null,
+    intensitySum,
+    pressure: intensitySum !== null && scouted > 0 ? intensitySum / scouted : null,
+    severity: intensitySum !== null && affected > 0 ? intensitySum / affected : null,
+    suppressed: scouted < minSample,
+  };
 }

@@ -107,6 +107,11 @@ after_migrate = [
 	# has something to place. Stock Entry is shared with three other installed
 	# apps, so these must be rebuilt rather than assumed to exist.
 	"upande_scp.serverscripts.store.stock_entry_fields.ensure_scp_stock_entry_fields",
+	# The `custom_farm` links on BOM / Spray Team. Declared in code rather than
+	# shipped as fixtures because fixture sync OVERWRITES, and a site may already
+	# carry its own `custom_farm` on these shared doctypes — this creates only
+	# where absent. Must precede the layout pass, same as the Stock Entry fields.
+	"upande_scp.serverscripts.common.farm_fields.ensure_farm_fields",
 	"upande_scp.serverscripts.common.scouting_tab_layout.enforce",
 ]
 
@@ -436,7 +441,11 @@ fixtures = [
                         # written with frappe.db.set_value (raw SQL, no meta check),
                         # so a site missing it 1054s on draft materialisation.
                         "BOM-custom_work_order",
-                        "BOM-custom_farm",
+                        # NOTE: `BOM-custom_farm` and `Spray Team-custom_farm` are
+                        # NOT fixtures. Fixture sync overwrites, and these sit on
+                        # doctypes where a site may already have its own farm
+                        # field; `common/farm_fields.py` creates them only where
+                        # absent, on after_migrate. One mechanism only.
                         # BOM Item fields
                         "BOM Item-custom_application_rate",
                         "BOM Item-custom_application_rateper_ha_",
@@ -469,8 +478,6 @@ fixtures = [
                         "Farm-custom_chemical_store",
                         "Farm-custom_fertilizer_store",
                         "Farm-store_keepers",
-                        # Spray Team fields
-                        "Spray Team-custom_farm",
                         # Work Order spray-plan fields
                         "Work Order-custom_classification",
                         "Work Order-custom_preventive_reason",

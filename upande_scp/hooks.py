@@ -432,8 +432,14 @@ fixtures = [
                         "BOM-custom_water_hardness",
                         "BOM-custom_water_ph",
                         "BOM-custom_item_group",
+                        # `custom_work_order` is the 1:1 backlink to the plan and is
+                        # written with frappe.db.set_value (raw SQL, no meta check),
+                        # so a site missing it 1054s on draft materialisation.
+                        "BOM-custom_work_order",
+                        "BOM-custom_farm",
                         # BOM Item fields
                         "BOM Item-custom_application_rate",
+                        "BOM Item-custom_application_rateper_ha_",
                         # Work Order fields
                         "Work Order-custom_spray_team",
                         "Work Order-custom_reentry_time",
@@ -452,6 +458,10 @@ fixtures = [
                         "Work Order-custom_variety",
                         "Work Order-custom_greenhouse",
                         "Work Order-custom_application_floor_plan",
+                        # Spray-session flow: the scan child table and the SAL
+                        # backlink. Both are read/written in spray_session.py.
+                        "Work Order-custom_chemical_scans",
+                        "Work Order-custom_spray_application_logsheet",
                         # Work Order Item fields
                         "Work Order Item-custom_updated_required_qty",
                         # Farm fields

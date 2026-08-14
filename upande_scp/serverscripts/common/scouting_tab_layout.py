@@ -11,6 +11,11 @@ from ..store.spray_stock_types import SE_TYPE_TRANSFER
 TAB = "custom_scouting_and_crop_protection_tab"
 TAB_LABEL = "Scouting and Crop Protection"
 
+# Declared locally, as every other module does (spray_session, lifecycle,
+# auto_material_issue, ...) — layout code must not import the resolver.
+AFP_TYPE = "Application Floor Plan"
+CHEMICAL_MIX = "Chemical Mix"
+
 # Ordered SCP fields per doctype (display order under the tab).
 SCP_FIELDS = {
     "Item": [
@@ -86,6 +91,15 @@ TAB_DEPENDS_ON = {
         f'eval:doc.stock_entry_type=="{SE_TYPE_TRANSFER}"'
         ' || doc.custom_labels_printed'
     ),
+    # Work Order and BOM are shared with manufacturing: only spray plans and
+    # the tank-mix BOMs they generate carry SCP data, so the tab stays hidden
+    # on every other Work Order / BOM rather than showing an empty tab. Both
+    # discriminators are the ones SCP itself writes and reads —
+    # `custom_type` (drafts/approval) and `custom_item_group` == Chemical Mix
+    # (stamped by bom_resolver.create_bom_for_plan + store.create_bom, read back
+    # by bom_resolver.cancel_orphan_plan_bom).
+    "Work Order": f'eval:doc.custom_type=="{AFP_TYPE}"',
+    "BOM": f'eval:doc.custom_item_group=="{CHEMICAL_MIX}"',
 }
 
 

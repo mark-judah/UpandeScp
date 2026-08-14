@@ -123,10 +123,13 @@ def fetch_creator_bootstrap() -> dict:
     # Active, non-group Cost Centers — drives the override picker on the
     # ApplicationPlan page. Returns all companies so the picker can show
     # cross-company options when the operator overrides intentionally.
+    # `custom_farm` is deliberately not selected: it's an unowned Custom Field
+    # (no app declares it), so it is absent on freshly provisioned sites and
+    # the read 1054'd the whole bootstrap. Nothing populates it either.
     cost_centers = frappe.get_all(
         "Cost Center",
         filters={"disabled": 0, "is_group": 0},
-        fields=["name", "company", "custom_farm"],
+        fields=["name", "company"],
         order_by="name asc",
     )
 

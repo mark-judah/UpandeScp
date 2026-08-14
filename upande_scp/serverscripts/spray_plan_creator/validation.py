@@ -100,7 +100,8 @@ def list_cost_centers(company: str | None = None) -> list[dict]:
     floor-plan pages to drive the override picker.
 
     Optionally filter to a single company. Output rows are
-    ``{name, company, custom_farm}`` so the UI can group/badge them.
+    ``{name, company}`` so the UI can group/badge them. `custom_farm` is not
+    selected — see the note in ``bootstrap.fetch_creator_bootstrap``.
     """
     filters: dict = {"disabled": 0, "is_group": 0}
     if company:
@@ -108,7 +109,7 @@ def list_cost_centers(company: str | None = None) -> list[dict]:
     return frappe.get_all(
         "Cost Center",
         filters=filters,
-        fields=["name", "company", "custom_farm"],
+        fields=["name", "company"],
         order_by="name asc",
         limit_page_length=0,
     )

@@ -139,6 +139,29 @@ def get_scan_verification_method() -> dict[str, str]:
     return {"method": method}
 
 
+def _verify_qr(qr_payload, work_order: str, item_code: str) -> dict[str, Any]:
+    """Verify a scanned label, or explain why it could not be.
+
+    Refuses (throws) when the payload IS a traceable code but fails a check — a wrong
+    plan, a cancelled transfer, a code that was never issued. Returns
+    ``verified=False`` for a legacy text payload, which cannot be checked at all:
+    those stickers are already in circulation and refusing them would stop work on
+    the day this ships. The distinction is recorded on the scan row so the audit trail
+    never claims a legacy scan proved something.
+    """
+    from upande_scp.serverscripts.qr import chemical_labels
+
+    try:
+        return chemical_labels.verify_scan(qr_payload, work_order, item_code)
+    except chemical_labels.ScanRefused as e:
+        frappe.throw(str(e), frappe.ValidationError)
+    except Exception:
+        # A fault in verification must not become a refusal to work; it is logged and
+        # the scan is recorded as unverified.
+        frappe.log_error(frappe.get_traceback(), "Chemical QR – verify failed")
+        return {"verified": False, "why": "label check unavailable"}
+
+
 # ───────────────────────────── register_csu_scan ─────────────────────────────
 
 
@@ -177,6 +200,12 @@ def register_csu_scan(
             f"Item {item_code} is not in this Work Order's required chemicals."
         )
 
+    # Check the label against the transfer it came from. Until this existed the
+    # payload was stored and never read, so the only test was that `item_code` — sent
+    # by the client, alongside the scan — appeared on the WO: a label from another
+    # greenhouse passed, and so did a typed code with no scan at all.
+    verification = _verify_qr(qr_payload, work_order, item_code)
+
     employee = _resolve_employee_from_session()
     now = now_datetime()
 
@@ -204,6 +233,7 @@ def register_csu_scan(
         payload["csu_warehouse"] = csu_warehouse
     if qr_payload:
         payload["qr_payload"] = qr_payload
+    payload["qr_verified"] = 1 if verification.get("verified") else 0
     if gps_lat is not None:
         payload["gps_lat"] = flt(gps_lat)
     if gps_lon is not None:
@@ -235,7 +265,12 @@ def register_csu_scan(
         "workflow_state": current_state,
         "all_scanned": all_scanned,
         "scanned": sorted(scanned),
+        "qr_verified": bool(verification.get("verified")),
     }
+    if verification.get("why"):
+        # Surfaced rather than swallowed: a sprayer scanning an old label should be
+        # told why it could not be verified, not left thinking it was.
+        response["qr_note"] = verification["why"]
 
     # Manufacture is now an EXPLICIT step (see ``manufacture_tank_mix``), not a
     # side effect of the last scan. Decoupling the two means there is exactly

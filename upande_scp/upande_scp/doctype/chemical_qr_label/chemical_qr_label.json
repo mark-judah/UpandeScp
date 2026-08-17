@@ -1,0 +1,193 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:code",
+ "creation": "2026-08-17 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "code",
+  "stock_entry",
+  "se_line_idx",
+  "work_order",
+  "item_code",
+  "item_name",
+  "item_surrogate",
+  "cb_qty",
+  "qty",
+  "uom",
+  "greenhouse",
+  "farm",
+  "issued_at",
+  "attachment"
+ ],
+ "fields": [
+  {
+   "fieldname": "code",
+   "fieldtype": "Data",
+   "label": "Code",
+   "reqd": 1,
+   "unique": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "The 33 digits in the QR. Also this row's name \u2014 a scan is one lookup."
+  },
+  {
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "label": "Stock Entry",
+   "options": "Stock Entry",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "se_line_idx",
+   "fieldtype": "Int",
+   "label": "Line",
+   "read_only": 1
+  },
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "label": "Work Order",
+   "options": "Work Order",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_surrogate",
+   "fieldtype": "Int",
+   "label": "Item Surrogate",
+   "read_only": 1,
+   "description": "The numeric id encoded in the code; the item code itself is not always numeric."
+  },
+  {
+   "fieldname": "cb_qty",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "label": "Qty",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "What was actually transferred. Settled: the code is only issued after the transfer is submitted."
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "label": "UOM",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "greenhouse",
+   "fieldtype": "Data",
+   "label": "Greenhouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "farm",
+   "fieldtype": "Link",
+   "label": "Farm",
+   "options": "Farm",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "issued_at",
+   "fieldtype": "Datetime",
+   "label": "Issued At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "attachment",
+   "fieldtype": "Data",
+   "label": "QR File",
+   "read_only": 1,
+   "description": "The File the printed label renders."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 0,
+ "links": [],
+ "modified": "2026-08-17 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Chemical QR Label",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP General Manager",
+   "share": 1,
+   "write": 0
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP Chemical Store Keeper",
+   "share": 0,
+   "write": 0
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Supervisor",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "item_name"
+}

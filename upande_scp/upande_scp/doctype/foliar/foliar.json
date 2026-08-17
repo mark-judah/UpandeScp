@@ -29,7 +29,8 @@
   "default_lower_rate_limit",
   "default_upper_rate_limit",
   "default_targets",
-  "default_requirements"
+  "default_requirements",
+  "qr_item_id"
  ],
  "fields": [
   {
@@ -174,6 +175,14 @@
    "fieldtype": "Table",
    "label": "Default Requirements",
    "options": "Chemical Requirements"
+  },
+  {
+   "fieldname": "qr_item_id",
+   "fieldtype": "Int",
+   "label": "QR Item Id",
+   "read_only": 1,
+   "description": "Stable small integer encoded in this chemical's label codes. Allocated once from a single shared counter and never reused \u2014 the allocator is what guarantees uniqueness, since a unique index cannot be added over rows that all default to 0.",
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
@@ -193,16 +202,38 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1, "delete": 1, "email": 1, "export": 1, "print": 1,
-   "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
   },
   {
-   "create": 1, "delete": 1, "export": 1, "print": 1,
-   "read": 1, "report": 1, "role": "SCP General Manager", "share": 1, "write": 1
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP General Manager",
+   "share": 1,
+   "write": 1
   },
   {
-   "create": 1, "delete": 1, "export": 1, "print": 1,
-   "read": 1, "report": 1, "role": "SCP Chemical Store Keeper", "share": 1, "write": 1
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP Chemical Store Keeper",
+   "share": 1,
+   "write": 1
   }
  ],
  "row_format": "Dynamic",

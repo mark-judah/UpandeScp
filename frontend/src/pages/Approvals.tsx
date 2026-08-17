@@ -333,11 +333,13 @@ export function Approvals() {
           if (res.qr_labels) {
             res.qr_labels.forEach((l) => qr.push({ ...l, wo: name }));
           }
+          // Labels are no longer generated here. The traceable code is issued when
+          // the store SUBMITS the transfer, because only then is the quantity what
+          // actually moved — so saying "3 QR labels" at approval time would report
+          // work that has not happened.
           appendLog(
             `✓ ${name} — SE ${res.se} raised to ${res.warehouse || "WIP"}` +
-              (res.qr_labels?.length
-                ? ` · ${res.qr_labels.length} QR label${res.qr_labels.length > 1 ? "s" : ""}`
-                : ""),
+              " · labels are issued when the store releases the chemicals",
             "ok",
           );
         } else if (res.status === "already_forwarded") {

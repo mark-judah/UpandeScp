@@ -13,21 +13,36 @@ import re
 import frappe
 
 
-def generate_qr_base64(payload_text, box_size=4, border=2):
+def generate_qr_base64(payload_text, box_size=4, border=2, error_correction="L"):
     """
     Return a base64-encoded PNG QR code image, or None on failure.
 
     Defaults are tuned for a 30x40 mm label printer: a box_size of 4 with a
     2-module quiet zone yields a QR that stays readable when scaled to roughly
     18-22 mm square — small enough to leave room for label text.
+
+    ``error_correction`` is "L", "M", "Q" or "H" — 7%, 15%, 25% or 30% of the symbol
+    recoverable. The traceable chemical codes ask for **M**: a label in a chemical
+    store is smudged and scuffed long before it is out-resolved, and at the smallest
+    tier (18 mm) a version-1 symbol still prints 6.9 dots per module on a 203 dpi
+    ZQ520, so recovery is what decides whether a worn label still scans. Anything
+    unrecognised falls back to "L", which is what every label used before.
     """
     try:
         import qrcode
         from io import BytesIO
 
+        levels = {
+            "L": qrcode.constants.ERROR_CORRECT_L,
+            "M": qrcode.constants.ERROR_CORRECT_M,
+            "Q": qrcode.constants.ERROR_CORRECT_Q,
+            "H": qrcode.constants.ERROR_CORRECT_H,
+        }
         qr = qrcode.QRCode(
             version=None,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            error_correction=levels.get(
+                str(error_correction).upper(), qrcode.constants.ERROR_CORRECT_L
+            ),
             box_size=box_size,
             border=border,
         )

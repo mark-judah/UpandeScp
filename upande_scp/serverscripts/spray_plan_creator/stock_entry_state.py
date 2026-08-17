@@ -102,6 +102,24 @@ def on_submit(doc, method):
     if not work_order_name:
         return None
 
+    # Issue the traceable label codes here — the transfer has just been submitted, so
+    # the quantity on each line is what physically moved and the code can carry it as
+    # fact. Generating at approval time (which is what approve_and_forward used to do)
+    # put a *proposed* quantity on the sticker, since the draft stays editable until
+    # the storesman submits it.
+    #
+    # Best-effort: a label problem must never roll back a stock movement that has
+    # already happened.
+    try:
+        from upande_scp.serverscripts.qr.chemical_labels import issue_for_stock_entry
+
+        issue_for_stock_entry(doc)
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"Chemical QR – issue on submit: {doc.name}",
+        )
+
     wo_type = frappe.db.get_value("Work Order", work_order_name, "custom_type")
     if wo_type != AFP_TYPE:
         return None

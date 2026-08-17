@@ -250,18 +250,14 @@ def approve_single_work_order(wo_name):
     """
     Create a draft Material Transfer for Manufacture SE for one Work Order.
     Fixes zero valuation rates via FIFO.
-    Generates and attaches QR labels for each chemical.
+    Does NOT generate labels: the traceable codes are issued when the storesman
+    submits the transfer, because only then is the quantity what actually moved.
+    `qr_labels` is returned empty and kept for shape compatibility with the client.
 
     Returns a dict with keys: wo, status, se, warehouse, qr_labels, message.
     """
     _ensure_approval_role()
     _ensure_wo_in_approver_scope(wo_name)
-    from upande_scp.serverscripts.qr.qr_generator import (
-        attach_qr_to_document,
-        build_chemical_qr_payload,
-        generate_qr_base64,
-        safe_filename,
-    )
 
     # Row-lock the WO so the duplicate-SE guard below is atomic with the
     # subsequent insert. Without this, two concurrent approve calls can
@@ -336,40 +332,17 @@ def approve_single_work_order(wo_name):
     except Exception:
         frappe.log_error(frappe.get_traceback(), f"Rate patch – {se_doc.name}")
 
-    # ── Generate & attach QR labels ──
-    qr_labels = []
-    greenhouse = wo_doc.custom_greenhouse or ""
-    farm = _derive_farm(greenhouse) or ""
-    wip_warehouse = wo_doc.wip_warehouse or ""
-    for item in se_doc.items or []:
-        try:
-            tgt_wh = item.t_warehouse or wip_warehouse
-            payload = build_chemical_qr_payload(
-                item.item_name or item.item_code,
-                item.qty,
-                item.stock_uom,
-            )
-            png_b64 = generate_qr_base64(payload)
-            if png_b64:
-                fname = f"QR_{se_doc.name}_{safe_filename(item.item_code)}.png"
-                attach_qr_to_document("Stock Entry", se_doc.name, fname, png_b64)
-                qr_labels.append(
-                    {
-                        "chemical":   item.item_name or item.item_code,
-                        "item_code":  item.item_code,
-                        "qty":        _fmt_qty(item.qty),
-                        "uom":        item.stock_uom,
-                        "src_wh":     item.s_warehouse or "",
-                        "tgt_wh":     tgt_wh,
-                        "farm":       farm,
-                        "greenhouse": greenhouse,
-                        "wo":         wo_name,
-                        "se":         se_doc.name,
-                        "png_base64": png_b64,
-                    }
-                )
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), f"QR gen – {se_doc.name} / {item.item_code}")
+    # ── No QR labels here, deliberately ──
+    # Codes are issued when the storesman SUBMITS this transfer (see
+    # stock_entry_state.on_submit → chemical_labels.issue_for_stock_entry), not now.
+    # At this point the Stock Entry is a draft: nothing has moved, and the quantity on
+    # each line is a proposal the storesman can still change. A label printed from it
+    # carried a number that was never checked against what was issued.
+    #
+    # Nothing downstream regresses: store_label_printing already only printed labels
+    # for submitted entries (docstatus=1 AND has_qr), so this removes QR images that
+    # existed for drafts which may never be submitted at all.
+    qr_labels: list = []
 
     # Bump workflow state to Approved (Task 16 of Spray Plan A1)
     frappe.db.set_value("Work Order", wo_name, "workflow_state", "Approved", update_modified=True)
@@ -417,16 +390,6 @@ def _derive_farm(greenhouse):
         return None
     m = re.match(r"^(.+?)\s+GH\b", str(greenhouse), re.IGNORECASE)
     return m.group(1).strip() if m else str(greenhouse).split(" ")[0]
-
-
-def _fmt_qty(val):
-    if val is None:
-        return "—"
-    try:
-        n = float(val)
-        return str(int(n)) if n % 1 == 0 else f"{n:.3f}".rstrip("0").rstrip(".")
-    except (TypeError, ValueError):
-        return str(val)
 
 
 def _friendly_error(raw):

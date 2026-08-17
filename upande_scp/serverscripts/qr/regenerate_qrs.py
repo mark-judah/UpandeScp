@@ -29,7 +29,6 @@ from typing import Iterable
 import frappe
 
 from upande_scp.serverscripts.qr.qr_generator import (
-    build_chemical_qr_payload,
     generate_qr_base64,
 )
 
@@ -105,16 +104,21 @@ def _missing_qr_files(
 def _regenerate_one(file_row: dict) -> str:
     """Rebuild the PNG bytes for one missing File row.
 
-    The payload is just the chemical name + quantity (built by
-    ``build_chemical_qr_payload``) so the QR stays at a low version
-    with chunky modules — readable on low-DPI thermal printers and at
-    the xs/s label tiers. The renderer picks any image attached to the
-    SE row, so the file_url stays the same and existing references
-    keep working.
+    The payload is the line's **traceable code** — the same 33 digits the label was
+    issued with, read back from its ``Chemical QR Label`` row so a rebuilt image is
+    byte-identical in meaning to the one that went missing. A regenerated label that
+    said something different from the original would be worse than a missing one.
 
-    Returns the disk path written, or raises with a human-readable
-    reason if the SE / item lookup or QR rendering fails.
+    Where no label row exists (a transfer submitted before traceable codes, or one
+    still in draft) the file cannot be rebuilt faithfully and is reported as such
+    rather than filled with an unverifiable payload. Reissue with
+    ``chemical_labels.issue_for_stock_entry`` instead — that mints a code and records
+    it, which is a different act from restoring a lost file.
+
+    Returns the disk path written, or raises with a human-readable reason.
     """
+    from upande_scp.serverscripts.qr.chemical_labels import LABEL, QR_ERROR_CORRECTION
+
     se_name = file_row["attached_to_name"]
     fname = file_row["file_name"]
     m = _FILENAME_ITEM_RE.search(fname)
@@ -127,12 +131,15 @@ def _regenerate_one(file_row: dict) -> str:
     if item is None:
         raise ValueError(f"{se_name}: no item row matches {item_code}")
 
-    payload = build_chemical_qr_payload(
-        item.item_name or item.item_code,
-        item.qty,
-        item.stock_uom,
+    payload = frappe.db.get_value(
+        LABEL, {"stock_entry": se_name, "item_code": item_code}, "code"
     )
-    png_b64 = generate_qr_base64(payload)
+    if not payload:
+        raise ValueError(
+            f"{se_name}/{item_code}: no issued label code, so the image cannot be "
+            "rebuilt faithfully — reissue with chemical_labels.issue_for_stock_entry"
+        )
+    png_b64 = generate_qr_base64(payload, error_correction=QR_ERROR_CORRECTION)
     if not png_b64:
         raise RuntimeError(f"{se_name}/{item_code}: qrcode lib produced no output")
 

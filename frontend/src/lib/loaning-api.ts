@@ -1,4 +1,14 @@
 /**
+ * SUPERSEDED (web): everything above the "v2" banner belonged to the original
+ * flow, where one chemical was split across up to five lender farms. The
+ * ChemicalLoaning page now uses the directed multi-item calls at the bottom of
+ * this file, and none of the legacy wrappers has a caller in the web app.
+ *
+ * They are kept rather than deleted because the SERVER endpoints they wrap
+ * (loaning.create_request / approve_source / …) may still be called by the React
+ * Native app, which lives in another repo — so removing the endpoints is not a
+ * decision to take from here. Delete these wrappers once that is confirmed.
+ *
  * Client for farm-to-farm chemical loaning
  * (``upande_scp.serverscripts.spray_plan_creator.loaning``).
  */

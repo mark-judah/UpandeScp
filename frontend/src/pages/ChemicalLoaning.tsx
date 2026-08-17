@@ -1,27 +1,48 @@
 /**
- * Chemical Loaning — a farm's Spray Plan Creator builds a cart of chemicals
- * (each split across up to 5 lender farms) and requests them from another
- * farm; source farms approve from the Inbox. Reads/writes via
- * lib/loaning-api.
+ * Chemical & foliar loaning — directed, multi-item.
+ *
+ * A farm's planner addresses ONE lending farm and asks for several chemicals or
+ * foliars at once. The lender decides each line on its own from the Incoming tab:
+ * approve in full, approve less, or decline.
+ *
+ * Two things shape this UI:
+ *
+ * * **The lender's stock is never browsable.** You add the items you want first
+ *   and only then see their on-hand — the server has no browse endpoint, by
+ *   design, so a borrower cannot enumerate another farm's inventory.
+ * * **Chemicals and foliars are both loanable** and live in different stores, so
+ *   each row shows which store its stock will actually come from.
+ *
+ * Replaces the earlier flow where one chemical was split across up to five
+ * lenders, which meant every farm could see the request.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Loader2,
-  RefreshCw,
-  ArrowRightLeft,
   AlertTriangle,
+  ArrowRightLeft,
   CheckCircle2,
+  Inbox,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Send,
+  Trash2,
   XCircle,
-  PackageCheck,
-  ShoppingCart,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { HEADER_PILL } from "@/components/header-controls";
 import { PageHeader } from "@/components/PageHeader";
+import { HeaderIconButton } from "@/components/header-controls";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -37,65 +58,259 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Toaster, type ToastItem } from "@/components/Toaster";
 import { cn } from "@/lib/utils";
+import { FrappeError } from "@/lib/frappe";
+import { fmtQty } from "@/lib/uom";
+import { searchChemicalItems, type ChemicalItem } from "@/lib/scouting-api";
 import {
+  createDirectedLoan,
+  decideLoanItems,
+  fetchLenderStock,
   fetchMyFarms,
-  fetchLoanableChemicals,
-  fetchSourcesFor,
-  listRequests,
-  createRequests,
-  getCreditors,
-  approveSource,
-  rejectRequest,
-  type LoanableChemical,
-  type LoanSource,
-  type LoanRequest,
-  type LoanCartItem,
-  type CreditorRow,
-  type RequestState,
+  isOverHalf,
+  listDirectedLoans,
+  listLenderFarms,
+  rejectLoanRequest,
+  summariseLoan,
+  type LenderStockRow,
+  type LoanRequestV2,
 } from "@/lib/loaning-api";
 
-const MAX_SOURCES = 5;
+interface BasketRow {
+  rowId: string;
+  item_code: string;
+  item_name: string;
+  qty: string;
+}
 
-const STATE_TONE: Record<RequestState, string> = {
-  Draft: "bg-muted text-muted-foreground",
-  "Pending Approval": "bg-amber-500/15 text-amber-600",
-  Approved: "bg-sky-500/15 text-sky-600",
-  Fulfilled: "bg-emerald-500/15 text-emerald-600",
-  Rejected: "bg-[var(--sd-data-red)]/15 text-[var(--sd-data-red)]",
-  Expired: "bg-muted text-muted-foreground",
-};
-
-const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/\.?0+$/, ""));
+let rowSeq = 0;
+const newRowId = () => `r${++rowSeq}`;
 
 export function ChemicalLoaning() {
+  const [tab, setTab] = useState<"request" | "incoming" | "outgoing">("request");
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const dismissToast = useCallback((id: number) => {
+    setToasts((t) => t.filter((x) => x.id !== id));
+  }, []);
+  const pushToast = useCallback((kind: ToastItem["kind"], text: string) => {
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    setToasts((t) => [...t, { id, kind, text }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000);
+  }, []);
+
+  // -- scope ---------------------------------------------------------------
   const [farms, setFarms] = useState<string[]>([]);
   const [enabled, setEnabled] = useState(true);
-  const [farm, setFarm] = useState<string>("");
-  const [tab, setTab] = useState<"request" | "inbox" | "creditors">("request");
-  const [booting, setBooting] = useState(true);
+  const [myFarm, setMyFarm] = useState("");
+  const [lenders, setLenders] = useState<string[]>([]);
+  const [lender, setLender] = useState("");
 
   useEffect(() => {
     fetchMyFarms()
       .then((r) => {
-        setFarms(r.farms);
-        setEnabled(r.enabled);
-        setFarm((f) => f || r.farms[0] || "");
+        setFarms(r?.farms ?? []);
+        setEnabled(r?.enabled !== false);
+        if (r?.farms?.length) setMyFarm((f) => f || r.farms[0]);
       })
-      .catch(() => setFarms([]))
-      .finally(() => setBooting(false));
+      .catch(() => setFarms([]));
   }, []);
 
+  useEffect(() => {
+    if (!myFarm) return;
+    listLenderFarms(myFarm).then((l) => {
+      setLenders(l);
+      setLender((cur) => (l.includes(cur) ? cur : ""));
+    });
+  }, [myFarm]);
+
+  // -- basket --------------------------------------------------------------
+  const [basket, setBasket] = useState<BasketRow[]>([]);
+  const [reason, setReason] = useState("");
+  const [stock, setStock] = useState<Record<string, LenderStockRow>>({});
+  const [stockLoading, setStockLoading] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addQuery, setAddQuery] = useState("");
+  const [addResults, setAddResults] = useState<ChemicalItem[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  // On-hand is fetched only for what's in the basket — the server has no
+  // browse endpoint, so items are named first and disclosed second.
+  useEffect(() => {
+    const codes = basket.map((b) => b.item_code).filter(Boolean);
+    if (!lender || !codes.length) {
+      setStock({});
+      return;
+    }
+    let cancelled = false;
+    setStockLoading(true);
+    fetchLenderStock(lender, codes)
+      .then((s) => {
+        if (!cancelled) setStock(s);
+      })
+      .finally(() => {
+        if (!cancelled) setStockLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lender, basket]);
+
+  useEffect(() => {
+    if (!addOpen) return;
+    const t = setTimeout(() => {
+      searchChemicalItems(addQuery).then(setAddResults);
+    }, 200);
+    return () => clearTimeout(t);
+  }, [addQuery, addOpen]);
+
+  const addItem = (item: ChemicalItem) => {
+    if (basket.some((b) => b.item_code === item.item_code)) {
+      pushToast("err", `${item.item_name || item.item_code} is already in the request.`);
+      return;
+    }
+    setBasket((b) => [
+      ...b,
+      {
+        rowId: newRowId(),
+        item_code: item.item_code,
+        item_name: item.item_name || item.item_code,
+        qty: "",
+      },
+    ]);
+    setAddOpen(false);
+    setAddQuery("");
+  };
+
+  const overHalfRows = useMemo(
+    () =>
+      basket.filter((b) => {
+        const s = stock[b.item_code];
+        const q = Number(b.qty);
+        return s && s.on_hand > 0 && q > s.on_hand * 0.5;
+      }),
+    [basket, stock],
+  );
+
+  const shortRows = useMemo(
+    () =>
+      basket.filter((b) => {
+        const s = stock[b.item_code];
+        return s && Number(b.qty) > s.on_hand;
+      }),
+    [basket, stock],
+  );
+
+  const canSubmit =
+    !!myFarm &&
+    !!lender &&
+    basket.length > 0 &&
+    basket.every((b) => Number(b.qty) > 0) &&
+    !shortRows.length &&
+    !submitting;
+
+  const submit = async () => {
+    setSubmitting(true);
+    try {
+      const r = await createDirectedLoan({
+        requesting_farm: myFarm,
+        lender_farm: lender,
+        items: basket.map((b) => ({
+          item_code: b.item_code,
+          requested_qty: Number(b.qty),
+        })),
+        reason: reason.trim() || undefined,
+      });
+      pushToast(
+        "ok",
+        `Request ${r.name} sent to ${lender}.` +
+          (r.over_half.length
+            ? ` They've been told it's over half their stock of ${r.over_half.join(", ")}.`
+            : ""),
+      );
+      setBasket([]);
+      setReason("");
+      setTab("outgoing");
+      void reload();
+    } catch (e) {
+      pushToast(
+        "err",
+        e instanceof FrappeError ? e.message : "Could not send the request.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // -- inbox / outbox ------------------------------------------------------
+  const [incoming, setIncoming] = useState<LoanRequestV2[] | null>(null);
+  const [outgoing, setOutgoing] = useState<LoanRequestV2[] | null>(null);
+
+  const reload = useCallback(async () => {
+    const [inc, out] = await Promise.all([
+      listDirectedLoans("incoming"),
+      listDirectedLoans("outgoing"),
+    ]);
+    setIncoming(inc);
+    setOutgoing(out);
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const pendingIncoming = useMemo(
+    () =>
+      (incoming ?? []).filter((r) =>
+        (r.items || []).some((i) => i.status === "Pending"),
+      ),
+    [incoming],
+  );
+
+  if (!enabled) {
+    return (
+      <div className="flex flex-col">
+        <PageHeader title="Loaning" />
+        <div className="px-4 md:px-6 pb-6">
+          <Card className="p-10 text-center text-sm text-muted-foreground">
+            Loaning is switched off. Ask the SCP General Manager to enable it in
+            Settings → Spray Plan.
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col min-h-svh">
+    <div className="flex flex-col">
       <PageHeader
-        title="Chemical Loaning"
-        eyebrow="Borrow a chemical you're short on from another farm"
+        title="Loaning"
+        eyebrow="Chemicals & foliars between farms"
+        switcher={
+          <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
+            <TabsList>
+              <TabsTrigger value="request">
+                <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+                Borrow
+              </TabsTrigger>
+              <TabsTrigger value="incoming">
+                <Inbox className="mr-1.5 h-3.5 w-3.5" />
+                Incoming
+                {pendingIncoming.length ? (
+                  <span className="ml-1.5 rounded-full bg-[var(--sd-data-red)] px-1.5 text-[0.6rem] font-semibold text-white">
+                    {pendingIncoming.length}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+              <TabsTrigger value="outgoing">Sent</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        }
       >
-        {farms.length > 0 && (
-          <Select value={farm} onValueChange={setFarm}>
-            <SelectTrigger aria-label="Your farm" className={HEADER_PILL}>
-              <SelectValue placeholder="Your farm" />
+        {farms.length > 1 ? (
+          <Select value={myFarm} onValueChange={setMyFarm}>
+            <SelectTrigger className="h-9 w-44 text-xs">
+              <SelectValue placeholder="My farm" />
             </SelectTrigger>
             <SelectContent>
               {farms.map((f) => (
@@ -105,656 +320,559 @@ export function ChemicalLoaning() {
               ))}
             </SelectContent>
           </Select>
-        )}
+        ) : null}
+        <HeaderIconButton onClick={() => void reload()} title="Reload">
+          <RefreshCw className="h-4 w-4" />
+        </HeaderIconButton>
       </PageHeader>
 
-      <div className="px-4 md:px-6 pt-2">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-          <TabsList>
-            <TabsTrigger value="request">Request</TabsTrigger>
-            <TabsTrigger value="inbox">Inbox</TabsTrigger>
-            <TabsTrigger value="creditors">Creditors</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
-      <div className="px-4 md:px-6 py-4 flex-1">
-        {booting ? (
-          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…
-          </div>
-        ) : !enabled ? (
-          <Card className="border-amber-500/40 bg-amber-500/5">
-            <CardContent className="p-6 text-sm text-amber-700 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4" />
-              Chemical loaning is turned off. Ask the General Manager to enable it
-              in Settings → Spray Plan.
-            </CardContent>
-          </Card>
-        ) : !farm ? (
-          <Card>
-            <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              You are not assigned to any farm.
-            </CardContent>
-          </Card>
-        ) : tab === "request" ? (
-          <RequestTab farm={farm} />
-        ) : tab === "inbox" ? (
-          <InboxTab />
+      <div className="px-4 md:px-6 pb-6">
+        {tab === "request" ? (
+          <BorrowForm
+            myFarm={myFarm}
+            lenders={lenders}
+            lender={lender}
+            setLender={setLender}
+            basket={basket}
+            setBasket={setBasket}
+            stock={stock}
+            stockLoading={stockLoading}
+            overHalfRows={overHalfRows}
+            shortRows={shortRows}
+            reason={reason}
+            setReason={setReason}
+            canSubmit={canSubmit}
+            submitting={submitting}
+            onAdd={() => setAddOpen(true)}
+            onSubmit={submit}
+          />
+        ) : tab === "incoming" ? (
+          <RequestList
+            rows={incoming}
+            role="lender"
+            emptyText="No one has asked to borrow from your farms."
+            onDecided={reload}
+            pushToast={pushToast}
+          />
         ) : (
-          <CreditorsTab farm={farm} />
+          <RequestList
+            rows={outgoing}
+            role="borrower"
+            emptyText="You haven't asked to borrow anything yet."
+            onDecided={reload}
+            pushToast={pushToast}
+          />
         )}
       </div>
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add to the request</DialogTitle>
+            <DialogDescription>
+              Search by name or code. Chemicals and foliars are both loanable —
+              you'll see {lender || "the lender"}'s stock once it's added.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={addQuery}
+            onChange={(e) => setAddQuery(e.target.value)}
+            placeholder="Search…"
+            autoFocus
+          />
+          <div className="flex max-h-72 flex-col gap-1 overflow-auto">
+            {addResults.map((it) => (
+              <button
+                key={it.item_code}
+                type="button"
+                onClick={() => addItem(it)}
+                className="rounded-md border bg-card px-3 py-2 text-left hover:bg-muted"
+              >
+                <div className="text-xs font-medium">
+                  {it.item_name || it.item_code}
+                </div>
+                <div className="font-mono text-[0.65rem] text-muted-foreground">
+                  {it.item_code}
+                  {it.is_fertilizer ? " · foliar" : " · chemical"}
+                </div>
+              </button>
+            ))}
+            {!addResults.length ? (
+              <div className="py-3 text-center text-xs text-muted-foreground">
+                Type to search.
+              </div>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Toaster items={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
 
-// ── Request tab ─────────────────────────────────────────────────────
-function RequestTab({ farm }: { farm: string }) {
-  const [chemicals, setChemicals] = useState<LoanableChemical[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [picked, setPicked] = useState<LoanableChemical | null>(null);
-  const [cart, setCart] = useState<LoanCartItem[]>([]);
-  const [reason, setReason] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitErr, setSubmitErr] = useState<string | null>(null);
-  const [result, setResult] = useState<{
-    names: string[];
-    failed: { item_code: string; error: string }[];
-  } | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setPicked(null);
-    fetchLoanableChemicals(farm)
-      .then(setChemicals)
-      .catch(() => setChemicals([]))
-      .finally(() => setLoading(false));
-  }, [farm]);
-
-  useEffect(load, [load]);
-
-  // Cart is per-farm state — reset it whenever the acting farm changes.
-  useEffect(() => {
-    setCart([]);
-    setReason("");
-    setResult(null);
-    setSubmitErr(null);
-  }, [farm]);
-
-  const nameFor = (itemCode: string) =>
-    chemicals.find((c) => c.item_code === itemCode)?.item_name || itemCode;
-
-  const addToCart = (item: LoanCartItem) => {
-    setCart((prev) => [...prev, item]);
-    setPicked(null);
-    setResult(null);
-  };
-
-  const removeFromCart = (idx: number) =>
-    setCart((prev) => prev.filter((_, i) => i !== idx));
-
-  const submitCart = async () => {
-    setSubmitErr(null);
-    setResult(null);
-    if (!cart.length) return;
-    setSubmitting(true);
-    try {
-      const res = await createRequests({
-        requesting_farm: farm,
-        reason: reason.trim() || undefined,
-        items: cart,
-      });
-      setResult(res);
-      if (res.failed.length) {
-        const failedCodes = new Set(res.failed.map((f) => f.item_code));
-        setCart((prev) => prev.filter((c) => failedCodes.has(c.item_code)));
-      } else {
-        setCart([]);
-        setReason("");
-      }
-    } catch (e: any) {
-      setSubmitErr(e?.message || "Could not submit the request.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Checking your stock…
-      </div>
-    );
-  }
-
-  if (picked) {
-    return (
-      <SourcePicker
-        farm={farm}
-        chem={picked}
-        onBack={() => setPicked(null)}
-        onAdd={addToCart}
-      />
-    );
-  }
+function BorrowForm(props: {
+  myFarm: string;
+  lenders: string[];
+  lender: string;
+  setLender: (v: string) => void;
+  basket: BasketRow[];
+  setBasket: React.Dispatch<React.SetStateAction<BasketRow[]>>;
+  stock: Record<string, LenderStockRow>;
+  stockLoading: boolean;
+  overHalfRows: BasketRow[];
+  shortRows: BasketRow[];
+  reason: string;
+  setReason: (v: string) => void;
+  canSubmit: boolean;
+  submitting: boolean;
+  onAdd: () => void;
+  onSubmit: () => void;
+}) {
+  const {
+    lenders, lender, setLender, basket, setBasket, stock, stockLoading,
+    overHalfRows, shortRows, reason, setReason, canSubmit, submitting, onAdd, onSubmit,
+  } = props;
 
   return (
-    <div className="space-y-4">
-      {cart.length > 0 && (
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <ShoppingCart className="h-4 w-4 text-primary" />
-              Request cart ({cart.length})
-            </div>
-            <div className="rounded-md border divide-y">
-              {cart.map((item, idx) => (
-                <div
-                  key={`${item.item_code}-${idx}`}
-                  className="flex items-center justify-between gap-3 px-3 py-2"
-                >
-                  <div className="text-sm">
-                    <span className="font-medium">{nameFor(item.item_code)}</span>{" "}
-                    <span className="text-muted-foreground text-xs">
-                      · {fmt(item.requested_qty)} {item.uom} from{" "}
-                      {item.sources
-                        .map((s) => `${s.source_farm} (${fmt(s.qty)})`)
-                        .join(", ")}
-                    </span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-destructive hover:text-destructive"
-                    onClick={() => removeFromCart(idx)}
-                  >
-                    <XCircle className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                placeholder="Reason (optional)"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                className="h-8 flex-1 min-w-40"
-              />
-              <Button onClick={submitCart} disabled={submitting}>
-                {submitting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowRightLeft className="h-4 w-4" />
-                )}
-                Submit request
-              </Button>
-            </div>
-            {submitErr && (
-              <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                {submitErr}
-              </div>
-            )}
-            {result && (
-              <div className="space-y-1 text-xs">
-                {result.names.length > 0 && (
-                  <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-emerald-700 flex items-center gap-1.5">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Sent {result.names.length} request
-                    {result.names.length === 1 ? "" : "s"} for approval.
-                  </div>
-                )}
-                {result.failed.length > 0 && (
-                  <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-destructive">
-                    {result.failed.map((f) => (
-                      <div key={f.item_code}>
-                        {nameFor(f.item_code)}: {f.error}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      <Card className="p-0">
-        <CardContent className="p-0">
-          <div className="flex items-center justify-between px-4 py-2 border-b">
-            <span className="text-sm font-medium">
-              Chemicals available to request ({chemicals.length})
-            </span>
-            <Button variant="ghost" size="sm" onClick={load} className="h-7 gap-1">
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
-            </Button>
+    <Card className="p-4">
+      <CardContent className="flex flex-col gap-4 p-0">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex min-w-56 flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Borrow from
+            </label>
+            <Select value={lender} onValueChange={setLender}>
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue placeholder="Pick a farm" />
+              </SelectTrigger>
+              <SelectContent>
+                {lenders.map((f) => (
+                  <SelectItem key={f} value={f}>
+                    {f}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          {chemicals.length === 0 ? (
-            <div className="p-10 text-center text-sm text-muted-foreground">
-              No chemicals found.
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Chemical</TableHead>
-                  <TableHead className="text-right">On hand</TableHead>
-                  <TableHead className="text-right">Baseline</TableHead>
-                  <TableHead className="w-24" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {chemicals.map((c) => (
-                  <TableRow key={c.item_code}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1"
+            disabled={!lender}
+            onClick={onAdd}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add chemical or foliar
+          </Button>
+          {stockLoading ? (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              checking their stock…
+            </span>
+          ) : null}
+        </div>
+
+        {!lender ? (
+          <p className="text-xs text-muted-foreground">
+            Pick the farm you want to borrow from. Only they will see this
+            request, and only they can approve it.
+          </p>
+        ) : !basket.length ? (
+          <p className="text-xs text-muted-foreground">
+            Add what you need. You'll see {lender}'s stock for each item once
+            it's on the list.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item</TableHead>
+                <TableHead className="text-right">Quantity</TableHead>
+                <TableHead className="text-right">They have</TableHead>
+                <TableHead>From store</TableHead>
+                <TableHead className="w-8" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {basket.map((b) => {
+                const s = stock[b.item_code];
+                const short = Number(b.qty) > (s?.on_hand ?? Infinity);
+                const half = overHalfRows.some((r) => r.rowId === b.rowId);
+                return (
+                  <TableRow key={b.rowId}>
                     <TableCell className="text-xs">
-                      <div className="font-medium">{c.item_name}</div>
-                      <div className="text-muted-foreground font-mono text-[0.65rem]">
-                        {c.item_code}
+                      <div className="font-medium">{b.item_name}</div>
+                      <div className="font-mono text-[0.65rem] text-muted-foreground">
+                        {b.item_code}
+                        {s ? ` · ${s.kind}` : ""}
                       </div>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-xs">
-                      {fmt(c.on_hand)} {c.uom}
+                    <TableCell className="text-right">
+                      <Input
+                        value={b.qty}
+                        inputMode="decimal"
+                        className={cn(
+                          "h-7 w-24 text-right text-xs tabular-nums",
+                          short && "border-[var(--sd-data-red)]",
+                        )}
+                        onChange={(e) =>
+                          setBasket((rows) =>
+                            rows.map((r) =>
+                              r.rowId === b.rowId ? { ...r, qty: e.target.value } : r,
+                            ),
+                          )
+                        }
+                      />
+                      <span className="ml-1 text-[0.65rem] text-muted-foreground">
+                        {s?.uom || ""}
+                      </span>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                      {c.baseline_qty != null ? fmt(c.baseline_qty) : "—"}
+                    <TableCell className="text-right text-xs tabular-nums">
+                      {s ? (
+                        <span
+                          className={cn(
+                            short
+                              ? "font-medium text-[var(--sd-data-red)]"
+                              : half
+                              ? "text-[var(--sd-data-amber)]"
+                              : "text-muted-foreground",
+                          )}
+                          title={
+                            short
+                              ? "More than they have."
+                              : half
+                              ? "More than half their stock — they'll be told, but it won't block the request."
+                              : undefined
+                          }
+                        >
+                          {fmtQty(s.on_hand)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-[0.65rem] text-muted-foreground">
+                      {s?.store || "—"}
                     </TableCell>
                     <TableCell>
-                      <Button size="sm" className="h-7" onClick={() => setPicked(c)}>
-                        Request
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() =>
+                          setBasket((rows) => rows.filter((r) => r.rowId !== b.rowId))
+                        }
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ── Source picker / split ───────────────────────────────────────────
-function SourcePicker({
-  farm,
-  chem,
-  onBack,
-  onAdd,
-}: {
-  farm: string;
-  chem: LoanableChemical;
-  onBack: () => void;
-  onAdd: (item: LoanCartItem) => void;
-}) {
-  const [sources, setSources] = useState<LoanSource[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [sel, setSel] = useState<Record<string, number>>({});
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLoading(true);
-    fetchSourcesFor(farm, chem.item_code)
-      .then(setSources)
-      .catch((e) => setErr(e?.message || "Failed to load sources"))
-      .finally(() => setLoading(false));
-  }, [farm, chem.item_code]);
-
-  const selectedFarms = Object.keys(sel);
-  const total = useMemo(
-    () => Object.values(sel).reduce((a, b) => a + (b || 0), 0),
-    [sel],
-  );
-
-  const toggle = (s: LoanSource) => {
-    setSel((prev) => {
-      const next = { ...prev };
-      if (s.source_farm in next) {
-        delete next[s.source_farm];
-      } else {
-        if (Object.keys(next).length >= MAX_SOURCES) return prev;
-        next[s.source_farm] = 0;
-      }
-      return next;
-    });
-  };
-
-  const setQty = (sf: string, q: number) =>
-    setSel((prev) => ({ ...prev, [sf]: q }));
-
-  const addToCart = () => {
-    setErr(null);
-    if (!selectedFarms.length) {
-      setErr("Pick at least one source farm.");
-      return;
-    }
-    if (total <= 0) {
-      setErr("Enter the quantity to request from each source.");
-      return;
-    }
-    onAdd({
-      item_code: chem.item_code,
-      uom: chem.uom,
-      requested_qty: total,
-      sources: selectedFarms.map((sf) => ({ source_farm: sf, qty: sel[sf] })),
-    });
-  };
-
-  return (
-    <Card>
-      <CardContent className="p-4 space-y-4">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="h-7" onClick={onBack}>
-            ← Back
-          </Button>
-          <div className="text-sm">
-            Borrow <span className="font-semibold">{chem.item_name}</span> for{" "}
-            <span className="font-semibold">{farm}</span>
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Finding farms with
-            surplus…
-          </div>
-        ) : sources.length === 0 ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">
-            No other farm has lendable stock of this chemical right now.
-          </div>
-        ) : (
-          <>
-            <div className="text-xs text-muted-foreground">
-              Pick up to {MAX_SOURCES} source farms and split the quantity.
-              Ranked by how much each can spare.
-            </div>
-            <div className="rounded-md border divide-y">
-              {sources.map((s) => {
-                const on = s.source_farm in sel;
-                return (
-                  <div
-                    key={s.source_farm}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-2",
-                      on && "bg-primary/5",
-                    )}
-                  >
-                    <Button
-                      variant={on ? "default" : "outline"}
-                      size="sm"
-                      className="h-7 w-20"
-                      onClick={() => toggle(s)}
-                      disabled={!on && selectedFarms.length >= MAX_SOURCES}
-                    >
-                      {on ? "Selected" : "Pick"}
-                    </Button>
-                    <div className="flex-1 text-sm">
-                      <span className="font-medium">{s.source_farm}</span>
-                      <span className="text-muted-foreground text-xs">
-                        {" "}· can spare {fmt(s.lendable)} {chem.uom}
-                      </span>
-                    </div>
-                    {on && (
-                      <Input
-                        type="number"
-                        min={0}
-                        max={s.lendable}
-                        step="0.1"
-                        value={sel[s.source_farm] || ""}
-                        placeholder="Qty"
-                        onChange={(e) =>
-                          setQty(s.source_farm, Number(e.target.value) || 0)
-                        }
-                        className="h-8 w-28"
-                      />
-                    )}
-                  </div>
                 );
               })}
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="text-sm">
-                Total requested:{" "}
-                <span className="font-semibold tabular-nums">
-                  {fmt(total)} {chem.uom}
-                </span>
-              </div>
-              <Button onClick={addToCart} disabled={total <= 0}>
-                <ArrowRightLeft className="h-4 w-4" />
-                Add to request
-              </Button>
-            </div>
-          </>
+            </TableBody>
+          </Table>
         )}
 
-        {err && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            {err}
+        {overHalfRows.length ? (
+          <div className="flex items-start gap-2 rounded-md border border-[var(--sd-data-amber)]/60 bg-[var(--sd-bg-soft)] px-3 py-2 text-xs">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0 text-[var(--sd-data-amber)]" />
+            <span>
+              This takes more than half {lender}'s stock of{" "}
+              {overHalfRows.map((r) => r.item_name).join(", ")}. They'll be told
+              so they're aware — it won't stop the request.
+            </span>
           </div>
-        )}
+        ) : null}
+
+        {shortRows.length ? (
+          <div className="flex items-start gap-2 rounded-md border border-[var(--sd-data-red)]/60 px-3 py-2 text-xs">
+            <XCircle className="mt-px h-3.5 w-3.5 shrink-0 text-[var(--sd-data-red)]" />
+            <span>
+              {shortRows.map((r) => r.item_name).join(", ")} exceed what {lender}{" "}
+              has. Reduce the quantity before sending.
+            </span>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex min-w-64 flex-1 flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Reason (optional)
+            </label>
+            <Input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Why you need it — helps them decide"
+              className="h-9 text-xs"
+            />
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            className="h-9 gap-1"
+            disabled={!canSubmit}
+            onClick={onSubmit}
+          >
+            {submitting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Send className="h-3.5 w-3.5" />
+            )}
+            Send to {lender || "…"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-// ── Inbox tab ───────────────────────────────────────────────────────
-function InboxTab() {
-  const [incoming, setIncoming] = useState<LoanRequest[]>([]);
-  const [mine, setMine] = useState<LoanRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    Promise.all([listRequests("incoming"), listRequests("mine")])
-      .then(([inc, m]) => {
-        setIncoming(inc);
-        setMine(m);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(load, [load]);
-
-  const act = async (fn: () => Promise<unknown>, key: string) => {
-    setBusy(key);
-    try {
-      await fn();
-      load();
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  if (loading) {
+function RequestList({
+  rows,
+  role,
+  emptyText,
+  onDecided,
+  pushToast,
+}: {
+  rows: LoanRequestV2[] | null;
+  role: "lender" | "borrower";
+  emptyText: string;
+  onDecided: () => void | Promise<void>;
+  pushToast: (kind: ToastItem["kind"], text: string) => void;
+}) {
+  if (rows === null) {
     return (
-      <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading inbox…
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-20 animate-pulse rounded-md bg-muted/40" />
+        ))}
       </div>
     );
   }
-
+  if (!rows.length) {
+    return (
+      <Card className="p-10 text-center text-sm text-muted-foreground">
+        {emptyText}
+      </Card>
+    );
+  }
   return (
-    <div className="space-y-6">
-      <section>
-        <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
-          <PackageCheck className="h-4 w-4 text-primary" />
-          Awaiting my approval ({incoming.length})
-        </h2>
-        {incoming.length === 0 ? (
-          <Card>
-            <CardContent className="p-6 text-center text-sm text-muted-foreground">
-              No requests waiting on your farms.
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {incoming.map((r) => (
-              <Card key={r.name}>
-                <CardContent className="p-3 flex flex-wrap items-center gap-3">
-                  <div className="flex-1 min-w-0 text-sm">
-                    <span className="font-medium">{r.item_name}</span> —{" "}
-                    <span className="font-semibold">
-                      {fmt(r.requested_qty)} {r.uom}
-                    </span>{" "}
-                    to <span className="font-medium">{r.requesting_farm}</span>
-                    <div className="text-xs text-muted-foreground">
-                      {r.sources
-                        .map((s) => `${s.source_farm}: ${fmt(s.qty)}${s.approved ? " ✓" : ""}`)
-                        .join(" · ")}
-                      {" · "}
-                      {r.name}
-                    </div>
-                  </div>
-                  {r.sources
-                    .filter((s) => !s.approved)
-                    .map((s) => (
-                      <div key={s.source_farm} className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          className="h-7"
-                          disabled={!!busy}
-                          onClick={() =>
-                            act(() => approveSource(r.name, s.source_farm), r.name + s.source_farm)
-                          }
-                        >
-                          {busy === r.name + s.source_farm ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                          )}
-                          Approve {s.source_farm}
-                        </Button>
-                      </div>
-                    ))}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-destructive hover:text-destructive"
-                    disabled={!!busy}
-                    onClick={() => act(() => rejectRequest(r.name), r.name + "rej")}
-                  >
-                    <XCircle className="h-3.5 w-3.5" />
-                    Reject
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-sm font-semibold mb-2">My requests ({mine.length})</h2>
-        {mine.length === 0 ? (
-          <Card>
-            <CardContent className="p-6 text-center text-sm text-muted-foreground">
-              You haven't raised any requests.
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="p-0">
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Request</TableHead>
-                    <TableHead>Chemical</TableHead>
-                    <TableHead>Sources</TableHead>
-                    <TableHead>State</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {mine.map((r) => (
-                    <TableRow key={r.name}>
-                      <TableCell className="text-xs font-mono">{r.name}</TableCell>
-                      <TableCell className="text-xs">
-                        {r.item_name}
-                        <span className="text-muted-foreground">
-                          {" "}· {fmt(r.requested_qty)} {r.uom}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {r.sources.map((s) => s.source_farm).join(", ")}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={cn("text-[0.6rem]", STATE_TONE[r.workflow_state])}>
-                          {r.workflow_state}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        )}
-      </section>
+    <div className="flex flex-col gap-3">
+      {rows.map((r) => (
+        <RequestCard
+          key={r.name}
+          req={r}
+          role={role}
+          onDecided={onDecided}
+          pushToast={pushToast}
+        />
+      ))}
     </div>
   );
 }
 
-// ── Creditors tab ───────────────────────────────────────────────────
-function CreditorsTab({ farm }: { farm: string }) {
-  const [rows, setRows] = useState<CreditorRow[]>([]);
-  const [loading, setLoading] = useState(true);
+function RequestCard({
+  req,
+  role,
+  onDecided,
+  pushToast,
+}: {
+  req: LoanRequestV2;
+  role: "lender" | "borrower";
+  onDecided: () => void | Promise<void>;
+  pushToast: (kind: ToastItem["kind"], text: string) => void;
+}) {
+  // Per-line decisions: the lender may approve some and decline others, and may
+  // approve less than asked. Seeded from the requested quantity.
+  const [qty, setQty] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      (req.items || []).map((i) => [i.item_code, String(i.requested_qty)]),
+    ),
+  );
+  const [busy, setBusy] = useState(false);
+  const pending = (req.items || []).filter((i) => i.status === "Pending");
+  const canDecide = role === "lender" && pending.length > 0;
 
-  const load = useCallback(() => {
-    setLoading(true);
-    getCreditors(farm)
-      .then(setRows)
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false));
-  }, [farm]);
-
-  useEffect(load, [load]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading creditors…
-      </div>
-    );
-  }
+  const decide = async (
+    decisions: Array<{ item_code: string; status: "Approved" | "Rejected"; approved_qty?: number }>,
+  ) => {
+    setBusy(true);
+    try {
+      const out = await decideLoanItems(req.name, decisions);
+      pushToast(
+        "ok",
+        out.stock_entry
+          ? `Transferred — ${out.stock_entry}.`
+          : `Request ${out.state.toLowerCase()}.`,
+      );
+      await onDecided();
+    } catch (e) {
+      pushToast("err", e instanceof FrappeError ? e.message : "Could not save.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <Card className="p-0">
-      <CardContent className="p-0">
-        <div className="flex items-center justify-between px-4 py-2 border-b">
+    <Card className="p-3">
+      <CardContent className="flex flex-col gap-2 p-0">
+        <div className="flex flex-wrap items-baseline gap-2">
           <span className="text-sm font-medium">
-            Farms {farm} owes chemicals to ({rows.length})
+            {role === "lender" ? req.requesting_farm : `→ ${req.lender_farm}`}
           </span>
-          <Button variant="ghost" size="sm" onClick={load} className="h-7 gap-1">
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </Button>
+          <Badge variant="outline" className="text-[0.65rem]">
+            {summariseLoan(req)}
+          </Badge>
+          <span className="font-mono text-[0.65rem] text-muted-foreground">
+            {req.name}
+          </span>
+          {req.reason ? (
+            <span className="text-xs text-muted-foreground">· {req.reason}</span>
+          ) : null}
         </div>
-        {rows.length === 0 ? (
-          <div className="p-10 text-center text-sm text-muted-foreground">
-            No outstanding chemical loans.
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Chemical</TableHead>
-                <TableHead>Received</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((r, i) => (
-                <TableRow key={`${r.creditor_farm}-${r.item_code}-${i}`}>
-                  <TableCell className="text-xs font-medium">{r.item_name}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    received {fmt(r.qty)} {r.uom} of{" "}
-                    <span className="font-medium text-foreground">{r.item_name}</span> from{" "}
-                    <span className="font-medium text-foreground">{r.creditor_farm}</span>
+
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Item</TableHead>
+              <TableHead className="text-right">Asked</TableHead>
+              {canDecide ? (
+                <TableHead className="text-right">Give</TableHead>
+              ) : (
+                <TableHead className="text-right">Approved</TableHead>
+              )}
+              <TableHead>Status</TableHead>
+              {canDecide ? <TableHead className="w-32" /> : null}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(req.items || []).map((i) => (
+              <TableRow key={i.item_code}>
+                <TableCell className="text-xs">
+                  <div className="font-medium">{i.item_name || i.item_code}</div>
+                  {isOverHalf(i) ? (
+                    <div className="flex items-center gap-1 text-[0.65rem] text-[var(--sd-data-amber)]">
+                      <AlertTriangle className="h-3 w-3" />
+                      over half your stock at the time ({fmtQty(i.lender_on_hand ?? 0)})
+                    </div>
+                  ) : null}
+                </TableCell>
+                <TableCell className="text-right text-xs tabular-nums">
+                  {fmtQty(i.requested_qty)} {i.uom}
+                </TableCell>
+                <TableCell className="text-right">
+                  {canDecide && i.status === "Pending" ? (
+                    <Input
+                      value={qty[i.item_code] ?? ""}
+                      inputMode="decimal"
+                      className="h-7 w-20 text-right text-xs tabular-nums"
+                      onChange={(e) =>
+                        setQty((q) => ({ ...q, [i.item_code]: e.target.value }))
+                      }
+                    />
+                  ) : (
+                    <span className="text-xs tabular-nums">
+                      {i.status === "Approved" ? fmtQty(i.approved_qty ?? 0) : "—"}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 text-xs",
+                      i.status === "Approved" && "text-[var(--sd-data-green)]",
+                      i.status === "Rejected" && "text-muted-foreground",
+                    )}
+                  >
+                    {i.status === "Approved" ? (
+                      <CheckCircle2 className="h-3 w-3" />
+                    ) : i.status === "Rejected" ? (
+                      <XCircle className="h-3 w-3" />
+                    ) : null}
+                    {i.status}
+                  </span>
+                </TableCell>
+                {canDecide ? (
+                  <TableCell>
+                    {i.status === "Pending" ? (
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-[0.65rem]"
+                          disabled={busy}
+                          onClick={() =>
+                            decide([
+                              {
+                                item_code: i.item_code,
+                                status: "Approved",
+                                approved_qty: Number(qty[i.item_code]),
+                              },
+                            ])
+                          }
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-[0.65rem]"
+                          disabled={busy}
+                          onClick={() =>
+                            decide([{ item_code: i.item_code, status: "Rejected" }])
+                          }
+                        >
+                          Decline
+                        </Button>
+                      </div>
+                    ) : null}
                   </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+                ) : null}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+
+        {canDecide ? (
+          <div className="flex justify-end gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await rejectLoanRequest(req.name);
+                  pushToast("ok", "Request declined.");
+                  await onDecided();
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Decline all
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              disabled={busy}
+              onClick={() =>
+                decide(
+                  pending.map((i) => ({
+                    item_code: i.item_code,
+                    status: "Approved" as const,
+                    approved_qty: Number(qty[i.item_code]),
+                  })),
+                )
+              }
+            >
+              Approve all
+            </Button>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

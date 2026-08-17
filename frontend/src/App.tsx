@@ -21,6 +21,9 @@ const STORE_KEEPER_ROLE = "SCP Chemical Store Keeper";
 const Dashboard = lazy(() =>
   import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })),
 );
+const Notifications = lazy(() =>
+  import("@/pages/Notifications").then((m) => ({ default: m.Notifications })),
+);
 const Trends = lazy(() =>
   import("@/pages/Trends").then((m) => ({ default: m.Trends })),
 );
@@ -234,6 +237,9 @@ function renderView(crop: string, view: View): ReactNode {
       return <ChemicalProgress />;
     case "chemical-loaning":
       return <ChemicalLoaning />;
+    // Not crop-scoped: reached from the header bell, not a crop sidebar.
+    case "notifications":
+      return <Notifications />;
     default:
       return <Dashboard initialCrop={cropName} />;
   }

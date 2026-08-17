@@ -34,9 +34,11 @@ export type View =
   | "labels"
   | "creator-stock"
   | "chemical-progress"
-  | "chemical-loaning";
+  | "chemical-loaning"
+  | "notifications";
 
 const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
+  "notifications",
   "dashboard",
   "trends",
   "observations",

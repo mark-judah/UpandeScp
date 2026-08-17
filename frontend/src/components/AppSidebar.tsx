@@ -1,4 +1,5 @@
 import {
+  Bell,
   LayoutDashboard,
   LineChart,
   MapPin,
@@ -41,6 +42,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarUser } from "@/components/SidebarUser";
 import { routeHash, type View } from "@/lib/router";
 import { bootstrap } from "@/lib/frappe";
+import { useUnreadNotifications } from "@/hooks/use-notifications";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import upandeLogo from "@/assets/Upande_logo.png";
@@ -315,6 +317,7 @@ export function AppSidebar({
 }) {
   const { state, toggle } = useSidebar();
   const collapsed = state === "collapsed";
+  const { unread: unreadNotifications } = useUnreadNotifications();
   const roles = bootstrap().roles || [];
 
   const nav = navForCrop(crop);
@@ -443,6 +446,32 @@ export function AppSidebar({
             "border-t border-sidebar-border shadow-[0_-6px_14px_-10px_rgba(10,10,10,0.16)]",
         )}
       >
+        {/* Notifications — a normal sidebar item, pinned to the footer rather
+            than the crop nav above: they are not crop-scoped, so listing them
+            per crop would imply they were. */}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={view === "notifications"}
+              onClick={() => onNavigate("notifications")}
+              title={
+                unreadNotifications
+                  ? `${unreadNotifications} unread notification${unreadNotifications === 1 ? "" : "s"}`
+                  : "Notifications"
+              }
+            >
+              <Bell className="h-4 w-4" />
+              <span>Notifications</span>
+              {unreadNotifications > 0 && (
+                <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--sd-data-red)] px-1 text-[0.6rem] font-semibold leading-none text-white">
+                  {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                </span>
+              )}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <SidebarSeparator />
+
         {/* Collapse — a normal sidebar item (icon + label), pinned here. */}
         <SidebarMenu>
           <SidebarMenuItem>

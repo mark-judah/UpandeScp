@@ -55,12 +55,11 @@ have), every allocation is physically measurable, and the split is proportional.
 Ties broken by larger original request, then farm name, so the result is
 deterministic and reproducible.
 
-### 2. The worked example needs reconciling — **still open**
+### 2. The worked example — resolved
 
-"5 farms wanting 10 each, reduced 50 → 45" gives **9 each**, not the 4.5 quoted.
-4.5 would mean 50 → 22.5. **Resolved for entry mode** (see below), but the
-example itself should be re-checked against a real case before implementing, in
-case it reveals a different intent.
+"5 farms wanting 10 each, reduced 50 → 45" gives **9 each**. The 4.5 in the
+original description was a slip; 9 each is intended. So a reduction is applied to
+the total and apportioned by request ratio, exactly as the algorithm above does.
 
 ### 3. Reduction entry: either mode, per chemical
 

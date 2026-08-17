@@ -28,6 +28,7 @@ import frappe
 from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
 from upande_scp.serverscripts.common.crop_protection import product_groups
+from upande_scp.serverscripts.common.notifications import notify
 from upande_scp.serverscripts.spray_plan_creator.scope import _resolve_user_scope
 from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
 from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_LOAN
@@ -653,17 +654,17 @@ def _notify_farm_creators(farm: str, subject: str, content: str, ref: str) -> No
 
 
 def _notify_user(user: str | None, subject: str, content: str, ref: str) -> None:
-    if not user or user in ("Administrator", "Guest"):
-        return
-    try:
-        frappe.get_doc({
-            "doctype": "Notification Log",
-            "for_user": user,
-            "type": "Alert",
-            "subject": subject,
-            "email_content": content,
-            "document_type": "Chemical Transfer Request",
-            "document_name": ref,
-        }).insert(ignore_permissions=True)
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "loaning notify failed")
+    """Thin shim onto the shared notifier.
+
+    Kept as a name because several call sites use it, but the implementation now
+    lives in ``common/notifications.py``. Two notification paths would drift —
+    and only one of them would ever gain realtime delivery or a category.
+    """
+    notify(
+        [user] if user else [],
+        subject,
+        content,
+        ref_doctype="Chemical Transfer Request",
+        ref_name=ref,
+        category="loan",
+    )

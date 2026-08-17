@@ -422,6 +422,10 @@ fixtures = [
         "filters": [
             [
                 "name", "in", [
+                        # Notification Log — our category taxonomy. Notification
+                        # Log.type is a fixed Frappe enum, so the SCP category
+                        # needs its own field for the notifications page to filter on.
+                        "Notification Log-scp_category",
                         # Warehouse fields
                         "Warehouse-custom_zone_numbering",
                         "Warehouse-custom_bed_numbering",

@@ -315,24 +315,44 @@ def sync_spray_session(payload) -> dict:
 
 	moments = resolve_moments(payload, get_datetime(check["anchor"]) if check["anchor"] else None)
 	wo_state = frappe.db.get_value("Work Order", work_order, "workflow_state") or ""
+	produced: dict = {}
 
 	try:
 		# 1. the scans, each at the moment it was taken. They do not build anything —
 		#    manufacture is a separate explicit step, which is where the mix moment lands.
 		if wo_state == "Chemical Issued":
 			_replay_scans(payload, work_order)
-			SS.manufacture_tank_mix(work_order, posting_moment=moments["mix_at"])
+			made = SS.manufacture_tank_mix(
+				work_order, posting_moment=moments["mix_at"]
+			)
+			produced["manufacture"] = (made or {}).get("manufacture_se")
+			produced["sal"] = (made or {}).get("sal")
 
 		# 2. start, at the recorded moment
 		state = frappe.db.get_value("Work Order", work_order, "workflow_state")
 		if state == SS.STATE_TANK_MIX_MANUFACTURED:
-			SS.start_spray_session(work_order, started_at=moments["started_at"])
+			# `enforce_cutoff=False`: the spray already happened. The cutoff governs whether
+			# work may START late, not whether a completed spray may be written down —
+			# enforcing it here would silently discard the only record of real work. The
+			# session is flagged `past_cutoff` on the token instead, so it is visible and
+			# reportable rather than lost.
+			SS.start_spray_session(
+				work_order,
+				started_at=moments["started_at"],
+				enforce_cutoff=False,
+				employee=payload.get("employee") or _supervisor_of(work_order),
+			)
 
 		# 3. end — submits the logsheet and fires the Material Issue at the spray's own
 		#    moment, which is the entry that decides the costing month.
 		state = frappe.db.get_value("Work Order", work_order, "workflow_state")
 		if state == SS.STATE_SPRAYING_IN_PROGRESS:
-			SS.end_spray_session(work_order, ended_at=moments["ended_at"])
+			closed = SS.end_spray_session(work_order, ended_at=moments["ended_at"])
+			# Taken from the return value, not searched for afterwards: the Material Issue
+			# deliberately leaves its `work_order` link unset (so it causes no Work Order
+			# side effects), which means there is nothing to find it by.
+			produced["issue"] = (closed or {}).get("material_issue")
+			produced["sal"] = (closed or {}).get("sal_submitted") or produced.get("sal")
 	except Exception as e:
 		frappe.db.rollback()
 		frappe.db.set_value(TOKEN, token, {
@@ -342,7 +362,7 @@ def sync_spray_session(payload) -> dict:
 		frappe.db.commit()
 		raise
 
-	_stamp_result(token, work_order, moments)
+	_stamp_result(token, work_order, produced)
 	frappe.db.commit()
 	return _result(token)
 
@@ -355,6 +375,17 @@ def _replay_scans(payload: dict, work_order: str) -> None:
 	handset found signal. The label codes go through the same verification as an online
 	scan, so an offline session cannot launder a label from another plan.
 	"""
+	# Who actually took the chemical, not who is syncing. Falls back to the session user
+	# when the token does not say — but for a replayed session that is the wrong person, and
+	# may be a different person entirely from the one who stood at the CSU.
+	employee = payload.get("employee") or _supervisor_of(work_order)
+
+	# The CSU is mandatory on the scan row, and the server already knows it — it is the
+	# plan's own `wip_warehouse`, where the tank mix is made. Defaulted here rather than
+	# required from the handset: asking the client to echo back something the server holds
+	# is only an opportunity for the two to disagree.
+	csu = frappe.db.get_value("Work Order", work_order, "wip_warehouse")
+
 	for scan in (payload.get("scans") or []):
 		item_code = scan.get("item_code")
 		if not item_code:
@@ -363,9 +394,27 @@ def _replay_scans(payload: dict, work_order: str) -> None:
 			work_order=work_order,
 			item_code=item_code,
 			qr_payload=scan.get("code"),
-			csu_warehouse=scan.get("csu_warehouse"),
+			csu_warehouse=scan.get("csu_warehouse") or csu,
 			scanned_at=scan.get("scanned_at"),
+			employee=employee,
 		)
+
+
+def _supervisor_of(work_order: str) -> str | None:
+	"""The plan's own supervisor, as a fallback for whom to credit a replayed scan.
+
+	Reuses the resolution the Material Issue already relies on, which reads the spray team
+	rather than the session — so a sync run by an office user still attributes the work to
+	the field.
+	"""
+	try:
+		from upande_scp.serverscripts.spray_plan_creator.auto_material_issue import (
+			resolve_supervisor_employee,
+		)
+
+		return resolve_supervisor_employee(frappe.get_doc("Work Order", work_order))
+	except Exception:
+		return None
 
 
 def _upsert_token(token: str, payload: dict, check: dict):
@@ -431,16 +480,19 @@ def _started_past_cutoff(work_order: str, started_at) -> bool:
 		return False
 
 
-def _stamp_result(token: str, work_order: str, moments: dict) -> None:
-	manu = SS._find_submitted_manufacture_se(work_order)
-	sal = frappe.db.get_value(
+def _stamp_result(token: str, work_order: str, produced: dict) -> None:
+	"""Record what the replay created.
+
+	Each document comes from the endpoint that made it. Only the Manufacture is looked up,
+	because it carries a `work_order` link; the Material Issue does not — it is built without
+	one on purpose, so that issuing has no Work Order side effects — and searching for it by
+	warehouse and date would be guessing.
+	"""
+	manu = produced.get("manufacture") or SS._find_submitted_manufacture_se(work_order)
+	sal = produced.get("sal") or frappe.db.get_value(
 		"Work Order", work_order, "custom_spray_application_logsheet"
 	)
-	issue = frappe.db.get_value(
-		"Stock Entry",
-		{"purpose": "Material Issue", "docstatus": 1, "work_order": work_order},
-		"name",
-	)
+	issue = produced.get("issue")
 	frappe.db.set_value(TOKEN, token, {
 		"status": "Synced",
 		"manufacture_stock_entry": manu,

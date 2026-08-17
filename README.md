@@ -293,7 +293,41 @@ sync's decision.
 | `test_offline_session.py` | 26 | the guard, moment clamping, idempotency, endpoint signatures |
 | `test_offline_token_mechanics.py` | 11 | the ledger itself: ordering, anchor floor, backdating, valuation |
 | `test_offline_sequence_feasibility.py` | 8 | the state machine's guarantees, through the real endpoints |
+| `test_offline_session_e2e.py` | 10 | **one real plan through the whole chain**, on real stock |
 | `spraySession.test.ts` (mobile) | 27 | skew measurement, UTC stamping, local ordering checks |
+| `spraySessionDb.test.ts` (mobile) | 15 | the local store: upsert, lifecycle, what prune will not delete |
+| `spraySessionRecorder.test.ts` (mobile) | 14 | the journal-always / settle-on-success rule |
+
+### Proven end to end on kaitet
+
+`MFG-WO-2026-05200`, a real plan with 0.8 kg of chemical genuinely in `Chepsito CSU Phase 1`,
+put through scan → mix → spray → sync with the session dated two days back:
+
+| Document | Posted | Not |
+| --- | --- | --- |
+| Manufacture — 0.8 kg consumed from the CSU, 1 tank mix into `Chepsito GH 14` | **2026-08-15** (the mix date) | 2026-08-17 (the sync date) |
+| Material Issue — 1 tank mix out of the greenhouse, at real cost | **2026-08-15** (the spray date) | 2026-08-17 |
+
+The Issue lands after the Manufacture in the ledger, the plan reaches `Completed`, the token
+records both documents, and a second sync returns the same two rather than making more. The
+test reverses the whole chain afterwards and is verified to run twice in a row leaving the
+site untouched.
+
+Four things the end-to-end run caught that no unit test had:
+
+- **scans and sprays were credited to whoever pressed Sync**, not to whoever did the work.
+  A replayed session now carries the field employee, falling back to the plan's own
+  supervisor rather than the office user syncing it.
+- **the CSU warehouse is mandatory on a scan row** and the token did not send it. Defaulted
+  server-side from the plan's `wip_warehouse` — asking the handset to echo back something the
+  server already holds is only an opportunity for the two to disagree.
+- **the daily cutoff refused the sync entirely.** The cutoff governs whether work may *start*
+  late; it cannot sensibly forbid *recording* a spray that already happened. The replay now
+  passes `enforce_cutoff=False` and flags the token `past_cutoff` instead, which is what the
+  policy above always said and the code did not yet do.
+- **the Material Issue has no `work_order` link** — deliberately, so issuing causes no Work
+  Order side effects — so searching for it found nothing. The sync now takes each document
+  from the endpoint that created it instead of guessing.
 
 Two findings that overturned assumptions, kept here because they are the kind of thing that
 gets re-assumed:

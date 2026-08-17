@@ -68,8 +68,17 @@ def _ensure_afp(wo) -> None:
         )
 
 
-def _resolve_employee_from_session() -> str:
-    """Find the Employee linked to the calling user. Throws if none."""
+def _resolve_employee_from_session(employee: str | None = None) -> str:
+    """Find the Employee to credit a scan to. Throws if there is none.
+
+    ``employee`` names who actually took the chemical, for a session recorded offline and
+    replayed later. Without it the scan is credited to whoever pressed Sync — which for a
+    replayed session is the wrong person, and may be a different person entirely.
+    """
+    if employee and frappe.db.exists(
+        "Employee", {"name": employee, "status": "Active"}
+    ):
+        return employee
     user = frappe.session.user
     if user and user not in ("Guest", "Administrator"):
         emp = frappe.db.get_value(
@@ -174,6 +183,7 @@ def register_csu_scan(
     gps_lat: float | None = None,
     gps_lon: float | None = None,
     scanned_at=None,
+    employee: str | None = None,
 ) -> dict[str, Any]:
     """Upsert one chemical's scan row on a Work Order.
 
@@ -207,7 +217,7 @@ def register_csu_scan(
     # greenhouse passed, and so did a typed code with no scan at all.
     verification = _verify_qr(qr_payload, work_order, item_code)
 
-    employee = _resolve_employee_from_session()
+    employee = _resolve_employee_from_session(employee)
     # `scanned_at` is the moment the label was actually scanned, for a session recorded
     # offline. It dates the audit row only — the Manufacture is a separate explicit step
     # (`manufacture_tank_mix`), which takes its own posting moment.
@@ -753,7 +763,12 @@ def _create_sal_draft(wo, manufacture_se) -> str:
 
 
 @frappe.whitelist()
-def start_spray_session(work_order: str, started_at=None) -> dict[str, Any]:
+def start_spray_session(
+    work_order: str,
+    started_at=None,
+    enforce_cutoff: bool = True,
+    employee: str | None = None,
+) -> dict[str, Any]:
     """Open a Sprayer Movement Session for an Application Floor Plan WO.
 
     Preconditions: WO state == Tank Mix Manufactured, SAL linked. Side effects:
@@ -765,6 +780,13 @@ def start_spray_session(work_order: str, started_at=None) -> dict[str, Any]:
     synced later. Without it the stamp is the moment of sync, so a spray done at 06:00
     and synced at noon reads as a noon spray — and the SAL's `Time` fields carry no date
     to contradict it. Defaults to now, which is the online case.
+
+    ``enforce_cutoff=False`` is for replaying a session that already happened. The daily
+    cutoff exists to stop somebody *deciding to start* a spray too late in the day;
+    refusing to *record* a spray that was carried out hours ago is a different act, and
+    doing so would lose the only account of real work. The offline sync passes False and
+    flags the session `past_cutoff` instead, so a late spray is visible rather than
+    discarded.
     """
     if not work_order:
         frappe.throw("work_order is required.")
@@ -783,9 +805,14 @@ def start_spray_session(work_order: str, started_at=None) -> dict[str, Any]:
     # postponed to a date somebody agreed to, which is the whole point of having a
     # cutoff. Checked here rather than in the client because the client is what would
     # be bypassed.
-    from upande_scp.serverscripts.spray_plan_creator import postponement
+    #
+    # Skipped when replaying a recorded session: see `enforce_cutoff` above. The spray has
+    # already happened, and a rule about when work may START cannot sensibly forbid writing
+    # down that it did.
+    if enforce_cutoff:
+        from upande_scp.serverscripts.spray_plan_creator import postponement
 
-    postponement.assert_within_cutoff(work_order)
+        postponement.assert_within_cutoff(work_order)
 
     sal_name = wo.custom_spray_application_logsheet
     if not sal_name:
@@ -794,7 +821,9 @@ def start_spray_session(work_order: str, started_at=None) -> dict[str, Any]:
             "Logsheet linked. Re-run the chemical-scan flow."
         )
 
-    employee = _resolve_employee_from_session()
+    # `employee` names who actually sprayed, for a replayed session. Falling back to the
+    # session user would credit the spray to whoever pressed Sync.
+    employee = _resolve_employee_from_session(employee)
     now = get_datetime(started_at) if started_at else now_datetime()
 
     sms = frappe.get_doc(

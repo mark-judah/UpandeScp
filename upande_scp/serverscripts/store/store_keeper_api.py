@@ -50,18 +50,68 @@ def _check_perm():
 # they're assigned to (Farm.store_keepers child table); System Manager /
 # Administrator / General Manager see everything, unchanged.
 # ----------------------------------------------------------------------
+def _is_elevated(user=None):
+    roles = set(frappe.get_roles(user or frappe.session.user))
+    return bool(roles & {"System Manager", "Administrator", "SCP General Manager"})
+
+
 def _allowed_farms_for(user=None):
     """``None`` => user sees all stores (admin/GM). Else the list of farms
     where the user is an assigned store keeper (possibly empty)."""
     user = user or frappe.session.user
-    roles = set(frappe.get_roles(user))
-    if roles & {"System Manager", "Administrator", "SCP General Manager"}:
+    if _is_elevated(user):
         return None
     return frappe.get_all(
         "Farm Store Keeper",
         filters={"user": user, "parenttype": "Farm"},
         pluck="parent",
     )
+
+
+def allowed_stores_for(user=None):
+    """``None`` => every store. Else the specific warehouses this user keeps.
+
+    A keeper row now names the store it applies to (``Farm Store Keeper.warehouse``),
+    so a farm with separate chemical and fertilizer keepers scopes correctly.
+
+    Rows with no warehouse — unmigrated, or added by hand — **fall back to their
+    farm's mapped chemical/fertilizer stores**, so a half-migrated site degrades
+    to the previous farm-level behaviour rather than showing an empty dashboard.
+
+    General-store keepers live on the settings Single (they belong to no farm),
+    and their stores are unioned in here.
+    """
+    user = user or frappe.session.user
+    if _is_elevated(user):
+        return None
+
+    stores: set = set()
+
+    for row in frappe.get_all(
+        "Farm Store Keeper",
+        filters={"user": user, "parenttype": "Farm"},
+        fields=["parent", "warehouse"],
+    ):
+        if row.warehouse:
+            stores.add(row.warehouse)
+            continue
+        mapped = frappe.db.get_value(
+            "Farm", row.parent,
+            ["custom_chemical_store", "custom_fertilizer_store"], as_dict=True,
+        ) or {}
+        for wh in (mapped.get("custom_chemical_store"), mapped.get("custom_fertilizer_store")):
+            if wh:
+                stores.add(wh)
+
+    for row in frappe.get_all(
+        "Farm Store Keeper",
+        filters={"user": user, "parentfield": "general_store_keepers"},
+        fields=["warehouse"],
+    ):
+        if row.warehouse:
+            stores.add(row.warehouse)
+
+    return sorted(stores)
 
 
 def bucket_overview(matrix, chem_group_items, chem_stores, fert_stores):

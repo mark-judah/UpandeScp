@@ -5,10 +5,35 @@
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
- "field_order": ["user", "full_name"],
+ "field_order": [
+  "user",
+  "full_name",
+  "warehouse"
+ ],
  "fields": [
-  {"fieldname": "user", "fieldtype": "Link", "in_list_view": 1, "label": "User", "options": "User", "reqd": 1},
-  {"fieldname": "full_name", "fieldtype": "Data", "in_list_view": 1, "label": "Full Name", "read_only": 1}
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "full_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Full Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Store",
+   "options": "Warehouse",
+   "description": "The specific store this user keeps. Blank falls back to the farm's mapped chemical/fertilizer stores."
+  }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,

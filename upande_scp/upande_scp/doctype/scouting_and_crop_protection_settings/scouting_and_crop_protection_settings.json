@@ -54,6 +54,8 @@
   "cp_groups_section",
   "chemical_item_groups",
   "foliar_item_groups",
+  "general_store_section",
+  "general_store_keepers",
   "scouting_tab",
   "scouting_note"
  ],
@@ -94,52 +96,314 @@
    "label": "Exclude Keywords",
    "options": "Spray Plan Exclude Keyword"
   },
-  {"fieldname": "thresholds_section", "fieldtype": "Section Break", "label": "Resistance Rotation Windows"},
-  {"default": "14", "description": "Warn if the same IRAC code was used on the same greenhouse within this many days.", "fieldname": "irac_rotation_window_days", "fieldtype": "Int", "label": "IRAC Rotation Window (days)", "non_negative": 1},
-  {"default": "21", "description": "Warn if the same FRAC code was used on the same greenhouse within this many days.", "fieldname": "frac_rotation_window_days", "fieldtype": "Int", "label": "FRAC Rotation Window (days)", "non_negative": 1},
-  {"fieldname": "weather_section", "fieldtype": "Section Break", "label": "Weather Spray-Friendliness Thresholds"},
-  {"default": "10", "fieldname": "weather_wind_green_max_kmh", "fieldtype": "Float", "label": "Wind: green <= (km/h)"},
-  {"default": "15", "fieldname": "weather_wind_red_min_kmh", "fieldtype": "Float", "label": "Wind: red >= (km/h)"},
-  {"default": "20", "fieldname": "weather_rain_green_max_pct", "fieldtype": "Float", "label": "Rain prob: green <= (%)"},
-  {"default": "50", "fieldname": "weather_rain_red_min_pct", "fieldtype": "Float", "label": "Rain prob: red >= (%)"},
-  {"default": "10", "fieldname": "weather_temp_green_min_c", "fieldtype": "Float", "label": "Temp: green >= (degC)"},
-  {"default": "28", "fieldname": "weather_temp_green_max_c", "fieldtype": "Float", "label": "Temp: green <= (degC)"},
-  {"default": "32", "fieldname": "weather_temp_red_max_c", "fieldtype": "Float", "label": "Temp: red >= (degC)"},
-  {"default": "8", "fieldname": "weather_temp_red_min_c", "fieldtype": "Float", "label": "Temp: red <= (degC)"},
-  {"fieldname": "material_issue_section", "fieldtype": "Section Break", "label": "Material Issue Defaults"},
-  {"fieldname": "default_chemical_expense_account", "fieldtype": "Link", "options": "Account", "label": "Default Chemical Expense Account", "description": "Used as the fallback expense account on auto-Material-Issue rows when the tank-mix Item has no Item Default for the Work Order's company."},
-  {"fieldname": "default_chemical_difference_account", "fieldtype": "Link", "options": "Account", "label": "Default Chemical Difference Account", "description": "Written as the Difference Account on the auto-generated Manufacture Stock Entry (tank-mix manufacture)."},
-  {"fieldname": "stock_accounting_section", "fieldtype": "Section Break", "label": "Stock Accounting (Mixing & Spray)"},
-  {"fieldname": "spray_raw_chemical_account", "fieldtype": "Link", "options": "Account", "label": "Raw Chemical Account (credited on Mixing)", "description": "Overrides the raw-consumption credit on Chemical Mixing. Blank = source warehouse account."},
-  {"fieldname": "spray_tank_mix_account", "fieldtype": "Link", "options": "Account", "label": "Tank-Mix / WIP Account (debited on Mixing, credited on Spray)", "description": "Shared account: tank-mix value in on Mixing (incl. valuation difference), out on Spray. Blank = CSU/WIP warehouse account."},
-  {"fieldname": "spray_expense_account", "fieldtype": "Link", "options": "Account", "label": "Spray Expense Account (debited on Spray)", "description": "P&L expense debited on Chemical Spray. Blank = default chemical expense account, then item expense account."},
-  {"fieldname": "flow_section", "fieldtype": "Section Break", "label": "Flow"},
-  {"fieldname": "spray_flow_diagram", "fieldtype": "HTML", "options": "<div class=\"scp-flow\">\n<style>\n.scp-flow{font:13px/1.5 -apple-system,Helvetica,Arial,sans-serif;color:#333}\n.scp-flow .stages{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:14px}\n.scp-flow .stage{background:#eef2f7;border:1px solid #c9d3e0;border-radius:6px;padding:6px 10px;white-space:nowrap}\n.scp-flow .stage.stock{background:#fdf3e7;border-color:#e7cfa8}\n.scp-flow .arrow{color:#8a94a6;font-weight:bold;padding:0 2px}\n.scp-flow .stock-steps{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}\n.scp-flow .stock-box{flex:1 1 220px;border:1px solid #d8dee8;border-radius:6px;padding:10px;background:#fafbfc}\n.scp-flow .stock-box h4{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:#555}\n.scp-flow .stock-box .dr{color:#1a7f37;font-weight:600}\n.scp-flow .stock-box .cr{color:#b42318;font-weight:600}\n.scp-flow .note{margin-top:10px;font-size:12px;color:#666}\n@media (prefers-color-scheme: dark){\n .scp-flow{color:#ddd}\n .scp-flow .stage{background:#2a2f3a;border-color:#454c5c}\n .scp-flow .stage.stock{background:#3a3020;border-color:#6a5a38}\n .scp-flow .arrow{color:#9aa4b5}\n .scp-flow .stock-box{background:#20242c;border-color:#3a4150}\n .scp-flow .stock-box h4{color:#aab2c0}\n .scp-flow .stock-box .dr{color:#5fd888}\n .scp-flow .stock-box .cr{color:#ff8a80}\n .scp-flow .note{color:#9aa4b5}\n}\n</style>\n<div class=\"stages\">\n<span class=\"stage\">Pending Submission</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Awaiting Approval</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Approved</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Chemical Issued</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Tank Mix Manufactured</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Spraying In Progress</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Completed</span>\n</div>\n<div class=\"stock-steps\">\n<div class=\"stock-box\">\n<h4>1. CSU Chemical Transfer</h4>\nStore &rarr; CSU warehouse.<br>\nNo P&amp;L impact &mdash; warehouse-to-warehouse Stock Entry.\n</div>\n<div class=\"stock-box\">\n<h4>2. Chemical Mixing (Manufacture)</h4>\n<span class=\"cr\">Cr</span> Raw Chemical account<br>\n<span class=\"dr\">Dr</span> Tank-Mix account (incl. valuation difference)\n</div>\n<div class=\"stock-box\">\n<h4>3. Chemical Spray (Material Issue)</h4>\n<span class=\"cr\">Cr</span> Tank-Mix account<br>\n<span class=\"dr\">Dr</span> Spray Expense account\n</div>\n</div>\n<div class=\"note\">Accounts for steps 2 &amp; 3 are configured in the Stock Accounting section above &mdash; leaving an account blank falls back to the relevant warehouse account.</div>\n</div>", "read_only": 1},
-  {"fieldname": "submission_gating_section", "fieldtype": "Section Break", "label": "Submission Gating"},
-  {"default": "0", "fieldname": "bypass_owner_check", "fieldtype": "Check", "label": "Bypass owner check on Submit for Approval", "description": "When ON, any Spray Plan Creator can submit any draft (not just drafts they own). Farm-scope checks still apply. Intended for testing — leave OFF in production."},
-  {"default": "0", "fieldname": "allow_submit_without_biometric", "fieldtype": "Check", "label": "Allow submit without biometric (device-down fallback)", "description": "When ON, the Spray Plan Transfers page also offers a \"Submit without biometric\" action. Use only when the biometric device is unavailable — the submitting user is recorded. Leave OFF in normal operation."},
-  {"fieldname": "auto_cancel_section", "fieldtype": "Section Break", "label": "Auto-Cancel Dormant Plans"},
-  {"default": "0", "fieldname": "auto_cancel_enabled", "fieldtype": "Check", "label": "Auto-cancel dormant unapproved plans", "description": "When ON, the daily job stops Application Floor Plan work orders that were submitted for approval but left unapproved for more than the window below. Stopping is reversible (un-stop in Desk)."},
-  {"default": "0", "depends_on": "auto_cancel_enabled", "fieldname": "auto_cancel_apply_to_backlog", "fieldtype": "Check", "label": "Apply to historical backlog", "description": "When OFF, only plans created after auto-cancel was first enabled are eligible (the rule applies going forward). When ON, every existing dormant unapproved plan is stopped on the next run too."},
-  {"default": "3", "depends_on": "auto_cancel_enabled", "fieldname": "auto_cancel_dormant_days", "fieldtype": "Int", "label": "Dormant window (days)", "non_negative": 1, "description": "Days since creation after which an unapproved plan is considered dormant."},
-  {"fieldname": "auto_cancel_activated_on", "fieldtype": "Datetime", "label": "Auto-cancel activated on", "read_only": 1, "description": "Stamped the first time auto-cancel was enabled; the going-forward cutoff."},
-  {"fieldname": "csu_scan_section", "fieldtype": "Section Break", "label": "CSU Scan Verification"},
-  {"default": "labels", "fieldname": "csu_scan_verification", "fieldtype": "Select", "label": "CSU scan verification method", "options": "labels\ntick", "description": "How a sprayer confirms each chemical taken from the CSU. 'labels' requires scanning the printed QR label (default). 'tick' lets the sprayer tick to confirm instead — only for farms where label printing is unavailable, as it removes the per-chemical scan check."},
-  {"fieldname": "loaning_section", "fieldtype": "Section Break", "label": "Farm-to-Farm Chemical Loaning"},
-  {"default": "0", "fieldname": "loaning_enabled", "fieldtype": "Check", "label": "Enable chemical loaning", "description": "When ON, a depleted farm's Spray Plan Creator can request a chemical from another farm and the source farm's creator approves it."},
-  {"default": "15", "depends_on": "loaning_enabled", "fieldname": "loaning_depletion_pct", "fieldtype": "Int", "label": "Depletion threshold (%)", "non_negative": 1, "description": "A chemical is 'depleted' (and cross-farm availability unlocks) when on-hand drops below this percentage of the captured baseline."},
-  {"default": "72", "depends_on": "loaning_enabled", "fieldname": "loaning_timeout_hours", "fieldtype": "Int", "label": "Request timeout (hours)", "non_negative": 1, "description": "Pending requests with no response auto-expire after this many hours."},
-  {"fieldname": "progress_email_section", "fieldtype": "Section Break", "label": "Daily Progress Email"},
-  {"default": "0", "fieldname": "progress_email_enabled", "fieldtype": "Check", "label": "Send daily Chemical Planning Progress Update", "description": "A black-and-white digest of today's scheduled spray plans and their progress (issued / printed / scanned / sprayed / done), per farm, to the GM, Spray Plan Approvers and Creators for their farms."},
-  {"default": "18", "depends_on": "progress_email_enabled", "fieldname": "progress_email_hour", "fieldtype": "Int", "label": "Send hour (0-23, EAT)", "non_negative": 1, "description": "Hour of the day (East Africa Time) to send the digest. 18 = 6pm / end of day."},
-  {"fieldname": "progress_email_last_sent", "fieldtype": "Date", "label": "Progress email last sent", "read_only": 1},
-  {"fieldname": "spray_plan_tab", "fieldtype": "Tab Break", "label": "Spray Plan"},
-  {"fieldname": "chemicals_tab", "fieldtype": "Tab Break", "label": "Chemicals"},
-  {"fieldname": "cp_groups_section", "fieldtype": "Section Break", "label": "Crop Protection Item Groups"},
-  {"fieldname": "chemical_item_groups", "fieldtype": "Table MultiSelect", "label": "Chemical Item Groups", "options": "Crop Protection Item Group", "description": "Item Groups whose items are chemicals. New items in these groups auto-register as a Chemical."},
-  {"fieldname": "foliar_item_groups", "fieldtype": "Table MultiSelect", "label": "Foliar Item Groups", "options": "Crop Protection Item Group", "description": "Item Groups whose items are foliars. New items in these groups auto-register as a Foliar."},
-  {"fieldname": "scouting_tab", "fieldtype": "Tab Break", "label": "Scouting"},
-  {"fieldname": "scouting_note", "fieldtype": "Small Text", "label": "Scouting Settings", "description": "Scouting-related configuration lives here.", "read_only": 1}
+  {
+   "fieldname": "thresholds_section",
+   "fieldtype": "Section Break",
+   "label": "Resistance Rotation Windows"
+  },
+  {
+   "default": "14",
+   "description": "Warn if the same IRAC code was used on the same greenhouse within this many days.",
+   "fieldname": "irac_rotation_window_days",
+   "fieldtype": "Int",
+   "label": "IRAC Rotation Window (days)",
+   "non_negative": 1
+  },
+  {
+   "default": "21",
+   "description": "Warn if the same FRAC code was used on the same greenhouse within this many days.",
+   "fieldname": "frac_rotation_window_days",
+   "fieldtype": "Int",
+   "label": "FRAC Rotation Window (days)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "weather_section",
+   "fieldtype": "Section Break",
+   "label": "Weather Spray-Friendliness Thresholds"
+  },
+  {
+   "default": "10",
+   "fieldname": "weather_wind_green_max_kmh",
+   "fieldtype": "Float",
+   "label": "Wind: green <= (km/h)"
+  },
+  {
+   "default": "15",
+   "fieldname": "weather_wind_red_min_kmh",
+   "fieldtype": "Float",
+   "label": "Wind: red >= (km/h)"
+  },
+  {
+   "default": "20",
+   "fieldname": "weather_rain_green_max_pct",
+   "fieldtype": "Float",
+   "label": "Rain prob: green <= (%)"
+  },
+  {
+   "default": "50",
+   "fieldname": "weather_rain_red_min_pct",
+   "fieldtype": "Float",
+   "label": "Rain prob: red >= (%)"
+  },
+  {
+   "default": "10",
+   "fieldname": "weather_temp_green_min_c",
+   "fieldtype": "Float",
+   "label": "Temp: green >= (degC)"
+  },
+  {
+   "default": "28",
+   "fieldname": "weather_temp_green_max_c",
+   "fieldtype": "Float",
+   "label": "Temp: green <= (degC)"
+  },
+  {
+   "default": "32",
+   "fieldname": "weather_temp_red_max_c",
+   "fieldtype": "Float",
+   "label": "Temp: red >= (degC)"
+  },
+  {
+   "default": "8",
+   "fieldname": "weather_temp_red_min_c",
+   "fieldtype": "Float",
+   "label": "Temp: red <= (degC)"
+  },
+  {
+   "fieldname": "material_issue_section",
+   "fieldtype": "Section Break",
+   "label": "Material Issue Defaults"
+  },
+  {
+   "fieldname": "default_chemical_expense_account",
+   "fieldtype": "Link",
+   "options": "Account",
+   "label": "Default Chemical Expense Account",
+   "description": "Used as the fallback expense account on auto-Material-Issue rows when the tank-mix Item has no Item Default for the Work Order's company."
+  },
+  {
+   "fieldname": "default_chemical_difference_account",
+   "fieldtype": "Link",
+   "options": "Account",
+   "label": "Default Chemical Difference Account",
+   "description": "Written as the Difference Account on the auto-generated Manufacture Stock Entry (tank-mix manufacture)."
+  },
+  {
+   "fieldname": "stock_accounting_section",
+   "fieldtype": "Section Break",
+   "label": "Stock Accounting (Mixing & Spray)"
+  },
+  {
+   "fieldname": "spray_raw_chemical_account",
+   "fieldtype": "Link",
+   "options": "Account",
+   "label": "Raw Chemical Account (credited on Mixing)",
+   "description": "Overrides the raw-consumption credit on Chemical Mixing. Blank = source warehouse account."
+  },
+  {
+   "fieldname": "spray_tank_mix_account",
+   "fieldtype": "Link",
+   "options": "Account",
+   "label": "Tank-Mix / WIP Account (debited on Mixing, credited on Spray)",
+   "description": "Shared account: tank-mix value in on Mixing (incl. valuation difference), out on Spray. Blank = CSU/WIP warehouse account."
+  },
+  {
+   "fieldname": "spray_expense_account",
+   "fieldtype": "Link",
+   "options": "Account",
+   "label": "Spray Expense Account (debited on Spray)",
+   "description": "P&L expense debited on Chemical Spray. Blank = default chemical expense account, then item expense account."
+  },
+  {
+   "fieldname": "flow_section",
+   "fieldtype": "Section Break",
+   "label": "Flow"
+  },
+  {
+   "fieldname": "spray_flow_diagram",
+   "fieldtype": "HTML",
+   "options": "<div class=\"scp-flow\">\n<style>\n.scp-flow{font:13px/1.5 -apple-system,Helvetica,Arial,sans-serif;color:#333}\n.scp-flow .stages{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:14px}\n.scp-flow .stage{background:#eef2f7;border:1px solid #c9d3e0;border-radius:6px;padding:6px 10px;white-space:nowrap}\n.scp-flow .stage.stock{background:#fdf3e7;border-color:#e7cfa8}\n.scp-flow .arrow{color:#8a94a6;font-weight:bold;padding:0 2px}\n.scp-flow .stock-steps{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}\n.scp-flow .stock-box{flex:1 1 220px;border:1px solid #d8dee8;border-radius:6px;padding:10px;background:#fafbfc}\n.scp-flow .stock-box h4{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:#555}\n.scp-flow .stock-box .dr{color:#1a7f37;font-weight:600}\n.scp-flow .stock-box .cr{color:#b42318;font-weight:600}\n.scp-flow .note{margin-top:10px;font-size:12px;color:#666}\n@media (prefers-color-scheme: dark){\n .scp-flow{color:#ddd}\n .scp-flow .stage{background:#2a2f3a;border-color:#454c5c}\n .scp-flow .stage.stock{background:#3a3020;border-color:#6a5a38}\n .scp-flow .arrow{color:#9aa4b5}\n .scp-flow .stock-box{background:#20242c;border-color:#3a4150}\n .scp-flow .stock-box h4{color:#aab2c0}\n .scp-flow .stock-box .dr{color:#5fd888}\n .scp-flow .stock-box .cr{color:#ff8a80}\n .scp-flow .note{color:#9aa4b5}\n}\n</style>\n<div class=\"stages\">\n<span class=\"stage\">Pending Submission</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Awaiting Approval</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Approved</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Chemical Issued</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Tank Mix Manufactured</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Spraying In Progress</span><span class=\"arrow\">&rarr;</span><span class=\"stage\">Completed</span>\n</div>\n<div class=\"stock-steps\">\n<div class=\"stock-box\">\n<h4>1. CSU Chemical Transfer</h4>\nStore &rarr; CSU warehouse.<br>\nNo P&amp;L impact &mdash; warehouse-to-warehouse Stock Entry.\n</div>\n<div class=\"stock-box\">\n<h4>2. Chemical Mixing (Manufacture)</h4>\n<span class=\"cr\">Cr</span> Raw Chemical account<br>\n<span class=\"dr\">Dr</span> Tank-Mix account (incl. valuation difference)\n</div>\n<div class=\"stock-box\">\n<h4>3. Chemical Spray (Material Issue)</h4>\n<span class=\"cr\">Cr</span> Tank-Mix account<br>\n<span class=\"dr\">Dr</span> Spray Expense account\n</div>\n</div>\n<div class=\"note\">Accounts for steps 2 &amp; 3 are configured in the Stock Accounting section above &mdash; leaving an account blank falls back to the relevant warehouse account.</div>\n</div>",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submission_gating_section",
+   "fieldtype": "Section Break",
+   "label": "Submission Gating"
+  },
+  {
+   "default": "0",
+   "fieldname": "bypass_owner_check",
+   "fieldtype": "Check",
+   "label": "Bypass owner check on Submit for Approval",
+   "description": "When ON, any Spray Plan Creator can submit any draft (not just drafts they own). Farm-scope checks still apply. Intended for testing \u2014 leave OFF in production."
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_submit_without_biometric",
+   "fieldtype": "Check",
+   "label": "Allow submit without biometric (device-down fallback)",
+   "description": "When ON, the Spray Plan Transfers page also offers a \"Submit without biometric\" action. Use only when the biometric device is unavailable \u2014 the submitting user is recorded. Leave OFF in normal operation."
+  },
+  {
+   "fieldname": "auto_cancel_section",
+   "fieldtype": "Section Break",
+   "label": "Auto-Cancel Dormant Plans"
+  },
+  {
+   "default": "0",
+   "fieldname": "auto_cancel_enabled",
+   "fieldtype": "Check",
+   "label": "Auto-cancel dormant unapproved plans",
+   "description": "When ON, the daily job stops Application Floor Plan work orders that were submitted for approval but left unapproved for more than the window below. Stopping is reversible (un-stop in Desk)."
+  },
+  {
+   "default": "0",
+   "depends_on": "auto_cancel_enabled",
+   "fieldname": "auto_cancel_apply_to_backlog",
+   "fieldtype": "Check",
+   "label": "Apply to historical backlog",
+   "description": "When OFF, only plans created after auto-cancel was first enabled are eligible (the rule applies going forward). When ON, every existing dormant unapproved plan is stopped on the next run too."
+  },
+  {
+   "default": "3",
+   "depends_on": "auto_cancel_enabled",
+   "fieldname": "auto_cancel_dormant_days",
+   "fieldtype": "Int",
+   "label": "Dormant window (days)",
+   "non_negative": 1,
+   "description": "Days since creation after which an unapproved plan is considered dormant."
+  },
+  {
+   "fieldname": "auto_cancel_activated_on",
+   "fieldtype": "Datetime",
+   "label": "Auto-cancel activated on",
+   "read_only": 1,
+   "description": "Stamped the first time auto-cancel was enabled; the going-forward cutoff."
+  },
+  {
+   "fieldname": "csu_scan_section",
+   "fieldtype": "Section Break",
+   "label": "CSU Scan Verification"
+  },
+  {
+   "default": "labels",
+   "fieldname": "csu_scan_verification",
+   "fieldtype": "Select",
+   "label": "CSU scan verification method",
+   "options": "labels\ntick",
+   "description": "How a sprayer confirms each chemical taken from the CSU. 'labels' requires scanning the printed QR label (default). 'tick' lets the sprayer tick to confirm instead \u2014 only for farms where label printing is unavailable, as it removes the per-chemical scan check."
+  },
+  {
+   "fieldname": "loaning_section",
+   "fieldtype": "Section Break",
+   "label": "Farm-to-Farm Chemical Loaning"
+  },
+  {
+   "default": "0",
+   "fieldname": "loaning_enabled",
+   "fieldtype": "Check",
+   "label": "Enable chemical loaning",
+   "description": "When ON, a depleted farm's Spray Plan Creator can request a chemical from another farm and the source farm's creator approves it."
+  },
+  {
+   "default": "15",
+   "depends_on": "loaning_enabled",
+   "fieldname": "loaning_depletion_pct",
+   "fieldtype": "Int",
+   "label": "Depletion threshold (%)",
+   "non_negative": 1,
+   "description": "A chemical is 'depleted' (and cross-farm availability unlocks) when on-hand drops below this percentage of the captured baseline."
+  },
+  {
+   "default": "72",
+   "depends_on": "loaning_enabled",
+   "fieldname": "loaning_timeout_hours",
+   "fieldtype": "Int",
+   "label": "Request timeout (hours)",
+   "non_negative": 1,
+   "description": "Pending requests with no response auto-expire after this many hours."
+  },
+  {
+   "fieldname": "progress_email_section",
+   "fieldtype": "Section Break",
+   "label": "Daily Progress Email"
+  },
+  {
+   "default": "0",
+   "fieldname": "progress_email_enabled",
+   "fieldtype": "Check",
+   "label": "Send daily Chemical Planning Progress Update",
+   "description": "A black-and-white digest of today's scheduled spray plans and their progress (issued / printed / scanned / sprayed / done), per farm, to the GM, Spray Plan Approvers and Creators for their farms."
+  },
+  {
+   "default": "18",
+   "depends_on": "progress_email_enabled",
+   "fieldname": "progress_email_hour",
+   "fieldtype": "Int",
+   "label": "Send hour (0-23, EAT)",
+   "non_negative": 1,
+   "description": "Hour of the day (East Africa Time) to send the digest. 18 = 6pm / end of day."
+  },
+  {
+   "fieldname": "progress_email_last_sent",
+   "fieldtype": "Date",
+   "label": "Progress email last sent",
+   "read_only": 1
+  },
+  {
+   "fieldname": "spray_plan_tab",
+   "fieldtype": "Tab Break",
+   "label": "Spray Plan"
+  },
+  {
+   "fieldname": "chemicals_tab",
+   "fieldtype": "Tab Break",
+   "label": "Chemicals"
+  },
+  {
+   "fieldname": "cp_groups_section",
+   "fieldtype": "Section Break",
+   "label": "Crop Protection Item Groups"
+  },
+  {
+   "fieldname": "chemical_item_groups",
+   "fieldtype": "Table MultiSelect",
+   "label": "Chemical Item Groups",
+   "options": "Crop Protection Item Group",
+   "description": "Item Groups whose items are chemicals. New items in these groups auto-register as a Chemical."
+  },
+  {
+   "fieldname": "foliar_item_groups",
+   "fieldtype": "Table MultiSelect",
+   "label": "Foliar Item Groups",
+   "options": "Crop Protection Item Group",
+   "description": "Item Groups whose items are foliars. New items in these groups auto-register as a Foliar."
+  },
+  {
+   "fieldname": "general_store_section",
+   "fieldtype": "Section Break",
+   "label": "General Store Keepers",
+   "description": "Users who keep a company-wide general chemical store. They belong to no farm, so they cannot be listed on a Farm."
+  },
+  {
+   "fieldname": "general_store_keepers",
+   "fieldtype": "Table",
+   "label": "General Store Keepers",
+   "options": "Farm Store Keeper"
+  },
+  {
+   "fieldname": "scouting_tab",
+   "fieldtype": "Tab Break",
+   "label": "Scouting"
+  },
+  {
+   "fieldname": "scouting_note",
+   "fieldtype": "Small Text",
+   "label": "Scouting Settings",
+   "description": "Scouting-related configuration lives here.",
+   "read_only": 1
+  }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,

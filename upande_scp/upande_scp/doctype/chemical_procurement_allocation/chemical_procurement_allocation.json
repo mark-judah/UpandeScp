@@ -1,0 +1,125 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-17 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "farm",
+  "uom",
+  "requested_qty",
+  "credit_in",
+  "basis_qty",
+  "allocated_qty",
+  "steps",
+  "credit_out",
+  "cb_move",
+  "target_warehouse",
+  "stock_entry",
+  "transferred"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "farm",
+   "fieldtype": "Link",
+   "label": "Farm",
+   "options": "Farm",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "label": "UOM",
+   "options": "UOM"
+  },
+  {
+   "fieldname": "requested_qty",
+   "fieldtype": "Float",
+   "label": "Requested",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "credit_in",
+   "fieldtype": "Float",
+   "label": "Credit Carried In",
+   "read_only": 1,
+   "description": "Owed from earlier cycles. Negative means paid ahead."
+  },
+  {
+   "fieldname": "basis_qty",
+   "fieldtype": "Float",
+   "label": "Basis",
+   "read_only": 1,
+   "description": "Request + credit in. The split is proportional to this."
+  },
+  {
+   "fieldname": "allocated_qty",
+   "fieldtype": "Float",
+   "label": "Allocated",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "steps",
+   "fieldtype": "Int",
+   "label": "Steps",
+   "read_only": 1
+  },
+  {
+   "fieldname": "credit_out",
+   "fieldtype": "Float",
+   "label": "Credit Carried Out",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_move",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "label": "Target Store",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "label": "Stock Entry",
+   "options": "Stock Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "transferred",
+   "fieldtype": "Check",
+   "label": "Transferred",
+   "default": "0",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-17 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Chemical Procurement Allocation",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

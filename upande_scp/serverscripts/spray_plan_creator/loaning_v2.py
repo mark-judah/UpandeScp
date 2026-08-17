@@ -39,7 +39,6 @@ from upande_scp.serverscripts.spray_plan_creator.loaning import (
     _ensure_creator,
     _ensure_enabled,
     _farm_chemical_stores,
-    _on_hand,
     _primary_store,
     _user_farms,
 )
@@ -557,12 +556,29 @@ def permission_query(user=None):
     if set(frappe.get_roles(user)) & ELEVATED:
         return ""
     farms = _user_farms(user)
+
+    # A request drawn from the general store has no lender farm — the keeper of
+    # that store is the one who decides it, so they must be able to see it. Their
+    # own farms' requests still reach them through the farm clause below.
+    stores = frappe.get_all(
+        "Farm Store Keeper", filters={"user": user}, pluck="warehouse"
+    )
+    pool = [s for s in stores if s]
+    pool_clause = ""
+    if pool:
+        quoted_stores = ", ".join(frappe.db.escape(s) for s in sorted(set(pool)))
+        pool_clause = (
+            f"(`tabChemical Transfer Request`.from_general_store = 1 "
+            f"and `tabChemical Transfer Request`.lender_warehouse in ({quoted_stores}))"
+        )
+
     if farms is None:
         return ""
     if not farms:
-        return "1=0"
+        return pool_clause or "1=0"
     quoted = ", ".join(frappe.db.escape(f) for f in sorted(farms))
-    return (
+    farm_clause = (
         f"(`tabChemical Transfer Request`.requesting_farm in ({quoted}) "
         f"or `tabChemical Transfer Request`.lender_farm in ({quoted}))"
     )
+    return f"({farm_clause} or {pool_clause})" if pool_clause else farm_clause

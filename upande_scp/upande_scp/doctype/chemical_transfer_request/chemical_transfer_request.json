@@ -9,6 +9,7 @@
  "field_order": [
   "requesting_farm",
   "requesting_warehouse",
+  "from_general_store",
   "lender_farm",
   "lender_warehouse",
   "workflow_state",
@@ -42,6 +43,14 @@
    "fieldtype": "Link",
    "label": "Requesting Warehouse",
    "options": "Warehouse"
+  },
+  {
+   "default": "0",
+   "fieldname": "from_general_store",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "From General Store",
+   "description": "Drawn from the shared pool rather than another farm. There is no lender farm; the general store keeper decides."
   },
   {
    "fieldname": "lender_farm",

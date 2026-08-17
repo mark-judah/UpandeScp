@@ -95,7 +95,7 @@ export function TankMixes() {
     <div className="flex flex-col min-h-svh">
       <PageHeader
         title="Tank Mixes"
-        eyebrow={<>Chemical Mix BOMs · {data.tank_mixes.length} loaded</>}
+        eyebrow={<>Tank mixes · {data.tank_mixes.length} loaded</>}
       >
           <div className="relative min-w-56">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -225,7 +225,7 @@ export function TankMixes() {
                   ) : (
                     <TableRow>
                       <TableCell colSpan={4} className="text-xs text-muted-foreground">
-                        No chemicals on this BOM.
+                        No chemicals on this tank mix.
                       </TableCell>
                     </TableRow>
                   )}

@@ -360,7 +360,7 @@ function WorkOrderDialog({
             <CardTitle className="text-sm">Chemical Mix</CardTitle>
             <CardDescription>
               {chemicals.length} chemical
-              {chemicals.length !== 1 ? "s" : ""} from BOM {wo?.bom_no || "—"}
+              {chemicals.length !== 1 ? "s" : ""} from tank mix {wo?.bom_no || "—"}
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -400,7 +400,7 @@ function WorkOrderDialog({
               </Table>
             ) : (
               <div className="text-xs text-muted-foreground py-4 text-center">
-                {loading ? "Loading…" : "No chemicals on this BOM."}
+                {loading ? "Loading…" : "No chemicals on this tank mix."}
               </div>
             )}
           </CardContent>

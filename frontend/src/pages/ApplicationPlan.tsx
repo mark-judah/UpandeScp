@@ -1094,7 +1094,10 @@ export function ApplicationPlan() {
 
   const submit = async () => {
     if (!greenhouse || !sprayDate || !sprayType || !scope || !bom || !kit || !classification) {
-      pushToast("err", "Fill in greenhouse, date, spray type, scope, kit, BOM and classification.");
+      pushToast(
+        "err",
+        "Fill in greenhouse, date, spray type, scope, kit, tank mix and classification.",
+      );
       return;
     }
     if (classification === "Preventive" && preventiveReason.trim().length < 20) {
@@ -1256,7 +1259,7 @@ export function ApplicationPlan() {
     if (newBomChems.some((c) => c.item_code === it.item_code)) {
       pushToast(
         "warn",
-        `${it.item_name || it.item_code} is already in this BOM.`,
+        `${it.item_name || it.item_code} is already in this tank mix.`,
       );
       return;
     }
@@ -1268,15 +1271,15 @@ export function ApplicationPlan() {
 
   const submitNewBom = async () => {
     if (!newBomItem.trim()) {
-      pushToast("err", "BOM name is required.");
+      pushToast("err", "Tank mix name is required.");
       return;
     }
     if (!newBomChems.length) {
-      pushToast("err", "Add at least one chemical to the BOM.");
+      pushToast("err", "Add at least one chemical to the tank mix.");
       return;
     }
     setCreatingBom(true);
-    const loaderId = pushToast("loading", "Creating BOM…", 0);
+    const loaderId = pushToast("loading", "Creating tank mix…", 0);
     try {
       const r = await createBom({
         item: newBomItem.trim(),
@@ -1303,11 +1306,11 @@ export function ApplicationPlan() {
         setNewBomChems([]);
         setNewBomSearch("");
       } else {
-        pushToast("err", r.message || "Could not create BOM.");
+        pushToast("err", r.message || "Could not create the tank mix.");
       }
     } catch (e: any) {
       dismissToast(loaderId);
-      pushToast("err", e?.message || "Could not create BOM.");
+      pushToast("err", e?.message || "Could not create the tank mix.");
     } finally {
       setCreatingBom(false);
     }
@@ -1911,7 +1914,7 @@ export function ApplicationPlan() {
             <CardContent className="p-0 flex flex-col gap-3">
               <div className="flex items-end gap-2">
                 <div className="flex-1 flex flex-col gap-1">
-                  <Label>BOM</Label>
+                  <Label>Tank Mix</Label>
                   <BomPicker boms={bomList} value={bom} onValueChange={setBom} />
                 </div>
                 <Button
@@ -2476,15 +2479,15 @@ export function ApplicationPlan() {
       <Dialog open={bomDialogOpen} onOpenChange={setBomDialogOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Create new Chemical Mix BOM</DialogTitle>
+            <DialogTitle>Create a new tank mix</DialogTitle>
             <DialogDescription>
-              Inline BOM creation — same fields as the legacy spray-plan page.
-              The new BOM is auto-selected on success.
+              The mix is created here and selected straight away. It is stored as
+              an ERPNext BOM, which is the name you will see in Desk.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
-              <Label>BOM Name</Label>
+              <Label>Tank Mix Name</Label>
               <Input
                 value={newBomItem}
                 onChange={(e) => setNewBomItem(e.target.value)}
@@ -2510,7 +2513,11 @@ export function ApplicationPlan() {
                 onChange={(e) => setNewBomSearch(e.target.value)}
                 placeholder="Search…"
               />
-              {newBomSearch && newBomSearchResults.length > 0 && (
+              {/* Listed as soon as the dialog opens, not only once something is
+                *  typed: the search runs with a blank query too, and an empty
+                *  panel read as "there are no chemicals" rather than "start
+                *  typing". */}
+              {newBomSearchResults.length > 0 ? (
                 <div className="rounded-md border bg-card max-h-40 overflow-auto">
                   {newBomSearchResults.map((it) => (
                     <button
@@ -2528,6 +2535,12 @@ export function ApplicationPlan() {
                     </button>
                   ))}
                 </div>
+              ) : (
+                <p className="px-1 py-2 text-xs text-muted-foreground">
+                  {newBomSearch
+                    ? `Nothing matches "${newBomSearch}".`
+                    : "Loading chemicals…"}
+                </p>
               )}
             </div>
             {newBomChems.length > 0 && (

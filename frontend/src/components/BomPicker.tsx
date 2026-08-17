@@ -79,7 +79,7 @@ export function BomPicker({
   boms,
   value,
   onValueChange,
-  placeholder = "Select BOM",
+  placeholder = "Select tank mix",
   className,
   disabled,
 }: BomPickerProps) {
@@ -171,7 +171,7 @@ export function BomPicker({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by mix, BOM code or farm…"
+            placeholder="Search by mix name, code or farm…"
             autoFocus
             className="h-7 border-0 p-0 text-xs shadow-none focus-visible:ring-0"
           />
@@ -212,7 +212,7 @@ export function BomPicker({
             <div className="px-2 py-6 text-center text-xs text-muted-foreground">
               {query.trim()
                 ? `No BOM matches “${query.trim()}”.`
-                : "No BOMs available."}
+                : "No tank mixes available."}
             </div>
           )}
         </div>

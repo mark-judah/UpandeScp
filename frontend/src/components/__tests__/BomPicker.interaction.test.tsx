@@ -18,11 +18,11 @@ function open(props: Partial<React.ComponentProps<typeof BomPicker>> = {}) {
 }
 
 describe("BomPicker", () => {
-  it("shows the placeholder until a BOM is selected, then its label", () => {
+  it("shows the placeholder until a tank mix is selected, then its label", () => {
     const { unmount } = render(
       <BomPicker boms={boms} value="" onValueChange={() => {}} />,
     );
-    expect(screen.getByText("Select BOM")).toBeInTheDocument();
+    expect(screen.getByText("Select tank mix")).toBeInTheDocument();
     unmount();
 
     render(
@@ -45,7 +45,7 @@ describe("BomPicker", () => {
     expect(onValueChange).toHaveBeenCalledWith("BOM-Th/xyz-004");
   });
 
-  it("finds a BOM by its code, not just its mix name", async () => {
+  it("finds a tank mix by its code, not just its mix name", async () => {
     const { onValueChange, user } = open();
     await user.click(screen.getByRole("button"));
     await user.type(screen.getByPlaceholderText(/search by mix/i), "fcm-902");

@@ -23,6 +23,39 @@ ITEM = "_TEST-LOAN-CHEM"
 FOLIAR = "_TEST-LOAN-FOLIAR"
 
 
+def setUpModule():
+    """Re-enable the shared test items for the run.
+
+    They are left DISABLED between runs (see tearDownModule), and ERPNext refuses
+    to move stock for a disabled item — so every run has to turn them back on.
+    """
+    for code in (ITEM, FOLIAR):
+        if frappe.db.exists("Item", code) and frappe.db.get_value(
+            "Item", code, "disabled"
+        ):
+            frappe.db.set_value("Item", code, "disabled", 0, update_modified=False)
+    frappe.db.commit()
+
+
+def tearDownModule():
+    """Disable the test items rather than deleting them.
+
+    They cannot be deleted: after many runs they carry a real stock ledger and live
+    Bin quantities in four warehouses, and unwinding that would mean cancelling
+    ledger entries on a live site. But leaving them ENABLED put `_TEST-LOAN-CHEM` at
+    the top of every planner's chemical search — a test leaking onto the operator's
+    screen. Disabled keeps the ledger intact and takes them out of every picker,
+    which all filter `disabled = 0`.
+
+    Module scope, not class scope: two test classes share these items, so a
+    per-class teardown disabled them out from under the second one.
+    """
+    for code in (ITEM, FOLIAR):
+        if frappe.db.exists("Item", code):
+            frappe.db.set_value("Item", code, "disabled", 1, update_modified=False)
+    frappe.db.commit()
+
+
 def _two_farms_with_stores():
     """Two farms in the SAME company.
 
@@ -63,6 +96,7 @@ class TestDirectedLoaning(unittest.TestCase):
             raise unittest.SkipTest("need two farms with chemical stores")
 
         # A dedicated item so the test never depends on, or disturbs, real stock.
+        # Re-enabled by setUpModule, since tearDownModule leaves it disabled.
         if not frappe.db.exists("Item", ITEM):
             frappe.get_doc({
                 "doctype": "Item", "item_code": ITEM, "item_name": ITEM,

@@ -128,7 +128,17 @@ class TestBackdatedLedgerOrder(unittest.TestCase):
             frappe.get_doc({
                 "doctype": "Item", "item_code": ITEM, "item_name": ITEM,
                 "item_group": group, "stock_uom": "Litre", "is_stock_item": 1,
+                "valuation_rate": 10,
             }).insert(ignore_permissions=True)
+        else:
+            # Re-enabled and re-valued on every run. tearDownClass disables the item, so
+            # without this the file passed exactly once and failed on every run after —
+            # and a valuation is needed or ERPNext refuses the consumption with a
+            # *valuation* error that looks nothing like the stock refusal under test.
+            frappe.db.set_value(
+                "Item", ITEM, {"disabled": 0, "valuation_rate": 10},
+                update_modified=False,
+            )
         frappe.db.commit()
 
     @classmethod

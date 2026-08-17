@@ -150,3 +150,112 @@ class TestDefaultSteps(unittest.TestCase):
         self.assertEqual(default_step_for_uom("Sachet"), 1.0)
         self.assertEqual(default_step_for_uom(None), 1.0)
         self.assertEqual(default_step_for_uom(""), 1.0)
+
+
+class TestCarryForward(unittest.TestCase):
+    """Unused allocation carries forward as a per-farm credit.
+
+    The invariant worth protecting is CONSERVATION: the credits must sum to the
+    stock actually left in the general store. If they don't, the pool has no
+    owner-by-owner explanation and the credits are just wishes.
+    """
+
+    def test_credits_sum_to_what_is_left_in_the_general_store(self):
+        # 3 farms, awkward ratio, coarse step: guarantees a residue.
+        reqs = {"A": 33, "B": 33, "C": 34}
+        r = apportion(reqs, 100, step=10)
+        self.assertAlmostEqual(
+            sum(r.carried_forward.values()), r.remainder, places=7,
+            msg="credits must account for exactly the leftover pool",
+        )
+
+    def test_a_farm_rounded_up_carries_a_debit(self):
+        """Hamilton pays somebody ahead. Forgiving that would mint entitlement:
+        the pool would owe more than it holds."""
+        reqs = {"A": 10, "B": 10, "C": 10}
+        r = apportion(reqs, 20, step=10)  # 2 steps for 3 farms
+        got = [a for a in r.allocations if a.allocated > 0]
+        self.assertEqual(len(got), 2)
+        self.assertTrue(
+            any(a.credit_out < 0 for a in got),
+            "a farm given a spare step must carry a debit",
+        )
+        self.assertTrue(
+            any(a.credit_out > 0 for a in r.allocations),
+            "a farm that missed out must carry a credit",
+        )
+
+    def test_the_credit_is_added_to_the_next_cycles_basis(self):
+        """The user's case: 0.4 owed to Farm A rides on its next request."""
+        r = apportion({"A": 10, "B": 10}, 20, step=1, carried={"A": 0.4})
+        by_farm = {a.farm: a for a in r.allocations}
+        self.assertEqual(by_farm["A"].credit_in, 0.4)
+        self.assertAlmostEqual(by_farm["A"].basis, 10.4)
+        # 0.4 of a 1-unit step still isn't measurable, so it doesn't buy stock
+        # yet — it must survive to the cycle after.
+        self.assertGreater(r.carried_forward["A"], 0)
+
+    def test_an_accumulated_credit_eventually_buys_a_whole_step(self):
+        """Once the credit clears a step boundary it converts into real stock —
+        the point of carrying it at all."""
+        r = apportion({"A": 10, "B": 10}, 22, step=1, carried={"A": 1.5})
+        by_farm = {a.farm: a.allocated for a in r.allocations}
+        self.assertGreater(
+            by_farm["A"], by_farm["B"],
+            "a credit past one step must buy more stock than the plain request",
+        )
+
+    def test_a_budget_cut_is_not_a_credit(self):
+        """Asked 10, budget allows 9 -> the missing 1 is a decision, not a debt.
+        If cuts carried forward, a reduction would mean nothing next cycle."""
+        r = apportion({f"F{i}": 10 for i in range(5)}, 45, step=1)
+        self.assertEqual(set(alloc_map(r).values()), {9})
+        self.assertEqual(
+            r.carried_forward, {},
+            "a clean proportional cut owes nobody anything",
+        )
+
+    def test_repeated_cycles_do_not_starve_the_same_farm(self):
+        """Without carry-forward the small farm gets zero forever. With it, the
+        credit accumulates until it clears a whole step."""
+        reqs = {"Big": 95, "Small": 5}
+        carried, small_got = {}, []
+        for _ in range(6):
+            r = apportion(reqs, 100, step=10, carried=carried)
+            carried = r.carried_forward
+            small_got.append({a.farm: a.allocated for a in r.allocations}.get("Small", 0))
+        # Measured: the small farm is served every other cycle (0, 10, 0, 10 …)
+        # instead of never, and the ledger clears itself each time it pays out.
+        self.assertGreaterEqual(
+            len([q for q in small_got if q > 0]), 2,
+            f"the small farm must be served repeatedly, got {small_got}",
+        )
+        self.assertAlmostEqual(
+            sum(small_got), 5 * len(small_got), places=6,
+            msg="over several cycles the small farm must receive its true share",
+        )
+
+    def test_a_farm_that_sits_out_keeps_its_credit(self):
+        r = apportion({"A": 10}, 10, step=1, carried={"B": 2.5})
+        self.assertAlmostEqual(r.carried_forward.get("B", 0), 2.5)
+
+    def test_a_debit_bigger_than_the_new_request_stays_outstanding(self):
+        """Not forgiven, not made negative: it waits."""
+        r = apportion({"A": 1, "B": 10}, 11, step=1, carried={"A": -4})
+        by_farm = {a.farm: a for a in r.allocations}
+        self.assertNotIn("A", by_farm, "a farm in net debit gets nothing")
+        self.assertAlmostEqual(r.carried_forward["A"], -3.0)
+
+    def test_a_sub_step_total_owes_everyone_their_share(self):
+        r = apportion({"A": 10, "B": 30}, 7, step=10)
+        self.assertEqual(r.allocations, ())
+        self.assertAlmostEqual(sum(r.carried_forward.values()), 7, places=7)
+
+    def test_float_dust_is_not_carried(self):
+        r = apportion({"A": 10, "B": 10}, 20, step=1)
+        self.assertEqual(r.carried_forward, {})
+
+    def test_credits_never_over_allocate(self):
+        """A big credit plus a request must still not exceed the stock on hand."""
+        r = apportion({"A": 10, "B": 10}, 15, step=1, carried={"A": 50})
+        self.assertLessEqual(r.distributed, 15)

@@ -130,12 +130,53 @@ records each farm's approved allocation per chemical. The metric is
 borrows raises its consumption without raising its allocation, so loans must
 appear in the reconciliation or a borrower looks like an overspender.
 
+### 10. Unused allocation carries forward — as a per-farm credit
+
+A remainder is not written off. Two things carry:
+
+* the **physical remainder** stays in the general store, visible to its keeper —
+  it is real stock that was never measurable into a farm share;
+* each farm's **unallocated fraction is remembered as a credit** and added to its
+  entitlement next cycle. If chemical A left 0.4 owed to Farm A, next cycle Farm
+  A's entitlement is its new request **plus 0.4**.
+
+So the sequence is: split by what was requested, then add each farm's carried
+credit, and only then apportion. Without the credit, a farm that repeatedly lands
+just under a step would be shorted every single cycle — the loss compounds
+silently, which is exactly the small-farm starvation the apportionment was
+designed to avoid, arriving by a slower route.
+
+The carried credit needs its own record per (farm, item) so it survives between
+cycles and can be shown to the general store keeper.
+
+### 11. Revision between reviews is allowed, but structured
+
+Both the planner and the GM may revise while a cycle is under review. Two rules
+bound it:
+
+* **An approval marked final is not changed.** Once a figure is approved as
+  final it is locked; anything further is a new amendment, not an edit.
+* **Every allocation change notifies the planner** with *what* changed, *by whom*,
+  and *what amount*. A number moving without attribution is the failure mode
+  here — a planner must never discover a changed allocation by noticing the
+  stock did not match.
+
+If a review is **rejected** and the planner wants to change their figures, they
+**request an amendment** rather than editing directly. The document could
+technically be amended in place; the point is that amendments have a shape —
+requested, attributed, reviewed — instead of being silent edits. Free editing
+would make the audit trail worthless precisely when it matters.
+
+This implies: an allocation change log (who, when, from, to) and an amendment
+request state, distinct from ordinary field edits.
+
 ## Open questions for the later phases
 
 - Review 1: "the number does not have an override" — read as *the planner
   confirms their own figure and nobody else silently changes it*, with the GM's
-  phase-2 amendment explicit and attributed. **Needs confirming.**
-- Does a farm's allocation carry forward if unused, or reset each cycle?
-- Can a planner revise after review 1 but before the GM's review?
-- Per-item or per-request source sets on multi-item loans (see 8).
-- Step-size defaults per UOM (see 4).
+  amendment explicit and attributed (see 11, now confirmed in that shape).
+- Per-item or per-request source sets on multi-item loans — **moot**: the
+  directed flow shipped with one lender per request, so source sets dissolved.
+- Step-size defaults per UOM: implemented as `apportion.DEFAULT_STEPS`
+  (10 for gram/ml, 0.1 for kg/litre, 1 for anything countable). Confirm against
+  how the store actually measures before the first real cycle.

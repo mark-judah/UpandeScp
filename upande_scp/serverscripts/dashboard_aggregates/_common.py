@@ -348,27 +348,71 @@ def cached_aggregate(endpoint: str, filters: dict, compute, force: bool = False)
 DASH_AGG_PROGRESS_EVENT = "scp:dash_agg:progress"
 
 
-def publish_progress(job_id: str, percent: int, label: str = "") -> None:
-    """Push a progress event to the calling user's socket.
+#: How long a job's progress stays readable after its last update. Long enough to
+#: outlive a slow poll, short enough that abandoned jobs evaporate.
+DASH_AGG_PROGRESS_TTL = 120
 
-    ``after_commit=False`` so the message is flushed immediately while the
-    worker is still computing; otherwise it would queue until the request
-    ends and the client would only see 100% at completion. No-ops when
-    ``job_id`` is falsy so endpoints can skip the work when the caller did
-    not pass a job id (warm-cache hits never reach here anyway).
+
+def _progress_key(job_id: str) -> str:
+    return f"scp:dash_agg:progress:{job_id}"
+
+
+def publish_progress(job_id: str, percent: int, label: str = "") -> None:
+    """Record progress for a job, two ways.
+
+    **Cache** is the one that actually reaches the SPA. The standalone
+    ``/scp_app`` shell does not load Frappe's socket.io bundle, so
+    ``frappe.realtime`` is undefined there and every realtime event published
+    below is dropped on the floor — which is why the loader used to show a
+    simulated creep instead of the real figure. Writing the percent to a cache key
+    the client can poll makes the number real wherever the page is hosted.
+
+    **Realtime** is still published for the Desk-hosted case, where it arrives
+    sooner and costs the client nothing. ``after_commit=False`` so it flushes while
+    the worker is still computing; otherwise the client would only ever see 100% at
+    completion.
+
+    No-ops when `job_id` is falsy, so endpoints can skip the work when the caller
+    did not pass one (warm-cache hits never reach here anyway).
     """
     if not job_id:
         return
+    percent = max(0, min(100, int(percent)))
+    try:
+        frappe.cache().set_value(
+            _progress_key(job_id),
+            {"percent": percent, "label": label},
+            expires_in_sec=DASH_AGG_PROGRESS_TTL,
+        )
+    except Exception:
+        # Progress is UI sugar; never let it break the response it describes.
+        pass
     try:
         frappe.publish_realtime(
             event=DASH_AGG_PROGRESS_EVENT,
-            message={"job_id": job_id, "percent": int(percent), "label": label},
+            message={"job_id": job_id, "percent": percent, "label": label},
             user=frappe.session.user,
             after_commit=False,
         )
     except Exception:
-        # Realtime is best-effort UI sugar; never let it break the response.
         pass
+
+
+@frappe.whitelist()
+def job_progress(job_id=None):
+    """How far along a cold aggregate call is. Polled by the loading bar.
+
+    Returns ``None`` when nothing is recorded — the normal case for a warm-cache
+    hit, and the signal the client uses to stay indeterminate rather than invent a
+    number. Job ids are client-generated UUIDs carrying no data, so reading one is
+    not a disclosure; the payload is a percent and a label.
+    """
+    if not job_id:
+        return None
+    try:
+        return frappe.cache().get_value(_progress_key(str(job_id)))
+    except Exception:
+        return None
 
 
 def partition_scope(names, units=None) -> tuple:

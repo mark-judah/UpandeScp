@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { call } from "@/lib/frappe";
 import { useRealtime } from "@/hooks/use-realtime";
+import { useJobProgress } from "@/hooks/use-job-progress";
 
 export type Endpoint =
   | "overview"
@@ -35,9 +36,9 @@ export interface AggregateState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
-  /** Non-null only while a cold-path fetch is publishing progress events.
-   *  Warm-cache hits skip the publishes entirely so this stays null and the
-   *  overlay never renders. */
+  /** Non-null only once a cold-path fetch has reported a stage. Warm-cache hits
+   *  never publish, so this stays null and the bar stays indeterminate rather than
+   *  showing a number nobody measured. */
   progress: AggregateProgress | null;
   reload: (opts?: { force?: boolean }) => void;
 }
@@ -77,6 +78,9 @@ export function useDashboardAggregate<T>(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<AggregateProgress | null>(null);
+  // Mirrored into state as well as the ref: the ref filters stale realtime events,
+  // while the polling hook needs a value that re-renders when it changes.
+  const [jobId, setJobId] = useState<string>("");
   const tokenRef = useRef(0);
   // Job id of the *currently-in-flight* fetch. Realtime progress events from
   // older fetches (e.g. rapid filter changes) are filtered out by comparing
@@ -91,6 +95,7 @@ export function useDashboardAggregate<T>(
       const token = ++tokenRef.current;
       const job_id = newJobId();
       jobIdRef.current = job_id;
+      setJobId(job_id);
       setLoading(true);
       setError(null);
       setProgress(null);
@@ -110,6 +115,7 @@ export function useDashboardAggregate<T>(
           setLoading(false);
           setProgress(null);
           jobIdRef.current = "";
+          setJobId("");
         }
       }
     },
@@ -136,11 +142,18 @@ export function useDashboardAggregate<T>(
   );
   useRealtime("scp:dash_agg:progress", onProgress);
 
+  // Two sources for the same figure: the realtime event (Desk-hosted, arrives
+  // first) and the polled cache key (the /scp_app shell, which has no socket).
+  // Whichever is further along wins; neither is simulated.
+  const polled = useJobProgress(jobId, loading);
+  const merged =
+    polled && (!progress || polled.percent > progress.percent) ? polled : progress;
+
   return {
     data,
     loading,
     error,
-    progress,
+    progress: merged,
     reload: (opts) => void fetchOnce(Boolean(opts?.force)),
   };
 }

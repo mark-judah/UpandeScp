@@ -56,7 +56,7 @@ import {
 } from "@/lib/scouting-api";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
 import { ymd } from "@/lib/utils";
-import { ProgressOverlay } from "./dashboard/ProgressOverlay";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { MarkerDefs, type MarkerKind } from "./maps/MarkerDefs";
 import {
   BedSvg,
@@ -549,7 +549,11 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
             </CardDescription>
           </Card>
         ) : gridState.loading ? (
-          <ProgressOverlay progress={gridState.progress} />
+          <LoadingOverlay
+            open
+            progress={gridState.progress?.percent ?? null}
+            label={gridState.progress?.label}
+          />
         ) : !visibleCards.length ? (
           <Card className="p-12 text-center">
             <CardTitle className="text-base">

@@ -16,7 +16,7 @@ import { PestsTab }     from "./dashboard/PestsTab";
 import { DiseasesTab }  from "./dashboard/DiseasesTab";
 import { TrapsTab }     from "./dashboard/TrapsTab";
 import { FcmTab }       from "./dashboard/FcmTab";
-import { ProgressOverlay } from "./dashboard/ProgressOverlay";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { ymd } from "@/lib/utils";
 import type { OverviewPayload } from "./dashboard/overview-types";
 import type { PestsPayload, DiseasesPayload } from "./dashboard/pests-diseases-types";
@@ -232,7 +232,11 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               crop={base.crop}
             />
             {overview.loading && (
-              <ProgressOverlay progress={overview.progress} />
+              <LoadingOverlay
+                open
+                progress={overview.progress?.percent ?? null}
+                label={overview.progress?.label}
+              />
             )}
           </TabsContent>
           <TabsContent value="pests" className="mt-0">
@@ -243,7 +247,13 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               stage={pestFilters.stage}
               onFiltersChange={setPestFilters}
             />
-            {pests.loading && <ProgressOverlay progress={pests.progress} />}
+            {pests.loading && (
+              <LoadingOverlay
+                open
+                progress={pests.progress?.percent ?? null}
+                label={pests.progress?.label}
+              />
+            )}
           </TabsContent>
           <TabsContent value="diseases" className="mt-0">
             <DiseasesTab
@@ -254,16 +264,32 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               onFiltersChange={setDiseaseFilters}
             />
             {diseases.loading && (
-              <ProgressOverlay progress={diseases.progress} />
+              <LoadingOverlay
+                open
+                progress={diseases.progress?.percent ?? null}
+                label={diseases.progress?.label}
+              />
             )}
           </TabsContent>
           <TabsContent value="traps" className="mt-0">
             <TrapsTab data={traps.data} />
-            {traps.loading && <ProgressOverlay progress={traps.progress} />}
+            {traps.loading && (
+              <LoadingOverlay
+                open
+                progress={traps.progress?.percent ?? null}
+                label={traps.progress?.label}
+              />
+            )}
           </TabsContent>
           <TabsContent value="fcm" className="mt-0">
             <FcmTab data={fcm.data} />
-            {fcm.loading && <ProgressOverlay progress={fcm.progress} />}
+            {fcm.loading && (
+              <LoadingOverlay
+                open
+                progress={fcm.progress?.percent ?? null}
+                label={fcm.progress?.label}
+              />
+            )}
           </TabsContent>
         </Tabs>
       </div>

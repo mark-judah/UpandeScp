@@ -2,6 +2,8 @@ import unittest
 import unittest.mock
 from unittest.mock import patch
 
+import frappe
+
 
 class TestResolveGreenhouseScope(unittest.TestCase):
     def test_explicit_greenhouse_wins(self):
@@ -165,3 +167,69 @@ class TestParentFilterConditions(unittest.TestCase):
                                                   "Rose", None)
         self.assertIn("se.crop_scouted = %(crop)s", where)
         self.assertEqual(params["crop"], "Rose")
+
+
+class TestJobProgress(unittest.TestCase):
+    """Progress a *different request* can read.
+
+    The realtime event this pairs with never arrives in the standalone /scp_app
+    shell — it loads no socket.io bundle, so `frappe.realtime` is undefined and
+    every publish is dropped. That is why the loader used to animate a simulated
+    percentage. The cache path is what makes the number real, so what matters here
+    is that a value written during one call is readable from another.
+    """
+
+    JOB = "_test_scp_job_progress"
+
+    def tearDown(self):
+        from upande_scp.serverscripts.dashboard_aggregates._common import (
+            _progress_key,
+        )
+        frappe.cache().delete_value(_progress_key(self.JOB))
+
+    def test_a_published_stage_is_readable_afterwards(self):
+        from upande_scp.serverscripts.dashboard_aggregates._common import (
+            job_progress,
+            publish_progress,
+        )
+        publish_progress(self.JOB, 35, "loading observations")
+        out = job_progress(self.JOB)
+        self.assertEqual(out["percent"], 35)
+        self.assertEqual(out["label"], "loading observations")
+
+    def test_later_stages_overwrite_earlier_ones(self):
+        from upande_scp.serverscripts.dashboard_aggregates._common import (
+            job_progress,
+            publish_progress,
+        )
+        publish_progress(self.JOB, 10, "resolving filters")
+        publish_progress(self.JOB, 70, "loading trap rows")
+        self.assertEqual(job_progress(self.JOB)["percent"], 70)
+
+    def test_an_unknown_job_reports_nothing_rather_than_zero(self):
+        """None is the signal for the bar to stay indeterminate. Returning 0 would
+        make a warm-cache hit look like a load stuck at the start line."""
+        from upande_scp.serverscripts.dashboard_aggregates._common import job_progress
+        self.assertIsNone(job_progress("_test_scp_no_such_job"))
+        self.assertIsNone(job_progress(None))
+        self.assertIsNone(job_progress(""))
+
+    def test_a_percent_outside_the_range_is_clamped(self):
+        from upande_scp.serverscripts.dashboard_aggregates._common import (
+            job_progress,
+            publish_progress,
+        )
+        publish_progress(self.JOB, 250, "over")
+        self.assertEqual(job_progress(self.JOB)["percent"], 100)
+        publish_progress(self.JOB, -5, "under")
+        self.assertEqual(job_progress(self.JOB)["percent"], 0)
+
+    def test_no_job_id_writes_nothing(self):
+        """Warm-cache hits pass no job id and must not leave a stray key behind."""
+        from upande_scp.serverscripts.dashboard_aggregates._common import (
+            job_progress,
+            publish_progress,
+        )
+        publish_progress("", 50, "ignored")
+        publish_progress(None, 50, "ignored")
+        self.assertIsNone(job_progress(""))

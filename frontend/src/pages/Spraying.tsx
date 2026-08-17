@@ -555,7 +555,9 @@ export function Spraying() {
         </div>
       </div>
 
-      <LoadingOverlay open={loading} progress={0} />
+      {/* No fraction to report for this fetch — null sweeps, 0 would sit
+          empty and read as stuck. */}
+      <LoadingOverlay open={loading} progress={null} />
     </div>
   );
 }

@@ -2,9 +2,8 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { useRoute, cropDisplayName, type View } from "@/lib/router";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { OrbitProgress } from "@/components/OrbitProgress";
+import { ProgressBar } from "@/components/ProgressBar";
 import { PerfClock } from "@/components/PerfClock";
-import { useSimulatedProgress } from "@/hooks/use-simulated-progress";
 import {
   primeBedsAndZones,
   primeMapSettings,
@@ -252,12 +251,13 @@ function renderView(crop: string, view: View): ReactNode {
 }
 
 function PageFallback() {
-  // Route-chunk load: no real progress signal, so creep a simulated percent
-  // through the shared orbit loader.
-  const pct = useSimulatedProgress(true);
+  // A lazy chunk fetch reports no fraction, so the bar sweeps rather than showing
+  // a percentage nothing measured.
   return (
     <div className="flex min-h-svh items-center justify-center">
-      <OrbitProgress percent={Math.round(pct)} size={140} smooth />
+      <div className="w-[min(22rem,80vw)]">
+        <ProgressBar percent={null} label="Loading" />
+      </div>
     </div>
   );
 }

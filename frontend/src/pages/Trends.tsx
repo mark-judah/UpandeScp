@@ -320,7 +320,8 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
       </div>
       <LoadingOverlay
         open={loading}
-        progress={progress?.percent ?? 0}
+        progress={progress?.percent ?? null}
+        label={progress?.label}
       />
     </div>
   );

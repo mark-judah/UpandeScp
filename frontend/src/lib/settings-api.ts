@@ -227,3 +227,53 @@ export async function saveChemical(
     payload: JSON.stringify(payload),
   });
 }
+
+// ── Timezone ──────────────────────────────────────────────────────────────
+// ERPNext's System Settings → Time Zone governs every timestamp, notification and
+// scheduled job; there is no second clock. So this is read-only here, alongside what
+// the farms' own coordinates say it should be — a mismatch is how the original bug
+// went unnoticed for the site's whole life.
+
+const TZ_NS = "upande_scp.serverscripts.common.timezone";
+
+export interface TimezoneReport {
+  erp_timezone: string;
+  erp_offset: string;
+  app_timezone: string;
+  app_offset: string;
+  follows_erp: boolean;
+  /** Inferred from farm coordinates. Null when there is nothing to infer from. */
+  expected_timezone: string | null;
+  expected_offset: string | null;
+  locked: boolean;
+  warnings: string[];
+  now_erp: string;
+  now_utc: string;
+  now_app: string | null;
+  affected: string[];
+}
+
+export async function fetchTimezoneReport(): Promise<TimezoneReport | null> {
+  try {
+    return await call<TimezoneReport>(`${TZ_NS}.timezone_report`);
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchAvailableTimezones(): Promise<string[]> {
+  try {
+    return (await call<string[]>(`${TZ_NS}.available_timezones`)) || [];
+  } catch {
+    return [];
+  }
+}
+
+export function setTimezoneLock(locked: boolean): Promise<TimezoneReport> {
+  return call<TimezoneReport>(`${TZ_NS}.set_lock`, { locked: locked ? 1 : 0 });
+}
+
+/** Blank means "follow ERPNext", which is almost always what you want. */
+export function setAppTimezone(name: string): Promise<TimezoneReport> {
+  return call<TimezoneReport>(`${TZ_NS}.set_app_timezone`, { name });
+}

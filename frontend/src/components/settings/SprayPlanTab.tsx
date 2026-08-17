@@ -17,6 +17,7 @@ import {
   Building2,
   Ban,
 } from "lucide-react";
+import { TimezoneCard } from "@/components/settings/TimezoneCard";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -531,6 +532,10 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      {/* First on the page: the cutoff, the reminders and the reports below all
+        * depend on which clock the site is running. */}
+      <TimezoneCard />
 
       <Card className="lg:col-span-2">
         <CardHeader>

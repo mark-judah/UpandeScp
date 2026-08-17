@@ -112,6 +112,9 @@ const ChemicalProgress = lazy(() =>
     default: m.ChemicalProgress,
   })),
 );
+const Procurement = lazy(() =>
+  import("@/pages/Procurement").then((m) => ({ default: m.Procurement })),
+);
 const ChemicalLoaning = lazy(() =>
   import("@/pages/ChemicalLoaning").then((m) => ({
     default: m.ChemicalLoaning,
@@ -154,6 +157,7 @@ const PREFETCH: Array<() => Promise<unknown>> = [
   () => import("@/pages/CreatorStock"),
   () => import("@/pages/ChemicalProgress"),
   () => import("@/pages/ChemicalLoaning"),
+  () => import("@/pages/Procurement"),
 ];
 
 /**
@@ -237,6 +241,8 @@ function renderView(crop: string, view: View): ReactNode {
       return <ChemicalProgress />;
     case "chemical-loaning":
       return <ChemicalLoaning />;
+    case "procurement":
+      return <Procurement />;
     // Not crop-scoped: reached from the header bell, not a crop sidebar.
     case "notifications":
       return <Notifications />;

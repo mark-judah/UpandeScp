@@ -42,6 +42,11 @@
   "auto_cancel_activated_on",
   "csu_scan_section",
   "csu_scan_verification",
+  "postponement_section",
+  "spray_cutoff_time",
+  "postponement_max_days",
+  "cb_postponement",
+  "postponement_grace_minutes",
   "loaning_section",
   "loaning_enabled",
   "loaning_depletion_pct",
@@ -295,6 +300,36 @@
    "label": "CSU scan verification method",
    "options": "labels\ntick",
    "description": "How a sprayer confirms each chemical taken from the CSU. 'labels' requires scanning the printed QR label (default). 'tick' lets the sprayer tick to confirm instead \u2014 only for farms where label printing is unavailable, as it removes the per-chemical scan check."
+  },
+  {
+   "fieldname": "postponement_section",
+   "fieldtype": "Section Break",
+   "label": "Postponement & Spray Cutoff"
+  },
+  {
+   "fieldname": "spray_cutoff_time",
+   "fieldtype": "Time",
+   "label": "Daily cutoff time",
+   "default": "10:00:00",
+   "description": "On a plan's own spray date, this is the deadline. After it a supervisor can no longer postpone the plan, and the spray can no longer be started. Read in the site's timezone \u2014 check Settings \u2192 System Settings if the times look wrong."
+  },
+  {
+   "fieldname": "postponement_max_days",
+   "fieldtype": "Int",
+   "label": "Furthest a plan may be pushed (days)",
+   "default": "7",
+   "description": "A postponement cannot move a spray more than this many days past its original date. Without a bound a plan can be deferred indefinitely, which is indistinguishable from abandoning it."
+  },
+  {
+   "fieldname": "cb_postponement",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "postponement_grace_minutes",
+   "fieldtype": "Int",
+   "label": "Grace after cutoff (minutes)",
+   "default": "0",
+   "description": "Extra minutes past the cutoff during which a postponement may still be declared, for the supervisor who is standing in the field at 10:01. Set to 0 for a hard deadline. Does NOT extend the window for starting a spray \u2014 that stays hard."
   },
   {
    "fieldname": "loaning_section",

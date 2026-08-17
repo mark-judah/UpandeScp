@@ -3,6 +3,7 @@ import {
   ArrowRightLeft,
   Beaker,
   Bell,
+  CalendarClock,
   CheckSquare,
   ClipboardList,
   Crosshair,
@@ -185,6 +186,18 @@ const ROSE_NAV: NavSection[] = [
         label: "Approvals",
         icon: CheckSquare,
         requireRoles: ["SCP General Manager", "SCP Spray Plan Approver"],
+      },
+      {
+        // Supervisors declare here and approvers decide, so both see it.
+        kind: "view",
+        view: "postponements",
+        label: "Postponements",
+        icon: CalendarClock,
+        requireRoles: [
+          "SCP Spray Supervisor",
+          "SCP Spray Plan Approver",
+          "SCP General Manager",
+        ],
       },
       {
         kind: "view",

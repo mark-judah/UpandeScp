@@ -33,6 +33,26 @@ AFP_TYPE = "Application Floor Plan"
 DEFAULT_DORMANT_DAYS = 3
 
 
+def _recently_postponed(work_order: str) -> bool:
+    """Whether a plan has been deliberately moved, or has a move pending.
+
+    Guards the dormancy sweep against its own clock: dormancy is measured from
+    creation, so without this a plan postponed to next week gets stopped today for
+    having been created too long ago.
+    """
+    try:
+        return bool(
+            frappe.db.exists(
+                "Spray Plan Postponement",
+                {"work_order": work_order, "status": ("in", ["Approved", "Pending"])},
+            )
+        )
+    except Exception:
+        # The doctype may not exist yet on a site mid-migration; a missing table must
+        # not stop the sweep, only widen it.
+        return False
+
+
 def auto_cancel_dormant_plans(dry_run: bool = False) -> dict:
     """Stop AFP plans submitted-but-unapproved beyond the dormant window.
 
@@ -67,6 +87,12 @@ def auto_cancel_dormant_plans(dry_run: bool = False) -> dict:
         fields=["name", "docstatus", "owner", "creation", "custom_greenhouse"],
         limit_page_length=0,
     )
+
+    # A postponed plan is not a dormant one. The dormancy clock runs from creation, so
+    # a plan somebody deliberately moved to next week would be stopped for being old —
+    # the exact opposite of what the postponement said. Anything with an approved
+    # postponement, or one still awaiting a decision, is left alone.
+    candidates = [c for c in candidates if not _recently_postponed(c.name)]
 
     if dry_run:
         return {

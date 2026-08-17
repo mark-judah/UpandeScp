@@ -534,6 +534,68 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
 
       <Card className="lg:col-span-2">
         <CardHeader>
+          <CardTitle className="text-base">Postponement &amp; spray cutoff</CardTitle>
+          <CardDescription>
+            When a spray stops being actionable on its own date, and how far a
+            supervisor may push it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <Label className="text-[0.7rem]">Daily cutoff time</Label>
+            <Input
+              type="time"
+              value={(draft.spray_cutoff_time || "10:00:00").slice(0, 5)}
+              onChange={(e) =>
+                set("spray_cutoff_time", `${e.target.value}:00`)
+              }
+              className="h-9 w-32"
+            />
+            <p className="mt-1 text-[0.65rem] leading-snug text-muted-foreground">
+              Measured on the plan&apos;s <strong>own</strong> spray date. After it,
+              no postponement and no starting the spray — which is also what stops
+              yesterday&apos;s plan being sprayed today.
+            </p>
+          </div>
+          <div>
+            <Label className="text-[0.7rem]">Furthest push (days)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={60}
+              value={draft.postponement_max_days ?? 7}
+              onChange={(e) =>
+                set("postponement_max_days", Number(e.target.value) || 0)
+              }
+              className="h-9 w-32"
+            />
+            <p className="mt-1 text-[0.65rem] leading-snug text-muted-foreground">
+              A plan deferred further than this has been abandoned rather than moved;
+              stop it instead.
+            </p>
+          </div>
+          <div>
+            <Label className="text-[0.7rem]">Grace after cutoff (minutes)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={720}
+              value={draft.postponement_grace_minutes ?? 0}
+              onChange={(e) =>
+                set("postponement_grace_minutes", Number(e.target.value) || 0)
+              }
+              className="h-9 w-32"
+            />
+            <p className="mt-1 text-[0.65rem] leading-snug text-muted-foreground">
+              For the supervisor standing in the field at 10:01. Extends declaring
+              only — starting a late spray stays refused.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader>
           <CardTitle className="text-base">Chemical allocation</CardTitle>
           <CardDescription>
             How a purchase received into the general store is split back to the

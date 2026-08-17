@@ -32,6 +32,14 @@ export interface SprayPlanSettings {
   auto_cancel_dormant_days: number;
   /** Read-only — stamped server-side when auto-cancel is first enabled. */
   auto_cancel_activated_on: string;
+  /**
+   * On a plan's own spray date, the deadline after which it can no longer be
+   * postponed and the spray can no longer be started.
+   */
+  spray_cutoff_time: string;
+  postponement_max_days: number;
+  /** Extra minutes for declaring only — never for starting a late spray. */
+  postponement_grace_minutes: number;
   loaning_enabled: number;
   /**
    * OFF (default): each farm's proportional share of a chemical purchase is

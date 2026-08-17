@@ -746,6 +746,14 @@ def start_spray_session(work_order: str) -> dict[str, Any]:
             f"{STATE_TANK_MIX_MANUFACTURED!r}."
         )
 
+    # The daily cutoff. A plan whose deadline has passed is not sprayed late — it is
+    # postponed to a date somebody agreed to, which is the whole point of having a
+    # cutoff. Checked here rather than in the client because the client is what would
+    # be bypassed.
+    from upande_scp.serverscripts.spray_plan_creator import postponement
+
+    postponement.assert_within_cutoff(work_order)
+
     sal_name = wo.custom_spray_application_logsheet
     if not sal_name:
         frappe.throw(

@@ -89,6 +89,15 @@ def get_settings_bundle() -> dict:
             "auto_cancel_apply_to_backlog": int(settings.auto_cancel_apply_to_backlog or 0),
             "auto_cancel_dormant_days": settings.auto_cancel_dormant_days or 3,
             "auto_cancel_activated_on": str(settings.auto_cancel_activated_on or ""),
+            # The deadline the whole postponement flow turns on, plus the two bounds
+            # around it. Read back with the defaults the server itself falls back to,
+            # so the editor never shows a blank that behaves as 10:00.
+            "allocation_balancing_enabled": int(
+                settings.allocation_balancing_enabled or 0
+            ),
+            "spray_cutoff_time": str(settings.spray_cutoff_time or "10:00:00"),
+            "postponement_max_days": settings.postponement_max_days or 7,
+            "postponement_grace_minutes": int(settings.postponement_grace_minutes or 0),
             "loaning_enabled": int(settings.loaning_enabled or 0),
             "loaning_depletion_pct": settings.loaning_depletion_pct or 15,
             "loaning_timeout_hours": settings.loaning_timeout_hours or 72,
@@ -149,6 +158,10 @@ def save_spray_plan_settings(payload) -> dict:
         "auto_cancel_enabled",
         "auto_cancel_apply_to_backlog",
         "auto_cancel_dormant_days",
+        "allocation_balancing_enabled",
+        "spray_cutoff_time",
+        "postponement_max_days",
+        "postponement_grace_minutes",
         "loaning_enabled",
         "loaning_depletion_pct",
         "loaning_timeout_hours",

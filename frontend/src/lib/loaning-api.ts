@@ -1,139 +1,19 @@
 /**
- * SUPERSEDED (web): everything above the "v2" banner belonged to the original
- * flow, where one chemical was split across up to five lender farms. The
- * ChemicalLoaning page now uses the directed multi-item calls at the bottom of
- * this file, and none of the legacy wrappers has a caller in the web app.
+ * Client for farm-to-farm loaning
+ * (``upande_scp.serverscripts.spray_plan_creator.loaning`` + ``loaning_v2``).
  *
- * They are kept rather than deleted because the SERVER endpoints they wrap
- * (loaning.create_request / approve_source / …) may still be called by the React
- * Native app, which lives in another repo — so removing the endpoints is not a
- * decision to take from here. Delete these wrappers once that is confirmed.
- *
- * Client for farm-to-farm chemical loaning
- * (``upande_scp.serverscripts.spray_plan_creator.loaning``).
+ * Only ``fetchMyFarms`` survives from the original single-chemical/many-lenders
+ * flow — everything else is the directed multi-item API below. The legacy
+ * wrappers and their types are gone rather than deprecated: their server
+ * endpoints were deleted too, and nothing under the mobile app's namespace ever
+ * called them.
  */
 import { call } from "./frappe";
 
 const NS = "upande_scp.serverscripts.spray_plan_creator.loaning";
 
-export interface LoanableChemical {
-  item_code: string;
-  item_name: string;
-  uom: string;
-  on_hand: number;
-  baseline_qty: number | null;
-}
-
-export interface LoanCartItem {
-  item_code: string;
-  uom: string;
-  requested_qty: number;
-  sources: { source_farm: string; qty: number }[];
-}
-
-export interface CreditorRow {
-  creditor_farm: string;
-  item_code: string;
-  item_name: string;
-  uom: string;
-  qty: number;
-}
-
-export interface LoanSource {
-  source_farm: string;
-  source_warehouse: string | null;
-  lendable: number;
-  on_hand: number;
-}
-
-export interface RequestSource {
-  source_farm: string;
-  source_warehouse: string | null;
-  qty: number;
-  approved: boolean;
-  approved_by: string | null;
-  approved_on: string | null;
-  stock_entry: string | null;
-}
-
-export type RequestState =
-  | "Draft"
-  | "Pending Approval"
-  | "Approved"
-  | "Fulfilled"
-  | "Rejected"
-  | "Expired";
-
-export interface LoanRequest {
-  name: string;
-  requesting_farm: string;
-  requesting_warehouse: string | null;
-  item_code: string;
-  item_name: string;
-  uom: string;
-  requested_qty: number;
-  workflow_state: RequestState;
-  reason: string | null;
-  rejected_reason: string | null;
-  expires_on: string | null;
-  creation: string;
-  sources: RequestSource[];
-}
-
 export function fetchMyFarms() {
   return call<{ farms: string[]; enabled: boolean }>(`${NS}.my_farms`);
-}
-
-export function fetchLoanableChemicals(farm: string) {
-  return call<LoanableChemical[]>(`${NS}.get_loanable_chemicals`, { farm });
-}
-
-export function fetchSourcesFor(farm: string, itemCode: string) {
-  return call<LoanSource[]>(`${NS}.get_sources_for`, { farm, item_code: itemCode });
-}
-
-export function listRequests(box: "mine" | "incoming") {
-  return call<LoanRequest[]>(`${NS}.list_requests`, { box });
-}
-
-export function createLoanRequest(payload: {
-  requesting_farm: string;
-  item_code: string;
-  uom: string;
-  requested_qty: number;
-  sources: { source_farm: string; qty: number }[];
-  reason?: string;
-}) {
-  return call<{ name: string }>(`${NS}.create_request`, {
-    payload: JSON.stringify(payload),
-  });
-}
-
-export function createRequests(payload: {
-  requesting_farm: string;
-  reason?: string;
-  items: LoanCartItem[];
-}) {
-  return call<{ names: string[]; failed: { item_code: string; error: string }[] }>(
-    `${NS}.create_requests`,
-    { payload: JSON.stringify(payload) },
-  );
-}
-
-export function getCreditors(farm: string) {
-  return call<CreditorRow[]>(`${NS}.get_creditors`, { farm });
-}
-
-export function approveSource(request: string, sourceFarm: string) {
-  return call<LoanRequest>(`${NS}.approve_source`, { request, source_farm: sourceFarm });
-}
-
-export function rejectRequest(request: string, reason?: string) {
-  return call<LoanRequest>(`${NS}.reject_request`, { request, reason });
-}
-
-export function bulkRestock(farm?: string) {
-  return call<{ farms: number; baselines_set: number }>(`${NS}.bulk_restock`, { farm });
 }
 
 /* =============================================================

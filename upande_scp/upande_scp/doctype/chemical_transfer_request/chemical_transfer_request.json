@@ -9,12 +9,16 @@
  "field_order": [
   "requesting_farm",
   "requesting_warehouse",
+  "lender_farm",
+  "lender_warehouse",
   "workflow_state",
   "column_break_1",
   "item_code",
   "item_name",
   "uom",
   "requested_qty",
+  "items_section",
+  "items",
   "sources_section",
   "sources",
   "meta_section",
@@ -40,6 +44,22 @@
    "options": "Warehouse"
   },
   {
+   "fieldname": "lender_farm",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Lender Farm",
+   "options": "Farm",
+   "description": "The single farm this request is addressed to. Only they can see or decide it."
+  },
+  {
+   "fieldname": "lender_warehouse",
+   "fieldtype": "Link",
+   "label": "Lender Store",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
    "default": "Draft",
    "fieldname": "workflow_state",
    "fieldtype": "Select",
@@ -60,20 +80,23 @@
    "in_list_view": 1,
    "label": "Chemical",
    "options": "Item",
-   "reqd": 1
+   "read_only": 1,
+   "description": "Legacy single-item field. New requests use the Items table."
   },
   {
    "fetch_from": "item_code.item_name",
    "fieldname": "item_name",
    "fieldtype": "Data",
    "label": "Chemical Name",
-   "read_only": 1
+   "read_only": 1,
+   "description": "Legacy single-item field. New requests use the Items table."
   },
   {
    "fieldname": "uom",
    "fieldtype": "Data",
    "label": "UoM",
-   "read_only": 1
+   "read_only": 1,
+   "description": "Legacy single-item field. New requests use the Items table."
   },
   {
    "fieldname": "requested_qty",
@@ -82,19 +105,33 @@
    "label": "Requested Qty",
    "non_negative": 1,
    "precision": "4",
-   "reqd": 1
+   "read_only": 1,
+   "description": "Legacy single-item field. New requests use the Items table."
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Chemicals Requested"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Chemical Transfer Request Item"
   },
   {
    "fieldname": "sources_section",
    "fieldtype": "Section Break",
-   "label": "Sources"
+   "label": "Sources (legacy)",
+   "collapsible": 1
   },
   {
-   "description": "Up to two source farms; each split is approved by that farm's Spray Plan Creator.",
+   "description": "Legacy multi-lender split. Superseded by lender_farm + per-item approval; retained so historical requests stay readable.",
    "fieldname": "sources",
    "fieldtype": "Table",
    "label": "Sources",
-   "options": "Chemical Transfer Request Source"
+   "options": "Chemical Transfer Request Source",
+   "read_only": 1
   },
   {
    "fieldname": "meta_section",
@@ -128,16 +165,38 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1, "delete": 1, "email": 1, "export": 1, "print": 1,
-   "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
   },
   {
-   "create": 1, "delete": 1, "export": 1, "print": 1,
-   "read": 1, "report": 1, "role": "SCP General Manager", "share": 1, "write": 1
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP General Manager",
+   "share": 1,
+   "write": 1
   },
   {
-   "create": 1, "delete": 0, "export": 1, "print": 1,
-   "read": 1, "report": 1, "role": "SCP Spray Plan Creator", "share": 1, "write": 1
+   "create": 1,
+   "delete": 0,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Creator",
+   "share": 1,
+   "write": 1
   }
  ],
  "row_format": "Dynamic",

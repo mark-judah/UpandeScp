@@ -30,3 +30,4 @@ upande_scp.patches.v1_0.add_scouting_child_indexes
 upande_scp.patches.v1_0.reparent_stranded_active_ingredients
 upande_scp.patches.v1_0.drop_dead_item_rate_greenhouse_fields
 upande_scp.patches.v1_0.setup_general_chemical_store
+upande_scp.patches.v1_0.loans_to_multi_item

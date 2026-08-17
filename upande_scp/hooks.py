@@ -151,6 +151,15 @@ before_uninstall = [
 # -----------
 # Permissions evaluated in scripted ways
 
+# Row-level visibility for chemical loans: a planner may only ever load requests
+# their farms raised or were asked for. Enforced here, not in the UI — filtering
+# client-side would leave the rows readable over the REST API.
+permission_query_conditions = {
+    "Chemical Transfer Request": (
+        "upande_scp.serverscripts.spray_plan_creator.loaning_v2.permission_query"
+    ),
+}
+
 # permission_query_conditions = {
 # 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
 # }

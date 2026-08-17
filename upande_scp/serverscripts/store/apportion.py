@@ -1,63 +1,108 @@
-"""Apportioning a reduced chemical quantity back to the farms that asked for it.
+"""Splitting a chemical quantity back to the farms that asked for it.
 
-When the General Manager cuts a chemical's total — because that is what the budget
-allows — the reduced quantity has to be split across the farms in proportion to
-what each originally requested, in amounts a store keeper can physically measure.
+A purchase arrives and has to be divided in proportion to what each farm requested,
+in amounts a store keeper can physically measure. Those two requirements fight: the
+proportional answer is usually a recurring decimal, and nobody can weigh out
+33.333… g.
 
-Those two requirements fight each other, and the obvious resolution is wrong.
-Rounding each farm's share DOWN to a measurable step starves the small ones: a
-farm entitled to 4.5 g of a 10 g step gets nothing, and five such farms leave the
-entire quantity sitting in the general store while everybody gets zero.
+There are **two modes**, and which one runs is the General Manager's choice: the
+``allocation_balancing_enabled`` setting ("Balance allocations and carry credits
+forward").
 
-So: **largest-remainder (Hamilton) apportionment in step units.** Convert the
-reduced total into whole steps, give each farm the whole steps its share earns,
-then hand out the leftover steps one at a time to the farms with the largest
-fractional parts. Properties that matter:
+## SIMPLE — the default
 
-* never over-allocates — you cannot ship stock you do not have;
-* every allocation is a whole number of steps, so it can be measured out;
-* the split stays proportional, and small farms are not wiped out;
-* deterministic — ties break on the larger original request, then farm name, so
-  the same inputs always produce the same answer.
+Each farm's proportional share, rounded **down** to a measurable step. Whatever
+will not divide evenly stays in the general store.
 
-Whatever cannot be expressed in whole steps stays in the general store, for the
-keeper to distribute on their own judgement.
+    three farms each asking for 100 kg, 100 kg arrives, step 0.1
+      → 33.3 each (33.333… rounded down), 0.1 left in the general store
 
-## Carry-forward
+That is the modulus, and it is the whole rule. Its virtue is that anyone can check
+it by hand: divide, round down, and the leftover is visible in one place.
 
-That leftover is not written off. Every farm's *exact* share is a real number; its
-allocation is a whole number of steps. The gap between the two is what the farm was
-owed and could not be measured out, and it is **remembered as a credit** and added
-to the farm's basis next cycle. Without it, a farm that repeatedly lands just under
-a step is shorted every single cycle — the same small-farm starvation the Hamilton
-split exists to prevent, arriving more slowly.
+Its limit is worth knowing. When a farm's share is smaller than one step it gets
+**nothing**, and the shortfall is not remembered — five farms each entitled to 4.5 g
+of a 10 g step all get zero, and the full 22.5 g waits in the store. In simple mode
+that is accepted: the keeper sees the leftover and hands it out on their own
+judgement.
+
+## BALANCED — opt-in
+
+Two additions, both aimed at the case simple mode handles poorly.
+
+**Largest-remainder (Hamilton) apportionment.** The leftover whole steps are handed
+out one at a time to the farms with the largest fractional parts, so the 22.5 g above
+reaches two farms instead of nobody. Deterministic: ties break on the larger basis,
+then farm name, so re-running can never reshuffle a published allocation.
+
+**Carry-forward.** The gap between a farm's exact share and what it actually got is
+remembered as a credit and added to its request next cycle. Without it, a farm that
+repeatedly lands just under a step is shorted every single cycle — the same
+starvation, arriving more slowly. Measured on a 95/5 split with a 10 g step, the
+small farm goes from never served to served every other cycle.
 
 Two properties keep the credits honest:
 
-* **They conserve.** The credits sum to exactly the stock left in the general
-  store, so the pool always has an owner-by-owner explanation. A farm that the
-  Hamilton pass rounded UP carries a negative credit — a debit — because it was
-  paid ahead; forgiving that would mint entitlement out of nothing and the pool
-  would stop reconciling.
+* **They conserve.** Credits sum to exactly the part of the leftover that was
+  *owed*, so the pool always has an owner-by-owner explanation. A farm the Hamilton
+  pass rounded UP carries a negative credit — a debit — because it was paid ahead;
+  forgiving that would mint entitlement and the pool would stop reconciling. Stock
+  bought *beyond* total demand also sits in the pool but is owed to nobody, so it is
+  credited to nobody.
 * **A budget cut is not a credit.** If a farm asks for 10 and the GM's reduction
-  leaves it 9, the missing 1 is a financial decision, not an unmeasurable
-  fraction. Only the rounding residue carries. Otherwise every cut would silently
-  return as next cycle's entitlement and the reduction would mean nothing.
+  leaves it 9, the missing 1 is a financial decision, not an unmeasurable fraction.
+  Only the rounding residue carries; otherwise every cut would silently return as
+  next cycle's entitlement and the reduction would mean nothing.
 
-A farm that requests nothing this cycle keeps its credit untouched rather than
-being pushed stock it did not ask for.
+A farm that requests nothing keeps its credit untouched rather than being pushed
+stock it did not ask for.
 
-Pure functions: no Frappe, no database. Step sizes and carried credits come from
-the caller.
+Both modes share everything else: never over-allocate, never exceed what was asked
+for, every allocation a whole number of steps.
+
+Pure functions: no Frappe, no database. The mode, step sizes and carried credits all
+come from the caller.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 #: Credits below this (in stock UOM) are treated as settled. Floating-point
 #: residue like 1e-16 is not a debt, and carrying it forever would litter the
 #: keeper's view with rows that mean nothing.
 CREDIT_EPSILON = 1e-9
+
+#: Tolerance for "how many whole steps fit", relative so it holds at any scale.
+_STEP_TOL = 1e-9
+
+
+def _steps_in(qty: float, step: float) -> int:
+	"""How many whole `step`s fit in `qty`, tolerant of binary float error.
+
+	Plain ``qty // step`` is wrong here, and wrong in the most common case: 0.1 has
+	no exact binary representation, so ``3 // 0.1`` is **29**, not 30. With the
+	default 0.1 step for kg and litres that stranded one step of every clean
+	quantity in the general store — 100 kg allocated as 99.9 with 0.1 unexplained.
+	"""
+	if step <= 0:
+		return 0
+	raw = qty / step
+	return max(0, int(math.floor(raw + max(_STEP_TOL, abs(raw) * _STEP_TOL))))
+
+
+#: Proportional share, rounded down to a measurable step, remainder to the general
+#: store. No redistribution, no credits. The default.
+MODE_SIMPLE = "simple"
+
+#: Hamilton redistribution of the leftover steps, plus carry-forward credits.
+MODE_BALANCED = "balanced"
+
+MODES = (MODE_SIMPLE, MODE_BALANCED)
+
+#: What runs when nobody says otherwise. Simple, because an allocation an operator
+#: can verify by hand is worth more than one that is marginally fairer.
+DEFAULT_MODE = MODE_SIMPLE
 
 
 @dataclass(frozen=True)
@@ -104,24 +149,38 @@ def apportion(
 	reduced_total: float,
 	step: float,
 	carried: dict[str, float] | None = None,
+	mode: str = DEFAULT_MODE,
 ) -> Apportionment:
 	"""Split `reduced_total` across `requests` in whole multiples of `step`.
 
 	`requests` maps farm -> quantity requested this cycle. Farms requesting zero
-	or less are ignored: they asked for nothing, so they get nothing now (any
-	credit they hold is passed through untouched).
+	or less are ignored: they asked for nothing, so they get nothing now.
 
-	`carried` maps farm -> credit owed from previous cycles, and is ADDED to the
-	request to form the basis the split is proportional to. Negative values are
-	debits and are honoured the same way.
+	`mode` is ``"simple"`` (the default) or ``"balanced"``:
+
+	* **simple** — each share rounded down to a step; the indivisible remainder
+	  stays in the general store; no redistribution and no credits. `carried` is
+	  ignored, so existing credit rows are left untouched and resume if balancing is
+	  switched back on.
+	* **balanced** — leftover steps go to the largest fractions, and each farm's
+	  shortfall is returned in `carried_forward` to be added to its next request.
+
+	`carried` maps farm -> credit owed from previous cycles and is ADDED to the
+	request to form the basis the split is proportional to (balanced mode only).
+	Negative values are debits and are honoured the same way.
 
 	Raises ValueError on a non-positive step, because "distribute in units of
-	zero" has no meaning and silently defaulting would hide a config mistake.
+	zero" has no meaning and silently defaulting would hide a config mistake, and
+	on an unknown mode, because guessing which policy the user meant is worse than
+	stopping.
 	"""
 	if step <= 0:
 		raise ValueError("step must be positive")
+	if mode not in MODES:
+		raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
 
-	carry_in = _carry(carried)
+	balanced = mode == MODE_BALANCED
+	carry_in = _carry(carried) if balanced else {}
 	asked = {f: float(q) for f, q in (requests or {}).items() if float(q) > 0}
 	reduced_total = max(0.0, float(reduced_total))
 
@@ -165,23 +224,46 @@ def apportion(
 	# ask here is the basis, so a carried credit can be paid out on top of the
 	# new request — that is the whole point of carrying it.
 	distributable = min(reduced_total, total_basis)
-	total_steps = int(distributable // step)
+	total_steps = _steps_in(distributable, step)
 
 	if total_steps <= 0:
-		# The whole amount is smaller than one measurable step. Nobody can be
-		# given a measurable share, so it all waits in the general store — and
-		# each farm's full share is owed forward.
-		credit_out = {
-			f: b / total_basis * distributable
-			for f, b in participating.items()
-		}
-		return _result((), reduced_total, 0.0, credit_out)
+		# The whole amount is smaller than one measurable step. Nobody can be given a
+		# measurable share, so it all waits in the general store — and in balanced
+		# mode each farm's full share is owed forward.
+		#
+		# Rows are still returned, at zero. Every farm that asked appears in the
+		# result, always: this is the case where the ENTIRE quantity is stranded, so
+		# it is the case where "who asked, and what did they get?" most needs an
+		# answer — and in simple mode there is no credit to carry that fact instead.
+		credit_out = (
+			{f: b / total_basis * distributable for f, b in participating.items()}
+			if balanced
+			else {}
+		)
+		empty = tuple(
+			Allocation(
+				farm=f,
+				requested=asked[f],
+				allocated=0.0,
+				steps=0,
+				basis=participating[f],
+				credit_in=carry_in.get(f, 0.0),
+				credit_out=round(credit_out.get(f, 0.0), 9),
+			)
+			for f in sorted(participating, key=lambda f: (-participating[f], f))
+		)
+		return _result(empty, reduced_total, 0.0, credit_out)
 
 	exact = {f: total_steps * (b / total_basis) for f, b in participating.items()}
-	whole = {f: int(v) for f, v in exact.items()}
+	# Tolerant floor again: an exact share of 10.0 can arrive as 9.999999999999998,
+	# and truncating that would quietly cost the farm a whole step.
+	whole = {
+		f: int(math.floor(v + max(_STEP_TOL, abs(v) * _STEP_TOL)))
+		for f, v in exact.items()
+	}
 	leftover = total_steps - sum(whole.values())
 
-	if leftover > 0:
+	if balanced and leftover > 0:
 		# Hamilton: the biggest fractional parts get the spare steps. Ties go to
 		# the larger basis, then alphabetically — deterministic, so the same
 		# inputs always yield the same split and a rerun cannot reshuffle it.
@@ -192,23 +274,32 @@ def apportion(
 		for farm in order[:leftover]:
 			whole[farm] += 1
 
-	# The credit is measured against the exact share of what was DISTRIBUTABLE,
-	# not of the original request: the difference between them is the GM's
-	# reduction, which is a decision and not a debt.
-	credit_out = {
-		f: b / total_basis * distributable - whole[f] * step
-		for f, b in participating.items()
-	}
+	# In simple mode nothing is owed: what did not divide evenly is simply left in
+	# the general store, which is the entire promise of that mode.
+	#
+	# In balanced mode the credit is measured against the exact share of what was
+	# DISTRIBUTABLE, not of the original request: the difference between those is
+	# the GM's reduction, which is a decision and not a debt.
+	credit_out = (
+		{
+			f: b / total_basis * distributable - whole[f] * step
+			for f, b in participating.items()
+		}
+		if balanced
+		else {}
+	)
 
 	allocations = tuple(
 		Allocation(
 			farm=f,
 			requested=asked[f],
-			allocated=whole[f] * step,
+			# Rounded because `whole * step` accumulates float dust — 2.9000000000000004
+			# would travel into a Stock Entry and a keeper's screen otherwise.
+			allocated=round(whole[f] * step, 9),
 			steps=whole[f],
 			basis=participating[f],
 			credit_in=carry_in.get(f, 0.0),
-			credit_out=round(credit_out[f], 9),
+			credit_out=round(credit_out.get(f, 0.0), 9),
 		)
 		for f in sorted(participating, key=lambda f: (-participating[f], f))
 	)

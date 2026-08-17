@@ -33,6 +33,13 @@ export interface SprayPlanSettings {
   /** Read-only — stamped server-side when auto-cancel is first enabled. */
   auto_cancel_activated_on: string;
   loaning_enabled: number;
+  /**
+   * OFF (default): each farm's proportional share of a chemical purchase is
+   * rounded DOWN to a measurable step and the indivisible remainder stays in the
+   * general store. ON: the leftover steps go to the largest fractions and each
+   * farm's shortfall is carried as a credit against its next request.
+   */
+  allocation_balancing_enabled: number;
   loaning_depletion_pct: number;
   loaning_timeout_hours: number;
   progress_email_enabled: number;

@@ -14,9 +14,18 @@ Run: bench --site <site> run-tests \
 import unittest
 
 from upande_scp.serverscripts.store.apportion import (
+    MODE_BALANCED,
+    MODE_SIMPLE,
     apportion,
     default_step_for_uom,
 )
+
+
+def balanced(requests, total, step, carried=None):
+    """Every call in the balanced-mode suites goes through here, so the mode is
+    never accidentally omitted — the default is simple, and a missing argument
+    would silently test the wrong policy."""
+    return apportion(requests, total, step, carried=carried, mode=MODE_BALANCED)
 
 
 def alloc_map(result):
@@ -33,14 +42,15 @@ class TestApportion(unittest.TestCase):
         self.assertEqual(r.distributed, 45)
         self.assertEqual(r.remainder, 0)
 
-    def test_a_small_farm_is_not_starved_by_the_step(self):
-        """The bug this module exists to avoid.
+    def test_balanced_mode_does_not_let_the_step_starve_a_small_farm(self):
+        """What the balanced mode is FOR.
 
-        Five farms each entitled to 4.5g with a 10g step: rounding down gives
-        every one of them zero and leaves the whole 22.5g in the general store.
-        Largest-remainder gives two farms a 10g step each instead."""
+        Five farms each entitled to 4.5g with a 10g step: rounding down gives every
+        one of them zero and leaves the whole 22.5g in the general store — which is
+        exactly what simple mode does, by design. Largest-remainder gives two farms
+        a 10g step each instead."""
         reqs = {f"F{i}": 10 for i in range(1, 6)}
-        r = apportion(reqs, 22.5, step=10)
+        r = balanced(reqs, 22.5, step=10)
         self.assertGreater(r.distributed, 0, "everybody was starved")
         self.assertEqual(r.distributed, 20)
         self.assertEqual(sorted(alloc_map(r).values()), [0, 0, 0, 10, 10])
@@ -91,14 +101,14 @@ class TestApportion(unittest.TestCase):
         # Identical requests, one spare step: the same farm must win every time,
         # or a rerun would silently reshuffle a published allocation.
         reqs = {"B": 10, "A": 10, "C": 10}
-        first = alloc_map(apportion(reqs, 4, step=1))
+        first = alloc_map(balanced(reqs, 4, step=1))
         for _ in range(5):
-            self.assertEqual(alloc_map(apportion(dict(reqs), 4, step=1)), first)
+            self.assertEqual(alloc_map(balanced(dict(reqs), 4, step=1)), first)
 
     def test_a_tie_breaks_on_request_size_then_name(self):
+        # Only balanced mode hands out spare steps, so only it can have a tie.
         reqs = {"Zeta": 10, "Alpha": 10}
-        # One spare step between two equal claims -> alphabetical wins.
-        m = alloc_map(apportion(reqs, 1, step=1))
+        m = alloc_map(balanced(reqs, 1, step=1))
         self.assertEqual(m["Alpha"], 1)
         self.assertEqual(m["Zeta"], 0)
 
@@ -152,6 +162,124 @@ class TestDefaultSteps(unittest.TestCase):
         self.assertEqual(default_step_for_uom(""), 1.0)
 
 
+class TestSimpleMode(unittest.TestCase):
+    """The default: proportional share, rounded down, remainder to the store.
+
+    Its whole value is that an operator can check it by hand — divide, round down,
+    and the leftover is visible in one place. So what these protect is mostly that
+    nothing clever happens: no redistribution, no credits, no surprises.
+    """
+
+    def test_it_is_the_default_when_no_mode_is_given(self):
+        reqs = {"A": 30, "B": 70}
+        self.assertEqual(
+            alloc_map(apportion(reqs, 50, step=10)),
+            alloc_map(apportion(reqs, 50, step=10, mode=MODE_SIMPLE)),
+        )
+
+    def test_a_recurring_decimal_is_rounded_down_and_the_rest_stays_put(self):
+        """The case this mode exists for: 100 / 3 is 33.333…"""
+        reqs = {"A": 100, "B": 100, "C": 100}
+        r = apportion(reqs, 100, step=0.1, mode=MODE_SIMPLE)
+        self.assertEqual(set(alloc_map(r).values()), {33.3})
+        self.assertAlmostEqual(r.distributed, 99.9)
+        self.assertAlmostEqual(r.remainder, 0.1)
+
+    def test_it_never_carries_anything_forward(self):
+        reqs = {"A": 30, "B": 70}
+        r = apportion(reqs, 50, step=10, mode=MODE_SIMPLE)
+        self.assertEqual(
+            r.carried_forward, {},
+            "simple mode owes nobody anything — that is the promise",
+        )
+        for a in r.allocations:
+            self.assertEqual(a.credit_out, 0.0)
+
+    def test_it_leaves_an_existing_credit_alone_rather_than_spending_it(self):
+        """Switching balancing off must not consume credits earned while it was on,
+        or turning it back on would resume from a silently emptied ledger."""
+        r = apportion({"A": 10, "B": 10}, 22, step=1, carried={"A": 1.5},
+                      mode=MODE_SIMPLE)
+        m = alloc_map(r)
+        self.assertEqual(m["A"], m["B"], "a credit must not buy stock in this mode")
+        self.assertEqual(r.carried_forward, {}, "and must not be reported as spent")
+
+    def test_spare_steps_are_not_redistributed(self):
+        """Two whole steps for five equal claims: in balanced mode two farms get
+        one each; here nobody does, and all 22.5 waits in the store."""
+        reqs = {f"F{i}": 10 for i in range(1, 6)}
+        r = apportion(reqs, 22.5, step=10, mode=MODE_SIMPLE)
+        self.assertEqual(r.distributed, 0)
+        self.assertAlmostEqual(r.remainder, 22.5)
+        # Every farm still appears, at zero — the pool has to be explicable.
+        self.assertEqual(len(r.allocations), 5)
+        self.assertTrue(all(a.allocated == 0 for a in r.allocations))
+
+    def test_a_clean_split_is_identical_to_balanced_mode(self):
+        """When the arithmetic divides evenly the two modes cannot differ — worth
+        pinning, because it is the common case and the mode should be invisible."""
+        reqs = {f"F{i}": 10 for i in range(1, 6)}
+        self.assertEqual(
+            alloc_map(apportion(reqs, 45, step=1, mode=MODE_SIMPLE)),
+            alloc_map(balanced(reqs, 45, 1)),
+        )
+
+    def test_everything_handed_out_is_still_measurable(self):
+        reqs = {"A": 7, "B": 13, "C": 31}
+        r = apportion(reqs, 37, step=10, mode=MODE_SIMPLE)
+        for a in r.allocations:
+            self.assertAlmostEqual(a.allocated % 10, 0)
+
+    def test_distributed_plus_remainder_still_accounts_for_everything(self):
+        r = apportion({"A": 33, "B": 33, "C": 34}, 47, step=10, mode=MODE_SIMPLE)
+        self.assertAlmostEqual(r.distributed + r.remainder, 47)
+
+    def test_an_unknown_mode_is_refused(self):
+        # Guessing which policy the user meant is worse than stopping.
+        for bad in ("Simple", "hamilton", "", None):
+            with self.assertRaises(ValueError):
+                apportion({"A": 10}, 10, step=1, mode=bad)
+
+
+class TestFloatSafety(unittest.TestCase):
+    """0.1 is the default step for kg and litres, and it has no exact binary form.
+
+    `3 // 0.1` is 29, not 30 — so before this was fixed, every clean kg quantity
+    stranded one step: 100 kg allocated as 99.9 with 0.1 sitting in the general store
+    that nobody could explain.
+    """
+
+    def test_a_whole_quantity_divides_completely_at_a_tenth_step(self):
+        r = apportion({"A": 10}, 3, step=0.1)
+        self.assertAlmostEqual(r.distributed, 3.0)
+        self.assertAlmostEqual(r.remainder, 0.0)
+
+    def test_a_hundred_kg_does_not_strand_a_step(self):
+        r = apportion({"A": 500}, 100, step=0.1)
+        self.assertAlmostEqual(r.distributed, 100.0)
+        self.assertAlmostEqual(r.remainder, 0.0)
+
+    def test_a_genuine_remainder_is_still_reported(self):
+        # 4.75 at a 0.1 step really is 4.7 with 0.05 over — the tolerance must not
+        # round a real remainder away.
+        r = apportion({"A": 10}, 4.75, step=0.1)
+        self.assertAlmostEqual(r.distributed, 4.7)
+        self.assertAlmostEqual(r.remainder, 0.05)
+
+    def test_allocations_are_clean_numbers(self):
+        """`whole * step` yields 2.9000000000000004; that must not reach a Stock
+        Entry or a keeper's screen."""
+        r = apportion({"A": 10}, 2.9, step=0.1)
+        for a in r.allocations:
+            self.assertEqual(a.allocated, round(a.allocated, 9))
+            self.assertEqual(str(a.allocated), "2.9")
+
+    def test_it_holds_at_a_large_scale(self):
+        r = apportion({"A": 10 ** 6}, 10 ** 6, step=0.1)
+        self.assertAlmostEqual(r.distributed, 10 ** 6)
+        self.assertAlmostEqual(r.remainder, 0.0)
+
+
 class TestCarryForward(unittest.TestCase):
     """Unused allocation carries forward as a per-farm credit.
 
@@ -168,7 +296,7 @@ class TestCarryForward(unittest.TestCase):
     def test_credits_sum_to_what_is_left_in_the_general_store(self):
         # 3 farms, awkward ratio, coarse step: guarantees a residue.
         reqs = {"A": 33, "B": 33, "C": 34}
-        r = apportion(reqs, 100, step=10)
+        r = balanced(reqs, 100, 10)
         self.assertAlmostEqual(
             sum(r.carried_forward.values()), r.remainder, places=7,
             msg="credits must account for exactly the leftover pool",
@@ -178,7 +306,7 @@ class TestCarryForward(unittest.TestCase):
         """Hamilton pays somebody ahead. Forgiving that would mint entitlement:
         the pool would owe more than it holds."""
         reqs = {"A": 10, "B": 10, "C": 10}
-        r = apportion(reqs, 20, step=10)  # 2 steps for 3 farms
+        r = balanced(reqs, 20, 10)  # 2 steps for 3 farms
         got = [a for a in r.allocations if a.allocated > 0]
         self.assertEqual(len(got), 2)
         self.assertTrue(
@@ -192,7 +320,7 @@ class TestCarryForward(unittest.TestCase):
 
     def test_the_credit_is_added_to_the_next_cycles_basis(self):
         """The user's case: 0.4 owed to Farm A rides on its next request."""
-        r = apportion({"A": 10, "B": 10}, 20, step=1, carried={"A": 0.4})
+        r = balanced({"A": 10, "B": 10}, 20, 1, carried={"A": 0.4})
         by_farm = {a.farm: a for a in r.allocations}
         self.assertEqual(by_farm["A"].credit_in, 0.4)
         self.assertAlmostEqual(by_farm["A"].basis, 10.4)
@@ -203,7 +331,7 @@ class TestCarryForward(unittest.TestCase):
     def test_an_accumulated_credit_eventually_buys_a_whole_step(self):
         """Once the credit clears a step boundary it converts into real stock —
         the point of carrying it at all."""
-        r = apportion({"A": 10, "B": 10}, 22, step=1, carried={"A": 1.5})
+        r = balanced({"A": 10, "B": 10}, 22, 1, carried={"A": 1.5})
         by_farm = {a.farm: a.allocated for a in r.allocations}
         self.assertGreater(
             by_farm["A"], by_farm["B"],
@@ -213,7 +341,7 @@ class TestCarryForward(unittest.TestCase):
     def test_a_budget_cut_is_not_a_credit(self):
         """Asked 10, budget allows 9 -> the missing 1 is a decision, not a debt.
         If cuts carried forward, a reduction would mean nothing next cycle."""
-        r = apportion({f"F{i}": 10 for i in range(5)}, 45, step=1)
+        r = balanced({f"F{i}": 10 for i in range(5)}, 45, 1)
         self.assertEqual(set(alloc_map(r).values()), {9})
         self.assertEqual(
             r.carried_forward, {},
@@ -226,7 +354,7 @@ class TestCarryForward(unittest.TestCase):
         reqs = {"Big": 95, "Small": 5}
         carried, small_got = {}, []
         for _ in range(6):
-            r = apportion(reqs, 100, step=10, carried=carried)
+            r = balanced(reqs, 100, 10, carried=carried)
             carried = r.carried_forward
             small_got.append({a.farm: a.allocated for a in r.allocations}.get("Small", 0))
         # Measured: the small farm is served every other cycle (0, 10, 0, 10 …)
@@ -241,28 +369,31 @@ class TestCarryForward(unittest.TestCase):
         )
 
     def test_a_farm_that_sits_out_keeps_its_credit(self):
-        r = apportion({"A": 10}, 10, step=1, carried={"B": 2.5})
+        r = balanced({"A": 10}, 10, 1, carried={"B": 2.5})
         self.assertAlmostEqual(r.carried_forward.get("B", 0), 2.5)
 
     def test_a_debit_bigger_than_the_new_request_stays_outstanding(self):
         """Not forgiven, not made negative: it waits."""
-        r = apportion({"A": 1, "B": 10}, 11, step=1, carried={"A": -4})
+        r = balanced({"A": 1, "B": 10}, 11, 1, carried={"A": -4})
         by_farm = {a.farm: a for a in r.allocations}
         self.assertNotIn("A", by_farm, "a farm in net debit gets nothing")
         self.assertAlmostEqual(r.carried_forward["A"], -3.0)
 
     def test_a_sub_step_total_owes_everyone_their_share(self):
-        r = apportion({"A": 10, "B": 30}, 7, step=10)
-        self.assertEqual(r.allocations, ())
+        r = balanced({"A": 10, "B": 30}, 7, 10)
+        # Rows at zero, not no rows: this is the case where the whole quantity is
+        # stranded, so who asked and got nothing is exactly what needs recording.
+        self.assertEqual({a.farm for a in r.allocations}, {"A", "B"})
+        self.assertTrue(all(a.allocated == 0 for a in r.allocations))
         self.assertAlmostEqual(sum(r.carried_forward.values()), 7, places=7)
 
     def test_float_dust_is_not_carried(self):
-        r = apportion({"A": 10, "B": 10}, 20, step=1)
+        r = balanced({"A": 10, "B": 10}, 20, 1)
         self.assertEqual(r.carried_forward, {})
 
     def test_credits_never_over_allocate(self):
         """A big credit plus a request must still not exceed the stock on hand."""
-        r = apportion({"A": 10, "B": 10}, 15, step=1, carried={"A": 50})
+        r = balanced({"A": 10, "B": 10}, 15, 1, carried={"A": 50})
         self.assertLessEqual(r.distributed, 15)
 
     def test_stock_beyond_what_anyone_asked_for_is_owed_to_nobody(self):
@@ -275,7 +406,7 @@ class TestCarryForward(unittest.TestCase):
         """
         # Basis 20.4 (A carries 0.4), but 22 arrived: 21 steps go out, 1.0 stays in
         # the pool, and only 0.5 of that was ever owed.
-        r = apportion({"A": 10, "B": 10}, 22, step=1, carried={"A": 1.5})
+        r = balanced({"A": 10, "B": 10}, 22, 1, carried={"A": 1.5})
         owed = sum(r.carried_forward.values())
         self.assertAlmostEqual(owed, 0.5, places=6)
         self.assertAlmostEqual(r.remainder, 1.0, places=6)

@@ -23,7 +23,7 @@ consolidate ──▶ review 2 — the GM cuts per chemical ──▶ lock as fi
 one Material Request (draft) ──▶ purchasing submits ──▶ PO ──▶ general store
       │
       ▼
-apportion by request + carried credit, in whole steps
+apportion by request, in whole steps (+ carried credit if balancing is on)
       │                                    │
       ▼                                    ▼
 transfer to each farm's store        remainder stays in the pool
@@ -80,15 +80,32 @@ and notifies the affected farm's planners in one function, naming the amount, th
 actor and the direction. A change that is logged but not announced, or announced
 but not logged, is the half-measure that makes an audit trail worthless.
 
-## Apportionment and carry-forward
+## Apportionment: two modes
 
-The maths lives in `store/apportion.py` (pure, no Frappe) and is unchanged from
-phase 1 except for carry-forward:
+The maths lives in `store/apportion.py` (pure, no Frappe). Which mode runs is the
+GM's `allocation_balancing_enabled` setting, read fresh on every allocation — it is a
+policy, and a GM who switches it expects the next split to follow rather than old
+cycles quietly keeping the old rule. The mode used is recorded in the preview and in
+the change log, so a past split stays explicable afterwards.
+
+**`simple` — the default.** Proportional share, floored to the step, remainder to the
+general store. No redistribution, no credits. Chosen as the default because an
+allocation an operator can check by hand is worth more than one that is marginally
+fairer. Its cost is explicit: a farm whose share is under one step gets nothing and is
+owed nothing. Rows are still written at zero, so the leftover always has a per-farm
+explanation.
+
+**`balanced` — opt-in.** Adds both of the phase-1 behaviours:
 
 * basis = this cycle's request **+** the farm's carried credit;
 * largest-remainder in whole steps, deterministic ties;
 * `credit_out = exact share of the distributable − allocated`, which makes the
-  credits sum to **exactly** the stock left in the pool.
+  credits sum to **exactly** the part of the pool that was owed.
+
+Switching balancing off must not touch the ledger. `_write_credits` deletes any farm
+absent from the map it is given, so publishing in simple mode is guarded rather than
+passed an empty map — otherwise credits earned while balancing was on would be wiped,
+and switching it back on would resume from nothing.
 
 Measured on a 95/5 split with a 10 g step: the small farm goes from never being
 served to being served every other cycle, and the ledger clears itself each time it
@@ -146,15 +163,21 @@ decides it. The keeper's stores are now a clause of their own.
   minimum history before it says anything.
 * **Step-size overrides.** `DEFAULT_STEPS` is by UOM only. A 500 g bottle is not
   split at all, so a per-item override is the obvious next need.
+* **A float trap worth remembering.** 0.1 has no exact binary form, so `3 // 0.1` is
+  29, not 30 — which stranded one step of every clean kg quantity in the general store
+  until `_steps_in()` was introduced. Any new arithmetic on step counts needs the same
+  tolerance.
 * **Receiving.** `preview_allocation` / `publish_allocation` accept a `received`
   map so the split follows what actually arrived, but nothing reads the Purchase
   Receipt automatically yet.
 
 ## Tests
 
-* `test_apportion` — 31 cases, no site. The apportionment and carry-forward maths,
-  including the six-cycle starvation trace.
-* `test_procurement` — 30 cases against the live site. Review flow, amendment
+* `test_apportion` — 46 cases, no site. Both modes, the carry-forward maths including
+  the six-cycle starvation trace, and `TestFloatSafety` for the 0.1-step trap.
+* `test_procurement` — 35 cases against the live site, with a `balancing()` context
+  manager so every credit test states which policy it is exercising rather than
+  relying on the default. Review flow, amendment
   application and logging, both reduction modes, the final-figure lock **and** the
   re-consolidation path, credit reconciliation with the pool, pool reservation, and
   the permission refusals (against a real non-elevated planner).

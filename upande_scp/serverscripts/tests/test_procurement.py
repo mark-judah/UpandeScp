@@ -19,10 +19,31 @@ Run: bench --site <site> run-tests \
 """
 
 import unittest
+from contextlib import contextmanager
 
 import frappe
 
 from upande_scp.serverscripts.store import procurement as P
+
+SETTINGS = "Scouting and Crop Protection Settings"
+
+
+@contextmanager
+def balancing(on: bool):
+    """Switch the GM's balancing setting for one test and put it back.
+
+    Explicit in every test that depends on it: the default is the simple split, and a
+    credit test that silently relied on the old behaviour would pass for the wrong
+    reason once the default changed — which is exactly how four of these failed.
+    """
+    before = frappe.db.get_single_value(SETTINGS, "allocation_balancing_enabled")
+    frappe.db.set_single_value(SETTINGS, "allocation_balancing_enabled", 1 if on else 0)
+    frappe.db.commit()
+    try:
+        yield
+    finally:
+        frappe.db.set_single_value(SETTINGS, "allocation_balancing_enabled", before or 0)
+        frappe.db.commit()
 
 CYCLE_NAME = "_test_scp_cycle"
 ITEM_A = "_test_scp_proc_a"
@@ -322,41 +343,43 @@ class TestProcurement(unittest.TestCase):
         )
 
     def test_publishing_writes_credits_that_reconcile_with_the_pool(self):
-        self._fresh_requirements()
-        P.consolidate(self.cycle)
-        # 33 with a 10g step: 3 whole steps to split between a 30/70 ask, so
-        # there is a real residue to carry.
-        P.set_reduction(self.cycle, ITEM_A, "Absolute", 33)
-        P.publish_allocation(self.cycle)
+        with balancing(True):
+            self._fresh_requirements()
+            P.consolidate(self.cycle)
+            # 33 with a 10g step: 3 whole steps to split between a 30/70 ask, so
+            # there is a real residue to carry.
+            P.set_reduction(self.cycle, ITEM_A, "Absolute", 33)
+            P.publish_allocation(self.cycle)
 
-        cycle = P.get_cycle(self.cycle)
-        line = next(l for l in cycle["lines"] if l["item_code"] == ITEM_A)
-        credits = frappe.get_all(
-            P.CREDIT, filters={"item_code": ITEM_A}, fields=["farm", "credit_qty"]
-        )
-        self.assertTrue(credits, "an unmeasurable residue must be carried")
-        self.assertAlmostEqual(
-            sum(c.credit_qty for c in credits), line["remainder"], places=6,
-            msg="the credits must account for exactly what is left in the pool",
-        )
+            cycle = P.get_cycle(self.cycle)
+            line = next(l for l in cycle["lines"] if l["item_code"] == ITEM_A)
+            credits = frappe.get_all(
+                P.CREDIT, filters={"item_code": ITEM_A}, fields=["farm", "credit_qty"]
+            )
+            self.assertTrue(credits, "an unmeasurable residue must be carried")
+            self.assertAlmostEqual(
+                sum(c.credit_qty for c in credits), line["remainder"], places=6,
+                msg="the credits must account for exactly what is left in the pool",
+            )
 
     def test_a_carried_credit_is_spent_in_the_next_cycle(self):
-        self._fresh_requirements()
-        P.consolidate(self.cycle)
-        P.set_reduction(self.cycle, ITEM_A, "Absolute", 33)
-        P.publish_allocation(self.cycle)
-        carried = P.credits_for(ITEM_A)
-        self.assertTrue(carried)
+        with balancing(True):
+            self._fresh_requirements()
+            P.consolidate(self.cycle)
+            P.set_reduction(self.cycle, ITEM_A, "Absolute", 33)
+            P.publish_allocation(self.cycle)
+            carried = P.credits_for(ITEM_A)
+            self.assertTrue(carried)
 
-        second = P.preview_allocation(self.cycle, received={ITEM_A: 100})
-        line = next(l for l in second["lines"] if l["item_code"] == ITEM_A)
-        by_farm = {a["farm"]: a for a in line["allocations"]}
-        for farm, credit in carried.items():
-            if farm in by_farm:
-                self.assertAlmostEqual(
-                    by_farm[farm]["credit_in"], credit, places=6,
-                    msg="the next split must start from the carried credit",
-                )
+            second = P.preview_allocation(self.cycle, received={ITEM_A: 100})
+            line = next(l for l in second["lines"] if l["item_code"] == ITEM_A)
+            by_farm = {a["farm"]: a for a in line["allocations"]}
+            for farm, credit in carried.items():
+                if farm in by_farm:
+                    self.assertAlmostEqual(
+                        by_farm[farm]["credit_in"], credit, places=6,
+                        msg="the next split must start from the carried credit",
+                    )
 
     def test_a_budget_cut_is_not_carried_as_a_debt(self):
         """The credit is the ROUNDING residue, never the size of the cut.
@@ -366,22 +389,23 @@ class TestProcurement(unittest.TestCase):
         further 5 g to the step — only the 5 is owed. Crediting the 15 would make
         the reduction meaningless next cycle.
         """
-        self._fresh_requirements()
-        P.consolidate(self.cycle)
-        P.set_reduction(self.cycle, ITEM_A, "Absolute", 50)
-        P.publish_allocation(self.cycle)
+        with balancing(True):
+            self._fresh_requirements()
+            P.consolidate(self.cycle)
+            P.set_reduction(self.cycle, ITEM_A, "Absolute", 50)
+            P.publish_allocation(self.cycle)
 
-        carried = P.credits_for(ITEM_A)
-        small, big = self.farms[0], self.farms[1]
-        self.assertAlmostEqual(carried.get(small, 0.0), 5.0, places=6)
-        self.assertAlmostEqual(carried.get(big, 0.0), -5.0, places=6)
-        step = 10.0
-        for farm, qty in carried.items():
-            self.assertLess(
-                abs(qty), step,
-                f"{farm} carries {qty}, which is more than one step — that is a "
-                "cut being repaid, not a rounding residue",
-            )
+            carried = P.credits_for(ITEM_A)
+            small, big = self.farms[0], self.farms[1]
+            self.assertAlmostEqual(carried.get(small, 0.0), 5.0, places=6)
+            self.assertAlmostEqual(carried.get(big, 0.0), -5.0, places=6)
+            step = 10.0
+            for farm, qty in carried.items():
+                self.assertLess(
+                    abs(qty), step,
+                    f"{farm} carries {qty}, which is more than one step — that is a "
+                    "cut being repaid, not a rounding residue",
+                )
 
     def test_publishing_logs_each_allocation(self):
         self._fresh_requirements()
@@ -396,16 +420,105 @@ class TestProcurement(unittest.TestCase):
         self.assertEqual({r.farm for r in rows}, set(self.farms[:2]))
 
     def test_the_pool_view_pairs_stock_with_who_is_owed_it(self):
-        self._fresh_requirements()
-        P.consolidate(self.cycle)
-        P.set_reduction(self.cycle, ITEM_A, "Absolute", 33)
-        P.publish_allocation(self.cycle)
-        pool = P.pool_status(self.company)
-        self.assertIn("credits", pool)
-        self.assertTrue(
-            any(c["item_code"] == ITEM_A for c in pool["credits"]),
-            "the keeper must be able to see what the pool owes",
+        with balancing(True):
+            self._fresh_requirements()
+            P.consolidate(self.cycle)
+            P.set_reduction(self.cycle, ITEM_A, "Absolute", 33)
+            P.publish_allocation(self.cycle)
+            pool = P.pool_status(self.company)
+            self.assertIn("credits", pool)
+            self.assertTrue(
+                any(c["item_code"] == ITEM_A for c in pool["credits"]),
+                "the keeper must be able to see what the pool owes",
+            )
+
+    # ────────────────────── the mode the GM chooses ────────────────────
+
+    def test_the_simple_split_is_what_runs_by_default(self):
+        """30/70 of 50 at a 10 g step: 10 and 30, and the indivisible 10 stays put.
+
+        Balanced mode would give 10 and 40 by handing the spare step to the larger
+        fraction. The difference IS the setting.
+        """
+        with balancing(False):
+            self._fresh_requirements()
+            P.consolidate(self.cycle)
+            P.set_reduction(self.cycle, ITEM_A, "Absolute", 50)
+            out = P.preview_allocation(self.cycle)
+            self.assertEqual(out["mode"], "simple")
+            line = next(l for l in out["lines"] if l["item_code"] == ITEM_A)
+            got = {a["farm"]: a["allocated"] for a in line["allocations"]}
+            self.assertEqual(got[self.farms[0]], 10)
+            self.assertEqual(got[self.farms[1]], 30)
+            self.assertAlmostEqual(line["remainder"], 10)
+            self.assertEqual(line["carried_forward"], {})
+
+    def test_the_simple_split_writes_no_credits(self):
+        with balancing(False):
+            self._fresh_requirements()
+            P.consolidate(self.cycle)
+            P.set_reduction(self.cycle, ITEM_A, "Absolute", 33)
+            P.publish_allocation(self.cycle)
+            self.assertEqual(
+                frappe.db.count(P.CREDIT, {"item_code": ITEM_A}), 0,
+                "simple mode owes nobody anything",
+            )
+
+    def test_switching_balancing_off_does_not_wipe_the_existing_ledger(self):
+        """The trap: `_write_credits` deletes any farm absent from the map, so
+        publishing in simple mode with an empty map would erase credits earned while
+        balancing was on — and switching it back on would resume from nothing."""
+        with balancing(True):
+            self._fresh_requirements()
+            P.consolidate(self.cycle)
+            P.set_reduction(self.cycle, ITEM_A, "Absolute", 33)
+            P.publish_allocation(self.cycle)
+            earned = P.credits_for(ITEM_A)
+        self.assertTrue(earned, "no credits to protect — test proves nothing")
+
+        with balancing(False):
+            P.publish_allocation(self.cycle)
+            after = P.credits_for(ITEM_A)
+        self.assertEqual(
+            {k: round(v, 6) for k, v in after.items()},
+            {k: round(v, 6) for k, v in earned.items()},
+            "a simple-mode publish must leave the ledger exactly as it was",
         )
+
+    def test_a_farm_that_got_nothing_still_gets_a_row(self):
+        """Its own answer to "why is this still in the general store?" — and in
+        simple mode there is no credit to carry that fact instead."""
+        with balancing(False):
+            self._fresh_requirements()
+            P.consolidate(self.cycle)
+            # 5 of a 10 g step: neither farm's share reaches one step.
+            P.set_reduction(self.cycle, ITEM_A, "Absolute", 5)
+            P.publish_allocation(self.cycle)
+            rows = frappe.get_all(
+                "Chemical Procurement Allocation",
+                filters={"parent": self.cycle, "item_code": ITEM_A},
+                fields=["farm", "requested_qty", "allocated_qty"],
+            )
+        self.assertEqual(
+            {r.farm for r in rows}, set(self.farms[:2]),
+            "both farms asked, so both are accounted for",
+        )
+        self.assertTrue(all(r.allocated_qty == 0 for r in rows))
+
+    def test_the_mode_used_is_recorded_against_the_change(self):
+        """A past allocation has to stay explicable after the setting changes."""
+        with balancing(False):
+            self._fresh_requirements()
+            P.consolidate(self.cycle)
+            P.set_reduction(self.cycle, ITEM_A, "Absolute", 50)
+            P.publish_allocation(self.cycle)
+        reasons = frappe.get_all(
+            P.CHANGE,
+            filters={"cycle": self.cycle, "what": "Allocation", "item_code": ITEM_A},
+            pluck="reason",
+        )
+        self.assertTrue(reasons)
+        self.assertTrue(all("simple" in (r or "") for r in reasons))
 
     # ───────────────────────── permissions ─────────────────────────
 

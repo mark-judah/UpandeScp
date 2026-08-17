@@ -133,6 +133,11 @@ export interface AllocationPreviewRow {
   credit_out: number;
 }
 
+/** Which split produced the figures. "simple" is the default: shares rounded down,
+ *  remainder to the general store. "balanced" adds largest-remainder redistribution
+ *  and carry-forward credits, and is the GM's opt-in. */
+export type AllocationMode = "simple" | "balanced";
+
 export interface AllocationPreviewLine {
   item_code: string;
   item_name: string;
@@ -159,6 +164,8 @@ export interface PoolStatus {
   on_hand: { item_code: string; actual_qty: number; stock_uom: string }[];
   credits: PoolCredit[];
   owed_by_item: Record<string, number>;
+  /** Whether those credits are actually applied, or on hold. */
+  mode: AllocationMode;
 }
 
 export interface PoolRequestItem {
@@ -339,7 +346,7 @@ export async function listAmendments(
 export function previewAllocation(
   cycle: string,
   received?: Record<string, number>,
-): Promise<{ cycle: string; lines: AllocationPreviewLine[] }> {
+): Promise<{ cycle: string; mode: AllocationMode; lines: AllocationPreviewLine[] }> {
   return call(`${NS}.preview_allocation`, {
     cycle,
     received: received ? JSON.stringify(received) : undefined,
@@ -370,7 +377,7 @@ export async function poolStatus(company?: string): Promise<PoolStatus> {
   try {
     return await call<PoolStatus>(`${NS}.pool_status`, { company });
   } catch {
-    return { store: null, on_hand: [], credits: [], owed_by_item: {} };
+    return { store: null, on_hand: [], credits: [], owed_by_item: {}, mode: "simple" };
   }
 }
 

@@ -99,6 +99,7 @@ import {
   setReduction,
   submitRequirement,
   transferAllocation,
+  type AllocationMode,
   type AllocationPreviewLine,
   type Amendment,
   type Cycle,
@@ -1065,6 +1066,7 @@ function AllocationTab({
   setBusy: (b: boolean) => void;
 }) {
   const [lines, setLines] = useState<AllocationPreviewLine[]>([]);
+  const [mode, setMode] = useState<AllocationMode>("simple");
   const [received, setReceived] = useState<Record<string, string>>({});
   const [detail, setDetail] = useState<CycleDetail | null>(null);
 
@@ -1083,6 +1085,7 @@ function AllocationTab({
         getCycle(cycle),
       ]);
       setLines(p.lines);
+      setMode(p.mode || "simple");
       setDetail(d);
     } catch (e) {
       push(errText(e), "err");
@@ -1093,8 +1096,33 @@ function AllocationTab({
     void load();
   }, [load]);
 
+  const balanced = mode === "balanced";
+
   return (
     <div className="flex flex-col gap-4">
+      {/* Which rule is running, in plain words. A split nobody can account for is
+        * worse than a cruder one, and the two modes differ by whole steps. */}
+      <Card>
+        <CardContent className="py-3 text-sm text-muted-foreground">
+          {balanced ? (
+            <>
+              <strong className="text-foreground">Balanced split.</strong> Leftover
+              measurable amounts go to the farms with the largest fractions, and each
+              farm's shortfall is carried forward as a credit against its next
+              request.
+            </>
+          ) : (
+            <>
+              <strong className="text-foreground">Simple split.</strong> Each farm's
+              share is rounded down to an amount the store can measure; whatever will
+              not divide evenly stays in the general store, and nothing is carried
+              forward. The General Manager can switch to a balanced split in
+              Settings.
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="flex flex-wrap gap-2">
         <Button
           disabled={busy}
@@ -1166,9 +1194,11 @@ function AllocationTab({
                 <TableRow>
                   <TableHead>Farm</TableHead>
                   <TableHead className="text-right">Requested</TableHead>
-                  <TableHead className="text-right">Carried in</TableHead>
+                  {balanced && <TableHead className="text-right">Carried in</TableHead>}
                   <TableHead className="text-right">Allocated</TableHead>
-                  <TableHead className="text-right">Carries forward</TableHead>
+                  {balanced && (
+                    <TableHead className="text-right">Carries forward</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1176,15 +1206,21 @@ function AllocationTab({
                   <TableRow key={a.farm}>
                     <TableCell>{a.farm}</TableCell>
                     <TableCell className="text-right">{fmtQty(a.requested)}</TableCell>
-                    <TableCell className="text-right text-muted-foreground">
-                      {Math.abs(a.credit_in) < 1e-9 ? "—" : describeCredit(a.credit_in, l.uom)}
-                    </TableCell>
+                    {balanced && (
+                      <TableCell className="text-right text-muted-foreground">
+                        {Math.abs(a.credit_in) < 1e-9
+                          ? "—"
+                          : describeCredit(a.credit_in, l.uom)}
+                      </TableCell>
+                    )}
                     <TableCell className="text-right font-medium">
                       {fmtQty(a.allocated)} {l.uom}
                     </TableCell>
-                    <TableCell className="text-right text-muted-foreground">
-                      {describeCredit(a.credit_out, l.uom)}
-                    </TableCell>
+                    {balanced && (
+                      <TableCell className="text-right text-muted-foreground">
+                        {describeCredit(a.credit_out, l.uom)}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -1382,7 +1418,16 @@ function PoolTab({
           <p className="font-medium">What the pool owes</p>
           <p className="text-sm text-muted-foreground">
             Stock stays here when a farm's exact share is smaller than the store can
-            measure. These credits are added to that farm's entitlement next cycle.
+            measure.{" "}
+            {status?.mode === "balanced" ? (
+              <>These credits are added to that farm's next request.</>
+            ) : (
+              <>
+                Credits are <strong>on hold</strong> — the simple split is in use, so
+                nothing is carried forward. They resume if the General Manager
+                switches balancing back on.
+              </>
+            )}
           </p>
           <Table>
             <TableHeader>

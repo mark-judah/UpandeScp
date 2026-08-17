@@ -132,6 +132,15 @@ appear in the reconciliation or a borrower looks like an overspender.
 
 ### 10. Unused allocation carries forward — as a per-farm credit
 
+> **Revised 2026-08-17.** This behaviour now sits behind a General Manager setting
+> (`allocation_balancing_enabled`) and is **off by default**. The default is the
+> plain rule: proportional share rounded down to a measurable step, and whatever
+> will not divide evenly stays in the general store — no redistribution, no credits.
+> The reasoning: an allocation an operator can verify by hand is worth more than one
+> that is marginally fairer, and the fairness argument below is real but only pays
+> off across several cycles. Everything in this section still describes exactly what
+> happens when the setting is on.
+
 A remainder is not written off. Two things carry:
 
 * the **physical remainder** stays in the general store, visible to its keeper —

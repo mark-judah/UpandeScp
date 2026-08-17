@@ -54,6 +54,8 @@
   "cp_groups_section",
   "chemical_item_groups",
   "foliar_item_groups",
+  "allocation_section",
+  "allocation_balancing_enabled",
   "general_store_section",
   "general_store_keepers",
   "scouting_tab",
@@ -379,6 +381,18 @@
    "label": "Foliar Item Groups",
    "options": "Crop Protection Item Group",
    "description": "Item Groups whose items are foliars. New items in these groups auto-register as a Foliar."
+  },
+  {
+   "fieldname": "allocation_section",
+   "fieldtype": "Section Break",
+   "label": "Chemical Allocation"
+  },
+  {
+   "fieldname": "allocation_balancing_enabled",
+   "fieldtype": "Check",
+   "label": "Balance allocations and carry credits forward",
+   "default": "0",
+   "description": "OFF (default): each farm gets its proportional share rounded DOWN to a measurable amount, and whatever will not divide evenly stays in the general store. Simple and easy to check by hand.<br><br>ON: the leftover measurable amounts are handed to the farms with the largest fractions, and each farm's unmeasurable shortfall is remembered as a credit added to its next request. Fairer to small farms over several cycles, but the arithmetic is no longer obvious from one allocation."
   },
   {
    "fieldname": "general_store_section",

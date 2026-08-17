@@ -534,6 +534,51 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
 
       <Card className="lg:col-span-2">
         <CardHeader>
+          <CardTitle className="text-base">Chemical allocation</CardTitle>
+          <CardDescription>
+            How a purchase received into the general store is split back to the
+            farms that requested it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+            <Checkbox
+              id="allocation_balancing_enabled"
+              checked={!!draft.allocation_balancing_enabled}
+              onCheckedChange={(v) =>
+                set("allocation_balancing_enabled", v ? 1 : 0)
+              }
+            />
+            <div className="flex flex-col gap-2">
+              <Label
+                htmlFor="allocation_balancing_enabled"
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Balance allocations and carry credits forward
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                <strong>Off (default):</strong> each farm gets its share rounded
+                down to an amount the store can measure, and whatever will not
+                divide evenly stays in the general store. Easy to check by hand.
+              </p>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                <strong>On:</strong> the leftover measurable amounts go to the
+                farms with the largest fractions, and each farm's shortfall is
+                remembered and added to its next request. Fairer to small farms
+                across several cycles, but the arithmetic is no longer obvious
+                from one allocation.
+              </p>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                Switching this off leaves any credits already earned untouched —
+                they are simply not applied until it is switched back on.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader>
           <CardTitle className="text-base">Farm-to-farm chemical loaning</CardTitle>
           <CardDescription>
             Let a depleted farm request a chemical from a sibling farm; the source

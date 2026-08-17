@@ -21,10 +21,12 @@ What happens here:
 4. **One Material Request** for the whole cycle, delivering into the general
    store.
 5. **The receipt is apportioned** back to the farms proportionally, in amounts the
-   store can physically measure, with each farm's unmeasurable fraction carried
-   forward as a credit (see ``apportion``). The crumb that cannot be measured for
-   anybody stays in the general store, and the credits sum to exactly that crumb —
-   so the pool always has a per-farm explanation.
+   store can physically measure. By default that is the plain rule — each share
+   rounded down, and whatever will not divide evenly stays in the general store. The
+   GM can switch on balancing (``allocation_balancing_enabled``), which additionally
+   hands the leftover measurable amounts to the farms with the largest fractions and
+   remembers each farm's shortfall as a credit against its next request. See
+   ``apportion`` for both.
 6. **Transfers** move each farm's allocation from the general store to its own.
 
 Two rules run through all of it:
@@ -33,9 +35,9 @@ Two rules run through all of it:
   `Chemical Allocation Change` (what, who, from, to) and the affected farm's
   planners are notified. A planner discovering a changed allocation by noticing
   the stock did not match is the failure this exists to prevent.
-* **A budget cut is not a debt.** The GM's reduction is a decision; only the
-  rounding residue is carried forward. Otherwise every cut would quietly return
-  as next cycle's entitlement.
+* **A budget cut is not a debt.** Where credits are in use at all, only the
+  rounding residue carries. The GM's reduction is a decision; if cuts carried
+  forward, every one would quietly return as next cycle's entitlement.
 """
 from __future__ import annotations
 
@@ -58,6 +60,8 @@ from upande_scp.serverscripts.spray_plan_creator.loaning_v2 import (
 )
 from upande_scp.serverscripts.store.apportion import (
 	CREDIT_EPSILON,
+	MODE_BALANCED,
+	MODE_SIMPLE,
 	apportion,
 	default_step_for_uom,
 )
@@ -180,6 +184,24 @@ def log_change(
 
 
 # ─────────────────────────────── cycles ──────────────────────────────────────
+
+
+def allocation_mode() -> str:
+	"""Which split the GM has chosen. Simple unless they turned balancing on.
+
+	Read fresh on every allocation rather than stored on the cycle: the setting is a
+	policy, and a GM who switches it expects the next split to follow — not for old
+	cycles to keep running the old rule invisibly. The mode used IS recorded in the
+	preview and in the change log, so a past allocation stays explicable.
+	"""
+	try:
+		enabled = frappe.db.get_single_value(
+			"Scouting and Crop Protection Settings", "allocation_balancing_enabled"
+		)
+	except Exception:
+		# A site whose settings predate the field gets the default, not an error.
+		return MODE_SIMPLE
+	return MODE_BALANCED if enabled else MODE_SIMPLE
 
 
 def _has_field(doctype: str, fieldname: str) -> bool:
@@ -861,11 +883,15 @@ def preview_allocation(cycle: str, received: str | None = None) -> dict:
 	`received` optionally maps item_code -> quantity actually received, for when
 	the delivery differs from the order — the split must follow what arrived, not
 	what was hoped for.
+
+	The mode is reported alongside the numbers so the screen can say which rule
+	produced them; a split nobody can account for is worse than a cruder one.
 	"""
 	doc = frappe.get_doc(CYCLE, cycle)
 	if isinstance(received, str):
 		received = json.loads(received or "{}")
 	received = received or {}
+	mode = allocation_mode()
 
 	out = []
 	for line in doc.lines:
@@ -875,7 +901,10 @@ def preview_allocation(cycle: str, received: str | None = None) -> dict:
 			_requested_by_farm(cycle, line.item_code),
 			qty,
 			step,
+			# Simple mode ignores credits, but they are still read so the screen can
+			# show what a farm is owed even while balancing is switched off.
 			carried=credits_for(line.item_code),
+			mode=mode,
 		)
 		out.append({
 			"item_code": line.item_code,
@@ -899,27 +928,36 @@ def preview_allocation(cycle: str, received: str | None = None) -> dict:
 			],
 			"carried_forward": result.carried_forward,
 		})
-	return {"cycle": cycle, "lines": out}
+	return {"cycle": cycle, "mode": mode, "lines": out}
 
 
 @frappe.whitelist()
 def publish_allocation(cycle: str, received: str | None = None) -> dict:
-	"""Commit the split: write the allocation rows and the carried credits.
+	"""Commit the split: write the allocation rows and, in balanced mode, the credits.
 
-	Credits are replaced wholesale from `carried_forward` rather than incremented,
-	because that map is complete — it already contains the farms that sat the
-	cycle out. Adding to the old value instead would double-count them.
+	In **balanced** mode credits are replaced wholesale from `carried_forward` rather
+	than incremented, because that map is complete — it already contains the farms
+	that sat the cycle out, so adding to the old value would double-count them.
+
+	In **simple** mode the ledger is not touched at all. Not "written as empty":
+	`_write_credits` deletes any farm absent from the map, so passing an empty map
+	would wipe credits earned while balancing was on, and switching it back on would
+	resume from an emptied ledger.
 	"""
 	_assert_gm("publish an allocation")
 	doc = frappe.get_doc(CYCLE, cycle)
 	preview = preview_allocation(cycle, received)
+	mode = preview.get("mode", MODE_SIMPLE)
 
 	before = {(a.item_code, a.farm): flt(a.allocated_qty) for a in doc.allocations}
 	doc.allocations = []
 	for line in preview["lines"]:
 		code = line["item_code"]
 		for a in line["allocations"]:
-			if a["allocated"] <= 0 and a["credit_out"] <= CREDIT_EPSILON:
+			# A farm that asked and got nothing keeps its row. That row is the answer
+			# to "why is this still in the general store?", and in simple mode there
+			# is no credit to carry the fact instead.
+			if a["requested"] <= 0 and a["allocated"] <= 0:
 				continue
 			doc.append("allocations", {
 				"item_code": code,
@@ -937,17 +975,21 @@ def publish_allocation(cycle: str, received: str | None = None) -> dict:
 			if l.item_code == code:
 				l.allocated_total = line["distributed"]
 				l.remainder = line["remainder"]
-		_write_credits(code, line["carried_forward"], cycle, line["uom"])
+		if mode == MODE_BALANCED:
+			_write_credits(code, line["carried_forward"], cycle, line["uom"])
 
 	doc.status = "Allocated"
 	doc.save(ignore_permissions=True)
 
+	# The mode goes in the reason so a past allocation stays explicable after the
+	# setting changes — otherwise the figures would look arbitrary in hindsight.
+	why = f"{mode} allocation"
 	for a in doc.allocations:
 		was = before.get((a.item_code, a.farm), 0.0)
 		if abs(flt(a.allocated_qty) - was) > CREDIT_EPSILON:
 			log_change(
 				cycle, "Allocation", was, flt(a.allocated_qty),
-				item_code=a.item_code, farm=a.farm,
+				item_code=a.item_code, farm=a.farm, reason=why,
 			)
 	frappe.db.commit()
 	return get_cycle(cycle)
@@ -1090,6 +1132,10 @@ def pool_status(company: str | None = None) -> dict:
 		"on_hand": on_hand,
 		"credits": credits,
 		"owed_by_item": owed,
+		# The keeper needs to know whether these credits will actually be applied:
+		# with balancing off they are on hold, and saying otherwise would have them
+		# expecting a farm's next allocation to absorb stock it will not.
+		"mode": allocation_mode(),
 	}
 
 

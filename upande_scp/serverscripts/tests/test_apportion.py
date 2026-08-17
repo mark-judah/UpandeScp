@@ -155,9 +155,14 @@ class TestDefaultSteps(unittest.TestCase):
 class TestCarryForward(unittest.TestCase):
     """Unused allocation carries forward as a per-farm credit.
 
-    The invariant worth protecting is CONSERVATION: the credits must sum to the
-    stock actually left in the general store. If they don't, the pool has no
-    owner-by-owner explanation and the credits are just wishes.
+    The invariant worth protecting is CONSERVATION: the credits must sum to the part
+    of the pool that was actually OWED — the share somebody had a claim on and that
+    could not be measured out. Without that, the pool has no owner-by-owner
+    explanation and the credits are just wishes.
+
+    Narrower than "credits = everything left in the store", and deliberately: stock
+    beyond total demand also sits in the pool but is owed to nobody. See
+    `test_stock_beyond_what_anyone_asked_for_is_owed_to_nobody`.
     """
 
     def test_credits_sum_to_what_is_left_in_the_general_store(self):
@@ -259,3 +264,22 @@ class TestCarryForward(unittest.TestCase):
         """A big credit plus a request must still not exceed the stock on hand."""
         r = apportion({"A": 10, "B": 10}, 15, step=1, carried={"A": 50})
         self.assertLessEqual(r.distributed, 15)
+
+    def test_stock_beyond_what_anyone_asked_for_is_owed_to_nobody(self):
+        """The conservation rule is narrower than "credits = the whole pool".
+
+        Credits account for the part of the leftover that was *owed* — the share
+        somebody had a claim on and could not be measured out. If the purchase
+        exceeds total demand, the excess also sits in the general store, but no farm
+        is owed it, so crediting it would invent entitlement out of a surplus.
+        """
+        # Basis 20.4 (A carries 0.4), but 22 arrived: 21 steps go out, 1.0 stays in
+        # the pool, and only 0.5 of that was ever owed.
+        r = apportion({"A": 10, "B": 10}, 22, step=1, carried={"A": 1.5})
+        owed = sum(r.carried_forward.values())
+        self.assertAlmostEqual(owed, 0.5, places=6)
+        self.assertAlmostEqual(r.remainder, 1.0, places=6)
+        self.assertLess(
+            owed, r.remainder,
+            "the surplus over total demand must not become somebody's credit",
+        )

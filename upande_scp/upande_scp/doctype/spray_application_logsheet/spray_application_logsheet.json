@@ -51,7 +51,9 @@
   "supervisor_name",
   "col_break_5",
   "manager_name",
-  "amended_from"
+  "amended_from",
+  "custom_application_start_at",
+  "custom_application_stop_at"
  ],
  "fields": [
   {
@@ -312,6 +314,20 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "custom_application_start_at",
+   "fieldtype": "Datetime",
+   "label": "Application Start (datetime)",
+   "read_only": 1,
+   "description": "Written alongside the Time field of the same name. A Time carries no date, so a session that crossed midnight \u2014 or was recorded offline and synced the next morning \u2014 cannot be reconstructed from it."
+  },
+  {
+   "fieldname": "custom_application_stop_at",
+   "fieldtype": "Datetime",
+   "label": "Application Stop (datetime)",
+   "read_only": 1,
+   "description": "Written alongside the Time field of the same name. A Time carries no date, so a session that crossed midnight \u2014 or was recorded offline and synced the next morning \u2014 cannot be reconstructed from it."
   }
  ],
  "grid_page_length": 50,

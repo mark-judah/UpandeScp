@@ -97,7 +97,9 @@ def resolve_expense_account(item_code: str, company: str) -> str:
     )
 
 
-def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
+def build_material_issue(
+    manufacture_se, wo, supervisor_employee: str, posting_moment=None
+) -> dict:
     """Return a dict ready to ``frappe.get_doc()`` for the Material Issue.
 
     Throws (rolling back the triggering transaction) on any missing input.
@@ -157,7 +159,9 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
         if _emp_fields else {}
     ) or {}
 
-    posting = now_datetime()
+    # `set_posting_time` below means an explicit moment is honoured, which is what makes
+    # an offline session postable at the time it happened rather than the time it synced.
+    posting = frappe.utils.get_datetime(posting_moment) if posting_moment else now_datetime()
     return {
         "doctype": "Stock Entry",
         "stock_entry_type": SE_TYPE_SPRAY,
@@ -180,16 +184,22 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
     }
 
 
-def build_and_submit_material_issue(wo, manufacture_se):
+def build_and_submit_material_issue(wo, manufacture_se, posting_moment=None):
     """Create + submit the Material Issue SE that consumes the tank-mix.
 
     Called from ``end_spray_session`` once the supervisor closes the spray.
     Both inputs are loaded docs (callers already have them). Returns the new
     Material Issue's name. Any throw propagates so the caller's transaction
     rolls back.
+
+    ``posting_moment`` dates the issue to when the spray actually finished rather than to
+    now — the offline case. This entry debits the greenhouse, so its date decides which
+    month carries the cost.
     """
     supervisor = resolve_supervisor_employee(wo)
-    payload = build_material_issue(manufacture_se, wo, supervisor)
+    payload = build_material_issue(
+        manufacture_se, wo, supervisor, posting_moment=posting_moment
+    )
 
     mi = frappe.get_doc(payload)
     mi.flags.ignore_permissions = True

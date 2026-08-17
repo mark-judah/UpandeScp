@@ -22,7 +22,7 @@ import json
 from typing import Any
 
 import frappe
-from frappe.utils import flt, now_datetime, today
+from frappe.utils import flt, get_datetime, now_datetime, today
 
 from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import (
     _derive_farm,
@@ -173,6 +173,7 @@ def register_csu_scan(
     csu_warehouse: str | None = None,
     gps_lat: float | None = None,
     gps_lon: float | None = None,
+    scanned_at=None,
 ) -> dict[str, Any]:
     """Upsert one chemical's scan row on a Work Order.
 
@@ -207,7 +208,10 @@ def register_csu_scan(
     verification = _verify_qr(qr_payload, work_order, item_code)
 
     employee = _resolve_employee_from_session()
-    now = now_datetime()
+    # `scanned_at` is the moment the label was actually scanned, for a session recorded
+    # offline. It dates the audit row only — the Manufacture is a separate explicit step
+    # (`manufacture_tank_mix`), which takes its own posting moment.
+    now = get_datetime(scanned_at) if scanned_at else now_datetime()
 
     # Upsert on (work_order, item_code) via direct child-row operations. We
     # deliberately avoid ``wo.save()`` here — the WO is docstatus=1 and a full
@@ -363,11 +367,22 @@ def _rebuild_manufacture_from_transfer(se_doc, wo_name: str, wip: str) -> None:
         idx = idx + 1
 
 
-def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
+def _promote_to_tank_mix_manufactured(
+    wo, csu_warehouse: str | None, posting_moment=None
+):
     """Build Manufacture SE + SAL draft, flip WO to Tank Mix Manufactured.
 
     Caller must already hold the WO row lock and have verified all chemicals
     are scanned. Any throw here rolls back the whole register_csu_scan call.
+
+    ``posting_moment`` back-dates the Manufacture to when the mix was actually made,
+    for a session recorded offline and synced later. Without it the entry lands on
+    the sync date and the cost misses the month the spray happened — the exact
+    problem `redate_chain_to_transfer_console.py` was written to clean up.
+
+    The caller is responsible for the moment being honest: it must not precede the
+    transfer that put the raw chemicals in the CSU, or the ledger refuses it (see
+    `offline_session.resolve_moments`, which clamps it).
     """
     from erpnext.manufacturing.doctype.work_order.work_order import (
         make_stock_entry as _make_se,
@@ -382,6 +397,12 @@ def _promote_to_tank_mix_manufactured(wo, csu_warehouse: str | None):
     se_doc.stock_entry_type = SE_TYPE_MIX
     if not getattr(se_doc, "to_warehouse", None):
         se_doc.to_warehouse = wo.fg_warehouse or wo.custom_greenhouse
+
+    if posting_moment:
+        moment = get_datetime(posting_moment)
+        se_doc.set_posting_time = 1
+        se_doc.posting_date = moment.date()
+        se_doc.posting_time = moment.time()
 
     # Floor-plan-is-truth: rebuild the raw consumption from what was actually
     # transferred into the CSU for this WO, instead of the template BOM's
@@ -517,8 +538,13 @@ def get_manufacture_reconciliation(work_order: str) -> dict[str, Any]:
 
 
 @frappe.whitelist()
-def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
+def manufacture_tank_mix(work_order: str, posting_moment=None) -> dict[str, Any]:
     """Explicitly manufacture the tank mix for a fully-scanned WO.
+
+    ``posting_moment`` back-dates the Manufacture to when the mix was actually made, for a
+    session recorded offline and synced later. It must not precede the transfer that put
+    the raw chemicals in the CSU — `offline_session.resolve_moments` clamps it, and the
+    ledger refuses it if anything slips through.
 
     This is the deliberate replacement for the old auto-promote-on-last-scan:
     the supervisor confirms the spray team and then presses "Confirm Tank Mix",
@@ -588,7 +614,9 @@ def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
             ),
         }
 
-    manu_se_name, sal_name = _promote_to_tank_mix_manufactured(wo, None)
+    manu_se_name, sal_name = _promote_to_tank_mix_manufactured(
+        wo, None, posting_moment=posting_moment
+    )
     wo = frappe.get_doc("Work Order", work_order)   # reload post-manufacture
     return {
         "workflow_state": STATE_TANK_MIX_MANUFACTURED,
@@ -725,13 +753,18 @@ def _create_sal_draft(wo, manufacture_se) -> str:
 
 
 @frappe.whitelist()
-def start_spray_session(work_order: str) -> dict[str, Any]:
+def start_spray_session(work_order: str, started_at=None) -> dict[str, Any]:
     """Open a Sprayer Movement Session for an Application Floor Plan WO.
 
     Preconditions: WO state == Tank Mix Manufactured, SAL linked. Side effects:
     creates an Active Sprayer Movement Session, stamps the SAL's
     application_start_time + start_time, advances the WO to Spraying In
     Progress and writes actual_start_date.
+
+    ``started_at`` is when the spray actually began, for a session recorded offline and
+    synced later. Without it the stamp is the moment of sync, so a spray done at 06:00
+    and synced at noon reads as a noon spray — and the SAL's `Time` fields carry no date
+    to contradict it. Defaults to now, which is the online case.
     """
     if not work_order:
         frappe.throw("work_order is required.")
@@ -762,7 +795,7 @@ def start_spray_session(work_order: str) -> dict[str, Any]:
         )
 
     employee = _resolve_employee_from_session()
-    now = now_datetime()
+    now = get_datetime(started_at) if started_at else now_datetime()
 
     sms = frappe.get_doc(
         {
@@ -865,8 +898,12 @@ def _team_applicators(wo) -> list[dict[str, Any]]:
 
 
 @frappe.whitelist()
-def end_spray_session(work_order: str) -> dict[str, Any]:
+def end_spray_session(work_order: str, ended_at=None) -> dict[str, Any]:
     """Close out a spray: fire Material Issue, submit SAL, close SMS, mark WO Completed.
+
+    ``ended_at`` is when the spray actually finished, for an offline session. It dates the
+    SAL close, the session close, the WO's actual_end_date **and the Material Issue** —
+    which is the one that matters for costing, since that is what debits the greenhouse.
 
     Preconditions: WO state == Spraying In Progress, Manufacture SE on file,
     SAL drafted. Side effects:
@@ -924,11 +961,15 @@ def end_spray_session(work_order: str) -> dict[str, Any]:
     # Stop never throws just because the person pressing it has no linked
     # Employee — the same robust resolution the Material Issue already uses.
     supervisor_emp = resolve_supervisor_employee(wo)
-    now = now_datetime()
+    now = get_datetime(ended_at) if ended_at else now_datetime()
 
-    # Fill SAL closing fields, then submit.
+    # Fill SAL closing fields, then submit. The `Time` fields carry no date, so the
+    # datetime pair below is written alongside them — a session that crossed midnight, or
+    # was synced the next morning, cannot be reconstructed from a bare time.
     sal.application_stop_time = now.time()
     sal.end_time = now.time()
+    if sal.meta.get_field("custom_application_stop_at"):
+        sal.custom_application_stop_at = now
     sal.supervisor_name = supervisor_emp
     sal.applicators = []
     for app in _team_applicators(wo):
@@ -940,7 +981,9 @@ def end_spray_session(work_order: str) -> dict[str, Any]:
     # Fire the Material Issue. Any throw here rolls back the SAL submit + all
     # downstream state. ``build_and_submit_material_issue`` rebuilds the issue
     # payload from the Manufacture SE, so we don't need to track FG rows here.
-    mi_name = build_and_submit_material_issue(wo, manu_se)
+    # Dated to when the spray finished, not when it synced: this is the entry that
+    # debits the greenhouse, so it decides which month carries the cost.
+    mi_name = build_and_submit_material_issue(wo, manu_se, posting_moment=now)
 
     # Close the SMS (best-effort discovery — there should be exactly one open
     # session for this WO).

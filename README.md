@@ -187,6 +187,139 @@ bench --site <site> run-tests --module upande_scp.serverscripts.tests.test_procu
 
 ---
 
+## Offline spray sessions
+
+A supervisor with no signal scans the chemicals, makes the tank mix, sprays, and finishes.
+The handset holds a **token** — the ordered log of what happened and when — and the server
+replays it into the documents it should have created at the time: a Manufacture and a
+Material Issue **posted at the real moments**, so the cost lands in the month the spray
+did.
+
+### The failure this had to survive
+
+Could a synced session issue a tank mix that was never made? It splits into two, and both
+were tested against real Stock Entries rather than reasoned about:
+
+| Failure | Result |
+| --- | --- |
+| Issue with no Manufacture at all | **Blocked by the state machine.** `start_spray_session` requires `Tank Mix Manufactured`; `end_spray_session` requires `Spraying In Progress` **and** a submitted Manufacture entry |
+| Issue posted **earlier in the ledger** than its Manufacture | **Refused** by ERPNext with `NegativeStockError` — this is the one backdating introduces, since stock is judged on posting time, not creation order |
+
+That refusal depends on `allow_negative_stock` being **off**, so it is asserted as a tested
+precondition rather than left as a lucky setting.
+
+### How a wrong phone clock is made harmless
+
+Not by trusting it, and not by refusing it. Three layers:
+
+1. **Skew is measured.** While online the app records `device_now − server_now` and applies
+   it to every offline stamp, so a phone seven minutes fast still produces correct moments.
+2. **Moments travel as UTC**, so the phone's *timezone* cannot shift anything — only its
+   clock can, and (1) handles that.
+3. **The server clamps to a floor derived from data:**
+
+```
+anchor = the transfer Stock Entry's posting moment   (raws provably in the CSU)
+mix_at = max(token.mix_at,   anchor)
+end_at = max(token.ended_at, mix_at + 1s)
+```
+
+`max()` in both places means a wrong clock can only ever push a posting **later**, never
+behind the moment its inputs arrived. Tested: the ledger refuses a consumption dated before
+the transfer that delivered it, so the floor is real rather than merely polite.
+
+The principle is borrowed from the remediation script that cleaned up the original
+mis-dated backlog:
+
+> *"The honest, valid anchor is the TRANSFER date: on that date the raw chemicals are
+> provably in the CSU, so a manufacture + issue posted that day cannot fail on stock."*
+
+### Cost is never sacrificed to make a sync succeed
+
+`allow_zero_valuation_rate` would let anything post — at zero cost, which defeats the whole
+reason for dating it correctly. A mix with no value is **refused and reported**, exactly as
+the remediation script skips rather than "issuing at a zero value".
+
+Worth knowing: a missing valuation surfaces as *"Valuation Rate for the Item ... is
+required"*, which looks nothing like a stock error and is easily misdiagnosed as an
+ordering problem. It was, on the first run of these tests.
+
+### One atomic sync, not four queued calls
+
+`register_csu_scan` → `manufacture_tank_mix` → `start` → `end` is a state machine: each step
+refuses unless the previous one happened. Queued separately they can interleave across
+sessions and half-fail, leaving a plan in a state nobody chose. `sync_spray_session()`
+replays the log in one transaction — the session lands whole or not at all.
+
+### It explains itself before it touches stock
+
+The ledger *would* stop an impossible session, with a stock error naming a warehouse the
+supervisor has never heard of, halfway through a transaction. `preflight()` reaches the same
+conclusions first, in words about chemicals and dates:
+
+- no submitted transfer, so there is nothing to date the mix from
+- chemicals scanned that are not on this plan, or plan chemicals not scanned
+- `Amistar: 0.8 needed in the CSU on 2026-08-17 08:00 but only 0.3 was there`
+- the mix has no valuation, so it would post at zero cost
+- the session is older than the 7-day limit and needs a person
+
+It is whitelisted and read-only, so the handset can warn while there is still signal.
+
+### A re-sync cannot double-post
+
+Each session is a `Spray Session Token` named by its token id, holding what it created.
+A second sync finds the row and returns it. The guarantee lives server-side deliberately:
+the handset's own id lives in the handset's storage and does not survive a reinstall.
+
+A **refused** token is kept too, with its reason. The session happened in the field; the
+reason it could not be applied is worth more than a clean table.
+
+### Two policies, and where they are set
+
+**A late start is recorded, not refused.** If a spray began after its daily cutoff, the
+token is flagged `past_cutoff` rather than rejected — the session happened, and losing the
+record would be worse than flagging it. A flag can be reported on; a refusal only teaches
+supervisors to stop syncing. To enforce instead, call
+`postponement.assert_within_cutoff` from `offline_session._started_past_cutoff`.
+
+**A session older than 7 days is held for a person** (`MAX_AGE_DAYS`). Backdating that far
+can land behind entries that already consumed the same stock, and re-valuing those is not a
+sync's decision.
+
+### Results
+
+| Suite | Cases | What it covers |
+| --- | --- | --- |
+| `test_offline_session.py` | 26 | the guard, moment clamping, idempotency, endpoint signatures |
+| `test_offline_token_mechanics.py` | 11 | the ledger itself: ordering, anchor floor, backdating, valuation |
+| `test_offline_sequence_feasibility.py` | 8 | the state machine's guarantees, through the real endpoints |
+| `spraySession.test.ts` (mobile) | 27 | skew measurement, UTC stamping, local ordering checks |
+
+Two findings that overturned assumptions, kept here because they are the kind of thing that
+gets re-assumed:
+
+- **The one-second gap between Manufacture and Issue is not load-bearing.** Same-second
+  posting is accepted. It is kept for legibility, and the design does not depend on it.
+- **Backdating does not block the submit.** It queues a `Repost Item Valuation`, so a bulk
+  sync will not hang.
+
+### Where the code is
+
+| What | Where |
+| --- | --- |
+| Sync, guard, clamping | `upande_scp/serverscripts/spray_plan_creator/offline_session.py` |
+| Posting moments on the chain | `spray_session.py`, `auto_material_issue.py` |
+| The token record | `Spray Session Token` + `Spray Session Scan` doctypes |
+| Handset token logic | `src/services/spraySession.ts` (Upande-Scout) |
+| Design record | `docs/superpowers/specs/2026-08-17-offline-spray-session-design.md` |
+
+```bash
+bench --site <site> run-tests --module upande_scp.serverscripts.tests.test_offline_session
+bench --site <site> run-tests --module upande_scp.serverscripts.tests.test_offline_token_mechanics
+```
+
+---
+
 ### Contributing
 
 This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:

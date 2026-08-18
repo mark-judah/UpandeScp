@@ -354,6 +354,190 @@ bench --site <site> run-tests --module upande_scp.serverscripts.tests.test_offli
 
 ---
 
+## Field units: beds, rows and bands
+
+Roses are planted in **beds**, avocado in **rows**, coffee in **bands**. Those are
+three names for one thing. All of them are rows in `tabBed`, told apart by
+`unit_type`, and a band is simply what coffee calls a row — it sits on a Block and
+holds trees, exactly as a row does.
+
+That matters because it decides how much code the third crop costs. Nothing
+downstream — the maps, the scouting screens, the mobile bundle — needs to learn a
+new structure for coffee.
+
+### One tool instead of three
+
+There used to be two automations that turned a GeoJSON export into records:
+
+| Tool | Crop | Made |
+| --- | --- | --- |
+| Bed And Zone Automation | roses | `Bed` + a `Zone` per zone |
+| Tree And Row Automation | avocado | `Bed` (`unit_type = Row`) + an `Orchard Tree` per tree |
+
+They already wrote into the same table and differed only in field names, GeoJSON
+conventions and which child they made. Coffee would have been a third copy, so
+they are now one **Field Unit Automation**, with `unit_type` selecting the
+vocabulary:
+
+| Unit Type | Crop | Children |
+| --- | --- | --- |
+| `Bed` | roses | `Zone` |
+| `Row` | avocado | `Orchard Tree` |
+| `Band` | coffee | `Orchard Tree` |
+
+Both GeoJSON layouts and all three id conventions now work for every unit type —
+a single `FeatureCollection` or one per line, and ids from `unit_id`/`child_id`,
+`row_id`/`tree_id`, `line_id`/`zone_id`, or a name ending `_ROW<n>_T<n>`. Each old
+tool read only its own, so an operator had to reshape an export to suit whichever
+tool their crop happened to use.
+
+Re-running is safe and is the normal way to extend a layout: anything that already
+exists is counted as skipped, never duplicated. So an operator can paste an
+updated export without first working out what is new.
+
+`Band` is added to `Bed.unit_type` by Property Setter rather than by editing
+upande_core's doctype, appending only, so a site's own options survive.
+
+### What building this uncovered
+
+Writing tests against real data showed **neither old tool could create anything on
+kaitet**. `Bed`, `Zone` and `Orchard Tree` moved into upande_core, which renamed
+fields and added validation the automations were never updated for:
+
+- `Orchard Tree.tree` (Int) is mandatory and names the document. The avocado tool
+  wrote only the legacy `tree_number` (Data), so every tree insert failed. New
+  trees set both — `tree` because core requires it, `tree_number` because every
+  reader in this app queries it and all 53,699 existing trees carry it.
+- `Zone`'s geometry field is `geojson`; the rose tool wrote `raw_geojson`.
+- Units and children require the warehouse's Farm to declare a matching structure
+  level — "Has Beds", "Has Rows", "Has Zones", "Has Orchard Trees". **No farm on
+  kaitet declares any of them**, so every insert throws.
+
+None of it surfaced because both tools logged insert failures and carried on,
+reporting a cheerful "0 created, 0 existed". The merged tool still logs rather
+than raising — one bad feature must not abort a 700-feature import — but it counts
+what it skipped, so a run that creates nothing says so.
+
+**The last point is outstanding and needs the office, not a patch.** Seeding farm
+types is a decision about what each farm grows; until a farm declares its levels
+the tool will correctly refuse to create units there.
+
+### The migration
+
+All 173 documents were carried across — 96 rose, 77 avocado — keeping every name,
+GeoJSON payload and sector range. Both were named after their warehouse and the
+merged doctype is too, and no warehouse had a layout in both tools, so no name
+changed. The patch re-checks that rather than trusting the measurement, and
+refuses to pick a winner if it is ever false. The 18,796 Beds, 1,872 Rows, 154,341
+Zones and 53,699 Trees are untouched.
+
+One claim did not survive contact with the code. The merge was going to fix a
+latent collision, since the rose tool matched units on `greenhouse + bed` while
+ignoring `unit_type`. It cannot happen: core validates the warehouse's role too,
+so a warehouse is either a Greenhouse holding beds or a Block holding rows and
+bands, never both. Keying the lookup on `unit_type` is still right — it states
+what the data model guarantees instead of borrowing the guarantee from another
+app — but it is not load-bearing.
+
+### What the phone gets
+
+`getFarmDataBundle` now sends `unit_type` per unit, plus a
+`unit_type_by_warehouse` summary so a screen can title itself "Bands" without
+walking the list. Without it the app called every unit a bed, wrong on two of the
+three crops.
+
+The version digest gained a schema stamp, because it is otherwise built from
+`modified` timestamps alone: a phone holding a bundle from before the field
+existed would have gone on reporting itself up to date while missing it. Cached
+bed payloads are stored verbatim, so no handset cache change was needed.
+
+| What | Where |
+| --- | --- |
+| The tool | `upande_scp/upande_scp/doctype/field_unit_automation/` |
+| Band as a unit type | `upande_scp/serverscripts/geo/field_unit_types.py` |
+| Migration | `upande_scp/patches/v1_0/merge_field_unit_automations.py` |
+| Bundle field | `upande_scp/serverscripts/mobile/get_farm_data_bundle.py` |
+| Handset labels | `src/services/fieldUnits.ts` (Upande-Scout) |
+
+```bash
+bench --site <site> run-tests --module upande_scp.serverscripts.tests.test_field_unit_automation
+```
+
+---
+
+## Pest and disease photos on the phone
+
+A scout matching what they can see against the master needs the picture. The
+masters hold full-resolution research downloads — on kaitet, 47 files totalling
+**44 MB**, averaging 944 KB and up to 2048 px wide — which is not something to
+send to a field phone on a metered connection, even once.
+
+`getReferenceImages` answers with a **manifest**, not bytes. Every image file on
+this site is public, so the phone fetches the pictures directly and the endpoint
+only has to say which ones it needs:
+
+| Field | What it is for |
+| --- | --- |
+| `key` | `"pest:Antestia Bug"` — what the phone caches against |
+| `url`, `size` | the copy to download |
+| `full_url`, `full_size` | the original, for tap-to-zoom |
+| `content_hash` | sha256 of the original's **bytes** |
+
+Hashing the bytes rather than the URL is the whole point. Replacing a master's
+photo under the same file name is how it happens in the office; the hash changes,
+so the phone notices. A URL-only check would serve that stale picture forever.
+Renaming the record changes no bytes, so nothing is re-downloaded.
+
+A `version` digest over the manifest means an up-to-date phone transfers no
+listing at all — the common case, since these masters change a few times a year.
+
+### Measured results
+
+| | |
+| --- | --- |
+| Originals | 44.4 MB across 47 photos |
+| What the phone downloads | **3.03 MB** — 15x less |
+| Cold manifest rebuild | 345 ms |
+| Warm | 0 ms |
+
+The manifest points at a derivative fitted inside 800 px, named by the source's
+content hash so it is immutable and generated on first request. Two things
+measurement changed:
+
+- Re-encoding **grew** two already-small, already-compressed photos. A derivative
+  is discarded unless it saves bytes, so the manifest never offers the phone more
+  than the original.
+- One Predator points at a `.webp` that is not on disk. Those are reported under
+  `missing` rather than shipped as URLs the phone would 404 on.
+
+Coverage on kaitet is 34/36 pests, 13/15 diseases, 1/4 predators, 0/6 disorders —
+a data gap for the office, not a code limit.
+
+### On the handset
+
+`referenceImages.ts` downloads only what its hashes say it does not hold, and
+verifies the file is actually on disk before trusting its own index — a cache
+directory can be cleared by the OS without saying so. A failure never writes off
+work: one unreachable picture does not abandon the rest, and the manifest version
+is stored only when nothing failed, so the next sync retries rather than believing
+it is finished. Nothing here can throw into a scouting screen; a missing picture
+is a worse screen, a thrown error is a scout who cannot record what they found.
+
+It runs from the configure flow, alongside the observations the photos belong to,
+because that is the one moment the phone is known to have signal and the scout is
+deliberately waiting.
+
+| What | Where |
+| --- | --- |
+| Manifest + derivatives | `upande_scp/serverscripts/mobile/reference_images.py` |
+| Handset cache | `src/services/referenceImages.ts` (Upande-Scout) |
+
+```bash
+bench --site <site> run-tests --module upande_scp.serverscripts.tests.test_reference_images
+```
+
+---
+
 ### Contributing
 
 This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:

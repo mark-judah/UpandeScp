@@ -163,7 +163,11 @@ class FieldUnitCase(unittest.TestCase):
         """Remove children first, then units, then the automation docs."""
         for warehouse in (self.greenhouse, self.block):
             for unit in frappe.get_all("Bed", filters={"greenhouse": warehouse}, pluck="name"):
-                for doctype, field in (("Zone", "bed"), ("Orchard Tree", "row")):
+                for doctype, field in (
+                    ("Zone", "bed"),
+                    ("Orchard Tree", "row"),
+                    ("Triad", "row"),
+                ):
                     for child in frappe.get_all(doctype, filters={field: unit}, pluck="name"):
                         frappe.delete_doc(doctype, child, force=True, ignore_permissions=True)
                 frappe.delete_doc("Bed", unit, force=True, ignore_permissions=True)

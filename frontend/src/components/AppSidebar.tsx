@@ -10,7 +10,6 @@ import {
   Droplets,
   FileText,
   Flame,
-  GitFork,
   History,
   Layers,
   LayoutDashboard,
@@ -220,7 +219,9 @@ const ROSE_NAV: NavSection[] = [
     hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
-      { kind: "view", view: "varieties", label: "Varieties", icon: GitFork },
+      // Varieties is hidden until the page is finished. The route and the page are
+      // still here, so restoring it is one line — reachable meanwhile by URL for
+      // whoever is working on it.
     ],
   },
 ];

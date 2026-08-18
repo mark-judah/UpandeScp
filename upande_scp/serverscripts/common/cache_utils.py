@@ -60,6 +60,11 @@ K_SM_TRAPS_BY_GH = "scp:sm_traps_by_gh_v1"
 # beds + traps + sections for a farm so the mobile app can populate its
 # offline cache in a single request instead of per-block round-trips.
 K_SM_FARM_BUNDLE_PREFIX = "scp:sm_farm_bundle_v1"
+# Manifest of every pest / disease / predator / disorder photo, with a sha256 of
+# each file's bytes. The mobile app downloads a photo once and then only when its
+# hash changes, so this must be invalidated whenever one of those masters is
+# edited (see `invalidate_reference_images`).
+K_SM_REFERENCE_IMAGES = "scp:sm_reference_images_v1"
 # Per-block Orchard Tree FeatureCollection used by the avocado view of the
 # scouts map. Key suffix is the block (Warehouse) name.
 K_ORCHARD_TREES_PREFIX = "scp:orchard_trees_v1"
@@ -256,6 +261,15 @@ def publish_scouting_dirty(doc, method=None):
             f"bump_dash_agg_version failed for {getattr(doc, 'doctype', '?')}",
             "SCP Realtime",
         )
+
+
+def invalidate_reference_images():
+    """Clear the mobile reference-image manifest.
+
+    Cheap to rebuild (per-file hashes are memoised on size+mtime), so we just
+    drop the whole manifest rather than trying to patch one entry.
+    """
+    invalidate(K_SM_REFERENCE_IMAGES)
 
 
 def invalidate_farm_bundle(farm):
@@ -546,12 +560,12 @@ def build_bed_count_by_gh():
 
 _DOC_INVALIDATIONS = {
     "Employee": ("scp:sm_scout_lookup_v1",),
-    "Pest": (K_OBSERVATION_TYPES, K_PEST_COLORS),
-    "Plant Disease": (K_OBSERVATION_TYPES, K_DISEASE_COLORS),
-    "Predator": (K_OBSERVATION_TYPES,),
+    "Pest": (K_OBSERVATION_TYPES, K_PEST_COLORS, K_SM_REFERENCE_IMAGES),
+    "Plant Disease": (K_OBSERVATION_TYPES, K_DISEASE_COLORS, K_SM_REFERENCE_IMAGES),
+    "Predator": (K_OBSERVATION_TYPES, K_SM_REFERENCE_IMAGES),
     "Weed": (K_OBSERVATION_TYPES,),
     "Incident": (K_OBSERVATION_TYPES,),
-    "Physiological Disorder": (K_OBSERVATION_TYPES,),
+    "Physiological Disorder": (K_OBSERVATION_TYPES, K_SM_REFERENCE_IMAGES),
     "Pests Stages": (K_OBSERVATION_TYPES,),
     "Disease Stages": (K_OBSERVATION_TYPES,),
     "Predator Stages": (K_OBSERVATION_TYPES,),

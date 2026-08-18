@@ -1,0 +1,81 @@
+diff --git a/upande_core/upande_core/doctype/bed/bed.py b/upande_core/upande_core/doctype/bed/bed.py
+index 39b78e9..15e6093 100644
+--- a/upande_core/upande_core/doctype/bed/bed.py
++++ b/upande_core/upande_core/doctype/bed/bed.py
+@@ -7,9 +7,15 @@ from frappe.model.document import Document
+ from upande_core.utils import validate_structure_level
+ 
+ 
++# Units that are rows in all but name. Coffee calls a row a "Band", so a Band
++# sits on a Block and is validated as a row — not as a bed on a greenhouse,
++# which is where an unrecognised unit_type would otherwise fall.
++ROW_LIKE_UNIT_TYPES = ("Row", "Band")
++
++
+ class Bed(Document):
+ 	def validate(self):
+-		if self.unit_type == "Row":
++		if self.unit_type in ROW_LIKE_UNIT_TYPES:
+ 			validate_structure_level(self.greenhouse, "Has Rows", "Block")
+ 		else:
+ 			validate_structure_level(self.greenhouse, "Has Beds", "Greenhouse")
+@@ -17,7 +23,7 @@ class Bed(Document):
+ 		self.assign_section()
+ 
+ 	def assign_section(self):
+-		if self.unit_type == "Row":
++		if self.unit_type in ROW_LIKE_UNIT_TYPES:
+ 			self.section = None
+ 			return
+ 		self.section = frappe.db.get_value(
+diff --git a/upande_core/upande_core/doctype/orchard_tree/orchard_tree.py b/upande_core/upande_core/doctype/orchard_tree/orchard_tree.py
+index 6285780..4177362 100644
+--- a/upande_core/upande_core/doctype/orchard_tree/orchard_tree.py
++++ b/upande_core/upande_core/doctype/orchard_tree/orchard_tree.py
+@@ -5,6 +5,7 @@ import frappe
+ from frappe import _
+ from frappe.model.document import Document
+ 
++from upande_core.upande_core.doctype.bed.bed import ROW_LIKE_UNIT_TYPES
+ from upande_core.utils import validate_structure_level
+ 
+ 
+@@ -13,8 +14,11 @@ class OrchardTree(Document):
+ 		row_unit_type, block = frappe.db.get_value(
+ 			"Bed", self.row, ["unit_type", "greenhouse"]
+ 		)
+-		if row_unit_type != "Row":
+-			frappe.throw(_("{0} is a bed, not a row. Trees can only be placed on rows.").format(self.row))
++		# A coffee Band is a row under another name, so trees belong on it too.
++		if row_unit_type not in ROW_LIKE_UNIT_TYPES:
++			frappe.throw(
++				_("{0} is a bed, not a row. Trees can only be placed on rows.").format(self.row)
++			)
+ 		self.block = block
+ 		validate_structure_level(block, "Has Orchard Trees", "Block")
+ 		self.validate_triad_block(block)
+diff --git a/upande_core/upande_core/doctype/triad/triad.py b/upande_core/upande_core/doctype/triad/triad.py
+index 6827cf5..14dd448 100644
+--- a/upande_core/upande_core/doctype/triad/triad.py
++++ b/upande_core/upande_core/doctype/triad/triad.py
+@@ -5,6 +5,7 @@ import frappe
+ from frappe import _
+ from frappe.model.document import Document
+ 
++from upande_core.upande_core.doctype.bed.bed import ROW_LIKE_UNIT_TYPES
+ from upande_core.utils import validate_structure_level
+ 
+ 
+@@ -13,7 +14,10 @@ class Triad(Document):
+ 		row_unit_type, block = frappe.db.get_value(
+ 			"Bed", self.row, ["unit_type", "greenhouse"]
+ 		)
+-		if row_unit_type != "Row":
+-			frappe.throw(_("{0} is a bed, not a row. Triads can only be placed on rows.").format(self.row))
++		# A coffee Band is a row under another name, so triads belong on it too.
++		if row_unit_type not in ROW_LIKE_UNIT_TYPES:
++			frappe.throw(
++				_("{0} is a bed, not a row. Triads can only be placed on rows.").format(self.row)
++			)
+ 		self.block = block
+ 		validate_structure_level(block, "Has Triads", "Block")

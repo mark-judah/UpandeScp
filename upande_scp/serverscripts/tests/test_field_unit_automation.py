@@ -530,3 +530,62 @@ class TestTheOldToolsAreGone(unittest.TestCase):
     def test_the_entry_point_is_callable_from_the_desk(self):
         self.assertIn(FUA.run, frappe.whitelisted)
         self.assertIn(FUA.FieldUnitAutomation.run_automation, frappe.whitelisted)
+
+
+class TestTheMobileBundleCarriesTheUnitKind(unittest.TestCase):
+    """The phone downloads its units from `getFarmDataBundle`.
+
+    Beds, rows and bands all live in `tabBed`, so a payload without `unit_type`
+    leaves the app unable to label a unit or pick the right scouting screen —
+    which is what it was, before this. Lokitela is the one farm on kaitet holding
+    rows (1,872 of them), so it is the case that proves the field is real and not
+    just defaulted.
+    """
+
+    def _bundle(self, farm):
+        from upande_scp.serverscripts.common.cache_utils import invalidate_farm_bundle
+        from upande_scp.serverscripts.mobile.get_farm_data_bundle import (
+            _build_farm_bundle,
+        )
+
+        invalidate_farm_bundle(farm)
+        return _build_farm_bundle(farm)
+
+    def test_every_unit_declares_its_kind(self):
+        bundle = self._bundle("Lokitela")
+        units = [u for group in bundle["beds_by_warehouse"].values() for u in group]
+        if not units:
+            self.skipTest("Lokitela has no units on this site")
+        for unit in units:
+            self.assertIn(unit.get("unit_type"), ("Bed", "Row", "Band"), unit)
+
+    def test_rows_are_reported_as_rows(self):
+        """Not silently defaulted to Bed."""
+        bundle = self._bundle("Lokitela")
+        kinds = set(bundle["unit_type_by_warehouse"].values())
+        if not kinds:
+            self.skipTest("Lokitela has no units on this site")
+        self.assertIn("Row", kinds)
+
+    def test_each_warehouse_is_summarised_by_one_kind(self):
+        """So the app can label a picker without scanning every unit. Core
+        validates beds onto Greenhouses and rows/bands onto Blocks, so a
+        warehouse holds one kind."""
+        bundle = self._bundle("Lokitela")
+        for warehouse, units in bundle["beds_by_warehouse"].items():
+            if not units:
+                continue
+            kinds = {u["unit_type"] for u in units}
+            self.assertEqual(
+                len(kinds), 1, f"{warehouse} holds more than one unit kind: {kinds}"
+            )
+            self.assertEqual(bundle["unit_type_by_warehouse"][warehouse], kinds.pop())
+
+    def test_the_version_carries_a_schema_stamp(self):
+        """The digest is otherwise built from `modified` timestamps alone, so a
+        phone holding a bundle from before this field existed would never learn it
+        was missing one."""
+        from upande_scp.serverscripts.mobile.get_farm_data_bundle import _BUNDLE_SCHEMA
+
+        bundle = self._bundle("Lokitela")
+        self.assertTrue(bundle["version"].startswith(_BUNDLE_SCHEMA))

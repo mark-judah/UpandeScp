@@ -24,7 +24,15 @@ from upande_scp.serverscripts.common.cache_utils import (
 )
 
 
-_BED_FIELDS = ["name", "bed", "greenhouse"]
+# `unit_type` distinguishes a rose bed from an avocado row from a coffee band.
+# They all live in `tabBed`, so without it the phone cannot label a unit or tell
+# which scouting screen applies. See `field_unit_automation.py`.
+_BED_FIELDS = ["name", "bed", "greenhouse", "unit_type"]
+
+# Bumped whenever the payload's *shape* changes. The version digest is otherwise
+# derived purely from `modified` timestamps, so a phone holding a bundle from
+# before a new field existed would never learn it was missing one.
+_BUNDLE_SCHEMA = "v2-unit-type"
 _TRAP_FIELDS = ["name", "farm", "greenhouse", "trap_number", "location", "type"]
 _WAREHOUSE_FIELDS = [
     "name",
@@ -57,7 +65,8 @@ def getFarmDataBundle(farm=None, version=None):
                 "sections": [{"name": "...", "warehouse_name": "..."}, ...],
                 "station_type": "Block" | "Greenhouse" | None,
                 "has_sections": True | False,
-                "beds_by_warehouse": {wh_name: [{...}, ...]},
+                "beds_by_warehouse": {wh_name: [{name, bed, unit_type}, ...]},
+            "unit_type_by_warehouse": {wh_name: "Bed" | "Row" | "Band"},
                 "traps_by_warehouse": {wh_name: [{...}, ...]},
             }
         }
@@ -119,7 +128,12 @@ def _build_farm_bundle(farm: str) -> dict:
         )
         for b in beds:
             beds_by_warehouse.setdefault(b.greenhouse, []).append(
-                {"name": b.name, "bed": b.bed}
+                {
+                    "name": b.name,
+                    "bed": b.bed,
+                    # Defaults to Bed for the rose records that predate the field.
+                    "unit_type": b.unit_type or "Bed",
+                }
             )
 
         traps = frappe.get_all(
@@ -135,6 +149,14 @@ def _build_farm_bundle(farm: str) -> dict:
     station_type = _infer_station_type(warehouses)
     version = _compute_farm_version(farm, station_names)
 
+    # What one unit is called in each warehouse, so the app can label a picker
+    # "Bands" without scanning every unit. A warehouse holds one kind — core
+    # validates beds onto Greenhouses and rows/bands onto Blocks — so the first
+    # unit settles it.
+    unit_type_by_warehouse = {
+        wh: units[0]["unit_type"] for wh, units in beds_by_warehouse.items() if units
+    }
+
     return {
         "farm": farm,
         "version": version,
@@ -144,6 +166,7 @@ def _build_farm_bundle(farm: str) -> dict:
         "station_type": station_type,
         "has_sections": len(sections) > 0,
         "beds_by_warehouse": beds_by_warehouse,
+        "unit_type_by_warehouse": unit_type_by_warehouse,
         "traps_by_warehouse": traps_by_warehouse,
     }
 
@@ -167,12 +190,14 @@ def _infer_station_type(warehouses) -> str | None:
 
 
 def _compute_farm_version(farm: str, station_names: list[str]) -> str:
-    """Digest = max(modified) across Warehouse / Bed / Trap for this farm.
+    """Digest = schema stamp + max(modified) across Warehouse / Bed / Trap.
 
-    Cheap (3 indexed MAX queries) and changes the moment any underlying
-    record is touched, which lines up with our doc_event invalidator.
+    Cheap (3 indexed MAX queries) and changes the moment any underlying record is
+    touched, which lines up with our doc_event invalidator. The schema stamp
+    covers the case timestamps cannot: adding a field to the payload, where the
+    data is unchanged but what the phone holds is now incomplete.
     """
-    parts: list[str] = []
+    parts: list[str] = [_BUNDLE_SCHEMA]
 
     wh_max = frappe.db.sql(
         "SELECT MAX(modified) FROM `tabWarehouse` WHERE custom_farm = %s",

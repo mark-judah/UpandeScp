@@ -192,14 +192,13 @@ class FieldUnitCase(unittest.TestCase):
         if logs:
             self.fail(f"the automation swallowed an error:\n{logs[0].error[:900]}")
 
-    def build(self, unit_type, geojson, sectors=None, child_type=None):
+    def build(self, unit_type, geojson, sectors=None):
         warehouse = self.warehouse_for(unit_type)
         doc = frappe.get_doc(
             {
                 "doctype": "Field Unit Automation",
                 "warehouse": warehouse,
                 "unit_type": unit_type,
-                "child_type": child_type or "",
                 "units_geojson": geojson,
                 "sectors": sectors or [],
             }
@@ -249,35 +248,25 @@ class TestBands(FieldUnitCase):
         self.assertEqual(len(self.units("Band")), 2)
         self.assertEqual(len(self.triads("Band")), 3)
 
-    def test_a_band_can_also_take_the_plants_on_it(self):
-        """A triad divides the band; an Orchard Tree is a plant standing on it.
-        Different levels, so choosing one must not rule out the other."""
-        doc = self.build(
-            "Band",
-            _collection(_feature(unit_id=1, child_id=1)),
-            child_type="Orchard Tree",
-        )
+    def test_a_band_is_a_row_to_core_but_holds_its_own_child(self):
+        """Both halves matter. Core validates a band onto a Block exactly as it does
+        a row, which is what keeps the maps and mobile bundle working — and is also
+        why it is easy to wrongly give it a row's child."""
+        doc = self.build("Band", _collection(_feature(unit_id=2, child_id=1)))
         doc.run_automation()
-        self.assertEqual(len(self.children("Orchard Tree", "row", "Band")), 1)
-        self.assertEqual(self.triads("Band"), [])
-
-    def test_a_band_can_hold_exactly_what_a_row_can(self):
-        """Not merely 'also works' — the same set, so nothing downstream needs a
-        coffee-specific branch. Only the default differs, because that reflects
-        what each crop imports today, not what it is allowed to hold."""
+        unit = self.units("Band")[0]
         self.assertEqual(
-            FUA.allowed_child_types("Band"), FUA.allowed_child_types("Row")
+            frappe.db.get_value("Bed", unit.name, "greenhouse"), self.block
         )
+        self.assertEqual(FUA.child_doctype_for("Band"), "Triad")
 
-    def test_a_bands_trees_carry_the_number_readers_actually_query(self):
+    def test_trees_carry_the_number_readers_actually_query(self):
         """`tree` is mandatory and names the document; `tree_number` is what every
         reader in this app queries. The superseded tool wrote only the latter, so
         nothing could be created once core made `tree` mandatory."""
-        doc = self.build(
-            "Band", _collection(_feature(unit_id=1, child_id=4)), child_type="Orchard Tree"
-        )
+        doc = self.build("Row", _collection(_feature(row_id=1, tree_id=4)))
         doc.run_automation()
-        names = self.children("Orchard Tree", "row", "Band")
+        names = self.children("Orchard Tree", "row", "Row")
         self.assertEqual(len(names), 1)
         tree = frappe.db.get_value(
             "Orchard Tree", names[0], ["tree", "tree_number"], as_dict=True
@@ -322,7 +311,7 @@ class TestUnitKinds(FieldUnitCase):
         with self.assertRaises(frappe.ValidationError):
             doc.run_automation()
 
-    def test_the_summary_names_the_unit_kind_and_the_child(self):
+    def test_the_summary_names_the_unit_kind_and_its_child(self):
         """The old confirmation said "Bed and Zone documents" for all three crops."""
         doc = self.build("Band", _collection(_feature(unit_id=1, child_id=1)))
         summary = doc.run_automation()
@@ -330,43 +319,51 @@ class TestUnitKinds(FieldUnitCase):
         self.assertIn("triad", summary.lower())
 
 
-class TestChildType(FieldUnitCase):
-    """The segment and the plant are different levels, so `child_type` is its own
-    choice rather than something derived from `unit_type`.
+class TestTheThreePairs(FieldUnitCase):
+    """Two levels, three pairs: a unit kind and the one child it holds.
 
-    An earlier version derived it, which made `Orchard Tree` the row's segment —
-    wrong by a level. A `Triad` divides a row or band the way a `Zone` divides a
-    bed; an `Orchard Tree` is one plant standing on a unit.
+    | `unit_type` | Holds |
+    |-------------|----------------|
+    | `Bed`  | `Zone`         |
+    | `Row`  | `Orchard Tree` |
+    | `Band` | `Triad`        |
+
+    Getting the coffee pair wrong is the failure that matters. `Band` behaves like
+    `Row` everywhere core is concerned — it sits on a Block and validates as a row
+    — which makes it easy to assume it holds trees like a row does. It does not: a
+    band holds triads.
     """
 
-    def test_the_default_matches_what_each_crop_imports_today(self):
-        """Chosen from real data, so an existing document behaves as it did before
-        the field existed: 154,341 zones under beds, 53,699 trees straight off
-        rows, and coffee bands divided into triads."""
-        self.assertEqual(FUA.resolve_child_type("Bed"), "Zone")
-        self.assertEqual(FUA.resolve_child_type("Row"), "Orchard Tree")
-        self.assertEqual(FUA.resolve_child_type("Band"), "Triad")
+    def test_each_unit_kind_holds_its_own_child(self):
+        self.assertEqual(FUA.child_doctype_for("Bed"), "Zone")
+        self.assertEqual(FUA.child_doctype_for("Row"), "Orchard Tree")
+        self.assertEqual(FUA.child_doctype_for("Band"), "Triad")
 
-    def test_an_explicit_choice_wins(self):
-        self.assertEqual(FUA.resolve_child_type("Band", "Orchard Tree"), "Orchard Tree")
-        self.assertEqual(FUA.resolve_child_type("Row", "Triad"), "Triad")
+    def test_an_unknown_unit_kind_holds_nothing(self):
+        self.assertIsNone(FUA.child_doctype_for("Terrace"))
 
-    def test_a_blank_choice_falls_back_to_the_default(self):
-        for blank in (None, "", "   "):
-            self.assertEqual(FUA.resolve_child_type("Band", blank), "Triad")
-
-    def test_a_bed_holds_only_zones(self):
-        """There is no bed-level equivalent of a triad or a tree."""
-        self.assertEqual(FUA.allowed_child_types("Bed"), ("Zone",))
-
-    def test_a_row_can_be_divided_into_triads(self):
-        """Nothing populates `Triad` on kaitet yet, so this is the first thing that
-        proves core's row → triad edge actually works."""
-        doc = self.build("Row", _collection(_feature(row_id=2, tree_id=1)), child_type="Triad")
+    def test_a_band_holds_triads_not_trees(self):
+        """The assumption this exists to block: core treats a band as a row, so it
+        would be easy to give it a row's child."""
+        doc = self.build("Band", _collection(_feature(unit_id=1, child_id=1)))
         doc.run_automation()
-        self.assertEqual(len(self.triads("Row")), 1)
+        self.assertEqual(len(self.triads("Band")), 1)
+        self.assertEqual(self.children("Orchard Tree", "row", "Band"), [])
 
-    def test_a_triad_records_its_block_and_geometry(self):
+    def test_a_row_holds_trees_not_triads(self):
+        doc = self.build("Row", _collection(_feature(row_id=2, tree_id=1)))
+        doc.run_automation()
+        self.assertEqual(len(self.children("Orchard Tree", "row", "Row")), 1)
+        self.assertEqual(self.triads("Row"), [])
+
+    def test_a_bed_holds_zones(self):
+        doc = self.build("Bed", _collection(_feature(line_id=1, zone_id=1)))
+        doc.run_automation()
+        self.assertEqual(len(self.children("Zone", "bed", "Bed")), 1)
+
+    def test_a_triad_records_its_number_block_and_geometry(self):
+        """Nothing had ever populated `Triad` on kaitet, so this is the first thing
+        that proves core's row -> triad edge works."""
         doc = self.build("Band", _collection(_feature(unit_id=3, child_id=7)))
         doc.run_automation()
         names = self.triads("Band")
@@ -377,36 +374,6 @@ class TestChildType(FieldUnitCase):
         self.assertEqual(triad.triad, 7)
         self.assertEqual(triad.block, self.block)
         self.assertTrue(triad.geojson)
-
-    def test_a_bed_asked_for_triads_is_refused_with_a_reason(self):
-        """Refused here rather than by core on every single row, so the operator
-        reads it instead of finding it in the Error Log."""
-        doc = self.build("Bed", _collection(_feature(line_id=1, zone_id=1)))
-        doc.child_type = "Triad"
-        with self.assertRaises(frappe.ValidationError) as caught:
-            doc.run_automation()
-        self.assertIn("Zone", str(caught.exception))
-
-    def test_an_unknown_child_type_is_refused(self):
-        doc = self.build("Band", _collection(_feature(unit_id=1, child_id=1)))
-        doc.child_type = "Sapling"
-        with self.assertRaises(frappe.ValidationError):
-            doc.run_automation()
-
-    def test_triads_and_trees_can_coexist_on_one_unit(self):
-        """The point of separating the levels: importing one must not displace the
-        other."""
-        doc = self.build("Band", _collection(_feature(unit_id=1, child_id=1)))
-        doc.run_automation()
-
-        doc.child_type = "Orchard Tree"
-        doc.save(ignore_permissions=True)
-        doc.run_automation()
-
-        self.assertEqual(len(self.triads("Band")), 1)
-        self.assertEqual(len(self.children("Orchard Tree", "row", "Band")), 1)
-        # And one unit, not two — the same band was reused.
-        self.assertEqual(len(self.units("Band")), 1)
 
 
 class TestGeojsonFormats(FieldUnitCase):

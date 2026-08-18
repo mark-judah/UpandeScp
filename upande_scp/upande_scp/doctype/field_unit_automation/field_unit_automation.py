@@ -18,37 +18,20 @@ conventions and the child doctype differed. Coffee then needed a third —
 **bands** — and a band is simply what coffee calls a row, so a third tool would
 have been a third copy of the same code.
 
-So there is one tool. `unit_type` says what a unit is called, and `child_type` says
-what the GeoJSON describes:
+So there is one tool, and `unit_type` says which crop's vocabulary is in play. Each
+unit kind holds exactly one kind of child:
 
-| Level | Roses | Avocado | Coffee |
-|-------|-------|---------|--------|
-| Warehouse | Greenhouse | Block | Block |
-| Unit (`tabBed`) | `Bed` | `Row` | `Band` |
-| Segment of a unit | `Zone` | `Triad` | `Triad` |
-| Individual plant | — | `Orchard Tree` | `Orchard Tree` |
+| `unit_type` | Crop | Warehouse | Holds |
+|-------------|---------|------------|----------------|
+| `Bed`  | roses   | Greenhouse | `Zone`         |
+| `Row`  | avocado | Block      | `Orchard Tree` |
+| `Band` | coffee  | Block      | `Triad`        |
 
-`Band` is a `Row` under coffee's name, so nothing downstream learns a new
-structure: a coffee band is a `Bed` with `unit_type = "Band"`, and the scouting
-screens, maps and mobile bundle read it the way they already read the other two.
-
-**The segment and the plant are different levels.** A `Zone` subdivides a bed and a
-`Triad` subdivides a row or band — those are the same idea in two vocabularies. An
-`Orchard Tree` is not a subdivision at all; it is one plant, which sits on a unit
-and may optionally belong to a `Triad`. An earlier version of this tool derived the
-child from `unit_type` alone and so treated `Orchard Tree` as the row's segment,
-which is wrong by a level.
-
-`child_type` therefore has to be its own choice, because one unit kind can hold
-both: a block of avocado rows has trees today and could have triads tomorrow
-without either replacing the other. Left blank it follows `unit_type`, defaulting to
-what each crop currently imports:
-
-| `unit_type` | Default `child_type` | Why |
-|-------------|----------------------|-----|
-| `Bed`  | `Zone`         | all 154,341 zones on kaitet |
-| `Row`  | `Orchard Tree` | all 53,699 trees on kaitet hang straight off a row |
-| `Band` | `Triad`        | coffee bands are divided into triads |
+Two levels, three pairs. `Band` is a `Row` under coffee's name as far as core is
+concerned — it sits on a Block and is validated as a row — so nothing downstream
+learns a new structure: a coffee band is a `Bed` with `unit_type = "Band"`, and the
+scouting screens, maps and mobile bundle read it the way they already read the
+other two. What differs is only what hangs off it.
 
 ## What the merge fixed on the way through
 
@@ -111,28 +94,25 @@ _ID_CONVENTIONS = (
 	("line_id", "zone_id"),    # rose exports
 )
 
-# What each child doctype needs, so one code path serves all three.
+# unit_type → the one child it holds, and everything needed to create it.
 #
+#   child   — the doctype
 #   parent  — the field linking the child back to its unit (a `tabBed` row)
 #   number  — the child's own number; Int, mandatory, and what it names itself from
 #   mirror  — a second field carrying the same number, where one exists
 #   station — the field naming the warehouse
 #
-# Geometry is `geojson` on all three.
-_CHILD_TABLE = {
-	"Zone": {
+# Geometry is `geojson` on all three children.
+_UNIT_SPEC = {
+	"Bed": {
+		"child": "Zone",
 		"parent": "bed",
 		"number": "zone",
 		"mirror": None,
 		"station": "greenhouse",
 	},
-	"Triad": {
-		"parent": "row",
-		"number": "triad",
-		"mirror": None,
-		"station": "block",
-	},
-	"Orchard Tree": {
+	"Row": {
+		"child": "Orchard Tree",
 		"parent": "row",
 		"number": "tree",
 		# `tree` (Int) is mandatory and names the document, while `tree_number`
@@ -144,40 +124,20 @@ _CHILD_TABLE = {
 		"mirror": "tree_number",
 		"station": "block",
 	},
+	"Band": {
+		"child": "Triad",
+		"parent": "row",
+		"number": "triad",
+		"mirror": None,
+		"station": "block",
+	},
 }
 
-# What each unit kind imports when `child_type` is not set explicitly. Chosen to
-# match what is actually on kaitet, so an existing document keeps behaving as it
-# did before `child_type` existed.
-_DEFAULT_CHILD = {
-	"Bed": "Zone",
-	"Row": "Orchard Tree",
-	"Band": "Triad",
-}
 
-# Which units are rows in all but name. Mirrors `ROW_LIKE_UNIT_TYPES` in
-# upande_core; a band sits on a Block and is validated as a row.
-_ROW_LIKE = ("Row", "Band")
-
-
-def resolve_child_type(unit_type, child_type=None):
-	"""What to create: the explicit choice, or this unit kind's default."""
-	chosen = (child_type or "").strip()
-	if chosen:
-		return chosen
-	return _DEFAULT_CHILD.get(unit_type, "Zone")
-
-
-def allowed_child_types(unit_type):
-	"""The children a unit kind can hold.
-
-	A bed has zones. A row or band has triads dividing it and trees planted on
-	it — core links `Orchard Tree.row` and `Triad.row` both to a `Bed` row, so
-	either is valid on either.
-	"""
-	if unit_type in _ROW_LIKE:
-		return ("Triad", "Orchard Tree")
-	return ("Zone",)
+def child_doctype_for(unit_type):
+	"""The child a unit kind holds. One each — see `_UNIT_SPEC`."""
+	spec = _UNIT_SPEC.get(unit_type)
+	return spec["child"] if spec else None
 
 
 class FieldUnitAutomation(Document):
@@ -194,25 +154,15 @@ class FieldUnitAutomation(Document):
 
 		if not warehouse:
 			frappe.throw("Please select a Greenhouse / Block.")
-		if unit_type not in _DEFAULT_CHILD:
+		if unit_type not in _UNIT_SPEC:
 			frappe.throw(f"Unknown Unit Type '{unit_type}'.")
-
-		child_doctype = resolve_child_type(unit_type, self.child_type)
-		if child_doctype not in _CHILD_TABLE:
-			frappe.throw(f"Unknown value for Creates: '{child_doctype}'.")
-		if child_doctype not in allowed_child_types(unit_type):
-			# Catching this here rather than letting core reject every row keeps
-			# the reason in front of the operator instead of in the Error Log.
-			frappe.throw(
-				f"A {unit_type} cannot hold {child_doctype} records. "
-				f"Choose one of: {', '.join(allowed_child_types(unit_type))}."
-			)
 
 		features = _parse_features(self.units_geojson)
 		if not features:
 			frappe.throw("GeoJSON has no features.")
 
-		spec = _CHILD_TABLE[child_doctype]
+		spec = _UNIT_SPEC[unit_type]
+		child_doctype = spec["child"]
 
 		units_created = units_skipped = 0
 		children_created = children_skipped = 0
@@ -353,16 +303,13 @@ def run(doc_name=None):
 
 
 def run_from_file(
-	warehouse, geojson_path, unit_type="Bed", child_type=None, sectors=None
+	warehouse, geojson_path, unit_type="Bed", sectors=None
 ):
 	"""Load GeoJSON from disk, attach it to the warehouse's doc, run it.
 
 	    bench --site kaitet.local execute \\
 	        upande_scp.upande_scp.doctype.field_unit_automation.field_unit_automation.run_from_file \\
 	        --kwargs '{"warehouse":"DAIRY BLK 6 - KL","geojson_path":"/tmp/blk6.geojson","unit_type":"Row"}'
-
-	`child_type` is optional; omitted, it follows `unit_type` (see
-	`resolve_child_type`).
 	"""
 	with open(geojson_path) as f:
 		payload = f.read()
@@ -371,7 +318,6 @@ def run_from_file(
 		doc = frappe.get_doc("Field Unit Automation", warehouse)
 		doc.units_geojson = payload
 		doc.unit_type = unit_type
-		doc.child_type = child_type or ""
 		if sectors is not None:
 			doc.set("sectors", sectors)
 		doc.save(ignore_permissions=True)
@@ -381,7 +327,6 @@ def run_from_file(
 				"doctype": "Field Unit Automation",
 				"warehouse": warehouse,
 				"unit_type": unit_type,
-				"child_type": child_type or "",
 				"units_geojson": payload,
 				"sectors": sectors or [],
 			}

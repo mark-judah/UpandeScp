@@ -365,33 +365,27 @@ That matters because it decides how much code the third crop costs. Nothing
 downstream — the maps, the scouting screens, the mobile bundle — needs to learn a
 new structure for coffee.
 
-### The levels, and why they are not one thing
+### Two levels, three pairs
 
-A `Zone` divides a bed. A `Triad` divides a row or a band — the same idea in
-another vocabulary. An `Orchard Tree` is not a division at all: it is one plant
-standing on a unit, which may optionally belong to a triad.
+Each crop has a unit and one kind of thing on it:
 
-| Level | Roses | Avocado | Coffee |
+| Crop | Warehouse | Unit (`tabBed`) | Holds |
 | --- | --- | --- | --- |
-| Warehouse | Greenhouse | Block | Block |
-| Unit (`tabBed`) | `Bed` | `Row` | `Band` |
-| Division of a unit | `Zone` | `Triad` | `Triad` |
-| Individual plant | — | `Orchard Tree` | `Orchard Tree` |
+| Roses | Greenhouse | `Bed` | `Zone` |
+| Avocado | Block | `Row` | `Orchard Tree` |
+| Coffee | Block | `Band` | `Triad` |
 
-So a unit kind does not determine its child: a block of rows has trees on it today
-and can be divided into triads without either replacing the other. **Creates**
-(`child_type`) is therefore its own choice. Left blank it follows the unit kind,
-defaulting to what each crop actually imports:
+`Band` is a `Row` as far as core is concerned — it sits on a Block and is validated
+as a row — which is what keeps the maps, scouting screens and mobile bundle working
+without learning a new shape. What differs is only what hangs off it.
 
-| Unit | Default | Because |
-| --- | --- | --- |
-| `Bed` | `Zone` | all 154,341 zones on kaitet hang off a bed |
-| `Row` | `Orchard Tree` | all 53,699 trees hang straight off a row |
-| `Band` | `Triad` | coffee bands are divided into triads |
+That last point is the one worth stating plainly, because the resemblance invites
+the wrong guess: **a band holds triads, not trees.** A test asserts it directly, for
+exactly that reason.
 
-`Triad.row` has **no rows at all** on kaitet — core models the level but nothing
-has ever populated it — so coffee is the first thing to use it, and the tests here
-are the first proof the edge works.
+`Triad.row` had **no rows at all** on kaitet — core models the level but nothing had
+ever populated it — so coffee is its first use, and the tests here are the first
+proof the edge works.
 
 ### One tool instead of three
 
@@ -404,8 +398,8 @@ There used to be two automations that turned a GeoJSON export into records:
 
 They already wrote into the same table and differed only in field names, GeoJSON
 conventions and which child they made. Coffee would have been a third copy, so
-they are now one **Field Unit Automation**, with `unit_type` naming the unit and
-`child_type` saying what the GeoJSON describes.
+they are now one **Field Unit Automation**, with `unit_type` selecting which pair
+above is in play.
 
 Both GeoJSON layouts and all three id conventions now work for every unit type —
 a single `FeatureCollection` or one per line, and ids from `unit_id`/`child_id`,

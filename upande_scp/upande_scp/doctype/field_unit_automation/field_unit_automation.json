@@ -1,0 +1,97 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:warehouse",
+ "creation": "2026-08-18 09:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "warehouse",
+  "unit_type",
+  "column_break_main",
+  "units_geojson",
+  "sectors_section",
+  "sectors"
+ ],
+ "fields": [
+  {
+   "description": "The greenhouse, block or field this GeoJSON describes.",
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Greenhouse / Block",
+   "options": "Warehouse",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "Bed",
+   "description": "What one unit is called here. Beds hold Zones; Rows and Bands hold Trees. A Band is a Row under its coffee name.",
+   "fieldname": "unit_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Unit Type",
+   "options": "Bed\nRow\nBand",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "A GeoJSON FeatureCollection, or one FeatureCollection per line. Each feature needs a unit number and a child number — from <code>unit_id</code>/<code>child_id</code>, <code>row_id</code>/<code>tree_id</code>, <code>line_id</code>/<code>zone_id</code>, or a name ending <code>_ROW&lt;n&gt;_T&lt;n&gt;</code>.",
+   "fieldname": "units_geojson",
+   "fieldtype": "Code",
+   "label": "Units GeoJSON",
+   "options": "JSON",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sectors_section",
+   "fieldtype": "Section Break",
+   "label": "Varieties by Unit Range"
+  },
+  {
+   "description": "Optional. Stamps each new unit with the variety whose range covers its number.",
+   "fieldname": "sectors",
+   "fieldtype": "Table",
+   "label": "Sectors",
+   "options": "Field Unit Sector"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-18 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Field Unit Automation",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "SCP General Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

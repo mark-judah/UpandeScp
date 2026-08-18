@@ -54,7 +54,7 @@ doctype_js = {
     "Warehouse": "public/js/warehouse.js",
     "Pest": "public/js/pest.js",
     "BOM": "public/js/bom.js",
-    "Bed And Zone Automation": "public/js/bed_and_zone_automation.js",
+    "Field Unit Automation": "public/js/field_unit_automation.js",
 }
 doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -113,6 +113,10 @@ after_migrate = [
 	# where absent. Must precede the layout pass, same as the Stock Entry fields.
 	"upande_scp.serverscripts.common.farm_fields.ensure_farm_fields",
 	"upande_scp.serverscripts.common.scouting_tab_layout.enforce",
+	# `Bed.unit_type` belongs to upande_core and ships with Bed + Row only. Coffee
+	# units are Bands, so SCP appends that option itself rather than editing another
+	# app's doctype. Append-only, so a site's own options survive.
+	"upande_scp.serverscripts.geo.field_unit_types.after_migrate",
 ]
 
 before_uninstall = [
@@ -514,7 +518,7 @@ fixtures = [
     # Approvals page replaces it).
     # NOTE: Server Scripts are no longer shipped as fixtures. The only live one
     # ("Zone Atomation Tool" / createBedsAndZones) was moved into code at
-    # upande_scp.serverscripts.geo.bed_zone_automation.create_beds_and_zones; the
+    # upande_scp.upande_scp.doctype.field_unit_automation.field_unit_automation.run; the
     # rest were dead (their callers were the removed www pages).
     # NOTE: the "Spray Plan" Print Format is no longer a fixture — it's a
     # standard app print format in code at

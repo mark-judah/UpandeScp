@@ -365,6 +365,34 @@ That matters because it decides how much code the third crop costs. Nothing
 downstream — the maps, the scouting screens, the mobile bundle — needs to learn a
 new structure for coffee.
 
+### The levels, and why they are not one thing
+
+A `Zone` divides a bed. A `Triad` divides a row or a band — the same idea in
+another vocabulary. An `Orchard Tree` is not a division at all: it is one plant
+standing on a unit, which may optionally belong to a triad.
+
+| Level | Roses | Avocado | Coffee |
+| --- | --- | --- | --- |
+| Warehouse | Greenhouse | Block | Block |
+| Unit (`tabBed`) | `Bed` | `Row` | `Band` |
+| Division of a unit | `Zone` | `Triad` | `Triad` |
+| Individual plant | — | `Orchard Tree` | `Orchard Tree` |
+
+So a unit kind does not determine its child: a block of rows has trees on it today
+and can be divided into triads without either replacing the other. **Creates**
+(`child_type`) is therefore its own choice. Left blank it follows the unit kind,
+defaulting to what each crop actually imports:
+
+| Unit | Default | Because |
+| --- | --- | --- |
+| `Bed` | `Zone` | all 154,341 zones on kaitet hang off a bed |
+| `Row` | `Orchard Tree` | all 53,699 trees hang straight off a row |
+| `Band` | `Triad` | coffee bands are divided into triads |
+
+`Triad.row` has **no rows at all** on kaitet — core models the level but nothing
+has ever populated it — so coffee is the first thing to use it, and the tests here
+are the first proof the edge works.
+
 ### One tool instead of three
 
 There used to be two automations that turned a GeoJSON export into records:
@@ -376,14 +404,8 @@ There used to be two automations that turned a GeoJSON export into records:
 
 They already wrote into the same table and differed only in field names, GeoJSON
 conventions and which child they made. Coffee would have been a third copy, so
-they are now one **Field Unit Automation**, with `unit_type` selecting the
-vocabulary:
-
-| Unit Type | Crop | Children |
-| --- | --- | --- |
-| `Bed` | roses | `Zone` |
-| `Row` | avocado | `Orchard Tree` |
-| `Band` | coffee | `Orchard Tree` |
+they are now one **Field Unit Automation**, with `unit_type` naming the unit and
+`child_type` saying what the GeoJSON describes.
 
 Both GeoJSON layouts and all three id conventions now work for every unit type —
 a single `FeatureCollection` or one per line, and ids from `unit_id`/`child_id`,

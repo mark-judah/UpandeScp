@@ -9,6 +9,7 @@
  "field_order": [
   "warehouse",
   "unit_type",
+  "child_type",
   "column_break_main",
   "units_geojson",
   "sectors_section",
@@ -37,11 +38,20 @@
    "reqd": 1
   },
   {
+   "depends_on": "warehouse",
+   "description": "What the GeoJSON describes. Zones subdivide a bed; Triads subdivide a row or band; Orchard Trees are the individual plants on one. Left blank, it follows the Unit Type.",
+   "fieldname": "child_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Creates",
+   "options": "\nZone\nTriad\nOrchard Tree"
+  },
+  {
    "fieldname": "column_break_main",
    "fieldtype": "Column Break"
   },
   {
-   "description": "A GeoJSON FeatureCollection, or one FeatureCollection per line. Each feature needs a unit number and a child number — from <code>unit_id</code>/<code>child_id</code>, <code>row_id</code>/<code>tree_id</code>, <code>line_id</code>/<code>zone_id</code>, or a name ending <code>_ROW&lt;n&gt;_T&lt;n&gt;</code>.",
+   "description": "A GeoJSON FeatureCollection, or one FeatureCollection per line. Each feature needs a unit number and a child number \u2014 from <code>unit_id</code>/<code>child_id</code>, <code>row_id</code>/<code>tree_id</code>, <code>line_id</code>/<code>zone_id</code>, or a name ending <code>_ROW&lt;n&gt;_T&lt;n&gt;</code>.",
    "fieldname": "units_geojson",
    "fieldtype": "Code",
    "label": "Units GeoJSON",

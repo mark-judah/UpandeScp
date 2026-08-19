@@ -74,6 +74,23 @@ DROP_FIELDS = {
 	("Crop Scouted", "farms"),
 }
 
+# Records the target holds under a different name, keyed by the doctype being
+# linked to, so every field pointing at it is rewritten consistently — a value
+# remap, not a per-field one.
+#
+# Torongo GH 17 and 18 were renamed to include a space. The target adopted the
+# corrected names; this bench still has the originals as the *live* records, with
+# the spaced versions present but disabled. So the data here is right and only its
+# labels are stale, which is exactly the case a remap is for — rewriting on the
+# way out is honest, whereas creating a second warehouse on the target would
+# reintroduce the duplicate the rename existed to remove.
+REMAP = {
+	"Warehouse": {
+		"Torongo GH17 - KR": "Torongo GH 17 - KR",
+		"Torongo GH18 - KR": "Torongo GH 18 - KR",
+	},
+}
+
 # Never sent: they describe this site's bookkeeping, not the document.
 _META_FIELDS = {
 	"owner",
@@ -91,8 +108,26 @@ _META_FIELDS = {
 _CHILD_META = _META_FIELDS | {"name", "parent", "parenttype", "parentfield"}
 
 
+def _link_targets(doctype):
+	"""{fieldname: linked doctype} for this doctype's own Link fields."""
+	return {
+		f.fieldname: f.options
+		for f in frappe.get_meta(doctype).fields
+		if f.fieldtype == "Link" and f.options
+	}
+
+
+def _remapped(value, linked_doctype):
+	"""Rewrite a link value the target holds under another name."""
+	table = REMAP.get(linked_doctype)
+	if not table:
+		return value
+	return table.get(value, value)
+
+
 def _clean(doc_dict, doctype):
 	"""A payload the target will accept: our content, none of our bookkeeping."""
+	links = _link_targets(doctype)
 	out = {}
 	for key, value in doc_dict.items():
 		if key in _META_FIELDS:
@@ -104,11 +139,18 @@ def _clean(doc_dict, doctype):
 			for row in value:
 				if not isinstance(row, dict):
 					continue
-				rows.append({k: v for k, v in row.items() if k not in _CHILD_META})
+				child_links = _link_targets(row.get("doctype")) if row.get("doctype") else {}
+				rows.append(
+					{
+						k: _remapped(v, child_links[k]) if k in child_links else v
+						for k, v in row.items()
+						if k not in _CHILD_META
+					}
+				)
 			if rows:
 				out[key] = rows
 			continue
-		out[key] = value
+		out[key] = _remapped(value, links[key]) if key in links else value
 	return out
 
 

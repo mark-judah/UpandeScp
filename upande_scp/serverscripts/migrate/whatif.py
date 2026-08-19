@@ -27,8 +27,21 @@ from upande_scp.serverscripts.migrate.readiness import (
 from upande_scp.serverscripts.migrate.target import Target
 
 
+# Historical or retired, so not being ported at all. Excluded from the report
+# rather than listed as blocked — a blocker on something nobody wants is noise.
+NOT_WANTED = {
+	"Livestock Event": "historical",
+	"Livestock Health Case": "historical",
+	"Livestock Diagnosis": "historical",
+	"Milk Recording": "historical",
+	"Milking Palour Checksheet": "retired, being removed",
+}
+
+
 def _hypothetical():
 	"""What the operator is proposing to upload, as {doctype: {names}}."""
+	from upande_scp.serverscripts.migrate.push import REMAP
+
 	lokitela = set(
 		frappe.get_all(
 			"Warehouse",
@@ -40,13 +53,24 @@ def _hypothetical():
 		frappe.get_all("Warehouse", filters={"custom_farm": "Endebess"}, pluck="name")
 	)
 	boms = set(frappe.get_all("Herds", pluck="bom")) - {None, ""}
+	assets = set(frappe.get_all("Animal", pluck="asset_link")) - {None, ""}
+	# The remap means a reference to the old name resolves to the new one, so for
+	# readiness purposes the old names count as present.
+	renamed = set(REMAP.get("Warehouse", {}))
+	varieties = set(frappe.get_all("Field Unit Sector", pluck="sector")) - {None, ""}
+
 	return {
-		"Warehouse": lokitela | endebess,
+		"Warehouse": lokitela | endebess | renamed,
 		"BOM": boms,
+		"Asset": assets,
+		"Item": varieties,
 	}, {
 		"Lokitela blocks + sections": len(lokitela),
 		"Endebess coffee blocks": len(endebess),
 		"livestock feed BOMs": len(boms),
+		"Assets linked to Animals": len(assets),
+		"variety Items on layouts": len(varieties),
+		"Torongo names remapped": len(renamed),
 	}
 
 
@@ -77,6 +101,10 @@ def run(env_file=None):
 		print(f"=== {app} ===")
 		for doctype in sorted(owned):
 			if doctype in ALREADY_PORTED or not frappe.db.exists("DocType", doctype):
+				continue
+			if doctype in NOT_WANTED:
+				print(f"  [skip]    {doctype:<26} {frappe.db.count(doctype):>6,}  "
+				      f"{NOT_WANTED[doctype]}")
 				continue
 			here = frappe.db.count(doctype)
 			if not here:

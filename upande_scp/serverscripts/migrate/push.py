@@ -48,6 +48,9 @@ the work by hand, so the path is kept deliberately.
 
 from __future__ import annotations
 
+import datetime
+import decimal
+
 import frappe
 
 from upande_scp.serverscripts.migrate.target import Target, TargetError
@@ -82,12 +85,70 @@ STEPS = [
 		["Trap", "Tank And Valve", "Field Unit Automation"],
 	),
 	("livestock reference", ["Breeders"]),
+	# ERPNext masters, not ours — carried only because the livestock records below
+	# cannot resolve without them, and only the specific rows they reference (see
+	# SELECTORS). Porting all 16,508 Items would be a different exercise entirely.
+	(
+		"ERPNext masters the livestock records need",
+		["Item Group", "UOM", "Item", "BOM"],
+	),
+	("herds and animals", ["Herds", "Animal"]),
+	("records that hang off an animal", ["Livestock Disposal", "Livestock Insurance Policy"]),
 ]
+
+# Which rows to carry, for doctypes where "all of them" is the wrong answer.
+# Each returns a list of names; anything absent from here ports in full.
+SELECTORS = {
+	"Item": lambda: _livestock_items(),
+	"Item Group": lambda: sorted(
+		{
+			frappe.db.get_value("Item", i, "item_group")
+			for i in _livestock_items()
+		}
+		- {None, ""}
+	),
+	"UOM": lambda: sorted(
+		{frappe.db.get_value("Item", i, "stock_uom") for i in _livestock_items()}
+		- {None, ""}
+	),
+	"BOM": lambda: sorted({b for b in frappe.get_all("Herds", pluck="bom") if b}),
+}
+
+
+def _livestock_items():
+	"""The Items livestock actually references: feed BOM inputs and outputs, plus
+	the asset item. Cached per process, since several selectors ask for it."""
+	global _ITEM_CACHE
+	if _ITEM_CACHE is not None:
+		return _ITEM_CACHE
+	boms = [b for b in frappe.get_all("Herds", pluck="bom") if b]
+	need = {r.item for r in frappe.get_all("BOM", filters={"name": ["in", boms]}, fields=["item"])}
+	need |= {
+		r.item_code
+		for r in frappe.get_all("BOM Item", filters={"parent": ["in", boms]}, fields=["item_code"])
+	}
+	need |= {a for a in frappe.get_all("Asset", filters={"asset_category": "Herd"}, pluck="item_code")}
+	_ITEM_CACHE = sorted(n for n in need if n)
+	return _ITEM_CACHE
+
+
+_ITEM_CACHE = None
 
 # Child tables and links the target cannot resolve, dropped by explicit decision
 # rather than silently failing. See the module docstring.
 DROP_FIELDS = {
 	("Crop Scouted", "farms"),
+	# Every Animal points at a `Herd` Asset. Porting those would mean creating two
+	# GL accounts in Karen Roses' chart of accounts and an Asset Category on the
+	# target — a finance change, not a data copy. The field is optional, so the
+	# animals go across complete for herd, breeding and health work and simply
+	# carry no accounting counterpart. Decided explicitly, not for convenience.
+	("Animal", "asset_link"),
+	# Item and BOM reference each other: an Item's `default_bom` names a BOM, and
+	# that BOM's rows name the Item. Neither can be first. Dropped here because
+	# ERPNext repopulates `default_bom` itself when a BOM with `is_default` is
+	# submitted — so the field comes back on its own, and nothing is lost.
+	("Item", "default_bom"),
 }
 
 # Records the target holds under a different name, keyed by the doctype being
@@ -107,12 +168,31 @@ REMAP = {
 	},
 }
 
+# Submitted here, so they must be submitted there. A plain insert always creates a
+# draft — Frappe forces docstatus 0 on insert and ignores `docstatus` in the
+# payload — so without an explicit submit these arrive unsubmitted and vanish from
+# any report filtering on submitted.
+SUBMIT_AFTER_INSERT = {"Animal", "Herds", "Livestock Disposal", "BOM"}
+
 # Doctypes whose name carries no meaning (`autoname: hash`), matched on the fields
 # that genuinely identify a record instead. Without this a re-run duplicates them,
 # because Frappe assigns a new hash on insert and ignores the name we send.
 NATURAL_KEYS = {
 	"Pest Filter": ("pest", "crop_scouted"),
 	"Disease Filter": ("disease", "crop_scouted"),
+	"Breeders": ("breeder",),
+	# ERPNext names a BOM from its item plus a per-item counter, so the target
+	# issues its own number and the name never matches. One BOM per item here.
+	"BOM": ("item",),
+	# Naming series, so the target issues its own ANI-DISP number.
+	"Livestock Disposal": ("animal", "disposal_date"),
+	# `format:LIP-{####}` reads as content-derived but {####} is a series counter,
+	# so this is series-named too despite the `format:` prefix.
+	"Livestock Insurance Policy": ("policy_number",),
+	# `field:warehouse`, and the warehouse is remapped — so the target names it
+	# from the corrected name and the local name never matches. Keyed on the
+	# warehouse, which the remap then translates.
+	"Field Unit Automation": ("warehouse",),
 }
 
 # Never sent: they describe this site's bookkeeping, not the document.
@@ -132,6 +212,23 @@ _META_FIELDS = {
 _CHILD_META = _META_FIELDS | {"name", "parent", "parenttype", "parentfield"}
 
 
+def _jsonable(value):
+	"""Coerce a field value into something `json` can serialise.
+
+	Frappe hands back real `date`, `datetime`, `time` and `Decimal` objects. The
+	JSON encoder raises on all of them, and the exception surfaced from inside the
+	POST — killing the whole run rather than failing one record. `Item.end_of_life`
+	was the first to hit it; every dated doctype after it would have too.
+	"""
+	if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+		return value.isoformat(sep=" ") if isinstance(value, datetime.datetime) else value.isoformat()
+	if isinstance(value, decimal.Decimal):
+		return float(value)
+	if isinstance(value, datetime.timedelta):
+		return str(value)
+	return value
+
+
 def _link_targets(doctype):
 	"""{fieldname: linked doctype} for this doctype's own Link fields."""
 	return {
@@ -141,8 +238,20 @@ def _link_targets(doctype):
 	}
 
 
+# Names the target assigned that differ from ours, learned during a run. ERPNext
+# names a BOM itself — `BOM-Calves Meal-002` here can land as `-001` there — so a
+# later `Herds.bom` would point at a name that does not exist. Anything created in
+# this run is recorded here and subsequent references are rewritten, which covers
+# every series- and hash-named doctype without needing to know in advance which
+# ones will differ.
+LEARNED = {}
+
+
 def _remapped(value, linked_doctype):
 	"""Rewrite a link value the target holds under another name."""
+	learned = LEARNED.get(linked_doctype, {})
+	if value in learned:
+		return learned[value]
 	table = REMAP.get(linked_doctype)
 	if not table:
 		return value
@@ -194,11 +303,11 @@ def _clean(doc_dict, doctype, resolver=None, pruned=None):
 							for field, val in unresolved:
 								pruned.append((doctype, child_dt, field, val))
 						continue
-				rows.append(cleaned)
+				rows.append({k: _jsonable(v) for k, v in cleaned.items()})
 			if rows:
 				out[key] = rows
 			continue
-		out[key] = _remapped(value, links[key]) if key in links else value
+		out[key] = _jsonable(_remapped(value, links[key]) if key in links else value)
 	return out
 
 
@@ -207,25 +316,42 @@ def _plan_counts():
 
 
 def _execute(site, write, log_path=None):
+	LEARNED.clear()
 	created, skipped, failed = [], [], []
-	pruned = []
+	pruned, unsubmitted = [], []
 	lines = []
 
-	# Cache of names present on the target, so pruning costs one listing per
-	# linked doctype rather than one request per row.
-	_names = {}
+	# Whether one link value exists on the target, cached per (doctype, value).
+	#
+	# The obvious implementation — list every name of every linked doctype — hangs.
+	# `Item` alone links out to a dozen doctypes through its child tables, and one of
+	# those listings can be enormous. Values repeat heavily across rows, so a cached
+	# per-value COUNT is both cheaper and bounded: a few hundred small requests
+	# instead of a handful of unbounded ones.
+	_exists = {}
+
+	# What this run itself will add. Without it the resolver prunes rows pointing at
+	# records created earlier in the same run — every `BOM Item` referencing a feed
+	# Item we create two steps before would be dropped, leaving empty BOMs.
+	planned = {}
+	for _label, group in STEPS:
+		for dt in group:
+			selector = SELECTORS.get(dt)
+			planned.setdefault(dt, set()).update(
+				selector() if selector else frappe.get_all(dt, pluck="name")
+			)
 
 	def resolver(linked_doctype, value):
-		if linked_doctype not in _names:
-			try:
-				_names[linked_doctype] = site.names(linked_doctype)
-			except Exception:
-				# Cannot list it (child table, or no permission). Assume it
-				# resolves rather than pruning on a guess — a real failure will
-				# surface on insert with a message.
-				_names[linked_doctype] = None
-		known = _names[linked_doctype]
-		return True if known is None else value in known
+		if value in planned.get(linked_doctype, ()):
+			return True
+		key = (linked_doctype, value)
+		if key not in _exists:
+			state, count = site.probe(linked_doctype, [["name", "=", value]])
+			# Not readable (child table, or no permission): assume it resolves rather
+			# than pruning on a guess. A real problem then surfaces on insert with a
+			# message, which beats silently dropping a row.
+			_exists[key] = True if state != "ok" else bool(count)
+		return _exists[key]
 
 	for label, doctypes in STEPS:
 		print(f"\n--- {label} ---")
@@ -239,25 +365,50 @@ def _execute(site, write, log_path=None):
 				continue
 
 			key_fields = NATURAL_KEYS.get(doctype)
+			selector = SELECTORS.get(doctype)
+			wanted = selector() if selector else None
+			
 			if key_fields:
-				# Match on content, since the name is a random hash on both sides.
+				# Match on content: the name is a series or a hash on one side or both.
 				existing = {
 					tuple(r.get(f) for f in key_fields)
 					for r in site.get_list(doctype, list(key_fields))
 				}
+				filters = {"name": ["in", wanted]} if wanted is not None else None
 				local = frappe.get_all(
-					doctype, fields=["name"] + list(key_fields), order_by="name"
+					doctype,
+					filters=filters,
+					fields=["name"] + list(key_fields),
+					order_by="name",
+					limit_page_length=0,
 				)
+				# A key value that is itself remapped has to be compared in the target's
+				# terms, or a record already there reads as missing.
+				links = _link_targets(doctype)
 				identities = {
-					r["name"]: tuple(r.get(f) for f in key_fields) for r in local
+					r["name"]: tuple(
+						_remapped(r.get(f), links[f]) if f in links else r.get(f)
+						for f in key_fields
+					)
+					for r in local
 				}
 				names = [r["name"] for r in local]
 			else:
 				existing = site.names(doctype)
 				identities = None
-				names = frappe.get_all(doctype, pluck="name", order_by="name")
+				names = (
+					wanted
+					if wanted is not None
+					else frappe.get_all(doctype, pluck="name", order_by="name")
+				)
 
 			made = skip = fail = 0
+			doc_docstatus = {}
+			if doctype in SUBMIT_AFTER_INSERT:
+				doc_docstatus = {
+					r["name"]: r["docstatus"]
+					for r in frappe.get_all(doctype, fields=["name", "docstatus"], limit_page_length=0)
+				}
 
 			for name in names:
 				identity = identities[name] if identities else name
@@ -277,19 +428,41 @@ def _execute(site, write, log_path=None):
 					created.append((doctype, name))
 					continue
 				ok, result = site.insert(doctype, payload)
-				if ok:
-					made += 1
-					existing.add(identity)
-					created.append((doctype, result or name))
-					lines.append(f"OK      {doctype}\t{result or name}")
-				else:
+				if not ok:
 					fail += 1
 					failed.append((doctype, name, result))
 					lines.append(f"FAILED  {doctype}\t{name}\t{result}")
+					continue
+
+				made += 1
+				existing.add(identity)
+				if result and result != name:
+					LEARNED.setdefault(doctype, {})[name] = result
+				_exists[(doctype, result or name)] = True
+				created.append((doctype, result or name))
+				lines.append(f"OK      {doctype}\t{result or name}")
+
+				# Submit only what is submitted here — a draft on this side stays a
+				# draft there.
+				if doctype in SUBMIT_AFTER_INSERT and doc_docstatus.get(name) == 1:
+					sok, serr = site.submit(doctype, result or name)
+					if sok:
+						counters["submitted"] += 1
+						lines.append(f"SUBMIT  {doctype}\t{result or name}")
+					else:
+						unsubmitted.append((doctype, result or name, serr))
+						lines.append(f"NOSUBMIT {doctype}\t{result or name}\t{serr}")
 
 			verb = "would create" if not write else "created"
 			note = f", {fail} FAILED" if fail else ""
 			print(f"  {doctype:<26} {verb} {made:>4}, skipped {skip:>4}{note}")
+
+	if counters["submitted"]:
+		print(f"\n  submitted {counters['submitted']} document(s) after insert")
+	if unsubmitted:
+		print(f"\n  {len(unsubmitted)} inserted but NOT submitted:")
+		for dt, nm, why in unsubmitted[:8]:
+			print(f"    {dt} {nm}: {str(why)[:150]}")
 
 	if pruned:
 		print(f"\n  pruned {len(pruned)} child row(s) whose links are absent on the target:")

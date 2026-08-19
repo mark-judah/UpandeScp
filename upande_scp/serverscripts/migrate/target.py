@@ -30,6 +30,7 @@ revoking a shared user's key breaks whatever else was using it.
 
 from __future__ import annotations
 
+import json
 import os
 from urllib.parse import urlparse
 
@@ -212,13 +213,53 @@ class Target:
 		return {r["name"] for r in self.get_list(doctype, ["name"])}
 
 	def insert(self, doctype, payload):
-		"""Create one document. Returns (ok, name_or_error)."""
+		"""Create one document. Returns (ok, name_or_error).
+
+		A payload that cannot be serialised is reported as this record's failure
+		rather than raised: the encoder error for a single stray `date` once took
+		down a run of 400 documents partway through.
+		"""
+		try:
+			body = json.dumps(payload)
+		except (TypeError, ValueError) as e:
+			return False, f"payload could not be serialised: {e}"
 		r = self._request(
-			"POST", f"/api/resource/{requests.utils.quote(doctype)}", json=payload
+			"POST",
+			f"/api/resource/{requests.utils.quote(doctype)}",
+			data=body,
 		)
 		if r.ok:
 			return True, (r.json().get("data") or {}).get("name")
 		return False, _explain(r)
+
+	def submit(self, doctype, name):
+		"""Submit an already-inserted document. Returns (ok, error_or_None).
+
+		Calls the document's own `submit` through `run_doc_method`, which acts on
+		the stored record by name. The tempting alternative — posting the whole doc
+		to `frappe.client.submit` — builds a *new* in-memory document from the
+		payload, so a name that already exists risks a second insert rather than a
+		submit.
+
+		A plain insert always lands as a draft: Frappe forces docstatus 0 on
+		`insert()`, so `docstatus: 1` in the payload is silently ignored. Without
+		this step every Animal, Herd and BOM arrives unsubmitted and drops out of
+		anything filtering on submitted.
+		"""
+		r = self._request(
+			"POST",
+			"/api/method/run_doc_method",
+			json={"dt": doctype, "dn": name, "method": "submit"},
+		)
+		if r.ok:
+			return True, None
+		return False, _explain(r)
+
+	def docstatus(self, doctype, name):
+		"""Stored docstatus, or None if it cannot be read. Used to verify a submit
+		rather than trusting the response."""
+		rows = self.get_list(doctype, ["name", "docstatus"], [["name", "=", name]])
+		return rows[0].get("docstatus") if rows else None
 
 
 def _explain(response):

@@ -255,6 +255,23 @@ class Target:
 			return True, None
 		return False, _explain(r)
 
+	def cancel(self, doctype, name):
+		"""Cancel a submitted document. Returns (ok, error_or_None)."""
+		r = self._request(
+			"POST",
+			"/api/method/run_doc_method",
+			json={"dt": doctype, "dn": name, "method": "cancel"},
+		)
+		return (True, None) if r.ok else (False, _explain(r))
+
+	def delete(self, doctype, name):
+		"""Delete a document. Returns (ok, error_or_None)."""
+		r = self._request(
+			"DELETE",
+			f"/api/resource/{requests.utils.quote(doctype)}/{requests.utils.quote(name)}",
+		)
+		return (True, None) if r.ok else (False, _explain(r))
+
 	def docstatus(self, doctype, name):
 		"""Stored docstatus, or None if it cannot be read. Used to verify a submit
 		rather than trusting the response."""

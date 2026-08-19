@@ -111,23 +111,77 @@ SELECTORS = {
 		{frappe.db.get_value("Item", i, "stock_uom") for i in _livestock_items()}
 		- {None, ""}
 	),
-	"BOM": lambda: sorted({b for b in frappe.get_all("Herds", pluck="bom") if b}),
+	"BOM": lambda: _livestock_boms(),
 }
 
 
+def _livestock_boms():
+	"""The feed BOMs, sub-BOMs included, ordered so a BOM never precedes one it uses.
+
+	Two things make this more than "the BOMs the Herds point at". A BOM row can
+	name another BOM (`BOM Item.bom_no`), so the set has to be closed over those
+	references — `BOM-Dry Cows  Meal-002` is needed by a herd's BOM but is not a
+	herd's BOM itself, and would otherwise be missed entirely. And ERPNext refuses
+	a BOM whose sub-BOM is absent, so order matters: inserting the parent first
+	fails with "Could not find Row #2: BOM No", which is exactly how this was
+	found.
+	"""
+	roots = {b for b in frappe.get_all("Herds", pluck="bom") if b}
+
+	# Close over sub-BOM references.
+	needed, frontier = set(roots), set(roots)
+	while frontier:
+		rows = frappe.get_all(
+			"BOM Item",
+			filters={"parent": ["in", list(frontier)]},
+			fields=["bom_no"],
+			limit_page_length=0,
+		)
+		nxt = {r.bom_no for r in rows if r.bom_no} - needed
+		needed |= nxt
+		frontier = nxt
+
+	# Dependencies first. A cycle would be an ERPNext data problem, not ours, so
+	# anything still unplaced is appended rather than dropped — better to attempt
+	# it and get a clear server error than to silently omit it.
+	deps = {
+		b: {
+			r.bom_no
+			for r in frappe.get_all(
+				"BOM Item", filters={"parent": b}, fields=["bom_no"], limit_page_length=0
+			)
+			if r.bom_no and r.bom_no in needed
+		}
+		for b in needed
+	}
+	ordered, placed = [], set()
+	while len(ordered) < len(needed):
+		ready = sorted(b for b in needed if b not in placed and deps[b] <= placed)
+		if not ready:
+			ordered.extend(sorted(b for b in needed if b not in placed))
+			break
+		ordered.extend(ready)
+		placed.update(ready)
+	return ordered
+
+
 def _livestock_items():
-	"""The Items livestock actually references: feed BOM inputs and outputs, plus
-	the asset item. Cached per process, since several selectors ask for it."""
+	"""The Items the feed BOMs reference — their outputs and their inputs.
+
+	Cached per process, since several selectors ask for it."""
 	global _ITEM_CACHE
 	if _ITEM_CACHE is not None:
 		return _ITEM_CACHE
-	boms = [b for b in frappe.get_all("Herds", pluck="bom") if b]
+	boms = _livestock_boms()
 	need = {r.item for r in frappe.get_all("BOM", filters={"name": ["in", boms]}, fields=["item"])}
 	need |= {
 		r.item_code
 		for r in frappe.get_all("BOM Item", filters={"parent": ["in", boms]}, fields=["item_code"])
 	}
-	need |= {a for a in frappe.get_all("Asset", filters={"asset_category": "Herd"}, pluck="item_code")}
+	# Deliberately NOT the `herd` asset item. It exists only to hang the 366 Herd
+	# assets off, and those are not being ported — porting them would mean creating
+	# GL accounts and an Asset Category on the target. Including it just produces a
+	# failure on every run, since an asset item needs a category that is not there.
 	_ITEM_CACHE = sorted(n for n in need if n)
 	return _ITEM_CACHE
 
@@ -229,6 +283,22 @@ def _jsonable(value):
 	return value
 
 
+def _identity(row, key_fields):
+	"""A natural key that compares equal across the wire.
+
+	Locally a Date field is a `datetime.date`; the API returns `"2026-06-10"`. Those
+	never match, so every record looked new — this silently created 27
+	`Livestock Disposal` rows where there should have been 11, up to three copies
+	each. Both sides are normalised through `_jsonable`, then to text, so the type a
+	value happens to arrive as cannot decide identity.
+	"""
+	out = []
+	for field in key_fields:
+		value = _jsonable(row.get(field))
+		out.append("" if value is None else str(value))
+	return tuple(out)
+
+
 def _link_targets(doctype):
 	"""{fieldname: linked doctype} for this doctype's own Link fields."""
 	return {
@@ -319,6 +389,8 @@ def _execute(site, write, log_path=None):
 	LEARNED.clear()
 	created, skipped, failed = [], [], []
 	pruned, unsubmitted = [], []
+	# A dict, so the nested insert loop can increment it without a nonlocal.
+	counters = {"submitted": 0}
 	lines = []
 
 	# Whether one link value exists on the target, cached per (doctype, value).
@@ -370,10 +442,12 @@ def _execute(site, write, log_path=None):
 			
 			if key_fields:
 				# Match on content: the name is a series or a hash on one side or both.
-				existing = {
-					tuple(r.get(f) for f in key_fields)
-					for r in site.get_list(doctype, list(key_fields))
-				}
+				# The target's own name is fetched alongside, because a record we
+				# *skip* also has to teach us what it is called there — see
+				# `_learn_existing`.
+				remote = site.get_list(doctype, ["name"] + list(key_fields))
+				existing = {_identity(r, key_fields) for r in remote}
+				remote_names = {_identity(r, key_fields): r["name"] for r in remote}
 				filters = {"name": ["in", wanted]} if wanted is not None else None
 				local = frappe.get_all(
 					doctype,
@@ -382,19 +456,31 @@ def _execute(site, write, log_path=None):
 					order_by="name",
 					limit_page_length=0,
 				)
+				if wanted is not None:
+					# Restore the selector's order. `order_by="name"` discards it, and
+					# for BOMs the order is the whole point: alphabetically
+					# `BOM-Bullying Heifers-004` precedes the `BOM-Heifer Meal-002`
+					# it depends on, so the parent was attempted first and failed
+					# every time.
+					rank = {n: i for i, n in enumerate(wanted)}
+					local.sort(key=lambda r: rank.get(r["name"], len(rank)))
 				# A key value that is itself remapped has to be compared in the target's
 				# terms, or a record already there reads as missing.
 				links = _link_targets(doctype)
 				identities = {
-					r["name"]: tuple(
-						_remapped(r.get(f), links[f]) if f in links else r.get(f)
-						for f in key_fields
+					r["name"]: _identity(
+						{
+							f: _remapped(r.get(f), links[f]) if f in links else r.get(f)
+							for f in key_fields
+						},
+						key_fields,
 					)
 					for r in local
 				}
 				names = [r["name"] for r in local]
 			else:
 				existing = site.names(doctype)
+				remote_names = None
 				identities = None
 				names = (
 					wanted
@@ -415,6 +501,17 @@ def _execute(site, write, log_path=None):
 				if identity in existing:
 					skip += 1
 					skipped.append((doctype, name))
+					# A record already there may be called something else — ERPNext
+					# names a BOM itself, so `BOM-Calves Meal-002` here is `-001`
+					# there. Learning it on the skip path too is what stops later
+					# rows pointing at a name that does not exist. Missing this cost
+					# 3 BOMs, 5 Herds, 185 Animals and 6 Disposals in one run: each
+					# failed only because the thing it referenced was already
+					# present under another name.
+					if remote_names:
+						there = remote_names.get(identity)
+						if there and there != name:
+							LEARNED.setdefault(doctype, {})[name] = there
 					continue
 				payload = _clean(
 					frappe.get_doc(doctype, name).as_dict(),

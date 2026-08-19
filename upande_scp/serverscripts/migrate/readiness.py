@@ -44,13 +44,21 @@ LIVESTOCK_OWNED = {
 	"Livestock Insurance Policy", "Breed", "Calf Rearing", "Livestock Weight Record",
 }
 
-# Already ported; listed so a re-run reports them as done rather than as work.
-ALREADY_PORTED = {
-	"Pest", "Plant Disease", "Plant Section", "Stage", "FRAC Code", "IRAC Code",
-	"GHS Code", "Incident", "Physiological Disorder", "Weed", "Predator",
-	"Crop Scouted", "Pest Filter", "Disease Filter", "FRAC Guideline",
-	"IRAC Guideline",
-}
+def already_ported(site, doctype, here):
+	"""True when the target holds at least as many rows as this site.
+
+	Asked of the target rather than kept as a list, because a hardcoded list goes
+	stale the moment a wave lands — which it did: after the spatial wave, a static
+	set still reported `Trap` as outstanding work.
+
+	A count is a coarse test and deliberately so. Establishing identity properly
+	would mean pulling every natural key over the wire for 1,320 traps to answer a
+	question the operator is asking to *plan* with; `push` re-checks identity
+	per record anyway and skips what is present, so a wrong guess here costs a
+	line in a report, never a duplicate.
+	"""
+	state, there = site.probe(doctype)
+	return state == "ok" and there is not None and here > 0 and there >= here
 
 GROUPS = [
 	("upande_scp", SCP_OWNED),
@@ -122,11 +130,9 @@ def run(env_file=None):
 						+ (f" (via {owner}.{fieldname})" if owner != doctype else "")
 					)
 
-			if doctype in ALREADY_PORTED:
-				state, there = site.probe(doctype)
-				mark = "done" if there == here else f"done? here {here} vs there {there}"
+			if already_ported(site, doctype, here):
 				summary["done"].append(doctype)
-				print(f"  {'[done]':<9} {doctype:<26} {here:>6,}  {mark}")
+				print(f"  {'[done]':<9} {doctype:<26} {here:>6,}  on target")
 			elif problems:
 				summary["blocked"].append((doctype, here, problems))
 				print(f"  {'[blocked]':<9} {doctype:<26} {here:>6,}  {'; '.join(problems)}")

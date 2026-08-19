@@ -18,11 +18,11 @@ from __future__ import annotations
 import frappe
 
 from upande_scp.serverscripts.migrate.readiness import (
-	ALREADY_PORTED,
 	LIVESTOCK_OWNED,
 	SCP_OWNED,
 	_outbound,
 	_values_used,
+	already_ported,
 )
 from upande_scp.serverscripts.migrate.target import Target
 
@@ -100,7 +100,9 @@ def run(env_file=None):
 	for app, owned in (("upande_scp", SCP_OWNED), ("upande_livestock", LIVESTOCK_OWNED)):
 		print(f"=== {app} ===")
 		for doctype in sorted(owned):
-			if doctype in ALREADY_PORTED or not frappe.db.exists("DocType", doctype):
+			if not frappe.db.exists("DocType", doctype):
+				continue
+			if already_ported(site, doctype, frappe.db.count(doctype)):
 				continue
 			if doctype in NOT_WANTED:
 				print(f"  [skip]    {doctype:<26} {frappe.db.count(doctype):>6,}  "

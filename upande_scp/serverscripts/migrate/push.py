@@ -11,11 +11,20 @@ what happens.
 
 ## Idempotency
 
-Every doctype here names itself from a field, so a document's name is a function
-of its content: re-running finds `Pest/Aphids` already present and skips it rather
-than duplicating or 409-ing. That is what makes a partial run safe to repeat —
-and a partial run is the expected case, since one bad record must not abandon the
-other 340.
+Most doctypes here name themselves from a field, so a document's name is a
+function of its content: re-running finds `Pest/Aphids` present and skips it.
+
+**`autoname: hash` breaks that.** `Pest Filter` and `Disease Filter` get a fresh
+random name from Frappe on insert — the name in the payload is ignored — so local
+and target names never match even when both hold the same 40 records. A name-based
+check reports "nothing there yet" and a second run duplicates the lot. It was
+caught by a dry run reporting `would create 40, skipped 0` against a site that
+already had all 40.
+
+So those doctypes are matched on a **natural key** instead: the fields that
+actually identify the record. `NATURAL_KEYS` lists them, and each is verified
+unique on this site by the tests. Anything not listed falls back to matching on
+name, which is correct for `field:`, `format:` and `prompt` naming.
 
 ## What gets stripped
 
@@ -66,6 +75,13 @@ STEPS = [
 		"per-crop filters and code guidelines",
 		["Pest Filter", "Disease Filter", "FRAC Guideline", "IRAC Guideline"],
 	),
+	# The spatial layer. Independent of each other, and of everything above, but
+	# it waited on the target having the warehouses these point at.
+	(
+		"traps, tanks and field layouts",
+		["Trap", "Tank And Valve", "Field Unit Automation"],
+	),
+	("livestock reference", ["Breeders"]),
 ]
 
 # Child tables and links the target cannot resolve, dropped by explicit decision
@@ -89,6 +105,14 @@ REMAP = {
 		"Torongo GH17 - KR": "Torongo GH 17 - KR",
 		"Torongo GH18 - KR": "Torongo GH 18 - KR",
 	},
+}
+
+# Doctypes whose name carries no meaning (`autoname: hash`), matched on the fields
+# that genuinely identify a record instead. Without this a re-run duplicates them,
+# because Frappe assigns a new hash on insert and ignores the name we send.
+NATURAL_KEYS = {
+	"Pest Filter": ("pest", "crop_scouted"),
+	"Disease Filter": ("disease", "crop_scouted"),
 }
 
 # Never sent: they describe this site's bookkeeping, not the document.
@@ -125,8 +149,21 @@ def _remapped(value, linked_doctype):
 	return table.get(value, value)
 
 
-def _clean(doc_dict, doctype):
-	"""A payload the target will accept: our content, none of our bookkeeping."""
+def _clean(doc_dict, doctype, resolver=None, pruned=None):
+	"""A payload the target will accept: our content, none of our bookkeeping.
+
+	`resolver(doctype, value) -> bool` says whether a link can resolve on the
+	target. When it cannot, the child row carrying it is **dropped** and recorded
+	in `pruned`, rather than left to fail the whole parent.
+
+	That trade is deliberate and worth stating: three `Field Unit Sector` rows
+	point at rose varieties that were retired and are absent from the target. Left
+	in, they take two whole greenhouse layouts down with them. Dropped, those
+	greenhouses import and lose only the variety mapping for the affected bed
+	ranges. A mandatory child field cannot be blanked, so removing the row is the
+	only way to keep the parent — and losing a range mapping beats losing the
+	layout. Every drop is reported; none is silent.
+	"""
 	links = _link_targets(doctype)
 	out = {}
 	for key, value in doc_dict.items():
@@ -139,14 +176,25 @@ def _clean(doc_dict, doctype):
 			for row in value:
 				if not isinstance(row, dict):
 					continue
-				child_links = _link_targets(row.get("doctype")) if row.get("doctype") else {}
-				rows.append(
-					{
-						k: _remapped(v, child_links[k]) if k in child_links else v
-						for k, v in row.items()
-						if k not in _CHILD_META
-					}
-				)
+				child_dt = row.get("doctype")
+				child_links = _link_targets(child_dt) if child_dt else {}
+				cleaned = {
+					k: _remapped(v, child_links[k]) if k in child_links else v
+					for k, v in row.items()
+					if k not in _CHILD_META
+				}
+				if resolver:
+					unresolved = [
+						(f, cleaned[f])
+						for f, linked_dt in child_links.items()
+						if cleaned.get(f) and not resolver(linked_dt, cleaned[f])
+					]
+					if unresolved:
+						if pruned is not None:
+							for field, val in unresolved:
+								pruned.append((doctype, child_dt, field, val))
+						continue
+				rows.append(cleaned)
 			if rows:
 				out[key] = rows
 			continue
@@ -160,7 +208,24 @@ def _plan_counts():
 
 def _execute(site, write, log_path=None):
 	created, skipped, failed = [], [], []
+	pruned = []
 	lines = []
+
+	# Cache of names present on the target, so pruning costs one listing per
+	# linked doctype rather than one request per row.
+	_names = {}
+
+	def resolver(linked_doctype, value):
+		if linked_doctype not in _names:
+			try:
+				_names[linked_doctype] = site.names(linked_doctype)
+			except Exception:
+				# Cannot list it (child table, or no permission). Assume it
+				# resolves rather than pruning on a guess — a real failure will
+				# surface on insert with a message.
+				_names[linked_doctype] = None
+		known = _names[linked_doctype]
+		return True if known is None else value in known
 
 	for label, doctypes in STEPS:
 		print(f"\n--- {label} ---")
@@ -173,23 +238,48 @@ def _execute(site, write, log_path=None):
 				lines.append(msg)
 				continue
 
-			existing = site.names(doctype)
-			names = frappe.get_all(doctype, pluck="name", order_by="name")
+			key_fields = NATURAL_KEYS.get(doctype)
+			if key_fields:
+				# Match on content, since the name is a random hash on both sides.
+				existing = {
+					tuple(r.get(f) for f in key_fields)
+					for r in site.get_list(doctype, list(key_fields))
+				}
+				local = frappe.get_all(
+					doctype, fields=["name"] + list(key_fields), order_by="name"
+				)
+				identities = {
+					r["name"]: tuple(r.get(f) for f in key_fields) for r in local
+				}
+				names = [r["name"] for r in local]
+			else:
+				existing = site.names(doctype)
+				identities = None
+				names = frappe.get_all(doctype, pluck="name", order_by="name")
+
 			made = skip = fail = 0
 
 			for name in names:
-				if name in existing:
+				identity = identities[name] if identities else name
+				if identity in existing:
 					skip += 1
 					skipped.append((doctype, name))
 					continue
-				payload = _clean(frappe.get_doc(doctype, name).as_dict(), doctype)
+				payload = _clean(
+					frappe.get_doc(doctype, name).as_dict(),
+					doctype,
+					resolver=resolver,
+					pruned=pruned,
+				)
 				if not write:
 					made += 1
+					existing.add(identity)
 					created.append((doctype, name))
 					continue
 				ok, result = site.insert(doctype, payload)
 				if ok:
 					made += 1
+					existing.add(identity)
 					created.append((doctype, result or name))
 					lines.append(f"OK      {doctype}\t{result or name}")
 				else:
@@ -200,6 +290,12 @@ def _execute(site, write, log_path=None):
 			verb = "would create" if not write else "created"
 			note = f", {fail} FAILED" if fail else ""
 			print(f"  {doctype:<26} {verb} {made:>4}, skipped {skip:>4}{note}")
+
+	if pruned:
+		print(f"\n  pruned {len(pruned)} child row(s) whose links are absent on the target:")
+		for parent_dt, child_dt, field, value in pruned:
+			print(f"    {parent_dt} / {child_dt}.{field} = {value!r}")
+			lines.append(f"PRUNED  {parent_dt}\t{child_dt}.{field}\t{value}")
 
 	if log_path and lines:
 		with open(log_path, "w") as fh:

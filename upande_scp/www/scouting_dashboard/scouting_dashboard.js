@@ -917,7 +917,7 @@ function callFrappe(method, args) {
 
 function fetchCompleteScoutingEntries(fromDate, toDate, greenhouse) {
 	return callFrappe(
-		"upande_scp.serverscripts.get_complete_scouting_entries.getCompleteScoutingEntries",
+		"upande_scp.serverscripts.scouting.get_complete_scouting_entries.getCompleteScoutingEntries",
 		{ from_date: fromDate, to_date: toDate, greenhouse: greenhouse }
 	).then(function (r) { return r.message || {}; });
 }
@@ -929,7 +929,7 @@ function loadGreenhouseOptions() {
 	   orchards) appear alongside greenhouse farms. Falls back to deriving
 	   from Scouting Entry rows when the endpoint isn't available. */
 	return callFrappe(
-		"upande_scp.serverscripts.scouting_metrics_api.get_farms_and_warehouses",
+		"upande_scp.serverscripts.scouting.scouting_metrics_api.get_farms_and_warehouses",
 		{}
 	).then(function (r) {
 		var map = r && r.message;
@@ -993,7 +993,7 @@ function setDefaultWeekInputsToLatestScouting(weekFromInput, weekToInput) {
    arrives. Failure is silent — the filter just shows the default Rose. */
 function loadCropOptions() {
 	return callFrappe(
-		"upande_scp.serverscripts.scouting_metrics_api.get_crops_with_farms",
+		"upande_scp.serverscripts.scouting.scouting_metrics_api.get_crops_with_farms",
 		{}
 	).then(function (r) {
 		var rows = (r && r.message) || [];
@@ -1532,7 +1532,7 @@ function hideLoading() {
 
 function fetchScoutingChunk(fromDate, toDate, greenhouse, includeMeta) {
 	return callFrappe(
-		"upande_scp.serverscripts.get_complete_scouting_entries.getScoutingEntriesChunk",
+		"upande_scp.serverscripts.scouting.get_complete_scouting_entries.getScoutingEntriesChunk",
 		{ from_date: fromDate, to_date: toDate, greenhouse: greenhouse, include_meta: includeMeta ? 1 : 0 }
 	).then(function (r) { return r.message || {}; });
 }

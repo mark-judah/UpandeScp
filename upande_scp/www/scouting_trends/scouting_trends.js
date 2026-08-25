@@ -238,7 +238,7 @@
 
 	function fetchScoutingChunk(fromDate, toDate, includeMeta) {
 		return callFrappe(
-			"upande_scp.serverscripts.get_complete_scouting_entries.getScoutingEntriesChunk",
+			"upande_scp.serverscripts.scouting.get_complete_scouting_entries.getScoutingEntriesChunk",
 			{ from_date: fromDate, to_date: toDate, include_meta: includeMeta ? 1 : 0 }
 		).then(function (r) { return (r && r.message) || {}; });
 	}

@@ -15,7 +15,7 @@ export interface OrderingBundle {
 
 export async function getPriorities(crop: string): Promise<OrderingBundle> {
   const r = await call<{ message?: OrderingBundle } | OrderingBundle>(
-    "upande_scp.serverscripts.ordering_api.get_priorities",
+    "upande_scp.serverscripts.store.ordering_api.get_priorities",
     { crop },
   );
   return (
@@ -33,7 +33,7 @@ export async function savePriorities(
   payload: OrderingBundle,
 ): Promise<{ ok: boolean }> {
   const r = await call<{ message?: { ok: boolean } } | { ok: boolean }>(
-    "upande_scp.serverscripts.ordering_api.save_priorities",
+    "upande_scp.serverscripts.store.ordering_api.save_priorities",
     { crop, payload: JSON.stringify(payload) },
   );
   return (

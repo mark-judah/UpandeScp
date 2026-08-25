@@ -2,8 +2,8 @@
 
 import frappe
 
-from upande_scp.serverscripts import scouting_metrics
-from upande_scp.serverscripts.scouting_metrics import get_zone_counts_by_greenhouse
+from upande_scp.serverscripts.scouting import scouting_metrics
+from upande_scp.serverscripts.scouting.scouting_metrics import get_zone_counts_by_greenhouse
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     parent_filter_conditions,

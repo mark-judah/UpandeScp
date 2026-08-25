@@ -14,7 +14,7 @@ existing references keep working without touching the DB.
 Invoke from a bench shell:
 
     bench --site <site> execute \\
-        upande_scp.serverscripts.regenerate_qrs.run
+        upande_scp.serverscripts.qr.regenerate_qrs.run
 
 Pass ``--kwargs '{"dry_run": true}'`` to see what would be rebuilt
 without writing anything, or ``--kwargs '{"se_names": ["SE-..."]}'``
@@ -28,7 +28,7 @@ from typing import Iterable
 
 import frappe
 
-from upande_scp.serverscripts.qr_generator import (
+from upande_scp.serverscripts.qr.qr_generator import (
     build_chemical_qr_payload,
     generate_qr_base64,
 )

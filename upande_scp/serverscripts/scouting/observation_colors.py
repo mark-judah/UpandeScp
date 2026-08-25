@@ -15,7 +15,7 @@ next call rebuilds the map.
 
 import frappe
 
-from upande_scp.serverscripts.get_complete_scouting_entries import (
+from upande_scp.serverscripts.scouting.get_complete_scouting_entries import (
     _cached_disease_colors,
     _cached_pest_colors,
 )

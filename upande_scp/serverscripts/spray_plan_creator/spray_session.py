@@ -24,7 +24,7 @@ from typing import Any
 import frappe
 from frappe.utils import flt, now_datetime, today
 
-from upande_scp.serverscripts.spray_plan_approval import (
+from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import (
     _derive_farm,
     _patch_zero_rates,
 )

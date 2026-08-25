@@ -6,7 +6,7 @@ given the latest scan (or None), the SE's assigned employee, and the
 """
 import unittest
 
-from upande_scp.serverscripts import store_keeper_api as sk
+from upande_scp.serverscripts.store import store_keeper_api as sk
 
 SCAN_MATCH = {"name": "LOG-1", "employee": "EMP-1", "employee_name": "Jane"}
 SCAN_OTHER = {"name": "LOG-2", "employee": "EMP-9", "employee_name": "Otto"}

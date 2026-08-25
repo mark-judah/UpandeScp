@@ -99,7 +99,7 @@ export function Historical() {
     let cancelled = false;
     setLoading(true);
     call<typeof data>(
-      "upande_scp.serverscripts.scouting_metrics_api.list_application_work_orders",
+      "upande_scp.serverscripts.scouting.scouting_metrics_api.list_application_work_orders",
       {
         from_date: from,
         to_date: to,
@@ -341,7 +341,7 @@ function WorkOrderDialog({
     }
     setLoading(true);
     call<any>(
-      "upande_scp.serverscripts.scouting_metrics_api.get_application_work_order",
+      "upande_scp.serverscripts.scouting.scouting_metrics_api.get_application_work_order",
       { name },
     )
       .then(setData)

@@ -24,7 +24,7 @@ from frappe.utils import add_to_date, get_datetime, now_datetime
 
 from .bulk import _user_has_role
 from .scope import _resolve_user_scope
-from upande_scp.serverscripts.warehouse_classify import is_chemical_store, is_csu
+from upande_scp.serverscripts.common.warehouse_classify import is_chemical_store, is_csu
 
 
 _CHEMICAL_GROUPS = ("CHEMICALS", "Fertilizer")

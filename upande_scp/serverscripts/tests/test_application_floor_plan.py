@@ -17,7 +17,7 @@ import unittest
 
 import frappe
 
-from upande_scp.serverscripts import create_bom as cb
+from upande_scp.serverscripts.store import create_bom as cb
 from upande_scp.serverscripts.common import crop_protection as cp
 from upande_scp.serverscripts.spray_plan_creator import bootstrap, validation as val
 

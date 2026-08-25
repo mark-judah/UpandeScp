@@ -95,9 +95,9 @@ doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # UI. public/dist is gitignored and `bench build` does not run this app's Vite
 # build, so without this the live site freezes on a hand-built bundle and new
 # pages never ship. Set UPANDE_SCP_SKIP_FRONTEND_BUILD=1 to skip locally.
-before_migrate = ["upande_scp.serverscripts.frontend_build.before_migrate"]
+before_migrate = ["upande_scp.serverscripts.common.frontend_build.before_migrate"]
 
-after_migrate = ["upande_scp.serverscripts.observation_colors.after_migrate"]
+after_migrate = ["upande_scp.serverscripts.scouting.observation_colors.after_migrate"]
 
 # Uninstallation
 # ------------
@@ -160,8 +160,8 @@ after_migrate = ["upande_scp.serverscripts.observation_colors.after_migrate"]
 # }
 
 # Invalidate cached dashboard/map payloads when underlying master data changes.
-_SCP_CACHE_INVALIDATOR = "upande_scp.serverscripts.cache_utils.invalidate_on_change"
-_SCP_REALTIME_DIRTY = "upande_scp.serverscripts.cache_utils.publish_scouting_dirty"
+_SCP_CACHE_INVALIDATOR = "upande_scp.serverscripts.common.cache_utils.invalidate_on_change"
+_SCP_REALTIME_DIRTY = "upande_scp.serverscripts.common.cache_utils.publish_scouting_dirty"
 _SCP_CACHE_EVENTS = {
     "on_update": _SCP_CACHE_INVALIDATOR,
     "on_trash": _SCP_CACHE_INVALIDATOR,
@@ -249,31 +249,31 @@ scheduler_events = {
     "cron": {
         # Daily Scouting & Crop Protection Summary — 17:00 EAT (14:00 UTC)
         "0 14 * * *": [
-            "upande_scp.serverscripts.send_daily_scouting_report.send_daily_scouting_report"
+            "upande_scp.serverscripts.reports.send_daily_scouting_report.send_daily_scouting_report"
         ],
         # Weekly Trap Scouting Report — Mondays 08:00 EAT (05:00 UTC)
         "0 5 * * 1": [
-            "upande_scp.serverscripts.send_weekly_trap_report.send_weekly_trap_report"
+            "upande_scp.serverscripts.reports.send_weekly_trap_report.send_weekly_trap_report"
         ],
         # KEPHIS FCM Weekly Excel — Tuesdays 08:00
         "0 8 * * 2": [
-            "upande_scp.serverscripts.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
+            "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
         ],
     },
     "daily": [
-        "upande_scp.serverscripts.scouting_prewarm.daily_prewarm",
+        "upande_scp.serverscripts.scouting.scouting_prewarm.daily_prewarm",
         # Cancel AFP spray plans left unapproved for more than 3 days.
         "upande_scp.serverscripts.spray_plan_creator.maintenance.auto_cancel_dormant_plans",
     ],
     "hourly": [
         # Keep the current + previous ISO week of scouting payload warm in Redis
         # all day (per-week cache TTL is 1h; writes bust the active week).
-        "upande_scp.serverscripts.scouting_prewarm.hourly_prewarm",
+        "upande_scp.serverscripts.scouting.scouting_prewarm.hourly_prewarm",
         # Expire chemical loan requests that sat unanswered past their timeout.
         "upande_scp.serverscripts.spray_plan_creator.loaning.expire_dormant_requests",
         # Daily Chemical Planning Progress Update — sends at the GM-configured
         # EAT hour (self-gated; once per day).
-        "upande_scp.serverscripts.send_chemical_progress_email.send_chemical_progress_email",
+        "upande_scp.serverscripts.reports.send_chemical_progress_email.send_chemical_progress_email",
     ],
 }
 

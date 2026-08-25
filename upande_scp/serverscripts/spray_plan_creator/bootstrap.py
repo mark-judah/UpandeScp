@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import frappe
 
-from upande_scp.serverscripts.warehouse_filter import (
+from upande_scp.serverscripts.geo.warehouse_filter import (
     is_greenhouse_allowed,
     load_settings,
 )

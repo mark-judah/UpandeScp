@@ -6,7 +6,7 @@ The page filters scouting entries to crop_scouted in ('', 'Rose'/'Roses').
 import json
 import frappe
 
-from upande_scp.serverscripts.cache_utils import (
+from upande_scp.serverscripts.common.cache_utils import (
     K_FARM_HIERARCHY,
     K_GREENHOUSES_GEOJSON,
     TTL_LONG,

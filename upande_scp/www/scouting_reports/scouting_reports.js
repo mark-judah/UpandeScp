@@ -11,13 +11,13 @@
 
 	/* ── API endpoints ── */
 	var API = {
-		"email-daily":  "upande_scp.serverscripts.send_daily_scouting_report.trigger_daily_email",
-		"email-weekly": "upande_scp.serverscripts.send_weekly_trap_report.trigger_weekly_email",
-		"email-fcm":    "upande_scp.serverscripts.send_fcm_weekly_excel_report.trigger_fcm_email",
-		"dl-daily":     "upande_scp.serverscripts.send_daily_scouting_report.download_daily_pdf",
-		"dl-weekly":    "upande_scp.serverscripts.send_weekly_trap_report.download_weekly_pdf",
-		"dl-fcm":       "upande_scp.serverscripts.send_fcm_weekly_excel_report.download_fcm_xlsx",
-		"list-fcm-farms": "upande_scp.serverscripts.send_fcm_weekly_excel_report.list_farms_with_data",
+		"email-daily":  "upande_scp.serverscripts.reports.send_daily_scouting_report.trigger_daily_email",
+		"email-weekly": "upande_scp.serverscripts.reports.send_weekly_trap_report.trigger_weekly_email",
+		"email-fcm":    "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.trigger_fcm_email",
+		"dl-daily":     "upande_scp.serverscripts.reports.send_daily_scouting_report.download_daily_pdf",
+		"dl-weekly":    "upande_scp.serverscripts.reports.send_weekly_trap_report.download_weekly_pdf",
+		"dl-fcm":       "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.download_fcm_xlsx",
+		"list-fcm-farms": "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.list_farms_with_data",
 	};
 
 	var LABELS = {

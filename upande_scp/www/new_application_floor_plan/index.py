@@ -1,12 +1,12 @@
 import frappe
 
-from upande_scp.serverscripts.cache_utils import (
+from upande_scp.serverscripts.common.cache_utils import (
     K_AFP_SPRAY_EQUIPMENT,
     K_AFP_WAREHOUSES,
     TTL_LONG,
     get_or_set,
 )
-from upande_scp.serverscripts.warehouse_filter import (
+from upande_scp.serverscripts.geo.warehouse_filter import (
     gh_sort_key,
     is_greenhouse_allowed,
     load_settings,

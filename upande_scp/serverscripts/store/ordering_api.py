@@ -164,7 +164,7 @@ def save_priorities(crop: str, payload) -> dict:
 
     # Drop the observation_types cache so mobile picks up the new order.
     try:
-        from upande_scp.serverscripts.cache_utils import invalidate, K_OBSERVATION_TYPES
+        from upande_scp.serverscripts.common.cache_utils import invalidate, K_OBSERVATION_TYPES
         invalidate(K_OBSERVATION_TYPES)
     except Exception:
         pass

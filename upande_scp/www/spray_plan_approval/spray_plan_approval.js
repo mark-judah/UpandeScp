@@ -20,11 +20,11 @@ function _call(method, args) {
 
 // ── API paths ─────────────────────────────────────────────────────────────────
 var API = {
-  GET_WO:    "upande_scp.serverscripts.spray_plan_approval.get_pending_work_orders",
-  GET_FARMS: "upande_scp.serverscripts.spray_plan_approval.get_farms_and_greenhouses",
-  APPROVE:   "upande_scp.serverscripts.spray_plan_approval.approve_single_work_order",
-  STOP:      "upande_scp.serverscripts.spray_plan_approval.stop_single_work_order",
-  SCOUTING:  "upande_scp.serverscripts.get_scouting_report.getScoutingData",
+  GET_WO:    "upande_scp.serverscripts.spray_plan_ops.spray_plan_approval.get_pending_work_orders",
+  GET_FARMS: "upande_scp.serverscripts.spray_plan_ops.spray_plan_approval.get_farms_and_greenhouses",
+  APPROVE:   "upande_scp.serverscripts.spray_plan_ops.spray_plan_approval.approve_single_work_order",
+  STOP:      "upande_scp.serverscripts.spray_plan_ops.spray_plan_approval.stop_single_work_order",
+  SCOUTING:  "upande_scp.serverscripts.scouting.get_scouting_report.getScoutingData",
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────

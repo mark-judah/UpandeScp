@@ -4,7 +4,7 @@
 import frappe
 from frappe.model.document import Document
 
-from upande_scp.serverscripts.warehouse_classify import (
+from upande_scp.serverscripts.common.warehouse_classify import (
     is_chemical_store,
     is_fertilizer_store,
 )

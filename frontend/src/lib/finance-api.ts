@@ -1,6 +1,6 @@
 /**
  * Crop-protection finances endpoint.
- * Backend: upande_scp.serverscripts.finances.chemical_cost_by_target
+ * Backend: upande_scp.serverscripts.reports.finances.chemical_cost_by_target
  * Gated to General Manager / System Manager server-side.
  */
 import { call } from "./frappe";
@@ -72,7 +72,7 @@ export async function fetchChemicalCostByTarget(
   farm?: string,
 ): Promise<ChemicalCostReport> {
   return call<ChemicalCostReport>(
-    "upande_scp.serverscripts.finances.chemical_cost_by_target",
+    "upande_scp.serverscripts.reports.finances.chemical_cost_by_target",
     { from_date: fromDate, to_date: toDate, ...(farm ? { farm } : {}) },
   );
 }

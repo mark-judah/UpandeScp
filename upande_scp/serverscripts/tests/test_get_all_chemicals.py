@@ -12,7 +12,7 @@ import unittest
 
 class TestGetAllChemicals(unittest.TestCase):
     def test_fertilizers_are_returned(self):
-        from upande_scp.serverscripts.create_bom import getAllChemicals
+        from upande_scp.serverscripts.store.create_bom import getAllChemicals
 
         result = getAllChemicals()
         self.assertTrue(result["chemicals"], "no chemicals returned")
@@ -22,7 +22,7 @@ class TestGetAllChemicals(unittest.TestCase):
         )
 
     def test_no_hardcoded_group_literals_remain(self):
-        from upande_scp.serverscripts import create_bom
+        from upande_scp.serverscripts.store import create_bom
 
         src = inspect.getsource(create_bom)
         for literal in ('"CHEMICALS"', "'CHEMICALS'", '"Fertilizer"', "'Fertilizer'"):

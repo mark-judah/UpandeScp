@@ -28,7 +28,7 @@ the KEPHIS submission down with it.
 Hook in hooks.py:
     scheduler_events = {
         "weekly": [
-            "upande_scp.serverscripts.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
+            "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
         ]
     }
 """
@@ -39,7 +39,7 @@ from datetime import date, timedelta
 
 import frappe
 
-from upande_scp.serverscripts.scouting_metrics import (
+from upande_scp.serverscripts.scouting.scouting_metrics import (
     MOTH_OTHERS,
     get_fcm_larvae_weekly,
     get_fcm_trap_counts_weekly,

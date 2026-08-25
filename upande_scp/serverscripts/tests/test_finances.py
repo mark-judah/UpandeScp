@@ -9,7 +9,7 @@ import unittest
 
 import frappe
 
-from upande_scp.serverscripts import finances
+from upande_scp.serverscripts.reports import finances
 
 FROM_DATE, TO_DATE = "2020-01-01", "2030-12-31"
 

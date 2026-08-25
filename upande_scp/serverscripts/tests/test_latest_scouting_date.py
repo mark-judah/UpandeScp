@@ -4,7 +4,7 @@ from unittest import mock
 
 import frappe
 
-from upande_scp.serverscripts import scouting_metrics_api as api
+from upande_scp.serverscripts.scouting import scouting_metrics_api as api
 
 
 class TestLatestScoutingDate(unittest.TestCase):

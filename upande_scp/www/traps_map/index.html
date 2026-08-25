@@ -466,7 +466,7 @@
 	            if (w < 1) { y -= 1; w = 52; }
 	            const key = `${y}-W${w.toString().padStart(2, '0')}`;
 	            if (dataCache.has(key)) continue;
-	            fetch('/api/method/upande_scp.serverscripts.get_trap_data.getTrapData', {
+	            fetch('/api/method/upande_scp.serverscripts.scouting.get_trap_data.getTrapData', {
 	                method: 'POST',
 	                headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': CSRF },
 	                body: JSON.stringify({ week: key })
@@ -499,7 +499,7 @@
 	            setProgress(serverPct);
 	        }, 150);
 
-	        fetch('/api/method/upande_scp.serverscripts.get_trap_data.getTrapData', {
+	        fetch('/api/method/upande_scp.serverscripts.scouting.get_trap_data.getTrapData', {
 	            method: 'POST',
 	            headers: {
 	                'Content-Type': 'application/json',

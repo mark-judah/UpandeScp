@@ -273,7 +273,7 @@ def get_farms_and_warehouses():
     keywords (``tunnel``, ``phase``, ``ipm``, ``wetland``, ``csu``).
     Orphans (no ``custom_farm``) drop out.
     """
-    from upande_scp.serverscripts.warehouse_filter import (
+    from upande_scp.serverscripts.geo.warehouse_filter import (
         is_greenhouse_allowed,
         load_settings,
     )

@@ -497,7 +497,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const fetchChemicals = async () => {
         showLoader();
         try {
-            const response = await fetch('/api/method/upande_scp.serverscripts.create_bom.getAllChemicals', {
+            const response = await fetch('/api/method/upande_scp.serverscripts.store.create_bom.getAllChemicals', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -573,7 +573,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const fetchChemicalUom = async (chemicalName) => {
         try {
-            const response = await fetch('/api/method/upande_scp.serverscripts.create_bom.getChemicalUom', {
+            const response = await fetch('/api/method/upande_scp.serverscripts.store.create_bom.getChemicalUom', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -612,7 +612,7 @@ document.addEventListener("DOMContentLoaded", () => {
         renderGrid(0, 0);
         showLoader();
         try {
-            const response = await fetch('/api/method/upande_scp.serverscripts.get_scouting_report.getScoutingData', {
+            const response = await fetch('/api/method/upande_scp.serverscripts.scouting.get_scouting_report.getScoutingData', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1823,7 +1823,7 @@ document.addEventListener("DOMContentLoaded", () => {
         };
         showLoader();
         try {
-            const response = await fetch('/api/method/upande_scp.serverscripts.create_bom.createBOM', {
+            const response = await fetch('/api/method/upande_scp.serverscripts.store.create_bom.createBOM', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': getCSRFToken() },
                 body: JSON.stringify(bomData)
@@ -1880,7 +1880,7 @@ document.addEventListener("DOMContentLoaded", () => {
         setStockMessage("Fetching stock balances...");
         showLoader();
         try {
-            const response = await fetch('/api/method/upande_scp.serverscripts.get_bom_stock_balances.getBomStockBalances', {
+            const response = await fetch('/api/method/upande_scp.serverscripts.store.get_bom_stock_balances.getBomStockBalances', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': getCSRFToken() },
                 body: JSON.stringify({ data: JSON.stringify({ chemicals: uniqueItems }) })
@@ -3203,7 +3203,7 @@ document.addEventListener("DOMContentLoaded", () => {
         setLoaderMessage('Creating spray plan...');
         try {
             const fullPayload = { payload: { raw_data: data } };
-            const response = await fetch('/api/method/upande_scp.serverscripts.create_application_work_order.createApplicationWorkOrder', {
+            const response = await fetch('/api/method/upande_scp.serverscripts.store.create_application_work_order.createApplicationWorkOrder', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': getCSRFToken() },
                 body: JSON.stringify(fullPayload)

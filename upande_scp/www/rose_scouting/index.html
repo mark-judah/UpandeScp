@@ -695,7 +695,7 @@
 	        const body = { date, crops: ['', 'Rose', 'Roses'] };
 	        if (greenhouse) body.greenhouse = greenhouse;
 
-	        fetch('/api/method/upande_scp.serverscripts.get_scouting_analysis.getScoutingAnalysis', {
+	        fetch('/api/method/upande_scp.serverscripts.scouting.get_scouting_analysis.getScoutingAnalysis', {
 	            method: 'POST',
 	            headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': CSRF },
 	            body: JSON.stringify(body),

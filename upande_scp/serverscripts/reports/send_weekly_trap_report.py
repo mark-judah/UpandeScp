@@ -11,7 +11,7 @@ Exposes:
 
 Hook in hooks.py:
     scheduler_events = {"cron": {"0 5 * * 1": [
-        "upande_scp.serverscripts.send_weekly_trap_report.send_weekly_trap_report"
+        "upande_scp.serverscripts.reports.send_weekly_trap_report.send_weekly_trap_report"
     ]}}
 """
 

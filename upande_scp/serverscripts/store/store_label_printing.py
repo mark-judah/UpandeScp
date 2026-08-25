@@ -12,8 +12,8 @@ import json
 
 import frappe
 
-from upande_scp.serverscripts import store_keeper_api
-from upande_scp.serverscripts.spray_plan_labels import (
+from upande_scp.serverscripts.store import store_keeper_api
+from upande_scp.serverscripts.spray_plan_ops.spray_plan_labels import (
     _collect_labels,
     _stamp_labels_printed,
 )
@@ -95,7 +95,7 @@ def get_label_config() -> dict:
     """Canonical label tier table (shared/label_tiers.json) for the app's
     live preview + ZPL, kept in lockstep with the web preview and PDF."""
     store_keeper_api._check_perm()
-    from upande_scp.serverscripts.spray_plan_labels import _load_tiers
+    from upande_scp.serverscripts.spray_plan_ops.spray_plan_labels import _load_tiers
     return _load_tiers()
 
 

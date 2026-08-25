@@ -49,7 +49,7 @@ export async function fetchSubmittedTransfers(opts: {
   to_date?: string;
 } = {}): Promise<SubmittedTransfersResp> {
   const r = await call(
-    "upande_scp.serverscripts.store_keeper_api.list_submitted_transfers",
+    "upande_scp.serverscripts.store.store_keeper_api.list_submitted_transfers",
     opts,
   );
   return unwrap<SubmittedTransfersResp>(r);
@@ -148,7 +148,7 @@ export async function generateLabelPdf(opts: {
           fields:            ov.fields ? JSON.stringify(ov.fields) : undefined,
         };
   const r = await call(
-    "upande_scp.serverscripts.spray_plan_labels.generate_pdf",
+    "upande_scp.serverscripts.spray_plan_ops.spray_plan_labels.generate_pdf",
     args,
   );
   return unwrap<GeneratePdfResp>(r);

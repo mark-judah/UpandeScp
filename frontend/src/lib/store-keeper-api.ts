@@ -92,7 +92,7 @@ function unwrap<T>(resp: any): T {
 
 export async function fetchChemicalOverview(): Promise<ChemicalOverview> {
   const r = await call(
-    "upande_scp.serverscripts.store_keeper_api.chemical_stock_overview",
+    "upande_scp.serverscripts.store.store_keeper_api.chemical_stock_overview",
   );
   return unwrap<ChemicalOverview>(r);
 }
@@ -116,7 +116,7 @@ export interface ChemicalStoreLevels {
 
 export async function fetchChemicalStoreLevels(): Promise<ChemicalStoreLevels> {
   const r = await call(
-    "upande_scp.serverscripts.store_keeper_api.chemical_store_levels",
+    "upande_scp.serverscripts.store.store_keeper_api.chemical_store_levels",
   );
   return unwrap<ChemicalStoreLevels>(r);
 }
@@ -127,7 +127,7 @@ export async function fetchDraftTransfers(opts: {
   to_date?: string;
 } = {}): Promise<DraftTransfersResp> {
   const r = await call(
-    "upande_scp.serverscripts.store_keeper_api.list_draft_transfers",
+    "upande_scp.serverscripts.store.store_keeper_api.list_draft_transfers",
     opts,
   );
   return unwrap<DraftTransfersResp>(r);
@@ -137,7 +137,7 @@ export async function submitWithBiometric(
   names: string[],
 ): Promise<BiometricSubmitResp> {
   const r = await call(
-    "upande_scp.serverscripts.store_keeper_api.submit_with_biometric",
+    "upande_scp.serverscripts.store.store_keeper_api.submit_with_biometric",
     { names: JSON.stringify(names) },
   );
   return unwrap<BiometricSubmitResp>(r);
@@ -156,7 +156,7 @@ export async function verifyEmployeeScan(): Promise<{
   error?: string;
 }> {
   const r = await call(
-    "upande_scp.serverscripts.store_keeper_api.verify_employee",
+    "upande_scp.serverscripts.store.store_keeper_api.verify_employee",
   );
   return unwrap(r);
 }
@@ -172,7 +172,7 @@ export interface TransferItem {
 
 export async function fetchTransferItems(name: string): Promise<TransferItem[]> {
   const r = await call(
-    "upande_scp.serverscripts.store_keeper_api.get_transfer_items",
+    "upande_scp.serverscripts.store.store_keeper_api.get_transfer_items",
     { name },
   );
   const m = unwrap<{ items: TransferItem[] }>(r);
@@ -191,7 +191,7 @@ export async function searchEmployees(
   limit = 12,
 ): Promise<EmployeeHit[]> {
   const r = await call(
-    "upande_scp.serverscripts.store_keeper_api.search_employees",
+    "upande_scp.serverscripts.store.store_keeper_api.search_employees",
     { query, limit },
   );
   return unwrap<EmployeeHit[]>(r) || [];
@@ -215,7 +215,7 @@ export async function bulkAssignEmployee(
   employee: string,
 ): Promise<BulkAssignResp> {
   const r = await call(
-    "upande_scp.serverscripts.store_keeper_api.bulk_assign_employee",
+    "upande_scp.serverscripts.store.store_keeper_api.bulk_assign_employee",
     { names: JSON.stringify(names), employee },
   );
   return unwrap<BulkAssignResp>(r);

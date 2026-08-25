@@ -7,7 +7,7 @@ import datetime
 
 import frappe
 
-from upande_scp.serverscripts.get_complete_scouting_entries import (
+from upande_scp.serverscripts.scouting.get_complete_scouting_entries import (
     _fetch_week_entries,
     _iso_year_week,
 )

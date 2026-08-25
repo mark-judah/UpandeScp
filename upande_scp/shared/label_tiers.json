@@ -1,5 +1,5 @@
 {
-  "_doc": "Canonical tier table for the dynamic-size label engine. Loaded by upande_scp.serverscripts.spray_plan_labels (Python PDF renderer) and frontend/src/lib/label-tiers.ts (TS live preview). Both renderers MUST stay in lockstep — if you change a number here, the live preview and the PDF change together.",
+  "_doc": "Canonical tier table for the dynamic-size label engine. Loaded by upande_scp.serverscripts.spray_plan_ops.spray_plan_labels (Python PDF renderer) and frontend/src/lib/label-tiers.ts (TS live preview). Both renderers MUST stay in lockstep — if you change a number here, the live preview and the PDF change together.",
   "min_dim_floor_mm": 15,
   "qr_min_dim_floor_mm": 18,
   "stack_ratio_threshold": 1.4,

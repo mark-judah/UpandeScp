@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import frappe
 
-from upande_scp.serverscripts.cache_utils import (
+from upande_scp.serverscripts.common.cache_utils import (
     K_SM_FARM_BUNDLE_PREFIX,
     TTL_MEDIUM,
     get_or_set,

@@ -11,7 +11,7 @@ Exposes:
 
 Hook in hooks.py:
     scheduler_events = {"cron": {"0 14 * * *": [
-        "upande_scp.serverscripts.send_daily_scouting_report.send_daily_scouting_report"
+        "upande_scp.serverscripts.reports.send_daily_scouting_report.send_daily_scouting_report"
     ]}}
 """
 

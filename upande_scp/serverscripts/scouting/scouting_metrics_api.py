@@ -12,8 +12,8 @@ is mostly a safety net — edits flush immediately.
 
 import frappe
 
-from upande_scp.serverscripts import scouting_metrics
-from upande_scp.serverscripts.cache_utils import (
+from upande_scp.serverscripts.scouting import scouting_metrics
+from upande_scp.serverscripts.common.cache_utils import (
     K_CROPS_SCOUTED,
     K_MAP_SETTINGS,
     K_SM_BEDS_BY_GH,
@@ -179,7 +179,7 @@ def get_zones_by_greenhouse():
 @frappe.whitelist()
 def get_zone_counts_by_greenhouse():
     """{greenhouse: zone_count}. Denominator for trends/heatmap percentages."""
-    from upande_scp.serverscripts.cache_utils import K_SM_ZONE_COUNTS_BY_GH
+    from upande_scp.serverscripts.common.cache_utils import K_SM_ZONE_COUNTS_BY_GH
 
     return get_or_set(
         K_SM_ZONE_COUNTS_BY_GH,
@@ -547,7 +547,7 @@ def get_chemical_stock_balances(item_codes):
     if not item_codes:
         return {}
 
-    from upande_scp.serverscripts.get_bom_stock_balances import (
+    from upande_scp.serverscripts.store.get_bom_stock_balances import (
         _fill_balances,
         get_allowed_chemical_store_warehouses,
         get_allowed_fertilizer_unit_warehouses,
@@ -615,7 +615,7 @@ def get_bom_details(name):
     balances_by_code = {}
 
     if item_codes:
-        from upande_scp.serverscripts.get_bom_stock_balances import (
+        from upande_scp.serverscripts.store.get_bom_stock_balances import (
             _fill_balances,
             get_allowed_chemical_store_warehouses,
             get_allowed_fertilizer_unit_warehouses,
@@ -664,7 +664,7 @@ def get_application_plan_bootstrap():
                       ``custom_spray_team`` dropdown in the React plan
                       page (legacy field on the Application Floor Plan).
     """
-    from upande_scp.serverscripts.cache_utils import (
+    from upande_scp.serverscripts.common.cache_utils import (
         K_AFP_WAREHOUSES,
         K_AFP_SPRAY_EQUIPMENT,
         TTL_LONG,

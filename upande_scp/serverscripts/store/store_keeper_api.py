@@ -31,7 +31,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime, add_to_date, flt
 
-from upande_scp.serverscripts.warehouse_classify import is_chemical_store
+from upande_scp.serverscripts.common.warehouse_classify import is_chemical_store
 
 
 # ----------------------------------------------------------------------

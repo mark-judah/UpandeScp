@@ -23,7 +23,7 @@ once subscribers register; until then the TTL bounds staleness.
 
 import frappe
 
-from upande_scp.serverscripts import scouting_metrics
+from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     parent_filter_conditions,

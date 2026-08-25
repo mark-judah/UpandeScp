@@ -250,7 +250,7 @@ def approve_single_work_order(wo_name):
     """
     _ensure_approval_role()
     _ensure_wo_in_approver_scope(wo_name)
-    from upande_scp.serverscripts.qr_generator import (
+    from upande_scp.serverscripts.qr.qr_generator import (
         attach_qr_to_document,
         build_chemical_qr_payload,
         generate_qr_base64,

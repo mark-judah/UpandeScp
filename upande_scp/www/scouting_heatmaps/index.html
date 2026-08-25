@@ -960,7 +960,7 @@
 		// actually scouted — a house scouted Mon, Wed, last Fri shows those
 		// three, not the global Wed/Tue/Mon.
 		function fetchPerGreenhouseDates() {
-			return fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getRecentScoutingDatesPerGreenhouse", {
+			return fetch("/api/method/upande_scp.serverscripts.scouting.get_heatmap_data.getRecentScoutingDatesPerGreenhouse", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -981,7 +981,7 @@
 			showLoader();
 			document.getElementById("scout-date-picker").value = currentDate;
 
-			fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getFarmsAndGreenhouses", {
+			fetch("/api/method/upande_scp.serverscripts.scouting.get_heatmap_data.getFarmsAndGreenhouses", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -1303,7 +1303,7 @@
 		function loadGreenhouseDay(ghName, date) {
 			const ctrl = new AbortController();
 			activeAbortControllers.push(ctrl);
-			return fetch("/api/method/upande_scp.serverscripts.get_heatmap_data.getHeatmapData", {
+			return fetch("/api/method/upande_scp.serverscripts.scouting.get_heatmap_data.getHeatmapData", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",

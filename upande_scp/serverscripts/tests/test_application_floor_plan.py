@@ -103,22 +103,21 @@ class TestApplicationFloorPlan(unittest.TestCase):
 
     def test_unconfigured_site_fails_loudly(self):
         """An empty `in` filter returns zero rows without error, so an
-        unconfigured site would show an empty picker that reads as "no
-        chemicals stocked". It must say what is actually wrong."""
-        settings = frappe.get_doc("Spray Plan Settings")
-        saved_chem = list(settings.get("chemical_item_groups") or [])
-        saved_fol = list(settings.get("foliar_item_groups") or [])
+        unconfigured site would show an empty picker that reads as "no chemicals
+        stocked". It must say what is actually wrong instead.
+
+        The guard is exercised by stubbing `product_groups`, never by clearing
+        the real settings — an earlier version of this test did that and could
+        not put the child rows back, leaving the site unconfigured.
+        """
+        original = cb.product_groups
         try:
-            settings.chemical_item_groups = []
-            settings.foliar_item_groups = []
-            settings.save(ignore_permissions=True)
-            frappe.clear_cache()
+            cb.product_groups = lambda kind=None: ()
+            with self.assertRaises(frappe.ValidationError):
+                cb.assert_groups_configured()
             with self.assertRaises(frappe.ValidationError):
                 cb.getAllChemicals()
         finally:
-            settings = frappe.get_doc("Spray Plan Settings")
-            settings.chemical_item_groups = saved_chem
-            settings.foliar_item_groups = saved_fol
-            settings.save(ignore_permissions=True)
-            frappe.db.commit()
-            frappe.clear_cache()
+            cb.product_groups = original
+        # Real settings untouched.
+        self.assertTrue(cb.product_groups(), "settings were disturbed by the test")

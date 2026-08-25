@@ -214,32 +214,27 @@ def _empty_bootstrap() -> dict:
 
 
 def _fetch_rate_limits() -> dict:
-    """Build {item_code: {lower, upper}} from the Chemical master, falling back
-    to Item custom fields for any chemical without a Chemical row yet."""
+    """Build {item_code: {lower, upper}} from the Chemical/Foliar sidecars.
+
+    Reads `default_*` — the field names the sidecars actually use. The old
+    unprefixed `lower_rate_limit` / `upper_rate_limit` COLUMNS still exist on
+    `tabChemical` (Frappe does not drop a column when a field is removed) and
+    are all zero, so a query against them returns nothing and silently reports
+    "no rate limits" instead of failing loudly.
+
+    The Item `custom_*` fallback is gone: nothing on mona carries those values
+    any more (0 of 78 chemical Items), and the sidecar is the source of truth.
+    """
     out: dict = {}
-    for r in frappe.db.sql(
-        """SELECT item AS item_code, lower_rate_limit, upper_rate_limit
-           FROM `tabChemical`
-           WHERE (lower_rate_limit IS NOT NULL AND lower_rate_limit > 0)
-              OR (upper_rate_limit IS NOT NULL AND upper_rate_limit > 0)""",
-        as_dict=True,
-    ):
-        out[r["item_code"]] = {
-            "lower": r["lower_rate_limit"] or None,
-            "upper": r["upper_rate_limit"] or None,
-        }
-    for r in frappe.db.sql(
-        """SELECT i.name AS item_code, i.custom_lower_rate_limit, i.custom_upper_rate_limit
-           FROM `tabItem` i
-           WHERE NOT EXISTS (SELECT 1 FROM `tabChemical` c WHERE c.item = i.name)
-             AND ((i.custom_lower_rate_limit IS NOT NULL AND i.custom_lower_rate_limit > 0)
-               OR (i.custom_upper_rate_limit IS NOT NULL AND i.custom_upper_rate_limit > 0))""",
-        as_dict=True,
-    ):
-        out.setdefault(r["item_code"], {
-            "lower": r["custom_lower_rate_limit"] or None,
-            "upper": r["custom_upper_rate_limit"] or None,
-        })
+    for doctype in ("Chemical", "Foliar"):
+        for r in frappe.get_all(
+            doctype,
+            fields=["item", "default_lower_rate_limit", "default_upper_rate_limit"],
+        ):
+            lower = r.default_lower_rate_limit or None
+            upper = r.default_upper_rate_limit or None
+            if lower or upper:
+                out[r.item] = {"lower": lower, "upper": upper}
     return out
 
 

@@ -185,11 +185,12 @@ def validate_rate_in_limits(
         return
     lim = (limits or {}).get(item_code)
     if lim is None:
-        # Not in the caller's prefetched map → resolve from the Chemical master
-        # (falls back to Item custom fields). This is the rate-limit "validator"
-        # reading the Chemical list, not the Item list.
-        from upande_scp.serverscripts import chemical_meta
-        lower, upper = chemical_meta.rate_limits(item_code)
+        # Not in the caller's prefetched map → resolve from the Chemical/Foliar
+        # sidecar (crop profile override -> master default). This is the
+        # rate-limit "validator" reading the product master, not the Item list.
+        from upande_scp.serverscripts.common import crop_protection
+
+        lower, upper = crop_protection.get_product_rate(item_code)
     else:
         lower = lim.get("lower")
         upper = lim.get("upper")

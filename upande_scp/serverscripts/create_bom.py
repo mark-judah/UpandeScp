@@ -1,6 +1,11 @@
 import frappe
 import json
 
+from upande_scp.serverscripts.common.crop_protection import (
+    get_product_rate,
+    is_foliar_group,
+    product_groups,
+)
 from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
     get_allowed_farms,
 )
@@ -26,6 +31,43 @@ def _resolve_bom_farm(data):
 
     allowed = get_allowed_farms()
     return allowed[0] if allowed else None
+
+
+def _resolve_bom_company(data):
+    """Company for a new tank-mix BOM.
+
+    This used to be the literal "Karen Roses". That is one customer's company
+    name, so on any other site BOM creation failed outright with "Could not find
+    Company: Karen Roses" — the tank-mix builder simply did not work.
+
+    Resolution order: the payload, then the greenhouse's Warehouse (the same
+    rule `drafts._derive_plan_company` uses, so a plan and its BOM cannot end up
+    on different companies), then the global default, then the only company on
+    the site.
+    """
+    company = (data.get("company") or "").strip() if hasattr(data, "get") else ""
+    if company:
+        return company
+
+    greenhouse = (data.get("custom_greenhouse") or data.get("greenhouse") or "").strip()
+    if greenhouse:
+        company = frappe.db.get_value("Warehouse", greenhouse, "company")
+        if company:
+            return company
+
+    company = frappe.defaults.get_global_default("company")
+    if company:
+        return company
+
+    companies = frappe.get_all("Company", pluck="name", limit=2)
+    if len(companies) == 1:
+        return companies[0]
+
+    frappe.throw(
+        "Cannot determine which Company this tank mix belongs to. Set a default "
+        "Company, or make sure the greenhouse's Warehouse has one.",
+        title="Company not resolved",
+    )
 
 
 @frappe.whitelist()
@@ -82,7 +124,7 @@ def createBOM():
         bom_doc = frappe.new_doc("BOM")
         bom_doc.item = bom_item_name
         bom_doc.custom_item_group = "Chemical Mix"
-        bom_doc.company = "Karen Roses"
+        bom_doc.company = _resolve_bom_company(data)
         bom_farm = _resolve_bom_farm(data)
         if bom_farm:
             bom_doc.custom_farm = bom_farm
@@ -248,7 +290,6 @@ def check_duplicate_bom(bom_item_name, water_ph, water_hardness, chemicals):
         return None
     
 @frappe.whitelist()
-@frappe.whitelist()
 def get_chemical_rate_limits():
     """Return a compact map of per-chemical rate limits for live validation.
 
@@ -265,18 +306,18 @@ def get_chemical_rate_limits():
     to round-trip item_code → item_name."""
     rows = frappe.get_all(
         "Item",
-        filters={"item_group": "CHEMICALS", "disabled": 0},
-        fields=[
-            "name",
-            "item_name",
-            "custom_lower_rate_limit",
-            "custom_upper_rate_limit",
-        ],
+        filters={"item_group": ["in", list(product_groups("chemical"))], "disabled": 0},
+        fields=["name", "item_name"],
     )
     out = {}
     for r in rows:
-        lower = float(r.get("custom_lower_rate_limit") or 0)
-        upper = float(r.get("custom_upper_rate_limit") or 0)
+        # Resolve through the sidecar (crop profile override -> master default).
+        # This used to read Item.custom_lower_rate_limit / custom_upper_rate_limit,
+        # which are empty on every chemical Item here, so the map was always {}
+        # and the plan page had no live rate validation at all.
+        _lower, _upper = get_product_rate(r.name)
+        lower = float(_lower or 0)
+        upper = float(_upper or 0)
         if not lower and not upper:
             continue
         out[r.name] = {
@@ -292,15 +333,8 @@ def getAllChemicals():
     # Fetch both chemicals and fertilizers in one query
     items = frappe.get_all(
         "Item",
-        filters={"item_group": ["in", ["CHEMICALS", "Fertilizer"]], "disabled": 0},
-        fields=[
-            "name",
-            "item_name",
-            "stock_uom",
-            "item_group",
-            "custom_lower_rate_limit",
-            "custom_upper_rate_limit",
-        ],
+        filters={"item_group": ["in", list(product_groups())], "disabled": 0},
+        fields=["name", "item_name", "stock_uom", "item_group"],
         order_by="item_name",
     )
 
@@ -316,7 +350,7 @@ def getAllChemicals():
 
     for it in items:
         display_name = it.item_name or it.name
-        item_type = "fertilizer" if it.item_group == "Fertilizer" else "chemical"
+        item_type = "fertilizer" if is_foliar_group(it.item_group) else "chemical"
         if item_type == "fertilizer":
             fertilizer_names.append(display_name)
         else:
@@ -324,8 +358,11 @@ def getAllChemicals():
         item_uom_map[display_name] = it.stock_uom
         item_code_map[display_name] = it.name
         item_type_map[display_name] = item_type
-        lower = float(it.get("custom_lower_rate_limit") or 0)
-        upper = float(it.get("custom_upper_rate_limit") or 0)
+        # From the Chemical/Foliar sidecar, not the Item custom_* fields —
+        # those are empty on every product here, so this map shipped blank.
+        _lower, _upper = get_product_rate(it.name)
+        lower = float(_lower or 0)
+        upper = float(_upper or 0)
         if lower or upper:
             item_rate_limits_map[display_name] = {
                 "lower": lower or None,

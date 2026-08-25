@@ -100,3 +100,25 @@ class TestApplicationFloorPlan(unittest.TestCase):
         self.assertNotIn('bom_doc.company = "', src)
         company = cb._resolve_bom_company(frappe._dict({}))
         self.assertTrue(frappe.db.exists("Company", company))
+
+    def test_unconfigured_site_fails_loudly(self):
+        """An empty `in` filter returns zero rows without error, so an
+        unconfigured site would show an empty picker that reads as "no
+        chemicals stocked". It must say what is actually wrong."""
+        settings = frappe.get_doc("Spray Plan Settings")
+        saved_chem = list(settings.get("chemical_item_groups") or [])
+        saved_fol = list(settings.get("foliar_item_groups") or [])
+        try:
+            settings.chemical_item_groups = []
+            settings.foliar_item_groups = []
+            settings.save(ignore_permissions=True)
+            frappe.clear_cache()
+            with self.assertRaises(frappe.ValidationError):
+                cb.getAllChemicals()
+        finally:
+            settings = frappe.get_doc("Spray Plan Settings")
+            settings.chemical_item_groups = saved_chem
+            settings.foliar_item_groups = saved_fol
+            settings.save(ignore_permissions=True)
+            frappe.db.commit()
+            frappe.clear_cache()

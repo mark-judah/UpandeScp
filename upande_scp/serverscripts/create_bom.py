@@ -289,6 +289,25 @@ def check_duplicate_bom(bom_item_name, water_ph, water_hardness, chemicals):
         frappe.log_error(f"Error checking duplicate BOM: {str(e)}", "Duplicate BOM Check")
         return None
     
+def assert_groups_configured(kind=None):
+    """Fail loudly when no crop-protection item groups are configured.
+
+    An unconfigured site makes `product_groups()` empty, and an empty `in`
+    filter returns zero rows without error — so the picker would come back
+    blank and read as "this site stocks no chemicals". Every silent failure in
+    this area has cost real time; this one announces itself.
+    """
+    groups = product_groups(kind)
+    if not groups:
+        frappe.throw(
+            "No crop-protection item groups are configured. Set Chemical Item "
+            "Groups and Foliar Item Groups on Spray Plan Settings — until then "
+            "the spray plan cannot list any product.",
+            title="Crop protection not configured",
+        )
+    return groups
+
+
 @frappe.whitelist()
 def get_chemical_rate_limits():
     """Return a compact map of per-chemical rate limits for live validation.
@@ -306,7 +325,7 @@ def get_chemical_rate_limits():
     to round-trip item_code → item_name."""
     rows = frappe.get_all(
         "Item",
-        filters={"item_group": ["in", list(product_groups("chemical"))], "disabled": 0},
+        filters={"item_group": ["in", list(assert_groups_configured("chemical"))], "disabled": 0},
         fields=["name", "item_name"],
     )
     out = {}
@@ -333,7 +352,7 @@ def getAllChemicals():
     # Fetch both chemicals and fertilizers in one query
     items = frappe.get_all(
         "Item",
-        filters={"item_group": ["in", list(product_groups())], "disabled": 0},
+        filters={"item_group": ["in", list(assert_groups_configured())], "disabled": 0},
         fields=["name", "item_name", "stock_uom", "item_group"],
         order_by="item_name",
     )

@@ -86,6 +86,42 @@ def _get_cached_zones(utm_epsg: str, project_to_utm):
 # Public API
 # ---------------------------------------------------------------------------
 
+def get_distance_to_zone(latitude, longitude, zone_name):
+    """Metres from a GPS point to one NAMED zone, or None if unmeasurable.
+
+    `get_zone_from_coordinates` answers "which zone is this point in?". This
+    answers "how far is this point from the zone the scout SAID they were in?",
+    which is a different question and the one that verifies a manual pick.
+
+    Returns None — never 0.0 — when the point or the zone cannot support a
+    measurement: no fix, or a zone with no geometry. A farm whose beds have
+    never been surveyed would otherwise read as perfectly accurate.
+    """
+    if not zone_name or latitude in (None, "") or longitude in (None, ""):
+        return None
+    try:
+        lat = float(latitude)
+        lon = float(longitude)
+    except (TypeError, ValueError):
+        return None
+
+    try:
+        utm_epsg = get_dynamic_utm_epsg(lat, lon)
+        project_to_utm = Transformer.from_crs(
+            "EPSG:4326", utm_epsg, always_xy=True
+        ).transform
+        for zone in _get_cached_zones(utm_epsg, project_to_utm):
+            if zone["name"] != zone_name:
+                continue
+            point_utm = transform(project_to_utm, Point(lon, lat))
+            return round(point_utm.distance(zone["line_utm"]), 2)
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(), f"geo_utils.get_distance_to_zone: {zone_name}"
+        )
+    return None
+
+
 def get_zone_from_coordinates(latitude, longitude, bed, accuracy):
     """
     Find the nearest Zone for a given GPS point.

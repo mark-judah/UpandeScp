@@ -1,0 +1,196 @@
+"""Every endpoint path named in the frontend, www or hooks must actually resolve.
+
+Python imports fail loudly. These do not: a whitelisted method is named by a
+STRING in `frontend/src` and `www/*.js`, so a wrong one raises nothing at import
+or build time — the screen simply 404s the first time a user opens it.
+
+There are ~145 such strings. Moving serverscripts between packages rewrites all
+of them at once, and nothing else in the toolchain checks the result. This test
+is what makes that move safe: run it before the move (it passes), and after.
+"""
+
+import ast
+import importlib
+import pathlib
+import re
+import unittest
+
+import frappe
+
+_APP = pathlib.Path(__file__).resolve().parents[2]
+_ROOT = _APP.parent
+
+# "upande_scp.serverscripts.<module path>.<attribute>"
+_PATH = re.compile(r"upande_scp\.serverscripts\.[A-Za-z0-9_.]+")
+
+_SEARCH = [
+    (_ROOT / "frontend" / "src", ("*.ts", "*.tsx")),
+    (_APP / "www", ("*.js", "*.html", "*.py")),
+    (_APP / "public", ("*.js",)),
+    (_APP, ("hooks.py",)),
+]
+
+
+# Endpoint paths named in prose are documentation, not calls. `label-tiers.ts`
+# opens with "TS mirror of upande_scp.serverscripts.spray_plan_labels.plan_label"
+# — a true statement about a function that is deliberately not whitelisted.
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"^\s*(//|#).*$", re.M)
+_TRAILING_COMMENT = re.compile(r"(?<![:\w])//.*$", re.M)
+
+
+def _strip_comments(text):
+    text = _BLOCK_COMMENT.sub("", text)
+    text = _LINE_COMMENT.sub("", text)
+    return _TRAILING_COMMENT.sub("", text)
+
+
+# Live call sites whose target does not exist on this branch. Both are wrapped
+# in try/catch returning an empty FeatureCollection, so they fail silently:
+# tanks/valves and blocks simply never render and nothing is logged.
+#
+# kaitet has both — `geo/get_tanks_valves.py` and `get_blocks_geojson` in
+# `scouting/scouting_metrics_api.py` — so the serverscript regrouping is what
+# closes them. Listed here so the net can be green without the bugs being
+# forgotten; delete an entry the moment its target lands.
+KNOWN_BROKEN = {
+    "upande_scp.serverscripts.get_tanks_valves.get_tanks_valves_geojson",
+    "upande_scp.serverscripts.scouting_metrics_api.get_blocks_geojson",
+}
+
+
+def _collect():
+    """{dotted path: [where it was found]} across every searched file."""
+    found: dict[str, list[str]] = {}
+    for base, patterns in _SEARCH:
+        if not base.exists():
+            continue
+        for pattern in patterns:
+            for path in base.rglob(pattern):
+                if "node_modules" in str(path) or "__pycache__" in str(path):
+                    continue
+                try:
+                    text = path.read_text(errors="ignore")
+                except OSError:
+                    continue
+                text = _strip_comments(text)
+                for match in _PATH.findall(text):
+                    found.setdefault(match.rstrip("."), []).append(
+                        str(path.relative_to(_ROOT))
+                    )
+    return found
+
+
+def _resolve(dotted):
+    """(module, attribute) for a dotted path, or None if nothing resolves.
+
+    The split point is unknown — `a.b.c` may be module `a.b` attribute `c`, or
+    module `a.b.c` — so walk the boundary from the right.
+    """
+    # A bare module path resolves as a module. `getattr` on a package does NOT
+    # auto-import its submodules, so try the whole path as a module first.
+    try:
+        return dotted, importlib.import_module(dotted)
+    except Exception:
+        pass
+
+    parts = dotted.split(".")
+    for cut in range(len(parts) - 1, 1, -1):
+        module_name = ".".join(parts[:cut])
+        try:
+            module = importlib.import_module(module_name)
+        except Exception:
+            continue
+        target = module
+        for attr in parts[cut:]:
+            target = getattr(target, attr, None)
+            if target is None:
+                break
+        if target is not None:
+            return module_name, target
+    return None
+
+
+class TestEndpointPaths(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.found = _collect()
+
+    def test_the_search_actually_finds_the_endpoints(self):
+        """A guard on the guard: if the globs stop matching, every other
+        assertion here passes vacuously and the net silently disappears."""
+        self.assertGreater(
+            len(self.found), 50,
+            "far fewer endpoint strings than expected — the search paths are wrong",
+        )
+
+    def test_every_referenced_endpoint_resolves(self):
+        broken = []
+        for dotted, sources in sorted(self.found.items()):
+            if dotted in KNOWN_BROKEN:
+                continue
+            if _resolve(dotted) is None:
+                broken.append(f"{dotted}  <- {sorted(set(sources))[0]}")
+        self.assertEqual(
+            broken, [],
+            "endpoint paths that resolve to nothing:\n  " + "\n  ".join(broken),
+        )
+
+    def test_every_referenced_endpoint_is_whitelisted(self):
+        """Resolving is not enough — an un-whitelisted function is a 403, which
+        looks like a permissions problem and gets debugged as one.
+
+        Only paths named by a CLIENT need this. hooks.py names scheduler events,
+        doc events and migrate hooks, which Frappe calls internally and which
+        must NOT be whitelisted.
+        """
+        not_whitelisted = []
+        for dotted, sources in sorted(self.found.items()):
+            if all(src.endswith("hooks.py") for src in sources):
+                continue
+            resolved = _resolve(dotted)
+            if resolved is None:
+                continue
+            target = resolved[1]
+            # Frappe records whitelisted functions in a set, not as an attribute
+            # on the function object.
+            if callable(target) and target not in frappe.whitelisted:
+                not_whitelisted.append(f"{dotted}  <- {sorted(set(sources))[0]}")
+        self.assertEqual(
+            not_whitelisted, [],
+            "referenced but not @frappe.whitelist():\n  " + "\n  ".join(not_whitelisted),
+        )
+
+    def test_no_module_imports_itself_by_the_old_flat_path(self):
+        """After the move, a stale `from upande_scp.serverscripts import X` for a
+        module that now lives in a subpackage would still import if a shim were
+        left behind. There are no shims; this asserts none appear."""
+        stale = []
+        for path in (_APP / "serverscripts").rglob("*.py"):
+            # Tests legitimately name a retired module to assert it is gone.
+            if "__pycache__" in str(path) or "/tests/" in str(path):
+                continue
+            try:
+                tree = ast.parse(path.read_text(errors="ignore"))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    if node.module == "upande_scp.serverscripts":
+                        for alias in node.names:
+                            target = _APP / "serverscripts" / f"{alias.name}.py"
+                            if not target.exists():
+                                stale.append(
+                                    f"{path.relative_to(_ROOT)}: imports {alias.name}"
+                                )
+        self.assertEqual(stale, [], "stale flat imports:\n  " + "\n  ".join(stale))
+
+
+    def test_known_broken_list_does_not_outlive_its_bugs(self):
+        """An allowlist that keeps entries after they are fixed teaches people
+        to ignore it."""
+        stale = [d for d in KNOWN_BROKEN if _resolve(d) is not None]
+        self.assertEqual(
+            stale, [],
+            "these now resolve — remove them from KNOWN_BROKEN:\n  " + "\n  ".join(stale),
+        )

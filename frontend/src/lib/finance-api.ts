@@ -57,6 +57,8 @@ export interface UntargetedItem {
 export interface ChemicalCostReport {
   as_of: string;
   currency: string;
+  /** item_code -> item_name, so codes can be shown as readable names */
+  item_names: Record<string, string>;
   farms: FinanceFarm[];
   unattributed: UnattributedEntry[];
   untargeted_items: UntargetedItem[];

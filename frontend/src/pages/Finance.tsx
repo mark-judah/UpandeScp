@@ -79,6 +79,9 @@ export function Finance() {
     [data],
   );
 
+  /** Readable product name, falling back to the code when unknown. */
+  const nameOf = (code: string) => data?.item_names?.[code] || code;
+
   function Cell({ cell }: { cell: CostCell | undefined }) {
     if (!cell || !cell.value) {
       return <span className="text-muted-foreground/40">—</span>;
@@ -99,7 +102,14 @@ export function Finance() {
             {money(cell.split)} was divided equally across this plan&apos;s targets
             because these products have no targets recorded:
           </p>
-          <p className="mt-1 text-xs font-mono">{cell.split_items.join(", ")}</p>
+          <ul className="mt-1 space-y-0.5 text-xs">
+            {cell.split_items.map((code) => (
+              <li key={code}>
+                {nameOf(code)}{" "}
+                <span className="font-mono opacity-60">{code}</span>
+              </li>
+            ))}
+          </ul>
         </TooltipContent>
       </Tooltip>
     );
@@ -107,7 +117,7 @@ export function Finance() {
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="flex flex-col min-h-svh">
+      <div className="flex min-h-svh w-full min-w-0 flex-col overflow-x-hidden">
         <header className="sticky top-0 z-20 flex flex-wrap items-end justify-between gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
           <div className="flex items-center gap-2">
             <SidebarTrigger />
@@ -133,7 +143,7 @@ export function Finance() {
           </div>
         </header>
 
-        <div className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
           {data && (
             <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -202,12 +212,12 @@ export function Finance() {
                       {money(farm.total)} total
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="p-0">
+                  <CardContent className="min-w-0 p-0">
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm border-collapse">
                         <thead className="text-[0.7rem] uppercase tracking-wide text-muted-foreground border-b">
                           <tr>
-                            <th className="text-left px-3 py-2 sticky left-0 bg-card">
+                            <th className="sticky left-0 z-20 bg-card after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border text-left px-3 py-2">
                               Greenhouse
                             </th>
                             <th className="text-left px-3 py-2">Kind</th>
@@ -225,7 +235,7 @@ export function Finance() {
                               key={`${r.greenhouse}-${r.kind}`}
                               className="border-b last:border-0 hover:bg-muted/40"
                             >
-                              <td className="px-3 py-2 sticky left-0 bg-card font-medium whitespace-nowrap">
+                              <td className="sticky left-0 z-20 bg-card after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border px-3 py-2 font-medium whitespace-nowrap">
                                 {r.greenhouse}
                               </td>
                               <td className="px-3 py-2 text-xs text-muted-foreground">
@@ -244,7 +254,7 @@ export function Finance() {
                         </tbody>
                         <tfoot className="border-t-2">
                           <tr className="font-semibold">
-                            <td className="px-3 py-2 sticky left-0 bg-card">Total</td>
+                            <td className="sticky left-0 z-20 bg-card after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border px-3 py-2">Total</td>
                             <td />
                             {farm.targets.map((t) => (
                               <td key={t} className="px-3 py-2 text-right tabular-nums">

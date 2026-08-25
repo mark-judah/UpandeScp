@@ -115,7 +115,7 @@ def chemical_cost_by_target(from_date: str, to_date: str, farm: str | None = Non
     empty = {
         "as_of": now_datetime().isoformat(timespec="seconds"),
         "currency": frappe.db.get_default("currency") or "KES",
-        "farms": [], "unattributed": [], "untargeted_items": [],
+        "farms": [], "unattributed": [], "untargeted_items": [], "item_names": {},
         "totals_by_kind": {"chemical": 0.0, "foliar": 0.0},
         "grand_total": 0.0,
     }
@@ -137,6 +137,7 @@ def chemical_cost_by_target(from_date: str, to_date: str, farm: str | None = Non
     )
 
     tcache: dict[str, set] = {}
+    names: dict = {}                # item_code -> item_name, for readable output
     data: dict = {}                 # farm -> (greenhouse, kind) -> target -> cell
     unattributed: dict = {}         # (cost_center, kind) -> value
     untargeted: dict = {}           # item_code -> {item_name, kind, value}
@@ -150,6 +151,7 @@ def chemical_cost_by_target(from_date: str, to_date: str, farm: str | None = Non
         if farm and f != farm:
             continue
 
+        names[r["item_code"]] = r["item_name"] or r["item_code"]
         kind = crop_protection.classify_item_group(r["item_group"]) or "chemical"
         totals_by_kind[kind] = totals_by_kind.get(kind, 0.0) + amount
 
@@ -234,6 +236,10 @@ def chemical_cost_by_target(from_date: str, to_date: str, farm: str | None = Non
     return {
         "as_of": now_datetime().isoformat(timespec="seconds"),
         "currency": frappe.db.get_default("currency") or "KES",
+        # item_code -> item_name, so the client can show "Magnum Gold" rather
+        # than "CHE00058". Sent once as a lookup instead of repeated on every
+        # cell — one chemical can be named by dozens of split cells.
+        "item_names": names,
         "farms": farms_out,
         "unattributed": unattributed_out,
         "untargeted_items": untargeted_out,

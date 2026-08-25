@@ -138,3 +138,17 @@ class TestFinances(unittest.TestCase):
         """)[0][0]
         self.assertGreater(float(excluded or 0), 0, "fixture check: expected excluded spend")
         self.assertLess(self.report["grand_total"], 22_000_000)
+
+    def test_split_items_can_be_resolved_to_readable_names(self):
+        """The report names untargeted products by item code; the page must be
+        able to show "Magnum Gold", not "CHE00058"."""
+        self.assertTrue(self.report["item_names"])
+        for farm in self.report["farms"]:
+            for row in farm["rows"]:
+                for cell in row["costs"].values():
+                    for code in cell["split_items"]:
+                        self.assertIn(
+                            code, self.report["item_names"],
+                            f"{code} has no name in item_names",
+                        )
+                        self.assertTrue(self.report["item_names"][code])

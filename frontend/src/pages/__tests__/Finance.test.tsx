@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { ChemicalCostReport } from "@/lib/finance-api";
 
@@ -6,6 +7,11 @@ const REPORT: ChemicalCostReport = {
   as_of: "2026-08-25T00:00:00",
   currency: "KES",
   grand_total: 20964894.18,
+  item_names: {
+    CHE00058: "MAGNUM GOLD",
+    CHE00025: "TECAMIN MAX",
+    CHE00043: "RIDOMIL GOLD",
+  },
   totals_by_kind: { chemical: 11637699.47, foliar: 9327194.71 },
   farms: [
     {
@@ -104,6 +110,32 @@ describe("Finance page", () => {
     );
     expect(screen.getByText("CALCIUM NITRATE (Yara)")).toBeInTheDocument();
     expect(screen.getByText("FER00008")).toBeInTheDocument();
+  });
+
+  it("names the untargeted products, not just their codes", async () => {
+    const user = userEvent.setup();
+    render(<Finance />);
+    await waitFor(() => expect(screen.getByText("~100%")).toBeInTheDocument());
+    await user.hover(screen.getByText("~100%"));
+    await waitFor(() =>
+      expect(screen.getAllByText("MAGNUM GOLD").length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText("TECAMIN MAX").length).toBeGreaterThan(0);
+  });
+
+  it("pins the greenhouse column and scrolls the rest inside the table", async () => {
+    render(<Finance />);
+    await waitFor(() =>
+      expect(screen.getByText("Main GH 04 - MFK")).toBeInTheDocument(),
+    );
+    const cell = screen.getByText("Main GH 04 - MFK");
+    // The greenhouse column stays put while the target columns slide under it.
+    expect(cell.className).toContain("sticky");
+    expect(cell.className).toContain("left-0");
+    // ...and the sideways scrolling happens inside the table, not on the page,
+    // which is what stopped the sidebar being dragged along.
+    const scroller = cell.closest("div.overflow-x-auto");
+    expect(scroller).not.toBeNull();
   });
 
   it("shows chemical and foliar totals separately", async () => {

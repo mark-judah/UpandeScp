@@ -117,7 +117,7 @@ export function Finance() {
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="flex min-h-svh w-full min-w-0 flex-col overflow-x-hidden">
+      <div className="flex min-h-svh w-full min-w-0 flex-col">
         <header className="sticky top-0 z-20 flex flex-wrap items-end justify-between gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
           <div className="flex items-center gap-2">
             <SidebarTrigger />

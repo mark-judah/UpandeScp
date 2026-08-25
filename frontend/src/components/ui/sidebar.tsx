@@ -217,7 +217,11 @@ export const SidebarInset = React.forwardRef<
   <main
     ref={ref}
     className={cn(
-      "relative flex min-h-svh flex-1 flex-col bg-background",
+      // `min-w-0` matters: a flex item defaults to min-width:auto, so without
+      // it a wide table inside a page stretches this pane and drags the whole
+      // layout — including the sidebar — into a horizontal scroll. Pages keep
+      // their own `overflow-x-auto` wrappers; this just lets the pane shrink.
+      "relative flex min-h-svh min-w-0 flex-1 flex-col bg-background",
       className,
     )}
     {...props}

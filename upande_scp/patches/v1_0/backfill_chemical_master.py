@@ -15,12 +15,11 @@ SCALAR_MAP = {
     "toxicity": "custom_toxicity",
     "reentry_interval_hrs": "custom_reentry_interval_hrs",
     "application_rate": "custom_application_rate",
-    "lower_rate_limit": "custom_lower_rate_limit",
-    "upper_rate_limit": "custom_upper_rate_limit",
-    "pack_rate": "custom_pack_rate",
+    "default_lower_rate_limit": "custom_lower_rate_limit",
+    "default_upper_rate_limit": "custom_upper_rate_limit",
 }
 CHILD_MAP = {
-    "targets": "custom_targets",
+    "default_targets": "custom_targets",
     "active_ingredients": "custom_active_ingredients",
     "irac": "custom_irac",
     "frac": "custom_frac",

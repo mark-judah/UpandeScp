@@ -13,6 +13,9 @@
   "allowed_farms",
   "keywords_section",
   "exclude_keywords",
+  "cp_groups_section",
+  "chemical_item_groups",
+  "foliar_item_groups",
   "thresholds_section",
   "irac_rotation_window_days",
   "frac_rotation_window_days",
@@ -101,6 +104,23 @@
    "fieldtype": "Table",
    "label": "Exclude Keywords",
    "options": "Spray Plan Exclude Keyword"
+  },
+  {
+   "fieldname": "cp_groups_section",
+   "fieldtype": "Section Break",
+   "label": "Crop Protection Item Groups"
+  },
+  {
+   "fieldname": "chemical_item_groups",
+   "fieldtype": "Table MultiSelect",
+   "label": "Chemical Item Groups",
+   "options": "Crop Protection Item Group"
+  },
+  {
+   "fieldname": "foliar_item_groups",
+   "fieldtype": "Table MultiSelect",
+   "label": "Foliar Item Groups",
+   "options": "Crop Protection Item Group"
   },
   {
    "fieldname": "thresholds_section",
@@ -218,7 +238,7 @@
    "fieldname": "bypass_owner_check",
    "fieldtype": "Check",
    "label": "Bypass owner check on Submit for Approval",
-   "description": "When ON, any Spray Plan Creator can submit any draft (not just drafts they own). Farm-scope checks still apply. Intended for testing \u2014 leave OFF in production."
+   "description": "When ON, any Spray Plan Creator can submit any draft (not just drafts they own). Farm-scope checks still apply. Intended for testing — leave OFF in production."
   },
   {
    "fieldname": "auto_cancel_section",

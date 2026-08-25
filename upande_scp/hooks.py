@@ -199,7 +199,13 @@ doc_events = {
         ],
     },
     "Spray Equipment Details": _SCP_CACHE_EVENTS,
-    "Item": _SCP_CACHE_EVENTS,
+    "Item": {
+        **_SCP_CACHE_EVENTS,
+        # Create the Chemical / Foliar sidecar when an item is added under a
+        # configured crop-protection group, so new products are classifiable
+        # without waiting for a backfill patch.
+        "after_insert": "upande_scp.serverscripts.common.crop_protection.on_item_after_insert",
+    },
     "Crop Scouted": _SCP_CACHE_EVENTS,
     "Spray Plan Settings": _SCP_CACHE_EVENTS,
     "Spray Plan Allowed Farm": _SCP_CACHE_EVENTS,

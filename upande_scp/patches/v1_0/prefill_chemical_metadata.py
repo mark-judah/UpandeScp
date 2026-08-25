@@ -97,14 +97,14 @@ def execute() -> None:
                     if frappe.db.exists("IRAC Code", c):
                         chem.append("irac", {"code": c})
                         changed = True
-            if not chem.get("targets"):
+            if not chem.get("default_targets"):
                 for p in d.get("pests", []):
                     if frappe.db.exists("Pest", p):
-                        chem.append("targets", {"pest": p})
+                        chem.append("default_targets", {"pest": p})
                         changed = True
                 for dis in d.get("diseases", []):
                     if frappe.db.exists("Plant Disease", dis):
-                        chem.append("targets", {"disease": dis})
+                        chem.append("default_targets", {"disease": dis})
                         changed = True
             if not chem.description and d.get("desc"):
                 chem.description = d["desc"]

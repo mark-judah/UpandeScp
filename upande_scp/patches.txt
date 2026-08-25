@@ -23,3 +23,7 @@ upande_scp.patches.v1_0.setup_spray_supervisor_role
 upande_scp.patches.v1_0.seed_stage_catalog
 upande_scp.patches.v1_0.consolidate_disease_stages
 upande_scp.patches.v1_0.rebrand_workspace_upande_scp
+upande_scp.patches.v1_0.configure_crop_protection_item_groups
+upande_scp.patches.v1_0.converge_chemical_to_kaitet_schema
+upande_scp.patches.v1_0.backfill_foliar_master
+upande_scp.patches.v1_0.drop_dead_chemical_rate_columns

@@ -7,8 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "item",
-  "chemical_name",
-  "allowed",
+  "foliar_name",
   "type",
   "classification_section",
   "active_ingredients",
@@ -29,12 +28,9 @@
   "low_stock_threshold",
   "default_lower_rate_limit",
   "default_upper_rate_limit",
-  "application_rate",
   "default_targets",
-  "crop_scouted",
   "default_requirements",
-  "qr_item_id",
-  "description"
+  "qr_item_id"
  ],
  "fields": [
   {
@@ -50,18 +46,10 @@
   },
   {
    "fetch_from": "item.item_name",
-   "fieldname": "chemical_name",
+   "fieldname": "foliar_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Chemical Name"
-  },
-  {
-   "default": "1",
-   "fieldname": "allowed",
-   "fieldtype": "Check",
-   "label": "Allowed on Application Floor Plan",
-   "in_list_view": 1,
-   "description": "When on, this chemical can be picked in the Application Floor Plan. Off hides it."
+   "label": "Foliar Name"
   },
   {
    "fieldname": "type",
@@ -164,7 +152,7 @@
    "non_negative": 1
   },
   {
-   "description": "Default lower application rate; per-crop overrides live on Chemical Crop Profile.",
+   "description": "Default lower application rate; per-crop overrides live on Foliar Crop Profile.",
    "fieldname": "default_lower_rate_limit",
    "fieldtype": "Float",
    "label": "Default Lower Rate Limit (per 1000L)",
@@ -177,22 +165,10 @@
    "non_negative": 1
   },
   {
-   "fieldname": "application_rate",
-   "fieldtype": "Float",
-   "label": "Application Rate (per 1000 L)",
-   "precision": "3"
-  },
-  {
    "fieldname": "default_targets",
    "fieldtype": "Table",
    "label": "Default Target(s)",
    "options": "Chemical Targets"
-  },
-  {
-   "fieldname": "crop_scouted",
-   "fieldtype": "Table",
-   "label": "Crops",
-   "options": "Chemical Crop"
   },
   {
    "fieldname": "default_requirements",
@@ -205,13 +181,8 @@
    "fieldtype": "Int",
    "label": "QR Item Id",
    "read_only": 1,
-   "description": "Stable small integer encoded in this chemical's label codes. Allocated once from a single shared counter and never reused — the allocator is what guarantees uniqueness, since a unique index cannot be added over rows that all default to 0.",
+   "description": "Stable small integer encoded in this chemical's label codes. Allocated once from a single shared counter and never reused \u2014 the allocator is what guarantees uniqueness, since a unique index cannot be added over rows that all default to 0.",
    "search_index": 1
-  },
-  {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description / Compounds"
   }
  ],
  "grid_page_length": 50,
@@ -219,14 +190,14 @@
  "links": [
   {
    "group": "Crop Configuration",
-   "link_doctype": "Chemical Crop Profile",
-   "link_fieldname": "chemical"
+   "link_doctype": "Foliar Crop Profile",
+   "link_fieldname": "foliar"
   }
  ],
  "modified": "2026-07-22 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
- "name": "Chemical",
+ "name": "Foliar",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
@@ -269,5 +240,5 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "chemical_name"
+ "title_field": "foliar_name"
 }

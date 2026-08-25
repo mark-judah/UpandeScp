@@ -383,7 +383,8 @@ def list_chemicals(
     if item_codes:
         for c in frappe.db.sql(
             """SELECT item, allowed, type, toxicity, reentry_interval_hrs,
-                      lower_rate_limit, upper_rate_limit
+                      default_lower_rate_limit AS lower_rate_limit,
+                      default_upper_rate_limit AS upper_rate_limit
                  FROM `tabChemical` WHERE item IN %(p)s""",
             {"p": tuple(item_codes)},
             as_dict=True,
@@ -494,10 +495,13 @@ def save_chemical(item_code: str, payload) -> dict:
 
     is_chemical = (item.item_group == "Chemicals")
 
-    def _apply_codes_targets(doc, prefix):
-        # prefix "" for Chemical (fields irac/frac/ghs/targets/active_ingredients),
+    def _apply_codes_targets(doc, prefix, targets_field=None):
+        # prefix "" for Chemical (fields irac/frac/ghs/active_ingredients),
         # "custom_" for the legacy Item fields. The Code Filter link column is
-        # literally ``code``.
+        # literally ``code``. The targets table is named separately because
+        # Chemical calls it `default_targets` while Item calls it
+        # `custom_targets`.
+        targets_field = targets_field or f"{prefix}targets"
         for key in ("irac", "frac", "ghs"):
             if key in payload:
                 doc.set(f"{prefix}{key}", [])
@@ -505,12 +509,12 @@ def save_chemical(item_code: str, payload) -> dict:
                     if code:
                         doc.append(f"{prefix}{key}", {"code": code})
         if "targets" in payload:
-            doc.set(f"{prefix}targets", [])
+            doc.set(targets_field, [])
             for row in payload.get("targets") or []:
                 pest = (row.get("pest") or "").strip() if isinstance(row, dict) else ""
                 disease = (row.get("disease") or "").strip() if isinstance(row, dict) else ""
                 if pest or disease:
-                    doc.append(f"{prefix}targets", {"pest": pest, "disease": disease})
+                    doc.append(targets_field, {"pest": pest, "disease": disease})
         if "active_ingredients" in payload:
             doc.set(f"{prefix}active_ingredients", [])
             for row in payload.get("active_ingredients") or []:
@@ -539,13 +543,15 @@ def save_chemical(item_code: str, payload) -> dict:
     chem.item = item_code
     if "allowed" in payload:
         chem.allowed = 1 if payload.get("allowed") else 0
-    for fld in ("lower_rate_limit", "upper_rate_limit", "reentry_interval_hrs"):
+    for fld in ("lower_rate_limit", "upper_rate_limit"):
         if fld in payload:
-            chem.set(fld, payload[fld] or 0)
+            chem.set(f"default_{fld}", payload[fld] or 0)
+    if "reentry_interval_hrs" in payload:
+        chem.set("reentry_interval_hrs", payload["reentry_interval_hrs"] or 0)
     for fld in ("type", "toxicity"):
         if fld in payload:
             chem.set(fld, payload[fld] or "")
-    _apply_codes_targets(chem, "")
+    _apply_codes_targets(chem, "", targets_field="default_targets")
     if "crops" in payload:
         chem.set("crop_scouted", [])
         for crop in payload.get("crops") or []:

@@ -610,13 +610,19 @@ def get_fcm_larvae_weekly(year, farm=None):
     )
 
 
-def get_scouting_records_weekly(year, farm=None):
+def get_scouting_records_weekly(year, farm=None, week=None):
     """Per-entry audit records backing the summary numbers.
 
     Returns a flat list of every pest-plant and trap observation in ``year``
     (optionally restricted to ``farm``), with enough context to reconcile any
     number on the Scouting Summary / Weekly summary / FCM Daily sheets back to
     the original Scouting Entry and the scout who recorded it.
+
+    ``week`` narrows to a single ISO week in SQL. Callers that want one week
+    should pass it rather than filtering the result: this query returns raw,
+    un-aggregated rows, so a full year is hundreds of thousands of them on a
+    large farm — fetched, de-duplicated in Python, and then mostly discarded.
+    Pushing the week down turns that into a few thousand.
 
     Fields per row:
         wk, date_of_capture, time_of_capture, scout, scout_employee,
@@ -626,8 +632,9 @@ def get_scouting_records_weekly(year, farm=None):
     """
     gh_cond = " AND gh.custom_farm = %s " if farm else ""
     trap_cond = " AND t.farm = %s " if farm else ""
-    params_plant = [year] + ([farm] if farm else [])
-    params_trap  = [year] + ([farm] if farm else [])
+    week_cond = " AND WEEK(se.date_of_capture, 1) = %s " if week else ""
+    params_plant = [year] + ([farm] if farm else []) + ([week] if week else [])
+    params_trap  = [year] + ([farm] if farm else []) + ([week] if week else [])
 
     plant = frappe.db.sql(
         f"""
@@ -652,6 +659,7 @@ def get_scouting_records_weekly(year, farm=None):
         WHERE YEAR(se.date_of_capture) = %s
           AND pse.count > 0
           {gh_cond}
+          {week_cond}
         """,
         tuple(params_plant),
         as_dict=True,
@@ -680,6 +688,7 @@ def get_scouting_records_weekly(year, farm=None):
         WHERE YEAR(se.date_of_capture) = %s
           AND tse.count > 0
           {trap_cond}
+          {week_cond}
         """,
         tuple(params_trap),
         as_dict=True,

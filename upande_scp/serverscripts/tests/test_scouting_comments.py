@@ -73,3 +73,50 @@ class TestPhotoAlertRule(unittest.TestCase):
     def test_a_named_pest_or_disease_stays_quiet(self):
         for name in ("Spidermites", "Downy Mildew", "Thrips", "Botrytis"):
             self.assertFalse(pest_image._is_unidentified(name), name)
+
+
+class TestPhotoFileName(unittest.TestCase):
+    """The stored name must fit File.file_name (Data, 140) and be stable.
+
+    The live failure: the client named the upload from the raw client_id, whose
+    separators percent-encode on the wire, and a real Mona capture reached 148
+    characters — CharacterLengthExceededError, and a photo already uploaded was
+    lost on insert.
+    """
+
+    LONG = (
+        "Spodoptera-diana.tanui_40monaflowers.co.ke_7C2026-08-26_7C19_3A44_3A49"
+        "_7CMain_20GH_2006_20-_20MFK_7CMain_20GH_2006_20-_20MFK_20-_20Bed_2011f9a17.jpg"
+    )
+    CID = (
+        "diana.tanui@monaflowers.co.ke|2026-08-26|19:44:49"
+        "|Main GH 06 - MFK|Main GH 06 - MFK - Bed 11"
+    )
+
+    def test_the_name_that_broke_production_now_fits(self):
+        self.assertGreater(len(self.LONG), pest_image.MAX_FILE_NAME)
+        out = pest_image._short_file_name(self.LONG, self.CID, "Spodoptera")
+        self.assertLessEqual(len(out), pest_image.MAX_FILE_NAME)
+
+    def test_it_is_deterministic_so_retries_stay_idempotent(self):
+        # The duplicate check matches on file_name; a name that varied per
+        # attempt would attach a fresh copy on every retry of a lost ack.
+        a = pest_image._short_file_name(self.LONG, self.CID, "Spodoptera")
+        b = pest_image._short_file_name(self.LONG, self.CID, "Spodoptera")
+        self.assertEqual(a, b)
+
+    def test_different_subjects_on_one_entry_stay_distinct(self):
+        a = pest_image._short_file_name(self.LONG, self.CID, "Spodoptera")
+        b = pest_image._short_file_name(self.LONG, self.CID, "Downy Mildew")
+        self.assertNotEqual(a, b)
+
+    def test_the_subject_stays_legible_in_the_name(self):
+        out = pest_image._short_file_name(self.LONG, self.CID, "Downy Mildew")
+        self.assertTrue(out.startswith("Downy-Mildew-"), out)
+        self.assertTrue(out.endswith(".jpg"), out)
+
+    def test_a_hostile_or_absent_name_still_yields_something_storable(self):
+        for raw in (None, "", "../../etc/passwd", "no-extension"):
+            out = pest_image._short_file_name(raw, self.CID, "")
+            self.assertLessEqual(len(out), pest_image.MAX_FILE_NAME)
+            self.assertRegex(out, r"^[A-Za-z0-9._-]+$")

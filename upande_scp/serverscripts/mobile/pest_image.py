@@ -19,6 +19,7 @@ the distinction a scout documenting ten findings on a round would send ten
 alerts, and the alert would stop meaning anything.
 """
 
+import hashlib
 import os
 import re
 
@@ -56,6 +57,34 @@ def _is_unidentified(name):
     return not name or "unidentified" in name.lower()
 
 
+# Frappe's File.file_name is Data(140).
+MAX_FILE_NAME = 140
+_SUBJECT_LIMIT = 40
+_DIGEST_LEN = 10
+
+
+def _short_file_name(raw_name, client_id, subject_name):
+    """A short, portable, *deterministic* name for the stored photo.
+
+    The client names the upload from the raw client_id — email|date|time|
+    greenhouse|bed — whose separators percent-encode on the wire ('_7C', '_3A',
+    '_20' apiece). That routinely lands past 140 characters and the File insert
+    raises CharacterLengthExceededError, losing a photo the phone had already
+    uploaded and marked done. So the client's name is not used for length; only
+    its extension is.
+
+    Deterministic is the load-bearing word: the duplicate check below matches on
+    file_name, so a random or timestamped name would let every retry of a lost
+    success response attach another copy. Keyed on client_id + subject to match
+    the identity the old name encoded.
+    """
+    ext = re.sub(r"[^A-Za-z0-9.]+", "", os.path.splitext(raw_name or "")[1])[:8] or ".jpg"
+    subject = re.sub(r"[^A-Za-z0-9]+", "-", subject_name or "").strip("-")
+    subject = subject[:_SUBJECT_LIMIT] or "photo"
+    digest = hashlib.sha1(f"{client_id}|{subject_name}".encode("utf-8")).hexdigest()
+    return f"{subject}-{digest[:_DIGEST_LEN]}{ext}"[:MAX_FILE_NAME]
+
+
 @frappe.whitelist()
 def attach_unidentified_pest_image():
     client_id = frappe.form_dict.get("client_id")
@@ -80,11 +109,7 @@ def attach_unidentified_pest_image():
         return
 
     content = file_obj.stream.read()
-    # The client names the upload from the raw client_id (email|date|time), which
-    # carries ':' and '|' — illegal on some storage backends. Keep only safe
-    # characters so the on-disk name is portable.
-    raw_name = file_obj.filename or f"{client_id}.jpg"
-    fname = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_name).strip("_") or "pest.jpg"
+    fname = _short_file_name(file_obj.filename, client_id, subject_name)
 
     # Idempotent against client retries after a lost success response.
     existing = frappe.db.get_value(

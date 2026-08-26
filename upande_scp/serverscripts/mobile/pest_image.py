@@ -1,4 +1,5 @@
-"""Attach an "unidentified pest" photo to its Scouting Entry and email the GM.
+"""Attach a scouting photo to its Scouting Entry, and alert the GM when it is
+of something the scout could not name.
 
 The mobile app uploads the (already compressed) photo out-of-band, keyed by the
 parent scouting submission's ``client_id``. We resolve the Scouting Entry from
@@ -7,6 +8,15 @@ attached to the entry, and email the General Manager with the photo attached.
 
 If the parent entry hasn't synced yet we return ``{"status": "pending"}`` so the
 phone retries later — the photo upload is fully decoupled from the data sync.
+
+The same endpoint carries two different things. A photo of an identified pest or
+disease is documentation: it attaches and stays quiet. A photo of something the
+scout could not name is the original case, and worth interrupting the GM for.
+
+The test mirrors the client's — the app demands a photo when the pest name reads
+"unidentified" — rather than a flag the two ends could disagree about. Without
+the distinction a scout documenting ten findings on a round would send ten
+alerts, and the alert would stop meaning anything.
 """
 
 import os
@@ -35,11 +45,26 @@ def _gm_recipients():
     return out
 
 
+def _is_unidentified(name):
+    """Does this photo show something the scout could not name?
+
+    Mirrors the client's own rule — `needsPhoto` in traps/index.tsx tests the
+    pest name for "unidentified", which is why a photo was demanded at all. The
+    app always sends a name, so "no name supplied" is NOT the test: using it
+    would mean the alert never fires again.
+    """
+    return not name or "unidentified" in name.lower()
+
+
 @frappe.whitelist()
 def attach_unidentified_pest_image():
     client_id = frappe.form_dict.get("client_id")
-    pest = frappe.form_dict.get("pest") or "Unidentified pest"
+    pest = (frappe.form_dict.get("pest") or "").strip()
+    disease = (frappe.form_dict.get("disease") or "").strip()
     trap = frappe.form_dict.get("trap") or ""
+
+    subject_name = pest or disease
+    is_unidentified = _is_unidentified(subject_name)
 
     files = getattr(frappe.request, "files", None)
     file_obj = files.get("file") if files else None
@@ -87,17 +112,16 @@ def attach_unidentified_pest_image():
     frappe.db.commit()
 
     # Best-effort GM email — a mail failure must not fail the upload (the photo
-    # is already attached to the entry).
+    # is already attached to the entry). Only for something unnamed.
     try:
-        recipients = _gm_recipients()
+        recipients = _gm_recipients() if is_unidentified else []
         if recipients:
             gh = frappe.db.get_value("Scouting Entry", entry, "greenhouse") or ""
             esc = frappe.utils.escape_html
-            subject = f"Unidentified pest photo — {pest}"
+            subject = "Unidentified pest photo"
             message = (
                 "<p>A scout flagged an unidentified pest and attached a photo.</p>"
                 "<ul>"
-                f"<li><b>Pest:</b> {esc(pest)}</li>"
                 f"<li><b>Trap:</b> {esc(trap) or '—'}</li>"
                 f"<li><b>Greenhouse:</b> {esc(gh) or '—'}</li>"
                 f"<li><b>Scouting Entry:</b> {entry}</li>"
@@ -116,4 +140,10 @@ def attach_unidentified_pest_image():
             frappe.get_traceback(),
         )
 
-    frappe.response["data"] = {"status": "ok", "file": saved.file_url, "entry": entry}
+    frappe.response["data"] = {
+        "status": "ok",
+        "file": saved.file_url,
+        "entry": entry,
+        "subject": subject_name or "Unidentified",
+        "notified": is_unidentified,
+    }

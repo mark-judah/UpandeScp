@@ -326,6 +326,16 @@ def createScoutingEntry():
                         elif parent_field == "incidents_scouting_entry":
                             child_row.incident = item.get("incident")
 
+                        elif parent_field == "comments_scouting_entry":
+                            # Free text, so strip it and drop anything that is
+                            # only whitespace — an empty comment row is noise in
+                            # every report that reads the table.
+                            comment = (item.get("comment") or "").strip()
+                            if not comment:
+                                parent_doc.get(parent_field).pop()
+                                continue
+                            child_row.comment = comment
+
                         elif parent_field == "trap_scouting_entry":
                             child_row.trap     = item.get("trap")
                             child_row.pest     = item.get("pest")
@@ -348,6 +358,7 @@ def createScoutingEntry():
                 add_child_items(scout_doc, "incidents_scouting_entry",       entry_data.get("incidents_scouting_entry"))
                 add_child_items(scout_doc, "trap_scouting_entry",            entry_data.get("trap_scouting_entry"))
                 add_child_items(scout_doc, "crop_modelling_entry",           entry_data.get("crop_modelling_entry"))
+                add_child_items(scout_doc, "comments_scouting_entry",        entry_data.get("comments_scouting_entry"))
 
                 scout_doc.insert()
 

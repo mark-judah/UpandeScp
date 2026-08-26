@@ -347,6 +347,23 @@ def getObservationsDetails(crop=None):
             "fields": predator_fields
         })
 
+    # COMMENTS — a free-text note on the entry as a whole.
+    #
+    # Unconditional, unlike every category above it. The others are driven by
+    # what a farm has configured — no weeds configured, no Weeds tab. A comment
+    # needs no configuration to be worth writing, and the app only shows the tab
+    # when this category is present, so omitting it would mean no farm ever gets
+    # one.
+    #
+    # The app supplies its own field when `fields` is empty
+    # (use-scouting-utils.ts, `commentField`), so sending the category alone is
+    # enough. Rows arrive as comments_scouting_entry.
+    observation_types.append({
+        "category": "Comments",
+        "type": "text",
+        "fields": [],
+    })
+
     # Plant sections allowed for this crop (empty on the crop → no filter → None).
     allowed_plant_sections = None
     if crop:

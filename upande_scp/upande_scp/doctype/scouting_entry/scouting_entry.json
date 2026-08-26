@@ -31,6 +31,7 @@
   "weeds_scouting_entry",
   "section_break_dlwd",
   "incidents_scouting_entry",
+  "comments_scouting_entry",
   "section_break_betj",
   "physiological_disorders_entry",
   "section_break_chp",
@@ -198,6 +199,12 @@
    "fieldtype": "Table",
    "label": "Incidents",
    "options": "Incidents Scouting Entry"
+  },
+  {
+   "fieldname": "comments_scouting_entry",
+   "fieldtype": "Table",
+   "label": "Comments",
+   "options": "Comments Scouting Entry"
   },
   {
    "fieldname": "section_break_betj",

@@ -113,7 +113,6 @@ def _is_duplicate_by_time_window(
 def createScoutingEntry():
     try:
         data = frappe.request.get_json()
-        frappe.log_error("Scouting Payload", data)
 
         if not data:
             frappe.response.http_status_code = 400

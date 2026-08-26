@@ -1079,7 +1079,7 @@ export async function fetchTanksValvesGeojson(
   return cached(key, async () => {
     try {
       const r = await call<GeoJsonFC>(
-        "upande_scp.serverscripts.get_tanks_valves.get_tanks_valves_geojson",
+        "upande_scp.serverscripts.geo.get_tanks_valves.get_tanks_valves_geojson",
         args,
       );
       return r || { type: "FeatureCollection", features: [] };

@@ -54,7 +54,7 @@ def _strip_comments(text):
 # closes them. Listed here so the net can be green without the bugs being
 # forgotten; delete an entry the moment its target lands.
 KNOWN_BROKEN = {
-    "upande_scp.serverscripts.get_tanks_valves.get_tanks_valves_geojson",
+    "upande_scp.serverscripts.geo.get_tanks_valves.get_tanks_valves_geojson",
     "upande_scp.serverscripts.scouting.scouting_metrics_api.get_blocks_geojson",
 }
 

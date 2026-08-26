@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { Mail, Download, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  Mail,
+  Download,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  ListTree,
+} from "lucide-react";
 import {
   Card,
   CardContent,
@@ -46,6 +53,17 @@ interface ReportSpec {
   downloadUrl?: (args: { farm?: string; week?: string }) => string;
   /** When set, page renders a farm picker before enabling actions. */
   needsFarm?: boolean;
+  /**
+   * Optional second download offered under the primary one. The KEPHIS
+   * workbook used to carry the per-observation audit trail as a 7th sheet;
+   * it is now this separate, week-scoped file so the submission itself stays
+   * small and fast.
+   */
+  extraDownload?: {
+    label: string;
+    hint: string;
+    url: (args: { farm?: string; week?: string }) => string;
+  };
 }
 
 const REPORTS: ReportSpec[] = [
@@ -73,12 +91,18 @@ const REPORTS: ReportSpec[] = [
     key: "fcm",
     title: "KEPHIS FCM Weekly",
     description:
-      "Per-farm FCM monitoring template for KEPHIS submission. Pick a farm before sending or downloading.",
+      "Per-farm FCM monitoring template for KEPHIS submission. Pick a farm and week; the per-observation records download separately below.",
     emailMethod:
       "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.trigger_fcm_email",
     downloadUrl: ({ farm, week }) =>
       `/api/method/upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.download_fcm_xlsx?farm=${encodeURIComponent(farm || "")}&week=${encodeURIComponent(week || "")}`,
     needsFarm: true,
+    extraDownload: {
+      label: "Scouting Entries",
+      hint: "Every observation behind the selected week's totals.",
+      url: ({ farm, week }) =>
+        `/api/method/upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.download_scouting_entries_xlsx?farm=${encodeURIComponent(farm || "")}&week=${encodeURIComponent(week || "")}`,
+    },
   },
 ];
 
@@ -151,6 +175,25 @@ export function Reports() {
     if (!spec.downloadUrl) return;
     window.location.href = spec.downloadUrl({ farm, week });
     setStatus({ kind: "ok", text: `${spec.title} download started.` });
+  };
+
+  const downloadExtra = (spec: ReportSpec) => {
+    if (!spec.extraDownload) return;
+    if (spec.needsFarm && !farm) {
+      setStatus({ kind: "err", text: "Pick a farm first." });
+      return;
+    }
+    if (!week) {
+      // The entries file is one week wide, so an unset week has no meaning
+      // here even though the KEPHIS workbook would fall back to last week.
+      setStatus({ kind: "err", text: "Pick a week first." });
+      return;
+    }
+    window.location.href = spec.extraDownload.url({ farm, week });
+    setStatus({
+      kind: "ok",
+      text: `${spec.extraDownload.label} download started.`,
+    });
   };
 
   return (
@@ -269,6 +312,22 @@ export function Reports() {
                   Download
                 </Button>
               </div>
+              {r.extraDownload && (
+                <div className="flex flex-col gap-1 pt-2 border-t">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => downloadExtra(r)}
+                  >
+                    <ListTree className="h-3.5 w-3.5" />
+                    {r.extraDownload.label}
+                  </Button>
+                  <p className="text-[0.7rem] text-muted-foreground">
+                    {r.extraDownload.hint}
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}

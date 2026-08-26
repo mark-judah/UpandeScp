@@ -1,6 +1,11 @@
 import frappe
 from datetime import datetime, timedelta
-from .geo_utils import get_zone_from_coordinates
+from .geo_utils import get_distance_to_zone, get_zone_from_coordinates
+
+# Slack added to the GPS accuracy before calling a manual pick "Far". A fix is
+# only ever as good as its own accuracy figure, so the comparison has to allow
+# for it, plus a little for the width of a bed.
+ZONE_VERIFY_TOLERANCE_M = 15.0
 
 
 @frappe.whitelist()
@@ -174,13 +179,18 @@ def createScoutingEntry():
                     })
                     continue
 
+                # A fix is required only when GPS is the thing deciding the
+                # zone. If the scout picked one, a missing fix costs a
+                # verification result and nothing else — a scout under a
+                # polytunnel still records their work.
                 if not latitude or not longitude:
-                    has_errors = True
-                    results.append({
-                        "status": "error",
-                        "message": "Latitude and longitude are required."
-                    })
-                    continue
+                    if not (entry_data.get('zone') or "").strip():
+                        has_errors = True
+                        results.append({
+                            "status": "error",
+                            "message": "Latitude and longitude are required when no zone is selected."
+                        })
+                        continue
 
                 # --- Zone / Tree determination ---
                 determined_zone = None
@@ -197,12 +207,49 @@ def createScoutingEntry():
                 if not isinstance(zone_message, dict):
                     zone_message = {"distance": "0.0", "buffer": "0.0", "fallback": False}
 
-                # Zone is required when a bed is provided (Greenhouse flow).
-                if bed_for_zone and not determined_zone:
+                # --- Whose zone wins -------------------------------------
+                # A scout who picked a column knows where they are better than a
+                # fix drifting under a polytunnel does, so their choice is
+                # authoritative. GPS stops deciding the zone and starts checking
+                # it. Sending no zone keeps the old behaviour exactly, so
+                # nothing changes for a client that has not been updated.
+                selected_zone = (entry_data.get('zone') or "").strip()
+                if selected_zone and not frappe.db.exists("Zone", selected_zone):
+                    # A name we cannot resolve is worse than none: it would file
+                    # the entry against nothing. Fall back to GPS and say so.
+                    zone_message["selected_zone_unknown"] = selected_zone
+                    selected_zone = ""
+
+                zone_source = "Manual" if selected_zone else "GPS"
+                final_zone = selected_zone or determined_zone
+
+                # How far the scout was from the column they named. None when
+                # unmeasurable — no fix, or a zone with no geometry — never 0.0,
+                # which would read as perfect accuracy.
+                selected_distance = None
+                zone_verification = None
+                if selected_zone:
+                    selected_distance = get_distance_to_zone(
+                        latitude, longitude, selected_zone
+                    )
+                    if not latitude or not longitude:
+                        zone_verification = "No Fix"
+                    elif selected_distance is None:
+                        zone_verification = "No Geometry"
+                    else:
+                        buffer_m = float(accuracy or 0) + ZONE_VERIFY_TOLERANCE_M
+                        zone_verification = (
+                            "Verified" if selected_distance <= buffer_m else "Far"
+                        )
+
+                # A bed still needs a zone from somewhere. With a manual pick
+                # that is always satisfied, which is what lets a farm with no
+                # surveyed geometry — Altura — scout at all.
+                if bed_for_zone and not final_zone:
                     has_errors = True
                     results.append({
                         "status": "error",
-                        "message": f"Could not determine zone for bed: {bed_for_zone}. No zone geometry found.",
+                        "message": f"Could not determine zone for bed: {bed_for_zone}. No zone geometry found, and no zone was selected.",
                         "coordinates": f"({latitude}, {longitude})",
                         "accuracy": accuracy,
                         "bed": bed_for_zone
@@ -266,7 +313,7 @@ def createScoutingEntry():
                 else:
                     scout_doc.greenhouse = greenhouse
                     scout_doc.bed        = bed
-                    scout_doc.zone       = determined_zone
+                    scout_doc.zone       = final_zone
                 scout_doc.time_of_capture = entry_data.get('time_of_capture')
                 scout_doc.date_of_capture = entry_data.get('date_of_capture')
                 scout_doc.latitude        = latitude
@@ -284,6 +331,12 @@ def createScoutingEntry():
                 scout_metadata_doc.stationary       = is_stationary
                 scout_metadata_doc.zone_buffer      = zone_message["buffer"]
                 scout_metadata_doc.distance         = zone_message["distance"]
+                # calculated_zone stays whatever GPS worked out, so the two can
+                # be compared after the fact even when the scout overrode it.
+                scout_metadata_doc.selected_zone    = selected_zone or None
+                scout_metadata_doc.zone_source      = zone_source
+                scout_metadata_doc.zone_verification = zone_verification
+                scout_metadata_doc.selected_zone_distance = selected_distance
 
                 def add_child_items(parent_doc, parent_field, items_list):
                     if not items_list or not isinstance(items_list, list):
@@ -395,7 +448,10 @@ def createScoutingEntry():
                     "message": "Scouting Entry created successfully.",
                     "name": scout_doc.name,
                     "metadata_name": scout_metadata_doc.name,
-                    "determined_zone": determined_zone,
+                    "determined_zone": final_zone,
+                    "zone_source": zone_source,
+                    "zone_verification": zone_verification,
+                    "selected_zone_distance": selected_distance,
                     "determined_tree": determined_tree,
                     "zone_confidence": round(confidence * 100, 1) if (determined_zone or determined_tree) else 0.0,
                     "zone_fallback": zone_message.get("fallback", False),

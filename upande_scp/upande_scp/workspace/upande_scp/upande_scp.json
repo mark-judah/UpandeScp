@@ -5,10 +5,6 @@
  "creation": "2025-08-08 15:31:19.092083",
  "custom_blocks": [
   {
-   "custom_block_name": "SCP Dashboard",
-   "label": "SCP Dashboard"
-  },
-  {
    "custom_block_name": "SCP Navigation",
    "label": "SCP Navigation"
   }
@@ -23,8 +19,8 @@
  "is_hidden": 0,
  "label": "Upande SCP",
  "links": [],
- "modified": "2026-07-02 10:45:01.035210",
- "modified_by": "Administrator",
+ "modified": "2026-07-09 10:13:49.437772",
+ "modified_by": "stephene@upande.com",
  "module": "Upande Scp",
  "name": "Upande SCP",
  "number_cards": [],

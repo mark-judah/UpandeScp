@@ -15,6 +15,10 @@
   "zone_buffer",
   "calculated_zone",
   "distance",
+  "selected_zone",
+  "zone_source",
+  "zone_verification",
+  "selected_zone_distance",
   "gps_accuracy",
   "gps_quality",
   "gps_confidence",
@@ -103,6 +107,33 @@
    "fieldname": "distance",
    "fieldtype": "Float",
    "label": "Distance (m)"
+  },
+  {
+   "fieldname": "selected_zone",
+   "fieldtype": "Link",
+   "label": "Selected Zone",
+   "options": "Zone",
+   "description": "The zone the scout chose. Authoritative for the entry."
+  },
+  {
+   "fieldname": "zone_source",
+   "fieldtype": "Select",
+   "label": "Zone Source",
+   "options": "GPS\nManual",
+   "description": "Whether the entry's zone came from the scout or from the GPS point."
+  },
+  {
+   "fieldname": "zone_verification",
+   "fieldtype": "Select",
+   "label": "Zone Verification",
+   "options": "\nVerified\nFar\nNo Fix\nNo Geometry",
+   "description": "How the GPS point compared with the chosen zone. Never blocks a submission."
+  },
+  {
+   "fieldname": "selected_zone_distance",
+   "fieldtype": "Float",
+   "label": "Distance To Selected Zone (m)",
+   "description": "Metres from the recorded point to the chosen zone. Meaningless unless Zone Verification is Verified or Far — a Float cannot hold 'no reading', so it stores 0 for No Fix and No Geometry. Always read the two together."
   }
  ],
  "grid_page_length": 50,

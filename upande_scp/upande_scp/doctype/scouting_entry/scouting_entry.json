@@ -138,13 +138,13 @@
    "fieldname": "latitude",
    "fieldtype": "Data",
    "label": "Latitude",
-   "reqd": 1
+   "mandatory_depends_on": "eval:!doc.zone"
   },
   {
    "fieldname": "longitude",
    "fieldtype": "Data",
    "label": "Longitude",
-   "reqd": 1
+   "mandatory_depends_on": "eval:!doc.zone"
   },
   {
    "fieldname": "section_break_hwtj",

@@ -17,7 +17,13 @@ Sheets generated
 4. Intake QC Report       – (empty — pending AI integration)
 5. Variety List           – (empty — pending integration with live variety data)
 6. FCM Risk profiling     – (empty — pending AI integration)
-7. Scouting Records       – per-entry audit trail (who scouted what, when)
+
+The per-observation audit trail is NOT in this workbook. It is a separate,
+week-scoped download — see ``download_scouting_entries_xlsx``. It used to be a
+7th sheet here carrying every observation from week 1 to the selected week,
+which on a large farm late in the year meant ~350,000 individually-styled rows
+and about two minutes of openpyxl, overrunning the request timeout and taking
+the KEPHIS submission down with it.
 
 Hook in hooks.py:
     scheduler_events = {
@@ -34,12 +40,12 @@ from datetime import date, timedelta
 import frappe
 
 from upande_scp.serverscripts.scouting_metrics import (
+    get_scouting_records_weekly,
     MOTH_OTHERS,
     get_fcm_larvae_weekly,
     get_fcm_trap_counts_weekly,
     get_fcm_traps_ordered,
     get_plant_pests_weekly,
-    get_scouting_records_weekly,
     get_weekly_trap_pest_totals_indoor,
 )
 from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
@@ -216,7 +222,6 @@ def _build_workbook_bytes(farm, week=None, year=None):
     trap_pest_wk   = get_weekly_trap_pest_totals_indoor(current_year, farm=farm)
     plant_pests    = get_plant_pests_weekly(current_year, farm=farm)
     fcm_larvae_raw = get_fcm_larvae_weekly(current_year, farm=farm)
-    records        = get_scouting_records_weekly(current_year, farm=farm)
 
     # -----------------------------------------------------------------------
     # Build lookup maps
@@ -644,94 +649,6 @@ def _build_workbook_bytes(farm, week=None, year=None):
     ws6["A4"].font = italic_note_fnt
 
     # ===================================================================
-    # SHEET 7 – Scouting Records  (audit trail — who/what/when per entry)
-    # ===================================================================
-    ws7 = wb.create_sheet("Scouting Records")
-    _widths7 = [8, 13, 10, 26, 30, 16, 16, 12, 12, 16, 12, 14, 18, 10, 26]
-    for i, w in enumerate(_widths7, 1):
-        ws7.column_dimensions[get_column_letter(i)].width = w
-
-    ws7["A1"] = "Production Site Name"; ws7["A1"].font = bold_fnt
-    ws7["E1"] = "Year";                 ws7["E1"].font = bold_fnt
-    ws7["F1"] = current_year
-    ws7["A2"] = farm_title;             ws7["A2"].font = mk_font(bold=True, size=14)
-    ws7["A3"] = (
-        "Audit trail: every pest and trap observation that feeds the summary "
-        "sheets above. Use the 'Scouting Entry' column to open the source document."
-    )
-    ws7["A3"].font = italic_note_fnt
-    ws7.merge_cells("A3:O3")
-
-    _h7 = [
-        "Week", "Date", "Time", "Scout",
-        "Greenhouse", "Bed", "Zone", "Block", "Row", "Tree",
-        "Type", "Trap / Location", "Pest", "Count", "Scouting Entry",
-    ]
-    ws7.row_dimensions[5].height = 32
-    for col, hdr in enumerate(_h7, 1):
-        c = ws7.cell(row=5, column=col, value=hdr)
-        c.font = hdr_fnt; c.fill = dark_fill; c.border = thin_brd; c.alignment = c_align
-
-    week_set = set(all_weeks)
-    cur7 = 6
-    for rec in records:
-        wk = rec.get("wk")
-        if wk is None or wk not in week_set:
-            # Skip weeks outside the reporting range (e.g. future weeks).
-            continue
-
-        is_last = (wk == last_week_num)
-        w_fill7 = green_fill if is_last else None
-
-        entry_type = rec.get("entry_type") or ""
-        if entry_type == "Trap":
-            # For trap entries, show "TrapNo — Location" so readers can
-            # reconcile with the FCM Daily sheet at a glance.
-            trap_label = rec.get("trap") or ""
-            loc_label  = rec.get("stage_or_location") or ""
-            trap_loc = " — ".join(x for x in (trap_label, loc_label) if x)
-            stage_lbl = ""
-        else:
-            trap_loc  = ""
-            stage_lbl = rec.get("stage_or_location") or ""
-
-        pest_lbl = rec.get("pest") or ""
-        if entry_type == "Plant" and stage_lbl:
-            pest_lbl = f"{pest_lbl} ({stage_lbl})" if pest_lbl else stage_lbl
-
-        vals = [
-            f"WK {wk:02d}",
-            rec.get("date_of_capture"),
-            str(rec.get("time_of_capture") or ""),
-            rec.get("scout") or "",
-            rec.get("greenhouse") or "",
-            rec.get("bed") or "",
-            rec.get("zone") or "",
-            rec.get("block") or "",
-            rec.get("row") or "",
-            rec.get("tree") or "",
-            entry_type,
-            trap_loc,
-            pest_lbl,
-            safe_int(rec.get("count")),
-            rec.get("scouting_entry") or "",
-        ]
-        for col, val in enumerate(vals, 1):
-            c = ws7.cell(row=cur7, column=col, value=val)
-            c.font  = data_fnt; c.border = thin_brd
-            if w_fill7:
-                c.fill = w_fill7
-            c.alignment = r_align if col == 14 else l_align
-        cur7 += 1
-
-    if cur7 == 6:
-        # No records at all — leave a friendly note so the sheet isn't blank.
-        ws7.cell(row=6, column=1, value="No scouting entries recorded for this farm in the reporting period.")
-        ws7.cell(row=6, column=1).font = italic_note_fnt
-
-    ws7.freeze_panes = "A6"
-
-    # ===================================================================
     # Save workbook → bytes buffer
     # ===================================================================
     buf = io.BytesIO()
@@ -807,19 +724,16 @@ def _build_email_html(week_range_str, current_year, farm_display, kephis_id):
           <td style="padding:7px 12px;border-bottom:1px solid #dde;">Variety List</td>
           <td style="padding:7px 12px;border-bottom:1px solid #dde;"><em>To be populated in the next update</em></td>
         </tr>
-        <tr>
-          <td style="padding:7px 12px;border-bottom:1px solid #dde;">FCM Risk profiling</td>
-          <td style="padding:7px 12px;border-bottom:1px solid #dde;"><em>To be populated in the next update</em></td>
-        </tr>
         <tr style="background:#f4f6fb;">
-          <td style="padding:7px 12px;">Scouting Records</td>
-          <td style="padding:7px 12px;">Per-entry audit trail — who scouted, when, what was recorded</td>
+          <td style="padding:7px 12px;">FCM Risk profiling</td>
+          <td style="padding:7px 12px;"><em>To be populated in the next update</em></td>
         </tr>
       </table>
       <p style="font-size:13px;color:#555;">
         <strong>Last week&rsquo;s rows are highlighted in green</strong> throughout all data sheets.
-        Use the <strong>Scouting Records</strong> sheet to trace any summary number back to
-        the scout and scouting entry that produced it.
+        To trace any summary number back to the scout and scouting entry that produced
+        it, download <strong>Scouting Entries</strong> for the same week from the Reports
+        page — it lists every observation behind these totals.
       </p>
       <p>Regards,<br>Upande Crop-Protection System</p>
       <hr style="border:none;border-top:1px solid #ddd;margin:20px 0;">
@@ -929,6 +843,158 @@ def download_fcm_xlsx(farm, week=None):
         frappe.throw(
             f"No scouting data found for {farm_display or farm} in {current_year}. "
             f"Report not generated."
+        )
+    frappe.local.response.filename = fname
+    frappe.local.response.filecontent = excel_bytes
+    frappe.local.response.type = "download"
+
+
+def _build_scouting_entries_bytes(farm, week=None, year=None):
+    """Build the standalone Scouting Entries workbook for one farm and week.
+
+    This is the per-observation audit trail that used to ride along inside the
+    KEPHIS workbook as a 7th sheet. It was moved out for two reasons:
+
+    * Cost. The sheet carried every observation from week 1 to the selected
+      week, and styled all fifteen cells of every row individually. On a large
+      farm late in the year that was ~350,000 rows and around two minutes of
+      openpyxl — enough to blow past the request timeout and take the KEPHIS
+      submission down with it.
+    * Scope. The KEPHIS submission covers one week, so an audit trail for that
+      week is what reconciles it. A year-to-date trail was answering a question
+      nobody asked of a weekly report.
+
+    So this builds ONE week, and styles the header row only — column widths and
+    a freeze pane, nothing per-cell. Writing 15 cells with a font, a border and
+    an alignment each costs roughly 13x what writing the values alone costs;
+    at this size that is the difference between a snappy download and a slow
+    one, and it buys nothing on a sheet people filter and pivot.
+
+    Returns (excel_bytes, fname, current_year, week_num, farm_display).
+    ``excel_bytes`` is None when the week holds no observations.
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import PatternFill, Font, Alignment
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        frappe.log_error("openpyxl not installed – run: pip install openpyxl", "FCM Weekly Report")
+        return None, None, None, None, None
+
+    farm_display, _, abbrev = _resolve_farm(farm)
+
+    today = date.today()
+    current_year = int(year) if year else today.year
+    default_week_mon = today - timedelta(days=today.weekday() + 7)
+    week_num = int(week) if week else int(default_week_mon.isocalendar()[1])
+
+    try:
+        wk_mon = date.fromisocalendar(current_year, week_num, 1)
+        wk_sun = date.fromisocalendar(current_year, week_num, 7)
+        week_range_str = wk_mon.strftime("%d %b") + " - " + wk_sun.strftime("%d %b %Y")
+    except ValueError:
+        week_range_str = f"Week {week_num}"
+
+    # The week is pushed into SQL rather than filtered here: this query returns
+    # raw un-aggregated rows, so fetching a whole year to keep one week of it
+    # would cost ~25s on a large farm and throw away 97% of what it read.
+    # get_scouting_records_weekly de-duplicates re-submitted observations, so
+    # these rows reconcile 1:1 with the KEPHIS workbook's summary sheets.
+    records = get_scouting_records_weekly(current_year, farm=farm, week=week_num)
+    if not records:
+        return None, None, current_year, week_num, farm_display
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Scouting Entries"
+
+    headers = [
+        "Week", "Date", "Time", "Scout",
+        "Greenhouse", "Bed", "Zone", "Block", "Row", "Tree",
+        "Type", "Trap / Location", "Pest", "Count", "Scouting Entry",
+    ]
+    widths = [8, 13, 10, 26, 30, 16, 16, 12, 12, 16, 12, 14, 18, 10, 26]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    ws.append([f"{farm_display} — Scouting Entries — {week_range_str} ({current_year})"])
+    ws["A1"].font = Font(name="Calibri", size=14, bold=True)
+    ws.append([])
+    ws.append(headers)
+
+    hdr_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+    hdr_fill = PatternFill("solid", fgColor="0D2B5E")
+    hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for col in range(1, len(headers) + 1):
+        c = ws.cell(row=3, column=col)
+        c.font = hdr_font
+        c.fill = hdr_fill
+        c.alignment = hdr_align
+
+    def safe_int(v):
+        try:
+            return int(float(v or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    for rec in records:
+        entry_type = rec.get("entry_type") or ""
+        if entry_type == "Trap":
+            trap_loc = " — ".join(
+                x for x in (rec.get("trap") or "", rec.get("stage_or_location") or "") if x
+            )
+            pest_lbl = rec.get("pest") or ""
+        else:
+            trap_loc = ""
+            stage_lbl = rec.get("stage_or_location") or ""
+            pest_lbl = rec.get("pest") or ""
+            if stage_lbl:
+                pest_lbl = f"{pest_lbl} ({stage_lbl})" if pest_lbl else stage_lbl
+
+        # ws.append() writes the whole row in one call and leaves every cell
+        # on the workbook default style — this is the cheap path.
+        ws.append([
+            f"WK {rec.get('wk'):02d}" if rec.get("wk") is not None else "",
+            rec.get("date_of_capture"),
+            str(rec.get("time_of_capture") or ""),
+            rec.get("scout") or "",
+            rec.get("greenhouse") or "",
+            rec.get("bed") or "",
+            rec.get("zone") or "",
+            rec.get("block") or "",
+            rec.get("row") or "",
+            rec.get("tree") or "",
+            entry_type,
+            trap_loc,
+            pest_lbl,
+            safe_int(rec.get("count")),
+            rec.get("scouting_entry") or "",
+        ])
+
+    ws.freeze_panes = "A4"
+    ws.auto_filter.ref = f"A3:{get_column_letter(len(headers))}{ws.max_row}"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    prefix = (abbrev or farm_display or "FCM").replace(" ", "_").upper()
+    fname = f"{prefix}_Scouting_Entries_{current_year}_W{week_num:02d}.xlsx"
+    return buf.read(), fname, current_year, week_num, farm_display
+
+
+@frappe.whitelist()
+def download_scouting_entries_xlsx(farm, week=None):
+    """Stream the per-observation Scouting Entries workbook for one week."""
+    if not farm:
+        frappe.throw("A farm must be supplied to download scouting entries.")
+    excel_bytes, fname, current_year, week_num, farm_display = (
+        _build_scouting_entries_bytes(farm, week=week)
+    )
+    if excel_bytes is None:
+        frappe.throw(
+            f"No scouting entries found for {farm_display or farm} "
+            f"in week {week_num} of {current_year}."
         )
     frappe.local.response.filename = fname
     frappe.local.response.filecontent = excel_bytes

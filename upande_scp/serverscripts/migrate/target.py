@@ -115,9 +115,11 @@ class Target:
 
 	# ---------------------------------------------------------------- requests
 
-	def _request(self, method, path, **kw):
+	def _request(self, method, path, timeout=None, **kw):
 		try:
-			r = self.session.request(method, f"{self.url}{path}", timeout=TIMEOUT, **kw)
+			r = self.session.request(
+				method, f"{self.url}{path}", timeout=timeout or TIMEOUT, **kw
+			)
 		except requests.RequestException as e:
 			raise TargetError(f"{method} {path}: {e}") from None
 		return r

@@ -328,6 +328,15 @@ def _remapped(value, linked_doctype):
 	return table.get(value, value)
 
 
+def _optional_links(doctype):
+	"""{fieldname: linked doctype} for Link fields that are NOT mandatory."""
+	return {
+		f.fieldname: f.options
+		for f in frappe.get_meta(doctype).fields
+		if f.fieldtype == "Link" and f.options and not f.reqd
+	}
+
+
 def _clean(doc_dict, doctype, resolver=None, pruned=None):
 	"""A payload the target will accept: our content, none of our bookkeeping.
 
@@ -344,6 +353,7 @@ def _clean(doc_dict, doctype, resolver=None, pruned=None):
 	layout. Every drop is reported; none is silent.
 	"""
 	links = _link_targets(doctype)
+	optional = _optional_links(doctype)
 	out = {}
 	for key, value in doc_dict.items():
 		if key in _META_FIELDS:
@@ -377,7 +387,21 @@ def _clean(doc_dict, doctype, resolver=None, pruned=None):
 			if rows:
 				out[key] = rows
 			continue
-		out[key] = _jsonable(_remapped(value, links[key]) if key in links else value)
+		resolved = _remapped(value, links[key]) if key in links else value
+
+		# An optional link the target cannot resolve is blanked rather than left to
+		# fail the document. The two Karen scouts point at a Holiday List, a Shift
+		# Type and Users that do not exist there — none of it needed to record who
+		# scouted a bed, and all of it fatal if sent. A *mandatory* link is left
+		# alone deliberately: that must fail loudly, because a document missing one
+		# is not the document.
+		if resolver and key in optional and resolved:
+			if not resolver(optional[key], resolved):
+				if pruned is not None:
+					pruned.append((doctype, "(field)", key, resolved))
+				continue
+
+		out[key] = _jsonable(resolved)
 	return out
 
 

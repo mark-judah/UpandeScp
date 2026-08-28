@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe.utils import flt
 
 from upande_scp.serverscripts.geo.warehouse_filter import (
     is_greenhouse_allowed,
@@ -37,6 +38,21 @@ def fetch_creator_bootstrap() -> dict:
         )
     ]
     greenhouses = _enrich_greenhouses(filtered_ghs)
+
+    # Blocks, for the crops grown on them — avocado and coffee. Deliberately NOT run
+    # through `is_greenhouse_allowed`: that filter enforces the `GH <N>` naming
+    # convention and the tunnel/phase/ipm/csu exclusions, which are facts about
+    # greenhouses. An orchard block is named `AIRSTRIP BLK 10 - KL` and would be
+    # rejected by every one of those rules.
+    #
+    # `custom_area_ha` rides along because it is the whole point: a block is planned as
+    # one unit and its area comes off the warehouse, where roses sum `Bed.bed__area`
+    # instead. On Lokitela all 78 blocks carry it (213.27 ha) while all 1,872 of its
+    # rows have no area at all, so summing units the rose way would yield zero.
+    blocks = _enrich_blocks([
+        w for w in scope["warehouses"]
+        if (w.get("warehouse_type") or "") == "Block" and w.get("custom_farm")
+    ])
 
     # Kits live in `Spray Equipment Details` (child table), NOT `Spray Kit` (which doesn't exist here).
     # The source data has literal duplicate rows (same kit + same warehouse repeated 3x), so we
@@ -149,6 +165,7 @@ def fetch_creator_bootstrap() -> dict:
     return {
         "scope": {"farms": farms, "allowed_warehouses": scope["warehouses"]},
         "greenhouses": greenhouses,
+        "blocks": blocks,
         "kits": kits,
         "spray_teams": spray_teams,
         "tank_mixes": tank_mixes,
@@ -175,7 +192,7 @@ def fetch_creator_bootstrap() -> dict:
 def _empty_bootstrap() -> dict:
     return {
         "scope": {"farms": [], "allowed_warehouses": []},
-        "greenhouses": [], "kits": [], "spray_teams": [], "tank_mixes": [],
+        "greenhouses": [], "blocks": [], "kits": [], "spray_teams": [], "tank_mixes": [],
         "rate_limits": {}, "pest_catalog": [], "disease_catalog": [],
         "cost_centers": [], "farm_stores": {},
         "weather_settings": {}, "irac_window_days": 14, "frac_window_days": 21,
@@ -224,4 +241,28 @@ def _enrich_greenhouses(greenhouses: list[dict]) -> list[dict]:
                 record["latitude"] = row.get("lat")
                 record["longitude"] = row.get("lon")
         out.append(record)
+    return out
+
+
+def _enrich_blocks(blocks: list[dict]) -> list[dict]:
+    """Blocks in the same shape as greenhouses, plus their area.
+
+    Same keys as `_enrich_greenhouses` so the planner can treat a block as a unit
+    without a second code path — only `area_ha` is extra, and only because a block
+    knows its own area where a greenhouse has to have its beds summed.
+    """
+    if not blocks:
+        return []
+    areas = {}
+    for row in frappe.get_all(
+        "Warehouse",
+        filters={"name": ["in", [b["name"] for b in blocks]]},
+        fields=["name", "custom_area_ha"],
+    ):
+        areas[row["name"]] = flt(row.get("custom_area_ha"))
+
+    out: list[dict] = []
+    for b in _enrich_greenhouses(blocks):
+        b["area_ha"] = areas.get(b["name"]) or 0
+        out.append(b)
     return out

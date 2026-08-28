@@ -250,7 +250,9 @@ const AVOCADO_NAV: NavSection[] = [
   {
     label: "Crop Protection",
     items: [
-      { kind: "view", view: "heatmaps", label: "Heat maps", icon: Flame },
+      // The heat map page carries the block prescription panel, so for avocado it is
+      // the jobsheet — observe and plan without leaving it.
+      { kind: "view", view: "heatmaps", label: "Jobsheet", icon: ClipboardList },
     ],
   },
   {

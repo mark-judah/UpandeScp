@@ -6,8 +6,11 @@
  * Reuses the shared avocado map plumbing (Map3D, MapHeader filters + single-farm
  * auto-select, cached useScouting, lean tree points) but renders a heatmap +
  * dots instead of the 3D TreesLayer. A thin, collapsible planning sidebar lists
- * the most-affected blocks; picking one shows its top pests/diseases and a
- * (stubbed) "Plan spray" action — observe now, prescribe next.
+ * the most-affected blocks; picking one shows its top pests/diseases and then the
+ * prescription itself — observe and prescribe in one place, which is why this page is
+ * the avocado **Jobsheet** rather than a heat map with a sidebar. The plan it creates
+ * is an ordinary Application Floor Plan: same draft endpoint, same approval, same
+ * transfer, with the block riding in `custom_greenhouse`.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
@@ -23,6 +26,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { HEADER_PILL } from "@/components/header-controls";
+import { BlockSprayPlan } from "./BlockSprayPlan";
 import { ALL, MapHeader, type MapFilterValue } from "../maps/MapHeader";
 import {
   fetchBlocksGeojson,
@@ -545,13 +549,11 @@ export function AvocadoHeatMap() {
                     </div>
                   ))}
 
-                  <div className="pt-1">
-                    <Button size="sm" className="w-full" disabled>
+                  <div className="border-t pt-2">
+                    <div className="mb-1 text-[0.7rem] uppercase tracking-wide text-muted-foreground">
                       Plan spray
-                    </Button>
-                    <p className="mt-1 text-center text-[0.7rem] text-muted-foreground">
-                      Prescription flow comes next
-                    </p>
+                    </div>
+                    <BlockSprayPlan block={selectedAgg.block} />
                   </div>
                 </div>
               )}

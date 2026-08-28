@@ -86,9 +86,18 @@ export interface CreatorFarmStores {
   fertilizer_store: string | null;
 }
 
+/** A block — the planning unit for avocado and coffee. Same shape as a greenhouse
+ *  plus `area_ha`, because a block knows its own area where a greenhouse has to have
+ *  its beds summed. On Lokitela every block carries it (213.27 ha across 78) while
+ *  every one of its 1,872 rows has none, so the rose way of summing units yields zero. */
+export interface CreatorBlock extends CreatorGreenhouse {
+  area_ha: number;
+}
+
 export interface CreatorBootstrap {
   scope: CreatorScope;
   greenhouses: CreatorGreenhouse[];
+  blocks: CreatorBlock[];
   kits: CreatorKit[];
   spray_teams: CreatorSprayTeam[];
   tank_mixes: CreatorTankMix[];

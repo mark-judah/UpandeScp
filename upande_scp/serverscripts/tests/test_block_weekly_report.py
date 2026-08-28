@@ -94,3 +94,42 @@ class TestWeeks(unittest.TestCase):
 	def test_a_farm_with_no_blocks_offers_no_weeks(self):
 		frappe.set_user("Administrator")
 		self.assertEqual(R.report_weeks("Coffee", "Endebess"), [])
+
+
+class TestBlocksReachThePlanner(unittest.TestCase):
+	"""Blocks have to be offered to the planner, and with their area.
+
+	`_resolve_user_scope` splits warehouses into `greenhouses` by type, and the
+	bootstrap then runs those through `is_greenhouse_allowed` — a filter that enforces
+	the `GH <N>` naming convention and the tunnel/phase/ipm/csu exclusions. Every one
+	of those rules rejects `AIRSTRIP BLK 10 - KL`, so blocks need their own path.
+	"""
+
+	def test_blocks_carry_their_area(self):
+		from upande_scp.serverscripts.spray_plan_creator.bootstrap import _enrich_blocks
+
+		frappe.set_user("Administrator")
+		raw = frappe.get_all(
+			"Warehouse",
+			filters={"custom_farm": "Lokitela", "warehouse_type": "Block", "disabled": 0},
+			fields=["name", "custom_farm", "warehouse_type"],
+		)
+		if not raw:
+			self.skipTest("no blocks on Lokitela")
+		blocks = _enrich_blocks(raw)
+		self.assertEqual(len(blocks), len(raw))
+		with_area = [b for b in blocks if b["area_ha"] > 0]
+		self.assertTrue(with_area, "no block carried an area — quantities cannot derive")
+		for b in blocks:
+			self.assertIn("custom_farm", b)
+			self.assertIn("cost_center", b)
+
+	def test_the_rose_area_source_is_empty_for_avocado(self):
+		"""Why blocks need `custom_area_ha` at all: summing units the rose way is zero."""
+		frappe.set_user("Administrator")
+		total = frappe.db.sql(
+			"""SELECT IFNULL(SUM(b.bed__area), 0) FROM `tabBed` b
+			   JOIN `tabWarehouse` w ON w.name = b.greenhouse
+			   WHERE w.custom_farm = 'Lokitela'"""
+		)[0][0]
+		self.assertEqual(float(total or 0), 0.0)

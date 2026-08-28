@@ -280,3 +280,73 @@ class TestManagerCanApprove(unittest.TestCase):
 			f"{user} holds {GM} and not {SM}, and cannot use these during approval:\n  "
 			+ "\n  ".join(gaps),
 		)
+
+
+class TestTheWorkspaceAdmitsTheAppsRoles(unittest.TestCase):
+	"""Permission on a doctype and admission to the workspace are separate gates.
+
+	A Workspace carries its own role list. `namespace_scp_roles` moved every document
+	grant onto the `SCP ` roles and left that list naming only `System Manager` and the
+	legacy `Scouting & Crop Protection User`, so the SCP desk icon led nowhere for anyone
+	holding just the new roles — while looking fine to whoever checked, because they
+	usually still carried the legacy role too.
+	"""
+
+	WORKSPACE = "Upande SCP"
+
+	def test_every_scp_role_is_admitted_to_the_workspace(self):
+		if not frappe.db.exists("Workspace", self.WORKSPACE):
+			self.skipTest(f"{self.WORKSPACE} does not exist on this site")
+
+		admitted = set()
+		for row in frappe.get_all("Has Role",
+		                          filters={"parenttype": "Workspace", "parent": self.WORKSPACE},
+		                          fields=["role"]):
+			admitted.add(row["role"])
+
+		missing = []
+		for role in ROLE_REQUIREMENTS:
+			if role not in admitted:
+				missing.append(role)
+		if GM not in admitted:
+			missing.append(GM)
+		self.assertEqual(
+			missing, [],
+			f"these roles cannot open {self.WORKSPACE}: " + ", ".join(missing),
+		)
+
+	def test_a_manager_without_the_legacy_role_can_open_it(self):
+		"""The end-to-end version — the table being right is not the page opening."""
+		import json
+
+		from frappe.desk.desktop import get_desktop_page
+
+		if not frappe.db.exists("Workspace", self.WORKSPACE):
+			self.skipTest(f"{self.WORKSPACE} does not exist on this site")
+
+		elevated = set()
+		for u in frappe.get_all("Has Role", filters={"role": SM, "parenttype": "User"},
+		                        fields=["parent"]):
+			elevated.add(u.parent)
+		for u in frappe.get_all("Has Role",
+		                        filters={"role": "Scouting & Crop Protection User",
+		                                 "parenttype": "User"},
+		                        fields=["parent"]):
+			elevated.add(u.parent)
+
+		candidates = []
+		for u in frappe.get_all("Has Role", filters={"role": GM, "parenttype": "User"},
+		                        fields=["parent"]):
+			if u.parent not in elevated and u.parent not in ("Administrator", "Guest"):
+				candidates.append(u.parent)
+		if not candidates:
+			self.skipTest("every manager here also holds System Manager or the legacy role")
+
+		user = sorted(candidates)[0]
+		original = frappe.session.user
+		try:
+			frappe.set_user(user)
+			page = get_desktop_page(json.dumps({"name": self.WORKSPACE}))
+			self.assertIsInstance(page, dict, f"{user} could not open {self.WORKSPACE}")
+		finally:
+			frappe.set_user(original)

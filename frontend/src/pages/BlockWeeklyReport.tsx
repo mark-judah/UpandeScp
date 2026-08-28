@@ -102,7 +102,7 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        description={`Weekly pest counts per block for ${crop}.`}
+        eyebrow={`Weekly pest counts per block for ${crop}`}
       />
 
       <Card>

@@ -82,7 +82,10 @@ export function BlockSprayPlan({
     () => (boot?.spray_teams || []).filter((t) => !farm || !t.custom_farm || t.custom_farm === farm),
     [boot, farm],
   );
-  const kits = useMemo(() => boot?.kits || [], [boot]);
+  const kits = useMemo(
+    () => (boot?.kits || []).filter((k) => !farm || !k.custom_farm || k.custom_farm === farm),
+    [boot, farm],
+  );
 
   const qtyFor = (rate: number) =>
     waterVolumeL > 0 ? (rate * waterVolumeL) / WATER_VOLUME_RATE : 0;
@@ -192,8 +195,8 @@ export function BlockSprayPlan({
           </SelectTrigger>
           <SelectContent>
             {kits.map((k) => (
-              <SelectItem key={k.name} value={k.name}>
-                {k.name}
+              <SelectItem key={k.kit} value={k.kit}>
+                {k.kit}
               </SelectItem>
             ))}
           </SelectContent>

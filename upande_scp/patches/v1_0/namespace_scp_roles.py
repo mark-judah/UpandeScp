@@ -52,13 +52,22 @@ def _copy_assignments(old_role, new_role):
     validation on that pre-existing dirty data. A direct child insert with
     ``ignore_links`` touches only the one new assignment.
     """
-    # Deliberately NOT `frappe.db.exists("Role", old_role)`. On kaitet the `Store Keeper`
-    # and `Spray Plan Approver` Role records had already been deleted while 110 and 24
-    # `Has Role` rows still pointed at them — assignments outlive the role they name,
-    # because nothing cascades. Guarding on the Role doc made this patch skip exactly the
-    # populations that most needed it, and skip them silently: those users held a role
-    # granting nothing at all. The assignments are the evidence that someone was meant to
-    # have this; the Role record is not.
+    # A missing Role document means the mapping was RETIRED, not that its assignments
+    # were orphaned by accident — so skip it.
+    #
+    # This guard was removed once, on the reasoning that assignments outlive the role they
+    # name and the patch was therefore skipping populations that needed it. That was
+    # backwards. `Store Keeper` and `Spray Plan Approver` are the only two whose Role
+    # documents had been deleted, and they were deleted deliberately: `Store Keeper` on
+    # kaitet is a generic warehouse role held by 110 people across the whole business, not
+    # chemical store keepers. Their orphan `Has Role` rows granted nothing precisely
+    # because the role was gone. Migrating them turned 110 dormant rows into real access
+    # and took the SCP store keepers from 2 to 112.
+    #
+    # The deleted Role doc is a signal. If a mapping here should apply, restore the Role.
+    if not frappe.db.exists("Role", old_role):
+        return
+
     users = frappe.get_all(
         "Has Role",
         filters={"role": old_role, "parenttype": "User"},

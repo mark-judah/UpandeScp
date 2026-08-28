@@ -132,6 +132,7 @@ def scheduled_of(wo) -> "frappe.utils.datetime.datetime | None":
 	return get_datetime(value) if value else None
 
 
+@frappe.whitelist()
 def cutoff_status(work_order: str) -> dict:
 	"""Where a plan stands against its deadline. Read-only; safe for any caller."""
 	wo = frappe.db.get_value(

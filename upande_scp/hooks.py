@@ -342,10 +342,38 @@ scheduler_events = {
 
 # Overriding Methods
 # ------------------------------
+
+# Bare-path aliases for the handset.
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "upande_scp.event.get_events"
-# }
+# The Upande-Scout app posts to short paths like `/api/method/start_work_order`, which
+# Frappe only resolves via an API-type Server Script. Those scripts were dropped on
+# 2026-07-17 (`57e09ce`) after an audit that found "no in-repo caller" — true of this
+# repository, and false of the app, which is where the callers live. Every handset lost
+# its spray list and its bed lookups.
+#
+# `frappe.handler.execute_cmd` consults this map before the Server Script map and before
+# `get_attr`, so aliasing here fixes the binaries already in the field without a rebuild,
+# and keeps the implementations as versioned, greppable, testable code.
+#
+# Anything added here MUST stay: a build in the field can outlive several releases, and
+# these paths are its only way in.
+override_whitelisted_methods = {
+	"fetchScheduledApplications": (
+		"upande_scp.serverscripts.mobile.scheduled_applications.fetchScheduledApplications"
+	),
+	"fetchGreenhouseBeds": (
+		"upande_scp.serverscripts.mobile.greenhouse_beds.fetchGreenhouseBeds"
+	),
+	"start_work_order": (
+		"upande_scp.serverscripts.mobile.start_work_order.start_work_order"
+	),
+	"update_work_order_dates": (
+		"upande_scp.serverscripts.mobile.start_work_order.update_work_order_dates"
+	),
+	"update_work_order_team": (
+		"upande_scp.serverscripts.spray_plan_creator.spray_session.update_work_order_team"
+	),
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,

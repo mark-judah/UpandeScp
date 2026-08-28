@@ -927,6 +927,100 @@ def _team_applicators(wo) -> list[dict[str, Any]]:
 
 
 @frappe.whitelist()
+def update_work_order_team(work_order: str = None, team=None) -> dict[str, Any]:
+    """Record who is spraying, just before the spray starts.
+
+    Reached at the bare path ``/api/method/update_work_order_team``, which had no
+    implementation anywhere — the handset called it, got a 404, and
+    ``api.ts`` turned that into ``{success: true, simulated: true}``. So
+    ``plan-details.tsx``'s ``if (teamRes?.success === false) throw`` never fired and the
+    team the supervisor had just confirmed on screen was silently discarded, leaving the
+    SAL applicators to be built from whatever the planner set days earlier.
+
+    Writing the child table matters beyond the audit trail: ``_team_applicators`` reads
+    ``custom_spray_plan_team_members`` to build the logsheet's applicator rows, so the
+    people named here are the people recorded as exposed to the chemical.
+
+    The WO is submitted, so the rows are replaced directly rather than through
+    ``wo.save()`` — a full save re-runs ERPNext's manufacturing validations, which is the
+    wrong tool for what is an audit-log write. Same reasoning as ``register_csu_scan``.
+    """
+    work_order = work_order or frappe.form_dict.get("work_order_name")
+    if not work_order:
+        frappe.throw("work_order_name is required.")
+
+    if team is None:
+        team = frappe.form_dict.get("team")
+    if isinstance(team, str):
+        team = json.loads(team or "[]")
+    if not isinstance(team, list):
+        frappe.throw("team must be a list of members.")
+
+    if not frappe.db.exists("Work Order", work_order):
+        frappe.throw(f"{work_order} does not exist.")
+
+    # `id` is the Employee, `name` its display name — the shape `plan-details.tsx`
+    # builds from `custom_spray_plan_team_members` and hands straight back.
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for member in team:
+        if not isinstance(member, dict):
+            continue
+        employee = str(member.get("id") or member.get("employee") or "").strip()
+        if not employee or employee in seen:
+            continue
+        seen.add(employee)
+        rows.append({
+            "employee": employee,
+            "employee_name": str(
+                member.get("name") or member.get("employee_name") or ""
+            ).strip(),
+            "role": str(member.get("role") or "").strip(),
+        })
+
+    # An empty team is refused rather than written: it is far more likely to be a
+    # screen that lost its state than a deliberate act, and overwriting a real team
+    # with nothing costs the logsheet its applicators.
+    if not rows:
+        frappe.throw("A spray team needs at least one member with an employee.")
+
+    frappe.db.delete(
+        "Custom Spray Plan Team Member",
+        {
+            "parent": work_order,
+            "parenttype": "Work Order",
+            "parentfield": "custom_spray_plan_team_members",
+        },
+    )
+    for idx, row in enumerate(rows, start=1):
+        child = frappe.get_doc({
+            "doctype": "Custom Spray Plan Team Member",
+            "parent": work_order,
+            "parenttype": "Work Order",
+            "parentfield": "custom_spray_plan_team_members",
+            "idx": idx,
+            **row,
+        })
+        child.flags.ignore_permissions = True
+        child.insert()
+
+    # `custom_spray_team` is the human-readable copy the desk form and the plan list
+    # show. Kept in step so the two never disagree about who sprayed.
+    frappe.db.set_value(
+        "Work Order",
+        work_order,
+        "custom_spray_team",
+        "\n".join(
+            f"{r['employee_name'] or r['employee']} - {r['role']}".rstrip(" -")
+            for r in rows
+        ),
+        update_modified=False,
+    )
+
+    return {"success": True, "work_order": work_order, "members": len(rows)}
+
+
+@frappe.whitelist()
 def end_spray_session(work_order: str, ended_at=None) -> dict[str, Any]:
     """Close out a spray: fire Material Issue, submit SAL, close SMS, mark WO Completed.
 

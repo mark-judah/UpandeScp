@@ -220,10 +220,10 @@ export async function fetchChunk(
 /** Thrown-away errors here used to render as "No farms configured", which is a
  *  claim about the data when the truth was "the request failed". Callers that
  *  need to tell the difference should use `fetchFarmsAndWarehousesResult`. */
-export async function fetchFarmsAndWarehouses(): Promise<
-  Record<string, string[]>
-> {
-  return (await fetchFarmsAndWarehousesResult()).farms;
+export async function fetchFarmsAndWarehouses(
+  crop?: string,
+): Promise<Record<string, string[]>> {
+  return (await fetchFarmsAndWarehousesResult(crop)).farms;
 }
 
 export interface FarmsResult {
@@ -232,11 +232,16 @@ export interface FarmsResult {
   error?: "stale-session" | "failed";
 }
 
-export async function fetchFarmsAndWarehousesResult(): Promise<FarmsResult> {
+/** `crop` narrows the list to the farms that crop is grown on — the "where you are"
+ *  filter. The server applies the "who you are" filter regardless, so omitting it
+ *  never widens what comes back. */
+export async function fetchFarmsAndWarehousesResult(
+  crop?: string,
+): Promise<FarmsResult> {
   try {
     const r = await call<Record<string, string[]>>(
       "upande_scp.serverscripts.scouting.scouting_metrics_api.get_farms_and_warehouses",
-      {},
+      crop ? { crop } : {},
     );
     return { farms: r || {} };
   } catch (e) {

@@ -13,6 +13,7 @@ import re
 import frappe
 from frappe.utils import add_days, cstr, flt, now_datetime, today
 
+from upande_scp.serverscripts.common import crop_scope
 from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_TRANSFER
 
 AFP_TYPE = "Application Floor Plan"
@@ -36,8 +37,21 @@ def _ensure_approval_role():
 
 
 def _ensure_wo_in_approver_scope(wo_name: str) -> None:
-    """Reject approve/stop calls on Work Orders whose greenhouse is not in
-    the approver's farm roster. GMs / System Managers pass through."""
+    """Reject approve/stop calls on a Work Order outside the caller's farms.
+
+    Two scopes, both enforced. The approver roster passes ``None`` for a general
+    manager, so on its own it let a GM at Kaitet Ltd. approve a Karen Roses plan by
+    name — listing and acting are different doors, and closing only the one the UI uses
+    is not closing it.
+    """
+    gh = frappe.db.get_value("Work Order", wo_name, "custom_greenhouse")
+    scoped = crop_scope.scoped_greenhouses(None, frappe.session.user)
+    if scoped is not None and gh and gh not in scoped:
+        frappe.throw(
+            f"{gh} is not on a farm your company grows on.",
+            frappe.PermissionError,
+        )
+
     allowed = _approver_allowed_greenhouses(frappe.session.user)
     if allowed is None:
         return
@@ -131,15 +145,28 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
         where.append("custom_greenhouse LIKE %(farm_prefix)s")
         params["farm_prefix"] = farm + " GH%"
 
-    # Approver farm scoping — GMs / System Managers / Administrator pass
-    # ``None`` and see everything. A Spray Plan Approver only sees WOs
-    # whose greenhouse belongs to a farm they've been rostered on.
-    allowed_ghs = _approver_allowed_greenhouses(frappe.session.user)
-    if allowed_ghs is not None:
+    # Farm scoping, from two independent sources that both have to hold.
+    #
+    # The approver roster answers "which farms are you rostered on" and passes ``None``
+    # for a GM. The crop gate answers "which farms does your company grow on" and passes
+    # ``None`` only for an administrator. Before the crop gate this query ran on raw SQL
+    # with only the roster applied, so a general manager at Kaitet Ltd. was served all
+    # 707 pending Karen Roses plans — `permission_query_conditions` cannot reach
+    # `frappe.db.sql`, which is exactly why this is applied by hand here.
+    limits = []
+    roster = _approver_allowed_greenhouses(frappe.session.user)
+    if roster is not None:
+        limits.append(set(roster))
+    scoped = crop_scope.scoped_greenhouses(None, frappe.session.user)
+    if scoped is not None:
+        limits.append(scoped)
+
+    if limits:
+        allowed_ghs = set.intersection(*limits)
         if not allowed_ghs:
             return {"work_orders": [], "farms": []}
         where.append("custom_greenhouse IN %(allowed_ghs)s")
-        params["allowed_ghs"] = tuple(allowed_ghs)
+        params["allowed_ghs"] = tuple(sorted(allowed_ghs))
 
     wos = frappe.db.sql(
         """
@@ -208,19 +235,36 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
 
 
 @frappe.whitelist()
-def get_farms_and_greenhouses():
-    """Return distinct farms and their greenhouse lists (from open WOs)."""
+def get_farms_and_greenhouses(crop=None):
+    """Return distinct farms and their greenhouse lists (from open WOs).
+
+    Two narrowings apply, and they are different things. The approver roster and the
+    crop gate both answer *who you are*: an approver sees the farms they are rostered
+    on, and nobody sees a farm outside their company's crops. `crop` answers *where you
+    are* — inside the Avocado section a farm picker should offer Lokitela alone, even
+    to an administrator entitled to every farm. Context narrows everyone; permission
+    narrows further. The answer is the intersection of whichever apply.
+    """
     _ensure_approval_role()
     wo_filters: list = [
         ["custom_type", "=", AFP_TYPE],
         ["status",      "=", "Not Started"],
         ["docstatus",   "=", 1],
     ]
-    allowed_ghs = _approver_allowed_greenhouses(frappe.session.user)
-    if allowed_ghs is not None:
+
+    limits = []
+    roster = _approver_allowed_greenhouses(frappe.session.user)
+    if roster is not None:
+        limits.append(set(roster))
+    scoped = crop_scope.scoped_greenhouses(crop, frappe.session.user)
+    if scoped is not None:
+        limits.append(scoped)
+
+    if limits:
+        allowed_ghs = set.intersection(*limits)
         if not allowed_ghs:
             return {"farms": [], "greenhouses_by_farm": {}}
-        wo_filters.append(["custom_greenhouse", "in", allowed_ghs])
+        wo_filters.append(["custom_greenhouse", "in", sorted(allowed_ghs)])
 
     wos = frappe.get_all(
         "Work Order",

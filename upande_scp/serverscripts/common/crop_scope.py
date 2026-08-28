@@ -215,6 +215,64 @@ def allowed_greenhouses(user: str | None = None) -> set[str] | None:
 	return houses
 
 
+# ───────────────────── crop context, for the UI's dropdowns ──────────────────
+#
+# Two different narrowings meet in the frontend and are easy to conflate:
+#
+#   * **who you are** — the gate above. A Karen Roses user never sees Lokitela.
+#   * **where you are** — the crop section you have navigated into. Inside Avocado,
+#     a farm picker should offer Lokitela and nothing else, even to an administrator
+#     who is entitled to every farm.
+#
+# The second is context, not permission, so it narrows everyone including the
+# unrestricted. The two compose: the answer is always the intersection.
+
+
+def farms_for_crop(crop: str | None) -> set[str] | None:
+	"""Farms this crop is grown on. `None` when no crop is given."""
+	if not crop:
+		return None
+	farms: set[str] = set()
+	for row in frappe.get_all(
+		"Farm Filter",
+		filters={"parenttype": "Crop Scouted", "parent": crop},
+		fields=["farm"],
+	):
+		if row.get("farm"):
+			farms.add(row["farm"])
+	return farms
+
+
+def scoped_farms(crop: str | None = None, user: str | None = None) -> set[str] | None:
+	"""The farms a user may see, narrowed to a crop's farms when one is in play.
+
+	`None` means "no restriction at all" and can only come back when the user is
+	unrestricted *and* no crop context was given.
+	"""
+	mine = allowed_farms(user)
+	theirs = farms_for_crop(crop)
+	if theirs is None:
+		return mine
+	if mine is None:
+		return theirs
+	return mine & theirs
+
+
+def scoped_greenhouses(crop: str | None = None, user: str | None = None) -> set[str] | None:
+	"""Warehouses under `scoped_farms`. `None` means no restriction."""
+	farms = scoped_farms(crop, user)
+	if farms is None:
+		return None
+	if not farms:
+		return set()
+	houses: set[str] = set()
+	for row in frappe.get_all(
+		"Warehouse", filters={"custom_farm": ["in", list(farms)]}, fields=["name"]
+	):
+		houses.add(row["name"])
+	return houses
+
+
 # ─────────────────────────── permission hooks ────────────────────────────────
 
 

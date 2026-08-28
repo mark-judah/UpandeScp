@@ -99,8 +99,16 @@ export async function fetchPendingWorkOrders(args: {
   return r || { work_orders: [] };
 }
 
-export async function fetchFarmsAndGreenhouses(): Promise<FarmsAndGreenhouses> {
-  const r = await call<FarmsAndGreenhouses>(ENDPOINTS.GET_FARMS, {});
+/** `crop` narrows the cascade to the farms that crop is grown on. The server applies
+ *  the user's own farm scope regardless, so omitting `crop` never widens the result —
+ *  it only means "no crop section is in play". */
+export async function fetchFarmsAndGreenhouses(
+  crop?: string,
+): Promise<FarmsAndGreenhouses> {
+  const r = await call<FarmsAndGreenhouses>(
+    ENDPOINTS.GET_FARMS,
+    crop ? { crop } : {},
+  );
   return r || { farms: [], greenhouses_by_farm: {} };
 }
 

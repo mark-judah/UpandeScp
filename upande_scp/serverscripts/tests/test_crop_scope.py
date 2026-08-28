@@ -230,3 +230,50 @@ class TestWorkOrderScope(unittest.TestCase):
 
 	def test_administrator_gets_no_condition(self):
 		self.assertEqual(crop_scope.work_order_query_condition("Administrator"), "")
+
+
+class TestCropContextNarrowsTheDropdowns(unittest.TestCase):
+	"""Two narrowings meet in the UI and must not be conflated.
+
+	*Who you are* is the gate: a Karen Roses user never sees Lokitela. *Where you are*
+	is context: inside the Avocado section a farm picker offers Lokitela alone, even to
+	an administrator entitled to every farm. Context narrows everyone; permission
+	narrows further; the answer is the intersection.
+	"""
+
+	def setUp(self):
+		crop_scope.clear_cache()
+
+	def tearDown(self):
+		crop_scope.clear_cache()
+
+	def test_crop_context_narrows_even_an_unrestricted_user(self):
+		self.assertIsNone(crop_scope.allowed_farms("Administrator"))
+		avocado = crop_scope.scoped_farms("Avocado", "Administrator")
+		self.assertIsNotNone(avocado, "a crop context must narrow even an administrator")
+		self.assertEqual(avocado, {"Lokitela"})
+
+	def test_no_crop_leaves_an_unrestricted_user_unrestricted(self):
+		self.assertIsNone(crop_scope.scoped_farms(None, "Administrator"))
+
+	def test_a_rose_user_gets_nothing_under_avocado(self):
+		if not _has_employee(PETER):
+			self.skipTest("Peter Kamuren has no Employee record on this site")
+		self.assertEqual(crop_scope.scoped_farms("Avocado", PETER), set())
+
+	def test_an_avocado_user_gets_nothing_under_rose(self):
+		"""'for roses we should not be seeing lokitela'."""
+		if not _has_employee(ELVIS):
+			self.skipTest("Elvis Koskei has no Employee record on this site")
+		self.assertEqual(crop_scope.scoped_farms("Rose", ELVIS), set())
+
+	def test_an_avocado_user_under_avocado_gets_their_farm(self):
+		if not _has_employee(ELVIS):
+			self.skipTest("Elvis Koskei has no Employee record on this site")
+		self.assertEqual(crop_scope.scoped_farms("Avocado", ELVIS), {"Lokitela"})
+
+	def test_coffee_resolves_to_its_tagged_farms(self):
+		"""The tags resolve even though those farms have no scoutable units yet —
+		`farms_for_crop` reads the tags, and whether a farm has beds or typed
+		warehouses is a separate question the dropdown answers downstream."""
+		self.assertEqual(crop_scope.farms_for_crop("Coffee"), {"Endebess", "Saboti"})

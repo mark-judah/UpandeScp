@@ -12,6 +12,8 @@ is mostly a safety net — edits flush immediately.
 
 import frappe
 
+from upande_scp.serverscripts.common import crop_scope
+
 from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.common.cache_utils import (
     K_CROPS_SCOUTED,
@@ -81,17 +83,25 @@ def get_map_settings():
 
 
 @frappe.whitelist()
-def get_farms_and_warehouses():
+def get_farms_and_warehouses(crop=None):
     """{farm: [warehouse_name, ...]} — greenhouses *and* blocks (active only).
 
-    Used by the scouting dashboard so block-based farms (orchards) appear
-    alongside greenhouse-based farms in the Farm dropdown.
+    Used by the scouting dashboard so block-based farms (orchards) appear alongside
+    greenhouse-based farms in the Farm dropdown.
+
+    **Filtered after the cache, never inside it.** The payload is memoised under one
+    site-wide key, so narrowing it before `get_or_set` would store the first caller's
+    scope and serve it to everyone — the exact shape of bug this gate exists to prevent.
     """
-    return get_or_set(
+    farms = get_or_set(
         K_SM_FARMS_AND_WHS,
         scouting_metrics.get_farms_and_warehouses,
         ttl=TTL_MEDIUM,
-    )
+    ) or {}
+    allowed = crop_scope.scoped_farms(crop, frappe.session.user)
+    if allowed is None:
+        return farms
+    return {f: whs for f, whs in farms.items() if f in allowed}
 
 
 @frappe.whitelist()
@@ -106,12 +116,29 @@ def get_units_by_warehouse():
 
 @frappe.whitelist()
 def get_crops_with_farms():
-    """[{name, crop_name, farms: [...]}] — drives the dashboard Crop filter."""
-    return get_or_set(
+    """[{name, crop_name, farms: [...]}] — drives the dashboard Crop filter.
+
+    Filtered after the cache for the same reason as `get_farms_and_warehouses`: the
+    payload is memoised site-wide. Each crop's `farms` list is narrowed too, so a
+    Kaitet Ltd. user reading Avocado sees Lokitela and not the rose farms.
+    """
+    crops = get_or_set(
         K_CROPS_SCOUTED,
         scouting_metrics.get_crops_with_farms,
         ttl=TTL_MEDIUM,
-    )
+    ) or []
+    allowed_crops = crop_scope.allowed_crops(frappe.session.user)
+    allowed_farms = crop_scope.allowed_farms(frappe.session.user)
+    out = []
+    for c in crops:
+        name = c.get("name")
+        if allowed_crops is not None and name not in allowed_crops:
+            continue
+        row = dict(c)
+        if allowed_farms is not None:
+            row["farms"] = [f for f in (c.get("farms") or []) if f in allowed_farms]
+        out.append(row)
+    return out
 
 
 @frappe.whitelist()

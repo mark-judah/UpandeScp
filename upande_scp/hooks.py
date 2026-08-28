@@ -355,12 +355,19 @@ scheduler_events = {
 # Hooks cannot reach `frappe.get_all` or raw SQL, which is most of this app's read
 # path, so SCP's own endpoints opt in by calling `crop_scope` directly. See
 # docs/superpowers/specs/2026-08-28-crop-access-gate-design.md.
+_SCOPE = "upande_scp.serverscripts.common.crop_scope"
+
 permission_query_conditions = {
-	"Crop Scouted": "upande_scp.serverscripts.common.crop_scope.crop_query_condition",
+	"Crop Scouted": f"{_SCOPE}.crop_query_condition",
+	"Scouting Entry": f"{_SCOPE}.scouting_entry_query_condition",
+	# Only Application Floor Plans are scoped — see `work_order_query_condition`.
+	"Work Order": f"{_SCOPE}.work_order_query_condition",
 }
 
 has_permission = {
-	"Crop Scouted": "upande_scp.serverscripts.common.crop_scope.crop_has_permission",
+	"Crop Scouted": f"{_SCOPE}.crop_has_permission",
+	"Scouting Entry": f"{_SCOPE}.scouting_entry_has_permission",
+	"Work Order": f"{_SCOPE}.work_order_has_permission",
 }
 
 # Bare-path aliases for the handset.

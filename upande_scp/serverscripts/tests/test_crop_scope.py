@@ -134,3 +134,99 @@ class TestTheQueryCondition(unittest.TestCase):
 		if frappe.db.exists("Crop Scouted", "Coffee"):
 			coffee = frappe.get_doc("Crop Scouted", "Coffee")
 			self.assertFalse(crop_scope.crop_has_permission(coffee, "read", PETER))
+
+
+class TestScoutingEntryScope(unittest.TestCase):
+	"""Scoped on `crop_scouted`, not on the greenhouse.
+
+	Every one of the 297,131 scouting entries on kaitet carries a crop, but only
+	293,769 have a greenhouse that resolves to a farm — the 3,362 that do not are
+	exactly the avocado ones, because avocado is recorded against blocks. A
+	farm-based condition would therefore hide every avocado entry while looking
+	perfectly correct for roses.
+	"""
+
+	def setUp(self):
+		crop_scope.clear_cache()
+
+	def tearDown(self):
+		crop_scope.clear_cache()
+
+	def test_condition_names_only_the_users_crops(self):
+		if not _has_employee(PETER):
+			self.skipTest("Peter Kamuren has no Employee record on this site")
+		cond = crop_scope.scouting_entry_query_condition(PETER)
+		self.assertIn("`tabScouting Entry`.crop_scouted IN (", cond)
+		self.assertIn("'Rose'", cond)
+		self.assertNotIn("'Avocado'", cond)
+
+	def test_an_empty_scope_blocks_every_row(self):
+		ghost = "no-such-user-in-this-test@example.com"
+		self.assertEqual(crop_scope.scouting_entry_query_condition(ghost), "1=0")
+
+	def test_administrator_gets_no_condition(self):
+		self.assertEqual(crop_scope.scouting_entry_query_condition("Administrator"), "")
+
+	def test_a_row_with_no_crop_is_refused_not_allowed(self):
+		"""An unclassifiable record is not the same as an unrestricted one."""
+		if not _has_employee(PETER):
+			self.skipTest("Peter Kamuren has no Employee record on this site")
+		doc = frappe._dict({"crop_scouted": None})
+		self.assertFalse(crop_scope.scouting_entry_has_permission(doc, "read", PETER))
+
+
+class TestWorkOrderScope(unittest.TestCase):
+	"""Only Application Floor Plans are scoped.
+
+	1,786 Work Orders on kaitet are livestock and manufacturing orders with no
+	`custom_type` and no greenhouse. Gating every Work Order by farm would hide all
+	of them from everyone — wrong, and nothing to do with crop protection.
+	"""
+
+	def setUp(self):
+		crop_scope.clear_cache()
+
+	def tearDown(self):
+		crop_scope.clear_cache()
+
+	def test_a_non_spray_work_order_is_never_scoped(self):
+		if not _has_employee(ELVIS):
+			self.skipTest("Elvis Koskei has no Employee record on this site")
+		feed = frappe._dict({"custom_type": None, "custom_greenhouse": None})
+		self.assertTrue(crop_scope.work_order_has_permission(feed, "read", ELVIS))
+
+	def test_the_condition_always_admits_non_spray_orders(self):
+		if not _has_employee(ELVIS):
+			self.skipTest("Elvis Koskei has no Employee record on this site")
+		cond = crop_scope.work_order_query_condition(ELVIS)
+		self.assertIn("custom_type IS NULL", cond)
+		self.assertIn("!= 'Application Floor Plan'", cond)
+
+	def test_an_empty_scope_still_admits_non_spray_orders(self):
+		"""Failing closed must not take out the livestock work orders."""
+		ghost = "no-such-user-in-this-test@example.com"
+		cond = crop_scope.work_order_query_condition(ghost)
+		self.assertNotEqual(cond, "1=0")
+		self.assertIn("custom_type IS NULL", cond)
+
+	def test_a_spray_plan_outside_the_users_farms_is_refused(self):
+		if not _has_employee(ELVIS):
+			self.skipTest("Elvis Koskei has no Employee record on this site")
+		houses = crop_scope.allowed_greenhouses(ELVIS)
+		self.assertIsNotNone(houses)
+		foreign = frappe.db.get_value(
+			"Work Order",
+			{"custom_type": "Application Floor Plan"},
+			["name", "custom_greenhouse"],
+			as_dict=True,
+		)
+		if not foreign or foreign.custom_greenhouse in houses:
+			self.skipTest("no spray plan outside this user's farms")
+		doc = frappe._dict({
+			"custom_type": "Application Floor Plan",
+			"custom_greenhouse": foreign.custom_greenhouse,
+		})
+		self.assertFalse(crop_scope.work_order_has_permission(doc, "read", ELVIS))
+
+	def test_administrator_gets_no_condition(self):
+		self.assertEqual(crop_scope.work_order_query_condition("Administrator"), "")

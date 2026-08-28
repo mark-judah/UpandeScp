@@ -42,9 +42,28 @@ class TestWeekCacheKey(unittest.TestCase):
         # Patch scouting_payload_version to a known stamp.
         import upande_scp.serverscripts.scouting.get_complete_scouting_entries as mod
         from unittest.mock import patch
+        # The prefix is derived, not spelled out: it carries a payload-shape version
+        # that gets bumped whenever the cached rows change shape, and hardcoding it
+        # here meant this test failed for a *correct* bump (v2 -> v3 in e7e5760)
+        # rather than for a broken key. What the test is actually about is the ISO
+        # year/week formatting, so that is what it asserts.
+        from upande_scp.serverscripts.common.cache_utils import K_SCOUTING_PAYLOAD_PREFIX
+
         with patch.object(mod, "scouting_payload_version", return_value=7):
-            self.assertEqual(_week_cache_key(2025, 18), "scp:scouting_payload_v2:7:2025-W18")
-            self.assertEqual(_week_cache_key(2026, 1),  "scp:scouting_payload_v2:7:2026-W01")
+            self.assertEqual(
+                _week_cache_key(2025, 18), f"{K_SCOUTING_PAYLOAD_PREFIX}:7:2025-W18"
+            )
+            self.assertEqual(
+                _week_cache_key(2026, 1), f"{K_SCOUTING_PAYLOAD_PREFIX}:7:2026-W01"
+            )
+            # Zero-padding is the point: W01 must not collapse to W1, or a week's
+            # cache entry collides with a different week's on string comparison.
+            self.assertTrue(_week_cache_key(2026, 1).endswith("2026-W01"))
+            # A crop-scoped slice caches independently of the all-crop slice.
+            self.assertEqual(
+                _week_cache_key(2026, 1, crop="Avocado"),
+                f"{K_SCOUTING_PAYLOAD_PREFIX}:7:Avocado:2026-W01",
+            )
 
 
 class TestFetchPayloadUsesWeeks(unittest.TestCase):

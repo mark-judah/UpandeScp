@@ -186,6 +186,35 @@ def assert_crop(crop: str, user: str | None = None) -> None:
 	)
 
 
+def allowed_greenhouses(user: str | None = None) -> set[str] | None:
+	"""Warehouses belonging to a farm this user may see.
+
+	Work Orders carry no crop — only `custom_greenhouse` — so a spray plan is scoped by
+	where it happens rather than by what grows there. `Warehouse.custom_farm` is the only
+	warehouse-to-farm edge in the system.
+	"""
+	user = _user(user)
+	memo = _cache()
+	key = ("greenhouses", user)
+	if key in memo:
+		return memo[key]
+
+	farms = allowed_farms(user)
+	if farms is None:
+		memo[key] = None
+		return None
+
+	houses: set[str] = set()
+	if farms:
+		for row in frappe.get_all(
+			"Warehouse", filters={"custom_farm": ["in", list(farms)]}, fields=["name"]
+		):
+			houses.add(row["name"])
+
+	memo[key] = houses
+	return houses
+
+
 # ─────────────────────────── permission hooks ────────────────────────────────
 
 
@@ -215,3 +244,66 @@ def crop_has_permission(doc, ptype: str = "read", user: str | None = None) -> bo
 		return True
 	name = getattr(doc, "name", None) or (doc.get("name") if hasattr(doc, "get") else None)
 	return bool(name) and name in crops
+
+
+def scouting_entry_query_condition(user: str | None = None) -> str:
+	"""`permission_query_conditions` for `Scouting Entry`.
+
+	Scoped on `crop_scouted`, which every one of the 297,131 rows on kaitet carries —
+	not on the greenhouse. Avocado entries have no greenhouse at all (avocado is
+	recorded against blocks), so a farm-based condition would hide every avocado entry
+	while looking correct for roses.
+	"""
+	crops = allowed_crops(user)
+	if crops is None:
+		return ""
+	if not crops:
+		return "1=0"
+	return f"`tabScouting Entry`.crop_scouted IN ({_in_clause(crops)})"
+
+
+def scouting_entry_has_permission(doc, ptype: str = "read", user: str | None = None) -> bool:
+	crops = allowed_crops(user)
+	if crops is None:
+		return True
+	crop = getattr(doc, "crop_scouted", None)
+	if not crop:
+		# A row with no crop cannot be placed. Refused rather than allowed: an
+		# unclassifiable record is not the same as an unrestricted one.
+		return False
+	return crop in crops
+
+
+def work_order_query_condition(user: str | None = None) -> str:
+	"""`permission_query_conditions` for `Work Order`.
+
+	**Only Application Floor Plans are scoped.** 1,786 of the Work Orders on kaitet are
+	livestock and manufacturing orders with no `custom_type` and no greenhouse; a
+	condition that gated every Work Order by farm would hide all of them from everyone,
+	which is both wrong and nothing to do with crop protection.
+
+	Scoped by greenhouse rather than by crop because a Work Order carries no crop field
+	— `custom_greenhouse` and `custom_variety` are all it has, and all 3,370 floor plans
+	resolve through the greenhouse to a farm.
+	"""
+	houses = allowed_greenhouses(user)
+	if houses is None:
+		return ""
+	unscoped = (
+		"(`tabWork Order`.custom_type IS NULL "
+		"OR `tabWork Order`.custom_type != 'Application Floor Plan')"
+	)
+	if not houses:
+		return unscoped
+	return (
+		f"({unscoped} OR `tabWork Order`.custom_greenhouse IN ({_in_clause(houses)}))"
+	)
+
+
+def work_order_has_permission(doc, ptype: str = "read", user: str | None = None) -> bool:
+	houses = allowed_greenhouses(user)
+	if houses is None:
+		return True
+	if (getattr(doc, "custom_type", None) or "") != "Application Floor Plan":
+		return True  # not a spray plan; crop scope has no opinion
+	return (getattr(doc, "custom_greenhouse", None) or "") in houses

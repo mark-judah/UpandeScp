@@ -34,3 +34,4 @@ upande_scp.patches.v1_0.loans_to_multi_item
 upande_scp.patches.v1_0.lock_timezone_setting
 upande_scp.patches.v1_0.merge_field_unit_automations
 upande_scp.patches.v1_0.scp_roles_on_workspace
+upande_scp.patches.v1_0.correct_crop_farm_tags

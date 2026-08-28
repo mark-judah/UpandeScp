@@ -343,6 +343,26 @@ scheduler_events = {
 # Overriding Methods
 # ------------------------------
 
+# Crop access gate.
+#
+# A user sees the crops grown on farms belonging to their Employee's company, and to
+# every company beneath it in the tree. `crop_scope` resolves that chain; these two
+# hooks apply it to everything generic — list views, link dropdowns, standard reports,
+# REST, and the workspace's crop tiles, which need no change of their own because the
+# SCP Navigation block reads `Crop Scouted` through a permission-checked
+# `frappe.db.get_list`.
+#
+# Hooks cannot reach `frappe.get_all` or raw SQL, which is most of this app's read
+# path, so SCP's own endpoints opt in by calling `crop_scope` directly. See
+# docs/superpowers/specs/2026-08-28-crop-access-gate-design.md.
+permission_query_conditions = {
+	"Crop Scouted": "upande_scp.serverscripts.common.crop_scope.crop_query_condition",
+}
+
+has_permission = {
+	"Crop Scouted": "upande_scp.serverscripts.common.crop_scope.crop_has_permission",
+}
+
 # Bare-path aliases for the handset.
 #
 # The Upande-Scout app posts to short paths like `/api/method/start_work_order`, which

@@ -253,6 +253,12 @@ const AVOCADO_NAV: NavSection[] = [
       { kind: "view", view: "heatmaps", label: "Heat maps", icon: Flame },
     ],
   },
+  {
+    label: "Reports",
+    items: [
+      { kind: "view", view: "reports", label: "Reports", icon: FileText },
+    ],
+  },
 ];
 
 // Coffee — minimal nav for the triad tessellation test: Dashboard + the
@@ -268,6 +274,12 @@ const COFFEE_NAV: NavSection[] = [
     label: "Scouting",
     items: [
       { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
+    ],
+  },
+  {
+    label: "Reports",
+    items: [
+      { kind: "view", view: "reports", label: "Reports", icon: FileText },
     ],
   },
 ];

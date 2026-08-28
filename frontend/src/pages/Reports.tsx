@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/PageHeader";
+import { BlockWeeklyReport } from "./BlockWeeklyReport";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { call } from "@/lib/frappe";
 import { cn } from "@/lib/utils";
@@ -106,7 +107,22 @@ const REPORTS: ReportSpec[] = [
   },
 ];
 
-export function Reports() {
+/** Crops grown on blocks rather than beds. They are not FCM-reportable, so the KEPHIS
+ *  workbook and the rose daily/trap reports do not apply to them at all — they get the
+ *  plain weekly block sheet instead. */
+const BLOCK_GROWN = new Set(["avocado", "coffee"]);
+
+export function Reports({ initialCrop }: { initialCrop?: string } = {}) {
+  const crop = (initialCrop || "").toLowerCase();
+  if (BLOCK_GROWN.has(crop)) {
+    return (
+      <BlockWeeklyReport crop={crop.charAt(0).toUpperCase() + crop.slice(1)} />
+    );
+  }
+  return <RoseReports />;
+}
+
+function RoseReports() {
   const [farms, setFarms] = useState<FarmOption[]>([]);
   const [farm, setFarm] = useState<string>("");
   const [weeks, setWeeks] = useState<WeekOption[]>([]);

@@ -219,7 +219,9 @@ function renderView(crop: string, view: View): ReactNode {
     case "varieties":
       return <Varieties />;
     case "reports":
-      return <Reports />;
+      // Block-grown crops get the plain weekly block sheet; roses keep the KEPHIS
+      // workbook and the daily/trap reports, which are rose-specific.
+      return <Reports initialCrop={cropName} />;
     case "tank-mixes":
       return <TankMixes />;
     case "historical":

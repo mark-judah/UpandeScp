@@ -52,8 +52,13 @@ def _copy_assignments(old_role, new_role):
     validation on that pre-existing dirty data. A direct child insert with
     ``ignore_links`` touches only the one new assignment.
     """
-    if not frappe.db.exists("Role", old_role):
-        return  # fresh site never had the old role — nothing to migrate
+    # Deliberately NOT `frappe.db.exists("Role", old_role)`. On kaitet the `Store Keeper`
+    # and `Spray Plan Approver` Role records had already been deleted while 110 and 24
+    # `Has Role` rows still pointed at them — assignments outlive the role they name,
+    # because nothing cascades. Guarding on the Role doc made this patch skip exactly the
+    # populations that most needed it, and skip them silently: those users held a role
+    # granting nothing at all. The assignments are the evidence that someone was meant to
+    # have this; the Role record is not.
     users = frappe.get_all(
         "Has Role",
         filters={"role": old_role, "parenttype": "User"},

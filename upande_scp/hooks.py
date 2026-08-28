@@ -303,6 +303,41 @@ scheduler_events = {
 # Overriding Methods
 # ------------------------------
 #
+# Bare-path aliases for the handset.
+#
+# The Upande-Scout app posts to short paths like `/api/method/start_work_order`, which
+# Frappe resolves only through an API-type Server Script. Three of those exist on no
+# mona Server Script and in no code, so they 404 for every handset:
+# `start_work_order`, `update_work_order_dates` and `update_work_order_team`.
+#
+# `update_work_order_team` is the one that did damage rather than just failing. The app
+# called it before every spray and `api.ts` turned the 404 into
+# `{success: true, simulated: true}`, so the team the supervisor had just confirmed was
+# dropped without a word — and `_team_applicators` reads that child table to build the
+# logsheet's applicator rows, so the people recorded as exposed to the chemical were
+# whoever the planner set days earlier.
+#
+# `frappe.handler.execute_cmd` consults this map before the Server Script map and before
+# `get_attr`, so aliasing here fixes binaries already in the field without a rebuild.
+#
+# Deliberately NOT aliased here: `fetchScheduledApplications` and `fetchGreenhouseBeds`.
+# Both still resolve on mona through live Server Scripts (unlike kaitet, where they were
+# dropped in 57e09ce and had to be restored as code). Aliasing them would silently
+# override those scripts with a different implementation, which is not a change this
+# commit is entitled to make. `test_endpoint_paths.py` guards them either way — it
+# accepts a Server Script or code, and fails if a path stops resolving by both.
+override_whitelisted_methods = {
+	"start_work_order": (
+		"upande_scp.serverscripts.mobile.start_work_order.start_work_order"
+	),
+	"update_work_order_dates": (
+		"upande_scp.serverscripts.mobile.start_work_order.update_work_order_dates"
+	),
+	"update_work_order_team": (
+		"upande_scp.serverscripts.spray_plan_creator.spray_session.update_work_order_team"
+	),
+}
+
 # override_whitelisted_methods = {
 # 	"frappe.desk.doctype.event.event.get_events": "upande_scp.event.get_events"
 # }

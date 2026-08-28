@@ -206,3 +206,72 @@ class TestEndpointPaths(unittest.TestCase):
             stale, [],
             "these now resolve — remove them from KNOWN_BROKEN:\n  " + "\n  ".join(stale),
         )
+
+
+#: The **bare** paths the Upande-Scout handset posts to — `/api/method/start_work_order`
+#: rather than a dotted module path. Frappe resolves these only through an API-type
+#: Server Script or an `override_whitelisted_methods` alias, so nothing above sees them:
+#: the scan at the top of this file looks for `upande_scp.serverscripts.*` strings in
+#: `frontend/src` and `www`, and these live in neither this repository nor that syntax.
+#:
+#: That blind spot is not hypothetical. `upande_scp@57e09ce` dropped nine API Server
+#: Scripts as dead — "no in-repo caller remains", true here and false in Upande-Scout,
+#: where the callers are — and took out the spray list and the bed lookups on kaitet.
+#: mona kept its Server Scripts, so it lost only the three below, which never existed.
+#:
+#: Keep in step with `upande_scout_rn/src/services/api.ts`. This list is the only thing
+#: in either repository that connects the two.
+HANDSET_BARE_PATHS = (
+    "fetchScheduledApplications",
+    "fetchGreenhouseBeds",
+    "start_work_order",
+    "update_work_order_dates",
+    "update_work_order_team",
+)
+
+
+def _resolves_bare(cmd):
+    """True when `/api/method/<cmd>` would reach something, by Frappe's own rules.
+
+    Accepts either resolution — a live Server Script or code behind an alias — because
+    which one serves a path is a per-site fact, and this test is about the handset
+    getting an answer, not about how.
+    """
+    from frappe.core.doctype.server_script.server_script_utils import (
+        get_server_script_map,
+    )
+    from frappe.handler import get_attr
+
+    resolved = frappe.override_whitelisted_method(cmd)
+    if get_server_script_map().get("_api", {}).get(resolved):
+        return True
+    try:
+        get_attr(resolved)
+        return True
+    except Exception:
+        return False
+
+
+class TestHandsetBarePaths(unittest.TestCase):
+    def test_every_bare_path_the_handset_calls_resolves(self):
+        unreachable = [p for p in HANDSET_BARE_PATHS if not _resolves_bare(p)]
+        self.assertEqual(
+            unreachable, [],
+            "these 404 for every handset in the field: " + ", ".join(unreachable),
+        )
+
+    def test_an_aliased_path_points_at_a_whitelisted_function(self):
+        # An alias onto a function without `@frappe.whitelist()` is a 403 rather than a
+        # 404 — the same outage with a different code. Server-script-backed paths are
+        # skipped: they carry their own permission model.
+        from frappe.handler import get_attr
+
+        for name in HANDSET_BARE_PATHS:
+            resolved = frappe.override_whitelisted_method(name)
+            if resolved == name:
+                continue
+            with self.subTest(path=name):
+                self.assertIn(
+                    get_attr(resolved), frappe.whitelisted,
+                    f"{name} resolves but is not whitelisted",
+                )

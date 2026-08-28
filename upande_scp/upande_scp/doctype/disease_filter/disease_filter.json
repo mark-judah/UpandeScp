@@ -106,6 +106,16 @@
    "write": 1
   },
   {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Scout"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Scouting User"
+  },
+  {
    "create": 1,
    "delete": 1,
    "email": 1,

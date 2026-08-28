@@ -497,10 +497,40 @@
  "owner": "Administrator",
  "permissions": [
   {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Chemical Store Keeper"
+  },
+  {
    "create": 1,
    "read": 1,
    "role": "SCP General Manager",
    "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Scout"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Scouting User"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Approver"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Creator"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Supervisor"
   },
   {
    "create": 1,

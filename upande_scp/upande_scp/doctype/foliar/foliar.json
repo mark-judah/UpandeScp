@@ -225,6 +225,21 @@
    "write": 1
   },
   {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Approver"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Creator"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Supervisor"
+  },
+  {
    "create": 1,
    "delete": 1,
    "email": 1,

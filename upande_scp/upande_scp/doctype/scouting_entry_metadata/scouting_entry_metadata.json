@@ -129,6 +129,18 @@
   },
   {
    "create": 1,
+   "read": 1,
+   "role": "SCP Scout",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "SCP Scouting User",
+   "write": 1
+  },
+  {
+   "create": 1,
    "delete": 1,
    "email": 1,
    "export": 1,

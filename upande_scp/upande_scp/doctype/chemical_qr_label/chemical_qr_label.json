@@ -140,7 +140,7 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 0,
+   "create": 1,
    "delete": 0,
    "export": 1,
    "print": 1,
@@ -148,7 +148,7 @@
    "report": 1,
    "role": "SCP Chemical Store Keeper",
    "share": 0,
-   "write": 0
+   "write": 1
   },
   {
    "create": 1,

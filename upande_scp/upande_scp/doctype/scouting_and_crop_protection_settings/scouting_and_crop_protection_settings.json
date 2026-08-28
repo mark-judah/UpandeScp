@@ -188,18 +188,18 @@
    "label": "Material Issue Defaults"
   },
   {
+   "description": "Used as the fallback expense account on auto-Material-Issue rows when the tank-mix Item has no Item Default for the Work Order's company.",
    "fieldname": "default_chemical_expense_account",
    "fieldtype": "Link",
-   "options": "Account",
    "label": "Default Chemical Expense Account",
-   "description": "Used as the fallback expense account on auto-Material-Issue rows when the tank-mix Item has no Item Default for the Work Order's company."
+   "options": "Account"
   },
   {
+   "description": "Written as the Difference Account on the auto-generated Manufacture Stock Entry (tank-mix manufacture).",
    "fieldname": "default_chemical_difference_account",
    "fieldtype": "Link",
-   "options": "Account",
    "label": "Default Chemical Difference Account",
-   "description": "Written as the Difference Account on the auto-generated Manufacture Stock Entry (tank-mix manufacture)."
+   "options": "Account"
   },
   {
    "fieldname": "stock_accounting_section",
@@ -207,25 +207,25 @@
    "label": "Stock Accounting (Mixing & Spray)"
   },
   {
+   "description": "Overrides the raw-consumption credit on Chemical Mixing. Blank = source warehouse account.",
    "fieldname": "spray_raw_chemical_account",
    "fieldtype": "Link",
-   "options": "Account",
    "label": "Raw Chemical Account (credited on Mixing)",
-   "description": "Overrides the raw-consumption credit on Chemical Mixing. Blank = source warehouse account."
+   "options": "Account"
   },
   {
+   "description": "Shared account: tank-mix value in on Mixing (incl. valuation difference), out on Spray. Blank = CSU/WIP warehouse account.",
    "fieldname": "spray_tank_mix_account",
    "fieldtype": "Link",
-   "options": "Account",
    "label": "Tank-Mix / WIP Account (debited on Mixing, credited on Spray)",
-   "description": "Shared account: tank-mix value in on Mixing (incl. valuation difference), out on Spray. Blank = CSU/WIP warehouse account."
+   "options": "Account"
   },
   {
+   "description": "P&L expense debited on Chemical Spray. Blank = default chemical expense account, then item expense account.",
    "fieldname": "spray_expense_account",
    "fieldtype": "Link",
-   "options": "Account",
    "label": "Spray Expense Account (debited on Spray)",
-   "description": "P&L expense debited on Chemical Spray. Blank = default chemical expense account, then item expense account."
+   "options": "Account"
   },
   {
    "fieldname": "flow_section",
@@ -245,17 +245,17 @@
   },
   {
    "default": "0",
+   "description": "When ON, any Spray Plan Creator can submit any draft (not just drafts they own). Farm-scope checks still apply. Intended for testing \u2014 leave OFF in production.",
    "fieldname": "bypass_owner_check",
    "fieldtype": "Check",
-   "label": "Bypass owner check on Submit for Approval",
-   "description": "When ON, any Spray Plan Creator can submit any draft (not just drafts they own). Farm-scope checks still apply. Intended for testing \u2014 leave OFF in production."
+   "label": "Bypass owner check on Submit for Approval"
   },
   {
    "default": "0",
+   "description": "When ON, the Spray Plan Transfers page also offers a \"Submit without biometric\" action. Use only when the biometric device is unavailable \u2014 the submitting user is recorded. Leave OFF in normal operation.",
    "fieldname": "allow_submit_without_biometric",
    "fieldtype": "Check",
-   "label": "Allow submit without biometric (device-down fallback)",
-   "description": "When ON, the Spray Plan Transfers page also offers a \"Submit without biometric\" action. Use only when the biometric device is unavailable \u2014 the submitting user is recorded. Leave OFF in normal operation."
+   "label": "Allow submit without biometric (device-down fallback)"
   },
   {
    "fieldname": "auto_cancel_section",
@@ -264,34 +264,34 @@
   },
   {
    "default": "0",
+   "description": "When ON, the daily job stops Application Floor Plan work orders that were submitted for approval but left unapproved for more than the window below. Stopping is reversible (un-stop in Desk).",
    "fieldname": "auto_cancel_enabled",
    "fieldtype": "Check",
-   "label": "Auto-cancel dormant unapproved plans",
-   "description": "When ON, the daily job stops Application Floor Plan work orders that were submitted for approval but left unapproved for more than the window below. Stopping is reversible (un-stop in Desk)."
+   "label": "Auto-cancel dormant unapproved plans"
   },
   {
    "default": "0",
    "depends_on": "auto_cancel_enabled",
+   "description": "When OFF, only plans created after auto-cancel was first enabled are eligible (the rule applies going forward). When ON, every existing dormant unapproved plan is stopped on the next run too.",
    "fieldname": "auto_cancel_apply_to_backlog",
    "fieldtype": "Check",
-   "label": "Apply to historical backlog",
-   "description": "When OFF, only plans created after auto-cancel was first enabled are eligible (the rule applies going forward). When ON, every existing dormant unapproved plan is stopped on the next run too."
+   "label": "Apply to historical backlog"
   },
   {
    "default": "3",
    "depends_on": "auto_cancel_enabled",
+   "description": "Days since creation after which an unapproved plan is considered dormant.",
    "fieldname": "auto_cancel_dormant_days",
    "fieldtype": "Int",
    "label": "Dormant window (days)",
-   "non_negative": 1,
-   "description": "Days since creation after which an unapproved plan is considered dormant."
+   "non_negative": 1
   },
   {
+   "description": "Stamped the first time auto-cancel was enabled; the going-forward cutoff.",
    "fieldname": "auto_cancel_activated_on",
    "fieldtype": "Datetime",
    "label": "Auto-cancel activated on",
-   "read_only": 1,
-   "description": "Stamped the first time auto-cancel was enabled; the going-forward cutoff."
+   "read_only": 1
   },
   {
    "fieldname": "csu_scan_section",
@@ -300,11 +300,11 @@
   },
   {
    "default": "labels",
+   "description": "How a sprayer confirms each chemical taken from the CSU. 'labels' requires scanning the printed QR label (default). 'tick' lets the sprayer tick to confirm instead \u2014 only for farms where label printing is unavailable, as it removes the per-chemical scan check.",
    "fieldname": "csu_scan_verification",
    "fieldtype": "Select",
    "label": "CSU scan verification method",
-   "options": "labels\ntick",
-   "description": "How a sprayer confirms each chemical taken from the CSU. 'labels' requires scanning the printed QR label (default). 'tick' lets the sprayer tick to confirm instead \u2014 only for farms where label printing is unavailable, as it removes the per-chemical scan check."
+   "options": "labels\ntick"
   },
   {
    "fieldname": "timezone_section",
@@ -318,21 +318,21 @@
    "options": "<p style='margin:0;color:#6b7280;font-size:12px'>ERPNext's <b>System Settings &rarr; Time Zone</b> governs every timestamp this app writes, every notification, and the clock the scheduler evaluates cron against. It is shown on the SCP settings screen, read-only, alongside what the farms' own coordinates suggest it should be.</p>"
   },
   {
+   "description": "Leave blank to follow ERPNext, which is almost always what you want. A value here changes only how THIS APP renders times \u2014 stored timestamps, scheduled reports and notification timing all follow ERPNext, because they must.",
    "fieldname": "app_timezone",
    "fieldtype": "Data",
-   "label": "App display timezone",
-   "description": "Leave blank to follow ERPNext, which is almost always what you want. A value here changes only how THIS APP renders times \u2014 stored timestamps, scheduled reports and notification timing all follow ERPNext, because they must."
+   "label": "App display timezone"
   },
   {
    "fieldname": "cb_timezone",
    "fieldtype": "Column Break"
   },
   {
+   "default": "1",
+   "description": "On by default. While locked the app timezone cannot be changed. A changed timezone silently re-times every notification, scheduled report and spray deadline, so it takes a deliberate unlock \u2014 and every change is written to the Error Log under 'SCP timezone changed'.",
    "fieldname": "timezone_locked",
    "fieldtype": "Check",
-   "label": "Timezone locked",
-   "default": "1",
-   "description": "On by default. While locked the app timezone cannot be changed. A changed timezone silently re-times every notification, scheduled report and spray deadline, so it takes a deliberate unlock \u2014 and every change is written to the Error Log under 'SCP timezone changed'."
+   "label": "Timezone locked"
   },
   {
    "fieldname": "postponement_section",
@@ -340,29 +340,29 @@
    "label": "Postponement & Spray Cutoff"
   },
   {
+   "default": "10:00:00",
+   "description": "On a plan's own spray date, this is the deadline. After it a supervisor can no longer postpone the plan, and the spray can no longer be started. Read in the site's timezone \u2014 check Settings \u2192 System Settings if the times look wrong.",
    "fieldname": "spray_cutoff_time",
    "fieldtype": "Time",
-   "label": "Daily cutoff time",
-   "default": "10:00:00",
-   "description": "On a plan's own spray date, this is the deadline. After it a supervisor can no longer postpone the plan, and the spray can no longer be started. Read in the site's timezone \u2014 check Settings \u2192 System Settings if the times look wrong."
+   "label": "Daily cutoff time"
   },
   {
+   "default": "7",
+   "description": "A postponement cannot move a spray more than this many days past its original date. Without a bound a plan can be deferred indefinitely, which is indistinguishable from abandoning it.",
    "fieldname": "postponement_max_days",
    "fieldtype": "Int",
-   "label": "Furthest a plan may be pushed (days)",
-   "default": "7",
-   "description": "A postponement cannot move a spray more than this many days past its original date. Without a bound a plan can be deferred indefinitely, which is indistinguishable from abandoning it."
+   "label": "Furthest a plan may be pushed (days)"
   },
   {
    "fieldname": "cb_postponement",
    "fieldtype": "Column Break"
   },
   {
+   "default": "0",
+   "description": "Extra minutes past the cutoff during which a postponement may still be declared, for the supervisor who is standing in the field at 10:01. Set to 0 for a hard deadline. Does NOT extend the window for starting a spray \u2014 that stays hard.",
    "fieldname": "postponement_grace_minutes",
    "fieldtype": "Int",
-   "label": "Grace after cutoff (minutes)",
-   "default": "0",
-   "description": "Extra minutes past the cutoff during which a postponement may still be declared, for the supervisor who is standing in the field at 10:01. Set to 0 for a hard deadline. Does NOT extend the window for starting a spray \u2014 that stays hard."
+   "label": "Grace after cutoff (minutes)"
   },
   {
    "fieldname": "loaning_section",
@@ -371,28 +371,28 @@
   },
   {
    "default": "0",
+   "description": "When ON, a depleted farm's Spray Plan Creator can request a chemical from another farm and the source farm's creator approves it.",
    "fieldname": "loaning_enabled",
    "fieldtype": "Check",
-   "label": "Enable chemical loaning",
-   "description": "When ON, a depleted farm's Spray Plan Creator can request a chemical from another farm and the source farm's creator approves it."
+   "label": "Enable chemical loaning"
   },
   {
    "default": "15",
    "depends_on": "loaning_enabled",
+   "description": "A chemical is 'depleted' (and cross-farm availability unlocks) when on-hand drops below this percentage of the captured baseline.",
    "fieldname": "loaning_depletion_pct",
    "fieldtype": "Int",
    "label": "Depletion threshold (%)",
-   "non_negative": 1,
-   "description": "A chemical is 'depleted' (and cross-farm availability unlocks) when on-hand drops below this percentage of the captured baseline."
+   "non_negative": 1
   },
   {
    "default": "72",
    "depends_on": "loaning_enabled",
+   "description": "Pending requests with no response auto-expire after this many hours.",
    "fieldname": "loaning_timeout_hours",
    "fieldtype": "Int",
    "label": "Request timeout (hours)",
-   "non_negative": 1,
-   "description": "Pending requests with no response auto-expire after this many hours."
+   "non_negative": 1
   },
   {
    "fieldname": "progress_email_section",
@@ -401,19 +401,19 @@
   },
   {
    "default": "0",
+   "description": "A black-and-white digest of today's scheduled spray plans and their progress (issued / printed / scanned / sprayed / done), per farm, to the GM, Spray Plan Approvers and Creators for their farms.",
    "fieldname": "progress_email_enabled",
    "fieldtype": "Check",
-   "label": "Send daily Chemical Planning Progress Update",
-   "description": "A black-and-white digest of today's scheduled spray plans and their progress (issued / printed / scanned / sprayed / done), per farm, to the GM, Spray Plan Approvers and Creators for their farms."
+   "label": "Send daily Chemical Planning Progress Update"
   },
   {
    "default": "18",
    "depends_on": "progress_email_enabled",
+   "description": "Hour of the day (East Africa Time) to send the digest. 18 = 6pm / end of day.",
    "fieldname": "progress_email_hour",
    "fieldtype": "Int",
    "label": "Send hour (0-23, EAT)",
-   "non_negative": 1,
-   "description": "Hour of the day (East Africa Time) to send the digest. 18 = 6pm / end of day."
+   "non_negative": 1
   },
   {
    "fieldname": "progress_email_last_sent",
@@ -437,18 +437,18 @@
    "label": "Crop Protection Item Groups"
   },
   {
+   "description": "Item Groups whose items are chemicals. New items in these groups auto-register as a Chemical.",
    "fieldname": "chemical_item_groups",
    "fieldtype": "Table MultiSelect",
    "label": "Chemical Item Groups",
-   "options": "Crop Protection Item Group",
-   "description": "Item Groups whose items are chemicals. New items in these groups auto-register as a Chemical."
+   "options": "Crop Protection Item Group"
   },
   {
+   "description": "Item Groups whose items are foliars. New items in these groups auto-register as a Foliar.",
    "fieldname": "foliar_item_groups",
    "fieldtype": "Table MultiSelect",
    "label": "Foliar Item Groups",
-   "options": "Crop Protection Item Group",
-   "description": "Item Groups whose items are foliars. New items in these groups auto-register as a Foliar."
+   "options": "Crop Protection Item Group"
   },
   {
    "fieldname": "allocation_section",
@@ -456,17 +456,17 @@
    "label": "Chemical Allocation"
   },
   {
+   "default": "0",
+   "description": "OFF (default): each farm gets its proportional share rounded DOWN to a measurable amount, and whatever will not divide evenly stays in the general store. Simple and easy to check by hand.<br><br>ON: the leftover measurable amounts are handed to the farms with the largest fractions, and each farm's unmeasurable shortfall is remembered as a credit added to its next request. Fairer to small farms over several cycles, but the arithmetic is no longer obvious from one allocation.",
    "fieldname": "allocation_balancing_enabled",
    "fieldtype": "Check",
-   "label": "Balance allocations and carry credits forward",
-   "default": "0",
-   "description": "OFF (default): each farm gets its proportional share rounded DOWN to a measurable amount, and whatever will not divide evenly stays in the general store. Simple and easy to check by hand.<br><br>ON: the leftover measurable amounts are handed to the farms with the largest fractions, and each farm's unmeasurable shortfall is remembered as a credit added to its next request. Fairer to small farms over several cycles, but the arithmetic is no longer obvious from one allocation."
+   "label": "Balance allocations and carry credits forward"
   },
   {
+   "description": "Users who keep a company-wide general chemical store. They belong to no farm, so they cannot be listed on a Farm.",
    "fieldname": "general_store_section",
    "fieldtype": "Section Break",
-   "label": "General Store Keepers",
-   "description": "Users who keep a company-wide general chemical store. They belong to no farm, so they cannot be listed on a Farm."
+   "label": "General Store Keepers"
   },
   {
    "fieldname": "general_store_keepers",
@@ -480,10 +480,10 @@
    "label": "Scouting"
   },
   {
+   "description": "Scouting-related configuration lives here.",
    "fieldname": "scouting_note",
    "fieldtype": "Small Text",
    "label": "Scouting Settings",
-   "description": "Scouting-related configuration lives here.",
    "read_only": 1
   }
  ],
@@ -496,6 +496,12 @@
  "name": "Scouting and Crop Protection Settings",
  "owner": "Administrator",
  "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "SCP General Manager",
+   "write": 1
+  },
   {
    "create": 1,
    "delete": 0,

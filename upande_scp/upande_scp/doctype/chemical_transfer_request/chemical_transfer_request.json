@@ -46,20 +46,20 @@
   },
   {
    "default": "0",
+   "description": "Drawn from the shared pool rather than another farm. There is no lender farm; the general store keeper decides.",
    "fieldname": "from_general_store",
    "fieldtype": "Check",
    "in_standard_filter": 1,
-   "label": "From General Store",
-   "description": "Drawn from the shared pool rather than another farm. There is no lender farm; the general store keeper decides."
+   "label": "From General Store"
   },
   {
+   "description": "The single farm this request is addressed to. Only they can see or decide it.",
    "fieldname": "lender_farm",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Lender Farm",
-   "options": "Farm",
-   "description": "The single farm this request is addressed to. Only they can see or decide it."
+   "options": "Farm"
   },
   {
    "fieldname": "lender_warehouse",
@@ -84,38 +84,38 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "Legacy single-item field. New requests use the Items table.",
    "fieldname": "item_code",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Chemical",
    "options": "Item",
-   "read_only": 1,
-   "description": "Legacy single-item field. New requests use the Items table."
+   "read_only": 1
   },
   {
+   "description": "Legacy single-item field. New requests use the Items table.",
    "fetch_from": "item_code.item_name",
    "fieldname": "item_name",
    "fieldtype": "Data",
    "label": "Chemical Name",
-   "read_only": 1,
-   "description": "Legacy single-item field. New requests use the Items table."
+   "read_only": 1
   },
   {
+   "description": "Legacy single-item field. New requests use the Items table.",
    "fieldname": "uom",
    "fieldtype": "Data",
    "label": "UoM",
-   "read_only": 1,
-   "description": "Legacy single-item field. New requests use the Items table."
+   "read_only": 1
   },
   {
+   "description": "Legacy single-item field. New requests use the Items table.",
    "fieldname": "requested_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Requested Qty",
    "non_negative": 1,
    "precision": "4",
-   "read_only": 1,
-   "description": "Legacy single-item field. New requests use the Items table."
+   "read_only": 1
   },
   {
    "fieldname": "items_section",
@@ -129,10 +129,10 @@
    "options": "Chemical Transfer Request Item"
   },
   {
+   "collapsible": 1,
    "fieldname": "sources_section",
    "fieldtype": "Section Break",
-   "label": "Sources (legacy)",
-   "collapsible": 1
+   "label": "Sources (legacy)"
   },
   {
    "description": "Legacy multi-lender split. Superseded by lender_farm + per-item approval; retained so historical requests stay readable.",
@@ -181,17 +181,6 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "System Manager",
-   "share": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "delete": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
    "role": "SCP General Manager",
    "share": 1,
    "write": 1
@@ -204,6 +193,18 @@
    "read": 1,
    "report": 1,
    "role": "SCP Spray Plan Creator",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
    "share": 1,
    "write": 1
   }

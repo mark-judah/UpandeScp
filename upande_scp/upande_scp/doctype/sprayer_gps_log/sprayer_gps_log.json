@@ -52,8 +52,8 @@
    "fieldname": "client_id",
    "fieldtype": "Data",
    "label": "Client ID",
-   "unique": 1,
-   "search_index": 1
+   "search_index": 1,
+   "unique": 1
   },
   {
    "description": "Mobile app version/build string that sent this entry",
@@ -168,6 +168,18 @@
  "naming_rule": "By \"Naming Series\" field",
  "owner": "stephene@upande.com",
  "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP General Manager",
+   "share": 1,
+   "write": 1
+  },
   {
    "create": 1,
    "delete": 1,

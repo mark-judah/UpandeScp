@@ -41,8 +41,8 @@
    "label": "Item",
    "options": "Item",
    "reqd": 1,
-   "unique": 1,
-   "search_index": 1
+   "search_index": 1,
+   "unique": 1
   },
   {
    "fetch_from": "item.item_name",
@@ -177,11 +177,11 @@
    "options": "Chemical Requirements"
   },
   {
+   "description": "Stable small integer encoded in this chemical's label codes. Allocated once from a single shared counter and never reused \u2014 the allocator is what guarantees uniqueness, since a unique index cannot be added over rows that all default to 0.",
    "fieldname": "qr_item_id",
    "fieldtype": "Int",
    "label": "QR Item Id",
    "read_only": 1,
-   "description": "Stable small integer encoded in this chemical's label codes. Allocated once from a single shared counter and never reused \u2014 the allocator is what guarantees uniqueness, since a unique index cannot be added over rows that all default to 0.",
    "search_index": 1
   }
  ],
@@ -204,18 +204,18 @@
   {
    "create": 1,
    "delete": 1,
-   "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "System Manager",
+   "role": "SCP Chemical Store Keeper",
    "share": 1,
    "write": 1
   },
   {
    "create": 1,
    "delete": 1,
+   "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
@@ -227,11 +227,12 @@
   {
    "create": 1,
    "delete": 1,
+   "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "SCP Chemical Store Keeper",
+   "role": "System Manager",
    "share": 1,
    "write": 1
   }

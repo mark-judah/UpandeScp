@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Scouting migration — Upande SCP</title>
+<meta name="csrf_token" content="{{ csrf_token }}" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --paper:#FBFAF7; --card:#FFFFFF; --ink:#1C1B18; --soft:#6B6862; --faint:#A7A29A;
+    --rule:#E4E0D8; --gold:#B8892B; --gold-tint:#F3E7CC;
+    --sage:#5C7A5C; --sage-tint:#E2EBE1; --clay:#A8503C; --clay-tint:#F5E3DE;
+    --cell:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:Poppins,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-weight:300;-webkit-font-smoothing:antialiased}
+  .mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-variant-numeric:tabular-nums;font-weight:400}
+  .wrap{max-width:1080px;margin:0 auto;padding:40px 28px 72px}
+
+  /* ---- header ---- */
+  header{display:flex;justify-content:space-between;align-items:flex-end;gap:32px;
+    flex-wrap:wrap;padding-bottom:22px;border-bottom:1px solid var(--rule)}
+  .eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
+    margin:0 0 10px}
+  h1{margin:0;font-size:34px;font-weight:500;letter-spacing:-.02em;line-height:1.1}
+  .route{margin:8px 0 0;font-size:12.5px;color:var(--soft)}
+  .route b{font-weight:500;color:var(--ink)}
+  .live{text-align:right;flex-shrink:0}
+  .rate{font-size:42px;line-height:1;font-weight:500;letter-spacing:-.03em}
+  .rate small{font-size:14px;font-weight:400;color:var(--soft);letter-spacing:0}
+  .eta{margin-top:6px;font-size:12.5px;color:var(--soft)}
+  .pulse{display:inline-block;width:7px;height:7px;border-radius:50%;
+    background:var(--sage);margin-right:7px;vertical-align:1px}
+  .pulse.stopped{background:var(--faint)}
+  .pulse.live{animation:beat 1.6s ease-in-out infinite}
+  @keyframes beat{0%,100%{opacity:1}50%{opacity:.25}}
+
+  /* ---- primary bar ---- */
+  .bar-block{margin:30px 0 8px}
+  .bar{height:26px;background:var(--card);border:1px solid var(--rule);
+    border-radius:3px;overflow:hidden;display:flex}
+  .bar span{display:block;height:100%;transition:width .6s cubic-bezier(.4,0,.2,1)}
+  .seg-done{background:var(--sage)}
+  .seg-present{background:var(--sage-tint)}
+  .seg-blocked{background:var(--clay-tint)}
+  .legend{display:flex;gap:22px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:var(--soft)}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
+  .legend b{font-weight:500;color:var(--ink)}
+
+  /* ---- the day ledger: the signature ---- */
+  .ledger{margin-top:44px}
+  .ledger h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);font-weight:400;margin:0 0 4px}
+  .ledger p.note{margin:0 0 20px;font-size:12.5px;color:var(--soft)}
+  .month{display:flex;align-items:center;gap:14px;margin-bottom:7px}
+  .month-name{width:34px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--soft);text-align:right;flex-shrink:0}
+  .cells{display:flex;gap:3px;flex-wrap:wrap}
+  .cell{width:var(--cell);height:var(--cell);border-radius:2px;
+    background:var(--card);border:1px solid var(--rule);
+    transition:background .45s ease,border-color .45s ease}
+  .cell.done{background:var(--sage);border-color:var(--sage)}
+  .cell.partial{background:var(--sage);border-color:var(--clay)}
+  .cell.empty{background:var(--paper);border-color:var(--rule);opacity:.5}
+  .cell.error{background:var(--clay);border-color:var(--clay)}
+  .cell.active{background:var(--gold);border-color:var(--gold);animation:beat 1.3s ease-in-out infinite}
+  .month-count{font-size:11px;color:var(--faint);margin-left:auto;flex-shrink:0}
+
+  /* ---- workers ---- */
+  .workers{margin-top:44px;display:grid;gap:12px}
+  .worker{background:var(--card);border:1px solid var(--rule);border-radius:4px;padding:14px 16px}
+  .worker-top{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+    font-size:13px;margin-bottom:9px}
+  .worker-id{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+  .worker-day{font-weight:500}
+  .worker-stage{color:var(--soft);font-size:12px}
+  .minibar{height:5px;background:var(--paper);border-radius:3px;overflow:hidden}
+  .minibar span{display:block;height:100%;background:var(--gold);
+    transition:width .5s cubic-bezier(.4,0,.2,1)}
+  .idle{color:var(--faint);font-size:12.5px;padding:4px 0}
+
+  /* ---- blocked ---- */
+  .blocked{margin-top:44px;background:var(--card);border:1px solid var(--rule);
+    border-radius:4px;padding:18px 20px}
+  .blocked h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);font-weight:400;margin:0 0 12px}
+  .blocked dl{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;margin:0;font-size:13px}
+  .blocked dt{color:var(--soft)}
+  .blocked dd{margin:0}
+  .tag{display:inline-block;background:var(--clay-tint);color:var(--clay);
+    border-radius:3px;padding:2px 7px;font-size:11.5px;margin:0 4px 4px 0}
+
+  footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--rule);
+    font-size:11.5px;color:var(--faint);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .absent{text-align:center;padding:80px 20px;color:var(--soft)}
+  .absent code{background:var(--card);border:1px solid var(--rule);border-radius:3px;
+    padding:2px 6px;font-size:12px}
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+  }
+  @media (max-width:640px){
+    h1{font-size:26px}.rate{font-size:32px}.wrap{padding:26px 18px 48px}
+    :root{--cell:11px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Upande SCP · Scouting Entry</p>
+      <h1>Scouting migration</h1>
+      <p class="route"><b>kaitet-group</b> <span style="color:var(--faint)">v15 &rarr;</span> <b>kaitetv16</b> <span style="color:var(--faint)">v16</span></p>
+    </div>
+    <div class="live">
+      <div class="rate mono"><span id="rate">—</span><small> /sec</small></div>
+      <div class="eta"><span class="pulse stopped" id="dot"></span><span id="state">waiting for a run</span></div>
+    </div>
+  </header>
+
+  <div id="body" hidden>
+    <div class="bar-block">
+      <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+           aria-valuenow="0" aria-label="Rows migrated" id="barwrap">
+        <span class="seg-done"    id="s-done"    style="width:0"></span>
+        <span class="seg-present" id="s-present" style="width:0"></span>
+        <span class="seg-blocked" id="s-blocked" style="width:0"></span>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--sage)"></i><b id="n-done">0</b> migrated</span>
+        <span><i style="background:var(--sage-tint)"></i><b id="n-present">0</b> already there</span>
+        <span><i style="background:var(--clay-tint)"></i><b id="n-blocked">0</b> blocked</span>
+        <span><i style="background:var(--card);border:1px solid var(--rule)"></i><b id="n-left">0</b> to go</span>
+        <span id="n-failed-wrap" hidden><i style="background:var(--clay)"></i><b id="n-failed">0</b> failed</span>
+      </div>
+    </div>
+
+    <section class="ledger">
+      <h2>Day ledger</h2>
+      <p class="note">One cell per day, newest first — the run fills backwards from September to January.</p>
+      <div id="months"></div>
+    </section>
+
+    <section class="workers">
+      <h2 class="eyebrow" style="margin:0">Workers</h2>
+      <div id="worker-list"></div>
+    </section>
+
+    <section class="blocked" id="blocked-box" hidden>
+      <h2>Blocked, to deal with later</h2>
+      <dl>
+        <dt>Scouts absent from the target</dt><dd id="b-scouts">—</dd>
+        <dt>Beds, zones and trees absent</dt><dd id="b-geo">—</dd>
+      </dl>
+    </section>
+  </div>
+
+  <div class="absent" id="absent">
+    <p>No run has published a status file yet.</p>
+    <p><code id="absent-path">/tmp/scp_migration_status.json</code></p>
+  </div>
+
+  <footer>
+    <span>Reads a local snapshot. Opening this page does not touch either site.</span>
+    <span class="mono">updated <span id="updated">—</span></span>
+  </footer>
+</div>
+
+<script>
+const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const fmt=n=>(n||0).toLocaleString();
+
+function render(d){
+  const absent=document.getElementById("absent"), body=document.getElementById("body");
+  if(!d || d.missing || d.error){
+    absent.hidden=false; body.hidden=true;
+    if(d && d.path) document.getElementById("absent-path").textContent=d.path;
+    return;
+  }
+  absent.hidden=true; body.hidden=false;
+
+  document.getElementById("rate").textContent=(d.rate||0).toFixed(1);
+  const dot=document.getElementById("dot");
+  dot.className="pulse "+(d.running?"live":"stopped");
+  document.getElementById("state").textContent = d.running
+    ? `${d.phase||"running"} · ${d.eta_h!=null?d.eta_h.toFixed(1)+" h left":"estimating"} · ${(d.elapsed_h||0).toFixed(1)} h elapsed`
+    : `stopped · ${(d.elapsed_h||0).toFixed(1)} h elapsed`;
+  document.getElementById("updated").textContent=(d.updated||"").replace("T"," ");
+
+  const total=Math.max(d.total||0,1);
+  const pct=v=>Math.min(100,(v||0)/total*100);
+  document.getElementById("s-done").style.width=pct(d.inserted)+"%";
+  document.getElementById("s-present").style.width=pct(d.present)+"%";
+  document.getElementById("s-blocked").style.width=pct(d.blocked)+"%";
+  document.getElementById("barwrap").setAttribute("aria-valuenow",
+    Math.round(pct((d.inserted||0)+(d.present||0)+(d.blocked||0))));
+  document.getElementById("n-done").textContent=fmt(d.inserted);
+  document.getElementById("n-present").textContent=fmt(d.present);
+  document.getElementById("n-blocked").textContent=fmt(d.blocked);
+  document.getElementById("n-left").textContent=
+    fmt(Math.max(total-(d.inserted||0)-(d.present||0)-(d.blocked||0),0));
+  const fw=document.getElementById("n-failed-wrap");
+  fw.hidden=!(d.failed>0);
+  document.getElementById("n-failed").textContent=fmt(d.failed);
+
+  // day ledger, grouped by month, newest month at the top
+  const days=d.days||{}, byMonth={};
+  Object.keys(days).forEach(k=>{
+    const m=k.slice(0,7);
+    (byMonth[m]=byMonth[m]||[]).push(k);
+  });
+  const active=new Set(Object.values(d.active||{}).map(a=>a.day));
+  const host=document.getElementById("months");
+  host.innerHTML=Object.keys(byMonth).sort().reverse().map(m=>{
+    const list=byMonth[m].sort();
+    const done=list.filter(k=>["done","empty"].includes((days[k]||{}).state)).length;
+    const cells=list.map(k=>{
+      const it=days[k]||{}; let cls=it.state||"pending";
+      if(active.has(k)) cls="active";
+      else if(cls==="done" && (it.blocked||0)>0) cls="partial";
+      const bits=[`${k}`];
+      if(it.rows!=null) bits.push(`${fmt(it.rows)} rows`);
+      if(it.inserted) bits.push(`${fmt(it.inserted)} migrated`);
+      if(it.blocked) bits.push(`${fmt(it.blocked)} blocked`);
+      return `<div class="cell ${cls}" title="${bits.join(" · ")}"></div>`;
+    }).join("");
+    return `<div class="month"><div class="month-name">${MONTHS[+m.slice(5,7)-1]}</div>
+      <div class="cells">${cells}</div>
+      <div class="month-count mono">${done}/${list.length}</div></div>`;
+  }).join("");
+
+  // workers
+  const act=d.active||{};
+  const ids=Object.keys(act).sort();
+  const wl=document.getElementById("worker-list");
+  wl.innerHTML = ids.length ? ids.map(id=>{
+    const a=act[id], p=a.of?Math.min(100,a.done/a.of*100):0;
+    return `<div class="worker">
+      <div class="worker-top">
+        <span><span class="worker-id">${id}</span> &nbsp;<span class="worker-day mono">${a.day||""}</span>
+          &nbsp;<span class="worker-stage">${a.stage||""}</span></span>
+        <span class="mono worker-stage">${a.of?fmt(a.done)+" / "+fmt(a.of):""}${a.rate?"  ·  "+a.rate+"/sec":""}</span>
+      </div>
+      <div class="minibar"><span style="width:${p}%"></span></div>
+    </div>`;
+  }).join("") : `<p class="idle">No worker is active.</p>`;
+
+  // blocked
+  const box=document.getElementById("blocked-box");
+  const scouts=d.blocked_scouts||[], geoN=d.blocked_geo_count||0;
+  if(scouts.length||geoN){
+    box.hidden=false;
+    document.getElementById("b-scouts").innerHTML = scouts.length
+      ? scouts.map(s=>`<span class="tag mono">${s}</span>`).join("") : "none";
+    document.getElementById("b-geo").innerHTML = geoN
+      ? `<b>${fmt(geoN)}</b> name(s) — ${(d.blocked_geo||[]).slice(0,6).map(g=>`<span class="tag mono">${g}</span>`).join("")}${geoN>6?` +${geoN-6} more`:""}`
+      : "none";
+  } else box.hidden=true;
+}
+
+async function tick(){
+  try{
+    const r=await fetch("/api/method/upande_scp.www.migration.index.status",
+      {headers:{"Accept":"application/json"},credentials:"same-origin"});
+    const j=await r.json();
+    render(j.message);
+  }catch(e){ /* a dropped poll is not worth clearing a good view for */ }
+}
+render({{ status_json }});
+tick(); setInterval(tick,2000);
+</script>
+</body>
+</html>

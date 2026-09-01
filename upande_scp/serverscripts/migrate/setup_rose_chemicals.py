@@ -15,7 +15,7 @@ will stop counting them.
     python3 setup_rose_chemicals.py             # dry run
     python3 setup_rose_chemicals.py --apply
 
-Credentials come from ~/.scp_migrate_env. See target.py.
+Credentials come from ~/.scp_migrate_staging_env. See target.py.
 """
 
 from __future__ import annotations

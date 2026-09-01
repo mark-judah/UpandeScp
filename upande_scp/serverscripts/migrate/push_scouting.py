@@ -8,12 +8,25 @@ TREE NAMES DIFFER. kaitet's Orchard Trees carry legacy import codes
 both, so the name is rebuilt from them. Verified at 100% on a 1,000-tree sample
 before this was written — a miss is reported, never guessed past.
 
+THE DEDUPE PRE-READ IS SCOPED BY DATE. An entry can only duplicate another from
+the same day, so only the dates a slice touches are read from the target. Reading
+the whole table was 779 MB in one response and ~2.5 GB resident, which two
+parallel workers could not both afford.
+
 NAMES ARE NOT PRESERVED. Scouting Entry autonames from a naming series, so the
 name Frappe assigns on the target has nothing to do with the source's. Checking
 "is this already there?" by name never matches, and a re-run inserts everything
 a second time — which is exactly what happened on the first avocado push, and
 cost a dedupe of 500 documents. Idempotency keys on the observation instead:
 who looked, when, and at which plant.
+
+SCOUTS WHO HAVE LEFT ARE ABSENT FROM THE TARGET. Only Active Employees were
+ported — the target holds 2,355, all Active, against the source's 4,172 of which
+1,685 are not Active. But history references whoever was on the farm at the time,
+so a 2026 entry can name a scout who has since left. Those entries are SKIPPED,
+counted and reported, not failed and not invented: adding a departed employee to
+a live HR system to satisfy a foreign key is worse than losing the row. Measured
+exposure across the whole 2026 range is 3 scouts and 1,489 entries — 0.05%.
 
 GREENHOUSE NAMES WERE CORRECTED. Torongo GH17/GH18 gained a space, and one
 Chepsito greenhouse carries a triple space. kaitet holds both spellings; the
@@ -49,6 +62,22 @@ KEY_FIELDS = ("date_of_capture", "time_of_capture", "scouts_name", "crop_scouted
               "greenhouse", "block", "bed", "zone", "tree")
 
 
+_scout_cache = {}
+
+
+def _scouts_present(t, names):
+	"""Which of these Employees exist on the target. Cached across slices, and
+	chunked because a 300-name `in` filter is about as much as a query string
+	will carry."""
+	unknown = sorted(n for n in names if n and n not in _scout_cache)
+	for i in range(0, len(unknown), 300):
+		chunk = unknown[i:i + 300]
+		found = {r["name"] for r in t.get_list("Employee", ["name"], [["name", "in", chunk]])}
+		for n in chunk:
+			_scout_cache[n] = n in found
+	return {n for n in names if n and _scout_cache.get(n)}
+
+
 def _natural_key(row):
 	return tuple(str(row.get(f) or "") for f in KEY_FIELDS)
 
@@ -82,13 +111,33 @@ def main():
 
 	tree_map = json.load(open(DATA + "tree_map.json"))
 
-	# Read the target's existing observations ONCE. Re-reading per slice costs a
-	# 290k-row fetch that grows as the push proceeds; instead the set is held and
-	# added to, so a resumed or repeated run is still exact.
-	print("reading what the target already holds ...", flush=True)
-	t1 = time.time()
-	present = {_natural_key(r) for r in t.get_list("Scouting Entry", fields=list(KEY_FIELDS), limit=0)}
-	print("  {} observation(s) already there ({:.1f}s)".format(len(present), time.time() - t1))
+	# The target's existing observations, read LAZILY BY DATE rather than all at
+	# once. Reading the whole table cost 779 MB in a single response and ~2.5 GB of
+	# resident set by the end of a full push — survivable for one process, fatal for
+	# two running in parallel on a 12 GB box. Scoped by date it is a few MB per
+	# slice, because a scouting entry can only collide with another one from the
+	# same day.
+	#
+	# Still one shared set, and dates already loaded are never re-read, so a run
+	# whose slices overlap or repeat stays exact.
+	present = set()
+	loaded_dates = set()
+
+	def _load_dates(dates):
+		want = sorted(d for d in dates if d and d not in loaded_dates)
+		if not want:
+			return
+		t1 = time.time()
+		added = 0
+		for i in range(0, len(want), 40):
+			chunk = want[i:i + 40]
+			for r in t.get_list("Scouting Entry", fields=list(KEY_FIELDS),
+			                    filters={"date_of_capture": ["in", chunk]}, limit=0):
+				present.add(_natural_key(r))
+				added += 1
+			loaded_dates.update(chunk)
+		print("    pre-read {} date(s): {} existing observation(s) ({:.1f}s)".format(
+			len(want), added, time.time() - t1), flush=True)
 
 	grand_ok = grand_fail = grand_skip = 0
 	errors = []
@@ -119,9 +168,22 @@ def main():
 				else:
 					unmapped_trees.add(d["tree"])
 
+		# Only the dates this slice touches — see _load_dates.
+		_load_dates({d.get("date_of_capture") for d in docs})
+
+		# Resolved against the target rather than hardcoded, so it stays correct
+		# as employees are added or retired. See the module docstring.
+		referenced = {d.get("scouts_name") for d in docs if d.get("scouts_name")}
+		absent_scouts = referenced - _scouts_present(t, referenced)
+
 		todo = []
+		skipped_scout = 0
 		for d in docs:
 			k = _natural_key(d)
+			if d.get("scouts_name") in absent_scouts:
+				skipped_scout += 1
+				grand_skip += 1
+				continue
 			if k in present or (d.get("tree") in unmapped_trees and d.get("tree")):
 				grand_skip += 1
 				continue
@@ -132,6 +194,9 @@ def main():
 		label = path.rsplit("/", 1)[-1]
 		print("\n[{}/{}] {}  {} docs, {} remapped, {} skipped -> pushing {}".format(
 			fi, len(files), label, len(docs), remapped, len(docs) - len(todo), len(todo)), flush=True)
+		if absent_scouts:
+			print("    ! {} scout(s) absent from the target -> {} entry(ies) skipped: {}".format(
+				len(absent_scouts), skipped_scout, ", ".join(sorted(absent_scouts)[:6])))
 		if unmapped_trees:
 			print("    ! {} unmapped tree name(s), those entries skipped".format(len(unmapped_trees)))
 		if not args.apply or not todo:

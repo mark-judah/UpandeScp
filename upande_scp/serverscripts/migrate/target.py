@@ -5,7 +5,7 @@ through bench (this database is authoritative); only writes go over the wire.
 
 ## Credentials
 
-Read from a file outside the repository — `~/.scp_migrate_env` by default, or
+Read from a file outside the repository — `~/.scp_migrate_staging_env` by default, or
 wherever `SCP_MIGRATE_ENV` points:
 
     SCP_TARGET_URL=https://training.example
@@ -36,7 +36,7 @@ from urllib.parse import urlparse
 
 import requests
 
-DEFAULT_ENV_FILE = "~/.scp_migrate_env"
+DEFAULT_ENV_FILE = "~/.scp_migrate_staging_env"
 TIMEOUT = 60
 
 

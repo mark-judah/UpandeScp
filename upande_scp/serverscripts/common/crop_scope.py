@@ -279,6 +279,7 @@ def scoped_greenhouses(crop: str | None = None, user: str | None = None) -> set[
 ROSTER_FIELDS = {
 	"spray_plan_creators": "Farm Spray Plan Creator",
 	"spray_plan_approvers": "Farm Spray Plan Approver",
+	"spray_supervisors": "Farm Spray Supervisor",
 	"store_keepers": "Farm Store Keeper",
 }
 

@@ -43,7 +43,7 @@ SCP_FIELDS = {
     ],
     "Farm": [
         "custom_chemical_store", "custom_fertilizer_store", "spray_plan_creators",
-        "store_keepers", "spray_plan_approvers",
+        "spray_plan_approvers", "spray_supervisors", "store_keepers",
     ],
     # Stock Entry carries exactly one SCP layout concern: the store-label print
     # audit trail, written by `spray_plan_labels._stamp_labels_printed` and read

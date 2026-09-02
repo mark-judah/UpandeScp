@@ -21,13 +21,43 @@ class FarmSprayPlanApprover(Document):
         _assert_spray_plan_approver_role(self.user)
 
 
+def _has_role(user: str) -> bool:
+    return bool(frappe.db.exists(
+        "Has Role", {"parent": user, "parenttype": "User", "role": "SCP Spray Plan Approver"}
+    ))
+
+
 def validate_farm_spray_plan_approvers(doc, method=None) -> None:
     """doc_events hook: called on Farm.validate.
 
-    Mirrors the creator-role validator: Frappe doesn't propagate validate()
-    to child rows during a parent save, so we re-check role membership for
-    every row written to ``Farm.spray_plan_approvers``.
+    Frappe does not propagate validate() to child rows during a parent save, so
+    the roster is enforced here.
+
+    A row whose user has **lost** the role is dropped rather than raised on.
+    Throwing looks stricter but was strictly worse: a single stale row made the
+    whole Farm unsaveable, so nobody could roster anyone — for any role — until
+    someone found and deleted it by hand. It cost me two roster edits before I
+    understood why. And the stale row granted nothing anyway: every consumer
+    re-checks the role at read time (spray_plan_approval._approver_allowed_greenhouses), so dropping it changes no
+    access. It only stops dead data blocking live edits.
+
+    A row for someone who never held the role still raises. That is a mistake
+    being made right now, and the operator should hear about it.
     """
-    for row in doc.get("spray_plan_approvers") or []:
-        if row.user:
-            _assert_spray_plan_approver_role(row.user)
+    rows = doc.get("spray_plan_approvers") or []
+    stale = []
+    for row in list(rows):
+        if not row.user:
+            continue
+        if row.get("__islocal") or not row.get("name"):
+            _assert_spray_plan_approver_role(row.user)      # adding somebody: hard error
+        elif not _has_role(row.user):
+            stale.append(row.user)      # already saved, role since removed
+            rows.remove(row)
+    if stale:
+        frappe.msgprint(
+            "Removed from this farm's roster because they no longer hold the "
+            "'SCP Spray Plan Approver' role: " + ", ".join(sorted(stale)) + ".",
+            title="Roster updated",
+            indicator="orange",
+        )

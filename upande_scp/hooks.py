@@ -252,6 +252,7 @@ doc_events = {
         "validate": [
             "upande_scp.upande_scp.doctype.farm_spray_plan_creator.farm_spray_plan_creator.validate_farm_spray_plan_creators",
             "upande_scp.upande_scp.doctype.farm_spray_plan_approver.farm_spray_plan_approver.validate_farm_spray_plan_approvers",
+            "upande_scp.upande_scp.doctype.farm_spray_supervisor.farm_spray_supervisor.validate_farm_spray_supervisors",
         ],
     },
     "Spray Equipment Details": _SCP_CACHE_EVENTS,

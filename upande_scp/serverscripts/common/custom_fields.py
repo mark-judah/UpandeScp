@@ -405,12 +405,28 @@ def _field_spec() -> dict:
 					"the Spray Plan Approver role may be added."
 				),
 			},
+			# Who supervises spraying on this farm. Several per farm is normal —
+			# a big farm sprays more than one block at once, and each supervisor
+			# carries the day's plans on their own handset. This is the roster
+			# the mobile download scopes by.
+			{
+				"fieldname": "spray_supervisors",
+				"label": "Spray Supervisors",
+				"fieldtype": "Table",
+				"options": "Farm Spray Supervisor",
+				"insert_after": "spray_plan_approvers",
+				"description": (
+					"Users who supervise spraying on this farm and scan chemicals in "
+					"the field. Only users with the SCP Spray Supervisor role may be "
+					"added. More than one is expected."
+				),
+			},
 			{
 				"fieldname": "store_keepers",
 				"label": "Store Keepers",
 				"fieldtype": "Table",
 				"options": "Farm Store Keeper",
-				"insert_after": "spray_plan_approvers",
+				"insert_after": "spray_supervisors",
 			},
 		],
 		"Warehouse": [

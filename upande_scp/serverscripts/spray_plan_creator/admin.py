@@ -49,6 +49,17 @@ def list_farms_with_creators() -> list[dict]:
             filters={"parent": f["name"], "parenttype": "Farm"},
             fields=["user", "full_name"],
         )
+        # Supervisors are the field role: they carry the day's plans on a handset
+        # and scan chemicals at the CSU. Guarded like the approver read above so
+        # the page still loads on a site that hasn't migrated yet.
+        if frappe.db.table_exists("Farm Spray Supervisor"):
+            supervisors = frappe.get_all(
+                "Farm Spray Supervisor",
+                filters={"parent": f["name"], "parenttype": "Farm"},
+                fields=["user", "full_name"],
+            )
+        else:
+            supervisors = []
         farm_stores = frappe.db.get_value(
             "Farm", f["name"],
             ["custom_chemical_store", "custom_fertilizer_store"], as_dict=True
@@ -59,6 +70,7 @@ def list_farms_with_creators() -> list[dict]:
             "business_unit": f.get("custom_business_unit") or "",
             "creators": creators,
             "approvers": approvers,
+            "supervisors": supervisors,
             "store_keepers": store_keepers,
             "chemical_store": farm_stores.get("custom_chemical_store"),
             "fertilizer_store": farm_stores.get("custom_fertilizer_store"),
@@ -74,6 +86,28 @@ def list_spray_plan_creator_candidates(q: str | None = None) -> list[dict]:
 @frappe.whitelist()
 def list_spray_plan_approver_candidates(q: str | None = None) -> list[dict]:
     return _candidates_for_role("SCP Spray Plan Approver", q)
+
+
+@frappe.whitelist()
+def list_spray_supervisor_candidates(q: str | None = None) -> list[dict]:
+    return _candidates_for_role("SCP Spray Supervisor", q)
+
+
+@frappe.whitelist()
+def set_farm_supervisors(farm: str, users: list[str] | str) -> dict:
+    """Roster the supervisors for a farm. Several are expected — a farm sprays
+    more than one block at a time and each supervisor carries their own handset.
+
+    This roster is what the mobile plan download scopes by, so a supervisor who
+    is not on it falls back to their company's plans rather than seeing none.
+    """
+    result = _set_farm_roster(
+        farm,
+        users,
+        role="SCP Spray Supervisor",
+        child_field="spray_supervisors",
+    )
+    return {"farm": result["farm"], "supervisors": result["roster"]}
 
 
 def _candidates_for_role(role: str, q: str | None) -> list[dict]:

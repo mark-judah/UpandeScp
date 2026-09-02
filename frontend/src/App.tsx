@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { useRoute, cropDisplayName, type View } from "@/lib/router";
-import { AppSidebar } from "@/components/AppSidebar";
+import { AppSidebar, canOpenView } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { ProgressBar } from "@/components/ProgressBar";
 import { PerfClock } from "@/components/PerfClock";
@@ -183,8 +183,32 @@ function KeepAlive({
 
 /** The page component for a given crop + view. Crop is fixed per keep-alive
  *  entry, so ``initialCrop`` is stable for the life of the mounted page. */
+/** Shown instead of a page the user's roles don't permit. */
+function NotPermitted({ view }: { view: View }) {
+  return (
+    <div className="p-8 max-w-lg">
+      <h2 className="text-base font-semibold">You don't have access to this page</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Your roles don't include access to <span className="font-mono">{view}</span>.
+        If you think this is wrong, ask the SCP General Manager to review your
+        roles under Settings → Access.
+      </p>
+    </div>
+  );
+}
+
 function renderView(crop: string, view: View): ReactNode {
   const cropName = cropDisplayName(crop);
+
+  // Gate the ROUTE, not just the sidebar link. Hiding a link is presentation,
+  // not access control — `#/rose/approvals` typed into the address bar rendered
+  // the Approvals page for anyone, and only looked empty because the server
+  // refused the data. `canOpenView` reads the same nav definition the sidebar
+  // does, so the two cannot drift apart.
+  if (!canOpenView(view, crop, bootstrap().roles || [])) {
+    return <NotPermitted view={view} />;
+  }
+
   switch (view) {
     case "trends":
       return <Trends initialCrop={cropName} />;

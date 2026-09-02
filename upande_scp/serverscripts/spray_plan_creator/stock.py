@@ -276,13 +276,12 @@ def creator_stock_overview() -> dict:
                i.item_name,
                i.item_group,
                COALESCE(i.stock_uom, '')            AS uom,
-               COALESCE(ch.low_stock_threshold, fo.low_stock_threshold, 0) AS threshold,
+               COALESCE(sp.low_stock_threshold, 0)  AS threshold,
                b.actual_qty                         AS qty
         FROM   `tabBin`       b
         JOIN   `tabWarehouse` w ON w.name = b.warehouse
         JOIN   `tabItem`      i ON i.name = b.item_code
-        LEFT JOIN `tabChemical` ch ON ch.item = b.item_code
-        LEFT JOIN `tabFoliar`   fo ON fo.item = b.item_code
+        LEFT JOIN `tabSpray Product` sp ON sp.item = b.item_code
         WHERE  w.custom_farm IN %(farms)s
           AND  w.disabled = 0
           AND  i.item_group IN %(groups)s

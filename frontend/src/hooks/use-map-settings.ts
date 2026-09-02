@@ -42,6 +42,12 @@ export function useMapSettings(): MapSettings {
  * transition so the operator sees the relocation rather than a hard
  * jump. Caller can pass ``animate: false`` for the initial boot frame.
  */
+/** True for a coordinate that is really "unset" rather than a real place.
+ *  Exactly (0, 0) is Null Island; no farm in this system is within ~100m of it. */
+function isUnset(v: number): boolean {
+  return !Number.isFinite(v) || Math.abs(v) < 0.001;
+}
+
 export function flyToFarm(
   map: LeafletMap | null | undefined,
   settings: MapSettings,
@@ -59,6 +65,13 @@ export function flyToFarm(
         zoom: settings.default_zoom || 16,
       };
   if (!Number.isFinite(target.lat) || !Number.isFinite(target.lon)) return;
+  // An unconfigured Map Settings reads as (0, 0) — Null Island, in the Gulf of
+  // Guinea — and the old code obediently flew there at zoom 16, leaving the
+  // operator on blank ocean with no clue why, and a long pinch-zoom back to
+  // Kenya. Nowhere on any of these farms is at (0, 0), so treat it as "not
+  // configured" and leave the viewport alone: whatever the caller already
+  // fitted to the data stays put, which is nearly always the better answer.
+  if (isUnset(target.lat) && isUnset(target.lon)) return;
   const animate = options.animate !== false;
   if (animate) {
     map.flyTo([target.lat, target.lon], target.zoom, {

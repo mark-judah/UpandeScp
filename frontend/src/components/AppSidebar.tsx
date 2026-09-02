@@ -348,6 +348,56 @@ function isHiddenForUser(
   return hideForRoles.some((r) => userRoles.includes(r));
 }
 
+/** Whether this user may open `view` under `crop`, by the SAME rules the
+ *  sidebar uses to show or hide it.
+ *
+ *  Hiding a link is not access control: the sidebar hid Approvals from anyone
+ *  without an approver role, but `#/rose/approvals` typed into the address bar
+ *  still rendered the page — it only looked empty because the server refused
+ *  the data. Exported so `App.tsx` can gate the route off the very same nav
+ *  definition, rather than a second copy of the rule that drifts from this one.
+ *
+ *  A view that appears in no nav section is unrestricted: plenty of routes are
+ *  reached by drill-down rather than a sidebar link, and defaulting those to
+ *  "denied" would break navigation the moment someone adds a page.
+ */
+export function canOpenView(view: View, crop: string, userRoles: string[]): boolean {
+  // 1. The crop the user is actually in. A section hidden from them hides every
+  //    view inside it, whatever the item says.
+  for (const section of navForCrop(crop)) {
+    const owns = section.items.some((i) => i.kind === "view" && i.view === view);
+    if (!owns) continue;
+    if (isHiddenForUser(section.hideForRoles, userRoles)) return false;
+    for (const item of section.items) {
+      if (item.kind !== "view" || item.view !== view) continue;
+      return (
+        userHasAnyRole(item.requireRoles, userRoles) &&
+        !isHiddenForUser(item.hideForRoles, userRoles)
+      );
+    }
+  }
+
+  // 2. Not in this crop's nav — but a restriction declared for the same view
+  //    under ANY crop still applies. Only ROSE_NAV lists `approvals`, so
+  //    without this `#/avocado/approvals` stayed open to everyone: the same
+  //    hole, one URL along. A rule declared once should not have to be
+  //    repeated per crop to keep working.
+  for (const nav of [ROSE_NAV, AVOCADO_NAV, COFFEE_NAV, DEFAULT_CROP_NAV]) {
+    for (const section of nav) {
+      for (const item of section.items) {
+        if (item.kind !== "view" || item.view !== view) continue;
+        if (item.requireRoles?.length) {
+          return userHasAnyRole(item.requireRoles, userRoles);
+        }
+      }
+    }
+  }
+
+  // 3. Genuinely unrestricted: reached by drill-down rather than a sidebar
+  //    link, and nothing anywhere declares a role for it.
+  return true;
+}
+
 export function AppSidebar({
   crop,
   view,

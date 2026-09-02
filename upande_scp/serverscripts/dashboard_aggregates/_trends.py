@@ -214,9 +214,9 @@ def _fetch_spray_events(from_date: str, to_date: str, stations: list) -> dict:
         FROM   `tabWork Order`      wo
         JOIN   `tabWork Order Item` woi ON woi.parent = wo.name
         JOIN   `tabItem`            i   ON i.name = woi.item_code
-        LEFT JOIN `tabChemical`     c   ON c.item = woi.item_code
+        LEFT JOIN `tabSpray Product` c  ON c.item = woi.item_code
         LEFT JOIN `tabActive Ingredient` ai
-               ON ai.parent = c.name AND ai.parenttype = 'Chemical'
+               ON ai.parent = c.name AND ai.parenttype = 'Spray Product'
         WHERE  wo.docstatus < 2
           AND  wo.custom_greenhouse IN %(stations)s
           AND  DATE(wo.planned_start_date) BETWEEN %(from_date)s AND %(to_date)s

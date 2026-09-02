@@ -839,16 +839,18 @@ export async function fetchBomDetails(
   // Keyed by greenhouse too — a farm-mapped store restricts the returned
   // warehouse lists, so the same BOM fetched for two different greenhouses
   // can legitimately return different ``chemical_warehouses``/balances.
-  return cached(`bom:${name}:${greenhouse || ""}`, async () => {
-    try {
-      return await call<BomDetails>(
-        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_bom_details",
-        { name, greenhouse: greenhouse || undefined },
-      );
-    } catch {
-      return null as unknown as BomDetails;
-    }
-  });
+  // Deliberately NOT swallowing the error. Returning null on failure meant two
+  // things at once: the panel rendered blank with no message, and `cached`
+  // stored the null — so a single server error kept the chemicals panel empty
+  // for the whole cache TTL, even once the server was fixed. Letting it throw
+  // both surfaces the failure and keeps the failure out of the cache (`cached`
+  // only writes on resolve).
+  return cached(`bom:${name}:${greenhouse || ""}`, () =>
+    call<BomDetails>(
+      "upande_scp.serverscripts.scouting.scouting_metrics_api.get_bom_details",
+      { name, greenhouse: greenhouse || undefined },
+    ),
+  );
 }
 
 /** Reserved qty per item at one source warehouse, from Application Floor

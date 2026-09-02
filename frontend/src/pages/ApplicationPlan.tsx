@@ -274,6 +274,9 @@ export function ApplicationPlan() {
   const [bomLoading, setBomLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [bomDetails, setBomDetails] = useState<BomDetails | null>(null);
+  // Why the load failed, if it did. Without this the panel just went blank and
+  // the operator had no way to tell a broken endpoint from an empty tank mix.
+  const [bomError, setBomError] = useState<string | null>(null);
 
   // Cost-center override. Defaults to the auto-resolved value for the
   // picked greenhouse (read from bootstrap.greenhouses[].cost_center).
@@ -420,6 +423,7 @@ export function ApplicationPlan() {
   useEffect(() => {
     if (!bom) {
       setBomDetails(null);
+      setBomError(null);
       setChemRows([]);
       setWaterPh("");
       setWaterHardness("");
@@ -427,6 +431,7 @@ export function ApplicationPlan() {
     }
     let cancelled = false;
     setBomLoading(true);
+    setBomError(null);
     // Pass the picked greenhouse so a farm-mapped store already collapses
     // the returned warehouse lists (and balances) server-side (Task 6).
     fetchBomDetails(bom, greenhouse)
@@ -462,6 +467,15 @@ export function ApplicationPlan() {
               stock_qty: 0,
             };
           }),
+        );
+      })
+      .catch((e: any) => {
+        if (cancelled) return;
+        setBomDetails(null);
+        setChemRows([]);
+        setBomError(
+          e?.message ||
+            "Could not load this tank mix's chemicals. Try again, or pick another mix.",
         );
       })
       .finally(() => !cancelled && setBomLoading(false));
@@ -1978,6 +1992,12 @@ export function ApplicationPlan() {
                 <div className="text-xs text-muted-foreground flex items-center gap-2">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   Loading chemicals…
+                </div>
+              )}
+
+              {bomError && !bomLoading && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+                  {bomError}
                 </div>
               )}
 

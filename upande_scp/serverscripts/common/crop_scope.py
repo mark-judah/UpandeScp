@@ -283,29 +283,45 @@ ROSTER_FIELDS = {
 }
 
 
-def rostered_farms(roster_field: str, user: str | None = None) -> set[str]:
-	"""Farms whose ``roster_field`` child table names this user.
+#: Every roster, for a read that is not tied to one job. `ANY_ROSTER` answers
+#: "which farms is this person involved with at all", which is the right
+#: question for a history view: an approver who is not also a creator still
+#: needs to see the plans he approved.
+ANY_ROSTER = tuple(ROSTER_FIELDS)
+
+
+def rostered_farms(roster_field, user: str | None = None) -> set[str]:
+	"""Farms whose roster child table(s) name this user.
+
+	``roster_field`` is one field name or an iterable of them; several are
+	unioned, because holding any one of the roles is involvement with the farm.
 
 	Always a set — never the `None` sentinel. Not being on a roster is not the
 	same as being unrestricted, and conflating the two is how a store keeper
 	ended up seeing every farm in the group.
 	"""
-	child = ROSTER_FIELDS.get(roster_field)
-	if not child or not frappe.db.table_exists(child):
+	fields = [roster_field] if isinstance(roster_field, str) else list(roster_field or [])
+	children = [ROSTER_FIELDS[f] for f in fields if f in ROSTER_FIELDS]
+	children = [c for c in children if frappe.db.table_exists(c)]
+	if not children:
 		return set()
-	return {
-		row["parent"]
-		for row in frappe.get_all(
-			child,
-			filters={"user": _user(user), "parenttype": "Farm"},
-			fields=["parent"],
-		)
-		if row.get("parent")
-	}
+
+	farms: set[str] = set()
+	for child in children:
+		farms |= {
+			row["parent"]
+			for row in frappe.get_all(
+				child,
+				filters={"user": _user(user), "parenttype": "Farm"},
+				fields=["parent"],
+			)
+			if row.get("parent")
+		}
+	return farms
 
 
 def visible_farms(
-	roster_field: str | None = None,
+	roster_field=None,
 	crop: str | None = None,
 	user: str | None = None,
 ) -> set[str] | None:
@@ -339,7 +355,7 @@ def visible_farms(
 
 
 def visible_farm_list(
-	roster_field: str | None = None,
+	roster_field=None,
 	crop: str | None = None,
 	user: str | None = None,
 ) -> list[str]:

@@ -1,0 +1,16 @@
+--- a/upande_core/upande_core/doctype/farm/farm.json
++++ b/upande_core/upande_core/doctype/farm/farm.json
+@@ -46,12 +46,11 @@
+    "description": "Pick all structure levels this farm uses, e.g. Has Phases, Has Greenhouses, Has Beds",
+    "fieldname": "farm_type",
+    "fieldtype": "Table MultiSelect",
+    "in_list_view": 1,
+    "label": "Farm Type",
+-   "options": "Farm Type Item",
+-   "reqd": 1
++   "options": "Farm Type Item"
+   },
+   {
+    "description": "Employee who approves farm operations",
+    "fieldname": "farm_approver",
+    "fieldtype": "Link",

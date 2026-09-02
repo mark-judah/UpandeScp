@@ -392,7 +392,11 @@ def list_application_work_orders(
     #    which yields the site suffix ("KR"), not a Farm.
     #
     # Now both come from the user's visible farms and the warehouse link.
-    visible = crop_scope.visible_farms(roster_field="spray_plan_creators")
+    # ANY roster, not the creator roster: Historical is a read-only view of what
+    # happened, so an approver who is not also a creator still needs to see the
+    # plans he approved. Keying it on `spray_plan_creators` showed Vincent Labat
+    # one farm while Approvals showed him six.
+    visible = crop_scope.visible_farms(roster_field=crop_scope.ANY_ROSTER)
     gh_rows = frappe.get_all(
         "Work Order",
         filters=[
@@ -587,7 +591,15 @@ def get_bom_details(name, greenhouse=None):
     if not name:
         frappe.throw("name is required")
 
-    from upande_scp.serverscripts.common.crop_protection import is_foliar_group
+    # `item_uom_options` is used below for each exploded item. It was imported
+    # only inside `list_chemical_items`, which is a *local* binding there — so
+    # this function raised `NameError: name 'item_uom_options' is not defined`
+    # on every call since e62644d, and the Application Plan's chemical panel
+    # went blank whenever a BOM was picked (the client swallowed the error).
+    from upande_scp.serverscripts.common.crop_protection import (
+        is_foliar_group,
+        item_uom_options,
+    )
 
     restrict_chem = restrict_fert = None
     if greenhouse:

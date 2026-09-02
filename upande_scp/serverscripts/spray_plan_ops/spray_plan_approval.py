@@ -71,17 +71,31 @@ def _ensure_wo_in_approver_scope(wo_name: str) -> None:
 
 def _approver_allowed_greenhouses(user: str) -> list[str] | None:
     """Return the list of greenhouse warehouse names this user can act on,
-    or ``None`` for unscoped access (General Manager / Administrator).
+    or ``None`` for unscoped access.
 
-    Spray Plan Approvers are limited to the farms the GM has rostered them
-    on via the Settings → Access tab. An approver with no farms returns
-    ``[]`` and the calling endpoint short-circuits to an empty result.
+    Spray Plan Approvers are limited to the farms the GM has rostered them on
+    via the Settings → Access tab. An approver with no farms returns ``[]`` and
+    the calling endpoint short-circuits to an empty result.
+
+    **Unscoped means Administrator and System Manager only**, matching
+    ``crop_scope.BYPASS_ROLES``. `SCP General Manager` used to be a bypass here,
+    which made this the one place in the app where a GM was unscoped: Historical,
+    Tank Mixes and Loaning all narrow a GM to their company via
+    `crop_scope.visible_farms`, while Approvals showed them every farm in the
+    group. A general manager belongs to a company like anyone else — the same
+    reasoning `crop_scope.allowed_companies` already documents — and a GM who
+    genuinely needs cross-company reach gets it by being rostered, or by holding
+    System Manager.
     """
     if user == "Administrator":
         return None
     roles = set(frappe.get_roles(user))
-    if "SCP General Manager" in roles or "System Manager" in roles:
+    if "System Manager" in roles:
         return None
+    if "SCP General Manager" in roles:
+        # Scoped, not unscoped: every farm this GM's company can see.
+        scoped = crop_scope.scoped_greenhouses(None, user)
+        return None if scoped is None else sorted(scoped)
     if "SCP Spray Plan Approver" not in roles:
         # Defence in depth — _ensure_approval_role already rejected this.
         return []

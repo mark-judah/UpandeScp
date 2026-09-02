@@ -118,6 +118,29 @@ def set_farm_approvers(farm: str, users: list[str] | str) -> dict:
     return {"farm": result["farm"], "approvers": result["roster"]}
 
 
+def _save_farm(farm_doc) -> None:
+    """Save a Farm after SCP has edited only its own fields.
+
+    `ignore_mandatory` is not laziness. `Farm` belongs to upande_core and
+    declares `farm_type` (the structure-levels table) as `reqd: 1`, while 16 of
+    kaitet's 17 farms carry no value for it. Every save therefore fails with
+    `MandatoryError: [Farm, <name>]: farm_type` — which meant **no farm could be
+    rostered at all**: not a spray plan creator, not an approver, not a store
+    keeper, not even a chemical store. That is why staging had zero approvers
+    and zero store keepers, and why only System Manager (a crop_scope bypass
+    role) could do anything.
+
+    SCP writes only the roster child tables and the two store links it owns. It
+    has no business demanding another app's unrelated taxonomy be filled in
+    first, and it must not invent a `farm_type` value on the operator's behalf.
+    The real fix belongs in core and is tracked in
+    `docs/upande_core_patches/farm-type-not-mandatory.patch`; this keeps the
+    Access tab working on a site that has not applied it.
+    """
+    farm_doc.flags.ignore_mandatory = True
+    farm_doc.save(ignore_permissions=True)
+
+
 def _set_farm_roster(
     farm: str,
     users: list[str] | str,
@@ -145,7 +168,7 @@ def _set_farm_roster(
     farm_doc.set(child_field, [])
     for u in users:
         farm_doc.append(child_field, {"user": u})
-    farm_doc.save(ignore_permissions=True)
+    _save_farm(farm_doc)
     farm_doc.reload()
     return {
         "farm": farm,
@@ -199,7 +222,7 @@ def set_farm_stores(farm: str, chemical_store: str | None = None, fertilizer_sto
     doc = frappe.get_doc("Farm", farm)
     doc.custom_chemical_store = chemical_store or None
     doc.custom_fertilizer_store = fertilizer_store or None
-    doc.save(ignore_permissions=True)
+    _save_farm(doc)
     return {
         "farm": farm,
         "chemical_store": doc.custom_chemical_store,

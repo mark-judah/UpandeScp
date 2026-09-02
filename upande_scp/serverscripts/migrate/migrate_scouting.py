@@ -64,12 +64,14 @@ import datetime as dt
 import json
 import os
 import queue
+import re
 import sys
 import threading
 import time
 
 import benchmark_scouting as B
 
+DOCTYPE = "Scouting Entry"
 BATCH = 200          # the API's hard cap
 WORKERS = 2          # the measured optimum; see the module docstring
 PAGE = 20000         # rows per source fetch
@@ -84,6 +86,31 @@ PHASES = [
 ]
 
 STATUS_FILE = "/tmp/scp_migration_status.json"
+
+# Legacy orchard-tree codes -> the names the field automation generated on the target.
+#
+#     56HA_AIRSTRIPBLK8_ROW13_T61  ->  AIRSTRIP BLK 8 - KL - Row 13 - Tree 61
+#     23HA_BLK9_ROW24_T25          ->  BLOCK BLK 9 - KL - Row 24 - Tree 25
+#
+# An empty block name means BLOCK — the one case a naive reading gets wrong.
+# Checked against all 53,699 pairs in the map the earlier avocado push built:
+# 100% exact, nothing unparsed.
+#
+# The rebuilt name is still looked up on the target before use. A rebuild that
+# names a tree the target does not have is a miss, and a miss is blocked rather
+# than guessed past.
+TREE_CODE = re.compile(r"^\d+HA_(?P<name>[A-Z0-9]*)BLK(?P<blk>\d+)_ROW(?P<row>\d+)_T(?P<tree>\d+)$")
+
+
+def rebuild_tree_name(code):
+    """The target's name for a legacy tree code, or None if it is not one."""
+    g = TREE_CODE.match(code or "")
+    if not g:
+        return None
+    name = g.group("name") or "BLOCK"
+    return (f"{name} BLK {int(g.group('blk'))} - KL"
+            f" - Row {int(g.group('row'))} - Tree {int(g.group('tree'))}")
+
 
 _print_lock = threading.Lock()
 
@@ -251,6 +278,13 @@ def prepare(tgt, rows, kids, cache):
         for f in ("bed", "row", "zone"):
             if r.get(f):
                 r[f] = B.remap_geometry(r[f])
+        # Avocado: rebuild the legacy tree code into the target's name. Done before
+        # the link check so the result is validated like any other link, and a
+        # rebuild that still misses is blocked instead of failing its batch.
+        if r.get("tree"):
+            rebuilt = rebuild_tree_name(r["tree"])
+            if rebuilt:
+                r["tree"] = rebuilt
 
     # A link the target does not have is BLOCKED, deliberately: the insert would
     # fail on the foreign key and take its whole 200-document batch with it, for a
@@ -316,15 +350,40 @@ def prepare(tgt, rows, kids, cache):
     return docs, dropped, skipped, why
 
 
+# A gateway hiccup is not bad data. Halving a chunk because the proxy returned 502
+# writes off perfectly good rows as "unlinkable" and, worse, doubles the request
+# rate against a target that has just shown it is struggling.
+_TRANSIENT = ("502", "503", "504", "Bad Gateway", "Service Unavailable",
+              "Gateway Time-out", "timed out", "Connection reset", "Remote end closed")
+
+
+def _is_transient(msg):
+    return any(t.lower() in str(msg).lower() for t in _TRANSIENT)
+
+
 def _insert_isolating(tgt, chunk, _depth=0):
     """Insert `chunk`, halving on failure so one bad row cannot sink good ones.
 
-    Returns (inserted, failed, first_error). A single document that still fails is
-    genuinely unlinkable and is reported rather than retried further.
+    Returns (inserted, failed, first_error).
+
+    Transient failures (502/503/504, resets, timeouts) are retried in place with a
+    short backoff instead of being halved: the rows are fine, the server blinked,
+    and halving would both mislabel good data and double the load on something
+    already unhappy. Only a single document that fails a NON-transient check is
+    genuinely unlinkable.
     """
-    good, res = tgt.post_json("frappe.client.insert_many", {"docs": chunk}, timeout=1800)
-    if good:
-        return len(chunk), 0, ""
+    for attempt in range(4):
+        good, res = tgt.post_json("frappe.client.insert_many", {"docs": chunk}, timeout=1800)
+        if good:
+            return len(chunk), 0, ""
+        if not _is_transient(res):
+            break
+        if attempt < 3:
+            time.sleep(2 ** attempt * 1.5)   # 1.5s, 3s, 6s
+    if _is_transient(res):
+        # Still failing after backoff. Leave the rows for a re-run rather than
+        # branding them bad — the push is idempotent, so a later pass picks them up.
+        return 0, len(chunk), f"transient, left for re-run: {str(res)[:120]}"
     if len(chunk) == 1:
         return 0, 1, str(res)
     mid = len(chunk) // 2
@@ -341,6 +400,28 @@ def worker(idx, jobs, src, tgt, stats, total, args):
         except queue.Empty:
             return
         try:
+            # Cheap presence check before the expensive pull. Resuming a phase
+            # re-walks every day; fetching 25,000 parents and their child rows
+            # only to find them all present costs ~30s a day, an hour across a
+            # finished phase. Two counts settle it in under a second.
+            stats.touch(f"w{idx}", day=day, stage="checking", done=0, of=0, rate=0)
+            f = [["date_of_capture", "=", day]]
+            if args.crop:
+                f.append(["crop_scouted", "=", args.crop])
+            n_src = src.call("frappe.client.get_count", doctype=DOCTYPE, filters=json.dumps(f))
+            n_tgt = tgt.call("frappe.client.get_count", doctype=DOCTYPE, filters=json.dumps(f))
+            if n_src and n_tgt >= n_src:
+                say(f"  w{idx} {day}  {n_src:>6,} rows -> already complete on the target")
+                stats.mark(day, state="done", rows=n_src, inserted=0, blocked=0)
+                stats.add(skipped=n_src)
+                stats.touch(f"w{idx}")
+                continue
+            if not n_src:
+                say(f"  w{idx} {day}       0 rows -> nothing on the source")
+                stats.mark(day, state="empty", rows=0, inserted=0, blocked=0)
+                stats.touch(f"w{idx}")
+                continue
+
             stats.touch(f"w{idx}", day=day, stage="fetching", done=0, of=0, rate=0)
             rows, kids = fetch_day(src, day, args.crop,
                                    progress=lambda m: say(f"  w{idx} {day}    {m}"))
@@ -380,8 +461,14 @@ def worker(idx, jobs, src, tgt, stats, total, args):
                     g, b, msg = _insert_isolating(tgt, chunk)
                     ok += g
                     fail += b
-                    say(f"  w{idx} {day}  ! batch of {len(chunk)} partly failed: "
-                        f"{g} saved, {b} unlinkable — {msg[:150]}")
+                    if b == 0:
+                        # Everything came back on retry. Worth a line so a blip is
+                        # visible, but calling a full recovery a failure sends
+                        # whoever is watching to look for damage that isn't there.
+                        say(f"  w{idx} {day}    retried a batch of {len(chunk)}: all recovered")
+                    else:
+                        say(f"  w{idx} {day}  ! batch of {len(chunk)}: "
+                            f"{g} saved, {b} NOT inserted — {msg[:150]}")
                 # Every ~4,000 docs. Without this a big day is silent for minutes,
                 # which reads exactly like a hang to whoever is watching.
                 bno = i // args.batch + 1
@@ -444,19 +531,26 @@ def main():
 
     print("\nplan:")
     grand = 0
+    scope = 0
     for name, a, b in phases:
         n_src = src.call("frappe.client.get_count", doctype="Scouting Entry",
                          filters=json.dumps([["date_of_capture", ">=", a], ["date_of_capture", "<", b]]))
         n_tgt = tgt.call("frappe.client.get_count", doctype="Scouting Entry",
                          filters=json.dumps([["date_of_capture", ">=", a], ["date_of_capture", "<", b]]))
-        todo = max(n_src - n_tgt, 0); grand += todo
+        todo = max(n_src - n_tgt, 0)
+        grand += todo
+        # The progress denominator is the SOURCE count, not the outstanding one.
+        # Counting `present` against an outstanding total double-counts rows that
+        # were already on the target — the sum overshoots and "to go" clamps to
+        # zero while a quarter of a million rows are still missing.
+        scope += n_src
         print(f"  {name:8} {a} .. {b}   source {n_src:>9,}  target {n_tgt:>9,}  todo {todo:>9,}"
               f"   ~{todo/116.4/3600:4.1f} h")
     print(f"  {'TOTAL':8} {'':24}{'':32} {grand:>9,}   ~{grand/116.4/3600:4.1f} h")
     if args.plan:
         return 0
 
-    stats = Stats(status_file=args.status_file, total=grand,
+    stats = Stats(status_file=args.status_file, total=scope,
                   workers=args.workers, phases=phases)
     for name, a, b in phases:
         day_list = days(a, b, newest_first=not args.oldest_first)
@@ -474,16 +568,16 @@ def main():
         jobs = queue.Queue()
         for d in day_list:
             jobs.put(d)
-        threads = [threading.Thread(target=worker, args=(i + 1, jobs, src, tgt, stats, grand, args))
+        threads = [threading.Thread(target=worker, args=(i + 1, jobs, src, tgt, stats, scope, args))
                    for i in range(args.workers)]
         for t in threads: t.start()
         for t in threads: t.join()
-        print(f"--- phase {name} done: {stats.line(grand)}")
+        print(f"--- phase {name} done: {stats.line(scope)}")
 
     stats.running = False
     stats.write()
     print("\n" + "=" * 78)
-    print(stats.line(grand))
+    print(stats.line(scope))
     if stats.absent_scouts:
         print(f"scouts absent from the target ({len(stats.absent_scouts)}): {', '.join(sorted(stats.absent_scouts))}")
     if stats.missing_geo:

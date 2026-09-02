@@ -114,8 +114,8 @@
 <div class="wrap">
   <header>
     <div>
-      <p class="eyebrow">Upande SCP · Scouting Entry</p>
-      <h1>Scouting migration</h1>
+      <p class="eyebrow" id="eyebrow">Upande SCP · Scouting Entry</p>
+      <h1 id="title">Scouting migration</h1>
       <p class="route"><b>kaitet-group</b> <span style="color:var(--faint)">v15 &rarr;</span> <b>kaitetv16</b> <span style="color:var(--faint)">v16</span></p>
     </div>
     <div class="live">
@@ -134,14 +134,20 @@
       </div>
       <div class="legend">
         <span><i style="background:var(--sage)"></i><b id="n-done">0</b> migrated</span>
-        <span><i style="background:var(--sage-tint)"></i><b id="n-present">0</b> already there</span>
+        <span><i style="background:var(--sage-tint)"></i><b id="n-present">0</b> <span id="lbl-present">already there</span></span>
         <span><i style="background:var(--clay-tint)"></i><b id="n-blocked">0</b> blocked</span>
         <span><i style="background:var(--card);border:1px solid var(--rule)"></i><b id="n-left">0</b> to go</span>
         <span id="n-failed-wrap" hidden><i style="background:var(--clay)"></i><b id="n-failed">0</b> failed</span>
       </div>
     </div>
 
-    <section class="ledger">
+    <section class="ledger" id="stages-box" hidden>
+      <h2>Stages</h2>
+      <p class="note">This job moves documents, not days — progress is per stage.</p>
+      <div id="stages"></div>
+    </section>
+
+    <section class="ledger" id="ledger-box">
       <h2>Day ledger</h2>
       <p class="note">One cell per day, newest first — the run fills backwards from September to January.</p>
       <div id="months"></div>
@@ -202,12 +208,37 @@ function render(d){
     Math.round(pct((d.inserted||0)+(d.present||0)+(d.blocked||0))));
   document.getElementById("n-done").textContent=fmt(d.inserted);
   document.getElementById("n-present").textContent=fmt(d.present);
+  document.getElementById("lbl-present").textContent =
+    job==="spray-plans" ? "already ported" : "already there";
   document.getElementById("n-blocked").textContent=fmt(d.blocked);
   document.getElementById("n-left").textContent=
     fmt(Math.max(total-(d.inserted||0)-(d.present||0)-(d.blocked||0),0));
   const fw=document.getElementById("n-failed-wrap");
   fw.hidden=!(d.failed>0);
   document.getElementById("n-failed").textContent=fmt(d.failed);
+
+  // A job that moves documents (BOMs, work orders) has stages, not days.
+  const job=d.job||"scouting";
+  document.getElementById("title").textContent =
+    job==="spray-plans" ? "Spray plan port" : "Scouting migration";
+  document.getElementById("eyebrow").textContent =
+    job==="spray-plans" ? "Upande SCP · Application Floor Plan" : "Upande SCP · Scouting Entry";
+  const hasDays=Object.keys(d.days||{}).length>0;
+  document.getElementById("ledger-box").hidden=!hasDays;
+  const sbox=document.getElementById("stages-box");
+  sbox.hidden=hasDays || !(d.stages||[]).length;
+  if(!sbox.hidden){
+    document.getElementById("stages").innerHTML=(d.stages||[]).map(st=>{
+      const p=st.total?Math.min(100,st.done/st.total*100):0;
+      return `<div class="worker">
+        <div class="worker-top">
+          <span><span class="worker-day">${st.name}</span></span>
+          <span class="mono worker-stage">${fmt(st.done)} / ${fmt(st.total)}</span>
+        </div>
+        <div class="minibar"><span style="width:${p}%"></span></div>
+      </div>`;
+    }).join("");
+  }
 
   // day ledger, grouped by month, newest month at the top
   const days=d.days||{}, byMonth={};

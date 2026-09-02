@@ -24,6 +24,7 @@ from typing import Any
 import frappe
 from frappe.utils import flt, get_datetime, now_datetime, today
 
+from upande_scp.serverscripts.common.timezone import to_site_naive
 from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import (
     _derive_farm,
     _patch_zero_rates,
@@ -221,7 +222,7 @@ def register_csu_scan(
     # `scanned_at` is the moment the label was actually scanned, for a session recorded
     # offline. It dates the audit row only — the Manufacture is a separate explicit step
     # (`manufacture_tank_mix`), which takes its own posting moment.
-    now = get_datetime(scanned_at) if scanned_at else now_datetime()
+    now = to_site_naive(scanned_at) or now_datetime()
 
     # Upsert on (work_order, item_code) via direct child-row operations. We
     # deliberately avoid ``wo.save()`` here — the WO is docstatus=1 and a full

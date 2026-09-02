@@ -50,6 +50,7 @@ from datetime import datetime, timezone as _tz
 import frappe
 from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
+from upande_scp.serverscripts.common.timezone import to_site_naive
 from upande_scp.serverscripts.spray_plan_creator import spray_session as SS
 
 TOKEN = "Spray Session Token"
@@ -95,13 +96,24 @@ def _as_payload(payload):
 
 
 def _moment(value):
-	"""Read a client moment. Returns None rather than guessing."""
-	if not value:
-		return None
-	try:
-		return get_datetime(value)
-	except Exception:
-		return None
+	"""Read a client moment, as a naive datetime in the site's own timezone.
+
+	The handset stamps with `Date.toISOString()`, which is UTC and carries a `Z`.
+	`get_datetime` honours that and hands back an *aware* datetime, while
+	everything on this side is naive site-local: `now_datetime()`, the anchor read
+	out of a Stock Entry's posting date and time, a plan's cutoff. Comparing the
+	two raises `TypeError: can't compare offset-naive and offset-aware datetimes`,
+	which is what refused a manual push outright.
+
+	Converting rather than just discarding the offset is the point of this
+	function. The instant the phone recorded is real; on a site three hours ahead
+	of UTC, dropping the tzinfo would date a tank mix three hours before it was
+	mixed — and `resolve_moments` clamps forward, so that error would be silently
+	absorbed into the anchor instead of being visible as a wrong time.
+
+	Returns None rather than guessing when the value is missing or unparseable.
+	"""
+	return to_site_naive(value)
 
 
 # ─────────────────────────────── the guard ───────────────────────────────────
@@ -395,7 +407,9 @@ def _replay_scans(payload: dict, work_order: str) -> None:
 			item_code=item_code,
 			qr_payload=scan.get("code"),
 			csu_warehouse=scan.get("csu_warehouse") or csu,
-			scanned_at=scan.get("scanned_at"),
+			# Normalised here as well as in `register_csu_scan`: the raw ISO string
+			# went straight into the column and MariaDB refused it (1292).
+			scanned_at=_moment(scan.get("scanned_at")),
 			employee=employee,
 		)
 

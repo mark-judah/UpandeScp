@@ -304,3 +304,55 @@ class TestSchedulerAlignment(unittest.TestCase):
                 f"{job['job']} next runs at {nxt[11:16]}, not the {hour}:{minute} its "
                 "cron asks for",
             )
+
+
+class TestClientMomentsAreSiteLocal(unittest.TestCase):
+    """`to_site_naive` — the seam between a handset's clock and this database.
+
+    This exists because of a bug that reached the field. The RN app stamps every
+    offline moment with `Date.toISOString()`, which is UTC and ends in `Z`. Frappe's
+    `get_datetime` honours that offset and returns an *aware* datetime; everything
+    stored here is naive and in the ERP timezone. The mixture failed twice over —
+    `TypeError: can't compare offset-naive and offset-aware datetimes` when the
+    sync compared the moment against the transfer anchor, and MariaDB 1292
+    `Incorrect datetime value: '2026-09-02 21:18:00+00:00'` when a scan's raw
+    string went into the column — so a supervisor pressing "send this to the site"
+    got a refusal and their day's work stayed on the phone.
+    """
+
+    def test_utc_is_converted_not_stripped(self):
+        """The instant is real: `Z` must be *converted*, never merely discarded.
+
+        Stripping the offset is the tempting one-line fix and it is wrong. On a
+        site three hours ahead of UTC it dates a tank mix three hours before it was
+        mixed, and `resolve_moments` then clamps that forward to the anchor — so
+        the mistake is absorbed and never shows up as a visibly wrong time.
+        """
+        with site_timezone("Africa/Nairobi"):
+            got = TZ.to_site_naive("2026-09-03T00:15:00.000Z")
+        self.assertEqual(str(got), "2026-09-03 03:15:00")
+        self.assertIsNone(got.tzinfo, "must be naive to reach a datetime column")
+
+    def test_explicit_offset_is_honoured(self):
+        with site_timezone("Africa/Nairobi"):
+            got = TZ.to_site_naive("2026-09-02T21:15:00+00:00")
+        self.assertEqual(str(got), "2026-09-03 00:15:00")
+
+    def test_naive_input_is_left_alone(self):
+        """Server-side callers already speak site-local; do not shift them."""
+        with site_timezone("Africa/Nairobi"):
+            got = TZ.to_site_naive("2026-09-03 00:15:00")
+        self.assertEqual(str(got), "2026-09-03 00:15:00")
+
+    def test_result_compares_against_now(self):
+        """The actual crash: comparison against a naive server moment."""
+        with site_timezone("Africa/Nairobi"):
+            got = TZ.to_site_naive("2026-09-03T00:15:00.000Z")
+        try:
+            got < frappe.utils.now_datetime()
+        except TypeError as e:  # pragma: no cover - the regression itself
+            self.fail(f"still not comparable: {e}")
+
+    def test_missing_and_unparseable_return_none(self):
+        for value in (None, "", "not a date", []):
+            self.assertIsNone(TZ.to_site_naive(value), repr(value))

@@ -59,6 +59,45 @@ def erp_timezone() -> str:
 	return str(_single_value("System Settings", "time_zone") or FALLBACK)
 
 
+def to_site_naive(value):
+	"""A client timestamp as a naive datetime in the ERP's timezone.
+
+	The handsets stamp with JavaScript's `Date.toISOString()` — UTC, carrying a
+	`Z`. Frappe's `get_datetime` honours that offset and hands back an *aware*
+	datetime, while every timestamp stored on this side is naive and in the ERP
+	timezone. Mixing the two fails in two different places, both of which stopped
+	a real offline sync:
+
+	    TypeError: can't compare offset-naive and offset-aware datetimes
+	    OperationalError (1292): Incorrect datetime value: '2026-09-02 21:18:00+00:00'
+
+	so this is the one place where a client moment becomes a site moment.
+
+	It **converts**; it does not merely strip the offset. The instant the phone
+	recorded is real, and on a site three hours ahead of UTC, discarding `+00:00`
+	would date the work three hours before it happened — which `resolve_moments`
+	would then quietly absorb by clamping it forward to the transfer anchor, so
+	the error would never surface as a visibly wrong time.
+
+	Naive input is returned untouched: it is already in site terms. Anything
+	unparseable returns None rather than a guess.
+	"""
+	if not value:
+		return None
+	try:
+		moment = frappe.utils.get_datetime(value)
+	except Exception:
+		return None
+	if moment is None or getattr(moment, "tzinfo", None) is None:
+		return moment
+	name = erp_timezone()
+	if not is_valid(name):
+		# A site with an unusable timezone is broken in ways far beyond this
+		# function; treating the moment as UTC at least keeps the instant right.
+		name = FALLBACK
+	return moment.astimezone(ZoneInfo(name)).replace(tzinfo=None)
+
+
 def app_timezone() -> str:
 	"""The timezone this app renders in. Follows ERP unless overridden."""
 	override = (_single_value(SETTINGS, "app_timezone") or "").strip()

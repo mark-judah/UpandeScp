@@ -290,6 +290,23 @@ def _collect_labels(se_names: List[str], prefer_simple_qr: bool = False):
 		for it in (se.items or []):
 			items_by_code.setdefault(it.item_code, it)
 
+		# The traceable code minted when this transfer was submitted, keyed by the
+		# line it belongs to. The attached QR *image* has always encoded this, but
+		# the ZPL payload below encoded the human-readable text instead — so the
+		# same physical label carried different data depending on whether it came
+		# from the web PDF or the store's Bluetooth printer, and only the image
+		# matched what the handset verifies. One label, one payload.
+		codes_by_idx = {}
+		if frappe.db.table_exists("Chemical QR Label"):
+			codes_by_idx = {
+				r["se_line_idx"]: r["code"]
+				for r in frappe.get_all(
+					"Chemical QR Label",
+					filters={"stock_entry": se_name},
+					fields=["se_line_idx", "code"],
+				)
+			}
+
 		wo = wo_sched.get(se.work_order) if se.work_order else None
 		scheduled = _fmt_date(wo.custom_scheduled_application_time) if wo else ""
 		spray_type = (wo.custom_spray_type if wo else "") or ""
@@ -331,10 +348,21 @@ def _collect_labels(se_names: List[str], prefer_simple_qr: bool = False):
 					"scheduled": scheduled,
 					"spray_type": spray_type,
 					"greenhouse": greenhouse,
-					"qr_payload": build_chemical_qr_payload(
-						chem_name,
-						item.qty if item else None,
-						(item.stock_uom or "") if item else "",
+					# Prefer the traceable code. It identifies the chemical by
+					# surrogate, carries the quantity, and binds the label to its
+					# plan — none of which the text payload can express, which is
+					# why a drum from yesterday's job used to scan clean.
+					#
+					# The text form remains the fallback for a transfer submitted
+					# before codes were minted; those labels are still in
+					# circulation and the handset still reads them.
+					"qr_payload": (
+						codes_by_idx.get(item.idx if item else None)
+						or build_chemical_qr_payload(
+							chem_name,
+							item.qty if item else None,
+							(item.stock_uom or "") if item else "",
+						)
 					),
 				}
 			)

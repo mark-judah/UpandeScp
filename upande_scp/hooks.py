@@ -265,6 +265,15 @@ doc_events = {
         "on_update": "upande_scp.serverscripts.common.crop_protection.on_item_update",
     },
     "Orchard Tree": _SCP_CACHE_EVENTS,
+    # These four were declared in cache_utils' invalidation map but never
+    # hooked, so their entries were dead code and the cache never flushed for
+    # them. Map Settings was the visible one: setting a farm's coordinates left
+    # `get_map_settings` serving the old (0, 0) for a TTL_LONG window, so the
+    # maps still opened on open ocean long after the data was fixed.
+    "Map Settings": _SCP_CACHE_EVENTS,
+    "Farm Map Coordinate": _SCP_CACHE_EVENTS,
+    "Cost Center": _SCP_CACHE_EVENTS,
+    "Disease Filter": _SCP_CACHE_EVENTS,
     "Crop Scouted": _SCP_CACHE_EVENTS,
     "Tank And Valve": _SCP_CACHE_EVENTS,
     "Scouting and Crop Protection Settings": _SCP_CACHE_EVENTS,

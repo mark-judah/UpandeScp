@@ -103,15 +103,61 @@ def get_greenhouses_by_farm(farm=None):
     )
 
 
+#: How a site marks a bed as retired. ``upande_core``'s ``Bed`` declares no such
+#: field at all, so both of these are site-local custom fields and neither can be
+#: assumed: kaitet carries ``custom_active`` (Check, default 1), the v16 sites
+#: carry ``status`` (Select: Empty/Planted/Producing/Harvesting/Transplanted/
+#: Uprooted). Ordered most-specific first.
+_BED_RETIRED_FLAGS = (
+    ("custom_active", "custom_active = 1", {"custom_active": 1}),
+    ("status", "status != 'Uprooted'", {"status": ("!=", "Uprooted")}),
+)
+
+
+def _bed_active_flag():
+    """Return the ``(sql, filters)`` pair for excluding retired beds, or None.
+
+    Probing the schema rather than naming one field is the whole point. Hardcoding
+    ``custom_active`` is what produced, on a site that has ``status`` instead::
+
+        MySQLdb.OperationalError: (1054, "Unknown column 'custom_active' in 'WHERE'")
+
+    which took `get_beds_by_greenhouse` down, emptied the Application Plan's bed
+    map and left the area-to-spray permanently blank.
+
+    Only physically-gone beds are excluded. An ``Empty`` bed — no crop in it right
+    now — is still part of the greenhouse being sprayed, and on a v16 site it is
+    over a third of them, so treating Empty as retired would silently shrink every
+    computed area.
+
+    Returns ``None`` on a site carrying neither flag, which counts every bed. That
+    is the honest reading: with nothing recording retirement, there is nothing to
+    exclude.
+    """
+    for column, sql, filters in _BED_RETIRED_FLAGS:
+        if frappe.db.has_column("Bed", column):
+            return sql, filters
+    return None
+
+
+def bed_active_filters():
+    """``frappe.get_all`` filter fragment for non-retired beds. ``{}`` if none."""
+    flag = _bed_active_flag()
+    return dict(flag[1]) if flag else {}
+
+
 def get_beds_by_greenhouse(active_only=True):
     """Return {greenhouse: [{name, bed, unit_type, variety, bed__area}, ...]}.
 
-    Active-only by default (``custom_active = 1``) because retired beds should
-    not inflate denominators on dashboards or report totals.
+    Active-only by default because retired beds should not inflate denominators
+    on dashboards or report totals. Which column records that is resolved per
+    site — see ``_bed_active_flag``.
     """
     conditions = ["greenhouse IS NOT NULL", "greenhouse != ''"]
     if active_only:
-        conditions.append("custom_active = 1")
+        flag = _bed_active_flag()
+        if flag:
+            conditions.append(flag[0])
     rows = frappe.db.sql(
         f"""
         SELECT name, greenhouse, bed, unit_type, variety, bed_area AS bed__area

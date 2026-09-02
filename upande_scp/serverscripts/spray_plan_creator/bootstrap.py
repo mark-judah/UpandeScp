@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import frappe
+
+from upande_scp.serverscripts.common.tank_mix import tank_mix_item_group
 from frappe.utils import flt
 
 from upande_scp.serverscripts.geo.warehouse_filter import (
@@ -118,7 +120,7 @@ def fetch_creator_bootstrap() -> dict:
     # the per-row chemical-warehouse selector handles the actual
     # source restriction farm-side.
     bom_filters = {
-        "custom_item_group": "Chemical Mix",
+        "custom_item_group": tank_mix_item_group(),
         "is_active": 1,
         "docstatus": 1,
     }
@@ -200,17 +202,24 @@ def _empty_bootstrap() -> dict:
 
 
 def _fetch_rate_limits() -> dict:
-    """Build {item_code: {lower, upper}} from the Chemical/Foliar sidecars."""
+    """Build {item_code: {lower, upper}} from the Spray Product records.
+
+    Default limits only. The page seeds an input with these and validates
+    against them; a per-crop limit needs the crop, which the client sends with
+    the plan, so `crop_protection.get_product_rate(item, crop)` resolves it at
+    the point the plan is actually checked.
+    """
     out: dict = {}
-    for doctype in ("Chemical", "Foliar"):
-        for r in frappe.get_all(
-            doctype,
-            fields=["item", "default_lower_rate_limit", "default_upper_rate_limit"],
-        ):
-            lower = r.default_lower_rate_limit or None
-            upper = r.default_upper_rate_limit or None
-            if lower or upper:
-                out[r.item] = {"lower": lower, "upper": upper}
+    for r in frappe.get_all(
+        "Spray Product",
+        filters={"disabled": 0},
+        fields=["item", "default_lower_rate_limit", "default_upper_rate_limit"],
+        limit_page_length=0,
+    ):
+        lower = r.default_lower_rate_limit or None
+        upper = r.default_upper_rate_limit or None
+        if lower or upper:
+            out[r.item] = {"lower": lower, "upper": upper}
     return out
 
 

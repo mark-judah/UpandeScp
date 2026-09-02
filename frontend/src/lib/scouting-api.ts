@@ -933,7 +933,11 @@ export interface CreateBomArgs {
     item_name?: string;
     qty: number;
     stock_uom?: string;
-    rate?: number;
+    /** Dose per 1000 L. This is the field `create_bom.createBOM` actually
+     *  reads, and it rejects the row outright when it is missing or <= 0
+     *  ("Rate must be > 0 for '<name>' (row #n)"). The dialog used to send
+     *  only `qty: 1`, so every BOM creation failed for every user. */
+    custom_application_rate: number;
   }>;
   custom_greenhouse?: string;
   custom_farm?: string;

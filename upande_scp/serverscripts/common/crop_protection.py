@@ -1,15 +1,26 @@
-"""Crop-protection product resolution (Chemical / Foliar).
+"""Crop-protection product resolution.
 
-Single source of truth for "is this Item a chemical / foliar?" and for
-resolving a product's effective rate/targets for a crop. Replaces the old
-hardcoded, case-inconsistent `item_group in ("CHEMICALS"/...)` string tests.
+Single source of truth for "is this Item a spray product?" and for resolving a
+product's effective rate/targets for a crop. Replaces the old hardcoded,
+case-inconsistent `item_group in ("CHEMICALS"/...)` string tests.
 
-Which Item Groups hold chemicals vs foliars is configured on the settings
-Single (`chemical_item_groups` / `foliar_item_groups`), so the classification
-is data-driven. A product's metadata lives on the `Chemical` / `Foliar`
-sidecar doctype (1:1 with the Item); per-crop overrides live on
-`Chemical Crop Profile` / `Foliar Crop Profile`, falling back to the master's
-`default_*` values.
+Which Item Groups hold chemicals vs foliars is configured on the settings Single
+(`chemical_item_groups` / `foliar_item_groups`), so the classification stays
+data-driven — it now sets `Spray Product.category` rather than choosing between
+two doctypes.
+
+A product's metadata lives on the `Spray Product` sidecar (1:1 with the Item).
+Per-crop rate limits live in its `crop_rates` child table, falling back to the
+record's `default_lower_rate_limit` / `default_upper_rate_limit`.
+
+## Why one doctype
+
+This was `Chemical` and `Foliar`: identical field sets, plus a per-crop override
+doctype each (`Chemical Crop Profile`, `Foliar Crop Profile`). Every reader had
+to try both masters in turn, and the two override doctypes held zero rows on
+every site — the override that mattered was always just a rate. `category`
+carries the only distinction that does any work: which store the product is
+issued from.
 """
 
 import json
@@ -22,11 +33,12 @@ from frappe.utils import flt, get_datetime
 # The settings Single. Kept as a constant so a future rename touches one place.
 SETTINGS = "Scouting and Crop Protection Settings"
 
-# (master doctype, crop-profile doctype, profile link field)
-_PRODUCTS = (
-	("Chemical", "Chemical Crop Profile", "chemical"),
-	("Foliar", "Foliar Crop Profile", "foliar"),
-)
+#: The one product doctype.
+PRODUCT = "Spray Product"
+
+#: `category` values, matching the settings tables that assign them.
+CHEMICAL = "Chemical"
+FOLIAR = "Foliar"
 
 
 def _settings():
@@ -84,91 +96,103 @@ def is_foliar_group(item_group):
 	return classify_item_group(item_group) == "foliar"
 
 
+def _product_name(item_code, category=None):
+	"""Name of the Spray Product for `item_code`, or None.
+
+	A disabled product is deliberately still resolvable: it is disabled because
+	its Item left the configured groups, and existing BOMs, spray plans and QR
+	labels must keep resolving their rates and re-entry intervals. Filtering
+	happens where products are *offered*, not where they are read back.
+	"""
+	if not item_code:
+		return None
+	filters = {"item": item_code}
+	if category:
+		filters["category"] = category
+	return frappe.db.get_value(PRODUCT, filters, "name")
+
+
+def is_spray_product(item_code, category=None):
+	"""True when this Item has a Spray Product record, optionally of a category."""
+	return bool(_product_name(item_code, category))
+
+
 def is_chemical(item_code):
-	return bool(item_code and frappe.db.exists("Chemical", {"item": item_code}))
+	return is_spray_product(item_code, CHEMICAL)
 
 
 def is_foliar(item_code):
-	return bool(item_code and frappe.db.exists("Foliar", {"item": item_code}))
+	return is_spray_product(item_code, FOLIAR)
+
+
+def get_spray_product(item_code, category=None):
+	name = _product_name(item_code, category)
+	return frappe.get_cached_doc(PRODUCT, name) if name else None
 
 
 def get_chemical(item_code):
-	name = frappe.db.get_value("Chemical", {"item": item_code}, "name")
-	return frappe.get_cached_doc("Chemical", name) if name else None
+	return get_spray_product(item_code, CHEMICAL)
 
 
 def get_foliar(item_code):
-	name = frappe.db.get_value("Foliar", {"item": item_code}, "name")
-	return frappe.get_cached_doc("Foliar", name) if name else None
-
-
-def _master_for(item_code):
-	"""Return (master_doctype, master_name, profile_doctype, link_field) for the
-	product record (Chemical or Foliar) tied to `item_code`, or None."""
-	for master_dt, profile_dt, link in _PRODUCTS:
-		name = frappe.db.get_value(master_dt, {"item": item_code}, "name")
-		if name:
-			return master_dt, name, profile_dt, link
-	return None
+	return get_spray_product(item_code, FOLIAR)
 
 
 def get_product_rate(item_code, crop=None):
 	"""Effective (lower, upper) rate limits per 1000L.
 
-	Prefers the Chemical/Foliar sidecar (crop profile override -> master
-	default); falls back to the legacy Item custom fields when no sidecar
-	exists (e.g. fertilizers, or pre-migration items). This keeps behaviour
-	identical while making the sidecar authoritative for chemicals/foliars.
+	The `crop_rates` row for `crop` wins where it sets either bound; otherwise
+	the product's `default_*` limits apply. Returns `(None, None)` for an Item
+	with no Spray Product record, which callers already read as "no bound".
 	"""
-	resolved = _master_for(item_code)
-	if not resolved:
+	name = _product_name(item_code)
+	if not name:
 		return (None, None)
-	master_dt, name, profile_dt, link = resolved
 	if crop:
-		prof = frappe.db.get_value(
-			profile_dt, {link: name, "crop": crop},
-			["lower_rate_limit", "upper_rate_limit"], as_dict=True,
+		row = frappe.db.get_value(
+			"Spray Product Crop Rate",
+			{"parent": name, "parenttype": PRODUCT, "crop": crop},
+			["lower_rate_limit", "upper_rate_limit"],
+			as_dict=True,
 		)
-		if prof and (prof.lower_rate_limit or prof.upper_rate_limit):
-			return (prof.lower_rate_limit, prof.upper_rate_limit)
+		if row and (row.lower_rate_limit or row.upper_rate_limit):
+			return (row.lower_rate_limit, row.upper_rate_limit)
 	d = frappe.db.get_value(
-		master_dt, name,
+		PRODUCT, name,
 		["default_lower_rate_limit", "default_upper_rate_limit"], as_dict=True,
 	)
 	return (d.default_lower_rate_limit, d.default_upper_rate_limit) if d else (None, None)
 
 
 def get_product_targets(item_code, crop=None):
-	"""Effective target rows (list of {pest, disease}): crop profile if present
-	and non-empty, else master default_targets."""
-	resolved = _master_for(item_code)
-	if not resolved:
+	"""Target rows (list of {pest, disease}) for this product.
+
+	`crop` is accepted and ignored: targets are a property of the product, not
+	of the crop it is sprayed on. The per-crop override doctype that used to
+	hold them held zero rows on every site, and only rates were ever varied per
+	crop — which `crop_rates` now does. Kept in the signature so callers read
+	the same as `get_product_rate` beside them.
+	"""
+	name = _product_name(item_code)
+	if not name:
 		return []
-	master_dt, name, profile_dt, link = resolved
-	if crop:
-		profile_name = frappe.db.get_value(profile_dt, {link: name, "crop": crop}, "name")
-		if profile_name:
-			rows = frappe.get_all(
-				"Chemical Targets",
-				filters={"parent": profile_name, "parentfield": "targets"},
-				fields=["pest", "disease"],
-			)
-			if rows:
-				return rows
+	# `parenttype` matters: the record's name is the item code, so filtering on
+	# `parent` alone also matches the Item's own child rows.
 	return frappe.get_all(
 		"Chemical Targets",
-		filters={"parent": name, "parentfield": "default_targets"},
+		filters={
+			"parent": name,
+			"parenttype": PRODUCT,
+			"parentfield": "default_targets",
+		},
 		fields=["pest", "disease"],
 	)
 
 
 def get_product_type(item_code):
 	"""Product type (Insecticide/Fungicide/...) from the sidecar, else None."""
-	m = _master_for(item_code)
-	if not m:
-		return None
-	master_dt, name, _, _ = m
-	return frappe.db.get_value(master_dt, name, "type")
+	name = _product_name(item_code)
+	return frappe.db.get_value(PRODUCT, name, "type") if name else None
 
 
 def get_product_codes(item_code, kind):
@@ -176,13 +200,12 @@ def get_product_codes(item_code, kind):
 
 	kind: 'irac' | 'frac' | 'ghs'. Child doctype is e.g. 'IRAC Code Filter'.
 	"""
-	m = _master_for(item_code)
-	if not m:
+	name = _product_name(item_code)
+	if not name:
 		return []
-	master_dt, name, _, _ = m
 	rows = frappe.get_all(
 		f"{kind.upper()} Code Filter",
-		filters={"parent": name, "parenttype": master_dt, "parentfield": kind},
+		filters={"parent": name, "parenttype": PRODUCT, "parentfield": kind},
 		fields=["code"],
 	)
 	return [r.code for r in rows if r.code]
@@ -191,14 +214,11 @@ def get_product_codes(item_code, kind):
 def get_reentry_interval_hrs(item_code):
 	"""Re-entry interval (hours) from the product's sidecar, or 0.
 
-	Lives on both Chemical and Foliar, so `_master_for` resolves either.
-	Replaces the deleted `Item.custom_reentry_interval_hrs`.
+	Chemicals and foliars alike carry one. Replaces the deleted
+	`Item.custom_reentry_interval_hrs`.
 	"""
-	m = _master_for(item_code)
-	if not m:
-		return 0.0
-	master_dt, name, _, _ = m
-	return flt(frappe.db.get_value(master_dt, name, "reentry_interval_hrs"))
+	name = _product_name(item_code)
+	return flt(frappe.db.get_value(PRODUCT, name, "reentry_interval_hrs")) if name else 0.0
 
 
 @frappe.whitelist()
@@ -240,7 +260,21 @@ def crop_protection_item_codes(kind=None):
 	groups = product_groups(kind)
 	if not groups:
 		return []
-	return frappe.get_all("Item", filters={"item_group": ["in", groups]}, pluck="name")
+	codes = frappe.get_all("Item", filters={"item_group": ["in", groups]}, pluck="name")
+	if not codes:
+		return []
+	# Drop products that were disabled by an Item Group change. They stay
+	# resolvable by item code — existing BOMs and labels depend on that — but
+	# they are no longer offered anywhere a product is chosen.
+	disabled = set(
+		frappe.get_all(
+			PRODUCT,
+			filters={"item": ["in", codes], "disabled": 1},
+			pluck="item",
+			limit_page_length=0,
+		)
+	)
+	return [c for c in codes if c not in disabled]
 
 
 # Legacy Item custom_* fields copied into a new sidecar. Scalars first, then
@@ -283,71 +317,169 @@ def _copy_legacy_fields(item, doc):
 			                 if k not in _CHILD_STD and not str(k).startswith("_")})
 
 
+#: `classify_item_group` returns these; `Spray Product.category` stores these.
+_CATEGORY_BY_KIND = {"chemical": CHEMICAL, "foliar": FOLIAR}
+
+
 def ensure_product_record(item_code):
-	"""Create a Chemical/Foliar for an Item if its group is configured and none
-	exists, copying any legacy Item custom_* values. Returns (doctype, name)
-	when created, else None."""
+	"""Create a Spray Product for an Item whose group is configured, if absent.
+
+	Copies any legacy Item ``custom_*`` values. Returns ``(PRODUCT, name)`` when
+	one was created, else None.
+	"""
 	item_group = frappe.db.get_value("Item", item_code, "item_group")
-	kind = classify_item_group(item_group)
-	target = None
-	if kind == "chemical" and not is_chemical(item_code):
-		target = "Chemical"
-	elif kind == "foliar" and not is_foliar(item_code):
-		target = "Foliar"
-	if not target:
+	category = _CATEGORY_BY_KIND.get(classify_item_group(item_group))
+	if not category or is_spray_product(item_code):
 		return None
 	item = frappe.get_doc("Item", item_code)
-	doc = frappe.new_doc(target)
+	doc = frappe.new_doc(PRODUCT)
 	doc.item = item_code
+	doc.category = category
 	_copy_legacy_fields(item, doc)
 	doc.insert(ignore_permissions=True)
-	return (target, doc.name)
+	return (PRODUCT, doc.name)
+
+
+def sync_product_to_item_group(item_code):
+	"""Reconcile an Item's Spray Product with its current Item Group.
+
+	Three transitions, and the third is the one that had no handling at all:
+
+	* **Into** a configured group — create the record, or re-enable it if the
+	  Item is coming back.
+	* **Between** a chemical group and a foliar group — update ``category``, so
+	  the product starts being issued from the right store.
+	* **Out of** every configured group — set ``disabled``. The record, its
+	  rates, its IRAC/FRAC codes and its targets are kept, because BOMs, past
+	  spray plans and issued QR labels still reference it; deleting would break
+	  them and lose metadata the moment somebody re-groups the Item by mistake.
+
+	Returns a short verb describing what changed, or None. Idempotent.
+	"""
+	item_group = frappe.db.get_value("Item", item_code, "item_group")
+	category = _CATEGORY_BY_KIND.get(classify_item_group(item_group))
+	name = _product_name(item_code)
+
+	if not name:
+		return "created" if category and ensure_product_record(item_code) else None
+
+	current = frappe.db.get_value(
+		PRODUCT, name, ["category", "disabled"], as_dict=True
+	)
+
+	if not category:
+		if current.disabled:
+			return None
+		frappe.db.set_value(PRODUCT, name, "disabled", 1)
+		return "disabled"
+
+	changes = {}
+	if current.disabled:
+		changes["disabled"] = 0
+	if current.category != category:
+		changes["category"] = category
+	if not changes:
+		return None
+	frappe.db.set_value(PRODUCT, name, changes)
+	return "recategorised" if "category" in changes else "re-enabled"
 
 
 def on_item_after_insert(doc, method=None):
-	"""doc_events hook: auto-register a new chemical/foliar-group Item and tell
-	the user (a desk modal) that the sidecar record was created."""
+	"""doc_events hook: auto-register a new spray-product Item and say so."""
 	try:
 		result = ensure_product_record(doc.name)
 	except Exception:
 		frappe.logger().exception("crop_protection.on_item_after_insert failed")
 		return
 	if result:
-		doctype, name = result
-		route = frappe.scrub(doctype).replace("_", "-")
-		link = f"/app/{route}/{quote(name)}"
+		_, name = result
+		link = f"/app/spray-product/{quote(name)}"
 		frappe.msgprint(
-			f'Registered as {doctype}. <a href="{link}">Open the {doctype} record</a> '
+			f'Registered as a Spray Product. <a href="{link}">Open the record</a> '
 			"to add its metadata.",
 			title="Crop Protection",
 			indicator="green",
 		)
 
 
+def on_item_update(doc, method=None):
+	"""doc_events hook: follow the Item's group in and out of the configured set.
+
+	Only an ``item_group`` change is interesting, and Items are saved constantly
+	for unrelated reasons, so the hook exits immediately otherwise.
+	"""
+	before = doc.get_doc_before_save()
+	if before is not None and before.item_group == doc.item_group:
+		return
+	try:
+		action = sync_product_to_item_group(doc.name)
+	except Exception:
+		frappe.logger().exception("crop_protection.on_item_update failed")
+		return
+	if action == "disabled":
+		frappe.msgprint(
+			f"{doc.name} left the configured crop-protection Item Groups, so its "
+			"Spray Product record was disabled. Its rates and codes are kept — "
+			"move the Item back to re-enable it.",
+			title="Crop Protection",
+			indicator="orange",
+		)
+	elif action == "recategorised":
+		frappe.msgprint(
+			f"{doc.name} moved between chemical and foliar Item Groups. Its Spray "
+			"Product category was updated, so it will now be issued from the other "
+			"store.",
+			title="Crop Protection",
+			indicator="orange",
+		)
+
+
 @frappe.whitelist()
 def export_to_chemicals():
-	"""Backfill: ensure a Chemical exists for every Item under the configured
-	chemical groups. Idempotent."""
+	"""Backfill: ensure a Spray Product exists for every Item under the
+	configured chemical groups. Idempotent."""
 	return _export("chemical")
 
 
 @frappe.whitelist()
 def export_to_foliars():
-	"""Backfill: ensure a Foliar exists for every Item under the configured
-	foliar groups. Idempotent."""
+	"""Backfill: ensure a Spray Product exists for every Item under the
+	configured foliar groups. Idempotent."""
 	return _export("foliar")
 
 
+@frappe.whitelist()
+def resync_products():
+	"""Reconcile every Spray Product with its Item's current Item Group.
+
+	The settings-page counterpart to the `on_update` hook: an Item Group can be
+	added to or removed from the settings tables long after the Items in it were
+	last saved, and nothing re-examines them. This does.
+
+	Returns counts per action so the page can say what changed.
+	"""
+	from collections import Counter
+
+	tally = Counter()
+	for code in frappe.get_all(PRODUCT, pluck="item", limit_page_length=0):
+		tally[sync_product_to_item_group(code) or "unchanged"] += 1
+	for kind in ("chemical", "foliar"):
+		for code in crop_protection_item_codes(kind):
+			if not is_spray_product(code) and ensure_product_record(code):
+				tally["created"] += 1
+	frappe.db.commit()
+	return dict(tally)
+
+
 def item_dashboard(data):
-	"""override_doctype_dashboards hook: link an Item to its Chemical/Foliar
-	sidecar (both linked via their ``item`` field)."""
+	"""override_doctype_dashboards hook: link an Item to its Spray Product
+	(linked via the ``item`` field, not by name)."""
 	data.setdefault("non_standard_fieldnames", {})
-	data["non_standard_fieldnames"]["Chemical"] = "item"
-	data["non_standard_fieldnames"]["Foliar"] = "item"
+	data["non_standard_fieldnames"][PRODUCT] = "item"
 	data.setdefault("transactions", [])
 	data["transactions"].append({
 		"label": "Crop Protection",
-		"items": ["Chemical", "Foliar"],
+		"items": [PRODUCT],
 	})
 	return data
 

@@ -361,3 +361,78 @@ these while building the doctypes this spec now consolidates:
 4. **`Spray Product.name == item code`**, inherited from `Chemical`. Child-table
    queries filtered by `parent` alone double-count Item rows against product
    rows — always filter by `parenttype` as well.
+
+---
+
+# Implementation record
+
+Built 2026-09-02, verified on `kaitet.local`. What shipped, and where it differs
+from the design above.
+
+## Found during implementation, not in the original design
+
+Three defects surfaced while building and are fixed here:
+
+1. **`upande_core`'s `Farm.farm_type` blocks every app.** It is a
+   `Table MultiSelect` carrying `in_list_view: 1`, a combination Frappe forbids —
+   and Frappe validates the whole doctype whenever a Custom Field is added to it.
+   So `Farm` could not be extended by anybody, which is the real reason
+   `spray_plan_approvers` never existed. Patch in
+   `docs/upande_core_patches/farm-type-not-in-list-view.patch`; SCP also repairs
+   the flag itself on `after_migrate`, because the failure is silent.
+2. **Seed-data patches never run on a fresh install.**
+   `installer.install_app` calls `set_all_patches_as_completed(app)`, marking
+   every entry in `patches.txt` done without executing it. That is correct for a
+   schema patch and wrong for a seeding one: `kaitetv16-staging` had **none** of
+   the four spray Stock Entry Types, so `approve_and_forward` could not set
+   `stock_entry_type` at all. Now ensured on `after_migrate`
+   (`spray_stock_types.ensure_spray_stock_entry_types`).
+3. **The farm name-parse was wrong on kaitet, not merely unportable.** It
+   disagreed with `Warehouse.custom_farm` on **51 of the 158** linked
+   greenhouses.
+
+## Deviations from the design
+
+**`Spray Team.custom_farm` left alone** (design §2 proposed a `farm` field).
+`common/farm_fields.py` already owns it declaratively with deliberate
+create-only semantics. Renaming would churn ~325 references for no gain.
+
+**The store name-prefix fallback was kept, not deleted** (design §3 said delete).
+Five kaitet farms — Lokitela, Saboti, Vale, Chepsito, Endebess — have a chemical
+store warehouse but no `Farm.custom_chemical_store` link, so deleting the
+fallback would have silently disabled loaning for them. It now lives in one
+module (`common/stores.py`) instead of six, is clearly secondary to the link, and
+`stores.unmapped_farms()` names exactly who depends on it. Map those five and the
+fallback can go.
+
+**`chemical_name` was renamed to `product_name`**, not kept. The doctype holds
+foliars now.
+
+**The consolidation is two patches, not one.** `rename_chemical_to_spray_product`
+(pre_model_sync) does schema identity; `consolidate_spray_products`
+(post_model_sync) does the data. One patch cannot do both: the fields the data
+half writes (`category`, `crop_rates`) do not exist until the sync between them
+creates them.
+
+## Results on kaitet
+
+| | |
+| --- | --- |
+| Spray Products | 710 — 479 Chemical + 231 Foliar |
+| Foliars skipped | 2, both with a deleted Item (`_test_scp_proc_a/b`) |
+| Doctypes removed | `Foliar`, `Chemical Crop Profile`, `Foliar Crop Profile` |
+| Stray QR labels found | 34, across 13 non-AFP stock entries |
+| Tests | 260 backend, 194 frontend, all passing |
+
+`bench migrate` runs clean twice in a row, and `test_manager_permissions` carries
+one pre-existing Stock Entry failure unrelated to this work (confirmed by
+stashing every change and re-running).
+
+## Follow-ups this work surfaced but did not take
+
+- `Farm.farm_type` is `reqd: 1` yet ~10 of 11 kaitet farms have no value.
+- `Warehouse.custom_farm` on kaitet points at `Chepsito` and `Endebess`, neither
+  of which is a `Farm` record.
+- 2,993 staging beds have `bed_area = 0`, so their greenhouses compute no area.
+- Five farms need their `custom_chemical_store` / `custom_fertilizer_store` links
+  set; see `stores.unmapped_farms()`.

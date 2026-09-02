@@ -212,6 +212,26 @@ function rateLimitError(
   return null;
 }
 
+/** A chemical staged in the "create tank mix" dialog. The dose is held as the
+ *  raw input string so a half-typed "0." doesn't collapse to 0 mid-keystroke;
+ *  it is parsed once, at submit. */
+export type NewBomChem = ChemicalItem & { rate?: string };
+
+/** Rows whose dose the server would reject, with the reason.
+ *
+ *  `create_bom.createBOM` requires `custom_application_rate > 0` on every row
+ *  and fails the whole call on the first bad one. Checking here means the
+ *  operator sees which row is wrong, inline, instead of a single
+ *  "Rate must be > 0 for 'X' (row #1)" toast after a round-trip. */
+export function newBomRateError(chem: NewBomChem): string | null {
+  const raw = (chem.rate ?? "").trim();
+  if (!raw) return "Dose required.";
+  const rate = Number(raw);
+  if (!Number.isFinite(rate)) return "Not a number.";
+  if (rate <= 0) return "Must be greater than 0.";
+  return null;
+}
+
 export function ApplicationPlan() {
   const [bootstrap, setBootstrap] = useState<CreatorBootstrap | null>(null);
   const [bootstrapError, setBootstrapError] = useState<{ status: number; message: string } | null>(null);
@@ -292,7 +312,7 @@ export function ApplicationPlan() {
   const [newBomItem, setNewBomItem] = useState<string>("");
   const [newBomPh, setNewBomPh] = useState<string>("7");
   const [newBomHardness, setNewBomHardness] = useState<string>("100");
-  const [newBomChems, setNewBomChems] = useState<ChemicalItem[]>([]);
+  const [newBomChems, setNewBomChems] = useState<NewBomChem[]>([]);
   const [newBomSearch, setNewBomSearch] = useState<string>("");
   const [newBomSearchResults, setNewBomSearchResults] = useState<ChemicalItem[]>(
     [],
@@ -1263,11 +1283,23 @@ export function ApplicationPlan() {
       );
       return;
     }
-    setNewBomChems((prev) => [...prev, it]);
+    // Seed the dose from the chemical's own configured lower limit. It is the
+    // lowest rate the server will accept for this product, so it is both a safe
+    // default and one the operator can only revise upward — never a number this
+    // page invented.
+    const seeded = rateLimits[it.item_code]?.lower ?? null;
+    setNewBomChems((prev) => [
+      ...prev,
+      { ...it, rate: seeded != null && seeded > 0 ? String(seeded) : "" },
+    ]);
     setNewBomSearch("");
   };
   const removeNewBomChem = (code: string) =>
     setNewBomChems((prev) => prev.filter((c) => c.item_code !== code));
+  const updateNewBomChemRate = (code: string, rate: string) =>
+    setNewBomChems((prev) =>
+      prev.map((c) => (c.item_code === code ? { ...c, rate } : c)),
+    );
 
   const submitNewBom = async () => {
     if (!newBomItem.trim()) {
@@ -1276,6 +1308,16 @@ export function ApplicationPlan() {
     }
     if (!newBomChems.length) {
       pushToast("err", "Add at least one chemical to the tank mix.");
+      return;
+    }
+    // Every row needs a dose the server will accept. Report the first offender
+    // by name — the server would too, but only after a round-trip.
+    const bad = newBomChems.find((c) => newBomRateError(c));
+    if (bad) {
+      pushToast(
+        "err",
+        `${bad.item_name || bad.item_code}: ${newBomRateError(bad)}`,
+      );
       return;
     }
     setCreatingBom(true);
@@ -1288,7 +1330,10 @@ export function ApplicationPlan() {
         items: newBomChems.map((c) => ({
           item_code: c.item_code,
           item_name: c.item_name,
-          qty: 1,
+          // The BOM is defined per 1000 L, so the dose IS the quantity. `qty`
+          // was hardcoded to 1 here while the rate was never sent at all.
+          qty: Number(c.rate),
+          custom_application_rate: Number(c.rate),
           stock_uom: c.stock_uom,
         })),
         custom_greenhouse: greenhouse || undefined,
@@ -2549,12 +2594,21 @@ export function ApplicationPlan() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Chemical</TableHead>
+                      <TableHead className="w-32">Dose / 1000 L</TableHead>
                       <TableHead>UoM</TableHead>
                       <TableHead className="w-8" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {newBomChems.map((c) => (
+                    {newBomChems.map((c) => {
+                      const rateErr = newBomRateError(c);
+                      const limit = rateLimits[c.item_code];
+                      const outOfRange = rateLimitError(
+                        c.item_code,
+                        Number(c.rate),
+                        rateLimits,
+                      );
+                      return (
                       <TableRow key={c.item_code}>
                         <TableCell className="text-xs">
                           <div className="font-medium">
@@ -2563,6 +2617,35 @@ export function ApplicationPlan() {
                           <div className="text-[0.65rem] text-muted-foreground font-mono">
                             {c.item_code}
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="any"
+                            inputMode="decimal"
+                            className="h-7 text-xs"
+                            aria-label={`Dose per 1000 L for ${c.item_name || c.item_code}`}
+                            aria-invalid={rateErr ? true : undefined}
+                            value={c.rate ?? ""}
+                            placeholder="0.00"
+                            onChange={(e) =>
+                              updateNewBomChemRate(c.item_code, e.target.value)
+                            }
+                          />
+                          {rateErr ? (
+                            <p className="mt-0.5 text-[0.65rem] text-destructive">
+                              {rateErr}
+                            </p>
+                          ) : outOfRange ? (
+                            <p className="mt-0.5 text-[0.65rem] text-amber-600">
+                              {outOfRange}
+                            </p>
+                          ) : limit?.lower != null || limit?.upper != null ? (
+                            <p className="mt-0.5 text-[0.65rem] text-muted-foreground">
+                              {limit.lower ?? "—"} – {limit.upper ?? "—"}
+                            </p>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-xs">
                           {c.stock_uom || ""}
@@ -2578,7 +2661,8 @@ export function ApplicationPlan() {
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -2591,7 +2675,14 @@ export function ApplicationPlan() {
               >
                 Cancel
               </Button>
-              <Button onClick={submitNewBom} disabled={creatingBom}>
+              <Button
+                onClick={submitNewBom}
+                disabled={
+                  creatingBom ||
+                  !newBomChems.length ||
+                  newBomChems.some((c) => newBomRateError(c))
+                }
+              >
                 {creatingBom ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : null}

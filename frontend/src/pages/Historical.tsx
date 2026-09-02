@@ -146,6 +146,10 @@ export function Historical() {
       >
           <DatePicker value={from} onChange={setFrom} />
           <DatePicker value={to} onChange={setTo} />
+          {/* Only worth showing when there is a choice to make. The server
+              returns the farms this user may see, so a single-farm user gets a
+              picker with exactly one option — noise, not a control. */}
+          {data.farms.length > 1 && (
           <Select
             value={farm}
             onValueChange={(v) => {
@@ -165,6 +169,7 @@ export function Historical() {
               ))}
             </SelectContent>
           </Select>
+          )}
           <Select value={greenhouse} onValueChange={setGreenhouse}>
             <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
               <SelectValue />

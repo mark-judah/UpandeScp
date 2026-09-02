@@ -273,6 +273,91 @@ def scoped_greenhouses(crop: str | None = None, user: str | None = None) -> set[
 	return houses
 
 
+#: The `Farm` child tables that roster a user onto a farm, by the job they do.
+#: A roster answers "which farms were you put on"; `allowed_farms` answers
+#: "which farms does your company have". Both have to hold.
+ROSTER_FIELDS = {
+	"spray_plan_creators": "Farm Spray Plan Creator",
+	"spray_plan_approvers": "Farm Spray Plan Approver",
+	"store_keepers": "Farm Store Keeper",
+}
+
+
+def rostered_farms(roster_field: str, user: str | None = None) -> set[str]:
+	"""Farms whose ``roster_field`` child table names this user.
+
+	Always a set — never the `None` sentinel. Not being on a roster is not the
+	same as being unrestricted, and conflating the two is how a store keeper
+	ended up seeing every farm in the group.
+	"""
+	child = ROSTER_FIELDS.get(roster_field)
+	if not child or not frappe.db.table_exists(child):
+		return set()
+	return {
+		row["parent"]
+		for row in frappe.get_all(
+			child,
+			filters={"user": _user(user), "parenttype": "Farm"},
+			fields=["parent"],
+		)
+		if row.get("parent")
+	}
+
+
+def visible_farms(
+	roster_field: str | None = None,
+	crop: str | None = None,
+	user: str | None = None,
+) -> set[str] | None:
+	"""The farms this user may see: roster ∩ company scope (∩ crop, if given).
+
+	One rule for the loaning page, the historical list and the tank-mix list,
+	all three of which previously applied no farm scope at all — the loaning
+	page offered every farm with a chemical store, and the historical page built
+	its dropdown from raw SQL over every Work Order on the site, which
+	`permission_query_conditions` cannot reach.
+
+	`None` means unrestricted and is returned **only** for Administrator and
+	System Manager (`BYPASS_ROLES`). An `SCP General Manager` is scoped like
+	everybody else: a general manager belongs to a company just as anyone does,
+	which is the same reasoning `allowed_companies` already documents.
+
+	When `roster_field` is omitted the company scope alone applies — right for a
+	read that is not tied to a particular job, such as listing tank mixes.
+
+	An empty set means nothing is visible. Never everything.
+	"""
+	scope = scoped_farms(crop, user)
+	if roster_field is None:
+		return scope
+	roster = rostered_farms(roster_field, user)
+	if scope is None:
+		# Unrestricted: a roster would only narrow an explicit bypass, and an
+		# administrator with no roster row would see nothing at all.
+		return None
+	return scope & roster
+
+
+def visible_farm_list(
+	roster_field: str | None = None,
+	crop: str | None = None,
+	user: str | None = None,
+) -> list[str]:
+	"""``visible_farms`` as a sorted list, resolving `None` to every farm.
+
+	For endpoints that must return a concrete dropdown. The `None` sentinel is
+	deliberately not leaked to the UI — a caller that forgets to handle it would
+	turn "unrestricted" into "no farms".
+	"""
+	farms = visible_farms(roster_field, crop, user)
+	if farms is None:
+		# Sorted in Python, not by the database: MySQL's default collation is
+		# case-insensitive, so "_Test" and "cheptiret" land in a different place
+		# than every other sorted list this app produces.
+		return sorted(frappe.get_all("Farm", pluck="name"))
+	return sorted(farms)
+
+
 # ─────────────────────────── permission hooks ────────────────────────────────
 
 

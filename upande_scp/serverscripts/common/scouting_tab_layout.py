@@ -14,7 +14,7 @@ TAB_LABEL = "Scouting and Crop Protection"
 # Declared locally, as every other module does (spray_session, lifecycle,
 # auto_material_issue, ...) — layout code must not import the resolver.
 AFP_TYPE = "Application Floor Plan"
-CHEMICAL_MIX = "Chemical Mix"
+from ..common.tank_mix import tank_mix_item_group
 
 # Ordered SCP fields per doctype (display order under the tab).
 SCP_FIELDS = {
@@ -99,7 +99,7 @@ TAB_DEPENDS_ON = {
     # (stamped by bom_resolver.create_bom_for_plan + store.create_bom, read back
     # by bom_resolver.cancel_orphan_plan_bom).
     "Work Order": f'eval:doc.custom_type=="{AFP_TYPE}"',
-    "BOM": f'eval:doc.custom_item_group=="{CHEMICAL_MIX}"',
+    "BOM": f'eval:doc.custom_item_group=="{tank_mix_item_group()}"',
 }
 
 

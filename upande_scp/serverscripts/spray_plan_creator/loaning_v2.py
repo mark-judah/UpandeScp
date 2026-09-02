@@ -29,6 +29,9 @@ from __future__ import annotations
 import json
 
 import frappe
+
+from upande_scp.serverscripts.common import crop_scope
+from upande_scp.serverscripts.common import stores
 from frappe.utils import flt, now_datetime
 
 from upande_scp.serverscripts.common.crop_protection import is_foliar_group
@@ -80,21 +83,7 @@ def _stores_of_kind(farm: str, kind: str) -> list[str]:
     store lock uses, and falls back to a name match for farms that were never
     mapped.
     """
-    if not farm:
-        return []
-    field = "custom_fertilizer_store" if kind == "foliar" else "custom_chemical_store"
-    mapped = frappe.db.get_value("Farm", farm, field)
-    if mapped:
-        return [mapped]
-    prefix = "Fertilizer Store%" if kind == "foliar" else "Chemical Store%"
-    return frappe.get_all(
-        "Warehouse",
-        filters={
-            "custom_farm": farm, "is_group": 0, "disabled": 0,
-            "name": ("like", prefix),
-        },
-        pluck="name",
-    )
+    return stores.farm_stores(farm, "foliar" if kind == "foliar" else "chemical")
 
 
 def store_for(farm: str, item_code: str) -> str | None:
@@ -141,31 +130,24 @@ def list_lender_farms(requesting_farm: str) -> list[str]:
     _ensure_enabled()
     _ensure_creator()
     _assert_farm_access(requesting_farm)
-    rows = frappe.get_all(
-        "Warehouse",
-        filters={
-            "is_group": 0, "disabled": 0, "custom_farm": ("is", "set"),
-        },
-        or_filters=[
-            ["name", "like", "Chemical Store%"],
-            ["name", "like", "Fertilizer Store%"],
-        ],
-        fields=["custom_farm"],
-        distinct=True,
-    )
-    farms = {r.custom_farm for r in rows if r.custom_farm}
-    # Farms mapped explicitly count even if their store is named unusually.
-    for f in frappe.get_all(
-        "Farm",
-        or_filters=[
-            ["custom_chemical_store", "is", "set"],
-            ["custom_fertilizer_store", "is", "set"],
-        ],
-        pluck="name",
-    ):
-        farms.add(f)
-    farms.discard(requesting_farm)
-    return sorted(farms)
+
+    # A farm can lend only what it has a store for. `Farm.custom_chemical_store`
+    # / `custom_fertilizer_store` are that mapping — the `LIKE 'Chemical Store%'`
+    # sweep this replaces enumerated every farm on the site by warehouse-name
+    # convention, which is both a naming assumption and, on any site with more
+    # than one company, a disclosure: the borrower saw farms they have no
+    # business borrowing from.
+    lenders = set(stores.farms_with_stores())
+
+    # Then narrow to what this borrower may see at all. Loaning is a
+    # farm-to-farm transfer inside one company; crossing a company boundary is
+    # not a loan, it is a sale.
+    visible = crop_scope.visible_farms(user=frappe.session.user)
+    if visible is not None:
+        lenders &= visible
+
+    lenders.discard(requesting_farm)
+    return sorted(lenders)
 
 
 @frappe.whitelist()

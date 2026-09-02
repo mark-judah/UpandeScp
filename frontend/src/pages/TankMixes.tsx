@@ -106,6 +106,9 @@ export function TankMixes() {
               className="h-9 pl-7"
             />
           </div>
+          {/* See Historical: a one-option picker is noise. `farms` is already
+              scoped server-side to what this user may see. */}
+          {farms.length > 1 && (
           <Select value={farm} onValueChange={setFarm}>
             <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
               <SelectValue />
@@ -119,6 +122,7 @@ export function TankMixes() {
               ))}
             </SelectContent>
           </Select>
+          )}
           <Select
             value={activeOnly ? "active" : "all"}
             onValueChange={(v) => setActiveOnly(v === "active")}

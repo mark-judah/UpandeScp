@@ -12,7 +12,10 @@ is mostly a safety net — edits flush immediately.
 
 import frappe
 
+from upande_scp.serverscripts.common.tank_mix import tank_mix_item_group
+
 from upande_scp.serverscripts.common import crop_scope
+from upande_scp.serverscripts.common import farm_map
 
 from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.common.cache_utils import (
@@ -220,23 +223,41 @@ def list_tank_mixes(farm=None, q=None, active_only=1, limit=200):
     pull the same data over a single round-trip instead of replicating
     the multi-table fetch on the client.
     """
-    bom_filters = [["BOM", "custom_item_group", "=", "Chemical Mix"]]
+    bom_filters = [["BOM", "custom_item_group", "=", tank_mix_item_group()]]
     if str(active_only).strip() in ("1", "true", "yes"):
         bom_filters.append(["BOM", "is_active", "=", 1])
+
+    # Farm scope. A tank mix is a farm's recipe, and this list had none at all —
+    # every user saw every farm's mixes and the farm dropdown was built from
+    # whatever happened to be on the page.
+    visible = crop_scope.visible_farms(user=frappe.session.user)
     if farm:
+        if visible is not None and farm not in visible:
+            return {"tank_mixes": [], "farms": []}
         bom_filters.append(["BOM", "custom_farm", "=", farm])
+    elif visible is not None:
+        if not visible:
+            return {"tank_mixes": [], "farms": []}
+        bom_filters.append(["BOM", "custom_farm", "in", sorted(visible)])
     if q:
         bom_filters.append(["BOM", "item", "like", f"%{q}%"])
+
+    # `custom_business_unit` is an ERPNext Accounting Dimension, so it exists
+    # only where that dimension is configured. Naming it unconditionally is an
+    # unknown-column crash on every site that has not enabled it.
+    bom_fields = [
+        "name",
+        "item",
+        "item_name",
+        "custom_farm",
+    ]
+    if frappe.db.has_column("BOM", "custom_business_unit"):
+        bom_fields.append("custom_business_unit")
 
     boms = frappe.get_list(
         "BOM",
         filters=bom_filters,
-        fields=[
-            "name",
-            "item",
-            "item_name",
-            "custom_farm",
-            "custom_business_unit",
+        fields=bom_fields + [
             "custom_water_ph",
             "custom_water_hardness",
             "uom",
@@ -276,9 +297,12 @@ def list_tank_mixes(farm=None, q=None, active_only=1, limit=200):
         b["chemicals"] = items_by_bom.get(b["name"], [])
         b["item_count"] = len(b["chemicals"])
         b["total_amount"] = sum(c.get("amount") or 0 for c in b["chemicals"])
+    # The dropdown lists the farms this user may see, not merely the farms that
+    # happen to appear on this page of results — otherwise filtering to a farm
+    # makes every other farm vanish from the picker.
     return {
         "tank_mixes": boms,
-        "farms": sorted({b.get("custom_farm") for b in boms if b.get("custom_farm")}),
+        "farms": crop_scope.visible_farm_list(),
     }
 
 
@@ -341,16 +365,13 @@ def list_application_work_orders(
         order_by="custom_scheduled_application_time desc, creation desc",
         limit=int(limit) or 200,
     )
+    # Farm scoping by the `Warehouse.custom_farm` link. This used to split the
+    # greenhouse name on " - " and fall back to a case-insensitive substring
+    # test, which both hardcoded one site's naming convention and matched the
+    # wrong farm whenever one farm's name is a substring of another's.
     if farm:
-        f_low = farm.lower()
-        rows = [
-            w for w in rows
-            if w.get("custom_greenhouse")
-            and (
-                w["custom_greenhouse"].split(" - ")[-1] == farm
-                or f_low in (w["custom_greenhouse"] or "").lower()
-            )
-        ]
+        farm_ghs = set(farm_map.greenhouses_for_farm(farm))
+        rows = [w for w in rows if w.get("custom_greenhouse") in farm_ghs]
     for w in rows:
         ds = w.get("docstatus")
         w["status_label"] = (
@@ -360,25 +381,38 @@ def list_application_work_orders(
             "approved" if ds == 1 else "cancelled" if ds == 2 else "pending"
         )
 
-    ghs = frappe.db.sql(
-        """
-        SELECT DISTINCT custom_greenhouse
-        FROM `tabWork Order`
-        WHERE custom_type = 'Application Floor Plan'
-          AND custom_greenhouse IS NOT NULL AND custom_greenhouse != ''
-        ORDER BY custom_greenhouse
-        """,
-        as_dict=True,
+    # The filter dropdowns. Two things were wrong here and both mattered.
+    #
+    # 1. Scope. This was raw SQL over every Application Floor Plan on the site,
+    #    which `permission_query_conditions` cannot reach — so the rows above
+    #    were correctly narrowed to the user while the dropdown beside them
+    #    listed every farm and greenhouse in the company. That is the "we can
+    #    see all the farms under Historical" report.
+    # 2. The farm name itself came from splitting the greenhouse name on " - ",
+    #    which yields the site suffix ("KR"), not a Farm.
+    #
+    # Now both come from the user's visible farms and the warehouse link.
+    visible = crop_scope.visible_farms(roster_field="spray_plan_creators")
+    gh_rows = frappe.get_all(
+        "Work Order",
+        filters=[
+            ["custom_type", "=", "Application Floor Plan"],
+            ["custom_greenhouse", "is", "set"],
+        ],
+        fields=["custom_greenhouse"],
+        group_by="custom_greenhouse",
+        order_by="custom_greenhouse asc",
+        limit_page_length=0,
     )
-    farms = sorted({
-        (g["custom_greenhouse"] or "").split(" - ")[-1]
-        for g in ghs
-        if g["custom_greenhouse"]
-    })
+    seen_ghs = [g["custom_greenhouse"] for g in gh_rows if g["custom_greenhouse"]]
+    farm_by_gh = farm_map.farms_for_warehouses(seen_ghs)
+    if visible is not None:
+        seen_ghs = [g for g in seen_ghs if farm_by_gh.get(g) in visible]
+    farms = sorted({farm_by_gh[g] for g in seen_ghs if farm_by_gh.get(g)})
     return {
         "work_orders": rows,
-        "greenhouses": [g["custom_greenhouse"] for g in ghs],
-        "farms": [f for f in farms if f],
+        "greenhouses": seen_ghs,
+        "farms": farms,
     }
 
 
@@ -688,7 +722,7 @@ def get_application_plan_bootstrap():
         "boms": frappe.get_all(
             "BOM",
             filters={
-                "custom_item_group": "Chemical Mix",
+                "custom_item_group": tank_mix_item_group(),
                 "is_active": 1,
                 "docstatus": 1,
             },

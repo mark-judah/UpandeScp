@@ -7,7 +7,9 @@
  "engine": "InnoDB",
  "field_order": [
   "item",
-  "foliar_name",
+  "product_name",
+  "category",
+  "disabled",
   "type",
   "classification_section",
   "active_ingredients",
@@ -28,6 +30,7 @@
   "low_stock_threshold",
   "default_lower_rate_limit",
   "default_upper_rate_limit",
+  "crop_rates",
   "default_targets",
   "default_requirements",
   "qr_item_id"
@@ -46,10 +49,29 @@
   },
   {
    "fetch_from": "item.item_name",
-   "fieldname": "foliar_name",
+   "fieldname": "product_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Foliar Name"
+   "label": "Product Name"
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "label": "Category",
+   "options": "Chemical\nFoliar",
+   "default": "Chemical",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Set from the Item's Item Group via the Chemicals tab of Scouting and Crop Protection Settings. Decides which store the product is issued from."
+  },
+  {
+   "fieldname": "disabled",
+   "fieldtype": "Check",
+   "label": "Disabled",
+   "default": "0",
+   "in_standard_filter": 1,
+   "description": "Set automatically when the Item leaves every configured chemical/foliar Item Group. The record and its rates are kept so existing BOMs, spray plans and QR labels still resolve."
   },
   {
    "fieldname": "type",
@@ -152,7 +174,7 @@
    "non_negative": 1
   },
   {
-   "description": "Default lower application rate; per-crop overrides live on Foliar Crop Profile.",
+   "description": "Default lower application rate; per-crop overrides live on Chemical Crop Profile.",
    "fieldname": "default_lower_rate_limit",
    "fieldtype": "Float",
    "label": "Default Lower Rate Limit (per 1000L)",
@@ -163,6 +185,13 @@
    "fieldtype": "Float",
    "label": "Default Upper Rate Limit (per 1000L)",
    "non_negative": 1
+  },
+  {
+   "fieldname": "crop_rates",
+   "fieldtype": "Table",
+   "label": "Per-Crop Rates",
+   "options": "Spray Product Crop Rate",
+   "description": "Dose limits per crop. A crop with no row here falls back to the default limits above."
   },
   {
    "fieldname": "default_targets",
@@ -177,7 +206,7 @@
    "options": "Chemical Requirements"
   },
   {
-   "description": "Stable small integer encoded in this chemical's label codes. Allocated once from a single shared counter and never reused \u2014 the allocator is what guarantees uniqueness, since a unique index cannot be added over rows that all default to 0.",
+   "description": "Stable small integer encoded in this chemical's label codes. Allocated once from a single shared counter and never reused — the allocator is what guarantees uniqueness, since a unique index cannot be added over rows that all default to 0.",
    "fieldname": "qr_item_id",
    "fieldtype": "Int",
    "label": "QR Item Id",
@@ -190,14 +219,14 @@
  "links": [
   {
    "group": "Crop Configuration",
-   "link_doctype": "Foliar Crop Profile",
-   "link_fieldname": "foliar"
+   "link_doctype": "Chemical Crop Profile",
+   "link_fieldname": "chemical"
   }
  ],
  "modified": "2026-07-22 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
- "name": "Foliar",
+ "name": "Spray Product",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
@@ -256,5 +285,5 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "foliar_name"
+ "title_field": "chemical_name"
 }

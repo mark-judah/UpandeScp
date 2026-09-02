@@ -25,6 +25,9 @@ import json
 from typing import Any
 
 import frappe
+
+from upande_scp.serverscripts.common import crop_scope
+from upande_scp.serverscripts.common import stores
 from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
 from upande_scp.serverscripts.common.crop_protection import product_groups
@@ -65,11 +68,18 @@ def _ensure_creator():
 
 
 def _user_farms(user: str | None = None) -> set[str] | None:
-    """Farms the user may act for, or None for unscoped (GM / admin)."""
+    """Farms the user may act for, or None for unscoped.
+
+    Unscoped is now Administrator and System Manager only. `ELEVATED` includes
+    `SCP General Manager`, and using it here meant a GM borrowed for, and lent
+    from, every farm on the site regardless of company — the "I can see all
+    farms in all perspectives" report. A general manager belongs to a company
+    like anyone else (see `crop_scope.BYPASS_ROLES`).
+    """
     user = user or frappe.session.user
-    if set(frappe.get_roles(user)) & ELEVATED:
-        return None
-    return set(_resolve_user_scope(user).get("farms") or [])
+    return crop_scope.visible_farms(
+        roster_field="spray_plan_creators", user=user
+    )
 
 
 def _assert_farm_access(farm: str) -> None:
@@ -86,27 +96,15 @@ def _assert_farm_access(farm: str) -> None:
 
 
 def _farm_chemical_stores(farm: str) -> list[str]:
-    if not farm:
-        return []
-    return frappe.get_all(
-        "Warehouse",
-        filters={
-            "custom_farm": farm,
-            "is_group": 0,
-            "disabled": 0,
-            "name": ("like", "Chemical Store%"),
-        },
-        pluck="name",
-    )
+    """Delegates to `common.stores`, which prefers `Farm.custom_chemical_store`
+    over the warehouse-name convention. This function used to do the name match
+    only, so a farm with a correctly mapped but unconventionally named store was
+    treated as having no stock at all."""
+    return stores.farm_stores(farm, "chemical")
 
 
 def _primary_store(farm: str) -> str | None:
-    stores = _farm_chemical_stores(farm)
-    if not stores:
-        return None
-    prefix = f"chemical store {farm.lower()}"
-    preferred = [s for s in stores if s.lower().startswith(prefix)]
-    return (preferred or stores)[0]
+    return stores.primary_store(farm, "chemical")
 
 
 def _on_hand(farm: str, item_code: str) -> float:
@@ -123,18 +121,7 @@ def _on_hand(farm: str, item_code: str) -> float:
 
 
 def _all_chemical_farms() -> list[str]:
-    rows = frappe.get_all(
-        "Warehouse",
-        filters={
-            "is_group": 0,
-            "disabled": 0,
-            "name": ("like", "Chemical Store%"),
-            "custom_farm": ("is", "set"),
-        },
-        fields=["custom_farm"],
-        distinct=True,
-    )
-    return sorted({r.custom_farm for r in rows if r.custom_farm})
+    return sorted(stores.farms_with_stores())
 
 
 # ───────────────────────────────── reads ─────────────────────────────────────
@@ -142,7 +129,11 @@ def _all_chemical_farms() -> list[str]:
 
 @frappe.whitelist()
 def my_farms() -> dict:
-    """Farms the current user may request for + feature flag, for the page."""
+    """Farms the current user may request for + feature flag, for the page.
+
+    An unscoped user (Administrator / System Manager) still gets the full list;
+    everyone else gets the farms they are rostered on within their company.
+    """
     _ensure_creator()
     allowed = _user_farms()
     farms = _all_chemical_farms() if allowed is None else sorted(allowed)
@@ -177,7 +168,9 @@ def capture_baseline_on_receipt(doc, method=None):
         farm = frappe.db.get_value("Warehouse", wh, "custom_farm")
         if not farm:
             continue
-        if not str(wh).lower().startswith("chemical store"):
+        # Was a name test; now the farm's actual chemical stores, so a mapped
+        # store with an unconventional name still captures a baseline.
+        if wh not in stores.farm_stores(farm, "chemical"):
             continue
         group = frappe.db.get_value("Item", code, "item_group")
         if group not in product_groups():

@@ -49,8 +49,7 @@ app_include_js = "/assets/upande_scp/js/scp_desk.js"
 doctype_js = {
     "Work Order": "public/js/spray_plan_wo_form.js",
     "Item": "public/js/item.js",
-    "Chemical": "public/js/chemical.js",
-    "Foliar": "public/js/foliar.js",
+    "Spray Product": "public/js/spray_product.js",
     "Warehouse": "public/js/warehouse.js",
     "Pest": "public/js/pest.js",
     "BOM": "public/js/bom.js",
@@ -107,6 +106,21 @@ after_migrate = [
 	# has something to place. Stock Entry is shared with three other installed
 	# apps, so these must be rebuilt rather than assumed to exist.
 	"upande_scp.serverscripts.store.stock_entry_fields.ensure_scp_stock_entry_fields",
+	# Every other SCP custom field on a shared doctype (Work Order, BOM, Farm,
+	# Warehouse, Item, Notification Log). These used to ship as a Custom Field
+	# fixture; a fixture only restores what some site last exported, which is how
+	# `Work Order.workflow_state` and `Farm.spray_plan_approvers` came to be
+	# missing on a fresh install. Declared in code so every site converges.
+	"upande_scp.serverscripts.common.custom_fields.ensure_scp_custom_fields",
+	# The four spray-flow Stock Entry Types. A patch creates these too, but a
+	# fresh install marks every patch as done without running it, so the seed
+	# never happened on a new site — and approve_and_forward cannot create its
+	# transfer without them. See that function's docstring.
+	"upande_scp.serverscripts.store.spray_stock_types.ensure_spray_stock_entry_types",
+	# The tank-mix Item Group and UOM. These were hardcoded strings ("Chemical
+	# Mix", "Tank Mix (1000L)") and are now settings, so the records the settings
+	# point at have to exist. See common/tank_mix.py.
+	"upande_scp.serverscripts.common.tank_mix.ensure_tank_mix_conventions",
 	# The `custom_farm` links on BOM / Spray Team. Declared in code rather than
 	# shipped as fixtures because fixture sync OVERWRITES, and a site may already
 	# carry its own `custom_farm` on these shared doctypes — this creates only
@@ -121,6 +135,7 @@ after_migrate = [
 
 before_uninstall = [
 	"upande_scp.serverscripts.store.stock_entry_fields.remove_scp_stock_entry_fields",
+	"upande_scp.serverscripts.common.custom_fields.remove_scp_custom_fields",
 ]
 
 # Uninstallation
@@ -243,6 +258,11 @@ doc_events = {
     "Item": {
         **_SCP_CACHE_EVENTS,
         "after_insert": "upande_scp.serverscripts.common.crop_protection.on_item_after_insert",
+        # Follow the Item's group in and out of the configured chemical/foliar
+        # sets. Only `after_insert` was hooked, so an Item moved INTO a
+        # configured group later got no Spray Product, and one moved OUT kept a
+        # live record that still showed up in every picker.
+        "on_update": "upande_scp.serverscripts.common.crop_protection.on_item_update",
     },
     "Orchard Tree": _SCP_CACHE_EVENTS,
     "Crop Scouted": _SCP_CACHE_EVENTS,
@@ -485,88 +505,18 @@ fixtures = [
     # Trap Report Settings was removed entirely (feature retired).
     # Desk workspace custom blocks (SCP Dashboard / Scout Map / Navigation).
     {"doctype": "Custom HTML Block"},
-    {
-        "doctype": "Custom Field",
-        "filters": [
-            [
-                "name", "in", [
-                        # Notification Log — our category taxonomy. Notification
-                        # Log.type is a fixed Frappe enum, so the SCP category
-                        # needs its own field for the notifications page to filter on.
-                        "Notification Log-scp_category",
-                        # Warehouse fields
-                        "Warehouse-custom_zone_numbering",
-                        "Warehouse-custom_bed_numbering",
-                        "Warehouse-custom_raw_geojson",
-                        "Warehouse-custom_location",
-                        "Warehouse-custom_area_ha",
-                        "Warehouse-custom_cost_center",
-                        # Item fields (chemical metadata moved to Chemical/Foliar;
-                        # only the per-variety intervention threshold remains)
-                        "Item-custom_chemical_intervention_threshhold",
-                        "Item-custom_scouting_and_crop_protection_tab",
-                        # BOM fields
-                        "BOM-custom_water_hardness",
-                        "BOM-custom_water_ph",
-                        "BOM-custom_item_group",
-                        # `custom_work_order` is the 1:1 backlink to the plan and is
-                        # written with frappe.db.set_value (raw SQL, no meta check),
-                        # so a site missing it 1054s on draft materialisation.
-                        "BOM-custom_work_order",
-                        # NOTE: `BOM-custom_farm` and `Spray Team-custom_farm` are
-                        # NOT fixtures. Fixture sync overwrites, and these sit on
-                        # doctypes where a site may already have its own farm
-                        # field; `common/farm_fields.py` creates them only where
-                        # absent, on after_migrate. One mechanism only.
-                        # BOM Item fields
-                        "BOM Item-custom_application_rate",
-                        "BOM Item-custom_application_rateper_ha_",
-                        # Work Order fields
-                        "Work Order-custom_spray_team",
-                        "Work Order-custom_reentry_time",
-                        "Work Order-custom_scheduled_application_time",
-                        "Work Order-custom_reentry_period_hrs",
-                        "Work Order-custom_scope_details",
-                        "Work Order-custom_water_hardness",
-                        "Work Order-custom_water_ph",
-                        "Work Order-custom_water_volume",
-                        "Work Order-custom_area",
-                        "Work Order-custom_type",
-                        "Work Order-custom_scope",
-                        "Work Order-custom_kit",
-                        "Work Order-custom_spray_type",
-                        "Work Order-custom_targets",
-                        "Work Order-custom_variety",
-                        "Work Order-custom_greenhouse",
-                        "Work Order-custom_application_floor_plan",
-                        # Spray-session flow: the scan child table and the SAL
-                        # backlink. Both are read/written in spray_session.py.
-                        "Work Order-custom_chemical_scans",
-                        "Work Order-custom_spray_application_logsheet",
-                        # Work Order Item fields
-                        "Work Order Item-custom_updated_required_qty",
-                        # Farm fields
-                        "Farm-spray_plan_creators",
-                        "Farm-custom_chemical_store",
-                        "Farm-custom_fertilizer_store",
-                        "Farm-store_keepers",
-                        # Work Order spray-plan fields
-                        "Work Order-custom_classification",
-                        "Work Order-custom_preventive_reason",
-                        "Work Order-custom_cost_center",
-                        "Work Order-custom_rate_overridden",
-                        "Work Order-custom_weather_snapshot",
-                        "Work Order-custom_spray_plan_team_members",
-                        # NOTE: Stock Entry / Stock Entry Detail fields are NOT
-                        # fixtures. They are declared in
-                        # serverscripts/store/stock_entry_fields.py and rebuilt
-                        # on after_migrate, so a reset-to-defaults or a fresh
-                        # site converges without needing a re-export. One
-                        # mechanism only — see that module's docstring.
-                ]
-            ]
-        ]
-    },
+    # NOTE: Custom Fields are no longer shipped as fixtures. Every SCP custom
+    # field on a shared doctype is declared in code and rebuilt on
+    # after_migrate:
+    #   * serverscripts/common/custom_fields.py    — Work Order, BOM, Farm,
+    #     Warehouse, Item, Notification Log (+ their child tables)
+    #   * serverscripts/store/stock_entry_fields.py — Stock Entry
+    #   * serverscripts/common/farm_fields.py       — custom_farm on BOM /
+    #     Spray Team (create-only, never overwrites a site's own)
+    # A fixture only restores what some site last exported, so a field that was
+    # never exported is absent on every fresh install — which is how
+    # `Work Order.workflow_state` and `Farm.spray_plan_approvers` went missing
+    # on staging. Declaring them converges every site.
     # NOTE: Client Scripts are no longer shipped as fixtures. Desk form scripts
     # now live in code under public/js/ wired via doctype_js above. The legacy
     # "Spray Plan Approval v7" list-view approval UI was dropped (the React

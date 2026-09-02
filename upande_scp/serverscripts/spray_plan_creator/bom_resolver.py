@@ -29,7 +29,9 @@ from frappe.utils import flt
 from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
 
 TANK_MIX_UOM = "Tank Mix (1000L)"
-CHEMICAL_MIX = "Chemical Mix"
+#: Resolved from settings at use, not pinned here — see common.tank_mix.
+#: Kept as a name so the two call sites below read the same as before.
+from upande_scp.serverscripts.common.tank_mix import tank_mix_item_group
 
 
 def _plan_farm(wo) -> str | None:
@@ -101,17 +103,20 @@ def create_bom_for_plan(wo) -> str | None:
 
     bom = frappe.new_doc("BOM")
     bom.item = fg_item
-    bom.custom_item_group = CHEMICAL_MIX
+    bom.custom_item_group = tank_mix_item_group()
     bom.company = wo.company
     # custom_business_unit is an optional site-provided Custom Field (was
     # supplied by the old upande_kaitet shim; not owned by any current app).
     # Only touch it where the column actually exists, else the get_value/write
     # throws "Unknown column" on sites without it (e.g. kaitet post-migration).
     if frappe.db.has_column("BOM", "custom_business_unit"):
-        bom.custom_business_unit = (
-            frappe.db.get_value("BOM", {"item": fg_item}, "custom_business_unit")
-            or "Roses"
-        )
+        # Inherit from the template BOM only. The old `or "Roses"` fallback wrote
+        # one site's crop into every site's BOM as an accounting dimension — a
+        # value this app has no basis to invent. Left unset when the template
+        # carries none, so ERPNext applies whatever default the site configured.
+        inherited = frappe.db.get_value("BOM", {"item": fg_item}, "custom_business_unit")
+        if inherited:
+            bom.custom_business_unit = inherited
     farm = _plan_farm(wo)
     if farm:
         bom.custom_farm = farm
@@ -180,7 +185,7 @@ def cancel_orphan_plan_bom(bom_name: str | None, keep_wo: str | None = None) -> 
     )
     if not info or info.docstatus != 1 or info.is_default:
         return False
-    if (info.custom_item_group or "") != CHEMICAL_MIX:
+    if (info.custom_item_group or "") != tank_mix_item_group():
         return False
     if frappe.db.exists("Stock Entry", {"bom_no": bom_name, "docstatus": 1}):
         return False

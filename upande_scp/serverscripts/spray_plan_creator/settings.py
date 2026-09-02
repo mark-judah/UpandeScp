@@ -426,14 +426,11 @@ def save_chemical(item_code: str, payload) -> dict:
     if "enabled" in payload:
         frappe.db.set_value("Item", item_code, "disabled", 0 if payload.get("enabled") else 1)
 
-    # Write chemical metadata to the authoritative record: the Chemical/Foliar
-    # sidecar when present (chemicals/foliars), else the Item (fertilizers).
-    chem_name = frappe.db.get_value("Chemical", {"item": item_code}, "name")
-    fol_name = frappe.db.get_value("Foliar", {"item": item_code}, "name")
-    if chem_name:
-        _save_product_fields(frappe.get_doc("Chemical", chem_name), payload)
-    elif fol_name:
-        _save_product_fields(frappe.get_doc("Foliar", fol_name), payload)
+    # Write metadata to the authoritative record: the Spray Product sidecar when
+    # present, else the Item (items predating the sidecar).
+    product = frappe.db.get_value("Spray Product", {"item": item_code}, "name")
+    if product:
+        _save_product_fields(frappe.get_doc("Spray Product", product), payload)
     else:
         _save_legacy_item_fields(frappe.get_doc("Item", item_code), payload)
 
@@ -441,8 +438,8 @@ def save_chemical(item_code: str, payload) -> dict:
 
 
 def _save_product_fields(doc, payload):
-    """Write the editor payload to a Chemical/Foliar sidecar (rate limits map to
-    the master ``default_*`` fields; targets to ``default_targets``)."""
+    """Write the editor payload to a Spray Product (rate limits map to the
+    record's ``default_*`` fields; targets to ``default_targets``)."""
     rate_map = {
         "lower_rate_limit": "default_lower_rate_limit",
         "upper_rate_limit": "default_upper_rate_limit",

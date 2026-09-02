@@ -102,11 +102,21 @@ def on_submit(doc, method):
     if not work_order_name:
         return None
 
+    wo_type = frappe.db.get_value("Work Order", work_order_name, "custom_type")
+    if wo_type != AFP_TYPE:
+        return None
+
     # Issue the traceable label codes here — the transfer has just been submitted, so
     # the quantity on each line is what physically moved and the code can carry it as
     # fact. Generating at approval time (which is what approve_and_forward used to do)
     # put a *proposed* quantity on the sticker, since the draft stays editable until
     # the storesman submits it.
+    #
+    # Deliberately AFTER the Application Floor Plan check. "Material Transfer for
+    # Manufacture" is ERPNext's ordinary transfer-to-WIP purpose, used by every
+    # manufacturing flow on the site — so gating on purpose alone minted chemical
+    # QR labels for every unrelated work order's transfer. Labels belong to spray
+    # plans only.
     #
     # Best-effort: a label problem must never roll back a stock movement that has
     # already happened.
@@ -119,10 +129,6 @@ def on_submit(doc, method):
             frappe.get_traceback(),
             f"Chemical QR – issue on submit: {doc.name}",
         )
-
-    wo_type = frappe.db.get_value("Work Order", work_order_name, "custom_type")
-    if wo_type != AFP_TYPE:
-        return None
 
     current_state = frappe.db.get_value(
         "Work Order", work_order_name, "workflow_state"

@@ -1,6 +1,8 @@
 import re
 
 import frappe
+
+from upande_scp.serverscripts.common.tank_mix import tank_mix_item_group
 import hashlib
 from frappe.utils import flt
 
@@ -12,6 +14,7 @@ from upande_scp.serverscripts.common.cache_utils import (
     build_zone_count_by_bed,
     get_or_set,
 )
+from upande_scp.serverscripts.scouting.scouting_metrics import bed_active_filters
 from upande_scp.serverscripts.common.crop_protection import (
     is_foliar_group,
     product_groups,
@@ -421,7 +424,7 @@ def getScoutingData():
         # --- BOMs (always fetched) ---
         chemical_mix_boms = frappe.get_all(
             "BOM",
-            filters={"custom_item_group": "Chemical Mix", "docstatus": 1, "is_active": 1},
+            filters={"custom_item_group": tank_mix_item_group(), "docstatus": 1, "is_active": 1},
             fields=["name", "custom_water_ph", "custom_water_hardness"]
         )
         bom_names = [b["name"] for b in chemical_mix_boms]
@@ -456,7 +459,7 @@ def getScoutingData():
         # for non-rectangular greenhouses without needing GeoJSON.
         gh_beds = frappe.get_all(
             "Bed",
-            filters={"greenhouse": greenhouse, "custom_active": 1},
+            filters={"greenhouse": greenhouse, **bed_active_filters()},
             fields=["name"],
             limit_page_length=0,
         )

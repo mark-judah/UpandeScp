@@ -15,7 +15,6 @@ from __future__ import annotations
 import frappe
 from frappe.utils import flt, now_datetime
 
-from upande_scp.serverscripts.common.crop_protection import is_foliar_group
 from upande_scp.serverscripts.qr.chemical_code import (
 	CodeError,
 	decode,
@@ -31,7 +30,14 @@ from upande_scp.serverscripts.qr.qr_generator import (
 )
 
 LABEL = "Chemical QR Label"
+PRODUCT = "Spray Product"
 TRANSFER_PURPOSE = "Material Transfer for Manufacture"
+
+#: Only a spray plan's transfer earns a label. `TRANSFER_PURPOSE` is ERPNext's
+#: ordinary transfer-to-WIP purpose, shared by every manufacturing flow on the
+#: site, so purpose alone is not a filter — it minted chemical QR labels for
+#: every unrelated work order's transfer to its shop floor.
+AFP_TYPE = "Application Floor Plan"
 
 #: Error-correction level for the label image. **M (15% recovery), not L (7%).**
 #: A chemical-store label is smudged and scuffed long before it is out-resolved: at
@@ -40,8 +46,8 @@ TRANSFER_PURPOSE = "Material Transfer for Manufacture"
 #: The 33-digit code fits v1 at this level; 35 digits would not.
 QR_ERROR_CORRECTION = "M"
 
-#: Where the shared surrogate counter lives. One counter across both sidecar types so
-#: a Chemical and a Foliar can never be handed the same id.
+#: Where the surrogate counter lives. One counter for every spray product, so a
+#: chemical and a foliar can never be handed the same id.
 _SURROGATE_KEY = "scp_qr_item_id"
 
 
@@ -49,15 +55,15 @@ _SURROGATE_KEY = "scp_qr_item_id"
 
 
 def _sidecar_for(item_code: str) -> tuple[str, str] | tuple[None, None]:
-	"""``(doctype, name)`` of the item's SCP sidecar, creating nothing."""
-	group = frappe.db.get_value("Item", item_code, "item_group")
-	doctype = "Foliar" if is_foliar_group(group) else "Chemical"
-	if frappe.db.exists(doctype, item_code):
-		return doctype, item_code
-	# The other kind, in case the item's group moved after the sidecar was made.
-	other = "Chemical" if doctype == "Foliar" else "Foliar"
-	if frappe.db.exists(other, item_code):
-		return other, item_code
+	"""``(doctype, name)`` of the item's Spray Product, creating nothing.
+
+	The two-doctype dance this replaces had to guess the doctype from the Item
+	Group and then try the other one, because an Item whose group had moved kept
+	a sidecar of the old kind. With one doctype the group no longer selects
+	where to look — `category` is just a field on the record it finds.
+	"""
+	if frappe.db.exists(PRODUCT, item_code):
+		return PRODUCT, item_code
 	return None, None
 
 
@@ -93,11 +99,11 @@ def _next_surrogate() -> int:
 	restored database, or a counter reset, cannot hand out an id that is already in
 	use — and ids are never reused, so a reprinted label always means the same item.
 	"""
+	# One table now. This used to GREATEST across `tabChemical` and `tabFoliar`,
+	# which was the whole reason the counter had to be shared — and the reason a
+	# product moving between the two could be handed a second id.
 	current = frappe.db.sql(
-		"""SELECT GREATEST(
-		       COALESCE((SELECT MAX(qr_item_id) FROM `tabChemical`), 0),
-		       COALESCE((SELECT MAX(qr_item_id) FROM `tabFoliar`), 0)
-		   ) AS m"""
+		f"SELECT COALESCE(MAX(qr_item_id), 0) AS m FROM `tab{PRODUCT}`"
 	)
 	highest = int((current[0][0] if current and current[0] else 0) or 0)
 
@@ -123,6 +129,22 @@ def _next_surrogate() -> int:
 # ─────────────────────────────── issuing ─────────────────────────────────────
 
 
+def is_labelled_transfer(doc) -> bool:
+	"""True when this Stock Entry is a spray plan's chemical transfer.
+
+	The discriminator is the linked Work Order's ``custom_type``, not the entry's
+	purpose: `Material Transfer for Manufacture` is ERPNext's own transfer-to-WIP
+	purpose and every manufacturing flow on the site uses it.
+
+	A transfer with no work order is never ours — an AFP transfer is always
+	minted against its plan.
+	"""
+	work_order = getattr(doc, "work_order", None)
+	if not work_order:
+		return False
+	return frappe.db.get_value("Work Order", work_order, "custom_type") == AFP_TYPE
+
+
 def issue_for_stock_entry(doc, regenerate: bool = False) -> list[dict]:
 	"""Issue one code per chemical line on a submitted transfer, and attach its QR.
 
@@ -131,6 +153,8 @@ def issue_for_stock_entry(doc, regenerate: bool = False) -> list[dict]:
 	``regenerate=True`` only to reissue deliberately.
 	"""
 	if doc.purpose != TRANSFER_PURPOSE or doc.docstatus != 1:
+		return []
+	if not is_labelled_transfer(doc):
 		return []
 
 	year = name_year(doc.name) or int(str(doc.posting_date or "")[:4] or 0) % 100
@@ -370,12 +394,22 @@ def backfill(limit: int = 500, dry_run: int = 0) -> dict:
 	already = set(
 		frappe.get_all(LABEL, pluck="stock_entry", limit_page_length=0)
 	)
-	candidates = frappe.get_all(
-		"Stock Entry",
-		filters={"purpose": TRANSFER_PURPOSE, "docstatus": 1},
+	# Joined to the Work Order rather than filtered on purpose alone: without the
+	# `custom_type` check this swept every manufacturing transfer on the site and
+	# minted chemical labels for work orders that have nothing to do with spraying.
+	candidates = frappe.db.sql(
+		"""
+		SELECT se.name
+		FROM `tabStock Entry` se
+		JOIN `tabWork Order` wo ON wo.name = se.work_order
+		WHERE se.purpose = %(purpose)s
+		  AND se.docstatus = 1
+		  AND wo.custom_type = %(afp)s
+		ORDER BY se.creation DESC
+		LIMIT %(limit)s
+		""",
+		{"purpose": TRANSFER_PURPOSE, "afp": AFP_TYPE, "limit": int(limit or 500)},
 		pluck="name",
-		order_by="creation desc",
-		limit_page_length=int(limit or 500),
 	)
 	pending = [n for n in candidates if n not in already]
 

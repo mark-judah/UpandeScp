@@ -200,28 +200,34 @@ class TestSurrogate(unittest.TestCase):
 
 	def test_the_surrogate_fits_the_field(self):
 		# 4 digits: room for 9,999 against 697 items today.
-		row = frappe.db.get_value("Chemical", {}, "name")
+		row = frappe.db.get_value("Spray Product", {}, "name")
 		if not row:
-			self.skipTest("no Chemical sidecars on this site")
+			self.skipTest("no Spray Products on this site")
 		self.assertLess(CL.item_surrogate(row), 10_000)
 
-	def test_surrogates_are_not_shared_between_chemicals_and_foliars(self):
-		"""One counter across both sidecar types, so a Chemical and a Foliar can never
-		encode to the same digits."""
+	def test_no_two_products_share_a_surrogate(self):
+		"""One counter across every spray product, so a chemical and a foliar can
+		never encode to the same digits.
+
+		This used to need a join between two tables. Consolidating onto one
+		doctype makes the property a plain uniqueness check — and removes the
+		class of bug where a product moved between the two tables and was handed
+		a second id.
+		"""
 		dupes = frappe.db.sql(
-			"""SELECT c.qr_item_id
-			   FROM `tabChemical` c JOIN `tabFoliar` f ON f.qr_item_id = c.qr_item_id
-			   WHERE c.qr_item_id > 0"""
+			"""SELECT qr_item_id, COUNT(*) n FROM `tabSpray Product`
+			   WHERE qr_item_id > 0 GROUP BY qr_item_id HAVING n > 1"""
 		)
 		self.assertEqual(dupes, (), f"surrogate collision: {dupes}")
 
-	def test_no_two_items_of_a_kind_share_a_surrogate(self):
-		for doctype in ("Chemical", "Foliar"):
-			dupes = frappe.db.sql(
-				f"""SELECT qr_item_id, COUNT(*) n FROM `tab{doctype}`
-				    WHERE qr_item_id > 0 GROUP BY qr_item_id HAVING n > 1"""
-			)
-			self.assertEqual(dupes, (), f"{doctype} surrogate collision: {dupes}")
+	def test_surrogates_are_unique_across_categories(self):
+		dupes = frappe.db.sql(
+			"""SELECT a.qr_item_id
+			   FROM `tabSpray Product` a JOIN `tabSpray Product` b
+			     ON b.qr_item_id = a.qr_item_id AND b.name != a.name
+			   WHERE a.qr_item_id > 0 AND a.category != b.category"""
+		)
+		self.assertEqual(dupes, (), f"cross-category collision: {dupes}")
 
 
 class TestVerifyScan(unittest.TestCase):

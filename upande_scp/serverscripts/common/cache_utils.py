@@ -543,11 +543,20 @@ def build_zone_count_by_bed():
 
 
 def build_bed_count_by_gh():
+    # Which column marks a bed retired is site-local (`custom_active` here,
+    # `status` on a v16 site, neither on a bare upande_core), so it is probed
+    # rather than named — see scouting_metrics._bed_active_flag.
+    from upande_scp.serverscripts.scouting.scouting_metrics import _bed_active_flag
+
+    conditions = ["greenhouse IS NOT NULL", "greenhouse != ''"]
+    flag = _bed_active_flag()
+    if flag:
+        conditions.append(flag[0])
     rows = frappe.db.sql(
-        """
+        f"""
         SELECT greenhouse, COUNT(*) AS bed_count
         FROM `tabBed`
-        WHERE custom_active = 1 AND greenhouse IS NOT NULL AND greenhouse != ''
+        WHERE {" AND ".join(conditions)}
         GROUP BY greenhouse
         """,
         as_dict=True,

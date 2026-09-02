@@ -5,6 +5,8 @@ import json
 from frappe import _
 
 from upande_scp.serverscripts.common.crop_protection import get_product_rate
+from upande_scp.serverscripts.common.farm_map import farm_for_warehouse as _greenhouse_farm
+from upande_scp.serverscripts.common.tank_mix import resolve_company
 
 
 def _validate_chemical_rate_limits(chemicals):
@@ -125,8 +127,16 @@ def createApplicationWorkOrder():
         template_bom = frappe.get_doc("BOM", bom_name)
         if not template_bom.is_active:
             frappe.throw(_("BOM {0} is not active.").format(bom_name))
-        if template_bom.company != "Karen Roses":
-            frappe.throw(_("BOM {0} is not for Karen Roses.").format(bom_name))
+        # The plan and its BOM must belong to the same company. This was a
+        # literal check against "Karen Roses", which rejected every BOM on every
+        # other site — including the one the operator had just created.
+        plan_company = resolve_company(_greenhouse_farm(greenhouse))
+        if plan_company and template_bom.company != plan_company:
+            frappe.throw(
+                _("BOM {0} belongs to {1}, not {2}.").format(
+                    bom_name, template_bom.company, plan_company
+                )
+            )
 
         production_item = template_bom.item
 
@@ -213,7 +223,7 @@ def createApplicationWorkOrder():
             "bom_no": bom_to_use,
             "qty": wo_qty,
             "stock_uom": bom_uom,
-            "company": "Karen Roses",
+            "company": template_bom.company,
             "wip_warehouse": wip_warehouse,
             "fg_warehouse": greenhouse,
             "custom_type": raw_data.get("custom_type"),

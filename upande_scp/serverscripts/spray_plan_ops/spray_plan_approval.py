@@ -8,12 +8,12 @@ Whitelisted endpoints:
   stop_single_work_order(wo_name)
 """
 
-import re
 
 import frappe
 from frappe.utils import add_days, cstr, flt, now_datetime, today
 
 from upande_scp.serverscripts.common import crop_scope
+from upande_scp.serverscripts.common import farm_map
 from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_TRANSFER
 
 AFP_TYPE = "Application Floor Plan"
@@ -96,16 +96,7 @@ def _approver_allowed_greenhouses(user: str) -> list[str] | None:
     ]
     if not farms:
         return []
-    greenhouses = frappe.get_all(
-        "Warehouse",
-        filters={
-            "custom_farm": ["in", farms],
-            "warehouse_type": "Greenhouse",
-            "disabled": 0,
-        },
-        fields=["name"],
-    )
-    return [g["name"] for g in greenhouses]
+    return farm_map.greenhouses_for_farms(farms)
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -142,8 +133,15 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
         where.append("custom_greenhouse = %(greenhouse)s")
         params["greenhouse"] = greenhouse
     elif farm:
-        where.append("custom_greenhouse LIKE %(farm_prefix)s")
-        params["farm_prefix"] = farm + " GH%"
+        # By link, not by name. `LIKE '<farm> GH%'` hardcoded one site's naming
+        # convention and, even there, missed every greenhouse whose name does
+        # not begin with its farm — "Kapkolia Wetland GH 3", the CSU phases, and
+        # all 37 test-farm units among them.
+        farm_ghs = farm_map.greenhouses_for_farm(farm)
+        if not farm_ghs:
+            return {"work_orders": [], "farms": []}
+        where.append("custom_greenhouse IN %(farm_ghs)s")
+        params["farm_ghs"] = tuple(farm_ghs)
 
     # Farm scoping, from two independent sources that both have to hold.
     #
@@ -216,10 +214,15 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
     )
     forwarded = {r.work_order for r in se_rows}
 
+    # One query for every greenhouse in the page, not one per row. The name
+    # regex this replaced needed no query at all, so resolving per row would
+    # turn a free operation into an N+1 across hundreds of pending plans.
+    farm_by_gh = farm_map.farms_for_warehouses(w.custom_greenhouse for w in wos)
+
     farms = set()
     result = []
     for wo in wos:
-        farm_name = _derive_farm(wo.custom_greenhouse)
+        farm_name = farm_by_gh.get(wo.custom_greenhouse)
         if farm_name:
             farms.add(farm_name)
         result.append(
@@ -274,12 +277,14 @@ def get_farms_and_greenhouses(crop=None):
         limit=0,
     )
 
+    farm_by_gh = farm_map.farms_for_warehouses(w.custom_greenhouse for w in wos)
+
     farms_map = {}
     for wo in wos:
         gh = wo.custom_greenhouse
         if not gh:
             continue
-        farm = _derive_farm(gh)
+        farm = farm_by_gh.get(gh)
         if farm:
             farms_map.setdefault(farm, []).append(gh)
 
@@ -430,10 +435,13 @@ def stop_single_work_order(wo_name):
 
 
 def _derive_farm(greenhouse):
-    if not greenhouse:
-        return None
-    m = re.match(r"^(.+?)\s+GH\b", str(greenhouse), re.IGNORECASE)
-    return m.group(1).strip() if m else str(greenhouse).split(" ")[0]
+    """The farm a greenhouse belongs to, from `Warehouse.custom_farm`.
+
+    Was a regex over the warehouse name. See `common.farm_map` for why that was
+    wrong on 51 of kaitet's 158 linked greenhouses, never mind on a site with a
+    different naming convention.
+    """
+    return farm_map.farm_for_warehouse(greenhouse)
 
 
 def _friendly_error(raw):

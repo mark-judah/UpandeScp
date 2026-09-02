@@ -9,6 +9,11 @@ from upande_scp.serverscripts.common.crop_protection import (
     is_foliar_group,
     product_groups,
 )
+from upande_scp.serverscripts.common.tank_mix import (
+    resolve_company,
+    tank_mix_item_group,
+    tank_mix_uom,
+)
 
 
 def _resolve_bom_farm(data):
@@ -72,13 +77,30 @@ def createBOM():
                 "action": "Would you like to use the existing BOM instead?"
             }
 
+        item_group = tank_mix_item_group()
+        uom = tank_mix_uom()
+        bom_farm = _resolve_bom_farm(data)
+
+        # The company comes from the farm, then ERPNext's global default. It was
+        # the literal "Karen Roses", which is simply not a company on any other
+        # site — the single line that made this endpoint un-deployable.
+        company = resolve_company(bom_farm)
+        if not company:
+            return {
+                "status": "error",
+                "message": (
+                    "No company could be resolved for this tank mix. Set a Company "
+                    "on the farm, or a default Company in Global Defaults."
+                ),
+            }
+
         # === ENSURE BOM ITEM EXISTS ===
         if not frappe.db.exists("Item", bom_item_name):
             item_doc = frappe.new_doc("Item")
             item_doc.item_code = bom_item_name
             item_doc.item_name = bom_item_name
-            item_doc.item_group = "Chemical Mix"
-            item_doc.stock_uom = "Tank Mix (1000L)"
+            item_doc.item_group = item_group
+            item_doc.stock_uom = uom
             item_doc.is_stock_item = 1
             item_doc.insert(ignore_permissions=True)
             frappe.db.commit()
@@ -86,16 +108,16 @@ def createBOM():
         # === CREATE BOM ===
         bom_doc = frappe.new_doc("BOM")
         bom_doc.item = bom_item_name
-        bom_doc.custom_item_group = "Chemical Mix"
-        bom_doc.company = "Karen Roses"
-        bom_farm = _resolve_bom_farm(data)
+        bom_doc.custom_item_group = item_group
+        bom_doc.company = company
         if bom_farm:
             bom_doc.custom_farm = bom_farm
-        # Optional site-provided field (see bom_resolver) — only set it where
-        # the BOM column exists, so sites without it don't choke.
-        if frappe.db.has_column("BOM", "custom_business_unit"):
-            bom_doc.custom_business_unit = "Roses"
-        bom_doc.uom = "Tank Mix (1000L)"
+        # `custom_business_unit` is an ERPNext Accounting Dimension. Its value is
+        # a site's own dimension record, so there is no default this app could
+        # invent — the old hardcoded "Roses" was one site's crop written into
+        # every site's BOM. Left unset; ERPNext applies its own default if one
+        # is configured.
+        bom_doc.uom = uom
         bom_doc.quantity = 1
         bom_doc.custom_water_ph = water_ph
         bom_doc.custom_water_hardness = water_hardness

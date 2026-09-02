@@ -155,11 +155,10 @@ ROLE_REQUIREMENTS: dict[str, dict[str, str]] = {
 		# rows under the supervisor's own session.
 		"Spray Application Logsheet": "rwcs", "Sprayer Movement Session": "rwc",
 		"Spray Session Token": "rc", "Chemical QR Label": "r",
-		"Chemical": "r", "Foliar": "r", "Scouting and Crop Protection Settings": "r",
+		"Spray Product": "r", "Scouting and Crop Protection Settings": "r",
 	},
 	"SCP Chemical Store Keeper": {
-		"Chemical": "rwc", "Foliar": "rwc",
-		"Chemical Crop Profile": "rwc", "Foliar Crop Profile": "rwc",
+		"Spray Product": "rwc",
 		# Labels are minted by `stock_entry_state.on_submit` -> `issue_for_stock_entry`,
 		# which runs as whoever submits the transfer: the store keeper.
 		"Chemical QR Label": "rwc", "Chemical Transfer Request": "rwc",
@@ -169,12 +168,11 @@ ROLE_REQUIREMENTS: dict[str, dict[str, str]] = {
 	"SCP Spray Plan Creator": {
 		"Chemical Purchase Requirement": "rwc", "Chemical Requirement Amendment": "rwc",
 		"Chemical Transfer Request": "rwc",
-		"Chemical": "r", "Foliar": "r", "Chemical Crop Profile": "r",
-		"Foliar Crop Profile": "r", "Spray Plan Postponement": "r",
+		"Spray Product": "r", "Spray Plan Postponement": "r",
 		"Scouting and Crop Protection Settings": "r",
 	},
 	"SCP Spray Plan Approver": {
-		"Spray Plan Postponement": "rw", "Chemical": "r", "Foliar": "r",
+		"Spray Plan Postponement": "rw", "Spray Product": "r",
 		"Scouting and Crop Protection Settings": "r",
 	},
 }

@@ -3,6 +3,7 @@ import re
 import frappe
 from frappe import _
 
+from upande_scp.serverscripts.scouting.scouting_metrics import bed_active_filters
 from upande_scp.serverscripts.common.cache_utils import (
     K_BED_COUNT_BY_GH,
     K_FARMS_AND_GREENHOUSES,
@@ -68,7 +69,7 @@ def getHeatmapData(date, greenhouse):
         # Max zone-count across beds of this greenhouse — derived from cached map
         gh_beds = frappe.get_all(
             "Bed",
-            filters={"greenhouse": greenhouse, "custom_active": 1},
+            filters={"greenhouse": greenhouse, **bed_active_filters()},
             fields=["name"],
             limit_page_length=0,
         )

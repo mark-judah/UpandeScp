@@ -64,6 +64,9 @@
   "cp_groups_section",
   "chemical_item_groups",
   "foliar_item_groups",
+  "tank_mix_section",
+  "tank_mix_item_group",
+  "tank_mix_uom",
   "allocation_section",
   "allocation_balancing_enabled",
   "general_store_section",
@@ -245,14 +248,14 @@
   },
   {
    "default": "0",
-   "description": "When ON, any Spray Plan Creator can submit any draft (not just drafts they own). Farm-scope checks still apply. Intended for testing \u2014 leave OFF in production.",
+   "description": "When ON, any Spray Plan Creator can submit any draft (not just drafts they own). Farm-scope checks still apply. Intended for testing — leave OFF in production.",
    "fieldname": "bypass_owner_check",
    "fieldtype": "Check",
    "label": "Bypass owner check on Submit for Approval"
   },
   {
    "default": "0",
-   "description": "When ON, the Spray Plan Transfers page also offers a \"Submit without biometric\" action. Use only when the biometric device is unavailable \u2014 the submitting user is recorded. Leave OFF in normal operation.",
+   "description": "When ON, the Spray Plan Transfers page also offers a \"Submit without biometric\" action. Use only when the biometric device is unavailable — the submitting user is recorded. Leave OFF in normal operation.",
    "fieldname": "allow_submit_without_biometric",
    "fieldtype": "Check",
    "label": "Allow submit without biometric (device-down fallback)"
@@ -300,7 +303,7 @@
   },
   {
    "default": "labels",
-   "description": "How a sprayer confirms each chemical taken from the CSU. 'labels' requires scanning the printed QR label (default). 'tick' lets the sprayer tick to confirm instead \u2014 only for farms where label printing is unavailable, as it removes the per-chemical scan check.",
+   "description": "How a sprayer confirms each chemical taken from the CSU. 'labels' requires scanning the printed QR label (default). 'tick' lets the sprayer tick to confirm instead — only for farms where label printing is unavailable, as it removes the per-chemical scan check.",
    "fieldname": "csu_scan_verification",
    "fieldtype": "Select",
    "label": "CSU scan verification method",
@@ -318,7 +321,7 @@
    "options": "<p style='margin:0;color:#6b7280;font-size:12px'>ERPNext's <b>System Settings &rarr; Time Zone</b> governs every timestamp this app writes, every notification, and the clock the scheduler evaluates cron against. It is shown on the SCP settings screen, read-only, alongside what the farms' own coordinates suggest it should be.</p>"
   },
   {
-   "description": "Leave blank to follow ERPNext, which is almost always what you want. A value here changes only how THIS APP renders times \u2014 stored timestamps, scheduled reports and notification timing all follow ERPNext, because they must.",
+   "description": "Leave blank to follow ERPNext, which is almost always what you want. A value here changes only how THIS APP renders times — stored timestamps, scheduled reports and notification timing all follow ERPNext, because they must.",
    "fieldname": "app_timezone",
    "fieldtype": "Data",
    "label": "App display timezone"
@@ -329,7 +332,7 @@
   },
   {
    "default": "1",
-   "description": "On by default. While locked the app timezone cannot be changed. A changed timezone silently re-times every notification, scheduled report and spray deadline, so it takes a deliberate unlock \u2014 and every change is written to the Error Log under 'SCP timezone changed'.",
+   "description": "On by default. While locked the app timezone cannot be changed. A changed timezone silently re-times every notification, scheduled report and spray deadline, so it takes a deliberate unlock — and every change is written to the Error Log under 'SCP timezone changed'.",
    "fieldname": "timezone_locked",
    "fieldtype": "Check",
    "label": "Timezone locked"
@@ -341,7 +344,7 @@
   },
   {
    "default": "10:00:00",
-   "description": "On a plan's own spray date, this is the deadline. After it a supervisor can no longer postpone the plan, and the spray can no longer be started. Read in the site's timezone \u2014 check Settings \u2192 System Settings if the times look wrong.",
+   "description": "On a plan's own spray date, this is the deadline. After it a supervisor can no longer postpone the plan, and the spray can no longer be started. Read in the site's timezone — check Settings → System Settings if the times look wrong.",
    "fieldname": "spray_cutoff_time",
    "fieldtype": "Time",
    "label": "Daily cutoff time"
@@ -359,7 +362,7 @@
   },
   {
    "default": "0",
-   "description": "Extra minutes past the cutoff during which a postponement may still be declared, for the supervisor who is standing in the field at 10:01. Set to 0 for a hard deadline. Does NOT extend the window for starting a spray \u2014 that stays hard.",
+   "description": "Extra minutes past the cutoff during which a postponement may still be declared, for the supervisor who is standing in the field at 10:01. Set to 0 for a hard deadline. Does NOT extend the window for starting a spray — that stays hard.",
    "fieldname": "postponement_grace_minutes",
    "fieldtype": "Int",
    "label": "Grace after cutoff (minutes)"
@@ -449,6 +452,25 @@
    "fieldtype": "Table MultiSelect",
    "label": "Foliar Item Groups",
    "options": "Crop Protection Item Group"
+  },
+  {
+   "fieldname": "tank_mix_section",
+   "fieldtype": "Section Break",
+   "label": "Tank Mix Conventions"
+  },
+  {
+   "fieldname": "tank_mix_item_group",
+   "fieldtype": "Link",
+   "label": "Tank Mix Item Group",
+   "options": "Item Group",
+   "description": "Item Group that marks a BOM and its produced Item as a tank mix. Created on migrate if absent."
+  },
+  {
+   "fieldname": "tank_mix_uom",
+   "fieldtype": "Link",
+   "label": "Tank Mix UOM",
+   "options": "UOM",
+   "description": "UOM a tank-mix BOM is defined in — one unit is one batch. Created on migrate if absent."
   },
   {
    "fieldname": "allocation_section",

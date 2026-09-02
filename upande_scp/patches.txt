@@ -5,6 +5,12 @@ upande_scp.patches.v1_0.export_sal_fixtures
 upande_scp.patches.v1_0.promote_filters_to_standalone
 upande_scp.patches.v1_0.namespace_scp_roles
 upande_scp.patches.v1_0.rename_spray_plan_settings_doctype
+# Chemical -> Spray Product. Must be pre_model_sync: the rename has to land
+# before doctypes sync from disk, or migrate treats `Spray Product` as new and
+# `Chemical` as an orphan and deletes it (and its 479 records). Schema identity
+# only — the data half is consolidate_spray_products, post_model_sync, because
+# the fields it writes do not exist until the sync in between creates them.
+upande_scp.patches.v1_0.rename_chemical_to_spray_product
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
@@ -35,3 +41,6 @@ upande_scp.patches.v1_0.lock_timezone_setting
 upande_scp.patches.v1_0.merge_field_unit_automations
 upande_scp.patches.v1_0.scp_roles_on_workspace
 upande_scp.patches.v1_0.correct_crop_farm_tags
+# Absorb Foliar into Spray Product and drop the dead doctypes. Pairs with the
+# pre_model_sync rename above.
+upande_scp.patches.v1_0.consolidate_spray_products

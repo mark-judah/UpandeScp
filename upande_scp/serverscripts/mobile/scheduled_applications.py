@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import frappe
 
+from upande_scp.serverscripts.common import crop_scope, farm_map
+
 #: Fields the app reads off a plan. Same list the Server Script carried.
 _WO_FIELDS = (
 	"name",
@@ -61,6 +63,28 @@ def fetchScheduledApplications(start_date=None):
 	filters = {"docstatus": 1, "custom_type": "Application Floor Plan"}
 	if start_date:
 		filters["custom_scheduled_application_time"] = [">=", start_date]
+
+	# Farm scope. This endpoint had none: every user downloaded every submitted
+	# plan on the site. A spray plan creator rostered on one farm pulled 3,337
+	# plans across six farms, and so did an approver — the two results were
+	# byte-identical, which is what gave it away.
+	#
+	# Company scope, not roster scope, and deliberately so: the people who live
+	# in this app are Spray Supervisors, and there is no supervisor roster on
+	# Farm to intersect with. Narrowing to `ANY_ROSTER` would hand every
+	# supervisor an empty plan list and break the tab outright. Company scope
+	# still stops a Kaitet Ltd. handset pulling Karen Roses' plans, which is the
+	# leak that matters. Narrowing further needs a supervisor roster first.
+	visible = crop_scope.visible_farms()
+	if visible is not None:
+		if not visible:
+			frappe.response["data"] = []
+			return []
+		greenhouses = farm_map.greenhouses_for_farms(visible)
+		if not greenhouses:
+			frappe.response["data"] = []
+			return []
+		filters["custom_greenhouse"] = ["in", greenhouses]
 
 	work_orders = frappe.get_all(
 		"Work Order", filters=filters, fields=list(_WO_FIELDS)

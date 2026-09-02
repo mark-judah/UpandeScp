@@ -196,14 +196,26 @@ class TestPreflight(unittest.TestCase):
     def test_an_ancient_session_is_held_for_a_person(self):
         """Backdating that far can land behind entries that already consumed the stock,
         and re-valuing those is not a sync's decision."""
+        # Deterministic pick. `get_value` with no ordering returns whichever row
+        # the database offers first, so this test passed or failed depending on
+        # what else happened to be in the table — creating one new plan was
+        # enough to flip it.
         wo = frappe.db.get_value(
-            "Work Order", {"custom_type": OS.AFP_TYPE}, "name"
+            "Work Order", {"custom_type": OS.AFP_TYPE}, "name", order_by="creation asc"
         )
         if not wo:
             self.skipTest("no AFP plan on this site")
+        # Scan every chemical on the plan. Without this the preflight stops at
+        # "not scanned: <item>" and never reaches the age check, so the assertion
+        # below was testing whichever guard happened to fire first.
+        doc = frappe.get_doc("Work Order", wo)
+        scans = [
+            {"item_code": r.item_code} for r in (doc.required_items or []) if r.item_code
+        ]
         ancient = str(add_to_date(now_datetime(), days=-(OS.MAX_AGE_DAYS + 30)))
         out = OS.preflight({
-            "token": "t5", "work_order": wo, "mix_at": ancient, "ended_at": ancient,
+            "token": "t5", "work_order": wo, "scans": scans,
+            "mix_at": ancient, "ended_at": ancient,
         })
         self.assertFalse(out["ok"])
         self.assertIn("days old", " ".join(out["problems"]))

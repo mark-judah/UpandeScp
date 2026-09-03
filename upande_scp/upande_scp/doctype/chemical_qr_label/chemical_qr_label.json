@@ -14,6 +14,7 @@
   "item_code",
   "item_name",
   "item_surrogate",
+  "serial",
   "cb_qty",
   "qty",
   "uom",
@@ -80,6 +81,13 @@
    "fieldname": "item_surrogate",
    "fieldtype": "Int",
    "label": "Item Surrogate",
+   "read_only": 1
+  },
+  {
+   "description": "The number carried in slot 3 of the code. Allocated by us and dense, so it cannot be moved by a naming-series repair the way the Stock Entry tail was.",
+   "fieldname": "serial",
+   "fieldtype": "Int",
+   "label": "Label Serial",
    "read_only": 1
   },
   {

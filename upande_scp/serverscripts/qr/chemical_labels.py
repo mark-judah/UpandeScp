@@ -22,6 +22,9 @@ from upande_scp.serverscripts.qr.chemical_code import (
 	looks_like_code,
 	name_year,
 	numeric_tail,
+	ref_capacity,
+	REF_HEADROOM_WARN_AT,
+	widths,
 )
 from upande_scp.serverscripts.qr.qr_generator import (
 	attach_qr_to_document,
@@ -92,6 +95,54 @@ def item_surrogate(item_code: str) -> int:
 	return next_id
 
 
+_SERIAL_KEY = "scp_qr_label_serial"
+
+
+def _next_label_serial() -> int:
+	"""The next label serial, seeded past anything already issued.
+
+	Same belt-and-braces as `_next_surrogate`: take the higher of the live maximum and
+	the counter, so a restored database or a reset counter cannot hand out a number
+	that is already on a printed sticker. Codes are named by their own value, so a
+	collision would be a hard failure at insert; this makes it not arise.
+
+	Dense by construction — one per label actually minted, never one per Stock Entry —
+	which is the whole reason it replaced the Stock Entry tail. See chemical_code.
+	"""
+	row = frappe.db.sql(
+		f"SELECT COALESCE(MAX(serial), 0) FROM `tab{LABEL}`"
+	)
+	highest = int((row[0][0] if row and row[0] else 0) or 0)
+
+	# Raw SQL against tabSeries: it has no `creation` column, and get_value adds an
+	# implicit ORDER BY that fails on it.
+	series_row = frappe.db.sql(
+		"SELECT current FROM tabSeries WHERE name = %s", (_SERIAL_KEY,)
+	)
+	series = int((series_row[0][0] if series_row and series_row[0] else 0) or 0)
+	nxt = max(highest, series) + 1
+	if series_row:
+		frappe.db.sql(
+			"UPDATE tabSeries SET current = %s WHERE name = %s", (nxt, _SERIAL_KEY)
+		)
+	else:
+		frappe.db.sql(
+			"INSERT INTO tabSeries (name, current) VALUES (%s, %s)", (_SERIAL_KEY, nxt)
+		)
+
+	# Owning the counter is what makes overflow a non-event, so if it is ever in
+	# sight that is worth saying out loud rather than discovering at print time.
+	capacity = ref_capacity()
+	if nxt > capacity * REF_HEADROOM_WARN_AT:
+		frappe.log_error(
+			f"label serial {nxt:,} is past {REF_HEADROOM_WARN_AT:.0%} of the "
+			f"{capacity:,} that slot 3 holds. Widening it is a new code layout "
+			f"(chemical_code.LAYOUTS), not a config change.",
+			"Chemical QR – serial headroom",
+		)
+	return nxt
+
+
 def _next_surrogate() -> int:
 	"""Next id from the shared counter, seeded past anything already allocated.
 
@@ -158,9 +209,11 @@ def issue_for_stock_entry(doc, regenerate: bool = False) -> list[dict]:
 		return []
 
 	year = name_year(doc.name) or int(str(doc.posting_date or "")[:4] or 0) % 100
-	se_tail = numeric_tail(doc.name)
-	wo_tail = numeric_tail(doc.work_order)
+	# Bounded to the slot: the Work Order number is Frappe's, not ours, and the one
+	# lesson of the MAT-STE- series repair is that a borrowed number can move.
+	wo_tail = numeric_tail(doc.work_order, widths()["wo_tail"])
 	issued: list[dict] = []
+	skipped: list[str] = []
 
 	for row in doc.items or []:
 		if not row.item_code:
@@ -177,20 +230,26 @@ def issue_for_stock_entry(doc, regenerate: bool = False) -> list[dict]:
 			continue
 
 		surrogate = item_surrogate(row.item_code)
+		# Allocated here, after the already-labelled check, so a rerun of the backfill
+		# does not burn a serial per line it skips.
+		serial = _next_label_serial()
 		try:
 			code = encode(
 				year=year,
-				se_tail=se_tail,
+				ref=serial,
 				item_id=surrogate,
 				qty=flt(row.qty),
 				wo_tail=wo_tail,
 			)
-		except CodeError:
-			# A segment overflowed — the label is skipped rather than issued wrong,
-			# and the failure is recorded where somebody will see it.
+		except CodeError as e:
+			# A segment overflowed — the label is skipped rather than issued wrong.
+			# Since the serial is ours and dense this should not be reachable; the
+			# arm is kept because issuing a code that says the wrong thing is worse
+			# than issuing none, and because `wo_tail` is still a borrowed number.
+			skipped.append(f"line {row.idx} ({row.item_code}): {e}")
 			frappe.log_error(
 				f"{doc.name} line {row.idx}: cannot encode a label code "
-				f"(se_tail={se_tail} wo_tail={wo_tail} item={surrogate})",
+				f"(serial={serial} wo_tail={wo_tail} item={surrogate}): {e}",
 				"Chemical QR – encode failed",
 			)
 			continue
@@ -204,6 +263,7 @@ def issue_for_stock_entry(doc, regenerate: bool = False) -> list[dict]:
 			"item_code": row.item_code,
 			"item_name": row.item_name or row.item_code,
 			"item_surrogate": surrogate,
+			"serial": serial,
 			"qty": flt(row.qty),
 			"uom": row.uom or row.stock_uom,
 			"greenhouse": _greenhouse_of(doc),
@@ -222,6 +282,18 @@ def issue_for_stock_entry(doc, regenerate: bool = False) -> list[dict]:
 					LABEL, label.name, "attachment", fname, update_modified=False
 				)
 		issued.append({"code": code, "item_code": row.item_code, "reissued": True})
+
+	if skipped:
+		# The storesman used to find this out days later, as "1 skipped (no QR)" on the
+		# printing page, with no way to tell which line or why. Tell them now.
+		frappe.msgprint(
+			"These lines were transferred but could not be given a traceable label:<br>"
+			+ "<br>".join(skipped)
+			+ "<br><br>The stock moved as normal. Report this — the chemicals cannot "
+			"be scan-verified at the CSU without a label.",
+			title="Some labels could not be issued",
+			indicator="orange",
+		)
 
 	return issued
 
@@ -356,6 +428,12 @@ def explain_code(payload: str) -> dict:
 		"segments": {
 			"format_version": parsed.version,
 			"year": 2000 + parsed.year,
+			# Slot 3 means different things in different layouts, so it is reported
+			# under the name it actually has. `stock_entry_tail` stays for v1 codes and
+			# reads None for later ones — the row below is the authority either way.
+			"reference": parsed.ref,
+			"reference_kind": parsed.ref_kind,
+			"label_serial": parsed.serial,
 			"stock_entry_tail": parsed.se_tail,
 			"item_surrogate": parsed.item_id,
 			"qty": None if parsed.qty_overflowed else parsed.qty,

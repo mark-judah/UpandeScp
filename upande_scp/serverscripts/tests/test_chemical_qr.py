@@ -25,6 +25,9 @@ from upande_scp.serverscripts.qr.chemical_code import (
 	LAYOUT,
 	QTY_OVERFLOW,
 	VERSION,
+	LAYOUTS,
+	ref_capacity,
+	numeric_tail,
 	CodeError,
 	decode,
 	encode,
@@ -34,7 +37,7 @@ from upande_scp.serverscripts.qr.chemical_code import (
 	numeric_tail,
 )
 
-SAMPLE = dict(year=26, se_tail=2562406, item_id=347, wo_tail=5200)
+SAMPLE = dict(year=26, ref=2562406, item_id=347, wo_tail=5200)
 
 
 class TestCodec(unittest.TestCase):
@@ -70,7 +73,8 @@ class TestCodec(unittest.TestCase):
 		got = decode(code)
 		self.assertEqual(got.version, VERSION)
 		self.assertEqual(got.year, 26)
-		self.assertEqual(got.se_tail, 2562406)
+		self.assertEqual(got.ref, 2562406)
+		self.assertEqual(got.serial, 2562406)
 		self.assertEqual(got.item_id, 347)
 		self.assertEqual(got.wo_tail, 5200)
 		self.assertEqual(got.random, 84915177)
@@ -80,14 +84,14 @@ class TestCodec(unittest.TestCase):
 	def test_segments_are_read_at_the_right_offsets(self):
 		"""A layout edit that shifts a boundary would still round-trip; this catches it
 		by checking the digits land where the documented layout says."""
-		code = encode(year=7, se_tail=1, item_id=2, wo_tail=3, qty=0.04, rand=5)
+		code = encode(year=7, ref=1, item_id=2, wo_tail=3, qty=0.04, rand=5)
 		at, seen = 0, {}
 		for name, width in LAYOUT:
 			seen[name] = code[at : at + width]
 			at += width
-		self.assertEqual(seen["version"], "1")
+		self.assertEqual(seen["version"], str(VERSION))
 		self.assertEqual(seen["year"], "07")
-		self.assertEqual(seen["se_tail"], "0000001")
+		self.assertEqual(seen["ref"], "0000001")
 		self.assertEqual(seen["item_id"], "0002")
 		self.assertEqual(seen["qty_x100"], "00004")
 		self.assertEqual(seen["wo_tail"], "000003")
@@ -121,9 +125,9 @@ class TestCodec(unittest.TestCase):
 
 	def test_a_segment_that_cannot_fit_is_refused_not_truncated(self):
 		with self.assertRaises(CodeError):
-			encode(year=26, se_tail=99_999_999, item_id=1, wo_tail=1, qty=1)
+			encode(year=26, ref=99_999_999, item_id=1, wo_tail=1, qty=1)
 		with self.assertRaises(CodeError):
-			encode(year=26, se_tail=1, item_id=99_999, wo_tail=1, qty=1)
+			encode(year=26, ref=1, item_id=99_999, wo_tail=1, qty=1)
 
 	def test_junk_is_rejected(self):
 		for bad in ("Score 250 EC\n10 L", "", "12345", "1" * 34, "abc" * 11, None):
@@ -329,10 +333,80 @@ class TestVerifyScan(unittest.TestCase):
 		out = CL.explain_code(label.code)
 		self.assertTrue(out["valid"])
 		self.assertTrue(out["issued"])
-		self.assertEqual(out["segments"]["stock_entry_tail"], SAMPLE["se_tail"])
+		self.assertEqual(out["segments"]["label_serial"], SAMPLE["ref"])
 		self.assertEqual(out["segments"]["work_order_tail"], SAMPLE["wo_tail"])
 		self.assertAlmostEqual(out["segments"]["qty"], 2.25)
 
 	def test_explain_code_on_a_legacy_payload_says_so(self):
 		out = CL.explain_code("Score 250 EC\n10 L")
 		self.assertFalse(out["valid"])
+
+
+class TestLayoutVersions(unittest.TestCase):
+	"""Slot 3 stopped being a number we borrow, and old stickers still scan."""
+
+	def test_a_v1_sticker_still_decodes_after_v2_shipped(self):
+		"""The version digit is first so this is possible. Until now `decode` threw on
+		any version but the current one, so the promise in the docstring was not kept —
+		and shipping v2 would have bricked every label already on a shelf."""
+		v1 = encode(**SAMPLE, qty=2.25, rand=84915177, version=1)
+		got = decode(v1)
+		self.assertEqual(got.version, 1)
+		self.assertEqual(got.code, v1, "a v1 code must re-encode to itself, not to v2")
+		self.assertTrue(looks_like_code(v1))
+
+	def test_slot_three_is_named_for_what_it_holds(self):
+		v1 = decode(encode(**SAMPLE, qty=1, rand=1, version=1))
+		v2 = decode(encode(**SAMPLE, qty=1, rand=1))
+		self.assertEqual((v1.se_tail, v1.serial), (SAMPLE["ref"], None))
+		self.assertEqual((v2.serial, v2.se_tail), (SAMPLE["ref"], None))
+		self.assertIn("stock entry", v1.describe())
+		self.assertIn("label #", v2.describe())
+
+	def test_an_unknown_layout_is_refused_by_name(self):
+		future = "9" + "0" * (CODE_LENGTH - 1)
+		self.assertFalse(looks_like_code(future))
+		with self.assertRaises(CodeError) as ctx:
+			decode(future)
+		self.assertIn("v9", str(ctx.exception))
+
+	def test_every_layout_is_the_same_length(self):
+		"""A shorter or longer layout would change the printed symbol size and break
+		the length check that tells our codes from a legacy text payload."""
+		for version, layout in LAYOUTS.items():
+			self.assertEqual(sum(w for _, w in layout), CODE_LENGTH, f"v{version}")
+			self.assertEqual(layout[0], ("version", 1), f"v{version}")
+
+	def test_the_nine_digit_name_that_started_this_is_still_refused(self):
+		"""MAT-STE-2026-100001717. Slot 3 is seven digits and that has not changed —
+		what changed is that we no longer put a borrowed number in it."""
+		with self.assertRaises(CodeError):
+			encode(year=26, ref=100001717, item_id=1, wo_tail=4045, qty=1)
+
+	def test_the_slot_holds_ten_million(self):
+		self.assertEqual(ref_capacity(), 10_000_000)
+		self.assertEqual(encode(year=26, ref=9_999_999, item_id=1, wo_tail=1,
+		                        qty=1, rand=1)[3:10], "9999999")
+
+
+class TestBorrowedNumbersCannotBreakALabel(unittest.TestCase):
+	"""The residual risk after the serial: `wo_tail` is still Frappe's number."""
+
+	def test_a_tail_is_kept_to_its_slot(self):
+		"""A Work Order series repaired the way MAT-STE- was would push this past six
+		digits and, unbounded, take every label down with it."""
+		self.assertEqual(numeric_tail("MFG-WO-2026-100004045", 6), 4045)
+		self.assertEqual(numeric_tail("MFG-WO-2026-05200", 6), 5200)
+		self.assertEqual(numeric_tail("MFG-WO-2026-05200-1", 6), 5200)
+
+	def test_unbounded_is_still_the_default(self):
+		self.assertEqual(numeric_tail("MFG-WO-2026-100004045"), 100004045)
+
+	def test_a_label_survives_a_work_order_series_jump(self):
+		"""End to end through the encoder: the label is still issued, and the tail it
+		shows is the low-order digits — which is what `…5200` already meant."""
+		code = encode(
+			year=26, ref=1, item_id=1, qty=1,
+			wo_tail=numeric_tail("MFG-WO-2026-100004045", 6), rand=1,
+		)
+		self.assertEqual(decode(code).wo_tail, 4045)

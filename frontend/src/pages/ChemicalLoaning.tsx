@@ -60,7 +60,7 @@ import {
 } from "@/components/ui/table";
 import { Toaster, type ToastItem } from "@/components/Toaster";
 import { cn } from "@/lib/utils";
-import { FrappeError } from "@/lib/frappe";
+import { errorText } from "@/lib/errors";
 import { fmtQty } from "@/lib/uom";
 import { searchChemicalItems, type ChemicalItem } from "@/lib/scouting-api";
 import {
@@ -235,7 +235,7 @@ export function ChemicalLoaning() {
     } catch (e) {
       pushToast(
         "err",
-        e instanceof FrappeError ? e.message : "Could not send the request.",
+        errorText(e, "Could not send the request."),
       );
     } finally {
       setSubmitting(false);
@@ -708,7 +708,7 @@ function RequestCard({
       );
       await onDecided();
     } catch (e) {
-      pushToast("err", e instanceof FrappeError ? e.message : "Could not save.");
+      pushToast("err", errorText(e, "Could not save."));
     } finally {
       setBusy(false);
     }

@@ -31,6 +31,7 @@ import {
 } from "@/lib/spray-plan-admin-api";
 import { FrappeError } from "@/lib/frappe";
 
+import { errorText } from "@/lib/errors";
 interface RowState {
   farm: string;
   business_unit: string;
@@ -77,7 +78,7 @@ export function SprayPlanAccess() {
         if (e instanceof FrappeError) {
           setError({ status: e.status, message: e.message });
         } else {
-          setError({ status: 0, message: String(e) });
+          setError({ status: 0, message: errorText(e) });
         }
       })
       .finally(() => !cancelled && setLoading(false));
@@ -106,7 +107,7 @@ export function SprayPlanAccess() {
         saving: false,
       });
     } catch (e) {
-      const msg = e instanceof FrappeError ? e.message : String(e);
+      const msg = errorText(e);
       updateRow(farm, { saving: false, error: msg });
     }
   };

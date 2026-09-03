@@ -67,6 +67,7 @@ import {
 import { Toaster, type ToastItem } from "@/components/Toaster";
 import { cn } from "@/lib/utils";
 import { bootstrap, FrappeError } from "@/lib/frappe";
+import { errorText } from "@/lib/errors";
 import { fmtQty } from "@/lib/uom";
 import { searchChemicalItems, type ChemicalItem } from "@/lib/scouting-api";
 import { fetchMyFarms } from "@/lib/loaning-api";
@@ -139,7 +140,7 @@ function useToasts() {
 
 function errText(e: unknown): string {
   if (e instanceof FrappeError) return e.message;
-  return e instanceof Error ? e.message : String(e);
+  return errorText(e);
 }
 
 export function Procurement() {

@@ -43,6 +43,7 @@ import {
 } from "@/lib/spray-plan-creator-api";
 import { FrappeError } from "@/lib/frappe";
 
+import { errorText } from "@/lib/errors";
 interface Props {
   onToast: (kind: "ok" | "err" | "loading" | "warn", text: string, autoMs?: number) => number;
   onDismiss: (id: number) => void;
@@ -66,7 +67,7 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
         if (e instanceof FrappeError && e.status === 403) {
           setDrafts([]);
         } else {
-          setError(e instanceof Error ? e.message : String(e));
+          setError(errorText(e));
         }
       })
       .finally(() => setLoading(false));
@@ -89,7 +90,7 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
       refresh();
     } catch (e) {
       onDismiss(tid);
-      onToast("err", e instanceof Error ? e.message : String(e));
+      onToast("err", errorText(e));
     }
   };
 
@@ -101,7 +102,7 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
       const d = await fetchDraftPlan(name);
       setDetail(d);
     } catch (e) {
-      onToast("err", e instanceof Error ? e.message : String(e));
+      onToast("err", errorText(e));
       setDetailOpen(false);
     } finally {
       setDetailLoading(false);
@@ -127,7 +128,7 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
       refresh();
     } catch (e) {
       onDismiss(tid);
-      onToast("err", e instanceof Error ? e.message : String(e));
+      onToast("err", errorText(e));
     } finally {
       setBusy(false);
     }

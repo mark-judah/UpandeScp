@@ -38,6 +38,7 @@ import {
   type OrderingRow,
 } from "@/lib/ordering-api";
 
+import { errorText } from "@/lib/errors";
 export function OrderingTab() {
   const [crops, setCrops] = useState<string[]>([]);
   const [crop, setCrop] = useState<string>("");
@@ -53,7 +54,7 @@ export function OrderingTab() {
         setCrops(r);
         if (r.length && !crop) setCrop(r[0]);
       })
-      .catch((e) => setError(e?.message || "Failed to load crops"));
+      .catch((e) => setError(errorText(e, "Failed to load crops")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -70,7 +71,7 @@ export function OrderingTab() {
         if (!cancelled) setBundle(b);
       })
       .catch((e) => {
-        if (!cancelled) setError(e?.message || "Failed to load ordering");
+        if (!cancelled) setError(errorText(e, "Failed to load ordering"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -109,7 +110,7 @@ export function OrderingTab() {
       await savePriorities(crop, bundle);
       setSavedAt(new Date().toLocaleTimeString());
     } catch (e: any) {
-      setError(e?.message || "Save failed");
+      setError(errorText(e, "Save failed"));
     } finally {
       setSaving(false);
     }

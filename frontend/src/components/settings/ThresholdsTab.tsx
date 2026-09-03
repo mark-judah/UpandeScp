@@ -42,6 +42,7 @@ import {
   type ThresholdsBundle,
 } from "@/lib/thresholds-api";
 
+import { errorText } from "@/lib/errors";
 type FilterRow = ThresholdPestRow | ThresholdDiseaseRow;
 
 function isPest(row: FilterRow): row is ThresholdPestRow {
@@ -63,7 +64,7 @@ export function ThresholdsTab() {
         setCrops(r);
         if (r.length && !crop) setCrop(r[0]);
       })
-      .catch((e) => setError(e?.message || "Failed to load crops"));
+      .catch((e) => setError(errorText(e, "Failed to load crops")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -82,7 +83,7 @@ export function ThresholdsTab() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setError(e?.message || "Failed to load thresholds");
+        setError(errorText(e, "Failed to load thresholds"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -143,7 +144,7 @@ export function ThresholdsTab() {
       await saveThresholds(crop, bundle);
       setSavedAt(new Date().toLocaleTimeString());
     } catch (e: any) {
-      setError(e?.message || "Save failed");
+      setError(errorText(e, "Save failed"));
     } finally {
       setSaving(false);
     }

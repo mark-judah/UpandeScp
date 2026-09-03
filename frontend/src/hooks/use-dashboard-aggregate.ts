@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { call } from "@/lib/frappe";
+import { errorText } from "@/lib/errors";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useJobProgress } from "@/hooks/use-job-progress";
 
@@ -109,7 +110,7 @@ export function useDashboardAggregate<T>(
         setData(payload);
       } catch (e: any) {
         if (tokenRef.current !== token) return;
-        setError(e?.message || "Failed to load dashboard data");
+        setError(errorText(e, "Failed to load dashboard data"));
       } finally {
         if (tokenRef.current === token) {
           setLoading(false);

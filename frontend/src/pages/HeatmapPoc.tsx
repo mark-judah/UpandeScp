@@ -19,6 +19,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { call } from "@/lib/frappe";
+import { errorText } from "@/lib/errors";
 import { fetchBedsAndZones } from "@/lib/scouting-api";
 import {
   projectGeometry,
@@ -106,7 +107,7 @@ export function HeatmapPoc() {
     if (!params.ghs.length) return;
     void fetchBedsAndZones()
       .then((t) => setTree(t as any))
-      .catch((e) => setErr(e?.message || "geometry fetch failed"));
+      .catch((e) => setErr(errorText(e, "geometry fetch failed")));
   }, [params.ghs.length === 0]);
 
   // Fetch all GHs in parallel whenever the param set changes.
@@ -176,7 +177,7 @@ export function HeatmapPoc() {
             const next = cur.slice();
             next[rowIdx] = {
               greenhouse: gh,
-              err: e?.message || "fetch failed",
+              err: errorText(e, "fetch failed"),
             };
             return next;
           }),

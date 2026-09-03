@@ -15,6 +15,7 @@ import type {
   ScoutingMeta,
 } from "@/lib/scouting-types";
 
+import { errorText } from "@/lib/errors";
 const EMPTY_META: ScoutingMeta = {
   pestColors: {},
   diseaseColors: {},
@@ -165,7 +166,7 @@ export function useScouting({
         } catch (e: any) {
           if (tokenRef.current !== token) return;
           console.error("[scouting] hydrate failed", e);
-          setError(e?.message || "Failed to load scouting data");
+          setError(errorText(e, "Failed to load scouting data"));
           return;
         } finally {
           if (tokenRef.current === token) setLoading(false);

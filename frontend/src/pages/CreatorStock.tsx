@@ -49,6 +49,7 @@ import {
 } from "@/lib/spray-plan-creator-api";
 import { cn } from "@/lib/utils";
 
+import { errorText } from "@/lib/errors";
 interface BulletRow {
   item_code: string;
   item_name: string;
@@ -161,8 +162,7 @@ export function CreatorStock() {
       .then(setData)
       .catch((e) =>
         setError(
-          e?.message ||
-            "Could not load chemical stock. Ask the GM to confirm your farm assignments.",
+          errorText(e, "Could not load chemical stock. Ask the GM to confirm your farm assignments."),
         ),
       )
       .finally(() => setLoading(false));

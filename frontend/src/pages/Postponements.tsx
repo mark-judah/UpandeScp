@@ -48,6 +48,7 @@ import {
 import { Toaster, type ToastItem } from "@/components/Toaster";
 import { cn } from "@/lib/utils";
 import { bootstrap, FrappeError } from "@/lib/frappe";
+import { errorText } from "@/lib/errors";
 import {
   declarePostponement,
   decidePostponement,
@@ -75,7 +76,7 @@ type TabKey = "plans" | "pending" | "history";
 
 function errText(e: unknown): string {
   if (e instanceof FrappeError) return e.message;
-  return e instanceof Error ? e.message : String(e);
+  return errorText(e);
 }
 
 export function Postponements() {

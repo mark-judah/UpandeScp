@@ -15,6 +15,7 @@ import {
   type ApprovalReview,
 } from "@/lib/spray-plan-creator-api";
 
+import { errorText } from "@/lib/errors";
 interface Props {
   woName: string;
 }
@@ -30,7 +31,7 @@ export function ApprovalChemicalsTable({ woName }: Props) {
     setError(null);
     getApprovalReview(woName)
       .then((r) => !cancelled && setReview(r))
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)))
+      .catch((e) => !cancelled && setError(errorText(e)))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;

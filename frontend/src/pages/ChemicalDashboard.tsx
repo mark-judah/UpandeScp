@@ -20,6 +20,7 @@ import { CsuLevels } from "@/components/CsuLevels";
 import { StoreBucketPanel } from "@/components/StoreBucketPanel";
 import { cn } from "@/lib/utils";
 
+import { errorText } from "@/lib/errors";
 function fmt(n: number): string {
   if (Math.abs(n) >= 1000) return n.toLocaleString(undefined, {
     maximumFractionDigits: 0,
@@ -38,7 +39,7 @@ export function ChemicalDashboard() {
     setError(null);
     fetchChemicalOverview()
       .then(setData)
-      .catch((e) => setError(e?.message || "Failed to load stock"))
+      .catch((e) => setError(errorText(e, "Failed to load stock")))
       .finally(() => setLoading(false));
   };
 

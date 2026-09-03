@@ -76,6 +76,7 @@ import {
 import { planLabel, MIN_DIM_FLOOR_MM } from "@/lib/label-tiers";
 import { cn } from "@/lib/utils";
 
+import { errorText } from "@/lib/errors";
 const ALL_FARMS = "__all__";
 const CUSTOM = "__custom__";
 
@@ -461,7 +462,7 @@ export function Labels() {
           return next;
         });
       })
-      .catch((e) => setError(e?.message || "Failed to load transfers"))
+      .catch((e) => setError(errorText(e, "Failed to load transfers")))
       .finally(() => setLoading(false));
   };
 
@@ -602,7 +603,7 @@ export function Labels() {
         );
       }
     } catch (e: any) {
-      setError(e?.message || "Failed to generate PDF.");
+      setError(errorText(e, "Failed to generate PDF."));
     } finally {
       setBusy(false);
     }

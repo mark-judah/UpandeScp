@@ -61,6 +61,7 @@ import {
 } from "@/lib/store-keeper-api";
 import { cn } from "@/lib/utils";
 
+import { errorText } from "@/lib/errors";
 const ALL_FARMS = "__all__";
 
 function fmt(n: number): string {
@@ -116,7 +117,7 @@ export function SprayPlanTransfers() {
           return next;
         });
       })
-      .catch((e) => setError(e?.message || "Failed to load drafts"))
+      .catch((e) => setError(errorText(e, "Failed to load drafts")))
       .finally(() => setLoading(false));
   };
 
@@ -196,7 +197,7 @@ export function SprayPlanTransfers() {
       setAssignResult(r);
       load(); // refresh rows so employee column updates
     } catch (e: any) {
-      setError(e?.message || "Bulk assign failed");
+      setError(errorText(e, "Bulk assign failed"));
     } finally {
       setAssigning(false);
     }
@@ -293,7 +294,7 @@ export function SprayPlanTransfers() {
         load();
       }
     } catch (e: any) {
-      setError(e?.message || "Submit failed");
+      setError(errorText(e, "Submit failed"));
     } finally {
       setSubmitting(false);
     }
@@ -317,7 +318,7 @@ export function SprayPlanTransfers() {
         load();
       }
     } catch (e: any) {
-      setError(e?.message || "Submit failed");
+      setError(errorText(e, "Submit failed"));
     } finally {
       setSubmitting(false);
     }

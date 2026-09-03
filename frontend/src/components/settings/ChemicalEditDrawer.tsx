@@ -34,8 +34,8 @@ import {
   type TargetsResponse,
   type ToxicityClass,
 } from "@/lib/settings-api";
-import { FrappeError } from "@/lib/frappe";
 
+import { errorText } from "@/lib/errors";
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -234,7 +234,7 @@ export function ChemicalEditDrawer({
       });
       onClose();
     } catch (e) {
-      setError(e instanceof FrappeError ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setSaving(false);
     }

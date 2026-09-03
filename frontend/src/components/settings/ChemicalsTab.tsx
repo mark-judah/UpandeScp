@@ -47,7 +47,7 @@ import {
   type CodesResponse,
   type TargetsResponse,
 } from "@/lib/settings-api";
-import { FrappeError } from "@/lib/frappe";
+import { errorText } from "@/lib/errors";
 import { ChemicalEditDrawer } from "./ChemicalEditDrawer";
 
 const PAGE_SIZE = 30;
@@ -103,7 +103,7 @@ export function ChemicalsTab() {
     })
       .then((r) => setData(r))
       .catch((e) =>
-        setError(e instanceof FrappeError ? e.message : String(e)),
+        setError(errorText(e)),
       )
       .finally(() => setLoading(false));
   };
@@ -149,7 +149,7 @@ export function ChemicalsTab() {
           : d,
       );
     } catch (e) {
-      setError(e instanceof FrappeError ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setSavingCode(null);
     }

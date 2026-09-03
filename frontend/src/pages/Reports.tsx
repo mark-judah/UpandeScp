@@ -27,6 +27,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { BlockWeeklyReport } from "./BlockWeeklyReport";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { call } from "@/lib/frappe";
+import { errorText } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 
 type Status = { kind: "ok" | "err"; text: string } | null;
@@ -177,7 +178,7 @@ function RoseReports() {
       await call(spec.emailMethod, spec.needsFarm ? { farm, week } : {});
       setStatus({ kind: "ok", text: `${spec.title} emailed.` });
     } catch (e: any) {
-      setStatus({ kind: "err", text: e?.message || "Email failed." });
+      setStatus({ kind: "err", text: errorText(e, "Email failed.") });
     } finally {
       setBusy(null);
     }

@@ -77,6 +77,7 @@ import {
   type TeamMemberRow,
 } from "@/components/spray-plan/SprayTeamEditor";
 import { FrappeError } from "@/lib/frappe";
+import { asStatement, errorText, explainError } from "@/lib/errors";
 import { mergeDateTime, splitDateTime, todayAt, ymd } from "@/lib/utils";
 import {
   pestColor,
@@ -331,9 +332,14 @@ export function ApplicationPlan() {
   // Inline toaster pinned just below the header.
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastIdRef = useRef(0);
-  const pushToast = (kind: ToastItem["kind"], text: string, autoMs = 4000) => {
+  const pushToast = (
+    kind: ToastItem["kind"],
+    text: string,
+    autoMs = 4000,
+    hint?: string,
+  ) => {
     const id = ++toastIdRef.current;
-    setToasts((prev) => [...prev, { id, kind, text }]);
+    setToasts((prev) => [...prev, { id, kind, text: asStatement(text), hint }]);
     if (kind !== "loading" && autoMs > 0) {
       setTimeout(
         () => setToasts((prev) => prev.filter((t) => t.id !== id)),
@@ -341,6 +347,12 @@ export function ApplicationPlan() {
       );
     }
     return id;
+  };
+  /** Server errors get the statement on one line and what to do on the next,
+   *  rather than one long run-on sentence. */
+  const pushError = (e: unknown, fallback?: string) => {
+    const h = explainError(e, fallback);
+    return pushToast("err", h.text, h.kind === "bug" ? 12000 : 8000, h.hint);
   };
   const dismissToast = (id: number) =>
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -382,7 +394,7 @@ export function ApplicationPlan() {
         if (e instanceof FrappeError) {
           setBootstrapError({ status: e.status, message: e.message });
         } else {
-          setBootstrapError({ status: 0, message: String(e) });
+          setBootstrapError({ status: 0, message: errorText(e) });
         }
       });
     fetchBedsAndZones().then((v) => !cancelled && setVarietyTree(v));
@@ -474,8 +486,7 @@ export function ApplicationPlan() {
         setBomDetails(null);
         setChemRows([]);
         setBomError(
-          e?.message ||
-            "Could not load this tank mix's chemicals. Try again, or pick another mix.",
+          errorText(e, "Could not load this tank mix's chemicals. Try again, or pick another mix."),
         );
       })
       .finally(() => !cancelled && setBomLoading(false));
@@ -1247,7 +1258,9 @@ export function ApplicationPlan() {
       dismissToast(loaderId);
       pushToast(
         "ok",
-        woName ? `Added ${woName} to your draft batch.` : "Plan added to batch.",
+        woName ? `${woName} is in your draft batch.` : "The plan is in your draft batch.",
+        4000,
+        "Submit the batch when you have added every plan for the day.",
       );
       for (const w of r?.warnings || []) {
         pushToast("warn", w, 8000);
@@ -1282,7 +1295,7 @@ export function ApplicationPlan() {
       window.dispatchEvent(new CustomEvent("spray-plan:draft-added"));
     } catch (e: any) {
       dismissToast(loaderId);
-      pushToast("err", e?.message || "Submission failed");
+      pushError(e, "The spray plan could not be added to your batch.");
     } finally {
       setBusy(false);
     }
@@ -1365,11 +1378,11 @@ export function ApplicationPlan() {
         setNewBomChems([]);
         setNewBomSearch("");
       } else {
-        pushToast("err", r.message || "Could not create the tank mix.");
+        pushError(r.message, "The tank mix could not be created.");
       }
     } catch (e: any) {
       dismissToast(loaderId);
-      pushToast("err", e?.message || "Could not create the tank mix.");
+      pushError(e, "The tank mix could not be created.");
     } finally {
       setCreatingBom(false);
     }

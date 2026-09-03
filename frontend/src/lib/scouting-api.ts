@@ -12,6 +12,7 @@ import type {
 } from "./scouting-types";
 import { expandTreeRows, type OrchardTreeRow } from "./orchard-rows";
 
+import { errorText } from "./errors";
 export const DEFAULT_CROP = "Rose";
 
 const toNumber = (v: any): number => {
@@ -959,7 +960,7 @@ export async function createBom(args: CreateBomArgs): Promise<CreateBomResult> {
     );
     return r || { status: "error", message: "No response from server" };
   } catch (e: any) {
-    return { status: "error", message: e?.message || "Failed to create BOM" };
+    return { status: "error", message: errorText(e, "Failed to create BOM") };
   }
 }
 

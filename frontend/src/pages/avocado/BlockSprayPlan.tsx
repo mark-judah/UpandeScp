@@ -16,6 +16,7 @@ import {
   type CreatorBootstrap,
 } from "@/lib/spray-plan-creator-api";
 
+import { errorText } from "@/lib/errors";
 /** Litres of water per hectare — the same constant the rose planner uses to derive
  *  `custom_water_volume` from the area to spray. Kept identical on purpose: a block
  *  and a greenhouse are sprayed by the same crews with the same equipment, and a
@@ -65,7 +66,7 @@ export function BlockSprayPlan({
   useEffect(() => {
     fetchCreatorBootstrap()
       .then(setBoot)
-      .catch((e) => setError(e?.message || "Could not load planning data."));
+      .catch((e) => setError(errorText(e, "Could not load planning data.")));
   }, []);
 
   const blockInfo = useMemo(
@@ -124,7 +125,7 @@ export function BlockSprayPlan({
       setDone(wo || "created");
       if (wo && onDone) onDone(wo);
     } catch (e: unknown) {
-      setError((e as { message?: string })?.message || "Could not create the plan.");
+      setError(errorText(e, "Could not create the plan."));
     } finally {
       setBusy(false);
     }

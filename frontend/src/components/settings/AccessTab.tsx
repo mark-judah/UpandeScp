@@ -52,6 +52,7 @@ import {
 } from "@/lib/spray-plan-admin-api";
 import { FrappeError } from "@/lib/frappe";
 
+import { errorText } from "@/lib/errors";
 /** Sentinel for "no warehouse selected" — Radix Select rejects an empty
  *  string as an item value, so we need a non-empty placeholder value. */
 const NO_STORE = "__none__";
@@ -121,7 +122,7 @@ export function AccessTab() {
         if (e instanceof FrappeError) {
           setError({ status: e.status, message: e.message });
         } else {
-          setError({ status: 0, message: String(e) });
+          setError({ status: 0, message: errorText(e) });
         }
       })
       .finally(() => !cancelled && setLoading(false));
@@ -207,7 +208,7 @@ export function AccessTab() {
       }
       updateRow(farm, patch);
     } catch (e) {
-      const msg = e instanceof FrappeError ? e.message : String(e);
+      const msg = errorText(e);
       updateRow(farm, { saving: false, error: msg });
     }
   };

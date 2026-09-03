@@ -80,6 +80,7 @@ import {
   type LifecycleSummaryRow,
 } from "@/lib/lifecycle-api";
 
+import { errorText } from "@/lib/errors";
 const ALL = "__all__";
 // Pending/forwarded come from the approval feed; the four post-approval
 // stages come from the lifecycle summary so the GM sees the whole journey.
@@ -353,7 +354,7 @@ export function Approvals() {
         }
       } catch (e: any) {
         err++;
-        appendLog(`✗ ${name} — ${e?.message || "Could not connect to server."}`, "err");
+        appendLog(`✗ ${name} — ${errorText(e, "Could not connect to server.")}`, "err");
       }
       const pct = Math.round(((i + 1) / woNames.length) * 100);
       setProgress((p) => ({ ...p, fillPct: pct }));
@@ -402,7 +403,7 @@ export function Approvals() {
         }
       } catch (e: any) {
         err++;
-        appendLog(`✗ ${name} — ${e?.message || "Could not connect to server."}`, "err");
+        appendLog(`✗ ${name} — ${errorText(e, "Could not connect to server.")}`, "err");
       }
       const pct = Math.round(((i + 1) / woNames.length) * 100);
       setProgress((p) => ({ ...p, fillPct: pct }));
@@ -462,7 +463,7 @@ export function Approvals() {
         isStop: false,
         doneColor: "#ef4444",
         closable: true,
-        log: [{ text: e?.message || String(e), variant: "err" }],
+        log: [{ text: errorText(e), variant: "err" }],
         qrLabels: [],
       });
     } finally {

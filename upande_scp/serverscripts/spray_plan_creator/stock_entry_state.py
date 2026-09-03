@@ -1,6 +1,13 @@
-"""Stock Entry on_submit dispatcher for the Application Floor Plan spray flow.
+"""Stock Entry hooks for the Application Floor Plan spray flow.
 
-The hook is wired in hooks.py against ``Stock Entry.on_submit``. We dispatch on
+Two hooks are wired in hooks.py, both dispatching on ``purpose`` and both acting
+only when the related Work Order is an AFP.
+
+``before_validate`` corrects the entry before ERPNext validates it: a transfer
+gets the plan's cost centre stamped on every row, a Manufacture gets its
+consumption rebuilt from what actually reached the CSU. See the function.
+
+``on_submit`` moves the plan's state. We dispatch on
 ``purpose`` and only act when the related Work Order is an AFP. State
 transitions:
 
@@ -18,13 +25,84 @@ transaction, including the Stock Entry's docstatus=1 write.
 from __future__ import annotations
 
 import frappe
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 AFP_TYPE = "Application Floor Plan"
 CHEMICAL_ISSUED = "Chemical Issued"
+TRANSFER_PURPOSE = "Material Transfer for Manufacture"
+SETTINGS = "Scouting and Crop Protection Settings"
+
+
+def _afp_cost_center(wo_name):
+    """The cost centre this plan belongs to, or None.
+
+    `custom_cost_center` is what the plan itself resolved at creation
+    (drafts._resolve_cost_center_with_override: the operator's override, else
+    the greenhouse chain). Older plans predate that field, so the greenhouse is
+    resolved again as a fallback.
+    """
+    from upande_scp.serverscripts.spray_plan_creator.validation import (
+        match_cost_center,
+    )
+
+    cc = frappe.db.get_value("Work Order", wo_name, "custom_cost_center")
+    if cc:
+        return cc
+    return match_cost_center(
+        frappe.db.get_value("Work Order", wo_name, "custom_greenhouse")
+    )
+
+
+def _stamp_rows(doc, cc):
+    """Attribute every line to `cc` so the GL splits by greenhouse."""
+    if not cc:
+        return
+    for it in (doc.items or []):
+        it.cost_center = cc
+
+
+def _transfer_stamp_enabled():
+    """Whether CSU transfers get the greenhouse cost centre.
+
+    Plainly the stored value — `get_single_value` casts a missing Check to 0, so
+    there is no telling an absent row from a deliberate OFF here. The ON default
+    is written down once by the `stamp_transfer_cost_center_on` patch instead.
+    Turning it off hands the transfer back to ERPNext's own chain (Item Default
+    buying cost centre, then the Company default).
+    """
+    return bool(cint(frappe.db.get_single_value(SETTINGS, "stamp_transfer_cost_center")))
 
 
 def before_validate(doc, method):
+    """Correct AFP stock entries before ERPNext validates them.
+
+    Two jobs, dispatched on `purpose`:
+
+      * `Material Transfer for Manufacture` — stamp the plan's cost centre on
+        every row. ERPNext builds this entry itself (work_order.make_stock_entry,
+        called from spray_plan_approval.approve_single_work_order) and knows
+        nothing about `custom_cost_center`, so without this the rows fall back to
+        the Item Default buying cost centre and then the Company default. When
+        both are blank the entry is refused outright with "Cost Center is
+        mandatory for Item ...". Mixing and Spray have always stamped it; the
+        transfer was the one that did not.
+
+      * `Manufacture` — the consumption rebuild below.
+    """
+    if getattr(doc, "purpose", None) == TRANSFER_PURPOSE:
+        wo_name = getattr(doc, "work_order", None)
+        if (
+            wo_name
+            and frappe.db.get_value("Work Order", wo_name, "custom_type") == AFP_TYPE
+            and _transfer_stamp_enabled()
+        ):
+            _stamp_rows(doc, _afp_cost_center(wo_name))
+        return None
+
+    return _before_validate_manufacture(doc)
+
+
+def _before_validate_manufacture(doc):
     """Auto-correct EVERY AFP Manufacture to consume what was transferred.
 
     Wired on ``Stock Entry.before_validate`` so it runs before ERPNext's own
@@ -56,9 +134,6 @@ def before_validate(doc, method):
     from upande_scp.serverscripts.spray_plan_creator.spray_session import (
         _rebuild_manufacture_from_transfer,
     )
-    from upande_scp.serverscripts.spray_plan_creator.validation import (
-        match_cost_center,
-    )
 
     def raw_totals(d):
         out: dict[str, float] = {}
@@ -72,14 +147,7 @@ def before_validate(doc, method):
 
     # Stamp the greenhouse cost center on every row so the per-chemical GL
     # attributes to the greenhouse, not the company default.
-    cc = frappe.db.get_value("Work Order", wo_name, "custom_cost_center")
-    if not cc:
-        cc = match_cost_center(
-            frappe.db.get_value("Work Order", wo_name, "custom_greenhouse")
-        )
-    if cc:
-        for it in (doc.items or []):
-            it.cost_center = cc
+    _stamp_rows(doc, _afp_cost_center(wo_name))
 
     after = raw_totals(doc)
     if before != after:

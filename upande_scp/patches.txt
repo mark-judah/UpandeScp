@@ -44,3 +44,4 @@ upande_scp.patches.v1_0.correct_crop_farm_tags
 # Absorb Foliar into Spray Product and drop the dead doctypes. Pairs with the
 # pre_model_sync rename above.
 upande_scp.patches.v1_0.consolidate_spray_products
+upande_scp.patches.v1_0.stamp_transfer_cost_center_on

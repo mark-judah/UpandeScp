@@ -1,9 +1,10 @@
 /**
  * Unified Spray Plan Settings page.
  *
- * Four tabs gated to GM / System Manager:
+ * Tabs, all gated to GM / System Manager:
  *   • Access            — assign Spray Plan Creators to farms (legacy).
  *   • Spray Plan        — Spray Plan Settings (Single doctype) form.
+ *   • Accounts          — cost-centre attribution + the GL account overrides.
  *   • Farms & Map       — Map Settings + per-farm coordinates.
  *   • Chemicals         — Item rows in the chemical groups with full
  *                         per-item edit drawer (rate, codes, targets).
@@ -19,6 +20,7 @@ import {
   ListOrdered,
   Loader2,
   MapPin,
+  Scale,
   Settings as SettingsIcon,
   ShieldAlert,
   ShieldCheck,
@@ -28,18 +30,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PageHeader } from "@/components/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccessTab } from "@/components/settings/AccessTab";
+import { AccountsTab } from "@/components/settings/AccountsTab";
 import { ChemicalsTab } from "@/components/settings/ChemicalsTab";
 import { FarmMapTab } from "@/components/settings/FarmMapTab";
 import { SprayPlanTab } from "@/components/settings/SprayPlanTab";
 import { ThresholdsTab } from "@/components/settings/ThresholdsTab";
 import { OrderingTab } from "@/components/settings/OrderingTab";
 import { FrappeError } from "@/lib/frappe";
+import { errorText } from "@/lib/errors";
 import {
   fetchSettingsBundle,
   type SettingsBundle,
 } from "@/lib/settings-api";
 
-const TABS = ["access", "spray-plan", "thresholds", "ordering", "farms", "chemicals"] as const;
+const TABS = [
+  "access", "spray-plan", "accounts", "thresholds", "ordering", "farms", "chemicals",
+] as const;
 type TabId = (typeof TABS)[number];
 
 function getInitialTab(): TabId {
@@ -72,7 +78,7 @@ export function Settings() {
         if (e instanceof FrappeError) {
           setError({ status: e.status, message: e.message });
         } else {
-          setError({ status: 0, message: String(e) });
+          setError({ status: 0, message: errorText(e) });
         }
       })
       .finally(() => !cancelled && setLoading(false));
@@ -104,7 +110,7 @@ export function Settings() {
             Spray Plan Settings
           </span>
         }
-        eyebrow="Access · Plan rules · Maps · Chemicals"
+        eyebrow="Access · Plan rules · Accounts · Maps · Chemicals"
       />
 
       <section className="px-4 md:px-6 py-4">
@@ -155,6 +161,10 @@ export function Settings() {
                 <Sliders />
                 Spray Plan
               </TabsTrigger>
+              <TabsTrigger value="accounts">
+                <Scale />
+                Accounts
+              </TabsTrigger>
               <TabsTrigger value="thresholds">
                 <Gauge />
                 Thresholds
@@ -180,6 +190,14 @@ export function Settings() {
               <SprayPlanTab
                 initial={bundle.spray_plan}
                 farms={bundle.farms}
+                onSaved={(saved) =>
+                  setBundle({ ...bundle, spray_plan: saved })
+                }
+              />
+            </TabsContent>
+            <TabsContent value="accounts">
+              <AccountsTab
+                initial={bundle.spray_plan}
                 onSaved={(saved) =>
                   setBundle({ ...bundle, spray_plan: saved })
                 }

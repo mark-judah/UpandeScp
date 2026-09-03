@@ -23,13 +23,6 @@
   "weather_temp_green_max_c",
   "weather_temp_red_max_c",
   "weather_temp_red_min_c",
-  "material_issue_section",
-  "default_chemical_expense_account",
-  "default_chemical_difference_account",
-  "stock_accounting_section",
-  "spray_raw_chemical_account",
-  "spray_tank_mix_account",
-  "spray_expense_account",
   "flow_section",
   "spray_flow_diagram",
   "submission_gating_section",
@@ -60,6 +53,16 @@
   "progress_email_enabled",
   "progress_email_hour",
   "progress_email_last_sent",
+  "accounts_tab",
+  "cost_center_section",
+  "stamp_transfer_cost_center",
+  "material_issue_section",
+  "default_chemical_expense_account",
+  "default_chemical_difference_account",
+  "stock_accounting_section",
+  "spray_raw_chemical_account",
+  "spray_tank_mix_account",
+  "spray_expense_account",
   "chemicals_tab",
   "cp_groups_section",
   "chemical_item_groups",
@@ -75,6 +78,11 @@
   "scouting_note"
  ],
  "fields": [
+  {
+   "fieldname": "spray_plan_tab",
+   "fieldtype": "Tab Break",
+   "label": "Spray Plan"
+  },
   {
    "fieldname": "intro_section",
    "fieldtype": "Section Break",
@@ -186,51 +194,6 @@
    "label": "Temp: red <= (degC)"
   },
   {
-   "fieldname": "material_issue_section",
-   "fieldtype": "Section Break",
-   "label": "Material Issue Defaults"
-  },
-  {
-   "description": "Used as the fallback expense account on auto-Material-Issue rows when the tank-mix Item has no Item Default for the Work Order's company.",
-   "fieldname": "default_chemical_expense_account",
-   "fieldtype": "Link",
-   "label": "Default Chemical Expense Account",
-   "options": "Account"
-  },
-  {
-   "description": "Written as the Difference Account on the auto-generated Manufacture Stock Entry (tank-mix manufacture).",
-   "fieldname": "default_chemical_difference_account",
-   "fieldtype": "Link",
-   "label": "Default Chemical Difference Account",
-   "options": "Account"
-  },
-  {
-   "fieldname": "stock_accounting_section",
-   "fieldtype": "Section Break",
-   "label": "Stock Accounting (Mixing & Spray)"
-  },
-  {
-   "description": "Overrides the raw-consumption credit on Chemical Mixing. Blank = source warehouse account.",
-   "fieldname": "spray_raw_chemical_account",
-   "fieldtype": "Link",
-   "label": "Raw Chemical Account (credited on Mixing)",
-   "options": "Account"
-  },
-  {
-   "description": "Shared account: tank-mix value in on Mixing (incl. valuation difference), out on Spray. Blank = CSU/WIP warehouse account.",
-   "fieldname": "spray_tank_mix_account",
-   "fieldtype": "Link",
-   "label": "Tank-Mix / WIP Account (debited on Mixing, credited on Spray)",
-   "options": "Account"
-  },
-  {
-   "description": "P&L expense debited on Chemical Spray. Blank = default chemical expense account, then item expense account.",
-   "fieldname": "spray_expense_account",
-   "fieldtype": "Link",
-   "label": "Spray Expense Account (debited on Spray)",
-   "options": "Account"
-  },
-  {
    "fieldname": "flow_section",
    "fieldtype": "Section Break",
    "label": "Flow"
@@ -248,14 +211,14 @@
   },
   {
    "default": "0",
-   "description": "When ON, any Spray Plan Creator can submit any draft (not just drafts they own). Farm-scope checks still apply. Intended for testing — leave OFF in production.",
+   "description": "When ON, any Spray Plan Creator can submit any draft (not just drafts they own). Farm-scope checks still apply. Intended for testing \u2014 leave OFF in production.",
    "fieldname": "bypass_owner_check",
    "fieldtype": "Check",
    "label": "Bypass owner check on Submit for Approval"
   },
   {
    "default": "0",
-   "description": "When ON, the Spray Plan Transfers page also offers a \"Submit without biometric\" action. Use only when the biometric device is unavailable — the submitting user is recorded. Leave OFF in normal operation.",
+   "description": "When ON, the Spray Plan Transfers page also offers a \"Submit without biometric\" action. Use only when the biometric device is unavailable \u2014 the submitting user is recorded. Leave OFF in normal operation.",
    "fieldname": "allow_submit_without_biometric",
    "fieldtype": "Check",
    "label": "Allow submit without biometric (device-down fallback)"
@@ -303,7 +266,7 @@
   },
   {
    "default": "labels",
-   "description": "How a sprayer confirms each chemical taken from the CSU. 'labels' requires scanning the printed QR label (default). 'tick' lets the sprayer tick to confirm instead — only for farms where label printing is unavailable, as it removes the per-chemical scan check.",
+   "description": "How a sprayer confirms each chemical taken from the CSU. 'labels' requires scanning the printed QR label (default). 'tick' lets the sprayer tick to confirm instead \u2014 only for farms where label printing is unavailable, as it removes the per-chemical scan check.",
    "fieldname": "csu_scan_verification",
    "fieldtype": "Select",
    "label": "CSU scan verification method",
@@ -321,7 +284,7 @@
    "options": "<p style='margin:0;color:#6b7280;font-size:12px'>ERPNext's <b>System Settings &rarr; Time Zone</b> governs every timestamp this app writes, every notification, and the clock the scheduler evaluates cron against. It is shown on the SCP settings screen, read-only, alongside what the farms' own coordinates suggest it should be.</p>"
   },
   {
-   "description": "Leave blank to follow ERPNext, which is almost always what you want. A value here changes only how THIS APP renders times — stored timestamps, scheduled reports and notification timing all follow ERPNext, because they must.",
+   "description": "Leave blank to follow ERPNext, which is almost always what you want. A value here changes only how THIS APP renders times \u2014 stored timestamps, scheduled reports and notification timing all follow ERPNext, because they must.",
    "fieldname": "app_timezone",
    "fieldtype": "Data",
    "label": "App display timezone"
@@ -332,7 +295,7 @@
   },
   {
    "default": "1",
-   "description": "On by default. While locked the app timezone cannot be changed. A changed timezone silently re-times every notification, scheduled report and spray deadline, so it takes a deliberate unlock — and every change is written to the Error Log under 'SCP timezone changed'.",
+   "description": "On by default. While locked the app timezone cannot be changed. A changed timezone silently re-times every notification, scheduled report and spray deadline, so it takes a deliberate unlock \u2014 and every change is written to the Error Log under 'SCP timezone changed'.",
    "fieldname": "timezone_locked",
    "fieldtype": "Check",
    "label": "Timezone locked"
@@ -344,7 +307,7 @@
   },
   {
    "default": "10:00:00",
-   "description": "On a plan's own spray date, this is the deadline. After it a supervisor can no longer postpone the plan, and the spray can no longer be started. Read in the site's timezone — check Settings → System Settings if the times look wrong.",
+   "description": "On a plan's own spray date, this is the deadline. After it a supervisor can no longer postpone the plan, and the spray can no longer be started. Read in the site's timezone \u2014 check Settings \u2192 System Settings if the times look wrong.",
    "fieldname": "spray_cutoff_time",
    "fieldtype": "Time",
    "label": "Daily cutoff time"
@@ -362,7 +325,7 @@
   },
   {
    "default": "0",
-   "description": "Extra minutes past the cutoff during which a postponement may still be declared, for the supervisor who is standing in the field at 10:01. Set to 0 for a hard deadline. Does NOT extend the window for starting a spray — that stays hard.",
+   "description": "Extra minutes past the cutoff during which a postponement may still be declared, for the supervisor who is standing in the field at 10:01. Set to 0 for a hard deadline. Does NOT extend the window for starting a spray \u2014 that stays hard.",
    "fieldname": "postponement_grace_minutes",
    "fieldtype": "Int",
    "label": "Grace after cutoff (minutes)"
@@ -425,9 +388,66 @@
    "read_only": 1
   },
   {
-   "fieldname": "spray_plan_tab",
+   "fieldname": "accounts_tab",
    "fieldtype": "Tab Break",
-   "label": "Spray Plan"
+   "label": "Accounts"
+  },
+  {
+   "fieldname": "cost_center_section",
+   "fieldtype": "Section Break",
+   "label": "Cost Centre Attribution"
+  },
+  {
+   "default": "1",
+   "description": "ON: every CSU Chemical Transfer for a spray plan is stamped with the plan's own cost centre (Work Order.custom_cost_center, falling back to the greenhouse resolver) \u2014 so the chemical spend attributes to the greenhouse, the same way Chemical Mixing and Chemical Spray already do. OFF: the transfer is left to ERPNext's own chain (Item Default buying cost centre, then the Company default), which attributes everything to the company cost centre and fails outright when that is blank. Unset reads as ON.",
+   "fieldname": "stamp_transfer_cost_center",
+   "fieldtype": "Check",
+   "label": "Stamp the greenhouse cost centre on CSU Chemical Transfers"
+  },
+  {
+   "fieldname": "material_issue_section",
+   "fieldtype": "Section Break",
+   "label": "Material Issue Defaults"
+  },
+  {
+   "description": "Used as the fallback expense account on auto-Material-Issue rows when the tank-mix Item has no Item Default for the Work Order's company.",
+   "fieldname": "default_chemical_expense_account",
+   "fieldtype": "Link",
+   "label": "Default Chemical Expense Account",
+   "options": "Account"
+  },
+  {
+   "description": "Written as the Difference Account on the auto-generated Manufacture Stock Entry (tank-mix manufacture).",
+   "fieldname": "default_chemical_difference_account",
+   "fieldtype": "Link",
+   "label": "Default Chemical Difference Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "stock_accounting_section",
+   "fieldtype": "Section Break",
+   "label": "Stock Accounting (Mixing & Spray)"
+  },
+  {
+   "description": "Overrides the raw-consumption credit on Chemical Mixing. Blank = source warehouse account.",
+   "fieldname": "spray_raw_chemical_account",
+   "fieldtype": "Link",
+   "label": "Raw Chemical Account (credited on Mixing)",
+   "options": "Account"
+  },
+  {
+   "description": "Shared account: tank-mix value in on Mixing (incl. valuation difference), out on Spray. Blank = CSU/WIP warehouse account.",
+   "fieldname": "spray_tank_mix_account",
+   "fieldtype": "Link",
+   "label": "Tank-Mix / WIP Account (debited on Mixing, credited on Spray)",
+   "options": "Account"
+  },
+  {
+   "description": "P&L expense debited on Chemical Spray. Blank = default chemical expense account, then item expense account.",
+   "fieldname": "spray_expense_account",
+   "fieldtype": "Link",
+   "label": "Spray Expense Account (debited on Spray)",
+   "options": "Account"
   },
   {
    "fieldname": "chemicals_tab",
@@ -470,7 +490,7 @@
    "fieldtype": "Link",
    "label": "Tank Mix UOM",
    "options": "UOM",
-   "description": "UOM a tank-mix BOM is defined in — one unit is one batch. Created on migrate if absent."
+   "description": "UOM a tank-mix BOM is defined in \u2014 one unit is one batch. Created on migrate if absent."
   },
   {
    "fieldname": "allocation_section",

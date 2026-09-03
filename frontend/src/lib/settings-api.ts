@@ -25,6 +25,19 @@ export interface SprayPlanSettings {
   weather_temp_red_min_c: number;
   default_chemical_expense_account: string;
   default_chemical_difference_account: string;
+  /** Overrides the raw-consumption credit on Chemical Mixing. Blank = source warehouse account. */
+  spray_raw_chemical_account: string;
+  /** Tank-mix value in on Mixing, out on Spray. Blank = CSU/WIP warehouse account. */
+  spray_tank_mix_account: string;
+  /** P&L expense debited on Chemical Spray. Blank = the default chemical expense account. */
+  spray_expense_account: string;
+  /**
+   * Stamp the plan's own cost centre on every CSU Chemical Transfer row, the
+   * way Chemical Mixing and Chemical Spray already do. Off hands the transfer
+   * back to ERPNext's chain (Item Default buying cost centre, then the Company
+   * default) — which throws outright when both are blank.
+   */
+  stamp_transfer_cost_center: number;
   bypass_owner_check: number;
   allow_submit_without_biometric: number;
   auto_cancel_enabled: number;

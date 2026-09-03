@@ -46,6 +46,51 @@ def get_dynamic_utm_epsg(latitude, longitude):
     return f"EPSG:{epsg_prefix}{zone_number:02d}"
 
 
+def _feature_geometry(geojson_data):
+    """The geometry and properties out of whichever GeoJSON shape a record has.
+
+    Three shapes reach this app, and which one a record carries is an accident of
+    how it was loaded rather than anything meaningful:
+
+        {"type": "FeatureCollection", "features": [{"geometry": {...}}]}
+        {"type": "Feature", "geometry": {...}}
+        {"type": "LineString" | "Point", "coordinates": [...]}    bare geometry
+
+    The tree cache has always understood all three. The zone cache understood only
+    the first and dropped the rest **silently** — no log, no exception; the zone
+    simply never entered the cache, so a scouted point matched the nearest
+    *parseable* zone however far away it was.
+
+    On staging that was 148,189 of 154,437 zones (96%). A point aimed at Simotwo
+    GH 19 Bed 219 resolved to GH 17 Bed 84, 104 m away in a different greenhouse,
+    and the entry was written with a bed and a zone that disagreed. Nothing about
+    it looked like a failure.
+
+    Returns ``(geometry, properties)``; geometry is None when there is nothing
+    usable, and properties is always a dict so callers need not guard it.
+    """
+    if not isinstance(geojson_data, dict):
+        return None, {}
+
+    kind = geojson_data.get("type")
+
+    if kind == "FeatureCollection":
+        features = geojson_data.get("features") or []
+        if not features:
+            return None, {}
+        feature = features[0] or {}
+        return feature.get("geometry"), (feature.get("properties") or {})
+
+    if kind == "Feature":
+        return geojson_data.get("geometry"), (geojson_data.get("properties") or {})
+
+    # A bare geometry object is its own geometry, and carries no properties.
+    if geojson_data.get("coordinates") is not None:
+        return geojson_data, {}
+
+    return None, {}
+
+
 def _build_zone_cache(utm_epsg: str, project_to_utm):
     """
     Load all zones from the database, parse their GeoJSON, transform them to
@@ -56,29 +101,41 @@ def _build_zone_cache(utm_epsg: str, project_to_utm):
     raw_zones = frappe.get_all("Zone", fields=["name", "bed", "geojson as raw_geojson"])
 
     built = []
+    skipped = 0
     for zone in raw_zones:
         try:
             if not zone.raw_geojson:
+                skipped += 1
                 continue
-            geojson_data = json.loads(zone.raw_geojson)
-            if (
-                geojson_data.get("type") == "FeatureCollection"
-                and geojson_data.get("features")
-            ):
-                feature = geojson_data["features"][0]
-                geometry = feature.get("geometry", {})
-                if geometry.get("type") == "LineString":
-                    coords = geometry.get("coordinates", [])
-                    if len(coords) >= 2:
-                        line_wgs84 = LineString(coords)
-                        line_utm = transform(project_to_utm, line_wgs84)
-                        built.append({
-                            "name": zone.name,
-                            "bed": zone.bed or "",
-                            "line_utm": line_utm,
-                        })
+
+            geometry, _props = _feature_geometry(json.loads(zone.raw_geojson))
+            if not geometry or geometry.get("type") != "LineString":
+                skipped += 1
+                continue
+
+            coords = geometry.get("coordinates") or []
+            if len(coords) < 2:
+                skipped += 1
+                continue
+
+            line_utm = transform(project_to_utm, LineString(coords))
+            built.append({
+                "name": zone.name,
+                "bed": zone.bed or "",
+                "line_utm": line_utm,
+            })
         except Exception as e:
+            skipped += 1
             frappe.log_error(f"geo_utils: skipping zone {zone.name} during cache build", str(e))
+
+    if skipped:
+        # ONE line for the whole build, not one per zone: on a site where most
+        # zones are unusable, per-zone logging is its own outage. A zone missing
+        # from this cache cannot be matched, so the count is worth seeing.
+        frappe.logger("upande_scp.geo").warning(
+            "zone cache: %d of %d zones had no usable LineString geometry",
+            skipped, len(raw_zones),
+        )
 
     _zone_cache[utm_epsg] = {"built_at": time.monotonic(), "zones": built}
     return built
@@ -107,35 +164,14 @@ def _build_tree_cache(utm_epsg: str, project_to_utm):
         try:
             if not tree.raw_geojson:
                 continue
-            geojson_data = json.loads(tree.raw_geojson)
-            geometry = None
+            geometry, props = _feature_geometry(json.loads(tree.raw_geojson))
+
             radius = DEFAULT_TREE_RADIUS_M
-            
-            # Handle FeatureCollection format
-            if (
-                geojson_data.get("type") == "FeatureCollection"
-                and geojson_data.get("features")
-            ):
-                feature = geojson_data["features"][0]
-                geometry = feature.get("geometry", {})
-                props = feature.get("properties", {}) or {}
-                if props.get("radius") is not None:
-                    try:
-                        radius = float(props["radius"])
-                    except (TypeError, ValueError):
-                        pass
-            # Handle Feature format
-            elif geojson_data.get("type") == "Feature":
-                geometry = geojson_data.get("geometry", {})
-                props = geojson_data.get("properties", {}) or {}
-                if props.get("radius") is not None:
-                    try:
-                        radius = float(props["radius"])
-                    except (TypeError, ValueError):
-                        pass
-            # Handle direct Point format
-            elif geojson_data.get("type") == "Point":
-                geometry = geojson_data
+            if props.get("radius") is not None:
+                try:
+                    radius = float(props["radius"])
+                except (TypeError, ValueError):
+                    pass
 
             if not geometry or geometry.get("type") != "Point":
                 continue

@@ -212,7 +212,14 @@ def _pick_qr_for_item(images: list, item_code: str, prefer_simple: bool):
 	  2. simple-QR for any item_code          (only when prefer_simple)
 	  3. regular QR for this exact item_code
 	  4. first image in the attachment list   (legacy single-QR SEs)
+
+	None when there are no images at all. That only happens on the Bluetooth
+	printer's path, which asks for labels with `require_image=False` because it
+	draws the QR from the payload — the PDF still stops before ever getting here.
 	"""
+	if not images:
+		return None
+
 	def by_code(pool, code):
 		for f in pool:
 			if _item_code_from_filename(f["file_name"]) == code:
@@ -230,12 +237,23 @@ def _pick_qr_for_item(images: list, item_code: str, prefer_simple: bool):
 	return match or images[0]
 
 
-def _collect_labels(se_names: List[str], prefer_simple_qr: bool = False):
+def _collect_labels(
+	se_names: List[str],
+	prefer_simple_qr: bool = False,
+	require_image: bool = True,
+):
 	"""Yield one dict per chemical line on each SE, in selection order.
 
 	``prefer_simple_qr`` flips the QR-attachment picker into low-density
 	mode — used when the planned label tier is XS / S so the QR still
 	scans after being shrunk.
+
+	``require_image`` is what the PDF needs and the Bluetooth printer does not.
+	The web PDF embeds the attached PNG, so a line without one cannot be drawn.
+	The ZQ520 renders the QR itself from ``qr_payload`` and is never sent an
+	image at all — yet it was refused a label whenever the PNG was missing from
+	disk, which does happen (`regenerate_qrs` exists for exactly that). Pass
+	False to print from the payload alone; ``image_src`` then comes back empty.
 	"""
 	labels = []
 	skipped = []
@@ -282,7 +300,7 @@ def _collect_labels(se_names: List[str], prefer_simple_qr: bool = False):
 		)
 		images = [f for f in files if _is_image(f.file_name)]
 
-		if not images:
+		if not images and require_image:
 			skipped.append({"se": se_name, "reason": "no image attachments"})
 			continue
 
@@ -319,10 +337,9 @@ def _collect_labels(se_names: List[str], prefer_simple_qr: bool = False):
 		added = 0
 		for item_code, item in items_by_code.items():
 			img = _pick_qr_for_item(images, item_code, prefer_simple_qr)
-			if not img:
-				continue
-			src = _resolve_image_src(img["file_url"], img["is_private"])
-			if not src:
+			src = _resolve_image_src(img["file_url"], img["is_private"]) if img else ""
+			if not src and require_image:
+				# The PDF has nothing to draw for this line. The printer does.
 				continue
 
 			if item:

@@ -3,7 +3,9 @@
 The store user picks a farm + date; the app prints that day's submitted
 chemical-transfer labels directly to a Bluetooth Zebra ZQ520 as native ZPL.
 This module returns label *data* (with a text ``qr_payload`` the printer
-renders natively) rather than the PDF the web Labels page builds.
+renders natively) rather than the PDF the web Labels page builds. No image is
+ever sent, which is why nothing here requires one to exist — see
+``_collect_labels(require_image=False)``.
 """
 
 from __future__ import annotations
@@ -63,7 +65,10 @@ def get_print_jobs(farm: str | None = None, date: str | None = None) -> dict:
     if not se_names:
         return {"jobs": [], "skipped": [], "se_count": 0}
 
-    labels, skipped = _collect_labels(se_names)
+    # `require_image=False`: the printer draws the QR from `qr_payload` and is
+    # never sent an image, so a missing PNG is no reason to withhold a label it
+    # can print perfectly well.
+    labels, skipped = _collect_labels(se_names, require_image=False)
     jobs = [_to_print_job(lbl) for lbl in labels]
     return {"jobs": jobs, "skipped": skipped, "se_count": len(se_names)}
 
@@ -122,8 +127,14 @@ def get_label_farms() -> dict:
 @frappe.whitelist()
 def get_label_dates(farm: str | None = None, days: int = 60) -> dict:
     """Recent posting dates (within ``days``) that have printable labels for
-    ``farm`` — i.e. submitted transfers that actually carry a QR. Used to
-    highlight dates in the store calendar."""
+    ``farm``. Used to highlight dates in the store calendar.
+
+    Every submitted transfer is printable here, because the printer builds the
+    QR from the label payload rather than from an attached image. This used to
+    filter on ``has_qr``, which is derived from a PNG existing on disk — so a
+    day's labels vanished from the calendar over a missing file the printer had
+    no use for.
+    """
     if not farm:
         frappe.throw("farm is required")
     try:
@@ -132,5 +143,4 @@ def get_label_dates(farm: str | None = None, days: int = 60) -> dict:
         days = 60
     cutoff = frappe.utils.add_days(frappe.utils.nowdate(), -abs(days))
     listing = store_keeper_api.list_submitted_transfers(farm=farm, from_date=cutoff)
-    rows = [r for r in listing.get("rows", []) if r.get("has_qr")]
-    return {"dates": _distinct_dates(rows)}
+    return {"dates": _distinct_dates(listing.get("rows", []))}

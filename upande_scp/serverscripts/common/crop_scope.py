@@ -409,29 +409,66 @@ def crop_has_permission(doc, ptype: str = "read", user: str | None = None) -> bo
 def scouting_entry_query_condition(user: str | None = None) -> str:
 	"""`permission_query_conditions` for `Scouting Entry`.
 
-	Scoped on `crop_scouted`, which every one of the 297,131 rows on kaitet carries —
-	not on the greenhouse. Avocado entries have no greenhouse at all (avocado is
-	recorded against blocks), so a farm-based condition would hide every avocado entry
-	while looking correct for roses.
+	Scoped on `crop_scouted` first, because that is what nearly every row carries and
+	because avocado entries have no greenhouse at all — avocado is recorded against
+	blocks, so a purely farm-based condition would hide every avocado entry while
+	looking correct for roses.
+
+	**Trap entries are the exception, and they carry no crop.** A trap is placed in a
+	greenhouse and catches whatever flies into it; the app sends no `crop_scouted` for
+	one. Scoping on crop alone made every trap row invisible — and the matching
+	`has_permission` refused to create them at all, which stalled 1,642 captures on one
+	scout's handset. A crop-less row is therefore placed by its greenhouse instead,
+	which is exactly how `work_order_query_condition` scopes spray plans.
 	"""
 	crops = allowed_crops(user)
 	if crops is None:
 		return ""
-	if not crops:
-		return "1=0"
-	return f"`tabScouting Entry`.crop_scouted IN ({_in_clause(crops)})"
+
+	by_crop = (
+		f"`tabScouting Entry`.crop_scouted IN ({_in_clause(crops)})" if crops else "1=0"
+	)
+
+	houses = allowed_greenhouses(user)
+	if not houses:
+		# Nothing to place a crop-less row by, so only the crop rule applies.
+		return by_crop
+
+	# A row with no crop is placed by where it was taken.
+	by_house = (
+		"(COALESCE(`tabScouting Entry`.crop_scouted, '') = '' "
+		f"AND `tabScouting Entry`.greenhouse IN ({_in_clause(houses)}))"
+	)
+	return f"({by_crop} OR {by_house})"
 
 
 def scouting_entry_has_permission(doc, ptype: str = "read", user: str | None = None) -> bool:
+	"""Whether this user may touch this scouting entry.
+
+	A crop places most rows. A **trap** entry has no crop — it is placed in a
+	greenhouse and catches whatever arrives — so the original "no crop, no access"
+	rule refused every one of them. That is what produced `PermissionError` on
+	`insert` for months and left one scout with 1,642 unsendable captures: the app
+	was behaving correctly and the gate was wrong about what a trap is.
+
+	So a crop-less row is placed by its greenhouse, the same way spray plans are.
+	A row with neither is still refused — that one genuinely cannot be placed, and
+	an unclassifiable record is not the same as an unrestricted one.
+	"""
 	crops = allowed_crops(user)
 	if crops is None:
 		return True
+
 	crop = getattr(doc, "crop_scouted", None)
-	if not crop:
-		# A row with no crop cannot be placed. Refused rather than allowed: an
-		# unclassifiable record is not the same as an unrestricted one.
-		return False
-	return crop in crops
+	if crop:
+		return crop in crops
+
+	greenhouse = getattr(doc, "greenhouse", None)
+	if greenhouse:
+		houses = allowed_greenhouses(user)
+		return houses is None or greenhouse in houses
+
+	return False
 
 
 def work_order_query_condition(user: str | None = None) -> str:

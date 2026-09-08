@@ -167,12 +167,66 @@ class TestScoutingEntryScope(unittest.TestCase):
 	def test_administrator_gets_no_condition(self):
 		self.assertEqual(crop_scope.scouting_entry_query_condition("Administrator"), "")
 
-	def test_a_row_with_no_crop_is_refused_not_allowed(self):
+	def test_a_row_with_neither_crop_nor_greenhouse_is_refused(self):
 		"""An unclassifiable record is not the same as an unrestricted one."""
 		if not _has_employee(PETER):
 			self.skipTest("Peter Kamuren has no Employee record on this site")
-		doc = frappe._dict({"crop_scouted": None})
+		doc = frappe._dict({"crop_scouted": None, "greenhouse": None})
 		self.assertFalse(crop_scope.scouting_entry_has_permission(doc, "read", PETER))
+
+	def test_a_trap_entry_is_placed_by_its_greenhouse(self):
+		"""A trap has no crop, and refusing it for that was the bug.
+
+		The app sends no `crop_scouted` for a trap capture — a trap sits in a
+		greenhouse and catches whatever arrives. The gate used to refuse every
+		one on `insert`, which is why not a single trap entry existed on the live
+		site and why one scout accumulated 1,642 unsendable captures.
+		"""
+		if not _has_employee(PETER):
+			self.skipTest("Peter Kamuren has no Employee record on this site")
+		houses = crop_scope.allowed_greenhouses(PETER)
+		if not houses:
+			self.skipTest("this user has no greenhouses on this site")
+		mine = sorted(houses)[0]
+		doc = frappe._dict({"crop_scouted": None, "greenhouse": mine})
+		self.assertTrue(crop_scope.scouting_entry_has_permission(doc, "create", PETER))
+
+	def test_a_trap_in_someone_elses_greenhouse_is_still_refused(self):
+		"""Placing by greenhouse must not become placing by nothing."""
+		if not _has_employee(PETER):
+			self.skipTest("Peter Kamuren has no Employee record on this site")
+		houses = crop_scope.allowed_greenhouses(PETER)
+		if houses is None:
+			self.skipTest("this user is unscoped on this site")
+		doc = frappe._dict(
+			{"crop_scouted": None, "greenhouse": "No Such Greenhouse - ZZ"}
+		)
+		self.assertFalse(crop_scope.scouting_entry_has_permission(doc, "create", PETER))
+
+	def test_a_crop_row_is_still_judged_on_its_crop(self):
+		"""The greenhouse fallback applies only when there is no crop."""
+		if not _has_employee(PETER):
+			self.skipTest("Peter Kamuren has no Employee record on this site")
+		crops = crop_scope.allowed_crops(PETER)
+		if not crops or "Avocado" in crops:
+			self.skipTest("this user's scope does not make the point on this site")
+		houses = crop_scope.allowed_greenhouses(PETER) or set()
+		mine = sorted(houses)[0] if houses else None
+		# An out-of-scope crop stays refused even in a greenhouse they may see.
+		doc = frappe._dict({"crop_scouted": "Avocado", "greenhouse": mine})
+		self.assertFalse(crop_scope.scouting_entry_has_permission(doc, "read", PETER))
+
+	def test_the_read_condition_lets_crop_less_rows_through(self):
+		"""Creating trap entries is no use if they are then invisible."""
+		if not _has_employee(PETER):
+			self.skipTest("Peter Kamuren has no Employee record on this site")
+		houses = crop_scope.allowed_greenhouses(PETER)
+		if not houses:
+			self.skipTest("this user has no greenhouses on this site")
+		cond = crop_scope.scouting_entry_query_condition(PETER)
+		self.assertIn("crop_scouted IN (", cond)
+		self.assertIn("COALESCE(`tabScouting Entry`.crop_scouted, '') = ''", cond)
+		self.assertIn("`tabScouting Entry`.greenhouse IN (", cond)
 
 
 class TestWorkOrderScope(unittest.TestCase):

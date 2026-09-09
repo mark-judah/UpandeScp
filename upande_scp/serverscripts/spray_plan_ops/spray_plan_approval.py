@@ -117,13 +117,29 @@ def _approver_allowed_greenhouses(user: str) -> list[str] | None:
 
 
 @frappe.whitelist()
-def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=None):
+def get_pending_work_orders(
+    from_date=None, to_date=None, farm=None, greenhouse=None, date_basis=None
+):
     _ensure_approval_role()
     """
     Return AFP Work Orders (Not Started, submitted) with child items
     and forwarding status (draft SE exists?).
-    Date range applies to COALESCE(custom_scheduled_application_time, planned_start_date)
-    so WOs without an explicit scheduled time still match against their planning time.
+
+    ``date_basis`` chooses which date the range filters on:
+
+    * ``"scheduled"`` (default) — when the spray is meant to happen, i.e.
+      ``COALESCE(custom_scheduled_application_time, planned_start_date)``. WOs
+      without an explicit scheduled time still match against their planning time.
+    * ``"created"`` — when the plan was written. An approver clearing today's
+      desk wants the plans made today, whatever day they are for; filtering by
+      the spray date hides a plan drafted this morning for next week and buries
+      it among older pending ones. On the live site every plan awaiting approval
+      was created on an earlier day and scheduled for an earlier day, so under
+      the old filter a GM looking at "today" saw an empty page while 27 plans
+      waited.
+
+    Anything unrecognised falls back to ``scheduled``, so an older caller that
+    sends nothing keeps exactly the behaviour it had.
     """
     params = {"type": AFP_TYPE}
     where = [
@@ -132,15 +148,17 @@ def get_pending_work_orders(from_date=None, to_date=None, farm=None, greenhouse=
         "docstatus = 1",
     ]
 
+    date_column = (
+        "creation"
+        if str(date_basis or "").strip().lower() == "created"
+        else "COALESCE(custom_scheduled_application_time, planned_start_date)"
+    )
+
     if from_date:
-        where.append(
-            "COALESCE(custom_scheduled_application_time, planned_start_date) >= %(from_date)s"
-        )
+        where.append(f"{date_column} >= %(from_date)s")
         params["from_date"] = from_date + " 00:00:00"
     if to_date:
-        where.append(
-            "COALESCE(custom_scheduled_application_time, planned_start_date) < %(to_date)s"
-        )
+        where.append(f"{date_column} < %(to_date)s")
         params["to_date"] = str(add_days(to_date, 1)) + " 00:00:00"
 
     if greenhouse:

@@ -58,6 +58,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { DatePicker } from "@/components/DatePicker";
+import {
+  DATE_BASIS_LABEL,
+  dateBasisHint,
+  groupByFarm,
+  type DateBasis,
+} from "@/lib/approval-grouping";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { ymd, cn } from "@/lib/utils";
 import {
@@ -144,6 +150,11 @@ export function Approvals() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
+  // Which date the range filters on, and whether to break the list up by farm.
+  // Both are the operator's call: an approver clearing a desk works by arrival,
+  // a farm manager works a farm at a time, and neither is right for everyone.
+  const [dateBasis, setDateBasis] = useState<DateBasis>("scheduled");
+  const [groupFarms, setGroupFarms] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -170,6 +181,7 @@ export function Approvals() {
         to_date: to || null,
         farm: farm === ALL ? null : farm,
         greenhouse: greenhouse === ALL ? null : greenhouse,
+        date_basis: dateBasis,
       });
       setAllWos(r.work_orders || []);
       setChecked(new Set());
@@ -194,7 +206,7 @@ export function Approvals() {
     } finally {
       setLoading(false);
     }
-  }, [from, to, farm, greenhouse]);
+  }, [from, to, farm, greenhouse, dateBasis]);
 
   // Debounce filter changes so cascading farm→greenhouse doesn't refetch
   // multiple times in quick succession.
@@ -247,6 +259,11 @@ export function Approvals() {
     // Stage tabs render from the lifecycle summary, not the approval feed.
     return [];
   }, [allWos, statusFilter]);
+
+  const farmGroups = useMemo(
+    () => (groupFarms ? groupByFarm(visibleWos) : []),
+    [groupFarms, visibleWos],
+  );
 
   // Drop checked WOs that are no longer visible after filter changes.
   useEffect(() => {
@@ -493,8 +510,29 @@ export function Approvals() {
         title="Spray Plan Approval"
         eyebrow="Pending application work orders · review and approve in bulk"
       >
+        <Select
+          value={dateBasis}
+          onValueChange={(v) => setDateBasis(v as DateBasis)}
+        >
+          <SelectTrigger aria-label="Filter dates by" className={HEADER_PILL}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="scheduled">{DATE_BASIS_LABEL.scheduled}</SelectItem>
+            <SelectItem value="created">{DATE_BASIS_LABEL.created}</SelectItem>
+          </SelectContent>
+        </Select>
         <DatePicker value={from} onChange={setFrom} />
         <DatePicker value={to} onChange={setTo} />
+        <Button
+          variant={groupFarms ? "default" : "outline"}
+          size="sm"
+          className="h-9"
+          onClick={() => setGroupFarms((v) => !v)}
+          title="Break the list into one section per farm"
+        >
+          {groupFarms ? "Grouped by farm" : "Group by farm"}
+        </Button>
         <Select value={farm} onValueChange={setFarm}>
           <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
             <SelectValue />
@@ -601,6 +639,17 @@ export function Approvals() {
                   {visibleWos.length} work order
                   {visibleWos.length !== 1 ? "s" : ""}
                 </span>
+                {/* Which of the two dates the range is filtering on. The page
+                    used to answer only "scheduled for", which is why a range
+                    covering today could come back empty while plans waited. */}
+                <span className="text-muted-foreground/70 truncate">
+                  · {dateBasisHint(dateBasis)}
+                </span>
+                {groupFarms && farmGroups.length > 0 ? (
+                  <span className="text-muted-foreground/70">
+                    · {farmGroups.length} farm{farmGroups.length !== 1 ? "s" : ""}
+                  </span>
+                ) : null}
               </div>
 
               <Table>
@@ -617,7 +666,12 @@ export function Approvals() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visibleWos.map((w) => {
+                  {(groupFarms
+                    ? farmGroups.flatMap((g) =>
+                        g.plans.map((p, i) => ({ ...p, __farmHead: i === 0 ? g : null })),
+                      )
+                    : visibleWos.map((w) => ({ ...w, __farmHead: null }))
+                  ).map((w: any) => {
                     const isChecked = checked.has(w.name);
                     const isOpen = expanded.has(w.name);
                     const sched = w.custom_scheduled_application_time
@@ -625,6 +679,22 @@ export function Approvals() {
                       : "—";
                     return (
                       <Fragment key={w.name}>
+                        {/* One heading per farm when grouping is on, so an
+                            approver can work a farm at a time instead of
+                            reading a mixed list. */}
+                        {w.__farmHead ? (
+                          <TableRow className="bg-muted/40 hover:bg-muted/40">
+                            <TableCell colSpan={8} className="py-1.5">
+                              <span className="text-xs font-medium">
+                                {w.__farmHead.farm}
+                              </span>
+                              <span className="text-[0.7rem] text-muted-foreground ml-2">
+                                {w.__farmHead.plans.length} plan
+                                {w.__farmHead.plans.length !== 1 ? "s" : ""}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        ) : null}
                         <TableRow
                           className={cn(
                             isChecked && "bg-primary/5",

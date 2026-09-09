@@ -1,4 +1,6 @@
 import frappe
+
+from upande_scp.serverscripts.mobile import greenhouse_alias
 from datetime import datetime, timedelta
 from .geo_utils import get_zone_from_coordinates, get_tree_from_coordinates
 
@@ -134,6 +136,14 @@ def createScoutingEntry():
                 "message": "Expected a single scouting entry or a list of entries."
             }
             return
+
+        # One physical greenhouse can exist twice in `tabWarehouse` under names
+        # differing only by whitespace, with the beds on one of them. A handset
+        # that cached the empty twin cannot save anything — the bed it names does
+        # not exist. Redirect the batch to the records that hold the beds before
+        # any of it is validated; costs no queries per entry, and leaves anything
+        # ambiguous alone to fail visibly.
+        data_list = greenhouse_alias.apply_to_batch(data_list)
 
         results = []
         has_errors = False

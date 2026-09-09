@@ -218,6 +218,9 @@ override_doctype_dashboards = {
 # Invalidate cached dashboard/map payloads when underlying master data changes.
 _SCP_CACHE_INVALIDATOR = "upande_scp.serverscripts.common.cache_utils.invalidate_on_change"
 _SCP_REALTIME_DIRTY = "upande_scp.serverscripts.common.cache_utils.publish_scouting_dirty"
+_SCP_ALIAS_INVALIDATOR = (
+    "upande_scp.serverscripts.mobile.greenhouse_alias.clear_cache_on_event"
+)
 _SCP_CACHE_EVENTS = {
     "on_update": _SCP_CACHE_INVALIDATOR,
     "on_trash": _SCP_CACHE_INVALIDATOR,
@@ -246,7 +249,16 @@ doc_events = {
     "Zone": _SCP_CACHE_EVENTS,
     "Bed": _SCP_CACHE_EVENTS,
     "Trap": _SCP_CACHE_EVENTS,
-    "Warehouse": _SCP_CACHE_EVENTS,
+    # Plus the duplicate-greenhouse map: a Warehouse created, renamed or
+    # deleted can make a bedless twin appear or disappear, and the map behind
+    # `greenhouse_alias` must not outlive that by an hour.
+    "Warehouse": {
+        **_SCP_CACHE_EVENTS,
+        "after_insert": _SCP_ALIAS_INVALIDATOR,
+        "after_rename": _SCP_ALIAS_INVALIDATOR,
+        "on_update": [_SCP_CACHE_INVALIDATOR, _SCP_ALIAS_INVALIDATOR],
+        "on_trash": [_SCP_CACHE_INVALIDATOR, _SCP_ALIAS_INVALIDATOR],
+    },
     "Farm": {
         **_SCP_CACHE_EVENTS,
         "validate": [

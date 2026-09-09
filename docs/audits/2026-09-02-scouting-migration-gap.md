@@ -1,7 +1,13 @@
 # Scouting entries not transferred to kaitetv16
 
-Migration of Scouting Entries from **kaitet-group.upande.com** (Frappe v15) to
+Migration of Scouting Entries from **kaitet-group.c.frappe.cloud** (Frappe v15) to
 **kaitetv16.nbg.frappe.cloud** (v16), run 2026-09-01/02.
+
+> The v15 source is **kaitet-group.c.frappe.cloud**. The custom domain
+> `kaitet-group.upande.com` named it when this run was made, but has since been
+> repointed at the v16 target — it now answers with the target's data and rejects
+> the source's API key. Anything still pointing "FROM" at that domain compares the
+> target against itself and reports a flawless migration.
 
 | | |
 |---|---|

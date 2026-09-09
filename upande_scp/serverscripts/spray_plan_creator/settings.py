@@ -47,6 +47,13 @@ def get_settings_bundle() -> dict:
     exclude_keywords = [
         {"keyword": r.keyword} for r in (settings.exclude_keywords or [])
     ]
+    # Which warehouse types a scout can be sent to. Empty means the code's own
+    # fallback (Greenhouse, Block) applies — surfaced as-is so the page shows
+    # what is really configured rather than pretending the default was chosen.
+    station_warehouse_types = [
+        {"warehouse_type": r.warehouse_type}
+        for r in (settings.station_warehouse_types or [])
+    ]
 
     map_settings = frappe.get_single("Map Settings")
     farm_coords = [
@@ -114,6 +121,7 @@ def get_settings_bundle() -> dict:
             ),
             "allowed_farms": allowed_farms,
             "exclude_keywords": exclude_keywords,
+            "station_warehouse_types": station_warehouse_types,
         },
         "map_settings": {
             "lat": map_settings.lat or 0,
@@ -203,9 +211,16 @@ def save_spray_plan_settings(payload) -> dict:
             if kw:
                 settings.append("exclude_keywords", {"keyword": kw})
 
+    if "station_warehouse_types" in payload:
+        settings.set("station_warehouse_types", [])
+        for r in payload.get("station_warehouse_types") or []:
+            wt = (r.get("warehouse_type") if isinstance(r, dict) else r) or ""
+            if wt:
+                settings.append("station_warehouse_types", {"warehouse_type": wt})
+
     settings.save(ignore_permissions=True)
     # Bust the AFP warehouse cache so the picker reflects the new
-    # allowed-farms / exclude-keywords set immediately.
+    # allowed-farms / exclude-keywords / station-type set immediately.
     invalidate(K_AFP_WAREHOUSES)
     return {"ok": True}
 

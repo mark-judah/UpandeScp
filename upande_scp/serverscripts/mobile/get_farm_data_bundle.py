@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import frappe
 
+from upande_scp.serverscripts.common import farm_map
+
 from upande_scp.serverscripts.common.cache_utils import (
     K_SM_FARM_BUNDLE_PREFIX,
     TTL_MEDIUM,
@@ -101,13 +103,17 @@ def _build_farm_bundle(farm: str) -> dict:
         order_by="lft asc",
     )
 
-    # Stations are the warehouses that beds and traps link to. Leaf
-    # warehouses (is_group=0) plus Block group-warehouses — orchard blocks
-    # often carry row sub-warehouses underneath, so the block itself is
-    # is_group=1 even though it is the station beds and traps reference.
+    # Stations are the warehouses that beds and traps link to, and they are
+    # chosen by *type* — not by "everything that is not a group".
+    #
+    # That older rule handed the phone every non-group warehouse on the farm:
+    # chemical stores, CSUs, transit, and `Torongo GH18 - KR`, a stock-only
+    # warehouse with no type and no beds. A scout picked it and lost six days of
+    # captures to `Could not find Bed`. `farm_map.is_station` keeps Block groups
+    # (an orchard block carries its rows beneath it) and drops the rest.
+    station_types = farm_map.station_types()
     station_names = [
-        w.name for w in warehouses
-        if (not w.is_group) or w.warehouse_type == "Block"
+        w.name for w in warehouses if farm_map.is_station(w, station_types)
     ]
     sections = [
         {"name": w.name, "warehouse_name": w.warehouse_name}

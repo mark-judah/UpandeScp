@@ -1,5 +1,7 @@
 import frappe
 
+from upande_scp.serverscripts.common import farm_map
+
 
 @frappe.whitelist()
 def getFarmHierarchyInfo(farm=None):
@@ -46,17 +48,21 @@ def getFarmHierarchyInfo(farm=None):
 		has_sections = len(sections) > 0
 
 	# Sample any leaf warehouse under this farm to infer station type.
+	# Which types count as stations is configuration (Settings → Station
+	# Warehouse Types), not a constant: roses call it a Greenhouse, avocado and
+	# coffee a Block, and the next crop will bring its own word.
+	types = farm_map.station_types()
 	leaf = frappe.db.sql(
 		"""
 		SELECT warehouse_type
 		FROM `tabWarehouse`
 		WHERE custom_farm = %s AND is_group = 0 AND disabled = 0
-		  AND warehouse_type IN ('Greenhouse', 'Block')
+		  AND warehouse_type IN %s
 		GROUP BY warehouse_type
 		ORDER BY COUNT(*) DESC
 		LIMIT 1
 		""",
-		(farm,),
+		(farm, tuple(types)),
 		as_dict=True,
 	)
 	if leaf:

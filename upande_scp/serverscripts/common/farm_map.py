@@ -92,3 +92,83 @@ def greenhouses_for_farms(farms) -> list:
 		order_by="name asc",
 		limit_page_length=0,
 	)
+
+
+# ---------------------------------------------------------------------------
+# Which warehouses are scouting stations
+#
+# "Every non-group warehouse of the farm" was the old answer, and it is how a
+# stock-only warehouse with no beds — `Torongo GH18 - KR` — reached a scout's
+# picker and cost her six days of captures. It also offered chemical stores,
+# CSUs and transit warehouses as places to scout.
+#
+# A station is a warehouse of a type that has field units under it. Which types
+# those are is configuration, not a constant: roses call it a Greenhouse, avocado
+# and coffee call it a Block, and the next crop will bring its own word.
+# ---------------------------------------------------------------------------
+
+#: Used when the setting has never been filled in. The same pair the rest of the
+#: app already hardcodes, so an un-migrated site behaves exactly as before.
+DEFAULT_STATION_TYPES = ("Greenhouse", "Block")
+
+#: A Block is routinely `is_group = 1` because its rows hang beneath it, and it
+#: is still the station beds and traps link to. Every other type must be a leaf:
+#: `Torongo Greenhouses - KR` is a folder, not a place to scout.
+_GROUPS_ALLOWED = ("Block",)
+
+
+def station_types_from_rows(rows) -> tuple:
+	"""The configured types, from the settings child rows. Pure.
+
+	Blank rows are dropped rather than treated as a wildcard — an empty grid line
+	must not quietly re-open the list to every warehouse on the farm.
+	"""
+	seen: list[str] = []
+	for row in rows or []:
+		value = (row.get("warehouse_type") or "").strip() if isinstance(row, dict) else ""
+		if value and value not in seen:
+			seen.append(value)
+	return tuple(seen) if seen else DEFAULT_STATION_TYPES
+
+
+def station_types() -> tuple:
+	"""The configured station types for this site."""
+	try:
+		rows = frappe.get_all(
+			"SCP Station Warehouse Type",
+			filters={"parenttype": "Scouting and Crop Protection Settings"},
+			fields=["warehouse_type"],
+		)
+	except Exception:
+		# The child table may not exist yet on a site mid-migration.
+		return DEFAULT_STATION_TYPES
+	return station_types_from_rows(rows)
+
+
+def is_station(warehouse, types=None) -> bool:
+	"""Is this warehouse a place a scout can be sent to?
+
+	``warehouse`` is a dict or Frappe row carrying ``warehouse_type`` and
+	``is_group``.
+	"""
+	types = types or station_types()
+	wt = warehouse.get("warehouse_type") if hasattr(warehouse, "get") else None
+	if not wt or wt not in types:
+		return False
+	is_group = warehouse.get("is_group") if hasattr(warehouse, "get") else 0
+	return (not is_group) or wt in _GROUPS_ALLOWED
+
+
+def stations_for_farm(farm: str | None) -> list:
+	"""Every warehouse of ``farm`` a scout can be sent to."""
+	if not farm:
+		return []
+	rows = frappe.get_all(
+		"Warehouse",
+		filters={"custom_farm": farm, "disabled": 0},
+		fields=["name", "warehouse_type", "is_group"],
+		order_by="name asc",
+		limit_page_length=0,
+	)
+	types = station_types()
+	return [r["name"] for r in rows if is_station(r, types)]

@@ -677,6 +677,196 @@ def list_draft_transfers(
 
 
 # ----------------------------------------------------------------------
+# Planned chemicals — what is coming, before the GM has approved it
+#
+# The draft transfer a keeper issues against is created at the moment of
+# approval (``spray_plan_approval._create_draft_se``), so until a GM acts the
+# Transfers page is empty and the store has no warning at all — 708 plans sat
+# in ``Awaiting Approval`` with no draft Stock Entry between them. These two
+# endpoints read the planned quantities off ``Work Order Item`` so the keeper
+# can prepare. They write nothing, and they are deliberately scoped tighter
+# than ``list_draft_transfers``: a plan is shown only if it draws from a store
+# this user actually keeps.
+# ----------------------------------------------------------------------
+_PLANNED_STATE = "Awaiting Approval"
+
+
+def planned_totals(rows):
+    """Per-chemical demand across the plans on show.
+
+    Pure — the arithmetic behind the totals strip, with no database, so the
+    part a keeper reads before walking to the shelf can be tested directly.
+    A code is totalled per unit: a litre and a kilogram of the same item are
+    not two of anything, and adding them would overstate what is needed.
+    """
+    by_key: dict = {}
+    for r in rows:
+        key = (r.get("item_code"), r.get("uom") or "")
+        entry = by_key.setdefault(key, {
+            "item_code": r.get("item_code"),
+            "item_name": r.get("item_name") or r.get("item_code"),
+            "uom": r.get("uom") or "",
+            "total_qty": 0.0,
+        })
+        entry["total_qty"] += float(r.get("required_qty") or 0)
+    return sorted(by_key.values(), key=lambda t: -t["total_qty"])
+
+
+def _planned_item_rows(from_date=None, to_date=None, stores=None):
+    """Every planned chemical line on every plan still waiting on the GM.
+
+    One query at line level rather than two aggregates: the rows and the totals
+    are grouped differently (by plan, by chemical) but must describe the same
+    work, and reading them from one result makes that true by construction
+    instead of by coincidence.
+
+    ``stores`` of ``None`` means an elevated caller who sees every store; an
+    empty list is a keeper who keeps none, and must see nothing.
+    """
+    where = [
+        "wo.custom_type = %(afp)s",
+        "wo.docstatus = 1",
+        "wo.workflow_state = %(state)s",
+    ]
+    params: dict = {"afp": _AFP_TYPE, "state": _PLANNED_STATE}
+
+    if from_date:
+        where.append(
+            "COALESCE(wo.custom_scheduled_application_time, wo.planned_start_date) >= %(from_date)s"
+        )
+        params["from_date"] = f"{from_date} 00:00:00"
+    if to_date:
+        where.append(
+            "COALESCE(wo.custom_scheduled_application_time, wo.planned_start_date) < %(to_date)s"
+        )
+        params["to_date"] = f"{add_to_date(to_date, days=1, as_string=True)} 00:00:00"
+
+    if stores is not None:
+        if not stores:
+            return []
+        where.append("i.source_warehouse IN %(stores)s")
+        params["stores"] = tuple(stores)
+
+    return frappe.db.sql(
+        f"""
+        SELECT wo.name                                   AS work_order,
+               COALESCE(wo.custom_scheduled_application_time,
+                        wo.planned_start_date)           AS planned_date,
+               COALESCE(wo.custom_greenhouse, '')        AS greenhouse,
+               COALESCE(wh.custom_farm, '')              AS farm,
+               i.item_code, i.item_name, i.required_qty,
+               COALESCE(i.stock_uom, '')                 AS uom,
+               COALESCE(i.source_warehouse, '')          AS source_warehouse,
+               i.idx
+        FROM   `tabWork Order`      wo
+        JOIN   `tabWork Order Item` i  ON i.parent = wo.name
+        LEFT   JOIN `tabWarehouse`  wh ON wh.name = i.source_warehouse
+        WHERE  {" AND ".join(where)}
+        ORDER  BY planned_date DESC, wo.name, i.idx
+        """,
+        params,
+        as_dict=True,
+    )
+
+
+@frappe.whitelist()
+def list_planned_transfers(
+    farm: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> dict:
+    """Plans awaiting GM approval, with the chemicals each one will need.
+
+    Row shape mirrors ``list_draft_transfers`` so the Transfers page can render
+    both lists the same way, minus everything that implies an action —  there
+    is no employee assignment and no submit, because nothing here can be issued
+    until the GM approves it.
+    """
+    _check_perm()
+
+    stores = allowed_stores_for()
+    items = _planned_item_rows(from_date=from_date, to_date=to_date, stores=stores)
+
+    by_wo: dict = {}
+    for r in items:
+        row = by_wo.setdefault(r["work_order"], {
+            "work_order":  r["work_order"],
+            "planned_date": r["planned_date"],
+            "greenhouse":  r["greenhouse"],
+            "farm":        r["farm"],
+            "item_count":  0,
+            "total_qty":   0.0,
+        })
+        row["item_count"] += 1
+        row["total_qty"] += float(r["required_qty"] or 0)
+        # A plan normally draws from one store; if it spans two, name the first
+        # we saw rather than leaving the column blank.
+        if not row["farm"] and r["farm"]:
+            row["farm"] = r["farm"]
+
+    rows = list(by_wo.values())
+    if farm:
+        rows = [r for r in rows if r["farm"] == farm]
+        kept = {r["work_order"] for r in rows}
+        items = [r for r in items if r["work_order"] in kept]
+
+    return {
+        "rows":   rows,
+        "farms":  sorted({r["farm"] for r in rows if r["farm"]}),
+        "totals": planned_totals(items),
+        "state":  _PLANNED_STATE,
+    }
+
+
+@frappe.whitelist()
+def get_planned_items(work_order: str) -> dict:
+    """The planned chemicals on one pending plan — the expanded row.
+
+    Answers for pending plans only. An approved plan is not this view's
+    business: it has a draft transfer of its own on the list above, where the
+    quantities are the ones about to move rather than the ones being asked for.
+    """
+    _check_perm()
+    work_order = (work_order or "").strip()
+    if not work_order:
+        return {"items": []}
+
+    stores = allowed_stores_for()
+    where = ["i.parent = %(wo)s", "wo.custom_type = %(afp)s",
+             "wo.docstatus = 1", "wo.workflow_state = %(state)s"]
+    params: dict = {"wo": work_order, "afp": _AFP_TYPE, "state": _PLANNED_STATE}
+    if stores is not None:
+        if not stores:
+            return {"items": []}
+        where.append("i.source_warehouse IN %(stores)s")
+        params["stores"] = tuple(stores)
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT i.item_code, i.item_name, i.required_qty,
+               COALESCE(i.stock_uom, '')        AS uom,
+               COALESCE(i.source_warehouse, '') AS source_warehouse
+        FROM   `tabWork Order Item` i
+        JOIN   `tabWork Order`      wo ON wo.name = i.parent
+        WHERE  {" AND ".join(where)}
+        ORDER  BY i.idx
+        """,
+        params,
+        as_dict=True,
+    )
+    return {"items": [
+        {
+            "item_code":      r["item_code"],
+            "item_name":      r["item_name"] or r["item_code"],
+            "qty":            float(r["required_qty"] or 0),
+            "uom":            r["uom"],
+            "from_warehouse": r["source_warehouse"],
+        }
+        for r in rows
+    ]}
+
+
+# ----------------------------------------------------------------------
 # Labels page — submitted transfers + their QR attachments
 # ----------------------------------------------------------------------
 

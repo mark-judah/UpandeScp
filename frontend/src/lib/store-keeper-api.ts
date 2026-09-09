@@ -1,3 +1,8 @@
+import type {
+  PlannedItem,
+  PlannedRow,
+  PlannedTotal,
+} from "./planned-chemicals";
 import { call } from "./frappe";
 
 export interface ChemicalItemRow {
@@ -260,4 +265,38 @@ export async function bulkAssignEmployee(
     { names: JSON.stringify(names), employee },
   );
   return unwrap<BulkAssignResp>(r);
+}
+
+// ---------------------------------------------------------------------------
+// Planned chemicals — plans still waiting on the General Manager.
+//
+// Read-only by design: there is no submit, no assignment, and no counterpart
+// write endpoint. The draft transfer these plans will become does not exist
+// until the GM approves, which is exactly why the store could not see them.
+// ---------------------------------------------------------------------------
+export interface PlannedTransfersResp {
+  rows: PlannedRow[];
+  farms: string[];
+  totals: PlannedTotal[];
+  state: string;
+}
+
+export async function fetchPlannedTransfers(opts: {
+  farm?: string;
+  from_date?: string;
+  to_date?: string;
+} = {}): Promise<PlannedTransfersResp> {
+  const r = await call(
+    "upande_scp.serverscripts.store.store_keeper_api.list_planned_transfers",
+    opts,
+  );
+  return unwrap<PlannedTransfersResp>(r);
+}
+
+export async function fetchPlannedItems(workOrder: string): Promise<PlannedItem[]> {
+  const r = await call(
+    "upande_scp.serverscripts.store.store_keeper_api.get_planned_items",
+    { work_order: workOrder },
+  );
+  return unwrap<{ items: PlannedItem[] }>(r).items || [];
 }

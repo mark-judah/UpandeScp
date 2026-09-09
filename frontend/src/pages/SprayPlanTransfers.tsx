@@ -59,6 +59,7 @@ import {
   type TransferItem,
   type TransferRow,
 } from "@/lib/store-keeper-api";
+import { PlannedChemicalsPanel } from "@/components/PlannedChemicalsPanel";
 import { cn } from "@/lib/utils";
 
 import { errorText } from "@/lib/errors";
@@ -785,6 +786,14 @@ export function SprayPlanTransfers() {
             </div>
           </CardContent>
         </Card>
+
+        {/* What is coming, once the GM approves it. Read-only, and below the
+            actionable list on purpose: the keeper's work comes first. */}
+        <PlannedChemicalsPanel
+          farm={farm === ALL_FARMS ? undefined : farm}
+          fromDate={fromDate || undefined}
+          toDate={toDate || undefined}
+        />
       </div>
 
       <Dialog open={confirmManual} onOpenChange={setConfirmManual}>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SCP report emails</title>
+<style>
+  body{margin:0;background:#e8e6e0;font-family:Poppins,'Segoe UI',system-ui,sans-serif;color:#161514;}
+  .wrap{max-width:900px;margin:0 auto;padding:36px 20px 60px;}
+  h1{font-size:22px;font-weight:600;letter-spacing:-0.3px;margin:0 0 6px;}
+  p{color:#3d3a35;font-size:13.5px;line-height:1.65;margin:0 0 18px;max-width:62ch;}
+  .rule{height:4px;border-radius:2px;background:linear-gradient(90deg,#a87d0d,#edc23c);margin:0 0 22px;width:120px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;}
+  a.card{display:block;background:#f4f3ef;border-radius:12px;padding:18px;text-decoration:none;color:inherit;}
+  a.card:hover{background:#fff;}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:4px 10px;border-radius:11px;color:#fff;}
+  .name{font-size:15px;font-weight:600;margin:10px 0 4px;}
+  .desc{color:#6f6a61;font-size:12px;line-height:1.5;}
+  .note{color:#6f6a61;font-size:12px;line-height:1.6;margin-top:26px;border-top:1px solid #d9d6ce;padding-top:16px;max-width:62ch;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="rule"></div>
+  <h1>SCP report emails</h1>
+  <p>Rebuilt from the design decisions locked in July. One email per crop, with the
+  report types stacked beneath an index — an email cannot hold real tabs. Built as
+  tables with inline styles so they survive Gmail and Outlook.</p>
+  <div class="grid">
+    <a class="card" href="email-roses.html">
+      <span class="pill" style="background:#a33a5b;">Roses</span>
+      <div class="name">Coverage, pests, spend, spray</div>
+      <div class="desc">All four reports. The fullest of the three.</div>
+    </a>
+    <a class="card" href="email-avocado.html">
+      <span class="pill" style="background:#5f7d33;">Avocado</span>
+      <div class="name">Coverage and pests</div>
+      <div class="desc">Shows what the email does when the data has stopped — which it has.</div>
+    </a>
+    <a class="card" href="email-coffee.html">
+      <span class="pill" style="background:#6f4a2f;">Coffee</span>
+      <div class="name">Counts only</div>
+      <div class="desc">No location hierarchy yet, so no coverage. The email says so.</div>
+    </a>
+  </div>
+  <div class="note">Charts are the one thing still to come: production renders them
+  server-side as PNG and attaches them with <code>cid:</code>, since Gmail strips SVG.
+  The bar rows here are already email-safe.</div>
+</div>
+</body>
+</html>

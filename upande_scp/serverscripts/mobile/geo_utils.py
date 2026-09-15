@@ -46,7 +46,7 @@ def get_dynamic_utm_epsg(latitude, longitude):
     return f"EPSG:{epsg_prefix}{zone_number:02d}"
 
 
-def _feature_geometry(geojson_data):
+def feature_geometry(geojson_data):
     """The geometry and properties out of whichever GeoJSON shape a record has.
 
     Three shapes reach this app, and which one a record carries is an accident of
@@ -108,7 +108,7 @@ def _build_zone_cache(utm_epsg: str, project_to_utm):
                 skipped += 1
                 continue
 
-            geometry, _props = _feature_geometry(json.loads(zone.raw_geojson))
+            geometry, _props = feature_geometry(json.loads(zone.raw_geojson))
             if not geometry or geometry.get("type") != "LineString":
                 skipped += 1
                 continue
@@ -164,7 +164,7 @@ def _build_tree_cache(utm_epsg: str, project_to_utm):
         try:
             if not tree.raw_geojson:
                 continue
-            geometry, props = _feature_geometry(json.loads(tree.raw_geojson))
+            geometry, props = feature_geometry(json.loads(tree.raw_geojson))
 
             radius = DEFAULT_TREE_RADIUS_M
             if props.get("radius") is not None:
@@ -447,3 +447,9 @@ def get_tree_from_coordinates(latitude, longitude, row, accuracy, block=None):
         error_msg = f"Error in get_tree_from_coordinates: {str(e)}"
         frappe.log_error("Error", error_msg)
         return None, 0.0, error_msg
+
+
+#: Kept as the old private name: this helper is shared with the web endpoint now
+#: (`geo.get_beds_and_zones`), so it is public, but existing callers and tests
+#: still reach for the underscore.
+_feature_geometry = feature_geometry

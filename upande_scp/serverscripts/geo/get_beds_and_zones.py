@@ -8,6 +8,73 @@ from upande_scp.serverscripts.common.cache_utils import (
     get_or_set,
 )
 from upande_scp.serverscripts.geo.zone_encoding import encode_beds
+from upande_scp.serverscripts.mobile.geo_utils import feature_geometry
+
+
+def decode_zone(row, bed_names=None):
+    """One Zone row as the encoder needs it, or ``None`` when it cannot be used.
+
+    This used to read the GeoJSON as ``gj["features"][0]`` — one of the three
+    shapes the data actually comes in — and swallow everything else in a bare
+    ``except Exception: continue``. On the live site 148,186 of 154,434 zones
+    (96%) are stored as a bare ``Feature``, so almost every zone was dropped
+    without a log. The endpoint returned beds with no zones under them, and every
+    map in the React app — scouting heatmap, observation map, the 3D view, the
+    Application Plan's picker — showed "Zone geometry not available for this
+    greenhouse" or sat for ever on "Zone polygons are being parsed in the
+    background". It looked like missing data rather than a parse that had failed.
+
+    `feature_geometry` already understood all three shapes; the mobile endpoints
+    have used it for months. This one simply never did.
+
+    Refusals that remain deliberate: a bed outside the list, a name that does not
+    carry its order, a line that is not a two-point segment, and a feature with no
+    ``line_id`` — the wire format is built around all four, and guessing at any of
+    them would put a zone somewhere it is not.
+    """
+    if not row:
+        return None
+
+    bed_name = row.get("bed")
+    if not bed_name:
+        return None
+    if bed_names is not None and bed_name not in bed_names:
+        return None
+
+    prefix = f"{bed_name} - Zone "
+    name = row.get("name") or ""
+    if not name.startswith(prefix) or not name[len(prefix):].isdigit():
+        return None
+    order = int(name[len(prefix):])
+
+    raw = row.get("geojson")
+    if not raw:
+        return None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            return None
+
+    geometry, properties = feature_geometry(raw)
+    if not geometry:
+        return None
+
+    coords = geometry.get("coordinates")
+    if not isinstance(coords, list) or len(coords) != 2:
+        return None
+
+    line_id = properties.get("line_id")
+    if line_id is None:
+        return None
+
+    return {
+        "bed": bed_name,
+        "name": name,
+        "line_id": line_id,
+        "order": order,
+        "coords": coords,
+    }
 
 
 def _build_beds_and_zones():
@@ -22,34 +89,21 @@ def _build_beds_and_zones():
     bed_names = {b["name"] for b in beds}
 
     zones = []
+    skipped = 0
     for z in zone_rows:
-        bed_name = z["bed"]
-        if bed_name not in bed_names:
+        decoded = decode_zone(z, bed_names)
+        if decoded is None:
+            skipped += 1
             continue
+        zones.append(decoded)
 
-        prefix = f"{bed_name} - Zone "
-        name = z["name"]
-        if not name.startswith(prefix) or not name[len(prefix):].isdigit():
-            continue
-        order = int(name[len(prefix):])
-
-        try:
-            gj = json.loads(z["geojson"])
-            feature = gj["features"][0]
-            coords = feature["geometry"]["coordinates"]
-            line_id = feature["properties"]["line_id"]
-            if len(coords) != 2:
-                continue
-        except Exception:
-            continue
-
-        zones.append({
-            "bed": bed_name,
-            "name": name,
-            "line_id": line_id,
-            "order": order,
-            "coords": coords,
-        })
+    # Silence is what made this take months to find: 96% of zones were dropped
+    # and nothing anywhere said so.
+    if skipped:
+        frappe.logger("scp_zones").info(
+            f"beds_and_zones: {len(zones)} zones encoded, {skipped} skipped "
+            f"of {len(zone_rows)} with geometry"
+        )
 
     encoded_beds = encode_beds(zones)
 

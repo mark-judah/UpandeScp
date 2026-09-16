@@ -59,9 +59,21 @@ def _card_detail_returns_the_full_three_dates():
     assert 1 <= len(detail["recent"]) <= 3, (
         f"expected 1-3 recent dates from detail, got {len(detail['recent'])}"
     )
-    # recent[0] must match what the grid already showed, or the thumbnail
-    # would jump when the modal opens.
-    assert detail["recent"][0]["date"] == card["recent"][0]["date"], (
-        f"detail recent[0] date {detail['recent'][0]['date']!r} != grid "
-        f"recent[0] date {card['recent'][0]['date']!r}"
+    # ``recent[]`` is OLDEST-FIRST — `_build_cards` takes the N most-recent
+    # weeks and then reverses them, so that left-to-right reads forward in
+    # time. `Heatmaps.tsx:791` relies on exactly that, labelling the modal's
+    # slices by distance from the END ("Latest week" is the last one).
+    #
+    # So the week the grid thumbnail drew is the detail's **last** entry, not
+    # its first: the grid asks for one week and gets the newest, while the
+    # detail asks for three and gets the newest last. This assertion used to
+    # compare `detail[0]` against `grid[0]`, which only holds when the window
+    # happens to contain a single scouted week — it did when this was written,
+    # and the check has been failing ever since a second week appeared.
+    # Comparing the wrong end made a green test impossible and would have
+    # hidden a genuine regression here.
+    assert detail["recent"][-1]["date"] == card["recent"][0]["date"], (
+        f"detail recent[-1] (the latest week) {detail['recent'][-1]['date']!r} "
+        f"!= grid recent[0] {card['recent'][0]['date']!r} — the thumbnail "
+        "would jump to a different week when the modal opens"
     )

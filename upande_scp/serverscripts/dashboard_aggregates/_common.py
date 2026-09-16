@@ -280,7 +280,13 @@ K_DASH_AGG_PREFIX = "scp:dash_agg"
 # to clean them up.
 K_DASH_AGG_VERSION = "scp:dash_agg:ver"
 K_DASH_AGG_BUMP_LOCK = "scp:dash_agg:bump_lock"
-DASH_AGG_BUMP_DEBOUNCE = 60  # seconds — matches the old unconditional-bump staleness bound
+# 20 minutes, agreed with the operator as the acceptable staleness for a
+# dashboard whose default view is a 30-day window. At the previous 60s the
+# stamp bumped once a minute all through a scouting day, so every cached
+# aggregate orphaned once a minute while a full rebuild costs ~16s — the cache
+# could never stay warm and nearly every dashboard open paid the cold path.
+# Measured on kaitetv16: overview lands at 2,555 ms warm vs 16,178 ms cold.
+DASH_AGG_BUMP_DEBOUNCE = 1200  # seconds — the staleness bound for aggregates
 DASH_AGG_TTL = 1800  # seconds — safe to raise now that the version stamp bounds staleness
 
 

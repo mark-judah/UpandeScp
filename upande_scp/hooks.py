@@ -341,6 +341,14 @@ scheduler_events = {
         "0 8 * * 2": [
             "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.send_fcm_weekly_excel_report"
         ],
+        # Keep the dashboard aggregates warm. The invalidation stamp bumps at
+        # most once per DASH_AGG_BUMP_DEBOUNCE (20 min); running every 10 min
+        # means a bump is re-warmed before the next operator opens a dashboard.
+        # Every run after the first in a window is a plain Redis read.
+        # Measured cold vs warm on kaitetv16: 16,178 ms vs 2,555 ms.
+        "*/10 * * * *": [
+            "upande_scp.serverscripts.dashboard_aggregates.prewarm.prewarm_dashboard_aggregates"
+        ],
     },
     "daily": [
         "upande_scp.serverscripts.scouting.scouting_prewarm.daily_prewarm",

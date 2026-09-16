@@ -163,6 +163,14 @@ export function useScouting({
           }, scopedCrop, scopedGreenhouse);
           if (tokenRef.current !== token) return;
           setProgress(100);
+          // ONE rebuild, once every week is in IDB. This used to happen
+          // implicitly via ``weeksLoaded`` being a dependency of Effect B,
+          // which meant a full re-read and rebuild of the whole range per
+          // hydrated week — up to 45 of them on the avocado map's 10-month
+          // default. Effect B reads from IDB, so it must still run once here,
+          // or the rows just fetched would not reach the screen until some
+          // other dependency changed.
+          await buildAndSet(token);
         } catch (e: any) {
           if (tokenRef.current !== token) return;
           console.error("[scouting] hydrate failed", e);
@@ -197,8 +205,15 @@ export function useScouting({
     if (!from || !to || from > to) return;
     const token = tokenRef.current;
     void buildAndSet(token);
+    // ``weeksLoaded`` is deliberately NOT a dependency. It increments once per
+    // hydrated week, so including it re-ran this whole effect per week — each
+    // run re-reading the entire range out of IndexedDB and rebuilding every
+    // derived structure, with the work growing as weeks accumulated. On the
+    // avocado map's 10-month default that was up to 45 full rebuilds for one
+    // page load. Effect A now calls ``buildAndSet`` once when hydration
+    // finishes; per-week progress belongs to the overlay, not to a rebuild.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, greenhouse, greenhousesKey, crop, tick, weeksLoaded]);
+  }, [from, to, greenhouse, greenhousesKey, crop, tick]);
 
   // Realtime: invalidate the affected month and re-render.
   useRealtime("scp:scouting:dirty", async (payload: { months?: string[] }) => {

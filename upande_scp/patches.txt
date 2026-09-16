@@ -46,3 +46,9 @@ upande_scp.patches.v1_0.correct_crop_farm_tags
 upande_scp.patches.v1_0.consolidate_spray_products
 upande_scp.patches.v1_0.stamp_transfer_cost_center_on
 upande_scp.patches.v1_0.seed_station_warehouse_types
+# Greenhouse/block/crop-leading composites + child covering indexes. A NEW name
+# because add_scouting_indexes and add_scouting_child_indexes are already logged
+# on live v16 while none of their indexes exist there — they ran before the
+# Scouting Entry table did and returned quietly. This one throws instead, and
+# verifies its own work before it finishes.
+upande_scp.patches.v1_0.add_scouting_lookup_indexes

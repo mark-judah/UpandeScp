@@ -372,15 +372,24 @@ export function App() {
     ric(pump);
   }, []);
 
-  // Warm long-lived reference caches once per session. Heatmaps and the
-  // Application Plan diagnose plot read straight from the IDB-backed
-  // bed/zone payload — priming on boot means switching to those pages
-  // does not pay a network round-trip.
+  // Warm the small, crop-agnostic reference caches once per session. Both are
+  // a few KB and every section reads them, so they are unconditional. The
+  // bed/zone payload used to be primed here too and is not — see below.
   useEffect(() => {
-    primeBedsAndZones();
     primeMapSettings();
     void loadObservationColors();
   }, []);
+
+  // Bed/zone geometry is 5.2 MB raw (1.09 MB on the wire) and is read only by
+  // rose pages — Heatmaps, the Application Plan diagnose plot, Varieties. It
+  // used to be primed unconditionally on mount, so every avocado page paid for
+  // geometry it can never draw: avocado is blocks/rows/trees and has its own
+  // payloads. Measured on kaitetv16 it was 5,231 KB of the dashboard's 5,252 KB
+  // — 99.6% of the bytes — re-fetched on every load, because the IndexedDB hit
+  // still fires a stale-while-revalidate refresh behind it.
+  useEffect(() => {
+    if (crop !== "avocado") primeBedsAndZones();
+  }, [crop]);
 
   // Warm the avocado 3D-map geometry as soon as the user is in the avocado
   // section, so the map's own fetch finds it cached (or shares the in-flight

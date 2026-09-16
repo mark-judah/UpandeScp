@@ -515,6 +515,7 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
         </span>
         <span className="ml-auto tabular-nums">
           {blockCount} blocks · {treeCount} trees · {scoutedTreeCount} visited
+          {treesPlacing && treeCount > 0 ? " · drawing trees…" : ""}
         </span>
       </div>
 
@@ -532,9 +533,17 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
         </aside>
       </div>
 
+      {/* Deliberately NOT gated on ``treesPlacing``. Placing the orchard-tree
+          instances is the single most expensive thing this page does — measured
+          on kaitetv16, ~28s of a 32s load, and unchanged by network throttling
+          because it is CPU, not transfer. Holding a full-screen overlay over it
+          hid a map that was ready to use, while the bar read "45 of 45 weeks ·
+          100%" — the scouting data finishes at ~2s — so everyone diagnosed the
+          fetch instead. Trees stream in over a live map now; the header says so. */}
       <LoadingOverlay
-        open={loading || loadingGeo || treesPlacing}
+        open={loading || loadingGeo}
         progress={loading ? progress : 100}
+        label={loading ? "Loading scouting data" : "Loading map"}
         weeksLoaded={weeksLoaded}
         weeksTotal={weeksTotal}
       />

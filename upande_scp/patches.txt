@@ -55,3 +55,7 @@ upande_scp.patches.v1_0.add_scouting_lookup_indexes
 # Drop the "Upande" prefix on the desk: "Upande SCP" -> "SCP". Same rename
 # dance as rebrand_workspace_upande_scp, and for the same reasons.
 upande_scp.patches.v1_0.rename_workspace_to_scp
+# Put the 78 Lokitela block polygons back. They are empty on live v16 — the
+# v15->v16 migration never carried custom_raw_geojson — so the avocado map draws
+# no blocks there and the jobsheet has nothing to click. Fills blanks only.
+upande_scp.patches.v1_0.restore_block_boundaries

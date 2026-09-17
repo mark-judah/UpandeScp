@@ -58,3 +58,43 @@ class TestCropNavigation(unittest.TestCase):
 		self.assertEqual(CN.CROP_MARKS["rose"], ("rose.png", "#a33a5b"))
 		self.assertEqual(CN.CROP_MARKS["avocado"], ("avocado.png", "#5f7d33"))
 		self.assertEqual(CN.CROP_MARKS["coffee"], ("coffee.png", "#6f4a2f"))
+
+
+class TestTileIcons(unittest.TestCase):
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self.nav = CN.get_crop_navigation()
+
+	def test_every_tile_carries_a_mark_and_a_tint(self):
+		"""A tile with no icon renders an empty chip — a hole in the grid rather
+		than a missing decoration."""
+		for entry in self.nav:
+			for tile in entry["tiles"]:
+				self.assertTrue(tile["icon"], f"{entry['crop']}/{tile['label']} has no icon")
+				self.assertTrue(tile["tint"], f"{entry['crop']}/{tile['label']} has no tint")
+				self.assertTrue(tile["colour"], f"{entry['crop']}/{tile['label']} has no colour")
+
+	def test_the_icon_is_inner_markup_not_a_whole_svg(self):
+		"""The block writes the <svg> wrapper so viewBox, stroke and width cannot
+		drift between one tile and the next."""
+		for entry in self.nav:
+			for tile in entry["tiles"]:
+				self.assertNotIn("<svg", tile["icon"])
+
+	def test_the_original_seven_keep_the_colours_they_have_always_had(self):
+		"""Roses users know these tiles. Re-pointing the links should not have
+		repainted them."""
+		self.assertEqual(CN.VIEW_ICONS["dashboard"][1:], ("rgba(59,130,246,.13)", "#3b82f6"))
+		self.assertEqual(CN.VIEW_ICONS["scouting-map"][1:], ("rgba(34,197,94,.13)", "#16a34a"))
+		self.assertEqual(CN.VIEW_ICONS["spraying"][1:], ("rgba(6,182,212,.13)", "#0891b2"))
+		self.assertEqual(CN.VIEW_ICONS["application-plan"][1:], ("rgba(139,92,246,.13)", "#7c53e0"))
+		self.assertEqual(CN.VIEW_ICONS["approvals"][1:], ("rgba(245,158,11,.13)", "#d97706"))
+		self.assertEqual(CN.VIEW_ICONS["settings"][1:], ("rgba(100,116,139,.13)", "#64748b"))
+
+	def test_a_view_with_no_icon_falls_back_rather_than_vanishing(self):
+		tile = CN._tile("avocado", "some-future-view", "Future", "")
+		self.assertEqual(
+			(tile["icon"], tile["tint"], tile["colour"]),
+			CN.FALLBACK_ICON,
+		)
+		self.assertEqual(tile["href"], "/scp_app#/avocado/some-future-view")

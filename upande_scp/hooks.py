@@ -1,9 +1,26 @@
 app_name = "upande_scp"
-app_title = "Upande Scp"
+# What the DESK calls this app. The package is still upande_scp and the React
+# app still says Upande SCP in its own headings — this is the name on the desk
+# sidebar, the apps screen and the navbar, where the farm is already inside
+# Upande's ERP and the prefix says nothing. The logo carries the "Upande" half.
+app_title = "SCP"
 app_publisher = "Upande"
 app_description = "Scouting & Crop Protection Module"
 app_email = "info@upande.com"
 app_license = "mit"
+
+# Logo shown on the desk app/workspace grid card.
+app_logo_url = "/assets/upande_scp/images/upande_logo.png"
+
+# Also surface the app on the /apps launcher screen.
+add_to_apps_screen = [
+	{
+		"name": "upande_scp",
+		"logo": "/assets/upande_scp/images/upande_logo.png",
+		"title": "SCP",
+		"route": "/app/scp",
+	}
+]
 
 # Apps
 # ------------------

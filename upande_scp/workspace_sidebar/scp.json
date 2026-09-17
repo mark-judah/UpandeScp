@@ -13,7 +13,7 @@
    "indent": 0,
    "keep_closed": 0,
    "label": "Home",
-   "link_to": "Upande SCP",
+   "link_to": "SCP",
    "link_type": "Workspace",
    "show_arrow": 0,
    "type": "Link"
@@ -459,8 +459,8 @@
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "module_onboarding": null,
- "name": "Upande SCP",
+ "name": "SCP",
  "owner": "Administrator",
  "standard": 1,
- "title": "Upande SCP"
+ "title": "SCP"
 }

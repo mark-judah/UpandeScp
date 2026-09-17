@@ -36,6 +36,8 @@
   "auto_cancel_activated_on",
   "csu_scan_section",
   "csu_scan_verification",
+  "wip_area_keywords",
+  "wip_area_label",
   "timezone_section",
   "timezone_erp_note",
   "app_timezone",
@@ -281,6 +283,20 @@
    "fieldtype": "Select",
    "label": "CSU scan verification method",
    "options": "labels\ntick"
+  },
+  {
+   "description": "Words that mark a warehouse as a work-in-progress spray area \u2014 where chemicals are transferred to, mixed, and sprayed out of. Roses call theirs the CSU. Matched as whole words, case-insensitively, against the warehouse name. Empty falls back to CSU, so a site that has never touched this keeps behaving exactly as before.",
+   "fieldname": "wip_area_keywords",
+   "fieldtype": "Table",
+   "label": "WIP Area Keywords",
+   "options": "SCP WIP Area Keyword"
+  },
+  {
+   "default": "CSU",
+   "description": "What to call the work-in-progress area in this crop's screens. Overridable per crop \u2014 the flow is the same everywhere, but an orchard does not call its mixing area a CSU.",
+   "fieldname": "wip_area_label",
+   "fieldtype": "Data",
+   "label": "WIP Area Label"
   },
   {
    "fieldname": "timezone_section",

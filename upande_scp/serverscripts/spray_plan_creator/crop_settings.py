@@ -60,7 +60,8 @@ OVERRIDABLE = {
 	"postponement_grace_minutes": "As above.",
 	"auto_cancel_enabled": "A crop with few plans a season should not have them cancelled on a roses cadence.",
 	"auto_cancel_dormant_days": "As above.",
-	"csu_scan_verification": "The CSU step is a roses concept; block-grown crops have no CSU to scan.",
+	"csu_scan_verification": "How the handover into the work-in-progress area is verified. The flow is the same on every crop, but the crews and their equipment are not.",
+	"wip_area_label": "What that area is called here. Roses call theirs the CSU; an orchard does not.",
 }
 
 
@@ -177,3 +178,50 @@ def replace_overrides(crop: str, values: dict) -> dict:
 	settings.save(ignore_permissions=True)
 	frappe.db.commit()
 	return {"crop": crop, "overridden": sorted(written)}
+
+
+# The word roses have always used, and the fallback for a site that has never
+# configured this. Keeping it means nothing changes for an existing site.
+DEFAULT_WIP_KEYWORD = "CSU"
+
+
+def wip_keywords() -> list:
+	"""Words that mark a warehouse as a work-in-progress spray area.
+
+	The flow is the same on every crop — chemicals are transferred into a
+	holding area, mixed there, and sprayed out of it — but the place has a
+	different name on an orchard than on a rose farm. This used to be the
+	literal string "CSU" in a SQL LIKE and in a regex in the React app, which
+	meant an area called anything else was simply never found: not listed, not
+	shown as holding stock, not offered to a store keeper.
+
+	Site-wide rather than per-crop, because the store dashboards are organised
+	by farm and warehouse and a single list has to match all of them at once.
+	What the area is *called* on screen is per-crop — see `wip_area_label` in
+	OVERRIDABLE.
+
+	Empty falls back to CSU, so a site that never touches this keeps behaving
+	exactly as it did.
+	"""
+	settings = frappe.get_single(SETTINGS_DOCTYPE)
+	words = []
+	for row in settings.get("wip_area_keywords") or []:
+		word = (getattr(row, "keyword", "") or "").strip()
+		if word and word.lower() not in [w.lower() for w in words]:
+			words.append(word)
+	return words or [DEFAULT_WIP_KEYWORD]
+
+
+def is_wip_area(warehouse_name: str) -> bool:
+	"""Whole-word, case-insensitive — the rule the React app already applied.
+
+	Whole-word matters: a substring match makes "Focus Store" a WIP area
+	because it contains "cus", and there is no way for an operator to see why.
+	"""
+	import re
+
+	name = warehouse_name or ""
+	for word in wip_keywords():
+		if re.search(rf"\b{re.escape(word)}\b", name, re.IGNORECASE):
+			return True
+	return False

@@ -130,3 +130,72 @@ class TestWhatMayBeOverridden(_RestoresOverrides):
 	def test_an_unknown_crop_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
 			CS.replace_overrides("Not A Crop", {"irac_rotation_window_days": "3"})
+
+
+class TestWipAreas(unittest.TestCase):
+	"""Which warehouses count as a work-in-progress spray area.
+
+	The flow is the same on every crop — chemicals in, mixed, sprayed out — but
+	roses call the place the CSU and an orchard does not, and the matcher used
+	to be the literal string in a SQL LIKE and a React regex.
+	"""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self._before = [
+			{"keyword": r.keyword}
+			for r in (frappe.get_single(CS.SETTINGS_DOCTYPE).get("wip_area_keywords") or [])
+		]
+
+	def tearDown(self):
+		doc = frappe.get_single(CS.SETTINGS_DOCTYPE)
+		doc.set("wip_area_keywords", self._before)
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+
+	def _set(self, words):
+		doc = frappe.get_single(CS.SETTINGS_DOCTYPE)
+		doc.set("wip_area_keywords", [{"keyword": w} for w in words])
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+
+	def test_an_unconfigured_site_still_finds_its_CSUs(self):
+		"""The fallback is the whole reason roses keep working untouched."""
+		self._set([])
+		self.assertEqual(CS.wip_keywords(), ["CSU"])
+		self.assertTrue(CS.is_wip_area("Torongo CSU Phase 1 - KR"))
+
+	def test_a_crop_can_call_it_something_else(self):
+		self._set(["CSU", "Mixing Bay"])
+		self.assertTrue(CS.is_wip_area("Torongo CSU Phase 1 - KR"))
+		self.assertTrue(CS.is_wip_area("Lokitela Mixing Bay - KL"))
+
+	def test_matching_is_whole_word(self):
+		"""A substring match would make 'Focus Store' a spray area because it
+		contains 'cus', with nothing on screen to explain why."""
+		self._set(["CSU"])
+		self.assertFalse(CS.is_wip_area("Focus Store - KR"))
+		self.assertFalse(CS.is_wip_area("Excused Goods - KR"))
+
+	def test_matching_ignores_case(self):
+		self._set(["CSU"])
+		self.assertTrue(CS.is_wip_area("my csu bay - KL"))
+
+	def test_the_same_word_twice_is_read_once(self):
+		"""Case-insensitively — "CSU" and "csu" are one keyword, not two, or the
+		SQL pre-filter gains a redundant OR for every repeat."""
+		self._set(["CSU", "csu", "Mixing Bay"])
+		self.assertEqual([w.lower() for w in CS.wip_keywords()], ["csu", "mixing bay"])
+
+	def test_a_blank_keyword_cannot_be_stored(self):
+		"""`keyword` is reqd on the child doctype, so the empty row the read path
+		also guards against cannot get in through the form in the first place. A
+		blank that DID get in (an import, a patch) would match every warehouse."""
+		with self.assertRaises(frappe.MandatoryError):
+			self._set(["CSU", "   "])
+
+	def test_the_label_is_per_crop_while_the_keywords_are_not(self):
+		"""What the area is CALLED is a crop's business; which warehouses ARE one
+		is the site's, because the store dashboards span farms and crops."""
+		self.assertIn("wip_area_label", CS.OVERRIDABLE)
+		self.assertNotIn("wip_area_keywords", CS.OVERRIDABLE)

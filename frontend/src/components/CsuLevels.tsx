@@ -32,7 +32,20 @@ import { Button } from "@/components/ui/button";
 import type { ChemicalOverview } from "@/lib/store-keeper-api";
 import { cn } from "@/lib/utils";
 
-const CSU_RE = /\bcsu\b/i;
+/** Roses call their work-in-progress spray area the CSU. The flow is the same on
+ *  every crop but the place is not called the same thing on an orchard, so the
+ *  words come from the server (Settings → WIP Area Keywords) and this is only
+ *  the fallback for an older backend that does not send them. Whole-word, so
+ *  "Focus Store" is not a spray area because it contains "cus". */
+const FALLBACK_WIP_KEYWORDS = ["CSU"];
+
+function wipMatcher(keywords?: string[]): RegExp {
+  const words = (keywords?.length ? keywords : FALLBACK_WIP_KEYWORDS)
+    .map((w) => w.trim())
+    .filter(Boolean)
+    .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`\\b(?:${words.join("|")})\\b`, "i");
+}
 const MAX_SELECT = 5;
 const PALETTE = [
   "var(--sd-data-cyan, #06b6d4)",
@@ -69,24 +82,28 @@ export function CsuLevels({
 
   // Full CSU roster (all enabled CSUs, even empty ones) so the selector shows
   // every CSU; falls back to stock-bearing warehouses on an older backend.
+  const wipRe = useMemo(() => wipMatcher(data?.wip_keywords), [data]);
+
   const csus = useMemo(() => {
     const roster =
+      // Built from the site's configured keywords rather than a constant, so a
+      // crop whose area is not called "CSU" is still found.
       data?.csus && data.csus.length
         ? data.csus.map((c) => c.warehouse)
         : (data?.warehouses || []).map((w) => w.warehouse);
     return roster
-      .filter((w) => CSU_RE.test(w))
+      .filter((w) => wipRe.test(w))
       .sort((a, b) => a.localeCompare(b));
-  }, [data]);
+  }, [data, wipRe]);
 
   // CSUs that actually hold chemical stock right now — the rest are disabled.
   const stockCsus = useMemo(() => {
     const s = new Set<string>();
     for (const c of data?.matrix || []) {
-      if (c.qty > 0 && CSU_RE.test(c.warehouse)) s.add(c.warehouse);
+      if (c.qty > 0 && wipRe.test(c.warehouse)) s.add(c.warehouse);
     }
     return s;
-  }, [data]);
+  }, [data, wipRe]);
 
   // qty[item][warehouse], restricted to CSU warehouses.
   const byItem = useMemo(() => {

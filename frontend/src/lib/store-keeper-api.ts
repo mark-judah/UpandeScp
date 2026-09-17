@@ -57,6 +57,11 @@ export interface ChemicalOverview {
   /** Full CSU roster (all enabled, non-group CSU warehouses) — optional so the
    *  client degrades gracefully against an older backend. */
   csus?: CsuWarehouse[];
+  /** The words that define a work-in-progress spray area on this site. Sent by
+   *  the server so the client applies the same rule instead of carrying its own
+   *  copy of "CSU" — roses call theirs the CSU, an orchard does not. Optional so
+   *  the client degrades gracefully against an older backend. */
+  wip_keywords?: string[];
   as_of: string;
   /** Per-store-type (chemical / fertilizer) aggregates, farm-scoped
    *  server-side for Store Keepers — optional so the client degrades

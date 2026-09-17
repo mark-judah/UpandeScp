@@ -25,6 +25,8 @@ import os
 from datetime import timedelta
 
 import frappe
+
+from upande_scp.serverscripts.spray_plan_creator import crop_settings
 from frappe.utils import now_datetime, add_to_date
 
 from upande_scp.serverscripts.common.crop_protection import product_groups
@@ -215,6 +217,7 @@ def chemical_stock_overview() -> dict:
             "warehouses": [],
             "matrix": [],
             "csus": [],
+            "wip_keywords": crop_settings.wip_keywords(),
             "as_of": now_datetime().isoformat(timespec="seconds"),
             "buckets": buckets,
             "allowed_farms": allowed,
@@ -275,11 +278,24 @@ def chemical_stock_overview() -> dict:
             {"item_code": ik, "warehouse": wh, "qty": qty},
         )
 
-    # Full CSU roster (every enabled, non-group CSU warehouse), independent of
-    # whether it currently holds stock — lets the dashboard show all CSUs and
-    # disable the empty ones. Pre-filtered to names containing "CSU"; the client
-    # applies the exact whole-word rule.
-    csu_params = {"p": "%CSU%"}
+    # Full roster of work-in-progress spray areas, independent of whether one
+    # currently holds stock — lets the dashboard show them all and disable the
+    # empty ones.
+    #
+    # The keyword used to be the literal "CSU", here and in a regex in the React
+    # app. That is the word ROSES use; the flow is the same on every crop but
+    # the place is not called the same thing on an orchard, so an area named
+    # anything else was never found — not listed, not shown as holding stock,
+    # not offered to a store keeper, with nothing on screen to say why. The
+    # words are configuration now, defaulting to CSU so nothing changes for a
+    # site that has not touched them.
+    keywords = crop_settings.wip_keywords()
+    csu_params = {}
+    like_clauses = []
+    for i, word in enumerate(keywords):
+        key = f"wip{i}"
+        like_clauses.append(f"name LIKE %({key})s")
+        csu_params[key] = f"%{word}%"
     csu_filter_sql = ""
     if allowed_whs is not None:
         csu_filter_sql = "AND  name IN %(allowed_whs)s"
@@ -289,13 +305,16 @@ def chemical_stock_overview() -> dict:
         f"""
         SELECT name AS warehouse, COALESCE(custom_farm, '') AS farm
         FROM   `tabWarehouse`
-        WHERE  is_group = 0 AND disabled = 0 AND name LIKE %(p)s
+        WHERE  is_group = 0 AND disabled = 0 AND ({" OR ".join(like_clauses)})
           {csu_filter_sql}
         ORDER  BY name
         """,
         csu_params,
         as_dict=True,
     )
+    # SQL LIKE is the cheap pre-filter; the whole-word rule is the real one, and
+    # it has to be applied on the same side as the keywords that define it.
+    csus = [c for c in csus if crop_settings.is_wip_area(c["warehouse"])]
 
     items_list = sorted(items.values(), key=lambda x: -x["total_qty"])
     warehouses_list = sorted(warehouses.values(), key=lambda x: -x["total_qty"])
@@ -307,6 +326,9 @@ def chemical_stock_overview() -> dict:
         "warehouses":    warehouses_list,
         "matrix":        matrix,
         "csus":          csus,
+        # The words that defined that roster, so the client applies the same
+        # rule instead of carrying its own copy of "CSU".
+        "wip_keywords":  crop_settings.wip_keywords(),
         "as_of":         now_datetime().isoformat(timespec="seconds"),
         "buckets":       buckets,
         "allowed_farms": allowed,

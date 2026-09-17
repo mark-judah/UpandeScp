@@ -182,6 +182,114 @@ def _pests_for_crop(crop: str) -> list[str]:
 	return pests
 
 
+def _thresholds_for_crop(crop: str) -> dict:
+	"""{pest: {"unit", "low", "moderate", "high"}} from the crop's Pest Filters.
+
+	`Pest Filter` has carried `low_threshold` / `moderate_threshold` /
+	`high_threshold` and a `unit` since severity was introduced, and nothing had
+	ever read them back — the sheet printed counts with no idea whether a number
+	was ordinary or alarming. This reads them.
+
+	NOTE: on both kaitet.local and live v16 every avocado filter is currently
+	`Per Warehouse` with all three bands at zero, so nothing shades until
+	somebody sets them. `populate_severity_defaults.run` holds a proposed set
+	(avocado Per Hectare: FCM 1/3/6, Thrips 5/15/30, ...) but it is a manual
+	`bench execute` that has never been run on either site, and its own comment
+	calls the numbers placeholders pending the agronomy team. Deliberately not
+	wired in here: shading a spraying report from numbers nobody has signed off
+	would be worse than shading nothing.
+
+	A pest with no filter row, or with all three bands at zero, is returned
+	absent: an unset threshold is not a threshold of nought, and colouring every
+	sighting red would make the sheet useless.
+	"""
+	rows = frappe.get_all(
+		"Pest Filter",
+		filters={"crop_scouted": crop},
+		fields=["pest", "unit", "low_threshold", "moderate_threshold", "high_threshold"],
+	)
+	out = {}
+	for r in rows:
+		pest = (r.get("pest") or "").strip()
+		if not pest:
+			continue
+		low = float(r.get("low_threshold") or 0)
+		moderate = float(r.get("moderate_threshold") or 0)
+		high = float(r.get("high_threshold") or 0)
+		if not (low or moderate or high):
+			continue
+		out[pest] = {
+			"unit": (r.get("unit") or "").strip(),
+			"low": low,
+			"moderate": moderate,
+			"high": high,
+		}
+	return out
+
+
+def _block_areas(blocks: list[str]) -> dict:
+	"""{block: hectares} from `Warehouse.custom_area_ha`.
+
+	This is the denominator for a Per-Hectare threshold, and it is the reason
+	the report can say anything at all about pressure: a count of 40 is a
+	different fact on a 1.5 ha block and on a 12 ha one. `get_units_by_warehouse`
+	has surfaced the same figure for the dashboards all along.
+
+	A block with no area is returned absent rather than as zero — see
+	`_band`. On Lokitela all 78 blocks carry one (213.27 ha); Endebess's 64
+	coffee blocks carry none, which is a setup gap and has to read as one.
+	"""
+	if not blocks:
+		return {}
+	rows = frappe.get_all(
+		"Warehouse",
+		filters={"name": ["in", blocks]},
+		fields=["name", "custom_area_ha"],
+		limit_page_length=0,
+	)
+	return {
+		r["name"]: float(r["custom_area_ha"])
+		for r in rows
+		if float(r.get("custom_area_ha") or 0) > 0
+	}
+
+
+def _band(count: float, spec: dict, area_ha: float | None):
+	"""Which severity band a count falls in — or None when it cannot be said.
+
+	Returns "high" / "moderate" / "low" / "" (below the lowest band), or None
+	meaning "not assessable", which is a different answer and must not be drawn
+	as clean:
+
+	* no threshold configured for this pest;
+	* the unit is Per Hectare and the block has no area — dividing by a missing
+	  denominator would invent a figure;
+	* the unit is "Per Zone %", which is a greenhouse measure. Blocks have no
+	  zones, so a zone percentage cannot be computed for one.
+
+	Bands are compared as ">=", so a count sitting exactly on the High threshold
+	reads as High. The thresholds are the value AT WHICH severity becomes that
+	band — that is what the field descriptions say.
+	"""
+	if not spec:
+		return None
+	unit = spec.get("unit") or ""
+	value = float(count or 0)
+	if unit == "Per Hectare":
+		if not area_ha:
+			return None
+		value = value / float(area_ha)
+	elif unit == "Per Zone %":
+		return None
+	# "Per Warehouse" (and an unset unit) compare the raw count, which is what
+	# the sheet already prints.
+	for key in ("high", "moderate", "low"):
+		limit = float(spec.get(key) or 0)
+		if limit and value >= limit:
+			return key
+	return ""
+
+
 def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> bytes:
 	from openpyxl import Workbook
 	from openpyxl.styles import Alignment, Font, PatternFill
@@ -195,6 +303,9 @@ def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> 
 
 	monday, sunday = _week_bounds(iso_year, iso_week)
 	counts = _pest_counts(blocks, monday, sunday, crop)
+
+	thresholds = _thresholds_for_crop(crop)
+	areas = _block_areas(blocks)
 
 	pests = _pests_for_crop(crop)
 	# A pest seen this week but absent from the crop's filters still gets a column —
@@ -212,43 +323,116 @@ def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> 
 	ws["A1"].font = Font(bold=True, size=14)
 	ws["A2"] = f"{farm}   ·   {iso_year}-W{iso_week:02d}   ·   {monday} to {sunday}"
 	ws["A3"] = "Each cell is the total count recorded for that pest on that block over the week."
+	ws["A4"] = (
+		"Shading is the severity band from the crop's Pest Filter. Per-hectare "
+		"thresholds are judged on count \u00f7 area, so blocks of different sizes "
+		"compare fairly; an unshaded cell is either below the lowest band or has "
+		"no threshold set. A block with no area cannot be judged per hectare and "
+		"is left unshaded with its area shown as \u2014."
+	)
+	ws["A4"].font = Font(italic=True, size=9, color="666666")
 
-	header_row = 5
+	# Area sits beside the block, because it is the denominator every shaded
+	# cell on that row was judged against — a reader who cannot see it cannot
+	# check the colour.
+	header_row = 6
+	first_pest_col = 3
 	ws.cell(row=header_row, column=1, value="Block")
+	ws.cell(row=header_row, column=2, value="Area (ha)")
 	for i, pest in enumerate(pests):
-		ws.cell(row=header_row, column=2 + i, value=pest)
-	ws.cell(row=header_row, column=2 + len(pests), value="Total")
+		ws.cell(row=header_row, column=first_pest_col + i, value=pest)
+	ws.cell(row=header_row, column=first_pest_col + len(pests), value="Total")
 
 	head_fill = PatternFill("solid", fgColor="DDDDDD")
-	for c in range(1, 3 + len(pests)):
+	for c in range(1, first_pest_col + len(pests) + 1):
 		cell = ws.cell(row=header_row, column=c)
 		cell.font = Font(bold=True)
 		cell.fill = head_fill
 		cell.alignment = Alignment(horizontal="center", wrap_text=True)
 
+	# Amber / orange / red at a weight that stays readable behind black text, and
+	# distinguishable from each other when the sheet is printed in greyscale.
+	band_fills = {
+		"low": PatternFill("solid", fgColor="FFF3CD"),
+		"moderate": PatternFill("solid", fgColor="FFD9A0"),
+		"high": PatternFill("solid", fgColor="F5A8A8"),
+	}
+
 	column_totals = [0.0] * len(pests)
 	for r, block in enumerate(blocks, start=header_row + 1):
 		ws.cell(row=r, column=1, value=block)
+		area = areas.get(block)
+		area_cell = ws.cell(row=r, column=2, value=area if area else "\u2014")
+		if not area:
+			area_cell.alignment = Alignment(horizontal="center")
 		row_total = 0.0
 		for i, pest in enumerate(pests):
 			value = counts.get(block, {}).get(pest, 0)
-			ws.cell(row=r, column=2 + i, value=value)
+			cell = ws.cell(row=r, column=first_pest_col + i, value=value)
+			if value:
+				band = _band(value, thresholds.get(pest), area)
+				if band:
+					cell.fill = band_fills[band]
 			row_total += value
 			column_totals[i] += value
-		ws.cell(row=r, column=2 + len(pests), value=row_total)
+		ws.cell(row=r, column=first_pest_col + len(pests), value=row_total)
 
 	total_row = header_row + 1 + len(blocks)
 	ws.cell(row=total_row, column=1, value="Total").font = Font(bold=True)
+	total_area = sum(areas.get(b, 0) for b in blocks)
+	if total_area:
+		ws.cell(row=total_row, column=2, value=round(total_area, 2)).font = Font(bold=True)
 	for i, total in enumerate(column_totals):
-		cell = ws.cell(row=total_row, column=2 + i, value=total)
+		cell = ws.cell(row=total_row, column=first_pest_col + i, value=total)
 		cell.font = Font(bold=True)
-	grand = ws.cell(row=total_row, column=2 + len(pests), value=sum(column_totals))
+	grand = ws.cell(row=total_row, column=first_pest_col + len(pests), value=sum(column_totals))
 	grand.font = Font(bold=True)
 
+	# The legend carries the actual numbers, not just the colours — a band name
+	# with no figure behind it cannot be checked or argued with.
+	legend_row = total_row + 2
+	ws.cell(row=legend_row, column=1, value="Thresholds").font = Font(bold=True)
+	if thresholds:
+		ws.cell(row=legend_row, column=2, value="Unit")
+		ws.cell(row=legend_row, column=3, value="Low")
+		ws.cell(row=legend_row, column=4, value="Moderate")
+		ws.cell(row=legend_row, column=5, value="High")
+		for c in range(2, 6):
+			ws.cell(row=legend_row, column=c).font = Font(bold=True)
+		for n, pest in enumerate(sorted(thresholds), start=1):
+			spec = thresholds[pest]
+			ws.cell(row=legend_row + n, column=1, value=pest)
+			ws.cell(row=legend_row + n, column=2, value=spec["unit"] or "Per Warehouse")
+			for col, key in ((3, "low"), (4, "moderate"), (5, "high")):
+				cell = ws.cell(row=legend_row + n, column=col, value=spec[key] or None)
+				cell.fill = band_fills[key]
+	else:
+		ws.cell(
+			row=legend_row + 1,
+			column=1,
+			value=f"No thresholds are set on {crop}'s Pest Filters, so nothing is shaded.",
+		).font = Font(italic=True, color="666666")
+
+	missing_area = [b for b in blocks if not areas.get(b)]
+	if missing_area:
+		note_row = legend_row + len(thresholds) + 2
+		ws.cell(
+			row=note_row,
+			column=1,
+			value=(
+				f"{len(missing_area)} of {len(blocks)} blocks have no area set, so their "
+				"per-hectare thresholds could not be judged. Set Area (ha) on the "
+				"block's Warehouse to bring them in."
+			),
+		).font = Font(italic=True, color="996600")
+
 	ws.column_dimensions["A"].width = 32
+	ws.column_dimensions["B"].width = 10
 	for i in range(len(pests) + 1):
-		ws.column_dimensions[ws.cell(row=header_row, column=2 + i).column_letter].width = 14
-	ws.freeze_panes = ws.cell(row=header_row + 1, column=2)
+		ws.column_dimensions[
+			ws.cell(row=header_row, column=first_pest_col + i).column_letter
+		].width = 14
+	ws.freeze_panes = ws.cell(row=header_row + 1, column=first_pest_col)
 
 	buf = io.BytesIO()
 	wb.save(buf)

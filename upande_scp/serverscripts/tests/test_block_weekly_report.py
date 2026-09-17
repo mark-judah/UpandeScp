@@ -133,3 +133,70 @@ class TestBlocksReachThePlanner(unittest.TestCase):
 			   WHERE w.custom_farm = 'Lokitela'"""
 		)[0][0]
 		self.assertEqual(float(total or 0), 0.0)
+
+
+class TestSeverityBands(unittest.TestCase):
+	"""`_band` decides what a count means. Pure logic — no database."""
+
+	PER_HA = {"unit": "Per Hectare", "low": 1, "moderate": 3, "high": 6}
+
+	def test_per_hectare_divides_by_area(self):
+		"""The whole point: 30 on a 3 ha block is 10/ha and alarming; the same 30
+		spread over 30 ha is 1/ha and merely present."""
+		self.assertEqual(R._band(30, self.PER_HA, 3.0), "high")
+		self.assertEqual(R._band(30, self.PER_HA, 30.0), "low")
+
+	def test_bands_are_inclusive_of_their_threshold(self):
+		"""The field description says the threshold is the value AT WHICH severity
+		becomes that band, so sitting exactly on it counts."""
+		self.assertEqual(R._band(18, self.PER_HA, 3.0), "high")       # 6.0/ha
+		self.assertEqual(R._band(9, self.PER_HA, 3.0), "moderate")    # 3.0/ha
+		self.assertEqual(R._band(3, self.PER_HA, 3.0), "low")         # 1.0/ha
+
+	def test_below_the_lowest_band_is_clean_not_unknown(self):
+		"""An empty string, not None: we know it is below Low. That is a different
+		answer from 'cannot be judged' and must not be drawn the same way."""
+		self.assertEqual(R._band(2, self.PER_HA, 3.0), "")
+
+	def test_per_hectare_without_an_area_is_not_assessable(self):
+		"""Dividing by a missing denominator would invent a figure. Endebess's 64
+		coffee blocks carry no area, and a sheet for them must not imply calm."""
+		self.assertIsNone(R._band(30, self.PER_HA, None))
+		self.assertIsNone(R._band(30, self.PER_HA, 0))
+
+	def test_an_unset_threshold_is_not_a_threshold_of_zero(self):
+		self.assertIsNone(R._band(10, None, 3.0))
+		self.assertIsNone(R._band(10, {}, 3.0))
+
+	def test_per_zone_percent_cannot_describe_a_block(self):
+		"""Zones are a greenhouse idea. A block has none, so the unit does not apply
+		and the cell stays unjudged rather than being silently compared raw."""
+		spec = {"unit": "Per Zone %", "low": 1, "moderate": 2, "high": 3}
+		self.assertIsNone(R._band(10, spec, 3.0))
+
+	def test_per_warehouse_compares_the_raw_count(self):
+		spec = {"unit": "Per Warehouse", "low": 3, "moderate": 8, "high": 16}
+		self.assertEqual(R._band(10, spec, None), "moderate")
+		self.assertEqual(R._band(2, spec, None), "")
+
+
+class TestThresholdAndAreaLoading(unittest.TestCase):
+	def test_blocks_without_an_area_are_absent_not_zero(self):
+		"""`_block_areas` must omit them, so `_band` sees None and refuses to judge
+		rather than dividing by nought."""
+		frappe.set_user("Administrator")
+		blocks = R._blocks_for_farm("Lokitela")
+		areas = R._block_areas(blocks)
+		self.assertTrue(areas, "Lokitela's blocks should carry custom_area_ha")
+		self.assertTrue(all(v > 0 for v in areas.values()))
+		self.assertTrue(set(areas).issubset(set(blocks)))
+
+	def test_a_filter_with_all_bands_at_zero_is_not_a_threshold(self):
+		"""Every avocado filter currently sits at 0/0/0. Returning those would paint
+		every sighting red; they have to read as 'not set'."""
+		frappe.set_user("Administrator")
+		for spec in R._thresholds_for_crop("Avocado").values():
+			self.assertTrue(
+				(spec["low"] or spec["moderate"] or spec["high"]),
+				"a threshold with nothing set should have been dropped",
+			)

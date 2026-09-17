@@ -1,4 +1,5 @@
 import { recordCall } from "./perf";
+import { requestFinished, requestStarted } from "./splash";
 
 export interface ScpBootstrap {
   user: string;
@@ -71,9 +72,28 @@ export function bootstrap(): ScpBootstrap {
   };
 }
 
+/**
+ * Every endpoint in the app goes through here, which is what lets the opening
+ * cover know whether anything is still outstanding without a single page having
+ * to report it. See lib/splash.
+ */
 export async function call<T = unknown>(
   method: string,
   args: Record<string, unknown> = {},
+): Promise<T> {
+  requestStarted();
+  try {
+    return await request<T>(method, args);
+  } finally {
+    // `finally`, not a call after the await: a throwing request must still
+    // decrement, or one failed endpoint holds the cover until the cap.
+    requestFinished();
+  }
+}
+
+async function request<T>(
+  method: string,
+  args: Record<string, unknown>,
 ): Promise<T> {
   const fetchStart = performance.now();
   const res = await fetch(`/api/method/${method}`, {

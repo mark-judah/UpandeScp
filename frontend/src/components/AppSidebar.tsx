@@ -1,4 +1,5 @@
 import {
+  Home,
   Activity,
   ArrowRightLeft,
   Beaker,
@@ -591,6 +592,33 @@ export function AppSidebar({
                 <PanelLeftClose className="h-4 w-4" />
               )}
               <span>{collapsed ? "Expand" : "Collapse"}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <SidebarSeparator />
+
+        {/* Back to Desk, beside the profile chip: a full page load out of this
+            app and into Frappe's own workspace at /app. It sits here rather
+            than in the nav above because it is not one of this app's surfaces —
+            and because somebody new to the app has to be able to leave it
+            without hunting. A plain <a href>, deliberately: the desk is a
+            different document, not a hash route.
+
+            No loading cover on the way out. `scp_desk.js` raises one going the
+            other way, into /scp_app, because Frappe shows nothing on that
+            crossing — but leaving for /app raises Frappe's own splash the
+            moment it starts loading, and two covers handing over to each other
+            is one more than the crossing needs. */}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              title="Back to Desk — the Frappe workspace at /app"
+            >
+              <a href="/app">
+                <Home className="h-4 w-4" />
+                <span>Back to Desk</span>
+              </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

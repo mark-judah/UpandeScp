@@ -27,8 +27,18 @@ import {
 } from "@/components/ui/popover";
 import { HEADER_PILL } from "@/components/header-controls";
 import { BlockSprayPlan } from "./BlockSprayPlan";
+import { getThresholds, type ThresholdPestRow } from "@/lib/thresholds-api";
+import {
+  BAND_COLOR,
+  BAND_LABEL,
+  bandFor,
+  bandRank,
+  judgedValue,
+  specsByPest,
+} from "@/lib/pest-bands";
 import { ALL, MapHeader, type MapFilterValue } from "../maps/MapHeader";
 import {
+  fetchBlockAreas,
   fetchBlocksGeojson,
   fetchOrchardTreeRows,
   type GeoJsonFC,
@@ -115,13 +125,38 @@ export function AvocadoHeatMap() {
   const [showBoundary, setShowBoundary] = useState(false);
   const [showTrees, setShowTrees] = useState(true);
   const [planOpen, setPlanOpen] = useState(false);
+  // Thresholds and block areas, so a count can be said to be heavy FOR THIS
+  // BLOCK rather than merely large. Both are small and cached client-side.
+  const [pestSpecs, setPestSpecs] = useState<Record<string, ReturnType<typeof specsByPest>[string]>>({});
+  const [blockAreas, setBlockAreas] = useState<Record<string, number>>({});
+  // Which pests this plan is aimed at. The rose planner asks the same question
+  // — what are we spraying for — and the answer rides onto the plan's scope.
+  const [targets, setTargets] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  // Targets belong to the block they were chosen on. Carrying them across would
+  // quietly plan a spray for pests nobody looked at on the new block.
 
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const { pest: pestColor, disease: diseaseColor } = useObservationColors();
 
   // Blocks (all) for boundary + fit; trees (per farm) for the faint dot layer.
+  useEffect(() => {
+    let cancelled = false;
+    const farm = filters.farm === ALL ? undefined : filters.farm;
+    void Promise.all([
+      getThresholds(filters.crop).catch(() => null),
+      fetchBlockAreas({ farm }).catch(() => ({})),
+    ]).then(([bundle, areas]) => {
+      if (cancelled) return;
+      setPestSpecs(specsByPest((bundle?.pests as ThresholdPestRow[]) || []));
+      setBlockAreas(areas || {});
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.crop, filters.farm]);
+
   useEffect(() => {
     setLoadingGeo(true);
     fetchBlocksGeojson()
@@ -234,6 +269,10 @@ export function AvocadoHeatMap() {
 
   const affected = blockAggs.filter((b) => b.obs > 0);
   const totalObs = blockAggs.reduce((s, b) => s + b.obs, 0);
+  useEffect(() => {
+    setTargets([]);
+  }, [selected]);
+
   const selectedAgg = useMemo(
     () => blockAggs.find((b) => b.block === selected) || null,
     [blockAggs, selected],
@@ -385,10 +424,43 @@ export function AvocadoHeatMap() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, n);
 
+  // Pests for the selected block, judged against the crop's thresholds using
+  // that block's own hectares, and ordered by pressure — the pest furthest over
+  // its threshold leads, not merely the one with the biggest number. A pest that
+  // cannot be judged (no threshold set, or no area to divide by) keeps its place
+  // by count rather than being dropped: the sighting is still a fact.
+  const rankedPests = useMemo(() => {
+    if (!selectedAgg)
+      return [] as Array<
+        readonly [
+          string,
+          number,
+          ReturnType<typeof bandFor>,
+          ReturnType<typeof judgedValue>,
+        ]
+      >;
+    const areaHa = blockAreas[selectedAgg.block] ?? null;
+    return Array.from(selectedAgg.pests.entries())
+      .map(([name, count]) => {
+        const spec = pestSpecs[name];
+        return [
+          name,
+          count,
+          bandFor(count, spec, areaHa),
+          judgedValue(count, spec, areaHa),
+        ] as const;
+      })
+      .sort((a, b) => bandRank(b[2]) - bandRank(a[2]) || b[1] - a[1])
+      .slice(0, 8);
+  }, [selectedAgg, pestSpecs, blockAreas]);
+
   return (
     <div className="flex flex-col h-svh overflow-hidden">
       <MapHeader
-        title="Heat maps"
+        // The sidebar has called this "Jobsheet" since the prescribe flow
+        // landed on it; the heading still said "Heat maps", so the page a
+        // manager was sent to did not match the name they were sent to.
+        title="Jobsheet"
         subtitle="Orchard pest & disease intensity · red = most affected"
         value={filters}
         onChange={setFilters}
@@ -451,7 +523,11 @@ export function AvocadoHeatMap() {
 
       <div
         className={`flex-1 min-h-0 grid grid-cols-1 gap-4 px-4 pb-4 md:px-6 md:pb-6 ${
-          planOpen ? "lg:grid-cols-[1fr_300px]" : ""
+          // The plan is the working half of this page — a team, a kit, a rate
+          // per chemical and the targets — while the map only has to be big
+          // enough to pick a block off. At 300px the plan was a column of
+          // truncated labels beside a map with room to spare.
+          planOpen ? "lg:grid-cols-[minmax(0,1fr)_440px]" : ""
         }`}
       >
         <div className="h-full w-full min-h-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
@@ -516,32 +592,84 @@ export function AvocadoHeatMap() {
                     </div>
                   </div>
 
+                  {/* Pests lead, ranked by pressure rather than by raw count,
+                      and each is selectable: choosing what to spray for is the
+                      first step of the rose flow and it belongs here too.
+                      Diseases stay informational — the plan targets pests. */}
                   {[
-                    { title: "Top pests", rows: topN(selectedAgg.pests), colorOf: pestColor },
-                    { title: "Top diseases", rows: topN(selectedAgg.diseases), colorOf: diseaseColor },
+                    {
+                      title: "Top pests",
+                      rows: rankedPests,
+                      colorOf: pestColor,
+                      selectable: true,
+                    },
+                    {
+                      title: "Top diseases",
+                      rows: topN(selectedAgg.diseases).map(
+                        ([n, c]) => [n, c, null, null] as const,
+                      ),
+                      colorOf: diseaseColor,
+                      selectable: false,
+                    },
                   ].map((s) => (
                     <div key={s.title}>
                       <div className="mb-1 text-[0.7rem] uppercase tracking-wide text-muted-foreground">
                         {s.title}
                       </div>
                       {s.rows.length ? (
-                        s.rows.map(([name, count]) => (
-                          <div
+                        s.rows.map(([name, count, band, judged]) => (
+                          <label
                             key={name}
-                            className="flex items-center gap-2 rounded px-1.5 py-1"
+                            className={`flex items-center gap-2 rounded px-1.5 py-1 ${
+                              s.selectable ? "cursor-pointer hover:bg-muted" : ""
+                            }`}
                           >
-                            <span
-                              className="h-2.5 w-2.5 shrink-0 rounded-full border"
-                              style={{ background: s.colorOf(name) }}
-                              aria-hidden
-                            />
-                            <span className="flex-1 truncate" title={name}>
+                            {s.selectable ? (
+                              <Checkbox
+                                checked={targets.includes(name as string)}
+                                onCheckedChange={(v) =>
+                                  setTargets((t) =>
+                                    v
+                                      ? [...t, name as string]
+                                      : t.filter((x) => x !== name),
+                                  )
+                                }
+                              />
+                            ) : (
+                              <span
+                                className="h-2.5 w-2.5 shrink-0 rounded-full border"
+                                style={{ background: s.colorOf(name as string) }}
+                                aria-hidden
+                              />
+                            )}
+                            <span className="flex-1 truncate" title={name as string}>
                               {name}
                             </span>
-                            <span className="tabular-nums text-muted-foreground">
+                            {/* Only when a band was actually computed. Without a
+                                threshold the "judged" figure is just the count
+                                again, and printing "56.0  56" reads as two
+                                different numbers that happen to agree. */}
+                            {band && judged ? (
+                              <span className="tabular-nums text-[0.65rem] text-muted-foreground">
+                                {(judged as { value: number }).value.toFixed(1)}
+                                {(judged as { suffix: string }).suffix}
+                              </span>
+                            ) : null}
+                            {band ? (
+                              <span
+                                className="rounded-full px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide"
+                                style={{
+                                  background: `${BAND_COLOR[band as "high"]}22`,
+                                  color: BAND_COLOR[band as "high"],
+                                }}
+                              >
+                                {BAND_LABEL[band as "high"]}
+                              </span>
+                            ) : null}
+                            <span className="w-8 text-right tabular-nums text-muted-foreground">
                               {count}
                             </span>
-                          </div>
+                          </label>
                         ))
                       ) : (
                         <div className="px-1.5 py-1 text-muted-foreground">None</div>
@@ -553,7 +681,7 @@ export function AvocadoHeatMap() {
                     <div className="mb-1 text-[0.7rem] uppercase tracking-wide text-muted-foreground">
                       Plan spray
                     </div>
-                    <BlockSprayPlan block={selectedAgg.block} />
+                    <BlockSprayPlan block={selectedAgg.block} targets={targets} />
                   </div>
                 </div>
               )}

@@ -761,6 +761,37 @@ def get_blocks_geojson():
 
 
 @frappe.whitelist()
+def get_block_areas(farm=None):
+    """{block warehouse: hectares} from ``Warehouse.custom_area_ha``.
+
+    The denominator for a Per-Hectare pest threshold. The jobsheet needs it to
+    say whether a block's count is heavy *for that block* — forty on 1.5 ha and
+    forty on 12 ha are different facts — and it is the same figure the weekly
+    block report judges its cells against, read from the same column, so the
+    two cannot disagree.
+
+    Blocks with no area are omitted rather than returned as zero: absent means
+    "cannot be judged per hectare", which the caller must draw differently from
+    "judged and found calm". Endebess's 64 coffee blocks are all in that state.
+    """
+    filters = {"warehouse_type": "Block", "disabled": 0}
+    farm = (farm or "").strip()
+    if farm:
+        filters["custom_farm"] = farm
+    rows = frappe.get_all(
+        "Warehouse",
+        filters=filters,
+        fields=["name", "custom_area_ha"],
+        limit_page_length=0,
+    )
+    return {
+        r["name"]: float(r["custom_area_ha"])
+        for r in rows
+        if float(r.get("custom_area_ha") or 0) > 0
+    }
+
+
+@frappe.whitelist()
 def get_scout_lookup():
     """Map of Employee ``name`` (the numeric ID) to human-readable
     ``employee_name``. Cached because the Employee list rarely changes during

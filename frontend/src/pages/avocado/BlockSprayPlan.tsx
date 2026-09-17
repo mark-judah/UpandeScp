@@ -50,9 +50,15 @@ export interface BlockChemRow {
  */
 export function BlockSprayPlan({
   block,
+  targets = [],
   onDone,
 }: {
   block: string;
+  /** Pests chosen on the heat map beside this panel. Shown here so the plan
+   *  states what it is for — the rose planner asks the same question before
+   *  chemicals are picked, and an operator who has ticked three pests should
+   *  see them while choosing what to spray, not have to remember them. */
+  targets?: string[];
   onDone?: (workOrder: string) => void;
 }) {
   const [boot, setBoot] = useState<CreatorBootstrap | null>(null);
@@ -173,6 +179,24 @@ export function BlockSprayPlan({
       </div>
 
       <div className="space-y-1">
+        {targets.length ? (
+          <div className="mb-2 rounded-lg border border-border bg-muted/40 px-2.5 py-2">
+            <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+              Spraying for
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {targets.map((t) => (
+                <span
+                  key={t}
+                  className="rounded-full bg-background px-2 py-0.5 text-[0.7rem] font-medium"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <Label className="text-[0.7rem]">Spray team</Label>
         <Select value={team} onValueChange={setTeam}>
           <SelectTrigger className="h-8 text-xs">

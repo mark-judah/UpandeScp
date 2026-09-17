@@ -964,6 +964,26 @@ export async function createBom(args: CreateBomArgs): Promise<CreateBomResult> {
   }
 }
 
+/** {block warehouse: hectares} — the denominator for a Per-Hectare threshold.
+ *  Blocks with no area are absent, not zero: absent means "cannot be judged",
+ *  which the caller has to draw differently from "judged and calm". */
+export async function fetchBlockAreas(
+  args: { farm?: string } = {},
+): Promise<Record<string, number>> {
+  const key = `block_areas:${args.farm || ""}`;
+  return cached(key, async () => {
+    try {
+      const r = await call<Record<string, number>>(
+        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_block_areas",
+        args,
+      );
+      return r || {};
+    } catch {
+      return {};
+    }
+  });
+}
+
 export async function fetchBlocksGeojson(): Promise<GeoJsonFC> {
   return cached("blocks_geojson", async () => {
     try {

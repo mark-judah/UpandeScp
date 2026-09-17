@@ -28,6 +28,7 @@ import frappe
 from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import _derive_farm
 from upande_scp.serverscripts.spray_plan_creator.lifecycle import AFP_TYPE, get_lifecycle
 
+
 EAT = ZoneInfo("Africa/Nairobi")
 
 # Lifecycle steps shown in the email, in order, with short labels.
@@ -242,9 +243,29 @@ def build_html(farm_to_wos: dict[str, list[dict]], target_date) -> str:
 
 # ───────────────────────────── send / triggers ───────────────────────────────
 
+# The redesigned renderer lives in its own module; imported inside the functions
+# so neither module has to import the other at load time.
 
-def _build_and_send(target_date) -> dict:
-    """Core: build per-recipient emails for plans scheduled on target_date."""
+
+def render_v2(farm_to_wos, target_date) -> str:
+    from upande_scp.serverscripts.reports.progress_email_v2 import render
+
+    return render(farm_to_wos, target_date)
+
+
+def build_pdf(farm_to_wos, target_date):
+    from upande_scp.serverscripts.reports.progress_email_v2 import build_pdf as _build
+
+    return _build(farm_to_wos, target_date)
+
+
+
+def _build_and_send(target_date, dry_run: bool = False) -> dict:
+    """Core: build per-recipient emails for plans scheduled on target_date.
+
+    ``dry_run`` builds every message and its attachment but sends nothing —
+    the only safe way to exercise this on a site with live recipient addresses.
+    """
     wos = _wos_scheduled_on(target_date)
     farm_to_wos = _group_by_farm(wos)
     all_farms = set(farm_to_wos)
@@ -256,6 +277,10 @@ def _build_and_send(target_date) -> dict:
     subject = "Chemical Planning Progress Update — " + frappe.utils.formatdate(
         target_date, "dd-MMM-yyyy"
     )
+    attach_pdf = _pdf_enabled()
+    pdf_name = f"chemical-progress-{target_date}.pdf"
+    pdfs: dict[frozenset, bytes | None] = {}   # one render per distinct farm scope
+
     for user, farms in recip_farms.items():
         mine = {f: farm_to_wos[f] for f in farms if f in farm_to_wos}
         if not mine:
@@ -263,17 +288,48 @@ def _build_and_send(target_date) -> dict:
         email = _email_for(user)
         if not email:
             continue
+
+        attachments = []
+        if attach_pdf:
+            scope = frozenset(mine)
+            if scope not in pdfs:
+                pdfs[scope] = build_pdf(mine, target_date)
+            if pdfs[scope]:
+                attachments = [{"fname": pdf_name, "fcontent": pdfs[scope]}]
+
+        if dry_run:
+            sent.append({
+                "to": email,
+                "farms": sorted(mine),
+                "plans": sum(len(v) for v in mine.values()),
+                "html_bytes": len(render_v2(mine, target_date).encode()),
+                "pdf_bytes": len(attachments[0]["fcontent"]) if attachments else 0,
+            })
+            continue
         try:
             frappe.sendmail(
                 recipients=[email],
                 subject=subject,
-                message=build_html(mine, target_date),
+                # the mail body is the day at a glance: the count, the exceptions,
+                # and finished plans in one line each. Everything in full, in
+                # Poppins, rides along as the attachment.
+                message=render_v2(mine, target_date),
+                attachments=attachments,
                 reference_doctype="Scouting and Crop Protection Settings",
             )
             sent.append(email)
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"chemical progress email: {email}")
-    return {"sent": len(sent), "recipients": sent}
+    return {"sent": len(sent), "recipients": sent, "pdf": bool(attach_pdf), "pdfs_rendered": len(pdfs)}
+
+
+def _pdf_enabled() -> bool:
+    """GM-controllable, and absent on sites that have not added the field yet."""
+    try:
+        s = frappe.get_single("Scouting and Crop Protection Settings")
+    except Exception:
+        return True
+    return bool(getattr(s, "progress_email_attach_pdf", 1))
 
 
 def send_chemical_progress_email() -> dict:
@@ -299,6 +355,16 @@ def send_chemical_progress_email() -> dict:
     frappe.db.set_value("Scouting and Crop Protection Settings", None, "progress_email_last_sent", today)
     frappe.db.commit()
     return {"enabled": True, **result}
+
+
+@frappe.whitelist()
+def dry_run_chemical_progress_email(target_date: str | None = None) -> dict:
+    """Build every recipient's email and attachment, send none."""
+    if not (set(frappe.get_roles(frappe.session.user))
+            & {"SCP General Manager", "System Manager", "Administrator"}):
+        frappe.throw("Not permitted.", frappe.PermissionError)
+    target = frappe.utils.getdate(target_date) if target_date else datetime.now(EAT).date()
+    return _build_and_send(target, dry_run=True)
 
 
 @frappe.whitelist()

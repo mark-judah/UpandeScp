@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { useRoute, cropDisplayName, type View } from "@/lib/router";
 import { AppSidebar, canOpenView } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { ProgressBar } from "@/components/ProgressBar";
+import { PageSkeleton, MapPageSkeleton } from "@/components/Loading";
 import { PerfClock } from "@/components/PerfClock";
 import {
   primeBedsAndZones,
@@ -282,17 +282,22 @@ function renderView(crop: string, view: View): ReactNode {
   }
 }
 
+/* The route fallback. This used to be a sweeping progress bar on an empty
+ * surface: honest about having no fraction to report, but silent about what is
+ * arriving, so every first visit to a screen flashed a blank and then reflowed
+ * into a layout. A skeleton is the same wait with the shape already in place. */
 function PageFallback() {
-  // A lazy chunk fetch reports no fraction, so the bar sweeps rather than showing
-  // a percentage nothing measured.
-  return (
-    <div className="flex min-h-svh items-center justify-center">
-      <div className="w-[min(22rem,80vw)]">
-        <ProgressBar percent={null} label="Loading" />
-      </div>
-    </div>
-  );
+  return <PageSkeleton />;
 }
+
+/* Full-bleed map pages do not have KPI cards, so PageSkeleton would draw the
+ * wrong silhouette and reflow on arrival. */
+const MAP_VIEWS = new Set<View>([
+  "scouting-map",
+  "observations",
+  "traps",
+  "heatmaps",
+]);
 
 /* Page-shaped skeleton for ApplicationPlan. Matches the real header + two-column
  * layout so the user sees structure instantly while the heavy chunk (recharts,
@@ -358,18 +363,35 @@ export function App() {
   }, [activeKey]);
 
   // Prefetch route chunks on idle so the Suspense chunk loader never shows on
-  // navigation (see PREFETCH above).
+  // navigation (see PREFETCH above). By the time anybody clicks, the code is in
+  // cache and the only thing left to wait for is the data — which is what the
+  // skeletons are for.
+  //
+  // Strictly one at a time, chained on completion rather than merely scheduled
+  // on the next idle: a farm connection asked for twenty-eight chunks at once
+  // serves the one the operator is actually waiting for last. Waiting for each
+  // import to settle keeps exactly one prefetch in flight.
   useEffect(() => {
-    let i = 0;
+    let cancelled = false;
     const ric: (fn: () => void) => void =
       (window as unknown as { requestIdleCallback?: (fn: () => void) => void })
         .requestIdleCallback || ((fn) => window.setTimeout(fn, 200));
-    const pump = () => {
-      if (i >= PREFETCH.length) return;
-      void PREFETCH[i++]().catch(() => {});
-      ric(pump);
+    ric(() => {
+      if (cancelled) return;
+      void PREFETCH.reduce(
+        (queue, load) =>
+          queue.then(() =>
+            cancelled ? undefined : load().then(
+              () => undefined,
+              () => undefined,
+            ),
+          ),
+        Promise.resolve<void>(undefined),
+      );
+    });
+    return () => {
+      cancelled = true;
     };
-    ric(pump);
   }, []);
 
   // Warm the small, crop-agnostic reference caches once per session. Both are
@@ -445,6 +467,8 @@ export function App() {
             const fallback =
               kView === "application-plan" ? (
                 <ApplicationPlanSkeleton />
+              ) : MAP_VIEWS.has(kView) ? (
+                <MapPageSkeleton />
               ) : (
                 <PageFallback />
               );

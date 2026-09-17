@@ -32,6 +32,14 @@ class TestAvailability(unittest.TestCase):
 			R.build_workbook_bytes("Coffee", "Endebess", 2026, 28)
 
 
+# The sheet grew an explanatory line and an Area column when per-hectare
+# thresholds landed, so the header moved from row 5 to row 6 and the pests start
+# at column 3. These are named once here rather than spelled out in every test.
+HEADER_ROW = 6
+FIRST_BLOCK_ROW = HEADER_ROW + 1
+FIRST_PEST_COL = 3
+
+
 class TestTheSheet(unittest.TestCase):
 	YEAR, WEEK = 2026, 28
 
@@ -49,7 +57,7 @@ class TestTheSheet(unittest.TestCase):
 		blocks = R._blocks_for_farm("Lokitela")
 		self.assertTrue(blocks)
 		names = set()
-		for r in range(6, ws.max_row):
+		for r in range(FIRST_BLOCK_ROW, ws.max_row):
 			v = ws.cell(row=r, column=1).value
 			if v:
 				names.add(v)
@@ -60,19 +68,29 @@ class TestTheSheet(unittest.TestCase):
 		ws = self._sheet()
 		header = []
 		for c in range(1, ws.max_column + 1):
-			header.append(ws.cell(row=5, column=c).value)
+			header.append(ws.cell(row=HEADER_ROW, column=c).value)
 		self.assertEqual(header[0], "Block")
-		self.assertEqual(header[-1], "Total")
-		self.assertGreater(len(header), 2, "expected at least one pest column")
+		# Area sits beside the block because it is the denominator every shaded
+		# cell on that row was judged against.
+		self.assertEqual(header[1], "Area (ha)")
+		pest_header = [h for h in header[FIRST_PEST_COL - 1 :] if h]
+		self.assertEqual(pest_header[-1], "Total")
+		self.assertGreater(len(pest_header), 1, "expected at least one pest column")
 
 	def test_the_totals_row_adds_up(self):
 		ws = self._sheet()
-		total_row = ws.max_row
-		self.assertEqual(ws.cell(row=total_row, column=1).value, "Total")
-		# Column totals must equal the sum of the rows above them.
-		for c in range(2, ws.max_column):
+		# The legend and any missing-area note sit below the totals now, so the
+		# totals row is no longer the last row on the sheet — find it by name.
+		total_row = None
+		for r in range(FIRST_BLOCK_ROW, ws.max_row + 1):
+			if ws.cell(row=r, column=1).value == "Total":
+				total_row = r
+				break
+		self.assertIsNotNone(total_row, "no Total row on the sheet")
+		# Column totals must equal the sum of the block rows above them.
+		for c in range(FIRST_PEST_COL, ws.max_column):
 			column_sum = 0.0
-			for r in range(6, total_row):
+			for r in range(FIRST_BLOCK_ROW, total_row):
 				column_sum += float(ws.cell(row=r, column=c).value or 0)
 			self.assertAlmostEqual(
 				float(ws.cell(row=total_row, column=c).value or 0), column_sum

@@ -17,11 +17,36 @@ def _require_admin() -> None:
 
 
 @frappe.whitelist()
-def list_farms_with_creators() -> list[dict]:
+def list_farms_with_creators(crop: str | None = None) -> list[dict]:
+    """The Access roster, one row per farm.
+
+    ``crop`` restricts it to that crop's farms. Settings is per-crop now, and
+    this endpoint used to return every farm on the site whatever page asked —
+    so the avocado Access tab listed all seventeen when one is tagged to
+    avocado, and rostering a creator for Lokitela meant scrolling past sixteen
+    farms that have nothing to do with the crop, each one a place to make a
+    mistake.
+
+    A crop with no farms tagged gets an empty list, not every farm. Adding a
+    farm to the crop on `Crop Scouted` is what makes it appear here; the page
+    says so rather than showing a blank table. Called without a crop the
+    behaviour is unchanged, which is what a site-wide caller wants.
+    """
     _require_admin()
+
+    filters = {"disabled": 0} if frappe.db.has_column("Farm", "disabled") else {}
+    crop = (crop or "").strip()
+    if crop:
+        from upande_scp.serverscripts.spray_plan_creator import crop_settings
+
+        tagged = crop_settings.farms_for_crop(crop)
+        if not tagged:
+            return []
+        filters["name"] = ["in", tagged]
+
     farms = frappe.get_all(
         "Farm",
-        filters={"disabled": 0} if frappe.db.has_column("Farm", "disabled") else {},
+        filters=filters,
         fields=["name"] + (["farm_name as farm"] if frappe.db.has_column("Farm", "farm_name") else [])
             + (["custom_business_unit"] if frappe.db.has_column("Farm", "custom_business_unit") else []),
         order_by="name",

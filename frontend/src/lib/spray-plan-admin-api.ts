@@ -47,8 +47,15 @@ export interface CreatorCandidate {
 
 const PREFIX = "upande_scp.serverscripts.spray_plan_creator.admin";
 
-export async function listFarmsWithCreators(): Promise<FarmWithCreators[]> {
-  const r = await call<FarmWithCreators[]>(`${PREFIX}.list_farms_with_creators`);
+/** `crop` restricts the roster to that crop's farms. A crop with none tagged
+ *  gets an empty list — adding a farm to the crop is what makes it appear. */
+export async function listFarmsWithCreators(
+  crop?: string,
+): Promise<FarmWithCreators[]> {
+  const r = await call<FarmWithCreators[]>(
+    `${PREFIX}.list_farms_with_creators`,
+    crop ? { crop } : {},
+  );
   // Older server builds don't include ``approvers``/``store_keepers`` (or
   // the store fields) yet — normalise so consumers can always assume the
   // fields are present.

@@ -225,3 +225,35 @@ def is_wip_area(warehouse_name: str) -> bool:
 		if re.search(rf"\b{re.escape(word)}\b", name, re.IGNORECASE):
 			return True
 	return False
+
+
+def farms_for_crop(crop: str) -> list:
+	"""The farms this crop is grown on, from `Crop Scouted`'s own farm tags.
+
+	The one definition of the question, used by the Settings page's per-farm
+	tabs and by the Access roster endpoint, so the two cannot disagree about
+	which farms belong to a crop.
+
+	**An untagged crop returns nothing, and that is deliberate.** An earlier
+	version fell back to every farm on the site on the grounds that an empty
+	list reads as "you have no farms" — but it reads that way only if nothing
+	says otherwise, and the cost of the fallback was worse: the avocado Access
+	tab listed all seventeen farms when one is tagged, so an operator rostering
+	a creator for Lokitela scrolled past sixteen that have nothing to do with
+	avocado, and every one of them was a place to make a mistake. Adding a farm
+	to the crop is what should make it appear. The caller says so on screen
+	rather than showing a blank table.
+
+	`Crop Scouted` is the authority rather than `Warehouse.custom_farm` because
+	it is the thing an operator edits when a crop moves to a new farm.
+	"""
+	crop = (crop or "").strip()
+	if not crop or not frappe.db.exists("Crop Scouted", crop):
+		return []
+	doc = frappe.get_doc("Crop Scouted", crop)
+	farms = []
+	for row in doc.get("farms") or []:
+		farm = getattr(row, "farm", None)
+		if farm and farm not in farms:
+			farms.append(farm)
+	return sorted(farms)

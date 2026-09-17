@@ -199,3 +199,45 @@ class TestWipAreas(unittest.TestCase):
 		is the site's, because the store dashboards span farms and crops."""
 		self.assertIn("wip_area_label", CS.OVERRIDABLE)
 		self.assertNotIn("wip_area_keywords", CS.OVERRIDABLE)
+
+
+class TestFarmsForCrop(unittest.TestCase):
+	"""Which farms belong to a crop — the Access roster and the Settings tabs
+	have to agree, and neither may show a farm the crop is not grown on."""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+
+	def test_a_crop_gets_its_own_farms(self):
+		self.assertEqual(CS.farms_for_crop("Avocado"), ["Lokitela"])
+		self.assertEqual(CS.farms_for_crop("Coffee"), ["Endebess", "Saboti"])
+
+	def test_an_untagged_crop_gets_nothing_not_everything(self):
+		"""The fallback this replaces listed all 17 farms on the avocado page,
+		where one is tagged — sixteen chances to roster the wrong farm."""
+		self.assertEqual(CS.farms_for_crop("Not A Crop"), [])
+		self.assertEqual(CS.farms_for_crop(""), [])
+
+	def test_the_access_roster_shows_the_same_farms(self):
+		from upande_scp.serverscripts.spray_plan_creator.admin import (
+			list_farms_with_creators,
+		)
+
+		for crop in ("Avocado", "Coffee", "Rose"):
+			rostered = sorted(r["farm"] for r in list_farms_with_creators(crop))
+			self.assertEqual(rostered, CS.farms_for_crop(crop), crop)
+
+	def test_the_roster_without_a_crop_is_unchanged(self):
+		"""A site-wide caller still gets every farm — the filter is opt-in."""
+		from upande_scp.serverscripts.spray_plan_creator.admin import (
+			list_farms_with_creators,
+		)
+
+		self.assertGreater(len(list_farms_with_creators()), len(CS.farms_for_crop("Avocado")))
+
+	def test_an_untagged_crop_rosters_nothing(self):
+		from upande_scp.serverscripts.spray_plan_creator.admin import (
+			list_farms_with_creators,
+		)
+
+		self.assertEqual(list_farms_with_creators("Not A Crop"), [])

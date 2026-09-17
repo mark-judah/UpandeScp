@@ -568,20 +568,8 @@ def save_crop_settings(crop: str, payload: str) -> dict:
 
 
 def _farms_for_crop(crop: str) -> list:
-    """Farms this crop is actually grown on, via `Crop Scouted`'s farm tags.
+    """Farms this crop is grown on. See `crop_settings.farms_for_crop` — one
+    definition, so the Settings tabs and the Access roster cannot disagree."""
+    from upande_scp.serverscripts.spray_plan_creator import crop_settings
 
-    Falls back to every farm when the crop names none — an unconfigured crop
-    should show the full list rather than an empty one, because an empty list
-    reads as "you have no farms" when it means "nobody has said which".
-    """
-    crop = (crop or "").strip()
-    tagged = []
-    if crop and frappe.db.exists("Crop Scouted", crop):
-        doc = frappe.get_doc("Crop Scouted", crop)
-        for row in doc.get("farms") or []:
-            farm = getattr(row, "farm", None)
-            if farm:
-                tagged.append(farm)
-    if tagged:
-        return sorted(set(tagged))
-    return [r["name"] for r in frappe.get_all("Farm", fields=["name"], order_by="name")]
+    return crop_settings.farms_for_crop(crop)

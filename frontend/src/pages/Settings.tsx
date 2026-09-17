@@ -182,8 +182,13 @@ export function Settings({ initialCrop }: { initialCrop?: string } = {}) {
           // asking someone to find theirs among twelve. Falls back to all farms
           // when the crop names none, because an empty list reads as "you have
           // no farms" when it means "nobody has said which".
-          const farms = cropSettings?.farms?.length
-            ? bundle.farms.filter((f) => cropSettings.farms.includes(f))
+          // On a crop's page these show that crop's farms and only those.
+          // There is deliberately no fall back to every farm when a crop has
+          // none tagged: adding the farm to the crop is what makes it appear,
+          // and listing all seventeen on the avocado page put sixteen farms in
+          // front of somebody who wanted one.
+          const farms = crop
+            ? bundle.farms.filter((f) => (cropSettings?.farms || []).includes(f))
             : bundle.farms;
           return (
           <Tabs value={tab} onValueChange={handleTab} className="w-full">
@@ -219,7 +224,7 @@ export function Settings({ initialCrop }: { initialCrop?: string } = {}) {
             </TabsList>
 
             <TabsContent value="access">
-              <AccessTab />
+              <AccessTab crop={crop} />
             </TabsContent>
             <TabsContent value="spray-plan">
               {crop ? <CropOverridesCard crop={crop} /> : null}

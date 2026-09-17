@@ -81,7 +81,7 @@ function rosterEqual(a: FarmCreatorRow[], b: FarmCreatorRow[]): boolean {
   return aUsers.every((u, i) => u === bUsers[i]);
 }
 
-export function AccessTab() {
+export function AccessTab({ crop }: { crop?: string } = {}) {
   const [rows, setRows] = useState<RowState[] | null>(null);
   const [error, setError] = useState<{ status: number; message: string } | null>(
     null,
@@ -95,7 +95,7 @@ export function AccessTab() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    listFarmsWithCreators()
+    listFarmsWithCreators(crop)
       .then((farms) => {
         if (cancelled) return;
         setRows(
@@ -129,7 +129,9 @@ export function AccessTab() {
     return () => {
       cancelled = true;
     };
-  }, []);
+    // Re-fetch when the crop changes: the roster is that crop's farms, not
+    // every farm on the site.
+  }, [crop]);
 
   useEffect(() => {
     let cancelled = false;
@@ -275,13 +277,30 @@ export function AccessTab() {
     );
   }
   if (rows && rows.length === 0) {
+    // Two different reasons for an empty roster, and they need different
+    // answers. On a crop's page it almost always means the crop has no farms
+    // tagged yet — saying "create a Farm" there would send someone to make a
+    // second Lokitela.
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">No farms configured</CardTitle>
+          <CardTitle className="text-base">
+            {crop ? `No farms are tagged to ${crop} yet` : "No farms configured"}
+          </CardTitle>
           <CardDescription>
-            Create at least one Farm in Frappe Desk to start assigning Spray
-            Plan Creators and Approvers here.
+            {crop ? (
+              <>
+                This roster shows {crop}'s farms only. Add the farm to{" "}
+                <span className="font-mono">{crop}</span> under Crop Scouted in
+                Frappe Desk and it will appear here, ready to roster creators,
+                approvers and store keepers.
+              </>
+            ) : (
+              <>
+                Create at least one Farm in Frappe Desk to start assigning Spray
+                Plan Creators and Approvers here.
+              </>
+            )}
           </CardDescription>
         </CardHeader>
       </Card>

@@ -19,6 +19,12 @@
   .pill{display:inline-block;font-size:11px;font-weight:600;padding:4px 10px;border-radius:11px;color:#fff;}
   .name{font-size:15px;font-weight:600;margin:10px 0 4px;}
   .desc{color:#6f6a61;font-size:12px;line-height:1.5;}
+  h2{font-size:15px;font-weight:600;margin:34px 0 4px;}
+  .icons{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+  .icons figure{margin:0;background:#f4f3ef;border-radius:12px;padding:16px 20px;text-align:center;}
+  .icons img{display:block;width:48px;height:48px;margin:0 auto 8px;}
+  .icons figcaption{font-size:11px;font-weight:600;color:#6f6a61;}
+  .icons code{font-size:10.5px;font-weight:400;color:#9a958c;}
   .note{color:#6f6a61;font-size:12px;line-height:1.6;margin-top:26px;border-top:1px solid #d9d6ce;padding-top:16px;max-width:62ch;}
 </style>
 </head>
@@ -33,7 +39,7 @@
     <a class="card" href="email-roses-daily.html">
       <span class="pill" style="background:#a33a5b;">Roses · daily 18:00</span>
       <div class="name">Chemical planning progress</div>
-      <div class="desc">The 6pm email, same data it sends today — farm sections, the seven lifecycle steps, actors — in the new design. Postponed says postponed.</div>
+      <div class="desc">The 6pm email, same data it sends today — every plan, not a sample; the seven lifecycle steps with the time each was recorded, and the last hand on any plan that stopped.</div>
     </a>
     <a class="card" href="email-roses-spray.html">
       <span class="pill" style="background:#a33a5b;">Roses · weekly</span>
@@ -56,6 +62,22 @@
       <div class="desc">No location hierarchy yet, so no coverage. The email says so.</div>
     </a>
   </div>
+  <h2>Crop icons</h2>
+  <p>Cut out of the one sheet into their own files so they can be used anywhere —
+  three tints each (accent, light, ink) at 512px and 96px, in <code>docs/design/icons/</code>.
+  The masthead of each email carries its crop's icon on an accent chip instead of the
+  crop's name.</p>
+  <div class="icons">
+    <figure><img src="../icons/rose-accent-96.png" alt="Rose">
+      <figcaption>Rose<br><code>#a33a5b</code></figcaption></figure>
+    <figure><img src="../icons/avocado-accent-96.png" alt="Avocado">
+      <figcaption>Avocado<br><code>#5f7d33</code></figcaption></figure>
+    <figure><img src="../icons/coffee-accent-96.png" alt="Coffee">
+      <figcaption>Coffee<br><code>#6f4a2f</code></figcaption></figure>
+    <figure><img src="../icons/vegetables-accent-96.png" alt="Vegetables">
+      <figcaption>Vegetables<br><code>#b4531f</code></figcaption></figure>
+  </div>
+
   <div class="note">Charts are the one thing still to come: production renders them
   server-side as PNG and attaches them with <code>cid:</code>, since Gmail strips SVG.
   The bar rows here are already email-safe.</div>

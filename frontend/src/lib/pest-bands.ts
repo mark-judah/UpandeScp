@@ -22,12 +22,21 @@ export const BAND_LABEL: Record<"high" | "moderate" | "low", string> = {
   low: "Low",
 };
 
-/** The severity ramp already used by the heat map's legend, so a block that
- *  reads red on the map reads red in the panel beside it. */
+/**
+ * One hue, three depths — the same ramp the weekly sheet shades its cells with,
+ * so a pest that reads deep red in the spreadsheet reads deep red in the
+ * jobsheet. Severity is one thing getting worse, and a ramp within a single
+ * colour says that without the reader having to learn which of green, amber and
+ * red means what.
+ *
+ * This is deliberately NOT the heat map's own legend, which stays green/amber/
+ * red: that scale is observation *intensity* — how much was seen — which is a
+ * different question from whether what was seen is over a threshold.
+ */
 export const BAND_COLOR: Record<"high" | "moderate" | "low", string> = {
-  high: "#dc2626",
-  moderate: "#e9a23b",
-  low: "#5bb45d",
+  high: "#9b1c1c",
+  moderate: "#cf4a4a",
+  low: "#e08585",
 };
 
 export interface BandSpec {

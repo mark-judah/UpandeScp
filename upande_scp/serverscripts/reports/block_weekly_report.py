@@ -350,12 +350,16 @@ def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> 
 		cell.fill = head_fill
 		cell.alignment = Alignment(horizontal="center", wrap_text=True)
 
-	# Amber / orange / red at a weight that stays readable behind black text, and
-	# distinguishable from each other when the sheet is printed in greyscale.
+	# One hue, three depths. Severity is a single thing getting worse, and a
+	# ramp within one colour reads that way at a glance; amber-to-red reads as
+	# three separate states that have to be learned from the legend. All three
+	# stay light enough for black text to sit on them, and they are far enough
+	# apart in value to survive a greyscale print — which is how these sheets
+	# are read in a packhouse.
 	band_fills = {
-		"low": PatternFill("solid", fgColor="FFF3CD"),
-		"moderate": PatternFill("solid", fgColor="FFD9A0"),
-		"high": PatternFill("solid", fgColor="F5A8A8"),
+		"low": PatternFill("solid", fgColor="FDE8E8"),
+		"moderate": PatternFill("solid", fgColor="F7B9B9"),
+		"high": PatternFill("solid", fgColor="E98080"),
 	}
 
 	column_totals = [0.0] * len(pests)

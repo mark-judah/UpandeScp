@@ -290,3 +290,36 @@ export function setTimezoneLock(locked: boolean): Promise<TimezoneReport> {
 export function setAppTimezone(name: string): Promise<TimezoneReport> {
   return call<TimezoneReport>(`${TZ_NS}.set_app_timezone`, { name });
 }
+
+// ───────── Per-crop spray-plan overrides ─────────
+
+export interface CropSettings {
+  crop: string;
+  /** What the site default is, for every overridable key. */
+  defaults: Record<string, string | number>;
+  /** What is actually in force for this crop — the default, or its override. */
+  effective: Record<string, string | number>;
+  /** Which keys this crop overrides. Everything else inherits. */
+  overridden: string[];
+  /** fieldname → why a crop may differ. Rendered as the field's help text, so
+   *  the reason a knob is per-crop is visible where it is being changed. */
+  overridable: Record<string, string>;
+  /** The farms this crop is grown on — used to scope the per-farm tabs. */
+  farms: string[];
+}
+
+export async function fetchCropSettings(crop: string): Promise<CropSettings> {
+  return call<CropSettings>(`${PREFIX}.get_crop_settings`, { crop });
+}
+
+/** Replaces this crop's overrides with exactly `values`. A key left out, or set
+ *  to "", goes back to inheriting the site default. */
+export async function saveCropSettings(
+  crop: string,
+  values: Record<string, string>,
+): Promise<{ crop: string; overridden: string[] }> {
+  return call(`${PREFIX}.save_crop_settings`, {
+    crop,
+    payload: JSON.stringify(values),
+  });
+}

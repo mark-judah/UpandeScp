@@ -36,6 +36,8 @@ import { FarmMapTab } from "@/components/settings/FarmMapTab";
 import { SprayPlanTab } from "@/components/settings/SprayPlanTab";
 import { ThresholdsTab } from "@/components/settings/ThresholdsTab";
 import { OrderingTab } from "@/components/settings/OrderingTab";
+import { CropOverridesCard } from "@/components/settings/CropOverridesCard";
+import { fetchCropSettings, type CropSettings } from "@/lib/settings-api";
 import { FrappeError } from "@/lib/frappe";
 import { errorText } from "@/lib/errors";
 import {
@@ -59,8 +61,22 @@ function pushTabHash(tab: TabId) {
   window.location.hash = `${base}?tab=${tab}`;
 }
 
-export function Settings() {
+/** A short note on a tab whose values are the same for every crop, so nobody
+ *  changes one from the avocado page thinking it only affects avocado. */
+function SiteWideNote() {
+  return (
+    <div className="mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+      <span className="font-medium text-foreground">Site-wide.</span> These
+      settings are shared by every crop — changing them here changes them
+      everywhere.
+    </div>
+  );
+}
+
+export function Settings({ initialCrop }: { initialCrop?: string } = {}) {
+  const crop = (initialCrop || "").trim();
   const [tab, setTab] = useState<TabId>(getInitialTab);
+  const [cropSettings, setCropSettings] = useState<CropSettings | null>(null);
   const [bundle, setBundle] = useState<SettingsBundle | null>(null);
   const [error, setError] = useState<{ status: number; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,6 +85,16 @@ export function Settings() {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    if (crop) {
+      fetchCropSettings(crop)
+        .then((c) => {
+          if (!cancelled) setCropSettings(c);
+        })
+        .catch(() => {
+          // A crop we cannot resolve should not take the page down — the tabs
+          // fall back to every farm, which is what they showed before.
+        });
+    }
     fetchSettingsBundle()
       .then((b) => {
         if (!cancelled) setBundle(b);
@@ -150,7 +176,16 @@ export function Settings() {
           </Card>
         )}
 
-        {!loading && !error && bundle && (
+        {!loading && !error && bundle && (() => {
+          // Access and Farms & Map are per-FARM already, and farms belong to
+          // crops — so on a crop's page they show that crop's farms rather than
+          // asking someone to find theirs among twelve. Falls back to all farms
+          // when the crop names none, because an empty list reads as "you have
+          // no farms" when it means "nobody has said which".
+          const farms = cropSettings?.farms?.length
+            ? bundle.farms.filter((f) => cropSettings.farms.includes(f))
+            : bundle.farms;
+          return (
           <Tabs value={tab} onValueChange={handleTab} className="w-full">
             <TabsList>
               <TabsTrigger value="access">
@@ -187,15 +222,19 @@ export function Settings() {
               <AccessTab />
             </TabsContent>
             <TabsContent value="spray-plan">
+              {crop ? <CropOverridesCard crop={crop} /> : null}
+              {crop ? <div className="h-4" /> : null}
+              {crop ? <SiteWideNote /> : null}
               <SprayPlanTab
                 initial={bundle.spray_plan}
-                farms={bundle.farms}
+                farms={farms}
                 onSaved={(saved) =>
                   setBundle({ ...bundle, spray_plan: saved })
                 }
               />
             </TabsContent>
             <TabsContent value="accounts">
+              {crop ? <SiteWideNote /> : null}
               <AccountsTab
                 initial={bundle.spray_plan}
                 onSaved={(saved) =>
@@ -212,17 +251,19 @@ export function Settings() {
             <TabsContent value="farms">
               <FarmMapTab
                 initial={bundle.map_settings}
-                farms={bundle.farms}
+                farms={farms}
                 onSaved={(saved) =>
                   setBundle({ ...bundle, map_settings: saved })
                 }
               />
             </TabsContent>
             <TabsContent value="chemicals">
+              {crop ? <SiteWideNote /> : null}
               <ChemicalsTab />
             </TabsContent>
           </Tabs>
-        )}
+          );
+        })()}
       </section>
     </div>
   );

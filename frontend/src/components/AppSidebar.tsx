@@ -261,6 +261,13 @@ const AVOCADO_NAV: NavSection[] = [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
     ],
   },
+  {
+    // Settings is per-crop now: this crop's spray-plan overrides, its farms'
+    // rosters and map, its thresholds and ordering. The site-wide tabs are
+    // still here, marked as such, so nobody has to go to roses to find them.
+    label: "Settings",
+    items: [{ kind: "view", view: "settings", label: "Settings", icon: Settings }],
+  },
 ];
 
 // Coffee — minimal nav for the triad tessellation test: Dashboard + the
@@ -283,6 +290,13 @@ const COFFEE_NAV: NavSection[] = [
     items: [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
     ],
+  },
+  {
+    // Settings is per-crop now: this crop's spray-plan overrides, its farms'
+    // rosters and map, its thresholds and ordering. The site-wide tabs are
+    // still here, marked as such, so nobody has to go to roses to find them.
+    label: "Settings",
+    items: [{ kind: "view", view: "settings", label: "Settings", icon: Settings }],
   },
 ];
 

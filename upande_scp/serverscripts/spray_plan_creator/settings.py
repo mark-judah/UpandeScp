@@ -530,3 +530,58 @@ def _save_legacy_item_fields(item, payload):
                 item.append("custom_active_ingredients", {"ingredient": ing})
     item.flags.ignore_validate_update_after_submit = True
     item.save(ignore_permissions=True)
+
+
+@frappe.whitelist()
+def get_crop_settings(crop: str) -> dict:
+    """The spray-plan settings in force for one crop, and what they inherit.
+
+    Returns the site defaults, the effective values, the list of keys this crop
+    overrides, and the farms the crop is grown on. The page needs all four: it
+    has to show the number in force, say whether it came from this crop or from
+    the site, and scope the per-farm tabs to the farms that are actually this
+    crop's.
+    """
+    _require_admin()
+    from upande_scp.serverscripts.spray_plan_creator import crop_settings
+
+    resolved = crop_settings.resolve(crop)
+    resolved["overridable"] = crop_settings.OVERRIDABLE
+    resolved["farms"] = _farms_for_crop(crop)
+    return resolved
+
+
+@frappe.whitelist()
+def save_crop_settings(crop: str, payload: str) -> dict:
+    """Replace this crop's overrides with exactly what the page sent.
+
+    Replace rather than merge: the page shows every overridable setting and
+    which are overridden, so what it sends is the complete intent. Merging would
+    make a cleared field unclearable — the one thing the editor most needs to be
+    able to do, since clearing is how you go back to the site default.
+    """
+    _require_admin()
+    from upande_scp.serverscripts.spray_plan_creator import crop_settings
+
+    values = frappe.parse_json(payload) or {}
+    return crop_settings.replace_overrides(crop, values)
+
+
+def _farms_for_crop(crop: str) -> list:
+    """Farms this crop is actually grown on, via `Crop Scouted`'s farm tags.
+
+    Falls back to every farm when the crop names none — an unconfigured crop
+    should show the full list rather than an empty one, because an empty list
+    reads as "you have no farms" when it means "nobody has said which".
+    """
+    crop = (crop or "").strip()
+    tagged = []
+    if crop and frappe.db.exists("Crop Scouted", crop):
+        doc = frappe.get_doc("Crop Scouted", crop)
+        for row in doc.get("farms") or []:
+            farm = getattr(row, "farm", None)
+            if farm:
+                tagged.append(farm)
+    if tagged:
+        return sorted(set(tagged))
+    return [r["name"] for r in frappe.get_all("Farm", fields=["name"], order_by="name")]

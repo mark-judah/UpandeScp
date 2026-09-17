@@ -253,7 +253,9 @@ function renderView(crop: string, view: View): ReactNode {
     case "approvals":
       return <Approvals />;
     case "settings":
-      return <Settings />;
+      // Crop-scoped: the page shows what this crop overrides and scopes the
+      // per-farm tabs to its farms. Site-wide tabs are shown and marked.
+      return <Settings initialCrop={cropName} />;
     case "spray-plan-access":
       return <SprayPlanAccess />;
     case "application-plan":

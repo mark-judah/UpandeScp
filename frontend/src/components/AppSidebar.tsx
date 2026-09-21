@@ -589,7 +589,7 @@ export function AppSidebar({
         {/* Notifications — a normal sidebar item, pinned to the footer rather
             than the crop nav above: they are not crop-scoped, so listing them
             per crop would imply they were. */}
-        <SidebarMenu>
+        <SidebarMenu className="group-data-[collapsible=icon]:items-center">
           <SidebarMenuItem>
             <SidebarMenuButton
               isActive={view === "notifications"}
@@ -613,7 +613,7 @@ export function AppSidebar({
         <SidebarSeparator />
 
         {/* Collapse — a normal sidebar item (icon + label), pinned here. */}
-        <SidebarMenu>
+        <SidebarMenu className="group-data-[collapsible=icon]:items-center">
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={toggle}
@@ -642,7 +642,7 @@ export function AppSidebar({
             crossing — but leaving for /app raises Frappe's own splash the
             moment it starts loading, and two covers handing over to each other
             is one more than the crossing needs. */}
-        <SidebarMenu>
+        <SidebarMenu className="group-data-[collapsible=icon]:items-center">
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild

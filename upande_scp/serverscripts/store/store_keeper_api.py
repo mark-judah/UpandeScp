@@ -31,6 +31,7 @@ from frappe.utils import now_datetime, add_to_date
 
 from upande_scp.serverscripts.common.crop_protection import product_groups
 from upande_scp.serverscripts.store import batch_suggestion
+from upande_scp.serverscripts.store.batch_stock import available_in_store
 
 
 # ----------------------------------------------------------------------
@@ -1310,60 +1311,6 @@ def _batch_rows_needing_attention(name: str) -> list:
     )
 
 
-def _available_by_item(pairs: list) -> dict:
-    """`{(item_code, warehouse): [batch rows]}` for every pair on the transfer.
-
-    Stock here is held as Serial and Batch Bundles — 76,358 ledger entries
-    carry a bundle against 52 that still use the old `batch_no` column — so
-    availability is the bundle join, summed per batch and warehouse. Anything
-    that nets to zero or less is dropped: it is not stock, it is history.
-
-    One query for the whole transfer. The alternative, ERPNext's
-    `get_available_batches`, answers for a single item at a time and would turn
-    a thirty-line transfer into thirty round trips on a page someone is waiting
-    at.
-    """
-    if not pairs:
-        return {}
-    items = sorted({p[0] for p in pairs})
-    houses = sorted({p[1] for p in pairs if p[1]})
-    if not items or not houses:
-        return {}
-
-    rows = frappe.db.sql(
-        """
-        SELECT sle.item_code, sbe.warehouse, sbe.batch_no,
-               SUM(sbe.qty)      AS qty,
-               bt.expiry_date    AS expiry_date,
-               MIN(bt.creation)  AS created
-        FROM   `tabStock Ledger Entry` sle
-        JOIN   `tabSerial and Batch Entry` sbe
-               ON sbe.parent = sle.serial_and_batch_bundle
-        JOIN   `tabBatch` bt ON bt.name = sbe.batch_no
-        WHERE  sle.is_cancelled = 0
-          AND  bt.disabled = 0
-          AND  sle.item_code IN %(items)s
-          AND  sbe.warehouse IN %(houses)s
-        GROUP  BY sle.item_code, sbe.warehouse, sbe.batch_no, bt.expiry_date
-        HAVING SUM(sbe.qty) > 0
-        """,
-        {"items": items, "houses": houses},
-        as_dict=True,
-    )
-
-    out: dict = {}
-    for r in rows:
-        out.setdefault((r["item_code"], r["warehouse"]), []).append(
-            {
-                "batch_no": r["batch_no"],
-                "qty": float(r["qty"] or 0),
-                "expiry_date": r["expiry_date"],
-                "created": r["created"],
-            }
-        )
-    return out
-
-
 @frappe.whitelist()
 def suggest_transfer_batches(name: str) -> dict:
     """What to issue for each row of a draft transfer, and what is behind it.
@@ -1392,7 +1339,7 @@ def suggest_transfer_batches(name: str) -> dict:
         for r in rows
         if r.get("has_batch_no") and r.get("s_warehouse")
     ]
-    available = _available_by_item(pairs)
+    available = available_in_store(pairs)
 
     out = []
     unfilled = 0

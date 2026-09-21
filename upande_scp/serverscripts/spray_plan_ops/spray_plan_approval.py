@@ -326,6 +326,55 @@ def get_farms_and_greenhouses(crop=None):
     }
 
 
+def create_transfer_stock_entry(wo_name, wo_doc=None):
+    """Create the draft Material Transfer for Manufacture for one Work Order.
+
+    Fixes zero valuation rates via FIFO. Issues no labels — see the note in
+    `approve_single_work_order`: codes are issued when the storesman submits.
+
+    Deliberately does NOT commit: the caller owns the transaction, so a bulk
+    approval can create the transfer and flip the workflow state atomically.
+    Raises on failure — approving a Work Order whose transfer could not be
+    created strands it permanently, because the approval paths only act on
+    WOs still in 'Awaiting Approval'.
+    """
+    # Idempotence: never add a second transfer for the same WO. Submitting
+    # two pushes cumulative transferred past planned and ERPNext rejects it.
+    existing = frappe.get_all(
+        "Stock Entry",
+        filters=[
+            ["work_order", "=", wo_name],
+            ["purpose", "=", "Material Transfer for Manufacture"],
+            ["docstatus", "<", 2],
+        ],
+        fields=["name"],
+        limit=1,
+    )
+    if existing:
+        return frappe.get_doc("Stock Entry", existing[0].name), []
+
+    from erpnext.manufacturing.doctype.work_order.work_order import (
+        make_stock_entry as _make_se,
+    )
+
+    se_data = _make_se(work_order_id=wo_name, purpose="Material Transfer for Manufacture")
+    if not se_data:
+        raise ValueError(f"Could not generate stock entry data for {wo_name}.")
+
+    se_doc = frappe.get_doc(se_data) if isinstance(se_data, dict) else se_data
+    se_doc.stock_entry_type = SE_TYPE_TRANSFER
+    se_doc.insert(ignore_permissions=True)
+
+    # ── Fix zero valuation rates ──
+    try:
+        if _patch_zero_rates(se_doc):
+            se_doc.save(ignore_permissions=True)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"Rate patch – {se_doc.name}")
+
+    return se_doc, []
+
+
 @frappe.whitelist()
 def approve_single_work_order(wo_name):
     """
@@ -389,29 +438,11 @@ def approve_single_work_order(wo_name):
         }
 
     try:
-        from erpnext.manufacturing.doctype.work_order.work_order import (
-            make_stock_entry as _make_se,
-        )
-        se_data = _make_se(work_order_id=wo_name, purpose="Material Transfer for Manufacture")
-        if not se_data:
-            return {"wo": wo_name, "status": "error", "message": "Could not generate stock entry data."}
-
-        se_doc = frappe.get_doc(se_data) if isinstance(se_data, dict) else se_data
-        se_doc.stock_entry_type = SE_TYPE_TRANSFER
-        se_doc.insert(ignore_permissions=True)
+        se_doc, _ = create_transfer_stock_entry(wo_name, wo_doc)
         frappe.db.commit()
     except Exception:
         frappe.log_error(frappe.get_traceback(), f"Spray Approval – create SE: {wo_name}")
         return {"wo": wo_name, "status": "error", "message": _friendly_error(frappe.get_traceback())}
-
-    # ── Fix zero valuation rates ──
-    try:
-        changed = _patch_zero_rates(se_doc)
-        if changed:
-            se_doc.save(ignore_permissions=True)
-            frappe.db.commit()
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), f"Rate patch – {se_doc.name}")
 
     # ── No QR labels here, deliberately ──
     # Codes are issued when the storesman SUBMITS this transfer (see

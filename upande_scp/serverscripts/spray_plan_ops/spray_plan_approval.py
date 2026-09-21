@@ -239,6 +239,69 @@ def get_farms_and_greenhouses():
     }
 
 
+def create_transfer_stock_entry(wo_name, wo_doc=None):
+    """Create the draft Material Transfer for Manufacture for one Work Order.
+
+    Fixes zero valuation rates via FIFO. Issues no labels — see the note below.
+    Returns ``(se_doc, [])``.
+
+    Deliberately does NOT commit: the caller owns the transaction, so a bulk
+    approval can create the transfer and flip the workflow state atomically.
+    Raises on failure — approving a Work Order whose transfer could not be
+    created strands it permanently, because the approval paths only act on
+    WOs still in 'Awaiting Approval'.
+    """
+    from upande_scp.serverscripts.qr.qr_generator import (
+        attach_qr_to_document,
+        build_chemical_qr_payload,
+        generate_qr_base64,
+        safe_filename,
+    )
+
+    # Idempotence: never add a second transfer for the same WO. Submitting
+    # two pushes cumulative transferred past planned and ERPNext rejects it.
+    existing = frappe.get_all(
+        "Stock Entry",
+        filters=[
+            ["work_order", "=", wo_name],
+            ["purpose", "=", "Material Transfer for Manufacture"],
+            ["docstatus", "<", 2],
+        ],
+        fields=["name"],
+        limit=1,
+    )
+    if existing:
+        return frappe.get_doc("Stock Entry", existing[0].name), []
+
+    from erpnext.manufacturing.doctype.work_order.work_order import (
+        make_stock_entry as _make_se,
+    )
+
+    se_data = _make_se(work_order_id=wo_name, purpose="Material Transfer for Manufacture")
+    if not se_data:
+        raise ValueError(f"Could not generate stock entry data for {wo_name}.")
+
+    se_doc = frappe.get_doc(se_data) if isinstance(se_data, dict) else se_data
+    se_doc.insert(ignore_permissions=True)
+
+    # ── Fix zero valuation rates ──
+    try:
+        if _patch_zero_rates(se_doc):
+            se_doc.save(ignore_permissions=True)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"Rate patch – {se_doc.name}")
+
+    # ── No QR labels here, deliberately ──
+    # Codes are issued when the storesman SUBMITS this transfer
+    # (stock_entry_state.on_submit -> chemical_labels.issue_for_stock_entry).
+    # At this point the Stock Entry is a draft: nothing has moved and each line's
+    # quantity is a proposal the storesman can still change, so a label printed
+    # now carried a number that was never checked against what was issued.
+    qr_labels: list = []
+
+    return se_doc, qr_labels
+
+
 @frappe.whitelist()
 def approve_single_work_order(wo_name):
     """
@@ -250,12 +313,6 @@ def approve_single_work_order(wo_name):
     """
     _ensure_approval_role()
     _ensure_wo_in_approver_scope(wo_name)
-    from upande_scp.serverscripts.qr.qr_generator import (
-        attach_qr_to_document,
-        build_chemical_qr_payload,
-        generate_qr_base64,
-        safe_filename,
-    )
 
     # Row-lock the WO so the duplicate-SE guard below is atomic with the
     # subsequent insert. Without this, two concurrent approve calls can
@@ -306,63 +363,11 @@ def approve_single_work_order(wo_name):
         }
 
     try:
-        from erpnext.manufacturing.doctype.work_order.work_order import (
-            make_stock_entry as _make_se,
-        )
-        se_data = _make_se(work_order_id=wo_name, purpose="Material Transfer for Manufacture")
-        if not se_data:
-            return {"wo": wo_name, "status": "error", "message": "Could not generate stock entry data."}
-
-        se_doc = frappe.get_doc(se_data) if isinstance(se_data, dict) else se_data
-        se_doc.insert(ignore_permissions=True)
+        se_doc, qr_labels = create_transfer_stock_entry(wo_name, wo_doc)
         frappe.db.commit()
     except Exception:
         frappe.log_error(frappe.get_traceback(), f"Spray Approval – create SE: {wo_name}")
         return {"wo": wo_name, "status": "error", "message": _friendly_error(frappe.get_traceback())}
-
-    # ── Fix zero valuation rates ──
-    try:
-        changed = _patch_zero_rates(se_doc)
-        if changed:
-            se_doc.save(ignore_permissions=True)
-            frappe.db.commit()
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), f"Rate patch – {se_doc.name}")
-
-    # ── Generate & attach QR labels ──
-    qr_labels = []
-    greenhouse = wo_doc.custom_greenhouse or ""
-    farm = _derive_farm(greenhouse) or ""
-    wip_warehouse = wo_doc.wip_warehouse or ""
-    for item in se_doc.items or []:
-        try:
-            tgt_wh = item.t_warehouse or wip_warehouse
-            payload = build_chemical_qr_payload(
-                item.item_name or item.item_code,
-                item.qty,
-                item.stock_uom,
-            )
-            png_b64 = generate_qr_base64(payload)
-            if png_b64:
-                fname = f"QR_{se_doc.name}_{safe_filename(item.item_code)}.png"
-                attach_qr_to_document("Stock Entry", se_doc.name, fname, png_b64)
-                qr_labels.append(
-                    {
-                        "chemical":   item.item_name or item.item_code,
-                        "item_code":  item.item_code,
-                        "qty":        _fmt_qty(item.qty),
-                        "uom":        item.stock_uom,
-                        "src_wh":     item.s_warehouse or "",
-                        "tgt_wh":     tgt_wh,
-                        "farm":       farm,
-                        "greenhouse": greenhouse,
-                        "wo":         wo_name,
-                        "se":         se_doc.name,
-                        "png_base64": png_b64,
-                    }
-                )
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), f"QR gen – {se_doc.name} / {item.item_code}")
 
     # Bump workflow state to Approved (Task 16 of Spray Plan A1)
     frappe.db.set_value("Work Order", wo_name, "workflow_state", "Approved", update_modified=True)

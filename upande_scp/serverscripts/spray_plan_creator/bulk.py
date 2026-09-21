@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import frappe
 
+from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import (
+    create_transfer_stock_entry,
+)
+
 from .scope import _resolve_user_scope
 
 
@@ -87,11 +91,16 @@ def submit_drafts_for_approval(wo_names) -> dict:
 def approve_drafts_bulk(wo_names) -> dict:
     """Race-free GM bulk approval: Awaiting Approval -> Approved.
 
-    Single transaction with row locks, all-or-nothing. Does NOT yet call
-    `approve_single_work_order` (which creates a Material Transfer SE) because
-    that legacy endpoint runs heavy logic and we want this Part-A bulk endpoint
-    isolated. Task 16 wires the legacy single-approver path to also set
-    workflow_state; Part B will pair this bulk endpoint with the SE creation.
+    Single transaction with row locks. Each Work Order gets its Material
+    Transfer for Manufacture created *before* its state is flipped, so bulk
+    approval produces exactly what single approval produces.
+
+    This endpoint used to flip the state without creating the transfer. The
+    store page lists only existing draft transfers, so those plans silently
+    disappeared from the store side — and since the approval paths only act on
+    WOs still in 'Awaiting Approval', flipping the state without a transfer
+    stranded them permanently. A WO whose transfer cannot be created is
+    therefore left alone and reported in ``skipped``, never half-approved.
     """
     user = frappe.session.user
     if isinstance(wo_names, str):
@@ -122,6 +131,15 @@ def approve_drafts_bulk(wo_names) -> dict:
             row = row[0]
             if row.docstatus != 1 or row.workflow_state != "Awaiting Approval":
                 skipped.append({"name": name, "reason": "not awaiting approval"}); continue
+            # The transfer must exist before the state moves. If it cannot be
+            # created, leave the WO in 'Awaiting Approval' so it stays
+            # approvable rather than becoming invisible to the store.
+            try:
+                create_transfer_stock_entry(name)
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"Bulk approve – create SE: {name}")
+                skipped.append({"name": name, "reason": "could not create material transfer"})
+                continue
             # Flip state via raw SQL (avoids ERPNext on_update_after_submit hooks)
             frappe.db.sql(
                 "UPDATE `tabWork Order` SET workflow_state=%s, modified=NOW() WHERE name=%s",

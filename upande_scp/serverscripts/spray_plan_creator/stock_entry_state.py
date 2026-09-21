@@ -18,6 +18,8 @@ transaction, including the Stock Entry's docstatus=1 write.
 from __future__ import annotations
 
 import frappe
+
+from upande_scp.serverscripts.qr.chemical_labels import issue_for_stock_entry
 from frappe.utils import flt
 
 AFP_TYPE = "Application Floor Plan"
@@ -131,5 +133,15 @@ def on_submit(doc, method):
         frappe.log_error(
             frappe.get_traceback(),
             "stock_entry_state.on_submit: add_comment failed",
+        )
+
+    # Labels are issued here, against the submitted transfer — the quantities
+    # that actually moved. Never let a label failure undo a physical issue.
+    try:
+        issue_for_stock_entry(doc)
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "stock_entry_state.on_submit: label issue failed",
         )
     return CHEMICAL_ISSUED

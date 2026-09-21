@@ -252,7 +252,7 @@ export const SidebarHeader = React.forwardRef<
     data-sidebar="header"
     className={cn(
       "flex flex-col gap-2 p-3 overflow-hidden",
-      "group-data-[collapsible=icon]:p-1",
+      "group-data-[collapsible=icon]:p-[0.3rem]",
       className,
     )}
     {...props}
@@ -269,6 +269,7 @@ export const SidebarFooter = React.forwardRef<
     data-sidebar="footer"
     className={cn(
       "mt-auto flex flex-col gap-2 p-3 overflow-hidden",
+      "group-data-[collapsible=icon]:items-center",
       "group-data-[collapsible=icon]:p-1",
       className,
     )}

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+
+import { TransferBatchPanel } from "@/components/store/TransferBatchPanel";
 import {
   Truck,
   RefreshCw,
@@ -763,6 +765,17 @@ export function SprayPlanTransfers() {
                                   </tbody>
                                 </table>
                               )}
+
+                              {/* Batch tracking is on for the chemicals, so a
+                                  transfer will not submit until every row names
+                                  one. This is where that is settled — before the
+                                  thumb is scanned, not after it fails. */}
+                              <div className="mt-4 border-t pt-3">
+                                <TransferBatchPanel
+                                  name={r.name}
+                                  onApplied={load}
+                                />
+                              </div>
                             </td>
                           </tr>
                         )}

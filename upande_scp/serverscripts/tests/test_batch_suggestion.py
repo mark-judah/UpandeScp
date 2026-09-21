@@ -144,3 +144,68 @@ class TestWhatThePanelShows(unittest.TestCase):
 		self.assertEqual(d["batch_no"], "B-1")
 		self.assertEqual(d["qty"], 12.5)
 		self.assertEqual(d["days_to_expiry"], 10)
+
+
+class TestTheMigrationPlaceholders(unittest.TestCase):
+	"""`-PREMIGRATION` batches are opening stock the migration invented.
+
+	On live there are 1,971 of them holding 2.87 trillion units between them.
+	Because they never run out they win any rule that merely asks whether there
+	is enough — and they did: in the forty-five days before this was written,
+	every transfer row that carried a batch carried one of these. 5,213 rows,
+	not one real batch. That is what "we have not had the correct batch numbers"
+	turned out to mean, so the rule has to name them rather than hope the dates
+	sort them out.
+	"""
+
+	def test_a_real_batch_is_preferred_however_little_is_left(self):
+		out = BS.rank_batches(
+			[b("1111133076-PREMIGRATION", 999999880, created="2026-09-15"),
+			 b("ROSE-2026-00033", 2.95, created="2026-09-03")],
+			TODAY,
+		)
+		self.assertEqual([x["batch_no"] for x in out],
+		                 ["ROSE-2026-00033", "1111133076-PREMIGRATION"])
+
+	def test_it_wins_even_against_a_sooner_expiry(self):
+		"""Expiry is the rule among real stock. A placeholder's expiry is fiction,
+		so it must not be able to jump the queue with one."""
+		out = BS.rank_batches(
+			[b("X-PREMIGRATION", 1000, "2026-10-01"), b("ROSE-1", 5, "2027-06-01")],
+			TODAY,
+		)
+		self.assertEqual([x["batch_no"] for x in out], ["ROSE-1", "X-PREMIGRATION"])
+
+	def test_it_is_still_offered_when_it_is_all_there_is(self):
+		"""Not hidden: sometimes the placeholder really is all the store has on
+		the system, and refusing to show it would just move the block."""
+		out = BS.rank_batches([b("X-PREMIGRATION", 1000)], TODAY)
+		self.assertEqual([x["batch_no"] for x in out], ["X-PREMIGRATION"])
+
+	def test_real_stock_is_used_first_and_the_placeholder_takes_the_rest(self):
+		plan = BS.allocate(
+			10, [b("X-PREMIGRATION", 9999, created="2026-09-15"),
+			     b("ROSE-1", 4, created="2026-09-03")], TODAY,
+		)
+		self.assertEqual([(p["batch_no"], p["qty"]) for p in plan["picks"]],
+		                 [("ROSE-1", 4), ("X-PREMIGRATION", 6)])
+		self.assertEqual(plan["short"], 0)
+
+	def test_the_panel_says_what_it_is(self):
+		d = BS.describe(b("1111133076-PREMIGRATION", 999999880), TODAY)
+		self.assertEqual(d["status"], "placeholder")
+		self.assertTrue(d["placeholder"])
+
+	def test_placeholder_beats_every_other_label(self):
+		"""Even a dated, healthy-looking placeholder reads as a placeholder — its
+		expiry is as invented as its quantity."""
+		self.assertEqual(BS.describe(b("X-PREMIGRATION", 5, "2027-06-01"), TODAY)["status"],
+		                 "placeholder")
+
+	def test_a_real_batch_is_not_mistaken_for_one(self):
+		self.assertFalse(BS.is_placeholder("ROSE-2026-00033"))
+		self.assertFalse(BS.is_placeholder(""))
+		self.assertFalse(BS.is_placeholder(None))
+
+	def test_the_match_ignores_case(self):
+		self.assertTrue(BS.is_placeholder("abc-premigration"))

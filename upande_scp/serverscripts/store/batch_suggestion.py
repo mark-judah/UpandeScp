@@ -33,6 +33,11 @@ offered is legible instead of magic.
   A row that looks answered but is not is worse than one that is visibly short.
 * **A row that already names a batch is left alone.** This fills blanks; it does
   not overrule a person who has already decided.
+* **A migration placeholder is proposed only when nothing real is left.** The
+  `-PREMIGRATION` batches never run out, so any rule that asks "is there
+  enough?" picks them every time — and did, 5,213 rows running. They sort behind
+  every real batch and are labelled as what they are, but they are not hidden:
+  sometimes the placeholder is genuinely all the store has on the system.
 
 Pure by design: everything here takes plain dicts, so the rule can be read and
 tested without a warehouse, a stock ledger or a site.
@@ -43,6 +48,27 @@ from __future__ import annotations
 # A date far past anything real, so "no expiry" sorts after every dated batch
 # without needing a second comparison key or a None-safe comparator.
 _NO_EXPIRY = "9999-12-31"
+
+#: Opening-stock batches the v15→v16 migration invented so that nothing would
+#: block while the real batches were still being loaded. They are not stock: on
+#: live there are 1,971 of them holding 2.87 trillion units between them, and
+#: because they never run out they win any rule that merely asks "is there
+#: enough?". In the forty-five days before this was written, every transfer row
+#: that carried a batch at all carried one of these — 5,213 rows, against not a
+#: single real batch — which is what "we have not had the correct batch numbers"
+#: turned out to mean.
+_PLACEHOLDER_MARKERS = ("PREMIGRATION",)
+
+
+def is_placeholder(batch_no) -> bool:
+	"""A migration opening-stock batch rather than a delivery.
+
+	Matched on the name because that is what the migration stamped and the only
+	thing that reliably distinguishes them: the quantity is absurd but not
+	uniformly so, and the Batch record otherwise looks ordinary.
+	"""
+	name = str(batch_no or "").upper()
+	return any(marker in name for marker in _PLACEHOLDER_MARKERS)
 
 
 def _as_date(value) -> str:
@@ -81,12 +107,14 @@ def rank_batches(batches, today: str) -> list:
 				"qty": qty,
 				"expiry_date": expiry or None,
 				"created": _as_date(b.get("created")),
+				"placeholder": is_placeholder(b.get("batch_no")),
 			}
 		)
 
 	return sorted(
 		live,
 		key=lambda b: (
+			b["placeholder"],                # real stock before migration filler
 			b["expiry_date"] or _NO_EXPIRY,  # soonest to go off
 			b["created"] or _NO_EXPIRY,      # then oldest stock
 			b["batch_no"],                   # then stable
@@ -154,7 +182,12 @@ def describe(batch, today: str) -> dict:
 	"""
 	expiry = _as_date(batch.get("expiry_date")) if batch else ""
 	days = days_until(expiry, today)
-	if days is None:
+	placeholder = is_placeholder((batch or {}).get("batch_no"))
+	if placeholder:
+		# Said before anything else, because its expiry and quantity are both
+		# fiction and reading them as facts is how it got issued 5,213 times.
+		status = "placeholder"
+	elif days is None:
 		status = "undated"
 	elif days < 0:
 		status = "expired"
@@ -167,5 +200,6 @@ def describe(batch, today: str) -> dict:
 		"qty": float((batch or {}).get("qty") or 0),
 		"expiry_date": expiry or None,
 		"days_to_expiry": days,
+		"placeholder": placeholder,
 		"status": status,
 	}

@@ -305,3 +305,67 @@ export async function fetchPlannedItems(workOrder: string): Promise<PlannedItem[
   );
   return unwrap<{ items: PlannedItem[] }>(r).items || [];
 }
+
+/** One batch as the picker shows it: the code, plus the numbers behind it. */
+export interface BatchOption {
+  batch_no: string;
+  qty: number;
+  expiry_date: string | null;
+  days_to_expiry: number | null;
+  placeholder: boolean;
+  status: "ok" | "expiring" | "expired" | "undated" | "placeholder";
+}
+
+/** What the store rule would take from one batch to cover a row. */
+export interface BatchPick {
+  batch_no: string;
+  qty: number;
+  expiry_date: string | null;
+}
+
+/** A transfer row, with the batch it has or the batch it should get. */
+export interface TransferBatchRow {
+  idx: number;
+  item_code: string;
+  item_name: string;
+  qty: number;
+  uom: string;
+  warehouse: string;
+  batch_no: string;
+  needs_batch: boolean;
+  /** Already carries a batch — shown, never reproposed. */
+  settled: boolean;
+  suggestion: string | null;
+  picks: BatchPick[];
+  /** How much the available batches cannot cover. Reported, never hidden. */
+  short: number;
+  options: BatchOption[];
+}
+
+export interface TransferBatchSuggestion {
+  rows: TransferBatchRow[];
+  needs_batch: number;
+  unfilled: number;
+}
+
+export async function suggestTransferBatches(
+  name: string,
+): Promise<TransferBatchSuggestion> {
+  const r = await call(
+    "upande_scp.serverscripts.store.store_keeper_api.suggest_transfer_batches",
+    { name },
+  );
+  return (r ?? { rows: [], needs_batch: 0, unfilled: 0 }) as TransferBatchSuggestion;
+}
+
+/** `picks` is row index -> batch. Partial is fine; the server writes all or none. */
+export async function applyTransferBatches(
+  name: string,
+  picks: Record<number, string>,
+): Promise<{ updated: number; rows: string[] }> {
+  const r = await call(
+    "upande_scp.serverscripts.store.store_keeper_api.apply_transfer_batches",
+    { name, picks: JSON.stringify(picks) },
+  );
+  return (r ?? { updated: 0, rows: [] }) as { updated: number; rows: string[] };
+}

@@ -453,7 +453,7 @@ export function AppSidebar({
           <a
             href="/app"
             title="Open Frappe Desk"
-            className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background p-1.5 ring-1 ring-border/60 transition-[width,height,box-shadow] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:ring-2 hover:ring-border group-data-[collapsible=icon]:size-[2.625rem]"
+            className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background p-1.5 ring-1 ring-border/60 transition-[width,height,box-shadow] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:ring-2 hover:ring-border group-data-[collapsible=icon]:size-[3rem]"
           >
             <img
               src={upandeLogo}

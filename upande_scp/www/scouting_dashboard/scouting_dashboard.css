@@ -1,3 +1,4 @@
+@import url("/assets/upande_scp/css/poppins.css");
 /* ================================================================
  *  SCOUTING DASHBOARD — CSS
  *  Theme aligned with observations_map: Inter font, white panels on
@@ -37,8 +38,8 @@
 	--sd-data-indigo:  #3D54B0;
 
 	/* Type — Inter throughout, matching map_base.html */
-	--sd-font:        "Inter", "Helvetica Neue", Arial, sans-serif;
-	--sd-font-display:"Inter", "Helvetica Neue", Arial, sans-serif;
+	--sd-font:        "Poppins", "Helvetica Neue", Arial, sans-serif;
+	--sd-font-display:"Poppins", "Helvetica Neue", Arial, sans-serif;
 	--sd-font-mono:   ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
 
 	/* Geometry */

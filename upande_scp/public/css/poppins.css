@@ -1,0 +1,16 @@
+/* Poppins for the pages that live outside the React bundle.
+ *
+ * The app gets its webfont through Vite, which fingerprints the filenames;
+ * these www pages are served by Frappe and cannot reference a hashed name, so
+ * they load stable copies from the app's own assets. Same four weights the
+ * bundle ships, so a page rendered here and a page rendered in the app are the
+ * same typeface rather than merely the same name.
+ */
+@font-face { font-family: "Poppins"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/assets/upande_scp/fonts/poppins-400.woff2") format("woff2"); }
+@font-face { font-family: "Poppins"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/assets/upande_scp/fonts/poppins-500.woff2") format("woff2"); }
+@font-face { font-family: "Poppins"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("/assets/upande_scp/fonts/poppins-600.woff2") format("woff2"); }
+@font-face { font-family: "Poppins"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("/assets/upande_scp/fonts/poppins-700.woff2") format("woff2"); }

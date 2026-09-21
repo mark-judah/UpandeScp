@@ -1,3 +1,4 @@
+@import url("/assets/upande_scp/css/poppins.css");
 /* ================================================================
    Spray Plan Approval — Page Styles
    Neutral palette aligned with Scouting Reports theme.
@@ -8,7 +9,7 @@
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  font-family: "Poppins", "Helvetica Neue", Arial, sans-serif;
   font-size: 0.875rem;
   color: #374151;
   background: #f5f7fa;

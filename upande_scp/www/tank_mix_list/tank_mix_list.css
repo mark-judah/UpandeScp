@@ -1,10 +1,11 @@
+@import url("/assets/upande_scp/css/poppins.css");
 /* ────────────────────────────────────────────────────────
    Tank Mix List — BOMs filtered to Chemical Mix
    Scoped under #tml-root, matches Scouting Reports theme.
    ──────────────────────────────────────────────────────── */
 
 #tml-root {
-	font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+	font-family: "Poppins", "Helvetica Neue", Arial, sans-serif;
 	background: #f5f7fa;
 	min-height: 100vh;
 	color: #374151;

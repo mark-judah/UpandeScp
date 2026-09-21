@@ -1,3 +1,4 @@
+@import url("/assets/upande_scp/css/poppins.css");
 /* Restore native date picker chrome for #scheduled-application-time
    (chemical_base.html hides the indicator and overlays a custom calendar icon
    intended for Flatpickr inputs; this page uses the browser's native picker). */
@@ -21,7 +22,7 @@
   margin-bottom: 24px;
   padding-bottom: 20px;
   border-bottom: 1px solid #e5e7eb;
-  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  font-family: "Poppins", "Helvetica Neue", Arial, sans-serif;
 }
 .nafp-page-header-left {
   display: flex;
@@ -67,7 +68,7 @@
   display: flex;
   flex-direction: column;
   gap: 28px;
-  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  font-family: "Poppins", "Helvetica Neue", Arial, sans-serif;
 }
 
 .nafp-step {
@@ -639,7 +640,7 @@
   color: #d1d5db;
 }
 .nafp-team-editor__meta-extra {
-  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  font-family: "Poppins", "Helvetica Neue", Arial, sans-serif;
   color: #9ca3af;
 }
 .nafp-team-editor__role {
@@ -873,7 +874,7 @@
   text-overflow: ellipsis;
 }
 .nafp-emp-picker__row-extra {
-  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  font-family: "Poppins", "Helvetica Neue", Arial, sans-serif;
   color: #9ca3af;
 }
 .nafp-emp-picker__row-badge {
@@ -1475,14 +1476,14 @@
   }
 
   .hm-bed-num {
-    font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+    font-family: "Poppins", "Helvetica Neue", Arial, sans-serif;
     font-size: 6.5px;
     font-weight: 700;
     fill: #4b5563;
   }
 
   .hm-zone-num {
-    font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+    font-family: "Poppins", "Helvetica Neue", Arial, sans-serif;
     font-size: 6px;
     font-weight: 600;
     fill: #6b7280;
@@ -1521,7 +1522,7 @@
     font-weight: 600;
     pointer-events: none;
     white-space: nowrap;
-    font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+    font-family: "Poppins", "Helvetica Neue", Arial, sans-serif;
   }
 
 /* ── Target quick-pick strip ──────────────────────────────────

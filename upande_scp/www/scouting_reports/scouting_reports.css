@@ -1,10 +1,11 @@
+@import url("/assets/upande_scp/css/poppins.css");
 /* ────────────────────────────────────────────────────────
    Scouting Reports page
    Scoped under #scouting-reports-root
    ──────────────────────────────────────────────────────── */
 
 #scouting-reports-root {
-	font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+	font-family: "Poppins", "Helvetica Neue", Arial, sans-serif;
 	background: #f5f7fa;
 	min-height: 100vh;
 	color: #374151;

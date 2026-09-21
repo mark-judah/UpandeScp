@@ -34,9 +34,14 @@ export function SidebarUser() {
       <SidebarMenuItem>
         <div
           className={
-            "flex items-center gap-2 px-2 py-1.5 " +
-            "group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-1 " +
-            "group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-0"
+            // The avatar sits concentric with the BOTTOM corner, as the mark does
+            // with the top one: centre at (R, R) from that corner, so the gap
+            // to the border is R - r in every direction. The footer pads 0.8rem
+            // for the rows above; this pulls back to the 7.14px the avatar wants.
+            "flex items-center gap-2 -ml-[0.35rem] -mb-[0.35rem] " +
+            "group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-start "
+            + "group-data-[collapsible=icon]:gap-1 " +
+            "group-data-[collapsible=icon]:py-0"
           }
         >
           <Avatar className="h-[2.7rem] w-[2.7rem] shrink-0 group-data-[collapsible=icon]:h-[2.7rem] group-data-[collapsible=icon]:w-[2.7rem]">

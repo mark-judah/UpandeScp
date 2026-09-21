@@ -38,4 +38,6 @@ upande_scp.patches.v1_0.drop_dead_chemical_rate_columns
 # doctypes. Post_model_sync, pairing with the pre_model_sync rename above.
 # No-ops where Foliar was never created — which is mona production.
 upande_scp.patches.v1_0.consolidate_spray_products
+# Must follow the consolidation: it throws if Spray Product is absent.
 upande_scp.patches.v1_0.add_spray_product_to_workspace
+upande_scp.patches.v1_0.fix_scouting_observations_label

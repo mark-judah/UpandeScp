@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { errorText } from "@/lib/errors";
 import {
   listCrops,
   getThresholds,
@@ -63,7 +64,7 @@ export function ThresholdsTab() {
         setCrops(r);
         if (r.length && !crop) setCrop(r[0]);
       })
-      .catch((e) => setError(e?.message || "Failed to load crops"));
+      .catch((e) => setError(errorText(e, "Failed to load crops")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -82,7 +83,7 @@ export function ThresholdsTab() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setError(e?.message || "Failed to load thresholds");
+        setError(errorText(e, "Failed to load thresholds"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -143,7 +144,7 @@ export function ThresholdsTab() {
       await saveThresholds(crop, bundle);
       setSavedAt(new Date().toLocaleTimeString());
     } catch (e: any) {
-      setError(e?.message || "Save failed");
+      setError(errorText(e, "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -327,7 +328,7 @@ function FilterEditor({
         />
       </div>
       {row.stages.length > 0 && (
-        <div className="mt-2 pl-3 border-l-2 border-muted flex flex-col gap-1.5">
+        <div className="mt-2 pl-3 flex flex-col gap-1.5">
           <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
             Per-stage overrides
           </div>

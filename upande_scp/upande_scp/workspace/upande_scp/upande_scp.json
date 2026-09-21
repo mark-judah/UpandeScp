@@ -92,7 +92,7 @@
   {
    "color": "Grey",
    "doc_view": "List",
-   "label": "Scouting Obeservations Report",
+   "label": "Scouting Observations Report",
    "link_to": "Scouting Obeservations",
    "report_ref_doctype": "Scouting Entry",
    "type": "Report"

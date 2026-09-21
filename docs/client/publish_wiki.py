@@ -33,7 +33,7 @@ USAGE
     python3 publish_wiki.py --source <dir> --space-route livestock \
                             --space-name Livestock [--dry-run] [--no-merge]
 
-Credentials come from ~/.scp_migrate_wiki_env (WIKI_URL / WIKI_API_KEY /
+Credentials come from ~/.API_CREDENTIALS_WIKI_SITE_UPANDEDOCUMENTATION_NBG_FRAPPE_CLOUD (WIKI_URL / WIKI_API_KEY /
 WIKI_API_SECRET). Nothing is ever printed that would disclose them.
 """
 
@@ -48,7 +48,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-ENV_FILE = os.path.expanduser("~/.scp_migrate_wiki_env")
+ENV_FILE = os.path.expanduser("~/.API_CREDENTIALS_WIKI_SITE_UPANDEDOCUMENTATION_NBG_FRAPPE_CLOUD")
 
 
 # ---------------------------------------------------------------------------

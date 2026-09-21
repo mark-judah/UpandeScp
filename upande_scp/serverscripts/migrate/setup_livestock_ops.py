@@ -22,7 +22,7 @@ WHAT IT WILL NOT DO
   of either exists on any site to copy — kaitet carries the same fault. Someone
   who feeds those animals has to say what goes in.
 
-Credentials come from ~/.scp_migrate_staging_env, same as the rest of the migrate
+Credentials come from ~/.API_CREDENTIALS_STAGING_SITE_V16_KAITETV16_STAGING_NBG_FRAPPE_CLOUD, same as the rest of the migrate
 tooling. See target.py.
 """
 

@@ -3,7 +3,7 @@
     bench --site kaitet.local execute \
         upande_scp.serverscripts.migrate.preflight.run
 
-Reads credentials from `~/.scp_migrate_staging_env` (see `target.py`) and makes only GET
+Reads credentials from `~/.API_CREDENTIALS_STAGING_SITE_V16_KAITETV16_STAGING_NBG_FRAPPE_CLOUD` (see `target.py`) and makes only GET
 requests — nothing here writes.
 
 ## What it is actually looking for

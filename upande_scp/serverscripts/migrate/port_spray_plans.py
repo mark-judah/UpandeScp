@@ -434,8 +434,8 @@ def main():
     p.add_argument("--limit", type=int, default=0)
     args = p.parse_args()
 
-    se = B.load_env("~/.scp_migrate_from_site_env")
-    te = B.load_env("~/.scp_migrate_target_site_env")
+    se = B.load_env("~/.API_CREDENTIALS_RETIRED_OLD_SITE_V15_KAITET_GROUP_C_FRAPPE_CLOUD_DO_NOT_USE")
+    te = B.load_env("~/.API_CREDENTIALS_CURRENT_LIVE_SITE_V16_KAITETV16_NBG_FRAPPE_CLOUD")
     src = B.Site(se["FROM_URL"], se["FROM_API_KEY"], se["FROM_API_SECRET"], "source")
     tgt = B.Site(te["TARGET_URL"], te["TARGET_API_KEY"], te["TARGET_API_SECRET"], "target")
     print(f"source : {src.url}")

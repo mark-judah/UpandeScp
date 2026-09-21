@@ -156,8 +156,8 @@ def main():
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
-    src_env = load_env("~/.scp_migrate_from_site_env")
-    tgt_env = load_env("~/.scp_migrate_target_site_env")
+    src_env = load_env("~/.API_CREDENTIALS_RETIRED_OLD_SITE_V15_KAITET_GROUP_C_FRAPPE_CLOUD_DO_NOT_USE")
+    tgt_env = load_env("~/.API_CREDENTIALS_CURRENT_LIVE_SITE_V16_KAITETV16_NBG_FRAPPE_CLOUD")
     src = Site(src_env["FROM_URL"], src_env["FROM_API_KEY"], src_env["FROM_API_SECRET"], "source")
     tgt = Site(tgt_env["TARGET_URL"], tgt_env["TARGET_API_KEY"], tgt_env["TARGET_API_SECRET"], "target")
     print(f"source : {src.url}")

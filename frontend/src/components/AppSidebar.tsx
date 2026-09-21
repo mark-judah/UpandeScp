@@ -1,4 +1,5 @@
 import {
+  Home,
   LayoutDashboard,
   LineChart,
   MapPin,
@@ -273,16 +274,22 @@ export function AppSidebar({
   const nav = navForCrop(crop);
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" variant="floating">
       <SidebarHeader>
         <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
-          <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background ring-1 ring-border/60 group-data-[collapsible=icon]:size-6">
+          {/* The logo is the way back to the Frappe desk. A plain <a href>,
+              deliberately: /app is a different document, not a hash route. */}
+          <a
+            href="/app"
+            title="Back to Desk — the Frappe workspace at /app"
+            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background ring-1 ring-border/60 transition hover:ring-2 hover:ring-border group-data-[collapsible=icon]:size-6"
+          >
             <img
               src={upandeLogo}
-              alt="Upande"
+              alt="Back to Desk"
               className="size-full object-contain"
             />
-          </div>
+          </a>
           {/* Always rendered, hidden via CSS so the width animation plays
               around it without React inserting/removing nodes mid-transition. */}
           <div className="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
@@ -351,6 +358,26 @@ export function AppSidebar({
         </ScrollArea>
       </SidebarContent>
       <SidebarFooter>
+        {/* Back to Desk sits beside the profile chip rather than in the nav
+            above, because it is not one of this app's surfaces — and because
+            somebody new to the app has to be able to leave it without hunting.
+            No loading cover on the way out: Frappe raises its own splash the
+            moment /app starts loading, and two covers handing over to each
+            other is one more than the crossing needs. */}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              title="Back to Desk — the Frappe workspace at /app"
+            >
+              <a href="/app">
+                <Home className="h-4 w-4" />
+                <span>Back to Desk</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <SidebarSeparator />
         <SidebarUser />
       </SidebarFooter>
     </Sidebar>

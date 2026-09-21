@@ -110,10 +110,20 @@ export const Sidebar = React.forwardRef<
   React.HTMLAttributes<HTMLDivElement> & {
     side?: "left" | "right";
     collapsible?: "offcanvas" | "icon" | "none";
+    /** `floating` detaches the rail into a rounded panel with a gap around it,
+     *  instead of sitting flush against the window edge. */
+    variant?: "sidebar" | "floating";
   }
 >(
   (
-    { side = "left", collapsible = "icon", className, children, ...props },
+    {
+      side = "left",
+      collapsible = "icon",
+      variant = "sidebar",
+      className,
+      children,
+      ...props
+    },
     ref,
   ) => {
     const { state, isMobile, openMobile, setOpenMobile } = useSidebar();
@@ -161,25 +171,43 @@ export const Sidebar = React.forwardRef<
       );
     }
 
+    const floating = variant === "floating";
+
     return (
       <div
         ref={ref}
         data-state={state}
         data-collapsible={state === "collapsed" ? collapsible : ""}
         data-side={side}
+        data-variant={variant}
         className={cn(
-          "group peer hidden md:flex sticky top-0 h-svh shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-linear",
-          side === "left" ? "border-r" : "border-l",
+          "group peer hidden md:flex sticky top-0 h-svh shrink-0 flex-col text-sidebar-foreground transition-[width] duration-200 ease-linear",
+          // Flush against the edge: the rail IS the surface, with one border
+          // separating it from the content.
+          !floating && ["bg-sidebar", side === "left" ? "border-r" : "border-l"],
+          // Detached: the outer box is only a spacer, so the page background
+          // shows through the gap and the panel inside casts its own edge.
+          floating && "bg-transparent p-2",
           state === "expanded"
-            ? "w-[var(--sidebar-width)]"
+            ? floating
+              ? "w-[calc(var(--sidebar-width)+1rem)]"
+              : "w-[var(--sidebar-width)]"
             : collapsible === "icon"
-              ? "w-[var(--sidebar-width-icon)]"
+              ? floating
+                ? "w-[calc(var(--sidebar-width-icon)+1rem)]"
+                : "w-[var(--sidebar-width-icon)]"
               : "w-0 overflow-hidden",
           className,
         )}
         {...props}
       >
-        {children}
+        {floating ? (
+          <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-sidebar-border bg-sidebar shadow-sm">
+            {children}
+          </div>
+        ) : (
+          children
+        )}
       </div>
     );
   },

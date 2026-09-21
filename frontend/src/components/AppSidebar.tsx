@@ -488,7 +488,19 @@ export function AppSidebar({
         ref={navRef}
         className="overflow-hidden p-0 group-data-[collapsible=icon]:p-0"
       >
-        <ScrollArea className="h-full w-full">
+        <ScrollArea
+          className={cn(
+            "h-full w-full",
+            // Radix wraps viewport content in a `display: table` div, which
+            // sizes to its content rather than to the viewport. Collapsed, the
+            // labels are hidden but still measure, so that div keeps the
+            // EXPANDED width — 108px of column inside a 37px rail — and every
+            // row is laid out against its left edge instead of the rail's
+            // centre. Forcing it to block lets it take the rail's width, so
+            // the rows have somewhere symmetrical to sit.
+            "group-data-[collapsible=icon]:[&>[data-radix-scroll-area-viewport]>div]:!block",
+          )}
+        >
           <div className="flex flex-col gap-1 p-2 group-data-[collapsible=icon]:p-1">
             {nav.map((section) => {
               if (isHiddenForUser(section.hideForRoles, roles)) return null;

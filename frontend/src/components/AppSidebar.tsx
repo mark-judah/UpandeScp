@@ -587,7 +587,7 @@ export function AppSidebar({
 
 
         {/* Collapse — a normal sidebar item (icon + label), pinned here. */}
-        <SidebarMenu className="group-data-[collapsible=icon]:items-center">
+        <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={toggle}
@@ -616,7 +616,7 @@ export function AppSidebar({
             crossing — but leaving for /app raises Frappe's own splash the
             moment it starts loading, and two covers handing over to each other
             is one more than the crossing needs. */}
-        <SidebarMenu className="group-data-[collapsible=icon]:items-center">
+        <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild

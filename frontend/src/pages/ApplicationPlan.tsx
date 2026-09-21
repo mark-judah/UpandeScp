@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
 import { AlertTriangle, Loader2, Plus, Trash2, Maximize2, FilePlus2 } from "lucide-react";
 import {
   Card,
@@ -1160,28 +1161,18 @@ export function ApplicationPlan() {
   return (
     <div className="flex flex-col min-h-svh">
       <MarkerDefs />
-      <header className="sticky top-0 z-40 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                New Application Floor Plan
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Diagnose · Prescribe · Submit for approval
-              </p>
-            </div>
-          </div>
+      <PageHeader
+        eyebrow={<>Diagnose · Prescribe · Submit for approval</>}
+        title={<>New Application Floor Plan</>}
+      >
           <a
             href="/scp_app#/historical"
             className="text-xs text-muted-foreground underline"
           >
             View past plans →
           </a>
-        </div>
-      </header>
+        
+      </PageHeader>
 
       <Toaster items={toasts} onDismiss={dismissToast} />
 

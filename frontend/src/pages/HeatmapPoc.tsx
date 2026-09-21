@@ -18,6 +18,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
 import { call } from "@/lib/frappe";
 import { errorText } from "@/lib/errors";
 import { fetchBedsAndZones } from "@/lib/scouting-api";
@@ -239,16 +240,10 @@ export function HeatmapPoc() {
   return (
     <div className="p-4 md:p-6 flex flex-col gap-4">
       <MarkerDefs />
-      <header className="flex items-baseline justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-lg font-semibold">
-            {params.ghs.length} greenhouse{params.ghs.length === 1 ? "" : "s"} · {params.obs}
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Open DevTools console for timing logs: [poc-row], [poc-grid]
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow={<>Open DevTools console for timing logs: [poc-row], [poc-grid]</>}
+        title={<>{params.ghs.length} greenhouse{params.ghs.length === 1 ? "" : "s"} · {params.obs}</>}
+      />
 
       <div className="flex flex-col gap-3">
         {rows.map((r, rowIdx) => {

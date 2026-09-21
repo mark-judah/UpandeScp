@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
 import {
   Printer,
   RefreshCw,
@@ -630,16 +631,10 @@ export function Labels() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-40 flex items-center gap-3 border-b bg-card/80 px-4 py-3 md:px-6 md:py-4 backdrop-blur">
-        <SidebarTrigger />
-        <Separator orientation="vertical" className="h-5" />
-        <div className="flex-1">
-          <h1 className="text-base font-semibold leading-tight">Labels</h1>
-          <p className="text-xs text-muted-foreground">
-            Print QR labels for submitted spray-plan transfers. Pick any
-            size — the layout adapts.
-          </p>
-        </div>
+      <PageHeader
+        eyebrow={<>Print QR labels for submitted spray-plan transfers</>}
+        title={<>Labels</>}
+      >
         <Button
           variant="outline"
           size="sm"
@@ -652,7 +647,7 @@ export function Labels() {
           />
           Refresh
         </Button>
-      </header>
+      </PageHeader>
 
       <div className="grid flex-1 grid-cols-1 lg:grid-cols-3 gap-4 p-4 md:p-6 lg:items-start">
         {/* ── Left: selection tree ─────────────────────────────── */}

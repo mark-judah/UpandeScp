@@ -12,6 +12,7 @@
  *     is reported as unattributed rather than given a home it never had.
  */
 import { useEffect, useMemo, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
 import { Coins, Info, Loader2, Split, TriangleAlert } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -118,19 +119,10 @@ export function Finance() {
   return (
     <TooltipProvider delayDuration={150}>
       <div className="flex min-h-svh w-full min-w-0 flex-col">
-        <header className="sticky top-0 z-20 flex flex-wrap items-end justify-between gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight flex items-center gap-2">
-                <Coins className="h-4 w-4" /> Finances
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Chemical &amp; foliar spend by greenhouse and target · all product consumed
-              </p>
-            </div>
-          </div>
+        <PageHeader
+          eyebrow={<>Chemical &amp; foliar spend by greenhouse and target · all product consumed</>}
+          title={<>Finances</>}
+        >
           <div className="flex flex-wrap items-end gap-2">
             <div className="flex flex-col gap-1">
               <Label>From</Label>
@@ -141,7 +133,7 @@ export function Finance() {
               <DatePicker value={to} onChange={setTo} />
             </div>
           </div>
-        </header>
+        </PageHeader>
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
           {data && (

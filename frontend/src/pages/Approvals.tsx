@@ -29,6 +29,7 @@ import {
   Printer,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -486,20 +487,10 @@ export function Approvals() {
   // ── Render ────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Spray Plan Approval
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Pending application work orders · review and approve in bulk
-              </p>
-            </div>
-          </div>
+      <PageHeader
+        eyebrow={<>Pending application work orders · review and approve in bulk</>}
+        title={<>Spray Plan Approval</>}
+      >
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
             {pendingCount > 0 && (
@@ -515,7 +506,6 @@ export function Approvals() {
               </span>
             )}
           </div>
-        </div>
 
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex flex-col gap-1">
@@ -573,7 +563,7 @@ export function Approvals() {
             Clear
           </Button>
         </div>
-      </header>
+      </PageHeader>
 
       <div className="px-4 md:px-6 py-4 flex-1 flex flex-col gap-3">
         <Tabs

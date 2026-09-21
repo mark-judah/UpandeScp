@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
 import {
   Maximize2,
   ChevronDown,
@@ -362,20 +363,10 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   return (
     <div className="flex flex-col min-h-svh">
       <MarkerDefs />
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Heatmaps
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Per-greenhouse zone intensity · pest &amp; disease markers
-              </p>
-            </div>
-          </div>
+      <PageHeader
+        eyebrow={<>Per-greenhouse zone intensity · pest &amp; disease markers</>}
+        title={<>Heatmaps</>}
+      >
 
           <div className="flex flex-wrap items-end gap-2">
             {!initialCrop && (
@@ -445,14 +436,13 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               Reload
             </Button>
           </div>
-        </div>
 
         {gridState.error && (
           <div className="text-xs text-[var(--sd-data-red)]">
             Failed to load: {gridState.error}
           </div>
         )}
-      </header>
+      </PageHeader>
 
       <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b bg-card/50">
         <span className="ml-auto tabular-nums">

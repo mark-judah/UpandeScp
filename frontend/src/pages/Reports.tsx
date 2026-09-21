@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
 import {
   Mail,
   Download,
@@ -199,18 +200,10 @@ export function Reports() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex items-center gap-2 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <SidebarTrigger />
-        <Separator orientation="vertical" className="h-6" />
-        <div>
-          <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-            Reports
-          </h1>
-          <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-            Email or download scouting summaries
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow={<>Email or download scouting summaries</>}
+        title={<>Reports</>}
+      />
 
       {status && (
         <div

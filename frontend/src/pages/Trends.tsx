@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
 import { ChevronDown, MapPin, Sparkles, RefreshCw, Gauge } from "lucide-react";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { fetchCrops, DEFAULT_CROP } from "@/lib/scouting-api";
@@ -185,20 +186,10 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Scouting Trends
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Across farms, stations, pests &amp; stages
-              </p>
-            </div>
-          </div>
+      <PageHeader
+        eyebrow={<>Across farms, stations, pests &amp; stages</>}
+        title={<>Scouting Trends</>}
+      >
 
           <div className="flex flex-wrap items-end gap-2">
             {!initialCrop && (
@@ -304,14 +295,13 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
               Reload
             </Button>
           </div>
-        </div>
 
         {error && (
           <div className="text-xs text-[var(--sd-data-red)]">
             Failed to load: {error}
           </div>
         )}
-      </header>
+      </PageHeader>
 
       <div className="flex-1 px-4 py-4 md:px-6 md:py-6 flex flex-col gap-4">
         {!selections.length ? (

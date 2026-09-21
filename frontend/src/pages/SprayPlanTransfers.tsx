@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
 import {
   Truck,
   Warehouse,
@@ -334,20 +335,10 @@ export function SprayPlanTransfers() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Spray Plan Transfers
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Material Transfer for Manufacture · biometric-authorised bulk submit
-              </p>
-            </div>
-          </div>
+      <PageHeader
+        eyebrow={<>Material Transfer for Manufacture · biometric-authorised bulk submit</>}
+        title={<>Spray Plan Transfers</>}
+      >
 
           <div className="flex flex-wrap items-end gap-2">
             <div className="flex flex-col gap-1 min-w-40">
@@ -387,7 +378,6 @@ export function SprayPlanTransfers() {
               Reload
             </Button>
           </div>
-        </div>
 
         {/* Action row — bulk-assign + biometric submit live together so the
             store keeper can see the whole flow in one place. */}
@@ -540,7 +530,7 @@ export function SprayPlanTransfers() {
             <span>{error}</span>
           </div>
         )}
-      </header>
+      </PageHeader>
 
       <div className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4">
         {/* Pre-flight panel */}

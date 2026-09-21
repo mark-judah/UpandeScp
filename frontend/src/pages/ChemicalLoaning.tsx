@@ -5,6 +5,7 @@
  * selected farm is actually depleted in (enforced server-side too).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
 import {
   Loader2,
   RefreshCw,
@@ -83,22 +84,11 @@ export function ChemicalLoaning() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-center gap-2">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-6" />
+      <PageHeader
+        eyebrow={<>Borrow a chemical you're short on from another farm</>}
+        title={<>Chemical Loaning</>}
+      >
           <div className="flex items-center gap-2">
-            <ArrowRightLeft className="h-4 w-4 text-primary" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Chemical Loaning
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Borrow a chemical you're short on from another farm
-              </p>
-            </div>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
             {farms.length > 0 && (
               <Select value={farm} onValueChange={setFarm}>
                 <SelectTrigger className="h-9 w-48">
@@ -114,14 +104,13 @@ export function ChemicalLoaning() {
               </Select>
             )}
           </div>
-        </div>
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
           <TabsList>
             <TabsTrigger value="request">Request</TabsTrigger>
             <TabsTrigger value="inbox">Inbox</TabsTrigger>
           </TabsList>
         </Tabs>
-      </header>
+      </PageHeader>
 
       <div className="px-4 md:px-6 py-4 flex-1">
         {booting ? (

@@ -448,7 +448,7 @@ export function AppSidebar({
       <SidebarHeader>
         {/* Brand — reference `.topbar__brand`: prominent logo, thin divider,
             product name with an uppercase let-spaced eyebrow subtitle. */}
-        <div className="flex items-center gap-2.5 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:py-0">
+        <div className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
           {/* Logo links back to the Frappe desk (/app). */}
           <a
             href="/app"

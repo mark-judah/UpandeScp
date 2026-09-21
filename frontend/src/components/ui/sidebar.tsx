@@ -251,8 +251,13 @@ export const SidebarHeader = React.forwardRef<
     ref={ref}
     data-sidebar="header"
     className={cn(
-      "flex flex-col gap-2 p-3 overflow-hidden",
-      "group-data-[collapsible=icon]:p-[0.3rem]",
+      // 0.3rem in BOTH states, deliberately. The panel corner is an arc of
+      // radius R centred at (R, R); the mark is a circle of radius r. The
+      // gap between them is the same in every direction only when the two
+      // are concentric — when the mark's centre IS (R, R). That fixes the
+      // padding at R - r - 1px inset, and it cannot change with the state
+      // or the mark would move and the gap would stop being uniform.
+      "flex flex-col gap-2 p-[0.3rem] overflow-hidden",
       className,
     )}
     {...props}

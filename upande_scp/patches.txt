@@ -27,3 +27,4 @@ upande_scp.patches.v1_0.configure_crop_protection_item_groups
 upande_scp.patches.v1_0.converge_chemical_to_kaitet_schema
 upande_scp.patches.v1_0.backfill_foliar_master
 upande_scp.patches.v1_0.drop_dead_chemical_rate_columns
+upande_scp.patches.v1_0.fix_scouting_observations_label

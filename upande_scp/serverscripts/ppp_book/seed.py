@@ -133,7 +133,9 @@ def seed_from_book(path=None, dry_run=False):
     diseases = set(frappe.get_all("Plant Disease", pluck="name"))
 
     for code, entry in sorted(resolved.items()):
-        master = "Chemical" if entry["kind"] == "chemical" else "Foliar"
+        # One doctype for both kinds since the Spray Product consolidation;
+        # `category` carries the chemical/foliar distinction.
+        master = "Spray Product"
         name = frappe.db.get_value(master, {"item": code}, "name")
         if not name:
             continue

@@ -80,16 +80,16 @@ def check():
     # 2 — pre-rename Chemical data that the converge patch must carry.
     line("")
     line("2. Chemical schema")
-    if not frappe.db.table_exists("Chemical"):
+    if not frappe.db.table_exists("Spray Product"):
         line("   no Chemical table yet — it will be created by migrate")
     else:
-        line("   Chemical rows: %s" % frappe.db.count("Chemical"))
+        line("   Spray Product rows: %s" % frappe.db.count("Spray Product"))
         for column in ("lower_rate_limit", "upper_rate_limit"):
-            if not _has_column("tabChemical", column):
+            if not _has_column("tabSpray Product", column):
                 line("   %-20s absent (already converged)" % column)
                 continue
             n = frappe.db.sql(
-                "SELECT COUNT(*) FROM `tabChemical` WHERE IFNULL(`%s`, 0) <> 0" % column
+                "SELECT COUNT(*) FROM `tabSpray Product` WHERE IFNULL(`%s`, 0) <> 0" % column
             )[0][0]
             line("   %-20s present, %s non-zero values to carry over" % (column, n))
         legacy = frappe.db.sql(

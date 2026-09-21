@@ -7,8 +7,9 @@
  "engine": "InnoDB",
  "field_order": [
   "item",
-  "chemical_name",
-  "allowed",
+  "product_name",
+  "category",
+  "disabled",
   "type",
   "classification_section",
   "active_ingredients",
@@ -29,12 +30,10 @@
   "low_stock_threshold",
   "default_lower_rate_limit",
   "default_upper_rate_limit",
-  "application_rate",
+  "crop_rates",
   "default_targets",
-  "crop_scouted",
   "default_requirements",
-  "qr_item_id",
-  "description"
+  "qr_item_id"
  ],
  "fields": [
   {
@@ -45,23 +44,34 @@
    "label": "Item",
    "options": "Item",
    "reqd": 1,
-   "unique": 1,
-   "search_index": 1
+   "search_index": 1,
+   "unique": 1
   },
   {
    "fetch_from": "item.item_name",
-   "fieldname": "chemical_name",
+   "fieldname": "product_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Chemical Name"
+   "label": "Product Name"
   },
   {
-   "default": "1",
-   "fieldname": "allowed",
-   "fieldtype": "Check",
-   "label": "Allowed on Application Floor Plan",
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "label": "Category",
+   "options": "Chemical\nFoliar",
+   "default": "Chemical",
+   "reqd": 1,
    "in_list_view": 1,
-   "description": "When on, this chemical can be picked in the Application Floor Plan. Off hides it."
+   "in_standard_filter": 1,
+   "description": "Set from the Item's Item Group via the Chemicals tab of Scouting and Crop Protection Settings. Decides which store the product is issued from."
+  },
+  {
+   "fieldname": "disabled",
+   "fieldtype": "Check",
+   "label": "Disabled",
+   "default": "0",
+   "in_standard_filter": 1,
+   "description": "Set automatically when the Item leaves every configured chemical/foliar Item Group. The record and its rates are kept so existing BOMs, spray plans and QR labels still resolve."
   },
   {
    "fieldname": "type",
@@ -177,10 +187,11 @@
    "non_negative": 1
   },
   {
-   "fieldname": "application_rate",
-   "fieldtype": "Float",
-   "label": "Application Rate (per 1000 L)",
-   "precision": "3"
+   "fieldname": "crop_rates",
+   "fieldtype": "Table",
+   "label": "Per-Crop Rates",
+   "options": "Spray Product Crop Rate",
+   "description": "Dose limits per crop. A crop with no row here falls back to the default limits above."
   },
   {
    "fieldname": "default_targets",
@@ -189,29 +200,18 @@
    "options": "Chemical Targets"
   },
   {
-   "fieldname": "crop_scouted",
-   "fieldtype": "Table",
-   "label": "Crops",
-   "options": "Chemical Crop"
-  },
-  {
    "fieldname": "default_requirements",
    "fieldtype": "Table",
    "label": "Default Requirements",
    "options": "Chemical Requirements"
   },
   {
+   "description": "Stable small integer encoded in this chemical's label codes. Allocated once from a single shared counter and never reused — the allocator is what guarantees uniqueness, since a unique index cannot be added over rows that all default to 0.",
    "fieldname": "qr_item_id",
    "fieldtype": "Int",
    "label": "QR Item Id",
    "read_only": 1,
-   "description": "Stable small integer encoded in this chemical's label codes. Allocated once from a single shared counter and never reused — the allocator is what guarantees uniqueness, since a unique index cannot be added over rows that all default to 0.",
    "search_index": 1
-  },
-  {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description / Compounds"
   }
  ],
  "grid_page_length": 50,
@@ -226,25 +226,25 @@
  "modified": "2026-07-22 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
- "name": "Chemical",
+ "name": "Spray Product",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
    "delete": 1,
-   "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "System Manager",
+   "role": "SCP Chemical Store Keeper",
    "share": 1,
    "write": 1
   },
   {
    "create": 1,
    "delete": 1,
+   "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
@@ -254,13 +254,29 @@
    "write": 1
   },
   {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Approver"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Creator"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Supervisor"
+  },
+  {
    "create": 1,
    "delete": 1,
+   "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "SCP Chemical Store Keeper",
+   "role": "System Manager",
    "share": 1,
    "write": 1
   }

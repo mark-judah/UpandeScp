@@ -225,16 +225,17 @@ def _fetch_rate_limits() -> dict:
     The Item `custom_*` fallback is gone: nothing on mona carries those values
     any more (0 of 78 chemical Items), and the sidecar is the source of truth.
     """
+    # One doctype since the Spray Product consolidation — chemicals and foliars
+    # are the same record now, told apart by `category`.
     out: dict = {}
-    for doctype in ("Chemical", "Foliar"):
-        for r in frappe.get_all(
-            doctype,
-            fields=["item", "default_lower_rate_limit", "default_upper_rate_limit"],
-        ):
-            lower = r.default_lower_rate_limit or None
-            upper = r.default_upper_rate_limit or None
-            if lower or upper:
-                out[r.item] = {"lower": lower, "upper": upper}
+    for r in frappe.get_all(
+        "Spray Product",
+        fields=["item", "default_lower_rate_limit", "default_upper_rate_limit"],
+    ):
+        lower = r.default_lower_rate_limit or None
+        upper = r.default_upper_rate_limit or None
+        if lower or upper:
+            out[r.item] = {"lower": lower, "upper": upper}
     return out
 
 

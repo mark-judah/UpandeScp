@@ -385,7 +385,7 @@ def list_chemicals(
             """SELECT item, allowed, type, toxicity, reentry_interval_hrs,
                       default_lower_rate_limit AS lower_rate_limit,
                       default_upper_rate_limit AS upper_rate_limit
-                 FROM `tabChemical` WHERE item IN %(p)s""",
+                 FROM `tabSpray Product` WHERE item IN %(p)s""",
             {"p": tuple(item_codes)},
             as_dict=True,
         ):
@@ -394,12 +394,12 @@ def list_chemicals(
     no_chem = [c for c in item_codes if c not in chem]
 
     # Child rows — from Chemical for backfilled chemicals, from Item otherwise.
-    c_irac = _child("IRAC Code Filter", "code", with_chem, "Chemical")
-    c_frac = _child("FRAC Code Filter", "code", with_chem, "Chemical")
-    c_ghs = _child("GHS Code Filter", "code", with_chem, "Chemical")
-    c_tgt = _child("Chemical Targets", "pest, disease", with_chem, "Chemical")
-    c_ai = _child("Active Ingredient", "ingredient", with_chem, "Chemical")
-    c_crop = _child("Chemical Crop", "crop", with_chem, "Chemical")
+    c_irac = _child("IRAC Code Filter", "code", with_chem, "Spray Product")
+    c_frac = _child("FRAC Code Filter", "code", with_chem, "Spray Product")
+    c_ghs = _child("GHS Code Filter", "code", with_chem, "Spray Product")
+    c_tgt = _child("Chemical Targets", "pest, disease", with_chem, "Spray Product")
+    c_ai = _child("Active Ingredient", "ingredient", with_chem, "Spray Product")
+    c_crop = _child("Chemical Crop", "crop", with_chem, "Spray Product")
     i_irac = _child("IRAC Code Filter", "code", no_chem, "Item")
     i_frac = _child("FRAC Code Filter", "code", no_chem, "Item")
     i_ghs = _child("GHS Code Filter", "code", no_chem, "Item")
@@ -536,9 +536,9 @@ def save_chemical(item_code: str, payload) -> dict:
         return {"ok": True, "item_code": item_code}
 
     chem = (
-        frappe.get_doc("Chemical", item_code)
-        if frappe.db.exists("Chemical", item_code)
-        else frappe.new_doc("Chemical")
+        frappe.get_doc("Spray Product", item_code)
+        if frappe.db.exists("Spray Product", item_code)
+        else frappe.new_doc("Spray Product")
     )
     chem.item = item_code
     if "allowed" in payload:

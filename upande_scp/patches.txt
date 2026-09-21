@@ -3,6 +3,13 @@
 # Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
 upande_scp.patches.v1_0.export_sal_fixtures
 upande_scp.patches.v1_0.promote_filters_to_standalone
+# Chemical -> Spray Product. Must be pre_model_sync: the rename has to land in
+# the database before migrate syncs doctypes from disk, or migrate sees
+# `Spray Product` as new and `Chemical` as an orphan and deletes the orphan,
+# taking every record with it. Schema identity only — the data half is
+# consolidate_spray_products, post_model_sync, because the fields that work
+# needs (category, crop_rates) do not exist until the sync in between.
+upande_scp.patches.v1_0.rename_chemical_to_spray_product
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
@@ -27,3 +34,7 @@ upande_scp.patches.v1_0.configure_crop_protection_item_groups
 upande_scp.patches.v1_0.converge_chemical_to_kaitet_schema
 upande_scp.patches.v1_0.backfill_foliar_master
 upande_scp.patches.v1_0.drop_dead_chemical_rate_columns
+# Folds Foliar into Spray Product and drops the dead per-crop override
+# doctypes. Post_model_sync, pairing with the pre_model_sync rename above.
+# No-ops where Foliar was never created — which is mona production.
+upande_scp.patches.v1_0.consolidate_spray_products

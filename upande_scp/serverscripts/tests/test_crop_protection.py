@@ -37,7 +37,7 @@ def _ensure_item_group(name):
 
 
 def _delete_sidecars_for(code):
-    for master in ("Chemical", "Foliar"):
+    for master in ("Spray Product",):
         name = frappe.db.get_value(master, {"item": code}, "name")
         if name:
             frappe.delete_doc(master, name, force=True, ignore_permissions=True)
@@ -76,7 +76,7 @@ class TestCropProtection(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        for master in ("Chemical", "Foliar"):
+        for master in ("Spray Product",):
             for name in frappe.get_all(master, filters={"item": ["like", f"{_ITEM_PREFIX}%"]}, pluck="name"):
                 frappe.delete_doc(master, name, force=True, ignore_permissions=True)
         for name in frappe.get_all("Item", filters={"item_code": ["like", f"{_ITEM_PREFIX}%"]}, pluck="name"):

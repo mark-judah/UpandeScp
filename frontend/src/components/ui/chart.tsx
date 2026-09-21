@@ -69,7 +69,10 @@ export const ChartContainer = React.forwardRef<
         )}
         {...props}
       >
-        <Recharts.ResponsiveContainer>
+        {/* Debounce resize handling so charts recompute once after a layout
+            change settles (e.g. the sidebar collapse animation) instead of
+            re-laying-out every frame — which is what made the slide chunky. */}
+        <Recharts.ResponsiveContainer debounce={200}>
           {children as any}
         </Recharts.ResponsiveContainer>
       </div>

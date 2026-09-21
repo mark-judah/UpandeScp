@@ -3,10 +3,7 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar";
-import {
-  SidebarMenu,
-  SidebarMenuItem,
-} from "@/components/ui/sidebar";
+import { SidebarMenu, SidebarMenuItem } from "@/components/ui/sidebar";
 import { bootstrap } from "@/lib/frappe";
 
 function initialsOf(name: string): string {
@@ -25,12 +22,7 @@ function initialsOf(name: string): string {
 /**
  * Bottom-of-sidebar profile chip. Renders the user's avatar (or initials
  * fallback) alongside their name and email. In collapsed sidebar state the
- * name and email hide and the avatar stands alone.
- *
- * No exit link here any more: leaving the app is Back to Desk in the footer
- * above, and the logo. This one pointed at a single workspace page rather
- * than the desk, and two half-answers to "how do I get out" is worse than
- * one clear one.
+ * name and email hide, leaving just the avatar.
  */
 export function SidebarUser() {
   const { user, full_name, user_image } = bootstrap();

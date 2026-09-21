@@ -2,15 +2,15 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { PanelLeft } from "lucide-react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const SIDEBAR_WIDTH = "16rem";
-const SIDEBAR_WIDTH_ICON = "3rem";
+// Slightly wider than stock (3rem) so the collapsed icon rail still clears
+// the button hit-area once the floating card's outer padding is subtracted.
+const SIDEBAR_WIDTH_ICON = "4rem";
 const SIDEBAR_COOKIE_NAME = "sidebar:state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 
@@ -94,7 +94,10 @@ export const SidebarProvider = React.forwardRef<
             } as React.CSSProperties
           }
           className={cn(
-            "group/sidebar-wrapper flex min-h-svh w-full",
+            // Paint the app's own paper backdrop so the region behind the
+            // floating sidebar matches the content and never depends on the
+            // host www page's background.
+            "group/sidebar-wrapper flex min-h-svh w-full bg-background",
             className,
           )}
           {...props}
@@ -112,20 +115,10 @@ export const Sidebar = React.forwardRef<
   React.HTMLAttributes<HTMLDivElement> & {
     side?: "left" | "right";
     collapsible?: "offcanvas" | "icon" | "none";
-    /** `floating` detaches the rail into a rounded panel with a gap around it,
-     *  instead of sitting flush against the window edge. */
-    variant?: "sidebar" | "floating";
   }
 >(
   (
-    {
-      side = "left",
-      collapsible = "icon",
-      variant = "sidebar",
-      className,
-      children,
-      ...props
-    },
+    { side = "left", collapsible = "icon", className, children, ...props },
     ref,
   ) => {
     const { state, isMobile, openMobile, setOpenMobile } = useSidebar();
@@ -173,52 +166,29 @@ export const Sidebar = React.forwardRef<
       );
     }
 
-    const floating = variant === "floating";
-
     return (
+      // Detached, rounded, shadowed sidebar (reference `.side`): the outer
+      // column is transparent and sticky — it only reserves width and adds
+      // the margin that lets the inner card float on the paper background.
       <div
         ref={ref}
         data-state={state}
         data-collapsible={state === "collapsed" ? collapsible : ""}
         data-side={side}
-        data-variant={variant}
         className={cn(
-          "group peer relative hidden md:flex sticky top-0 h-svh shrink-0 flex-col text-sidebar-foreground transition-[width] duration-200 ease-linear",
-          // Flush against the edge: the rail IS the surface, with one border
-          // separating it from the content.
-          !floating && ["bg-sidebar", side === "left" ? "border-r" : "border-l"],
-          // Detached: the outer box is only a spacer, so the page background
-          // shows through the gap and the panel inside casts its own edge.
-          floating && "bg-transparent p-2",
+          "group peer hidden md:flex sticky top-0 h-svh shrink-0 flex-col p-2.5 transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
           state === "expanded"
-            ? floating
-              ? "w-[calc(var(--sidebar-width)+1rem)]"
-              : "w-[var(--sidebar-width)]"
+            ? "w-[var(--sidebar-width)]"
             : collapsible === "icon"
-              ? floating
-                ? "w-[calc(var(--sidebar-width-icon)+1rem)]"
-                : "w-[var(--sidebar-width-icon)]"
+              ? "w-[var(--sidebar-width-icon)]"
               : "w-0 overflow-hidden",
           className,
         )}
         {...props}
       >
-        {floating ? (
-          <div
-            className={cn(
-              "flex h-full w-full flex-col overflow-hidden border border-sidebar-border bg-sidebar shadow-sm",
-              // Expanded the panel is a card; collapsed it is barely wider
-              // than the logo it holds, where a 12px corner reads as a
-              // clipped rectangle. A full radius ends the rail in arcs
-              // concentric with the logo instead.
-              "rounded-xl group-data-[collapsible=icon]:rounded-full",
-            )}
-          >
-            {children}
-          </div>
-        ) : (
-          children
-        )}
+        <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[20px] border bg-sidebar text-sidebar-foreground shadow-[var(--sd-shadow-1)]">
+          {children}
+        </div>
       </div>
     );
   },
@@ -256,11 +226,7 @@ export const SidebarInset = React.forwardRef<
   <main
     ref={ref}
     className={cn(
-      // `min-w-0` matters: a flex item defaults to min-width:auto, so without
-      // it a wide table inside a page stretches this pane and drags the whole
-      // layout — including the sidebar — into a horizontal scroll. Pages keep
-      // their own `overflow-x-auto` wrappers; this just lets the pane shrink.
-      "relative flex min-h-svh min-w-0 flex-1 flex-col bg-background",
+      "relative flex min-h-svh flex-1 flex-col bg-background",
       className,
     )}
     {...props}
@@ -364,7 +330,7 @@ export const SidebarGroupLabel = React.forwardRef<
       // staying parked below an empty 32px row. CSS-driven (no React state
       // toggle) so it stays in sync with the sidebar's width transition.
       className={cn(
-        "flex h-8 shrink-0 items-center px-2 text-[0.7rem] font-medium uppercase tracking-wider text-sidebar-foreground/60 whitespace-nowrap overflow-hidden transition-[margin,opacity] duration-200 ease-linear group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
+        "flex h-8 shrink-0 items-center px-2 text-[0.7rem] font-medium uppercase tracking-wider text-sidebar-foreground/60 whitespace-nowrap overflow-hidden transition-[margin,opacity] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
         className,
       )}
       {...props}
@@ -416,7 +382,7 @@ const sidebarMenuButtonVariants = cva(
   // [&>span:last-child]:truncate keeps the label on a single line during the
   // sidebar's width animation — otherwise text wraps to two rows at narrow
   // intermediate widths and the row visibly jumps. Mirrors mona's pattern.
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding] focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:font-medium data-[active=true]:text-sidebar-primary-foreground data-[state=open]:hover:bg-sidebar-accent group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>span:last-child]:truncate [&>span:last-child]:min-w-0",
+  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-lg group-data-[collapsible=icon]:rounded-full p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding,border-radius] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:font-medium data-[active=true]:text-sidebar-primary-foreground data-[state=open]:hover:bg-sidebar-accent group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>span:last-child]:truncate [&>span:last-child]:min-w-0",
   {
     variants: {
       size: {
@@ -449,50 +415,3 @@ export const SidebarMenuButton = React.forwardRef<
   );
 });
 SidebarMenuButton.displayName = "SidebarMenuButton";
-
-
-/**
- * Collapse control pinned to the sidebar's outer edge, after Frappe v16's own
- * desk sidebar: a small chevron straddling the margin rather than a button
- * parked in the page header.
- *
- * The chevron points the way the rail will move — left to push it closed,
- * right to pull it open — so it reads as a handle on the panel rather than as
- * decoration. It is hidden from the mobile drawer, which is dismissed by its
- * own overlay.
- */
-export const SidebarEdgeToggle = React.forwardRef<
-  HTMLButtonElement,
-  React.ButtonHTMLAttributes<HTMLButtonElement>
->(({ className, onClick, ...props }, ref) => {
-  const { state, toggle } = useSidebar();
-  const expanded = state === "expanded";
-  const Chevron = expanded ? ChevronLeft : ChevronRight;
-
-  return (
-    <button
-      ref={ref}
-      type="button"
-      aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-      title={expanded ? "Collapse sidebar" : "Expand sidebar"}
-      onClick={(e) => {
-        onClick?.(e);
-        toggle();
-      }}
-      className={cn(
-        // Straddles the right edge: half the control sits over the panel, half
-        // over the page, which is what makes it read as attached to the rail.
-        "absolute top-1/2 right-0 z-20 hidden -translate-y-1/2 translate-x-1/2 md:flex",
-        "size-5 items-center justify-center rounded-full",
-        "border border-sidebar-border bg-sidebar text-sidebar-foreground/70 shadow-sm",
-        "transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-        className,
-      )}
-      {...props}
-    >
-      <Chevron className="size-3" />
-    </button>
-  );
-});
-SidebarEdgeToggle.displayName = "SidebarEdgeToggle";

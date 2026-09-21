@@ -33,9 +33,6 @@ const RoseScouting = lazy(() =>
 const Spraying = lazy(() =>
   import("@/pages/Spraying").then((m) => ({ default: m.Spraying })),
 );
-const Varieties = lazy(() =>
-  import("@/pages/Varieties").then((m) => ({ default: m.Varieties })),
-);
 const Reports = lazy(() =>
   import("@/pages/Reports").then((m) => ({ default: m.Reports })),
 );
@@ -218,8 +215,6 @@ export function App() {
             <RoseScouting />
           ) : view === "spraying" ? (
             <Spraying />
-          ) : view === "varieties" ? (
-            <Varieties />
           ) : view === "reports" ? (
             <Reports />
           ) : view === "tank-mixes" ? (

@@ -29,6 +29,7 @@ import {
   Printer,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { HEADER_PILL } from "@/components/header-controls";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -508,18 +509,15 @@ export function Approvals() {
           </div>
 
         <div className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <Label>From</Label>
+          <div className="flex items-center">
             <DatePicker value={from} onChange={setFrom} />
           </div>
-          <div className="flex flex-col gap-1">
-            <Label>To</Label>
+          <div className="flex items-center">
             <DatePicker value={to} onChange={setTo} />
           </div>
-          <div className="flex flex-col gap-1 min-w-32">
-            <Label>Farm</Label>
+          <div className="flex items-center">
             <Select value={farm} onValueChange={setFarm}>
-              <SelectTrigger className="h-9">
+              <SelectTrigger className={HEADER_PILL}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -532,14 +530,13 @@ export function Approvals() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex flex-col gap-1 min-w-40">
-            <Label>Greenhouse</Label>
+          <div className="flex items-center">
             <Select
               value={greenhouse}
               onValueChange={setGreenhouse}
               disabled={farm === ALL}
             >
-              <SelectTrigger className="h-9">
+              <SelectTrigger className={HEADER_PILL}>
                 <SelectValue
                   placeholder={farm === ALL ? "Pick a farm first" : "All"}
                 />

@@ -20,7 +20,6 @@ import {
   ListOrdered,
   Loader2,
   MapPin,
-  Settings as SettingsIcon,
   ShieldAlert,
   ShieldCheck,
   Sliders,
@@ -103,11 +102,8 @@ export function Settings() {
     <div className="flex flex-col min-h-svh">
       <PageHeader
         eyebrow={<>Access · Plan rules · Maps · Chemicals</>}
-        title={<><SettingsIcon className="h-4 w-4" />
-                Spray Plan Settings</>}
-      >
-        
-      </PageHeader>
+        title={<>Spray Plan Settings</>}
+      />
 
       <section className="px-4 md:px-6 py-4">
         {loading && (

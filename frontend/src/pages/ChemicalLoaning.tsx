@@ -5,6 +5,7 @@
  * selected farm is actually depleted in (enforced server-side too).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { HEADER_PILL } from "@/components/header-controls";
 import { PageHeader } from "@/components/PageHeader";
 import {
   Loader2,
@@ -91,7 +92,7 @@ export function ChemicalLoaning() {
           <div className="flex items-center gap-2">
             {farms.length > 0 && (
               <Select value={farm} onValueChange={setFarm}>
-                <SelectTrigger className="h-9 w-48">
+                <SelectTrigger className={HEADER_PILL}>
                   <SelectValue placeholder="Your farm" />
                 </SelectTrigger>
                 <SelectContent>

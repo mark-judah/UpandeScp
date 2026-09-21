@@ -124,12 +124,10 @@ export function Finance() {
           title={<>Finances</>}
         >
           <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1">
-              <Label>From</Label>
+            <div className="flex items-center">
               <DatePicker value={from} onChange={setFrom} />
             </div>
-            <div className="flex flex-col gap-1">
-              <Label>To</Label>
+            <div className="flex items-center">
               <DatePicker value={to} onChange={setTo} />
             </div>
           </div>

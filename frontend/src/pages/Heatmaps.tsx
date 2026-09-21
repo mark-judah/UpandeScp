@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { HEADER_PILL } from "@/components/header-controls";
 import { PageHeader } from "@/components/PageHeader";
 import {
   Maximize2,
@@ -370,10 +371,9 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
 
           <div className="flex flex-wrap items-end gap-2">
             {!initialCrop && (
-              <div className="flex flex-col gap-1 min-w-32">
-                <Label htmlFor="hm-crop">Crop</Label>
+              <div className="flex items-center">
                 <Select value={crop} onValueChange={setCrop}>
-                  <SelectTrigger id="hm-crop" className="h-9">
+                  <SelectTrigger id="hm-crop" className={HEADER_PILL}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -387,16 +387,14 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               </div>
             )}
 
-            <div className="flex flex-col gap-1">
-              <Label>From</Label>
+            <div className="flex items-center">
               <DatePicker
                 value={from}
                 onChange={(v) => setRange({ from: v, to })}
               />
             </div>
 
-            <div className="flex flex-col gap-1">
-              <Label>To</Label>
+            <div className="flex items-center">
               <DatePicker
                 value={to}
                 onChange={(v) => setRange({ from, to: v })}
@@ -405,7 +403,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
 
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-2">
+                <Button variant="outline" size="sm" className={HEADER_PILL}>
                   <MapPin className="h-3.5 w-3.5" />
                   Farms
                   <span className="text-muted-foreground tabular-nums">
@@ -444,7 +442,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
         )}
       </PageHeader>
 
-      <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b bg-card/50">
+      <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground">
         <span className="ml-auto tabular-nums">
           {distinctGh} greenhouses · {totalZones} zones · {totalObs}{" "}
           observation{totalObs === 1 ? "" : "s"}

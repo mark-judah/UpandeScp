@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { HEADER_PILL } from "@/components/header-controls";
 import { PageHeader } from "@/components/PageHeader";
 import { ChevronDown, MapPin, Sparkles, RefreshCw, Gauge } from "lucide-react";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
@@ -193,10 +194,9 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
 
           <div className="flex flex-wrap items-end gap-2">
             {!initialCrop && (
-              <div className="flex flex-col gap-1 min-w-32">
-                <Label htmlFor="t-crop">Crop</Label>
+              <div className="flex items-center">
                 <Select value={crop} onValueChange={setCrop}>
-                  <SelectTrigger id="t-crop" className="h-9">
+                  <SelectTrigger id="t-crop" className={HEADER_PILL}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -210,16 +210,14 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
               </div>
             )}
 
-            <div className="flex flex-col gap-1">
-              <Label>From</Label>
+            <div className="flex items-center">
               <DatePicker
                 value={from}
                 onChange={(v) => setRange({ from: v, to })}
               />
             </div>
 
-            <div className="flex flex-col gap-1">
-              <Label>To</Label>
+            <div className="flex items-center">
               <DatePicker
                 value={to}
                 onChange={(v) => setRange({ from, to: v })}
@@ -228,7 +226,7 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
 
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-2">
+                <Button variant="outline" size="sm" className={HEADER_PILL}>
                   <MapPin className="h-3.5 w-3.5" />
                   Farms
                   <span className="text-muted-foreground tabular-nums">
@@ -250,7 +248,7 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
 
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-2">
+                <Button variant="outline" size="sm" className={HEADER_PILL}>
                   <Sparkles className="h-3.5 w-3.5" />
                   Observations
                   <span className="text-muted-foreground tabular-nums">

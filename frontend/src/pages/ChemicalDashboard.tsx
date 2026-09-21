@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { HEADER_PILL } from "@/components/header-controls";
 import { PageHeader } from "@/components/PageHeader";
 import {
   Bar,
@@ -138,13 +139,12 @@ export function ChemicalDashboard() {
       >
 
           <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1 min-w-44">
-              <Label htmlFor="cd-warehouse">Warehouse</Label>
+            <div className="flex items-center">
               <Select
                 value={warehouseFilter}
                 onValueChange={setWarehouseFilter}
               >
-                <SelectTrigger id="cd-warehouse" className="h-9">
+                <SelectTrigger id="cd-warehouse" className={HEADER_PILL}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -157,8 +157,7 @@ export function ChemicalDashboard() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-col gap-1 min-w-56">
-              <Label htmlFor="cd-search">Search</Label>
+            <div className="flex items-center">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input

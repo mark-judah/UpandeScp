@@ -13,7 +13,6 @@ import {
   History,
   Layers,
   FileText,
-  GitFork,
   Settings,
   Beaker,
   Truck,
@@ -194,7 +193,6 @@ const ROSE_NAV: NavSection[] = [
     hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
-      { kind: "view", view: "varieties", label: "Varieties", icon: GitFork },
     ],
   },
 ];

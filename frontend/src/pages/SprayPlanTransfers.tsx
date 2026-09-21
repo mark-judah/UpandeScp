@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { HEADER_PILL } from "@/components/header-controls";
 import { PageHeader } from "@/components/PageHeader";
 import {
   Truck,
@@ -341,10 +342,9 @@ export function SprayPlanTransfers() {
       >
 
           <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1 min-w-40">
-              <Label htmlFor="spt-farm">Farm</Label>
+            <div className="flex items-center">
               <Select value={farm} onValueChange={setFarm}>
-                <SelectTrigger id="spt-farm" className="h-9">
+                <SelectTrigger id="spt-farm" className={HEADER_PILL}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -357,12 +357,10 @@ export function SprayPlanTransfers() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-col gap-1">
-              <Label>From</Label>
+            <div className="flex items-center">
               <DatePicker value={fromDate} onChange={setFromDate} />
             </div>
-            <div className="flex flex-col gap-1">
-              <Label>To</Label>
+            <div className="flex items-center">
               <DatePicker value={toDate} onChange={setToDate} />
             </div>
             <Button
@@ -382,8 +380,7 @@ export function SprayPlanTransfers() {
         {/* Action row — bulk-assign + biometric submit live together so the
             store keeper can see the whole flow in one place. */}
         <div className="flex flex-wrap items-end gap-2 border-t pt-3">
-          <div className="flex flex-col gap-1 min-w-72">
-            <Label htmlFor="spt-emp">Bulk-assign employee</Label>
+          <div className="flex items-center">
             <Popover open={empOpen} onOpenChange={setEmpOpen}>
               <PopoverTrigger asChild>
                 <Button

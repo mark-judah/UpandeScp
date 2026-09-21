@@ -1533,7 +1533,7 @@ export function ApplicationPlan() {
 
               <div className="flex flex-col gap-1 col-span-2">
                 <Label>Scheduled Application Date</Label>
-                <DatePicker value={sprayDate} onChange={setSprayDate} />
+                <DatePicker value={sprayDate} onChange={setSprayDate} variant="field" />
               </div>
               <div className="flex flex-col gap-1">
                 <Label>Spray Type</Label>

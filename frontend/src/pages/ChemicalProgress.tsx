@@ -130,7 +130,12 @@ export function ChemicalProgress() {
             {missedCount} missed window
           </span>
         )}
-        <HeaderIconButton onClick={load} title="Refresh" disabled={loading}>
+        <HeaderIconButton
+          onClick={load}
+          aria-label="Refresh"
+          tooltip="Re-read chemical planning progress from the server"
+          disabled={loading}
+        >
           <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
         </HeaderIconButton>
       </PageHeader>

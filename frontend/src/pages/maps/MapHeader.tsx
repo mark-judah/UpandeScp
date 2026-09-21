@@ -173,7 +173,11 @@ export function MapHeader({
       />
 
       {onReload && (
-        <HeaderIconButton onClick={onReload} title="Reload">
+        <HeaderIconButton
+          onClick={onReload}
+          aria-label="Reload"
+          tooltip="Fetch the latest scouting entries for this window"
+        >
           <RefreshCw className="h-4 w-4" />
         </HeaderIconButton>
       )}

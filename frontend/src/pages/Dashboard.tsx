@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/PageHeader";
-import { HEADER_PILL } from "@/components/header-controls";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
 import { OverviewTab }  from "./dashboard/OverviewTab";
 import { PestsTab }     from "./dashboard/PestsTab";
@@ -188,23 +188,23 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               />
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
+            <HeaderIconButton
               onClick={reloadActive}
-              className="h-9"
-              title="Reload (force cache refresh)"
+              aria-label="Reload"
+              tooltip="Rebuild this dashboard from the server, ignoring the cached copy"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Reload
-            </Button>
+              <RefreshCw className="h-4 w-4" />
+            </HeaderIconButton>
 
-            <Button asChild variant="outline" size="sm" className="h-9">
+            <HeaderIconButton
+              asChild
+              aria-label="Reports"
+              tooltip="Open the scouting reports page"
+            >
               <a href="/scouting_reports" target="_self">
-                <FileText className="h-3.5 w-3.5" />
-                Reports
+                <FileText className="h-4 w-4" />
               </a>
-            </Button>
+            </HeaderIconButton>
           </div>
 
         {(() => {

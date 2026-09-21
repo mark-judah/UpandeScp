@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { HEADER_PILL } from "@/components/header-controls";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { PageHeader } from "@/components/PageHeader";
 import {
   Maximize2,
@@ -423,16 +423,13 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               </PopoverContent>
             </Popover>
 
-            <Button
-              variant="outline"
-              size="sm"
+            <HeaderIconButton
               onClick={() => gridState.reload({ force: true })}
-              className="h-9"
-              title="Reload (force cache refresh)"
+              aria-label="Reload"
+              tooltip="Rebuild the heatmaps from the server, ignoring the cached copy"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Reload
-            </Button>
+              <RefreshCw className="h-4 w-4" />
+            </HeaderIconButton>
           </div>
 
         {gridState.error && (

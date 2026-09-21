@@ -1,26 +1,29 @@
 import {
+  Coins,
   Home,
+  Activity,
+  ArrowRightLeft,
+  Beaker,
+  Bell,
+  CalendarClock,
+  CheckSquare,
+  ClipboardList,
+  Crosshair,
+  Droplets,
+  FileText,
+  Flame,
+  History,
+  Layers,
   LayoutDashboard,
   LineChart,
   MapPin,
-  Sprout,
-  Search,
-  Flame,
-  Crosshair,
-  Droplets,
-  ClipboardList,
-  CheckSquare,
-  History,
-  Layers,
-  FileText,
-  Settings,
-  Beaker,
-  Truck,
   QrCode,
+  Scale,
+  Search,
+  Settings,
+  Sprout,
+  Truck,
   Warehouse,
-  Activity,
-  ArrowRightLeft,
-  Coins,
 } from "lucide-react";
 import {
   Sidebar,
@@ -41,6 +44,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarUser } from "@/components/SidebarUser";
 import { routeHash, type View } from "@/lib/router";
 import { bootstrap } from "@/lib/frappe";
+import { cn } from "@/lib/utils";
+import { useEffect, useRef, useState } from "react";
 import upandeLogo from "@/assets/Upande_logo.png";
 
 type IconType = React.ComponentType<{ className?: string }>;
@@ -79,10 +84,7 @@ interface NavSection {
   hideForRoles?: string[];
 }
 
-const STORE_KEEPER_ROLE = "Store Keeper";
-// mona.local names the store role "Stock Manager"; kaitet uses "Store Keeper".
-// Honour both wherever store-keeper access is gated.
-const STORE_KEEPER_ROLES = ["Store Keeper", "Stock Manager"];
+const STORE_KEEPER_ROLE = "SCP Chemical Store Keeper";
 
 const ROSE_NAV: NavSection[] = [
   // Store-Keeper exclusive section — only role that sees it, and the
@@ -96,28 +98,28 @@ const ROSE_NAV: NavSection[] = [
         view: "spray-plan-transfers",
         label: "Spray Plan Transfers",
         icon: Truck,
-        requireRoles: STORE_KEEPER_ROLES,
+        requireRoles: [STORE_KEEPER_ROLE],
       },
       {
         kind: "view",
         view: "chemical-dashboard",
         label: "Chemical Dashboard",
         icon: Beaker,
-        requireRoles: STORE_KEEPER_ROLES,
+        requireRoles: [STORE_KEEPER_ROLE],
       },
       {
         kind: "view",
         view: "labels",
         label: "Labels",
         icon: QrCode,
-        requireRoles: STORE_KEEPER_ROLES,
+        requireRoles: [STORE_KEEPER_ROLE],
       },
       {
         kind: "view",
         view: "chemical-progress",
         label: "Chemical Progress",
         icon: Activity,
-        requireRoles: STORE_KEEPER_ROLES,
+        requireRoles: [STORE_KEEPER_ROLE],
       },
     ],
   },
@@ -127,6 +129,7 @@ const ROSE_NAV: NavSection[] = [
     items: [
       { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
       { kind: "view", view: "trends", label: "Trends", icon: LineChart },
+      // mona-only: kaitet has no Finances page, so its sidebar has no entry.
       { kind: "view", view: "finances", label: "Finances", icon: Coins },
     ],
   },
@@ -156,28 +159,28 @@ const ROSE_NAV: NavSection[] = [
         view: "creator-stock",
         label: "Chemical Stock",
         icon: Warehouse,
-        requireRoles: ["Spray Plan Creator"],
+        requireRoles: ["SCP Spray Plan Creator"],
       },
       {
         kind: "view",
         view: "chemical-loaning",
         label: "Chemical Loaning",
         icon: ArrowRightLeft,
-        requireRoles: ["Spray Plan Creator", "General Manager"],
+        requireRoles: ["SCP Spray Plan Creator", "SCP General Manager"],
       },
       {
         kind: "view",
         view: "approvals",
         label: "Approvals",
         icon: CheckSquare,
-        requireRoles: ["General Manager", "Spray Plan Approver"],
+        requireRoles: ["SCP General Manager", "SCP Spray Plan Approver"],
       },
       {
         kind: "view",
         view: "settings",
         label: "Settings",
         icon: Settings,
-        requireRoles: ["General Manager", "System Manager", "Administrator"],
+        requireRoles: ["SCP General Manager", "System Manager", "Administrator"],
       },
       {
         kind: "view",
@@ -193,7 +196,84 @@ const ROSE_NAV: NavSection[] = [
     hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
+      // Varieties is hidden until the page is finished. The route and the page are
+      // still here, so restoring it is one line — reachable meanwhile by URL for
+      // whoever is working on it.
     ],
+  },
+];
+
+// Avocado is its own app: a parallel sidebar reached via the crop switcher.
+// It reuses the rose page components forced to crop = Avocado, so avocado
+// gets its own dashboards/trends/scouting scoped to avocado farms.
+// It reuses the rose page components forced to the crop in the route, so the
+// crop gets its own dashboards/trends/scouting scoped to its farms.
+const AVOCADO_NAV: NavSection[] = [
+  {
+    label: "Overview",
+    items: [
+      { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
+      { kind: "view", view: "trends", label: "Trends", icon: LineChart },
+    ],
+  },
+  {
+    label: "Scouting",
+    items: [
+      { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
+      { kind: "view", view: "observations", label: "Observations", icon: Search },
+      { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
+    ],
+  },
+  {
+    label: "Crop Protection",
+    items: [
+      // The heat map page carries the block prescription panel, so for avocado it is
+      // the jobsheet — observe and plan without leaving it.
+      { kind: "view", view: "heatmaps", label: "Jobsheet", icon: ClipboardList },
+    ],
+  },
+  {
+    label: "Reports",
+    items: [
+      { kind: "view", view: "reports", label: "Reports", icon: FileText },
+    ],
+  },
+  {
+    // Settings is per-crop now: this crop's spray-plan overrides, its farms'
+    // rosters and map, its thresholds and ordering. The site-wide tabs are
+    // still here, marked as such, so nobody has to go to roses to find them.
+    label: "Settings",
+    items: [{ kind: "view", view: "settings", label: "Settings", icon: Settings }],
+  },
+];
+
+// Coffee — minimal nav for the triad tessellation test: Dashboard + the
+// (triad) Scouting map only.
+const COFFEE_NAV: NavSection[] = [
+  {
+    label: "Overview",
+    items: [
+      { kind: "view", view: "dashboard", label: "Dashboards", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "Scouting",
+    items: [
+      { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
+    ],
+  },
+  {
+    label: "Reports",
+    items: [
+      { kind: "view", view: "reports", label: "Reports", icon: FileText },
+    ],
+  },
+  {
+    // Settings is per-crop now: this crop's spray-plan overrides, its farms'
+    // rosters and map, its thresholds and ordering. The site-wide tabs are
+    // still here, marked as such, so nobody has to go to roses to find them.
+    label: "Settings",
+    items: [{ kind: "view", view: "settings", label: "Settings", icon: Settings }],
   },
 ];
 
@@ -220,23 +300,41 @@ const DEFAULT_CROP_NAV: NavSection[] = [
 
 function navForCrop(crop: string): NavSection[] {
   if (crop === "rose") return ROSE_NAV;
+  if (crop === "avocado") return AVOCADO_NAV;
+  if (crop === "coffee") return COFFEE_NAV;
   return DEFAULT_CROP_NAV;
+}
+
+/** Role names here carry kaitet's ``SCP `` prefix, from the namespacing it did
+ *  and mona has not. Both sets exist on mona and its live users hold the
+ *  unprefixed ones — the approver on production is a "General Manager", not an
+ *  "SCP General Manager" — so matching the literal string would hide Approvals,
+ *  Procurement and the rest from exactly the people who need them, silently and
+ *  with no error to notice. Compare with the prefix off on both sides, so a
+ *  gate written either way answers for either site. */
+function sameRole(a: string, b: string): boolean {
+  const bare = (r: string) => r.replace(/^SCP /, "").toLowerCase();
+  return bare(a) === bare(b);
+}
+
+function holdsRole(userRoles: string[], role: string): boolean {
+  return userRoles.some((held) => sameRole(held, role));
 }
 
 function userHasAnyRole(required: string[] | undefined, userRoles: string[]): boolean {
   if (!required || required.length === 0) return true;
-  return required.some((r) => userRoles.includes(r));
+  return required.some((r) => holdsRole(userRoles, r));
 }
 
 // Roles that override Store-Keeper-only lockdown — a person who's BOTH a
 // Store Keeper AND a System Manager / Administrator / General Manager
 // stays a full user; only somebody whose elevated access is exclusively
-// "Store Keeper" gets the trimmed two-page sidebar.
-const ELEVATED_ROLES = ["System Manager", "Administrator", "General Manager"];
+// "SCP Chemical Store Keeper" gets the trimmed two-page sidebar.
+const ELEVATED_ROLES = ["System Manager", "Administrator", "SCP General Manager"];
 
 function isStoreKeeperExclusive(userRoles: string[]): boolean {
-  if (!STORE_KEEPER_ROLES.some((r) => userRoles.includes(r))) return false;
-  return !ELEVATED_ROLES.some((r) => userRoles.includes(r));
+  if (!holdsRole(userRoles, STORE_KEEPER_ROLE)) return false;
+  return !ELEVATED_ROLES.some((r) => holdsRole(userRoles, r));
 }
 
 function isHiddenForUser(
@@ -254,7 +352,57 @@ function isHiddenForUser(
   ) {
     return isStoreKeeperExclusive(userRoles);
   }
-  return hideForRoles.some((r) => userRoles.includes(r));
+  return hideForRoles.some((r) => holdsRole(userRoles, r));
+}
+
+/** Whether this user may open `view` under `crop`, by the SAME rules the
+ *  sidebar uses to show or hide it.
+ *
+ *  Hiding a link is not access control: the sidebar hid Approvals from anyone
+ *  without an approver role, but `#/rose/approvals` typed into the address bar
+ *  still rendered the page — it only looked empty because the server refused
+ *  the data. Exported so `App.tsx` can gate the route off the very same nav
+ *  definition, rather than a second copy of the rule that drifts from this one.
+ *
+ *  A view that appears in no nav section is unrestricted: plenty of routes are
+ *  reached by drill-down rather than a sidebar link, and defaulting those to
+ *  "denied" would break navigation the moment someone adds a page.
+ */
+export function canOpenView(view: View, crop: string, userRoles: string[]): boolean {
+  // 1. The crop the user is actually in. A section hidden from them hides every
+  //    view inside it, whatever the item says.
+  for (const section of navForCrop(crop)) {
+    const owns = section.items.some((i) => i.kind === "view" && i.view === view);
+    if (!owns) continue;
+    if (isHiddenForUser(section.hideForRoles, userRoles)) return false;
+    for (const item of section.items) {
+      if (item.kind !== "view" || item.view !== view) continue;
+      return (
+        userHasAnyRole(item.requireRoles, userRoles) &&
+        !isHiddenForUser(item.hideForRoles, userRoles)
+      );
+    }
+  }
+
+  // 2. Not in this crop's nav — but a restriction declared for the same view
+  //    under ANY crop still applies. Only ROSE_NAV lists `approvals`, so
+  //    without this `#/avocado/approvals` stayed open to everyone: the same
+  //    hole, one URL along. A rule declared once should not have to be
+  //    repeated per crop to keep working.
+  for (const nav of [ROSE_NAV, AVOCADO_NAV, COFFEE_NAV, DEFAULT_CROP_NAV]) {
+    for (const section of nav) {
+      for (const item of section.items) {
+        if (item.kind !== "view" || item.view !== view) continue;
+        if (item.requireRoles?.length) {
+          return userHasAnyRole(item.requireRoles, userRoles);
+        }
+      }
+    }
+  }
+
+  // 3. Genuinely unrestricted: reached by drill-down rather than a sidebar
+  //    link, and nothing anywhere declares a role for it.
+  return true;
 }
 
 export function AppSidebar({
@@ -266,42 +414,72 @@ export function AppSidebar({
   view: View;
   onNavigate: (next: View) => void;
 }) {
-  const { state } = useSidebar();
+  const { state, toggle } = useSidebar();
   const collapsed = state === "collapsed";
   const roles = bootstrap().roles || [];
 
   const nav = navForCrop(crop);
 
+  // Show the footer "pocket" shadow only while nav items remain hidden below
+  // the fold; hide it once the list is scrolled to the end (or fully fits).
+  const navRef = useRef<HTMLDivElement>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
+  useEffect(() => {
+    const vp = navRef.current?.querySelector<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    );
+    if (!vp) return;
+    const update = () =>
+      setMoreBelow(vp.scrollHeight - vp.scrollTop - vp.clientHeight > 1);
+    update();
+    vp.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(vp);
+    if (vp.firstElementChild) ro.observe(vp.firstElementChild);
+    return () => {
+      vp.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, [crop, collapsed]);
+
   return (
     <Sidebar collapsible="icon" variant="floating">
       <SidebarEdgeToggle />
       <SidebarHeader>
-        <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
-          {/* The logo is the way back to the Frappe desk. A plain <a href>,
-              deliberately: /app is a different document, not a hash route. */}
+        {/* Brand — reference `.topbar__brand`: prominent logo, thin divider,
+            product name with an uppercase let-spaced eyebrow subtitle. */}
+        <div className="flex items-center gap-2.5 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:py-0">
+          {/* Logo links back to the Frappe desk (/app). */}
           <a
             href="/app"
-            title="Back to Desk — the Frappe workspace at /app"
-            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background ring-1 ring-border/60 transition hover:ring-2 hover:ring-border"
+            title="Open Frappe Desk"
+            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background ring-1 ring-border/60 transition hover:ring-2 hover:ring-border group-data-[collapsible=icon]:size-7"
           >
             <img
               src={upandeLogo}
-              alt="Back to Desk"
+              alt="Upande"
               className="size-full object-contain"
             />
           </a>
+          {/* Thin divider, reference `.topbar__divider`. */}
+          <div className="h-6 w-px shrink-0 bg-border group-data-[collapsible=icon]:hidden" />
           {/* Always rendered, hidden via CSS so the width animation plays
               around it without React inserting/removing nodes mid-transition. */}
-          <div className="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="truncate font-semibold">Upande SCP</span>
-            <span className="truncate text-xs text-muted-foreground">
+          <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
+            <span className="truncate text-sm font-semibold tracking-[-0.01em] text-foreground">
+              Upande SCP
+            </span>
+            <span className="mt-0.5 truncate text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--sd-quiet)]">
               Scouting &amp; Crop Protection
             </span>
           </div>
         </div>
       </SidebarHeader>
       <SidebarSeparator />
-      <SidebarContent className="overflow-hidden p-0 group-data-[collapsible=icon]:p-0">
+      <SidebarContent
+        ref={navRef}
+        className="overflow-hidden p-0 group-data-[collapsible=icon]:p-0"
+      >
         <ScrollArea className="h-full w-full">
           <div className="flex flex-col gap-1 p-2 group-data-[collapsible=icon]:p-1">
             {nav.map((section) => {
@@ -357,13 +535,31 @@ export function AppSidebar({
           </div>
         </ScrollArea>
       </SidebarContent>
-      <SidebarFooter>
-        {/* Back to Desk sits beside the profile chip rather than in the nav
-            above, because it is not one of this app's surfaces — and because
-            somebody new to the app has to be able to leave it without hunting.
-            No loading cover on the way out: Frappe raises its own splash the
-            moment /app starts loading, and two covers handing over to each
-            other is one more than the crossing needs. */}
+      {/* Boundary "pocket" cue — a subtle top shadow shown ONLY while nav
+          items remain hidden below the fold (moreBelow); it fades out once
+          the list is scrolled to the end or fully fits. Works collapsed too. */}
+      <SidebarFooter
+        className={cn(
+          "transition-shadow duration-200",
+          moreBelow &&
+            "border-t border-sidebar-border shadow-[0_-6px_14px_-10px_rgba(10,10,10,0.16)]",
+        )}
+      >
+        <SidebarSeparator />
+
+
+        {/* Back to Desk, beside the profile chip: a full page load out of this
+            app and into Frappe's own workspace at /app. It sits here rather
+            than in the nav above because it is not one of this app's surfaces —
+            and because somebody new to the app has to be able to leave it
+            without hunting. A plain <a href>, deliberately: the desk is a
+            different document, not a hash route.
+
+            No loading cover on the way out. `scp_desk.js` raises one going the
+            other way, into /scp_app, because Frappe shows nothing on that
+            crossing — but leaving for /app raises Frappe's own splash the
+            moment it starts loading, and two covers handing over to each other
+            is one more than the crossing needs. */}
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton

@@ -246,6 +246,10 @@ export const SidebarHeader = React.forwardRef<
     data-sidebar="header"
     className={cn(
       "flex flex-col gap-2 p-3 overflow-hidden",
+      // The rail eases its width over 300ms; anything that snaps instead
+      // frees space in a single frame and whatever is flex-1 lunges into
+      // it. Move with the rail, not before it.
+      "transition-[padding] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
       "group-data-[collapsible=icon]:p-2",
       className,
     )}

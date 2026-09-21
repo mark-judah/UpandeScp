@@ -670,14 +670,8 @@ export function Labels() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-1.5">
-                <Label className="text-xs">From</Label>
-                <DatePicker value={fromDate} onChange={setFromDate} />
-              </div>
-              <div className="grid gap-1.5">
-                <Label className="text-xs">To</Label>
-                <DatePicker value={toDate} onChange={setToDate} />
-              </div>
+              <DatePicker value={fromDate} onChange={setFromDate} />
+              <DatePicker value={toDate} onChange={setToDate} />
               <div className="ml-auto text-xs text-muted-foreground">
                 {selectableSelectedCount} of {totalSelectable} selected
               </div>

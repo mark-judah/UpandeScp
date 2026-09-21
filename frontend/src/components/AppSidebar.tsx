@@ -1,6 +1,4 @@
 import {
-  Coins,
-  Home,
   Activity,
   ArrowRightLeft,
   Beaker,
@@ -8,15 +6,19 @@ import {
   CalendarClock,
   CheckSquare,
   ClipboardList,
+  Coins,
   Crosshair,
   Droplets,
   FileText,
   Flame,
   History,
+  Home,
   Layers,
   LayoutDashboard,
   LineChart,
   MapPin,
+  PanelLeftClose,
+  PanelLeftOpen,
   QrCode,
   Scale,
   Search,
@@ -28,7 +30,6 @@ import {
 import {
   Sidebar,
   SidebarContent,
-  SidebarEdgeToggle,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
@@ -443,8 +444,7 @@ export function AppSidebar({
   }, [crop, collapsed]);
 
   return (
-    <Sidebar collapsible="icon" variant="floating">
-      <SidebarEdgeToggle />
+    <Sidebar collapsible="icon">
       <SidebarHeader>
         {/* Brand — reference `.topbar__brand`: prominent logo, thin divider,
             product name with an uppercase let-spaced eyebrow subtitle. */}
@@ -547,6 +547,24 @@ export function AppSidebar({
       >
         <SidebarSeparator />
 
+
+        {/* Collapse — a normal sidebar item (icon + label), pinned here. */}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={toggle}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+              <span>{collapsed ? "Expand" : "Collapse"}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <SidebarSeparator />
 
         {/* Back to Desk, beside the profile chip: a full page load out of this
             app and into Frappe's own workspace at /app. It sits here rather

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { HEADER_PILL } from "@/components/header-controls";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { PageHeader } from "@/components/PageHeader";
 import { ChevronDown, MapPin, Sparkles, RefreshCw, Gauge } from "lucide-react";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
@@ -268,30 +268,26 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
               </PopoverContent>
             </Popover>
 
-            <Button
-              variant={showThresholds ? "default" : "outline"}
-              size="sm"
+            <HeaderIconButton
+              active={showThresholds}
               onClick={() => setShowThresholds((v) => !v)}
-              className="h-9 gap-2"
-              title={
+              aria-label="Thresholds"
+              tooltip={
                 showThresholds
-                  ? "Hide threshold reference lines"
-                  : "Show threshold reference lines from Settings"
+                  ? "Hide the threshold reference lines"
+                  : "Show the threshold reference lines set in Settings"
               }
             >
-              <Gauge className="h-3.5 w-3.5" />
-              Thresholds
-            </Button>
+              <Gauge className="h-4 w-4" />
+            </HeaderIconButton>
 
-            <Button
-              variant="default"
-              size="sm"
+            <HeaderIconButton
               onClick={() => reload({ force: true })}
-              className="h-9"
+              aria-label="Reload"
+              tooltip="Rebuild these trends from the server, ignoring the cached copy"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Reload
-            </Button>
+              <RefreshCw className="h-4 w-4" />
+            </HeaderIconButton>
           </div>
 
         {error && (

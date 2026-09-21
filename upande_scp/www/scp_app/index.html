@@ -15,10 +15,33 @@
 			body { overflow: hidden; }
 			#scp-root { height: 100vh; width: 100%; overflow: auto; }
 			.page-content, .container, main.container { max-width: none !important; padding: 0 !important; margin: 0 !important; }
+
+			/* The cover that holds the screen while the bundle loads. Inline,
+			   deliberately: its whole job is to be on screen in the first frame —
+			   a splash that arrives with the CSS arrives after the thing it was
+			   meant to hide. */
+			.scp-splash {
+				position: fixed; inset: 0; z-index: 2147483000;
+				display: flex; align-items: center; justify-content: center;
+				/* White, like Frappe's own splash — the cover belongs to the
+				   crossing between the two apps, not to either one's paper. */
+				background: #ffffff;
+				transition: opacity 280ms ease;
+			}
+			/* No radius and no box: the mark is its own silhouette on nothing.
+			   Static, too — the cover holds for about a second, and a logo
+			   breathing at you for that long is fidgeting rather than telling
+			   you anything. Frappe's own splash is still for the same reason. */
+			.scp-splash img { width: 106px; height: auto; display: block; }
+			.scp-splash.scp-leaving { opacity: 0; pointer-events: none; }
+
 		</style>
 	</head>
 	<body>
 		<div id="scp-root"></div>
+		<div class="scp-splash" id="scp-splash">
+			<img src="/assets/upande_scp/images/upande_mark.svg" alt="Upande SCP" />
+		</div>
 
 		<script type="application/json" id="scp-bootstrap">{{ bootstrap_json | safe }}</script>
 		<script type="application/json" id="scp-prefetch">{{ prefetch_json | safe }}</script>

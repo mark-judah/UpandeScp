@@ -12,7 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/DatePicker";
 import { LoadingOverlay } from "@/components/LoadingOverlay";
@@ -22,8 +21,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Card } from "@/components/ui/card";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import { ymd } from "@/lib/utils";
 import { TristateTree } from "./trends/TristateTree";
 import { ChartPanel } from "./trends/ChartPanel";

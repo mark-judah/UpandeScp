@@ -14,9 +14,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Coins, Info, Loader2, Split, TriangleAlert } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { DatePicker } from "@/components/DatePicker";
 import {

@@ -26,8 +26,6 @@ import {
   Workflow,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccessTab } from "@/components/settings/AccessTab";
 import { ChemicalsTab } from "@/components/settings/ChemicalsTab";

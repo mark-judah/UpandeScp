@@ -24,8 +24,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { call } from "@/lib/frappe";
 import { cn } from "@/lib/utils";

@@ -9,8 +9,6 @@ import {
   YAxis,
 } from "recharts";
 import { Beaker, RefreshCw, Search } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import {
   Card,
   CardContent,
@@ -34,7 +32,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import {
   fetchChemicalOverview,
   type ChemicalOverview,

@@ -22,7 +22,6 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import {
   Card,
@@ -223,7 +222,7 @@ function PreviewLabel({
     boxSizing: "border-box" as const,
     padding: `${plan.paddingTopMm}mm ${plan.paddingRightMm}mm ${plan.paddingBottomMm}mm ${plan.paddingLeftMm}mm`,
     fontSize: `${plan.basePt}pt`,
-    border: "1px solid hsl(var(--border))",
+    border: "1px solid var(--border)",
     background: "white",
     color: "black",
     overflow: "hidden",

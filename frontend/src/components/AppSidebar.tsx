@@ -448,12 +448,12 @@ export function AppSidebar({
       <SidebarHeader>
         {/* Brand — reference `.topbar__brand`: prominent logo, thin divider,
             product name with an uppercase let-spaced eyebrow subtitle. */}
-        <div className="flex items-center gap-2.5 py-1 transition-[gap,padding] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:py-0">
+        <div className="flex items-center gap-2.5 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:py-0">
           {/* Logo links back to the Frappe desk (/app). */}
           <a
             href="/app"
             title="Open Frappe Desk"
-            className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background p-1.5 ring-1 ring-border/60 transition-[width,height,box-shadow] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:ring-2 hover:ring-border group-data-[collapsible=icon]:size-[3rem]"
+            className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background p-1.5 ring-1 ring-border/60 transition-[box-shadow] hover:ring-2 hover:ring-border group-data-[collapsible=icon]:size-[3rem]"
           >
             <img
               src={upandeLogo}
@@ -477,7 +477,7 @@ export function AppSidebar({
               // its full untruncated width and the name jumped ~30px wider
               // before collapsing. A 1fr -> 0fr column never measures the
               // text at all, so there is nothing to jump to.
-              "overflow-hidden transition-[grid-template-columns,opacity] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+              "overflow-hidden",
               "grid-cols-[1fr] opacity-100",
               "group-data-[collapsible=icon]:grid-cols-[0fr] group-data-[collapsible=icon]:opacity-0",
             )}

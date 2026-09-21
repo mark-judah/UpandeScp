@@ -10,7 +10,10 @@ import { useIsMobile } from "@/hooks/use-mobile";
 const SIDEBAR_WIDTH = "16rem";
 // Slightly wider than stock (3rem) so the collapsed icon rail still clears
 // the button hit-area once the floating card's outer padding is subtracted.
-const SIDEBAR_WIDTH_ICON = "4rem";
+// 5rem, not 4: the collapsed rail is sized around the brand mark, which
+// fills the width between the header padding exactly. Growing the mark
+// 50% without this would clip it.
+const SIDEBAR_WIDTH_ICON = "5rem";
 const SIDEBAR_COOKIE_NAME = "sidebar:state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 

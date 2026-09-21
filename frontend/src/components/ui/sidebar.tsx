@@ -179,7 +179,7 @@ export const Sidebar = React.forwardRef<
         data-collapsible={state === "collapsed" ? collapsible : ""}
         data-side={side}
         className={cn(
-          "group peer hidden md:flex sticky top-0 h-svh shrink-0 flex-col p-2.5",
+          "group peer hidden md:flex sticky top-0 h-svh shrink-0 flex-col p-2.5 transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
           state === "expanded"
             ? "w-[var(--sidebar-width)]"
             : collapsible === "icon"
@@ -370,9 +370,6 @@ export const SidebarMenu = React.forwardRef<
     data-sidebar="menu"
     className={cn(
       "flex w-full min-w-0 flex-col gap-0.5",
-      // Required, not cosmetic: collapsed, a row is 27px in a 51px rail,
-      // so left-aligned leaves 4px on one side and 19px on the other.
-      "group-data-[collapsible=icon]:items-center",
       className,
     )}
     {...props}
@@ -397,7 +394,7 @@ const sidebarMenuButtonVariants = cva(
   // [&>span:last-child]:truncate keeps the label on a single line during the
   // sidebar's width animation — otherwise text wraps to two rows at narrow
   // intermediate widths and the row visibly jumps. Mirrors mona's pattern.
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-lg group-data-[collapsible=icon]:rounded-full p-2 text-left text-sm outline-none ring-sidebar-ring transition-colors focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:font-medium data-[active=true]:text-sidebar-primary-foreground data-[state=open]:hover:bg-sidebar-accent group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>span:last-child]:truncate [&>span:last-child]:min-w-0",
+  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-lg group-data-[collapsible=icon]:rounded-full p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:font-medium data-[active=true]:text-sidebar-primary-foreground data-[state=open]:hover:bg-sidebar-accent group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>span:last-child]:truncate [&>span:last-child]:min-w-0",
   {
     variants: {
       size: {

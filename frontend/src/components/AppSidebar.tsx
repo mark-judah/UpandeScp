@@ -509,7 +509,17 @@ export function AppSidebar({
             "group-data-[collapsible=icon]:[&>[data-radix-scroll-area-viewport]>div]:!block",
           )}
         >
-          <div className="flex flex-col gap-1 p-2 group-data-[collapsible=icon]:p-1">
+          <div
+            className={cn(
+              "flex flex-col gap-1 p-2",
+              // Collapsed, this padding IS the centring. A row is 27.2px in
+              // a 51px rail, so it wants (51 - 27.2) / 2 = 11.9px either
+              // side, less the 1px the scroll viewport insets. Centring with
+              // items-center instead would move each row independently while
+              // their widths differ mid-transition, which is the ripple.
+              "group-data-[collapsible=icon]:p-[0.8rem]",
+            )}
+          >
             {nav.map((section) => {
               if (isHiddenForUser(section.hideForRoles, roles)) return null;
               const visibleItems = section.items.filter(

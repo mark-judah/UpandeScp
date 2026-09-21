@@ -19,6 +19,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { call } from "@/lib/frappe";
+import { errorText } from "@/lib/errors";
 import { fetchBedsAndZones } from "@/lib/scouting-api";
 import {
   projectGeometry,
@@ -80,7 +81,16 @@ interface RowState {
 export function HeatmapPoc() {
   const [params, setParams] = useState(parseHash);
   const [tree, setTree] = useState<
-    Array<{ beds: Array<{ name: string; zones: Array<{ name: string; raw_geojson?: string }> }> }> | null
+    Array<{
+      beds: Array<{
+        name: string;
+        zones: Array<{
+          name: string;
+          coords: [[number, number], [number, number]];
+          lineId: unknown;
+        }>;
+      }>;
+    }> | null
   >(null);
   const [rows, setRows] = useState<RowState[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -97,7 +107,7 @@ export function HeatmapPoc() {
     if (!params.ghs.length) return;
     void fetchBedsAndZones()
       .then((t) => setTree(t as any))
-      .catch((e) => setErr(e?.message || "geometry fetch failed"));
+      .catch((e) => setErr(errorText(e, "geometry fetch failed")));
   }, [params.ghs.length === 0]);
 
   // Fetch all GHs in parallel whenever the param set changes.
@@ -119,7 +129,11 @@ export function HeatmapPoc() {
 
           // Project this greenhouse's geometry from the cached tree.
           const ghPrefix = gh + " - ";
-          const zones: { name: string; raw_geojson?: string }[] = [];
+          const zones: {
+            name: string;
+            coords: [[number, number], [number, number]];
+            lineId: unknown;
+          }[] = [];
           for (const v of tree) {
             for (const bed of v.beds || []) {
               if (!bed.name?.startsWith(ghPrefix) && bed.name !== gh) continue;
@@ -163,7 +177,7 @@ export function HeatmapPoc() {
             const next = cur.slice();
             next[rowIdx] = {
               greenhouse: gh,
-              err: e?.message || "fetch failed",
+              err: errorText(e, "fetch failed"),
             };
             return next;
           }),

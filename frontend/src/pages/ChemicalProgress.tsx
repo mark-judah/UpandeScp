@@ -9,10 +9,8 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
+import { PageHeader } from "@/components/PageHeader";
 import {
   Table,
   TableBody,
@@ -122,61 +120,38 @@ export function ChemicalProgress() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Chemical Progress
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Follow each plan from issue → scan → tank mix → spray
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {missedCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--sd-data-red)]/15 text-[var(--sd-data-red)] px-2.5 py-1 text-xs font-medium">
-                <AlertTriangle className="h-3 w-3" />
-                {missedCount} missed window
-              </span>
-            )}
-            <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-1">
-              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-              Refresh
-            </Button>
-          </div>
-        </div>
+      <PageHeader
+        title="Chemical Progress"
+        eyebrow="Follow each plan from issue → scan → tank mix → spray"
+      >
+        {missedCount > 0 && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--sd-data-red)]/15 text-[var(--sd-data-red)] px-2.5 py-1 text-xs font-medium">
+            <AlertTriangle className="h-3 w-3" />
+            {missedCount} missed window
+          </span>
+        )}
+        <HeaderIconButton onClick={load} title="Refresh" disabled={loading}>
+          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+        </HeaderIconButton>
+      </PageHeader>
 
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <Label>From</Label>
-            <DatePicker value={from} onChange={setFrom} />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label>To</Label>
-            <DatePicker value={to} onChange={setTo} />
-          </div>
-          <div className="flex flex-col gap-1 min-w-32">
-            <Label>Farm</Label>
-            <Select value={farm} onValueChange={setFarm}>
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All Farms</SelectItem>
-                {farms.map((f) => (
-                  <SelectItem key={f} value={f}>
-                    {f}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </header>
+      <div className="flex flex-wrap items-center gap-2 px-4 md:px-6">
+        <DatePicker value={from} onChange={setFrom} />
+        <DatePicker value={to} onChange={setTo} />
+        <Select value={farm} onValueChange={setFarm}>
+          <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All Farms</SelectItem>
+            {farms.map((f) => (
+              <SelectItem key={f} value={f}>
+                {f}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       <div className="px-4 md:px-6 py-4 flex-1">
         {error && (

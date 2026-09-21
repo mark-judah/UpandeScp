@@ -86,6 +86,8 @@ function scoutLabel(s: string): string {
 interface ScoutVisit {
   scout: string;
   zone: string;
+  /** Greenhouse the zone belongs to — the trail is cut when this changes. */
+  greenhouse: string;
   /** Sortable timestamp — falls back to time_of_capture string. */
   ts: string;
   centroid: [number, number];
@@ -289,6 +291,7 @@ export function RoseScouting() {
       path.push({
         scout: e.scouts_name,
         zone: e.zone,
+        greenhouse: e.greenhouse || e.block || "",
         ts: `${e.date_of_capture} ${e.time_of_capture || ""}`,
         centroid: c,
       });
@@ -381,59 +384,67 @@ export function RoseScouting() {
       }
     });
 
-    // 2. Per-scout flow polylines — the scout's walking path, drawn ONE
-    //    SEGMENT PER DAY. A multi-day range must not connect the end of one
-    //    day to the start of the next (that produced cross-field spaghetti),
-    //    so we split each scout's visits by capture day and draw a line per
-    //    day. On a single-day view this is just one segment, as before.
+    // 2. Per-scout flow polylines, split into contiguous SEGMENTS. A line
+    //    never connects across days OR across greenhouses — when the scout's
+    //    next visit is in a different greenhouse the trail is CUT and a fresh
+    //    segment starts there (previously the path hopped greenhouse-to-
+    //    greenhouse, producing cross-field spaghetti). The trail itself is a
+    //    single faint neutral colour; only the start/end dots carry the
+    //    scout's colour so the person stays identifiable.
     visitsByScout.forEach((visits, scout) => {
+      // Per-scout colour, drawn faint so it reads as a subtle tint — a red
+      // scout shows as a muted greyish red, not a vivid line.
       const color = scoutInfo.colorMap.get(scout) || "#5BB45D";
-      const byDay = new Map<string, ScoutVisit[]>();
+      const segments: ScoutVisit[][] = [];
+      let cur: ScoutVisit[] = [];
+      let prevKey = "";
       for (const v of visits) {
-        const day = (v.ts || "").slice(0, 10);
-        const arr = byDay.get(day);
-        if (arr) arr.push(v);
-        else byDay.set(day, [v]);
+        const key = `${(v.ts || "").slice(0, 10)}|${v.greenhouse}`;
+        if (key !== prevKey && cur.length) {
+          segments.push(cur);
+          cur = [];
+        }
+        prevKey = key;
+        cur.push(v);
       }
-      byDay.forEach((dayVisits) => {
-        if (dayVisits.length >= 2) {
-          const points = dayVisits.map(
-            (v) => v.centroid as L.LatLngExpression,
-          );
+      if (cur.length) segments.push(cur);
+
+      segments.forEach((seg) => {
+        if (seg.length >= 2) {
+          const points = seg.map((v) => v.centroid as L.LatLngExpression);
           L.polyline(points, {
             color,
-            weight: 3,
-            opacity: 0.85,
+            weight: 2,
+            opacity: 0.4,
             lineJoin: "round",
             lineCap: "round",
           })
             .bindTooltip(
-              `<div style="font:11px Inter,Arial,sans-serif">
+              `<div style="font:11px var(--sd-font),Arial,sans-serif">
                  <b>${nameOf(scout)}</b><br/>
-                 ${dayVisits.length} zones · ${(dayVisits[0].ts || "").slice(0, 10)}
+                 ${seg[0].greenhouse || "—"} · ${seg.length} zones · ${(seg[0].ts || "").slice(0, 10)}
                </div>`,
               { sticky: true },
             )
             .addTo(layer);
         }
-        // Start / end markers so the direction of each day's walk is clear.
-        const first = dayVisits[0].centroid;
-        L.circleMarker(first, {
-          radius: 6,
+        // Start / end markers so the direction of each greenhouse walk is clear.
+        L.circleMarker(seg[0].centroid, {
+          radius: 5,
           color: "#ffffff",
           weight: 2,
           fillColor: color,
           fillOpacity: 1,
         })
           .bindTooltip(
-            `Start · ${dayVisits[0].zone} · ${(dayVisits[0].ts || "").slice(11) || "—"}`,
+            `Start · ${seg[0].zone} · ${(seg[0].ts || "").slice(11) || "—"}`,
             { sticky: true },
           )
           .addTo(layer);
-        if (dayVisits.length > 1) {
-          const lastV = dayVisits[dayVisits.length - 1];
+        if (seg.length > 1) {
+          const lastV = seg[seg.length - 1];
           L.circleMarker(lastV.centroid, {
-            radius: 6,
+            radius: 5,
             color,
             weight: 2,
             fillColor: "#ffffff",
@@ -516,7 +527,7 @@ export function RoseScouting() {
     });
 
   return (
-    <div className="flex flex-col min-h-svh">
+    <div className="flex flex-col h-svh overflow-hidden">
       <RangeHeader
         title="Scouting"
         subtitle="Up to one week · zones scouted, with repeat-day overlap"
@@ -527,7 +538,7 @@ export function RoseScouting() {
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[3fr_1fr]">
         <div className="relative min-h-[55vh] lg:min-h-0">
-          <div className="absolute inset-0 isolate z-0">
+          <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
             <MapBase
               onReady={(m) => {
                 mapRef.current = m;
@@ -539,7 +550,7 @@ export function RoseScouting() {
         {/* Right rail — clicked-zone detail, then the coverage summary below
             it. Scrolls on its own; capped height on small screens so the map
             above stays usable. */}
-        <div className="border-l bg-card p-3 overflow-auto flex flex-col gap-3 max-h-[45vh] lg:max-h-none">
+        <div className="m-4 md:m-6 lg:ml-0 rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] overflow-auto flex flex-col gap-3 max-h-[45vh] lg:max-h-none">
           {detail ? (
             <Card className="p-3 shadow-none border">
               <CardHeader className="p-0 pb-2">

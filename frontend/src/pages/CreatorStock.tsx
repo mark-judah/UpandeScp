@@ -26,12 +26,11 @@ import {
   Search,
   Warehouse as WarehouseIcon,
 } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/PageHeader";
+import { HeaderIconButton } from "@/components/header-controls";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import PillNav from "@/components/PillNav";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
   CardContent,
@@ -50,6 +49,7 @@ import {
 } from "@/lib/spray-plan-creator-api";
 import { cn } from "@/lib/utils";
 
+import { errorText } from "@/lib/errors";
 interface BulletRow {
   item_code: string;
   item_name: string;
@@ -162,8 +162,7 @@ export function CreatorStock() {
       .then(setData)
       .catch((e) =>
         setError(
-          e?.message ||
-            "Could not load chemical stock. Ask the GM to confirm your farm assignments.",
+          errorText(e, "Could not load chemical stock. Ask the GM to confirm your farm assignments."),
         ),
       )
       .finally(() => setLoading(false));
@@ -273,22 +272,11 @@ export function CreatorStock() {
 
   return (
     <div className="flex flex-col min-h-svh">
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Chemical Stock
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Chemical store inventory · CSU consumption window
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-end gap-2">
+      <PageHeader
+        title="Chemical Stock"
+        eyebrow="Chemical store inventory · CSU consumption window"
+      >
+        <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
@@ -298,45 +286,28 @@ export function CreatorStock() {
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
-            <Button
-              variant={onlyAlerts ? "default" : "outline"}
-              size="sm"
+            <HeaderIconButton
+              active={onlyAlerts}
               onClick={() => setOnlyAlerts((v) => !v)}
-              className={cn(
-                "h-9 gap-2",
-                onlyAlerts && "bg-amber-500 hover:bg-amber-500/90 text-white",
-              )}
+              title={
+                onlyAlerts
+                  ? `Showing alerts only${alertTotal ? ` (${alertTotal})` : ""} — click to show all`
+                  : `Show only alerts${alertTotal ? ` (${alertTotal})` : ""}`
+              }
             >
-              <AlertTriangle className="h-3.5 w-3.5" />
-              {onlyAlerts ? "Alerts only" : "Alerts"}
-              {alertTotal > 0 ? (
-                <span
-                  className={cn(
-                    "ml-0.5 rounded-full px-1.5 text-[0.6rem] font-semibold tabular-nums",
-                    onlyAlerts
-                      ? "bg-white/20 text-white"
-                      : "bg-amber-500/20 text-amber-700",
-                  )}
-                >
-                  {alertTotal}
-                </span>
-              ) : null}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
+              <AlertTriangle className="h-4 w-4" />
+            </HeaderIconButton>
+            <HeaderIconButton
               onClick={load}
-              className="h-9 gap-2"
               disabled={loading}
+              title="Reload"
             >
               <RefreshCw
-                className={cn("h-3.5 w-3.5", loading && "animate-spin")}
+                className={cn("h-4 w-4", loading && "animate-spin")}
               />
-              Reload
-            </Button>
-          </div>
+            </HeaderIconButton>
         </div>
-      </header>
+      </PageHeader>
 
       <div className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4">
         {error && (
@@ -348,7 +319,7 @@ export function CreatorStock() {
         )}
 
         {data && data.farms.length > 1 && (
-          <FarmPillNav
+          <FarmSwitcher
             farms={data.farms}
             selected={selectedFarm}
             allValue={ALL_FARMS}
@@ -1359,7 +1330,7 @@ function fmtAge(days: number): string {
 }
 
 
-function FarmPillNav({
+function FarmSwitcher({
   farms,
   selected,
   allValue,
@@ -1370,26 +1341,19 @@ function FarmPillNav({
   allValue: string;
   onSelect: (next: string) => void;
 }) {
-  const items = useMemo(
-    () => [
-      { label: "All Farms", href: `#${allValue}` },
-      ...farms.map((f) => ({ label: f, href: `#${f}` })),
-    ],
-    [farms, allValue],
-  );
   return (
     <div className="flex justify-start">
-      <PillNav
-        items={items}
-        activeHref={`#${selected}`}
-        onSelect={(item) => onSelect(item.href.slice(1))}
-        baseColor="var(--primary)"
-        pillColor="var(--card)"
-        pillTextColor="var(--foreground)"
-        hoveredPillTextColor="var(--primary-foreground)"
-        initialLoadAnimation={false}
-        className="creator-stock-farm-nav"
-      />
+      {/* Reference `.pillgroup` switcher (native shadcn Tabs). */}
+      <Tabs value={selected} onValueChange={onSelect} className="w-auto">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value={allValue}>All Farms</TabsTrigger>
+          {farms.map((f) => (
+            <TabsTrigger key={f} value={f}>
+              {f}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
     </div>
   );
 }

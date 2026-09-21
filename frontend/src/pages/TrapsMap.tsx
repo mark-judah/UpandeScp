@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { ALL, RangeHeader, type RangeFilterValue } from "./maps/RangeHeader";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { HEADER_PILL } from "@/components/header-controls";
 import { DEFAULT_CROP, fetchFarmsAndWarehouses } from "@/lib/scouting-api";
 import { flyToFarm, useMapSettings } from "@/hooks/use-map-settings";
 import {
@@ -156,11 +158,7 @@ function MultiPicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-2 font-normal text-[0.72rem]"
-        >
+        <Button variant="outline" size="sm" className={HEADER_PILL}>
           <span className="font-medium">{label}</span>
           <span className="text-muted-foreground tabular-nums">{summary}</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground" />
@@ -394,32 +392,35 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     if (!visibleTraps.length) return;
 
     const bounds = L.latLngBounds([]);
+    const maxTotal = Math.max(1, ...visibleTraps.map((t) => t.totalCount || 0));
     for (const t of visibleTraps) {
       if (t.latN === 0) continue;
       const lat = t.latSum / t.latN;
       const lng = t.lngSum / t.latN;
-      // Marker visual: pest colour fills the disc (canonical key from the
-      // doctype), the ring around it carries the severity colour so the
-      // operator still reads catch intensity at a glance.
-      const fill = resolvePestColor(t.pest);
-      const ring = severityColor(t.totalCount);
-      const ink = readableInk(fill);
+      // Marker size encodes the catch count (sqrt-scaled so heavy traps
+      // don't dominate); a zero-catch trap is a small dot. Colour is a
+      // subtle gold (grey for zero), not a vivid per-pest disc.
+      const count = t.totalCount || 0;
+      const size =
+        count <= 0
+          ? 8
+          : Math.round(14 + (Math.sqrt(count) / Math.sqrt(maxTotal)) * 24); // 14 → 38 px
+      const isZero = count <= 0;
+      const bg = isZero ? "rgba(10,10,10,0.20)" : "rgba(217,165,20,0.35)";
+      const bd = isZero ? "rgba(10,10,10,0.28)" : "rgba(217,165,20,0.80)";
 
       const html = `
         <div style="
-          width:34px;height:34px;border-radius:50%;
-          background:${fill};
-          border:3px solid ${ring};
-          box-shadow:0 1px 3px rgba(0,0,0,0.25);
-          display:flex;align-items:center;justify-content:center;
-          font:700 12px Inter,Arial,sans-serif;
-          color:${ink};
-        ">${t.totalCount}</div>`;
+          width:${size}px;height:${size}px;border-radius:50%;
+          background:${bg};
+          border:1.5px solid ${bd};
+          box-shadow:0 1px 2px rgba(10,10,10,0.12);
+        "></div>`;
       const icon = L.divIcon({
         className: "scp-trap-marker",
         html,
-        iconSize: [34, 34],
-        iconAnchor: [17, 17],
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
       });
 
       const marker = L.marker([lat, lng], { icon });
@@ -495,62 +496,67 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
   const noCoordHint = traps.length > 0 && plottable === 0;
 
   return (
-    <div className="flex flex-col min-h-svh">
+    <div className="flex flex-col h-svh overflow-hidden">
       <RangeHeader
         title="Traps"
         subtitle="Per-trap catches · up to one week · color = total count"
         value={filters}
         onChange={setFilters}
         showCrop={false}
+        showFarm={false}
+        showGreenhouse={false}
+        switcher={
+          <Tabs
+            value={locFilter}
+            onValueChange={(v) => setLocFilter(v as LocationFilter)}
+          >
+            <TabsList>
+              <TabsTrigger value="all">
+                All
+                <span className="tabular-nums opacity-70">
+                  {visibleTraps.length}
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="Indoor">
+                Indoor
+                <span className="tabular-nums opacity-70">{indoorCount}</span>
+              </TabsTrigger>
+              <TabsTrigger value="Outdoor">
+                Outdoor
+                <span className="tabular-nums opacity-70">{outdoorCount}</span>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        }
+        rightSlot={
+          <>
+            <MultiPicker
+              label="Farms"
+              items={farmOptions}
+              selected={farmSel ?? new Set(farmOptions)}
+              onChange={setFarmSel}
+            />
+            <MultiPicker
+              label="Greenhouses"
+              items={ghOptions}
+              selected={ghSel ?? new Set(ghOptions)}
+              onChange={setGhSel}
+            />
+            <MultiPicker
+              label="Pests"
+              items={pestOptions}
+              selected={pestSel ?? new Set(pestOptions)}
+              onChange={setPestSel}
+              swatch={resolvePestColor}
+              count={(p) => pestCounts[p] ?? 0}
+            />
+          </>
+        }
       />
 
-      <div className="flex flex-wrap items-center gap-2 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b bg-card/50">
-        <div className="flex items-center gap-0.5 rounded-md border bg-card p-0.5">
-          {(
-            [
-              ["all", `All · ${visibleTraps.length}`],
-              ["Indoor", `Indoor · ${indoorCount}`],
-              ["Outdoor", `Outdoor · ${outdoorCount}`],
-            ] as Array<[LocationFilter, string]>
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setLocFilter(k)}
-              className={`px-2.5 py-1 rounded text-[0.7rem] transition-colors ${
-                locFilter === k
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <MultiPicker
-          label="Farms"
-          items={farmOptions}
-          selected={farmSel ?? new Set(farmOptions)}
-          onChange={setFarmSel}
-        />
-        <MultiPicker
-          label="Greenhouses"
-          items={ghOptions}
-          selected={ghSel ?? new Set(ghOptions)}
-          onChange={setGhSel}
-        />
-        <MultiPicker
-          label="Pests"
-          items={pestOptions}
-          selected={pestSel ?? new Set(pestOptions)}
-          onChange={setPestSel}
-          swatch={resolvePestColor}
-          count={(p) => pestCounts[p] ?? 0}
-        />
-
-        <span className="ml-auto tabular-nums">
-          {plottable}/{visibleTraps.length} mapped · {totalCatches} catches
-        </span>
+      {/* Slim stats line — switcher + filters now live in the header row. */}
+      <div className="flex justify-end px-4 md:px-6 pb-1 text-xs text-muted-foreground tabular-nums">
+        {plottable}/{visibleTraps.length} mapped · {totalCatches} catches
       </div>
 
       {noCoordHint && (
@@ -561,16 +567,19 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
         </div>
       )}
 
-      <div className="relative flex-1 min-h-0">
-        <div className="absolute inset-0 isolate z-0">
-          <MapBase
-            onReady={(m) => {
-              mapRef.current = m;
-            }}
-          />
+      <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[3fr_1fr]">
+        <div className="relative min-h-[55vh] lg:min-h-0">
+          <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+            <MapBase
+              onReady={(m) => {
+                mapRef.current = m;
+              }}
+            />
+          </div>
         </div>
 
-        <div className="absolute bottom-4 right-4 z-10 rounded-lg border bg-card/95 backdrop-blur shadow-md p-3 w-60">
+        {/* Docked right sidebar (mirrors the scouting map). */}
+        <div className="m-4 md:m-6 lg:ml-0 flex max-h-[45vh] flex-col gap-3 overflow-auto rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] lg:max-h-none">
           <div className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground mb-2">
             Pests in view
           </div>

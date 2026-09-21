@@ -18,8 +18,9 @@ import L from "leaflet";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
 import { LoadingOverlay } from "@/components/LoadingOverlay";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ALL,
   RangeHeader,
@@ -261,7 +262,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
       // visually heavier even at low zoom (where polygon fill is too
       // small to see). Mirrors what the legacy page achieved by zooming
       // its zone fill in/out.
-      const weight = 4 + Math.round(op * 8); // 4 → 12 px
+      const weight = 2 + Math.round(op * 4); // 2 → 6 px, subtle
 
       // Render the zone's actual FeatureCollection (one LineString per
       // bed-line) directly. This is more robust than synthesising a
@@ -272,11 +273,11 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
         style: () => ({
           color: fill,
           weight,
-          opacity: 0.95,
-          // For any actual polygon features in the geometry, fill in
-          // the dominant colour at the intensity-scaled opacity.
+          opacity: 0.5,
+          // Subtle fill — the dominant colour at a muted, intensity-scaled
+          // opacity (matches the traps map's restrained palette).
           fillColor: fill,
-          fillOpacity: op,
+          fillOpacity: op * 0.55,
         }),
       });
 
@@ -354,66 +355,64 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
       return next;
     });
 
+  const kindSwitcher = (
+    <Tabs value={kind} onValueChange={(v) => setKind(v as Kind)}>
+      <TabsList>
+        {(["pest", "disease", "trap"] as Kind[]).map((k) => {
+          const total = dayEntries.reduce(
+            (s, e) => s + namesForKind(e, k).length,
+            0,
+          );
+          return (
+            <TabsTrigger key={k} value={k}>
+              <span
+                className="h-2 w-2 rounded-full border"
+                style={{ background: KIND_FALLBACK[k] }}
+                aria-hidden
+              />
+              {KIND_LABEL[k]}
+              <span className="tabular-nums opacity-70">{total}</span>
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </Tabs>
+  );
+
   return (
-    <div className="flex flex-col min-h-svh">
+    <div className="flex flex-col h-svh overflow-hidden">
       <RangeHeader
         title="Observations"
         subtitle="Scouted zones · up to one week · canonical pest / disease colour"
         value={filters}
         onChange={setFilters}
+        switcher={kindSwitcher}
         showCrop={false}
       />
 
-      {/* Kind pills with live observation counts. */}
-      <div className="flex flex-wrap items-center gap-2 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b bg-card/50">
-        <div className="flex items-center gap-0.5 rounded-md border bg-card p-0.5">
-          {(["pest", "disease", "trap"] as Kind[]).map((k) => {
-            const total = dayEntries.reduce(
-              (s, e) => s + namesForKind(e, k).length,
-              0,
-            );
-            return (
-              <button
-                key={k}
-                onClick={() => setKind(k)}
-                className={`px-2.5 py-1 rounded text-[0.7rem] transition-colors flex items-center gap-1.5 ${
-                  kind === k
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                <span
-                  className="h-2 w-2 rounded-full border"
-                  style={{ background: KIND_FALLBACK[k] }}
-                  aria-hidden
-                />
-                {KIND_LABEL[k]}
-                <span className="text-[0.65rem] tabular-nums opacity-80">
-                  {total}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <span className="ml-auto tabular-nums">
-          {zoneTotals.size} scouted zone{zoneTotals.size === 1 ? "" : "s"}
-        </span>
+      {/* Slim stats line — the kind switcher now lives in the header row. */}
+      <div className="flex justify-end px-4 md:px-6 pb-1 text-xs text-muted-foreground tabular-nums">
+        {zoneTotals.size} scouted zone{zoneTotals.size === 1 ? "" : "s"}
       </div>
 
       {/* Map + floating panel. ``isolate z-0`` keeps the leaflet panes
           (z-index up to 700 internally) inside this stacking context so
           the date-picker popover (z-50, portaled to body) always paints
           above the map. */}
-      <div className="relative flex-1 min-h-0">
-        <div className="absolute inset-0 isolate z-0">
-          <MapBase
-            onReady={(m) => {
-              mapRef.current = m;
-            }}
-          />
+      <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[3fr_1fr]">
+        <div className="relative min-h-[55vh] lg:min-h-0">
+          <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+            <MapBase
+              onReady={(m) => {
+                mapRef.current = m;
+              }}
+            />
+          </div>
         </div>
 
-        <Card className="absolute bottom-4 right-4 z-10 w-72 max-h-[70vh] overflow-y-auto bg-card/95 backdrop-blur shadow-md p-3">
+        {/* Docked right sidebar (mirrors the scouting map) — no longer a
+            hovering overlay. */}
+        <div className="m-4 md:m-6 lg:ml-0 flex max-h-[45vh] flex-col gap-3 overflow-auto rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] lg:max-h-none">
           <CardHeader className="p-0 pb-2">
             <CardTitle className="text-sm">{KIND_LABEL[kind]} summary</CardTitle>
             <CardDescription className="text-[0.7rem] tabular-nums">
@@ -497,7 +496,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
               })}
             </div>
           )}
-        </Card>
+        </div>
       </div>
 
       <LoadingOverlay

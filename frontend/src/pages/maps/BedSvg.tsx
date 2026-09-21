@@ -134,7 +134,7 @@ export function BedSvg({
               textAnchor="end"
               dominantBaseline="middle"
               fill={LABEL_COLOR}
-              fontFamily="ui-sans-serif, system-ui, sans-serif"
+              fontFamily="var(--sd-font)"
             >
               {b.bedId}
             </text>

@@ -29,6 +29,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { RevealLTR } from "@/components/RevealLTR";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { GreenhouseModal } from "./GreenhouseModal";
@@ -61,10 +62,12 @@ export function OverviewTab({
   crop?: string;
 }) {
   const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, blockCount: 0, highAlerts: 0 };
-  // Open-field (block) crops report Blocks; greenhouse crops report
-  // Greenhouses. Detect from the data shape so the label tracks reality
-  // for whatever crop is in view.
-  const showBlocks = k.blockCount > 0 && k.greenhouseCount === 0;
+  // Avocado scouting uses Blocks (open-field), everything else uses Greenhouses.
+  // Fall back to data shape too, so the label tracks reality even if the
+  // crop string ever drifts (case/whitespace) or a new block-crop is added.
+  const showBlocks =
+    (crop || "").trim().toLowerCase() === "avocado" ||
+    (k.blockCount > 0 && k.greenhouseCount === 0);
   const unitLabel = showBlocks ? "Blocks" : "Greenhouses";
   const unitValue = showBlocks ? k.blockCount : k.greenhouseCount;
   const daily = data?.daily ?? [];
@@ -134,7 +137,7 @@ export function OverviewTab({
           </CardHeader>
           <CardContent className="p-0">
             {daily.length ? (
-              <ChartContainer config={series} className="h-64">
+              <RevealLTR><ChartContainer config={series} className="h-64">
                 <AreaChart data={daily} margin={{ left: 4, right: 8, top: 8 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
                   <XAxis
@@ -149,7 +152,7 @@ export function OverviewTab({
                   <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
                   <ChartLegend content={<ChartLegendContent />} />
                   <Area
-                    type="linear"
+                    type="monotone"
                     dataKey="pests"
                     stackId="1"
                     stroke="var(--color-pests)"
@@ -157,7 +160,7 @@ export function OverviewTab({
                     fillOpacity={0.18}
                   />
                   <Area
-                    type="linear"
+                    type="monotone"
                     dataKey="diseases"
                     stackId="1"
                     stroke="var(--color-diseases)"
@@ -165,7 +168,7 @@ export function OverviewTab({
                     fillOpacity={0.18}
                   />
                   <Area
-                    type="linear"
+                    type="monotone"
                     dataKey="traps"
                     stackId="1"
                     stroke="var(--color-traps)"
@@ -173,7 +176,7 @@ export function OverviewTab({
                     fillOpacity={0.18}
                   />
                 </AreaChart>
-              </ChartContainer>
+              </ChartContainer></RevealLTR>
             ) : (
               <EmptyHint title="No timeline data" hint="No observations recorded in this range." />
             )}
@@ -188,7 +191,7 @@ export function OverviewTab({
           <CardContent className="p-0 relative">
             {totalsMax > 1 ? (
               <>
-                <ChartContainer config={series} className="h-56">
+                <RevealLTR><ChartContainer config={series} className="h-56">
                   <PieChart>
                     <ChartTooltip content={<ChartTooltipContent hideLabel />} />
                     <Pie
@@ -205,7 +208,7 @@ export function OverviewTab({
                       ))}
                     </Pie>
                   </PieChart>
-                </ChartContainer>
+                </ChartContainer></RevealLTR>
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="flex flex-col items-center">
                     <span className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
@@ -232,7 +235,7 @@ export function OverviewTab({
           </CardHeader>
           <CardContent className="p-0">
             {scoutsDaily.length ? (
-              <ChartContainer
+              <RevealLTR><ChartContainer
                 config={{ scouts: { label: "Scouts", color: "var(--sd-data-indigo)" } }}
                 className="h-48"
               >
@@ -249,7 +252,7 @@ export function OverviewTab({
                   <YAxis tickLine={false} axisLine={false} width={28} />
                   <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
                   <Line
-                    type="linear"
+                    type="monotone"
                     dataKey="scouts"
                     stroke="var(--sd-data-indigo)"
                     strokeWidth={2}
@@ -258,7 +261,7 @@ export function OverviewTab({
                     isAnimationActive={false}
                   />
                 </LineChart>
-              </ChartContainer>
+              </ChartContainer></RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -306,7 +309,7 @@ export function OverviewTab({
         </CardHeader>
         <CardContent className="p-0">
           {perf.length ? (
-            <ChartContainer
+            <RevealLTR><ChartContainer
               config={{
                 zones: { label: "Zones", color: "var(--sd-data-cyan)" },
                 pests: { label: "Pests", color: "var(--sd-data-amber)" },
@@ -327,11 +330,11 @@ export function OverviewTab({
                 <YAxis tickLine={false} axisLine={false} width={32} />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <ChartLegend content={<ChartLegendContent />} />
-                <Bar dataKey="zones" fill="var(--sd-data-cyan)" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="pests" fill="var(--sd-data-amber)" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="diseases" fill="var(--sd-data-pink)" radius={[3, 3, 0, 0]} />
+                <Bar isAnimationActive={false} dataKey="zones" fill="var(--sd-data-cyan)" radius={[3, 3, 0, 0]} />
+                <Bar isAnimationActive={false} dataKey="pests" fill="var(--sd-data-amber)" radius={[3, 3, 0, 0]} />
+                <Bar isAnimationActive={false} dataKey="diseases" fill="var(--sd-data-pink)" radius={[3, 3, 0, 0]} />
               </BarChart>
-            </ChartContainer>
+            </ChartContainer></RevealLTR>
           ) : (
             <EmptyHint />
           )}

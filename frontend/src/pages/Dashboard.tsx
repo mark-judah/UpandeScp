@@ -14,6 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/PageHeader";
+import { HEADER_PILL } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
 import { OverviewTab }  from "./dashboard/OverviewTab";
 import { PestsTab }     from "./dashboard/PestsTab";
@@ -108,27 +110,15 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
   return (
     <div className="flex flex-col min-h-svh">
       {/* === Filter bar (same as before) === */}
-      <header className="sticky top-0 z-20 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-6" />
-            <div>
-              <h1 className="text-base md:text-lg font-semibold leading-tight tracking-tight">
-                Scouting Dashboard
-              </h1>
-              <p className="text-[0.7rem] uppercase tracking-wide text-muted-foreground font-medium">
-                Pest · Disease · Trap Monitoring
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-end gap-2">
+      <PageHeader
+        eyebrow="Pest · Disease · Trap Monitoring"
+        title="Scouting Dashboard"
+      >
+          <div className="flex flex-wrap items-center gap-2">
             {!initialCrop && (
-              <div className="flex flex-col gap-1 min-w-32">
-                <Label htmlFor="crop">Crop</Label>
+              <div className="flex items-center">
                 <Select value={crop} onValueChange={setCrop}>
-                  <SelectTrigger id="crop" className="h-9">
+                  <SelectTrigger aria-label="Crop" className={HEADER_PILL}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -142,8 +132,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               </div>
             )}
 
-            <div className="flex flex-col gap-1 min-w-32">
-              <Label htmlFor="farm">Farm</Label>
+            <div className="flex items-center">
               <Select
                 value={farm}
                 onValueChange={(v) => {
@@ -151,7 +140,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                   setGreenhouse(ALL_GH);
                 }}
               >
-                <SelectTrigger id="farm" className="h-9">
+                <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -166,13 +155,12 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
             </div>
 
             <div className="flex flex-col gap-1 min-w-40">
-              <Label htmlFor="gh">Greenhouse</Label>
               <Select
                 value={greenhouse}
                 onValueChange={setGreenhouse}
                 disabled={!greenhouseList.length}
               >
-                <SelectTrigger id="gh" className="h-9">
+                <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
@@ -186,16 +174,14 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               </Select>
             </div>
 
-            <div className="flex flex-col gap-1">
-              <Label>From</Label>
+            <div className="flex items-center">
               <DatePicker
                 value={from}
                 onChange={(v) => setRange({ from: v, to })}
               />
             </div>
 
-            <div className="flex flex-col gap-1">
-              <Label>To</Label>
+            <div className="flex items-center">
               <DatePicker
                 value={to}
                 onChange={(v) => setRange({ from, to: v })}
@@ -220,7 +206,6 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               </a>
             </Button>
           </div>
-        </div>
 
         {(() => {
           const active = ({ overview, pests, diseases, traps, fcm } as const)[tab];
@@ -230,7 +215,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
             </div>
           ) : null;
         })()}
-      </header>
+      </PageHeader>
 
       <div className="flex-1 px-4 py-4 md:px-6 md:py-6">
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="flex flex-col gap-4">

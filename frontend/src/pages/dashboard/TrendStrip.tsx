@@ -94,7 +94,7 @@ export function TrendStrip({
             {keys.map((k, i) => (
               <Line
                 key={k}
-                type="linear"
+                type="monotone"
                 dataKey={k}
                 stroke={PALETTE[i % PALETTE.length]}
                 strokeWidth={2}

@@ -39,7 +39,7 @@ export function SidebarUser() {
             "group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-0"
           }
         >
-          <Avatar className="h-8 w-8 shrink-0">
+          <Avatar className="h-12 w-12 shrink-0 group-data-[collapsible=icon]:h-[3rem] group-data-[collapsible=icon]:w-[3rem]">
             {user_image ? <AvatarImage src={user_image} alt={displayName} /> : null}
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>

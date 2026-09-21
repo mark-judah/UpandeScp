@@ -179,7 +179,7 @@ export const Sidebar = React.forwardRef<
         data-collapsible={state === "collapsed" ? collapsible : ""}
         data-side={side}
         className={cn(
-          "group peer hidden md:flex sticky top-0 h-svh shrink-0 flex-col p-2.5 transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+          "group peer hidden md:flex sticky top-0 h-svh shrink-0 flex-col p-2.5",
           state === "expanded"
             ? "w-[var(--sidebar-width)]"
             : collapsible === "icon"
@@ -252,10 +252,6 @@ export const SidebarHeader = React.forwardRef<
     data-sidebar="header"
     className={cn(
       "flex flex-col gap-2 p-3 overflow-hidden",
-      // The rail eases its width over 300ms; anything that snaps instead
-      // frees space in a single frame and whatever is flex-1 lunges into
-      // it. Move with the rail, not before it.
-      "transition-[padding] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
       "group-data-[collapsible=icon]:p-1",
       className,
     )}
@@ -343,7 +339,7 @@ export const SidebarGroupLabel = React.forwardRef<
       // staying parked below an empty 32px row. CSS-driven (no React state
       // toggle) so it stays in sync with the sidebar's width transition.
       className={cn(
-        "flex h-8 shrink-0 items-center px-2 text-[0.7rem] font-medium uppercase tracking-wider text-sidebar-foreground/60 whitespace-nowrap overflow-hidden transition-[margin,opacity] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
+        "flex h-8 shrink-0 items-center px-2 text-[0.7rem] font-medium uppercase tracking-wider text-sidebar-foreground/60 whitespace-nowrap overflow-hidden group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
         className,
       )}
       {...props}
@@ -374,8 +370,8 @@ export const SidebarMenu = React.forwardRef<
     data-sidebar="menu"
     className={cn(
       "flex w-full min-w-0 flex-col gap-0.5",
-      // Collapsed, each row is a fixed square in a column the width of
-      // the rail, so it needs centring or it sits against the left edge.
+      // Required, not cosmetic: collapsed, a row is 27px in a 51px rail,
+      // so left-aligned leaves 4px on one side and 19px on the other.
       "group-data-[collapsible=icon]:items-center",
       className,
     )}

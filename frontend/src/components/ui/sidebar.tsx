@@ -269,8 +269,10 @@ export const SidebarFooter = React.forwardRef<
     data-sidebar="footer"
     className={cn(
       "mt-auto flex flex-col gap-2 p-3 overflow-hidden",
-      "group-data-[collapsible=icon]:items-center",
-      "group-data-[collapsible=icon]:p-1",
+      // Same trick as the nav: a 27.2px row in a 51px rail wants
+      // (51 - 27.2) / 2 = 11.9px either side, less the 1px inset.
+      // Padding centres it at rest without moving it on the way.
+      "group-data-[collapsible=icon]:p-[0.8rem]",
       className,
     )}
     {...props}

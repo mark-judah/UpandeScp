@@ -204,7 +204,16 @@ export const Sidebar = React.forwardRef<
         {...props}
       >
         {floating ? (
-          <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-sidebar-border bg-sidebar shadow-sm">
+          <div
+            className={cn(
+              "flex h-full w-full flex-col overflow-hidden border border-sidebar-border bg-sidebar shadow-sm",
+              // Expanded the panel is a card; collapsed it is barely wider
+              // than the logo it holds, where a 12px corner reads as a
+              // clipped rectangle. A full radius ends the rail in arcs
+              // concentric with the logo instead.
+              "rounded-xl group-data-[collapsible=icon]:rounded-full",
+            )}
+          >
             {children}
           </div>
         ) : (

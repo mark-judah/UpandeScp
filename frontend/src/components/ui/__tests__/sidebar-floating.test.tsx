@@ -57,6 +57,18 @@ describe("Sidebar floating variant", () => {
     expect(outer.className).toContain("w-[calc(var(--sidebar-width)+1rem)]");
   });
 
+  it("becomes a pill when collapsed, so the rail ends in arcs", () => {
+    // Collapsed, the rail is barely wider than the logo it holds. A 12px
+    // corner on a 40px-wide column reads as a clipped rectangle; a full
+    // radius turns each end into a semicircle concentric with the logo.
+    const outer = outerOf(renderSidebar({ variant: "floating" }));
+    const panel = outer.firstElementChild as HTMLElement;
+
+    expect(panel.className).toContain(
+      "group-data-[collapsible=icon]:rounded-full",
+    );
+  });
+
   it("leaves the default variant flush against the edge", () => {
     const outer = outerOf(renderSidebar());
 

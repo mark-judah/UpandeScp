@@ -284,7 +284,7 @@ export function AppSidebar({
           <a
             href="/app"
             title="Back to Desk — the Frappe workspace at /app"
-            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background ring-1 ring-border/60 transition hover:ring-2 hover:ring-border group-data-[collapsible=icon]:size-6"
+            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background ring-1 ring-border/60 transition hover:ring-2 hover:ring-border"
           >
             <img
               src={upandeLogo}

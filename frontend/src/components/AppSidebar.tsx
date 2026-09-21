@@ -456,12 +456,12 @@ export function AppSidebar({
       <SidebarHeader>
         {/* Brand — reference `.topbar__brand`: prominent logo, thin divider,
             product name with an uppercase let-spaced eyebrow subtitle. */}
-        <div className="flex items-center gap-2.5 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:py-0">
+        <div className="flex items-center gap-2.5 py-1 transition-[gap,padding] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:py-0">
           {/* Logo links back to the Frappe desk (/app). */}
           <a
             href="/app"
             title="Open Frappe Desk"
-            className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background p-1.5 ring-1 ring-border/60 transition hover:ring-2 hover:ring-border group-data-[collapsible=icon]:size-[2.625rem]"
+            className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background p-1.5 ring-1 ring-border/60 transition-[width,height,box-shadow] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:ring-2 hover:ring-border group-data-[collapsible=icon]:size-[2.625rem]"
           >
             <img
               src={upandeLogo}
@@ -473,7 +473,18 @@ export function AppSidebar({
           <div className="h-6 w-px shrink-0 bg-border group-data-[collapsible=icon]:hidden" />
           {/* Always rendered, hidden via CSS so the width animation plays
               around it without React inserting/removing nodes mid-transition. */}
-          <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
+          <div
+            className={cn(
+              "grid min-w-0 flex-1 text-left leading-tight",
+              // `hidden` is not animatable, so the name vanished on the first
+              // frame and the rail spent the next 260ms closing over the space
+              // it left. A 1fr -> 0fr column never measures the text, so there
+              // is nothing for it to jump to either.
+              "overflow-hidden transition-[grid-template-columns,opacity] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
+              "grid-cols-[1fr] opacity-100",
+              "group-data-[collapsible=icon]:grid-cols-[0fr] group-data-[collapsible=icon]:opacity-0",
+            )}
+          >
             <span className="truncate text-sm font-semibold tracking-[-0.01em] text-foreground">
               Upande SCP
             </span>

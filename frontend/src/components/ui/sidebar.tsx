@@ -189,7 +189,13 @@ export const Sidebar = React.forwardRef<
         )}
         {...props}
       >
-        <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[20px] group-data-[collapsible=icon]:rounded-full border bg-sidebar text-sidebar-foreground shadow-[var(--sd-shadow-1)]">
+        {/* 1.875rem == 25.5px == half the COLLAPSED panel width (5rem rail
+            less its 0.625rem padding each side). Fixing the radius there
+            means the panel is the same capsule in both states: expanded it
+            is that capsule with a straight run between the arcs, and
+            collapsing narrows that run to zero. The shape never morphs, so
+            the transition is a pure scale on one axis. */}
+        <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[1.875rem] border bg-sidebar text-sidebar-foreground shadow-[var(--sd-shadow-1)]">
           {children}
         </div>
       </div>

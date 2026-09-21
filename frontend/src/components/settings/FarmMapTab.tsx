@@ -36,7 +36,7 @@ import {
   type FarmCoord,
   type MapSettings,
 } from "@/lib/settings-api";
-import { FrappeError } from "@/lib/frappe";
+import { errorText } from "@/lib/errors";
 
 interface Props {
   initial: MapSettings;
@@ -104,7 +104,7 @@ export function FarmMapTab({ initial, farms, onSaved }: Props) {
       setOk(true);
       onSaved?.(draft);
     } catch (e) {
-      setError(e instanceof FrappeError ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setSaving(false);
     }

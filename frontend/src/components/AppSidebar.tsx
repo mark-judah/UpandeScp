@@ -406,6 +406,17 @@ export function canOpenView(view: View, crop: string, userRoles: string[]): bool
   return true;
 }
 
+/** The crop the rail is scoped to, for the brand subtitle. The route carries it
+ *  lower-cased and singular ("rose"); the chip names the crop the way the farm
+ *  says it — "Roses" — and an unknown or missing crop falls back to naming the
+ *  app rather than showing an empty line. */
+function cropLabel(crop: string): string {
+  const c = (crop || "").trim();
+  if (!c) return "Scouting & Crop Protection";
+  const name = c.charAt(0).toUpperCase() + c.slice(1);
+  return /s$/i.test(name) ? name : name + "s";
+}
+
 export function AppSidebar({
   crop,
   view,
@@ -486,7 +497,7 @@ export function AppSidebar({
               Upande SCP
             </span>
             <span className="mt-0.5 truncate text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--sd-quiet)]">
-              Scouting &amp; Crop Protection
+              {cropLabel(crop)}
             </span>
           </div>
         </div>

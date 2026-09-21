@@ -2,6 +2,8 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { PanelLeft } from "lucide-react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -181,7 +183,7 @@ export const Sidebar = React.forwardRef<
         data-side={side}
         data-variant={variant}
         className={cn(
-          "group peer hidden md:flex sticky top-0 h-svh shrink-0 flex-col text-sidebar-foreground transition-[width] duration-200 ease-linear",
+          "group peer relative hidden md:flex sticky top-0 h-svh shrink-0 flex-col text-sidebar-foreground transition-[width] duration-200 ease-linear",
           // Flush against the edge: the rail IS the surface, with one border
           // separating it from the content.
           !floating && ["bg-sidebar", side === "left" ? "border-r" : "border-l"],
@@ -438,3 +440,50 @@ export const SidebarMenuButton = React.forwardRef<
   );
 });
 SidebarMenuButton.displayName = "SidebarMenuButton";
+
+
+/**
+ * Collapse control pinned to the sidebar's outer edge, after Frappe v16's own
+ * desk sidebar: a small chevron straddling the margin rather than a button
+ * parked in the page header.
+ *
+ * The chevron points the way the rail will move — left to push it closed,
+ * right to pull it open — so it reads as a handle on the panel rather than as
+ * decoration. It is hidden from the mobile drawer, which is dismissed by its
+ * own overlay.
+ */
+export const SidebarEdgeToggle = React.forwardRef<
+  HTMLButtonElement,
+  React.ButtonHTMLAttributes<HTMLButtonElement>
+>(({ className, onClick, ...props }, ref) => {
+  const { state, toggle } = useSidebar();
+  const expanded = state === "expanded";
+  const Chevron = expanded ? ChevronLeft : ChevronRight;
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+      title={expanded ? "Collapse sidebar" : "Expand sidebar"}
+      onClick={(e) => {
+        onClick?.(e);
+        toggle();
+      }}
+      className={cn(
+        // Straddles the right edge: half the control sits over the panel, half
+        // over the page, which is what makes it read as attached to the rail.
+        "absolute top-1/2 right-0 z-20 hidden -translate-y-1/2 translate-x-1/2 md:flex",
+        "size-5 items-center justify-center rounded-full",
+        "border border-sidebar-border bg-sidebar text-sidebar-foreground/70 shadow-sm",
+        "transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+        className,
+      )}
+      {...props}
+    >
+      <Chevron className="size-3" />
+    </button>
+  );
+});
+SidebarEdgeToggle.displayName = "SidebarEdgeToggle";

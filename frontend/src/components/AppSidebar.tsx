@@ -26,6 +26,7 @@ import {
 import {
   Sidebar,
   SidebarContent,
+  SidebarEdgeToggle,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
@@ -275,6 +276,7 @@ export function AppSidebar({
 
   return (
     <Sidebar collapsible="icon" variant="floating">
+      <SidebarEdgeToggle />
       <SidebarHeader>
         <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
           {/* The logo is the way back to the Frappe desk. A plain <a href>,

@@ -173,3 +173,115 @@ class TestTheWholeBatch(unittest.TestCase):
 		batch = [{"greenhouse": "Torongo GH18 - KR"}, {"greenhouse": "Torongo GH18 - KR"}]
 		self.assertEqual(GA.count_redirects(batch, self.MAP), 2)
 		self.assertEqual(GA.count_redirects([{"greenhouse": "x"}], self.MAP), 0)
+
+
+class TestAHandsetNamingAWarehouseThatIsGone(unittest.TestCase):
+	"""The case the original rule could not see: only ONE record now exists.
+
+	The v15→v16 migration carried over the bedded `Torongo GH 18 - KR` and left
+	the stock-only `Torongo GH18 - KR` behind. `build_alias_map` needs both twins
+	present to pair them, so on the new site it builds nothing — and the handsets
+	that cached the unspaced name kept posting it into a void. 1,600 rejections
+	in three days, ~37 real trap captures with FCM counts in them, all refused by
+	a name that differs from a real greenhouse by one space.
+
+	Requiring the twin was never the point. The point is that a submitted name
+	must land on exactly one real greenhouse, and it does so here more safely
+	than in the twin case, because there is nothing to be ambiguous with.
+	"""
+
+	def test_a_name_no_longer_in_the_warehouse_list_still_resolves(self):
+		index = GA.build_resolution_index(rows(("Torongo GH 18 - KR", 558)))
+		self.assertEqual(GA.resolve_name("Torongo GH18 - KR", index), "Torongo GH 18 - KR")
+
+	def test_the_real_name_resolves_to_itself_and_is_not_rewritten(self):
+		index = GA.build_resolution_index(rows(("Torongo GH 18 - KR", 558)))
+		self.assertEqual(GA.resolve_name("Torongo GH 18 - KR", index), "Torongo GH 18 - KR")
+
+	def test_a_name_matching_nothing_is_left_to_fail_visibly(self):
+		index = GA.build_resolution_index(rows(("Torongo GH 18 - KR", 558)))
+		self.assertIsNone(GA.resolve_name("Nairobi GH 99 - KR", index))
+
+	def test_two_real_greenhouses_squashing_alike_are_refused(self):
+		"""Ambiguity is still refused — this is the whole safety rule."""
+		index = GA.build_resolution_index(
+			rows(("Torongo GH 18 - KR", 300), ("Torongo GH18 - KR", 258))
+		)
+		self.assertIsNone(GA.resolve_name("TORONGO GH18 - KR", index))
+
+	def test_the_bedded_one_wins_when_its_twin_is_empty(self):
+		"""The original pairing rule, expressed through the same index."""
+		index = GA.build_resolution_index(
+			rows(("Torongo GH 18 - KR", 558), ("Torongo GH18 - KR", 0))
+		)
+		self.assertEqual(GA.resolve_name("Torongo GH18 - KR", index), "Torongo GH 18 - KR")
+
+	def test_a_lone_bedless_greenhouse_resolves_to_itself(self):
+		"""No beds anywhere is a different fault, and not this one's to invent a
+		target for. It resolves to the record that exists and fails downstream on
+		the bed, which is the honest error."""
+		index = GA.build_resolution_index(rows(("Empty GH 01 - KR", 0)))
+		self.assertEqual(GA.resolve_name("Empty GH01 - KR", index), "Empty GH 01 - KR")
+
+	def test_nothing_resolves_nothing(self):
+		index = GA.build_resolution_index(rows(("Torongo GH 18 - KR", 558)))
+		self.assertIsNone(GA.resolve_name("", index))
+		self.assertIsNone(GA.resolve_name(None, index))
+
+
+class TestRewritingAgainstTheIndex(unittest.TestCase):
+	"""`rewrite_entry` has to work off the index, or the new rule never reaches a
+	capture. The bed moves with the greenhouse exactly as before."""
+
+	def setUp(self):
+		self.index = GA.build_resolution_index(rows(("Torongo GH 18 - KR", 558)))
+
+	def test_the_stuck_trap_capture_now_lands(self):
+		# The real payload from the live error log: a trap row, no bed.
+		entry = {
+			"scouts_name": "sharon.cheserek@karenroses.com",
+			"greenhouse": "Torongo GH18 - KR",
+			"bed": "",
+			"zone": "Trap",
+			"trap_scouting_entry": [{"trap": "Torongo - 1812", "pest": "FCM", "count": 0}],
+		}
+		out = GA.rewrite_entry(entry, self.index)
+		self.assertEqual(out["greenhouse"], "Torongo GH 18 - KR")
+		self.assertEqual(out["zone"], "Trap")
+		self.assertEqual(out["trap_scouting_entry"], entry["trap_scouting_entry"])
+
+	def test_a_bed_capture_moves_its_bed_too(self):
+		entry = {"greenhouse": "Torongo GH18 - KR", "bed": "Torongo GH18 - KR - Bed 250"}
+		out = GA.rewrite_entry(entry, self.index)
+		self.assertEqual(out["greenhouse"], "Torongo GH 18 - KR")
+		self.assertEqual(out["bed"], "Torongo GH 18 - KR - Bed 250")
+
+	def test_a_correct_capture_is_returned_untouched(self):
+		entry = {"greenhouse": "Torongo GH 18 - KR", "bed": "Torongo GH 18 - KR - Bed 250"}
+		self.assertEqual(GA.rewrite_entry(entry, self.index), entry)
+
+	def test_an_unknown_greenhouse_still_fails_visibly(self):
+		entry = {"greenhouse": "Nairobi GH 99 - KR", "bed": "Nairobi GH 99 - KR - Bed 1"}
+		self.assertEqual(GA.rewrite_entry(entry, self.index), entry)
+
+	def test_the_original_is_not_mutated(self):
+		entry = {"greenhouse": "Torongo GH18 - KR", "bed": "Torongo GH18 - KR - Bed 1"}
+		GA.rewrite_entry(entry, self.index)
+		self.assertEqual(entry["greenhouse"], "Torongo GH18 - KR")
+
+	def test_a_block_flow_capture_is_untouched(self):
+		"""Avocado posts `block`/`row`, never `greenhouse`."""
+		entry = {"block": "AIRSTRIP BLK 4 - KL", "row": "AIRSTRIP BLK 4 - KL - Row 1"}
+		self.assertEqual(GA.rewrite_entry(entry, self.index), entry)
+
+	def test_a_whole_batch_moves(self):
+		batch = [
+			{"greenhouse": "Torongo GH18 - KR", "bed": ""},
+			{"greenhouse": "Torongo GH 18 - KR", "bed": ""},
+			{"greenhouse": "Nairobi GH 99 - KR", "bed": ""},
+		]
+		out = GA.rewrite_batch(batch, self.index)
+		self.assertEqual([e["greenhouse"] for e in out], [
+			"Torongo GH 18 - KR", "Torongo GH 18 - KR", "Nairobi GH 99 - KR",
+		])
+		self.assertEqual(GA.count_redirects(batch, self.index), 1)

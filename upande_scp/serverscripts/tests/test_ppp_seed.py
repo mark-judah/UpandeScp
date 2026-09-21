@@ -1,4 +1,4 @@
-"""Seeding Chemical metadata from the Plant Protection Products book.
+"""Seeding Spray Product metadata from the Plant Protection Products book.
 
 Figures are the ones surveyed on 2026-08-25 against this workbook and this
 site. If one moves, the input changed — investigate rather than loosen the
@@ -49,9 +49,9 @@ class TestPPPSeed(unittest.TestCase):
     # -- written data ----------------------------------------------------
     def test_targets_were_actually_written(self):
         with_targets = frappe.db.sql("""
-            SELECT COUNT(*) FROM `tabChemical` c
+            SELECT COUNT(*) FROM `tabSpray Product` c
             WHERE EXISTS (SELECT 1 FROM `tabChemical Targets` t
-                          WHERE t.parent = c.name AND t.parenttype = 'Chemical')
+                          WHERE t.parent = c.name AND t.parenttype = 'Spray Product')
         """)[0][0]
         self.assertGreaterEqual(with_targets, 55)
 
@@ -61,16 +61,16 @@ class TestPPPSeed(unittest.TestCase):
         multi = frappe.db.sql("""
             SELECT COUNT(*) FROM (
                 SELECT parent FROM `tabChemical Targets`
-                WHERE parenttype = 'Chemical'
+                WHERE parenttype = 'Spray Product'
                 GROUP BY parent HAVING COUNT(*) > 1
             ) x
         """)[0][0]
         self.assertGreaterEqual(multi, 11)
 
     def test_seed_is_fill_blanks_only(self):
-        name = frappe.db.get_value("Chemical", {"item": "CHE00043"}, "name")
+        name = frappe.db.get_value("Spray Product", {"item": "CHE00043"}, "name")
         self.assertTrue(name)
-        doc = frappe.get_doc("Chemical", name)
+        doc = frappe.get_doc("Spray Product", name)
         before = doc.formulation
         doc.formulation = "SENTINEL"
         doc.save(ignore_permissions=True)
@@ -78,11 +78,11 @@ class TestPPPSeed(unittest.TestCase):
         try:
             seed.seed_from_book()
             self.assertEqual(
-                frappe.db.get_value("Chemical", name, "formulation"), "SENTINEL",
+                frappe.db.get_value("Spray Product", name, "formulation"), "SENTINEL",
                 "the loader overwrote a populated field",
             )
         finally:
-            doc = frappe.get_doc("Chemical", name)
+            doc = frappe.get_doc("Spray Product", name)
             doc.formulation = before
             doc.save(ignore_permissions=True)
             frappe.db.commit()
@@ -97,19 +97,19 @@ class TestPPPSeed(unittest.TestCase):
         self.assertEqual(frappe.db.count("Pest", {"name": "Nematodes"}), 1)
         targets = frappe.get_all(
             "Chemical Targets",
-            filters={"parent": "CHE00010", "parenttype": "Chemical"},
+            filters={"parent": "CHE00010", "parenttype": "Spray Product"},
             pluck="pest",
         )
         self.assertIn("Nematodes", targets)
 
     def test_reseeding_creates_no_duplicates(self):
         before = frappe.db.count("Pest")
-        targets_before = frappe.db.count("Chemical Targets", {"parenttype": "Chemical"})
+        targets_before = frappe.db.count("Chemical Targets", {"parenttype": "Spray Product"})
         seed.seed_from_book()
         seed.seed_from_book()
         self.assertEqual(frappe.db.count("Pest"), before)
         self.assertEqual(
-            frappe.db.count("Chemical Targets", {"parenttype": "Chemical"}),
+            frappe.db.count("Chemical Targets", {"parenttype": "Spray Product"}),
             targets_before,
             "re-running the loader duplicated target rows",
         )

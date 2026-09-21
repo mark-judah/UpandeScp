@@ -189,7 +189,7 @@ export const Sidebar = React.forwardRef<
         )}
         {...props}
       >
-        <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[20px] border bg-sidebar text-sidebar-foreground shadow-[var(--sd-shadow-1)]">
+        <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[20px] group-data-[collapsible=icon]:rounded-full border bg-sidebar text-sidebar-foreground shadow-[var(--sd-shadow-1)]">
           {children}
         </div>
       </div>
@@ -250,7 +250,7 @@ export const SidebarHeader = React.forwardRef<
       // frees space in a single frame and whatever is flex-1 lunges into
       // it. Move with the rail, not before it.
       "transition-[padding] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
-      "group-data-[collapsible=icon]:p-2",
+      "group-data-[collapsible=icon]:p-1",
       className,
     )}
     {...props}
@@ -395,7 +395,7 @@ const sidebarMenuButtonVariants = cva(
   // [&>span:last-child]:truncate keeps the label on a single line during the
   // sidebar's width animation — otherwise text wraps to two rows at narrow
   // intermediate widths and the row visibly jumps. Mirrors mona's pattern.
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-lg group-data-[collapsible=icon]:rounded-full p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,padding,border-radius] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:font-medium data-[active=true]:text-sidebar-primary-foreground data-[state=open]:hover:bg-sidebar-accent group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>span:last-child]:truncate [&>span:last-child]:min-w-0",
+  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-lg group-data-[collapsible=icon]:rounded-full p-2 text-left text-sm outline-none ring-sidebar-ring transition-colors focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:font-medium data-[active=true]:text-sidebar-primary-foreground data-[state=open]:hover:bg-sidebar-accent group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>svg]:size-4 [&>svg]:shrink-0 [&>span:last-child]:truncate [&>span:last-child]:min-w-0",
   {
     variants: {
       size: {

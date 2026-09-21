@@ -111,8 +111,29 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
       {/* === Filter bar (same as before) === */}
       <PageHeader
         eyebrow="Pest · Disease · Trap Monitoring"
-        title="Scouting Dashboard"
-      >
+        title={
+          <span className="text-[32px] leading-[1.05] md:text-[44px]">
+            Scouting Dashboard
+          </span>
+        }
+      />
+
+      <div className="flex-1 px-4 py-4 md:px-6 md:py-6">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="flex flex-col gap-4">
+          {/* The switcher is the reference `.pillgroup` — a native TabsList,
+              as kaitet has it. The animated PillNav this replaces carried its
+              own colour props, hover choreography and an href-shaped API for
+              something that is five tabs. */}
+          {/* Switcher and filters share one row, as kaitet has them: the
+              pillgroup on the left, the pill dropdowns and icon tools right. */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="pests">Pests</TabsTrigger>
+              <TabsTrigger value="diseases">Diseases</TabsTrigger>
+              <TabsTrigger value="traps">Traps</TabsTrigger>
+              <TabsTrigger value="fcm">FCM &amp; Moths</TabsTrigger>
+            </TabsList>
           <div className="flex flex-wrap items-center gap-2">
             {!initialCrop && (
               <div className="flex items-center">
@@ -153,7 +174,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               </Select>
             </div>
 
-            <div className="flex flex-col gap-1 min-w-40">
+            <div className="flex items-center">
               <Select
                 value={greenhouse}
                 onValueChange={setGreenhouse}
@@ -214,21 +235,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
             </div>
           ) : null;
         })()}
-      </PageHeader>
-
-      <div className="flex-1 px-4 py-4 md:px-6 md:py-6">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="flex flex-col gap-4">
-          {/* The switcher is the reference `.pillgroup` — a native TabsList,
-              as kaitet has it. The animated PillNav this replaces carried its
-              own colour props, hover choreography and an href-shaped API for
-              something that is five tabs. */}
-          <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="pests">Pests</TabsTrigger>
-            <TabsTrigger value="diseases">Diseases</TabsTrigger>
-            <TabsTrigger value="traps">Traps</TabsTrigger>
-            <TabsTrigger value="fcm">FCM &amp; Moths</TabsTrigger>
-          </TabsList>
+          </div>
 
           <TabsContent value="overview" className="mt-0">
             <OverviewTab

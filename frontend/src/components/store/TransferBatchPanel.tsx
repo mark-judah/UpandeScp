@@ -225,7 +225,7 @@ export function TransferBatchPanel({
       const picks: Record<number, string> = {};
       const tick = new Set<number>();
       for (const row of r.rows) {
-        if (row.needs_batch && !row.settled && row.suggestion) {
+        if (row.needs_batch && (!row.settled || row.expired) && row.suggestion) {
           picks[row.idx] = row.suggestion;
           // Pre-ticked: the common case is agreeing with all of it, and making
           // him tick thirty boxes to accept the default would just teach him to
@@ -260,11 +260,15 @@ export function TransferBatchPanel({
     }
   };
 
-  const pending = rows?.filter((r) => r.needs_batch && !r.settled) ?? [];
+  // An expired row counts as pending: it has a batch, but not one that can go
+  // out, so it is exactly what Apply is for.
+  const pending =
+    rows?.filter((r) => r.needs_batch && (!r.settled || r.expired)) ?? [];
   const acceptedCount = pending.filter(
     (r) => accepted.has(r.idx) && chosen[r.idx],
   ).length;
   const blockedCount = pending.filter((r) => !r.options.length).length;
+  const expiredCount = (rows ?? []).filter((r) => r.expired).length;
 
   if (!rows) {
     return (
@@ -295,6 +299,12 @@ export function TransferBatchPanel({
             ? `${pending.length} row${pending.length === 1 ? "" : "s"} need a batch`
             : "Every row has a batch."}
         </span>
+        {expiredCount > 0 && (
+          <span className="inline-flex items-center gap-1 text-[0.7rem] font-medium text-destructive">
+            <AlertTriangle className="h-3 w-3" />
+            {expiredCount} expired — this transfer cannot be sent until they change
+          </span>
+        )}
         {blockedCount > 0 && (
           <span className="inline-flex items-center gap-1 text-[0.7rem] font-medium text-destructive">
             <AlertTriangle className="h-3 w-3" />
@@ -348,7 +358,8 @@ export function TransferBatchPanel({
             // is marked rather than a line of small text inside one cell —
             // this is the one thing the storesman has to take somewhere else
             // before the transfer can go at all.
-            const blocked = r.needs_batch && !r.settled && !r.options.length;
+            const blocked =
+              r.needs_batch && (!r.settled || r.expired) && !r.options.length;
             return (
               <tr
                 key={r.idx}
@@ -358,7 +369,7 @@ export function TransferBatchPanel({
                 )}
               >
                 <td className="px-2 py-2">
-                  {r.needs_batch && !r.settled && (
+                  {r.needs_batch && (!r.settled || r.expired) && (
                     <Checkbox
                       checked={accepted.has(r.idx)}
                       disabled={!pick}
@@ -393,7 +404,7 @@ export function TransferBatchPanel({
                     <span className="text-[0.65rem] text-muted-foreground italic">
                       not batch tracked
                     </span>
-                  ) : r.settled ? (
+                  ) : r.settled && !r.expired ? (
                     <Badge variant="outline" className="font-mono text-[0.65rem]">
                       {r.batch_no}
                     </Badge>
@@ -405,6 +416,16 @@ export function TransferBatchPanel({
                     </span>
                   ) : (
                     <div className="space-y-1">
+                      {r.expired && (
+                        <div className="inline-flex items-start gap-1 text-[0.65rem] font-medium text-destructive">
+                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span>
+                            {r.batch_no} has expired. Choose another below — the
+                            list is what this store still holds — or send the drum
+                            back and issue this row from a store that has stock.
+                          </span>
+                        </div>
+                      )}
                       <BatchCombobox
                         options={r.options}
                         value={pick ?? null}

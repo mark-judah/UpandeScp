@@ -57,6 +57,12 @@ export interface TransferRow {
   total_qty: number;
   item_count: number;
   employees: TransferEmployee[];
+  /** Rows naming a batch that has already expired. Recomputed server-side on
+   *  every load, never stamped on the document — so fixing the batch clears it
+   *  without the page having to remember anything. */
+  expired_batches: number;
+  /** Shorthand for the above: this draft cannot be sent as it stands. */
+  blocked: boolean;
 }
 
 export interface DraftTransfersResp {
@@ -253,6 +259,10 @@ export interface TransferBatchRow {
   needs_batch: boolean;
   /** Already carries a batch — shown, never reproposed. */
   settled: boolean;
+  /** The batch it carries has expired: the one case where a settled row is
+   *  offered the picker again, because nothing can leave the store until it
+   *  changes. */
+  expired: boolean;
   suggestion: string | null;
   picks: BatchPick[];
   /** How much the available batches cannot cover. Reported, never hidden. */

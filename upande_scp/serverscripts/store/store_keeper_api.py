@@ -440,6 +440,12 @@ def list_draft_transfers(
     # than a ``custom_employee_data`` child table. There is at most one
     # assigned employee per SE; surface it as a 0-or-1-element ``employees``
     # list so the React table's contract is unchanged.
+    # Whether a draft can go out at all, answered before anyone opens it: a row
+    # carrying an expired batch is the one thing the storesman has to fix
+    # somewhere else first, and finding that out after scanning a thumb is how
+    # the queue at the counter forms.
+    health = batch_health([r["name"] for r in rows])
+
     for r in rows:
         bio_emp = r.pop("bio_employee", None)
         bio_name = r.pop("bio_employee_name", None)
@@ -450,6 +456,9 @@ def list_draft_transfers(
         )
         r["total_qty"] = float(r["total_qty"] or 0)
         r["item_count"] = int(r["item_count"] or 0)
+        h = health.get(r["name"], {})
+        r["expired_batches"] = int(h.get("expired", 0))
+        r["blocked"] = bool(r["expired_batches"])
 
     farms = sorted({r["farm"] for r in rows if r.get("farm")})
     bypass = bool(
@@ -791,6 +800,12 @@ def submit_with_biometric(names: str | list) -> dict:
             # negative — fail this row with a clear message instead.
             _assert_stock_available(doc)
 
+            # The batches, chosen by the rule rather than by hand. Anything the
+            # storesman already picked stands; a row naming an expired batch or
+            # with nothing left in the store stops THIS transfer and says why,
+            # while the rest of the selection carries on.
+            filled = autofill_batches(doc)
+
             doc.requires_biometric = 1
             doc.biometric_status = "Verified" if outcome == "verified" else "Bypassed"
             doc.biometric_verified_at = now_datetime()
@@ -798,7 +813,9 @@ def submit_with_biometric(names: str | list) -> dict:
             doc.save(ignore_permissions=False)
             doc.submit()
             ok_count += 1
-            results.append({"name": name, "ok": True, "error": None})
+            results.append(
+                {"name": name, "ok": True, "error": None, "batches_filled": len(filled)}
+            )
         except Exception as e:
             failed_count += 1
             results.append({"name": name, "ok": False, "error": str(e)})
@@ -854,6 +871,126 @@ def _batch_rows_needing_attention(name: str) -> list:
     )
 
 
+def autofill_batches(doc) -> list:
+    """Fill every blank batch row on a draft by the store's own rule.
+
+    MOST ROWS ARRIVE WITH NO BATCH. That is the normal state of a transfer the
+    app created, and asking a person to choose for each one — thirty rows, codes
+    differing by four digits in the middle, five in the morning — is what
+    produced 5,213 rows of migration placeholder and not one real batch. The
+    rule already knows the answer: first-expiry-first-out, real stock before
+    filler. So the submit applies it, and the panel exists for the cases where
+    the storesman disagrees.
+
+    It stops for exactly two things, because both are decisions a person has to
+    make somewhere other than this page:
+
+      * a row already naming an EXPIRED batch — the drum should not leave, and
+        the transfer says so by name rather than failing later inside ERPNext
+      * a row with nothing to pick — the store holds no batch of that item with
+        stock left, which is a delivery problem, not a picking one
+
+    Half-filling is never an option: a transfer that looks answered and is not
+    is worse than one that plainly refused.
+
+    Returns the rows it filled, as ``[{idx, item_code, batch_no}]``. Mutates the
+    doc in memory; the caller saves.
+    """
+    rows = [r for r in doc.items if frappe.db.get_value("Item", r.item_code, "has_batch_no")]
+    if not rows:
+        return []
+
+    today = frappe.utils.today()
+
+    # Anything already chosen is respected — unless it has expired, which is
+    # the one case where "someone chose this" is not a reason to keep it.
+    for row in rows:
+        current = (row.batch_no or "").strip()
+        if not current:
+            continue
+        expiry = frappe.db.get_value("Batch", current, "expiry_date")
+        if expiry and frappe.utils.getdate(expiry) < frappe.utils.getdate(today):
+            frappe.throw(
+                f"Row {row.idx}: {row.item_code} names batch {current}, which "
+                f"expired on {frappe.utils.formatdate(expiry)}. Choose another "
+                "batch on the transfers page — the picker offers what this "
+                "store still holds — or send the drum back before issuing it.",
+                frappe.ValidationError,
+            )
+
+    blanks = [r for r in rows if not (r.batch_no or "").strip()]
+    if not blanks:
+        return []
+
+    available = available_in_store(
+        [(r.item_code, r.s_warehouse) for r in blanks if r.s_warehouse]
+    )
+
+    filled = []
+    for row in blanks:
+        pool = available.get((row.item_code, row.s_warehouse), [])
+        plan = batch_suggestion.allocate(float(row.qty or 0), pool, today)
+        pick = plan["picks"][0]["batch_no"] if plan["picks"] else None
+        if not pick:
+            frappe.throw(
+                f"Row {row.idx}: {row.item_code} has no batch with stock left in "
+                f"{row.s_warehouse}. Receive the delivery against a batch, or "
+                "issue this row from a store that has one.",
+                frappe.ValidationError,
+            )
+        row.batch_no = pick
+        # Same reason as `apply_transfer_batches`: without this ERPNext builds
+        # its own bundle by FIFO and refuses the submit.
+        if hasattr(row, "use_serial_batch_fields"):
+            row.use_serial_batch_fields = 1
+        filled.append({"idx": row.idx, "item_code": row.item_code, "batch_no": pick})
+
+    return filled
+
+
+def batch_health(names: list) -> dict:
+    """Per draft: how many rows carry a batch that has already expired.
+
+    Read for the whole list in one query, because it decides whether a row on
+    the transfers page is selectable at all and the page draws dozens of rows.
+
+    ONLY EXPIRY COUNTS HERE. A row with no batch yet is the normal state of a
+    fresh transfer and the system fills it on the way out; a batch near its
+    expiry is the one FEFO wants issued FIRST, and flagging it would mean the
+    stock about to go off is the stock nobody may move. An expired batch is the
+    one case where the answer is "not this drum, and not today".
+
+    Never cached, never stamped on the document: the flag is recomputed every
+    time the list is read, so replacing the batch clears it with no extra step.
+    A checkbox that stays disabled after the storesman has fixed the problem is
+    worse than one that was never disabled.
+    """
+    names = [n for n in (names or []) if n]
+    if not names:
+        return {}
+
+    rows = frappe.db.sql(
+        """
+        SELECT sed.parent, sed.batch_no, b.expiry_date
+        FROM   `tabStock Entry Detail` sed
+        JOIN   `tabItem` i  ON i.name = sed.item_code AND i.has_batch_no = 1
+        LEFT   JOIN `tabBatch` b ON b.name = sed.batch_no
+        WHERE  sed.parent IN %(names)s
+        """,
+        {"names": names},
+        as_dict=True,
+    )
+
+    today = frappe.utils.getdate()
+    out = {n: {"expired": 0, "unbatched": 0} for n in names}
+    for r in rows:
+        if not (r["batch_no"] or "").strip():
+            out[r["parent"]]["unbatched"] += 1
+        elif r["expiry_date"] and frappe.utils.getdate(r["expiry_date"]) < today:
+            out[r["parent"]]["expired"] += 1
+    return out
+
+
 @frappe.whitelist()
 def suggest_transfer_batches(name: str) -> dict:
     """What to issue for each row of a draft transfer, and what is behind it.
@@ -884,6 +1021,27 @@ def suggest_transfer_batches(name: str) -> dict:
     ]
     available = available_in_store(pairs)
 
+    # Which of the batches already named have expired. A settled row is normally
+    # left alone, but an expired one is the single thing that stops the transfer
+    # leaving, so it gets the picker back rather than a read-only badge.
+    named = {r["batch_no"] for r in rows if (r.get("batch_no") or "").strip()}
+    expiry_of = (
+        {
+            b["name"]: b["expiry_date"]
+            for b in frappe.get_all(
+                "Batch",
+                filters={"name": ["in", list(named)]},
+                fields=["name", "expiry_date"],
+            )
+        }
+        if named
+        else {}
+    )
+
+    def _expired(batch_no: str) -> bool:
+        exp = expiry_of.get(batch_no)
+        return bool(exp and frappe.utils.getdate(exp) < frappe.utils.getdate(today))
+
     out = []
     unfilled = 0
     for r in rows:
@@ -902,12 +1060,15 @@ def suggest_transfer_batches(name: str) -> dict:
             "batch_no": r["batch_no"],
             "needs_batch": needs,
             "settled": bool(needs and r["batch_no"]),
+            "expired": bool(needs and r["batch_no"] and _expired(r["batch_no"])),
             "suggestion": None,
             "picks": [],
             "short": 0.0,
             "options": [],
         }
-        if needs and not r["batch_no"]:
+        # A row is offered a choice when it has none, and when the one it has
+        # has expired — those are the two cases a person still has to answer.
+        if needs and (not r["batch_no"] or entry["expired"]):
             pool = available.get((r["item_code"], r["s_warehouse"]), [])
             plan = batch_suggestion.allocate(entry["qty"], pool, today)
             entry["picks"] = plan["picks"]
@@ -921,10 +1082,13 @@ def suggest_transfer_batches(name: str) -> dict:
                 unfilled += 1
         out.append(entry)
 
+    expired_rows = sum(1 for e in out if e["expired"])
+
     return {
         "rows": out,
         "needs_batch": sum(1 for r in out if r["needs_batch"]),
         "unfilled": unfilled,
+        "expired": expired_rows,
     }
 
 
@@ -963,11 +1127,18 @@ def apply_transfer_batches(name: str, picks) -> dict:
         row = by_idx.get(idx)
         if not row:
             frappe.throw(f"{name} has no row {idx}.")
-        if (row.batch_no or "").strip():
-            frappe.throw(
-                f"Row {idx} already has batch {row.batch_no}. "
-                "Clear it first if it needs changing."
-            )
+        current = (row.batch_no or "").strip()
+        if current and current != batch_no:
+            # Refusing to overwrite protects a choice somebody made. An expired
+            # batch is not a choice worth protecting — it is the one thing on
+            # the page that has to change before the transfer can go at all.
+            expiry = frappe.db.get_value("Batch", current, "expiry_date")
+            spent = expiry and frappe.utils.getdate(expiry) < frappe.utils.getdate()
+            if not spent:
+                frappe.throw(
+                    f"Row {idx} already has batch {row.batch_no}. "
+                    "Clear it first if it needs changing."
+                )
         owner = frappe.db.get_value("Batch", batch_no, "item")
         if not owner:
             frappe.throw(f"Batch {batch_no} does not exist.")

@@ -7,21 +7,27 @@ Three places need the same answer and must not each decide for themselves: the
 payload that tells the handset which icons to draw, the photo upload, and the
 entry write that carries the comment rows. They ask here.
 
-WHY IT DEFAULTS TO ON. The Single may not exist yet — a site that has migrated
-but never opened the page has no row at all, and `get_single_value` answers
-None for every field on it. Reading that as "off" would switch the feature off
-for every farm the moment it shipped, which is the opposite of what a default
-is for. Absent means allowed; only an explicit 0 turns something off.
+WHY IT LIVES ON SPRAY PLAN SETTINGS. Not because a photo is a spray plan, but
+because that Single is already where this app keeps every farm-wide switch —
+weather bands, loaning, the progress email — and it is the one the SCP settings
+page loads and saves. A settings doctype per feature is how a settings page
+becomes six settings pages.
+
+WHY IT DEFAULTS TO ON. A site that has migrated but never opened the page has
+no row at all, and `get_single_value` answers None for every field on it.
+Reading that as "off" would switch the feature off for every farm the moment it
+shipped, which is the opposite of what a default is for. Absent means allowed;
+only an explicit 0 turns something off.
 """
 
 import frappe
 
-SETTINGS = "Scouting Settings"
+SETTINGS = "Spray Plan Settings"
 
 #: The switches this module answers for, and the field behind each.
 _FIELDS = {
-	"photos": "allow_photos",
-	"comments": "allow_comments",
+	"photos": "allow_scout_photos",
+	"comments": "allow_scout_comments",
 }
 
 

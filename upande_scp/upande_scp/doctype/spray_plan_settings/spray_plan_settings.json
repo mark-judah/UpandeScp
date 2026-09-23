@@ -28,6 +28,11 @@
   "weather_temp_green_max_c",
   "weather_temp_red_max_c",
   "weather_temp_red_min_c",
+  "scouting_capture_section",
+  "scouting_capture_note",
+  "allow_scout_photos",
+  "scouting_capture_column",
+  "allow_scout_comments",
   "material_issue_section",
   "default_chemical_expense_account",
   "scan_process_section",
@@ -195,6 +200,34 @@
    "fieldname": "weather_temp_red_min_c",
    "fieldtype": "Float",
    "label": "Temp: red <= (degC)"
+  },
+  {
+   "fieldname": "scouting_capture_section",
+   "fieldtype": "Section Break",
+   "label": "Scouting — What a Scout May Record on the Ground"
+  },
+  {
+   "fieldname": "scouting_capture_note",
+   "fieldtype": "HTML",
+   "options": "<p class=\"text-muted small\">The scouting app reads these when it loads a round. Switch one off and the handset stops offering it — the icon is not drawn at all, rather than drawn and refused.</p>"
+  },
+  {
+   "default": "1",
+   "description": "Let scouts photograph anything they meet on a round, each picture with its own caption. Off: the camera does not appear in the app.",
+   "fieldname": "allow_scout_photos",
+   "fieldtype": "Check",
+   "label": "Scouts Can Attach Photos"
+  },
+  {
+   "fieldname": "scouting_capture_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Let scouts write a note against the round they are on. Off: the Comments tab does not appear in the app.",
+   "fieldname": "allow_scout_comments",
+   "fieldtype": "Check",
+   "label": "Scouts Can Write Comments"
   },
   {
    "fieldname": "material_issue_section",

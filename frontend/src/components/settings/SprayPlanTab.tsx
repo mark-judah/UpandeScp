@@ -418,6 +418,62 @@ export function SprayPlanTab({ initial, farms, warehouses, onSaved }: Props) {
         </CardContent>
       </Card>
 
+      {/* The two switches the scouting app reads before it draws anything.
+          They live on this Single rather than a settings doctype of their own —
+          that is how one settings page becomes six — and here rather than on the
+          desk, so the GM changes them where they change everything else. */}
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle className="text-base">Scouting capture</CardTitle>
+          <CardDescription>
+            What a scout may record on the ground, beyond the counts. The app
+            reads these when it loads a round: switched off, the icon is not
+            drawn at all rather than drawn and refused.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+            <Checkbox
+              id="allow_scout_photos"
+              checked={draft.allow_scout_photos !== 0}
+              onCheckedChange={(v) => set("allow_scout_photos", v ? 1 : 0)}
+            />
+            <div className="flex flex-col gap-1">
+              <Label
+                htmlFor="allow_scout_photos"
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Scouts can attach photos
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                A scout may photograph anything they meet on a round, each
+                picture with its own caption. The photo lands on the scouting
+                entry it was taken during.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+            <Checkbox
+              id="allow_scout_comments"
+              checked={draft.allow_scout_comments !== 0}
+              onCheckedChange={(v) => set("allow_scout_comments", v ? 1 : 0)}
+            />
+            <div className="flex flex-col gap-1">
+              <Label
+                htmlFor="allow_scout_comments"
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Scouts can write comments
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                A free-text note against the round. Off: the Comments tab does
+                not appear in the app.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle className="text-base">Auto-cancel dormant plans</CardTitle>

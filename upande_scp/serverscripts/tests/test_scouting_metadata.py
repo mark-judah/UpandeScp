@@ -17,12 +17,13 @@ import frappe
 from upande_scp.serverscripts.mobile import get_observations_details
 from upande_scp.serverscripts.scouting import capture_settings
 
-SETTINGS = "Scouting Settings"
+SETTINGS = "Spray Plan Settings"
 
 
 def _set(photos, comments):
 	frappe.db.set_single_value(
-		SETTINGS, {"allow_photos": int(photos), "allow_comments": int(comments)}
+		SETTINGS,
+		{"allow_scout_photos": int(photos), "allow_scout_comments": int(comments)},
 	)
 
 
@@ -35,11 +36,14 @@ class TestTheSettingsTheGmOwns(unittest.TestCase):
 	def tearDownClass(cls):
 		_set(True, True)
 
-	def test_the_single_exists_with_both_switches(self):
-		self.assertTrue(frappe.db.exists("DocType", SETTINGS))
+	def test_the_switches_live_on_the_settings_the_page_already_loads(self):
+		"""Not a settings doctype of their own: that is how one settings page
+		becomes six. They sit on the Single the SCP settings page already
+		loads and saves."""
+		self.assertFalse(frappe.db.exists("DocType", "Scouting Settings"))
 		meta = frappe.get_meta(SETTINGS)
 		self.assertTrue(meta.issingle)
-		for fieldname in ("allow_photos", "allow_comments"):
+		for fieldname in ("allow_scout_photos", "allow_scout_comments"):
 			field = meta.get_field(fieldname)
 			self.assertIsNotNone(field, f"{SETTINGS} has no {fieldname}")
 			self.assertEqual(field.fieldtype, "Check")
@@ -48,15 +52,22 @@ class TestTheSettingsTheGmOwns(unittest.TestCase):
 		"""A farm that never opens the page should still get the feature. The
 		switch exists to turn something OFF, which is the rarer intent."""
 		meta = frappe.get_meta(SETTINGS)
-		for fieldname in ("allow_photos", "allow_comments"):
+		for fieldname in ("allow_scout_photos", "allow_scout_comments"):
 			self.assertEqual(
 				meta.get_field(fieldname).default, "1", f"{fieldname} should default on"
 			)
 
-	def test_the_general_manager_can_change_them(self):
-		roles = {p.role: p for p in frappe.get_meta(SETTINGS).permissions}
-		self.assertIn("General Manager", roles, "the GM cannot reach their own switch")
-		self.assertTrue(roles["General Manager"].write)
+	def test_the_general_manager_reaches_them_through_the_settings_page(self):
+		"""The page gates every endpoint to GM / System Manager server-side
+		(`_require_admin`), which is the door the GM actually uses — the desk
+		doctype stays System Manager, as the rest of this Single is."""
+		from upande_scp.serverscripts.spray_plan_creator import settings as settings_api
+
+		self.assertTrue(callable(settings_api.get_settings_bundle))
+		self.assertTrue(callable(settings_api.save_spray_plan_settings))
+		bundle_fields = settings_api.get_settings_bundle()["spray_plan"]
+		self.assertIn("allow_scout_photos", bundle_fields)
+		self.assertIn("allow_scout_comments", bundle_fields)
 
 	def test_allows_reads_the_switches(self):
 		_set(True, False)

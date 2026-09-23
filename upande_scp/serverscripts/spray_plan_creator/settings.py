@@ -12,6 +12,9 @@ Desk only:
      and per-chemical target list (custom_targets child table).
   4. Targets — read-only list of Pests + Plant Diseases, used by the
      Chemicals tab when picking what a chemical treats.
+  5. Scouting capture — whether a scout may photograph what they meet and
+     write a comment on the round. Two switches on the same Single, read on
+     the handset's side by ``serverscripts.scouting.capture_settings``.
 
 All endpoints are gated to General Manager / System Manager via
 ``_require_admin`` from ``admin.py``.
@@ -99,6 +102,10 @@ def get_settings_bundle() -> dict:
             "loaning_timeout_hours": settings.loaning_timeout_hours or 72,
             "progress_email_enabled": int(settings.progress_email_enabled or 0),
             "progress_email_hour": settings.progress_email_hour if settings.progress_email_hour is not None else 18,
+            # Scouting capture. Unset reads as ON, matching `capture_settings`
+            # — a farm that has never opened this page still gets the feature.
+            "allow_scout_photos": 0 if settings.allow_scout_photos == 0 else 1,
+            "allow_scout_comments": 0 if settings.allow_scout_comments == 0 else 1,
             "allowed_farms": allowed_farms,
             "exclude_keywords": exclude_keywords,
             "chemical_stores": chemical_stores,
@@ -151,6 +158,8 @@ def save_spray_plan_settings(payload) -> dict:
         "loaning_timeout_hours",
         "progress_email_enabled",
         "progress_email_hour",
+        "allow_scout_photos",
+        "allow_scout_comments",
     ]
     for f in scalar_fields:
         if f in payload:

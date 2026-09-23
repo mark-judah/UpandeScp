@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { HEADER_PILL } from "@/components/header-controls";
 import { PageHeader } from "@/components/PageHeader";
+import { TransferBatchPanel } from "@/components/store/TransferBatchPanel";
 import {
   Truck,
   Warehouse,
@@ -865,6 +866,14 @@ export function SprayPlanTransfers() {
                                   </tbody>
                                 </table>
                               )}
+
+                              {/* Where the batch is settled — before the thumb
+                                  is scanned, not after the submit fails on it.
+                                  Silent on items that are not batch-tracked,
+                                  which on mona is still all of them. */}
+                              <div className="mt-4 border-t pt-3">
+                                <TransferBatchPanel name={r.name} onApplied={load} />
+                              </div>
                             </td>
                           </tr>
                         )}

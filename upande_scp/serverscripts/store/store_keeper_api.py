@@ -29,6 +29,9 @@ import os
 from datetime import timedelta
 
 import frappe
+
+from upande_scp.serverscripts.store import batch_suggestion
+from upande_scp.serverscripts.store.batch_stock import available_in_store
 from frappe.utils import now_datetime, add_to_date, flt
 
 from upande_scp.serverscripts.common.warehouse_classify import is_chemical_store
@@ -815,3 +818,186 @@ def submit_with_biometric(names: str | list) -> dict:
             "bypassed":      scan is None,
         },
     }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Batches: which drum leaves the store.
+#
+# Ported from kaitet, where batch tracking on the chemicals made a Material
+# Transfer for Manufacture unsubmittable until every outgoing row named a
+# batch. mona does not track chemical batches yet — `has_batch_no` is 0 on
+# every item here — so on this site the endpoints answer with rows that need
+# nothing, and the panel says so. Switch batch tracking on for an item and the
+# same code starts proposing for it, without a deploy.
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _batch_rows_needing_attention(name: str) -> list:
+    """Every row on this draft, with whether it needs a batch and has one.
+
+    One query, not one per row: a transfer runs to thirty lines and this is
+    read on a page the store is standing at.
+    """
+    return frappe.db.sql(
+        """
+        SELECT sed.idx, sed.item_code, sed.item_name, sed.qty, sed.uom,
+               sed.s_warehouse, COALESCE(sed.batch_no, '') AS batch_no,
+               i.has_batch_no
+        FROM   `tabStock Entry Detail` sed
+        JOIN   `tabItem` i ON i.name = sed.item_code
+        WHERE  sed.parent = %(name)s
+        ORDER  BY sed.idx
+        """,
+        {"name": name},
+        as_dict=True,
+    )
+
+
+@frappe.whitelist()
+def suggest_transfer_batches(name: str) -> dict:
+    """What to issue for each row of a draft transfer, and what is behind it.
+
+    Proposes rather than decides. Every row comes back with the batch the store
+    rule picks, the batches it could have picked, and the numbers — quantity in
+    stock, expiry, days left — so the storesman can see why and change it.
+
+    A row that already names a batch is reported as `settled` and never
+    reproposed: this fills blanks, it does not overrule someone who has decided.
+
+    Note for whoever reads the expiry column and finds it empty: only 17 of the
+    site's 12,191 batches carry an expiry date, so first-expiry-first-out is in
+    practice first-in-first-out by batch age. That is the right fallback, but the
+    dates are the real fix and they are a data job, not a code one.
+    """
+    _check_perm()
+    name = (name or "").strip()
+    if not name:
+        return {"rows": [], "needs_batch": 0, "unfilled": 0}
+
+    today = frappe.utils.today()
+    rows = _batch_rows_needing_attention(name)
+    pairs = [
+        (r["item_code"], r["s_warehouse"])
+        for r in rows
+        if r.get("has_batch_no") and r.get("s_warehouse")
+    ]
+    available = available_in_store(pairs)
+
+    out = []
+    unfilled = 0
+    for r in rows:
+        needs = bool(r.get("has_batch_no"))
+        entry = {
+            "idx": r["idx"],
+            "item_code": r["item_code"],
+            "item_name": r["item_name"] or r["item_code"],
+            "qty": float(r["qty"] or 0),
+            "uom": r["uom"] or "",
+            "warehouse": r["s_warehouse"] or "",
+            "batch_no": r["batch_no"],
+            "needs_batch": needs,
+            "settled": bool(needs and r["batch_no"]),
+            "suggestion": None,
+            "picks": [],
+            "short": 0.0,
+            "options": [],
+        }
+        if needs and not r["batch_no"]:
+            pool = available.get((r["item_code"], r["s_warehouse"]), [])
+            plan = batch_suggestion.allocate(entry["qty"], pool, today)
+            entry["picks"] = plan["picks"]
+            entry["short"] = plan["short"]
+            entry["suggestion"] = plan["picks"][0]["batch_no"] if plan["picks"] else None
+            entry["options"] = [
+                batch_suggestion.describe(b, today)
+                for b in batch_suggestion.rank_batches(pool, today)
+            ]
+            if not entry["suggestion"]:
+                unfilled += 1
+        out.append(entry)
+
+    return {
+        "rows": out,
+        "needs_batch": sum(1 for r in out if r["needs_batch"]),
+        "unfilled": unfilled,
+    }
+
+
+@frappe.whitelist()
+def apply_transfer_batches(name: str, picks) -> dict:
+    """Write the accepted batches onto the draft, by row index.
+
+    `picks` is `{idx: batch_no}` — whatever the storesman agreed to, which may
+    be every proposal or three of them. Writing by index rather than by item
+    matters: the same chemical can appear twice on one transfer, out of two
+    warehouses, and a by-item write would put the same batch on both.
+
+    Refuses rather than half-writes. A batch that is not a real batch of that
+    item, or a row that already has one, stops the whole call — a transfer with
+    some rows silently skipped is worse than one that did not save, because the
+    storesman would submit it believing it done.
+    """
+    _check_perm()
+    name = (name or "").strip()
+    if not name:
+        frappe.throw("No stock entry given.")
+    if isinstance(picks, str):
+        picks = frappe.parse_json(picks)
+    picks = {str(k): (v or "").strip() for k, v in (picks or {}).items() if (v or "").strip()}
+    if not picks:
+        return {"updated": 0, "rows": []}
+
+    doc = frappe.get_doc("Stock Entry", name)
+    if doc.docstatus != 0:
+        frappe.throw(f"{name} is already submitted or cancelled.")
+    if (doc.purpose or "") != _SE_PURPOSE:
+        frappe.throw(f"{name} is not a {_SE_PURPOSE}.")
+
+    by_idx = {str(row.idx): row for row in doc.items}
+    for idx, batch_no in picks.items():
+        row = by_idx.get(idx)
+        if not row:
+            frappe.throw(f"{name} has no row {idx}.")
+        if (row.batch_no or "").strip():
+            frappe.throw(
+                f"Row {idx} already has batch {row.batch_no}. "
+                "Clear it first if it needs changing."
+            )
+        owner = frappe.db.get_value("Batch", batch_no, "item")
+        if not owner:
+            frappe.throw(f"Batch {batch_no} does not exist.")
+        if owner != row.item_code:
+            frappe.throw(
+                f"Batch {batch_no} belongs to {owner}, not {row.item_code} on row {idx}."
+            )
+
+    for idx, batch_no in picks.items():
+        row = by_idx[idx]
+        row.batch_no = batch_no
+        # ERPNext ONLY HONOURS A NAMED BATCH IF THE ROW SAYS SO. With Stock
+        # Settings' `auto_create_serial_and_batch_bundle_for_outward` on — the
+        # default on both sites — it builds its own Serial and Batch Bundle for
+        # every outgoing row by its own FIFO rule, then refuses the submit:
+        #
+        #   At row 1: Serial and Batch Bundle ... has already created.
+        #   Please remove the values from the serial no or batch no fields.
+        #
+        # So the batch the storesman picked is either replaced by ERPNext's own
+        # or the transfer never leaves. This flag settles it.
+        #
+        # Nothing else sets it for us. `StockController.set_use_serial_batch_fields`
+        # would copy it off Stock Settings, but no Stock Entry path calls that
+        # method, and a row built by `make_stock_entry(work_order)` arrives at 0
+        # — measured on mona, where the submit failed exactly as above. Live
+        # kaitet has no batch row with the flag off, so something in the desk
+        # path sets it there; a transfer batched only through this panel would
+        # not have been covered.
+        #
+        # The hasattr guard is for an older ERPNext without the column, not for
+        # kaitet: both benches run v16 (the `frappe15` directory is v16.26.3).
+        if hasattr(row, "use_serial_batch_fields"):
+            row.use_serial_batch_fields = 1
+
+    doc.save()
+    frappe.db.commit()
+    return {"updated": len(picks), "rows": sorted(picks.keys(), key=int)}

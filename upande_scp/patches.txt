@@ -41,3 +41,7 @@ upande_scp.patches.v1_0.consolidate_spray_products
 # Must follow the consolidation: it throws if Spray Product is absent.
 upande_scp.patches.v1_0.add_spray_product_to_workspace
 upande_scp.patches.v1_0.fix_scouting_observations_label
+# Renames the desk workspace, its sidebar and the desk card from "Upande SCP"
+# to "SCP". Must stay last: the patches above look the workspace up by its old
+# name and no-op once it has moved.
+upande_scp.patches.v1_0.call_it_scp_on_the_desk

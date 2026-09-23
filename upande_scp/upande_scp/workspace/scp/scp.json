@@ -21,12 +21,12 @@
  "idx": 1,
  "indicator_color": "purple",
  "is_hidden": 0,
- "label": "Upande SCP",
+ "label": "SCP",
  "links": [],
  "modified": "2026-07-02 10:45:01.035210",
  "modified_by": "Administrator",
  "module": "Upande Scp",
- "name": "Upande SCP",
+ "name": "SCP",
  "number_cards": [],
  "owner": "judah@upande.com",
  "parent_page": "",
@@ -310,6 +310,6 @@
    "type": "DocType"
   }
  ],
- "title": "Upande SCP",
+ "title": "SCP",
  "type": "Workspace"
 }

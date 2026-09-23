@@ -1430,7 +1430,27 @@ def apply_transfer_batches(name: str, picks) -> dict:
             )
 
     for idx, batch_no in picks.items():
-        by_idx[idx].batch_no = batch_no
+        row = by_idx[idx]
+        row.batch_no = batch_no
+        # NAMING THE BATCH IS NOT ENOUGH ON ITS OWN. With Stock Settings'
+        # `auto_create_serial_and_batch_bundle_for_outward` on — which it is
+        # here — ERPNext builds its own Serial and Batch Bundle for every
+        # outgoing row by its own FIFO rule, and then refuses the submit:
+        #
+        #   At row 1: Serial and Batch Bundle ... has already created.
+        #   Please remove the values from the serial no or batch no fields.
+        #
+        # So the batch the storesman picked is either replaced by ERPNext's own
+        # or the transfer never leaves at all.
+        #
+        # Nothing else sets this for us on a transfer built here.
+        # `StockController.set_use_serial_batch_fields` would copy it off Stock
+        # Settings, but no Stock Entry path calls that method, and a row from
+        # `make_stock_entry(work_order)` arrives at 0. Live has no batch row
+        # with the flag off, so the desk path sets it there — a transfer
+        # batched only through this panel was never covered.
+        if hasattr(row, "use_serial_batch_fields"):
+            row.use_serial_batch_fields = 1
 
     doc.save()
     frappe.db.commit()

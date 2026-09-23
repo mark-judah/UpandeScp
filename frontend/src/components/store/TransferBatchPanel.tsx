@@ -24,7 +24,7 @@
  * placeholder got issued five thousand times.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, ChevronsUpDown, Loader2, Search, Sparkles } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -207,6 +207,14 @@ export function TransferBatchPanel({
   /** Which rows the storesman has agreed to. Nothing is applied unticked. */
   const [accepted, setAccepted] = useState<Set<number>>(new Set());
 
+  // Loaded as soon as the draft is opened. This table IS the transfer's item
+  // list now — the batch sits beside the store the drum goes to, rather than in
+  // a second table underneath repeating the same rows. One call does both jobs.
+  useEffect(() => {
+    void propose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name]);
+
   const propose = async () => {
     setLoading(true);
     setError(null);
@@ -260,20 +268,21 @@ export function TransferBatchPanel({
 
   if (!rows) {
     return (
-      <div className="flex items-center gap-3">
-        <Button size="sm" variant="outline" onClick={propose} disabled={loading}>
-          {loading ? (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        {loading ? (
+          <>
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Sparkles className="h-3.5 w-3.5" />
-          )}
-          Propose batches
-        </Button>
-        <span className="text-[0.7rem] text-muted-foreground">
-          First-expiry-first-out, real stock before migration filler. You can
-          change any of it.
-        </span>
-        {error && <span className="text-[0.7rem] text-destructive">{error}</span>}
+            Loading chemicals and batches…
+          </>
+        ) : (
+          <>
+            <Button size="sm" variant="outline" onClick={propose}>
+              <Sparkles className="h-3.5 w-3.5" />
+              Load chemicals
+            </Button>
+            {error && <span className="text-destructive">{error}</span>}
+          </>
+        )}
       </div>
     );
   }
@@ -306,6 +315,12 @@ export function TransferBatchPanel({
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
           Re-check stock
         </Button>
+        {pending.length > 0 && (
+          <span className="text-[0.7rem] text-muted-foreground">
+            First-expiry-first-out, real stock before migration filler. You can
+            change any of it.
+          </span>
+        )}
         {done && <span className="text-[0.7rem] text-emerald-700">{done}</span>}
         {error && <span className="text-[0.7rem] text-destructive">{error}</span>}
       </div>
@@ -316,7 +331,9 @@ export function TransferBatchPanel({
             <th className="w-8 px-2 py-1" />
             <th className="text-left px-2 py-1">Chemical</th>
             <th className="text-right px-2 py-1">Qty</th>
+            <th className="text-left px-2 py-1">UoM</th>
             <th className="text-left px-2 py-1">From</th>
+            <th className="text-left px-2 py-1">To</th>
             <th className="text-left px-2 py-1">Batch</th>
           </tr>
         </thead>
@@ -362,10 +379,14 @@ export function TransferBatchPanel({
                   </div>
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums font-medium whitespace-nowrap">
-                  {fmt(r.qty)} {r.uom}
+                  {fmt(r.qty)}
                 </td>
+                <td className="px-2 py-2 text-muted-foreground">{r.uom}</td>
                 <td className="px-2 py-2 text-muted-foreground truncate max-w-44">
                   {r.warehouse || "—"}
+                </td>
+                <td className="px-2 py-2 text-muted-foreground truncate max-w-44">
+                  {r.to_warehouse || "—"}
                 </td>
                 <td className="px-2 py-2">
                   {!r.needs_batch ? (

@@ -710,72 +710,13 @@ export function SprayPlanTransfers() {
                         {isOpen && (
                           <tr className="border-b last:border-0 bg-muted/30">
                             <td colSpan={10} className="px-6 py-3">
-                              {itemsState === "loading" ? (
-                                <div className="text-xs text-muted-foreground flex items-center gap-2">
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                  Loading chemicals…
-                                </div>
-                              ) : itemsState === "error" ? (
-                                <div className="text-xs text-destructive">
-                                  Failed to load chemicals.
-                                </div>
-                              ) : !itemsState || !itemsState.length ? (
-                                <div className="text-xs text-muted-foreground italic">
-                                  No items on this stock entry.
-                                </div>
-                              ) : (
-                                <table className="w-full text-xs">
-                                  <thead className="text-[0.65rem] uppercase tracking-wide text-muted-foreground border-b">
-                                    <tr>
-                                      <th className="text-left px-2 py-1">Chemical</th>
-                                      <th className="text-right px-2 py-1">Qty</th>
-                                      <th className="text-left px-2 py-1">UoM</th>
-                                      <th className="text-left px-2 py-1">From</th>
-                                      <th className="text-left px-2 py-1">To</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {itemsState.map((it, i) => (
-                                      <tr
-                                        key={`${it.item_code}-${i}`}
-                                        className="border-b last:border-0"
-                                      >
-                                        <td className="px-2 py-1">
-                                          <div className="font-medium">
-                                            {it.item_name}
-                                          </div>
-                                          <div className="text-[0.6rem] text-muted-foreground font-mono">
-                                            {it.item_code}
-                                          </div>
-                                        </td>
-                                        <td className="px-2 py-1 text-right tabular-nums font-medium">
-                                          {fmt(it.qty)}
-                                        </td>
-                                        <td className="px-2 py-1">
-                                          {it.uom}
-                                        </td>
-                                        <td className="px-2 py-1 text-muted-foreground truncate max-w-44">
-                                          {it.from_warehouse || "—"}
-                                        </td>
-                                        <td className="px-2 py-1 text-muted-foreground truncate max-w-44">
-                                          {it.to_warehouse || "—"}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              )}
-
-                              {/* Batch tracking is on for the chemicals, so a
-                                  transfer will not submit until every row names
-                                  one. This is where that is settled — before the
-                                  thumb is scanned, not after it fails. */}
-                              <div className="mt-4 border-t pt-3">
-                                <TransferBatchPanel
-                                  name={r.name}
-                                  onApplied={load}
-                                />
-                              </div>
+                              {/* One table, not two. The chemicals and the
+                                  batch they will be issued from are the same
+                                  list; showing them apart meant reading a row
+                                  here and finding it again by name below. The
+                                  batch sits beside the store it goes to, which
+                                  is the pair the storesman is checking. */}
+                              <TransferBatchPanel name={r.name} onApplied={load} />
                             </td>
                           </tr>
                         )}

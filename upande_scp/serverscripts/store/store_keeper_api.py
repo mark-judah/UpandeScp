@@ -1299,7 +1299,8 @@ def _batch_rows_needing_attention(name: str) -> list:
     return frappe.db.sql(
         """
         SELECT sed.idx, sed.item_code, sed.item_name, sed.qty, sed.uom,
-               sed.s_warehouse, COALESCE(sed.batch_no, '') AS batch_no,
+               sed.s_warehouse, sed.t_warehouse,
+               COALESCE(sed.batch_no, '') AS batch_no,
                i.has_batch_no
         FROM   `tabStock Entry Detail` sed
         JOIN   `tabItem` i ON i.name = sed.item_code
@@ -1352,6 +1353,10 @@ def suggest_transfer_batches(name: str) -> dict:
             "qty": float(r["qty"] or 0),
             "uom": r["uom"] or "",
             "warehouse": r["s_warehouse"] or "",
+            # The destination too: the store page shows one table now, with the
+            # batch beside the store it goes to, rather than a list of rows and
+            # a second list underneath naming the same rows again.
+            "to_warehouse": r["t_warehouse"] or "",
             "batch_no": r["batch_no"],
             "needs_batch": needs,
             "settled": bool(needs and r["batch_no"]),

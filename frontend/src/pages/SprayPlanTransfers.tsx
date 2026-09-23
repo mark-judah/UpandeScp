@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/DatePicker";
@@ -112,11 +113,17 @@ export function SprayPlanTransfers() {
         setRows(r.rows);
         setFarms(r.farms);
         setAllowManual(!!r.allow_submit_without_biometric);
-        // Drop any selections that no longer exist after a reload.
+        // Drop selections that no longer exist — and any that have become
+        // unsendable since. Both are read off the rows that just arrived, so a
+        // draft cannot stay ticked for a problem it no longer has, and cannot
+        // stay stuck once the batch is fixed: the next load simply says
+        // `blocked: false` and the checkbox is live again.
         setSelected((prev) => {
-          const live = new Set(r.rows.map((x) => x.name));
+          const selectable = new Set(
+            r.rows.filter((x) => !x.blocked).map((x) => x.name),
+          );
           const next = new Set<string>();
-          prev.forEach((n) => live.has(n) && next.add(n));
+          prev.forEach((n) => selectable.has(n) && next.add(n));
           return next;
         });
       })
@@ -234,7 +241,7 @@ export function SprayPlanTransfers() {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name);
-      else next.add(name);
+      else if (!rows.find((r) => r.name === name)?.blocked) next.add(name);
       return next;
     });
   };
@@ -629,6 +636,10 @@ export function SprayPlanTransfers() {
                   {visibleRows.map((r) => {
                     const isSel = selected.has(r.name);
                     const isOpen = expanded.has(r.name);
+                    // Read straight off the row the server just sent. Nothing
+                    // here is remembered between loads, which is what keeps a
+                    // fixed draft from staying disabled.
+                    const blocked = r.blocked;
                     const emp = r.employees[0];
                     const itemsState = itemsByName[r.name];
                     return (
@@ -638,14 +649,21 @@ export function SprayPlanTransfers() {
                           className={cn(
                             "border-b last:border-0 hover:bg-muted/40 cursor-pointer",
                             isSel && "bg-primary/5",
+                            blocked && "bg-destructive/5",
                           )}
                           onClick={() => toggleOne(r.name)}
                         >
                           <td className="px-3 py-2">
                             <Checkbox
                               checked={isSel}
+                              disabled={blocked}
                               onCheckedChange={() => toggleOne(r.name)}
                               onClick={(e) => e.stopPropagation()}
+                              title={
+                                blocked
+                                  ? "An expired batch on this transfer — open it and choose another"
+                                  : undefined
+                              }
                             />
                           </td>
                           <td
@@ -663,6 +681,15 @@ export function SprayPlanTransfers() {
                             )}
                           </td>
                           <td className="px-3 py-2 font-mono text-[0.7rem]">
+                            {blocked && (
+                              <span
+                                className="mr-1.5 inline-flex items-center align-middle text-destructive"
+                                title={`${r.expired_batches} row${r.expired_batches === 1 ? "" : "s"} name a batch that has expired — open this transfer and choose another`}
+                                aria-label="Expired batch"
+                              >
+                                <AlertTriangle className="h-3.5 w-3.5" />
+                              </span>
+                            )}
                             {r.name}
                           </td>
                           <td className="px-3 py-2 tabular-nums">

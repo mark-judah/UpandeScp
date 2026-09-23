@@ -32,6 +32,7 @@
   "section_break_dlwd",
   "incidents_scouting_entry",
   "comments_scouting_entry",
+  "photos_scouting_entry",
   "section_break_betj",
   "physiological_disorders_entry",
   "section_break_chp",
@@ -205,6 +206,12 @@
    "fieldtype": "Table",
    "label": "Comments",
    "options": "Comments Scouting Entry"
+  },
+  {
+   "fieldname": "photos_scouting_entry",
+   "fieldtype": "Table",
+   "label": "Photos",
+   "options": "Scouting Entry Photo"
   },
   {
    "fieldname": "section_break_betj",

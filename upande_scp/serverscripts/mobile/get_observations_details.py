@@ -1,5 +1,7 @@
 import frappe
 
+from upande_scp.serverscripts.scouting import capture_settings
+
 # Maps a category key -> (filter doctype, link field, field linking to the crop).
 # Pest Filter / Disease Filter are standalone DocTypes linked via `crop_scouted`;
 # the other four are still child tables of Crop Scouted, linked via `parent`.
@@ -349,20 +351,21 @@ def getObservationsDetails(crop=None):
 
     # COMMENTS — a free-text note on the entry as a whole.
     #
-    # Unconditional, unlike every category above it. The others are driven by
-    # what a farm has configured — no weeds configured, no Weeds tab. A comment
-    # needs no configuration to be worth writing, and the app only shows the tab
-    # when this category is present, so omitting it would mean no farm ever gets
-    # one.
+    # Not driven by what a farm has configured, the way the categories above it
+    # are — no weeds configured, no Weeds tab. A comment needs no master data to
+    # be worth writing. It is driven by the one switch the General Manager owns,
+    # and the app shows the tab only when this category is present, so the
+    # switch has to reach the category itself and not merely the flag beside it.
     #
     # The app supplies its own field when `fields` is empty
     # (use-scouting-utils.ts, `commentField`), so sending the category alone is
     # enough. Rows arrive as comments_scouting_entry.
-    observation_types.append({
-        "category": "Comments",
-        "type": "text",
-        "fields": [],
-    })
+    if capture_settings.allows("comments"):
+        observation_types.append({
+            "category": "Comments",
+            "type": "text",
+            "fields": [],
+        })
 
     # Plant sections allowed for this crop (empty on the crop → no filter → None).
     allowed_plant_sections = None
@@ -378,6 +381,11 @@ def getObservationsDetails(crop=None):
     frappe.response["message"] = {
         "data": observation_types,
         "allowed_plant_sections": allowed_plant_sections,
+        # What the handset may offer on the ground. It rides here because the
+        # app decides whether to draw the camera while it is building the
+        # round, and a second request is one more thing to fail halfway down a
+        # greenhouse with no signal.
+        "capture": capture_settings.as_payload(),
     }
 
     return frappe.response["message"]

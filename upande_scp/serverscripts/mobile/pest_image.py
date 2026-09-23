@@ -1,6 +1,12 @@
 """Attach a scouting photo to its Scouting Entry, and alert the GM when it is
 of something the scout could not name.
 
+A scout may photograph ANYTHING on a round — the camera is no longer reserved
+for a pest named "unidentified" — and every picture carries its own caption, so
+the words about it live on the same row rather than in a note about the whole
+entry. Whether the camera appears at all is the General Manager's to say; see
+`serverscripts.scouting.capture_settings`.
+
 The mobile app uploads the (already compressed) photo out-of-band, keyed by the
 parent scouting submission's ``client_id``. We resolve the Scouting Entry from
 that id (via Scouting Entry Metadata), store the photo as a private File
@@ -24,6 +30,8 @@ import os
 import re
 
 import frappe
+
+from upande_scp.serverscripts.scouting import capture_settings
 
 
 def _gm_recipients():
@@ -86,13 +94,32 @@ def _short_file_name(raw_name, client_id, subject_name):
 
 
 @frappe.whitelist()
-def attach_unidentified_pest_image():
+def attach_scouting_photo():
+    """Store one photo against its Scouting Entry, with the caption it carries.
+
+    The subject is whatever the scout named it — a pest, a disease, or nothing
+    at all, because "a picture of this" is a legitimate thing to send. The
+    caption is the scout's own words and is the reason this row exists: a File
+    alone cannot hold them.
+    """
+    if not capture_settings.allows("photos"):
+        # The app is told this before it draws the camera, so arriving here
+        # means a stale handset or a switch flipped mid-round. Refusing plainly
+        # beats storing a photo the farm has said it does not want.
+        frappe.throw(
+            frappe._("Photos are switched off for this farm in Scouting Settings."),
+            frappe.PermissionError,
+        )
+
     client_id = frappe.form_dict.get("client_id")
     pest = (frappe.form_dict.get("pest") or "").strip()
     disease = (frappe.form_dict.get("disease") or "").strip()
     trap = frappe.form_dict.get("trap") or ""
+    caption = (frappe.form_dict.get("caption") or "").strip()
 
-    subject_name = pest or disease
+    # `subject` is what a scout photographing something uncategorised sends.
+    # pest / disease stay ahead of it for the handsets that still name them.
+    subject_name = pest or disease or (frappe.form_dict.get("subject") or "").strip()
     is_unidentified = _is_unidentified(subject_name)
 
     files = getattr(frappe.request, "files", None)
@@ -122,6 +149,10 @@ def attach_unidentified_pest_image():
         "name",
     )
     if existing:
+        # The photo is already here; a retry may still be carrying a caption the
+        # first attempt never delivered, so the row is reconciled either way.
+        _record_on_entry(entry, frappe.db.get_value("File", existing, "file_url"),
+                         caption, subject_name)
         frappe.response["data"] = {"status": "ok", "duplicate": True, "entry": entry}
         return
 
@@ -134,6 +165,7 @@ def attach_unidentified_pest_image():
     from frappe.utils.file_manager import save_file
 
     saved = save_file(fname, content, "Scouting Entry", entry, is_private=1)
+    _record_on_entry(entry, saved.file_url, caption, subject_name)
     frappe.db.commit()
 
     # Best-effort GM email — a mail failure must not fail the upload (the photo
@@ -170,5 +202,45 @@ def attach_unidentified_pest_image():
         "file": saved.file_url,
         "entry": entry,
         "subject": subject_name or "Unidentified",
+        "caption": caption,
         "notified": is_unidentified,
     }
+
+
+#: The name the handsets in the field call. A phone updates when its owner is
+#: next on wifi, which is not the same week the server does, so the old route
+#: keeps answering rather than failing a photo already taken.
+attach_unidentified_pest_image = attach_scouting_photo
+
+
+def _record_on_entry(entry, file_url, caption, subject_name):
+    """Put the picture on the entry itself, not only in the File table.
+
+    Before this the photos were File rows and nothing more: attached to the
+    entry, invisible on it, and with nowhere for a caption to go. The row is
+    keyed by file_url so a retry updates the words rather than adding a second
+    picture.
+    """
+    if not file_url:
+        return
+
+    doc = frappe.get_doc("Scouting Entry", entry)
+    for row in doc.get("photos_scouting_entry") or []:
+        if row.image == file_url:
+            if caption and row.caption != caption:
+                row.db_set("caption", caption, update_modified=False)
+            return
+
+    row = doc.append(
+        "photos_scouting_entry",
+        {
+            "image": file_url,
+            "caption": caption,
+            "subject": subject_name,
+            "captured_on": frappe.utils.now(),
+        },
+    )
+    # The parent is routinely submitted by the time its photo lands — the
+    # upload is decoupled from the sync on purpose — so the child is written
+    # directly rather than through a save the docstatus would refuse.
+    row.insert(ignore_permissions=True)

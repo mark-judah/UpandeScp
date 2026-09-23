@@ -245,7 +245,10 @@ export interface TransferBatchRow {
   item_name: string;
   qty: number;
   uom: string;
+  /** Source store — where the drum is taken from, and which batches are on offer. */
   warehouse: string;
+  /** Destination, so this one table can stand in for the transfer's item list. */
+  to_warehouse: string;
   batch_no: string;
   needs_batch: boolean;
   /** Already carries a batch — shown, never reproposed. */

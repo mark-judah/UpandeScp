@@ -20,3 +20,11 @@ CHEPSITO_FCM_Weekly_Report_2026_W14.xlsx
 /doc references
 # Local scratch / one-off console scripts (not part of the app)
 /reference/
+
+# Database dumps. A production backup is 68MB of every row on the live site;
+# once it is in git history it cannot be taken back out. They live in
+# /mnt/data/frappe-backups/, never under a source tree.
+*.sql
+*.sql.gz
+*_backup.gz
+*-database.sql.gz

@@ -45,3 +45,7 @@ upande_scp.patches.v1_0.fix_scouting_observations_label
 # to "SCP". Must stay last: the patches above look the workspace up by its old
 # name and no-op once it has moved.
 upande_scp.patches.v1_0.call_it_scp_on_the_desk
+# Drops the SCP Dashboard custom block from the workspace and from the site.
+# The workspace fixture no longer renders it, but a fixture never overwrites an
+# existing public workspace — so an existing site changes only because of this.
+upande_scp.patches.v1_0.drop_scp_dashboard_block

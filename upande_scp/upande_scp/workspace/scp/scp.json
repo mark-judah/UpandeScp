@@ -1,7 +1,7 @@
 {
  "app": "upande_scp",
  "charts": [],
- "content": "[{\"id\": \"scpDash001\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"SCP Dashboard\", \"col\": 12}}, {\"id\": \"scpNav0001\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"SCP Navigation\", \"col\": 12}}]",
+ "content": "[{\"id\": \"scpNav0001\", \"type\": \"custom_block\", \"data\": {\"custom_block_name\": \"SCP Navigation\", \"col\": 12}}]",
  "creation": "2025-08-08 15:31:19.092083",
  "custom_blocks": [
   {

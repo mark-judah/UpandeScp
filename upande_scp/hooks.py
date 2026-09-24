@@ -425,13 +425,14 @@ website_route_rules = [
 fixtures = [
     # Stage catalog — ships the per-stage icon_key mapping to every site.
     {"doctype": "Stage"},
-    # Scouting & Crop Protection workspace blocks — one consolidated block
-    # (SCP Dashboard: Map + Summary tabs) plus the role-gated navigation tiles
-    # that link into the /scp_app SPA.
+    # The workspace's navigation tiles — role-gated links into the /scp_app SPA.
+    # SCP Dashboard used to ship beside it and render above it: a Map + Summary
+    # pair on the desk, duplicating what the SPA does better. kaitet's workspace
+    # has only the navigation, and mona now matches.
     {
         "doctype": "Custom HTML Block",
         "filters": [["name", "in", [
-            "SCP Dashboard", "SCP Navigation",
+            "SCP Navigation",
         ]]],
     },
     # Custom Fields are created idempotently by the patch

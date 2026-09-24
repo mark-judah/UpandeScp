@@ -50,8 +50,21 @@ def allows(what: str) -> bool:
 		# The app shipped before the doctype reached this site.
 		return True
 
-	value = frappe.db.get_single_value(SETTINGS, fieldname)
-	return True if value is None else bool(int(value))
+	# READ THE ROW, NOT `get_single_value`. That helper casts by fieldtype
+	# before it returns, and a Check casts a missing row to 0 — so "nobody has
+	# ever opened this page" and "the GM switched it off" arrive identical, and
+	# the default-on rule above quietly inverts. Restoring mona production,
+	# which has no rows for these fields, is what showed it: the handset was
+	# told photos and comments were both off on a site where nothing had ever
+	# been switched off.
+	# Plain SQL: `get_value` orders by `creation`, and tabSingles has no such
+	# column — it is a key/value table, not a doctype table.
+	row = frappe.db.sql(
+		"SELECT value FROM tabSingles WHERE doctype = %s AND field = %s",
+		(SETTINGS, fieldname),
+	)
+	value = row[0][0] if row else None
+	return True if value in (None, "") else bool(int(value))
 
 
 def as_payload() -> dict:

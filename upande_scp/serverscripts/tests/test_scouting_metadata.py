@@ -69,6 +69,29 @@ class TestTheSettingsTheGmOwns(unittest.TestCase):
 		self.assertIn("allow_scout_photos", bundle_fields)
 		self.assertIn("allow_scout_comments", bundle_fields)
 
+	def test_a_farm_that_never_opened_the_page_is_allowed_both(self):
+		"""The default has to hold at RUNTIME, not just on the field.
+
+		`get_single_value` casts by fieldtype before returning, and a Check
+		casts a missing row to 0 — so "no row" and "switched off" arrive
+		identical, and the feature reads as off on every farm that has never
+		touched the page. Restoring production, which has no rows for these
+		fields, is what surfaced it: the payload said false on a site where
+		nobody had ever switched anything off.
+		"""
+		frappe.db.sql(
+			"""DELETE FROM tabSingles
+			   WHERE doctype = %s AND field IN ('allow_scout_photos', 'allow_scout_comments')""",
+			SETTINGS,
+		)
+		frappe.db.commit()
+		self.assertTrue(capture_settings.allows("photos"))
+		self.assertTrue(capture_settings.allows("comments"))
+		self.assertEqual(
+			get_observations_details.getObservationsDetails()["capture"],
+			{"photos": True, "comments": True},
+		)
+
 	def test_allows_reads_the_switches(self):
 		_set(True, False)
 		self.assertTrue(capture_settings.allows("photos"))

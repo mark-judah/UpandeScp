@@ -194,12 +194,18 @@ def validate_rate_in_limits(
     else:
         lower = lim.get("lower")
         upper = lim.get("upper")
-    if lower is not None and rate < lower:
+    # A ZERO IS NOT A LIMIT, IT IS AN EMPTY FIELD. Every Spray Product on
+    # mona's live site carries 0 in both bounds because nobody has filled them
+    # in yet — 111 of 111 — and reading that as a ceiling meant every rate was
+    # "above the configured upper limit of 0.0" and no plan could be made at
+    # all. A farm that has set no limits gets no limits; the field starts doing
+    # its job the moment somebody types a number into it.
+    if lower and rate < lower:
         frappe.throw(
             f"{item_code}: rate {rate} is below the configured lower limit of {lower}.",
             title="Rate out of range",
         )
-    if upper is not None and rate > upper:
+    if upper and rate > upper:
         frappe.throw(
             f"{item_code}: rate {rate} is above the configured upper limit of {upper}.",
             title="Rate out of range",

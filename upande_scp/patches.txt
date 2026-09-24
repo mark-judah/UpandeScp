@@ -49,3 +49,6 @@ upande_scp.patches.v1_0.call_it_scp_on_the_desk
 # The workspace fixture no longer renders it, but a fixture never overwrites an
 # existing public workspace — so an existing site changes only because of this.
 upande_scp.patches.v1_0.drop_scp_dashboard_block
+# Drops the SCP Scout Map custom block. This one was never on the workspace —
+# it rode in on a restored production database and nothing references it.
+upande_scp.patches.v1_0.drop_scp_scout_map_block

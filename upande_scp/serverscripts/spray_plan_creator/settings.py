@@ -12,6 +12,9 @@ Desk only:
      and per-chemical target list (custom_targets child table).
   4. Targets — read-only list of Pests + Plant Diseases, used by the
      Chemicals tab when picking what a chemical treats.
+  5. Scouting capture — whether a scout may photograph what they meet and
+     write a comment on the round. Two switches on the same Single, read on
+     the handset's side by ``serverscripts.scouting.capture_settings``.
 
 All endpoints are gated to General Manager / System Manager via
 ``_require_admin`` from ``admin.py``.
@@ -24,6 +27,57 @@ from upande_scp.serverscripts.common.cache_utils import K_AFP_WAREHOUSES, invali
 
 from .admin import _require_admin
 
+
+# ──────────────────────────────────────────────────────────────────────
+# Dead links in rows nobody touched.
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _drop_dangling_links(doc) -> list[str]:
+    """Remove child rows whose Link points at a record that no longer exists.
+
+    Frappe re-validates EVERY child row of a Single on save, including the rows
+    the edit never went near. A test once created an Item Group, wired it into
+    `foliar_item_groups` and rolled back; from then on every save of this Single
+    died with "Could not find Row #3: Item Group: _TEST CP Chemicals" — the
+    whole settings page, every tab, for everyone, with nothing on screen saying
+    why.
+
+    A link that has gone is data that has gone. Dropping the row is the only
+    outcome that leaves the page usable, and it is what a person would do by
+    hand. The names come back to the caller rather than vanishing: silently
+    discarding a farm's configuration is how the next hour gets spent.
+
+    Dynamic Link rows are left alone — their target doctype lives in another
+    field and a missing one is a different problem with a different answer.
+    """
+    dropped: list[str] = []
+
+    for table in doc.meta.get_table_fields():
+        rows = doc.get(table.fieldname) or []
+        keep = []
+        for row in rows:
+            missing = None
+            for field in row.meta.get("fields", {"fieldtype": "Link"}):
+                value = row.get(field.fieldname)
+                if not value or not field.options:
+                    continue
+                if not frappe.db.exists(field.options, value):
+                    missing = f"{table.fieldname}.{field.fieldname}={value}"
+                    break
+            if missing:
+                dropped.append(missing)
+            else:
+                keep.append(row)
+        if len(keep) != len(rows):
+            doc.set(table.fieldname, keep)
+
+    if dropped:
+        frappe.log_error(
+            title=f"{doc.doctype}: dropped rows with dead links",
+            message="\n".join(dropped),
+        )
+    return dropped
 
 # ──────────────────────────────────────────────────────────────────────
 # Bundle: one call to populate every tab on first load.
@@ -99,6 +153,10 @@ def get_settings_bundle() -> dict:
             "loaning_timeout_hours": settings.loaning_timeout_hours or 72,
             "progress_email_enabled": int(settings.progress_email_enabled or 0),
             "progress_email_hour": settings.progress_email_hour if settings.progress_email_hour is not None else 18,
+            # Scouting capture. Unset reads as ON, matching `capture_settings`
+            # — a farm that has never opened this page still gets the feature.
+            "allow_scout_photos": 0 if settings.allow_scout_photos == 0 else 1,
+            "allow_scout_comments": 0 if settings.allow_scout_comments == 0 else 1,
             "allowed_farms": allowed_farms,
             "exclude_keywords": exclude_keywords,
             "chemical_stores": chemical_stores,
@@ -151,6 +209,8 @@ def save_spray_plan_settings(payload) -> dict:
         "loaning_timeout_hours",
         "progress_email_enabled",
         "progress_email_hour",
+        "allow_scout_photos",
+        "allow_scout_comments",
     ]
     for f in scalar_fields:
         if f in payload:
@@ -189,11 +249,15 @@ def save_spray_plan_settings(payload) -> dict:
                 if wh:
                     settings.append(field, {"warehouse": wh})
 
+    # Before the save, not after: the rows that break it are the ones this
+    # endpoint never wrote.
+    dropped = _drop_dangling_links(settings)
+
     settings.save(ignore_permissions=True)
     # Bust the AFP warehouse cache so the picker reflects the new
     # allowed-farms / exclude-keywords set immediately.
     invalidate(K_AFP_WAREHOUSES)
-    return {"ok": True}
+    return {"ok": True, "dropped": dropped}
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -224,8 +288,9 @@ def save_farm_coordinates(payload) -> dict:
                 "default_zoom": r.get("default_zoom") or 0,
             })
 
+    dropped = _drop_dangling_links(settings)
     settings.save(ignore_permissions=True)
-    return {"ok": True}
+    return {"ok": True, "dropped": dropped}
 
 
 # ──────────────────────────────────────────────────────────────────────

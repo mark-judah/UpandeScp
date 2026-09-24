@@ -40,6 +40,10 @@ export interface SprayPlanSettings {
   loaning_timeout_hours: number;
   progress_email_enabled: number;
   progress_email_hour: number;
+  /** Scouting capture, read by the handset when it loads a round. 1 = the app
+   *  draws the camera / the Comments tab; 0 = it does not offer them at all. */
+  allow_scout_photos: number;
+  allow_scout_comments: number;
   allowed_farms: { farm: string }[];
   exclude_keywords: { keyword: string }[];
   /** Warehouses that hold chemicals — the Application Plan chemical picker

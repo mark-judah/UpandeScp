@@ -81,6 +81,10 @@ import {
   type TeamMemberRow,
 } from "@/components/spray-plan/SprayTeamEditor";
 import { computeAreaHa } from "@/lib/application-plan-area";
+import {
+  WATER_VOLUME_RATE,
+  applyWaterVolume,
+} from "@/lib/application-plan-totals";
 import { filterTeamsByFarm } from "@/lib/spray-team-filter";
 import { FrappeError } from "@/lib/frappe";
 import { ymd } from "@/lib/utils";
@@ -114,7 +118,7 @@ interface DiagnosePayload {
  *  ``new_application_floor_plan.js`` uses to derive ``custom_water_volume``
  *  from the area-to-spray. Exported as a named constant so the UI
  *  caption stays in sync if it ever needs tweaking. */
-const WATER_VOLUME_RATE = 1000;
+
 
 const SPRAY_TYPES = [
   "Full",
@@ -559,25 +563,26 @@ export function ApplicationPlan() {
   // Auto-derive each chemical's total ``stock_qty`` from its per-1000-L
   // ``rate`` scaled by the current water volume. The chain is:
   //   scope → areaHa → waterVolumeL → stock_qty (per row)
-  // The rate is the operator's source of truth; this effect just keeps
-  // the displayed total in sync whenever the water volume changes. When
-  // the operator edits the rate directly, ``updateChemRate`` writes both
-  // ``rate`` and ``stock_qty`` together so the matrix updates instantly
-  // without waiting for an effect.
+  // The rate is the operator's source of truth; this effect keeps the
+  // displayed total in sync. When the operator edits the rate directly,
+  // ``updateChemRate`` writes both ``rate`` and ``stock_qty`` together so the
+  // matrix updates instantly without waiting for an effect.
+  //
+  // WHY ``chemRows`` IS IN THE DEPS. Rows arrive with ``stock_qty: 0`` and are
+  // meant to be filled in here. Keyed on the water volume alone, that only
+  // happened if the volume changed AFTERWARDS — so picking the BOM after the
+  // scope (the order the form itself reads in: classification, date, type,
+  // scope, team, kit, then BOM) left every total at 0 while the Water Volume
+  // box plainly showed 1000.00, and the submit refused with "Water volume not
+  // set — <chemical> has no total qty." Picking the BOM first happened to
+  // work. An operator has no way to see that difference.
+  //
+  // Returning ``prev`` unchanged is what makes this safe: the updater must not
+  // hand back a fresh array when nothing moved, or the new dependency would
+  // retrigger the effect forever.
   useEffect(() => {
-    const wv = parseFloat(waterVolume) || 0;
-    if (wv <= 0) return;
-    const ratio = wv / WATER_VOLUME_RATE; // 1 = BOM batch is "per 1000 L"
-    setChemRows((prev) =>
-      prev.map((c) => {
-        const rate = Number(c.rate ?? 0);
-        if (!rate) return c;
-        const next = Math.round(rate * ratio * 10000) / 10000;
-        if (next === c.stock_qty) return c;
-        return { ...c, stock_qty: next };
-      }),
-    );
-  }, [waterVolume]);
+    setChemRows((prev) => applyWaterVolume(prev, waterVolume));
+  }, [waterVolume, chemRows]);
 
   const zonesInGh: ZoneGeoLike[] = useMemo(() => {
     if (!greenhouse) return [];
@@ -935,8 +940,27 @@ export function ApplicationPlan() {
   };
 
   const submit = async () => {
-    if (!greenhouse || !sprayDate || !sprayType || !scope || !bom || !kit || !classification) {
-      pushToast("err", "Fill in greenhouse, date, spray type, scope, kit, BOM and classification.");
+    // Name what is actually missing. Listing all seven every time tells an
+    // operator who has filled six of them nothing at all — they read it as the
+    // form not seeing what they just picked.
+    const missing = [
+      [greenhouse, "greenhouse"],
+      [sprayDate, "date"],
+      [sprayType, "spray type"],
+      [scope, "scope"],
+      [kit, "kit"],
+      [bom, "BOM"],
+      [classification, "classification"],
+    ]
+      .filter(([v]) => !v)
+      .map(([, label]) => label as string);
+    if (missing.length) {
+      pushToast(
+        "err",
+        missing.length === 1
+          ? `Pick a ${missing[0]} before adding to the batch.`
+          : `Still missing: ${missing.join(", ")}.`,
+      );
       return;
     }
     if (classification === "Preventive" && preventiveReason.trim().length < 20) {

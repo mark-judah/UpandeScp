@@ -62,6 +62,11 @@ type InAppItem = {
    *  of these roles. Used to keep store-keeper-only pages hidden from
    *  everyone else. */
   hideForRoles?: string[];
+  /** Render this item pinned in the sidebar footer instead of inside its
+   *  section. It stays declared in its section because that is where
+   *  ``canOpenView`` reads its role rules from — drop the declaration and the
+   *  view silently becomes reachable by URL to anyone. */
+  pinToFooter?: boolean;
 };
 
 type ExternalItem = {
@@ -72,6 +77,8 @@ type ExternalItem = {
   hint?: string;
   requireRoles?: string[];
   hideForRoles?: string[];
+  /** As on ``InAppItem`` — the footer draws external links too. */
+  pinToFooter?: boolean;
 };
 
 type NavItem = InAppItem | ExternalItem;
@@ -182,6 +189,10 @@ const ROSE_NAV: NavSection[] = [
         label: "Settings",
         icon: Settings,
         requireRoles: ["SCP General Manager", "System Manager", "Administrator"],
+        // Configuration, not a surface the day's work happens on — and in the
+        // middle of a scrolling nav list it went out of view with everything
+        // else. Pinned to the footer; the gate above still decides who sees it.
+        pinToFooter: true,
       },
       {
         kind: "view",
@@ -432,6 +443,20 @@ export function AppSidebar({
 
   const nav = navForCrop(crop);
 
+  /** Items declared in a section but drawn in the footer. Visibility is worked
+   *  out exactly as the nav list works it out — the section's own gate counts
+   *  too, so a Store Keeper does not get a pinned item out of a section that is
+   *  hidden from them. */
+  const pinnedItems = nav
+    .filter((section) => !isHiddenForUser(section.hideForRoles, roles))
+    .flatMap((section) => section.items)
+    .filter(
+      (item) =>
+        item.pinToFooter &&
+        userHasAnyRole(item.requireRoles, roles) &&
+        !isHiddenForUser(item.hideForRoles, roles),
+    );
+
   // Show the footer "pocket" shadow only while nav items remain hidden below
   // the fold; hide it once the list is scrolled to the end (or fully fits).
   const navRef = useRef<HTMLDivElement>(null);
@@ -538,13 +563,18 @@ export function AppSidebar({
                   userHasAnyRole(item.requireRoles, roles) &&
                   !isHiddenForUser(item.hideForRoles, roles),
               );
-              if (visibleItems.length === 0) return null;
+              // Count only what this list will actually draw: a section left
+              // with nothing but a footer-pinned item would otherwise render as
+              // a heading with no rows under it.
+              if (visibleItems.every((item) => item.pinToFooter)) return null;
               return (
                 <SidebarGroup key={section.label}>
                   <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
                   <SidebarGroupContent>
                     <SidebarMenu>
-                      {visibleItems.map((item) => {
+                      {visibleItems
+                        .filter((item) => !item.pinToFooter)
+                        .map((item) => {
                         const Icon = item.icon;
                         const active =
                           item.kind === "view" ? view === item.view : false;
@@ -596,6 +626,40 @@ export function AppSidebar({
       >
         <SidebarSeparator />
 
+        {/* Items flagged ``pinToFooter`` — Settings today. Same role gate as in
+            the nav, because it is literally the same declaration. */}
+        {pinnedItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <SidebarMenu key={`pinned:${item.label}`}>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={item.kind === "view" && view === item.view}
+                  title={item.hint || item.label}
+                >
+                  {item.kind === "view" ? (
+                    <a
+                      href={routeHash({ crop, view: item.view })}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onNavigate(item.view);
+                      }}
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span>{item.label}</span>
+                    </a>
+                  ) : (
+                    <a href={item.href}>
+                      <Icon className="h-4 w-4" />
+                      <span>{item.label}</span>
+                    </a>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          );
+        })}
 
         {/* Collapse — a normal sidebar item (icon + label), pinned here. */}
         <SidebarMenu>

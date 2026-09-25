@@ -1,12 +1,25 @@
 /**
- * Processes Settings — operational process choices the General Manager controls.
- * Currently: the CSU scan-verification method (scan the label/QR vs tick to
- * confirm). The mobile app reads this and shows a scan or a tick control
- * accordingly; the server enforces it on register_csu_scan.
+ * Processes Settings — operational process choices the General Manager controls:
+ * the CSU scan-verification method (scan the label/QR vs tick to confirm),
+ * whether issuing chemicals needs a live biometric, and what a scout may record
+ * on the ground. The mobile app reads all three and draws itself accordingly;
+ * the server enforces each one rather than trusting the handset.
+ *
+ * The scouting-capture switches live here rather than on the Spray Plan tab
+ * because that is a tab about planning a spray, and these are about what the
+ * people on the ground are permitted to do — the same question the scan method
+ * and the biometric answer.
  */
 
 import { useMemo, useState } from "react";
-import { Loader2, Save, ScanLine, CheckSquare, Fingerprint } from "lucide-react";
+import {
+  Loader2,
+  Save,
+  ScanLine,
+  CheckSquare,
+  Fingerprint,
+  Camera,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -46,16 +59,26 @@ export function ProcessesTab({ initial, onSaved }: Props) {
 
   const method = draft.scan_verification_method || SCAN_LABELS;
   const bypassBio = !!draft.bypass_biometric_on_issue;
+  // Unset reads as ON, matching the server: a farm that has never opened this
+  // page still gets the feature rather than silently losing it.
+  const allowPhotos = draft.allow_scout_photos !== 0;
+  const allowComments = draft.allow_scout_comments !== 0;
   const dirty = useMemo(
     () =>
       (draft.scan_verification_method || SCAN_LABELS) !==
         (initial.scan_verification_method || SCAN_LABELS) ||
-      !!draft.bypass_biometric_on_issue !== !!initial.bypass_biometric_on_issue,
+      !!draft.bypass_biometric_on_issue !== !!initial.bypass_biometric_on_issue ||
+      allowPhotos !== (initial.allow_scout_photos !== 0) ||
+      allowComments !== (initial.allow_scout_comments !== 0),
     [
       draft.scan_verification_method,
       initial.scan_verification_method,
       draft.bypass_biometric_on_issue,
       initial.bypass_biometric_on_issue,
+      allowPhotos,
+      initial.allow_scout_photos,
+      allowComments,
+      initial.allow_scout_comments,
     ],
   );
 
@@ -66,6 +89,16 @@ export function ProcessesTab({ initial, onSaved }: Props) {
 
   const setBypassBio = (on: boolean) => {
     setDraft((d) => ({ ...d, bypass_biometric_on_issue: on ? 1 : 0 }));
+    setOk(false);
+  };
+
+  const setAllowPhotos = (on: boolean) => {
+    setDraft((d) => ({ ...d, allow_scout_photos: on ? 1 : 0 }));
+    setOk(false);
+  };
+
+  const setAllowComments = (on: boolean) => {
+    setDraft((d) => ({ ...d, allow_scout_comments: on ? 1 : 0 }));
     setOk(false);
   };
 
@@ -165,6 +198,61 @@ export function ProcessesTab({ initial, onSaved }: Props) {
                 On: store keepers can assign and submit transfers without a
                 finger scan (recorded as Bypassed). Off: a matching scan in the
                 last 2 minutes is required to submit.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Camera className="h-4 w-4" />
+            Scouting capture
+          </CardTitle>
+          <CardDescription>
+            What a scout may record on the ground, beyond the counts. The app
+            reads these when it loads a round: switched off, the control is not
+            drawn at all rather than drawn and then refused.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 max-w-md">
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+            <Checkbox
+              id="allow_scout_photos"
+              checked={allowPhotos}
+              onCheckedChange={(v) => setAllowPhotos(!!v)}
+            />
+            <div className="flex flex-col gap-1">
+              <Label
+                htmlFor="allow_scout_photos"
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Scouts can attach photos
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                A scout may photograph anything they meet on a round, each
+                picture with its own caption. The photo lands on the scouting
+                entry it was taken during.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+            <Checkbox
+              id="allow_scout_comments"
+              checked={allowComments}
+              onCheckedChange={(v) => setAllowComments(!!v)}
+            />
+            <div className="flex flex-col gap-1">
+              <Label
+                htmlFor="allow_scout_comments"
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Scouts can write comments
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                A free-text note against the round. Off: the Comments tab does
+                not appear in the app.
               </p>
             </div>
           </div>

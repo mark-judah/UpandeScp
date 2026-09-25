@@ -12,6 +12,7 @@ import re
 
 import frappe
 from frappe.utils import add_days, cstr, flt, now_datetime, today
+from upande_scp.serverscripts.roles import has_any_role
 
 AFP_TYPE = "Application Floor Plan"
 
@@ -25,8 +26,7 @@ def _ensure_approval_role():
     user = frappe.session.user
     if not user or user == "Guest":
         frappe.throw("Please log in to use spray plan approval.", frappe.PermissionError)
-    user_roles = set(frappe.get_roles(user))
-    if not user_roles.intersection(APPROVAL_ROLES):
+    if not has_any_role(APPROVAL_ROLES, user=user):
         frappe.throw(
             "Spray plan approval requires the General Manager or Spray Plan Approver role.",
             frappe.PermissionError,
@@ -63,10 +63,9 @@ def _approver_allowed_greenhouses(user: str) -> list[str] | None:
     """
     if user == "Administrator":
         return None
-    roles = set(frappe.get_roles(user))
-    if "General Manager" in roles or "System Manager" in roles:
+    if has_any_role("General Manager", "System Manager", user=user):
         return None
-    if "Spray Plan Approver" not in roles:
+    if not has_any_role("Spray Plan Approver", user=user):
         # Defence in depth — _ensure_approval_role already rejected this.
         return []
     if not frappe.db.table_exists("Farm Spray Plan Approver"):

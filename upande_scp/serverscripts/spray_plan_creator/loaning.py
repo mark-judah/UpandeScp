@@ -27,6 +27,7 @@ from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
 from upande_scp.serverscripts.spray_plan_creator.scope import _resolve_user_scope
 from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
+from upande_scp.serverscripts.roles import has_any_role
 
 CHEMICAL_GROUPS = ("CHEMICALS", "Fertilizer")
 ELEVATED = {"General Manager", "System Manager", "Administrator"}
@@ -53,7 +54,7 @@ def _ensure_enabled():
 
 
 def _ensure_creator():
-    if not (set(frappe.get_roles(frappe.session.user)) & CREATOR_ROLES):
+    if not has_any_role(CREATOR_ROLES):
         frappe.throw(
             "Chemical loaning requires the Spray Plan Creator role.",
             frappe.PermissionError,
@@ -63,7 +64,7 @@ def _ensure_creator():
 def _user_farms(user: str | None = None) -> set[str] | None:
     """Farms the user may act for, or None for unscoped (GM / admin)."""
     user = user or frappe.session.user
-    if set(frappe.get_roles(user)) & ELEVATED:
+    if has_any_role(ELEVATED, user=user):
         return None
     return set(_resolve_user_scope(user).get("farms") or [])
 
@@ -533,7 +534,7 @@ def _upsert_baseline(farm: str, item_code: str, qty: float, via: str) -> None:
 @frappe.whitelist()
 def bulk_restock(farm: str | None = None) -> dict:
     """GM utility: set every (farm, chemical) baseline to current on-hand."""
-    if not (set(frappe.get_roles(frappe.session.user)) & ELEVATED):
+    if not has_any_role(ELEVATED):
         frappe.throw("Only the General Manager can bulk-restock.", frappe.PermissionError)
 
     farms = [farm] if farm else _all_chemical_farms()

@@ -8,14 +8,21 @@ from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import (
 )
 
 from .scope import _resolve_user_scope
+from upande_scp.serverscripts.roles import spellings
 
 
 def _user_has_role(user: str, role: str) -> bool:
     """Use a direct DB query instead of frappe.get_roles() because the Redis
-    role cache may not see fresh test-time inserts."""
+    role cache may not see fresh test-time inserts.
+
+    Compared bare, like every other gate: mona carries both "General Manager"
+    and "SCP General Manager" and they mean the same thing."""
     if user == "Administrator":
         return True
-    return bool(frappe.db.exists("Has Role", {"parent": user, "role": role}))
+    return any(
+        frappe.db.exists("Has Role", {"parent": user, "role": name})
+        for name in spellings(role)
+    )
 
 
 @frappe.whitelist()

@@ -1,4 +1,5 @@
 import frappe
+from upande_scp.serverscripts.roles import has_any_role
 
 
 def get_context(context):
@@ -8,9 +9,7 @@ def get_context(context):
     if not frappe.session.user or frappe.session.user == "Guest":
         frappe.throw("Please log in to access this page.", frappe.PermissionError)
 
-    roles = set(frappe.get_roles(frappe.session.user))
-    allowed = {"Spray Plan Approver", "General Manager"}
-    if not roles.intersection(allowed):
+    if not has_any_role("Spray Plan Approver", "General Manager"):
         frappe.throw(
             "This page requires the General Manager or Spray Plan Approver role.",
             frappe.PermissionError,

@@ -27,6 +27,7 @@ import frappe
 
 from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import _derive_farm
 from upande_scp.serverscripts.spray_plan_creator.lifecycle import AFP_TYPE, get_lifecycle
+from upande_scp.serverscripts.roles import has_any_role
 
 EAT = ZoneInfo("Africa/Nairobi")
 
@@ -304,7 +305,7 @@ def send_chemical_progress_email() -> dict:
 @frappe.whitelist()
 def trigger_chemical_progress_email(target_date: str | None = None) -> dict:
     """Manual send (ignores the time gate) — for testing from Desk / console."""
-    if not (set(frappe.get_roles(frappe.session.user)) & {"General Manager", "System Manager", "Administrator"}):
+    if not has_any_role("General Manager", "System Manager", "Administrator"):
         frappe.throw("Only the General Manager can trigger this email.", frappe.PermissionError)
     target = frappe.utils.getdate(target_date) if target_date else datetime.now(EAT).date()
     return _build_and_send(target)
@@ -313,7 +314,13 @@ def trigger_chemical_progress_email(target_date: str | None = None) -> dict:
 @frappe.whitelist()
 def preview_chemical_progress_email(target_date: str | None = None, farm: str | None = None) -> str:
     """Return the HTML (all farms, or one) without sending — for a preview."""
-    if not (set(frappe.get_roles(frappe.session.user)) & {"General Manager", "System Manager", "Administrator", "Spray Plan Approver", "Spray Plan Creator"}):
+    if not has_any_role(
+        "General Manager",
+        "System Manager",
+        "Administrator",
+        "Spray Plan Approver",
+        "Spray Plan Creator",
+    ):
         frappe.throw("Not permitted.", frappe.PermissionError)
     target = frappe.utils.getdate(target_date) if target_date else datetime.now(EAT).date()
     farm_to_wos = _group_by_farm(_wos_scheduled_on(target))

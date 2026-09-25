@@ -35,6 +35,7 @@ import frappe
 from frappe.utils import flt, now_datetime
 
 from upande_scp.serverscripts.common import crop_protection
+from upande_scp.serverscripts.roles import has_any_role
 
 FINANCE_ROLES = ("General Manager", "System Manager")
 NUTRITION = "Nutrition"
@@ -61,7 +62,7 @@ _SQL = """
 
 def _ensure_finance_role() -> None:
     user = frappe.session.user
-    if user == "Administrator" or set(frappe.get_roles(user)) & set(FINANCE_ROLES):
+    if user == "Administrator" or has_any_role(FINANCE_ROLES, user=user):
         return
     frappe.throw(
         "Crop-protection finances requires the General Manager role.",

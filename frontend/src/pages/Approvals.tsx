@@ -61,6 +61,7 @@ import {
 import { DatePicker } from "@/components/DatePicker";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { ymd, cn } from "@/lib/utils";
+import { errorText } from "@/lib/errors";
 import {
   approveWorkOrder,
   fetchFarmsAndGreenhouses,
@@ -186,10 +187,14 @@ export function Approvals() {
         .catch(() => setSummary([]));
     } catch (e: any) {
       setAllWos([]);
+      // Show what the server actually said. Sniffing for the word "permission"
+      // missed the message this endpoint really throws — "Spray plan approval
+      // requires the General Manager or Spray Plan Approver role." does not
+      // contain it — so the one case worth explaining was the one case that
+      // fell through to "Check your connection", which sent people to look at
+      // their wifi over a role they did not hold.
       setErrorMsg(
-        e?.message?.includes("permission")
-          ? "You do not have permission to view spray plan approvals. Ask an admin for the Spray Plan Approver role."
-          : "Failed to load work orders. Check your connection or permissions.",
+        errorText(e, "Failed to load work orders. Check your connection or permissions."),
       );
     } finally {
       setLoading(false);

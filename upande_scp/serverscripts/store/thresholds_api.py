@@ -14,14 +14,14 @@ to view it.
 import json
 
 import frappe
+from upande_scp.serverscripts.roles import has_any_role
 
 
 _WRITE_ROLES = {"System Manager", "Administrator", "General Manager"}
 
 
 def _check_write_perm():
-    roles = set(frappe.get_roles(frappe.session.user) or [])
-    if not (roles & _WRITE_ROLES):
+    if not has_any_role(_WRITE_ROLES):
         frappe.throw(
             "You need a Spray Plan settings role to edit thresholds.",
             frappe.PermissionError,

@@ -32,6 +32,7 @@ import frappe
 from frappe.utils import now_datetime, add_to_date, flt
 
 from upande_scp.serverscripts.common.warehouse_classify import is_chemical_store
+from upande_scp.serverscripts.roles import has_any_role
 
 
 # ----------------------------------------------------------------------
@@ -41,8 +42,7 @@ _WRITE_ROLES = {"Store Keeper", "Stock Manager", "System Manager", "Administrato
 
 
 def _check_perm():
-    roles = set(frappe.get_roles(frappe.session.user) or [])
-    if not (roles & _WRITE_ROLES):
+    if not has_any_role(_WRITE_ROLES):
         frappe.throw(
             "You need the Store Keeper or Stock Manager role to access this endpoint.",
             frappe.PermissionError,

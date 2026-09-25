@@ -13,6 +13,7 @@ roles. Reuses thresholds_api.list_crops for the crop picker.
 import json
 
 import frappe
+from upande_scp.serverscripts.roles import has_any_role
 
 _WRITE_ROLES = {"System Manager", "Administrator", "General Manager"}
 
@@ -22,8 +23,7 @@ _PREFERRED = ["buds", "top", "middle", "stem", "base"]
 
 
 def _check_write_perm():
-    roles = set(frappe.get_roles(frappe.session.user) or [])
-    if not (roles & _WRITE_ROLES):
+    if not has_any_role(_WRITE_ROLES):
         frappe.throw(
             "You need a Spray Plan settings role to edit ordering.",
             frappe.PermissionError,

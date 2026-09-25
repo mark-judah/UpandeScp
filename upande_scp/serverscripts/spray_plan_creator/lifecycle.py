@@ -29,6 +29,7 @@ from typing import Any
 
 import frappe
 from frappe.utils import get_datetime, now_datetime
+from upande_scp.serverscripts.roles import has_any_role
 
 AFP_TYPE = "Application Floor Plan"
 SE_PURPOSE = "Material Transfer for Manufacture"
@@ -75,7 +76,7 @@ def _ensure_access() -> None:
     user = frappe.session.user
     if not user or user == "Guest":
         frappe.throw("Please log in.", frappe.PermissionError)
-    if frappe.get_roles(user) and ACCESS_ROLES.intersection(frappe.get_roles(user)):
+    if has_any_role(ACCESS_ROLES, user=user):
         return
     frappe.throw(
         "You do not have permission to view spray-plan lifecycle.",

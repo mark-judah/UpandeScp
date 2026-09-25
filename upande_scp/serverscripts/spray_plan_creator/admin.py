@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import frappe
+from upande_scp.serverscripts.roles import has_any_role
 
 
 def _require_admin() -> None:
     user = frappe.session.user
     if user == "Administrator":
         return
-    roles = set(frappe.get_roles(user))
-    if not ({"General Manager", "System Manager"} & roles):
+    if not has_any_role("General Manager", "System Manager", user=user):
         frappe.throw(
             "Only General Manager or System Manager can manage Spray Plan access.",
             title="Forbidden",

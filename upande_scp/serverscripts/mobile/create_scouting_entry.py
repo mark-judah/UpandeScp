@@ -163,6 +163,12 @@ def createScoutingEntry():
                 quality_level   = entry_data.get('quality_level', 'unknown')
                 samples_used    = entry_data.get('samples_used', 0)
                 is_stationary   = entry_data.get('is_stationary', False)
+                # How far the averaged samples sat from the position submitted.
+                # `accuracy` is the chipset's claim about a single fix and floors
+                # out near 1.35 m on these handsets; the spread is what actually
+                # says whether the samples agreed. None when one sample went in —
+                # unmeasured, and stored as unmeasured rather than as zero.
+                gps_spread      = entry_data.get('gps_spread')
 
                 is_block_flow = bool(block or row or tree)
                 # Greenhouse/Bed flow: GPS rounds to nearest Zone (filtered by bed).
@@ -296,6 +302,8 @@ def createScoutingEntry():
                 scout_metadata_doc.gps_quality      = quality_level
                 scout_metadata_doc.gps_confidence   = confidence
                 scout_metadata_doc.gps_samples_used = samples_used
+                if gps_spread is not None:
+                    scout_metadata_doc.gps_spread = gps_spread
                 scout_metadata_doc.stationary       = is_stationary
                 scout_metadata_doc.zone_buffer      = zone_message["buffer"]
                 scout_metadata_doc.distance         = zone_message["distance"]

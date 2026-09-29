@@ -19,6 +19,7 @@
   "gps_quality",
   "gps_confidence",
   "gps_samples_used",
+  "gps_spread",
   "stationary"
  ],
  "fields": [
@@ -84,6 +85,13 @@
    "fieldname": "gps_samples_used",
    "fieldtype": "Data",
    "label": "GPS Samples Used"
+  },
+  {
+   "fieldname": "gps_spread",
+   "fieldtype": "Float",
+   "label": "GPS Spread (m)",
+   "precision": "3",
+   "description": "How far the furthest averaged sample sat from the position that was submitted. The truthful measure of the fix: gps_accuracy is the chipset's claim about ONE sample and floors out around 1.35 m, while five samples agreeing within 0.3 m describe a position good to about 0.3 m. Blank when only one sample went in \u2014 unmeasured, which is not the same as zero."
   },
   {
    "default": "0",

@@ -20,3 +20,6 @@ CHEPSITO_FCM_Weekly_Report_2026_W14.xlsx
 /doc references
 upande_scp/serverscripts/tests/snapshots/
 /trash
+
+# Playwright MCP session artifacts — console logs and page snapshots, never source.
+.playwright-mcp/

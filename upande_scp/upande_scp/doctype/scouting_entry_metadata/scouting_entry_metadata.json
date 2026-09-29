@@ -88,10 +88,9 @@
   },
   {
    "fieldname": "gps_spread",
-   "fieldtype": "Float",
+   "fieldtype": "Data",
    "label": "GPS Spread (m)",
-   "precision": "3",
-   "description": "How far the furthest averaged sample sat from the position that was submitted. The truthful measure of the fix: gps_accuracy is the chipset's claim about ONE sample and floors out around 1.35 m, while five samples agreeing within 0.3 m describe a position good to about 0.3 m. Blank when only one sample went in \u2014 unmeasured, which is not the same as zero."
+   "description": "How far the furthest averaged sample sat from the position that was submitted, in metres. The truthful measure of the fix: gps_accuracy is the chipset's claim about ONE sample and floors out around 1.35 m, while five samples agreeing within 0.3 m describe a position good to about 0.3 m. Blank when only one sample went in \u2014 unmeasured, which is not the same as zero. Data rather than Float for exactly that reason, and to match the four gps_ fields beside it: a Float column cannot be null, so every single-sample capture would have read as perfect agreement."
   },
   {
    "default": "0",

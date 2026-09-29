@@ -302,8 +302,10 @@ def createScoutingEntry():
                 scout_metadata_doc.gps_quality      = quality_level
                 scout_metadata_doc.gps_confidence   = confidence
                 scout_metadata_doc.gps_samples_used = samples_used
+                # Left unset, not zeroed, when one sample went in: the field is blank
+                # for unmeasured, and a stored 0 would claim perfect agreement.
                 if gps_spread is not None:
-                    scout_metadata_doc.gps_spread = gps_spread
+                    scout_metadata_doc.gps_spread = "{:.3f}".format(float(gps_spread))
                 scout_metadata_doc.stationary       = is_stationary
                 scout_metadata_doc.zone_buffer      = zone_message["buffer"]
                 scout_metadata_doc.distance         = zone_message["distance"]

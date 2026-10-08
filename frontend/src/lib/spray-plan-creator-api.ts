@@ -13,7 +13,7 @@
  * in the UI as an Access-Denied banner.
  */
 
-import type { CheckResult, ReviewCompliance } from "@/lib/spray-compliance-api";
+import type { CheckResult, OverrideInput, ReviewCompliance } from "@/lib/spray-compliance-api";
 import { call } from "./frappe";
 
 // ---------- Bootstrap ----------
@@ -157,7 +157,7 @@ export interface DraftPayload {
   chemicals: DraftPayloadChemical[];
   custom_scheduled_application_time?: string | null;
   /** Overrides a GM gives on save; the server ignores them from anyone else. */
-  spray_rule_overrides?: { key: string; reason: string }[];
+  spray_rule_overrides?: OverrideInput[];
 }
 
 export interface DraftSummary {

@@ -3,17 +3,23 @@
  * its IRAC/FRAC codes, rate, rate-limit indicator, and resistance
  * warnings (IRAC/FRAC rotation within the configured window).
  *
+ * Above the table sits the spray check for the plan; a GM can override a
+ * plan awaiting override from here.
+ *
  * Data comes from get_approval_review — loaded once per WO when the
- * component mounts.
+ * component mounts, and again after an override.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   getApprovalReview,
   type ApprovalReview,
 } from "@/lib/spray-plan-creator-api";
+import { overrideSprayPlan, type OverrideInput } from "@/lib/spray-compliance-api";
+import { SprayCheckCard } from "@/components/spray-plan/SprayCheckCard";
+import { OverrideDialog } from "@/components/spray-plan/OverrideDialog";
 
 import { errorText } from "@/lib/errors";
 interface Props {
@@ -24,6 +30,10 @@ export function ApprovalChemicalsTable({ woName }: Props) {
   const [review, setReview] = useState<ApprovalReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideBusy, setOverrideBusy] = useState(false);
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,7 +46,25 @@ export function ApprovalChemicalsTable({ woName }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [woName]);
+  }, [woName, reloadTick]);
+
+  const submitOverride = useCallback(
+    async (overrides: OverrideInput[]) => {
+      setOverrideBusy(true);
+      setOverrideError(null);
+      try {
+        await overrideSprayPlan(woName, overrides);
+        setOverrideOpen(false);
+        setReloadTick((t) => t + 1);
+      } catch (e) {
+        setOverrideError(errorText(e));
+        setOverrideOpen(false);
+      } finally {
+        setOverrideBusy(false);
+      }
+    },
+    [woName],
+  );
 
   if (loading) {
     return (
@@ -56,8 +84,36 @@ export function ApprovalChemicalsTable({ woName }: Props) {
   }
   if (!review) return null;
 
+  const compliance = review.compliance ?? null;
+  const canOverride = compliance?.status === "Awaiting Override" && compliance.can_override;
+
   return (
     <div className="px-3 py-2 border-t bg-muted/20">
+      <div className="mb-2">
+        <SprayCheckCard
+          result={compliance}
+          loading={false}
+          names={Object.fromEntries(review.chemicals.map((c) => [c.item_code, c.item_name || c.item_code]))}
+          overrides={compliance?.overrides}
+          onOverride={canOverride ? () => setOverrideOpen(true) : undefined}
+        />
+        {overrideError && (
+          <div className="mt-1 text-[0.65rem] text-destructive flex items-start gap-1">
+            <AlertTriangle className="h-3 w-3 mt-[1px] shrink-0" />
+            <span>{overrideError}</span>
+          </div>
+        )}
+      </div>
+      {compliance && (
+        <OverrideDialog
+          open={overrideOpen}
+          onOpenChange={setOverrideOpen}
+          violations={compliance.violations}
+          onConfirm={submitOverride}
+          confirmLabel="Override"
+          busy={overrideBusy}
+        />
+      )}
       {review.plan_warnings.length > 0 && (
         <div className="mb-2 text-[0.65rem] text-amber-700 dark:text-amber-400 flex flex-wrap gap-2">
           {review.plan_warnings.map((w) => (

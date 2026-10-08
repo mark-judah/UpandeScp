@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Loader2, Plus, Trash2, Maximize2, FilePlus2 } from "lucide-react";
+import { AlertTriangle, Loader2, Plus, Trash2, Maximize2, FilePlus2, ShieldAlert } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +72,18 @@ import {
   type CreatorBootstrap,
 } from "@/lib/spray-plan-creator-api";
 import { DraftBatchPanel } from "@/components/spray-plan/DraftBatchPanel";
+import { SprayCheckCard } from "@/components/spray-plan/SprayCheckCard";
+import { OverrideDialog } from "@/components/spray-plan/OverrideDialog";
+import {
+  checkSprayPlan,
+  eligibleBoms,
+  eligibleProducts,
+  saveGate,
+  type BomEligibility,
+  type CheckResult,
+  type OverrideInput,
+  type ProductEligibility,
+} from "@/lib/spray-compliance-api";
 import { WeatherCard } from "@/components/WeatherCard";
 import {
   SprayTeamEditor,
@@ -865,6 +878,120 @@ export function ApplicationPlan() {
       })),
     [bootstrap],
   );
+  // ── Spray check ─────────────────────────────────────────────────
+  // The server judges the mix against the picked targets; the page only
+  // shows the verdict and gates the save on it.
+  const [bomElig, setBomElig] = useState<Record<string, BomEligibility>>({});
+  const [check, setCheck] = useState<CheckResult | null>(null);
+  const [checkLoading, setCheckLoading] = useState(false);
+  const [productInfo, setProductInfo] = useState<Record<string, ProductEligibility>>({});
+  const [addEligRows, setAddEligRows] = useState<ProductEligibility[]>([]);
+  const [addShowAll, setAddShowAll] = useState(false);
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [pendingOverrides, setPendingOverrides] = useState<OverrideInput[] | null>(null);
+  const targetsArr = useMemo(() => Array.from(selectedTargets).sort(), [selectedTargets]);
+  // Keyed on the item list, not the rows, so editing a rate does not re-check.
+  const mixKey = useMemo(() => chemRows.map((c) => c.item_code).join("\u0001"), [chemRows]);
+  const mixItems = useMemo(() => (mixKey ? mixKey.split("\u0001") : []), [mixKey]);
+
+  useEffect(() => {
+    if (!greenhouse || !targetsArr.length || !bomList.length) {
+      setBomElig({});
+      return;
+    }
+    let cancelled = false;
+    eligibleBoms({ greenhouse, targets: targetsArr, boms: bomList.map((b) => b.name) })
+      .then((rows) => !cancelled && setBomElig(Object.fromEntries(rows.map((r) => [r.bom, r]))))
+      .catch(() => !cancelled && setBomElig({}));
+    return () => {
+      cancelled = true;
+    };
+  }, [greenhouse, targetsArr, bomList]);
+
+  useEffect(() => {
+    if (!greenhouse || !targetsArr.length || !mixItems.length) {
+      setCheck(null);
+      setProductInfo({});
+      setCheckLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCheckLoading(true);
+    const t = setTimeout(() => {
+      Promise.all([
+        checkSprayPlan({ greenhouse, targets: targetsArr, items: mixItems }),
+        eligibleProducts({ greenhouse, targets: targetsArr, items: [], candidates: mixItems }),
+      ])
+        .then(([r, info]) => {
+          if (cancelled) return;
+          setCheck(r);
+          setProductInfo(Object.fromEntries(info.map((p) => [p.item, p])));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setCheck(null);
+          setProductInfo({});
+        })
+        .finally(() => !cancelled && setCheckLoading(false));
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [greenhouse, targetsArr, mixItems]);
+
+  // An override answers one particular check; a new check needs a new one.
+  useEffect(() => {
+    setPendingOverrides(null);
+  }, [check]);
+
+  const gate = useMemo(() => saveGate(check), [check]);
+
+  /** Items named by a violation that has not been overridden. */
+  const flaggedItems = useMemo(() => {
+    const out = new Set<string>();
+    for (const v of check?.violations ?? []) if (!v.overridden) v.products.forEach((i) => out.add(i));
+    return out;
+  }, [check]);
+
+  // Add-chemical: rank the search results by how well they suit this plan.
+  useEffect(() => {
+    if (!addOpen || !greenhouse || !addResults.length) {
+      setAddEligRows([]);
+      return;
+    }
+    let cancelled = false;
+    eligibleProducts({
+      greenhouse,
+      targets: targetsArr,
+      items: mixItems,
+      candidates: addResults.map((r) => r.item_code),
+    })
+      .then((rows) => !cancelled && setAddEligRows(rows))
+      .catch(() => !cancelled && setAddEligRows([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [addOpen, greenhouse, targetsArr, mixItems, addResults]);
+
+  /** Search results in the server's suitability order; unsuitable target
+   *  products hidden unless "Show all" is on. Unranked results keep their
+   *  search order after the ranked ones. */
+  const addElig = useMemo(
+    () => Object.fromEntries(addEligRows.map((r) => [r.item, r])) as Record<string, ProductEligibility>,
+    [addEligRows],
+  );
+  const addShown = useMemo(() => {
+    const order = new Map(addEligRows.map((r, i) => [r.item, i]));
+    const rank = (i: ChemicalItem) => order.get(i.item_code) ?? order.size;
+    return [...addResults]
+      .sort((a, b) => rank(a) - rank(b))
+      .filter((it) => {
+        const e = addElig[it.item_code];
+        return addShowAll || !e || e.eligible || e.non_target;
+      });
+  }, [addResults, addElig, addEligRows, addShowAll]);
+
   const kitList = useMemo(
     () =>
       (bootstrap?.kits || []).map((k) => ({
@@ -1137,7 +1264,9 @@ export function ApplicationPlan() {
     });
   };
 
-  const submit = async () => {
+  /** `overridesArg` is passed by the override dialog, whose state update
+   *  would not yet be visible to this closure. */
+  const submit = async (overridesArg?: OverrideInput[]) => {
     if (!greenhouse || !sprayDate || !sprayType || !scope || !bom || !kit || !classification) {
       pushToast(
         "err",
@@ -1209,6 +1338,20 @@ export function ApplicationPlan() {
       return;
     }
 
+    const overrides = overridesArg ?? pendingOverrides;
+    if (checkLoading) {
+      pushToast("err", "The spray check is still running. Try again in a moment.");
+      return;
+    }
+    if (gate.state === "blocked") {
+      pushToast("err", gate.reason || "This mix is blocked by the spray check.");
+      return;
+    }
+    if (gate.state === "override" && check?.can_override && !overrides) {
+      setOverrideOpen(true);
+      return;
+    }
+
     const customScopeDetails =
       scope === "Specific Variety"
         ? Array.from(selectedVarieties).join(",")
@@ -1252,6 +1395,7 @@ export function ApplicationPlan() {
           application_rate: c.stock_qty,
         })),
         custom_scheduled_application_time: sprayDate || null,
+        spray_rule_overrides: overrides ?? [],
       };
       const r = await createDraftSprayPlan(draftPayload as Parameters<typeof createDraftSprayPlan>[0]);
       const woName = r?.work_order;
@@ -1264,6 +1408,9 @@ export function ApplicationPlan() {
       );
       for (const w of r?.warnings || []) {
         pushToast("warn", w, 8000);
+      }
+      if (r?.compliance?.status === "Awaiting Override") {
+        pushToast("ok", "Saved. An SCP General Manager must override before approval.");
       }
       // Full reset — operator explicitly asked for a clean slate after
       // every Add-to-batch so the next plan starts from scratch (incl.
@@ -1987,7 +2134,16 @@ export function ApplicationPlan() {
               <div className="flex items-end gap-2">
                 <div className="flex-1 flex flex-col gap-1">
                   <Label>Tank Mix</Label>
-                  <BomPicker boms={bomList} value={bom} onValueChange={setBom} />
+                  <BomPicker
+                    boms={bomList}
+                    value={bom}
+                    onValueChange={setBom}
+                    disabled={!selectedTargets.size}
+                    eligibility={bomElig}
+                  />
+                  {!selectedTargets.size && (
+                    <span className="text-[0.65rem] text-muted-foreground">Pick targets first.</span>
+                  )}
                 </div>
                 <Button
                   type="button"
@@ -2074,7 +2230,13 @@ export function ApplicationPlan() {
                             return (
                               <TableRow key={c.rowId}>
                                 <TableCell className="text-xs">
-                                  <div className="font-medium flex items-center gap-1.5">
+                                  <div className="font-medium flex flex-wrap items-center gap-1.5">
+                                    {flaggedItems.has(c.item_code) && (
+                                      <ShieldAlert
+                                        className="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-400"
+                                        aria-label="Named by the spray check"
+                                      />
+                                    )}
                                     {c.item_name || c.item_code}
                                     <Badge
                                       variant="outline"
@@ -2087,6 +2249,30 @@ export function ApplicationPlan() {
                                       {c.is_fertilizer ? "Fertilizer" : "Chemical"}
                                     </Badge>
                                   </div>
+                                  {(() => {
+                                    const info = productInfo[c.item_code];
+                                    if (!info) return null;
+                                    const hits = info.targets.filter((t) => targetsArr.includes(t));
+                                    if (!hits.length && !info.codes.length) return null;
+                                    return (
+                                      <div className="mt-0.5 flex flex-wrap gap-1">
+                                        {hits.map((t) => (
+                                          <Badge key={t} variant="outline" className="text-[0.6rem] px-1.5 py-0">
+                                            {t}
+                                          </Badge>
+                                        ))}
+                                        {info.codes.map((code) => (
+                                          <Badge
+                                            key={code}
+                                            variant="outline"
+                                            className="text-[0.6rem] px-1.5 py-0 text-muted-foreground"
+                                          >
+                                            {code}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    );
+                                  })()}
                                   <div className="text-[0.65rem] text-muted-foreground font-mono">
                                     {c.item_code}
                                   </div>
@@ -2404,6 +2590,14 @@ export function ApplicationPlan() {
                       })}
                     </div>
                   ) : null}
+
+                  {chemRows.length ? (
+                    <SprayCheckCard
+                      result={check}
+                      loading={checkLoading}
+                      names={Object.fromEntries(chemRows.map((c) => [c.item_code, c.item_name || c.item_code]))}
+                    />
+                  ) : null}
                 </>
               )}
               {/* Add-to-batch lives at the foot of the BOM card so it sits
@@ -2427,12 +2621,21 @@ export function ApplicationPlan() {
                       {stockShortRows.length === 1 ? " is" : "s are"} short on stock
                     </span>
                   ) : null}
+                  {gate.state === "blocked" ? (
+                    <span className="text-xs text-destructive max-w-md text-right whitespace-pre-line">
+                      {gate.reason}
+                    </span>
+                  ) : null}
                   <Button
-                    onClick={submit}
-                    disabled={busy || !greenhouse || stockShortRows.length > 0}
+                    onClick={() => submit()}
+                    disabled={
+                      busy || !greenhouse || stockShortRows.length > 0 || gate.state === "blocked"
+                    }
                     size="sm"
                     title={
-                      stockShortRows.length
+                      gate.state === "blocked"
+                        ? gate.reason
+                        : stockShortRows.length
                         ? stockShortRows
                             .map((s) =>
                               s.source
@@ -2444,7 +2647,11 @@ export function ApplicationPlan() {
                     }
                   >
                     {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    Add to batch
+                    {gate.state === "override"
+                      ? check?.can_override
+                        ? "Save — needs GM override"
+                        : "Save as draft (awaiting override)"
+                      : "Add to batch"}
                   </Button>
                 </div>
               )}
@@ -2519,13 +2726,29 @@ export function ApplicationPlan() {
               <span>{addNotice}</span>
             </div>
           )}
+          {targetsArr.length > 0 && (
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
+                checked={addShowAll}
+                onCheckedChange={(v) => setAddShowAll(v === true)}
+              />
+              Show all (including products that do not suit the targets)
+            </label>
+          )}
           <div className="max-h-72 overflow-auto flex flex-col gap-1">
-            {addResults.map((it) => (
+            {addShown.map((it) => {
+              const e = addElig[it.item_code];
+              const blocked = e?.worst_mode === "Block";
+              return (
               <button
                 key={it.item_code}
                 type="button"
+                disabled={blocked}
                 onClick={() => addChemical(it)}
-                className="text-left px-3 py-2 rounded-md border bg-card hover:bg-muted transition-colors"
+                className={
+                  "text-left px-3 py-2 rounded-md border bg-card transition-colors " +
+                  (blocked ? "opacity-60 cursor-not-allowed" : "hover:bg-muted")
+                }
               >
                 <div className="text-xs font-medium">
                   {it.item_name || it.item_code}
@@ -2542,16 +2765,36 @@ export function ApplicationPlan() {
                     </span>
                   )}
                 </div>
+                {e && !e.eligible && e.reasons[0] && (
+                  <div className="text-[0.65rem] text-muted-foreground mt-0.5">{e.reasons[0]}</div>
+                )}
               </button>
-            ))}
+              );
+            })}
             {!addResults.length && (
               <div className="text-xs text-muted-foreground py-3 text-center">
                 Type to search.
               </div>
             )}
+            {addResults.length > 0 && !addShown.length && (
+              <div className="text-xs text-muted-foreground py-3 text-center">
+                No result suits the targets. Turn on “Show all” to see them.
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
+
+      <OverrideDialog
+        open={overrideOpen}
+        onOpenChange={setOverrideOpen}
+        violations={check?.violations ?? []}
+        onConfirm={(o) => {
+          setPendingOverrides(o);
+          setOverrideOpen(false);
+          void submit(o);
+        }}
+      />
 
       {/* Create-BOM dialog (legacy parity) */}
       <Dialog open={bomDialogOpen} onOpenChange={setBomDialogOpen}>

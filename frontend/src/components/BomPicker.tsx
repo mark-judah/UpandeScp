@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronsUpDown, Search } from "lucide-react";
+import { Check, CheckCircle2, ChevronsUpDown, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -21,6 +21,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { sortBoms, type BomEligibility } from "@/lib/spray-compliance-api";
 
 export interface BomOption {
   name: string;
@@ -73,6 +74,15 @@ export interface BomPickerProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  /** Spray check per BOM name for the plan's targets. Eligible mixes sort
+   *  first; a mix the check hard-blocks cannot be picked. */
+  eligibility?: Record<string, BomEligibility>;
+}
+
+/** Next pickable index from `from` moving by `step`, or `from` when none. */
+function nextEnabled(n: number, from: number, step: 1 | -1, isDisabled: (i: number) => boolean): number {
+  for (let i = from + step; i >= 0 && i < n; i += step) if (!isDisabled(i)) return i;
+  return from;
 }
 
 export function BomPicker({
@@ -82,16 +92,26 @@ export function BomPicker({
   placeholder = "Select tank mix",
   className,
   disabled,
+  eligibility,
 }: BomPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const { shown, matched } = useMemo(
-    () => filterBoms(boms, query),
-    [boms, query],
+  // Sort the whole list, not just the rendered slice, so an eligible mix
+  // beyond the render cap still surfaces at the top.
+  const sorted = useMemo(
+    () => (eligibility ? sortBoms(boms, eligibility) : boms),
+    [boms, eligibility],
   );
+  const { shown, matched } = useMemo(
+    () => filterBoms(sorted, query),
+    [sorted, query],
+  );
+  const isBlocked = (b: BomOption) => eligibility?.[b.name]?.worst_mode === "Block";
+  const isDisabledIdx = (i: number) => !shown[i] || isBlocked(shown[i]);
+  const firstEnabled = () => nextEnabled(shown.length, -1, 1, isDisabledIdx);
 
   const selected = useMemo(
     () => boms.find((b) => b.name === value),
@@ -101,16 +121,14 @@ export function BomPicker({
   // Reset the query and the highlight every time the popover opens, so a stale
   // search from a previous pick doesn't hide the list.
   useEffect(() => {
-    if (open) {
-      setQuery("");
-      setActive(0);
-    }
+    if (open) setQuery("");
   }, [open]);
 
-  // Keep the highlight in range as the query narrows the list.
+  // Keep the highlight on a pickable row as the list or its eligibility changes.
   useEffect(() => {
-    setActive((a) => (a >= shown.length ? 0 : a));
-  }, [shown.length]);
+    setActive(firstEnabled());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown, open]);
 
   // Scroll the highlighted row into view for keyboard navigation. Optional call
   // because scrollIntoView is absent in jsdom and on older browsers — losing the
@@ -130,14 +148,14 @@ export function BomPicker({
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActive((a) => Math.min(a + 1, shown.length - 1));
+      setActive((a) => nextEnabled(shown.length, a, 1, isDisabledIdx));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActive((a) => Math.max(a - 1, 0));
+      setActive((a) => nextEnabled(shown.length, a, -1, isDisabledIdx));
     } else if (e.key === "Enter") {
       e.preventDefault();
       const bom = shown[active];
-      if (bom) pick(bom);
+      if (bom && !isBlocked(bom)) pick(bom);
     }
   };
 
@@ -178,16 +196,21 @@ export function BomPicker({
         </div>
 
         <div ref={listRef} className="max-h-72 overflow-auto p-1">
-          {shown.map((b, i) => (
+          {shown.map((b, i) => {
+            const elig = eligibility?.[b.name];
+            const blocked = isBlocked(b);
+            return (
             <button
               key={b.name}
               type="button"
               data-idx={i}
-              onClick={() => pick(b)}
-              onMouseEnter={() => setActive(i)}
+              aria-disabled={blocked || undefined}
+              onClick={blocked ? undefined : () => pick(b)}
+              onMouseEnter={blocked ? undefined : () => setActive(i)}
               className={cn(
                 "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-                i === active && "bg-muted",
+                i === active && !blocked && "bg-muted",
+                blocked && "cursor-not-allowed opacity-60",
               )}
             >
               <Check
@@ -204,9 +227,27 @@ export function BomPicker({
                   {b.name}
                   {b.custom_farm ? ` · ${b.custom_farm}` : ""}
                 </span>
+                {elig &&
+                  (elig.eligible ? (
+                    <span className="inline-flex items-center gap-1 text-[0.65rem] text-[var(--sd-data-green)]">
+                      <CheckCircle2 className="h-3 w-3 shrink-0" />
+                      {(() => {
+                        const covered = elig.coverage.filter((c) => c.products.length).map((c) => c.target);
+                        return covered.length ? `covers ${covered.join(", ")}` : "passes the spray check";
+                      })()}
+                    </span>
+                  ) : (
+                    <span
+                      className="block truncate text-[0.65rem] text-muted-foreground"
+                      title={elig.reasons.join("\n")}
+                    >
+                      {elig.reasons[0]}
+                    </span>
+                  ))}
               </span>
             </button>
-          ))}
+            );
+          })}
 
           {!shown.length && (
             <div className="px-2 py-6 text-center text-xs text-muted-foreground">

@@ -215,6 +215,14 @@ class TestApprovalReview(_Base):
 		                                          "overridden_by": "Guest"})
 		self.assertEqual([o["honoured"] for o in AR._compliance(wo)["overrides"]], [True, False])
 
+	def test_review_says_whether_the_viewer_can_override(self):
+		from upande_scp.serverscripts.spray_plan_creator import approval_review as AR
+		wo = frappe.new_doc("Work Order")
+		wo.custom_greenhouse, wo.custom_targets, wo.name = "Nowhere", "Thrips", "TEST-WO-NOT-SAVED"
+		self.assertTrue(AR._compliance(wo)["can_override"])
+		frappe.set_user("Guest")
+		self.assertFalse(AR._compliance(wo)["can_override"])
+
 
 class TestOverrideEndpoint(_Base):
 	def setUp(self):

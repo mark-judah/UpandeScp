@@ -34,6 +34,12 @@ describe("groupViolations", () => {
     expect(g[0].items).toHaveLength(2);
     expect(g[0].label).toBe("Product targets");
   });
+  it("keeps rules it does not know in an Other group at the end", () => {
+    const g = groupViolations([v("brand_new_rule", "Warn"), v("target_match", "Warn"), v("another_rule", "Block")]);
+    expect(g.map((x) => x.rule)).toEqual(["target_match", "other"]);
+    expect(g[1].label).toBe("Other");
+    expect(g[1].items.map((x) => x.rule)).toEqual(["brand_new_rule", "another_rule"]);
+  });
 });
 
 describe("modeBadge", () => {

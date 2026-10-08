@@ -74,14 +74,9 @@ def get_approval_review(wo_name: str) -> dict:
             "resistance_warnings": warnings,
         })
 
+    # Group rotation is reported by the spray check (`compliance`), not here.
     plan_warnings: list[str] = []
-    irac_violations = sum(1 for c in chemicals for w in c["resistance_warnings"] if w["kind"] == "irac")
-    frac_violations = sum(1 for c in chemicals for w in c["resistance_warnings"] if w["kind"] == "frac")
     rate_violations = sum(1 for c in chemicals if c["rate_status"] != "ok")
-    if irac_violations:
-        plan_warnings.append(f"{irac_violations} IRAC rotation warning(s)")
-    if frac_violations:
-        plan_warnings.append(f"{frac_violations} FRAC rotation warning(s)")
     if rate_violations:
         plan_warnings.append(f"{rate_violations} rate out-of-range")
 
@@ -113,6 +108,7 @@ def _compliance(wo) -> dict:
          "overridden_on": str(r.overridden_on), "honoured": api.override_counts(r)}
         for r in wo.get("custom_spray_rule_overrides") or []
     ]
+    result["can_override"] = api.can_override()
     return result
 
 

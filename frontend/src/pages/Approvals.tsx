@@ -340,6 +340,7 @@ export function Approvals() {
     });
     let ok = 0;
     let err = 0;
+    let blocked = 0;
     const qr: QrLabel[] = [];
 
     for (let i = 0; i < woNames.length; i++) {
@@ -365,6 +366,11 @@ export function Approvals() {
           appendLog(`ℹ ${name} — ${res.message || "Already forwarded."}`, "warn");
         } else if (res.status === "skipped") {
           appendLog(`— ${name} — ${res.message || "Skipped."}`, "skip");
+        } else if (res.status === "blocked") {
+          // Not a failure: the plan is held until its spray check passes or a
+          // GM overrides it.
+          blocked++;
+          appendLog(`⊘ ${name} — blocked by spray check — ${res.message || "see the plan's spray check."}`, "warn");
         } else {
           err++;
           appendLog(`✗ ${name} — ${res.message || "Unknown error."}`, "err");
@@ -378,10 +384,10 @@ export function Approvals() {
     }
 
     const color =
-      err === 0 ? "#10b981" : err === woNames.length ? "#ef4444" : "#f59e0b";
+      err === 0 && blocked === 0 ? "#10b981" : err === woNames.length ? "#ef4444" : "#f59e0b";
     setProgress((p) => ({
       ...p,
-      title: `Done — ${ok} approved, ${err} failed.`,
+      title: `Done — ${ok} approved${blocked ? `, ${blocked} blocked by spray check` : ""}, ${err} failed.`,
       fillPct: 100,
       doneColor: color,
       closable: true,
@@ -454,20 +460,38 @@ export function Approvals() {
     setBulkBusy(true);
     try {
       const result = await approveDraftsBulk(Array.from(checked));
-      appendLog(
-        `✓ Bulk approved ${result.approved.length}` +
-          (result.skipped.length
-            ? ` · ${result.skipped.length} skipped`
-            : "") +
-          ".",
-        "ok",
-      );
+      const SPRAY_BLOCK = "blocked by spray check: ";
+      const blockedRows = result.skipped.filter((sk) => sk.reason.startsWith(SPRAY_BLOCK));
+      const otherSkipped = result.skipped.length - blockedRows.length;
+      // A fresh log per run: the progress dialog is shared with single approval.
+      const log: LogLine[] = [
+        {
+          text:
+            `✓ Bulk approved ${result.approved.length}` +
+            (blockedRows.length ? ` · ${blockedRows.length} blocked by spray check` : "") +
+            (otherSkipped ? ` · ${otherSkipped} skipped` : "") +
+            ".",
+          variant: "ok",
+        },
+        ...result.skipped.map((sk): LogLine =>
+          sk.reason.startsWith(SPRAY_BLOCK)
+            ? { text: `⊘ ${sk.name} — blocked by spray check — ${sk.reason.slice(SPRAY_BLOCK.length)}`, variant: "warn" }
+            : { text: `— ${sk.name} — ${sk.reason}`, variant: "skip" },
+        ),
+      ];
       setProgress((p) => ({
         ...p,
+        log,
+        isStop: false,
+        qrLabels: [],
         open: true,
-        title: `Approved ${result.approved.length}${result.skipped.length ? ` · ${result.skipped.length} skipped` : ""}.`,
+        title:
+          `Approved ${result.approved.length}` +
+          (blockedRows.length ? ` · ${blockedRows.length} blocked by spray check` : "") +
+          (otherSkipped ? ` · ${otherSkipped} skipped` : "") +
+          ".",
         fillPct: 100,
-        doneColor: "#10b981",
+        doneColor: result.skipped.length ? "#f59e0b" : "#10b981",
         closable: true,
       }));
       setChecked(new Set());

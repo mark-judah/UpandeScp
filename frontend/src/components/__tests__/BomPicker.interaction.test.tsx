@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { BomPicker, MAX_RENDERED_BOMS, type BomOption } from "@/components/BomPicker";
+import type { BomEligibility } from "@/lib/spray-compliance-api";
 
 const boms: BomOption[] = [
   { name: "BOM-Th/fcm-561", item_name: "Botrytis Mix", custom_farm: "Kaptumbo" },
@@ -85,5 +86,42 @@ describe("BomPicker", () => {
     await user.type(screen.getByPlaceholderText(/search by mix/i), "zzz-nothing");
 
     expect(screen.getByText(/No BOM matches/i)).toBeInTheDocument();
+  });
+
+  describe("with spray-check eligibility", () => {
+    const elig = (bom: string, e: Partial<BomEligibility>): BomEligibility => ({
+      bom, eligible: false, status: "Warnings", worst_mode: "Warn", coverage: [], reasons: [], ...e,
+    });
+    const eligibility: Record<string, BomEligibility> = {
+      "BOM-Th/fcm-561": elig("BOM-Th/fcm-561", { worst_mode: "Block", reasons: ["Two IRAC 5 products in one tank"] }),
+      "BOM-Th/fcm-902": elig("BOM-Th/fcm-902", { reasons: ["Thrips is not covered"] }),
+      "BOM-Th/xyz-004": elig("BOM-Th/xyz-004", {
+        eligible: true, status: "Clean", worst_mode: "Off",
+        coverage: [{ target: "Thrips", products: ["ITEM-1"] }],
+      }),
+    };
+
+    it("lists eligible mixes first with what they cover, and the first reason under the rest", async () => {
+      const { user } = open({ eligibility });
+      await user.click(screen.getByRole("button"));
+      const options = screen.getAllByRole("button").filter((b) => b.hasAttribute("data-idx"));
+      expect(options[0]).toHaveTextContent("Downy Mildew Mix");
+      expect(screen.getByText("covers Thrips")).toBeInTheDocument();
+      expect(screen.getByText("Thrips is not covered")).toBeInTheDocument();
+    });
+
+    it("cannot pick a hard-blocked mix by click or keyboard", async () => {
+      const { onValueChange, user } = open({ eligibility });
+      await user.click(screen.getByRole("button"));
+      await user.type(screen.getByPlaceholderText(/search by mix/i), "botrytis");
+
+      await user.click(screen.getByText("Botrytis Mix"));
+      expect(onValueChange).not.toHaveBeenCalled();
+
+      // The highlight starts on, and arrowing never lands on, the blocked row.
+      await user.keyboard("{ArrowUp}{ArrowDown}{Enter}");
+      expect(onValueChange).toHaveBeenCalledTimes(1);
+      expect(onValueChange).toHaveBeenCalledWith("BOM-Th/fcm-902");
+    });
   });
 });

@@ -70,9 +70,12 @@ export function eligibleBoms(args: { greenhouse: string; targets: string[]; boms
   });
 }
 
+/** Violations grouped by rule in engine order. A rule this module does not
+ *  know yet lands in a trailing "Other" group rather than disappearing. */
 export function groupViolations(vs: Violation[]) {
-  return RULE_ORDER.map((rule) => ({ rule, label: ruleLabel(rule), items: vs.filter((v) => v.rule === rule) }))
-    .filter((g) => g.items.length);
+  const known = RULE_ORDER.map((rule) => ({ rule, label: ruleLabel(rule), items: vs.filter((v) => v.rule === rule) }));
+  const other = { rule: "other", label: "Other", items: vs.filter((v) => !RULE_ORDER.includes(v.rule)) };
+  return [...known, other].filter((g) => g.items.length);
 }
 
 export function modeBadge(mode: RuleMode, overridden: boolean): { text: string; tone: "red" | "amber" | "muted" | "green" } {

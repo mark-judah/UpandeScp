@@ -52,3 +52,38 @@ class TestContext(unittest.TestCase):
 		c = C.build_context(greenhouse="Nowhere", targets=["Powdery Mildew"], mix=[])
 		self.assertIn({"kind": "frac", "target": "Powdery Mildew", "code": "11"},
 		              c["guidelines"]["known_resistance"])
+
+
+class TestHistory(unittest.TestCase):
+	GH = "ZZ-TEST-GH"
+
+	def _wo(self, name, state, when, items, docstatus=1):
+		frappe.db.sql("""insert into `tabWork Order` (name, creation, modified, owner, modified_by, docstatus,
+		                 custom_type, custom_greenhouse, workflow_state, custom_scheduled_application_time)
+		                 values (%s, now(), now(), 'Administrator', 'Administrator', %s,
+		                 'Application Floor Plan', %s, %s, %s)""", (name, docstatus, self.GH, state, when))
+		for i, it in enumerate(items, 1):
+			frappe.db.sql("""insert into `tabWork Order Item` (name, creation, modified, owner, modified_by,
+			                 docstatus, idx, parent, parenttype, parentfield, item_code)
+			                 values (%s, now(), now(), 'Administrator', 'Administrator', 0, %s, %s,
+			                 'Work Order', 'required_items', %s)""", (f"{name}-{i}", i, name, it))
+
+	def test_history_filters_and_grouping(self):
+		from frappe.utils import add_days, now_datetime
+		now = now_datetime()
+		self._wo("ZZ-WO-OK", "Completed", add_days(now, -2), ["A", "B"])
+		self._wo("ZZ-WO-DIRECT", "Chemicals Issued Direct", add_days(now, -1), ["C"])
+		self._wo("ZZ-WO-DRAFT", "Awaiting Approval", add_days(now, -1), ["D"])
+		self._wo("ZZ-WO-OLD", "Completed", add_days(now, -4000), ["E"])
+		self._wo("ZZ-WO-FUTURE", "Approved", add_days(now, 3), ["F"])
+		self._wo("ZZ-WO-SELF", "Approved", add_days(now, -3), ["G"])
+		h = C.load_history(self.GH, "", now=now)
+		self.assertEqual([x["wo"] for x in h], ["ZZ-WO-SELF", "ZZ-WO-OK", "ZZ-WO-DIRECT"])
+		self.assertEqual(h[1]["items"], ["A", "B"])
+		h = C.load_history(self.GH, "", exclude_wo="ZZ-WO-SELF", now=now)
+		self.assertEqual([x["wo"] for x in h], ["ZZ-WO-OK", "ZZ-WO-DIRECT"])
+		frappe.db.rollback()
+
+	def test_targets_are_stripped(self):
+		c = C.build_context(greenhouse="Nowhere", targets=["Thrips\r", " ", "", " Mites "], mix=[])
+		self.assertEqual(c["targets"], ["Thrips", "Mites"])

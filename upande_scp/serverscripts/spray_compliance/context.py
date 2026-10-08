@@ -8,7 +8,12 @@ from ..spray_plan_creator import crop_settings
 from . import rules as R
 from .engine import RULES
 
-ACTIVE_STATES = ("Approved", "Chemical Issued", "Tank Mix Manufactured", "Spraying In Progress", "Completed")
+# Every Application Floor Plan state that means approved-or-later, taken from the
+# states present in the data (no Work Order workflow is installed on kaitet.local).
+# Awaiting Approval / Pending Submission are drafts; a NULL state only occurs on
+# draft or cancelled AFP rows, so it is excluded.
+ACTIVE_STATES = ("Approved", "Chemical Issued", "Chemicals Issued Direct", "Tank Mix Manufactured",
+                 "Spraying In Progress", "Completed")
 SETTINGS = "Scouting and Crop Protection Settings"
 
 
@@ -129,7 +134,7 @@ def build_context(*, greenhouse, targets, mix, exclude_wo=None, crop=None) -> di
 	history = load_history(greenhouse, crop, exclude_wo, now)
 	items = set(mix) | {i for h in history for i in h["items"]}
 	return {
-		"crop": crop, "targets": [t for t in targets or [] if t], "mix": [m for m in mix or [] if m],
+		"crop": crop, "targets": [t.strip() for t in targets or [] if t and t.strip()], "mix": [m for m in mix or [] if m],
 		"products": load_products(items), "history": history, "guidelines": load_guidelines(),
 		"incompatibilities": load_incompatibilities(), "modes": load_modes(crop),
 		"now": now.strftime("%Y-%m-%d %H:%M:%S"),

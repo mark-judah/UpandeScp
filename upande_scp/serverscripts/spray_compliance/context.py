@@ -61,7 +61,7 @@ def load_products(items) -> dict:
 			if code and code not in bucket.get(r.parent, []):
 				bucket.setdefault(r.parent, []).append(code)
 	targets = {}
-	for r in frappe.db.sql("""select parent, ifnull(pest, disease) t from `tabChemical Targets`
+	for r in frappe.db.sql("""select parent, coalesce(nullif(pest,''), nullif(disease,'')) t from `tabChemical Targets`
 	                          where parenttype='Spray Product' and parentfield='default_targets'
 	                          and parent in %(p)s order by idx""", {"p": tuple(names or [""])}, as_dict=True):
 		if r.t:

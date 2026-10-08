@@ -43,7 +43,7 @@ SEED = [
 	{"ingredient": "Flubendiamide", "kind": I, "irac_code": "28"},
 	{"ingredient": "Spinetoram", "kind": I, "irac_code": "5"},
 	{"ingredient": "Spinosad", "kind": I, "irac_code": "5"},
-	{"ingredient": "Emamectin benzoate", "kind": I, "irac_code": "6", "aliases": "Emamectin"},
+	{"ingredient": "Emamectin benzoate", "kind": I, "irac_code": "6", "aliases": "Emamectin\nEmmamectin benzoate"},
 	{"ingredient": "Abamectin", "kind": I, "irac_code": "6"},
 	{"ingredient": "Lufenuron", "kind": I, "irac_code": "15"},
 	{"ingredient": "Thiocyclam", "kind": I, "irac_code": "14", "aliases": "Thiocyclam hydrogen oxalate"},

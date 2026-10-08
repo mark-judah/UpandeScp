@@ -418,6 +418,11 @@ def approve_single_work_order(wo_name):
             "message": f"Skipped — workflow state is '{wo_doc.workflow_state or 'unset'}'.",
         }
 
+    from upande_scp.serverscripts.spray_compliance.api import enforce_on_approval
+    blocked = enforce_on_approval(wo_doc)
+    if blocked:
+        return {"wo": wo_name, "status": "blocked", "message": blocked["reason"]}
+
     # Guard: any non-cancelled MTM SE already exists?
     existing = frappe.get_all(
         "Stock Entry",

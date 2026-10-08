@@ -69,7 +69,10 @@ def _run_bulk(names, transfer_maker):
     with mock.patch.object(bulk.frappe, "db", db), \
          mock.patch.object(bulk.frappe, "session", session), \
          mock.patch.object(bulk.frappe, "get_doc", mock.Mock()), \
-         mock.patch.object(bulk, "create_transfer_stock_entry", transfer_maker, create=True):
+         mock.patch.object(bulk, "create_transfer_stock_entry", transfer_maker, create=True), \
+         mock.patch.object(bulk, "_compliance_block", return_value=None):
+        # The spray check is a separate gate (test_spray_compliance_enforcement);
+        # here every plan passes it so only the transfer path is under test.
         result = bulk.approve_drafts_bulk(names)
     return db, result
 

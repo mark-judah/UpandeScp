@@ -7,6 +7,7 @@ import frappe
 from frappe.utils import flt
 
 from ..common import crop_protection
+from ..spray_compliance import api as compliance
 from .scope import _resolve_user_scope
 from .validation import (
     derive_cost_center, validate_preventive_reason, validate_rate_in_limits,
@@ -367,6 +368,18 @@ def _apply_payload(wo, payload: dict) -> None:
     )
 
 
+def _compliance_payload(wo, payload: dict) -> dict:
+    """The plan as the spray check sees it, read off the WO after
+    `_apply_payload`: resolved item codes, and the stored greenhouse/targets
+    when an update payload leaves them out."""
+    return {
+        **payload,
+        "custom_greenhouse": wo.custom_greenhouse,
+        "custom_targets": (wo.custom_targets or "").split("\n"),
+        "chemicals": [{"item_code": r.item_code} for r in wo.required_items],
+    }
+
+
 def _validate_payload(payload: dict, scope: dict) -> None:
     classification = payload.get("custom_classification") or ""
     validate_preventive_reason(classification, payload.get("custom_preventive_reason"))
@@ -462,6 +475,7 @@ def create_draft_spray_plan(payload):
     if wip_warehouse:
         wo.wip_warehouse = wip_warehouse
     _apply_payload(wo, payload)
+    compliance_result = compliance.enforce_on_save(_compliance_payload(wo, payload), wo)
 
     # Mint a per-plan BOM (one per plan, for traceability + to keep bom_no in
     # lockstep with the recipe). production_item stays the tank-mix FG item.
@@ -492,7 +506,8 @@ def create_draft_spray_plan(payload):
     if dup_warning:
         warnings.append(dup_warning)
 
-    return {"work_order": wo.name, "summary": _summarize(wo), "warnings": warnings}
+    return {"work_order": wo.name, "summary": _summarize(wo), "warnings": warnings,
+            "compliance": compliance_result}
 
 
 @frappe.whitelist()
@@ -596,6 +611,9 @@ def update_draft_plan(name: str, payload):
     ])
 
     _apply_payload(wo, payload)
+    compliance_result = compliance.enforce_on_save(
+        _compliance_payload(wo, payload), wo, exclude_wo=wo.name,
+    )
 
     # Re-mint a per-plan BOM matching the (possibly edited) recipe, then retire
     # the superseded auto-BOM if nothing else references it.
@@ -626,7 +644,8 @@ def update_draft_plan(name: str, payload):
     )
     if dup_warning:
         warnings.append(dup_warning)
-    return {"work_order": wo.name, "summary": _summarize(wo), "warnings": warnings}
+    return {"work_order": wo.name, "summary": _summarize(wo), "warnings": warnings,
+            "compliance": compliance_result}
 
 
 @frappe.whitelist()

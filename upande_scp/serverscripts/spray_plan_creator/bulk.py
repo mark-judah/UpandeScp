@@ -87,6 +87,11 @@ def submit_drafts_for_approval(wo_names) -> dict:
     return {"submitted": submitted, "skipped": skipped}
 
 
+def _compliance_block(name):
+    from upande_scp.serverscripts.spray_compliance.api import enforce_on_approval
+    return enforce_on_approval(frappe.get_doc("Work Order", name))
+
+
 @frappe.whitelist()
 def approve_drafts_bulk(wo_names) -> dict:
     """Race-free GM bulk approval: Awaiting Approval -> Approved.
@@ -131,6 +136,9 @@ def approve_drafts_bulk(wo_names) -> dict:
             row = row[0]
             if row.docstatus != 1 or row.workflow_state != "Awaiting Approval":
                 skipped.append({"name": name, "reason": "not awaiting approval"}); continue
+            blocked = _compliance_block(name)
+            if blocked:
+                skipped.append({"name": name, "reason": f"blocked by spray check: {blocked['reason']}"}); continue
             # The transfer must exist before the state moves. If it cannot be
             # created, leave the WO in 'Awaiting Approval' so it stays
             # approvable rather than becoming invisible to the store.

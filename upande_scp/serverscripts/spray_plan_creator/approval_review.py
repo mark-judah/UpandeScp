@@ -7,7 +7,7 @@ from frappe.utils import add_days, get_datetime, now_datetime
 from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
 from upande_scp.serverscripts.common.crop_protection import get_product_rate
 
-# Table MultiSelect child doctypes for Item IRAC/FRAC codes
+# Table MultiSelect child doctypes for Spray Product IRAC/FRAC codes
 _IRAC_CHILD_TABLE = "IRAC Code Filter"
 _FRAC_CHILD_TABLE = "FRAC Code Filter"
 
@@ -34,8 +34,8 @@ def get_approval_review(wo_name: str) -> dict:
 
         # Fetch IRAC/FRAC codes for this item via child table. The Code Filter
         # child doctypes store the value in the ``code`` column (Link).
-        irac_codes = _get_item_codes(r.item_code, _IRAC_CHILD_TABLE, "custom_irac", "code") if item_exists else []
-        frac_codes = _get_item_codes(r.item_code, _FRAC_CHILD_TABLE, "custom_frac", "code") if item_exists else []
+        irac_codes = _get_item_codes(r.item_code, _IRAC_CHILD_TABLE, "irac", "code") if item_exists else []
+        frac_codes = _get_item_codes(r.item_code, _FRAC_CHILD_TABLE, "frac", "code") if item_exists else []
 
         # Rate limits (custom_lower_rate_limit/custom_upper_rate_limit) are
         # per-1000 L; required_qty is the absolute, so derive the rate to compare.
@@ -103,12 +103,23 @@ def get_approval_review(wo_name: str) -> dict:
         },
         "chemicals": chemicals,
         "plan_warnings": plan_warnings,
+        "compliance": _compliance(wo),
     }
+
+
+def _compliance(wo) -> dict:
+    from upande_scp.serverscripts.spray_compliance import api, context as C, engine as E
+    result = E.check_mix(C.context_for_wo(wo), api.stored_overrides(wo))
+    result["overrides"] = [
+        {"rule": r.rule, "reason": r.reason, "overridden_by": r.overridden_by, "overridden_on": str(r.overridden_on)}
+        for r in wo.get("custom_spray_rule_overrides") or []
+    ]
+    return result
 
 
 def _get_item_codes(item_code: str, child_table: str, parent_field: str,
                     code_col: str) -> list[str]:
-    """Return the list of code values from a Table MultiSelect child table for an Item.
+    """Return the hand-entered code values from a Spray Product Table MultiSelect child table.
 
     ``code_col`` is the actual DB column that holds the code value. Both Code
     Filter child doctypes (``IRAC Code Filter`` / ``FRAC Code Filter``) store it
@@ -118,7 +129,7 @@ def _get_item_codes(item_code: str, child_table: str, parent_field: str,
     rows = frappe.db.sql(
         f"SELECT `{code_col}` AS code"
         f" FROM `tab{child_table}`"
-        f" WHERE parent=%s AND parenttype='Item' AND parentfield=%s",
+        f" WHERE parent=%s AND parenttype='Spray Product' AND parentfield=%s",
         (item_code, parent_field),
         as_dict=True,
         debug=0,
@@ -136,11 +147,11 @@ def _detect_resistance_warnings(
         return []
     if code_kind == "irac":
         child_table = _IRAC_CHILD_TABLE
-        parent_field = "custom_irac"
+        parent_field = "irac"
         code_col = "code"
     else:
         child_table = _FRAC_CHILD_TABLE
-        parent_field = "custom_frac"
+        parent_field = "frac"
         code_col = "code"
 
     cutoff = add_days(now_datetime(), -window_days)
@@ -154,7 +165,7 @@ def _detect_resistance_warnings(
             INNER JOIN `tabItem` item ON item.name = wi.item_code
             INNER JOIN `tab{child_table}` cf
                     ON cf.parent = wi.item_code
-                   AND cf.parenttype = 'Item'
+                   AND cf.parenttype = 'Spray Product'
                    AND cf.parentfield = %s
                    AND cf.`{code_col}` = %s
             WHERE wo.custom_greenhouse = %s

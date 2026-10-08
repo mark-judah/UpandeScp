@@ -2,6 +2,7 @@
 approval paths share. The server decides; the UI only shows the decision."""
 
 import frappe
+from frappe.utils import now_datetime
 
 from . import context as C
 from . import engine as E
@@ -72,3 +73,46 @@ def result_for_payload(payload, exclude_wo=None) -> dict:
 	                      mix=[c.get("item_code") for c in payload.get("chemicals") or []],
 	                      exclude_wo=exclude_wo)
 	return E.check_mix(ctx, payload.get("spray_rule_overrides") or [] if can_override() else [])
+
+
+def _message(result) -> str:
+	return "\n".join(f"• {v['message']}" for v in result["violations"]
+	                 if v["mode"] in (E.BLOCK, E.GM) and not v["overridden"])
+
+
+def stored_overrides(wo) -> list[dict]:
+	"""The WO's override rows that still count: given by someone allowed to
+	override, with a reason. A row a non-GM wrote straight onto the WO does not."""
+	return [{"key": r.subject, "reason": r.reason}
+	        for r in wo.get("custom_spray_rule_overrides") or []
+	        if r.subject and (r.reason or "").strip() and r.overridden_by and can_override(r.overridden_by)]
+
+
+def enforce_on_save(payload, wo, exclude_wo=None) -> dict:
+	"""Check a draft before it is written. A hard block throws; otherwise the
+	status and the honoured overrides are written onto `wo`."""
+	overrides = [o for o in payload.get("spray_rule_overrides") or []
+	             if o.get("key") and (o.get("reason") or "").strip()]
+	if overrides and not can_override():
+		overrides = []
+	result = result_for_payload({**payload, "spray_rule_overrides": overrides}, exclude_wo)
+	if any(v["mode"] == E.BLOCK for v in result["violations"]):
+		frappe.throw(_message(result), title="Spray check failed")
+	wo.custom_compliance_status = result["status"]
+	by_key = {o["key"]: o for o in overrides}
+	now = now_datetime()
+	wo.set("custom_spray_rule_overrides", [
+		{"rule": v["rule"], "subject": v["key"], "reason": by_key[v["key"]]["reason"].strip(),
+		 "overridden_by": frappe.session.user, "overridden_on": now}
+		for v in result["violations"] if v["overridden"]
+	])
+	result["can_override"] = can_override()
+	return result
+
+
+def enforce_on_approval(wo) -> dict | None:
+	"""None when the WO may be approved, else {"reason": ...}."""
+	result = E.check_mix(C.context_for_wo(wo), stored_overrides(wo))
+	if result["blocking"]:
+		return {"reason": _message(result)}
+	return None

@@ -136,7 +136,12 @@ def approve_drafts_bulk(wo_names) -> dict:
             row = row[0]
             if row.docstatus != 1 or row.workflow_state != "Awaiting Approval":
                 skipped.append({"name": name, "reason": "not awaiting approval"}); continue
-            blocked = _compliance_block(name)
+            try:
+                blocked = _compliance_block(name)
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"Bulk approve – spray check: {name}")
+                skipped.append({"name": name, "reason": "spray check could not run"})
+                continue
             if blocked:
                 skipped.append({"name": name, "reason": f"blocked by spray check: {blocked['reason']}"}); continue
             # The transfer must exist before the state moves. If it cannot be

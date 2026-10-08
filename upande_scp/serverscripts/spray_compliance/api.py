@@ -84,8 +84,12 @@ def stored_overrides(wo) -> list[dict]:
 	"""The WO's override rows that still count: given by someone allowed to
 	override, with a reason. A row a non-GM wrote straight onto the WO does not."""
 	return [{"key": r.subject, "reason": r.reason}
-	        for r in wo.get("custom_spray_rule_overrides") or []
-	        if r.subject and (r.reason or "").strip() and r.overridden_by and can_override(r.overridden_by)]
+	        for r in wo.get("custom_spray_rule_overrides") or [] if override_counts(r)]
+
+
+def override_counts(row) -> bool:
+	return bool(row.subject and (row.reason or "").strip() and row.overridden_by
+	            and can_override(row.overridden_by))
 
 
 def enforce_on_save(payload, wo, exclude_wo=None) -> dict:
@@ -116,3 +120,86 @@ def enforce_on_approval(wo) -> dict | None:
 	if result["blocking"]:
 		return {"reason": _message(result)}
 	return None
+
+
+# Where a GM may still override: a draft, or a plan waiting for approval.
+OVERRIDABLE_STATES = ("Pending Submission", "Awaiting Approval")
+_OVERRIDE_TABLE = "custom_spray_rule_overrides"
+
+
+@frappe.whitelist()
+def override_spray_plan(wo, overrides):
+	"""A GM overrides `Block (GM override)` violations on someone else's plan.
+
+	Writes the override rows and the status directly: the plan's recipe is not
+	touched, so nothing else (BOM, re-entry, ERPNext's Work Order hooks) has
+	cause to run. `overrides` = [{rule, key, reason}]; only rows matching a
+	current GM-mode violation are kept."""
+	if not can_override():
+		frappe.throw("Only an SCP General Manager can override a spray check.", frappe.PermissionError)
+	from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import _ensure_wo_in_approver_scope
+	_ensure_wo_in_approver_scope(wo)
+	doc = frappe.get_doc("Work Order", wo)
+	if doc.custom_type != "Application Floor Plan":
+		frappe.throw("Only spray plans can be overridden.")
+	if doc.docstatus == 2 or doc.workflow_state not in OVERRIDABLE_STATES:
+		frappe.throw(f"This plan is '{doc.workflow_state or 'unset'}'; overrides can only be given before approval.")
+	given = _list(overrides)
+	if not given or any(not (o.get("reason") or "").strip() or not o.get("key") for o in given):
+		frappe.throw("Every override needs a reason.", title="Reason required")
+
+	kept = {r.subject: r for r in doc.get(_OVERRIDE_TABLE) or [] if override_counts(r)}
+	new = {o["key"]: o["reason"].strip() for o in given}
+	merged = [{"key": k, "reason": r.reason} for k, r in kept.items() if k not in new] + \
+	         [{"key": k, "reason": v} for k, v in new.items()]
+	result = E.check_mix(C.context_for_wo(doc), merged)
+	if any(v["mode"] == E.BLOCK for v in result["violations"]):
+		frappe.throw(_message(result), title="Spray check failed")
+
+	now, user = now_datetime(), frappe.session.user
+	rows = []
+	for v in result["violations"]:
+		if not (v["mode"] == E.GM and v["overridden"]):
+			continue
+		if v["key"] in new:
+			rows.append({"rule": v["rule"], "subject": v["key"], "reason": new[v["key"]],
+			             "overridden_by": user, "overridden_on": now})
+		else:
+			old = kept[v["key"]]
+			rows.append({"rule": old.rule, "subject": old.subject, "reason": old.reason,
+			             "overridden_by": old.overridden_by, "overridden_on": old.overridden_on})
+	frappe.db.delete("Spray Rule Override", {"parent": doc.name, "parenttype": "Work Order",
+	                                         "parentfield": _OVERRIDE_TABLE})
+	for i, row in enumerate(rows, 1):
+		frappe.get_doc({"doctype": "Spray Rule Override", "parent": doc.name, "parenttype": "Work Order",
+		                "parentfield": _OVERRIDE_TABLE, "idx": i, **row}).db_insert()
+	frappe.db.set_value("Work Order", doc.name, "custom_compliance_status", result["status"])
+	doc.add_comment("Info", f"Spray check overridden by {user}: " +
+	                "; ".join(f"{r['subject']} ({r['reason']})" for r in rows if r["overridden_by"] == user))
+	result["can_override"] = True
+	return result
+
+
+def stamp_overrides(doc, method=None):
+	"""Work Order validate hook: an override row that is new, or whose subject or
+	reason changed, is signed by whoever is saving it now — so a row written via
+	Desk or REST cannot claim another user's authority."""
+	if doc.get("custom_type") != "Application Floor Plan":
+		return
+	rows = doc.get(_OVERRIDE_TABLE) or []
+	if not rows:
+		return
+	prev = {}
+	if not doc.is_new():
+		prev = {r.name: r for r in frappe.db.sql(
+			"""select name, subject, reason, overridden_by, overridden_on from `tabSpray Rule Override`
+			   where parent=%s and parenttype='Work Order' and parentfield=%s""",
+			(doc.name, _OVERRIDE_TABLE), as_dict=True)}
+	now, user = now_datetime(), frappe.session.user
+	for r in rows:
+		p = prev.get(r.name) if r.name else None
+		if not p or p.subject != r.subject or (p.reason or "") != (r.reason or ""):
+			r.overridden_by, r.overridden_on = user, now
+		else:
+			# Unchanged row: its signature is whatever the database says, not the payload.
+			r.overridden_by, r.overridden_on = p.overridden_by, p.overridden_on

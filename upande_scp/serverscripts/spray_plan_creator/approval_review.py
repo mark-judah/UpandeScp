@@ -6,10 +6,7 @@ from frappe.utils import add_days, get_datetime, now_datetime
 
 from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
 from upande_scp.serverscripts.common.crop_protection import get_product_rate
-
-# Table MultiSelect child doctypes for Spray Product IRAC/FRAC codes
-_IRAC_CHILD_TABLE = "IRAC Code Filter"
-_FRAC_CHILD_TABLE = "FRAC Code Filter"
+from upande_scp.serverscripts.spray_compliance import context as C
 
 
 @frappe.whitelist()
@@ -22,6 +19,8 @@ def get_approval_review(wo_name: str) -> dict:
     irac_window = settings.irac_rotation_window_days or 14
     frac_window = settings.frac_rotation_window_days or 21
 
+    # A product's codes = its linked ingredients' codes + hand-entered ones (spec D9).
+    products = C.load_products([r.item_code for r in wo.required_items or []])
     chemicals = []
     for r in (wo.required_items or []):
         item_exists = frappe.db.exists("Item", r.item_code)
@@ -32,10 +31,9 @@ def get_approval_review(wo_name: str) -> dict:
         else:
             lower = upper = None
 
-        # Fetch IRAC/FRAC codes for this item via child table. The Code Filter
-        # child doctypes store the value in the ``code`` column (Link).
-        irac_codes = _get_item_codes(r.item_code, _IRAC_CHILD_TABLE, "irac", "code") if item_exists else []
-        frac_codes = _get_item_codes(r.item_code, _FRAC_CHILD_TABLE, "frac", "code") if item_exists else []
+        product = products.get(r.item_code) or {}
+        irac_codes = list(product.get("irac") or [])
+        frac_codes = list(product.get("frac") or [])
 
         # Rate limits (custom_lower_rate_limit/custom_upper_rate_limit) are
         # per-1000 L; required_qty is the absolute, so derive the rate to compare.
@@ -108,33 +106,14 @@ def get_approval_review(wo_name: str) -> dict:
 
 
 def _compliance(wo) -> dict:
-    from upande_scp.serverscripts.spray_compliance import api, context as C, engine as E
+    from upande_scp.serverscripts.spray_compliance import api, engine as E
     result = E.check_mix(C.context_for_wo(wo), api.stored_overrides(wo))
     result["overrides"] = [
-        {"rule": r.rule, "reason": r.reason, "overridden_by": r.overridden_by, "overridden_on": str(r.overridden_on)}
+        {"rule": r.rule, "subject": r.subject, "reason": r.reason, "overridden_by": r.overridden_by,
+         "overridden_on": str(r.overridden_on), "honoured": api.override_counts(r)}
         for r in wo.get("custom_spray_rule_overrides") or []
     ]
     return result
-
-
-def _get_item_codes(item_code: str, child_table: str, parent_field: str,
-                    code_col: str) -> list[str]:
-    """Return the hand-entered code values from a Spray Product Table MultiSelect child table.
-
-    ``code_col`` is the actual DB column that holds the code value. Both Code
-    Filter child doctypes (``IRAC Code Filter`` / ``FRAC Code Filter``) store it
-    in the ``code`` column (Link). (Kaitet additionally has a legacy
-    ``irac_code``/``frac_code`` column; the app's canonical field is ``code``.)
-    """
-    rows = frappe.db.sql(
-        f"SELECT `{code_col}` AS code"
-        f" FROM `tab{child_table}`"
-        f" WHERE parent=%s AND parenttype='Spray Product' AND parentfield=%s",
-        (item_code, parent_field),
-        as_dict=True,
-        debug=0,
-    )
-    return [r["code"] for r in rows if r.get("code")]
 
 
 def _detect_resistance_warnings(
@@ -142,47 +121,34 @@ def _detect_resistance_warnings(
     code_kind: str, code_value: str,
     window_days: int,
 ) -> list[dict]:
-    """Check for prior WOs in the given window on the same greenhouse using the same code."""
+    """Check for prior WOs in the given window on the same greenhouse using the same code.
+
+    A prior product's codes are read the same way as the plan's own
+    (``context.load_products``: linked ingredients + hand-entered rows)."""
     if not greenhouse or not code_value:
         return []
-    if code_kind == "irac":
-        child_table = _IRAC_CHILD_TABLE
-        parent_field = "irac"
-        code_col = "code"
-    else:
-        child_table = _FRAC_CHILD_TABLE
-        parent_field = "frac"
-        code_col = "code"
-
     cutoff = add_days(now_datetime(), -window_days)
     rows = frappe.db.sql(
-        f"""SELECT wo.name AS wo,
-                   wo.custom_scheduled_application_time AS sched,
-                   wi.item_code AS item_code,
-                   item.item_name AS item_name
-            FROM `tabWork Order` wo
-            INNER JOIN `tabWork Order Item` wi ON wi.parent = wo.name
-            INNER JOIN `tabItem` item ON item.name = wi.item_code
-            INNER JOIN `tab{child_table}` cf
-                    ON cf.parent = wi.item_code
-                   AND cf.parenttype = 'Spray Product'
-                   AND cf.parentfield = %s
-                   AND cf.`{code_col}` = %s
-            WHERE wo.custom_greenhouse = %s
-              AND wo.name != %s
-              AND wo.custom_type = 'Application Floor Plan'
-              AND wo.workflow_state IN ('Approved', 'Chemical Issued', 'Tank Mix Manufactured',
-                                        'Spraying In Progress', 'Completed')
-              AND wo.custom_scheduled_application_time >= %s
-            ORDER BY wo.custom_scheduled_application_time DESC
-            LIMIT 1""",
-        (parent_field, code_value, greenhouse, exclude_wo, cutoff),
+        """SELECT wo.name AS wo,
+                  wo.custom_scheduled_application_time AS sched,
+                  wi.item_code AS item_code,
+                  item.item_name AS item_name
+           FROM `tabWork Order` wo
+           INNER JOIN `tabWork Order Item` wi ON wi.parent = wo.name
+           INNER JOIN `tabItem` item ON item.name = wi.item_code
+           WHERE wo.custom_greenhouse = %(gh)s
+             AND wo.name != %(ex)s
+             AND wo.custom_type = 'Application Floor Plan'
+             AND wo.workflow_state IN %(st)s
+             AND wo.custom_scheduled_application_time >= %(cut)s
+           ORDER BY wo.custom_scheduled_application_time DESC, wo.name, wi.idx""",
+        {"gh": greenhouse, "ex": exclude_wo, "st": C.ACTIVE_STATES, "cut": cutoff},
         as_dict=True,
-        debug=0,
     )
-    if not rows:
+    products = C.load_products({r["item_code"] for r in rows})
+    r = next((r for r in rows if code_value in (products.get(r["item_code"]) or {}).get(code_kind, [])), None)
+    if not r:
         return []
-    r = rows[0]
     sched = get_datetime(r["sched"]) if r["sched"] else None
     days_ago = (now_datetime() - sched).days if sched else None
     return [{

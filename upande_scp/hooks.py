@@ -252,6 +252,12 @@ _SCP_SCOUTING_EVENTS = {
     "after_insert": _SCP_REALTIME_DIRTY,
 }
 doc_events = {
+    # Spray-check override rows are signed by whoever saves them (Desk/REST
+    # cannot forge another user's override). Limited to spray plans inside.
+    "Work Order": {
+        "validate": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
+        "before_update_after_submit": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
+    },
     "Employee": _SCP_CACHE_EVENTS,
     "Pest": _SCP_CACHE_EVENTS,
     "Plant Disease": _SCP_CACHE_EVENTS,

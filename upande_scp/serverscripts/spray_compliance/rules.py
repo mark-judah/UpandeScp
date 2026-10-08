@@ -5,7 +5,10 @@ are tested without a site.
 A violation does not know its mode; `engine.py` attaches that.
 """
 
+from datetime import datetime, timedelta
 from itertools import combinations
+
+from .ingredients import normalise
 
 NON_TARGET_TYPES = {"Adjuvant", "pH Buffer", "Plant Growth Regulator"}
 
@@ -123,4 +126,115 @@ def tank_mix_incompatible(ctx) -> list[dict]:
 				out.append(violation("tank_mix_incompatible",
 				                     f"{_name(ctx, x)} and {_name(ctx, y)} must not be mixed: {row.get('reason') or 'listed as incompatible'}.",
 				                     products=[x, y]))
+	return out
+
+
+# --- guideline parsing -------------------------------------------------------
+# The FRAC/IRAC Guideline parameters are free strings today (spec D7). Every
+# parser skips a line it cannot read instead of raising: a typo in a settings
+# record must not stop spray plans being saved.
+
+def _lines(text):
+	return [ln.strip() for ln in (text or "").replace("\r", "\n").split("\n") if ln.strip()]
+
+
+def parse_alternate_moa(text) -> int | None:
+	try:
+		n = int(str(text).strip())
+	except (TypeError, ValueError):
+		return None
+	return n if n > 0 else None
+
+
+def parse_max_sprays(text) -> list[dict]:
+	out = []
+	for ln in _lines(text):
+		parts = [p.strip() for p in ln.split(":")]
+		if len(parts) != 3 or not parts[0]:
+			continue
+		try:
+			out.append({"subject": parts[0], "sprays": int(parts[1]), "break_days": int(parts[2])})
+		except ValueError:
+			continue
+	return out
+
+
+def parse_known_resistance(text, kind) -> list[dict]:
+	out = []
+	for ln in _lines(text):
+		target, _, code = ln.partition(":")
+		target, code = target.strip(), code.strip()
+		if target and code:
+			out.append({"kind": kind, "target": target, "code": code})
+	return out
+
+
+def _dt(s):
+	return datetime.strptime(str(s)[:19], "%Y-%m-%d %H:%M:%S")
+
+
+# --- history rules -----------------------------------------------------------
+
+def moa_rotation(ctx) -> list[dict]:
+	out = []
+	limits = ctx["guidelines"].get("alternate_moa") or {}
+	sprays = [h["items"] for h in ctx["history"]] + [_unique_mix(ctx)]
+	for kind in ("irac", "frac"):
+		n = limits.get(kind)
+		if not n:
+			continue
+		label = kind.upper()
+		current = {}
+		for item in sprays[-1]:
+			for c in dict.fromkeys((ctx["products"].get(item) or {}).get(kind) or []):
+				if _counts(c):
+					current.setdefault(c, item)
+		for code, item in sorted(current.items()):
+			run = 0
+			for items in reversed(sprays):
+				if any(code in ((ctx["products"].get(i) or {}).get(kind) or []) for i in items):
+					run += 1
+				else:
+					break
+			if run > n:
+				out.append(violation("moa_rotation",
+				                     f"{label} {code} ({_name(ctx, item)}) would be the {run} spray in a row on this greenhouse; the limit is {n}. Rotate to another group.",
+				                     products=[item], codes=[f"{label} {code}"]))
+	return out
+
+
+def _carries(ctx, item, subject) -> bool:
+	p = ctx["products"].get(item) or {}
+	s = normalise(subject)
+	return s in (normalise(p.get("name")), normalise(item)) or s in {normalise(i) for i in p.get("ingredients") or []}
+
+
+def max_sprays(ctx) -> list[dict]:
+	out = []
+	now = _dt(ctx["now"])
+	for rule in ctx["guidelines"].get("max_sprays") or []:
+		cutoff = now - timedelta(days=rule["break_days"])
+		for item in _unique_mix(ctx):
+			if not _carries(ctx, item, rule["subject"]):
+				continue
+			used = sum(1 for h in ctx["history"]
+			           if _dt(h["when"]) >= cutoff and any(_carries(ctx, i, rule["subject"]) for i in h["items"]))
+			if used >= rule["sprays"]:
+				out.append(violation("max_sprays",
+				                     f"{rule['subject']} ({_name(ctx, item)}) was already sprayed {used} time(s) in the last {rule['break_days']} days; the limit is {rule['sprays']}.",
+				                     products=[item]))
+	return out
+
+
+def known_resistance(ctx) -> list[dict]:
+	out = []
+	wanted = set(ctx["targets"])
+	for row in ctx["guidelines"].get("known_resistance") or []:
+		if row["target"] not in wanted:
+			continue
+		for item in _unique_mix(ctx):
+			if row["code"] in ((ctx["products"].get(item) or {}).get(row["kind"]) or []):
+				out.append(violation("known_resistance",
+				                     f"{row['target']} is known to resist {row['kind'].upper()} {row['code']}, which {_name(ctx, item)} is.",
+				                     products=[item], targets=[row["target"]], codes=[f"{row['kind'].upper()} {row['code']}"]))
 	return out

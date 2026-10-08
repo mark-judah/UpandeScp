@@ -62,6 +62,13 @@ OVERRIDABLE = {
 	"auto_cancel_dormant_days": "As above.",
 	"csu_scan_verification": "How the handover into the work-in-progress area is verified. The flow is the same on every crop, but the crews and their equipment are not.",
 	"wip_area_label": "What that area is called here. Roses call theirs the CSU; an orchard does not.",
+	"rule_target_match": "Product data and resistance pressure differ by crop; roses can be strict while avocado data is still being filled.",
+	"rule_target_coverage": "As above.",
+	"rule_same_moa_in_mix": "As above.",
+	"rule_moa_rotation": "As above.",
+	"rule_max_sprays": "As above.",
+	"rule_known_resistance": "As above.",
+	"rule_tank_mix_incompatible": "As above.",
 }
 
 

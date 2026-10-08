@@ -249,10 +249,27 @@ def _field_spec() -> dict:
 				"hidden": 1,
 			},
 			{
+				"fieldname": "custom_compliance_status",
+				"label": "Spray Check",
+				"fieldtype": "Select",
+				"options": "\nClean\nWarnings\nAwaiting Override\nOverridden",
+				"insert_after": "custom_targets",
+				"read_only": 1,
+				"in_standard_filter": 1,
+			},
+			{
+				"fieldname": "custom_spray_rule_overrides",
+				"label": "Spray Rule Overrides",
+				"fieldtype": "Table",
+				"options": "Spray Rule Override",
+				"insert_after": "custom_compliance_status",
+				"read_only": 1,
+			},
+			{
 				"fieldname": "custom_spray_team",
 				"label": "Spray Team",
 				"fieldtype": "Code",
-				"insert_after": "custom_targets",
+				"insert_after": "custom_spray_rule_overrides",
 				"hidden": 1,
 			},
 			{

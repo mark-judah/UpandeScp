@@ -15,6 +15,15 @@
   "thresholds_section",
   "irac_rotation_window_days",
   "frac_rotation_window_days",
+  "spray_rules_section",
+  "rule_target_match",
+  "rule_target_coverage",
+  "rule_same_moa_in_mix",
+  "rule_moa_rotation",
+  "rule_max_sprays",
+  "rule_known_resistance",
+  "rule_tank_mix_incompatible",
+  "tank_mix_incompatibilities",
   "weather_section",
   "weather_wind_green_max_kmh",
   "weather_wind_red_min_kmh",
@@ -151,6 +160,67 @@
    "fieldtype": "Int",
    "label": "FRAC Rotation Window (days)",
    "non_negative": 1
+  },
+  {
+   "fieldname": "spray_rules_section",
+   "fieldtype": "Section Break",
+   "label": "Spray Rules",
+   "description": "How each check treats a spray plan. Warn saves and shows it; Block (GM override) needs an SCP General Manager's reason; Block cannot be saved. A crop may override these below."
+  },
+  {
+   "fieldname": "rule_target_match",
+   "fieldtype": "Select",
+   "label": "Product targets a selected pest/disease",
+   "options": "Off\nWarn\nBlock (GM override)\nBlock",
+   "default": "Warn"
+  },
+  {
+   "fieldname": "rule_target_coverage",
+   "fieldtype": "Select",
+   "label": "Every selected target is covered",
+   "options": "Off\nWarn\nBlock (GM override)\nBlock",
+   "default": "Warn"
+  },
+  {
+   "fieldname": "rule_same_moa_in_mix",
+   "fieldtype": "Select",
+   "label": "No two products share a FRAC/IRAC group in one tank",
+   "options": "Off\nWarn\nBlock (GM override)\nBlock",
+   "default": "Warn"
+  },
+  {
+   "fieldname": "rule_moa_rotation",
+   "fieldtype": "Select",
+   "label": "FRAC/IRAC rotation on the greenhouse (Alternate MoA guideline)",
+   "options": "Off\nWarn\nBlock (GM override)\nBlock",
+   "default": "Warn"
+  },
+  {
+   "fieldname": "rule_max_sprays",
+   "fieldtype": "Select",
+   "label": "Max sprays / required break (guideline)",
+   "options": "Off\nWarn\nBlock (GM override)\nBlock",
+   "default": "Warn"
+  },
+  {
+   "fieldname": "rule_known_resistance",
+   "fieldtype": "Select",
+   "label": "No product whose group a target resists (guideline)",
+   "options": "Off\nWarn\nBlock (GM override)\nBlock",
+   "default": "Warn"
+  },
+  {
+   "fieldname": "rule_tank_mix_incompatible",
+   "fieldtype": "Select",
+   "label": "No pair from the incompatibility list",
+   "options": "Off\nWarn\nBlock (GM override)\nBlock",
+   "default": "Warn"
+  },
+  {
+   "fieldname": "tank_mix_incompatibilities",
+   "fieldtype": "Table",
+   "label": "Tank Mix Incompatibilities",
+   "options": "Tank Mix Incompatibility"
   },
   {
    "fieldname": "weather_section",
@@ -570,7 +640,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-18 00:00:01.000000",
+ "modified": "2026-10-08 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting and Crop Protection Settings",

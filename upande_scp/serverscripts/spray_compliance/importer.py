@@ -99,6 +99,8 @@ def plan(rows) -> list[dict]:
 		for phrase in split_targets(row["targets_raw"]):
 			name, status = map_target(phrase)
 			if status == "mapped":
+				if any(t["name"] == name for t in targets):
+					continue
 				kind = "pest" if frappe.db.exists("Pest", name) else "disease"
 				targets.append({"name": name, "kind": kind})
 			elif status == "non_target":
@@ -117,7 +119,9 @@ def plan(rows) -> list[dict]:
 		frac = sorted({moa[i].frac_code for i in ingredients if moa[i].frac_code})
 		for p in products:
 			fix = None
-			if non_target:
+			if non_target and p.type and p.type not in ("Insecticide", "Fungicide", "Adjuvant", "Plant Growth Regulator"):
+				fix = None  # pH Buffer and the like are never overwritten
+			elif non_target:
 				want = "Plant Growth Regulator" if "Plant Growth Regulator" in kinds or "growth" in row["targets_raw"].lower() else "Adjuvant"
 				fix = want if p.type != want else None
 			elif frac and not irac and p.type == "Insecticide":
@@ -145,11 +149,13 @@ def _apply(row):
 		for t in row["targets"]:
 			if t["name"] not in have_t:
 				doc.append("default_targets", {t["kind"]: t["name"]})
+				have_t.add(t["name"])
 		for e in row["entries"]:
 			# The same ingredient already on the product, by link or by its label text.
+			keys = {k for k in (normalise(e["name"]), normalise(e["raw"]), normalise(e["ingredient"] or "")) if k}
 			existing = next((a for a in doc.active_ingredients
 			                 if (e["ingredient"] and a.active_ingredient == e["ingredient"])
-			                 or normalise(a.ingredient) in (normalise(e["name"]), normalise(e["ingredient"] or ""))), None)
+			                 or (normalise(a.ingredient) and normalise(a.ingredient) in keys)), None)
 			if existing is None:
 				doc.append("active_ingredients", {"active_ingredient": e["ingredient"], "concentration": e["concentration"],
 				                                  "concentration_unit": e["unit"], "ingredient": e["raw"]})
@@ -175,11 +181,14 @@ def migrate_existing_ingredients(apply=False, commit=True):
 	the text itself is never changed. Returns matched / unmatched for the report."""
 	apply = frappe.parse_json(apply) if isinstance(apply, str) else apply
 	index, _ = _moa_index()
-	matched, unmatched = [], []
+	matched, unmatched, multi = [], [], []
 	for r in frappe.db.sql("""select name, parent, ingredient, concentration from `tabActive Ingredient`
 	                          where parenttype='Spray Product' and parentfield='active_ingredients'
 	                            and ifnull(active_ingredient,'')=''""", as_dict=True):
 		entries = parse_entries(r.ingredient or "")
+		if len(entries) > 1:
+			multi.append({"product": r.parent, "text": r.ingredient})
+			continue
 		e = entries[0] if entries else None
 		canon = match_ingredient(e["name"], index) if e else None
 		if not canon:
@@ -193,21 +202,22 @@ def migrate_existing_ingredients(apply=False, commit=True):
 			frappe.db.set_value("Active Ingredient", r.name, values, update_modified=False)
 	if apply and commit:
 		frappe.db.commit()
-	return {"matched": matched, "unmatched": unmatched, "applied": bool(apply)}
+	return {"matched": matched, "unmatched": unmatched, "multi": multi, "applied": bool(apply)}
 
 
-def _write_report(rows, summary) -> str:
+def _write_report(rows, summary, applied=False) -> str:
 	ts = now_datetime().strftime("%Y%m%d-%H%M%S")
-	base = frappe.get_site_path("private", "files", f"spray_compliance_import_{ts}")
+	base = frappe.get_site_path("private", "files", f"spray_compliance_import_{'applied_' if applied else 'dryrun_'}{ts}")
 	cols = ["sno", "trade_name", "match", "matched", "matched_names", "targets", "unmapped_targets",
-	        "non_target", "ingredients", "unknown_ingredients", "no_concentration", "irac", "frac", "type_fix", "reg_no"]
+	        "non_target", "ingredients", "unknown_ingredients", "no_concentration", "irac", "frac", "type_fixes", "reg_no"]
 	with open(base + ".csv", "w", newline="") as f:
 		w = csv.writer(f)
 		w.writerow(cols)
 		for r in rows:
 			w.writerow([", ".join(t["name"] for t in r[c]) if c == "targets" else
+			            ", ".join(f"{k}: {v}" for k, v in r[c].items()) if isinstance(r[c], dict) else
 			            ", ".join(map(str, r[c])) if isinstance(r[c], list) else r[c] for c in cols])
-	cells = "".join("<tr>" + "".join(f"<td>{html.escape(str(r[c] if not isinstance(r[c], list) else ', '.join(t['name'] if isinstance(t, dict) else str(t) for t in r[c])))}</td>" for c in cols) + "</tr>" for r in rows)
+	cells = "".join("<tr>" + "".join(f"<td>{html.escape(str(', '.join(f'{k}: {v}' for k, v in r[c].items()) if isinstance(r[c], dict) else r[c] if not isinstance(r[c], list) else ', '.join(t['name'] if isinstance(t, dict) else str(t) for t in r[c])))}</td>" for c in cols) + "</tr>" for r in rows)
 	with open(base + ".html", "w") as f:
 		f.write(f"<!doctype html><meta charset=utf-8><title>Spray product import</title>"
 		        f"<pre>{html.escape(frappe.as_json(summary))}</pre><table border=1 cellpadding=4>"
@@ -216,8 +226,13 @@ def _write_report(rows, summary) -> str:
 
 
 @frappe.whitelist()
-def import_roses_sheet(path=None, apply=False, commit=True):
+def import_roses_sheet(path=None, apply=False, commit=True, accept=None):
+	"""accept: sheet trade names whose first-word or duplicate matches the reviewer
+	has confirmed; those rows are skipped on apply otherwise."""
 	apply = frappe.parse_json(apply) if isinstance(apply, str) else apply
+	accept = set(frappe.parse_json(accept) if isinstance(accept, str) else accept or [])
+	if apply and not frappe.db.count("Active Ingredient MoA"):
+		frappe.throw("Active Ingredient MoA is empty — seed it before applying the import.")
 	rows = plan(read_sheet(path or DEFAULT_SHEET))
 	summary = {
 		"rows": len(rows),
@@ -230,11 +245,17 @@ def import_roses_sheet(path=None, apply=False, commit=True):
 		"type_fixes": {k: v for r in rows for k, v in r["type_fixes"].items()},
 		"no_concentration": {r["trade_name"]: r["no_concentration"] for r in rows if r["no_concentration"]},
 		"applied": bool(apply),
+		"skipped_unconfirmed": [],
 	}
 	if apply:
 		for r in rows:
-			if r["matched"]:
-				_apply(r)
+			if not r["matched"]:
+				continue
+			if (r["match"] == "first-word" or len(r["matched"]) > 1) and r["trade_name"] not in accept:
+				summary["skipped_unconfirmed"].append(
+					{"trade_name": r["trade_name"], "match": r["match"], "matched": r["matched_names"]})
+				continue
+			_apply(r)
 		if commit:
 			frappe.db.commit()
-	return {"rows": rows, "summary": summary, "report_file": _write_report(rows, summary)}
+	return {"rows": rows, "summary": summary, "report_file": _write_report(rows, summary, bool(apply))}

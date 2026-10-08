@@ -68,6 +68,45 @@ class TestDryRun(unittest.TestCase):
 		                          "active_ingredient": "Boscalid"}, ["concentration", "concentration_unit"])
 		self.assertEqual(row, (200.0, "g/L"))
 
+	@staticmethod
+	def _child_counts():
+		meta = frappe.get_meta("Spray Product")
+		return {f.options: frappe.db.count(f.options, {"parenttype": "Spray Product"})
+		        for f in meta.get_table_fields()} | {"_products": frappe.db.count("Spray Product")}
+
+	def test_apply_never_overwrites_and_gates_ambiguous_matches(self):
+		# a pre-set registration number, type and concentration must survive
+		frappe.db.set_value("Spray Product", "1111101036", {"registration_no": "KEEP-ME", "type": "Adjuvant"})
+		ai = frappe.db.get_value("Active Ingredient", {"parenttype": "Spray Product", "parent": "1111101036"}, "name")
+		frappe.db.set_value("Active Ingredient", ai, "concentration", 123)
+		first_word = {"GOLAN SUPER 200SL", "EVISECT S", "BEAUVITECH WP", "LECATECH WP"}
+		pre = self._child_counts()
+		r = M.import_roses_sheet(SHEET, apply=True, commit=False)
+		skipped = {x["trade_name"] for x in r["summary"]["skipped_unconfirmed"]}
+		self.assertTrue(first_word <= skipped)
+		self.assertIn("MELTATOX 400 EC", skipped)
+		self.assertEqual(frappe.db.get_value("Spray Product", "1111101036", "type"), "Adjuvant")
+		self.assertEqual(frappe.db.get_value("Active Ingredient", ai, "concentration"), 123)
+		self.assertEqual(frappe.db.get_value("Spray Product", "1111101036", "registration_no"), "KEEP-ME")
+		self.assertEqual(self._child_counts()["_products"], pre["_products"])
+		self.assertEqual(frappe.db.count("FRAC Code Filter", {"parenttype": "Spray Product"}), pre.get("FRAC Code Filter", 0))
+		self.assertEqual(frappe.db.count("IRAC Code Filter", {"parenttype": "Spray Product"}), pre.get("IRAC Code Filter", 0))
+		# skipped rows wrote nothing: compare with an accepting run
+		mid = self._child_counts()
+		M.import_roses_sheet(SHEET, apply=True, commit=False)
+		self.assertEqual(self._child_counts(), mid)  # idempotent across ALL child tables
+		M.import_roses_sheet(SHEET, apply=True, commit=False, accept=list(first_word | {"MELTATOX 400 EC", "LECATECH WP"}))
+		after = self._child_counts()
+		self.assertGreater(sum(after.values()), sum(mid.values()))
+		self.assertEqual(frappe.db.get_value("Spray Product", "1111101036", "registration_no"), "KEEP-ME")
+		M.import_roses_sheet(SHEET, apply=True, commit=False, accept=list(first_word | {"MELTATOX 400 EC", "LECATECH WP"}))
+		self.assertEqual(self._child_counts(), after)
+
+	def test_apply_aborts_without_moa(self):
+		frappe.db.delete("Active Ingredient MoA")
+		with self.assertRaises(frappe.ValidationError):
+			M.import_roses_sheet(SHEET, apply=True, commit=False)
+
 	def test_migrate_existing_links_typos_and_reads_leading_concentration(self):
 		r = M.migrate_existing_ingredients(apply=False)
 		texts = {m["text"]: m for m in r["matched"]}

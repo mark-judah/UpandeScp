@@ -174,7 +174,6 @@ def _apply(row):
 		doc.save(ignore_permissions=True)
 
 
-@frappe.whitelist()
 def migrate_existing_ingredients(apply=False, commit=True):
 	"""Link the free-text Active Ingredient rows already on Spray Products and pull
 	their concentration out of the text ("50g/l Difenoconazole"). Unlinked rows only;
@@ -225,7 +224,6 @@ def _write_report(rows, summary, applied=False) -> str:
 	return base + ".html"
 
 
-@frappe.whitelist()
 def import_roses_sheet(path=None, apply=False, commit=True, accept=None):
 	"""accept: sheet trade names whose first-word or duplicate matches the reviewer
 	has confirmed; those rows are skipped on apply otherwise."""

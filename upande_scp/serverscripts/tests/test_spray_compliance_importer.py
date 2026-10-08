@@ -29,6 +29,17 @@ class TestPure(unittest.TestCase):
 		self.assertEqual(M.normalise_trade_name("CRYPTOGRAN SC\xa0"), "CRYPTOGRAN")
 
 
+class TestNotCallableOverHttp(unittest.TestCase):
+	"""The seed, the migration and the import write with ignore_permissions and
+	read any server path: they are bench-execute tools, never HTTP endpoints."""
+
+	def test_tools_are_not_whitelisted(self):
+		from upande_scp.serverscripts.spray_compliance import api, moa_seed
+		self.assertIn(api.check_spray_plan, frappe.whitelisted)  # the check itself is meaningful
+		for fn in (M.import_roses_sheet, M.migrate_existing_ingredients, moa_seed.seed):
+			self.assertNotIn(fn, frappe.whitelisted, fn.__name__)
+
+
 SHEET = "/home/ubuntu/stive/code/frappe15/apps/upande_scp/doc references/CHemicals/Crop Protection Agents + Target Pest.xlsx"
 
 

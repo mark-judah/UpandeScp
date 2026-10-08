@@ -80,7 +80,6 @@ def _ensure_code(doctype, code, created):
 		created.append(f"{doctype} {code}")
 
 
-@frappe.whitelist()
 def seed(dry_run=True, commit=None):
 	dry_run = frappe.parse_json(dry_run) if isinstance(dry_run, str) else dry_run
 	commit = (not dry_run) if commit is None else commit

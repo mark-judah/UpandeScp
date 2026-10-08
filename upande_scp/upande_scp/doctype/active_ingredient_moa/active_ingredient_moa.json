@@ -98,6 +98,26 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Chemical Store Keeper"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Approver"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Creator"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Supervisor"
   }
  ],
  "row_format": "Dynamic",

@@ -66,6 +66,9 @@ def evaluate_candidates(ctx, candidates) -> list[dict]:
 			"eligible": not mine,
 			"worst_mode": worst,
 			"reasons": [v["message"] for v in mine],
+			# Which rules it breaks: the picker hides only off-target products
+			# ("target_match") and greys the rest.
+			"rules": list(dict.fromkeys(v["rule"] for v in mine)),
 			"codes": R.display_codes(product),
 			"targets": list(product.get("targets") or []),
 			"non_target": R.is_non_target(product),

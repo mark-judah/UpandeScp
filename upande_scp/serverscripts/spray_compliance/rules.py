@@ -153,9 +153,12 @@ def parse_max_sprays(text) -> list[dict]:
 		if len(parts) != 3 or not parts[0]:
 			continue
 		try:
-			out.append({"subject": parts[0], "sprays": int(parts[1]), "break_days": int(parts[2])})
+			sprays, break_days = int(parts[1]), int(parts[2])
 		except ValueError:
 			continue
+		if sprays < 1 or break_days < 1:
+			continue
+		out.append({"subject": parts[0], "sprays": sprays, "break_days": break_days})
 	return out
 
 
@@ -174,6 +177,11 @@ def _dt(s):
 
 
 # --- history rules -----------------------------------------------------------
+
+def _ordinal(n: int) -> str:
+	suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+	return f"{n}{suffix}"
+
 
 def moa_rotation(ctx) -> list[dict]:
 	out = []
@@ -198,7 +206,7 @@ def moa_rotation(ctx) -> list[dict]:
 					break
 			if run > n:
 				out.append(violation("moa_rotation",
-				                     f"{label} {code} ({_name(ctx, item)}) would be the {run} spray in a row on this greenhouse; the limit is {n}. Rotate to another group.",
+				                     f"{label} {code} ({_name(ctx, item)}) would be the {_ordinal(run)} spray in a row on this greenhouse; the limit is {n}. Rotate to another group.",
 				                     products=[item], codes=[f"{label} {code}"]))
 	return out
 

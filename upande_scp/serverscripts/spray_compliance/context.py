@@ -2,7 +2,7 @@
 context dict that `rules.py` / `engine.py` evaluate (shape documented there)."""
 
 import frappe
-from frappe.utils import add_days, now_datetime
+from frappe.utils import add_days, get_datetime, now_datetime
 
 from ..spray_plan_creator import crop_settings
 from . import rules as R
@@ -72,10 +72,18 @@ def load_products(items) -> dict:
 	        for r in rows}
 
 
-def load_history(greenhouse, crop, exclude_wo=None, now=None) -> list[dict]:
+def anchor(when=None):
+	"""The moment a plan is judged at: its scheduled spray time, else now.
+	Plans are made ahead, so "now" would miss approved sprays due before it."""
+	return get_datetime(when) if when else now_datetime()
+
+
+def load_history(greenhouse, crop, exclude_wo=None, when=None) -> list[dict]:
+	"""Approved-or-later sprays on `greenhouse` scheduled before `when` (the
+	plan's own spray time), within the longest window any rule looks back."""
 	if not greenhouse:
 		return []
-	now = now or now_datetime()
+	when = anchor(when)
 	days = max(int(crop_settings.value_for("irac_rotation_window_days", crop) or 0),
 	           int(crop_settings.value_for("frac_rotation_window_days", crop) or 0), 1)
 	# Max-sprays break periods can be longer than the rotation window.
@@ -85,10 +93,10 @@ def load_history(greenhouse, crop, exclude_wo=None, now=None) -> list[dict]:
 	                        where wo.custom_greenhouse=%(gh)s and wo.custom_type='Application Floor Plan'
 	                          and wo.workflow_state in %(st)s and wo.name!=%(ex)s
 	                          and wo.custom_scheduled_application_time >= %(cut)s
-	                          and wo.custom_scheduled_application_time <= %(now)s
+	                          and wo.custom_scheduled_application_time < %(when)s
 	                        order by wo.custom_scheduled_application_time, wo.name, wi.idx""",
 	                     {"gh": greenhouse, "st": ACTIVE_STATES, "ex": exclude_wo or "",
-	                      "cut": add_days(now, -days), "now": now}, as_dict=True)
+	                      "cut": add_days(when, -days), "when": when}, as_dict=True)
 	out, by = [], {}
 	for r in rows:
 		if r.wo not in by:
@@ -128,9 +136,11 @@ def load_modes(crop) -> dict:
 	return {r: crop_settings.value_for(f"rule_{r}", crop) or "Warn" for r in RULES}
 
 
-def build_context(*, greenhouse, targets, mix, exclude_wo=None, crop=None) -> dict:
+def build_context(*, greenhouse, targets, mix, exclude_wo=None, crop=None, when=None) -> dict:
+	"""`when` = the plan's scheduled spray time; history and the rules'
+	"now" are anchored there (falls back to the current time)."""
 	crop = crop if crop is not None else crop_for_greenhouse(greenhouse)
-	now = now_datetime()
+	now = anchor(when)
 	history = load_history(greenhouse, crop, exclude_wo, now)
 	items = set(mix) | {i for h in history for i in h["items"]}
 	return {
@@ -144,7 +154,8 @@ def build_context(*, greenhouse, targets, mix, exclude_wo=None, crop=None) -> di
 def context_for_wo(wo) -> dict:
 	return build_context(greenhouse=wo.custom_greenhouse,
 	                     targets=(wo.custom_targets or "").split("\n"),
-	                     mix=[r.item_code for r in wo.required_items], exclude_wo=wo.name)
+	                     mix=[r.item_code for r in wo.required_items], exclude_wo=wo.name,
+	                     when=wo.custom_scheduled_application_time)
 
 
 def pest_control_items() -> list[str]:

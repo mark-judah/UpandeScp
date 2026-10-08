@@ -223,6 +223,38 @@ class TestApprovalReview(_Base):
 		frappe.set_user("Guest")
 		self.assertFalse(AR._compliance(wo)["can_override"])
 
+	def test_review_survives_a_check_that_cannot_run(self):
+		from upande_scp.serverscripts.spray_plan_creator import approval_review as AR
+		wo = frappe.new_doc("Work Order")
+		wo.custom_greenhouse, wo.custom_targets, wo.name = "Nowhere", "Thrips", "TEST-WO-NOT-SAVED"
+		with mock.patch.object(AR.C, "context_for_wo", side_effect=RuntimeError("boom")), \
+		     mock.patch.object(AR.frappe, "log_error") as log:
+			r = AR._compliance(wo)
+		self.assertEqual(r["status"], "Check failed")
+		self.assertTrue(r["blocking"] and r["message"])
+		self.assertEqual((r["violations"], r["coverage"], r["overrides"]), ([], [], []))
+		log.assert_called_once()
+
+
+class TestSingleApproval(_Base):
+	def test_single_approval_refuses_a_plan_whose_check_cannot_run(self):
+		from upande_scp.serverscripts.spray_plan_ops import spray_plan_approval as SPA
+		name = frappe.db.get_value("Work Order", {"custom_type": "Application Floor Plan",
+		                                          "workflow_state": "Awaiting Approval", "docstatus": 1}, "name")
+		if not name:
+			self.skipTest("no spray plan awaiting approval on this site")
+		with mock.patch.object(SPA, "_ensure_approval_role"), \
+		     mock.patch.object(SPA, "_ensure_wo_in_approver_scope"), \
+		     mock.patch.object(api, "enforce_on_approval", side_effect=RuntimeError("boom")), \
+		     mock.patch.object(SPA, "create_transfer_stock_entry") as make_se, \
+		     mock.patch.object(SPA.frappe, "log_error") as log:
+			r = SPA.approve_single_work_order(name)
+		self.assertEqual((r["wo"], r["status"]), (name, "blocked"))
+		self.assertIn("spray check could not run", r["message"])
+		make_se.assert_not_called()
+		log.assert_called_once()
+		self.assertEqual(frappe.db.get_value("Work Order", name, "workflow_state"), "Awaiting Approval")
+
 
 class TestOverrideEndpoint(_Base):
 	def setUp(self):

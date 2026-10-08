@@ -54,3 +54,46 @@ class TestApi(unittest.TestCase):
 			self.assertEqual(seen, [[], []])
 		finally:
 			frappe.set_user(orig)
+
+
+class TestAnchor(unittest.TestCase):
+	"""Every entry point judges a plan at its own spray time, not at "now"."""
+
+	def _when_passed(self, fn):
+		from unittest import mock
+		from upande_scp.serverscripts.spray_compliance import context as C
+		real = C.build_context
+		seen = []
+
+		def spy(**kw):
+			seen.append(kw.get("when"))
+			return real(**kw)
+
+		with mock.patch.object(C, "build_context", side_effect=spy):
+			fn()
+		return seen
+
+	def test_endpoints_and_save_pass_the_spray_time(self):
+		t = "2026-12-01 06:00:00"
+		bom = frappe.db.get_value("BOM", {"docstatus": 1, "is_active": 1}, "name")
+		self.assertEqual(self._when_passed(lambda: api.check_spray_plan("Nowhere", "[]", "[]", when=t)), [t])
+		self.assertEqual(self._when_passed(lambda: api.eligible_products("Nowhere", "[]", "[]", "[]", when=t)), [t])
+		self.assertEqual(self._when_passed(lambda: api.eligible_boms("Nowhere", "[]", [bom], when=t)), [t])
+		payload = {"custom_greenhouse": "Nowhere", "custom_targets": [], "chemicals": [],
+		           "custom_scheduled_application_time": t}
+		self.assertEqual(self._when_passed(lambda: api.result_for_payload(payload)), [t])
+
+	def test_a_wo_is_judged_at_its_scheduled_time(self):
+		from upande_scp.serverscripts.spray_compliance import context as C
+		wo = frappe.new_doc("Work Order")
+		wo.custom_greenhouse, wo.custom_targets, wo.name = "Nowhere", "Thrips", "TEST-WO-NOT-SAVED"
+		wo.custom_scheduled_application_time = "2026-12-01 06:00:00"
+		self.assertEqual(C.context_for_wo(wo)["now"], "2026-12-01 06:00:00")
+
+	def test_save_payload_carries_the_spray_time(self):
+		from upande_scp.serverscripts.spray_plan_creator import drafts
+		wo = frappe.new_doc("Work Order")
+		wo.custom_greenhouse, wo.custom_targets = "Nowhere", "Thrips"
+		wo.custom_scheduled_application_time = "2026-12-01 06:00:00"
+		p = drafts._compliance_payload(wo, {})
+		self.assertEqual(p["custom_scheduled_application_time"], "2026-12-01 06:00:00")

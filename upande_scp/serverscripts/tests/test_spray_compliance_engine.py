@@ -63,3 +63,6 @@ def test_evaluate_candidates():
 	assert not rows["SUC"]["eligible"] and rows["SUC"]["worst_mode"] == "Block"
 	assert not rows["MEL"]["eligible"] and "Downy Mildew" in rows["MEL"]["reasons"][0]
 	assert rows["ADJ"]["eligible"] and rows["ADJ"]["non_target"]
+	assert rows["COL"]["rules"] == [] and rows["ADJ"]["rules"] == []
+	assert rows["SUC"]["rules"] == ["same_moa_in_mix"]
+	assert "target_match" in rows["MEL"]["rules"]

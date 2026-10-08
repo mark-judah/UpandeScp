@@ -28,27 +28,31 @@ def _honoured(overrides):
 
 
 @frappe.whitelist()
-def check_spray_plan(greenhouse, targets, items, overrides=None, exclude_wo=None):
-	ctx = C.build_context(greenhouse=greenhouse, targets=_list(targets), mix=_list(items), exclude_wo=exclude_wo)
+def check_spray_plan(greenhouse, targets, items, overrides=None, exclude_wo=None, when=None):
+	ctx = C.build_context(greenhouse=greenhouse, targets=_list(targets), mix=_list(items), exclude_wo=exclude_wo,
+	                      when=when)
 	result = E.check_mix(ctx, _honoured(overrides))
 	result["can_override"] = can_override()
 	return result
 
 
 @frappe.whitelist()
-def eligible_products(greenhouse, targets, items=None, candidates=None):
-	ctx = C.build_context(greenhouse=greenhouse, targets=_list(targets), mix=_list(items))
+def eligible_products(greenhouse, targets, items=None, candidates=None, when=None):
+	ctx = C.build_context(greenhouse=greenhouse, targets=_list(targets), mix=_list(items), when=when)
 	cands = _list(candidates) or C.pest_control_items()
 	ctx["products"].update(C.load_products([c for c in cands if c not in ctx["products"]]))
 	rows = E.evaluate_candidates(ctx, cands)
 	for r in rows:
 		r["name"] = (ctx["products"].get(r["item"]) or {}).get("name") or r["item"]
-	rows.sort(key=lambda r: (not r["eligible"], r["non_target"], _SEVERITY[r["worst_mode"]], r["name"].lower()))
+	# Suitable first; then products registered for the targets that break another
+	# rule; products not registered for the targets last.
+	rows.sort(key=lambda r: (not r["eligible"], "target_match" in r["rules"], r["non_target"],
+	                         _SEVERITY[r["worst_mode"]], r["name"].lower()))
 	return rows
 
 
 @frappe.whitelist()
-def eligible_boms(greenhouse, targets, boms):
+def eligible_boms(greenhouse, targets, boms, when=None):
 	boms = _list(boms)
 	if not boms:
 		return []
@@ -56,7 +60,7 @@ def eligible_boms(greenhouse, targets, boms):
 	for r in frappe.db.sql("""select parent, item_code from `tabBOM Item` where parent in %(b)s order by idx""",
 	                       {"b": tuple(boms)}, as_dict=True):
 		items.setdefault(r.parent, []).append(r.item_code)
-	ctx = C.build_context(greenhouse=greenhouse, targets=_list(targets), mix=[])
+	ctx = C.build_context(greenhouse=greenhouse, targets=_list(targets), mix=[], when=when)
 	ctx["products"].update(C.load_products({i for v in items.values() for i in v} - set(ctx["products"])))
 	out = []
 	for bom in boms:
@@ -71,7 +75,7 @@ def result_for_payload(payload, exclude_wo=None) -> dict:
 	ctx = C.build_context(greenhouse=payload.get("custom_greenhouse"),
 	                      targets=payload.get("custom_targets") or [],
 	                      mix=[c.get("item_code") for c in payload.get("chemicals") or []],
-	                      exclude_wo=exclude_wo)
+	                      exclude_wo=exclude_wo, when=payload.get("custom_scheduled_application_time"))
 	return E.check_mix(ctx, payload.get("spray_rule_overrides") or [] if can_override() else [])
 
 

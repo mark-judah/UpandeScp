@@ -77,12 +77,43 @@ class TestHistory(unittest.TestCase):
 		self._wo("ZZ-WO-OLD", "Completed", add_days(now, -4000), ["E"])
 		self._wo("ZZ-WO-FUTURE", "Approved", add_days(now, 3), ["F"])
 		self._wo("ZZ-WO-SELF", "Approved", add_days(now, -3), ["G"])
-		h = C.load_history(self.GH, "", now=now)
+		h = C.load_history(self.GH, "", when=now)
 		self.assertEqual([x["wo"] for x in h], ["ZZ-WO-SELF", "ZZ-WO-OK", "ZZ-WO-DIRECT"])
 		self.assertEqual(h[1]["items"], ["A", "B"])
-		h = C.load_history(self.GH, "", exclude_wo="ZZ-WO-SELF", now=now)
+		h = C.load_history(self.GH, "", exclude_wo="ZZ-WO-SELF", when=now)
 		self.assertEqual([x["wo"] for x in h], ["ZZ-WO-OK", "ZZ-WO-DIRECT"])
+		# Anchored at a plan five days out, the approved spray due in three days is history.
+		h = C.load_history(self.GH, "", exclude_wo="ZZ-WO-SELF", when=add_days(now, 5))
+		self.assertEqual([x["wo"] for x in h], ["ZZ-WO-OK", "ZZ-WO-DIRECT", "ZZ-WO-FUTURE"])
 		frappe.db.rollback()
+
+	def test_rotation_counts_approved_sprays_due_before_the_plan(self):
+		"""Plans are batched ahead: a same-group spray approved for later this week
+		must count against a plan scheduled after it."""
+		from frappe.utils import add_days, now_datetime
+		from upande_scp.serverscripts.spray_compliance import engine as E
+		from upande_scp.serverscripts.spray_compliance import rules as R
+		parents = frappe.db.sql_list("""select distinct parent from `tabFRAC Code Filter`
+		                                where parenttype='Spray Product' limit 50""")
+		products = C.load_products(parents)
+		item = next(i for i, p in products.items() if any(R._counts(c) for c in p["frac"]))
+		now = now_datetime()
+		self._wo("ZZ-WO-SOON", "Approved", add_days(now, 2), [item])
+		plan_at = add_days(now, 6)
+
+		def rotation(when):
+			ctx = C.build_context(greenhouse=self.GH, targets=["Thrips"], mix=[item], crop="", when=when)
+			ctx["guidelines"]["alternate_moa"] = {"irac": 1, "frac": 1}
+			ctx["modes"] = {r: E.OFF for r in E.RULES} | {"moa_rotation": E.WARN}
+			return [v for v in E.check_mix(ctx)["violations"] if v["rule"] == "moa_rotation"]
+
+		try:
+			self.assertTrue(rotation(plan_at), "the spray due before the plan was not counted")
+			self.assertEqual(C.build_context(greenhouse=self.GH, targets=[], mix=[], crop="", when=plan_at)["now"],
+			                 plan_at.strftime("%Y-%m-%d %H:%M:%S"))
+			self.assertFalse(rotation(None))  # judged at "now", the later spray is not history yet
+		finally:
+			frappe.db.rollback()
 
 	def test_targets_are_stripped(self):
 		c = C.build_context(greenhouse="Nowhere", targets=["Thrips\r", " ", "", " Mites "], mix=[])

@@ -100,7 +100,25 @@ def get_approval_review(wo_name: str) -> dict:
     }
 
 
+CHECK_FAILED = "Check failed"
+
+
 def _compliance(wo) -> dict:
+    """The spray check for the review. If it cannot run, the review still
+    loads and says so; approval refuses the plan separately (fail closed)."""
+    try:
+        return _run_compliance(wo)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"Approval review – spray check: {wo.name}")
+        return {
+            "status": CHECK_FAILED,
+            "message": "The spray check could not run for this plan. It cannot be approved until it does.",
+            "violations": [], "coverage": [], "overrides": [],
+            "blocking": True, "needs_override": False, "can_override": False,
+        }
+
+
+def _run_compliance(wo) -> dict:
     from upande_scp.serverscripts.spray_compliance import api, engine as E
     result = E.check_mix(C.context_for_wo(wo), api.stored_overrides(wo))
     result["overrides"] = [

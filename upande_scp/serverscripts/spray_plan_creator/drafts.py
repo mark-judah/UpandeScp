@@ -370,12 +370,13 @@ def _apply_payload(wo, payload: dict) -> None:
 
 def _compliance_payload(wo, payload: dict) -> dict:
     """The plan as the spray check sees it, read off the WO after
-    `_apply_payload`: resolved item codes, and the stored greenhouse/targets
-    when an update payload leaves them out."""
+    `_apply_payload`: resolved item codes, and the stored greenhouse/targets/
+    spray time when an update payload leaves them out."""
     return {
         **payload,
         "custom_greenhouse": wo.custom_greenhouse,
         "custom_targets": (wo.custom_targets or "").split("\n"),
+        "custom_scheduled_application_time": wo.custom_scheduled_application_time,
         "chemicals": [{"item_code": r.item_code} for r in wo.required_items],
     }
 

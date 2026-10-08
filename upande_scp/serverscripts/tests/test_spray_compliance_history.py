@@ -34,6 +34,9 @@ def test_parse_max_sprays():
 
 def test_parse_max_sprays_tolerates_garbage():
 	assert R.parse_max_sprays("Tebuconazole:2\n:1:2\nX:a:3\n\n") == []
+	# A zero or negative limit or break period is a typo, not a rule.
+	assert R.parse_max_sprays("A:0:14\nB:2:0\nC:-1:14\nD:2:-5\nE:1:7") == [
+		{"subject": "E", "sprays": 1, "break_days": 7}]
 	assert R.parse_max_sprays(None) == []
 
 
@@ -58,7 +61,12 @@ def test_rotation_blocks_the_n_plus_first():
 	c = ctx(["DEL"], history=hist(("2026-09-24 07:00:00", ["DEL"]), ("2026-10-01 07:00:00", ["SUC"])),
 	        guidelines=g(alt={"irac": 2}))
 	v = R.moa_rotation(c)
-	assert len(v) == 1 and v[0]["codes"] == ["IRAC 5"] and "3" in v[0]["message"]
+	assert len(v) == 1 and v[0]["codes"] == ["IRAC 5"] and "the 3rd spray in a row" in v[0]["message"]
+
+
+def test_ordinal():
+	assert [R._ordinal(n) for n in (1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111, 112)] == [
+		"1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "23rd", "101st", "111th", "112th"]
 
 
 def test_rotation_resets_after_a_different_group():

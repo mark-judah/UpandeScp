@@ -13,6 +13,7 @@
  * in the UI as an Access-Denied banner.
  */
 
+import type { CheckResult, ReviewCompliance } from "@/lib/spray-compliance-api";
 import { call } from "./frappe";
 
 // ---------- Bootstrap ----------
@@ -155,6 +156,8 @@ export interface DraftPayload {
   production_item: string;
   chemicals: DraftPayloadChemical[];
   custom_scheduled_application_time?: string | null;
+  /** Overrides a GM gives on save; the server ignores them from anyone else. */
+  spray_rule_overrides?: { key: string; reason: string }[];
 }
 
 export interface DraftSummary {
@@ -173,6 +176,7 @@ export interface CreateDraftResponse {
   work_order: string;
   summary: unknown;
   warnings: string[];
+  compliance: CheckResult;
 }
 
 export async function createDraftSprayPlan(
@@ -316,6 +320,7 @@ export interface ApprovalReview {
   };
   chemicals: ChemicalReview[];
   plan_warnings: string[];
+  compliance: ReviewCompliance;
 }
 
 export async function getApprovalReview(woName: string): Promise<ApprovalReview> {

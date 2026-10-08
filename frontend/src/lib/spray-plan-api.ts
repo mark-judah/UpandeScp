@@ -76,7 +76,7 @@ export interface QrLabel {
 
 export interface ApproveResult {
   wo: string;
-  status: "approved" | "already_forwarded" | "skipped" | "error";
+  status: "approved" | "already_forwarded" | "skipped" | "blocked" | "error";
   se?: string;
   warehouse?: string;
   qr_labels?: QrLabel[];

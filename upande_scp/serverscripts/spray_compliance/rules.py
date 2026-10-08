@@ -89,7 +89,7 @@ def _codes(product: dict | None) -> list[str]:
 def same_moa_in_mix(ctx) -> list[dict]:
 	by_code: dict[str, list[str]] = {}
 	for item in _unique_mix(ctx):
-		for code in _codes(ctx["products"].get(item)):
+		for code in dict.fromkeys(_codes(ctx["products"].get(item))):
 			by_code.setdefault(code, []).append(item)
 	return [
 		violation("same_moa_in_mix",

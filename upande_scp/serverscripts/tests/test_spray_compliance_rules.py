@@ -167,3 +167,18 @@ def test_violation_key_is_stable():
 	a = R.violation("same_moa_in_mix", "m", products=["SUC", "DEL"], codes=["IRAC 5"])
 	b = R.violation("same_moa_in_mix", "other words", products=["DEL", "SUC"], codes=["IRAC 5"])
 	assert a["key"] == b["key"] == "same_moa_in_mix:DEL|SUC||IRAC 5"
+
+
+def test_repeated_code_on_one_product_is_not_a_clash():
+	c = ctx(["DEL"])
+	c["products"]["DEL"]["irac"] = ["5", "5"]
+	assert R.same_moa_in_mix(c) == []
+
+
+def test_incompatible_matches_in_reversed_orientation():
+	inc = [{"product_a": None, "product_b": "DEL", "ingredient_a": "Copper", "ingredient_b": None,
+	        "reason": "Copper degrades spinetoram"}]
+	v = R.tank_mix_incompatible(ctx(["DEL", "MEL"], incompatibilities=inc))
+	assert v and v[0]["products"] == ["DEL", "MEL"]
+	v = R.tank_mix_incompatible(ctx(["MEL", "DEL"], incompatibilities=inc))
+	assert v and v[0]["products"] == ["DEL", "MEL"]

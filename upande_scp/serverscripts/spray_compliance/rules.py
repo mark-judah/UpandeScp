@@ -238,3 +238,8 @@ def known_resistance(ctx) -> list[dict]:
 				                     f"{row['target']} is known to resist {row['kind'].upper()} {row['code']}, which {_name(ctx, item)} is.",
 				                     products=[item], targets=[row["target"]], codes=[f"{row['kind'].upper()} {row['code']}"]))
 	return out
+
+
+def display_codes(product: dict | None) -> list[str]:
+	p = product or {}
+	return [f"IRAC {c}" for c in p.get("irac") or []] + [f"FRAC {c}" for c in p.get("frac") or []]

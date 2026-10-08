@@ -58,6 +58,8 @@ outbreaks and resistance, not paperwork.
 | D6 | Active Ingredient → FRAC/IRAC code is its own reusable list; product codes are derived from it. |
 | D7 | Guideline parameter strings are read as they are. Standardising them into typed rule types is deferred (noted, not built). |
 | D8 | Ship every rule in `Warn`; tighten per rule/per crop from settings once data is reviewed. |
+| D9 | A product's FRAC/IRAC codes are derived **live** from its linked active ingredients; the product's own `irac`/`frac` fields are a manual top-up only (union of both). Nothing is copied, so correcting an ingredient fixes every product carrying it. |
+| D10 | Spray Product's Active Ingredients table records each ingredient's **concentration and unit**, so active-ingredient usage can be totalled later. The usage report itself is a follow-up. |
 
 ## 1. Data
 
@@ -75,9 +77,35 @@ Seeded from FRAC Code List 2024 and IRAC MoA v11 for the ingredients in use only
 Biologicals: Bt kurstaki → IRAC 11A; HearNPV / CrleGV → IRAC 31; Beauveria,
 Lecanicillium → IRAC UNF. Codes not yet in the FRAC/IRAC Code masters are created.
 
-A product's effective codes = the union of its active ingredients' codes, written
-to `Spray Product.irac` / `.frac` by the importer and by a "Derive codes" button.
-Existing hand-entered codes are kept (fill-blanks-only).
+A product's effective codes = the union of (a) the codes of its linked active
+ingredients, read live at check time, and (b) any codes entered by hand in
+`Spray Product.irac` / `.frac`. Nothing is copied onto the product (D9). The
+manual fields remain for a product whose ingredient is not yet in the list; the 21
+products with hand-entered codes keep them.
+
+### 1.1a Changed: `Active Ingredient` (existing child of Spray Product, `active_ingredients`)
+
+Today it has one field, `ingredient` (Data), holding free text such as
+`50g/l Difenoconazole` (45 rows on Spray Product). It becomes:
+
+| Field | Type | Notes |
+|---|---|---|
+| `active_ingredient` | Link → Active Ingredient MoA | new; what the rules read |
+| `concentration` | Float | new; e.g. 100 |
+| `concentration_unit` | Select: `g/L`, `g/kg`, `%`, `CFU/g`, `CFU/mL`, `OB/mL` | new |
+| `ingredient` | Data, label "As on label" | existing column kept; original wording |
+
+Grams of active ingredient per unit of product: `g/L` and `g/kg` as is; `%` × 10
+(1 % = 10 g per L or kg). `CFU/*` and `OB/mL` are counts, never summed with grams.
+These fields are captured now; the usage report (AI grams per greenhouse / farm /
+crop / period from WO `required_qty` × concentration) is a follow-up.
+
+Existing rows are migrated by a patch-style function: parse the free text into
+ingredient + concentration + unit, link where the ingredient matches (name or
+alias, typos included as aliases: `emmamectin`, `sprirotetramat`, `pyremethanil`,
+`monsaultap`, `fludioxinil`, `chlorfemepyr`), keep the original text in
+`ingredient`, and report rows that do not match (e.g. `amino acids`,
+`garlic extract`) — those stay unlinked.
 
 ### 1.2 New: `Tank Mix Incompatibility` (child of the settings Single)
 
@@ -129,6 +157,10 @@ fixture on Work Order, like the other `custom_*` WO fields.
   without a target until a catalog entry is decided).
 - Type fixes: products whose derived codes are FRAC-only but typed Insecticide
   (Disarm, Orvego) are corrected to Fungicide and reported.
+- Active ingredients: each sheet ingredient becomes an `active_ingredients` row with
+  the link, the parsed concentration and unit (`[250 g/L]` → 250 g/L, `[20%]` →
+  20 %, `850g/L`, `2 × 10^13 OB/mL`), and the sheet text in `ingredient`. An existing
+  row for the same ingredient gets only its blank fields filled.
 - Registration no. is written to `registration_no` when blank.
 
 ## 2. Engine — `upande_scp/serverscripts/spray_compliance/`
@@ -262,3 +294,4 @@ RN mobile app: out of scope (it does not create plans; the server enforces).
 - Phase 3: weather.
 - Standardising guideline parameters into typed rule records (D7).
 - Avocado/coffee product data; BOM list cleanup; removing `validateGuidelines`.
+- Active-ingredient usage report (D10) — next follow-up after this phase.

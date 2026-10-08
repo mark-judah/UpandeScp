@@ -24,6 +24,8 @@
 - Non-target = category `Foliar`, or type in {`Adjuvant`, `pH Buffer`, `Plant Growth Regulator`}. Blank type on a Chemical = pest-control.
 - Code master naming: FRAC `M1`, `P1`, `11`; IRAC `4A`, `UN`. Never zero-pad (`M01` is wrong here).
 - Importer is fill-blanks-only and idempotent; it never creates Spray Products.
+- A product's FRAC/IRAC codes = codes of its **linked** active ingredients (live, via `Active Ingredient.active_ingredient` → `Active Ingredient MoA`) ∪ its hand-entered `irac`/`frac` rows. Nothing writes codes onto Spray Product (spec D9).
+- Concentration units, verbatim: `g/L`, `g/kg`, `%`, `CFU/g`, `CFU/mL`, `OB/mL`. Grams per unit of product: g/L and g/kg as is, `%` × 10, counts → none. The usage report is NOT in this plan (spec D10).
 - Commits: no `Co-Authored-By` trailer (CLAUDE.md). Commit style: `feat(scp): …` lowercase sentence.
 - UI: no coloured left-border strips on cards/rows; accent via icon/text colour or pill. Clean state uses a check-in-circle icon.
 
@@ -77,12 +79,13 @@
 - Create: `upande_scp/upande_scp/doctype/spray_rule_override/{__init__.py,spray_rule_override.json,spray_rule_override.py}`
 - Modify: `upande_scp/upande_scp/doctype/scouting_and_crop_protection_settings/scouting_and_crop_protection_settings.json`
 - Modify: `upande_scp/upande_scp/doctype/spray_product/spray_product.json` (`type` options)
+- Modify: `upande_scp/upande_scp/doctype/active_ingredient/active_ingredient.json` (link + concentration)
 - Modify: `upande_scp/serverscripts/common/custom_fields.py` (Work Order list)
 - Modify: `upande_scp/serverscripts/spray_plan_creator/crop_settings.py` (`OVERRIDABLE`)
 - Test: `upande_scp/serverscripts/tests/test_spray_compliance_schema.py`
 
 **Interfaces:**
-- Produces: doctypes `Active Ingredient MoA` (fields `ingredient`, `aliases`, `kind`, `frac_code`, `irac_code`, `notes`), `Tank Mix Incompatibility` (`product_a`, `product_b`, `ingredient_a`, `ingredient_b`, `reason`), `Spray Rule Override` (`rule`, `subject`, `reason`, `overridden_by`, `overridden_on`); settings fields `rule_<key>` ×7 and table `tank_mix_incompatibilities`; WO fields `custom_spray_rule_overrides` (Table → Spray Rule Override), `custom_compliance_status` (Select: `""`, `Clean`, `Warnings`, `Awaiting Override`, `Overridden`).
+- Produces: doctypes `Active Ingredient MoA` (fields `ingredient`, `aliases`, `kind`, `frac_code`, `irac_code`, `notes`), `Tank Mix Incompatibility` (`product_a`, `product_b`, `ingredient_a`, `ingredient_b`, `reason`), `Spray Rule Override` (`rule`, `subject`, `reason`, `overridden_by`, `overridden_on`); settings fields `rule_<key>` ×7 and table `tank_mix_incompatibilities`; WO fields `custom_spray_rule_overrides` (Table → Spray Rule Override), `custom_compliance_status` (Select: `""`, `Clean`, `Warnings`, `Awaiting Override`, `Overridden`); child `Active Ingredient` fields `active_ingredient` (Link → Active Ingredient MoA), `concentration` (Float), `concentration_unit` (Select), `ingredient` (existing Data, relabelled "As on label").
 
 - [ ] **Step 1: Write the failing test**
 
@@ -127,6 +130,14 @@ class TestSchema(unittest.TestCase):
 		meta = frappe.get_meta("Work Order")
 		self.assertEqual(meta.get_field("custom_spray_rule_overrides").options, "Spray Rule Override")
 		self.assertIn("Awaiting Override", meta.get_field("custom_compliance_status").options)
+
+	def test_active_ingredient_row_has_link_and_concentration(self):
+		meta = frappe.get_meta("Active Ingredient")
+		self.assertEqual(meta.get_field("active_ingredient").options, "Active Ingredient MoA")
+		self.assertEqual(meta.get_field("concentration").fieldtype, "Float")
+		self.assertEqual(meta.get_field("concentration_unit").options.split("\n"),
+		                 ["", "g/L", "g/kg", "%", "CFU/g", "CFU/mL", "OB/mL"])
+		self.assertEqual(meta.get_field("ingredient").label, "As on label")
 
 	def test_spray_product_type_has_pgr(self):
 		opts = frappe.get_meta("Spray Product").get_field("type").options.split("\n")
@@ -295,6 +306,20 @@ p.write_text(json.dumps(d, indent=1, ensure_ascii=False) + "\n")
 
 Then in `spray_product.json`, the `type` field's `options` becomes `"\nInsecticide\nFungicide\nAdjuvant\npH Buffer\nPlant Growth Regulator"` and bump `modified`.
 
+Then rewrite the `fields` / `field_order` of `active_ingredient/active_ingredient.json` (keep every other key; bump `modified`):
+
+```json
+ "field_order": ["active_ingredient", "concentration", "concentration_unit", "ingredient"],
+ "fields": [
+  {"fieldname": "active_ingredient", "fieldtype": "Link", "label": "Active Ingredient", "options": "Active Ingredient MoA", "in_list_view": 1, "columns": 3},
+  {"fieldname": "concentration", "fieldtype": "Float", "label": "Concentration", "in_list_view": 1, "columns": 2, "non_negative": 1},
+  {"fieldname": "concentration_unit", "fieldtype": "Select", "label": "Unit", "options": "\ng/L\ng/kg\n%\nCFU/g\nCFU/mL\nOB/mL", "in_list_view": 1, "columns": 1},
+  {"fieldname": "ingredient", "fieldtype": "Data", "label": "As on label", "in_list_view": 1, "columns": 4}
+ ],
+```
+
+`ingredient` keeps its fieldname so the 45 existing rows keep their text. The new link is not mandatory: an ingredient not yet in the list is still recorded by its label text.
+
 - [ ] **Step 5: Declare the WO fields and the overridable keys**
 
 In `custom_fields.py`, append to the `"Work Order"` list, right after the `custom_targets` dict:
@@ -341,7 +366,7 @@ Then the DB runner with `test_spray_compliance_schema`. Expected: 5 tests OK. Al
 - [ ] **Step 7: Commit**
 
 ```bash
-git add upande_scp/upande_scp/doctype/active_ingredient_moa upande_scp/upande_scp/doctype/tank_mix_incompatibility upande_scp/upande_scp/doctype/spray_rule_override upande_scp/upande_scp/doctype/scouting_and_crop_protection_settings/scouting_and_crop_protection_settings.json upande_scp/upande_scp/doctype/spray_product/spray_product.json upande_scp/serverscripts/common/custom_fields.py upande_scp/serverscripts/spray_plan_creator/crop_settings.py upande_scp/serverscripts/tests/test_spray_compliance_schema.py
+git add upande_scp/upande_scp/doctype/active_ingredient/active_ingredient.json upande_scp/upande_scp/doctype/active_ingredient_moa upande_scp/upande_scp/doctype/tank_mix_incompatibility upande_scp/upande_scp/doctype/spray_rule_override upande_scp/upande_scp/doctype/scouting_and_crop_protection_settings/scouting_and_crop_protection_settings.json upande_scp/upande_scp/doctype/spray_product/spray_product.json upande_scp/serverscripts/common/custom_fields.py upande_scp/serverscripts/spray_plan_creator/crop_settings.py upande_scp/serverscripts/tests/test_spray_compliance_schema.py
 git commit -m "feat(scp): the schema spray rules are kept in — ingredient groups, rule modes, overrides"
 ```
 
@@ -378,7 +403,7 @@ ctx = {
 }
 ```
 
-- Produces (`ingredients.py`): `normalise(s: str) -> str`, `split_ingredients(s: str) -> list[str]`, `match_ingredient(raw: str, index: dict[str, str]) -> str | None`, `build_index(rows: list[dict]) -> dict[str, str]`.
+- Produces (`ingredients.py`): `normalise(s: str) -> str`, `parse_entries(s: str) -> list[{"raw", "name", "concentration": float | None, "unit": str | None}]`, `split_ingredients(s: str) -> list[str]` (the `name`s of `parse_entries`), `grams_per_unit(concentration, unit) -> float | None`, `match_ingredient(raw: str, index: dict[str, str]) -> str | None`, `build_index(rows: list[dict]) -> dict[str, str]`.
 - Produces (`rules.py`): `is_non_target(product: dict | None) -> bool`; `violation(rule, message, products=(), targets=(), codes=()) -> dict` with keys `rule, message, products, targets, codes, key`; rule functions `target_match(ctx)`, `target_coverage(ctx)`, `same_moa_in_mix(ctx)`, `tank_mix_incompatible(ctx)` each `-> list[dict]`; `coverage(ctx) -> list[{"target", "products"}]`; constant `EXCLUDED_CODE_PREFIXES`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -443,10 +468,36 @@ def test_split_and_normalise_sheet_strings():
 	assert I.normalise("Kresoxim-Methyl") == I.normalise("kresoxim methyl")
 
 
+def test_parse_entries_reads_concentration_and_unit():
+	e = I.parse_entries
+	assert [(x["name"], x["concentration"], x["unit"]) for x in e("Kresoxim-Methyl [100 g/L]; Boscalid (formerly nicobifen) [200 g/L]")] == [
+		("Kresoxim-Methyl", 100.0, "g/L"), ("Boscalid", 200.0, "g/L")]
+	assert [(x["name"], x["concentration"], x["unit"]) for x in e("Copper 406 g/kg + Iprovalicarb 84 g/kg")] == [
+		("Copper", 406.0, "g/kg"), ("Iprovalicarb", 84.0, "g/kg")]
+	assert (e("Spinetoram (sum of spinetoram-J and spinetoram-L) [250G/KG]")[0]["concentration"],
+	        e("Spinetoram (sum of spinetoram-J and spinetoram-L) [250G/KG]")[0]["unit"]) == (250.0, "g/kg")
+	assert e("Acetamiprid [20%]")[0]["unit"] == "%"
+	assert e("50g/l Difenoconazole")[0] == {"raw": "50g/l Difenoconazole", "name": "Difenoconazole",
+	                                        "concentration": 50.0, "unit": "g/L"}
+	assert e("Lecanicillium Muscarium (Verticillium-Lecanii) [1X10E10 CFU/g]")[0]["concentration"] == 1e10
+	c = e("Cryptophlebia leucotreta granulovirus ( CrleGV-SA): 2 × 1013 occlusion bodies/mL")[0]
+	assert (c["name"], c["concentration"], c["unit"]) == ("Cryptophlebia leucotreta granulovirus", 2e13, "OB/mL")
+	assert e("Fluxametamide 10EC")[0]["concentration"] is None
+	assert e("Bacillus thuringensis subspecies kurstaki strain SA-12")[0]["concentration"] is None
+
+
+def test_grams_per_unit():
+	assert I.grams_per_unit(250, "g/L") == 250
+	assert I.grams_per_unit(406, "g/kg") == 406
+	assert I.grams_per_unit(20, "%") == 200
+	assert I.grams_per_unit(1e10, "CFU/g") is None
+	assert I.grams_per_unit(None, "g/L") is None
+
+
 def test_match_ingredient_uses_aliases():
 	idx = I.build_index([{"ingredient": "Bacillus thuringiensis kurstaki",
 	                      "aliases": "Bacillus thuringensis\nBt kurstaki"},
-	                     {"ingredient": "Emamectin benzoate", "aliases": "Emamectin"}])
+	                     {"ingredient": "Emamectin benzoate", "aliases": "Emamectin\nEmmamectin benzoate\nEmmamectin"}])
 	assert I.match_ingredient("Bacillus thuringensis subspecies kurstaki strain SA-12", idx) == "Bacillus thuringiensis kurstaki"
 	assert I.match_ingredient("Emamectin [19.2 g/L]", idx) == "Emamectin benzoate"
 	assert I.match_ingredient("Unobtainium", idx) is None
@@ -550,24 +601,63 @@ bracketed asides removed.
 import re
 
 _BRACKETS = re.compile(r"\[[^\]]*\]|\([^)]*\)")
-_CONC = re.compile(r"\b\d+(?:[.,]\d+)?\s*(?:%|g/l|g/kg|ml/l|g|ec|sc|sl|wg|wp|sp)\b.*$", re.I)
 _SPLIT = re.compile(r";|\s\+\s|\+")
+_UNIT = r"(g/l|g/kg|%|cfu/g|cfu/ml|ob/ml|occlusion bodies/ml)"
+# "50g/l Difenoconazole" — concentration written first (existing kaitet rows).
+_LEAD = re.compile(r"^\s*(\d+(?:[.,]\d+)?)\s*(g/l|g/kg|%)\s+(.+)$", re.I)
+# "1X10E10 CFU/g", "2 × 1013 occlusion bodies/mL" (the sheet lost the superscript).
+_SCI = re.compile(r"(\d+(?:[.,]\d+)?)\s*[x×]\s*10\s*(?:e|\^)?\s*(\d+)\s*" + _UNIT, re.I)
+_TRAIL = re.compile(r"(\d+(?:[.,]\d+)?)\s*" + _UNIT, re.I)
+UNITS = {"g/l": "g/L", "g/kg": "g/kg", "%": "%", "cfu/g": "CFU/g", "cfu/ml": "CFU/mL",
+         "ob/ml": "OB/mL", "occlusion bodies/ml": "OB/mL"}
 
 
 def normalise(s: str) -> str:
 	return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
 
 
-def split_ingredients(s: str) -> list[str]:
+def _num(s):
+	return float(s.replace(",", "."))
+
+
+def parse_entries(s: str) -> list[dict]:
+	"""One entry per ingredient: its name, and its concentration and unit when the
+	label gives one. Verified against all 60 ingredients on the roses sheet."""
 	out = []
 	for part in _SPLIT.split(s or ""):
-		part = _BRACKETS.sub(" ", part)
-		part = part.split("|")[0]
-		part = _CONC.sub("", part)
-		part = re.sub(r"\s+", " ", part).strip(" :-,")
-		if part:
-			out.append(part)
+		raw = part.strip()
+		if not raw:
+			continue
+		conc = unit = None
+		body = raw
+		if m := _LEAD.match(raw):
+			conc, unit, body = _num(m.group(1)), m.group(2), m.group(3)
+		elif m := _SCI.search(raw):
+			conc, unit = _num(m.group(1)) * 10 ** int(m.group(2)), m.group(3)
+		elif m := _TRAIL.search(raw):
+			conc, unit = _num(m.group(1)), m.group(2)
+		name = _BRACKETS.sub(" ", body).split("|")[0]
+		name = re.split(r":|\s\d", name)[0]
+		name = re.sub(r"\s+", " ", name).strip(" :-,")
+		if name:
+			out.append({"raw": raw, "name": name, "concentration": conc,
+			            "unit": UNITS[unit.lower()] if unit else None})
 	return out
+
+
+def split_ingredients(s: str) -> list[str]:
+	return [e["name"] for e in parse_entries(s)]
+
+
+def grams_per_unit(concentration, unit) -> float | None:
+	"""Grams of active ingredient per L or kg of product; None for counts (CFU, OB)."""
+	if concentration is None:
+		return None
+	if unit in ("g/L", "g/kg"):
+		return float(concentration)
+	if unit == "%":
+		return float(concentration) * 10
+	return None
 
 
 def build_index(rows: list[dict]) -> dict[str, str]:
@@ -1227,6 +1317,21 @@ class TestContext(unittest.TestCase):
 		for k in ("name", "category", "type", "targets", "irac", "frac", "ingredients"):
 			self.assertIn(k, p[item])
 
+	def test_codes_come_live_from_linked_ingredients(self):
+		if not frappe.db.exists("Active Ingredient MoA", "Azoxystrobin"):
+			frappe.get_doc({"doctype": "Active Ingredient MoA", "ingredient": "Azoxystrobin",
+			                "kind": "Fungicide", "frac_code": "11"}).insert(ignore_permissions=True)
+		item = frappe.get_all("Spray Product", filters={"disabled": 0, "category": "Chemical"}, pluck="name", limit=1)[0]
+		doc = frappe.get_doc("Spray Product", item)
+		doc.set("frac", [])
+		doc.set("active_ingredients", [{"active_ingredient": "Azoxystrobin", "concentration": 250,
+		                                "concentration_unit": "g/L", "ingredient": "Azoxystrobin [250 g/L]"}])
+		doc.save(ignore_permissions=True)
+		p = C.load_products([item])[item]
+		self.assertIn("11", p["frac"])
+		self.assertEqual(p["ingredients"], ["Azoxystrobin"])
+		frappe.db.rollback()
+
 	def test_crop_for_a_rose_greenhouse(self):
 		farms = [r.farm for r in frappe.get_doc("Crop Scouted", "Rose").farms]
 		gh = frappe.db.get_value("Warehouse", {"custom_farm": ["in", farms], "is_group": 0}, "name")
@@ -1294,8 +1399,21 @@ def load_products(items) -> dict:
 	rows = frappe.db.sql("""select name, product_name, category, ifnull(type,'') type
 	                        from `tabSpray Product` where name in %(i)s""", {"i": tuple(items)}, as_dict=True)
 	names = [r.name for r in rows]
+	# Hand-entered codes (top-up) ...
 	irac, frac = _child("IRAC Code Filter", "code", names), _child("FRAC Code Filter", "code", names)
-	ingr = _child("Active Ingredient", "ingredient", names)
+	# ... plus the codes of the linked ingredients, read live (spec D9).
+	ingr = {}
+	for r in frappe.db.sql("""select ai.parent, ai.active_ingredient ing, m.irac_code, m.frac_code
+	                          from `tabActive Ingredient` ai
+	                          left join `tabActive Ingredient MoA` m on m.name = ai.active_ingredient
+	                          where ai.parenttype='Spray Product' and ai.parentfield='active_ingredients'
+	                            and ai.parent in %(p)s order by ai.idx""",
+	                       {"p": tuple(names or [""])}, as_dict=True):
+		if r.ing:
+			ingr.setdefault(r.parent, []).append(r.ing)
+		for bucket, code in ((irac, r.irac_code), (frac, r.frac_code)):
+			if code and code not in bucket.get(r.parent, []):
+				bucket.setdefault(r.parent, []).append(code)
 	targets = {}
 	for r in frappe.db.sql("""select parent, ifnull(pest, disease) t from `tabChemical Targets`
 	                          where parenttype='Spray Product' and parentfield='default_targets'
@@ -1389,7 +1507,7 @@ def pest_control_items() -> list[str]:
 
 `Crop Scouted.farms` is a `Farm Filter` table (verified on kaitet.local); confirm its link column is `farm` with `bench --site kaitet.local mariadb -e "describe \`tabFarm Filter\`"` before running.
 
-- [ ] **Step 4: Run** the DB runner with `test_spray_compliance_context`. Expected: 4 OK.
+- [ ] **Step 4: Run** the DB runner with `test_spray_compliance_context`. Expected: 5 OK.
 
 - [ ] **Step 5: Commit**
 
@@ -1843,8 +1961,8 @@ class TestSeed(unittest.TestCase):
 					self.assertFalse(c.startswith("M0") or c.startswith("P0"), c)
 
 	def test_seed_is_idempotent(self):
-		M.seed(dry_run=False)
-		second = M.seed(dry_run=False)
+		M.seed(dry_run=False, commit=False)
+		second = M.seed(dry_run=False, commit=False)
 		self.assertEqual(second["created"], [])
 		self.assertEqual(frappe.db.get_value("Active Ingredient MoA", "Azoxystrobin", "frac_code"), "11")
 		self.assertEqual(frappe.db.get_value("Active Ingredient MoA", "Spinetoram", "irac_code"), "5")
@@ -1880,7 +1998,7 @@ SEED = [
 	{"ingredient": "Difenoconazole", "kind": F, "frac_code": "3"},
 	{"ingredient": "Spiroxamine", "kind": F, "frac_code": "5"},
 	{"ingredient": "Dodemorph acetate", "kind": F, "frac_code": "5", "aliases": "Dodemorph"},
-	{"ingredient": "Propamocarb hydrochloride", "kind": F, "frac_code": "28", "aliases": "Propamocarb"},
+	{"ingredient": "Propamocarb hydrochloride", "kind": F, "frac_code": "28", "aliases": "Propamocarb\nPropamocarb HCl"},
 	{"ingredient": "Fluopicolide", "kind": F, "frac_code": "43"},
 	{"ingredient": "Iprovalicarb", "kind": F, "frac_code": "40"},
 	{"ingredient": "Dimethomorph", "kind": F, "frac_code": "40"},
@@ -1893,12 +2011,12 @@ SEED = [
 	{"ingredient": "Bupirimate", "kind": F, "frac_code": "8"},
 	{"ingredient": "Ametoctradin", "kind": F, "frac_code": "45", "aliases": "Initium\nEnervin\nBAS 650 F"},
 	{"ingredient": "Polyoxin B", "kind": F, "frac_code": "19", "aliases": "Polyoxin"},
-	{"ingredient": "Fosetyl-aluminium", "kind": F, "frac_code": "P7", "aliases": "Fosetyl-Al\nFosetyl aluminium"},
+	{"ingredient": "Fosetyl-aluminium", "kind": F, "frac_code": "P7", "aliases": "Fosetyl-Al\nFosetyl aluminium\nFosetyl"},
 	{"ingredient": "Cymoxanil", "kind": F, "frac_code": "27"},
 	{"ingredient": "Tolclofos-methyl", "kind": F, "frac_code": "14"},
-	{"ingredient": "Pyrimethanil", "kind": F, "frac_code": "9"},
+	{"ingredient": "Pyrimethanil", "kind": F, "frac_code": "9", "aliases": "Pyremethanil"},
 	{"ingredient": "Cyprodinil", "kind": F, "frac_code": "9"},
-	{"ingredient": "Fludioxonil", "kind": F, "frac_code": "12"},
+	{"ingredient": "Fludioxonil", "kind": F, "frac_code": "12", "aliases": "Fludioxinil"},
 	{"ingredient": "Fenhexamid", "kind": F, "frac_code": "17"},
 	{"ingredient": "Chrysophanol", "kind": F, "frac_code": "P5"},
 	# --- insecticides / acaricides (IRAC) ---
@@ -1909,19 +2027,19 @@ SEED = [
 	{"ingredient": "Abamectin", "kind": I, "irac_code": "6"},
 	{"ingredient": "Lufenuron", "kind": I, "irac_code": "15"},
 	{"ingredient": "Thiocyclam", "kind": I, "irac_code": "14", "aliases": "Thiocyclam hydrogen oxalate"},
-	{"ingredient": "Thiosultap-monosodium", "kind": I, "irac_code": "14", "aliases": "Monosultap"},
+	{"ingredient": "Thiosultap-monosodium", "kind": I, "irac_code": "14", "aliases": "Monosultap\nMonsaultap"},
 	{"ingredient": "Flometoquin", "kind": I, "irac_code": "34"},
 	{"ingredient": "Acetamiprid", "kind": I, "irac_code": "4A"},
 	{"ingredient": "Flupyradifurone", "kind": I, "irac_code": "4D"},
 	{"ingredient": "Fluxametamide", "kind": I, "irac_code": "30"},
-	{"ingredient": "Spirotetramat", "kind": I, "irac_code": "23"},
+	{"ingredient": "Spirotetramat", "kind": I, "irac_code": "23", "aliases": "Sprirotetramat"},
 	{"ingredient": "Buprofezin", "kind": I, "irac_code": "16"},
-	{"ingredient": "Pyrethrins", "kind": I, "irac_code": "3A", "aliases": "Pyrethrum"},
+	{"ingredient": "Pyrethrins", "kind": I, "irac_code": "3A", "aliases": "Pyrethrum\nPyrethrin"},
 	{"ingredient": "Methoxyfenozide", "kind": I, "irac_code": "18"},
 	{"ingredient": "Chlorfenapyr", "kind": I, "irac_code": "13", "aliases": "Chlorfemepyr"},
 	{"ingredient": "Flonicamid", "kind": I, "irac_code": "29", "aliases": "IKI-220"},
 	{"ingredient": "Azadirachtin", "kind": I, "irac_code": "UN", "aliases": "Margosa extract\nNeem"},
-	{"ingredient": "Oxymatrine", "kind": I, "irac_code": "UN", "aliases": "Matrine"},
+	{"ingredient": "Oxymatrine", "kind": I, "irac_code": "UN", "aliases": "Matrine\nProsuler oxymatrine"},
 	# --- biologicals ---
 	{"ingredient": "Bacillus thuringiensis kurstaki", "kind": "Biological", "irac_code": "11A",
 	 "aliases": "Bacillus thuringensis\nBacillus thuringiensis\nBt kurstaki"},
@@ -1943,8 +2061,9 @@ def _ensure_code(doctype, code, created):
 
 
 @frappe.whitelist()
-def seed(dry_run=True):
+def seed(dry_run=True, commit=None):
 	dry_run = frappe.parse_json(dry_run) if isinstance(dry_run, str) else dry_run
+	commit = (not dry_run) if commit is None else commit
 	report = {"created": [], "codes_created": [], "unchanged": []}
 	for row in SEED:
 		if frappe.db.exists("Active Ingredient MoA", row["ingredient"]):
@@ -1956,12 +2075,12 @@ def seed(dry_run=True):
 		_ensure_code("FRAC Code", row.get("frac_code"), report["codes_created"])
 		_ensure_code("IRAC Code", row.get("irac_code"), report["codes_created"])
 		frappe.get_doc({"doctype": "Active Ingredient MoA", **row}).insert(ignore_permissions=True)
-	if not dry_run:
+	if commit and not dry_run:
 		frappe.db.commit()
 	return report
 ```
 
-`IRAC Code` autoname is `field:moa_group` (verified). Note the test calls `seed(dry_run=False)` which commits — move the `frappe.db.commit()` behind a `commit=True` kwarg defaulting to `not dry_run`, and have the test call `seed(dry_run=False, commit=False)` so rollback works.
+`IRAC Code` autoname is `field:moa_group` (verified).
 
 - [ ] **Step 4: Run** DB runner with `test_spray_compliance_seed`. Expected: 3 OK.
 
@@ -1984,6 +2103,7 @@ git commit -m "feat(scp): the FRAC/IRAC group of every ingredient on the roses l
 **Interfaces:**
 - Consumes: `ingredients.split_ingredients/match_ingredient/build_index/normalise`.
 - Produces:
+  - `migrate_existing_ingredients(apply=False, commit=True) -> {"matched", "unmatched", "applied"}` — links the existing free-text rows (spec §1.1a).
   - `TARGET_MAP: dict[str, str | None]` (normalised sheet phrase → Pest/Plant Disease name; `None` = non-target).
   - `split_targets(text) -> list[str]`, `map_target(phrase) -> (name | None, status)` with status ∈ `mapped | non_target | unmapped`.
   - `normalise_trade_name(s) -> str`.
@@ -2051,16 +2171,31 @@ class TestDryRun(unittest.TestCase):
 		self.assertTrue(by["AMISIL"]["non_target"])
 		self.assertEqual(by["RIZOLEX 50 WP"]["unmapped_targets"], ["Soil borne fungal diseases"])
 		self.assertEqual(r["summary"]["unknown_ingredients"], [])
+		col = {e["ingredient"]: e for e in by["COLLIS 30 SC"]["entries"]}
+		self.assertEqual((col["Boscalid"]["concentration"], col["Boscalid"]["unit"]), (200.0, "g/L"))
+		self.assertEqual(sorted(r["summary"]["no_concentration"]), ["BEAUVITECH WP", "GRACIA 10 EC", "THURICIDE"])
 
 	def test_apply_is_fill_blanks_and_idempotent(self):
 		M.import_roses_sheet(SHEET, apply=True, commit=False)
 		n1 = frappe.db.count("Chemical Targets", {"parenttype": "Spray Product"})
+		a1 = frappe.db.count("Active Ingredient", {"parenttype": "Spray Product"})
 		M.import_roses_sheet(SHEET, apply=True, commit=False)
 		self.assertEqual(frappe.db.count("Chemical Targets", {"parenttype": "Spray Product"}), n1)
+		self.assertEqual(frappe.db.count("Active Ingredient", {"parenttype": "Spray Product"}), a1)
+		row = frappe.db.get_value("Active Ingredient", {"parenttype": "Spray Product", "parent": "1110001",
+		                          "active_ingredient": "Boscalid"}, ["concentration", "concentration_unit"])
+		self.assertEqual(row, (200.0, "g/L"))
 		frappe.db.rollback()
+
+	def test_migrate_existing_links_typos_and_reads_leading_concentration(self):
+		r = M.migrate_existing_ingredients(apply=False)
+		texts = {m["text"]: m for m in r["matched"]}
+		self.assertEqual(texts["emmamectin benzoate"]["active_ingredient"], "Emamectin benzoate")
+		self.assertEqual(texts["50g/l Difenoconazole"]["concentration"], 50.0)
+		self.assertIn("garlic extract", {u["text"] for u in r["unmatched"]})
 ```
 
-The DB test needs the MoA seed applied (`moa_seed.seed(dry_run=False)` in `setUpClass`, with `commit=False`).
+The DB test class needs the MoA seed: add `@classmethod def setUpClass(cls): from upande_scp.serverscripts.spray_compliance import moa_seed; moa_seed.seed(dry_run=False, commit=False)` (the runner's final rollback undoes it).
 
 - [ ] **Step 2: Run to verify failure** — `ModuleNotFoundError`.
 
@@ -2085,7 +2220,7 @@ import re
 import frappe
 from frappe.utils import now_datetime
 
-from .ingredients import build_index, match_ingredient, normalise, split_ingredients
+from .ingredients import build_index, match_ingredient, normalise, parse_entries
 
 DEFAULT_SHEET = os.path.join(frappe.get_app_path("upande_scp"), "..", "doc references", "CHemicals",
                              "Crop Protection Agents + Target Pest.xlsx")
@@ -2174,10 +2309,11 @@ def plan(rows) -> list[dict]:
 				non_target = True
 			else:
 				unmapped.append(phrase)
-		ingredients, unknown = [], []
-		for raw in split_ingredients(row["ingredients_raw"]):
-			canon = match_ingredient(raw, index)
-			(ingredients if canon else unknown).append(canon or raw)
+		ingredients, unknown, entries = [], [], []
+		for e in parse_entries(row["ingredients_raw"]):
+			canon = match_ingredient(e["name"], index)
+			(ingredients if canon else unknown).append(canon or e["name"])
+			entries.append({**e, "ingredient": canon})
 		kinds = {moa[i].kind for i in ingredients}
 		if kinds and kinds <= {"Adjuvant", "Plant Growth Regulator"}:
 			non_target = True
@@ -2200,7 +2336,9 @@ def plan(rows) -> list[dict]:
 		            "type_fix": next((p["_type_fix"] for p in products if p["_type_fix"]), None),
 		            "type_fixes": {p.name: p["_type_fix"] for p in products if p["_type_fix"]},
 		            "targets": targets, "unmapped_targets": unmapped, "non_target": non_target,
-		            "ingredients": ingredients, "unknown_ingredients": unknown, "irac": irac, "frac": frac})
+		            "ingredients": ingredients, "unknown_ingredients": unknown, "entries": entries,
+		            "no_concentration": [e["name"] for e in entries if e["concentration"] is None],
+		            "irac": irac, "frac": frac})
 	return out
 
 
@@ -2211,15 +2349,21 @@ def _apply(row):
 		for t in row["targets"]:
 			if t["name"] not in have_t:
 				doc.append("default_targets", {t["kind"]: t["name"]})
-		have_i = {normalise(a.ingredient) for a in doc.active_ingredients}
-		for ing in row["ingredients"]:
-			if normalise(ing) not in have_i:
-				doc.append("active_ingredients", {"ingredient": ing})
-		for field, codes in (("irac", row["irac"]), ("frac", row["frac"])):
-			have = {c.code for c in doc.get(field)}
-			for c in codes:
-				if c not in have:
-					doc.append(field, {"code": c})
+		for e in row["entries"]:
+			# The same ingredient already on the product, by link or by its label text.
+			existing = next((a for a in doc.active_ingredients
+			                 if (e["ingredient"] and a.active_ingredient == e["ingredient"])
+			                 or normalise(a.ingredient) in (normalise(e["name"]), normalise(e["ingredient"] or ""))), None)
+			if existing is None:
+				doc.append("active_ingredients", {"active_ingredient": e["ingredient"], "concentration": e["concentration"],
+				                                  "concentration_unit": e["unit"], "ingredient": e["raw"]})
+				continue
+			if not existing.active_ingredient and e["ingredient"]:
+				existing.active_ingredient = e["ingredient"]
+			if existing.concentration in (None, 0) and e["concentration"] is not None:
+				existing.concentration = e["concentration"]
+				existing.concentration_unit = e["unit"]
+		# Codes are NOT written here: they come live from the linked ingredients (spec D9).
 		if row["reg_no"] and not doc.registration_no:
 			doc.registration_no = row["reg_no"]
 		fix = row["type_fixes"].get(item)
@@ -2228,11 +2372,39 @@ def _apply(row):
 		doc.save(ignore_permissions=True)
 
 
+@frappe.whitelist()
+def migrate_existing_ingredients(apply=False, commit=True):
+	"""Link the free-text Active Ingredient rows already on Spray Products and pull
+	their concentration out of the text ("50g/l Difenoconazole"). Unlinked rows only;
+	the text itself is never changed. Returns matched / unmatched for the report."""
+	apply = frappe.parse_json(apply) if isinstance(apply, str) else apply
+	index, _ = _moa_index()
+	matched, unmatched = [], []
+	for r in frappe.db.sql("""select name, parent, ingredient, concentration from `tabActive Ingredient`
+	                          where parenttype='Spray Product' and parentfield='active_ingredients'
+	                            and ifnull(active_ingredient,'')=''""", as_dict=True):
+		entries = parse_entries(r.ingredient or "")
+		e = entries[0] if entries else None
+		canon = match_ingredient(e["name"], index) if e else None
+		if not canon:
+			unmatched.append({"product": r.parent, "text": r.ingredient})
+			continue
+		values = {"active_ingredient": canon}
+		if not r.concentration and e["concentration"] is not None:
+			values.update(concentration=e["concentration"], concentration_unit=e["unit"])
+		matched.append({"product": r.parent, "text": r.ingredient, **values})
+		if apply:
+			frappe.db.set_value("Active Ingredient", r.name, values, update_modified=False)
+	if apply and commit:
+		frappe.db.commit()
+	return {"matched": matched, "unmatched": unmatched, "applied": bool(apply)}
+
+
 def _write_report(rows, summary) -> str:
 	ts = now_datetime().strftime("%Y%m%d-%H%M%S")
 	base = frappe.get_site_path("private", "files", f"spray_compliance_import_{ts}")
 	cols = ["sno", "trade_name", "match", "matched", "matched_names", "targets", "unmapped_targets",
-	        "non_target", "ingredients", "unknown_ingredients", "irac", "frac", "type_fix", "reg_no"]
+	        "non_target", "ingredients", "unknown_ingredients", "no_concentration", "irac", "frac", "type_fix", "reg_no"]
 	with open(base + ".csv", "w", newline="") as f:
 		w = csv.writer(f)
 		w.writerow(cols)
@@ -2260,6 +2432,7 @@ def import_roses_sheet(path=None, apply=False, commit=True):
 		"unmapped_targets": sorted({t for r in rows for t in r["unmapped_targets"]}),
 		"unknown_ingredients": sorted({i for r in rows for i in r["unknown_ingredients"]}),
 		"type_fixes": {k: v for r in rows for k, v in r["type_fixes"].items()},
+		"no_concentration": {r["trade_name"]: r["no_concentration"] for r in rows if r["no_concentration"]},
 		"applied": bool(apply),
 	}
 	if apply:
@@ -2277,59 +2450,11 @@ Pure: `../../env/bin/python -m pytest upande_scp/serverscripts/tests/test_spray_
 DB: direct runner with `test_spray_compliance_importer`.
 Expected: all OK. If `unknown_ingredients` is non-empty, add the missing names as `aliases` in `moa_seed.SEED` (never weaken the assertion).
 
-- [ ] **Step 4b: "Derive codes" button (spec §1.1)**
-
-Add to `importer.py`:
-
-```python
-@frappe.whitelist()
-def derive_codes(item):
-	"""Fill a Spray Product's IRAC/FRAC rows from its active ingredients. Fill-blanks-only."""
-	frappe.has_permission("Spray Product", "write", item, throw=True)
-	index, moa = _moa_index()
-	doc = frappe.get_doc("Spray Product", item)
-	added = []
-	for a in doc.active_ingredients:
-		canon = match_ingredient(a.ingredient or "", index)
-		if not canon:
-			continue
-		for field, code in (("irac", moa[canon].irac_code), ("frac", moa[canon].frac_code)):
-			if code and code not in {c.code for c in doc.get(field)}:
-				doc.append(field, {"code": code})
-				added.append(f"{field.upper()} {code}")
-	if added:
-		doc.save()
-	return added
-```
-
-In `upande_scp/public/js/spray_product.js`, inside the existing `refresh` handler add:
-
-```js
-frm.add_custom_button(__("Derive codes"), () =>
-  frappe.call("upande_scp.serverscripts.spray_compliance.importer.derive_codes", { item: frm.doc.name })
-    .then((r) => { frappe.show_alert(r.message.length ? __("Added {0}", [r.message.join(", ")]) : __("Nothing to add")); frm.reload_doc(); }));
-```
-
-Test (append to the DB class in `test_spray_compliance_importer.py`):
-
-```python
-	def test_derive_codes_from_ingredients(self):
-		item = frappe.db.get_value("Spray Product", {"product_name": ["like", "Amitiv%"]}, "name")
-		doc = frappe.get_doc("Spray Product", item)
-		doc.set("frac", [])
-		doc.set("active_ingredients", [{"ingredient": "Azoxystrobin"}])
-		doc.save()
-		self.assertIn("FRAC 11", M.derive_codes(item))
-		frappe.db.rollback()
-```
-
-Add `upande_scp/public/js/spray_product.js` to this task's commit.
-
 - [ ] **Step 5: Commit**
 
 ```bash
-git add upande_scp/serverscripts/spray_compliance/importer.py upande_scp/serverscripts/tests/test_spray_compliance_importer.py upande_scp/serverscripts/spray_compliance/moa_seed.py upande_scp/public/js/spray_product.js
-git commit -m "feat(scp): load the roses approved list onto spray products — targets, ingredients, groups"
+git add upande_scp/serverscripts/spray_compliance/importer.py upande_scp/serverscripts/tests/test_spray_compliance_importer.py upande_scp/serverscripts/spray_compliance/moa_seed.py
+git commit -m "feat(scp): load the roses approved list onto spray products — targets, ingredients and their strengths"
 ```
 
 ---
@@ -2338,9 +2463,9 @@ git commit -m "feat(scp): load the roses approved list onto spray products — t
 
 - [ ] **Step 1:** `cd /home/ubuntu/stive/code/frappe15 && bench --site kaitet.local migrate`
 - [ ] **Step 2:** `bench --site kaitet.local execute upande_scp.serverscripts.spray_compliance.moa_seed.seed --kwargs '{"dry_run": false}'` — record created count.
-- [ ] **Step 3:** `bench --site kaitet.local execute upande_scp.serverscripts.spray_compliance.importer.import_roses_sheet` — prints the summary and the report path.
-- [ ] **Step 4:** Show the user the summary: matched / unmatched / duplicates / first-word matches / type fixes / unmapped targets. **STOP and wait for the user's go-ahead.** Do not run with `apply` until they say so.
-- [ ] **Step 5 (after approval):** `… import_roses_sheet --kwargs '{"apply": true}'`, then re-run the dry run and confirm targets/codes now present (`select count(distinct parent) from \`tabChemical Targets\` where parenttype='Spray Product'` should rise from 43).
+- [ ] **Step 3:** `bench --site kaitet.local execute upande_scp.serverscripts.spray_compliance.importer.import_roses_sheet` — prints the summary and the report path. Then `bench --site kaitet.local execute upande_scp.serverscripts.spray_compliance.importer.migrate_existing_ingredients` — the existing 45 rows' link/concentration proposals.
+- [ ] **Step 4:** Show the user the summary: matched / unmatched / duplicates / first-word matches / type fixes / unmapped targets / products with no concentration on the label / existing rows that could not be linked. **STOP and wait for the user's go-ahead.** Do not run with `apply` until they say so.
+- [ ] **Step 5 (after approval):** `… migrate_existing_ingredients --kwargs '{"apply": true}'` first, then `… import_roses_sheet --kwargs '{"apply": true}'`, then re-run the dry run and confirm targets/codes now present (`select count(distinct parent) from \`tabChemical Targets\` where parenttype='Spray Product'` should rise from 43).
 
 ---
 

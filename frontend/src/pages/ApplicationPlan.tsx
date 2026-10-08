@@ -78,6 +78,8 @@ import {
   checkSprayPlan,
   eligibleBoms,
   eligibleProducts,
+  pickerFilters,
+  pickerState,
   saveGate,
   type BomEligibility,
   type CheckResult,
@@ -900,13 +902,17 @@ export function ApplicationPlan() {
       return;
     }
     let cancelled = false;
-    eligibleBoms({ greenhouse, targets: targetsArr, boms: bomList.map((b) => b.name) })
-      .then((rows) => !cancelled && setBomElig(Object.fromEntries(rows.map((r) => [r.bom, r]))))
-      .catch(() => !cancelled && setBomElig({}));
+    // Debounced like the check below: ticking targets one by one fires once.
+    const t = setTimeout(() => {
+      eligibleBoms({ greenhouse, targets: targetsArr, boms: bomList.map((b) => b.name), when: sprayDate })
+        .then((rows) => !cancelled && setBomElig(Object.fromEntries(rows.map((r) => [r.bom, r]))))
+        .catch(() => !cancelled && setBomElig({}));
+    }, 300);
     return () => {
       cancelled = true;
+      clearTimeout(t);
     };
-  }, [greenhouse, targetsArr, bomList]);
+  }, [greenhouse, targetsArr, bomList, sprayDate]);
 
   useEffect(() => {
     if (!greenhouse || !targetsArr.length || !mixItems.length) {
@@ -918,27 +924,25 @@ export function ApplicationPlan() {
     let cancelled = false;
     setCheckLoading(true);
     const t = setTimeout(() => {
-      Promise.all([
-        checkSprayPlan({ greenhouse, targets: targetsArr, items: mixItems }),
-        eligibleProducts({ greenhouse, targets: targetsArr, items: [], candidates: mixItems }),
-      ])
-        .then(([r, info]) => {
-          if (cancelled) return;
-          setCheck(r);
-          setProductInfo(Object.fromEntries(info.map((p) => [p.item, p])));
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setCheck(null);
-          setProductInfo({});
-        })
-        .finally(() => !cancelled && setCheckLoading(false));
+      // Settled separately: the per-product details failing must not drop the
+      // check, which gates the save.
+      Promise.allSettled([
+        checkSprayPlan({ greenhouse, targets: targetsArr, items: mixItems, when: sprayDate }),
+        eligibleProducts({ greenhouse, targets: targetsArr, items: [], candidates: mixItems, when: sprayDate }),
+      ]).then(([r, info]) => {
+        if (cancelled) return;
+        setCheck(r.status === "fulfilled" ? r.value : null);
+        setProductInfo(
+          info.status === "fulfilled" ? Object.fromEntries(info.value.map((p) => [p.item, p])) : {},
+        );
+        setCheckLoading(false);
+      });
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [greenhouse, targetsArr, mixItems]);
+  }, [greenhouse, targetsArr, mixItems, sprayDate]);
 
   // An override answers one particular check; a new check needs a new one.
   useEffect(() => {
@@ -966,17 +970,19 @@ export function ApplicationPlan() {
       targets: targetsArr,
       items: mixItems,
       candidates: addResults.map((r) => r.item_code),
+      when: sprayDate,
     })
       .then((rows) => !cancelled && setAddEligRows(rows))
       .catch(() => !cancelled && setAddEligRows([]));
     return () => {
       cancelled = true;
     };
-  }, [addOpen, greenhouse, targetsArr, mixItems, addResults]);
+  }, [addOpen, greenhouse, targetsArr, mixItems, addResults, sprayDate]);
 
-  /** Search results in the server's suitability order; unsuitable target
-   *  products hidden unless "Show all" is on. Unranked results keep their
-   *  search order after the ranked ones. */
+  /** Search results in the server's suitability order; products not registered
+   *  for the targets hidden unless "Show all" is on, other rule-breakers greyed
+   *  (see `pickerState`). Unranked results keep their search order after the
+   *  ranked ones. */
   const addElig = useMemo(
     () => Object.fromEntries(addEligRows.map((r) => [r.item, r])) as Record<string, ProductEligibility>,
     [addEligRows],
@@ -986,10 +992,7 @@ export function ApplicationPlan() {
     const rank = (i: ChemicalItem) => order.get(i.item_code) ?? order.size;
     return [...addResults]
       .sort((a, b) => rank(a) - rank(b))
-      .filter((it) => {
-        const e = addElig[it.item_code];
-        return addShowAll || !e || e.eligible || e.non_target;
-      });
+      .filter((it) => pickerState(addElig[it.item_code], addShowAll) !== "hidden");
   }, [addResults, addElig, addEligRows, addShowAll]);
 
   const kitList = useMemo(
@@ -2726,19 +2729,20 @@ export function ApplicationPlan() {
               <span>{addNotice}</span>
             </div>
           )}
-          {targetsArr.length > 0 && (
+          {(addShowAll || pickerFilters(addEligRows)) && (
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <Checkbox
                 checked={addShowAll}
                 onCheckedChange={(v) => setAddShowAll(v === true)}
               />
-              Show all (including products that do not suit the targets)
+              Show all (including products not registered for the targets)
             </label>
           )}
           <div className="max-h-72 overflow-auto flex flex-col gap-1">
             {addShown.map((it) => {
               const e = addElig[it.item_code];
-              const blocked = e?.worst_mode === "Block";
+              const state = pickerState(e, addShowAll);
+              const blocked = state === "blocked";
               return (
               <button
                 key={it.item_code}
@@ -2747,7 +2751,11 @@ export function ApplicationPlan() {
                 onClick={() => addChemical(it)}
                 className={
                   "text-left px-3 py-2 rounded-md border bg-card transition-colors " +
-                  (blocked ? "opacity-60 cursor-not-allowed" : "hover:bg-muted")
+                  (blocked
+                    ? "opacity-60 cursor-not-allowed"
+                    : state === "greyed"
+                      ? "opacity-60 hover:opacity-100 hover:bg-muted"
+                      : "hover:bg-muted")
                 }
               >
                 <div className="text-xs font-medium">
@@ -2778,7 +2786,7 @@ export function ApplicationPlan() {
             )}
             {addResults.length > 0 && !addShown.length && (
               <div className="text-xs text-muted-foreground py-3 text-center">
-                No result suits the targets. Turn on “Show all” to see them.
+                No result is registered for the targets. Turn on “Show all” to see them.
               </div>
             )}
           </div>

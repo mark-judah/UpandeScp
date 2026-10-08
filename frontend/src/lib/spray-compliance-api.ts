@@ -14,11 +14,16 @@ export interface Violation {
 export interface CoverageRow { target: string; products: string[] }
 export interface CheckResult {
   violations: Violation[]; coverage: CoverageRow[]; blocking: boolean; needs_override: boolean;
-  status: "Clean" | "Warnings" | "Awaiting Override" | "Overridden" | "Blocked";
+  /** "Check failed": the server could not run the check (approval review only). */
+  status: "Clean" | "Warnings" | "Awaiting Override" | "Overridden" | "Blocked" | "Check failed";
   can_override: boolean;
+  /** Set when status is "Check failed". */
+  message?: string;
 }
 export interface ProductEligibility {
   item: string; name: string; eligible: boolean; worst_mode: RuleMode; reasons: string[];
+  /** Rule keys the product breaks; "target_match" = not registered for the targets. */
+  rules: string[];
   codes: string[]; targets: string[]; non_target: boolean;
 }
 export interface BomEligibility {
@@ -46,29 +51,52 @@ const LABELS: Record<string, string> = {
 
 export const ruleLabel = (rule: string) => LABELS[rule] ?? rule;
 
+/* `when` = the plan's scheduled spray time ("YYYY-MM-DD HH:mm:ss"); the server
+ * judges history and spray limits as of then. Omitted, it judges as of now. */
+
 export function checkSprayPlan(args: {
   greenhouse: string; targets: string[]; items: string[]; overrides?: OverrideInput[]; excludeWo?: string;
+  when?: string;
 }): Promise<CheckResult> {
   return call<CheckResult>(`${M}.check_spray_plan`, {
     greenhouse: args.greenhouse, targets: JSON.stringify(args.targets), items: JSON.stringify(args.items),
-    overrides: JSON.stringify(args.overrides ?? []), exclude_wo: args.excludeWo ?? "",
+    overrides: JSON.stringify(args.overrides ?? []), exclude_wo: args.excludeWo ?? "", when: args.when ?? "",
   });
 }
 
 export function eligibleProducts(args: {
-  greenhouse: string; targets: string[]; items: string[]; candidates?: string[];
+  greenhouse: string; targets: string[]; items: string[]; candidates?: string[]; when?: string;
 }): Promise<ProductEligibility[]> {
   return call<ProductEligibility[]>(`${M}.eligible_products`, {
     greenhouse: args.greenhouse, targets: JSON.stringify(args.targets), items: JSON.stringify(args.items),
-    candidates: JSON.stringify(args.candidates ?? []),
+    candidates: JSON.stringify(args.candidates ?? []), when: args.when ?? "",
   });
 }
 
-export function eligibleBoms(args: { greenhouse: string; targets: string[]; boms: string[] }): Promise<BomEligibility[]> {
+export function eligibleBoms(args: {
+  greenhouse: string; targets: string[]; boms: string[]; when?: string;
+}): Promise<BomEligibility[]> {
   return call<BomEligibility[]>(`${M}.eligible_boms`, {
     greenhouse: args.greenhouse, targets: JSON.stringify(args.targets), boms: JSON.stringify(args.boms),
+    when: args.when ?? "",
   });
 }
+
+/** How the Add-chemical list shows one search result (spec §3): products not
+ *  registered for the targets are hidden unless "Show all" is on; any other
+ *  rule-breaker is greyed with its reason and stays pickable unless a rule
+ *  hard-blocks it. A result the server has not ranked is shown as is. */
+export type PickerState = "ok" | "greyed" | "blocked" | "hidden";
+export function pickerState(e: ProductEligibility | undefined, showAll: boolean): PickerState {
+  if (!e) return "ok";
+  if (offTarget(e) && !showAll) return "hidden";
+  if (e.worst_mode === "Block") return "blocked";
+  return e.eligible ? "ok" : "greyed";
+}
+const offTarget = (e: ProductEligibility) => (e.rules ?? []).includes("target_match");
+
+/** Whether "Show all" changes anything for these results. */
+export const pickerFilters = (rows: ProductEligibility[]) => rows.some(offTarget);
 
 /** Violations grouped by rule in engine order. A rule this module does not
  *  know yet lands in a trailing "Other" group rather than disappearing. */

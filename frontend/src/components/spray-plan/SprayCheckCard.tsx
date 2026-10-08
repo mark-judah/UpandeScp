@@ -54,6 +54,11 @@ export function SprayCheckCard({
       <CardContent className="p-0 flex flex-col gap-3 text-xs">
         {!result ? (
           <span className="text-muted-foreground">Pick targets and a tank mix to check this plan.</span>
+        ) : result.status === "Check failed" ? (
+          <span className="inline-flex items-start gap-1.5 text-muted-foreground">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {result.message || "The spray check could not run for this plan."}
+          </span>
         ) : (
           <>
             {result.coverage.length > 0 && (

@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   groupViolations,
   modeBadge,
+  pickerFilters,
+  pickerState,
   saveGate,
   sortBoms,
   type CheckResult,
+  type ProductEligibility,
   type Violation,
 } from "./spray-compliance-api";
 
@@ -56,5 +59,31 @@ describe("sortBoms", () => {
     const boms = [{ name: "A" }, { name: "B" }, { name: "C" }];
     const elig = { A: { eligible: false }, B: { eligible: true } } as never;
     expect(sortBoms(boms, elig).map((b) => b.name)).toEqual(["B", "A", "C"]);
+  });
+});
+
+describe("pickerState", () => {
+  const p = (rules: string[], worst: ProductEligibility["worst_mode"] = rules.length ? "Warn" : "Off"): ProductEligibility => ({
+    item: "X", name: "X", eligible: rules.length === 0, worst_mode: worst, reasons: rules.map((r) => `${r} msg`),
+    rules, codes: [], targets: [], non_target: false,
+  });
+  it("shows a suitable product as is", () => expect(pickerState(p([]), false)).toBe("ok"));
+  it("shows an unranked result as is", () => expect(pickerState(undefined, false)).toBe("ok"));
+  it("greys a registered product that breaks a warn rule instead of hiding it", () => {
+    expect(pickerState(p(["moa_rotation"]), false)).toBe("greyed");
+    expect(pickerState(p(["same_moa_in_mix", "max_sprays"], "Block (GM override)"), false)).toBe("greyed");
+  });
+  it("hides a product not registered for the targets unless Show all", () => {
+    expect(pickerState(p(["target_match"]), false)).toBe("hidden");
+    expect(pickerState(p(["target_match"]), true)).toBe("greyed");
+  });
+  it("disables a hard-blocked product", () => {
+    expect(pickerState(p(["tank_mix_incompatible"], "Block"), false)).toBe("blocked");
+    expect(pickerState(p(["target_match"], "Block"), false)).toBe("hidden");
+    expect(pickerState(p(["target_match"], "Block"), true)).toBe("blocked");
+  });
+  it("offers Show all only when it would reveal something", () => {
+    expect(pickerFilters([p([]), p(["moa_rotation"])])).toBe(false);
+    expect(pickerFilters([p([]), p(["target_match"])])).toBe(true);
   });
 });

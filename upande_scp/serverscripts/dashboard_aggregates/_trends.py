@@ -48,7 +48,9 @@ from datetime import date, datetime
 
 import frappe
 
+from upande_scp.serverscripts.common import prevalence
 from upande_scp.serverscripts.scouting import scouting_metrics
+from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     obs_filter,
@@ -89,6 +91,12 @@ def _build(from_date: str, to_date: str, crop: str, job_id: str = "") -> dict:
 
     publish_progress(job_id, 70, "aggregating")
     payload = _aggregate(rows, scouted_rows)
+
+    # Adjusted station prevalence + margin beside the incidence above (spec §2):
+    # every week is plotted, so no previous-week lookback.
+    publish_progress(job_id, 85, "computing prevalence")
+    weeks = _prevalence_rows.StationWeeks.load(from_date, to_date, crop, None, lookback_days=0)
+    payload.update(_prevalence_tables(payload, weeks))
 
     publish_progress(job_id, 95, "loading unit counts")
     # Structural unit count per station, inferred from the warehouse type:
@@ -514,4 +522,59 @@ def _aggregate(rows: list, scouted_rows: list | None = None) -> dict:
         "stationsByFarm":     {f: sorted(s) for f, s in stations_by_farm.items()},
         "unitsByStation":     {s: len(u) for s, u in units_by_station.items()},
         "allWeeks":           vocab_weeks,
+    }
+
+
+def _prevalence_tables(payload: dict, weeks) -> dict:
+    """Adjusted station prevalence beside the incidence tables.
+
+    * ``prevalenceByStation`` rows ``[week, station, obs, prevalence, margin, rel]``
+      — one per ``byKindName`` row whose house has stations set up (all stages).
+    * ``prevalenceByFarm`` rows ``[week, farm, obs, prevalence, margin, rel]`` —
+      ``StationWeeks.combined``-style weighting over EVERY house of the farm
+      scouted that week, clean ones included.
+
+    ``margin`` is ``None`` when too clustered to judge; ``rel`` indexes
+    ``vocab.reliability``; ``farm`` indexes ``vocab.farms``. The Trends margin band
+    (one observation, no stage) reads these rows, so the line and band share a source.
+    """
+    vocab = payload["vocab"]
+    rel = {r: i for i, r in enumerate(prevalence.RELIABILITY)}
+    farms_map = scouting_metrics.get_farms_and_warehouses() or {}
+    station_to_farm = {s: f for f, stations in farms_map.items() for s in (stations or [])}
+
+    def farm_of(station):
+        return station_to_farm.get(station, "Unknown")
+
+    def _row(a, b, o, fig):
+        return [a, b, o, fig["prevalence"], fig["margin"], rel[fig["reliability"]]]
+
+    by_station = []
+    observed = set()
+    for w_i, s_i, o_i, _n in payload.get("byKindName", []):
+        week, station = vocab["weeks"][w_i], vocab["stations"][s_i]
+        kind, _sep, name = vocab["obs"][o_i].partition(":")
+        observed.add((w_i, farm_of(station), o_i))
+        fig = weeks.figures(station, week, kind, name)
+        if fig and fig.get("prevalence") is not None:
+            by_station.append(_row(w_i, s_i, o_i, fig))
+
+    farms = sorted({farm_of(s) for s in vocab["stations"]})
+    idx_farm = {f: i for i, f in enumerate(farms)}
+    by_farm = []
+    for w_i, farm, o_i in sorted(observed):
+        week = vocab["weeks"][w_i]
+        kind, _sep, name = vocab["obs"][o_i].partition(":")
+        fig = prevalence.combine([
+            weeks.figures(s, week, kind, name)
+            for s in weeks.warehouses_in(week)
+            if farm_of(s) == farm
+        ])
+        if fig and fig.get("prevalence") is not None:
+            by_farm.append(_row(w_i, idx_farm[farm], o_i, fig))
+
+    return {
+        "prevalenceByStation": sorted(by_station, key=lambda r: r[:3]),
+        "prevalenceByFarm": sorted(by_farm, key=lambda r: r[:3]),
+        "vocab": {**vocab, "farms": farms, "reliability": list(prevalence.RELIABILITY)},
     }

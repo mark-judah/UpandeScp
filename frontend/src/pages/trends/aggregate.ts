@@ -1,5 +1,6 @@
 import type {
   ObsKey,
+  PrevalenceRow,
   Selection,
   TreeNode,
   TrendsPayload,
@@ -478,4 +479,134 @@ export function cellStats(
     severity: intensitySum !== null && affected > 0 ? intensitySum / affected : null,
     suppressed: scouted < minSample,
   };
+}
+
+/* =============================================================
+ * Adjusted prevalence + margin band
+ *
+ * The server computes station prevalence per (week, station|farm, obs) — see
+ * _trends._prevalence_tables. The client only looks the rows up: the line keeps
+ * plotting incidence, and a shaded band shows where the adjusted prevalence
+ * lies (prevalence ± margin). Per observation over all stages, so there is no
+ * band on "All observations" or on a stage child panel.
+ * ============================================================= */
+
+export const BAND_SUFFIX = "__band";
+
+export interface PrevalencePoint {
+  prevalence: number;
+  margin: number | null;
+  reliability: string;
+  /** prevalence − margin, floored at 0; null when the margin is unknown */
+  lo: number | null;
+  /** prevalence + margin, capped at 100; null when the margin is unknown */
+  hi: number | null;
+}
+
+export interface PrevalenceIndex {
+  station: Map<string, PrevalencePoint>;
+  farm: Map<string, PrevalencePoint>;
+  farmIdxByName: Map<string, number>;
+}
+
+const round1 = (v: number) => Math.round(v * 10) / 10;
+
+function toPoint(row: PrevalenceRow, reliability: string[]): PrevalencePoint {
+  const [, , , prevalence, margin, rel] = row;
+  return {
+    prevalence,
+    margin,
+    reliability: reliability[rel] ?? "Low",
+    lo: margin == null ? null : Math.max(0, round1(prevalence - margin)),
+    hi: margin == null ? null : Math.min(100, round1(prevalence + margin)),
+  };
+}
+
+export function buildPrevalenceIndex(payload: TrendsPayload): PrevalenceIndex {
+  const rel = payload.vocab.reliability ?? ["Good", "Fair", "Low"];
+  const station = new Map<string, PrevalencePoint>();
+  for (const row of payload.prevalenceByStation ?? []) {
+    station.set(`${row[0]}|${row[1]}|${row[2]}`, toPoint(row, rel));
+  }
+  const farm = new Map<string, PrevalencePoint>();
+  for (const row of payload.prevalenceByFarm ?? []) {
+    farm.set(`${row[0]}|${row[1]}|${row[2]}`, toPoint(row, rel));
+  }
+  const farmIdxByName = new Map((payload.vocab.farms ?? []).map((f, i) => [f, i]));
+  return { station, farm, farmIdxByName };
+}
+
+export function prevalenceForCell(
+  index: MatrixIndex,
+  pIndex: PrevalenceIndex,
+  sel: Selection,
+  week: string,
+  obs: ObsKey | null,
+  stage: string | null,
+): PrevalencePoint | null {
+  if (!obs || stage) return null;
+  const w = index.weekIdxByWeek.get(week);
+  const o = index.obsIdxByKey.get(`${obs.kind}:${obs.name}`);
+  if (w === undefined || o === undefined) return null;
+  if (sel.kind === "station") {
+    const s = index.stationIdxByName.get(sel.station);
+    return s === undefined ? null : pIndex.station.get(`${w}|${s}|${o}`) ?? null;
+  }
+  const f = pIndex.farmIdxByName.get(sel.farm);
+  return f === undefined ? null : pIndex.farm.get(`${w}|${f}|${o}`) ?? null;
+}
+
+/** week → selection label → prevalence point (only where one exists). */
+export function buildPrevalenceByWeek(
+  weeks: string[],
+  index: MatrixIndex,
+  pIndex: PrevalenceIndex,
+  selections: Selection[],
+  obs: ObsKey | null,
+  stage: string | null,
+): Map<string, Map<string, PrevalencePoint>> {
+  const out = new Map<string, Map<string, PrevalencePoint>>();
+  for (const wk of weeks) {
+    const inner = new Map<string, PrevalencePoint>();
+    for (const sel of selections) {
+      const p = prevalenceForCell(index, pIndex, sel, wk, obs, stage);
+      if (p) inner.set(sel.label, p);
+    }
+    out.set(wk, inner);
+  }
+  return out;
+}
+
+/** week → { "<label>__band": [lo, hi] } for every point that has a margin. */
+export function buildMarginBands(
+  byWeek: Map<string, Map<string, PrevalencePoint>>,
+  selections: Selection[],
+): Map<string, Record<string, [number, number]>> {
+  const out = new Map<string, Record<string, [number, number]>>();
+  for (const [wk, inner] of byWeek) {
+    const rec: Record<string, [number, number]> = {};
+    for (const sel of selections) {
+      const p = inner.get(sel.label);
+      if (p && p.lo != null && p.hi != null) rec[`${sel.label}${BAND_SUFFIX}`] = [p.lo, p.hi];
+    }
+    out.set(wk, rec);
+  }
+  return out;
+}
+
+/** Band mode: the line plots the ADJUSTED prevalence so the band (prevalence ±
+ *  margin) surrounds its own line. A week with no prevalence row becomes a gap. */
+export function overlayPrevalence(
+  data: Array<Record<string, number | string | null>>,
+  byWeek: Map<string, Map<string, PrevalencePoint>>,
+  selections: Selection[],
+): Array<Record<string, number | string | null>> {
+  return data.map((point) => {
+    const inner = byWeek.get(String(point.date));
+    const next = { ...point };
+    for (const sel of selections) {
+      next[sel.label] = inner?.get(sel.label)?.prevalence ?? null;
+    }
+    return next;
+  });
 }

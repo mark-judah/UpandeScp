@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Line,
   LineChart,
   ReferenceLine,
@@ -37,10 +39,16 @@ import type {
   TrendsPayload,
 } from "./trends-types";
 import {
+  BAND_SUFFIX,
+  buildMarginBands,
+  buildPrevalenceByWeek,
+  buildPrevalenceIndex,
   buildSeries,
   cellStats,
+  overlayPrevalence,
   type CellStats,
   type MatrixIndex,
+  type PrevalencePoint,
 } from "./aggregate";
 
 function SideLegend({
@@ -174,13 +182,15 @@ function IncidenceTooltip({
   statsByWeek,
   unitLabelPlural,
   sprayByWeek,
+  prevalenceByWeek,
 }: {
   active?: boolean;
-  payload?: Array<{ name?: string; dataKey?: string; value?: number; color?: string }>;
+  payload?: Array<{ name?: string; dataKey?: string; value?: number | number[]; color?: string }>;
   label?: string;
   statsByWeek: Map<string, Map<string, CellStats>>;
   unitLabelPlural: string;
   sprayByWeek?: Map<string, SprayMark>;
+  prevalenceByWeek?: Map<string, Map<string, PrevalencePoint>>;
 }) {
   if (!active || !items?.length || !label) return null;
   const stats = statsByWeek.get(label);
@@ -188,7 +198,7 @@ function IncidenceTooltip({
     <div className="rounded-lg border bg-background px-2.5 py-2 text-xs shadow-md">
       <div className="mb-1 font-medium">{label.replace("-W", " · Week ")}</div>
       <div className="flex flex-col gap-1">
-        {items.map((it) => {
+        {items.filter((it) => !String(it.dataKey ?? it.name ?? "").endsWith(BAND_SUFFIX)).map((it) => {
           const key = String(it.dataKey ?? it.name ?? "");
           const s = stats?.get(key);
           return (
@@ -214,6 +224,15 @@ function IncidenceTooltip({
                     : ""}
                 </div>
               )}
+              {(() => {
+                const p = prevalenceByWeek?.get(label)?.get(key);
+                if (!p) return null;
+                return (
+                  <div className="pl-3.5 font-mono text-[0.65rem] text-muted-foreground tabular-nums">
+                    adjusted prevalence{p.margin != null ? ` ±${p.margin}` : " · too clustered to judge"} · {p.reliability}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -310,6 +329,30 @@ export function ChartPanel({
     }
     return m;
   }, [payload, index, selections, obs, child?.stage]);
+
+  /** Adjusted prevalence +/- margin per week and selection (server-computed rows,
+   *  looked up). Shown only for one observation with no stage: the line then
+   *  plots the adjusted figure and a shaded band surrounds it. */
+  const pIndex = useMemo(() => buildPrevalenceIndex(payload), [payload]);
+  const bandMode = !!obs && !child && (pIndex.station.size > 0 || pIndex.farm.size > 0);
+  const prevalenceByWeek = useMemo(
+    () =>
+      bandMode
+        ? buildPrevalenceByWeek(payload.allWeeks, index, pIndex, selections, obs, null)
+        : new Map<string, Map<string, PrevalencePoint>>(),
+    [bandMode, payload.allWeeks, index, pIndex, selections, obs],
+  );
+  const marginBands = useMemo(
+    () => buildMarginBands(prevalenceByWeek, selections),
+    [prevalenceByWeek, selections],
+  );
+  const chartData = useMemo(() => {
+    if (!bandMode) return seriesData;
+    return overlayPrevalence(seriesData, prevalenceByWeek, selections).map((p) => ({
+      ...p,
+      ...(marginBands.get(String(p.date)) ?? {}),
+    }));
+  }, [bandMode, seriesData, prevalenceByWeek, selections, marginBands]);
 
   /** Pest pressure — mean count per unit SCOUTED. A count, not a percentage, so
    *  it gets its own panel and axis rather than a second line on the incidence
@@ -422,8 +465,17 @@ export function ChartPanel({
     if (band) {
       max = Math.max(max, band.high ?? 0, band.moderate ?? 0, band.low ?? 0);
     }
+    for (const rec of marginBands.values()) {
+      for (const k in rec) max = Math.max(max, rec[k][1]);
+    }
+    for (const point of chartData) {
+      for (const k in point) {
+        const v = point[k];
+        if (k !== "date" && typeof v === "number" && v > max) max = v;
+      }
+    }
     return niceCeilPercent(max);
-  }, [seriesData, band]);
+  }, [seriesData, band, marginBands, chartData]);
 
   const onPng = async () => {
     const node = exportRef.current;
@@ -454,9 +506,17 @@ export function ChartPanel({
           </Badge>
           <CardDescription className="ml-auto">
             {selections.length} selection
-            {selections.length !== 1 ? "s" : ""} · % of{" "}
-            {payload.unitLabelPlural || "zones"} <strong>scouted</strong> with
-            matching observations, per week
+            {selections.length !== 1 ? "s" : ""} ·{" "}
+            {bandMode ? (
+              <>
+                adjusted prevalence per week, shaded band = ± 95% margin
+              </>
+            ) : (
+              <>
+                % of {payload.unitLabelPlural || "zones"} <strong>scouted</strong> with
+                matching observations, per week
+              </>
+            )}
           </CardDescription>
           <div className="flex items-center gap-1">
             <Button
@@ -532,8 +592,8 @@ export function ChartPanel({
               config={config}
               className={cn("w-full", child ? "h-48" : "h-64")}
             >
-              <LineChart
-                data={seriesData}
+              <ComposedChart
+                data={chartData}
                 margin={{ left: 4, right: 8, top: 8 }}
                 onMouseLeave={leave}
               >
@@ -560,6 +620,7 @@ export function ChartPanel({
                       statsByWeek={statsByWeek}
                       unitLabelPlural={payload.unitLabelPlural || "zones"}
                       sprayByWeek={sprayByWeek}
+                      prevalenceByWeek={prevalenceByWeek}
                     />
                   }
                 />
@@ -633,6 +694,20 @@ export function ChartPanel({
                     )}
                   />
                 ) : null}
+                {bandMode &&
+                  selections.map((s, i) => (
+                    <Area
+                      key={`band:${s.kind}:${s.label}`}
+                      type="monotone"
+                      dataKey={`${s.label}${BAND_SUFFIX}`}
+                      stroke="none"
+                      fill={PALETTE[i % PALETTE.length]}
+                      fillOpacity={hovered != null && hovered !== s.label ? 0.04 : 0.12}
+                      activeDot={false}
+                      legendType="none"
+                      isAnimationActive={false}
+                    />
+                  ))}
                 {selections.map((s, i) => {
                   const isHover = hovered === s.label;
                   const dim = hovered != null && !isHover;
@@ -654,7 +729,7 @@ export function ChartPanel({
                     />
                   );
                 })}
-              </LineChart>
+              </ComposedChart>
             </ChartContainer>
           </div>
           <div className="md:w-48 shrink-0 md:border-l md:pl-3 pt-2 md:pt-0">

@@ -29,7 +29,14 @@ export interface TrendsVocab {
   stations: string[];
   obs: string[];   // "pest:Thrips", "disease:Powdery Mildew"
   stages: string[]; // index 0 is the empty-stage sentinel
+  /** farm names that `prevalenceByFarm` rows index into */
+  farms?: string[];
+  /** reliability labels that prevalence rows index into: Good / Fair / Low */
+  reliability?: string[];
 }
+
+/** [weekIdx, stationIdx | farmIdx, obsIdx, prevalence %, margin % | null, reliabilityIdx] */
+export type PrevalenceRow = [number, number, number, number, number | null, number];
 
 export interface TrendsOptions {
   farmStations: Record<string, Record<string, number>>;
@@ -75,6 +82,12 @@ export interface TrendsPayload {
    *  whether it worked. Optional — a payload cached before this existed lacks
    *  it, and the overlay simply doesn't render. */
   sprayEvents?: Record<string, SprayEvent[]>;
+  /** Adjusted station prevalence per (week, station, observation): section rates
+   *  averaged over the 3 x 3 grid, with a 95% margin. Optional: a payload cached
+   *  before it existed simply draws no band. */
+  prevalenceByStation?: PrevalenceRow[];
+  /** The same, combined over every house of a farm scouted that week. */
+  prevalenceByFarm?: PrevalenceRow[];
 }
 
 export interface SprayEvent {

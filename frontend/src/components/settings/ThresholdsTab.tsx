@@ -2,7 +2,7 @@
  * Settings → Thresholds editor.
  *
  * Crop-scoped editor for the severity thresholds that drive the
- * dashboard alerts. The GM picks a crop (Rose, Avocado, …); the tab
+ * dashboard alerts. The crop is the route's (`#/<crop>/settings`); the tab
  * loads every Pest Filter + Disease Filter row under it, plus the
  * per-stage children where they exist. Each row shows three Floats —
  * Low / Moderate / High — interpreted as ``% of zones in the
@@ -28,12 +28,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  listCrops,
   getThresholds,
   saveThresholds,
   type ThresholdPestRow,
@@ -49,24 +47,13 @@ function isPest(row: FilterRow): row is ThresholdPestRow {
   return (row as ThresholdPestRow).pest !== undefined;
 }
 
-export function ThresholdsTab() {
-  const [crops, setCrops] = useState<string[]>([]);
-  const [crop, setCrop] = useState<string>("");
+/** `crop` is the route crop (spec D7); the tab no longer carries its own picker. */
+export function ThresholdsTab({ crop }: { crop: string }) {
   const [bundle, setBundle] = useState<ThresholdsBundle | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string>("");
-
-  useEffect(() => {
-    listCrops()
-      .then((r) => {
-        setCrops(r);
-        if (r.length && !crop) setCrop(r[0]);
-      })
-      .catch((e) => setError(errorText(e, "Failed to load crops")));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     if (!crop) {
@@ -166,7 +153,7 @@ export function ThresholdsTab() {
     <Card>
       <CardHeader className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div className="flex flex-col gap-1">
-          <CardTitle className="text-base">Severity Thresholds</CardTitle>
+          <CardTitle className="text-base">Severity Thresholds{crop ? ` · ${crop}` : ""}</CardTitle>
           <CardDescription>
             % of zones in a greenhouse with the observation. Per-stage
             values override the aggregate. Zero = unconfigured (no
@@ -174,21 +161,6 @@ export function ThresholdsTab() {
           </CardDescription>
         </div>
         <div className="flex items-end gap-2">
-          <div className="flex flex-col gap-1 min-w-44">
-            <Label htmlFor="th-crop">Crop</Label>
-            <Select value={crop} onValueChange={setCrop}>
-              <SelectTrigger id="th-crop" className="h-9">
-                <SelectValue placeholder="Pick a crop" />
-              </SelectTrigger>
-              <SelectContent>
-                {crops.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           <Button
             type="button"
             onClick={onSave}
@@ -207,6 +179,11 @@ export function ThresholdsTab() {
       <CardContent className="flex flex-col gap-4">
         {error && (
           <div className="text-xs text-destructive">{error}</div>
+        )}
+        {!crop && (
+          <div className="text-xs text-muted-foreground py-6 text-center">
+            Open Settings from a crop's section to edit its thresholds.
+          </div>
         )}
         {savedAt && !error && !saving && (
           <div className="text-[0.7rem] text-muted-foreground">

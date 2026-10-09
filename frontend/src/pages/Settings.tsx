@@ -248,7 +248,7 @@ export function Settings({ initialCrop }: { initialCrop?: string } = {}) {
               />
             </TabsContent>
             <TabsContent value="thresholds">
-              <ThresholdsTab />
+              <ThresholdsTab crop={crop} />
             </TabsContent>
             <TabsContent value="ordering">
               <OrderingTab />

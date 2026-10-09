@@ -84,16 +84,21 @@ class TestOverviewDailyAndTotals(FrappeTestCase):
     def test_active_alerts_high_first(self):
         from unittest.mock import patch
         from upande_scp.serverscripts.tests.test_dashboard_aggregates_fixture import (
-            ZONES_PER_GH, configure_rose_thresholds,
+            configure_rose_thresholds, fixture_station_grid,
         )
         configure_rose_thresholds()
-        with patch("upande_scp.serverscripts.scouting.scouting_metrics.get_zone_counts_by_greenhouse",
-                   return_value=ZONES_PER_GH):
+        with patch("upande_scp.serverscripts.dashboard_aggregates._prevalence_rows.station_grid",
+                   side_effect=fixture_station_grid):
             payload = self._call(crop="Rose")
         sevs = [a["severity"] for a in payload["activeAlerts"]]
-        # High cells: Thrips Adult on GH 1 and the four Powdery Mildew cells;
-        # Thrips Larvae is Low. Every High comes before anything lower.
-        self.assertEqual(sevs.count("high"), 5)
+        # Was 5 High under the all-zones denominator (every cell 1 of 2 zones = 50%).
+        # Prevalence is now per greenhouse's latest scouted ISO week over stations
+        # SCOUTED (spec D1/D4): the one scouted station reads 100% for what it
+        # carried that week and 0% otherwise.
+        # High: GH 1 Thrips Adult (stage band 50), Thrips Larvae (aggregate band 90),
+        # Powdery Mildew Severe (40); GH 2 Powdery Mildew Low. GH 2's Active and
+        # Moderate cells were W19-only -> 0% -> unclassified.
+        self.assertEqual(sevs.count("high"), 4)
         self.assertEqual(sevs, sorted(sevs, key=lambda s: s != "high"))
         high_kinds = {a["kind"] for a in payload["activeAlerts"] if a["severity"] == "high"}
         self.assertEqual(high_kinds, {"pest", "disease"})

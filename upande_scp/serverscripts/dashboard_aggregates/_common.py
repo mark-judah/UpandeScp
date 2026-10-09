@@ -261,7 +261,9 @@ K_DASH_AGG_PREFIX = "scp:dash_agg"
 # Bumped when an aggregate's meaning changes without its filters changing, so a
 # deploy never serves a payload computed under the old rules. "crop2": crop-less
 # entries count under their greenhouse's crop and off-crop pests/diseases drop out.
-K_DASH_AGG_SCHEMA = "crop2"
+# "prev1": percentages are station prevalence per ISO week over stations SCOUTED
+# (common/prevalence.py), and payloads carry margin / sections / reliability.
+K_DASH_AGG_SCHEMA = "prev1"
 # Versioning the key with K_SCOUTING_PAYLOAD_VERSION was the original design,
 # but every Scouting Entry insert/update bumps that stamp via
 # cache_utils.invalidate_on_change — on a busy site (mobile syncs) the

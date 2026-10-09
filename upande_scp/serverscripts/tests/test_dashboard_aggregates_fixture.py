@@ -179,6 +179,21 @@ def insert_fixture():
 ZONES_PER_GH = {_TEST_GH_1: 2, _TEST_GH_2: 2, _TEST_GH_3: 2}
 
 
+# --- Station prevalence (common/prevalence.py) ------------------------------
+# Severity is now fed each greenhouse's station prevalence in its LATEST scouted
+# ISO week, over stations SCOUTED (spec D1/D4). The fixture greenhouses have no
+# Zone rows, so tests patch _prevalence_rows.station_grid with this grid. Every
+# fixture entry sits on _TEST_ZONE, so a greenhouse-week has one scouted station:
+# no section reaches 3, the adjusted prevalence falls back to raw, and a cell
+# reads 100% when its observation was recorded that week and 0% when it was not.
+STATION_GRID = {_TEST_ZONE: (0, 0), "_TEST Zone 2": (2, 2)}
+
+
+def fixture_station_grid(warehouse: str) -> dict:
+    """Stand-in for _prevalence_rows.station_grid on the fixture greenhouses."""
+    return dict(STATION_GRID) if warehouse in (_TEST_GH_1, _TEST_GH_2, _TEST_GH_3) else {}
+
+
 def configure_rose_thresholds():
     """Rose bands for the fixture: _TEST Thrips stage "Adult" is High at 50%;
     its other stages fall back to the aggregate band, where 50% is Low.

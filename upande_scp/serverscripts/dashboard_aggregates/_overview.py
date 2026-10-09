@@ -2,7 +2,9 @@
 
 import frappe
 
+from upande_scp.serverscripts.common import prevalence as P
 from upande_scp.serverscripts.scouting import scouting_metrics
+from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     obs_filter,
@@ -54,11 +56,13 @@ def _build(from_date, to_date, crop, scope, job_id: str = "") -> dict:
 
     publish_progress(job_id, 35, "loading observations")
     obs     = _observation_rows(where, params)
-    zones_by_gh = scouting_metrics.get_zone_counts_by_greenhouse() or {}
+
+    publish_progress(job_id, 60, "loading scouted stations")
+    weeks = _prevalence_rows.StationWeeks.load(from_date, to_date, crop, scope)
 
     publish_progress(job_id, 85, "computing summaries")
     daily, range_totals = _daily_and_totals(obs)
-    gh_health, cells, alerts_total = _classify_cells(obs, crop, zones_by_gh)
+    gh_health, cells, alerts_total = _classify_cells(obs, crop, weeks)
     active = _active_alerts_from_cells(cells)
     top_scouts, scouts_per_day, scout_perf = _scout_aggs(obs)
 
@@ -181,30 +185,37 @@ def _daily_and_totals(obs: list) -> tuple:
     return sorted(by_date.values(), key=lambda x: x["date"]), totals
 
 
-def _classify_cells(obs: list, crop: str, zones_by_gh: dict) -> tuple:
+def _classify_cells(obs: list, crop: str, weeks) -> tuple:
     """Single pass over ``obs`` produces:
 
       * ``by_gh``        — per-greenhouse counts + scouts + alerts
-      * ``cells``        — one row per (gh, kind, obs_name, stage) with the
-                           pct-of-zones value and severity classification,
-                           the latest scouting date in that cell, and the
-                           summed pest/trap count
+      * ``cells``        — one row per (gh, kind, obs_name, stage) carrying the
+                           house's station prevalence for its LATEST scouted ISO
+                           week in the range, the previous scouted week beside it,
+                           margin / sections / reliability (common/prevalence.py),
+                           the severity classification, the latest scouting date
+                           in that cell and the summed pest/trap count
       * ``total_alerts`` — Σ alerts across greenhouses
 
-    Severity uses the per-stage thresholds (with aggregate fallback) from
-    the Crop Scouted doc — see ``_common.severity_for``. Traps keep the
-    legacy ``count > 10`` rule because trap thresholds aren't part of the
+    ``weeks`` is a ``_prevalence_rows.StationWeeks`` for the same crop, scope and
+    range. The denominator is stations SCOUTED that week (spec D1), never every
+    zone in the house. A house with no stations set up keeps its cells with null
+    figures (reason "no stations set up") and no severity.
+
+    Severity uses the per-stage thresholds (with aggregate fallback) from the Crop
+    Scouted doc — see ``_common.severity_for`` — fed the adjusted prevalence. Traps
+    keep the legacy ``count > 10`` rule because trap thresholds aren't part of the
     Crop Scouted threshold model yet."""
     from upande_scp.serverscripts.dashboard_aggregates._common import severity_for
 
     by_gh: dict = {}
     scouts_by_gh: dict = {}
-    # (gh, kind, obs_name, stage) → {zones: set, count_sum, latest_date}
+    # (gh, kind, obs_name, stage) → {count_sum, latest_date}
     cells: dict = {}
     total_alerts = 0
 
     for r in obs:
-        gh = r.greenhouse or r.block or "—"
+        gh = r.block or r.greenhouse or "—"   # block-first, as _prevalence_rows keys houses
         bucket = by_gh.setdefault(gh, {
             "name": gh, "pests": 0, "diseases": 0, "traps": 0,
             "scoutCount": 0, "alerts": 0,
@@ -224,27 +235,22 @@ def _classify_cells(obs: list, crop: str, zones_by_gh: dict) -> tuple:
         elif r.kind == "disease":
             bucket["diseases"] += 1
 
-        zone = (r.zone or "").strip()
-        if not zone:
+        station = (r.zone or r.tree or "").strip()
+        if not station:
             continue
         key = (gh, r.kind, r.obs_name or "", (r.stage or "").strip())
-        cell = cells.setdefault(key, {
-            "zones": set(),
-            "count_sum": 0,
-            "latest_date": "",
-        })
-        cell["zones"].add(zone)
+        cell = cells.setdefault(key, {"count_sum": 0, "latest_date": ""})
         cell["count_sum"] += int(r.count or 0)
         if date > (cell["latest_date"] or ""):
             cell["latest_date"] = date
 
     out_cells: list = []
     for (gh, kind, obs_name, stage), cell in cells.items():
-        total = zones_by_gh.get(gh) or 0
-        if total <= 0:
+        fig = weeks.latest(gh, kind, obs_name, stage)
+        if not fig:
             continue
-        pct = round(len(cell["zones"]) / total * 100, 1)
-        sev = severity_for(crop, kind, obs_name, stage, pct)
+        pct = fig["prevalence"]
+        sev = severity_for(crop, kind, obs_name, stage, pct) if pct is not None else None
         if sev == "high":
             by_gh[gh]["alerts"] += 1
             total_alerts += 1
@@ -253,12 +259,13 @@ def _classify_cells(obs: list, crop: str, zones_by_gh: dict) -> tuple:
             "kind":       kind,
             "obs_name":   obs_name,
             "stage":      stage,
-            "zones":      len(cell["zones"]),
-            "total":      total,
+            "zones":      fig["infested"],
+            "total":      fig["scouted"],
             "pct":        pct,
             "severity":   sev,
             "count":      cell["count_sum"],
             "date":       cell["latest_date"],
+            **P.public(fig),
         })
 
     for gh, bucket in by_gh.items():
@@ -288,9 +295,10 @@ def _active_alerts_from_cells(cells: list, n: int = 8) -> list:
             "severity":   c["severity"],
             "count":      c["count"],
             "greenhouse": c["greenhouse"],
-            "zone":       f"{c['zones']}/{c['total']} zones ({c['pct']}%)",
+            "zone":       f"{c['zones']}/{c['total']} scouted · {c['week']}",
             "date":       c["date"],
             "stage":      c["stage"],
+            **{k: c.get(k) for k in P.PUBLIC_KEYS},
         }
         for c in flagged
     ]

@@ -18,10 +18,10 @@ directly sidesteps that pre-existing framework quirk."""
 import frappe
 
 STOCKED = ["Karen Roses", "Kaitet Ltd.", "Westwood Dairies Limited"]
-# Chemicals and the mixes made from them share one inventory account so that
+# Chemicals, adjuvants and the mixes made from them share one inventory account so that
 # mixing (consume raw + produce mix) nets to zero, and one expense account so
 # both a raw-chemical issue and a sprayed-mix issue land on Chemicals Expense.
-CHEM_GROUPS = {"CHEMICALS", "Chemical Mix"}
+CHEM_GROUPS = {"CHEMICALS", "Chemical Mix", "Adjuvants"}
 # Fertilizer is kept SEPARATE from chemicals — its own stock + expense accounts.
 FERT_GROUPS = {"Fertilizer"}
 SCP_COMPANY = "Karen Roses"

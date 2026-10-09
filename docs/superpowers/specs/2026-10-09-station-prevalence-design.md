@@ -73,6 +73,15 @@ Output shape (one dict): `{stations, scouted, coverage, raw, prevalence, margin,
 
 Same module and screens; stations are trees, grid from row/tree order. Expect wide margins (≈7% weekly tree coverage); that is the honest answer, not a defect. Avocado pages that read these aggregates (`AvocadoHeatMap` ranking) are out of scope for this piece unless they already call the changed endpoints.
 
+## Clarifications from planning (2026-10-09)
+
+- No section has ≥ 3 scouted stations (m = 0) → prevalence falls back to `raw`, margin None, reason "too clustered to judge", Low.
+- Scope-wide figures (several houses): station-weighted mean of house prevalences, margins combined in quadrature, reliability = the worst house's, spread shown as sections scouted / sections in scope; any house with margin None makes the combined margin None.
+- "Was" = the latest scouted week before the shown week, looked up to 35 days back.
+- Pests/Diseases "Distribution" = latest-week adjusted prevalence per observation; the weekly series is the "Trends" card.
+- Trends margin band shows only for one observation with no stage; in that mode the line plots adjusted prevalence so the band surrounds its own line.
+- Houses are keyed block-first: `COALESCE(NULLIF(block,''), greenhouse)`.
+
 ## Out of scope
 
 Thresholds model and actions (piece 3); stage/variety weighting (piece 4); per-hectare reports; Heatmaps page figures; coffee triads (no triad scouting data exists).

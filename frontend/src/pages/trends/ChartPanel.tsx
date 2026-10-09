@@ -45,6 +45,7 @@ import {
   buildPrevalenceIndex,
   buildSeries,
   cellStats,
+  lineConnectsNulls,
   overlayPrevalence,
   type CellStats,
   type MatrixIndex,
@@ -724,7 +725,7 @@ export function ChartPanel({
                         strokeOpacity={dim ? 0.25 : 1}
                         dot={false}
                         activeDot={{ r: isHover ? 5 : 3 }}
-                        connectNulls
+                        connectNulls={lineConnectsNulls(bandMode)}
                         isAnimationActive={false}
                         onMouseEnter={() => enter(s.label)}
                         onMouseLeave={leave}

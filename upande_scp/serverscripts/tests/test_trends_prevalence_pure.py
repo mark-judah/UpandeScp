@@ -30,10 +30,13 @@ class FakeWeeks:
     def warehouses_in(self, week):
         return sorted({k[0] for k in self.figs if k[1] == week})
 
+    def weeks(self, wh):
+        return sorted({k[1] for k in self.figs if k[0] == wh})
 
-def tables(figs):
+
+def tables(figs, payload=PAYLOAD):
     with patch.object(_trends.scouting_metrics, "get_farms_and_warehouses", return_value=FARMS):
-        return _trends._prevalence_tables(PAYLOAD, FakeWeeks(figs))
+        return _trends._prevalence_tables(payload, FakeWeeks(figs))
 
 
 FIGS = {
@@ -68,3 +71,38 @@ class TestPrevalenceTables(unittest.TestCase):
         figs = {("GH 12", "2031-W10", "pest", "Thrips"): dict(fig(0, None, None, "Low"), stations=0)}
         out = tables(figs)
         self.assertEqual((out["prevalenceByStation"], out["prevalenceByFarm"]), ([], []))
+
+
+class TestCleanScoutedWeeks(unittest.TestCase):
+    """Band mode plots every week a house/farm was scouted for an observation
+    seen there in the window: a clean scouted week is 0 %, not a bridged gap."""
+
+    PAYLOAD = {
+        "vocab": {"weeks": ["2031-W10", "2031-W11", "2031-W12", "2031-W13"],
+                  "stations": ["GH 12", "GH 13"], "obs": ["pest:Thrips"], "stages": [""]},
+        # Thrips seen at GH 12 in W10 and W12 only; W11 scouted clean; W13 unscouted.
+        "byKindName": [[0, 0, 0, 3], [2, 0, 0, 2]],
+    }
+    FIGS = {
+        ("GH 12", "2031-W10", "pest", "Thrips"): fig(100, 30.0, 5.0, "Fair"),
+        ("GH 12", "2031-W11", "pest", "Thrips"): fig(100, 0.0, 4.0, "Good", infested=0),
+        ("GH 12", "2031-W12", "pest", "Thrips"): fig(100, 20.0, 5.0, "Fair"),
+        ("GH 13", "2031-W11", "pest", "Thrips"): fig(300, 0.0, 2.0, "Good", infested=0),
+    }
+
+    def test_a_clean_scouted_week_between_infested_weeks_is_a_zero_row(self):
+        out = tables(self.FIGS, self.PAYLOAD)
+        self.assertEqual(out["prevalenceByStation"], [
+            [0, 0, 0, 30.0, 5.0, 1],
+            [1, 0, 0, 0.0, 4.0, 0],      # clean, scouted → 0 %, not a gap
+            [2, 0, 0, 20.0, 5.0, 1],
+        ])                               # W13 unscouted → no row; GH 13 never saw Thrips → none
+
+    def test_the_farm_line_covers_every_week_the_farm_was_scouted(self):
+        out = tables(self.FIGS, self.PAYLOAD)
+        # W11: (100·0 + 300·0)/400 = 0; sqrt((100·4)² + (300·2)²)/400 = 721.1/400 = 1.8; worst = Good
+        self.assertEqual(out["prevalenceByFarm"], [
+            [0, 0, 0, 30.0, 5.0, 1],
+            [1, 0, 0, 0.0, 1.8, 0],
+            [2, 0, 0, 20.0, 5.0, 1],
+        ])

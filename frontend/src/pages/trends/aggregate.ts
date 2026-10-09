@@ -594,6 +594,13 @@ export function buildMarginBands(
   return out;
 }
 
+/** Whether a Trends line bridges null weeks. In band mode the server sends a row
+ *  for every week the house/farm was scouted (a clean week is 0 %), so a null is
+ *  a week nobody scouted and must stay a gap; the incidence line keeps bridging. */
+export function lineConnectsNulls(bandMode: boolean): boolean {
+  return !bandMode;
+}
+
 /** Band mode: the line plots the ADJUSTED prevalence so the band (prevalence ±
  *  margin) surrounds its own line. A week with no prevalence row becomes a gap. */
 export function overlayPrevalence(

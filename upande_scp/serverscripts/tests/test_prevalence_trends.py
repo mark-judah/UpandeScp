@@ -50,3 +50,31 @@ class TestTrendsPrevalence(unittest.TestCase):
         row = next(r for r in out["prevalenceByStation"] if r[:3] == [w, s, o])
         self.assertEqual(row[3], 33.3)
         self.assertTrue(any(r[0] == w and r[2] == o for r in out["prevalenceByFarm"]))
+
+
+class TestTrendsCleanWeeks(unittest.TestCase):
+    """A clean scouted week between two infested weeks is a 0 % row, not a gap."""
+
+    def setUp(self):
+        crop_scope.clear_cache()
+        crop_catalog.invalidate_catalog()
+        self.gh = F.rose_greenhouse()
+        PF.seed_even_week(self.gh, "2031-03-03", crop="Rose")                           # W10 infested
+        PF.seed_even_week(self.gh, "2031-03-10", crop="Rose", infested_per_section=0)   # W11 clean
+        PF.seed_even_week(self.gh, "2031-03-17", crop="Rose")                           # W12 infested
+
+    def tearDown(self):
+        crop_scope.clear_cache()
+        frappe.db.rollback()
+
+    def test_the_clean_week_is_plotted_at_zero(self):
+        out = DA.trends(from_date="2031-03-03", to_date="2031-03-23", crop="Rose", force="1")
+        v = out["vocab"]
+        s, o = v["stations"].index(self.gh), v["obs"].index("pest:Thrips")
+        series = {v["weeks"][r[0]]: r[3] for r in out["prevalenceByStation"] if r[1:3] == [s, o]}
+        self.assertEqual(series, {"2031-W10": 33.3, "2031-W11": 0.0, "2031-W12": 33.3})
+        farm = v["farms"].index(next(f for f, ss in out["stationsByFarm"].items() if self.gh in ss))
+        farm_weeks = {v["weeks"][r[0]] for r in out["prevalenceByFarm"] if r[1:3] == [farm, o]}
+        self.assertEqual(farm_weeks, {"2031-W10", "2031-W11", "2031-W12"})
+        clean = next(r for r in out["prevalenceByStation"] if r[1:3] == [s, o] and v["weeks"][r[0]] == "2031-W11")
+        self.assertGreater(clean[4], 0)                  # margin floor: never ±0

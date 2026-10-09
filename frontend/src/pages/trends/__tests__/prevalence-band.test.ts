@@ -5,6 +5,7 @@ import {
   buildMatrixIndex,
   buildPrevalenceByWeek,
   buildPrevalenceIndex,
+  lineConnectsNulls,
   overlayPrevalence,
   prevalenceForCell,
 } from "../aggregate";
@@ -84,5 +85,29 @@ describe("prevalence band lookups", () => {
     const byWeek = buildPrevalenceByWeek(p.allWeeks, buildMatrixIndex(p), buildPrevalenceIndex(p), [GH12, FARM], THRIPS, null);
     const out = overlayPrevalence([{ date: "2031-W10", "GH 12": 33.3 - 10, "Karen Farm": 5 }], byWeek, [GH12, FARM]);
     expect(out).toEqual([{ date: "2031-W10", "GH 12": 33.3, "Karen Farm": 30 }]);
+  });
+
+  it("band mode keeps a clean scouted week at 0 and leaves an unscouted week as a gap", () => {
+    // W10 infested, W11 scouted clean (server sends a 0 % row), W12 unscouted (no row).
+    const p = payload({
+      vocab: {
+        weeks: ["2031-W10", "2031-W11", "2031-W12"], stations: ["GH 12", "GH 13"], obs: ["pest:Thrips"],
+        stages: [""], farms: ["Karen Farm"], reliability: ["Good", "Fair", "Low"],
+      },
+      allWeeks: ["2031-W10", "2031-W11", "2031-W12"],
+      prevalenceByStation: [[0, 0, 0, 33.3, 17.8, 1], [1, 0, 0, 0, 9.3, 0]],
+      prevalenceByFarm: [],
+    });
+    const byWeek = buildPrevalenceByWeek(p.allWeeks, buildMatrixIndex(p), buildPrevalenceIndex(p), [GH12], THRIPS, null);
+    const out = overlayPrevalence(
+      [{ date: "2031-W10", "GH 12": 1 }, { date: "2031-W11", "GH 12": null }, { date: "2031-W12", "GH 12": null }],
+      byWeek,
+      [GH12],
+    );
+    expect(out.map((r) => r["GH 12"])).toEqual([33.3, 0, null]);
+    expect(buildMarginBands(byWeek, [GH12]).get("2031-W11")).toEqual({ [`GH 12${BAND_SUFFIX}`]: [0, 9.3] });
+    // …and the band-mode line must not bridge the unscouted null.
+    expect(lineConnectsNulls(true)).toBe(false);
+    expect(lineConnectsNulls(false)).toBe(true);
   });
 });

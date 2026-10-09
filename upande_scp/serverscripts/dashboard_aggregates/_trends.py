@@ -531,17 +531,23 @@ def _prevalence_tables(payload: dict, weeks) -> dict:
     """Adjusted station prevalence beside the incidence tables.
 
     * ``prevalenceByStation`` rows ``[week, station, obs, prevalence, margin, rel]``
-      — one per ``byKindName`` row whose house has stations set up (all stages).
+      — for every observation seen at a house anywhere in the window (any
+      ``byKindName`` row), one row per week that house was scouted (all stages),
+      when it has stations set up. A clean scouted week is a 0 % row, so the
+      band line drops to 0 instead of bridging; only unscouted weeks are gaps.
     * ``prevalenceByFarm`` rows ``[week, farm, obs, prevalence, margin, rel]`` —
+      likewise for every week any house of the farm was scouted, with
       ``StationWeeks.combined``-style weighting over EVERY house of the farm
       scouted that week, clean ones included.
 
-    ``margin`` is ``None`` when too clustered to judge; ``rel`` indexes
-    ``vocab.reliability``; ``farm`` indexes ``vocab.farms``. The Trends margin band
-    (one observation, no stage) reads these rows, so the line and band share a source.
+    ``weeks`` must be loaded in ``WINDOW`` mode. ``margin`` is ``None`` when too
+    clustered to judge; ``rel`` indexes ``vocab.reliability``; ``farm`` indexes
+    ``vocab.farms``. The Trends margin band (one observation, no stage) reads
+    these rows, so the line and band share a source.
     """
     vocab = payload["vocab"]
     rel = {r: i for i, r in enumerate(prevalence.RELIABILITY)}
+    idx_week = {w: i for i, w in enumerate(vocab["weeks"])}
     farms_map = scouting_metrics.get_farms_and_warehouses() or {}
     station_to_farm = {s: f for f, stations in farms_map.items() for s in (stations or [])}
 
@@ -551,29 +557,40 @@ def _prevalence_tables(payload: dict, weeks) -> dict:
     def _row(a, b, o, fig):
         return [a, b, o, fig["prevalence"], fig["margin"], rel[fig["reliability"]]]
 
+    seen_at_house: set = set()   # (station idx, obs idx)
+    seen_on_farm: set = set()    # (farm, obs idx)
+    for _w_i, s_i, o_i, _n in payload.get("byKindName", []):
+        seen_at_house.add((s_i, o_i))
+        seen_on_farm.add((farm_of(vocab["stations"][s_i]), o_i))
+
     by_station = []
-    observed = set()
-    for w_i, s_i, o_i, _n in payload.get("byKindName", []):
-        week, station = vocab["weeks"][w_i], vocab["stations"][s_i]
+    for s_i, o_i in sorted(seen_at_house):
+        station = vocab["stations"][s_i]
         kind, _sep, name = vocab["obs"][o_i].partition(":")
-        observed.add((w_i, farm_of(station), o_i))
-        fig = weeks.figures(station, week, kind, name)
-        if fig and fig.get("prevalence") is not None:
-            by_station.append(_row(w_i, s_i, o_i, fig))
+        for week in weeks.weeks(station):
+            w_i = idx_week.get(week)
+            if w_i is None:
+                continue
+            fig = weeks.figures(station, week, kind, name)
+            if fig and fig.get("prevalence") is not None:
+                by_station.append(_row(w_i, s_i, o_i, fig))
 
     farms = sorted({farm_of(s) for s in vocab["stations"]})
     idx_farm = {f: i for i, f in enumerate(farms)}
+    houses_by_week: dict = {}    # (farm, week) -> [house]
+    for station in vocab["stations"]:
+        for week in weeks.weeks(station):
+            houses_by_week.setdefault((farm_of(station), week), []).append(station)
     by_farm = []
-    for w_i, farm, o_i in sorted(observed):
-        week = vocab["weeks"][w_i]
+    for farm, o_i in sorted(seen_on_farm):
         kind, _sep, name = vocab["obs"][o_i].partition(":")
-        fig = prevalence.combine([
-            weeks.figures(s, week, kind, name)
-            for s in weeks.warehouses_in(week)
-            if farm_of(s) == farm
-        ])
-        if fig and fig.get("prevalence") is not None:
-            by_farm.append(_row(w_i, idx_farm[farm], o_i, fig))
+        for (f, week), houses in houses_by_week.items():
+            w_i = idx_week.get(week)
+            if f != farm or w_i is None:
+                continue
+            fig = prevalence.combine([weeks.figures(s, week, kind, name) for s in houses])
+            if fig and fig.get("prevalence") is not None:
+                by_farm.append(_row(w_i, idx_farm[farm], o_i, fig))
 
     return {
         "prevalenceByStation": sorted(by_station, key=lambda r: r[:3]),

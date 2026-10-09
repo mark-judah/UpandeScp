@@ -118,10 +118,10 @@ export function useScouting({
     if (!from || !to || from > to) return;
     const token = ++tokenRef.current;
     setError(null);
-    // Scope the fetch to a single sparse crop (e.g. avocado) so long ranges
-    // pull only that crop's rows and cache all history; rose / unset keeps the
-    // shared all-crop path.
-    const scopedCrop = crop && crop !== "Rose" ? crop : undefined;
+    // Every crop is fetched as its own server-side slice — Rose included — so
+    // the server applies the crop's farm and pest/disease scope (spec D4/D5).
+    // No crop keeps the shared all-crop path.
+    const scopedCrop = crop || undefined;
     // Scope the fetch to a single greenhouse when the page picked exactly one
     // and isn't asking for a multi-greenhouse list — that's the all/multi
     // mode's unfiltered path, which must keep working exactly as it does

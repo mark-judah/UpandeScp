@@ -476,7 +476,6 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
         value={filters}
         onChange={setFilters}
         showGreenhouse={false}
-        showCrop={false}
         rightSlot={
           <>
             {view.headerControls}

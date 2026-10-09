@@ -247,7 +247,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
   // first scouting page in the session.
   useEffect(() => {
     let cancelled = false;
-    fetchFarmsAndWarehouses()
+    fetchFarmsAndWarehouses(filters.crop)
       .then((farms) => {
         if (cancelled) return;
         const out: Record<string, string> = {};
@@ -265,7 +265,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [filters.crop]);
 
   const ghForCall = filters.greenhouse === ALL ? undefined : filters.greenhouse;
   const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
@@ -502,7 +502,6 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
         subtitle="Per-trap catches · up to one week · color = total count"
         value={filters}
         onChange={setFilters}
-        showCrop={false}
         showFarm={false}
         showGreenhouse={false}
         switcher={

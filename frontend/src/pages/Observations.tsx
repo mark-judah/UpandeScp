@@ -387,7 +387,6 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
         value={filters}
         onChange={setFilters}
         switcher={kindSwitcher}
-        showCrop={false}
       />
 
       {/* Slim stats line — the kind switcher now lives in the header row. */}

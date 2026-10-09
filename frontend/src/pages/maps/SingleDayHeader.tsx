@@ -19,11 +19,7 @@ import { Label } from "@/components/ui/label";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/DatePicker";
-import {
-  fetchCrops,
-  fetchFarmsAndWarehouses,
-  DEFAULT_CROP,
-} from "@/lib/scouting-api";
+import { useCropFarms } from "@/hooks/use-crop-farms";
 
 export const ALL = "__all__";
 
@@ -41,7 +37,6 @@ export interface SingleDayHeaderProps {
   onChange: (next: SingleDayFilterValue) => void;
   showGreenhouse?: boolean;
   /** Hide the crop picker — the crop is fixed by the route. */
-  showCrop?: boolean;
   rightSlot?: ReactNode;
 }
 
@@ -51,35 +46,11 @@ export function SingleDayHeader({
   value,
   onChange,
   showGreenhouse = true,
-  showCrop = true,
   rightSlot,
 }: SingleDayHeaderProps) {
-  const [crops, setCrops] = useState<
-    Array<{ name: string; crop_name: string; farms?: string[] }>
-  >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
-  const [farms, setFarms] = useState<Record<string, string[]>>({});
-
-  useEffect(() => {
-    fetchCrops().then((r) => {
-      if (!r.length) return;
-      const hasDefault = r.some((c) => c.crop_name === DEFAULT_CROP);
-      setCrops(
-        hasDefault
-          ? r
-          : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
-      );
-    });
-    fetchFarmsAndWarehouses().then(setFarms);
-  }, []);
-
-  const farmList = (() => {
-    const cropAllow =
-      crops.find((c) => c.crop_name === value.crop)?.farms || [];
-    const all = Object.keys(farms);
-    if (!cropAllow.length) return all;
-    const allowSet = new Set(cropAllow);
-    return all.filter((f) => allowSet.has(f));
-  })();
+  // Farms for the route crop only, narrowed on the server (spec D3).
+  const { farms } = useCropFarms(value.crop);
+  const farmList = Object.keys(farms);
 
   const greenhouseList =
     value.farm === ALL
@@ -103,29 +74,6 @@ export function SingleDayHeader({
         </div>
 
         <div className="flex flex-wrap items-end gap-2">
-          {showCrop && (
-            <div className="flex flex-col gap-1 min-w-32">
-              <Label>Crop</Label>
-              <Select
-                value={value.crop}
-                onValueChange={(v) =>
-                  onChange({ ...value, crop: v, farm: ALL, greenhouse: ALL })
-                }
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {crops.map((c) => (
-                    <SelectItem key={c.crop_name} value={c.crop_name}>
-                      {c.crop_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
           <div className="flex flex-col gap-1 min-w-32">
             <Label>Farm</Label>
             <Select

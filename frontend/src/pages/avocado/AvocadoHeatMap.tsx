@@ -465,7 +465,6 @@ export function AvocadoHeatMap() {
         value={filters}
         onChange={setFilters}
         showGreenhouse={false}
-        showCrop={false}
         rightSlot={
           <>
             <Button

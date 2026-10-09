@@ -50,10 +50,9 @@ import { METHOD, useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { call } from "@/lib/frappe";
 import {
   fetchBedsAndZones,
-  fetchCrops,
-  fetchFarmsAndWarehousesResult,
   DEFAULT_CROP,
 } from "@/lib/scouting-api";
+import { useCropFarms } from "@/hooks/use-crop-farms";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
 import { ymd } from "@/lib/utils";
 import { LoadingOverlay } from "@/components/LoadingOverlay";
@@ -198,11 +197,8 @@ function useProjectedGeometries(
 }
 
 export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
-  const [crop, setCrop] = useState<string>(initialCrop ?? DEFAULT_CROP);
+  const crop = initialCrop ?? DEFAULT_CROP;
   const [{ from, to }, setRange] = useState(defaultRange);
-  const [crops, setCrops] = useState<
-    Array<{ name: string; crop_name: string; farms?: string[] }>
-  >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
   const [farmsByGh, setFarmsByGh] = useState<Record<string, string>>({});
   // Distinguishes "this farm list is empty" from "we could not fetch it". The
   // picker used to say "No farms configured" for both, which sent people
@@ -278,26 +274,16 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     return () => { cancelled = true; };
   }, [picked, from, to, crop]);
 
-  // Bootstrap data: crop list + farm→greenhouse map for the tree.
+  // Farm → greenhouse map for the tree, for the route crop only (server-side).
+  const { farms: cropFarms, error: cropFarmsError } = useCropFarms(crop);
   useEffect(() => {
-    fetchCrops().then((r) => {
-      if (!r.length) return;
-      const hasDefault = r.some((c) => c.crop_name === DEFAULT_CROP);
-      setCrops(
-        hasDefault
-          ? r
-          : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
-      );
+    const ghToFarm: Record<string, string> = {};
+    Object.entries(cropFarms).forEach(([farm, ghs]) => {
+      (ghs || []).forEach((g) => (ghToFarm[g] = farm));
     });
-    fetchFarmsAndWarehousesResult().then(({ farms, error }) => {
-      const ghToFarm: Record<string, string> = {};
-      Object.entries(farms).forEach(([farm, ghs]) => {
-        (ghs || []).forEach((g) => (ghToFarm[g] = farm));
-      });
-      setFarmsByGh(ghToFarm);
-      setFarmsError(error ?? null);
-    });
-  }, []);
+    setFarmsByGh(ghToFarm);
+    setFarmsError(cropFarmsError ?? null);
+  }, [cropFarms, cropFarmsError]);
 
   // Server-side filter: only the crop, date range, and explicit greenhouse
   // selections (if any) go to the server. Obs filtering is purely
@@ -332,7 +318,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     () => ({
       from_date: from,
       to_date: to,
-      crop: crop === DEFAULT_CROP ? "" : crop,
+      crop,
       greenhouses: greenhouseFilter,
     }),
     [from, to, crop, greenhouseFilter],
@@ -463,21 +449,6 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
         title="Heatmaps"
         eyebrow={<>Per-greenhouse zone intensity · pest &amp; disease markers</>}
       >
-        {!initialCrop && (
-          <Select value={crop} onValueChange={setCrop}>
-            <SelectTrigger aria-label="Crop" className={HEADER_PILL}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {crops.map((c) => (
-                <SelectItem key={c.crop_name} value={c.crop_name}>
-                  {c.crop_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
         <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
         <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
 

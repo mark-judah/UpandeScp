@@ -533,7 +533,6 @@ export function RoseScouting() {
         subtitle="Up to one week · zones scouted, with repeat-day overlap"
         value={filters}
         onChange={setFilters}
-        showCrop={false}
       />
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[3fr_1fr]">

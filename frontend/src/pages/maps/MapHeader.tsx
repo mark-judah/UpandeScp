@@ -10,11 +10,7 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
-import {
-  fetchCrops,
-  fetchFarmsAndWarehouses,
-  DEFAULT_CROP,
-} from "@/lib/scouting-api";
+import { useCropFarms } from "@/hooks/use-crop-farms";
 
 export const ALL = "__all__";
 
@@ -35,7 +31,6 @@ export interface MapHeaderProps {
   showGreenhouse?: boolean;
   /** Hide the crop picker — the crop is fixed by the route (one crop per
    *  section), so the picker would be redundant. */
-  showCrop?: boolean;
   /** When true, the farm picker only includes farms whose warehouses are
    *  block-typed (avocado-style); used by the Avocado map. */
   blocksOnly?: boolean;
@@ -56,34 +51,11 @@ export function MapHeader({
   onChange,
   onReload,
   showGreenhouse = true,
-  showCrop = true,
   rightSlot,
 }: MapHeaderProps) {
-  const [crops, setCrops] = useState<
-    Array<{ name: string; crop_name: string; farms?: string[] }>
-  >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
-  const [farms, setFarms] = useState<Record<string, string[]>>({});
-
-  useEffect(() => {
-    fetchCrops().then((r) => {
-      if (!r.length) return;
-      const hasDefault = r.some((c) => c.crop_name === DEFAULT_CROP);
-      setCrops(
-        hasDefault
-          ? r
-          : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
-      );
-    });
-    fetchFarmsAndWarehouses().then(setFarms);
-  }, []);
-
-  const farmList = (() => {
-    const cropAllow = crops.find((c) => c.crop_name === value.crop)?.farms || [];
-    const all = Object.keys(farms);
-    if (!cropAllow.length) return all;
-    const allowSet = new Set(cropAllow);
-    return all.filter((f) => allowSet.has(f));
-  })();
+  // Farms for the route crop only, narrowed on the server (spec D3).
+  const { farms } = useCropFarms(value.crop);
+  const farmList = Object.keys(farms);
 
   // Single-farm crop (e.g. avocado → Lokitela): auto-select that farm on load
   // instead of leaving it on "All Farms" — several map layers (orchard trees,
@@ -106,26 +78,6 @@ export function MapHeader({
 
   return (
     <PageHeader title={title} eyebrow={subtitle}>
-      {showCrop && (
-        <Select
-          value={value.crop}
-          onValueChange={(v) =>
-            onChange({ ...value, crop: v, farm: ALL, greenhouse: ALL })
-          }
-        >
-          <SelectTrigger aria-label="Crop" className={HEADER_PILL}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {crops.map((c) => (
-              <SelectItem key={c.crop_name} value={c.crop_name}>
-                {c.crop_name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-
       <Select
         value={value.farm}
         onValueChange={(v) => onChange({ ...value, farm: v, greenhouse: ALL })}

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { FileText, RefreshCw } from "lucide-react";
 import {
-  fetchCrops, fetchFarmsAndWarehouses, fetchScoutLookup,
-  fetchZonesByGreenhouse, DEFAULT_CROP,
+  fetchScoutLookup, fetchZonesByGreenhouse, DEFAULT_CROP,
 } from "@/lib/scouting-api";
+import { useCropFarms } from "@/hooks/use-crop-farms";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -36,37 +36,21 @@ function defaultRange() {
 type TabId = "overview" | "pests" | "diseases" | "traps" | "fcm";
 
 export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
-  const [crop, setCrop] = useState<string>(initialCrop ?? DEFAULT_CROP);
+  // The crop is the route's (spec D1); the page carries no crop picker.
+  const crop = initialCrop ?? DEFAULT_CROP;
   const [farm, setFarm] = useState<string>(ALL_FARMS);
   const [greenhouse, setGreenhouse] = useState<string>(ALL_GH);
   const [{ from, to }, setRange] = useState(defaultRange);
-  const [crops, setCrops] = useState<Array<{ name: string; crop_name: string;
-                                              farms?: string[] }>>([
-    { name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }
-  ]);
-  const [farms, setFarms] = useState<Record<string, string[]>>({});
+  const { farms } = useCropFarms(crop);
   const [scoutLookup, setScoutLookup] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    fetchCrops().then((r) => {
-      if (!r.length) return;
-      const hasDefault = r.some((c) => c.crop_name === DEFAULT_CROP);
-      setCrops(hasDefault ? r : [
-        { name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r,
-      ]);
-    });
-    fetchFarmsAndWarehouses().then(setFarms);
     fetchScoutLookup().then(setScoutLookup);
     void fetchZonesByGreenhouse();
   }, []);
 
-  const farmList = (() => {
-    const cropAllow = crops.find((c) => c.crop_name === crop)?.farms || [];
-    const all = Object.keys(farms);
-    if (!cropAllow.length) return all;
-    const allowSet = new Set(cropAllow);
-    return all.filter((f) => allowSet.has(f));
-  })();
+  // Already the crop's farms, narrowed on the server.
+  const farmList = Object.keys(farms);
 
   const greenhouseList = (() => {
     if (farm === ALL_FARMS)
@@ -85,7 +69,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
   const base = {
     from_date: from,
     to_date: to,
-    crop: crop === DEFAULT_CROP ? "" : crop,
+    crop,
     farm: farm === ALL_FARMS ? "" : farm,
     greenhouse: greenhouse === ALL_GH ? "" : greenhouse,
   };
@@ -135,21 +119,6 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
             </TabsList>
 
             <div className="flex flex-wrap items-center gap-2">
-              {!initialCrop && (
-                <Select value={crop} onValueChange={setCrop}>
-                  <SelectTrigger aria-label="Crop" className={HEADER_PILL}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {crops.map((c) => (
-                      <SelectItem key={c.crop_name} value={c.crop_name}>
-                        {c.crop_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-
               <Select
                 value={farm}
                 onValueChange={(v) => {

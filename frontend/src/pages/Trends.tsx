@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, MapPin, Sparkles, RefreshCw, Gauge } from "lucide-react";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
-import { fetchCrops, DEFAULT_CROP } from "@/lib/scouting-api";
+import { DEFAULT_CROP } from "@/lib/scouting-api";
 import { getThresholds, type ThresholdsBundle } from "@/lib/thresholds-api";
 import {
   Select,
@@ -45,28 +45,14 @@ function defaultRange() {
 }
 
 export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
-  const [crop, setCrop] = useState<string>(initialCrop ?? DEFAULT_CROP);
+  // The crop is the route's (spec D1); the page carries no crop picker.
+  const crop = initialCrop ?? DEFAULT_CROP;
   const [{ from, to }, setRange] = useState(defaultRange);
-  const [crops, setCrops] = useState<
-    Array<{ name: string; crop_name: string; farms?: string[] }>
-  >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
   const [stationChecks, setStationChecks] = useState<Set<string>>(new Set());
   const [obsChecks, setObsChecks] = useState<Set<string>>(new Set());
   const [showThresholds, setShowThresholds] = useState(true);
   const [thresholdBundle, setThresholdBundle] =
     useState<ThresholdsBundle | null>(null);
-
-  useEffect(() => {
-    fetchCrops().then((r) => {
-      if (!r.length) return;
-      const hasDefault = r.some((c) => c.crop_name === DEFAULT_CROP);
-      setCrops(
-        hasDefault
-          ? r
-          : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
-      );
-    });
-  }, []);
 
   const { data, loading, error, progress, reload } =
     useDashboardAggregate<TrendsPayload>(
@@ -74,7 +60,7 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
       {
         from_date: from,
         to_date: to,
-        crop: crop === DEFAULT_CROP ? "" : crop,
+        crop,
       },
       true,
     );
@@ -188,21 +174,6 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
         title="Scouting Trends"
         eyebrow={<>Across farms, stations, pests &amp; stages</>}
       >
-        {!initialCrop && (
-          <Select value={crop} onValueChange={setCrop}>
-            <SelectTrigger aria-label="Crop" className={HEADER_PILL}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {crops.map((c) => (
-                <SelectItem key={c.crop_name} value={c.crop_name}>
-                  {c.crop_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
         <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
         <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
 

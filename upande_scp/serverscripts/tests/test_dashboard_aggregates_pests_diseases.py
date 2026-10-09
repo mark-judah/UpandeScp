@@ -35,18 +35,20 @@ class TestPestsEndpoint(FrappeTestCase):
     def test_severity_buckets(self):
         from unittest.mock import patch
         from upande_scp.serverscripts.tests.test_dashboard_aggregates_fixture import (
-            ZONES_PER_GH, configure_rose_thresholds,
+            configure_rose_thresholds, fixture_station_grid,
         )
         configure_rose_thresholds()
-        with patch("upande_scp.serverscripts.dashboard_aggregates._pests_diseases.get_zone_counts_by_greenhouse",
-                   return_value=ZONES_PER_GH):
+        with patch("upande_scp.serverscripts.dashboard_aggregates._prevalence_rows.station_grid",
+                   side_effect=fixture_station_grid):
             payload = self._call(crop="Rose")
         thrips = next(r for r in payload["ranking"] if r["name"] == "_TEST Thrips")
-        # Two cells on GH 1, each 1 of 2 zones = 50%: Adult uses its stage band
-        # (High at 50), Larvae falls back to the aggregate band (Low below 60).
-        self.assertEqual(thrips["high"], 1)
+        # Was High 1 / Low 1 under the all-zones denominator (each cell 1 of 2 zones = 50%).
+        # Station prevalence reads GH 1's latest scouted week, 2026-W20, where its one
+        # scouted station carried Thrips Adult and Larvae -> 100% each: Adult on its
+        # stage band (High at 50), Larvae on the aggregate band (High at 90).
+        self.assertEqual(thrips["high"], 2)
         self.assertEqual(thrips["moderate"], 0)
-        self.assertEqual(thrips["low"], 1)
+        self.assertEqual(thrips["low"], 0)
 
 
 class TestPestsZoneMetrics(FrappeTestCase):
@@ -75,10 +77,18 @@ class TestPestsZoneMetrics(FrappeTestCase):
         self.assertIn("Stem", names)
 
     def test_daily_percent_one_row_per_date_with_match(self):
-        payload = self._call(observation="_TEST Thrips")
+        from unittest.mock import patch
+        from upande_scp.serverscripts.tests.test_dashboard_aggregates_fixture import (
+            fixture_station_grid,
+        )
+        with patch("upande_scp.serverscripts.dashboard_aggregates._prevalence_rows.station_grid",
+                   side_effect=fixture_station_grid):
+            payload = self._call(observation="_TEST Thrips")
         dates = [r["date"] for r in payload["dailyPercent"]]
-        self.assertEqual(set(dates), {"2026-05-04", "2026-05-05", "2026-05-06",
-                                      "2026-05-11", "2026-05-14"})
+        # Was one row per scouting DATE with Thrips (all-zones denominator). The trend
+        # is now weekly adjusted prevalence (spec 2), one point per ISO week with
+        # scouting, dated on its Monday: 2026-W19 and 2026-W20.
+        self.assertEqual(dates, ["2026-05-04", "2026-05-11"])
 
     def test_trend_series_top_n(self):
         payload = self._call()

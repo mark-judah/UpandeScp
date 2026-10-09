@@ -1,9 +1,16 @@
-"""Pests and Diseases tabs aggregator (shared)."""
+"""Pests and Diseases tabs aggregator (shared).
+
+Percentages are station prevalence (common/prevalence.py): per greenhouse/block
+and ISO week over stations SCOUTED, sections averaged, with a margin. Scope-wide
+figures weight each house by its station count (``prevalence.combine``).
+"""
 
 import frappe
 
+from upande_scp.serverscripts.common import prevalence as P
 from upande_scp.serverscripts.scouting import scouting_metrics
-from upande_scp.serverscripts.scouting.scouting_metrics import get_zone_counts_by_greenhouse
+from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows
+from upande_scp.serverscripts.dashboard_aggregates._prevalence_rows import ANY
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     obs_filter,
@@ -79,37 +86,41 @@ def _build(kind: str, filters: dict, scope, job_id: str = "") -> dict:
         as_dict=True,
     )
 
-    publish_progress(job_id, 75, "computing zone metrics")
-    zones_by_gh = get_zone_counts_by_greenhouse() or {}
+    publish_progress(job_id, 55, "loading scouted stations")
+    weeks = _prevalence_rows.StationWeeks.load(
+        filters["from_date"], filters["to_date"], filters["crop"], scope, kinds=(kind,),
+    )
 
-    ranking = _ranking(kind, rows, filters["crop"], zones_by_gh)
+    publish_progress(job_id, 75, "computing prevalence")
+    ranking = _ranking(kind, rows, filters["crop"], weeks)
     fo = _filter_options(rows)
     fo[kind + "s"] = fo.pop("items")
 
     payload = {
         "filterOptions":      fo,
         "ranking":             ranking,
-        "distribution":       _distribution(rows, filters, zones_by_gh),
+        "distribution":       _distribution(kind, rows, filters, weeks),
         "sectionSplit":       _section_split(rows, filters),
-        "greenhousePressure": _gh_pressure(rows, filters, zones_by_gh),
-        "dailyPercent":       _daily_percent(rows, filters, zones_by_gh),
+        "greenhousePressure": _gh_pressure(kind, filters, weeks),
+        "dailyPercent":       _daily_percent(kind, filters, weeks),
         "trendSeries":        _trend_series(rows, kind),
     }
     publish_progress(job_id, 100, "")
     return payload
 
 
-def _ranking(kind: str, rows: list, crop: str, zones_by_gh: dict) -> list:
-    """Per-observation ranking with severity buckets driven by the
-    per-stage thresholds (with aggregate fallback) configured on
-    ``Crop Scouted``. One cell = one (greenhouse, obs_name, stage)
-    combination; ``high / moderate / low`` count the number of cells
-    that classify into each band. ``total`` sums the observation
-    counts (pest count for pests, row count for diseases) the same way
-    the old function did so the totals column doesn't shift unrelated."""
+def _ranking(kind: str, rows: list, crop: str, weeks) -> list:
+    """Per-observation ranking.
+
+    ``high / moderate / low`` count the (house, stage) cells of the observation
+    whose LATEST-week station prevalence classifies into each band against the
+    per-stage thresholds (with aggregate fallback) on ``Crop Scouted``. ``total``
+    sums the observation counts (pest count for pests, row count for diseases).
+    Each row also carries the scope-wide adjusted prevalence of the observation
+    (all stages, every scouted house, latest week) with its margin / sections /
+    reliability."""
     by_name: dict = {}
-    # (gh, obs_name, stage) → set of zones
-    cells: dict = {}
+    cells: set = set()
     for r in rows:
         bucket = by_name.setdefault(
             r.obs_name,
@@ -119,28 +130,20 @@ def _ranking(kind: str, rows: list, crop: str, zones_by_gh: dict) -> list:
             bucket["total"] += int(r.count or 0)
         else:
             bucket["total"] += 1
-        zone = (r.zone or "").strip()
-        if not zone:
-            continue
-        gh = r.greenhouse or r.block or ""
-        if not gh:
-            continue
-        key = (gh, r.obs_name or "", (r.stage or "").strip())
-        cells.setdefault(key, set()).add(zone)
+        wh = r.block or r.greenhouse or ""
+        if wh:
+            cells.add((wh, r.obs_name or "", (r.stage or "").strip()))
 
-    for (gh, obs_name, stage), zones in cells.items():
-        total = zones_by_gh.get(gh) or 0
-        if total <= 0:
+    for wh, obs_name, stage in sorted(cells):
+        fig = weeks.latest(wh, kind, obs_name, stage)
+        if not fig or fig["prevalence"] is None:
             continue
-        pct = len(zones) / total * 100
-        sev = severity_for(crop, kind, obs_name, stage, pct)
-        if not sev:
-            continue
-        bucket = by_name.setdefault(
-            obs_name,
-            {"name": obs_name, "total": 0, "high": 0, "moderate": 0, "low": 0},
-        )
-        bucket[sev] += 1
+        sev = severity_for(crop, kind, obs_name, stage, fig["prevalence"])
+        if sev:
+            by_name[obs_name][sev] += 1
+
+    for name, bucket in by_name.items():
+        bucket.update(P.public(weeks.combined_latest(kind, name or "")))
 
     # by_name is keyed by obs_name, so it's a total-order tie-break.
     return sorted(by_name.values(), key=lambda x: (-x["total"], x["name"]))
@@ -203,24 +206,34 @@ def _filter_row(row, filters: dict) -> bool:
     return True
 
 
-def _distribution(rows, filters, zones_by_gh) -> list:
-    """% of total zones in scope that have each observation type."""
-    ghs_in_scope = {r.greenhouse or r.block for r in rows
-                    if (r.greenhouse or r.block)}
-    denom = max(1, sum(zones_by_gh.get(gh, 0) for gh in ghs_in_scope))
-    by_obs = {}
-    for r in rows:
-        if not _filter_row(r, {**filters, "observation": ""}):
-            continue
-        u = _zone_key(r)
-        if not u:
-            continue
-        by_obs.setdefault(r.obs_name, set()).add(u)
-    out = [{"name": n, "zones": len(s),
-            "pct": round(len(s) / denom * 1000) / 10}
-           for n, s in by_obs.items()]
-    # by_obs is keyed by obs name, so it's a total-order tie-break.
-    out.sort(key=lambda x: (-x["zones"], x["name"]))
+def _select(filters: dict) -> tuple:
+    """(observation, stage, section) for StationWeeks; an empty filter is ANY."""
+    return (
+        filters["observation"] or ANY,
+        filters["stage"] or ANY,
+        filters["section"] or ANY,
+    )
+
+
+def _distribution(kind: str, rows, filters, weeks) -> list:
+    """Per observation: the scope-wide adjusted prevalence in each house's latest
+    scouted week (clean houses count), honouring the section and stage filters.
+    ``pct`` is None when no house in scope has stations set up."""
+    _obs, stage, section = _select(filters)
+    names = sorted({
+        r.obs_name for r in rows
+        if r.obs_name and _filter_row(r, {**filters, "observation": ""})
+    })
+    out = []
+    for name in names:
+        fig = weeks.combined_latest(kind, name, stage, section)
+        out.append({
+            "name": name,
+            "zones": (fig or {}).get("infested") or 0,
+            "pct": (fig or {}).get("prevalence"),
+            **P.public(fig),
+        })
+    out.sort(key=lambda x: (x["pct"] is None, -(x["pct"] or 0), x["name"]))
     return out
 
 
@@ -245,45 +258,42 @@ def _section_split(rows, filters) -> list:
     return out
 
 
-def _gh_pressure(rows, filters, zones_by_gh) -> list:
-    gh_to_zones = {}
-    for r in rows:
-        if not _filter_row(r, filters):
-            continue
-        gh = r.greenhouse or r.block
-        if not gh:
-            continue
-        u = _zone_key(r)
-        if not u:
-            continue
-        gh_to_zones.setdefault(gh, set()).add(u)
-    out = [{"name": gh, "zones": len(s),
-            "pct": round(len(s) / max(1, zones_by_gh.get(gh, 0)) * 1000) / 10}
-           for gh, s in gh_to_zones.items()]
-    # gh_to_zones is keyed by greenhouse name, so it's a total-order tie-break.
-    out.sort(key=lambda x: (-x["pct"], x["name"]))
+def _gh_pressure(kind: str, filters, weeks) -> list:
+    """One row per house scouted in the range: its latest-week adjusted prevalence
+    for the filtered observation / stage / section (any observation when none is
+    picked). A house with no stations set up stays, with null figures."""
+    obs, stage, section = _select(filters)
+    out = []
+    for wh in weeks.warehouses():
+        fig = weeks.latest(wh, kind, obs, stage, section)
+        out.append({
+            "name": wh,
+            "zones": (fig or {}).get("infested") or 0,
+            "pct": (fig or {}).get("prevalence"),
+            **P.public(fig),
+        })
+    # One row per house, so name is a total-order tie-break.
+    out.sort(key=lambda x: (x["pct"] is None, -(x["pct"] or 0), x["name"]))
     return out
 
 
-def _daily_percent(rows, filters, zones_by_gh) -> list:
-    ghs = {r.greenhouse or r.block for r in rows if (r.greenhouse or r.block)}
-    denom = max(1, sum(zones_by_gh.get(gh, 0) for gh in ghs))
-    by_date = {}
-    by_entry = {}
-    for r in rows:
-        if not _filter_row(r, filters):
+def _daily_percent(kind: str, filters, weeks) -> list:
+    """The trend line: one point per ISO week with scouting in the range, the
+    scope-wide adjusted prevalence of the filtered observation that week, dated
+    on the week's Monday."""
+    obs, stage, section = _select(filters)
+    out = []
+    for week in weeks.window_weeks():
+        fig = weeks.combined(week, kind, obs, stage, section)
+        if fig is None:
             continue
-        u = _zone_key(r)
-        if not u:
-            continue
-        date = str(r.date_of_capture)[:10]
-        if by_entry.get((date, r.name)) == u:
-            continue
-        by_entry[(date, r.name)] = u
-        by_date.setdefault(date, set()).add(u)
-    out = [{"date": d, "value": round(len(s) / denom * 1000) / 10}
-           for d, s in by_date.items()]
-    out.sort(key=lambda x: x["date"])
+        out.append({
+            "date": P.week_monday(week),
+            "week": week,
+            "value": fig["prevalence"],
+            "margin": fig["margin"],
+            "reliability": fig["reliability"],
+        })
     return out
 
 

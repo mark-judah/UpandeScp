@@ -171,14 +171,6 @@ def insert_fixture():
     return names
 
 
-# --- Severity under the current model ---------------------------------------
-# Severity is "% of a greenhouse's zones carrying the observation" classified
-# against the crop's Pest/Disease Filter bands (stage band first, then the
-# observation's aggregate band). The fixture puts every entry in one zone, so
-# with ZONES_PER_GH zones each (gh, observation, stage) cell is 50%.
-ZONES_PER_GH = {_TEST_GH_1: 2, _TEST_GH_2: 2, _TEST_GH_3: 2}
-
-
 # --- Station prevalence (common/prevalence.py) ------------------------------
 # Severity is now fed each greenhouse's station prevalence in its LATEST scouted
 # ISO week, over stations SCOUTED (spec D1/D4). The fixture greenhouses have no

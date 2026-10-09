@@ -87,8 +87,11 @@ def _build(kind: str, filters: dict, scope, job_id: str = "") -> dict:
     )
 
     publish_progress(job_id, 55, "loading scouted stations")
+    # WINDOW: the weekly line (dailyPercent) needs every in-window week, not
+    # just each house's latest + previous.
     weeks = _prevalence_rows.StationWeeks.load(
         filters["from_date"], filters["to_date"], filters["crop"], scope, kinds=(kind,),
+        weeks=_prevalence_rows.WINDOW,
     )
 
     publish_progress(job_id, 75, "computing prevalence")

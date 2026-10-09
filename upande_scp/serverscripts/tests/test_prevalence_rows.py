@@ -118,3 +118,81 @@ class TestStationWeeks(unittest.TestCase):
         fig = weeks.latest(block, "pest", AVOCADO_PEST)
         self.assertEqual(fig["stations"], frappe.db.count("Orchard Tree", {"block": block}))
         self.assertEqual((fig["scouted"], fig["prevalence"], fig["sections_scouted"]), (27, 33.3, 9))
+
+
+class TestStationFetch(unittest.TestCase):
+    """The station scans read only each house's latest + previous week."""
+
+    def setUp(self):
+        crop_scope.clear_cache()
+        crop_catalog.invalidate_catalog()
+        self.gh = F.rose_greenhouse()
+        self.zone = sorted(R._load_grid(self.gh))[0]
+
+    def tearDown(self):
+        crop_scope.clear_cache()
+        frappe.db.rollback()
+
+    def _entry(self, date, pests=()):
+        PF.insert_station_entry(date=date, greenhouse=self.gh, zone=self.zone, crop="Rose", pests=list(pests))
+
+    def test_only_the_latest_and_previous_weeks_are_fetched(self):
+        self._entry("2031-02-24", ["Thrips"])   # W09 — lookback, older than "previous"
+        self._entry("2031-03-03")               # W10 — previous
+        self._entry("2031-03-10", ["Thrips"])   # W11 — latest
+        weeks = R.StationWeeks.load(*PF.WEEK_11, "Rose", [self.gh])
+        self.assertEqual(weeks.latest_pair(self.gh), ("2031-W11", "2031-W10"))
+        self.assertEqual({w for (h, w) in weeks._scouted if h == self.gh}, {"2031-W10", "2031-W11"})
+        self.assertNotIn((self.gh, "2031-W09"), weeks._infested)
+        fig = weeks.latest(self.gh, "pest", "Thrips")
+        self.assertEqual((fig["prevalence"], fig["prev"]), (100.0, 0.0))
+
+    def test_window_mode_fetches_every_window_week(self):
+        self._entry("2031-03-03", ["Thrips"])   # W10
+        self._entry("2031-03-10")               # W11
+        self._entry("2031-03-17", ["Thrips"])   # W12
+        weeks = R.StationWeeks.load("2031-03-03", "2031-03-23", "Rose", [self.gh], weeks=R.WINDOW)
+        self.assertEqual(weeks.window_weeks(), ["2031-W10", "2031-W11", "2031-W12"])
+        self.assertEqual(weeks.figures(self.gh, "2031-W11", "pest", "Thrips")["prevalence"], 0.0)
+
+    def test_a_previous_week_at_the_snapped_lookback_monday_is_found(self):
+        # Window Wed 2031-03-12 → 03-16 (W11); 35 days back is Wed 02-05, which
+        # snaps to Mon 02-03 (W06). An entry on that Monday is the "was" week.
+        self._entry("2031-02-03", ["Thrips"])
+        self._entry("2031-03-12")
+        weeks = R.StationWeeks.load("2031-03-12", "2031-03-16", "Rose", [self.gh])
+        self.assertEqual(weeks.latest_pair(self.gh), ("2031-W11", "2031-W06"))
+        self.assertEqual(weeks.latest(self.gh, "pest", "Thrips")["prev"], 100.0)
+
+
+class TestGridPrefetch(unittest.TestCase):
+    """load() warms every house's grid in one batched scan (Zone has no index on
+    greenhouse, so per-house loads were one full scan each)."""
+
+    def setUp(self):
+        crop_scope.clear_cache()
+        crop_catalog.invalidate_catalog()
+
+    def tearDown(self):
+        crop_scope.clear_cache()
+        frappe.db.rollback()
+
+    def test_batched_grids_match_the_single_house_grids(self):
+        a, b = PF.rose_greenhouses(2)
+        block = F.avocado_block()
+        grids = R._load_grids([a, b, block, "No Such House"])
+        self.assertEqual(set(grids), {a, b, block, "No Such House"})
+        self.assertEqual(len(grids[a]), frappe.db.count("Zone", {"greenhouse": a}))
+        self.assertEqual(len(grids[block]), frappe.db.count("Orchard Tree", {"block": block}))
+        self.assertEqual(grids["No Such House"], {})
+
+    def test_load_warms_the_grid_cache_for_every_scouted_house(self):
+        a, b = PF.rose_greenhouses(2)
+        for gh in (a, b):
+            cache_utils.invalidate(R.grid_key(gh))
+            zone = sorted(R._load_grids([gh])[gh])[0]
+            PF.insert_station_entry(date=PF.WEEK_10[0], greenhouse=gh, zone=zone, crop="Rose")
+        R.StationWeeks.load(*PF.WEEK_10, "Rose", [a, b])
+        for gh in (a, b):
+            cached = frappe.cache().get_value(R.grid_key(gh))
+            self.assertEqual(len(cached or {}), frappe.db.count("Zone", {"greenhouse": gh}))

@@ -95,7 +95,9 @@ def _build(from_date: str, to_date: str, crop: str, job_id: str = "") -> dict:
     # Adjusted station prevalence + margin beside the incidence above (spec §2):
     # every week is plotted, so no previous-week lookback.
     publish_progress(job_id, 85, "computing prevalence")
-    weeks = _prevalence_rows.StationWeeks.load(from_date, to_date, crop, None, lookback_days=0)
+    weeks = _prevalence_rows.StationWeeks.load(
+        from_date, to_date, crop, None, lookback_days=0, weeks=_prevalence_rows.WINDOW,
+    )
     payload.update(_prevalence_tables(payload, weeks))
 
     publish_progress(job_id, 95, "loading unit counts")

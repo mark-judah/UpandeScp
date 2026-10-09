@@ -128,3 +128,33 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(w.warehouses(), ["GH A"])
         self.assertEqual(w.latest_by_house("pest")["GH A"]["Thrips"]["reason"], "no stations set up")
         self.assertIsNone(w.combined("2031-W10", "pest", "Thrips"))
+
+
+class TestWeekSelection(unittest.TestCase):
+    """Only each house's latest + previous week is fetched (spec Clarifications)."""
+
+    HOUSES = {
+        "GH A": {"2031-W05": False, "2031-W08": False, "2031-W10": True, "2031-W11": True},
+        "GH B": {"2031-W09": False, "2031-W11": True},
+        "GH C": {"2031-W08": False},                       # lookback only
+    }
+
+    def test_latest_mode_keeps_two_weeks_per_house(self):
+        self.assertEqual(R.select_weeks(self.HOUSES, R.LATEST), {
+            ("GH A", "2031-W11"), ("GH A", "2031-W10"),
+            ("GH B", "2031-W11"), ("GH B", "2031-W09"),
+        })
+
+    def test_window_mode_adds_every_in_window_week(self):
+        houses = {"GH A": {"2031-W08": False, "2031-W09": True, "2031-W10": True, "2031-W11": True},
+                  "GH B": {"2031-W09": False, "2031-W11": True}}
+        self.assertEqual(R.select_weeks(houses, R.WINDOW), {
+            ("GH A", "2031-W09"), ("GH A", "2031-W10"), ("GH A", "2031-W11"),
+            ("GH B", "2031-W11"), ("GH B", "2031-W09"),
+        })
+
+    def test_the_lookback_start_snaps_to_the_iso_monday(self):
+        # 2031-03-12 is a Wednesday; 35 days earlier is Wednesday 2031-02-05.
+        self.assertEqual(R.lookback_start("2031-03-12", 35), "2031-02-03")
+        self.assertEqual(R.lookback_start("2031-03-10", 35), "2031-02-03")   # already a Monday
+        self.assertEqual(R.lookback_start("2031-03-12", 0), "2031-03-12")    # no lookback, no snap

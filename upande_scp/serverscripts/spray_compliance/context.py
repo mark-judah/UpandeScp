@@ -4,6 +4,7 @@ context dict that `rules.py` / `engine.py` evaluate (shape documented there)."""
 import frappe
 from frappe.utils import add_days, get_datetime, now_datetime
 
+from ..common import crop_catalog
 from ..spray_plan_creator import crop_settings
 from . import rules as R
 from .engine import RULES
@@ -18,12 +19,9 @@ SETTINGS = "Scouting and Crop Protection Settings"
 
 
 def crop_for_greenhouse(greenhouse: str) -> str:
-	farm = frappe.db.get_value("Warehouse", greenhouse, "custom_farm") if greenhouse else None
-	if not farm:
-		return ""
-	row = frappe.db.sql("""select parent from `tabFarm Filter` where farm=%s
-	                       and parenttype='Crop Scouted' and parentfield='farms' order by idx limit 1""", farm)
-	return row[0][0] if row else ""
+	"""The greenhouse's crop, or "" — kept as the "" -returning wrapper callers and
+	`build_context` expect. The rule itself lives in `common.crop_catalog`."""
+	return crop_catalog.crop_for_greenhouse(greenhouse) or ""
 
 
 def _child(table, field, parents):

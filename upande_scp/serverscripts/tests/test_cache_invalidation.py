@@ -94,5 +94,27 @@ class TestInvalidateDispatch(unittest.TestCase):
             week.assert_not_called()
 
 
+class TestCropCatalogInvalidation(unittest.TestCase):
+    def test_every_source_of_the_index_busts_it(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        for dt in ("Crop Scouted", "Pest Filter", "Disease Filter", "Warehouse", "Farm"):
+            self.assertIn(cu.K_CROP_CATALOG, cu._DOC_INVALIDATIONS[dt], dt)
+
+
+class TestCropCatalogSourceBumps(unittest.TestCase):
+    def test_a_pest_filter_save_bumps_dashboard_aggregates_and_the_scouting_payload(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        from upande_scp.serverscripts.dashboard_aggregates import _common
+        for dt in ("Pest Filter", "Disease Filter", "Crop Scouted"):
+            doc = SimpleNamespace(doctype=dt, name="X")
+            with patch.object(cu, "invalidate") as inv, \
+                 patch.object(cu, "invalidate_scouting_payload") as payload, \
+                 patch.object(_common, "bump_dash_agg_version") as agg:
+                cu.invalidate_on_change(doc)
+                agg.assert_called_once_with()
+                payload.assert_called_once_with()
+                self.assertIn(cu.K_CROP_CATALOG, [a for c in inv.call_args_list for a in c.args])
+
+
 if __name__ == "__main__":
     unittest.main()

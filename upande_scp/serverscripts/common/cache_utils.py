@@ -72,6 +72,10 @@ K_ORCHARD_TREES_PREFIX = "scp:orchard_trees_v1"
 # the farm name (or '__all__' for the unfiltered bundle).
 K_TANKS_VALVES_PREFIX = "scp:tanks_valves_v1"
 K_CROPS_SCOUTED = "scp:crops_scouted_v1"
+# What belongs to each crop — pests, diseases, farms, greenhouses, farm→crop.
+# One site-wide entry (see common/crop_catalog.py); built with raw SQL so no
+# user's permission scope is ever stored in it.
+K_CROP_CATALOG = "scp:crop_catalog_v1"
 # Pest / Plant Disease legend colours (the per-name hex stored on the
 # doctype). Cached separately from the heavy scouting payload so a colour
 # tweak invalidates instantly without rebuilding the per-month entries.
@@ -580,15 +584,15 @@ _DOC_INVALIDATIONS = {
     "Predator Stages": (K_OBSERVATION_TYPES,),
     "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_BEDS_AND_ZONES_V2, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH, K_SM_UNITS_BY_WH, K_ZONE_CENTROIDS),
     "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_BEDS_AND_ZONES_V2, K_SM_BEDS_BY_GH, K_ZONE_CENTROIDS),
-    "Warehouse": (K_GREENHOUSES_GEOJSON, K_BLOCKS_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_SM_UNITS_BY_WH, K_FARM_HIERARCHY, K_ZONE_CENTROIDS),
-    "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_FARM_HIERARCHY),
+    "Warehouse": (K_GREENHOUSES_GEOJSON, K_BLOCKS_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_SM_UNITS_BY_WH, K_FARM_HIERARCHY, K_ZONE_CENTROIDS, K_CROP_CATALOG),
+    "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_FARM_HIERARCHY, K_CROP_CATALOG),
     "Orchard Tree": (K_SM_UNITS_BY_WH,),
     "Trap": (K_SM_TRAPS_BY_GH,),
     "Spray Equipment Details": (K_AFP_SPRAY_EQUIPMENT,),
     "Item": (K_CHEMICALS_LIST,),
-    "Crop Scouted": (K_CROPS_SCOUTED, K_SM_SEVERITY_THRESHOLDS),
-    "Pest Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS),
-    "Disease Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS),
+    "Crop Scouted": (K_CROPS_SCOUTED, K_SM_SEVERITY_THRESHOLDS, K_CROP_CATALOG),
+    "Pest Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS, K_CROP_CATALOG),
+    "Disease Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS, K_CROP_CATALOG),
     "Tank And Valve": (),
     # The chemical/foliar Item Groups configured here decide which Items count
     # as chemicals, so editing the Chemicals tab has to bust the chemicals list
@@ -624,7 +628,15 @@ _SCOUTING_PAYLOAD_INVALIDATORS = {
     "Warehouse",
     "Farm",
     "Orchard Tree",
+    # Crop-scoped payloads/aggregates depend on which pests/diseases belong to
+    # which crop, so a change to those links shifts many weeks at once.
+    "Crop Scouted",
+    "Pest Filter",
+    "Disease Filter",
 }
+
+# The crop-catalog sources whose change also shifts the dashboard aggregates.
+_CROP_CATALOG_SOURCES = ("Crop Scouted", "Pest Filter", "Disease Filter")
 
 
 def invalidate_on_change(doc, method=None):
@@ -648,3 +660,13 @@ def invalidate_on_change(doc, method=None):
         invalidate_scouting_week_for_doc(doc)
     elif doc.doctype in _SCOUTING_PAYLOAD_INVALIDATORS:
         invalidate_scouting_payload()
+    if doc.doctype in _CROP_CATALOG_SOURCES:
+        try:
+            from upande_scp.serverscripts.dashboard_aggregates._common import (
+                bump_dash_agg_version,
+            )
+            bump_dash_agg_version()
+        except Exception:
+            frappe.log_error(
+                f"bump_dash_agg_version failed for {doc.doctype}", "SCP Cache"
+            )

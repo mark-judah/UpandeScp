@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/table";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
+import { RevealLTR } from "@/components/RevealLTR";
 import { TrendStrip } from "./TrendStrip";
 import type { TrapsPayload } from "./traps-types";
 
@@ -86,7 +87,7 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
           </CardHeader>
           <CardContent className="p-0">
             {ranking.length ? (
-              <ChartContainer config={barConfig} className="h-72">
+              <RevealLTR><ChartContainer config={barConfig} className="h-72">
                 <BarChart
                   data={ranking.slice(0, 10)}
                   layout="vertical"
@@ -102,9 +103,9 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
                     width={120}
                   />
                   <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-                  <Bar dataKey="total" fill="var(--color-total)" radius={[4, 4, 4, 4]} />
+                  <Bar isAnimationActive={false} dataKey="total" fill="var(--color-total)" radius={[4, 4, 4, 4]} />
                 </BarChart>
-              </ChartContainer>
+              </ChartContainer></RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -118,7 +119,7 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
           </CardHeader>
           <CardContent className="p-0">
             {breakdown.length ? (
-              <ChartContainer config={pieConfig} className="h-72">
+              <RevealLTR><ChartContainer config={pieConfig} className="h-72">
                 <PieChart>
                   <ChartTooltip content={<ChartTooltipContent hideLabel />} />
                   <Pie
@@ -129,6 +130,7 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
                     outerRadius="90%"
                     stroke="var(--sd-card)"
                     strokeWidth={2}
+                    isAnimationActive={false}
                   >
                     {breakdown.map((b, i) => (
                       <Cell key={b.name} fill={PALETTE[i % PALETTE.length]} />
@@ -136,7 +138,7 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
                   </Pie>
                   <ChartLegend content={<ChartLegendContent />} />
                 </PieChart>
-              </ChartContainer>
+              </ChartContainer></RevealLTR>
             ) : (
               <EmptyHint />
             )}

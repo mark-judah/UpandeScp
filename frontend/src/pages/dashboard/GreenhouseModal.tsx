@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { RevealLTR } from "@/components/RevealLTR";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { weekTickFormatter } from "@/lib/iso-week";
 import type { PrevalenceFigures, SectionCell } from "@/lib/prevalence";
@@ -204,7 +205,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
           </CardHeader>
           <CardContent className="p-0">
             {detail.daily.length ? (
-              <ChartContainer config={SERIES} className="h-48">
+              <RevealLTR><ChartContainer config={SERIES} className="h-48">
                 <LineChart
                   data={detail.daily}
                   margin={{ left: 4, right: 8, top: 8 }}
@@ -249,7 +250,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
                     isAnimationActive={false}
                   />
                 </LineChart>
-              </ChartContainer>
+              </ChartContainer></RevealLTR>
             ) : (
               <span className="text-xs text-muted-foreground">
                 No daily data in range

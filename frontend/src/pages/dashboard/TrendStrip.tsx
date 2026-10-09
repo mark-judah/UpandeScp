@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { EmptyHint } from "./EmptyHint";
+import { RevealLTR } from "@/components/RevealLTR";
 import { weekTickFormatter } from "@/lib/iso-week";
 
 const PALETTE = [
@@ -70,7 +71,7 @@ export function TrendStrip({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="p-0">
-        <ChartContainer config={config} className="h-56">
+        <RevealLTR><ChartContainer config={config} className="h-56">
           <LineChart data={rows} margin={{ left: 4, right: 8, top: 8 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
@@ -104,7 +105,7 @@ export function TrendStrip({
               />
             ))}
           </LineChart>
-        </ChartContainer>
+        </ChartContainer></RevealLTR>
       </CardContent>
     </Card>
   );

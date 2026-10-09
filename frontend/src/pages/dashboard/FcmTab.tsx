@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/card";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
+import { RevealLTR } from "@/components/RevealLTR";
 import type { FcmPayload } from "./fcm-types";
 import { weekTickFormatter } from "@/lib/iso-week";
 
@@ -56,7 +57,7 @@ export function FcmTab({ data }: { data: FcmPayload | null }) {
         </CardHeader>
         <CardContent className="p-0">
           {daily.length ? (
-            <ChartContainer config={lineConfig} className="h-64">
+            <RevealLTR><ChartContainer config={lineConfig} className="h-64">
               <LineChart data={daily} margin={{ left: 4, right: 8, top: 8 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis
@@ -76,6 +77,7 @@ export function FcmTab({ data }: { data: FcmPayload | null }) {
                   stroke="var(--color-traps)"
                   strokeWidth={2}
                   dot={false}
+                  isAnimationActive={false}
                 />
                 <Line
                   type="monotone"
@@ -83,9 +85,10 @@ export function FcmTab({ data }: { data: FcmPayload | null }) {
                   stroke="var(--color-scouting)"
                   strokeWidth={2}
                   dot={false}
+                  isAnimationActive={false}
                 />
               </LineChart>
-            </ChartContainer>
+            </ChartContainer></RevealLTR>
           ) : (
             <EmptyHint title="No focus-pest activity" />
           )}
@@ -100,15 +103,15 @@ export function FcmTab({ data }: { data: FcmPayload | null }) {
           </CardHeader>
           <CardContent className="p-0">
             {breakdown.length ? (
-              <ChartContainer config={barConfig} className="h-60">
+              <RevealLTR><ChartContainer config={barConfig} className="h-60">
                 <BarChart data={breakdown}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
                   <XAxis dataKey="name" tickLine={false} axisLine={false} />
                   <YAxis tickLine={false} axisLine={false} width={32} />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} />
+                  <Bar isAnimationActive={false} dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} />
                 </BarChart>
-              </ChartContainer>
+              </ChartContainer></RevealLTR>
             ) : (
               <EmptyHint />
             )}

@@ -159,6 +159,7 @@ export function OverviewTab({
                     stroke="var(--color-pests)"
                     fill="var(--color-pests)"
                     fillOpacity={0.18}
+                    isAnimationActive={false}
                   />
                   <Area
                     type="monotone"
@@ -167,6 +168,7 @@ export function OverviewTab({
                     stroke="var(--color-diseases)"
                     fill="var(--color-diseases)"
                     fillOpacity={0.18}
+                    isAnimationActive={false}
                   />
                   <Area
                     type="monotone"
@@ -175,6 +177,7 @@ export function OverviewTab({
                     stroke="var(--color-traps)"
                     fill="var(--color-traps)"
                     fillOpacity={0.18}
+                    isAnimationActive={false}
                   />
                 </AreaChart>
               </ChartContainer></RevealLTR>
@@ -203,6 +206,7 @@ export function OverviewTab({
                       outerRadius="90%"
                       stroke="var(--sd-card)"
                       strokeWidth={2}
+                      isAnimationActive={false}
                     >
                       {totals.map((t) => (
                         <Cell key={t.name} fill={`var(--color-${t.name})`} />

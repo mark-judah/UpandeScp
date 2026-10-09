@@ -82,12 +82,21 @@ class TestOverviewDailyAndTotals(FrappeTestCase):
         self.assertEqual(names[0], "_TEST GH 1")
 
     def test_active_alerts_high_first(self):
-        payload = self._call()
-        kinds = [a["kind"] for a in payload["activeAlerts"][:4]]
-        sevs  = [a["severity"] for a in payload["activeAlerts"][:4]]
-        self.assertTrue(all(s == "high" for s in sevs))
-        self.assertIn("pest", kinds)
-        self.assertIn("disease", kinds)
+        from unittest.mock import patch
+        from upande_scp.serverscripts.tests.test_dashboard_aggregates_fixture import (
+            ZONES_PER_GH, configure_rose_thresholds,
+        )
+        configure_rose_thresholds()
+        with patch("upande_scp.serverscripts.scouting.scouting_metrics.get_zone_counts_by_greenhouse",
+                   return_value=ZONES_PER_GH):
+            payload = self._call(crop="Rose")
+        sevs = [a["severity"] for a in payload["activeAlerts"]]
+        # High cells: Thrips Adult on GH 1 and the four Powdery Mildew cells;
+        # Thrips Larvae is Low. Every High comes before anything lower.
+        self.assertEqual(sevs.count("high"), 5)
+        self.assertEqual(sevs, sorted(sevs, key=lambda s: s != "high"))
+        high_kinds = {a["kind"] for a in payload["activeAlerts"] if a["severity"] == "high"}
+        self.assertEqual(high_kinds, {"pest", "disease"})
 
 
 class TestOverviewScouts(FrappeTestCase):

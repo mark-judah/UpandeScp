@@ -30,7 +30,17 @@ class TestGreenhouseDetail(FrappeTestCase):
         self.assertEqual(p["traps"][0]["pest"], "_TEST False Codling Moth")
 
     def test_alerts_for_high_severity(self):
-        p = self._call("_TEST GH 1")
-        # GH 1: pest count of 22 (>15 → high). +1 alert.
-        # 2026-05-14 has a 'Severe' disease. +1 alert.
-        self.assertGreaterEqual(p["alerts"], 2)
+        from unittest.mock import patch
+        from upande_scp.serverscripts.dashboard_aggregates._gh_detail import greenhouse_detail
+        from upande_scp.serverscripts.tests.test_dashboard_aggregates_fixture import (
+            ZONES_PER_GH, configure_rose_thresholds,
+        )
+        configure_rose_thresholds()
+        with patch("upande_scp.serverscripts.scouting.scouting_metrics.get_zone_counts_by_greenhouse",
+                   return_value=ZONES_PER_GH):
+            p = greenhouse_detail({"greenhouse": "_TEST GH 1", "from_date": "2026-05-04",
+                                   "to_date": "2026-05-15", "crop": "Rose"}, force=True)
+        # GH 1 at 50% of zones: Thrips Adult (stage band High at 50) and the
+        # 'Severe' Powdery Mildew (aggregate High at 40) are High; Thrips
+        # Larvae is only Low. Two alerts.
+        self.assertEqual(p["alerts"], 2)

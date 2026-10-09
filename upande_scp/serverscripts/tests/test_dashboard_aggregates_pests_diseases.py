@@ -33,12 +33,20 @@ class TestPestsEndpoint(FrappeTestCase):
         self.assertIn("Fruit", payload["filterOptions"]["sections"])
 
     def test_severity_buckets(self):
-        payload = self._call()
+        from unittest.mock import patch
+        from upande_scp.serverscripts.tests.test_dashboard_aggregates_fixture import (
+            ZONES_PER_GH, configure_rose_thresholds,
+        )
+        configure_rose_thresholds()
+        with patch("upande_scp.serverscripts.dashboard_aggregates._pests_diseases.get_zone_counts_by_greenhouse",
+                   return_value=ZONES_PER_GH):
+            payload = self._call(crop="Rose")
         thrips = next(r for r in payload["ranking"] if r["name"] == "_TEST Thrips")
-        # Thrips counts: 3, 7, 22, 4, 11 -> low (3,4), moderate (7,11), high (22)
-        self.assertEqual(thrips["low"], 2)
-        self.assertEqual(thrips["moderate"], 2)
+        # Two cells on GH 1, each 1 of 2 zones = 50%: Adult uses its stage band
+        # (High at 50), Larvae falls back to the aggregate band (Low below 60).
         self.assertEqual(thrips["high"], 1)
+        self.assertEqual(thrips["moderate"], 0)
+        self.assertEqual(thrips["low"], 1)
 
 
 class TestPestsZoneMetrics(FrappeTestCase):

@@ -10,6 +10,8 @@ import re
 
 import frappe
 
+from upande_scp.serverscripts.common import crop_catalog
+
 
 
 K_STAGE_ICON_MAP = "scp:dash_agg:stage_icon_map"
@@ -256,6 +258,10 @@ def severity_for(
 
 
 K_DASH_AGG_PREFIX = "scp:dash_agg"
+# Bumped when an aggregate's meaning changes without its filters changing, so a
+# deploy never serves a payload computed under the old rules. "crop2": crop-less
+# entries count under their greenhouse's crop and off-crop pests/diseases drop out.
+K_DASH_AGG_SCHEMA = "crop2"
 # Versioning the key with K_SCOUTING_PAYLOAD_VERSION was the original design,
 # but every Scouting Entry insert/update bumps that stamp via
 # cache_utils.invalidate_on_change — on a busy site (mobile syncs) the
@@ -321,7 +327,7 @@ def bump_dash_agg_version() -> None:
 
 
 def _build_key(endpoint: str, filters: dict) -> str:
-    return f"{K_DASH_AGG_PREFIX}:v{dash_agg_version()}:{endpoint}:{filter_hash(filters)}"
+    return f"{K_DASH_AGG_PREFIX}:v{dash_agg_version()}:{K_DASH_AGG_SCHEMA}:{endpoint}:{filter_hash(filters)}"
 
 
 def cached_aggregate(endpoint: str, filters: dict, compute, force: bool = False):
@@ -471,8 +477,10 @@ def parent_filter_conditions(
     params = {"from_date": from_date, "to_date": to_date}
 
     if crop:
-        parts.append("se.crop_scouted = %(crop)s")
-        params["crop"] = crop
+        # D5: an entry with no crop counts under its greenhouse's crop. The
+        # params also carry the crop's pest/disease lists for obs_filter (D4).
+        parts.append(crop_catalog.entry_crop_condition("se"))
+        params.update(crop_catalog.crop_sql_params(crop))
 
     if greenhouse_scope is not None:
         ghs, blocks = partition_scope(greenhouse_scope, units=units)
@@ -488,6 +496,17 @@ def parent_filter_conditions(
             parts.append(f"se.greenhouse IN ({gh_sql})")
 
     return " AND ".join(parts), params
+
+
+def obs_filter(kind: str, column: str, params: dict) -> str:
+    """D4: ``" AND <column> IN (the crop's pests|diseases)"``.
+
+    Keyed off the params ``parent_filter_conditions`` produced, so a query only
+    has to pass what it already has; ``""`` when no crop is in play.
+    """
+    if "crop_pests" not in params:
+        return ""
+    return " AND " + crop_catalog.obs_crop_condition(kind, column)
 
 
 def coerce_date(value, default=None) -> str:

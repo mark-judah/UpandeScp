@@ -5,6 +5,7 @@ import frappe
 from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
+    obs_filter,
     parent_filter_conditions,
     publish_progress,
     resolve_greenhouse_scope,
@@ -124,6 +125,8 @@ def _observation_rows(where: str, params: dict) -> list:
     """One row per (entry, observation kind, observation row). Sub-queries
     UNION pests/diseases/traps so a single Python pass can derive most of
     the Overview metrics."""
+    pest_obs = obs_filter("pest", "p.pest", params)
+    disease_obs = obs_filter("disease", "d.disease", params)
     return frappe.db.sql(
         f"""
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
@@ -133,7 +136,7 @@ def _observation_rows(where: str, params: dict) -> list:
                p.stage   AS stage,    p.plant_section AS plant_section
         FROM `tabScouting Entry` se
         JOIN `tabPests Scouting Entry` p ON p.parent = se.name
-        WHERE {where}
+        WHERE {where}{pest_obs}
         UNION ALL
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
                se.scouts_name, se.zone, se.bed, se.tree,
@@ -142,7 +145,7 @@ def _observation_rows(where: str, params: dict) -> list:
                d.stage   AS stage, d.plant_section AS plant_section
         FROM `tabScouting Entry` se
         JOIN `tabDiseases Scouting Entry` d ON d.parent = se.name
-        WHERE {where}
+        WHERE {where}{disease_obs}
         UNION ALL
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
                se.scouts_name, se.zone, se.bed, se.tree,
@@ -343,12 +346,14 @@ def _scout_aggs(obs: list) -> tuple:
 
 def _recent_activity(where: str, params: dict, n: int = 8) -> list:
     """Top N most recent entries with their primary observation kind."""
+    pest_obs = obs_filter("pest", "p.pest", params)
+    disease_obs = obs_filter("disease", "d.disease", params)
     rows = frappe.db.sql(
         f"""
         SELECT se.name, se.date_of_capture, se.time_of_capture,
                se.greenhouse, se.block, se.zone, se.tree, se.scouts_name,
-               EXISTS(SELECT 1 FROM `tabPests Scouting Entry` p WHERE p.parent = se.name)    AS has_pest,
-               EXISTS(SELECT 1 FROM `tabDiseases Scouting Entry` d WHERE d.parent = se.name) AS has_disease,
+               EXISTS(SELECT 1 FROM `tabPests Scouting Entry` p WHERE p.parent = se.name{pest_obs})    AS has_pest,
+               EXISTS(SELECT 1 FROM `tabDiseases Scouting Entry` d WHERE d.parent = se.name{disease_obs}) AS has_disease,
                EXISTS(SELECT 1 FROM `tabTrap Scouting Entry` t WHERE t.parent = se.name)     AS has_trap
         FROM `tabScouting Entry` se
         WHERE {where}

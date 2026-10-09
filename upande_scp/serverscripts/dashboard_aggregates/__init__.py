@@ -6,6 +6,8 @@ actual SQL and aggregation work.
 
 import frappe
 
+from upande_scp.serverscripts.common import crop_catalog
+
 from upande_scp.serverscripts.dashboard_aggregates._overview        import overview as _overview
 from upande_scp.serverscripts.dashboard_aggregates._pests_diseases  import pests    as _pests
 from upande_scp.serverscripts.dashboard_aggregates._pests_diseases  import diseases as _diseases
@@ -37,8 +39,15 @@ def _truthy(v) -> bool:
 
 
 def _call(impl, **kwargs):
-    """Common entry: read force flag, drop it, delegate to the impl."""
+    """Common entry: read force flag, drop it, resolve the crop, delegate.
+
+    The crop is canonicalised and access-checked here, once, so every aggregate's
+    cache key holds `Rose` (never `rose`) and a user can never ask for a crop
+    they may not see.
+    """
     force = _truthy(kwargs.pop("force", "")) if "force" in kwargs else False
+    if "crop" in kwargs:
+        kwargs["crop"] = crop_catalog.resolve_crop(kwargs.get("crop"))
     return impl(kwargs, force=force)
 
 

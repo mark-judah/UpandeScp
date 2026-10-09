@@ -51,6 +51,7 @@ import frappe
 from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
+    obs_filter,
     parent_filter_conditions,
     publish_progress,
 )
@@ -157,6 +158,8 @@ def _fetch_observations(where: str, params: dict) -> list:
     populated on every row). Diseases have no count column, so they report 0 and
     are excluded from the intensity table downstream.
     """
+    pest_obs = obs_filter("pest", "p.pest", params)
+    disease_obs = obs_filter("disease", "d.disease", params)
     return frappe.db.sql(
         f"""
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
@@ -166,7 +169,7 @@ def _fetch_observations(where: str, params: dict) -> list:
                p.`count` AS obs_count
         FROM `tabScouting Entry` se
         JOIN `tabPests Scouting Entry` p ON p.parent = se.name
-        WHERE {where}
+        WHERE {where}{pest_obs}
         UNION ALL
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
                se.bed, se.zone, se.tree,
@@ -175,7 +178,7 @@ def _fetch_observations(where: str, params: dict) -> list:
                0 AS obs_count
         FROM `tabScouting Entry` se
         JOIN `tabDiseases Scouting Entry` d ON d.parent = se.name
-        WHERE {where}
+        WHERE {where}{disease_obs}
         """,
         params,
         as_dict=True,

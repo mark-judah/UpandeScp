@@ -11,7 +11,10 @@ one ISO week and one observation:
 * ``prevalence``  = mean of the section rates over the sections with at least
                     ``MIN_SECTION_N`` scouted stations, so scouting that bunches in
                     one part of the house does not drag the figure toward that part.
-* ``margin``      = 1.96 · sqrt(s²/m + p(1−p)/N), clipped to [0, 1].
+* ``margin``      = 1.96 · sqrt(s²/m + p̃(1−p̃)/N), clipped to [0, 1], where
+                    p̃ = (X + 2) / (N + 4) is the Agresti–Coull adjusted rate over
+                    the counted sections (X infested of N scouted), so an
+                    all-clean or all-infested sample never reads ±0.
 * ``reliability`` = Good (m ≥ 7 and margin ≤ 0.10) / Fair (m ≥ 4) / Low.
 
 Every percentage leaves this module as a 0–100 float rounded to 1 dp.
@@ -152,13 +155,14 @@ def figures(grid: dict, scouted, infested, scouted_counts=None):
         }
     counts = scouted_counts if scouted_counts is not None else section_counts(grid, scouted)
     hits = section_counts(grid, infested)
-    sections, rates, n_total = [], [], 0
+    sections, rates, n_total, x_total = [], [], 0, 0
     for j in range(SECTIONS):
         n, x = counts[j], hits[j]
         pct = None
         if n >= MIN_SECTION_N:
             rates.append(x / n)
             n_total += n
+            x_total += x
             pct = _pct(x / n)
         sections.append({"row": j // GRID, "col": j % GRID, "scouted": n, "infested": x, "pct": pct})
     m = len(rates)
@@ -167,7 +171,10 @@ def figures(grid: dict, scouted, infested, scouted_counts=None):
     margin = None
     if m >= 2:
         s2 = sum((q - p) ** 2 for q in rates) / (m - 1)
-        margin = min(1.0, max(0.0, Z95 * math.sqrt(s2 / m + p * (1 - p) / n_total)))
+        # Margin floor: the binomial term uses the Agresti–Coull rate, never p,
+        # so 0 % or 100 % in every section still carries sampling error.
+        p_ac = (x_total + 2) / (n_total + 4)
+        margin = min(1.0, max(0.0, Z95 * math.sqrt(s2 / m + p_ac * (1 - p_ac) / n_total)))
     return {
         "stations": len(grid),
         "scouted": len(scouted),

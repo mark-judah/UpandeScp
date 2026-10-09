@@ -63,7 +63,7 @@ class TestStationWeeks(unittest.TestCase):
         weeks = R.StationWeeks.load(*PF.WEEK_10, "Rose", [self.gh])
         fig = weeks.latest(self.gh, "pest", "Thrips")
         self.assertEqual((fig["scouted"], fig["infested"]), (27, 9))
-        self.assertEqual((fig["prevalence"], fig["margin"]), (33.3, 17.8))
+        self.assertEqual((fig["prevalence"], fig["margin"]), (33.3, 18.0))  # Agresti–Coull floor: p̃ = 11/31 (or 20/31) → 1.96·sqrt(0.22893/27) = 18.0 (was 17.8)
         self.assertEqual((fig["sections_scouted"], fig["reliability"]), (9, "Fair"))
         self.assertEqual(fig["stations"], frappe.db.count("Zone", {"greenhouse": self.gh}))
         self.assertEqual((fig["week"], fig["prev"]), ("2031-W10", None))

@@ -44,7 +44,7 @@ class TestOverviewPrevalence(unittest.TestCase):
                     if c["greenhouse"] == self.gh and c["obs_name"] == "Thrips" and c["stage"] == "Adult")
         self.assertEqual((cell["prevalence"], cell["prev"], cell["pct"]), (66.7, 33.3, 66.7))
         self.assertEqual((cell["zones"], cell["total"], cell["week"]), (18, 27, "2031-W11"))
-        self.assertEqual((cell["sections_scouted"], cell["margin"], cell["reliability"]), (9, 17.8, "Fair"))
+        self.assertEqual((cell["sections_scouted"], cell["margin"], cell["reliability"]), (9, 18.0, "Fair"))  # Agresti–Coull floor: p̃ = 11/31 (or 20/31) → 1.96·sqrt(0.22893/27) = 18.0 (was 17.8)
 
     def test_alerts_carry_the_figures(self):
         self._seed_two_weeks()

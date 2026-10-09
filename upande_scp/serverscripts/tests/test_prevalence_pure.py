@@ -86,7 +86,8 @@ class TestFigures(unittest.TestCase):
         infested = {n for names in sec.values() for n in names[:3]}
         fig = P.figures(grid, scouted, infested)
         self.assertEqual((fig["stations"], fig["scouted"], fig["infested"]), (900, 270, 27))
-        self.assertEqual((fig["raw"], fig["prevalence"], fig["margin"]), (10.0, 10.0, 3.6))
+        # Agresti–Coull floor: p̃ = 29/274 → 1.96·sqrt(0.09464/270) = 0.0367 (was 3.6 with p).
+        self.assertEqual((fig["raw"], fig["prevalence"], fig["margin"]), (10.0, 10.0, 3.7))
         self.assertEqual((fig["sections_scouted"], fig["sections_total"]), (9, 9))
         self.assertEqual((fig["reliability"], fig["reason"]), ("Good", None))
         self.assertEqual(fig["coverage"], 30.0)
@@ -112,7 +113,9 @@ class TestFigures(unittest.TestCase):
         fig = P.figures(grid, scouted, infested)
         self.assertEqual(fig["prevalence"], round(50 / 9, 1))      # 5.6: one section of nine at 50%
         self.assertEqual(fig["raw"], round(25 / 130 * 100, 1))     # 19.2: its 50 of 130 stations
-        self.assertEqual((fig["margin"], fig["reliability"]), (11.6, "Fair"))
+        # s²/m = 0.02778/9; p̃ = 27/134 → p̃(1−p̃)/130 = 0.001238 → 1.96·sqrt(0.004324)
+        # = 0.1289 (was 11.6 with p = 1/18).
+        self.assertEqual((fig["margin"], fig["reliability"]), (12.9, "Fair"))
 
     def test_sections_under_three_scouted_are_not_scouted(self):
         grid = grid_of(30, 30)
@@ -169,7 +172,8 @@ class TestFigures(unittest.TestCase):
         scouted = {n for names in sec.values() for n in names[:3]}
         infested = {names[0] for names in sec.values()}
         fig = P.figures(grid, scouted, infested)
-        self.assertEqual((fig["prevalence"], fig["margin"]), (33.3, 17.8))
+        # s² = 0; p̃ = 11/31 → 1.96·sqrt(0.22893/27) = 0.1805 (was 17.8 with p = 1/3).
+        self.assertEqual((fig["prevalence"], fig["margin"]), (33.3, 18.0))
         self.assertTrue(all(s["pct"] == 33.3 for s in fig["sections"]))
 
     def test_precomputed_scouted_counts_give_the_same_answer(self):
@@ -181,6 +185,33 @@ class TestFigures(unittest.TestCase):
             P.figures(grid, scouted, infested, scouted_counts=P.section_counts(grid, scouted)),
             P.figures(grid, scouted, infested),
         )
+
+    def test_all_clean_sections_never_read_plus_minus_zero(self):
+        # Margin floor (spec Clarifications): X = 0 of N = 27 over m = 9 sections,
+        # s² = 0, p̃ = (0 + 2) / (27 + 4) = 2/31 → 1.96·sqrt(p̃(1−p̃)/27) = 0.0927.
+        grid = grid_of(9, 9)
+        scouted = {n for names in by_section(grid).values() for n in names[:3]}
+        fig = P.figures(grid, scouted, set())
+        self.assertEqual((fig["prevalence"], fig["raw"], fig["sections_scouted"]), (0.0, 0.0, 9))
+        self.assertEqual(fig["margin"], 9.3)
+        self.assertGreater(fig["margin"], 0)
+        self.assertEqual(fig["reliability"], "Good")                 # m = 9 and 9.3 ≤ 10
+
+    def test_all_infested_sections_never_read_plus_minus_zero(self):
+        # X = N = 27: p̃ = 29/31, the mirror of the all-clean case → same 9.3.
+        grid = grid_of(9, 9)
+        scouted = {n for names in by_section(grid).values() for n in names[:3]}
+        fig = P.figures(grid, scouted, set(scouted))
+        self.assertEqual((fig["prevalence"], fig["raw"]), (100.0, 100.0))
+        self.assertEqual((fig["margin"], fig["reliability"]), (9.3, "Good"))
+
+    def test_a_thin_all_clean_sample_is_not_good(self):
+        # m = 2 sections of 3 → N = 6: p̃ = 2/10 → 1.96·sqrt(0.16/6) = 0.320 → Low.
+        grid = grid_of(9, 9)
+        sec = by_section(grid)
+        scouted = set(sec[(0, 0)][:3]) | set(sec[(2, 2)][:3])
+        fig = P.figures(grid, scouted, set())
+        self.assertEqual((fig["prevalence"], fig["margin"], fig["reliability"]), (0.0, 32.0, "Low"))
 
     def test_reliability_bands(self):
         self.assertEqual(P.reliability(7, 0.10), "Good")
@@ -207,6 +238,28 @@ class TestCombine(unittest.TestCase):
         out = P.combine([self.fig(100, 10.0, None, "Low"), self.fig(300, 30.0, 6.0, "Good")])
         self.assertIsNone(out["margin"])
         self.assertEqual((out["reason"], out["reliability"]), (P.CLUSTERED, "Low"))
+
+    def test_combine_with_a_raw_fallback_house_has_no_margin(self):
+        # Boundary: a clean, well-spread house (margin 9.3, floored above 0) next to
+        # a house whose sections all hold < 3 scouted stations (m = 0, raw fallback,
+        # margin None). The prevalence still combines; the margin is unknown.
+        grid = grid_of(9, 9)
+        sec = by_section(grid)
+        clean = P.figures(grid, {n for names in sec.values() for n in names[:3]}, set())
+        one_each = {names[0] for names in sec.values()}
+        fallback = P.figures(grid, one_each, set(sorted(one_each)[:3]))
+        self.assertEqual((clean["margin"], fallback["margin"], fallback["prevalence"]), (9.3, None, 33.3))
+        out = P.combine([clean, fallback])
+        self.assertEqual(out["prevalence"], round((81 * 0.0 + 81 * 33.3) / 162, 1))   # 16.6
+        self.assertIsNone(out["margin"])
+        self.assertEqual((out["reason"], out["reliability"]), (P.CLUSTERED, "Low"))
+
+    def test_combine_of_clean_houses_keeps_a_floor(self):
+        grid = grid_of(9, 9)
+        clean = P.figures(grid, {n for names in by_section(grid).values() for n in names[:3]}, set())
+        out = P.combine([clean, dict(clean)])
+        # sqrt((81·9.3)² · 2) / 162 = 9.3 / sqrt(2) = 6.58 → 6.6
+        self.assertEqual((out["prevalence"], out["margin"]), (0.0, 6.6))
 
     def test_houses_without_figures_are_skipped(self):
         self.assertIsNone(P.combine([None, P.figures({}, {"a"}, set())]))

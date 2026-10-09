@@ -29,9 +29,9 @@ class TestTrendsPrevalence(unittest.TestCase):
         v = out["vocab"]
         w, s, o = v["weeks"].index("2031-W10"), v["stations"].index(self.gh), v["obs"].index("pest:Thrips")
         self.assertEqual(v["reliability"], ["Good", "Fair", "Low"])
-        self.assertIn([w, s, o, 33.3, 17.8, 1], out["prevalenceByStation"])
+        self.assertIn([w, s, o, 33.3, 18.0, 1], out["prevalenceByStation"])
         farm = next(f for f, ss in out["stationsByFarm"].items() if self.gh in ss)
-        self.assertIn([w, v["farms"].index(farm), o, 33.3, 17.8, 1], out["prevalenceByFarm"])
+        self.assertIn([w, v["farms"].index(farm), o, 33.3, 18.0, 1], out["prevalenceByFarm"])  # Agresti–Coull floor: p̃ = 11/31 (or 20/31) → 1.96·sqrt(0.22893/27) = 18.0 (was 17.8)
 
     def test_the_incidence_tables_are_unchanged(self):
         out = self._trends()

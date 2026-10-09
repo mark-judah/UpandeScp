@@ -27,14 +27,14 @@ class TestPestsPrevalence(unittest.TestCase):
         PF.seed_even_week(self.gh, PF.WEEK_10[0], crop="Rose")
         row = next(r for r in self._pests()["ranking"] if r["name"] == "Thrips")
         self.assertEqual((row["prevalence"], row["sections_scouted"], row["reliability"]), (33.3, 9, "Fair"))
-        self.assertEqual(row["margin"], 17.8)
+        self.assertEqual(row["margin"], 18.0)  # Agresti–Coull floor: p̃ = 11/31 (or 20/31) → 1.96·sqrt(0.22893/27) = 18.0 (was 17.8)
         self.assertIsNone(row["prev"])
 
     def test_pressure_and_distribution_read_the_latest_week(self):
         PF.seed_even_week(self.gh, PF.WEEK_10[0], crop="Rose")
         out = self._pests()
         gh_row = next(r for r in out["greenhousePressure"] if r["name"] == self.gh)
-        self.assertEqual((gh_row["pct"], gh_row["zones"], gh_row["margin"]), (33.3, 9, 17.8))
+        self.assertEqual((gh_row["pct"], gh_row["zones"], gh_row["margin"]), (33.3, 9, 18.0))  # Agresti–Coull floor: p̃ = 11/31 (or 20/31) → 1.96·sqrt(0.22893/27) = 18.0 (was 17.8)
         dist = next(r for r in out["distribution"] if r["name"] == "Thrips")
         self.assertEqual((dist["pct"], dist["zones"]), (33.3, 9))
 
@@ -42,7 +42,7 @@ class TestPestsPrevalence(unittest.TestCase):
         PF.seed_even_week(self.gh, PF.WEEK_10[0], crop="Rose")
         out = self._pests(observation="Thrips")
         self.assertEqual(out["dailyPercent"], [
-            {"date": "2031-03-03", "week": "2031-W10", "value": 33.3, "margin": 17.8, "reliability": "Fair"},
+            {"date": "2031-03-03", "week": "2031-W10", "value": 33.3, "margin": 18.0, "reliability": "Fair"},  # Agresti–Coull floor: p̃ = 11/31 (or 20/31) → 1.96·sqrt(0.22893/27) = 18.0 (was 17.8)
         ])
 
     def test_the_stage_filter_narrows_the_infested_stations(self):

@@ -1,0 +1,85 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/observation-colors", () => ({
+  useObservationColors: () => ({ map: {}, pest: () => "#000", disease: () => "#000" }),
+}));
+vi.mock("@/hooks/use-dashboard-aggregate", () => ({
+  useDashboardAggregate: () => ({ data: null, loading: false, error: null, progress: null, reload: vi.fn() }),
+}));
+
+import { PrevalenceFigure } from "../PrevalenceFigure";
+import { PestsTab } from "../PestsTab";
+import { OverviewTab } from "../OverviewTab";
+import type { PestsPayload } from "../pests-diseases-types";
+import type { OverviewPayload } from "../overview-types";
+
+const fig = {
+  prevalence: 33.3, prev: 50, margin: 6, sections_scouted: 8, sections_total: 9,
+  reliability: "Fair" as const, reason: null,
+};
+
+describe("PrevalenceFigure", () => {
+  it("renders the figure line and the reliability pill", () => {
+    render(<PrevalenceFigure fig={fig} />);
+    expect(screen.getByText("33.3% (was 50%) · ±6 · 8/9")).toBeInTheDocument();
+    expect(screen.getByTestId("reliability-pill")).toHaveTextContent("Fair");
+    expect(screen.getByTestId("prevalence-figure").getAttribute("title")?.split("\n")).toHaveLength(4);
+  });
+
+  it("shows too clustered to judge with a Low pill", () => {
+    render(<PrevalenceFigure fig={{ ...fig, margin: null, reason: "too clustered to judge", sections_scouted: 1, reliability: "Low" }} />);
+    expect(screen.getByText("33.3% (was 50%) · too clustered to judge · 1/9")).toBeInTheDocument();
+    expect(screen.getByTestId("reliability-pill")).toHaveTextContent("Low");
+  });
+
+  it("uses no coloured left border", () => {
+    render(<PrevalenceFigure fig={fig} />);
+    const el = screen.getByTestId("prevalence-figure");
+    expect(el.className).not.toMatch(/border-l/);
+    expect(screen.getByTestId("reliability-pill").className).not.toMatch(/border-l/);
+  });
+
+  it("renders nothing without figures", () => {
+    const { container } = render(<PrevalenceFigure fig={null} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("Pests tab severity rows", () => {
+  it("carry the scope-wide figure line", () => {
+    const data: PestsPayload = {
+      filterOptions: { pests: ["Thrips"], sections: [], stages: [] },
+      ranking: [{ name: "Thrips", total: 9, high: 1, moderate: 0, low: 0, ...fig }],
+      distribution: [],
+      sectionSplit: [],
+      greenhousePressure: [],
+      dailyPercent: [],
+      trendSeries: { rows: [], keys: [] },
+    };
+    render(<PestsTab data={data} pestName="" section="" stage="" onFiltersChange={() => {}} />);
+    expect(screen.getByText("33.3% (was 50%) · ±6 · 8/9")).toBeInTheDocument();
+  });
+});
+
+describe("Overview active alerts", () => {
+  it("carry the figure line under the greenhouse", () => {
+    const data: OverviewPayload = {
+      kpis: { totalScouts: 1, zonesScouted: 27, greenhouseCount: 1, blockCount: 0, highAlerts: 1 },
+      daily: [],
+      rangeTotals: { pests: 0, diseases: 0, traps: 0 },
+      ghHealth: [],
+      topScouts: [],
+      scoutsPerDay: [],
+      scoutPerformance: [],
+      recentActivity: [],
+      activeAlerts: [{
+        name: "Thrips", kind: "pest", severity: "high", count: 27,
+        greenhouse: "Chepsito GH 01 - KR", zone: "9/27 scouted · 2031-W10", date: "2031-03-03",
+        ...fig,
+      }],
+    };
+    render(<OverviewTab data={data} scoutLookup={{}} fromDate="2031-03-03" toDate="2031-03-09" />);
+    expect(screen.getByText("33.3% (was 50%) · ±6 · 8/9")).toBeInTheDocument();
+  });
+});

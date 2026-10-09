@@ -1,3 +1,5 @@
+import type { PrevalenceFigures } from "@/lib/prevalence";
+
 export interface OverviewKpis {
   totalScouts: number;
   zonesScouted: number;
@@ -31,7 +33,9 @@ export interface RecentRow   {
   greenhouse: string; zone: string; scoutId: string;
   kind: "pest" | "disease" | "trap" | "other";
 }
-export interface ActiveAlert {
+/** One flagged (greenhouse, observation, stage) cell. The figures are the
+ *  house's station prevalence in its latest scouted ISO week. */
+export interface ActiveAlert extends PrevalenceFigures {
   name: string; kind: "pest" | "disease";
   severity: "high" | "moderate";
   count: number; greenhouse: string; zone: string; date: string;

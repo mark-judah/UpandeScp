@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import {
   ChartContainer,
@@ -17,12 +18,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { weekTickFormatter } from "@/lib/iso-week";
+import type { PrevalenceFigures, SectionCell } from "@/lib/prevalence";
+import { PrevalenceFigure } from "./PrevalenceFigure";
+import { SectionGrid } from "./SectionGrid";
 
 const SERIES = {
   pests: { label: "Pests", color: "var(--sd-data-cyan)" },
   diseases: { label: "Diseases", color: "var(--sd-data-pink)" },
   traps: { label: "Traps", color: "var(--sd-data-purple)" },
 };
+
+/** One top observation's station prevalence in the house's latest scouted week,
+ *  with its 3 × 3 sections. */
+export interface GhPrevalence extends PrevalenceFigures {
+  kind: "pest" | "disease";
+  name: string;
+  sections: SectionCell[];
+}
 
 export interface GhDetailPayload {
   topPests:    Array<{ name: string; count: number }>;
@@ -31,6 +43,7 @@ export interface GhDetailPayload {
   daily:       Array<{ date: string; pests: number; diseases: number; traps: number }>;
   scouts:      number;
   alerts:      number;
+  prevalence?: GhPrevalence[];
 }
 
 export interface GreenhouseModalProps {
@@ -50,7 +63,11 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
   );
 
   const detail = data ?? { topPests: [], topDiseases: [], traps: [], daily: [],
-                           scouts: 0, alerts: 0 };
+                           scouts: 0, alerts: 0, prevalence: [] };
+  const mapped = detail.prevalence ?? [];
+  const [picked, setPicked] = useState<string | null>(null);
+  useEffect(() => setPicked(null), [greenhouse]);
+  const current = mapped.find((m) => `${m.kind}:${m.name}` === picked) ?? mapped[0] ?? null;
   const total =
     detail.topPests.reduce((s, x) => s + x.count, 0) +
     detail.topDiseases.reduce((s, x) => s + x.count, 0) +
@@ -150,9 +167,41 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
           </Card>
         </div>
 
+        {current && (
+          <Card className="p-4">
+            <CardHeader className="p-0 pb-2">
+              <CardTitle>Where it is · {current.week ?? "latest scouted week"}</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 flex flex-col gap-2">
+              <div className="flex flex-wrap gap-1.5">
+                {mapped.map((m) => {
+                  const on = m === current;
+                  return (
+                    <button
+                      key={`${m.kind}:${m.name}`}
+                      type="button"
+                      onClick={() => setPicked(`${m.kind}:${m.name}`)}
+                      className={
+                        on
+                          ? "rounded-full border px-2.5 py-0.5 text-xs bg-primary text-primary-foreground border-primary"
+                          : "rounded-full border px-2.5 py-0.5 text-xs bg-card text-muted-foreground hover:bg-muted"
+                      }
+                    >
+                      {m.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <PrevalenceFigure fig={current} />
+              <SectionGrid sections={current.sections} />
+            </CardContent>
+          </Card>
+        )}
+
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Daily Trend</CardTitle>
+```
           </CardHeader>
           <CardContent className="p-0">
             {detail.daily.length ? (

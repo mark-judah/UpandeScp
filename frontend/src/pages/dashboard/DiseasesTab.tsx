@@ -27,6 +27,7 @@ import { RevealLTR } from "@/components/RevealLTR";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { DashFilterRow } from "./DashFilterRow";
+import { PrevalenceFigure } from "./PrevalenceFigure";
 import { stagesFor, type DiseasesPayload } from "./pests-diseases-types";
 import { weekTickFormatter } from "@/lib/iso-week";
 
@@ -65,7 +66,7 @@ export function DiseasesTab({
     [trend.diseaseName],
   );
   const distConfig: ChartConfig = {
-    pct: { label: "% zones", color: "var(--sd-data-pink)" },
+    pct: { label: "% scouted (adjusted)", color: "var(--sd-data-pink)" },
   };
 
   // Only the stages this disease actually has — see PestsTab.
@@ -103,7 +104,7 @@ export function DiseasesTab({
             <div>
               <CardTitle>Disease Trends</CardTitle>
               <CardDescription>
-                {trend.diseaseName} · zones infected (%) · daily data points
+                {trend.diseaseName} · adjusted prevalence (% of scouted stations) · weekly
               </CardDescription>
             </div>
             <DashFilterRow
@@ -139,7 +140,7 @@ export function DiseasesTab({
                   content={
                     <ChartTooltipContent
                       indicator="line"
-                      formatter={(v) => `${v}%`}
+                      formatter={(v) => (v == null ? "—" : `${v}%`)}
                     />
                   }
                 />
@@ -165,7 +166,7 @@ export function DiseasesTab({
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Disease Distribution</CardTitle>
-            <CardDescription>% of zones in scope with each disease</CardDescription>
+            <CardDescription>Adjusted prevalence across the scope · latest scouted week</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             {distribution.length ? (
@@ -193,7 +194,7 @@ export function DiseasesTab({
                     content={
                       <ChartTooltipContent
                         indicator="line"
-                        formatter={(v) => `${v}%`}
+                        formatter={(v) => (v == null ? "—" : `${v}%`)}
                       />
                     }
                   />
@@ -233,7 +234,7 @@ export function DiseasesTab({
                     content={
                       <ChartTooltipContent
                         indicator="line"
-                        formatter={(v) => `${v}%`}
+                        formatter={(v) => (v == null ? "—" : `${v}%`)}
                       />
                     }
                   />
@@ -286,6 +287,7 @@ export function DiseasesTab({
                             style={{ width: `${(r.low / tot) * 100}%` }}
                           />
                         </div>
+                        <PrevalenceFigure fig={r} className="mt-1" />
                       </div>
                       <div className="text-xs text-muted-foreground tabular-nums flex gap-3">
                         <span className="text-[var(--sd-data-red)]">{r.high}</span>
@@ -305,7 +307,7 @@ export function DiseasesTab({
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Disease Pressure by Greenhouse</CardTitle>
-            <CardDescription>% zones infected per greenhouse</CardDescription>
+            <CardDescription>Adjusted prevalence · each greenhouse's latest scouted week</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             {ghPressure.length ? (
@@ -334,7 +336,7 @@ export function DiseasesTab({
                     content={
                       <ChartTooltipContent
                         indicator="line"
-                        formatter={(v) => `${v}%`}
+                        formatter={(v) => (v == null ? "—" : `${v}%`)}
                       />
                     }
                   />

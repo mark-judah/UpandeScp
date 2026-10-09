@@ -33,6 +33,7 @@ import { RevealLTR } from "@/components/RevealLTR";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { GreenhouseModal } from "./GreenhouseModal";
+import { PrevalenceFigure } from "./PrevalenceFigure";
 import type { OverviewPayload } from "./overview-types";
 import { weekTickFormatter } from "@/lib/iso-week";
 
@@ -293,6 +294,7 @@ export function OverviewTab({
                     {a.greenhouse}
                     {a.zone ? ` · ${a.zone}` : ""}
                   </div>
+                  <PrevalenceFigure fig={a} />
                 </div>
               ))
             ) : (

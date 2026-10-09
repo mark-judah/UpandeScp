@@ -1,7 +1,19 @@
+import type { PrevalenceFigures, Reliability } from "@/lib/prevalence";
+
 export interface ItemPercent { name: string; pct: number; zones: number }
-export interface RankingRow  { name: string; total: number; high: number;
-                                moderate: number; low: number }
-export interface DailyPctRow { date: string; value: number }
+/** Distribution / pressure row: `pct` is the adjusted prevalence (null when no
+ *  house in scope has stations set up), `zones` the infested stations. */
+export interface PrevalenceItem extends PrevalenceFigures {
+  name: string; pct: number | null; zones: number;
+}
+export interface RankingRow extends PrevalenceFigures {
+  name: string; total: number; high: number; moderate: number; low: number;
+}
+/** One ISO week of the trend line, dated on the week's Monday. */
+export interface DailyPctRow {
+  date: string; week?: string; value: number | null;
+  margin?: number | null; reliability?: Reliability;
+}
 export interface TrendSeries {
   rows: Array<Record<string, string | number>>;
   keys: string[];
@@ -23,9 +35,9 @@ export interface StageFilterOptions {
 export interface PestsPayload {
   filterOptions: StageFilterOptions & { pests: string[] };
   ranking: RankingRow[];
-  distribution: ItemPercent[];
+  distribution: PrevalenceItem[];
   sectionSplit: ItemPercent[];
-  greenhousePressure: ItemPercent[];
+  greenhousePressure: PrevalenceItem[];
   dailyPercent: DailyPctRow[];
   trendSeries: TrendSeries;
 }

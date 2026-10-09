@@ -98,6 +98,11 @@ K_SCOUTING_PAYLOAD_VERSION = "scp:scouting_payload_ver_v3"
 # create/update/delete (the geometry source of truth) and Bed/Warehouse
 # changes (which can rename or reparent zones).
 K_ZONE_CENTROIDS = "scp:zone_centroids_v1"
+# Per-house 3 × 3 station grid for station prevalence (dashboard_aggregates/
+# _prevalence_rows.py). Suffix is the greenhouse/block name. Dropped by
+# invalidate_station_grid_for_doc whenever a Zone, Bed or Orchard Tree of that
+# house is saved or deleted.
+K_STATION_GRID_PREFIX = "scp:station_grid_v1"
 
 
 def scouting_payload_version():
@@ -343,6 +348,26 @@ def invalidate_orchard_trees_for_doc(doc):
             invalidate(f"{K_ORCHARD_TREES_PREFIX}:farm:{farm}")
             invalidate(f"{K_ORCHARD_TREES_PREFIX}:pts:farm:{farm}")
             invalidate(f"{K_ORCHARD_TREES_PREFIX}:rows:farm:{farm}")
+
+
+def invalidate_station_grid_for_doc(doc):
+    """Drop the cached station grid of the house a Zone / Bed / Orchard Tree is in.
+
+    An avocado row is a Bed whose ``greenhouse`` is the block, so Bed covers both
+    crops. A tree saved before ``block`` is set resolves it through its row.
+    """
+    dt = getattr(doc, "doctype", None)
+    if dt in ("Zone", "Bed"):
+        wh = getattr(doc, "greenhouse", None)
+    elif dt == "Orchard Tree":
+        wh = getattr(doc, "block", None)
+        row = getattr(doc, "row", None)
+        if not wh and row:
+            wh = frappe.db.get_value("Bed", row, "greenhouse")
+    else:
+        return
+    if wh:
+        invalidate(f"{K_STATION_GRID_PREFIX}:{wh}")
 
 
 def invalidate_farm_bundle_for_doc(doc):
@@ -675,6 +700,10 @@ def invalidate_on_change(doc, method=None):
     # Drop the per-block Orchard Tree FeatureCollection when trees move.
     if doc.doctype == "Orchard Tree":
         invalidate_orchard_trees_for_doc(doc)
+
+    # Drop the house's 3 × 3 station grid when its stations or beds change.
+    if doc.doctype in ("Zone", "Bed", "Orchard Tree"):
+        invalidate_station_grid_for_doc(doc)
     # Drop the per-farm Tank & Valve bundle when assets move or get edited.
     if doc.doctype == "Tank And Valve":
         invalidate_tanks_valves_for_doc(doc)

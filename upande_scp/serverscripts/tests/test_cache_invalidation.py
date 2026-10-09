@@ -155,5 +155,33 @@ class TestCropSliceInvalidation(unittest.TestCase):
                       [c.args[0] for c in inv.call_args_list])
 
 
+class TestStationGridInvalidation(unittest.TestCase):
+    """A Zone, Bed or Orchard Tree save drops its house's cached 3 × 3 grid."""
+
+    def _keys(self, doc):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        with patch.object(cu, "invalidate") as inv, \
+             patch.object(cu, "invalidate_scouting_payload"), \
+             patch.object(cu, "invalidate_farm_bundle_for_doc"), \
+             patch.object(cu, "invalidate_orchard_trees_for_doc"):
+            cu.invalidate_on_change(doc)
+        return [a for c in inv.call_args_list for a in c.args]
+
+    def test_zone_bed_and_tree_saves_drop_their_houses_grid(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        cases = [
+            (SimpleNamespace(doctype="Zone", name="Z", greenhouse="GH 1", bed="GH 1 - Bed 1"), "GH 1"),
+            (SimpleNamespace(doctype="Bed", name="GH 2 - Bed 1", greenhouse="GH 2"), "GH 2"),
+            (SimpleNamespace(doctype="Orchard Tree", name="T", block="BLK 1", row="BLK 1 - Row 1"), "BLK 1"),
+        ]
+        for doc, wh in cases:
+            self.assertIn(f"{cu.K_STATION_GRID_PREFIX}:{wh}", self._keys(doc), doc.doctype)
+
+    def test_a_zone_without_a_greenhouse_drops_no_grid(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        keys = self._keys(SimpleNamespace(doctype="Zone", name="Z-1"))
+        self.assertFalse([k for k in keys if str(k).startswith(cu.K_STATION_GRID_PREFIX)])
+
+
 if __name__ == "__main__":
     unittest.main()

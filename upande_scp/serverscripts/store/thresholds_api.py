@@ -15,6 +15,8 @@ import json
 
 import frappe
 
+from upande_scp.serverscripts.common import crop_catalog
+
 
 _WRITE_ROLES = {"System Manager", "Administrator", "SCP General Manager"}
 
@@ -58,7 +60,7 @@ def get_thresholds(crop: str) -> dict:
     thresholds (only stages that already exist on the doc — the GM
     adds new stage rows from the doctype itself for now).
     """
-    crop = (crop or "").strip()
+    crop = crop_catalog.resolve_crop(crop)
     if not crop:
         return {"crop": "", "pests": [], "diseases": []}
 
@@ -161,6 +163,42 @@ def get_thresholds(crop: str) -> dict:
     return {"crop": crop, "pests": pests, "diseases": diseases}
 
 
+_KINDS = (
+    ("pests", "Pest Filter", "Pests Stages"),
+    ("diseases", "Disease Filter", "Disease Stages"),
+)
+
+
+def _assert_rows_belong(crop: str, payload: dict) -> None:
+    """Refuse the whole save if any row is not `crop`'s (spec §5).
+
+    Checked before the first write: `save_thresholds` commits at the end, so a
+    half-applied payload would be permanent.
+    """
+    for key, doctype, child in _KINDS:
+        rows = [r for r in (payload.get(key) or []) if r.get("row")]
+        if not rows:
+            continue
+        owners = dict(frappe.db.sql(
+            f"select name, crop_scouted from `tab{doctype}` where name in %(n)s",
+            {"n": [r["row"] for r in rows]},
+        ))
+        wrong = [r["row"] for r in rows if owners.get(r["row"]) != crop]
+        if wrong:
+            frappe.throw(f"{doctype} rows {', '.join(wrong)} are not {crop} rows.", frappe.ValidationError)
+        for r in rows:
+            stages = [s["row"] for s in (r.get("stages") or []) if s.get("row")]
+            if not stages:
+                continue
+            parents = dict(frappe.db.sql(
+                f"select name, parent from `tab{child}` where name in %(n)s and parenttype = %(pt)s",
+                {"n": stages, "pt": doctype},
+            ))
+            stray = [s for s in stages if parents.get(s) != r["row"]]
+            if stray:
+                frappe.throw(f"{child} rows {', '.join(stray)} do not belong to {r['row']}.", frappe.ValidationError)
+
+
 @frappe.whitelist()
 def save_thresholds(crop: str, payload: str | dict) -> dict:
     """Persist threshold edits in bulk. ``payload`` is the same shape
@@ -174,11 +212,12 @@ def save_thresholds(crop: str, payload: str | dict) -> dict:
     editor."""
     _check_write_perm()
 
-    crop = (crop or "").strip()
+    crop = crop_catalog.resolve_crop(crop)
     if not crop:
         frappe.throw("Missing crop", frappe.ValidationError)
     if isinstance(payload, str):
         payload = json.loads(payload)
+    _assert_rows_belong(crop, payload)
 
     updated = {"pests": 0, "pest_stages": 0, "diseases": 0, "disease_stages": 0}
 

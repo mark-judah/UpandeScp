@@ -6,7 +6,6 @@ from upande_scp.serverscripts.common.cache_utils import (
     K_CROPS_SCOUTED,
     K_DISEASE_COLORS,
     K_PEST_COLORS,
-    K_SCOUTING_PAYLOAD_PREFIX,
     K_SM_SEVERITY_THRESHOLDS,
     K_SM_UNITS_BY_WH,
     K_SM_ZONE_COUNTS_BY_GH,
@@ -15,6 +14,7 @@ from upande_scp.serverscripts.common.cache_utils import (
     TTL_SHORT,
     get_or_set,
     scouting_payload_version,
+    scouting_week_key,
 )
 
 
@@ -101,9 +101,7 @@ def _week_cache_key(iso_year, iso_week, crop=None):
     ``crop`` namespaces the key for crop-scoped slices (e.g. avocado) so they
     cache independently of the all-crop slice.
     """
-    v = scouting_payload_version()
-    prefix = f"{crop}:" if crop else ""
-    return f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{prefix}{iso_year:04d}-W{iso_week:02d}"
+    return scouting_week_key(scouting_payload_version(), iso_year, iso_week, crop)
 
 
 def _weeks_in_range(from_date, to_date):
@@ -268,6 +266,22 @@ def _fetch_scouting_payload(from_date, to_date, greenhouse_filter, include_meta=
     return payload
 
 
+def _fill_resolved_crop(entries):
+    """D5 for rows read without the crop slice: a crop-less entry carries the
+    crop of its greenhouse/block's farm, so the client never relabels it Rose.
+    A station on no crop's farm stays blank (legacy behaviour)."""
+    cache = {}
+    for e in entries:
+        if e.get("crop_scouted"):
+            continue
+        station = e.get("greenhouse") or e.get("block")
+        if station not in cache:
+            cache[station] = crop_catalog.crop_for_greenhouse(station)
+        if cache[station]:
+            e["crop_scouted"] = cache[station]
+    return entries
+
+
 def _build_month_entries(from_date, to_date, crop=None):
     """Run the SQL join for one date range and return the entries list only.
 
@@ -297,7 +311,9 @@ def _build_month_entries(from_date, to_date, crop=None):
         scouting_entries = frappe.db.sql(
             f"""
             SELECT se.name, se.scouts_name, se.greenhouse, se.bed, se.zone, se.block,
-                   se.`row`, se.tree, se.crop_scouted, se.time_of_capture,
+                   se.`row`, se.tree,
+                   COALESCE(NULLIF(se.crop_scouted, ''), %(crop)s) AS crop_scouted,
+                   se.time_of_capture,
                    se.date_of_capture, se.latitude, se.longitude
             FROM `tabScouting Entry` se
             WHERE se.date_of_capture BETWEEN %(from_date)s AND %(to_date)s
@@ -331,6 +347,8 @@ def _build_month_entries(from_date, to_date, crop=None):
         )
     if not scouting_entries:
         return []
+    if not crop_params:
+        _fill_resolved_crop(scouting_entries)
 
     entry_names = [e["name"] for e in scouting_entries]
     entries_dict = {e["name"]: e for e in scouting_entries}
@@ -510,6 +528,8 @@ def get_entries_since(since=None, greenhouse=None, farm=None, limit=2000):
             e for e in entries
             if (e.get("greenhouse") in allowed) or (e.get("block") in allowed)
         ]
+
+    _fill_resolved_crop(entries)
 
     if entries:
         entry_names = [e["name"] for e in entries]

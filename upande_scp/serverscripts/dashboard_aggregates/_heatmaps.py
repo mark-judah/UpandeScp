@@ -122,16 +122,31 @@ def _latest_scouting_date(crop: str = "") -> str:
     that — 2026-07-13 was 29 days before 2026-08-11 on this site — every card
     disappears and the page reads as broken rather than as out of range.
     """
-    where = "1=1"
-    params: dict = {}
-    if crop:
-        where = crop_catalog.entry_crop_condition("se")
-        params.update(crop_catalog.crop_sql_params(crop))
-    row = frappe.db.sql(
-        f"SELECT MAX(se.date_of_capture) AS d FROM `tabScouting Entry` se WHERE {where}",
-        params,
+    if not crop:
+        row = frappe.db.sql("SELECT MAX(date_of_capture) FROM `tabScouting Entry`")
+        return str(row[0][0])[:10] if row and row[0] and row[0][0] else ""
+    # D5 as index-backed pieces (an OR over crop_scouted / station is a full
+    # scan, ~0.19s here): the crop's own newest entry, plus the newest
+    # crop-less entry per station, kept when the station belongs to the crop.
+    # Crop-less rows are a handful, so the grouped read is tiny.
+    canon = crop_catalog.canonical(crop)
+    best = frappe.db.sql(
+        "SELECT MAX(date_of_capture) FROM `tabScouting Entry` WHERE crop_scouted = %s",
+        (canon or crop_catalog.NO_MATCH,),
+    )[0][0]
+    stations = set(crop_catalog.greenhouses_for_crop(canon))
+    rows = frappe.db.sql(
+        """
+        SELECT COALESCE(NULLIF(greenhouse, ''), block) AS st, MAX(date_of_capture) AS d
+        FROM `tabScouting Entry`
+        WHERE crop_scouted IS NULL OR crop_scouted = ''
+        GROUP BY st
+        """
     )
-    return str(row[0][0])[:10] if row and row[0] and row[0][0] else ""
+    for st, d in rows:
+        if st in stations and d and (best is None or d > best):
+            best = d
+    return str(best)[:10] if best else ""
 
 
 def _query_kind(where: str, params: dict, mode: str) -> list:

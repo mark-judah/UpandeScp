@@ -150,16 +150,26 @@ def _resolve_scouting_date(doc):
         return None
 
 
+# Rule version of a cached week slice. Bump when the rows a slice holds change
+# shape or membership (crop2: crop-less rows carry their resolved crop, D5), so
+# slices built under the old rule are not served for up to their 24h TTL.
+K_SCOUTING_SLICE_SCHEMA = "crop2"
+
+
+def scouting_week_key(version, iso_year, iso_week, crop=None):
+    """The one place a per-ISO-week payload key is spelled (build + invalidate)."""
+    prefix = f"{crop}:" if crop else ""
+    return (f"{K_SCOUTING_PAYLOAD_PREFIX}:{version}:{K_SCOUTING_SLICE_SCHEMA}:"
+            f"{prefix}{iso_year:04d}-W{iso_week:02d}")
+
+
 def invalidate_scouting_week(iso_year, iso_week, crop=None):
     """Delete the cached payload for a single ISO week at the current version.
 
     ``crop`` targets a crop-scoped slice (see get_complete_scouting_entries
     ._week_cache_key); omitted targets the all-crop slice.
     """
-    v = scouting_payload_version()
-    prefix = f"{crop}:" if crop else ""
-    key = f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{prefix}{iso_year:04d}-W{iso_week:02d}"
-    invalidate(key)
+    invalidate(scouting_week_key(scouting_payload_version(), iso_year, iso_week, crop))
 
 
 def _resolve_scouting_crop(doc):

@@ -89,6 +89,17 @@ class TestDiagnoseAndValidation(unittest.TestCase):
         self.assertEqual(out["targets"], ["Aphids", "Thrips"])
         self.assertEqual(out["filterOpts"]["pests"], ["Aphids", "Thrips"])
 
+    def test_a_rose_only_user_cannot_diagnose_an_avocado_block(self):
+        if not frappe.db.exists("Employee", {"user_id": F.PETER}):
+            self.skipTest("Peter Kamuren has no Employee record on this site")
+        frappe.set_user(F.PETER)
+        try:
+            with self.assertRaises(frappe.PermissionError):
+                DA.application_plan_diagnose(greenhouse=F.avocado_block(), from_date=FROM,
+                                             to_date=TO, force="1")
+        finally:
+            frappe.set_user("Administrator")
+
     def test_preventive_rejects_an_off_crop_target(self):
         with self.assertRaises(frappe.ValidationError) as cm:
             validate_targets_in_scope("Preventive", [AVOCADO_DISEASE], greenhouse=self.gh, crop="Rose")

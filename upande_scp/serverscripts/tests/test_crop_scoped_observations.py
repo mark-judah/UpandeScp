@@ -76,3 +76,21 @@ class TestCropScopedObservations(unittest.TestCase):
         self.assertEqual(set(API.get_farms_and_warehouses("Avocado")), {"Lokitela"})
         with self.assertRaises(frappe.PermissionError):
             API.get_farms_and_warehouses("Mango")
+
+    def test_crop_less_rows_carry_their_resolved_crop(self):
+        """D5 reaches the client: a crop-less row is labelled with its farm's crop."""
+        avo_less = F.insert_entry(block=F.avocado_block(), crop=None, date=FROM)
+        by_name = {e["name"]: e for e in G.getScoutingEntriesChunk(
+            from_date=FROM, to_date=TO, crop="Avocado")["entries"]}
+        self.assertEqual(by_name[avo_less]["crop_scouted"], "Avocado")
+        by_name = {e["name"]: e for e in G.getScoutingEntriesChunk(
+            from_date=FROM, to_date=TO, crop="Rose")["entries"]}
+        self.assertEqual(by_name[self.crop_less]["crop_scouted"], "Rose")
+        # the unscoped slice and the delta endpoint resolve it too
+        by_name = {e["name"]: e for e in G.getScoutingEntriesChunk(
+            from_date=FROM, to_date=TO)["entries"]}
+        self.assertEqual(by_name[avo_less]["crop_scouted"], "Avocado")
+        frappe.db.sql("UPDATE `tabScouting Entry` SET modified=%s WHERE name=%s",
+                      ("2031-01-21 00:00:00", avo_less))
+        delta = G.get_entries_since(since="2031-01-20 00:00:00", limit=10000)["entries"]
+        self.assertEqual({e["name"]: e for e in delta}[avo_less]["crop_scouted"], "Avocado")

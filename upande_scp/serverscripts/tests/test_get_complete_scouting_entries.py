@@ -51,10 +51,10 @@ class TestWeekCacheKey(unittest.TestCase):
 
         with patch.object(mod, "scouting_payload_version", return_value=7):
             self.assertEqual(
-                _week_cache_key(2025, 18), f"{K_SCOUTING_PAYLOAD_PREFIX}:7:2025-W18"
+                _week_cache_key(2025, 18), f"{K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:2025-W18"
             )
             self.assertEqual(
-                _week_cache_key(2026, 1), f"{K_SCOUTING_PAYLOAD_PREFIX}:7:2026-W01"
+                _week_cache_key(2026, 1), f"{K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:2026-W01"
             )
             # Zero-padding is the point: W01 must not collapse to W1, or a week's
             # cache entry collides with a different week's on string comparison.
@@ -62,7 +62,7 @@ class TestWeekCacheKey(unittest.TestCase):
             # A crop-scoped slice caches independently of the all-crop slice.
             self.assertEqual(
                 _week_cache_key(2026, 1, crop="Avocado"),
-                f"{K_SCOUTING_PAYLOAD_PREFIX}:7:Avocado:2026-W01",
+                f"{K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:Avocado:2026-W01",
             )
 
 

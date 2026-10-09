@@ -10,7 +10,7 @@ fetching" the operator wants gone.
 
 import frappe
 
-from upande_scp.serverscripts.common import crop_catalog
+from upande_scp.serverscripts.common import crop_catalog, crop_scope
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     publish_progress,
@@ -32,7 +32,12 @@ def application_plan_diagnose(args: dict, force: bool = False) -> dict:
     # click recomputes identical SQL under a fresh key.
     # The greenhouse decides the crop (spec D6); the request's crop is only a
     # fallback for a greenhouse whose farm is on no crop (today's behaviour).
-    crop = crop_catalog.crop_for_greenhouse(greenhouse) or (args.get("crop") or "").strip()
+    derived = crop_catalog.crop_for_greenhouse(greenhouse)
+    if derived:
+        # The crop came from the greenhouse, not the request: refuse it when
+        # this user may not see that crop (a Rose-only user asking for a block).
+        crop_scope.assert_crop(derived)
+    crop = derived or (args.get("crop") or "").strip()
     row_filters = {
         "greenhouse": greenhouse,
         "from_date":  args.get("from_date", ""),

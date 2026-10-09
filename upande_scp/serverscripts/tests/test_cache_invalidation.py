@@ -55,7 +55,7 @@ class TestInvalidateScoutingWeek(unittest.TestCase):
             # key version — bumping K_SCOUTING_PAYLOAD_PREFIX (v2 -> v3 -> …) is
             # a routine cache-busting move and shouldn't fail this test.
             inv.assert_called_once_with(
-                f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:2025-W18"
+                f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:2025-W18"
             )
             bump.assert_not_called()
 
@@ -126,8 +126,8 @@ class TestCropSliceInvalidation(unittest.TestCase):
             cu.invalidate_scouting_week_for_doc(doc)
         self.assertEqual(
             [c.args[0] for c in inv.call_args_list],
-            [f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:2025-W18",
-             f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:Rose:2025-W18"],
+            [f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:2025-W18",
+             f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:Rose:2025-W18"],
         )
 
     def test_a_crop_less_write_busts_its_greenhouse_crop(self):
@@ -139,7 +139,7 @@ class TestCropSliceInvalidation(unittest.TestCase):
              patch.object(crop_catalog, "crop_for_greenhouse", return_value="Rose"), \
              patch.object(cu, "invalidate") as inv:
             cu.invalidate_scouting_week_for_doc(doc)
-        self.assertIn(f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:Rose:2025-W18",
+        self.assertIn(f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:Rose:2025-W18",
                       [c.args[0] for c in inv.call_args_list])
 
     def test_a_crop_less_block_write_busts_its_blocks_crop(self):
@@ -151,7 +151,7 @@ class TestCropSliceInvalidation(unittest.TestCase):
              patch.object(crop_catalog, "crop_for_greenhouse", return_value="Avocado"), \
              patch.object(cu, "invalidate") as inv:
             cu.invalidate_scouting_week_for_doc(doc)
-        self.assertIn(f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:Avocado:2025-W18",
+        self.assertIn(f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:Avocado:2025-W18",
                       [c.args[0] for c in inv.call_args_list])
 
 

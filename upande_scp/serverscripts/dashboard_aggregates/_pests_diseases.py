@@ -121,11 +121,15 @@ def _ranking(kind: str, rows: list, crop: str, weeks) -> list:
     reliability."""
     by_name: dict = {}
     cells: set = set()
-    for r in rows:
-        bucket = by_name.setdefault(
-            r.obs_name,
-            {"name": r.obs_name, "total": 0, "high": 0, "moderate": 0, "low": 0},
+    def _bucket(name):
+        return by_name.setdefault(
+            name, {"name": name, "total": 0, "high": 0, "moderate": 0, "low": 0},
         )
+
+    for r in rows:
+        # One key for a NULL observation in both passes ("" here and in the
+        # cells), so a NULL-obs child row can neither KeyError nor split in two.
+        bucket = _bucket(r.obs_name or "")
         if kind == "pest":
             bucket["total"] += int(r.count or 0)
         else:
@@ -140,7 +144,7 @@ def _ranking(kind: str, rows: list, crop: str, weeks) -> list:
             continue
         sev = severity_for(crop, kind, obs_name, stage, fig["prevalence"])
         if sev:
-            by_name[obs_name][sev] += 1
+            _bucket(obs_name)[sev] += 1
 
     for name, bucket in by_name.items():
         bucket.update(P.public(weeks.combined_latest(kind, name or "")))

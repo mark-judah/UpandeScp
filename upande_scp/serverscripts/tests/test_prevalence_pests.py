@@ -76,3 +76,26 @@ class TestPestsPrevalence(unittest.TestCase):
         row = next(r for r in out["greenhousePressure"] if r["name"] == block)
         self.assertEqual(row["pct"], 33.3)
         self.assertEqual(row["stations"], frappe.db.count("Orchard Tree", {"block": block}))
+
+
+class TestRankingNullObservation(unittest.TestCase):
+    """A child row with a NULL observation must not KeyError the ranking: its
+    cell is keyed ``""`` while the totals bucket is keyed by the raw value."""
+
+    def test_a_null_observation_row_is_ranked_not_raised(self):
+        from importlib import import_module
+        from unittest.mock import patch
+
+        PD = import_module("upande_scp.serverscripts.dashboard_aggregates._pests_diseases")
+
+        class Weeks:
+            def latest(self, *_a, **_k):
+                return {"prevalence": 50.0}
+
+            def combined_latest(self, *_a, **_k):
+                return None
+
+        row = frappe._dict(obs_name=None, count=2, block=None, greenhouse="GH X", stage="Adult")
+        with patch.object(PD, "severity_for", return_value="high"):
+            out = PD._ranking("pest", [row], "Rose", Weeks())
+        self.assertEqual([(r["name"], r["total"], r["high"]) for r in out], [("", 2, 1)])

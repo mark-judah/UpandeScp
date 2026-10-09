@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import frappe
 
+from upande_scp.serverscripts.common import crop_catalog, crop_scope
 from upande_scp.serverscripts.common.tank_mix import tank_mix_item_group
 from frappe.utils import flt
 
@@ -16,9 +17,19 @@ from .validation import match_cost_center
 
 
 @frappe.whitelist()
-def fetch_creator_bootstrap() -> dict:
+def fetch_creator_bootstrap(crop: str | None = None) -> dict:
+    """Everything the creator page needs, for one crop when `crop` is given.
+
+    With a crop, farms are the user's creator farms intersected with the crop's
+    farms the user may see (spec D3); greenhouses, blocks, kits, teams, tank
+    mixes and farm stores follow those farms; the target catalogs are the
+    crop's Pest/Disease Filter rows. Without a crop: today's behaviour.
+    """
     user = frappe.session.user
+    crop = crop_catalog.resolve_crop(crop)
     scope = _resolve_user_scope(user)
+    if crop:
+        scope = _narrow_to_crop(scope, crop, user)
 
     if not scope["farms"]:
         return _empty_bootstrap()
@@ -135,14 +146,24 @@ def fetch_creator_bootstrap() -> dict:
 
     skip = boms_with_untargeted([t.name for t in tank_mixes])
     tank_mixes = [t for t in tank_mixes if t.name not in skip]
+    if crop:
+        # A mix pinned to a farm outside this crop's farms is not offered; the
+        # unpinned majority stays available.
+        farm_set = set(farms)
+        tank_mixes = [t for t in tank_mixes if not t.get("custom_farm") or t.get("custom_farm") in farm_set]
 
     rate_limits = _fetch_rate_limits()
 
-    pest_catalog = frappe.get_all("Pest", fields=["name"], order_by="name") \
-        if frappe.db.table_exists("Pest") else []
-    # Disease catalog is `Plant Disease`, not `Disease`.
-    disease_catalog = frappe.get_all("Plant Disease", fields=["name"], order_by="name") \
-        if frappe.db.table_exists("Plant Disease") else []
+    if crop:
+        # The crop's own lists: empty stays empty, never the whole catalog.
+        pest_catalog = [{"name": n} for n in sorted(crop_catalog.pests_for_crop(crop))]
+        disease_catalog = [{"name": n} for n in sorted(crop_catalog.diseases_for_crop(crop))]
+    else:
+        pest_catalog = frappe.get_all("Pest", fields=["name"], order_by="name") \
+            if frappe.db.table_exists("Pest") else []
+        # Disease catalog is `Plant Disease`, not `Disease`.
+        disease_catalog = frappe.get_all("Plant Disease", fields=["name"], order_by="name") \
+            if frappe.db.table_exists("Plant Disease") else []
     # Active, non-group Cost Centers — drives the override picker on the
     # ApplicationPlan page. Returns all companies so the picker can show
     # cross-company options when the operator overrides intentionally.
@@ -158,6 +179,7 @@ def fetch_creator_bootstrap() -> dict:
 
     farm_store_rows = frappe.get_all(
         "Farm",
+        filters={"name": ["in", farms]} if crop else None,
         fields=["name", "custom_chemical_store", "custom_fertilizer_store"],
     )
     farm_stores = {
@@ -203,6 +225,21 @@ def _empty_bootstrap() -> dict:
         "rate_limits": {}, "pest_catalog": [], "disease_catalog": [],
         "cost_centers": [], "farm_stores": {},
         "weather_settings": {}, "irac_window_days": 14, "frac_window_days": 21,
+    }
+
+
+def _narrow_to_crop(scope: dict, crop: str, user: str) -> dict:
+    """Creator farms intersected with `crop_scope.scoped_farms(crop, user)`."""
+    allowed = crop_scope.scoped_farms(crop, user)
+    if allowed is None:
+        return scope
+    farms = [f for f in scope["farms"] if f in allowed]
+    keep = set(farms)
+    warehouses = [w for w in scope["warehouses"] if w.get("custom_farm") in keep]
+    return {
+        "farms": farms,
+        "warehouses": warehouses,
+        "greenhouses": [w for w in warehouses if (w.get("warehouse_type") or "") == "Greenhouse"],
     }
 
 

@@ -13,6 +13,8 @@ from typing import Iterable
 import frappe
 from frappe.utils import add_days, now_datetime
 
+from upande_scp.serverscripts.common import crop_catalog
+
 
 PREVENTIVE_REASON_MIN_CHARS = 20
 
@@ -181,10 +183,23 @@ def validate_targets_in_scope(
     *,
     greenhouse: str | None = None,
     days: int = 60,
+    crop: str | None = None,
 ) -> None:
+    """Targets must belong to the plan's crop (spec D6); Curative targets must
+    also have been observed in the greenhouse. With no crop the old catalog
+    check applies."""
     targets = [t for t in (targets or []) if t]
     if not targets:
         frappe.throw("At least one target is required.")
+
+    if crop:
+        allowed = set(crop_catalog.targets_for_crop(crop))
+        off_crop = [t for t in targets if t not in allowed]
+        if off_crop:
+            frappe.throw(
+                f"These targets are not {crop} pests or diseases: {', '.join(off_crop)}.",
+                title="Target not for this crop",
+            )
 
     if classification == "Curative":
         # Every target must appear in a Scouting Entry for this greenhouse in
@@ -202,8 +217,8 @@ def validate_targets_in_scope(
                 f"{days} days: {', '.join(unknown)}.",
                 title="Targets not observed",
             )
-    else:
-        # Preventive: each target must exist in the Pest or Plant Disease catalog.
+    elif not crop:
+        # Preventive, no crop: each target must exist in the Pest or Plant Disease catalog.
         for t in targets:
             if not (frappe.db.exists("Pest", t) or frappe.db.exists("Plant Disease", t)):
                 frappe.throw(

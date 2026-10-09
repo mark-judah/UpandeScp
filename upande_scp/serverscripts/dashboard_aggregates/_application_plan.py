@@ -10,6 +10,7 @@ fetching" the operator wants gone.
 
 import frappe
 
+from upande_scp.serverscripts.common import crop_catalog
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     publish_progress,
@@ -29,15 +30,20 @@ def application_plan_diagnose(args: dict, force: bool = False) -> dict:
     # Rows depend only on scope + window. The chips are applied afterwards,
     # so they must NOT be part of this cache key — otherwise every chip
     # click recomputes identical SQL under a fresh key.
+    # The greenhouse decides the crop (spec D6); the request's crop is only a
+    # fallback for a greenhouse whose farm is on no crop (today's behaviour).
+    crop = crop_catalog.crop_for_greenhouse(greenhouse) or (args.get("crop") or "").strip()
     row_filters = {
         "greenhouse": greenhouse,
         "from_date":  args.get("from_date", ""),
         "to_date":    args.get("to_date", ""),
-        "crop":       (args.get("crop") or "").strip(),
+        "crop":       crop,
     }
     job_id = (args.get("job_id") or "").strip()
+    # _v2: rows cached under the old rules (crop_scouted only, every pest)
+    # must not be served after deploy.
     rows = cached_aggregate(
-        "application_plan_rows",
+        "application_plan_rows_v2",
         row_filters,
         lambda: _load_rows(row_filters, job_id),
         force=force,
@@ -226,8 +232,12 @@ def _query_kind(filters: dict, kind: str) -> list:
     }
     crop_clause = ""
     if filters["crop"]:
-        crop_clause = "AND se.crop_scouted = %(crop)s"
-        params["crop"] = filters["crop"]
+        # D5 (crop-less rows in this greenhouse count) + D4 (off-crop targets drop).
+        crop_clause = (
+            f"AND {crop_catalog.entry_crop_condition('se')} "
+            f"AND {crop_catalog.obs_crop_condition(kind, 'c.' + col)}"
+        )
+        params.update(crop_catalog.crop_sql_params(filters["crop"]))
 
     rows = frappe.db.sql(
         f"""

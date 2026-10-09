@@ -6,7 +6,7 @@ import json
 import frappe
 from frappe.utils import flt
 
-from ..common import crop_protection
+from ..common import crop_catalog, crop_protection
 from ..spray_compliance import api as compliance
 from .scope import _resolve_user_scope
 from .validation import (
@@ -389,6 +389,7 @@ def _validate_payload(payload: dict, scope: dict) -> None:
             classification,
             payload.get("custom_targets") or [],
             greenhouse=payload.get("custom_greenhouse"),
+            crop=crop_catalog.crop_for_greenhouse(payload.get("custom_greenhouse")),
         )
     if not payload.get("_skip_bom_validation"):
         bom = payload.get("production_item")

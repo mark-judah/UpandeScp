@@ -104,9 +104,9 @@ interface BlockAgg {
   maxY: number;
 }
 
-export function AvocadoHeatMap() {
+export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: string } = {}) {
   const [filters, setFilters] = useState<MapFilterValue>(() => ({
-    crop: "Avocado",
+    crop: initialCrop,
     farm: ALL,
     greenhouse: ALL,
     // Sparse crop, crop-scoped fetch → default to a long 10-month window.
@@ -680,7 +680,7 @@ export function AvocadoHeatMap() {
                     <div className="mb-1 text-[0.7rem] uppercase tracking-wide text-muted-foreground">
                       Plan spray
                     </div>
-                    <BlockSprayPlan block={selectedAgg.block} targets={targets} />
+                    <BlockSprayPlan block={selectedAgg.block} targets={targets} crop={filters.crop} />
                   </div>
                 </div>
               )}

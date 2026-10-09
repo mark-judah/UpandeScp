@@ -51,6 +51,7 @@ export interface BlockChemRow {
 export function BlockSprayPlan({
   block,
   targets = [],
+  crop = "Avocado",
   onDone,
 }: {
   block: string;
@@ -59,6 +60,8 @@ export function BlockSprayPlan({
    *  chemicals are picked, and an operator who has ticked three pests should
    *  see them while choosing what to spray, not have to remember them. */
   targets?: string[];
+  /** The route crop — the bootstrap lists this crop's blocks, teams and kits. */
+  crop?: string;
   onDone?: (workOrder: string) => void;
 }) {
   const [boot, setBoot] = useState<CreatorBootstrap | null>(null);
@@ -70,10 +73,10 @@ export function BlockSprayPlan({
   const [done, setDone] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchCreatorBootstrap()
+    fetchCreatorBootstrap(crop)
       .then(setBoot)
       .catch((e) => setError(errorText(e, "Could not load planning data.")));
-  }, []);
+  }, [crop]);
 
   const blockInfo = useMemo(
     () => (boot?.blocks || []).find((b) => b.name === block) || null,

@@ -98,9 +98,9 @@ interface ZoneRoll {
   lastTs: string;
 }
 
-export function Spraying() {
+export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
   const [filters, setFilters] = useState<RangeFilterValue>(() => ({
-    crop: "Rose",
+    crop: initialCrop || "Rose",
     farm: ALL,
     greenhouse: ALL,
     ...currentWeekRange(),

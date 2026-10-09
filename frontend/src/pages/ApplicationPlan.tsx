@@ -248,7 +248,7 @@ export function newBomRateError(chem: NewBomChem): string | null {
   return null;
 }
 
-export function ApplicationPlan() {
+export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) {
   const [bootstrap, setBootstrap] = useState<CreatorBootstrap | null>(null);
   const [bootstrapError, setBootstrapError] = useState<{ status: number; message: string } | null>(null);
   const [varietyTree, setVarietyTree] = useState<VarietyNode[]>([]);
@@ -381,7 +381,6 @@ export function ApplicationPlan() {
       greenhouse,
       from_date: from,
       to_date:   to,
-      crop:      "Rose",
       pest:      diag.pest === ALL ? "" : diag.pest,
       section:   diag.section === ALL ? "" : diag.section,
       stage:     diag.stage === ALL ? "" : diag.stage,
@@ -398,7 +397,7 @@ export function ApplicationPlan() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchCreatorBootstrap()
+    fetchCreatorBootstrap(initialCrop)
       .then((b) => {
         if (cancelled) return;
         setBootstrap(b);
@@ -1520,7 +1519,7 @@ export function ApplicationPlan() {
         pushToast("ok", `Created BOM ${r.bom_name}.`);
         // Refresh bootstrap so the new BOM appears in the dropdown,
         // then auto-select it.
-        const fresh = await fetchCreatorBootstrap();
+        const fresh = await fetchCreatorBootstrap(initialCrop);
         setBootstrap(fresh);
         setBom(r.bom_name);
         setBomDialogOpen(false);
@@ -2088,7 +2087,7 @@ export function ApplicationPlan() {
                       return (
                         <span className="text-xs text-muted-foreground">
                           {classification === "Preventive"
-                            ? "Pest + Disease catalog is empty — add entries in Frappe Desk."
+                            ? "No pests or diseases are linked to this crop yet — add them under Crop Scouted in Desk."
                             : classification === "Curative"
                               ? "No pest/disease observations in the chosen greenhouse yet."
                               : "Pick Classification first."}

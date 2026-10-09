@@ -228,7 +228,7 @@ function renderView(crop: string, view: View): ReactNode {
       return crop === "rose" ? (
         <Heatmaps initialCrop={cropName} />
       ) : (
-        <AvocadoHeatMap />
+        <AvocadoHeatMap initialCrop={cropName} />
       );
     case "scouting-map":
       return crop === "rose" ? (
@@ -239,7 +239,7 @@ function renderView(crop: string, view: View): ReactNode {
         <AvocadoScouting />
       );
     case "spraying":
-      return <Spraying />;
+      return <Spraying initialCrop={cropName} />;
     case "varieties":
       return <Varieties />;
     case "reports":
@@ -259,7 +259,7 @@ function renderView(crop: string, view: View): ReactNode {
     case "spray-plan-access":
       return <SprayPlanAccess />;
     case "application-plan":
-      return <ApplicationPlan />;
+      return <ApplicationPlan initialCrop={cropName} />;
     case "chemical-dashboard":
       return <ChemicalDashboard />;
     case "spray-plan-transfers":

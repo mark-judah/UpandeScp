@@ -112,9 +112,12 @@ export interface CreatorBootstrap {
   farm_stores: Record<string, CreatorFarmStores>;
 }
 
-export async function fetchCreatorBootstrap(): Promise<CreatorBootstrap> {
+/** `crop` is the route crop: the server narrows farms, greenhouses, blocks and
+ *  the target catalogs to it (spec §2). Omitted → the old unscoped bootstrap. */
+export async function fetchCreatorBootstrap(crop?: string): Promise<CreatorBootstrap> {
   return call<CreatorBootstrap>(
     "upande_scp.serverscripts.spray_plan_creator.bootstrap.fetch_creator_bootstrap",
+    crop ? { crop } : {},
   );
 }
 

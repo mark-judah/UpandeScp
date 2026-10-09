@@ -6,6 +6,7 @@ from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.scouting.scouting_metrics import get_zone_counts_by_greenhouse
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
+    obs_filter,
     parent_filter_conditions,
     publish_progress,
     resolve_greenhouse_scope,
@@ -61,6 +62,7 @@ def _build(kind: str, filters: dict, scope, job_id: str = "") -> dict:
     )
     table, col = _TABLE[kind]
     count_clause = "c.count AS count" if kind == "pest" else "NULL AS count"
+    child_obs = obs_filter(kind, f"c.{col}", params)
     publish_progress(job_id, 20, f"loading {kind} observations")
     rows = frappe.db.sql(
         f"""
@@ -71,7 +73,7 @@ def _build(kind: str, filters: dict, scope, job_id: str = "") -> dict:
                {count_clause}
         FROM `tabScouting Entry` se
         JOIN `{table}` c ON c.parent = se.name
-        WHERE {where}
+        WHERE {where}{child_obs}
         """,
         params,
         as_dict=True,

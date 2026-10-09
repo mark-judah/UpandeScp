@@ -5,6 +5,7 @@ import frappe
 from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
+    obs_filter,
     parent_filter_conditions,
     publish_progress,
     severity_for,
@@ -39,12 +40,15 @@ def _build(filters: dict, job_id: str = "") -> dict:
         [filters["greenhouse"]],
     )
 
+    pest_obs = obs_filter("pest", "p.pest", params)
+    disease_obs = obs_filter("disease", "d.disease", params)
+
     publish_progress(job_id, 25, "loading pest rows")
     pests = frappe.db.sql(f"""
         SELECT se.name, se.date_of_capture, se.zone, p.pest, p.stage, p.count
         FROM `tabScouting Entry` se
         JOIN `tabPests Scouting Entry` p ON p.parent = se.name
-        WHERE {where}
+        WHERE {where}{pest_obs}
     """, params, as_dict=True)
 
     publish_progress(job_id, 50, "loading disease rows")
@@ -52,7 +56,7 @@ def _build(filters: dict, job_id: str = "") -> dict:
         SELECT se.name, se.date_of_capture, se.zone, d.disease, d.stage
         FROM `tabScouting Entry` se
         JOIN `tabDiseases Scouting Entry` d ON d.parent = se.name
-        WHERE {where}
+        WHERE {where}{disease_obs}
     """, params, as_dict=True)
 
     publish_progress(job_id, 70, "loading trap rows")

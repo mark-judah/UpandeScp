@@ -19,6 +19,7 @@ from upande_scp.serverscripts.dashboard_aggregates._trends import (
     _fetch_spray_events,
     week_key,
 )
+from upande_scp.serverscripts.common import crop_catalog
 from upande_scp.serverscripts.common.cache_utils import (
     K_BED_COUNT_BY_GH,
     TTL_SHORT,
@@ -27,6 +28,7 @@ from upande_scp.serverscripts.common.cache_utils import (
 )
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
+    obs_filter,
     parent_filter_conditions,
     publish_progress,
     resolve_greenhouse_scope,
@@ -123,10 +125,10 @@ def _latest_scouting_date(crop: str = "") -> str:
     where = "1=1"
     params: dict = {}
     if crop:
-        where = "crop_scouted = %(crop)s"
-        params["crop"] = crop
+        where = crop_catalog.entry_crop_condition("se")
+        params.update(crop_catalog.crop_sql_params(crop))
     row = frappe.db.sql(
-        f"SELECT MAX(date_of_capture) AS d FROM `tabScouting Entry` WHERE {where}",
+        f"SELECT MAX(se.date_of_capture) AS d FROM `tabScouting Entry` se WHERE {where}",
         params,
     )
     return str(row[0][0])[:10] if row and row[0] and row[0][0] else ""
@@ -144,6 +146,7 @@ def _query_kind(where: str, params: dict, mode: str) -> list:
         if mode == "pest"
         else "COUNT(*)"
     )
+    child_obs = obs_filter(mode, f"c.{col}", params)
     return frappe.db.sql(
         f"""
         SELECT
@@ -155,7 +158,7 @@ def _query_kind(where: str, params: dict, mode: str) -> list:
             {count_expr}                                    AS n
         FROM `tabScouting Entry` se
         JOIN `{table}` c ON c.parent = se.name
-        WHERE {where}
+        WHERE {where}{child_obs}
           AND se.zone IS NOT NULL AND se.zone != ''
         GROUP BY 1, 2, 3, 4, 5
         """,
@@ -472,8 +475,8 @@ def scouts_and_coverage(greenhouse: str, from_date: str, to_date: str, crop: str
     where = ["se.greenhouse = %(gh)s", "se.date_of_capture BETWEEN %(f)s AND %(t)s"]
     params = {"gh": greenhouse, "f": from_date, "t": to_date}
     if crop:
-        where.append("se.crop_scouted = %(crop)s")
-        params["crop"] = crop
+        where.append(crop_catalog.entry_crop_condition("se"))
+        params.update(crop_catalog.crop_sql_params(crop))
 
     rows = frappe.db.sql(
         f"""

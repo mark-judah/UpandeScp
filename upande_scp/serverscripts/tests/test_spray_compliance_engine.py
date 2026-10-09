@@ -58,7 +58,7 @@ def test_unknown_mode_is_treated_as_warn():
 
 def test_evaluate_candidates():
 	c = ctx(["DEL"], modes=modes(same_moa_in_mix="Block"))
-	rows = {r["item"]: r for r in E.evaluate_candidates(c, ["COL", "SUC", "MEL", "ADJ"])}
+	rows = {r["item"]: r for r in E.evaluate_candidates(c, ["COL", "SUC", "MEL", "ADJ", "UNT"])}
 	assert rows["COL"]["eligible"] and rows["COL"]["codes"] == ["FRAC 11", "FRAC 7"]
 	assert not rows["SUC"]["eligible"] and rows["SUC"]["worst_mode"] == "Block"
 	assert not rows["MEL"]["eligible"] and "Downy Mildew" in rows["MEL"]["reasons"][0]
@@ -66,3 +66,4 @@ def test_evaluate_candidates():
 	assert rows["COL"]["rules"] == [] and rows["ADJ"]["rules"] == []
 	assert rows["SUC"]["rules"] == ["same_moa_in_mix"]
 	assert "target_match" in rows["MEL"]["rules"]
+	assert rows["UNT"]["untargeted"] and not rows["MEL"]["untargeted"] and not rows["ADJ"]["untargeted"]

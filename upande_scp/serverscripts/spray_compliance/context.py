@@ -72,6 +72,30 @@ def load_products(items) -> dict:
 	        for r in rows}
 
 
+def untargeted_items() -> list[str]:
+	"""Items whose Spray Product is pest-control with no registered target
+	(`rules.is_untargeted`, in SQL). They are never offered: the chemical search
+	and the tank-mix list drop them on the server, so they are not even fetched."""
+	return frappe.db.sql_list("""select sp.item from `tabSpray Product` sp
+	                             where ifnull(sp.item,'')<>'' and ifnull(sp.category,'')<>'Foliar'
+	                               and ifnull(sp.type,'') not in %(nt)s
+	                               and not exists (select 1 from `tabChemical Targets` t
+	                                               where t.parenttype='Spray Product' and t.parentfield='default_targets'
+	                                                 and t.parent=sp.name
+	                                                 and coalesce(nullif(t.pest,''), nullif(t.disease,'')) is not null)""",
+	                          {"nt": tuple(R.NON_TARGET_TYPES)})
+
+
+def boms_with_untargeted(boms) -> set[str]:
+	"""The BOMs among `boms` that carry an untargeted item."""
+	boms, bad = list(boms or []), untargeted_items()
+	if not boms or not bad:
+		return set()
+	return set(frappe.db.sql_list("""select distinct parent from `tabBOM Item`
+	                                 where parenttype='BOM' and parent in %(b)s and item_code in %(i)s""",
+	                              {"b": tuple(boms), "i": tuple(bad)}))
+
+
 def anchor(when=None):
 	"""The moment a plan is judged at: its scheduled spray time, else now.
 	Plans are made ahead, so "now" would miss approved sprays due before it."""

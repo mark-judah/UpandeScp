@@ -23,6 +23,13 @@ def is_non_target(product: dict | None) -> bool:
 	return product.get("category") == "Foliar" or (product.get("type") or "") in NON_TARGET_TYPES
 
 
+def is_untargeted(product: dict | None) -> bool:
+	"""A pest-control product nobody has registered a target for. The pickers
+	never offer it: guessing its targets is worse than leaving it out. An item
+	that is not a Spray Product at all (water, feed) is not untargeted."""
+	return bool(product) and not is_non_target(product) and not product.get("targets")
+
+
 def _name(ctx, code):
 	return (ctx["products"].get(code) or {}).get("name") or code
 

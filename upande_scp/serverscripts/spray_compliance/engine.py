@@ -72,5 +72,6 @@ def evaluate_candidates(ctx, candidates) -> list[dict]:
 			"codes": R.display_codes(product),
 			"targets": list(product.get("targets") or []),
 			"non_target": R.is_non_target(product),
+			"untargeted": R.is_untargeted(product),
 		})
 	return out

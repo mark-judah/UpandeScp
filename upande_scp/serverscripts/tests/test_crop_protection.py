@@ -65,6 +65,14 @@ def _make_item(code, group):
 	}).insert(ignore_permissions=True)
 
 
+def _give_target(item):
+	"""A chemical with no registered target is never offered by the search, so
+	a test chemical that must show up there needs one."""
+	doc = frappe.get_doc(cp.PRODUCT, {"item": item.name})
+	doc.append("default_targets", {"pest": frappe.db.get_value("Pest", {}, "name")})
+	doc.save(ignore_permissions=True)
+
+
 class TestCropProtection(unittest.TestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -297,6 +305,7 @@ class TestCropProtection(unittest.TestCase):
 		from upande_scp.serverscripts.store import create_bom as cb
 
 		chem = _make_item(f"{_ITEM_PREFIX}CHEM-5", CHEM_GROUP)
+		_give_target(chem)
 		fol = _make_item(f"{_ITEM_PREFIX}FOL-2", FOL_GROUP)
 
 		rows = {r["item_code"]: r for r in sma.list_chemical_items(q=_ITEM_PREFIX)}
@@ -310,6 +319,19 @@ class TestCropProtection(unittest.TestCase):
 		self.assertIn(fol.item_name, payload["fertilizers"])
 		self.assertEqual(payload["item_type_map"][fol.item_name], "fertilizer")
 
+	def test_add_chemical_search_drops_untargeted_chemicals(self):
+		"""A chemical nobody has registered a target for is not fetched at all;
+		a foliar needs no target and stays."""
+		from upande_scp.serverscripts.scouting import scouting_metrics_api as sma
+
+		chem = _make_item(f"{_ITEM_PREFIX}CHEM-7", CHEM_GROUP)
+		fol = _make_item(f"{_ITEM_PREFIX}FOL-3", FOL_GROUP)
+		codes = [r["item_code"] for r in sma.list_chemical_items(q=_ITEM_PREFIX)]
+		self.assertNotIn(chem.name, codes)
+		self.assertIn(fol.name, codes)
+		_give_target(chem)
+		self.assertIn(chem.name, [r["item_code"] for r in sma.list_chemical_items(q=_ITEM_PREFIX)])
+
 	def test_add_chemical_search_matches_item_code(self):
 		"""The Add-chemical search takes a code as well as a name — operators who
 		work from item codes got an empty list before, which reads as the item
@@ -317,6 +339,7 @@ class TestCropProtection(unittest.TestCase):
 		from upande_scp.serverscripts.scouting import scouting_metrics_api as sma
 
 		item = _make_item(f"{_ITEM_PREFIX}CHEM-6", CHEM_GROUP)
+		_give_target(item)
 		frappe.db.set_value("Item", item.name, "item_name", "Zzz Unsearchable Label")
 
 		by_code = [r["item_code"] for r in sma.list_chemical_items(q=item.name)]

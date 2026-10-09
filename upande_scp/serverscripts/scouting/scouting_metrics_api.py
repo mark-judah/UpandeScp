@@ -487,10 +487,17 @@ def list_chemical_items(q=None, limit=50):
     if not groups:
         return []
 
+    from upande_scp.serverscripts.spray_compliance.context import untargeted_items
+
     filters = [
         ["Item", "disabled", "=", 0],
         ["Item", "item_group", "in", list(groups)],
     ]
+    # A pest-control product with no registered target is never offered, so
+    # it is filtered here rather than fetched and hidden by the page.
+    untargeted = untargeted_items()
+    if untargeted:
+        filters.append(["Item", "name", "not in", untargeted])
     # Match the search term against the name OR the code — operators work from
     # both. `or_filters` becomes a single parenthesised OR block ANDed with
     # `filters`, so the item-group restriction still bounds the result set.

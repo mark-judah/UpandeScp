@@ -98,6 +98,13 @@ def test_non_target_classification():
 	assert not R.is_non_target(None)              # unknown product = pest-control
 
 
+def test_untargeted_is_pest_control_without_targets():
+	assert R.is_untargeted(P["UNT"])
+	assert not R.is_untargeted(None)              # not a Spray Product: nothing to hide
+	assert not R.is_untargeted(P["DEL"])          # has targets
+	assert not R.is_untargeted(P["ADJ"]) and not R.is_untargeted(P["FOL"])  # never need one
+
+
 # --- target_match / coverage -------------------------------------------------
 
 def test_target_match_flags_only_off_target_pest_control():

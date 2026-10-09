@@ -1,4 +1,4 @@
-"""API endpoints on kaitet.local. DB test — direct runner. Read-only."""
+"""API endpoints on kaitet.local. DB test — direct runner. Writes are rolled back."""
 
 import unittest
 
@@ -29,7 +29,7 @@ class TestApi(unittest.TestCase):
 		bom = frappe.db.get_value("BOM", {"docstatus": 1, "is_active": 1}, "name")
 		rows = api.eligible_boms("Nowhere", ["Thrips"], [bom])
 		self.assertEqual(rows[0]["bom"], bom)
-		for k in ("eligible", "status", "coverage", "reasons"):
+		for k in ("eligible", "status", "coverage", "reasons", "untargeted"):
 			self.assertIn(k, rows[0])
 
 	def test_can_override(self):
@@ -97,3 +97,42 @@ class TestAnchor(unittest.TestCase):
 		wo.custom_scheduled_application_time = "2026-12-01 06:00:00"
 		p = drafts._compliance_payload(wo, {})
 		self.assertEqual(p["custom_scheduled_application_time"], "2026-12-01 06:00:00")
+
+
+class TestUntargetedNeverOffered(unittest.TestCase):
+	"""A pest-control product with no registered target is filtered on the
+	server: not in the chemical search, not ranked, and no tank mix carrying it
+	is listed. Strips one real product's targets and rolls back."""
+
+	def setUp(self):
+		from upande_scp.serverscripts.common.crop_protection import product_groups
+		row = frappe.db.sql("""select sp.item, b.parent bom from `tabSpray Product` sp
+		                       join `tabItem` i on i.name=sp.item and i.disabled=0 and i.item_group in %(g)s
+		                       join `tabBOM Item` b on b.item_code=sp.item
+		                       join `tabBOM` bm on bm.name=b.parent and bm.is_active=1 and bm.docstatus=1
+		                       where sp.category='Chemical' and exists (select 1 from `tabChemical Targets` t
+		                             where t.parenttype='Spray Product' and t.parent=sp.name)
+		                       limit 1""", {"g": tuple(product_groups())}, as_dict=True)
+		if not row:
+			self.skipTest("no targeted chemical in an active tank mix")
+		self.item, self.bom = row[0].item, row[0].bom
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def _offered(self):
+		from upande_scp.serverscripts.scouting.scouting_metrics_api import list_chemical_items
+		from upande_scp.serverscripts.spray_compliance import context as C
+		return {
+			"search": self.item in [r["item_code"] for r in list_chemical_items(q=self.item)],
+			"ranked": self.item in [r["item"] for r in api.eligible_products("Nowhere", ["Thrips"], [], [self.item])],
+			"bom": self.bom in [r["bom"] for r in api.eligible_boms("Nowhere", ["Thrips"], [self.bom])],
+			"bom_listed": self.bom not in C.boms_with_untargeted([self.bom]),
+		}
+
+	def test_targeted_product_is_offered(self):
+		self.assertEqual(self._offered(), {"search": True, "ranked": True, "bom": True, "bom_listed": True})
+
+	def test_untargeted_product_is_not_fetched(self):
+		frappe.db.sql("delete from `tabChemical Targets` where parenttype='Spray Product' and parent=%s", self.item)
+		self.assertEqual(self._offered(), {"search": False, "ranked": False, "bom": False, "bom_listed": False})

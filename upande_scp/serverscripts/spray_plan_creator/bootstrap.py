@@ -130,6 +130,11 @@ def fetch_creator_bootstrap() -> dict:
         fields=["name", "item_name"] + (["custom_farm"] if frappe.db.has_column("BOM", "custom_farm") else []),
         order_by="modified desc",
     )
+    # A mix carrying a product with no registered target is never offered.
+    from upande_scp.serverscripts.spray_compliance.context import boms_with_untargeted
+
+    skip = boms_with_untargeted([t.name for t in tank_mixes])
+    tank_mixes = [t for t in tank_mixes if t.name not in skip]
 
     rate_limits = _fetch_rate_limits()
 

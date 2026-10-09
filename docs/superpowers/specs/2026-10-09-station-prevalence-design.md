@@ -81,6 +81,9 @@ Same module and screens; stations are trees, grid from row/tree order. Expect wi
 - Pests/Diseases "Distribution" = latest-week adjusted prevalence per observation; the weekly series is the "Trends" card.
 - Trends margin band shows only for one observation with no stage; in that mode the line plots adjusted prevalence so the band surrounds its own line.
 - Houses are keyed block-first: `COALESCE(NULLIF(block,''), greenhouse)`.
+- **Margin floor (final review, 2026-10-09):** the binomial term uses the Agresti–Coull adjusted rate `p̃ = (X + 2) / (N + 4)` (X = infested across counted sections), i.e. `margin = 1.96 · sqrt( s²/m + p̃(1−p̃)/N )`, so an all-clean or all-infested sample never reads ±0. The reported prevalence is unchanged.
+- Trends band mode plots every week a house/farm was scouted for an observation seen there in the window — a clean scouted week is 0%, not a gap; only unscouted weeks are gaps.
+- Latest/previous selection fetches station sets only for each house's latest and previous scouted week; the lookback start snaps to the ISO Monday.
 
 ## Out of scope
 

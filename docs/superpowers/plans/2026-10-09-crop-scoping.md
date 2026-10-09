@@ -27,7 +27,7 @@
   - DB (direct runner; each test rolls back in `tearDown`): `cd /home/ubuntu/stive/code/frappe15/sites && ../env/bin/python -c "import frappe, unittest; frappe.init(site='kaitet.local'); frappe.connect(); frappe.set_user('Administrator'); import importlib; M=importlib.import_module('upande_scp.serverscripts.tests.<module>'); r=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromModule(M)); raise SystemExit(not r.wasSuccessful())"` — written below as **DB-RUN `<module>`**.
   - Frontend: `cd /home/ubuntu/stive/code/frappe15/apps/upande_scp/frontend && npx vitest run <path>`; typecheck `npx tsc --noEmit -p tsconfig.app.json` (plain `-p .` checks nothing: `tsconfig.json` only has references); build `yarn build`.
 - DB tests insert Scouting Entries with **raw SQL** dated in 2031 (no real data there; live max is 2026-09). Raw inserts skip the controller and the cache-busting doc events, so: every aggregate call in a test passes `force="1"` unless the test is about the cache, and Observations tests delete their week keys in `setUp`/`tearDown`.
-- Pre-existing, unrelated: `test_dashboard_aggregates_{overview,pests_diseases,gh_detail,traps,fcm}` already error on kaitet.local (`MandatoryError: [Warehouse, Karen Farm - KR]: custom_farm` in their fixture). Do not "fix" them here; they are not a regression signal.
+- `test_dashboard_aggregates_{overview,pests_diseases,gh_detail,traps,fcm}` pass on kaitet.local (fixture repaired in 3a28b5a, 31 tests). They are a regression signal: every task that touches `dashboard_aggregates/` must keep them green.
 - After Python changes, manual checks need `sudo -n supervisorctl restart frappe15-web:` (workers preload code).
 
 ## Review Focus
@@ -2585,7 +2585,7 @@ export function ThresholdsTab({ crop }: { crop: string }) {
 - [ ] **Step 6: Full server regression**
 
 `cd /home/ubuntu/stive/code/frappe15/apps/upande_scp && ../../env/bin/python -m pytest -q upande_scp/serverscripts/tests/test_crop_catalog_pure.py upande_scp/serverscripts/tests/test_cache_invalidation.py upande_scp/serverscripts/tests/test_dashboard_aggregates_trends.py` → all pass.
-DB-RUN each of: `test_crop_catalog`, `test_crop_scoped_aggregates`, `test_crop_scoped_aggregate_detail`, `test_crop_scoped_observations`, `test_crop_scoped_spray_plan`, `test_thresholds_crop_guard`, `test_crop_scope`, `test_spray_compliance_context`, `test_spray_compliance_api`, `test_dashboard_aggregates_common`, `test_get_complete_scouting_entries` → all `OK`.
+DB-RUN each of: `test_crop_catalog`, `test_crop_scoped_aggregates`, `test_crop_scoped_aggregate_detail`, `test_crop_scoped_observations`, `test_crop_scoped_spray_plan`, `test_thresholds_crop_guard`, `test_crop_scope`, `test_spray_compliance_context`, `test_spray_compliance_api`, `test_dashboard_aggregates_common`, `test_dashboard_aggregates_overview`, `test_dashboard_aggregates_pests_diseases`, `test_dashboard_aggregates_gh_detail`, `test_dashboard_aggregates_traps`, `test_dashboard_aggregates_fcm`, `test_get_complete_scouting_entries` → all `OK`.
 
 - [ ] **Step 7: Manual pass** (spec §Testing)
 

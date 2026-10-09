@@ -201,7 +201,6 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Daily Trend</CardTitle>
-```
           </CardHeader>
           <CardContent className="p-0">
             {detail.daily.length ? (

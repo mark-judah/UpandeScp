@@ -50,6 +50,11 @@ describe("GreenhouseModal 3 × 3", () => {
     });
   });
 
+  it("renders no stray markdown fence text", () => {
+    render(<GreenhouseModal greenhouse="Chepsito GH 01 - KR" fromDate="2031-03-03" toDate="2031-03-09" crop="Rose" onClose={() => {}} />);
+    expect(document.body.textContent).not.toContain("```");
+  });
+
   it("maps the top observation first and switches on click", () => {
     render(<GreenhouseModal greenhouse="Chepsito GH 01 - KR" fromDate="2031-03-03" toDate="2031-03-09" crop="Rose" onClose={() => {}} />);
     expect(screen.getByTestId("section-1-1")).toHaveTextContent("33.3%");

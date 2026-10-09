@@ -1,5 +1,6 @@
 import frappe
 
+from upande_scp.serverscripts.common import crop_catalog
 from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.common.cache_utils import (
     K_CROPS_SCOUTED,
@@ -83,6 +84,11 @@ def _cached_severity_thresholds():
 
 
 CACHE_WINDOW_DAYS = 90  # months older than this serve uncached (see docs/data_caching.md)
+
+# A crop slice older than the rolling window is cached only while it is small.
+# Avocado's weeks are a few hundred rows and cache for all history (what makes
+# its 10-month map fast); a Rose week is the dense one the window exists for.
+SPARSE_SLICE_MAX = 5000
 
 
 def _week_cache_key(iso_year, iso_week, crop=None):
@@ -190,7 +196,7 @@ def _fetch_week_entries(iso_year, iso_week, crop=None):
     monday, sunday = _week_bounds(iso_year, iso_week)
     entries = _build_month_entries(monday.isoformat(), sunday.isoformat(), crop)
 
-    if crop or _is_recent_week(iso_year, iso_week):
+    if _is_recent_week(iso_year, iso_week) or (crop and len(entries) <= SPARSE_SLICE_MAX):
         # 24h TTL. Safe: every scouting write busts the exact ISO week it
         # touches — both the all-crop key and the writing entry's crop key
         # (invalidate_scouting_week_for_doc) — so the active week never serves
@@ -282,45 +288,68 @@ def _build_month_entries(from_date, to_date, crop=None):
     scanning this payload's rows. Dropping these three fields alone cut the
     per-greenhouse weekly payload's raw size by roughly a fifth (measured
     against kaitet.local)."""
-    _filters = [["date_of_capture", "between", [from_date, to_date]]]
-    if crop:
-        _filters.append(["crop_scouted", "=", crop])
-    scouting_entries = frappe.get_all(
-        "Scouting Entry",
-        filters=_filters,
-        fields=[
-            "name",
-            "scouts_name",
-            "greenhouse",
-            "bed",
-            "zone",
-            "block",
-            "`row`",
-            "tree",
-            "crop_scouted",
-            "time_of_capture",
-            "date_of_capture",
-            "latitude",
-            "longitude",
-        ],
-        order_by="date_of_capture desc, time_of_capture desc",
-        limit_page_length=0,
-    )
+    crop_params = crop_catalog.crop_sql_params(crop) if crop else None
+    if crop_params:
+        # D5 in SQL: the crop's rows plus crop-less rows in its greenhouses, in
+        # one query so no entry can appear twice. Raw SQL rather than get_all:
+        # the slice is cached site-wide, so it must not carry the first
+        # caller's permission scope (the crop itself is checked at the endpoint).
+        scouting_entries = frappe.db.sql(
+            f"""
+            SELECT se.name, se.scouts_name, se.greenhouse, se.bed, se.zone, se.block,
+                   se.`row`, se.tree, se.crop_scouted, se.time_of_capture,
+                   se.date_of_capture, se.latitude, se.longitude
+            FROM `tabScouting Entry` se
+            WHERE se.date_of_capture BETWEEN %(from_date)s AND %(to_date)s
+              AND {crop_catalog.entry_crop_condition("se")}
+            ORDER BY se.date_of_capture DESC, se.time_of_capture DESC
+            """,
+            {"from_date": from_date, "to_date": to_date, **crop_params},
+            as_dict=True,
+        )
+    else:
+        scouting_entries = frappe.get_all(
+            "Scouting Entry",
+            filters=[["date_of_capture", "between", [from_date, to_date]]],
+            fields=[
+                "name",
+                "scouts_name",
+                "greenhouse",
+                "bed",
+                "zone",
+                "block",
+                "`row`",
+                "tree",
+                "crop_scouted",
+                "time_of_capture",
+                "date_of_capture",
+                "latitude",
+                "longitude",
+            ],
+            order_by="date_of_capture desc, time_of_capture desc",
+            limit_page_length=0,
+        )
     if not scouting_entries:
         return []
 
     entry_names = [e["name"] for e in scouting_entries]
     entries_dict = {e["name"]: e for e in scouting_entries}
 
+    pest_filters = [["parent", "in", entry_names]]
+    disease_filters = [["parent", "in", entry_names]]
+    if crop_params:
+        # D4: another crop's pest/disease rows are not returned at all.
+        pest_filters.append(["pest", "in", list(crop_params["crop_pests"])])
+        disease_filters.append(["disease", "in", list(crop_params["crop_diseases"])])
     pests = frappe.get_all(
         "Pests Scouting Entry",
-        filters=[["parent", "in", entry_names]],
+        filters=pest_filters,
         fields=["parent", "plant_section", "pest", "stage", "count"],
         limit_page_length=0,
     )
     diseases = frappe.get_all(
         "Diseases Scouting Entry",
-        filters=[["parent", "in", entry_names]],
+        filters=disease_filters,
         fields=["parent", "disease", "plant_section", "stage"],
         limit_page_length=0,
     )
@@ -376,11 +405,11 @@ def getScoutingEntriesChunk(
     avocado) then return only their own rows and cache all history, so a
     long-range single-crop fetch stays fast. Omitted → the all-crop slice.
     """
+    crop = crop_catalog.resolve_crop(crop or frappe.form_dict.get("crop")) or None
     try:
         from_date = from_date or frappe.form_dict.get("from_date")
         to_date = to_date or frappe.form_dict.get("to_date")
         greenhouse_filter = greenhouse or frappe.form_dict.get("greenhouse")
-        crop = crop or frappe.form_dict.get("crop") or None
         include_meta_flag = str(include_meta).lower() in ("1", "true", "yes")
 
         if not from_date or not to_date:

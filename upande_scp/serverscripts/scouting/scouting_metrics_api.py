@@ -14,7 +14,7 @@ import frappe
 
 from upande_scp.serverscripts.common.tank_mix import tank_mix_item_group
 
-from upande_scp.serverscripts.common import crop_scope
+from upande_scp.serverscripts.common import crop_catalog, crop_scope
 from upande_scp.serverscripts.common import farm_map
 
 from upande_scp.serverscripts.scouting import scouting_metrics
@@ -101,6 +101,7 @@ def get_farms_and_warehouses(crop=None):
         scouting_metrics.get_farms_and_warehouses,
         ttl=TTL_MEDIUM,
     ) or {}
+    crop = crop_catalog.resolve_crop(crop) or None
     allowed = crop_scope.scoped_farms(crop, frappe.session.user)
     if allowed is None:
         return farms

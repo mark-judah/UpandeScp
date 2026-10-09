@@ -116,5 +116,44 @@ class TestCropCatalogSourceBumps(unittest.TestCase):
                 self.assertIn(cu.K_CROP_CATALOG, [a for c in inv.call_args_list for a in c.args])
 
 
+class TestCropSliceInvalidation(unittest.TestCase):
+    def test_a_rose_write_busts_the_rose_slice_too(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        doc = SimpleNamespace(doctype="Scouting Entry", date_of_capture="2025-05-01",
+                              crop_scouted="Rose", greenhouse="GH")
+        with patch.object(cu, "scouting_payload_version", return_value=7), \
+             patch.object(cu, "invalidate") as inv:
+            cu.invalidate_scouting_week_for_doc(doc)
+        self.assertEqual(
+            [c.args[0] for c in inv.call_args_list],
+            [f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:2025-W18",
+             f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:Rose:2025-W18"],
+        )
+
+    def test_a_crop_less_write_busts_its_greenhouse_crop(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        from upande_scp.serverscripts.common import crop_catalog
+        doc = SimpleNamespace(doctype="Scouting Entry", date_of_capture="2025-05-01",
+                              crop_scouted=None, greenhouse="Chepsito GH 01 - KR")
+        with patch.object(cu, "scouting_payload_version", return_value=7), \
+             patch.object(crop_catalog, "crop_for_greenhouse", return_value="Rose"), \
+             patch.object(cu, "invalidate") as inv:
+            cu.invalidate_scouting_week_for_doc(doc)
+        self.assertIn(f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:Rose:2025-W18",
+                      [c.args[0] for c in inv.call_args_list])
+
+    def test_a_crop_less_block_write_busts_its_blocks_crop(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        from upande_scp.serverscripts.common import crop_catalog
+        doc = SimpleNamespace(doctype="Scouting Entry", date_of_capture="2025-05-01",
+                              crop_scouted=None, greenhouse=None, block="Block 1 - L")
+        with patch.object(cu, "scouting_payload_version", return_value=7), \
+             patch.object(crop_catalog, "crop_for_greenhouse", return_value="Avocado"), \
+             patch.object(cu, "invalidate") as inv:
+            cu.invalidate_scouting_week_for_doc(doc)
+        self.assertIn(f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:Avocado:2025-W18",
+                      [c.args[0] for c in inv.call_args_list])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -163,15 +163,29 @@ def invalidate_scouting_week(iso_year, iso_week, crop=None):
 
 
 def _resolve_scouting_crop(doc):
-    """Best-effort ``crop_scouted`` for a scouting-related doc (child rows walk
-    to their parent). ``None`` when unresolvable."""
+    """Best-effort crop for a scouting-related doc (child rows walk to their
+    parent). A row with no ``crop_scouted`` belongs to its greenhouse's (or
+    block's) crop (spec D5), because that is the slice it is served in.
+    ``None`` when unresolvable."""
     dt = getattr(doc, "doctype", None)
+    crop = place = None
     if dt == "Scouting Entry":
-        return getattr(doc, "crop_scouted", None)
-    if dt in ("Pests Scouting Entry", "Diseases Scouting Entry", "Trap Scouting Entry"):
+        crop = getattr(doc, "crop_scouted", None)
+        place = getattr(doc, "greenhouse", None) or getattr(doc, "block", None)
+    elif dt in ("Pests Scouting Entry", "Diseases Scouting Entry", "Trap Scouting Entry"):
         parent = getattr(doc, "parent", None)
         if parent:
-            return frappe.db.get_value("Scouting Entry", parent, "crop_scouted")
+            row = frappe.db.get_value(
+                "Scouting Entry", parent, ["crop_scouted", "greenhouse", "block"], as_dict=True
+            ) or {}
+            crop = row.get("crop_scouted")
+            place = row.get("greenhouse") or row.get("block")
+    if crop:
+        return crop
+    if place:
+        from upande_scp.serverscripts.common import crop_catalog
+
+        return crop_catalog.crop_for_greenhouse(place)
     return None
 
 
@@ -199,8 +213,9 @@ def invalidate_scouting_week_for_doc(doc):
     invalidate_scouting_week(iso[0], iso[1])  # all-crop slice
     # Also bust the crop-scoped slice (avocado etc.) so single-crop fetches,
     # which cache all history, don't serve stale data for the touched week.
+    # Rose is a scoped slice too now (the route always sends the crop).
     crop = _resolve_scouting_crop(doc)
-    if crop and crop != "Rose":
+    if crop:
         invalidate_scouting_week(iso[0], iso[1], crop)
 
 

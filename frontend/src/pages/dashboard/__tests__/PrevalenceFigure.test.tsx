@@ -33,6 +33,23 @@ describe("PrevalenceFigure", () => {
     expect(screen.getByTestId("reliability-pill")).toHaveTextContent("Low");
   });
 
+  it("shows the share of houses per reliability for a scope-wide figure", () => {
+    render(<PrevalenceFigure fig={{ ...fig, reliability: "Low", houses: 95, reliability_mix: { Good: 64, Fair: 28, Low: 3 } }} />);
+    expect(screen.getByTestId("reliability-mix")).toHaveTextContent("Good 64 · Fair 28 · Low 3");
+    expect(screen.queryByTestId("reliability-pill")).toBeNull();
+    expect(screen.getByTestId("prevalence-figure").getAttribute("title")).toMatch(/Good 64 · Fair 28 · Low 3/);
+  });
+
+  it("hides empty ratings in the share and keeps the pill for one house", () => {
+    const { unmount } = render(<PrevalenceFigure fig={{ ...fig, houses: 2, reliability_mix: { Good: 2, Fair: 0, Low: 0 } }} />);
+    expect(screen.getByTestId("reliability-mix")).toHaveTextContent("Good 2");
+    expect(screen.getByTestId("reliability-mix")).not.toHaveTextContent("Fair");
+    unmount();
+    render(<PrevalenceFigure fig={{ ...fig, houses: 1, reliability_mix: { Good: 0, Fair: 1, Low: 0 } }} />);
+    expect(screen.getByTestId("reliability-pill")).toHaveTextContent("Fair");
+    expect(screen.queryByTestId("reliability-mix")).toBeNull();
+  });
+
   it("uses no coloured left border", () => {
     render(<PrevalenceFigure fig={fig} />);
     const el = screen.getByTestId("prevalence-figure");

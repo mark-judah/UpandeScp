@@ -261,6 +261,15 @@ class TestCombine(unittest.TestCase):
         # sqrt((81·9.3)² · 2) / 162 = 9.3 / sqrt(2) = 6.58 → 6.6
         self.assertEqual((out["prevalence"], out["margin"]), (0.0, 6.6))
 
+    def test_combine_reports_the_share_of_houses_per_reliability(self):
+        # The scope pill shows how many houses are Good / Fair / Low, not the worst one.
+        out = P.combine([self.fig(100, 10.0, 4.0, "Good"), self.fig(100, 10.0, 4.0, "Good"),
+                         self.fig(300, 30.0, 6.0, "Fair"), self.fig(50, 5.0, None, "Low")])
+        self.assertEqual(out["reliability_mix"], {"Good": 2, "Fair": 1, "Low": 1})
+        self.assertEqual(out["houses"], 4)
+        self.assertIn("reliability_mix", P.public(out))
+        self.assertEqual(P.public(out)["houses"], 4)
+
     def test_houses_without_figures_are_skipped(self):
         self.assertIsNone(P.combine([None, P.figures({}, {"a"}, set())]))
 

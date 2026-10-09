@@ -21,6 +21,10 @@ export interface PrevalenceFigures {
   scouted?: number;
   stations?: number;
   week?: string | null;
+  /** scope-wide figures only: how many houses rate Good / Fair / Low */
+  reliability_mix?: Partial<Record<Reliability, number>> | null;
+  /** scope-wide figures only: houses combined */
+  houses?: number;
 }
 
 export interface SectionCell {
@@ -42,12 +46,29 @@ export function figureLine(f: PrevalenceFigures): string {
   return `${f.prevalence}%${was} · ${margin} · ${f.sections_scouted}/${f.sections_total ?? 9}`;
 }
 
-/** Hover text: what each of the four figures means, one line each. */
+const RATINGS: Reliability[] = ["Good", "Fair", "Low"];
+
+/** The reliability share to show, or null when the figure is one house's. */
+export function reliabilityMix(f: PrevalenceFigures): { rating: Reliability; count: number }[] | null {
+  if (!f.reliability_mix || (f.houses ?? 0) < 2) return null;
+  const parts = RATINGS.map((rating) => ({ rating, count: f.reliability_mix?.[rating] ?? 0 })).filter((p) => p.count > 0);
+  return parts.length ? parts : null;
+}
+
+/** "Good 64 · Fair 28 · Low 3" */
+export function mixLabel(parts: { rating: Reliability; count: number }[]): string {
+  return parts.map((p) => `${p.rating} ${p.count}`).join(" · ");
+}
+
+/** Hover text: what each of the four figures means, one line each (plus the
+ *  houses' reliability share on a scope-wide figure). */
 export function figureTooltip(f: PrevalenceFigures): string {
+  const mix = reliabilityMix(f);
   return [
     "Prevalence: share of scouted stations carrying it, each part of the house counted equally (latest scouted week)",
     "Was: the same figure for the previous scouted week",
     "±: 95% margin, from how much the parts of the house disagree and how many stations were scouted",
     `${f.sections_scouted}/${f.sections_total ?? 9}: parts of the house (3 × 3 grid) with at least 3 stations scouted`,
+    ...(mix ? [`Houses by reliability: ${mixLabel(mix)}`] : []),
   ].join("\n");
 }

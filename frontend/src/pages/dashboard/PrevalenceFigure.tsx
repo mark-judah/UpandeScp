@@ -2,6 +2,8 @@ import { cn } from "@/lib/utils";
 import {
   figureLine,
   figureTooltip,
+  mixLabel,
+  reliabilityMix,
   type PrevalenceFigures,
   type Reliability,
 } from "@/lib/prevalence";
@@ -27,7 +29,24 @@ export function ReliabilityPill({ value }: { value: Reliability }) {
   );
 }
 
-/** `34% (was 50%) · ±6 · 8/9` + reliability pill; hover explains the figures. */
+/** "Good 64 · Fair 28 · Low 3" — each rating in its own tone, as text. */
+export function ReliabilityMix({ parts }: { parts: { rating: Reliability; count: number }[] }) {
+  return (
+    <span data-testid="reliability-mix" aria-label={`Houses by reliability: ${mixLabel(parts)}`} className="whitespace-nowrap text-[0.6rem] font-medium">
+      {parts.map((p, i) => (
+        <span key={p.rating}>
+          {i > 0 && <span className="text-muted-foreground"> · </span>}
+          <span style={{ color: TONE[p.rating] }}>
+            {p.rating} {p.count}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** `34% (was 50%) · ±6 · 8/9` + reliability pill (one house) or the houses'
+ *  reliability share (a scope); hover explains the figures. */
 export function PrevalenceFigure({
   fig,
   className,
@@ -36,6 +55,7 @@ export function PrevalenceFigure({
   className?: string;
 }) {
   if (!fig) return null;
+  const mix = reliabilityMix(fig);
   return (
     <div
       data-testid="prevalence-figure"
@@ -46,7 +66,7 @@ export function PrevalenceFigure({
       )}
     >
       <span className="truncate">{figureLine(fig)}</span>
-      <ReliabilityPill value={fig.reliability} />
+      {mix ? <ReliabilityMix parts={mix} /> : <ReliabilityPill value={fig.reliability} />}
     </div>
   );
 }

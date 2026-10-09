@@ -40,12 +40,14 @@ NO_STATIONS = "no stations set up"
 PUBLIC_KEYS = (
     "prevalence", "prev", "margin", "sections_scouted", "sections_total",
     "reliability", "reason", "raw", "coverage", "scouted", "stations", "week",
+    "reliability_mix", "houses",
 )
 EMPTY = {
     "prevalence": None, "prev": None, "margin": None,
     "sections_scouted": 0, "sections_total": SECTIONS,
     "reliability": "Low", "reason": NO_STATIONS,
     "raw": None, "coverage": None, "scouted": 0, "stations": 0, "week": None,
+    "reliability_mix": None, "houses": 0,
 }
 
 # Digits at the very end of a name: "… - Bed 77", "… - Row 10", "…_T38".
@@ -197,7 +199,9 @@ def combine(figs):
     Prevalence is the station-weighted mean of the houses' adjusted prevalence
     ("how much of the farm"). The margin is the weighted houses' margins added in
     quadrature — unknown (``None``) as soon as one house is too clustered to judge.
-    Reliability is the worst house's. Houses without figures are skipped.
+    ``reliability`` is the worst house's; ``reliability_mix`` counts the houses per
+    rating, which is what the dashboard shows for a scope (one Low house among 95
+    would otherwise make every scope read Low). Houses without figures are skipped.
     """
     figs = [f for f in (figs or []) if f and f.get("prevalence") is not None and f.get("stations")]
     if not figs:
@@ -223,6 +227,7 @@ def combine(figs):
         "sections_scouted": sum(f.get("sections_scouted") or 0 for f in figs),
         "sections_total": sum(f.get("sections_total") or SECTIONS for f in figs),
         "reliability": RELIABILITY[worst],
+        "reliability_mix": {r: sum(1 for f in figs if (f.get("reliability") or "Low") == r) for r in RELIABILITY},
         "reason": CLUSTERED if margin is None else None,
         "houses": len(figs),
         "sections": [],

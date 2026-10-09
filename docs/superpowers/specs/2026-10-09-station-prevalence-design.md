@@ -76,7 +76,7 @@ Same module and screens; stations are trees, grid from row/tree order. Expect wi
 ## Clarifications from planning (2026-10-09)
 
 - No section has ≥ 3 scouted stations (m = 0) → prevalence falls back to `raw`, margin None, reason "too clustered to judge", Low.
-- Scope-wide figures (several houses): station-weighted mean of house prevalences, margins combined in quadrature, reliability = the worst house's, spread shown as sections scouted / sections in scope; any house with margin None makes the combined margin None.
+- Scope-wide figures (several houses): station-weighted mean of house prevalences, margins combined in quadrature, reliability shown as the share of houses per rating (`reliability_mix`, e.g. Good 64 · Fair 28 · Low 3 — user's choice, 2026-10-09; `reliability` keeps the worst house's for back-compat), spread shown as sections scouted / sections in scope; any house with margin None makes the combined margin None.
 - "Was" = the latest scouted week before the shown week, looked up to 35 days back.
 - Pests/Diseases "Distribution" = latest-week adjusted prevalence per observation; the weekly series is the "Trends" card.
 - Trends margin band shows only for one observation with no stage; in that mode the line plots adjusted prevalence so the band surrounds its own line.

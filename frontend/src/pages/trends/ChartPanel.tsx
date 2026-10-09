@@ -50,6 +50,7 @@ import {
   type MatrixIndex,
   type PrevalencePoint,
 } from "./aggregate";
+import { RevealLTR } from "@/components/RevealLTR";
 
 function SideLegend({
   items,
@@ -588,149 +589,151 @@ export function ChartPanel({
           className="flex flex-col md:flex-row gap-3 items-stretch"
         >
           <div className="flex-1 min-w-0">
-            <ChartContainer
-              config={config}
-              className={cn("w-full", child ? "h-48" : "h-64")}
-            >
-              <ComposedChart
-                data={chartData}
-                margin={{ left: 4, right: 8, top: 8 }}
-                onMouseLeave={leave}
+            <RevealLTR>
+              <ChartContainer
+                config={config}
+                className={cn("w-full", child ? "h-48" : "h-64")}
               >
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  interval={0}
-                  minTickGap={0}
-                  tickFormatter={weekLabelTickFormatter}
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  width={36}
-                  domain={[0, yMax]}
-                  allowDecimals={yMax <= 5}
-                  tickFormatter={(v: number) => `${v}%`}
-                />
-                <ChartTooltip
-                  content={
-                    <IncidenceTooltip
-                      statsByWeek={statsByWeek}
-                      unitLabelPlural={payload.unitLabelPlural || "zones"}
-                      sprayByWeek={sprayByWeek}
-                      prevalenceByWeek={prevalenceByWeek}
-                    />
-                  }
-                />
-                {/* Control actions. Solid + labelled when the spray targeted the
-                    charted observation; faint when it was for something else. */}
-                {sprayMarks.map((m) => (
-                  <ReferenceLine
-                    key={`spray:${m.week}`}
-                    x={m.week}
-                    stroke="var(--sd-data-violet, #7c3aed)"
-                    strokeWidth={m.onTarget ? 1.6 : 1}
-                    strokeDasharray={m.onTarget ? undefined : "2 4"}
-                    strokeOpacity={m.onTarget ? 0.75 : 0.3}
-                    label={
-                      m.onTarget
-                        ? {
-                            value: "spray",
-                            position: "insideTopLeft",
-                            fill: "var(--sd-data-violet, #7c3aed)",
-                            fontSize: 9,
-                          }
-                        : undefined
+                <ComposedChart
+                  data={chartData}
+                  margin={{ left: 4, right: 8, top: 8 }}
+                  onMouseLeave={leave}
+                >
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                    minTickGap={0}
+                    tickFormatter={weekLabelTickFormatter}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    width={36}
+                    domain={[0, yMax]}
+                    allowDecimals={yMax <= 5}
+                    tickFormatter={(v: number) => `${v}%`}
+                  />
+                  <ChartTooltip
+                    content={
+                      <IncidenceTooltip
+                        statsByWeek={statsByWeek}
+                        unitLabelPlural={payload.unitLabelPlural || "zones"}
+                        sprayByWeek={sprayByWeek}
+                        prevalenceByWeek={prevalenceByWeek}
+                      />
                     }
                   />
-                ))}
-                {band && band.low ? (
-                  <ReferenceLine
-                    y={band.low}
-                    stroke="var(--sd-data-green, #16a34a)"
-                    strokeDasharray="4 3"
-                    strokeWidth={1.2}
-                    ifOverflow="extendDomain"
-                    label={renderThresholdLabel(
-                      "Low",
-                      band.low,
-                      obs?.label || title,
-                      child?.stage,
-                      "var(--sd-data-green, #16a34a)",
-                    )}
-                  />
-                ) : null}
-                {band && band.moderate ? (
-                  <ReferenceLine
-                    y={band.moderate}
-                    stroke="var(--sd-target, #d97706)"
-                    strokeDasharray="4 3"
-                    strokeWidth={1.2}
-                    ifOverflow="extendDomain"
-                    label={renderThresholdLabel(
-                      "Moderate",
-                      band.moderate,
-                      obs?.label || title,
-                      child?.stage,
-                      "var(--sd-target, #d97706)",
-                    )}
-                  />
-                ) : null}
-                {band && band.high ? (
-                  <ReferenceLine
-                    y={band.high}
-                    stroke="var(--sd-data-red, #dc2626)"
-                    strokeDasharray="4 3"
-                    strokeWidth={1.4}
-                    ifOverflow="extendDomain"
-                    label={renderThresholdLabel(
-                      "High",
-                      band.high,
-                      obs?.label || title,
-                      child?.stage,
-                      "var(--sd-data-red, #dc2626)",
-                    )}
-                  />
-                ) : null}
-                {bandMode &&
-                  selections.map((s, i) => (
-                    <Area
-                      key={`band:${s.kind}:${s.label}`}
-                      type="monotone"
-                      dataKey={`${s.label}${BAND_SUFFIX}`}
-                      stroke="none"
-                      fill={PALETTE[i % PALETTE.length]}
-                      fillOpacity={hovered != null && hovered !== s.label ? 0.04 : 0.12}
-                      activeDot={false}
-                      legendType="none"
-                      isAnimationActive={false}
+                  {/* Control actions. Solid + labelled when the spray targeted the
+                      charted observation; faint when it was for something else. */}
+                  {sprayMarks.map((m) => (
+                    <ReferenceLine
+                      key={`spray:${m.week}`}
+                      x={m.week}
+                      stroke="var(--sd-data-violet, #7c3aed)"
+                      strokeWidth={m.onTarget ? 1.6 : 1}
+                      strokeDasharray={m.onTarget ? undefined : "2 4"}
+                      strokeOpacity={m.onTarget ? 0.75 : 0.3}
+                      label={
+                        m.onTarget
+                          ? {
+                              value: "spray",
+                              position: "insideTopLeft",
+                              fill: "var(--sd-data-violet, #7c3aed)",
+                              fontSize: 9,
+                            }
+                          : undefined
+                      }
                     />
                   ))}
-                {selections.map((s, i) => {
-                  const isHover = hovered === s.label;
-                  const dim = hovered != null && !isHover;
-                  return (
-                    <Line
-                      key={`${s.kind}:${s.label}`}
-                      type="monotone"
-                      dataKey={s.label}
-                      name={s.kind === "farm" ? `${s.label} (farm)` : s.label}
-                      stroke={PALETTE[i % PALETTE.length]}
-                      strokeWidth={isHover ? 3 : 2}
-                      strokeOpacity={dim ? 0.25 : 1}
-                      dot={false}
-                      activeDot={{ r: isHover ? 5 : 3 }}
-                      connectNulls
-                      isAnimationActive={false}
-                      onMouseEnter={() => enter(s.label)}
-                      onMouseLeave={leave}
+                  {band && band.low ? (
+                    <ReferenceLine
+                      y={band.low}
+                      stroke="var(--sd-data-green, #16a34a)"
+                      strokeDasharray="4 3"
+                      strokeWidth={1.2}
+                      ifOverflow="extendDomain"
+                      label={renderThresholdLabel(
+                        "Low",
+                        band.low,
+                        obs?.label || title,
+                        child?.stage,
+                        "var(--sd-data-green, #16a34a)",
+                      )}
                     />
-                  );
-                })}
-              </ComposedChart>
-            </ChartContainer>
+                  ) : null}
+                  {band && band.moderate ? (
+                    <ReferenceLine
+                      y={band.moderate}
+                      stroke="var(--sd-target, #d97706)"
+                      strokeDasharray="4 3"
+                      strokeWidth={1.2}
+                      ifOverflow="extendDomain"
+                      label={renderThresholdLabel(
+                        "Moderate",
+                        band.moderate,
+                        obs?.label || title,
+                        child?.stage,
+                        "var(--sd-target, #d97706)",
+                      )}
+                    />
+                  ) : null}
+                  {band && band.high ? (
+                    <ReferenceLine
+                      y={band.high}
+                      stroke="var(--sd-data-red, #dc2626)"
+                      strokeDasharray="4 3"
+                      strokeWidth={1.4}
+                      ifOverflow="extendDomain"
+                      label={renderThresholdLabel(
+                        "High",
+                        band.high,
+                        obs?.label || title,
+                        child?.stage,
+                        "var(--sd-data-red, #dc2626)",
+                      )}
+                    />
+                  ) : null}
+                  {bandMode &&
+                    selections.map((s, i) => (
+                      <Area
+                        key={`band:${s.kind}:${s.label}`}
+                        type="monotone"
+                        dataKey={`${s.label}${BAND_SUFFIX}`}
+                        stroke="none"
+                        fill={PALETTE[i % PALETTE.length]}
+                        fillOpacity={hovered != null && hovered !== s.label ? 0.04 : 0.12}
+                        activeDot={false}
+                        legendType="none"
+                        isAnimationActive={false}
+                      />
+                    ))}
+                  {selections.map((s, i) => {
+                    const isHover = hovered === s.label;
+                    const dim = hovered != null && !isHover;
+                    return (
+                      <Line
+                        key={`${s.kind}:${s.label}`}
+                        type="monotone"
+                        dataKey={s.label}
+                        name={s.kind === "farm" ? `${s.label} (farm)` : s.label}
+                        stroke={PALETTE[i % PALETTE.length]}
+                        strokeWidth={isHover ? 3 : 2}
+                        strokeOpacity={dim ? 0.25 : 1}
+                        dot={false}
+                        activeDot={{ r: isHover ? 5 : 3 }}
+                        connectNulls
+                        isAnimationActive={false}
+                        onMouseEnter={() => enter(s.label)}
+                        onMouseLeave={leave}
+                      />
+                    );
+                  })}
+                </ComposedChart>
+              </ChartContainer>
+            </RevealLTR>
           </div>
           <div className="md:w-48 shrink-0 md:border-l md:pl-3 pt-2 md:pt-0">
             <SideLegend
@@ -757,53 +760,55 @@ export function ChartPanel({
                 Pest pressure — mean count per{" "}
                 {(payload.unitLabelPlural || "zones").replace(/s$/, "")} scouted
               </div>
-              <ChartContainer config={config} className="w-full h-32">
-                <LineChart
-                  data={pressureData}
-                  margin={{ left: 4, right: 8, top: 4 }}
-                  onMouseLeave={leave}
-                >
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                    minTickGap={0}
-                    tickFormatter={weekLabelTickFormatter}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    width={36}
-                    allowDecimals
-                  />
-                  <ChartTooltip
-                    content={<ChartTooltipContent indicator="line" />}
-                  />
-                  {selections.map((s, i) => {
-                    const isHover = hovered === s.label;
-                    const dim = hovered != null && !isHover;
-                    return (
-                      <Line
-                        key={`pressure:${s.label}`}
-                        type="monotone"
-                        dataKey={s.label}
-                        name={s.label}
-                        stroke={PALETTE[i % PALETTE.length]}
-                        strokeWidth={isHover ? 3 : 2}
-                        strokeOpacity={dim ? 0.25 : 1}
-                        dot={false}
-                        activeDot={{ r: isHover ? 5 : 3 }}
-                        connectNulls
-                        isAnimationActive={false}
-                        onMouseEnter={() => enter(s.label)}
-                        onMouseLeave={leave}
-                      />
-                    );
-                  })}
-                </LineChart>
-              </ChartContainer>
+              <RevealLTR>
+                <ChartContainer config={config} className="w-full h-32">
+                  <LineChart
+                    data={pressureData}
+                    margin={{ left: 4, right: 8, top: 4 }}
+                    onMouseLeave={leave}
+                  >
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                      minTickGap={0}
+                      tickFormatter={weekLabelTickFormatter}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      width={36}
+                      allowDecimals
+                    />
+                    <ChartTooltip
+                      content={<ChartTooltipContent indicator="line" />}
+                    />
+                    {selections.map((s, i) => {
+                      const isHover = hovered === s.label;
+                      const dim = hovered != null && !isHover;
+                      return (
+                        <Line
+                          key={`pressure:${s.label}`}
+                          type="monotone"
+                          dataKey={s.label}
+                          name={s.label}
+                          stroke={PALETTE[i % PALETTE.length]}
+                          strokeWidth={isHover ? 3 : 2}
+                          strokeOpacity={dim ? 0.25 : 1}
+                          dot={false}
+                          activeDot={{ r: isHover ? 5 : 3 }}
+                          connectNulls
+                          isAnimationActive={false}
+                          onMouseEnter={() => enter(s.label)}
+                          onMouseLeave={leave}
+                        />
+                      );
+                    })}
+                  </LineChart>
+                </ChartContainer>
+              </RevealLTR>
             </div>
             <div className="md:w-48 shrink-0" />
           </div>

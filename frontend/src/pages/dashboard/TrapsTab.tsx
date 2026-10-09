@@ -87,25 +87,27 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
           </CardHeader>
           <CardContent className="p-0">
             {ranking.length ? (
-              <RevealLTR><ChartContainer config={barConfig} className="h-72">
-                <BarChart
-                  data={ranking.slice(0, 10)}
-                  layout="vertical"
-                  margin={{ left: 12, right: 12 }}
-                >
-                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                  <XAxis type="number" tickLine={false} axisLine={false} />
-                  <YAxis
-                    type="category"
-                    dataKey="trap"
-                    tickLine={false}
-                    axisLine={false}
-                    width={120}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-                  <Bar isAnimationActive={false} dataKey="total" fill="var(--color-total)" radius={[4, 4, 4, 4]} />
-                </BarChart>
-              </ChartContainer></RevealLTR>
+              <RevealLTR>
+                <ChartContainer config={barConfig} className="h-72">
+                  <BarChart
+                    data={ranking.slice(0, 10)}
+                    layout="vertical"
+                    margin={{ left: 12, right: 12 }}
+                  >
+                    <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                    <XAxis type="number" tickLine={false} axisLine={false} />
+                    <YAxis
+                      type="category"
+                      dataKey="trap"
+                      tickLine={false}
+                      axisLine={false}
+                      width={120}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                    <Bar isAnimationActive={false} dataKey="total" fill="var(--color-total)" radius={[4, 4, 4, 4]} />
+                  </BarChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -119,26 +121,28 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
           </CardHeader>
           <CardContent className="p-0">
             {breakdown.length ? (
-              <RevealLTR><ChartContainer config={pieConfig} className="h-72">
-                <PieChart>
-                  <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                  <Pie
-                    data={breakdown}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius="55%"
-                    outerRadius="90%"
-                    stroke="var(--sd-card)"
-                    strokeWidth={2}
-                    isAnimationActive={false}
-                  >
-                    {breakdown.map((b, i) => (
-                      <Cell key={b.name} fill={PALETTE[i % PALETTE.length]} />
-                    ))}
-                  </Pie>
-                  <ChartLegend content={<ChartLegendContent />} />
-                </PieChart>
-              </ChartContainer></RevealLTR>
+              <RevealLTR>
+                <ChartContainer config={pieConfig} className="h-72">
+                  <PieChart>
+                    <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+                    <Pie
+                      data={breakdown}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius="55%"
+                      outerRadius="90%"
+                      stroke="var(--sd-card)"
+                      strokeWidth={2}
+                      isAnimationActive={false}
+                    >
+                      {breakdown.map((b, i) => (
+                        <Cell key={b.name} fill={PALETTE[i % PALETTE.length]} />
+                      ))}
+                    </Pie>
+                    <ChartLegend content={<ChartLegendContent />} />
+                  </PieChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}

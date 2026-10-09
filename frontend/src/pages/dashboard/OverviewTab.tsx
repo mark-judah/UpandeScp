@@ -138,49 +138,51 @@ export function OverviewTab({
           </CardHeader>
           <CardContent className="p-0">
             {daily.length ? (
-              <RevealLTR><ChartContainer config={series} className="h-64">
-                <AreaChart data={daily} margin={{ left: 4, right: 8, top: 8 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                    minTickGap={0}
-                    tickFormatter={weekTickFormatter}
-                  />
-                  <YAxis tickLine={false} axisLine={false} width={32} />
-                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Area
-                    type="monotone"
-                    dataKey="pests"
-                    stackId="1"
-                    stroke="var(--color-pests)"
-                    fill="var(--color-pests)"
-                    fillOpacity={0.18}
-                    isAnimationActive={false}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="diseases"
-                    stackId="1"
-                    stroke="var(--color-diseases)"
-                    fill="var(--color-diseases)"
-                    fillOpacity={0.18}
-                    isAnimationActive={false}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="traps"
-                    stackId="1"
-                    stroke="var(--color-traps)"
-                    fill="var(--color-traps)"
-                    fillOpacity={0.18}
-                    isAnimationActive={false}
-                  />
-                </AreaChart>
-              </ChartContainer></RevealLTR>
+              <RevealLTR>
+                <ChartContainer config={series} className="h-64">
+                  <AreaChart data={daily} margin={{ left: 4, right: 8, top: 8 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                      minTickGap={0}
+                      tickFormatter={weekTickFormatter}
+                    />
+                    <YAxis tickLine={false} axisLine={false} width={32} />
+                    <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Area
+                      type="monotone"
+                      dataKey="pests"
+                      stackId="1"
+                      stroke="var(--color-pests)"
+                      fill="var(--color-pests)"
+                      fillOpacity={0.18}
+                      isAnimationActive={false}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="diseases"
+                      stackId="1"
+                      stroke="var(--color-diseases)"
+                      fill="var(--color-diseases)"
+                      fillOpacity={0.18}
+                      isAnimationActive={false}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="traps"
+                      stackId="1"
+                      stroke="var(--color-traps)"
+                      fill="var(--color-traps)"
+                      fillOpacity={0.18}
+                      isAnimationActive={false}
+                    />
+                  </AreaChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint title="No timeline data" hint="No observations recorded in this range." />
             )}
@@ -195,25 +197,27 @@ export function OverviewTab({
           <CardContent className="p-0 relative">
             {totalsMax > 1 ? (
               <>
-                <RevealLTR><ChartContainer config={series} className="h-56">
-                  <PieChart>
-                    <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                    <Pie
-                      data={totals}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius="58%"
-                      outerRadius="90%"
-                      stroke="var(--sd-card)"
-                      strokeWidth={2}
-                      isAnimationActive={false}
-                    >
-                      {totals.map((t) => (
-                        <Cell key={t.name} fill={`var(--color-${t.name})`} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ChartContainer></RevealLTR>
+                <RevealLTR>
+                  <ChartContainer config={series} className="h-56">
+                    <PieChart>
+                      <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+                      <Pie
+                        data={totals}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius="58%"
+                        outerRadius="90%"
+                        stroke="var(--sd-card)"
+                        strokeWidth={2}
+                        isAnimationActive={false}
+                      >
+                        {totals.map((t) => (
+                          <Cell key={t.name} fill={`var(--color-${t.name})`} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ChartContainer>
+                </RevealLTR>
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="flex flex-col items-center">
                     <span className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
@@ -240,33 +244,35 @@ export function OverviewTab({
           </CardHeader>
           <CardContent className="p-0">
             {scoutsDaily.length ? (
-              <RevealLTR><ChartContainer
-                config={{ scouts: { label: "Scouts", color: "var(--sd-data-indigo)" } }}
-                className="h-48"
-              >
-                <LineChart data={scoutsDaily} margin={{ left: 4, right: 8, top: 8 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                    minTickGap={0}
-                    tickFormatter={weekTickFormatter}
-                  />
-                  <YAxis tickLine={false} axisLine={false} width={28} />
-                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-                  <Line
-                    type="monotone"
-                    dataKey="scouts"
-                    stroke="var(--sd-data-indigo)"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ChartContainer></RevealLTR>
+              <RevealLTR>
+                <ChartContainer
+                  config={{ scouts: { label: "Scouts", color: "var(--sd-data-indigo)" } }}
+                  className="h-48"
+                >
+                  <LineChart data={scoutsDaily} margin={{ left: 4, right: 8, top: 8 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                      minTickGap={0}
+                      tickFormatter={weekTickFormatter}
+                    />
+                    <YAxis tickLine={false} axisLine={false} width={28} />
+                    <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                    <Line
+                      type="monotone"
+                      dataKey="scouts"
+                      stroke="var(--sd-data-indigo)"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -315,32 +321,34 @@ export function OverviewTab({
         </CardHeader>
         <CardContent className="p-0">
           {perf.length ? (
-            <RevealLTR><ChartContainer
-              config={{
-                zones: { label: "Zones", color: "var(--sd-data-cyan)" },
-                pests: { label: "Pests", color: "var(--sd-data-amber)" },
-                diseases: { label: "Diseases", color: "var(--sd-data-pink)" },
-              }}
-              className="h-64"
-            >
-              <BarChart data={perf} margin={{ left: 12, right: 12, top: 8 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  tickLine={false}
-                  axisLine={false}
-                  interval={0}
-                  height={48}
-                  tick={{ fontSize: 10 }}
-                />
-                <YAxis tickLine={false} axisLine={false} width={32} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <ChartLegend content={<ChartLegendContent />} />
-                <Bar isAnimationActive={false} dataKey="zones" fill="var(--sd-data-cyan)" radius={[3, 3, 0, 0]} />
-                <Bar isAnimationActive={false} dataKey="pests" fill="var(--sd-data-amber)" radius={[3, 3, 0, 0]} />
-                <Bar isAnimationActive={false} dataKey="diseases" fill="var(--sd-data-pink)" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ChartContainer></RevealLTR>
+            <RevealLTR>
+              <ChartContainer
+                config={{
+                  zones: { label: "Zones", color: "var(--sd-data-cyan)" },
+                  pests: { label: "Pests", color: "var(--sd-data-amber)" },
+                  diseases: { label: "Diseases", color: "var(--sd-data-pink)" },
+                }}
+                className="h-64"
+              >
+                <BarChart data={perf} margin={{ left: 12, right: 12, top: 8 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="name"
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                    height={48}
+                    tick={{ fontSize: 10 }}
+                  />
+                  <YAxis tickLine={false} axisLine={false} width={32} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar isAnimationActive={false} dataKey="zones" fill="var(--sd-data-cyan)" radius={[3, 3, 0, 0]} />
+                  <Bar isAnimationActive={false} dataKey="pests" fill="var(--sd-data-amber)" radius={[3, 3, 0, 0]} />
+                  <Bar isAnimationActive={false} dataKey="diseases" fill="var(--sd-data-pink)" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            </RevealLTR>
           ) : (
             <EmptyHint />
           )}

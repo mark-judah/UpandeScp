@@ -205,52 +205,54 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
           </CardHeader>
           <CardContent className="p-0">
             {detail.daily.length ? (
-              <RevealLTR><ChartContainer config={SERIES} className="h-48">
-                <LineChart
-                  data={detail.daily}
-                  margin={{ left: 4, right: 8, top: 8 }}
-                >
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                    minTickGap={0}
-                    tickFormatter={weekTickFormatter}
-                  />
-                  <YAxis tickLine={false} axisLine={false} width={28} />
-                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Line
-                    type="monotone"
-                    dataKey="pests"
-                    stroke="var(--sd-data-cyan)"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 3 }}
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="diseases"
-                    stroke="var(--sd-data-pink)"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 3 }}
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="traps"
-                    stroke="var(--sd-data-purple)"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 3 }}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ChartContainer></RevealLTR>
+              <RevealLTR>
+                <ChartContainer config={SERIES} className="h-48">
+                  <LineChart
+                    data={detail.daily}
+                    margin={{ left: 4, right: 8, top: 8 }}
+                  >
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                      minTickGap={0}
+                      tickFormatter={weekTickFormatter}
+                    />
+                    <YAxis tickLine={false} axisLine={false} width={28} />
+                    <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Line
+                      type="monotone"
+                      dataKey="pests"
+                      stroke="var(--sd-data-cyan)"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 3 }}
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="diseases"
+                      stroke="var(--sd-data-pink)"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 3 }}
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="traps"
+                      stroke="var(--sd-data-purple)"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 3 }}
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <span className="text-xs text-muted-foreground">
                 No daily data in range

@@ -30,8 +30,23 @@ describe("dashboard charts reveal left to right", () => {
     });
   }
 
-  it("Trends chart panel: every series has its own animation off", () => {
-    const src = source("../../trends/ChartPanel.tsx");
-    expect(count(src, OFF)).toBe(count(src, SERIES));
-  });
+  const OTHERS = [
+    ["Trends ChartPanel", "../../trends/ChartPanel.tsx"],
+    ["CsuLevels", "../../../components/CsuLevels.tsx"],
+    ["ChemicalStoreComparison", "../../../components/ChemicalStoreComparison.tsx"],
+    ["StoreBucketPanel", "../../../components/StoreBucketPanel.tsx"],
+  ];
+  for (const [label, rel] of OTHERS) {
+    const src = source(rel);
+
+    it(`${label}: every series has its own animation off`, () => {
+      expect(count(src, SERIES)).toBeGreaterThan(0);
+      expect(count(src, OFF)).toBe(count(src, SERIES));
+    });
+
+    it(`${label}: every chart sits inside RevealLTR`, () => {
+      expect(count(src, CONTAINER)).toBeGreaterThan(0);
+      expect(count(src, WRAPPED)).toBe(count(src, CONTAINER));
+    });
+  }
 });

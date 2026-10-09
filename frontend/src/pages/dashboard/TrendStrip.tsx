@@ -71,41 +71,43 @@ export function TrendStrip({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="p-0">
-        <RevealLTR><ChartContainer config={config} className="h-56">
-          <LineChart data={rows} margin={{ left: 4, right: 8, top: 8 }}>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
-            <XAxis
-              dataKey="date"
-              tickLine={false}
-              axisLine={false}
-              interval={0}
-              minTickGap={0}
-              tickFormatter={weekTickFormatter}
-            />
-            <YAxis tickLine={false} axisLine={false} width={32} />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  indicator="line"
-                  formatter={(v) => `${v}${unit}`}
-                />
-              }
-            />
-            <ChartLegend content={<ChartLegendContent />} />
-            {keys.map((k, i) => (
-              <Line
-                key={k}
-                type="monotone"
-                dataKey={k}
-                stroke={PALETTE[i % PALETTE.length]}
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 3 }}
-                isAnimationActive={false}
+        <RevealLTR>
+          <ChartContainer config={config} className="h-56">
+            <LineChart data={rows} margin={{ left: 4, right: 8, top: 8 }}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis
+                dataKey="date"
+                tickLine={false}
+                axisLine={false}
+                interval={0}
+                minTickGap={0}
+                tickFormatter={weekTickFormatter}
               />
-            ))}
-          </LineChart>
-        </ChartContainer></RevealLTR>
+              <YAxis tickLine={false} axisLine={false} width={32} />
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    indicator="line"
+                    formatter={(v) => `${v}${unit}`}
+                  />
+                }
+              />
+              <ChartLegend content={<ChartLegendContent />} />
+              {keys.map((k, i) => (
+                <Line
+                  key={k}
+                  type="monotone"
+                  dataKey={k}
+                  stroke={PALETTE[i % PALETTE.length]}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 3 }}
+                  isAnimationActive={false}
+                />
+              ))}
+            </LineChart>
+          </ChartContainer>
+        </RevealLTR>
       </CardContent>
     </Card>
   );

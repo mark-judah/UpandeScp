@@ -123,112 +123,18 @@ export function PestsTab({
         </CardHeader>
         <CardContent className="p-0">
           {trend.rows.length ? (
-            <RevealLTR><ChartContainer config={lineConfig} className="h-64">
-              <LineChart data={trend.rows} margin={{ left: 4, right: 8, top: 8 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  interval={0}
-                  minTickGap={0}
-                  tickFormatter={weekTickFormatter}
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  width={36}
-                  tickFormatter={(v: number) => `${v}%`}
-                />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent
-                      indicator="line"
-                      formatter={(v) => (v == null ? "—" : `${v}%`)}
-                    />
-                  }
-                />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="var(--sd-data-cyan)"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ChartContainer></RevealLTR>
-          ) : (
-            <EmptyHint title="Not observed in this range" hint="Try a wider date range or different filter." />
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <Card className="p-4">
-          <CardHeader className="p-0 pb-2">
-            <CardTitle>Pest Distribution</CardTitle>
-            <CardDescription>Adjusted prevalence across the scope · latest scouted week</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            {distribution.length ? (
-              <RevealLTR><ChartContainer config={distConfig} className="h-72">
-                <BarChart
-                  data={distribution.slice(0, 12)}
-                  layout="vertical"
-                  margin={{ left: 12, right: 12 }}
-                >
-                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                  <XAxis
-                    type="number"
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v: number) => `${v}%`}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    tickLine={false}
-                    axisLine={false}
-                    width={120}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        indicator="line"
-                        formatter={(v) => (v == null ? "—" : `${v}%`)}
-                      />
-                    }
-                  />
-                  <Bar isAnimationActive={false} dataKey="pct" radius={[3, 3, 3, 3]}>
-                    {distribution.slice(0, 12).map((row) => (
-                      <Cell key={row.name} fill={pestColor(row.name)} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ChartContainer></RevealLTR>
-            ) : (
-              <EmptyHint />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="p-4">
-          <CardHeader className="p-0 pb-2">
-            <CardTitle>Plant Section Split</CardTitle>
-            <CardDescription>Where pests are concentrated (% of pest zones)</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            {sectionSplit.length ? (
-              <RevealLTR><ChartContainer config={distConfig} className="h-72">
-                <BarChart
-                  data={sectionSplit}
-                  margin={{ left: 12, right: 12, top: 8 }}
-                >
+            <RevealLTR>
+              <ChartContainer config={lineConfig} className="h-64">
+                <LineChart data={trend.rows} margin={{ left: 4, right: 8, top: 8 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                    minTickGap={0}
+                    tickFormatter={weekTickFormatter}
+                  />
                   <YAxis
                     tickLine={false}
                     axisLine={false}
@@ -243,9 +149,109 @@ export function PestsTab({
                       />
                     }
                   />
-                  <Bar isAnimationActive={false} dataKey="pct" fill="var(--sd-data-purple)" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ChartContainer></RevealLTR>
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="var(--sd-data-cyan)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ChartContainer>
+            </RevealLTR>
+          ) : (
+            <EmptyHint title="Not observed in this range" hint="Try a wider date range or different filter." />
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Pest Distribution</CardTitle>
+            <CardDescription>Adjusted prevalence across the scope · latest scouted week</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {distribution.length ? (
+              <RevealLTR>
+                <ChartContainer config={distConfig} className="h-72">
+                  <BarChart
+                    data={distribution.slice(0, 12)}
+                    layout="vertical"
+                    margin={{ left: 12, right: 12 }}
+                  >
+                    <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v: number) => `${v}%`}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      tickLine={false}
+                      axisLine={false}
+                      width={120}
+                    />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          indicator="line"
+                          formatter={(v) => (v == null ? "—" : `${v}%`)}
+                        />
+                      }
+                    />
+                    <Bar isAnimationActive={false} dataKey="pct" radius={[3, 3, 3, 3]}>
+                      {distribution.slice(0, 12).map((row) => (
+                        <Cell key={row.name} fill={pestColor(row.name)} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+              </RevealLTR>
+            ) : (
+              <EmptyHint />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="p-4">
+          <CardHeader className="p-0 pb-2">
+            <CardTitle>Plant Section Split</CardTitle>
+            <CardDescription>Where pests are concentrated (% of pest zones)</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {sectionSplit.length ? (
+              <RevealLTR>
+                <ChartContainer config={distConfig} className="h-72">
+                  <BarChart
+                    data={sectionSplit}
+                    margin={{ left: 12, right: 12, top: 8 }}
+                  >
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      width={36}
+                      tickFormatter={(v: number) => `${v}%`}
+                    />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          indicator="line"
+                          formatter={(v) => (v == null ? "—" : `${v}%`)}
+                        />
+                      }
+                    />
+                    <Bar isAnimationActive={false} dataKey="pct" fill="var(--sd-data-purple)" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -316,38 +322,40 @@ export function PestsTab({
           </CardHeader>
           <CardContent className="p-0">
             {ghPressure.length ? (
-              <RevealLTR><ChartContainer config={distConfig} className="h-72">
-                <BarChart
-                  data={ghPressure.slice(0, 12)}
-                  layout="vertical"
-                  margin={{ left: 12, right: 12 }}
-                >
-                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                  <XAxis
-                    type="number"
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v: number) => `${v}%`}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    tickLine={false}
-                    axisLine={false}
-                    width={140}
-                    tick={{ fontSize: 10 }}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        indicator="line"
-                        formatter={(v) => (v == null ? "—" : `${v}%`)}
-                      />
-                    }
-                  />
-                  <Bar isAnimationActive={false} dataKey="pct" fill="var(--sd-data-amber)" radius={[3, 3, 3, 3]} />
-                </BarChart>
-              </ChartContainer></RevealLTR>
+              <RevealLTR>
+                <ChartContainer config={distConfig} className="h-72">
+                  <BarChart
+                    data={ghPressure.slice(0, 12)}
+                    layout="vertical"
+                    margin={{ left: 12, right: 12 }}
+                  >
+                    <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v: number) => `${v}%`}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      tickLine={false}
+                      axisLine={false}
+                      width={140}
+                      tick={{ fontSize: 10 }}
+                    />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          indicator="line"
+                          formatter={(v) => (v == null ? "—" : `${v}%`)}
+                        />
+                      }
+                    />
+                    <Bar isAnimationActive={false} dataKey="pct" fill="var(--sd-data-amber)" radius={[3, 3, 3, 3]} />
+                  </BarChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}

@@ -31,6 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ChemicalOverview } from "@/lib/store-keeper-api";
 import { cn } from "@/lib/utils";
+import { RevealLTR } from "@/components/RevealLTR";
 
 /** Roses call their work-in-progress spray area the CSU. The flow is the same on
  *  every crop but the place is not called the same thing on an orchard, so the
@@ -331,41 +332,44 @@ export function CsuLevels({
           {/* Grouped bar chart: one group per selected CSU */}
           <div className="lg:col-span-2 min-w-0">
             {selected.length && shownCsus.length ? (
-              <ChartContainer config={chartConfig} className="w-full h-80">
-                <BarChart
-                  data={chartData}
-                  margin={{ left: 12, right: 12, top: 8, bottom: 24 }}
-                >
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="csu"
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                    tick={{ fontSize: 10 }}
-                    angle={-20}
-                    height={50}
-                    textAnchor="end"
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    width={52}
-                    tickFormatter={(v: number) => fmt(v)}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {selected.map((code, i) => (
-                    <Bar
-                      key={code}
-                      dataKey={code}
-                      name={itemName.get(code) || code}
-                      fill={PALETTE[i % PALETTE.length]}
-                      radius={3}
+              <RevealLTR>
+                <ChartContainer config={chartConfig} className="w-full h-80">
+                  <BarChart
+                    data={chartData}
+                    margin={{ left: 12, right: 12, top: 8, bottom: 24 }}
+                  >
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="csu"
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                      tick={{ fontSize: 10 }}
+                      angle={-20}
+                      height={50}
+                      textAnchor="end"
                     />
-                  ))}
-                </BarChart>
-              </ChartContainer>
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      width={52}
+                      tickFormatter={(v: number) => fmt(v)}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {selected.map((code, i) => (
+                      <Bar
+                        key={code}
+                        dataKey={code}
+                        name={itemName.get(code) || code}
+                        fill={PALETTE[i % PALETTE.length]}
+                        radius={3}
+                        isAnimationActive={false}
+                      />
+                    ))}
+                  </BarChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <div className="flex items-center justify-center h-80 text-xs text-muted-foreground">
                 {!shownCsus.length

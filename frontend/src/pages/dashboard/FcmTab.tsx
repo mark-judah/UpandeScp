@@ -57,38 +57,40 @@ export function FcmTab({ data }: { data: FcmPayload | null }) {
         </CardHeader>
         <CardContent className="p-0">
           {daily.length ? (
-            <RevealLTR><ChartContainer config={lineConfig} className="h-64">
-              <LineChart data={daily} margin={{ left: 4, right: 8, top: 8 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  interval={0}
-                  minTickGap={0}
-                  tickFormatter={weekTickFormatter}
-                />
-                <YAxis tickLine={false} axisLine={false} width={32} />
-                <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-                <ChartLegend content={<ChartLegendContent />} />
-                <Line
-                  type="monotone"
-                  dataKey="traps"
-                  stroke="var(--color-traps)"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="scouting"
-                  stroke="var(--color-scouting)"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ChartContainer></RevealLTR>
+            <RevealLTR>
+              <ChartContainer config={lineConfig} className="h-64">
+                <LineChart data={daily} margin={{ left: 4, right: 8, top: 8 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                    minTickGap={0}
+                    tickFormatter={weekTickFormatter}
+                  />
+                  <YAxis tickLine={false} axisLine={false} width={32} />
+                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Line
+                    type="monotone"
+                    dataKey="traps"
+                    stroke="var(--color-traps)"
+                    strokeWidth={2}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="scouting"
+                    stroke="var(--color-scouting)"
+                    strokeWidth={2}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ChartContainer>
+            </RevealLTR>
           ) : (
             <EmptyHint title="No focus-pest activity" />
           )}
@@ -103,15 +105,17 @@ export function FcmTab({ data }: { data: FcmPayload | null }) {
           </CardHeader>
           <CardContent className="p-0">
             {breakdown.length ? (
-              <RevealLTR><ChartContainer config={barConfig} className="h-60">
-                <BarChart data={breakdown}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                  <YAxis tickLine={false} axisLine={false} width={32} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar isAnimationActive={false} dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ChartContainer></RevealLTR>
+              <RevealLTR>
+                <ChartContainer config={barConfig} className="h-60">
+                  <BarChart data={breakdown}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                    <YAxis tickLine={false} axisLine={false} width={32} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar isAnimationActive={false} dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}

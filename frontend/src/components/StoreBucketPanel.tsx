@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import type { StoreBucket } from "@/lib/store-keeper-api";
+import { RevealLTR } from "@/components/RevealLTR";
 
 const ALL_CHEMICALS = "__all__";
 
@@ -172,32 +173,34 @@ export function StoreBucketPanel({
           </div>
         ) : (
           <div className="min-w-0">
-            <ChartContainer config={chartConfig} className="w-full h-64">
-              <BarChart
-                data={barData}
-                margin={{ left: 12, right: 12, top: 8, bottom: 24 }}
-              >
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="warehouse"
-                  tickLine={false}
-                  axisLine={false}
-                  interval={0}
-                  tick={{ fontSize: 10 }}
-                  angle={-20}
-                  height={50}
-                  textAnchor="end"
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  width={52}
-                  tickFormatter={(v: number) => fmt(v)}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="qty" fill={PALETTE[0]} radius={4} />
-              </BarChart>
-            </ChartContainer>
+            <RevealLTR>
+              <ChartContainer config={chartConfig} className="w-full h-64">
+                <BarChart
+                  data={barData}
+                  margin={{ left: 12, right: 12, top: 8, bottom: 24 }}
+                >
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="warehouse"
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                    tick={{ fontSize: 10 }}
+                    angle={-20}
+                    height={50}
+                    textAnchor="end"
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    width={52}
+                    tickFormatter={(v: number) => fmt(v)}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar isAnimationActive={false} dataKey="qty" fill={PALETTE[0]} radius={4} />
+                </BarChart>
+              </ChartContainer>
+            </RevealLTR>
           </div>
         )}
 

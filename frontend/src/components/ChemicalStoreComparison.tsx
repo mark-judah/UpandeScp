@@ -34,6 +34,7 @@ import {
   type StoreLevelBucket,
 } from "@/lib/store-keeper-api";
 import { cn } from "@/lib/utils";
+import { RevealLTR } from "@/components/RevealLTR";
 
 const MAX_SELECT = 5;
 // Distinct, legible series colours (max 5 chemicals at once).
@@ -238,41 +239,44 @@ function StoreLevelComparison({
           {/* Grouped bar chart */}
           <div className="lg:col-span-2 min-w-0">
             {selected.length ? (
-              <ChartContainer config={chartConfig} className="w-full h-80">
-                <BarChart
-                  data={chartData}
-                  margin={{ left: 12, right: 12, top: 8, bottom: 24 }}
-                >
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="store"
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                    tick={{ fontSize: 10 }}
-                    angle={-20}
-                    height={50}
-                    textAnchor="end"
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    width={52}
-                    tickFormatter={(v: number) => fmt(v)}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {selected.map((code, i) => (
-                    <Bar
-                      key={code}
-                      dataKey={code}
-                      name={itemName.get(code) || code}
-                      fill={PALETTE[i % PALETTE.length]}
-                      radius={3}
+              <RevealLTR>
+                <ChartContainer config={chartConfig} className="w-full h-80">
+                  <BarChart
+                    data={chartData}
+                    margin={{ left: 12, right: 12, top: 8, bottom: 24 }}
+                  >
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="store"
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                      tick={{ fontSize: 10 }}
+                      angle={-20}
+                      height={50}
+                      textAnchor="end"
                     />
-                  ))}
-                </BarChart>
-              </ChartContainer>
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      width={52}
+                      tickFormatter={(v: number) => fmt(v)}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {selected.map((code, i) => (
+                      <Bar
+                        key={code}
+                        dataKey={code}
+                        name={itemName.get(code) || code}
+                        fill={PALETTE[i % PALETTE.length]}
+                        radius={3}
+                        isAnimationActive={false}
+                      />
+                    ))}
+                  </BarChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <div className="flex items-center justify-center h-80 text-xs text-muted-foreground">
                 Pick a chemical to compare.

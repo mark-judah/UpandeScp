@@ -128,3 +128,81 @@ class TestSchemaAndSeed(StageCase):
         self.assertEqual(cat["roles"]["Damages"], "Sign")
         self.assertEqual(cat["roles"]["Motiles"], "Form")
         self.assertTrue(all(w == 1.0 for w in cat["weights"].values()))
+
+
+TC = import_module("upande_scp.serverscripts.scouting.thresholds_check")
+
+
+class TestLiveFigure(StageCase):
+    def setUp(self):
+        super().setUp()
+        for stage, role in (("Adult", "Life stage"), ("Damages", "Sign"), ("Damage", "Sign"),
+                            ("Motiles", "Form"), ("Eggs", "Life stage"), ("Web", "Sign"),
+                            ("Adult Moth", "Life stage"), ("Larvae", "Life stage"), ("Pupae", "Life stage")):
+            SV.set_role(stage, role)
+        for stage in ("Motiles", "Eggs", "Adult Moth", "Larvae", "Pupae"):
+            SV.set_master_weight(stage, 1)
+            SV.set_override("Rose", "Spidermites", stage, 0)
+
+    def test_a_damages_only_station_is_out_of_the_live_figure_and_in_signs(self):
+        TF.seed_week(self.gh, SV.WEEK_44[0], crop="Rose", stage="Adult", infested_per_section=1)
+        TF.seed_week(self.gh, SV.WEEK_44[0], crop="Rose", stage="Damages", infested_per_section=2)
+        weeks = R.StationWeeks.load(*SV.WEEK_44, "Rose", None)
+        self.assertEqual(weeks.latest(self.gh, "pest", "Thrips")["prevalence"], 33.3)
+        self.assertEqual(weeks.latest(self.gh, "pest", "Thrips", role=R.SIGNS)["prevalence"], 66.7)
+        self.assertEqual(weeks.latest(self.gh, "pest", "Thrips", "Damages")["prevalence"], 66.7)
+
+    def test_evaluate_judges_the_live_figure(self):
+        TF.set_bands("Rose", "Thrips", 5, 20, 50)
+        TF.seed_week(self.gh, SV.WEEK_44[0], crop="Rose", stage="Damages", infested_per_section=3)  # signs 100 %
+        found = [f for f in TC.evaluate("Rose", SUN_44)
+                 if f["warehouse"] == self.gh and f["observation"] == "Thrips" and not f["stage"]]
+        house = [f for f in found if f.get("alert_type", "House") == "House"]
+        self.assertEqual([(f["value"], f["action"]) for f in house], [(0.0, None)])
+        self.assertFalse([f for f in found if f["action"]])                  # no hot spot either
+        with patch.object(TC.notifications, "notify", return_value=[]), patch.object(frappe, "sendmail"):
+            TC.check_crop("Rose", SUN_44)
+        self.assertEqual(frappe.db.count("Scouting Alert", {"warehouse": self.gh, "iso_week": "2031-W44"}), 0)
+
+    def test_a_count_row_never_sums_a_sign_stage(self):
+        TF.set_bands("Rose", "FCM", 0, 1, 2, measure="Count")
+        spec = _common.band_spec("Rose", "pest", "FCM", "")
+        self.assertEqual(spec["measure"], "Count")
+        self.assertEqual(spec["count_stages"], frozenset({"Adult Moth", "Larvae", "Eggs", "Pupae"}))  # no "Damage"
+        self.assertEqual(dict(spec["count_weights"]), {"Adult Moth": 1.0, "Larvae": 1.0, "Eggs": 1.0, "Pupae": 1.0})
+
+    def _spidermites(self):
+        """Motiles 3 and Eggs 6 on station 0 of each section: 1.0 + 2.0 per zone."""
+        TF.set_bands("Rose", "Spidermites", 0, 1, 5, measure="Count")
+        TF.seed_week(self.gh, SV.WEEK_44[0], crop="Rose", pest="Spidermites", stage="Motiles", count=3)
+        TF.seed_week(self.gh, SV.WEEK_44[0], crop="Rose", pest="Spidermites", stage="Eggs", count=6)
+        return R.StationWeeks.load(*SV.WEEK_44, "Rose", None)
+
+    def _value(self, weeks, stage=""):
+        _common.clear_threshold_cache()
+        return _common.house_value("Rose", "pest", "Spidermites", stage, weeks, self.gh, None)
+
+    def test_weights_of_one_reproduce_todays_count(self):
+        weeks = self._spidermites()
+        plain = weeks.count_latest(self.gh, "pest", "Spidermites", stages=frozenset({"Motiles", "Eggs"}))
+        self.assertEqual((self._value(weeks), plain["value"]), (3.0, 3.0))
+
+    def test_half_weight_on_eggs_halves_their_contribution(self):
+        weeks = self._spidermites()
+        SV.set_master_weight("Eggs", 0.5)
+        self.assertEqual(self._value(weeks), 2.0)                            # 1.0 + 0.5 × 2.0
+
+    def test_a_crop_override_beats_the_master_and_zero_inherits(self):
+        weeks = self._spidermites()
+        SV.set_master_weight("Eggs", 0.5)
+        SV.set_override("Rose", "Spidermites", "Eggs", 0.25)
+        self.assertEqual(self._value(weeks), 1.5)                            # 1.0 + 0.25 × 2.0
+        SV.set_override("Rose", "Spidermites", "Eggs", 0)
+        self.assertEqual(self._value(weeks), 2.0)
+
+    def test_a_stage_band_reads_raw_counts_whatever_the_weight(self):
+        TF.set_bands("Rose", "Spidermites", 0, 1, 5, measure="Count", stage_bands={"Eggs": (0, 1, 3)})
+        weeks = self._spidermites()
+        SV.set_master_weight("Eggs", 0.5)
+        self.assertEqual(_common.band_spec("Rose", "pest", "Spidermites", "Eggs")["count_weights"], ())
+        self.assertEqual(self._value(weeks, "Eggs"), 2.0)                    # 6 / 3, unweighted

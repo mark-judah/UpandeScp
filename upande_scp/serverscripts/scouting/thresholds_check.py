@@ -115,7 +115,8 @@ def banded_crops() -> list:
 def _figure(weeks, wh, week, kind, obs, stage, spec):
     """(figure, value) for one key, in its measure."""
     if spec["measure"] == B.COUNT:
-        fig = weeks.count_figures(wh, week, kind, obs, stages=spec["count_stages"])
+        fig = weeks.count_figures(wh, week, kind, obs, stages=spec["count_stages"],
+                                  weights=spec.get("count_weights"))
         return fig, (fig or {}).get("value")
     fig = weeks.figures(wh, week, kind, obs, stage or R.ANY)
     return fig, (fig or {}).get("prevalence")

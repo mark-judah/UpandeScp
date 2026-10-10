@@ -182,7 +182,8 @@ def _mark_hot(crop, kind, obs, weeks, gh, fig) -> list:
     hot = set()
     if spec:
         if spec["measure"] == B.COUNT:
-            cfig = weeks.count_latest(gh, kind, obs, stages=spec["count_stages"]) or {}
+            cfig = weeks.count_latest(gh, kind, obs, stages=spec["count_stages"],
+                                      weights=spec.get("count_weights")) or {}
             house, judged = cfig.get("value"), cfig.get("sections") or []
         else:
             house, judged = fig.get("prevalence"), sections

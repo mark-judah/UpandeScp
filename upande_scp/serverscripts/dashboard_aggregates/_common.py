@@ -11,6 +11,7 @@ import re
 import frappe
 
 from upande_scp.serverscripts.common import crop_catalog
+from upande_scp.serverscripts.common import stage_roles
 from upande_scp.serverscripts.common import threshold_bands as B
 
 
@@ -155,10 +156,13 @@ def load_thresholds(crop: str) -> dict:
     the row's own (all-stage) band.
 
     A spec is ``{"low", "mod", "high", "measure", "row_measure", "count_stages",
-    "reading_types"}``. ``measure`` is what this key is judged in
+    "count_weights", "reading_types"}``. ``measure`` is what this key is judged in
     (``threshold_bands.effective_measure``). ``count_stages`` are the stages a
     Count figure sums: every counted stage for the row key, the stage itself for
-    a stage key. Unset (all-zero) and misordered bands are left out, so they
+    a stage key. ``count_stages`` for the row key holds counted Life stage / Form
+    stages only — a Sign is never the pest (stage & variety S5) — and
+    ``count_weights`` carries their weights (``((stage, w), …)``); a stage key
+    reads its raw count (``()``). Unset (all-zero) and misordered bands are left out, so they
     classify nothing. Memoised per request; ``clear_threshold_cache`` drops it.
     """
     crop = (crop or "").strip()
@@ -192,6 +196,12 @@ def _usable(low, mod, high) -> bool:
     return B.is_configured(low, mod, high) and B.bands_ascending(low, mod, high)
 
 
+def _count_weights(crop: str, obs: str, stages) -> tuple:
+    """S5/S6: ``((stage, weight), …)`` for a row's Count, sorted — hashable,
+    so the StationWeeks memo can key on it."""
+    return tuple(sorted((s, stage_roles.stage_weight(crop, obs, s)) for s in stages))
+
+
 def _load_kind(out: dict, crop: str, *, parent_table: str, child_table: str, obs_col: str, kind: str) -> None:
     """Populate ``out`` for one kind with one LEFT JOIN. A filter row with no
     stage children comes back once with every ``s_*`` column NULL; that is not a
@@ -211,6 +221,7 @@ def _load_kind(out: dict, crop: str, *, parent_table: str, child_table: str, obs
         {"crop": crop, "parent_table": parent_table},
         as_dict=True,
     )
+    roles = stage_roles.role_map() if kind == "pest" else {}
     by_row: dict = {}
     for r in rows:
         by_row.setdefault(r["row_name"], []).append(r)
@@ -220,7 +231,12 @@ def _load_kind(out: dict, crop: str, *, parent_table: str, child_table: str, obs
         obs = head["obs"]
         stages = [r for r in group if r["s_stage"] is not None]
         reading_types = {(r["s_stage"] or "").strip(): (r["s_rt"] or "") for r in stages}
-        counted = frozenset(s for s, rt in reading_types.items() if rt == B.COUNT)
+        # S5: a pest's Count sums its counted LIVE stages — a Sign (damage,
+        # webs) recorded as a number is still not the pest.
+        counted = frozenset(
+            s for s, rt in reading_types.items()
+            if rt == B.COUNT and (kind != "pest" or stage_roles.is_live(s, roles))
+        )
         row_measure = head["measure"] if head["measure"] in B.MEASURES else B.PERCENTAGE
         if kind != "pest" or not counted:
             row_measure = B.PERCENTAGE
@@ -233,6 +249,7 @@ def _load_kind(out: dict, crop: str, *, parent_table: str, child_table: str, obs
                 "high": float(head["high_threshold"] or 0),
                 "measure": row_measure,
                 "count_stages": counted,
+                "count_weights": _count_weights(crop, obs, counted) if kind == "pest" else (),
                 **shared,
             }
         for r in stages:
@@ -245,6 +262,7 @@ def _load_kind(out: dict, crop: str, *, parent_table: str, child_table: str, obs
                 "high": float(r["s_high"] or 0),
                 "measure": B.effective_measure(row_measure, reading_types.get(stage, "")),
                 "count_stages": frozenset({stage}),
+                "count_weights": (),
                 **shared,
             }
 
@@ -281,6 +299,7 @@ def band_spec(crop: str, kind: str, obs_name: str, stage: str = "") -> dict | No
         **row,
         "measure": B.effective_measure(row["row_measure"], row["reading_types"].get(stage, "")),
         "count_stages": frozenset({stage}),
+        "count_weights": (),
     }
 
 
@@ -290,7 +309,8 @@ def house_value(crop: str, kind: str, obs_name: str, stage: str, weeks, wh: str,
     station (``weeks.count_latest``) for a Count. None when there is none."""
     spec = band_spec(crop, kind, obs_name, stage)
     if spec and spec["measure"] == B.COUNT:
-        cfig = weeks.count_latest(wh, kind, obs_name, stages=spec["count_stages"])
+        cfig = weeks.count_latest(wh, kind, obs_name, stages=spec["count_stages"],
+                                  weights=spec.get("count_weights"))
         return cfig["value"] if cfig else None
     return fig.get("prevalence") if fig else None
 

@@ -14,14 +14,17 @@ range (by scout), and the scouts' own photos of it.
   only — a Sign (damage) recorded as a number is not the pest (stage & variety
   S5); diseases have no count.
 * **Photos** — ``Scouting Entry Photo`` rows whose ``subject`` is the
-  observation, on entries the scope covers (G4), newest first, a page at a
+  observation (``subject`` is a bare name with no kind, so a pest and a disease
+  sharing a name would mix; the photo row has nothing to tell them apart, and
+  requiring a child row on the entry would drop photos taken before the scout
+  logged the observation), on entries the scope covers (G4), newest first, a page at a
   time. Uncached: the table is small, and a scout's new photo should show at
   once. The files are private; the browser fetches them with its own session.
 """
 
 import frappe
 
-from upande_scp.serverscripts.common import crop_catalog, stage_roles
+from upande_scp.serverscripts.common import crop_catalog, crop_scope, stage_roles
 from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows as R
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
@@ -33,6 +36,7 @@ from upande_scp.serverscripts.dashboard_aggregates._common import (
 from upande_scp.serverscripts.scouting import scouting_metrics
 
 PHOTOS_PER_PAGE = 24
+MAX_PAGE = 50
 
 _KINDS = {
     # kind: (master doctype, child table, observation column)
@@ -65,7 +69,7 @@ def observation_gallery(args: dict, force: bool = False) -> dict:
     if not name:
         frappe.throw("An observation name is required.", frappe.ValidationError)
     try:
-        page = max(0, int(args.get("page") or 0))
+        page = min(MAX_PAGE, max(0, int(args.get("page") or 0)))
     except (TypeError, ValueError):
         page = 0
 
@@ -75,6 +79,9 @@ def observation_gallery(args: dict, force: bool = False) -> dict:
         (args.get("farm") or "").strip(),
         farms_map,
     )
+    crop = (args.get("crop") or "").strip()
+    scope = _user_scope(scope, crop, (args.get("greenhouse") or "").strip(),
+                        (args.get("farm") or "").strip())
     filters = {
         "kind": kind,
         "name": name,
@@ -83,6 +90,8 @@ def observation_gallery(args: dict, force: bool = False) -> dict:
         "crop": (args.get("crop") or "").strip(),
         "farm": (args.get("farm") or "").strip(),
         "greenhouse": (args.get("greenhouse") or "").strip(),
+        # The effective scope, so one user's payload is never served to another.
+        "scope": sorted(scope) if scope is not None else None,
     }
     where, params = parent_filter_conditions(
         filters["from_date"], filters["to_date"], filters["crop"], scope,
@@ -98,6 +107,26 @@ def observation_gallery(args: dict, force: bool = False) -> dict:
     )
     photos, has_more = _photos(name, where, params, page)
     return {**cached, "photos": photos, "photosPage": page, "photosHasMore": has_more}
+
+
+def _user_scope(scope, crop: str, greenhouse: str, farm: str):
+    """Intersect the requested scope with the user's own farms' warehouses.
+
+    A caller-named greenhouse or farm outside the user's reach is refused, not
+    silently emptied; a blank request is narrowed to everything they may see.
+    """
+    allowed = crop_scope.scoped_greenhouses(crop or None)
+    if allowed is None:
+        return scope
+    if greenhouse and greenhouse not in allowed:
+        frappe.throw("You do not have access to that greenhouse.", frappe.PermissionError)
+    if farm and not greenhouse:
+        farms = crop_scope.scoped_farms(crop or None)
+        if farms is not None and farm not in farms:
+            frappe.throw("You do not have access to that farm.", frappe.PermissionError)
+    if scope is None:
+        return sorted(allowed)
+    return [g for g in scope if g in allowed]
 
 
 def _crop_list(kind: str, crop: str) -> list:

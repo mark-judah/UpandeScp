@@ -60,6 +60,18 @@ class TestCounted(unittest.TestCase):
 		line = self._line("Material Transfer for Manufacture", "Material Transfer for Manufacture")
 		self.assertTrue(finances._counted(line, _is_wip))
 
+	def test_csu_to_csu_transfer_is_not_counted_twice(self):
+		line = self._line("CSU Chemical Transfer", "Material Transfer for Manufacture",
+			"Chepsito CSU Phase 1 - KR")
+		self.assertFalse(finances._counted(line, _is_wip))
+
+	def test_wip_matcher_matches_csu1_style_names_but_not_focus(self):
+		m = finances._wip_matcher()
+		for n in ("CSU1", "Chepsito CSU Phase 1 - KR", "CSU_2 - KR", "csu"):
+			self.assertTrue(m(n), n)
+		for n in ("Focus Store - KR", "Chemical Store - KR", None):
+			self.assertFalse(m(n), n)
+
 	def test_material_issue_from_a_store_counts(self):
 		self.assertTrue(finances._counted(self._line("Material Issue", "Material Issue"), _is_wip))
 
@@ -229,8 +241,8 @@ class TestRealData(unittest.TestCase):
 
 	def test_grand_total_matches_an_independent_ledger_query(self):
 		from upande_scp.serverscripts.common import crop_protection
-		from upande_scp.serverscripts.spray_plan_creator.crop_settings import is_wip_area
 
+		wip = finances._wip_matcher()
 		groups = crop_protection.product_groups()
 		rows = frappe.db.sql(
 			"""
@@ -248,9 +260,7 @@ class TestRealData(unittest.TestCase):
 		for r in rows:
 			if r.stock_entry_type in ("Chemical Loaning", "Chemical Mixing"):
 				continue
-			if r.purpose == "Material Transfer for Manufacture":
-				expected += float(r.amount or 0)
-			elif r.purpose == "Material Issue" and not is_wip_area(r.s_warehouse):
+			if r.purpose in ("Material Transfer for Manufacture", "Material Issue") and not wip(r.s_warehouse):
 				expected += float(r.amount or 0)
 		self.assertAlmostEqual(self.report["grand_total"], expected, delta=1.0)
 		self.assertGreater(expected, 0, "fixture check: kaitet.local has crop-protection spend")

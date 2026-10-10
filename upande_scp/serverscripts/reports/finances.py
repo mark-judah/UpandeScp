@@ -87,10 +87,9 @@ def _counted(line, is_wip) -> bool:
 	if line.get("stock_entry_type") in EXCLUDED_TYPES:
 		return False
 	purpose = line.get("purpose")
-	if purpose == "Material Transfer for Manufacture":
-		return True
-	if purpose == "Material Issue":
-		# Out of a CSU it was already counted on the transfer into it.
+	if purpose in ("Material Transfer for Manufacture", "Material Issue"):
+		# Out of a CSU it was already counted on the transfer into it, so a
+		# CSU-to-CSU transfer or a spray out of a CSU is not counted again.
 		return not is_wip(line.get("s_warehouse"))
 	return False
 
@@ -281,7 +280,10 @@ def _wip_matcher():
 	"""`is_wip_area` with the keyword list read once, not once per line."""
 	from upande_scp.serverscripts.spray_plan_creator.crop_settings import wip_keywords
 
-	patterns = [re.compile(rf"\b{re.escape(w)}\b", re.IGNORECASE) for w in wip_keywords()]
+	# Letter-bounded, not \b: "CSU1" and "CSU_2" match, "Focus Store" still does not.
+	patterns = [
+		re.compile(rf"(?<![A-Za-z]){re.escape(w)}(?![A-Za-z])", re.IGNORECASE) for w in wip_keywords()
+	]
 	return lambda name: any(p.search(name or "") for p in patterns)
 
 

@@ -182,7 +182,67 @@ class TestPhotos(GalleryCase):
                photos=[("Thrips", "rose", 0)])
         self.assertEqual([p["caption"] for p in self.gallery()["photos"]], ["rose"])
         other = frappe.db.get_value("Warehouse", {"name": ["!=", self.gh], "warehouse_type": "Greenhouse"}, "name")
-        self.assertEqual(self.gallery(greenhouse=other)["photos"], [])
+        with self.assertRaises(frappe.PermissionError):   # not one of the crop's farms
+            self.gallery(greenhouse=other)
+
+
+class TestUserFarmScope(GalleryCase):
+    """The user's own farms bound every scan, whatever the caller passes."""
+
+    def other_house(self):
+        farms = tuple(r[0] for r in frappe.db.sql(
+            "select farm from `tabFarm Filter` where parenttype='Crop Scouted' and parent='Rose'"))
+        return frappe.db.sql(
+            """select name from `tabWarehouse` where custom_farm in %s and name != %s and is_group=0
+               and warehouse_type='Greenhouse' order by name limit 1""", (farms, self.gh))[0][0]
+
+    def seed_two_houses(self):
+        self.other = self.other_house()
+        insert(scout=self.s1, date=MON, greenhouse=self.gh, zone=self.zones[0],
+               pests=[("Thrips", "Adult", 1)], photos=[("Thrips", "mine", 0)])
+        insert(scout=self.s2, date=MON, greenhouse=self.other,
+               pests=[("Thrips", "Adult", 5)], photos=[("Thrips", "theirs", 0)])
+
+    def restricted(self):
+        from unittest import mock
+        return mock.patch.object(crop_scope, "scoped_greenhouses", return_value={self.gh})
+
+    def test_a_farm_restricted_user_sees_only_their_farms_scouts_and_photos(self):
+        self.seed_two_houses()
+        both = self.gallery()
+        self.assertEqual({r["scout"] for r in both["scouts"]}, {self.s1, self.s2})
+        with self.restricted():
+            out = self.gallery()
+        self.assertEqual([r["scout"] for r in out["scouts"]], [self.s1])
+        self.assertEqual([p["caption"] for p in out["photos"]], ["mine"])
+
+    def test_a_greenhouse_outside_the_users_farms_is_refused(self):
+        self.seed_two_houses()
+        with self.restricted(), self.assertRaises(frappe.PermissionError):
+            self.gallery(greenhouse=self.other)
+
+    def test_a_farm_outside_the_users_farms_is_refused(self):
+        self.seed_two_houses()
+        farm = frappe.db.get_value("Warehouse", self.other, "custom_farm")
+        with self.restricted(), mock_farms({"x"}), self.assertRaises(frappe.PermissionError):
+            self.gallery(farm=farm)
+
+    def test_the_cache_is_not_shared_between_scopes(self):
+        self.seed_two_houses()
+        kw = dict(crop="Rose", kind="pest", name="Thrips", from_date=MON, to_date=SUN)
+        full = DA.observation_gallery(force="1", **kw)    # unrestricted, cached
+        with self.restricted():
+            mine = DA.observation_gallery(**kw)           # same args, no force
+        self.assertEqual(len(full["scouts"]), 2)
+        self.assertEqual([r["scout"] for r in mine["scouts"]], [self.s1])
+
+    def test_page_is_capped(self):
+        self.assertEqual(self.gallery(page=10**9)["photosPage"], G.MAX_PAGE)
+
+
+def mock_farms(farms):
+    from unittest import mock
+    return mock.patch.object(crop_scope, "scoped_farms", return_value=farms)
 
 
 class TestScoping(GalleryCase):

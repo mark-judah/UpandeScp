@@ -2,7 +2,12 @@ import { defineConfig } from "vitest/config";
 import path from "node:path";
 
 export default defineConfig({
-  resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+      "@shared": path.resolve(__dirname, "../upande_scp/shared"),
+    },
+  },
   test: {
     // jsdom + the jest-dom setup so component tests (*.test.tsx) run. This file
     // shadows the `test` block in vite.config.ts, so anything a component test

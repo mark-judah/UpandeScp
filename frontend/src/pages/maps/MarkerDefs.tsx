@@ -8,11 +8,15 @@
  *     Filled shapes were dropped in favour of outlined symbols so two
  *     markers stacked on the same zone don't bleed into a single blob.
  *
- * Each ``<symbol>`` uses a centered 10×10 viewBox so a
- * ``<use href="#scp-m-X" x="cx" y="cy" />`` lands with the marker
- * centred at (cx, cy). The caller passes ``stroke`` (line colour); fill
- * stays transparent so the bed line behind the marker shows through.
+ * Each ``<symbol>`` uses the shared icon's centred 24×24 viewBox, so a
+ * ``<use href="#scp-m-X" x={cx - s/2} y={cy - s/2} width={s} height={s} />``
+ * lands with the marker centred at (cx, cy). The caller passes ``stroke``
+ * and ``fill`` (the legend colour; ``none`` for line shapes).
  */
+
+import { sharedIconsOf } from "@/components/SharedIcon";
+
+const STAGE_ICONS = sharedIconsOf("stage");
 
 export const MARKER_ID = {
   circle:   "scp-m-circle",   // default / no stage
@@ -75,13 +79,12 @@ export function shapeForStage(stage: string | null | undefined): MarkerShape {
 }
 
 export function MarkerDefs() {
-  // Markers are now filled — the caller passes the pest's legend colour
-  // as ``fill``. We keep a hairline same-colour stroke for crisp edges
-  // when the marker overlaps a bed line. ``non-scaling-stroke`` so dense
-  // maps don't get smudgy as the SVG zooms.
-  const sw = 0.4;
-  const ve = "non-scaling-stroke";
-
+  // The shapes come from the one shared icon set
+  // (upande_scp/shared/icons/stage/<key>.svg, item 9b). Each carries its own
+  // hairline / line stroke width with ``non-scaling-stroke`` so dense maps
+  // don't get smudgy as the SVG zooms; fill and stroke colour are left to the
+  // caller's ``<use>`` (the pest's legend colour). Line shapes (cross, plus,
+  // chevron) set ``fill="none"`` themselves.
   return (
     <svg
       width={0}
@@ -90,98 +93,14 @@ export function MarkerDefs() {
       style={{ position: "absolute" }}
     >
       <defs>
-        <symbol id={MARKER_ID.circle} viewBox="-5 -5 10 10">
-          <circle r="4" strokeWidth={sw} vectorEffect={ve} />
-        </symbol>
-
-        <symbol id={MARKER_ID.triangle} viewBox="-5 -5 10 10">
-          <polygon
-            points="0,-4 3.6,2.6 -3.6,2.6"
-            strokeWidth={sw}
-            strokeLinejoin="round"
-            vectorEffect={ve}
+        {(Object.keys(MARKER_ID) as MarkerShape[]).map((shape) => (
+          <symbol
+            key={shape}
+            id={MARKER_ID[shape]}
+            viewBox={STAGE_ICONS[shape].viewBox}
+            dangerouslySetInnerHTML={{ __html: STAGE_ICONS[shape].body }}
           />
-        </symbol>
-
-        <symbol id={MARKER_ID.pentagon} viewBox="-5 -5 10 10">
-          <polygon
-            points="0,-4 3.8,-1.2 2.4,3.2 -2.4,3.2 -3.8,-1.2"
-            strokeWidth={sw}
-            strokeLinejoin="round"
-            vectorEffect={ve}
-          />
-        </symbol>
-
-        <symbol id={MARKER_ID.diamond} viewBox="-5 -5 10 10">
-          <polygon
-            points="0,-4 4,0 0,4 -4,0"
-            strokeWidth={sw}
-            strokeLinejoin="round"
-            vectorEffect={ve}
-          />
-        </symbol>
-
-        {/* Cross/plus stay outlined-only — a filled stroke shape is just
-            the stroke. We thicken the stroke a touch so they read at the
-            new smaller marker size. */}
-        <symbol id={MARKER_ID.cross} viewBox="-5 -5 10 10">
-          <path
-            d="M-3.2 -3.2 L3.2 3.2 M3.2 -3.2 L-3.2 3.2"
-            fill="none"
-            strokeWidth={1.6}
-            strokeLinecap="round"
-            vectorEffect={ve}
-          />
-        </symbol>
-
-        <symbol id={MARKER_ID.plus} viewBox="-5 -5 10 10">
-          <path
-            d="M0 -3.8 L0 3.8 M-3.8 0 L3.8 0"
-            fill="none"
-            strokeWidth={1.6}
-            strokeLinecap="round"
-            vectorEffect={ve}
-          />
-        </symbol>
-
-        <symbol id={MARKER_ID.square} viewBox="-5 -5 10 10">
-          <rect
-            x="-3.4" y="-3.4" width="6.8" height="6.8"
-            strokeWidth={sw}
-            strokeLinejoin="round"
-            vectorEffect={ve}
-          />
-        </symbol>
-
-        <symbol id={MARKER_ID.hexagon} viewBox="-5 -5 10 10">
-          <polygon
-            points="0,-4 3.5,-2 3.5,2 0,4 -3.5,2 -3.5,-2"
-            strokeWidth={sw}
-            strokeLinejoin="round"
-            vectorEffect={ve}
-          />
-        </symbol>
-
-        <symbol id={MARKER_ID.star} viewBox="-5 -5 10 10">
-          <polygon
-            points="0,-4 1.18,-1.29 3.9,-1.24 1.7,0.49 2.35,3.24 0,1.6 -2.35,3.24 -1.7,0.49 -3.9,-1.24 -1.18,-1.29"
-            strokeWidth={sw}
-            strokeLinejoin="round"
-            vectorEffect={ve}
-          />
-        </symbol>
-
-        {/* Chevron is outline-only, like cross/plus. */}
-        <symbol id={MARKER_ID.chevron} viewBox="-5 -5 10 10">
-          <path
-            d="M-3.6 -1.6 L0 2.2 L3.6 -1.6"
-            fill="none"
-            strokeWidth={1.6}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect={ve}
-          />
-        </symbol>
+        ))}
       </defs>
     </svg>
   );

@@ -1,24 +1,46 @@
 import { pinValueLabel, type ScoutingPin } from "@/lib/spread-api";
 
+type Pt = [number, number];
+
+/** Split the weekly values into runs of consecutive scouted weeks: a null
+ *  (thin or unscouted) week ends the run, so the line shows a gap there. */
+export function sparkSegments(points: (number | null)[], W = 84, H = 22): Pt[][] {
+  const step = points.length > 1 ? W / (points.length - 1) : 0;
+  const out: Pt[][] = [];
+  let run: Pt[] = [];
+  points.forEach((v, i) => {
+    if (v == null) {
+      if (run.length) out.push(run);
+      run = [];
+    } else {
+      run.push([i * step, H - (Math.max(0, Math.min(100, v)) / 100) * H]);
+    }
+  });
+  if (run.length) out.push(run);
+  return out;
+}
+
 /** 0–100 values left to right; a null (thin or unscouted) week is a gap. */
 export function Sparkline({ points, testId }: { points: (number | null)[]; testId?: string }) {
   const W = 84;
   const H = 22;
-  const step = points.length > 1 ? W / (points.length - 1) : 0;
-  const shown = points
-    .map((v, i) => (v == null ? null : ([i * step, H - (Math.max(0, Math.min(100, v)) / 100) * H] as [number, number])))
-    .filter((c): c is [number, number] => c != null);
+  const segments = sparkSegments(points, W, H);
+  const shown = segments.flat();
   return (
     <svg data-testid={testId} data-points={shown.length} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0 overflow-visible" aria-hidden>
-      {shown.length > 1 ? (
-        <polyline
-          points={shown.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ")}
-          fill="none"
-          stroke="var(--sd-data-purple)"
-          strokeWidth={1.5}
-          strokeLinejoin="round"
-        />
-      ) : null}
+      {segments
+        .filter((seg) => seg.length > 1)
+        .map((seg, i) => (
+          <polyline
+            key={i}
+            data-testid="spark-segment"
+            points={seg.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ")}
+            fill="none"
+            stroke="var(--sd-data-purple)"
+            strokeWidth={1.5}
+            strokeLinejoin="round"
+          />
+        ))}
       {shown.map(([x, y], i) => (
         <circle key={i} cx={x} cy={y} r={1.6} fill="var(--sd-data-purple)" />
       ))}

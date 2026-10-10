@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getHouseClusters = vi.fn();
@@ -90,8 +90,31 @@ describe("HouseSpread", () => {
     render(<HouseSpread {...props} />);
     expect(await screen.findByTestId("pin-sparkline-PIN-1")).toHaveAttribute("data-points", "2");
     expect(screen.getByTestId("pin-PIN-1")).toHaveTextContent("too few scouted");
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Delete pin Thrips · front" }));
     await waitFor(() => expect(deletePin).toHaveBeenCalledWith("PIN-1"));
+  });
+
+  it("asks before deleting a pin and keeps it when the answer is no", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<HouseSpread {...props} />);
+    await screen.findByTestId("pin-PIN-1");
+    fireEvent.click(screen.getByRole("button", { name: "Delete pin Thrips · front" }));
+    expect(confirm).toHaveBeenCalled();
+    expect(deletePin).not.toHaveBeenCalled();
+  });
+
+  it("never lets a slow pin list for the house it left land on the new house", async () => {
+    const slow: Record<string, (p: unknown[]) => void> = {};
+    listPins.mockReset().mockImplementation(
+      (_c: string, wh: string) => new Promise((res) => (slow[wh] = res)),
+    );
+    const { rerender } = render(<HouseSpread {...props} />);
+    rerender(<HouseSpread {...props} greenhouse="GH B" />);
+    await act(async () => slow["GH B"]([{ ...pin, name: "PIN-B", title: "Bpin" }]));
+    await act(async () => slow[GH]([{ ...pin, name: "PIN-A", title: "Apin" }]));
+    expect(screen.getByTestId("pin-PIN-B")).toBeInTheDocument();
+    expect(screen.queryByTestId("pin-PIN-A")).toBeNull();
   });
 
   it("draws no left-border strips", async () => {

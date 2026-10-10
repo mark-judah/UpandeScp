@@ -51,6 +51,7 @@ def _candidates(now) -> dict:
         if r.crop not in stations:
             stations[r.crop] = _common.station_word(r.crop)
         r["unit"] = B.unit_label(r.measure, stations[r.crop])
+        r["station_word"] = stations[r.crop]
         for user in TC.recipients_for(r.farm, r.crop, r.action):
             out.setdefault(user, []).append(r)
     for alerts in out.values():
@@ -91,10 +92,16 @@ def build_digests(now) -> dict:
 def _figure(a) -> str:
     """``33.3% ± 4.1`` — or ``33.3%`` + "too clustered to judge" when the stored
     margin is meaningless (``_margin`` is the only correct reader of it); a hot
-    spot shows its section's station count instead of a margin."""
-    text = frappe.utils.escape_html(B.format_value(a.value, a.unit))
+    spot shows its house's figure and its section's station count ("zones" /
+    "trees") instead of a margin."""
+    esc = frappe.utils.escape_html
+    text = esc(B.format_value(a.value, a.unit))
     if a.get("alert_type") == B.HOT_SPOT:
-        return f"{text} <span style='color:#777'>({int(a.sections_scouted or 0)} stations in this section)</span>"
+        house = f"(house {esc(B.format_value(a.house_value, a.unit))}) · " if a.get("house_value") is not None else ""
+        return (
+            f"{text} <span style='color:#777'>{house}{int(a.sections_scouted or 0)} "
+            f"{esc(B.stations_word(a.get('station_word')))} in this section</span>"
+        )
     margin = TC._margin(a)
     if margin is None:
         return f"{text} <span style='color:#777'>(too clustered to judge)</span>"

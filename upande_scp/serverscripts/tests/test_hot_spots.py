@@ -21,7 +21,7 @@ from upande_scp.serverscripts.tests.test_scouting_alerts import (
 
 LABEL = "first beds · front"
 SPOT_FIELDS = ["name", "alert_type", "section_row", "section_col", "section_label", "action", "band",
-               "value", "margin", "reliability", "sections_scouted", "status", "notified_band",
+               "value", "house_value", "margin", "reliability", "sections_scouted", "status", "notified_band",
                "notified_action", "notified", "raised_at"]
 
 
@@ -135,6 +135,7 @@ class TestHotSpots(HotCase):
              s.status, s.notified_band, s.notified_action or None),
             ("Hot spot", "Hot spot", "High", 100.0, "Fair", 5, LABEL, "Open", "High", None),
         )
+        self.assertEqual(s.house_value, 11.1)                              # the house figure is stored
         self.assertEqual(frappe.db.count("Scouting Alert", {"warehouse": self.gh, "alert_type": "Hot spot"}), 1)
         self.assertEqual([self.told(u, s.name) for u in (U_CREATOR, U_SUPER, U_APPROVER, U_GM)], [1, 1, 0, 0])
         subject = frappe.db.get_value("Notification Log", {"document_name": s.name, "for_user": U_CREATOR}, "subject")
@@ -267,6 +268,13 @@ class TestHotSpots(HotCase):
         self.assertEqual((s.section_label, s.value, s.sections_scouted), ("first rows · front", 100.0, 5))
         subject = frappe.db.get_value("Notification Log", {"document_name": s.name, "for_user": U_CREATOR}, "subject")
         self.assertIn(f"Hot spot in {block}, first rows · front: Mealybugs 100.0% (house 11.1%)", subject)
+        content = frappe.db.get_value("Notification Log", {"document_name": s.name, "for_user": U_CREATOR},
+                                      "email_content")
+        self.assertIn("5 trees scouted in this section", content)
+        row = next(r for r in TC.open_alerts("Avocado", greenhouse=block) if r.name == s.name)
+        self.assertEqual((row.house_value, row.station_word), (11.1, "tree"))
+        html = D.render([row], SUN_20)
+        self.assertIn("100.0% <span style='color:#777'>(house 11.1%) · 5 trees in this section</span>", html)
 
     def test_three_of_five_is_noise_on_the_alerts_and_the_grid(self):
         # Final review: a Percentage section is judged on its Wilson lower bound.
@@ -308,6 +316,7 @@ class TestSurfaces(HotCase):
                          [(house, "House", "Alarming"), (spot, "Hot spot", "Hot spot")])
         self.assertEqual((rows[1].section_label, rows[1].section_row, rows[1].section_col, rows[1].margin),
                          (LABEL, 0, 0, None))
+        self.assertEqual((rows[1].house_value, rows[1].station_word), (46.7, "zone"))
         self.assertEqual((rows[0].section_label or "", rows[0].section_row), ("", -1))
 
     def test_the_creator_never_sees_a_hot_spot(self):

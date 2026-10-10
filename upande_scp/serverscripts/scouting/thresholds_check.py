@@ -57,7 +57,7 @@ LIVE_STATES = ("Open", "Acknowledged", "Converted to plan")
 ALERT_FIELDS = [
     "name", "crop", "farm", "warehouse", "kind", "observation", "stage", "iso_week",
     "alert_type", "section_row", "section_col", "section_label",
-    "measure", "value", "margin", "reliability", "sections_scouted", "sections_total",
+    "measure", "value", "house_value", "margin", "reliability", "sections_scouted", "sections_total",
     "band", "action", "status", "raised_on", "raised_at", "acknowledged_by", "work_order",
 ]
 #: Every key-based statement matches the alert type and section too, so a house
@@ -154,7 +154,7 @@ def evaluate(crop, today=None) -> list:
                 "crop": crop, "warehouse": wh, "kind": kind, "observation": obs,
                 "stage": stage, "iso_week": week, "previous_week": previous,
                 "alert_type": B.HOUSE, "section_row": -1, "section_col": -1, "section_label": "",
-                "measure": spec["measure"],
+                "measure": spec["measure"], "station_word": station,
                 "unit": B.unit_label(spec["measure"], station), "value": value,
                 "margin": fig.get("margin"), "reliability": fig.get("reliability") or "Low",
                 "sections_scouted": fig.get("sections_scouted") or 0,
@@ -326,6 +326,8 @@ def upsert(finding, now=None, _retry=True):
         "reliability": finding["reliability"], "sections_scouted": finding["sections_scouted"],
         "sections_total": finding["sections_total"], "band": band, "action": action,
     }
+    if hot:
+        fields["house_value"] = finding.get("house_value")
     level, level_field = (band, "notified_band") if hot else (action, "notified_action")
     existing = _existing(name, latest=not _retry)
     reopened = False
@@ -445,7 +447,8 @@ def _hot_spot_text(finding) -> tuple:
         f"{value} (house {house}) — high infestation in this area, stay alert"
     )
     body = (
-        f"{subject}. {finding['crop']} · {finding['iso_week']} · {finding['sections_scouted']} stations "
+        f"{subject}. {finding['crop']} · {finding['iso_week']} · {finding['sections_scouted']} "
+        f"{B.stations_word(finding.get('station_word'))} "
         f"scouted in this section · band {B.BAND_LABEL.get(finding['band'], '')} · "
         "spraying follows the house's own alert."
     )
@@ -720,6 +723,7 @@ def open_alerts(crop: str, farm: str | None = None, greenhouse: str | None = Non
     station = _common.station_word(crop)
     for r in rows:
         r["unit"] = B.unit_label(r.measure, station)
+        r["station_word"] = station
         r["margin"] = _margin(r)
     rows.sort(key=lambda r: (
         -B.ALERT_RANK.get(r.action, 0), r.alert_type == B.HOT_SPOT, r.status != "Open", -(r.value or 0),

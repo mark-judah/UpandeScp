@@ -220,7 +220,7 @@ class TestDigest(AlertCase):
         self.assertNotIn(U_APPROVER, digests)
         html = D.render(digests[U_CREATOR], SUN_20)
         self.assertIn(f"{self.gh} · first beds · front", html)
-        self.assertIn("100.0% <span style='color:#777'>(5 stations in this section)</span>", html)
+        self.assertIn("100.0% <span style='color:#777'>(house 46.7%) · 5 zones in this section</span>", html)
         self.assertIn("Hot spot means one part of the house is clearly worse", html)
         with patch.object(frappe, "sendmail") as sendmail:
             D.send_alert_digest(at(SUN_20, 17, 5))

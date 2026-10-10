@@ -228,6 +228,11 @@ def band_escalates(previous, new) -> bool:
     return _STORED_BAND_RANK[new] > _STORED_BAND_RANK.get(previous or "", 0)
 
 
+def stations_word(station) -> str:
+    """``zones`` / ``trees`` — the crop's station, plural; ``stations`` when unknown."""
+    return f"{station}s" if station else "stations"
+
+
 def section_unit(station) -> str:
     """``row`` for a crop scouted on trees (avocado blocks), else ``bed``."""
     return "row" if station == "tree" else "bed"

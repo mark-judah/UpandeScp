@@ -6,6 +6,11 @@ import unittest
 import frappe
 
 from upande_scp.serverscripts.reports import block_weekly_report as R
+from upande_scp.serverscripts.dashboard_aggregates import _common
+from upande_scp.serverscripts.tests import crop_scoping_fixture as F
+from upande_scp.serverscripts.tests import thresholds_fixture as TF
+
+PEST = "Fruit fly (Ceratitis)"
 
 
 class TestAvailability(unittest.TestCase):
@@ -32,12 +37,12 @@ class TestAvailability(unittest.TestCase):
 			R.build_workbook_bytes("Coffee", "Endebess", 2026, 28)
 
 
-# The sheet grew an explanatory line and an Area column when per-hectare
-# thresholds landed, so the header moved from row 5 to row 6 and the pests start
-# at column 3. These are named once here rather than spelled out in every test.
+# Header on row 6 (an explanatory line sits above it). Block, Area (ha) and
+# Count / ha lead; the pests start at column 4 since thresholds piece 3a kept
+# count per hectare as a column (D8).
 HEADER_ROW = 6
 FIRST_BLOCK_ROW = HEADER_ROW + 1
-FIRST_PEST_COL = 3
+FIRST_PEST_COL = 4
 
 
 class TestTheSheet(unittest.TestCase):
@@ -73,6 +78,7 @@ class TestTheSheet(unittest.TestCase):
 		# Area sits beside the block because it is the denominator every shaded
 		# cell on that row was judged against.
 		self.assertEqual(header[1], "Area (ha)")
+		self.assertEqual(header[2], "Count / ha")
 		pest_header = [h for h in header[FIRST_PEST_COL - 1 :] if h]
 		self.assertEqual(pest_header[-1], "Total")
 		self.assertGreater(len(pest_header), 1, "expected at least one pest column")
@@ -153,49 +159,64 @@ class TestBlocksReachThePlanner(unittest.TestCase):
 		self.assertEqual(float(total or 0), 0.0)
 
 
-class TestSeverityBands(unittest.TestCase):
-	"""`_band` decides what a count means. Pure logic — no database."""
+class TestPerHectare(unittest.TestCase):
+	"""Count per hectare stays a column (thresholds D8). Pure logic."""
 
-	PER_HA = {"unit": "Per Hectare", "low": 1, "moderate": 3, "high": 6}
+	def test_divides_the_weeks_total_by_the_blocks_area(self):
+		self.assertEqual(R._per_hectare(30, 3.0), 10.0)
+		self.assertEqual(R._per_hectare(30, 30.0), 1.0)
 
-	def test_per_hectare_divides_by_area(self):
-		"""The whole point: 30 on a 3 ha block is 10/ha and alarming; the same 30
-		spread over 30 ha is 1/ha and merely present."""
-		self.assertEqual(R._band(30, self.PER_HA, 3.0), "high")
-		self.assertEqual(R._band(30, self.PER_HA, 30.0), "low")
+	def test_no_area_is_not_a_zero_area(self):
+		"""Dividing by a missing denominator would invent a figure."""
+		self.assertIsNone(R._per_hectare(30, None))
+		self.assertIsNone(R._per_hectare(30, 0))
 
-	def test_bands_are_inclusive_of_their_threshold(self):
-		"""The field description says the threshold is the value AT WHICH severity
-		becomes that band, so sitting exactly on it counts."""
-		self.assertEqual(R._band(18, self.PER_HA, 3.0), "high")       # 6.0/ha
-		self.assertEqual(R._band(9, self.PER_HA, 3.0), "moderate")    # 3.0/ha
-		self.assertEqual(R._band(3, self.PER_HA, 3.0), "low")         # 1.0/ha
 
-	def test_below_the_lowest_band_is_clean_not_unknown(self):
-		"""An empty string, not None: we know it is below Low. That is a different
-		answer from 'cannot be judged' and must not be drawn the same way."""
-		self.assertEqual(R._band(2, self.PER_HA, 3.0), "")
+class TestShadingFollowsTheFigure(unittest.TestCase):
+	"""The sheet shades with the alerts' figure and bands (D8). DB, rolled back;
+	2031-W20 holds only what the test seeds."""
 
-	def test_per_hectare_without_an_area_is_not_assessable(self):
-		"""Dividing by a missing denominator would invent a figure. Endebess's 64
-		coffee blocks carry no area, and a sheet for them must not imply calm."""
-		self.assertIsNone(R._band(30, self.PER_HA, None))
-		self.assertIsNone(R._band(30, self.PER_HA, 0))
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self.block = F.avocado_block()
+		TF.clear_all_bands("Avocado")
 
-	def test_an_unset_threshold_is_not_a_threshold_of_zero(self):
-		self.assertIsNone(R._band(10, None, 3.0))
-		self.assertIsNone(R._band(10, {}, 3.0))
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		_common.clear_threshold_cache()
+		frappe.db.rollback()
 
-	def test_per_zone_percent_cannot_describe_a_block(self):
-		"""Zones are a greenhouse idea. A block has none, so the unit does not apply
-		and the cell stays unjudged rather than being silently compared raw."""
-		spec = {"unit": "Per Zone %", "low": 1, "moderate": 2, "high": 3}
-		self.assertIsNone(R._band(10, spec, 3.0))
+	def _seed(self):
+		TF.seed_week(self.block, TF.WEEK_20[0], crop="Avocado", pest=PEST, stage="Adult", count=3, block=True)
 
-	def test_per_warehouse_compares_the_raw_count(self):
-		spec = {"unit": "Per Warehouse", "low": 3, "moderate": 8, "high": 16}
-		self.assertEqual(R._band(10, spec, None), "moderate")
-		self.assertEqual(R._band(2, spec, None), "")
+	def _cell(self, pest):
+		from openpyxl import load_workbook
+
+		ws = load_workbook(io.BytesIO(R.build_workbook_bytes("Avocado", "Lokitela", 2031, 20))).active
+		header = {ws.cell(row=HEADER_ROW, column=c).value: c for c in range(1, ws.max_column + 1)}
+		row = next(r for r in range(FIRST_BLOCK_ROW, ws.max_row + 1) if ws.cell(row=r, column=1).value == self.block)
+		return ws, row, ws.cell(row=row, column=header[pest])
+
+	def test_a_count_row_shades_on_the_average_count_per_tree(self):
+		TF.set_bands("Avocado", PEST, 0, 1, 2, measure="Count")
+		self._seed()
+		ws, row, cell = self._cell(PEST)
+		self.assertEqual(cell.value, 27)                              # still the week's count: 9 trees x 3
+		self.assertTrue(cell.fill.fgColor.rgb.endswith("F7B9B9"))     # 1.0 per tree -> Moderate
+		area = frappe.db.get_value("Warehouse", self.block, "custom_area_ha")
+		self.assertEqual(ws.cell(row=row, column=3).value, round(27 / float(area), 2))
+
+	def test_a_percentage_row_shades_on_the_share_of_trees(self):
+		TF.set_bands("Avocado", PEST, 0, 10, 30)
+		self._seed()
+		_ws, _row, cell = self._cell(PEST)
+		self.assertTrue(cell.fill.fgColor.rgb.endswith("E98080"))     # 33.3 % -> High
+
+	def test_misordered_bands_leave_the_cell_unshaded(self):
+		TF.set_bands("Avocado", PEST, 1, 0.4, 2)
+		self._seed()
+		_ws, _row, cell = self._cell(PEST)
+		self.assertNotEqual(cell.fill.fill_type, "solid")
 
 
 class TestThresholdAndAreaLoading(unittest.TestCase):

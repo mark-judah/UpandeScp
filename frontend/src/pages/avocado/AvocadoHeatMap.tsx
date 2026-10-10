@@ -27,15 +27,8 @@ import {
 } from "@/components/ui/popover";
 import { HEADER_PILL } from "@/components/header-controls";
 import { BlockSprayPlan } from "./BlockSprayPlan";
-import { getThresholds, type ThresholdPestRow } from "@/lib/thresholds-api";
-import {
-  BAND_COLOR,
-  BAND_LABEL,
-  bandFor,
-  bandRank,
-  judgedValue,
-  specsByPest,
-} from "@/lib/pest-bands";
+import { BAND_COLOR, BAND_LABEL, bandRank, judgedLabel, perHectare, type Band, type HouseFigure } from "@/lib/pest-bands";
+import { fetchHouseFigures } from "@/lib/threshold-figures-api";
 import { ALL, MapHeader, type MapFilterValue } from "../maps/MapHeader";
 import {
   fetchBlockAreas,
@@ -125,9 +118,8 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   const [showBoundary, setShowBoundary] = useState(false);
   const [showTrees, setShowTrees] = useState(true);
   const [planOpen, setPlanOpen] = useState(false);
-  // Thresholds and block areas, so a count can be said to be heavy FOR THIS
-  // BLOCK rather than merely large. Both are small and cached client-side.
-  const [pestSpecs, setPestSpecs] = useState<Record<string, ReturnType<typeof specsByPest>[string]>>({});
+  // The server's per-pest figures for the selected block, and block areas for count per hectare.
+  const [houseFigs, setHouseFigs] = useState<Record<string, HouseFigure>>({});
   const [blockAreas, setBlockAreas] = useState<Record<string, number>>({});
   // Which pests this plan is aimed at. The rose planner asks the same question
   // — what are we spraying for — and the answer rides onto the plan's scope.
@@ -144,18 +136,15 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   useEffect(() => {
     let cancelled = false;
     const farm = filters.farm === ALL ? undefined : filters.farm;
-    void Promise.all([
-      getThresholds(filters.crop).catch(() => null),
-      fetchBlockAreas({ farm }).catch(() => ({})),
-    ]).then(([bundle, areas]) => {
-      if (cancelled) return;
-      setPestSpecs(specsByPest((bundle?.pests as ThresholdPestRow[]) || []));
-      setBlockAreas(areas || {});
-    });
+    void fetchBlockAreas({ farm })
+      .catch(() => ({}))
+      .then((areas) => {
+        if (!cancelled) setBlockAreas(areas || {});
+      });
     return () => {
       cancelled = true;
     };
-  }, [filters.crop, filters.farm]);
+  }, [filters.farm]);
 
   useEffect(() => {
     setLoadingGeo(true);
@@ -277,6 +266,23 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     () => blockAggs.find((b) => b.block === selected) || null,
     [blockAggs, selected],
   );
+
+  // Each pest of the selected block, judged on the server exactly as the
+  // alerts and the weekly sheet judge it (thresholds D8).
+  const selectedBlock = selectedAgg?.block ?? null;
+  useEffect(() => {
+    if (!selectedBlock) {
+      setHouseFigs({});
+      return;
+    }
+    let cancelled = false;
+    void fetchHouseFigures(filters.crop, selectedBlock, filters.from, filters.to).then((f) => {
+      if (!cancelled) setHouseFigs(f);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBlock, filters.crop, filters.from, filters.to]);
 
   const onMapReady = (map: maplibregl.Map) => {
     mapRef.current = map;
@@ -424,35 +430,19 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       .sort((a, b) => b[1] - a[1])
       .slice(0, n);
 
-  // Pests for the selected block, judged against the crop's thresholds using
-  // that block's own hectares, and ordered by pressure — the pest furthest over
-  // its threshold leads, not merely the one with the biggest number. A pest that
-  // cannot be judged (no threshold set, or no area to divide by) keeps its place
-  // by count rather than being dropped: the sighting is still a fact.
+  // Pests for the selected block, ranked by the band the server judged — the
+  // pest furthest over its threshold leads, not merely the biggest count. A pest
+  // with no band keeps its place by count rather than being dropped.
   const rankedPests = useMemo(() => {
-    if (!selectedAgg)
-      return [] as Array<
-        readonly [
-          string,
-          number,
-          ReturnType<typeof bandFor>,
-          ReturnType<typeof judgedValue>,
-        ]
-      >;
-    const areaHa = blockAreas[selectedAgg.block] ?? null;
+    if (!selectedAgg) return [] as Array<readonly [string, number, Band, HouseFigure | null]>;
     return Array.from(selectedAgg.pests.entries())
       .map(([name, count]) => {
-        const spec = pestSpecs[name];
-        return [
-          name,
-          count,
-          bandFor(count, spec, areaHa),
-          judgedValue(count, spec, areaHa),
-        ] as const;
+        const f = houseFigs[name] ?? null;
+        return [name, count, f?.band ?? null, f] as const;
       })
       .sort((a, b) => bandRank(b[2]) - bandRank(a[2]) || b[1] - a[1])
       .slice(0, 8);
-  }, [selectedAgg, pestSpecs, blockAreas]);
+  }, [selectedAgg, houseFigs]);
 
   return (
     <div className="flex flex-col h-svh overflow-hidden">
@@ -588,6 +578,13 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
                     <div className="text-muted-foreground">
                       {selectedAgg.obs} observations · {selectedAgg.trees.size}{" "}
                       trees scouted
+                      {(() => {
+                        const ha = perHectare(
+                          Array.from(selectedAgg.pests.values()).reduce((s, c) => s + c, 0),
+                          blockAreas[selectedAgg.block],
+                        );
+                        return ha != null ? ` · ${ha} pests / ha` : "";
+                      })()}
                     </div>
                   </div>
 
@@ -650,8 +647,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
                                 different numbers that happen to agree. */}
                             {band && judged ? (
                               <span className="tabular-nums text-[0.65rem] text-muted-foreground">
-                                {(judged as { value: number }).value.toFixed(1)}
-                                {(judged as { suffix: string }).suffix}
+                                {judgedLabel(judged as HouseFigure)}
                               </span>
                             ) : null}
                             {band ? (

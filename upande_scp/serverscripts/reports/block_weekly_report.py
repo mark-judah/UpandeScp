@@ -12,7 +12,8 @@ week's counts in the cells.
 week. The child row records `plant_section`, `pest`, `stage` and `count`; summing count
 is the literal "cumulative over that week" and stays comparable between blocks of
 similar size. Stage and plant section are summed over rather than broken out — a
-sheet with a column per (pest, stage, section) is unreadable at avocado's pest count.
+sheet with a column per (pest, stage, section) is unreadable at avocado's pest count. Shading comes from
+`thresholds_check.figures_for_houses`, the alerts' own figure.
 
 Pests only. Diseases, weeds, predators and disorders are recorded by the same scouts on
 the same entries, but this sheet answers one question.
@@ -40,6 +41,9 @@ from collections import defaultdict
 import frappe
 
 from upande_scp.serverscripts.common import crop_scope
+from upande_scp.serverscripts.common import threshold_bands as B
+from upande_scp.serverscripts.dashboard_aggregates import _common
+from upande_scp.serverscripts.scouting import thresholds_check
 from upande_scp.serverscripts.scouting.get_complete_scouting_entries import _week_bounds
 
 #: Warehouses of this type are the reporting unit for block-grown crops.
@@ -183,46 +187,19 @@ def _pests_for_crop(crop: str) -> list[str]:
 
 
 def _thresholds_for_crop(crop: str) -> dict:
-	"""{pest: {"unit", "low", "moderate", "high"}} from the crop's Pest Filters.
-
-	`Pest Filter` has carried `low_threshold` / `moderate_threshold` /
-	`high_threshold` and a `unit` since severity was introduced, and nothing had
-	ever read them back — the sheet printed counts with no idea whether a number
-	was ordinary or alarming. This reads them.
-
-	NOTE: on both kaitet.local and live v16 every avocado filter is currently
-	`Per Warehouse` with all three bands at zero, so nothing shades until
-	somebody sets them. `populate_severity_defaults.run` holds a proposed set
-	(avocado Per Hectare: FCM 1/3/6, Thrips 5/15/30, ...) but it is a manual
-	`bench execute` that has never been run on either site, and its own comment
-	calls the numbers placeholders pending the agronomy team. Deliberately not
-	wired in here: shading a spraying report from numbers nobody has signed off
-	would be worse than shading nothing.
-
-	A pest with no filter row, or with all three bands at zero, is returned
-	absent: an unset threshold is not a threshold of nought, and colouring every
-	sighting red would make the sheet useless.
-	"""
-	rows = frappe.get_all(
-		"Pest Filter",
-		filters={"crop_scouted": crop},
-		fields=["pest", "unit", "low_threshold", "moderate_threshold", "high_threshold"],
-	)
+	"""{pest: {"measure", "low", "moderate", "high"}} — the crop's row bands, for
+	the legend. Read through `_common.load_thresholds`, so the legend lists exactly
+	the bands the shading (and the dashboards and alerts) judged with: a pest with
+	no bands, or misordered ones, is absent (thresholds spec D3)."""
 	out = {}
-	for r in rows:
-		pest = (r.get("pest") or "").strip()
-		if not pest:
+	for (kind, obs, stage), spec in _common.load_thresholds(crop).items():
+		if kind != "pest" or stage or not obs:
 			continue
-		low = float(r.get("low_threshold") or 0)
-		moderate = float(r.get("moderate_threshold") or 0)
-		high = float(r.get("high_threshold") or 0)
-		if not (low or moderate or high):
-			continue
-		out[pest] = {
-			"unit": (r.get("unit") or "").strip(),
-			"low": low,
-			"moderate": moderate,
-			"high": high,
+		out[obs] = {
+			"measure": spec["measure"],
+			"low": spec["low"],
+			"moderate": spec["mod"],
+			"high": spec["high"],
 		}
 	return out
 
@@ -254,40 +231,13 @@ def _block_areas(blocks: list[str]) -> dict:
 	}
 
 
-def _band(count: float, spec: dict, area_ha: float | None):
-	"""Which severity band a count falls in — or None when it cannot be said.
-
-	Returns "high" / "moderate" / "low" / "" (below the lowest band), or None
-	meaning "not assessable", which is a different answer and must not be drawn
-	as clean:
-
-	* no threshold configured for this pest;
-	* the unit is Per Hectare and the block has no area — dividing by a missing
-	  denominator would invent a figure;
-	* the unit is "Per Zone %", which is a greenhouse measure. Blocks have no
-	  zones, so a zone percentage cannot be computed for one.
-
-	Bands are compared as ">=", so a count sitting exactly on the High threshold
-	reads as High. The thresholds are the value AT WHICH severity becomes that
-	band — that is what the field descriptions say.
-	"""
-	if not spec:
+def _per_hectare(total: float, area_ha: float | None):
+	"""The week's count over the block's hectares, or None without an area —
+	dividing by a missing denominator would invent a figure (Endebess's coffee
+	blocks carry none). Kept as a column, not a band (thresholds D8)."""
+	if not area_ha:
 		return None
-	unit = spec.get("unit") or ""
-	value = float(count or 0)
-	if unit == "Per Hectare":
-		if not area_ha:
-			return None
-		value = value / float(area_ha)
-	elif unit == "Per Zone %":
-		return None
-	# "Per Warehouse" (and an unset unit) compare the raw count, which is what
-	# the sheet already prints.
-	for key in ("high", "moderate", "low"):
-		limit = float(spec.get(key) or 0)
-		if limit and value >= limit:
-			return key
-	return ""
+	return round(float(total or 0) / float(area_ha), 2)
 
 
 def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> bytes:
@@ -306,6 +256,8 @@ def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> 
 
 	thresholds = _thresholds_for_crop(crop)
 	areas = _block_areas(blocks)
+	figs = thresholds_check.figures_for_houses(crop, blocks, str(monday), str(sunday))
+	station = _common.station_word(crop)
 
 	pests = _pests_for_crop(crop)
 	# A pest seen this week but absent from the crop's filters still gets a column —
@@ -324,11 +276,11 @@ def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> 
 	ws["A2"] = f"{farm}   ·   {iso_year}-W{iso_week:02d}   ·   {monday} to {sunday}"
 	ws["A3"] = "Each cell is the total count recorded for that pest on that block over the week."
 	ws["A4"] = (
-		"Shading is the severity band from the crop's Pest Filter. Per-hectare "
-		"thresholds are judged on count \u00f7 area, so blocks of different sizes "
-		"compare fairly; an unshaded cell is either below the lowest band or has "
-		"no threshold set. A block with no area cannot be judged per hectare and "
-		"is left unshaded with its area shown as \u2014."
+		"Shading is the severity band from the crop's thresholds, judged on the same "
+		"figure as the dashboards and alerts: the share of scouted trees carrying the "
+		"pest (Percentage) or the average count per scouted tree (Count), over the "
+		"block's 3 \u00d7 3 sections. Reports judge on the row bands only. Count / ha "
+		"is the week's total over the block's area; a block with no area shows \u2014."
 	)
 	ws["A4"].font = Font(italic=True, size=9, color="666666")
 
@@ -336,9 +288,10 @@ def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> 
 	# cell on that row was judged against — a reader who cannot see it cannot
 	# check the colour.
 	header_row = 6
-	first_pest_col = 3
+	first_pest_col = 4
 	ws.cell(row=header_row, column=1, value="Block")
 	ws.cell(row=header_row, column=2, value="Area (ha)")
+	ws.cell(row=header_row, column=3, value="Count / ha")
 	for i, pest in enumerate(pests):
 		ws.cell(row=header_row, column=first_pest_col + i, value=pest)
 	ws.cell(row=header_row, column=first_pest_col + len(pests), value="Total")
@@ -373,19 +326,23 @@ def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> 
 		for i, pest in enumerate(pests):
 			value = counts.get(block, {}).get(pest, 0)
 			cell = ws.cell(row=r, column=first_pest_col + i, value=value)
-			if value:
-				band = _band(value, thresholds.get(pest), area)
-				if band:
-					cell.fill = band_fills[band]
+			band = (figs.get(block, {}).get(pest) or {}).get("band")
+			if value and band:
+				cell.fill = band_fills[band]
 			row_total += value
 			column_totals[i] += value
 		ws.cell(row=r, column=first_pest_col + len(pests), value=row_total)
+		per_ha = _per_hectare(row_total, area)
+		per_ha_cell = ws.cell(row=r, column=3, value=per_ha if per_ha is not None else "\u2014")
+		if per_ha is None:
+			per_ha_cell.alignment = Alignment(horizontal="center")
 
 	total_row = header_row + 1 + len(blocks)
 	ws.cell(row=total_row, column=1, value="Total").font = Font(bold=True)
 	total_area = sum(areas.get(b, 0) for b in blocks)
 	if total_area:
 		ws.cell(row=total_row, column=2, value=round(total_area, 2)).font = Font(bold=True)
+		ws.cell(row=total_row, column=3, value=_per_hectare(sum(column_totals), total_area)).font = Font(bold=True)
 	for i, total in enumerate(column_totals):
 		cell = ws.cell(row=total_row, column=first_pest_col + i, value=total)
 		cell.font = Font(bold=True)
@@ -397,7 +354,7 @@ def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> 
 	legend_row = total_row + 2
 	ws.cell(row=legend_row, column=1, value="Thresholds").font = Font(bold=True)
 	if thresholds:
-		ws.cell(row=legend_row, column=2, value="Unit")
+		ws.cell(row=legend_row, column=2, value="Measure")
 		ws.cell(row=legend_row, column=3, value="Low")
 		ws.cell(row=legend_row, column=4, value="Moderate")
 		ws.cell(row=legend_row, column=5, value="High")
@@ -406,7 +363,7 @@ def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> 
 		for n, pest in enumerate(sorted(thresholds), start=1):
 			spec = thresholds[pest]
 			ws.cell(row=legend_row + n, column=1, value=pest)
-			ws.cell(row=legend_row + n, column=2, value=spec["unit"] or "Per Warehouse")
+			ws.cell(row=legend_row + n, column=2, value=f"{spec['measure']} ({B.unit_label(spec['measure'], station)})")
 			for col, key in ((3, "low"), (4, "moderate"), (5, "high")):
 				cell = ws.cell(row=legend_row + n, column=col, value=spec[key] or None)
 				cell.fill = band_fills[key]
@@ -425,13 +382,14 @@ def build_workbook_bytes(crop: str, farm: str, iso_year: int, iso_week: int) -> 
 			column=1,
 			value=(
 				f"{len(missing_area)} of {len(blocks)} blocks have no area set, so their "
-				"per-hectare thresholds could not be judged. Set Area (ha) on the "
+				"count per hectare cannot be shown. Set Area (ha) on the "
 				"block's Warehouse to bring them in."
 			),
 		).font = Font(italic=True, color="996600")
 
 	ws.column_dimensions["A"].width = 32
 	ws.column_dimensions["B"].width = 10
+	ws.column_dimensions["C"].width = 11
 	for i in range(len(pests) + 1):
 		ws.column_dimensions[
 			ws.cell(row=header_row, column=first_pest_col + i).column_letter

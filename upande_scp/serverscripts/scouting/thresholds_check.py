@@ -441,3 +441,48 @@ def open_alerts(crop: str, farm: str | None = None, greenhouse: str | None = Non
         r.warehouse or "", r.observation or "", r.stage or "",
     ))
     return rows
+
+
+# ── figures for the block report and the Jobsheet (D8) ────────────────────
+
+
+def figures_for_houses(crop, houses, from_date, to_date) -> dict:
+    """``{house: {pest: figure}}`` — each house's latest scouted ISO week in the
+    window, every pest recorded that week, judged exactly as the alerts judge
+    it (same measure, figure and row bands). ``band`` is None when the pest has
+    no usable bands."""
+    crop = crop_catalog.canonical(crop)
+    houses = sorted({h for h in (houses or ()) if h})
+    if not crop or not houses:
+        return {}
+    weeks = R.StationWeeks.load(from_date, to_date, crop, houses, kinds=("pest",), lookback_days=0)
+    station = _common.station_word(crop)
+    out = {}
+    for wh in weeks.warehouses():
+        week, _previous = weeks.latest_pair(wh)
+        per = {}
+        for obs in weeks.observations(wh, week, "pest"):
+            spec = _common.band_spec(crop, "pest", obs, "")
+            measure = spec["measure"] if spec else B.PERCENTAGE
+            fig, value = _figure(weeks, wh, week, "pest", obs, "", spec or {"measure": B.PERCENTAGE})
+            fig = fig or {}
+            band = B.band_of(value, spec["low"], spec["mod"], spec["high"]) if spec else None
+            per[obs] = {
+                "measure": measure, "unit": B.unit_label(measure, station), "value": value,
+                "margin": fig.get("margin"), "reliability": fig.get("reliability") or "Low",
+                "sections_scouted": fig.get("sections_scouted") or 0,
+                "sections_total": fig.get("sections_total") or P.SECTIONS,
+                "band": band, "action": B.action_for(band, fig.get("reliability")), "week": week,
+            }
+        out[wh] = per
+    return out
+
+
+@frappe.whitelist()
+def house_figures(crop: str, warehouse: str, from_date: str, to_date: str) -> dict:
+    """The Jobsheet's per-pest figures for one block or greenhouse."""
+    crop = crop_catalog.resolve_crop(crop)
+    if not crop or not warehouse:
+        return {}
+    _assert_can_see(crop, frappe.db.get_value("Warehouse", warehouse, "custom_farm"))
+    return figures_for_houses(crop, [warehouse], from_date, to_date).get(warehouse, {})

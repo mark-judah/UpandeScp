@@ -283,7 +283,8 @@ def band_spec(crop: str, kind: str, obs_name: str, stage: str = "") -> dict | No
     """The bands a (kind, observation, stage) figure is judged against, and the
     measure it is judged in: the stage's own bands first, else the row's bands
     read in the stage's measure (a tick-box stage under a Count row is a share,
-    and its Count — were it counted — would be that stage's alone)."""
+    and its Count — were it counted — would be that stage's alone). A Sign stage
+    with no band of its own has none: it is never graded on the pest's band."""
     thresholds = load_thresholds(crop)
     if not thresholds:
         return None
@@ -295,6 +296,8 @@ def band_spec(crop: str, kind: str, obs_name: str, stage: str = "") -> dict | No
     row = thresholds.get((kind, obs_name, ""))
     if not row or not stage:
         return row
+    if stage_roles.role_of(stage, stage_roles.role_map()) == stage_roles.SIGN:
+        return None     # a Sign is not the live pest: never graded on the pest's all-stage band
     return {
         **row,
         "measure": B.effective_measure(row["row_measure"], row["reading_types"].get(stage, "")),

@@ -417,3 +417,83 @@ class TestEditor(StageCase):
         for ok in (100, 0):
             row = self._save_weight(ok)
             self.assertEqual(frappe.db.get_value("Pests Stages", {"parent": row["row"], "stage": "Eggs"}, "weight"), float(ok))
+
+
+GD = import_module("upande_scp.serverscripts.dashboard_aggregates._gh_detail")
+
+
+class TestFinalReviewFixes(StageCase):
+    """Final review: a Sign cell is never graded on the pest's band; no double
+    signs figure on a Sign cell; count weights reach the alert and hot-spot readers."""
+
+    def setUp(self):
+        super().setUp()
+        for stage, role in (("Adult", "Life stage"), ("Damages", "Sign"), ("Eggs", "Life stage"),
+                            ("Motiles", "Form")):
+            SV.set_role(stage, role)
+
+    def _cells(self):
+        where, params = _common.parent_filter_conditions(*SV.WEEK_44, "Rose", None)
+        weeks = R.StationWeeks.load(*SV.WEEK_44, "Rose", None)
+        return O._classify_cells(O._observation_rows(where, params), "Rose", weeks)
+
+    def _seed_thrips(self):
+        TF.seed_week(self.gh, SV.WEEK_44[0], crop="Rose", stage="Adult", infested_per_section=1)
+        TF.seed_week(self.gh, SV.WEEK_44[0], crop="Rose", stage="Damages", infested_per_section=3)  # signs 100 %
+
+    def test_a_sign_cell_with_no_band_of_its_own_gets_no_severity_and_no_alert(self):
+        TF.set_bands("Rose", "Thrips", 5, 20, 50)
+        self._seed_thrips()
+        self.assertIsNone(_common.band_spec("Rose", "pest", "Thrips", "Damages"))
+        self.assertIsNotNone(_common.band_spec("Rose", "pest", "Thrips", "Adult"))
+        gh_out, cells, total = self._cells()
+        damages = next(c for c in cells if c["greenhouse"] == self.gh and c["stage"] == "Damages")
+        self.assertIsNone(damages["severity"])
+        self.assertEqual(total, 0)
+        self.assertFalse([a for a in O._active_alerts_from_cells(cells) if a["stage"] == "Damages"])
+
+    def test_a_sign_stage_with_its_own_band_is_still_graded(self):
+        TF.set_bands("Rose", "Thrips", 5, 20, 50, stage_bands={"Damages": (5, 20, 50)})
+        self._seed_thrips()
+        damages = next(c for c in self._cells()[1] if c["greenhouse"] == self.gh and c["stage"] == "Damages")
+        self.assertEqual(damages["severity"], "high")
+
+    def test_a_sign_cell_carries_no_signs_figure_of_its_own(self):
+        self._seed_thrips()
+        cells = self._cells()[1]
+        damages = next(c for c in cells if c["greenhouse"] == self.gh and c["stage"] == "Damages")
+        adult = next(c for c in cells if c["greenhouse"] == self.gh and c["stage"] == "Adult")
+        self.assertIsNone(damages["signs"])
+        self.assertIsNotNone(adult["signs"])
+
+    def _spidermites(self):
+        SV.set_master_weight("Eggs", 0.5)
+        SV.set_override("Rose", "Spidermites", "Eggs", 0)
+        SV.set_master_weight("Motiles", 1)
+        SV.set_override("Rose", "Spidermites", "Motiles", 0)
+        TF.set_bands("Rose", "Spidermites", 0, 1, 5, measure="Count")
+        TF.seed_week(self.gh, SV.WEEK_44[0], crop="Rose", pest="Spidermites", stage="Eggs", count=6)
+        return R.StationWeeks.load(*SV.WEEK_44, "Rose", None)
+
+    def test_thresholds_check_figure_passes_the_count_weights(self):
+        weeks = self._spidermites()
+        spec = _common.band_spec("Rose", "pest", "Spidermites", "")
+        week = weeks.latest_pair(self.gh)[0]
+        weighted = TC._figure(weeks, self.gh, week, "pest", "Spidermites", "", spec)[1]
+        plain = TC._figure(weeks, self.gh, week, "pest", "Spidermites", "",
+                           {**spec, "count_weights": ()})[1]
+        self.assertIsNotNone(plain)
+        self.assertEqual(weighted, plain / 2)
+
+    def test_mark_hot_passes_the_count_weights(self):
+        weeks = self._spidermites()
+        seen = {}
+        real = weeks.count_latest
+
+        def spy(*a, **kw):
+            seen.update(kw)
+            return real(*a, **kw)
+        with patch.object(weeks, "count_latest", side_effect=spy):
+            GD._mark_hot("Rose", "pest", "Spidermites", weeks, self.gh,
+                         weeks.latest(self.gh, "pest", "Spidermites"))
+        self.assertEqual(dict(seen["weights"])["Eggs"], 0.5)

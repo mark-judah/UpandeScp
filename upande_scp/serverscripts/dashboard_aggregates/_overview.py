@@ -2,6 +2,7 @@
 
 import frappe
 
+from upande_scp.serverscripts.common import stage_roles
 from upande_scp.serverscripts.common import prevalence as P
 from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows
@@ -245,6 +246,7 @@ def _classify_cells(obs: list, crop: str, weeks) -> tuple:
             cell["latest_date"] = date
 
     out_cells: list = []
+    roles = stage_roles.role_map()
     for (gh, kind, obs_name, stage), cell in cells.items():
         fig = weeks.latest(gh, kind, obs_name, stage)
         if not fig:
@@ -268,7 +270,10 @@ def _classify_cells(obs: list, crop: str, weeks) -> tuple:
             "date":       cell["latest_date"],
             **P.public(fig),
             # S4: the pest's signs beside its live figure (pest-level, every stage cell).
-            "signs":      _prevalence_rows.signs_latest(weeks, crop, gh, obs_name) if kind == "pest" else None,
+            "signs":      (
+                _prevalence_rows.signs_latest(weeks, crop, gh, obs_name)
+                if kind == "pest" and stage_roles.role_of(stage, roles) != stage_roles.SIGN else None
+            ),
         })
 
     for gh, bucket in by_gh.items():

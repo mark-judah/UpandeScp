@@ -58,6 +58,24 @@ describe("Overview active alerts", () => {
     expect(within(first).queryByRole("button", { name: "Acknowledge" })).toBeNull();
   });
 
+  it("says so quietly when acknowledging is denied, and keeps the row open", async () => {
+    acknowledgeAlert.mockRejectedValue(Object.assign(new Error("frappe.exceptions.PermissionError"), { status: 403 }));
+    renderTab();
+    const [first] = await screen.findAllByTestId("active-alert");
+    await userEvent.click(within(first).getByRole("button", { name: "Acknowledge" }));
+    expect(await within(first).findByText("You don't have permission to acknowledge this alert")).toBeInTheDocument();
+    expect(within(first).getByRole("button", { name: "Acknowledge" })).toBeEnabled();
+  });
+
+  it("offers a retry message on any other failure", async () => {
+    acknowledgeAlert.mockRejectedValue(new Error("boom"));
+    renderTab();
+    const [first] = await screen.findAllByTestId("active-alert");
+    await userEvent.click(within(first).getByRole("button", { name: "Acknowledge" }));
+    expect(await within(first).findByText("Couldn't acknowledge — try again")).toBeInTheDocument();
+    expect(within(first).getByRole("button", { name: "Acknowledge" })).toBeInTheDocument();
+  });
+
   it("asks for nothing without a crop", () => {
     render(<OverviewTab data={null} scoutLookup={{}} fromDate="" toDate="" />);
     expect(listOpenAlerts).not.toHaveBeenCalled();

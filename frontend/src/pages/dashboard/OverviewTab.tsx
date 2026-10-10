@@ -112,6 +112,7 @@ export function OverviewTab({
   // `activeAlerts` is no longer drawn.
   const [alerts, setAlerts] = useState<ScoutingAlert[]>([]);
   const [acking, setAcking] = useState<string | null>(null);
+  const [ackNote, setAckNote] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!crop) {
       setAlerts([]);
@@ -131,11 +132,19 @@ export function OverviewTab({
   }, [crop, farm, greenhouse]);
   const acknowledge = async (name: string) => {
     setAcking(name);
+    setAckNote((n) => ({ ...n, [name]: "" }));
     try {
       const r = await acknowledgeAlert(name);
       setAlerts((rows) => rows.map((a) => (a.name === name ? { ...a, status: r.status } : a)));
-    } catch {
-      // Left Open; the next load shows the truth.
+    } catch (e) {
+      const denied =
+        (e as { status?: number })?.status === 403 || /PermissionError/i.test(String((e as Error)?.message));
+      setAckNote((n) => ({
+        ...n,
+        [name]: denied
+          ? "You don't have permission to acknowledge this alert"
+          : "Couldn't acknowledge — try again",
+      }));
     } finally {
       setAcking(null);
     }
@@ -371,6 +380,11 @@ export function OverviewTab({
                       <span className="text-[0.65rem] text-muted-foreground">Acknowledged</span>
                     )}
                   </div>
+                  {ackNote[a.name] ? (
+                    <div data-testid="alert-ack-note" className="text-[0.65rem] text-muted-foreground">
+                      {ackNote[a.name]}
+                    </div>
+                  ) : null}
                 </div>
               ))
             ) : (

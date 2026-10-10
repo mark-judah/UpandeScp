@@ -77,6 +77,20 @@ def _order_key(number, name) -> tuple:
     return (number is None, number if number is not None else 0, str(name or ""))
 
 
+def _ordered_groups(stations) -> list:
+    """One house's stations as ordered groups: beds (orchard rows) by number,
+    then name; each group's stations by number, then name. The one ordering
+    both ``grid_positions`` and ``rank_positions`` read (spread spec §1)."""
+    groups: dict = {}
+    group_no: dict = {}
+    for s in stations:
+        g = s.get("group") or ""
+        groups.setdefault(g, []).append(s)
+        group_no.setdefault(g, s.get("group_no"))
+    ordered = sorted(groups, key=lambda g: _order_key(group_no[g], g))
+    return [sorted(groups[g], key=lambda s: _order_key(s.get("no"), s["name"])) for g in ordered]
+
+
 def grid_positions(stations) -> dict:
     """``{station_name: (row, col)}`` for one greenhouse/block (spec D3).
 
@@ -87,22 +101,27 @@ def grid_positions(stations) -> dict:
     ``(floor(3·b/B), floor(3·z/Z_b))``. Fewer than 3 groups, or a group of 1–2
     stations, still maps every station; the unused sections stay empty.
     """
-    groups: dict = {}
-    group_no: dict = {}
-    for s in stations:
-        g = s.get("group") or ""
-        groups.setdefault(g, []).append(s)
-        group_no.setdefault(g, s.get("group_no"))
-    ordered = sorted(groups, key=lambda g: _order_key(group_no[g], g))
+    ordered = _ordered_groups(stations)
     n_groups = len(ordered)
     out: dict = {}
-    for b, g in enumerate(ordered):
+    for b, members in enumerate(ordered):
         row = (GRID * b) // n_groups
-        members = sorted(groups[g], key=lambda s: _order_key(s.get("no"), s["name"]))
         size = len(members)
         for z, s in enumerate(members):
             out[s["name"]] = (row, (GRID * z) // size)
     return out
+
+
+def rank_positions(stations) -> dict:
+    """``{station_name: (group rank, rank within the group)}``, 0-based: bed rank
+    and zone rank within the bed (rose), row rank and tree rank within the row
+    (avocado). Same ordering as ``grid_positions``, so a station's grid cell is
+    always ``(3·b // B, 3·z // Z_b)`` of its ranks (spread spec §1)."""
+    return {
+        s["name"]: (b, z)
+        for b, members in enumerate(_ordered_groups(stations))
+        for z, s in enumerate(members)
+    }
 
 
 def section_counts(grid: dict, stations) -> list:

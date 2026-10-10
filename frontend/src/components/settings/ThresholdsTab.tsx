@@ -14,7 +14,7 @@
  * own weight).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bug, Hexagon, Save, Loader2 } from "lucide-react";
 import {
   Card,
@@ -42,6 +42,18 @@ type FilterRow = ThresholdPestRow | ThresholdDiseaseRow;
 
 function isPest(row: FilterRow): row is ThresholdPestRow {
   return (row as ThresholdPestRow).pest !== undefined;
+}
+
+/** A weight scales a stage's count, so only a counted stage (a Life stage or Form
+ *  scouts record as a number) under a pest row measured as a Count has one. */
+export function weightApplies(row: FilterRow, measure: Measure, s: ThresholdStageRow): boolean {
+  return isPest(row) && measure === "Count" && s.role !== "Sign" && s.reading_type === "Count";
+}
+
+/** A typed weight the server would refuse: not a finite number from 0 to WEIGHT_MAX. */
+export function weightInvalid(text: string): boolean {
+  const typed = text.trim();
+  return typed !== "" && !(Number.isFinite(Number(typed)) && Number(typed) >= 0 && Number(typed) <= WEIGHT_MAX);
 }
 
 /** The row's or any stage's bands do not rise. */
@@ -103,13 +115,25 @@ export function ThresholdsTab({ crop }: { crop: string }) {
     patchRow(key, i, { stages } as Partial<FilterRow>);
   };
 
+  // Stage rows whose weight field holds a value the server would refuse.
+  const [badWeights, setBadWeights] = useState<ReadonlySet<string>>(new Set());
+  const markWeight = useCallback((id: string, bad: boolean) => {
+    setBadWeights((prev) => {
+      if (prev.has(id) === bad) return prev;
+      const next = new Set(prev);
+      if (bad) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
   const invalidRows = useMemo(
     () => (bundle ? [...bundle.pests, ...bundle.diseases].filter(rowInvalid).length : 0),
     [bundle],
   );
 
   const onSave = async () => {
-    if (!bundle || !crop || invalidRows) return;
+    if (!bundle || !crop || invalidRows || badWeights.size) return;
     setSaving(true);
     setError(null);
     try {
@@ -149,10 +173,15 @@ export function ThresholdsTab({ crop }: { crop: string }) {
               {invalidRows} row{invalidRows !== 1 ? "s" : ""} need rising bands before saving.
             </span>
           )}
+          {badWeights.size > 0 && (
+            <span data-testid="weight-save-note" className="text-[0.7rem] text-destructive">
+              Fix the weights outside 0 to {WEIGHT_MAX} before saving.
+            </span>
+          )}
           <Button
             type="button"
             onClick={onSave}
-            disabled={saving || loading || !bundle || invalidRows > 0}
+            disabled={saving || loading || !bundle || invalidRows > 0 || badWeights.size > 0}
             className="h-9 gap-2"
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
@@ -190,6 +219,7 @@ export function ThresholdsTab({ crop }: { crop: string }) {
                   station={station}
                   onPatch={(patch) => patchRow("pests", i, patch)}
                   onStagePatch={(si, patch) => patchStage("pests", i, si, patch)}
+                  onWeightValidity={markWeight}
                 />
               ))}
             </Section>
@@ -292,11 +322,13 @@ function FilterEditor({
   station,
   onPatch,
   onStagePatch,
+  onWeightValidity,
 }: {
   row: FilterRow;
   station: string;
   onPatch: (patch: Partial<FilterRow>) => void;
   onStagePatch: (i: number, patch: Partial<ThresholdStageRow>) => void;
+  onWeightValidity?: (id: string, bad: boolean) => void;
 }) {
   const name = isPest(row) ? row.pest : row.disease;
   const measure: Measure = row.measure === "Count" ? "Count" : "Percentage";
@@ -343,8 +375,10 @@ function FilterEditor({
                   values={{ low: s.low, moderate: s.moderate, high: s.high }}
                   onChange={(patch) => onStagePatch(i, patch)}
                 />
-                {isPest(row) && (
+                {weightApplies(row, measure, s) && (
                   <WeightInput
+                    id={s.row}
+                    onValidity={onWeightValidity}
                     stage={s.stage}
                     value={s.weight ?? 0}
                     master={s.master_weight ?? 1}
@@ -438,11 +472,15 @@ function StageRolePill({ role, testId }: { role: string; testId: string }) {
  *  own weight, shown as the placeholder. A text field with its own draft, so
  *  "0." can be typed on the way to "0.5". */
 function WeightInput({
+  id,
+  onValidity,
   stage,
   value,
   master,
   onChange,
 }: {
+  id: string;
+  onValidity?: (id: string, bad: boolean) => void;
   stage: string;
   value: number;
   master: number;
@@ -452,8 +490,12 @@ function WeightInput({
   useEffect(() => {
     setText((t) => ((parseFloat(t) || 0) === value ? t : value > 0 ? String(value) : ""));
   }, [value]);
-  const typed = text.trim();
-  const bad = typed !== "" && !(Number.isFinite(Number(typed)) && Number(typed) >= 0 && Number(typed) <= WEIGHT_MAX);
+  const bad = weightInvalid(text);
+  // Tell the tab, so Save waits; a field that goes away no longer blocks it.
+  useEffect(() => {
+    onValidity?.(id, bad);
+    return () => onValidity?.(id, false);
+  }, [id, bad, onValidity]);
   return (
     <div className="flex items-center gap-1">
       <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">Weight</span>

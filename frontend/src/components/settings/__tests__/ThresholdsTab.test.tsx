@@ -120,9 +120,8 @@ describe("ThresholdsTab", () => {
     expect(within(thrips).getByTestId("stage-role-s1")).toHaveTextContent("Life stage");
     expect(within(thrips).getByTestId("stage-role-s2")).toHaveTextContent("Sign");
     expect(within(thrips).getByLabelText("Weight for Adult")).toHaveValue("0.5");
-    const damages = within(thrips).getByLabelText("Weight for Damages");
-    expect(damages).toHaveValue("");
-    expect(damages).toHaveAttribute("placeholder", "1");
+    const adult = within(thrips).getByLabelText("Weight for Adult");
+    expect(adult).toHaveAttribute("placeholder", "1");
     expect(thrips.innerHTML).not.toMatch(/border-l-|border-left/);
   });
 
@@ -139,10 +138,11 @@ describe("ThresholdsTab", () => {
     render(<ThresholdsTab crop="Rose" />);
     const thrips = await screen.findByTestId("threshold-row-p1");
     fireEvent.change(within(thrips).getByLabelText("Weight for Adult"), { target: { value: "0.5" } });
-    fireEvent.change(within(thrips).getByLabelText("Weight for Damages"), { target: { value: "" } });
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
-    const stages = saveThresholds.mock.calls[0][1].pests[0].stages;
-    expect([stages[0].weight, stages[1].weight]).toEqual([0.5, 0]);
+    expect(saveThresholds.mock.calls[0][1].pests[0].stages[0].weight).toBe(0.5);
+    fireEvent.change(within(thrips).getByLabelText("Weight for Adult"), { target: { value: "" } });
+    await userEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(saveThresholds.mock.calls[1][1].pests[0].stages[0].weight).toBe(0);
   });
 
   it("flags an out-of-range weight inline instead of clamping it", async () => {
@@ -153,5 +153,60 @@ describe("ThresholdsTab", () => {
     expect(within(thrips).getByTestId("weight-error-Adult")).toHaveTextContent("0 to 100");
     fireEvent.change(within(thrips).getByLabelText("Weight for Adult"), { target: { value: "100" } });
     expect(within(thrips).queryByTestId("weight-error-Adult")).toBeNull();
+  });
+
+  it("blocks Save while a weight is invalid, and frees it once fixed", async () => {
+    getThresholds.mockResolvedValue(rose);
+    render(<ThresholdsTab crop="Rose" />);
+    const thrips = await screen.findByTestId("threshold-row-p1");
+    const weight = within(thrips).getByLabelText("Weight for Adult");
+    const save = screen.getByRole("button", { name: /save/i });
+    for (const bad of ["abc", "-1", "101", "Infinity"]) {
+      fireEvent.change(weight, { target: { value: bad } });
+      expect(save).toBeDisabled();
+      expect(screen.getByTestId("weight-save-note")).toBeInTheDocument();
+    }
+    await userEvent.click(save);
+    expect(saveThresholds).not.toHaveBeenCalled();
+    fireEvent.change(weight, { target: { value: "0.5" } });
+    expect(save).not.toBeDisabled();
+    expect(screen.queryByTestId("weight-save-note")).toBeNull();
+  });
+
+  it("an invalid weight stops blocking Save once its field is hidden", async () => {
+    getThresholds.mockResolvedValue(rose);
+    render(<ThresholdsTab crop="Rose" />);
+    const thrips = await screen.findByTestId("threshold-row-p1");
+    fireEvent.change(within(thrips).getByLabelText("Weight for Adult"), { target: { value: "101" } });
+    expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
+    await userEvent.click(within(thrips).getByRole("radio", { name: "Percentage" }));
+    expect(within(thrips).queryByLabelText("Weight for Adult")).toBeNull();
+    expect(screen.getByRole("button", { name: /save/i })).not.toBeDisabled();
+  });
+
+  it("shows a weight only on a counted Life stage or Form of a Count pest row", async () => {
+    const thrips = rose.pests[0];
+    getThresholds.mockResolvedValue({
+      ...rose,
+      pests: [
+        { ...thrips, stages: [
+          ...thrips.stages,
+          { row: "s3", stage: "Motiles", reading_type: "Count", low: 0, moderate: 0, high: 0, invalid: false,
+            role: "Form", weight: 0, master_weight: 1 },
+          { row: "s4", stage: "Eggs", reading_type: "Checkbox", low: 0, moderate: 0, high: 0, invalid: false,
+            role: "Life stage", weight: 0, master_weight: 1 },
+        ] },
+        { ...thrips, row: "p9", pest: "Mites", measure: "Percentage", stages: [
+          { ...thrips.stages[0], row: "m1", stage: "Larvae" },
+        ] },
+      ],
+    });
+    render(<ThresholdsTab crop="Rose" />);
+    const count = await screen.findByTestId("threshold-row-p1");
+    expect(within(count).getByLabelText("Weight for Adult")).toBeInTheDocument();     // Life stage, counted
+    expect(within(count).getByLabelText("Weight for Motiles")).toBeInTheDocument();   // Form, counted
+    expect(within(count).queryByLabelText("Weight for Damages")).toBeNull();          // Sign
+    expect(within(count).queryByLabelText("Weight for Eggs")).toBeNull();             // tick-box stage
+    expect(within(screen.getByTestId("threshold-row-p9")).queryByLabelText("Weight for Larvae")).toBeNull();  // Percentage row
   });
 });

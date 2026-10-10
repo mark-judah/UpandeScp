@@ -187,7 +187,8 @@ function HouseTable({ rows }: { rows: QualityHouse[] }) {
       <CardHeader className="p-0 pb-2">
         <CardTitle>Houses</CardTitle>
         <CardDescription>
-          Coverage is the house's latest scouted week in the range; GPS figures cover every entry.
+          Coverage is the house's latest complete week in the range (the current week only when
+          nothing else is, marked partial); GPS figures cover every entry.
           {anyThin && (
             <span className="mt-1 block">
               Greyed GPS figures: fewer than half of that house's entries carry GPS detail
@@ -220,6 +221,9 @@ function HouseTable({ rows }: { rows: QualityHouse[] }) {
                   <TableRow key={h.house} data-testid="quality-house" data-gps={thin ? "thin" : "ok"}>
                     <TableCell className="font-medium whitespace-nowrap">{h.house}</TableCell>
                     <TableCell className="text-right tabular-nums whitespace-nowrap">
+                      {h.weekPartial && h.coveragePct != null && (
+                        <span className="mr-1 text-[11px] text-[var(--sd-quiet)]">partial week</span>
+                      )}
                       {pct(h.coveragePct)}
                       {h.stations ? (
                         <span className="ml-1 text-xs text-muted-foreground">
@@ -261,8 +265,9 @@ function ScoutTable({ rows, scopeNothing }: { rows: QualityScout[]; scopeNothing
       <CardHeader className="p-0 pb-2">
         <CardTitle>Scouts</CardTitle>
         <CardDescription>
-          Nothing found is compared with the scope's {pct(scopeNothing)}; sync delay counts only
-          entries created after the bulk load.
+          Nothing found is compared with the scope's {pct(scopeNothing)}; off zone with the houses
+          the scout worked. Sync is informational: entry creation minus capture time, for entries
+          created after the bulk load.
         </CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto p-0">
@@ -275,11 +280,11 @@ function ScoutTable({ rows, scopeNothing }: { rows: QualityScout[]; scopeNothing
                 {head("Days", "activeDays")}
                 {head("Per hour", "entriesPerHour", "Entries per active hour (first → last capture each day)")}
                 {head("Beds / day", "bedsPerDay")}
-                {head("Too fast", "tooFastPct", "Entries under 5 s after the previous one")}
+                {head("Too fast", "tooFastPct", "Zone-to-zone moves under 5 s")}
                 {head("Nothing found", "nothingFoundPct", "Entries with no pest or disease row")}
                 {head("Off zone", "offZonePct", "Fixes farther from their zone than its buffer")}
-                {head("Duplicates", "duplicatePct", "Repeat entries on the same station and day")}
-                {head("Sync", "medianSyncMin", "Median capture → server delay")}
+                {head("Duplicates", "duplicatePct", "Double-submits: same station, same second")}
+                {head("Sync", "medianSyncMin", "Median of entry creation minus capture time (informational)")}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -294,7 +299,15 @@ function ScoutTable({ rows, scopeNothing }: { rows: QualityScout[]; scopeNothing
                     <TableCell className="text-right tabular-nums">{num(s.bedsPerDay)}</TableCell>
                     <TableCell className="text-right tabular-nums">{pct(s.tooFastPct)}</TableCell>
                     <TableCell className="text-right tabular-nums">{pct(s.nothingFoundPct)}</TableCell>
-                    <GpsCell value={pct(s.offZonePct)} thin={thin} none={!s.fixes} />
+                    <GpsCell
+                      value={
+                        s.houseOffZonePct == null
+                          ? pct(s.offZonePct)
+                          : `${pct(s.offZonePct)} vs ${pct(s.houseOffZonePct)}`
+                      }
+                      thin={thin}
+                      none={!s.fixes}
+                    />
                     <TableCell className="text-right tabular-nums whitespace-nowrap">
                       {pct(s.duplicatePct)}
                       {s.duplicates ? (
@@ -340,14 +353,20 @@ export function DataQualityTab({ data }: { data: QualityPayload | null }) {
         <Kpi
           label="Off-zone fixes"
           value={pct(k?.offZonePct)}
-          hint={gpsThin ? `GPS detail on only ${pct(k?.metadataPct)} of entries` : "fixes outside the zone buffer"}
-          tone={over(k?.offZonePct, t?.offZonePct)}
+          hint={
+            gpsThin
+              ? `GPS detail on only ${pct(k?.metadataPct)} of entries`
+              : k?.zoneMapSuspect
+                ? "fixes outside their zone — zone map needs checking"
+                : "fixes outside their zone"
+          }
+          tone={k?.zoneMapSuspect ? "warning" : "default"}
           className={gpsThin ? "opacity-60" : undefined}
         />
         <Kpi
           label="Too fast"
           value={pct(k?.tooFastPct)}
-          hint={`entries < ${t?.tooFastSeconds ?? 5} s after the previous`}
+          hint={`zone-to-zone moves under ${t?.tooFastSeconds ?? 5} s`}
           tone={over(k?.tooFastPct, t?.tooFastPct)}
         />
         <Kpi

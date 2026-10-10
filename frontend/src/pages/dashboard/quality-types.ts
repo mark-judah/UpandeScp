@@ -24,6 +24,8 @@ export interface QualityFlag {
 export interface QualityHouse {
   house: string;
   week: string | null;
+  /** True when the house's only week in range is the current, unfinished one. */
+  weekPartial: boolean;
   stations: number | null;
   stationsScouted: number | null;
   coveragePct: number | null;
@@ -46,11 +48,15 @@ export interface QualityScout {
   activeDays: number;
   entriesPerHour: number | null;
   bedsPerDay: number | null;
+  /** Zone-to-zone moves; too fast is a share of these. */
+  moves: number;
   tooFastPct: number | null;
   nothingFoundPct: number | null;
   fixes: number;
   metadataPct: number | null;
   offZonePct: number | null;
+  /** Off-zone share of the houses this scout worked, weighted by their fixes there. */
+  houseOffZonePct: number | null;
   duplicates: number;
   duplicatePct: number | null;
   medianSyncMin: number | null;
@@ -64,6 +70,7 @@ export interface QualityPayload {
     scouts: number;
     coveragePct: number | null;
     offZonePct: number | null;
+    zoneMapSuspect: boolean;
     tooFastPct: number | null;
     metadataPct: number | null;
     nothingFoundPct: number | null;
@@ -79,7 +86,8 @@ export interface QualityPayload {
     tooFastSeconds: number;
     nothingFoundExcess: number;
     nothingFoundMinEntries: number;
-    offZonePct: number;
+    offZoneExcess: number;
+    zoneMapSuspectPct: number;
     duplicatePct: number;
     metadataMinPct: number;
     syncDelayFrom: string;

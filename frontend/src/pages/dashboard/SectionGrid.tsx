@@ -10,7 +10,14 @@ const COLS = ["Front", "Middle", "Back"];
  *  prevalence; a cell with fewer than 3 stations scouted is greyed "not scouted"
  *  because it does not enter the adjusted figure. A hot spot (``hot``) is ringed
  *  all round: an outline, never a side strip. */
-export function SectionGrid({ sections }: { sections: SectionCell[] }) {
+export function SectionGrid({
+  sections,
+  onPinSection,
+}: {
+  sections: SectionCell[];
+  /** When given, each cell carries a "Pin" button for this section (spread spec C6). */
+  onPinSection?: (row: number, col: number) => void;
+}) {
   const at = new Map(sections.map((s) => [`${s.row}:${s.col}`, s]));
   const anyHot = sections.some((s) => s.hot);
   return (
@@ -51,7 +58,17 @@ export function SectionGrid({ sections }: { sections: SectionCell[] }) {
                       : undefined
                   }
                 >
-                  {scouted ? `${pct}%` : "not scouted"}
+                  <span>{scouted ? `${pct}%` : "not scouted"}</span>
+                  {onPinSection ? (
+                    <button
+                      type="button"
+                      onClick={() => onPinSection(r, c)}
+                      aria-label={`Pin ${label} · ${COLS[c]}`}
+                      className="mt-0.5 block w-full text-[0.55rem] text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      Pin
+                    </button>
+                  ) : null}
                 </div>
               );
             })}

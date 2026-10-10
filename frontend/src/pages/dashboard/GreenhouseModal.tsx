@@ -21,7 +21,7 @@ import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { weekTickFormatter } from "@/lib/iso-week";
 import type { PrevalenceFigures, SectionCell } from "@/lib/prevalence";
 import { PrevalenceFigure } from "./PrevalenceFigure";
-import { SectionGrid } from "./SectionGrid";
+import { HouseSpread } from "./HouseSpread";
 
 const SERIES = {
   pests: { label: "Pests", color: "var(--sd-data-cyan)" },
@@ -194,7 +194,14 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
                 })}
               </div>
               <PrevalenceFigure fig={current} />
-              <SectionGrid sections={current.sections} />
+              <HouseSpread
+                crop={crop}
+                greenhouse={greenhouse ?? ""}
+                kind={current.kind}
+                observation={current.name}
+                week={current.week}
+                sections={current.sections}
+              />
             </CardContent>
           </Card>
         )}

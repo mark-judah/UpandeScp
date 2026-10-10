@@ -5,6 +5,11 @@ const useDashboardAggregate = vi.fn();
 vi.mock("@/hooks/use-dashboard-aggregate", () => ({
   useDashboardAggregate: (...a: unknown[]) => useDashboardAggregate(...a),
 }));
+vi.mock("@/lib/spread-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/spread-api")>()),
+  getHouseClusters: vi.fn().mockResolvedValue({ week: null, prev_week: null, unit: "bed", clusters: [], gone: [] }),
+  listPins: vi.fn().mockResolvedValue([]),
+}));
 
 import { SectionGrid } from "../SectionGrid";
 import { GreenhouseModal } from "../GreenhouseModal";

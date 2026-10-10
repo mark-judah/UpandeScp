@@ -16,12 +16,14 @@ import { PestsTab }     from "./dashboard/PestsTab";
 import { DiseasesTab }  from "./dashboard/DiseasesTab";
 import { TrapsTab }     from "./dashboard/TrapsTab";
 import { FcmTab }       from "./dashboard/FcmTab";
+import { DataQualityTab } from "./dashboard/DataQualityTab";
 import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { ymd } from "@/lib/utils";
 import type { OverviewPayload } from "./dashboard/overview-types";
 import type { PestsPayload, DiseasesPayload } from "./dashboard/pests-diseases-types";
 import type { TrapsPayload } from "./dashboard/traps-types";
 import type { FcmPayload } from "./dashboard/fcm-types";
+import type { QualityPayload } from "./dashboard/quality-types";
 
 const ALL_FARMS = "__all__";
 const ALL_GH = "__all__";
@@ -33,7 +35,7 @@ function defaultRange() {
   return { from: ymd(from), to: ymd(today) };
 }
 
-type TabId = "overview" | "pests" | "diseases" | "traps" | "fcm";
+type TabId = "overview" | "pests" | "diseases" | "traps" | "fcm" | "quality";
 
 export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
   // The crop is the route's (spec D1); the page carries no crop picker.
@@ -79,9 +81,10 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
   const diseases  = useDashboardAggregate<DiseasesPayload>("diseases",  { ...base, ...diseaseFilters }, tab === "diseases");
   const traps     = useDashboardAggregate<TrapsPayload>(   "traps",     base, tab === "traps");
   const fcm       = useDashboardAggregate<FcmPayload>(     "fcm",       base, tab === "fcm");
+  const quality   = useDashboardAggregate<QualityPayload>( "quality",   base, tab === "quality");
 
   const reloadActive = () => {
-    const h = ({overview, pests, diseases, traps, fcm} as const)[tab];
+    const h = ({overview, pests, diseases, traps, fcm, quality} as const)[tab];
     h.reload({ force: true });
   };
 
@@ -116,6 +119,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               <TabsTrigger value="diseases">Diseases</TabsTrigger>
               <TabsTrigger value="traps">Traps</TabsTrigger>
               <TabsTrigger value="fcm">FCM &amp; Moths</TabsTrigger>
+              <TabsTrigger value="quality">Data quality</TabsTrigger>
             </TabsList>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -182,7 +186,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
           </div>
 
           {(() => {
-            const active = ({ overview, pests, diseases, traps, fcm } as const)[
+            const active = ({ overview, pests, diseases, traps, fcm, quality } as const)[
               tab
             ];
             return active.error ? (
@@ -259,6 +263,16 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                 open
                 progress={fcm.progress?.percent ?? null}
                 label={fcm.progress?.label}
+              />
+            )}
+          </TabsContent>
+          <TabsContent value="quality" className="mt-0">
+            <DataQualityTab data={quality.data} />
+            {quality.loading && (
+              <LoadingOverlay
+                open
+                progress={quality.progress?.percent ?? null}
+                label={quality.progress?.label}
               />
             )}
           </TabsContent>

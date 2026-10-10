@@ -21,6 +21,7 @@ vi.mock("@/pages/dashboard/PestsTab", () => ({ PestsTab: () => null }));
 vi.mock("@/pages/dashboard/DiseasesTab", () => ({ DiseasesTab: () => null }));
 vi.mock("@/pages/dashboard/TrapsTab", () => ({ TrapsTab: () => null }));
 vi.mock("@/pages/dashboard/FcmTab", () => ({ FcmTab: () => null }));
+vi.mock("@/pages/dashboard/DataQualityTab", () => ({ DataQualityTab: () => null }));
 vi.mock("@/components/LoadingOverlay", () => ({ LoadingOverlay: () => null }));
 
 import { Dashboard } from "@/pages/Dashboard";
@@ -41,6 +42,14 @@ describe("Dashboard follows the route crop", () => {
     expect(overview?.[1]).toMatchObject({ crop: "Avocado" });
     expect(fetchCrops).not.toHaveBeenCalled();
     expect(screen.queryByLabelText("Crop")).toBeNull();
+  });
+
+  it("asks for the quality aggregate with the same scope as the other tabs", () => {
+    render(<Dashboard initialCrop="Rose" />);
+    const quality = useDashboardAggregate.mock.calls.find((c) => c[0] === "quality");
+    expect(quality?.[1]).toMatchObject({ crop: "Rose", farm: "", greenhouse: "" });
+    expect(quality?.[2]).toBe(false);  // only fetched while its tab is open
+    expect(screen.getByRole("tab", { name: "Data quality" })).toBeInTheDocument();
   });
 
   it("sends Rose as Rose, not as the old empty string", () => {

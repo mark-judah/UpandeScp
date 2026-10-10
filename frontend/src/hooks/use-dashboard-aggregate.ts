@@ -15,7 +15,8 @@ export type Endpoint =
   | "heatmap_card_detail"
   | "heatmap_terrain"
   | "application_plan_diagnose"
-  | "trends";
+  | "trends"
+  | "quality";
 
 export interface AggregateFilters {
   from_date: string;
@@ -59,6 +60,7 @@ export const METHOD: Record<Endpoint, string> = {
   application_plan_diagnose:
     "upande_scp.serverscripts.dashboard_aggregates.application_plan_diagnose",
   trends:             "upande_scp.serverscripts.dashboard_aggregates.trends",
+  quality:            "upande_scp.serverscripts.dashboard_aggregates.quality",
 };
 
 function newJobId(): string {

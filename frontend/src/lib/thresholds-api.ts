@@ -9,6 +9,12 @@ export interface ThresholdStageRow {
   moderate: number;
   high: number;
   invalid?: boolean;
+  /** pests only: Life stage / Form count as the live pest; a Sign is reported beside it (set on the Stage master) */
+  role?: "Life stage" | "Form" | "Sign";
+  /** pests only: this crop's weight for the stage in a Count; 0 = the Stage's own weight */
+  weight?: number;
+  /** pests only: the Stage master's weight */
+  master_weight?: number;
 }
 
 export interface ThresholdPestRow {

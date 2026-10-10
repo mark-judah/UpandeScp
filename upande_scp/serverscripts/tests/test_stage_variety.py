@@ -342,3 +342,57 @@ class TestVarieties(StageCase):
         rows = DA.pests(observation="Thrips", **base)["varieties"]
         self.assertEqual([(r["variety"], r["scouted"], r["prevalence"], r["signs"]) for r in rows],
                          [("_TEST Variety A", 27, 33.3, 66.7)])
+
+
+TA = import_module("upande_scp.serverscripts.store.thresholds_api")
+
+
+class TestEditor(StageCase):
+    def setUp(self):
+        super().setUp()
+        for stage, role in (("Motiles", "Form"), ("Eggs", "Life stage"), ("Web", "Sign")):
+            SV.set_role(stage, role)
+            SV.set_master_weight(stage, 1)
+            SV.set_override("Rose", "Spidermites", stage, 0)
+
+    def _row(self, bundle=None):
+        bundle = bundle or TA.get_thresholds("Rose")
+        return next(r for r in bundle["pests"] if r["pest"] == "Spidermites")
+
+    def test_pest_stage_rows_carry_their_role_and_weights(self):
+        SV.set_master_weight("Eggs", 0.5)
+        stages = {s["stage"]: (s["role"], s["master_weight"], s["weight"]) for s in self._row()["stages"]}
+        self.assertEqual(stages, {"Motiles": ("Form", 1.0, 0.0), "Eggs": ("Life stage", 0.5, 0.0),
+                                  "Web": ("Sign", 1.0, 0.0)})
+
+    def test_disease_stage_rows_carry_no_role_or_weight(self):
+        stage = next(s for r in TA.get_thresholds("Rose")["diseases"] for s in r["stages"])
+        self.assertFalse({"role", "weight", "master_weight"} & set(stage))
+
+    def test_a_saved_weight_override_is_read_at_once(self):
+        TF.set_bands("Rose", "Spidermites", 0, 1, 5, measure="Count")
+        self.assertEqual(dict(_common.band_spec("Rose", "pest", "Spidermites", "")["count_weights"])["Eggs"], 1.0)
+        row = self._row()
+        next(s for s in row["stages"] if s["stage"] == "Eggs")["weight"] = 0.25
+        with patch.object(frappe.db, "commit"):
+            TA.save_thresholds("Rose", {"pests": [row], "diseases": []})
+        self.assertEqual(frappe.db.get_value("Pests Stages", {"parent": row["row"], "stage": "Eggs"}, "weight"), 0.25)
+        self.assertEqual(stage_roles.stage_weight("Rose", "Spidermites", "Eggs"), 0.25)   # no stale cache
+        self.assertEqual(dict(_common.band_spec("Rose", "pest", "Spidermites", "")["count_weights"])["Eggs"], 0.25)
+
+    def test_a_negative_weight_is_refused_before_any_write(self):
+        row = self._row()
+        row["low"] = 0.5
+        next(s for s in row["stages"] if s["stage"] == "Eggs")["weight"] = -1
+        with patch.object(frappe.db, "commit"), self.assertRaisesRegex(frappe.ValidationError, "weight cannot be negative"):
+            TA.save_thresholds("Rose", {"pests": [row], "diseases": []})
+        self.assertEqual(frappe.db.get_value("Pest Filter", row["row"], "low_threshold"), 0.0)
+
+    def test_an_old_client_without_weights_leaves_the_override_alone(self):
+        SV.set_override("Rose", "Spidermites", "Eggs", 0.25)
+        row = self._row()
+        for s in row["stages"]:
+            s.pop("weight", None)
+        with patch.object(frappe.db, "commit"):
+            TA.save_thresholds("Rose", {"pests": [row], "diseases": []})
+        self.assertEqual(frappe.db.get_value("Pests Stages", {"parent": row["row"], "stage": "Eggs"}, "weight"), 0.25)

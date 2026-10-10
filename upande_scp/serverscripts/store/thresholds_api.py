@@ -12,6 +12,11 @@ back ``invalid: true`` so the editor flags it; a save that would store one is
 refused whole, before any write. The old ``unit`` column stays in the schema but
 is neither returned nor written.
 
+Pest stage rows also carry their **role** (Life stage / Form / Sign, read from
+the Stage master and edited there) and **weight**: the crop's override of the
+Stage's weight in a Count (0 = the Stage's; stage & variety S1, S5, S6).
+Diseases carry neither.
+
 Permissions: System Manager / Administrator / SCP General Manager write. Read is
 whitelisted so the page can populate for read-only viewers.
 """
@@ -20,7 +25,7 @@ import json
 
 import frappe
 
-from upande_scp.serverscripts.common import crop_catalog
+from upande_scp.serverscripts.common import crop_catalog, stage_roles
 from upande_scp.serverscripts.common import threshold_bands as B
 from upande_scp.serverscripts.dashboard_aggregates import _common
 
@@ -75,9 +80,11 @@ def _filter_rows(crop: str, doctype: str, child: str, obs_col: str, kind: str) -
         {"crop": crop},
         as_dict=True,
     )
+    with_weights = kind == "pest" and frappe.db.has_column(child, "weight")
+    roles = stage_roles.role_map() if kind == "pest" else {}
     stages = frappe.db.sql(
         f"""
-        SELECT name, parent, stage, reading_type,
+        SELECT name, parent, stage, reading_type, {"weight" if with_weights else "0"} AS weight,
                low_threshold, moderate_threshold, high_threshold
         FROM `tab{child}`
         WHERE parenttype = %(pt)s AND parent IN %(parents)s
@@ -103,6 +110,11 @@ def _filter_rows(crop: str, doctype: str, child: str, obs_col: str, kind: str) -
                 "invalid": not B.bands_ascending(
                     s["low_threshold"], s["moderate_threshold"], s["high_threshold"],
                 ),
+                **({
+                    "role": stage_roles.role_of(s["stage"], roles),
+                    "master_weight": stage_roles.master_weight(s["stage"]),
+                    "weight": _f(s["weight"]),
+                } if kind == "pest" else {}),
             }
             for s in by_parent.get(r["name"], [])
         ]
@@ -215,6 +227,8 @@ def _validate(payload: dict) -> None:
                     errors.append(
                         f"{label} · {s.get('stage') or s.get('row')}: bands must rise, Low < Moderate < High."
                     )
+                if kind == "pest" and "weight" in s and _f(s.get("weight")) < 0:
+                    errors.append(f"{label} · {s.get('stage') or s.get('row')}: weight cannot be negative.")
     if errors:
         frappe.throw("\n".join(errors), frappe.ValidationError)
 
@@ -255,19 +269,20 @@ def save_thresholds(crop: str, payload: str | dict) -> dict:
             for s in r.get("stages") or []:
                 if not s.get("row"):
                     continue
-                frappe.db.set_value(
-                    child, s["row"],
-                    {
-                        "low_threshold": _f(s.get("low")),
-                        "moderate_threshold": _f(s.get("moderate")),
-                        "high_threshold": _f(s.get("high")),
-                    },
-                    update_modified=True,
-                )
+                stage_values = {
+                    "low_threshold": _f(s.get("low")),
+                    "moderate_threshold": _f(s.get("moderate")),
+                    "high_threshold": _f(s.get("high")),
+                }
+                if key == "pests" and "weight" in s:
+                    # No key = an old client: the stored override stands.
+                    stage_values["weight"] = _f(s.get("weight"))
+                frappe.db.set_value(child, s["row"], stage_values, update_modified=True)
                 updated[stage_key] += 1
 
     # The next aggregate call must see the new bands immediately.
     _common.clear_threshold_cache()
+    stage_roles.invalidate_stage_roles()   # set_value fires no doc_events
     cache = frappe.cache()
     for k in cache.get_keys("scp:dash_agg:*"):
         cache.delete_value(k)

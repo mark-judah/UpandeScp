@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -50,14 +50,20 @@ describe("ThresholdsTab", () => {
         row: "p1", pest: "Thrips", measure: "Count", count_allowed: true, invalid: false,
         low: 0, moderate: 1, high: 2,
         stages: [
-          { row: "s1", stage: "Adult", reading_type: "Count", low: 0, moderate: 0, high: 0, invalid: false },
-          { row: "s2", stage: "Damages", reading_type: "Checkbox", low: 0, moderate: 0, high: 0, invalid: false },
+          { row: "s1", stage: "Adult", reading_type: "Count", low: 0, moderate: 0, high: 0, invalid: false,
+            role: "Life stage", weight: 0, master_weight: 1 },
+          { row: "s2", stage: "Damages", reading_type: "Checkbox", low: 0, moderate: 0, high: 0, invalid: false,
+            role: "Sign", weight: 0, master_weight: 1 },
         ],
       },
       { row: "p2", pest: "Scale Insects", measure: "Percentage", count_allowed: false, invalid: false,
         low: 0, moderate: 10, high: 30, stages: [] },
     ],
-    diseases: [],
+    diseases: [
+      { row: "d1", disease: "Downy Mildew", measure: "Percentage", count_allowed: false, invalid: false,
+        low: 0, moderate: 0, high: 0,
+        stages: [{ row: "ds1", stage: "Active", reading_type: "Range", low: 0, moderate: 0, high: 0, invalid: false }] },
+    ],
   };
   const misordered = {
     row: "p3", pest: "Aphids", measure: "Percentage", count_allowed: true, invalid: true,
@@ -102,5 +108,40 @@ describe("ThresholdsTab", () => {
     await userEvent.click(within(thrips).getByRole("radio", { name: "Percentage" }));
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(saveThresholds.mock.calls[0][1].pests[0].measure).toBe("Percentage");
+  });
+
+  it("shows each pest stage's role and its crop weight, the stage's own weight as placeholder", async () => {
+    getThresholds.mockResolvedValue({
+      ...rose,
+      pests: [{ ...rose.pests[0], stages: [{ ...rose.pests[0].stages[0], weight: 0.5 }, rose.pests[0].stages[1]] }, rose.pests[1]],
+    });
+    render(<ThresholdsTab crop="Rose" />);
+    const thrips = await screen.findByTestId("threshold-row-p1");
+    expect(within(thrips).getByTestId("stage-role-s1")).toHaveTextContent("Life stage");
+    expect(within(thrips).getByTestId("stage-role-s2")).toHaveTextContent("Sign");
+    expect(within(thrips).getByLabelText("Weight for Adult")).toHaveValue("0.5");
+    const damages = within(thrips).getByLabelText("Weight for Damages");
+    expect(damages).toHaveValue("");
+    expect(damages).toHaveAttribute("placeholder", "1");
+    expect(thrips.innerHTML).not.toMatch(/border-l-|border-left/);
+  });
+
+  it("shows no role or weight on a disease stage", async () => {
+    getThresholds.mockResolvedValue(rose);
+    render(<ThresholdsTab crop="Rose" />);
+    const downy = await screen.findByTestId("threshold-row-d1");
+    expect(within(downy).queryByTestId("stage-role-ds1")).toBeNull();
+    expect(within(downy).queryByLabelText("Weight for Active")).toBeNull();
+  });
+
+  it("sends a weight override on save, and an emptied weight as 0", async () => {
+    getThresholds.mockResolvedValue(rose);
+    render(<ThresholdsTab crop="Rose" />);
+    const thrips = await screen.findByTestId("threshold-row-p1");
+    fireEvent.change(within(thrips).getByLabelText("Weight for Adult"), { target: { value: "0.5" } });
+    fireEvent.change(within(thrips).getByLabelText("Weight for Damages"), { target: { value: "" } });
+    await userEvent.click(screen.getByRole("button", { name: /save/i }));
+    const stages = saveThresholds.mock.calls[0][1].pests[0].stages;
+    expect([stages[0].weight, stages[1].weight]).toEqual([0.5, 0]);
   });
 });

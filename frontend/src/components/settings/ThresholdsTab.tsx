@@ -9,6 +9,9 @@
  * tick-box stage under a Count row is judged as a share, so its bands read "%".
  * Bands that are set must rise: a misordered row is flagged inline and Save
  * waits until it is fixed. All zeros = unconfigured (no alerts).
+ * Pest stages show their role (Life stage / Form / Sign, set on the Stage
+ * master) and this crop's weight for the stage in a Count (empty = the stage's
+ * own weight).
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -324,15 +327,30 @@ function FilterEditor({
           <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
             Per-stage overrides
           </div>
+          {isPest(row) && (
+            <div className="text-[0.65rem] text-muted-foreground">
+              Signs (damage, webs, ragged margins) are reported beside the pest, never counted as it. Weight scales a
+              stage's count in a Count; leave it empty for the stage's own weight.
+            </div>
+          )}
           {row.stages.map((s, i) => (
             <div key={s.row} className="flex flex-col">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs min-w-20 text-muted-foreground">{s.stage || "—"}</span>
+                {isPest(row) && s.role && <StageRolePill role={s.role} testId={`stage-role-${s.row}`} />}
                 <ThresholdInputs
                   unit={unitFor(effectiveMeasure(measure, s.reading_type), station)}
                   values={{ low: s.low, moderate: s.moderate, high: s.high }}
                   onChange={(patch) => onStagePatch(i, patch)}
                 />
+                {isPest(row) && (
+                  <WeightInput
+                    stage={s.stage}
+                    value={s.weight ?? 0}
+                    master={s.master_weight ?? 1}
+                    onChange={(v) => onStagePatch(i, { weight: v })}
+                  />
+                )}
               </div>
               {!bandsAscending(s.low, s.moderate, s.high) && <BandError testId={`band-error-${s.row}`} />}
             </div>
@@ -387,6 +405,65 @@ function ThInput({
         className="h-7 w-16 text-xs tabular-nums"
       />
       <span className="text-[0.6rem] text-muted-foreground">{unit}</span>
+    </div>
+  );
+}
+
+const ROLE_TONE: Record<string, string> = {
+  "Life stage": "var(--sd-data-green)",
+  Form: "var(--sd-data-cyan)",
+  Sign: "var(--sd-data-amber)",
+};
+
+/** A stage's role (stage & variety S1), set on the Stage master — a tinted
+ *  pill, never a strip. */
+function StageRolePill({ role, testId }: { role: string; testId: string }) {
+  const tone = ROLE_TONE[role] ?? "var(--sd-muted)";
+  return (
+    <span
+      data-testid={testId}
+      title={role === "Sign" ? "A sign of the pest: reported beside it, never counted as it" : "Counts as the live pest"}
+      className="inline-flex items-center rounded-full px-1.5 py-px text-[0.6rem] font-medium leading-none"
+      style={{ color: tone, background: `color-mix(in srgb, ${tone} 14%, transparent)` }}
+    >
+      {role}
+    </span>
+  );
+}
+
+/** This crop's weight for the stage in a Count (S5, S6). Empty = the stage's
+ *  own weight, shown as the placeholder. A text field with its own draft, so
+ *  "0." can be typed on the way to "0.5". */
+function WeightInput({
+  stage,
+  value,
+  master,
+  onChange,
+}: {
+  stage: string;
+  value: number;
+  master: number;
+  onChange: (v: number) => void;
+}) {
+  const [text, setText] = useState(value > 0 ? String(value) : "");
+  useEffect(() => {
+    setText((t) => ((parseFloat(t) || 0) === value ? t : value > 0 ? String(value) : ""));
+  }, [value]);
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">Weight</span>
+      <Input
+        type="text"
+        inputMode="decimal"
+        aria-label={`Weight for ${stage}`}
+        placeholder={String(master)}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          onChange(Math.max(0, parseFloat(e.target.value) || 0));
+        }}
+        className="h-7 w-14 text-xs tabular-nums"
+      />
     </div>
   );
 }

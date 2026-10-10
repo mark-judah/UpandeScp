@@ -6,9 +6,11 @@ One scan of the scoped Scouting Entries, read one capture date at a time
 * the entry columns the KPIs need, the fix-to-zone distance from the 1:1
   Scouting Entry Metadata row (LEFT JOIN on its ``scouting_entry`` index), and
   "nothing found" as NOT EXISTS on the pest and disease child tables;
-* station coverage and sections for each house's latest COMPLETE ISO week in the
-  range (clarification 4: the current, unfinished week is used only when the
-  range holds nothing else, and is then marked partial) through piece 2's
+* station coverage and sections for each house's latest COMPLETE ISO week — the
+  whole Monday–Sunday inside the range and already ended (C4, I1); a cut or
+  unfinished week is used only when the range holds nothing else, and is then
+  marked partial. A house whose week ended > 14 days before the range end is
+  "not scouted recently" (I2) through piece 2's
   ``StationWeeks`` / ``prevalence.figures`` — fed the stations this scan already
   read, so no second pass over the entries.
 
@@ -30,6 +32,8 @@ from upande_scp.serverscripts.common import quality_rules as Q
 from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows as R
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
+    coerce_date,
+    obs_filter,
     parent_filter_conditions,
     publish_progress,
     resolve_greenhouse_scope,
@@ -44,8 +48,8 @@ SELECT se.scouts_name, se.date_of_capture, {R._WH}, COALESCE({R._STATION}, ''),
           TIMESTAMPDIFF(SECOND, TIMESTAMP(se.date_of_capture, se.time_of_capture), se.creation),
           NULL),
        m.distance, m.zone_buffer,
-       (NOT EXISTS (SELECT 1 FROM `tabPests Scouting Entry` p WHERE p.parent = se.name)
-        AND NOT EXISTS (SELECT 1 FROM `tabDiseases Scouting Entry` d WHERE d.parent = se.name))
+       (NOT EXISTS (SELECT 1 FROM `tabPests Scouting Entry` p WHERE p.parent = se.name{{pest_obs}})
+        AND NOT EXISTS (SELECT 1 FROM `tabDiseases Scouting Entry` d WHERE d.parent = se.name{{disease_obs}}))
 FROM `tabScouting Entry` se
 LEFT JOIN `tabScouting Entry Metadata` m ON m.scouting_entry = se.name
 WHERE {{where}}
@@ -60,16 +64,34 @@ def quality(args: dict, force: bool = False) -> dict:
         farms_map,
     )
     job_id = (args.get("job_id") or "").strip()
+    from_date, to_date, clamped = clamp_range(args.get("from_date", ""), args.get("to_date", ""))
     filters = {
-        "from_date": args.get("from_date", ""),
-        "to_date":   args.get("to_date", ""),
+        "from_date": from_date,
+        "to_date":   to_date,
         "crop":      (args.get("crop") or "").strip(),
         "farm":      (args.get("farm") or "").strip(),
         "greenhouse":(args.get("greenhouse") or "").strip(),
     }
-    return cached_aggregate(
+    payload = cached_aggregate(
         "quality", filters, lambda: _build(filters, scope, job_id), force=force,
     )
+    return {**payload, "clamped": clamped, "range": {"from_date": from_date, "to_date": to_date}}
+
+
+def clamp_range(from_date, to_date) -> tuple:
+    """I3: ``(from, to, clamped)`` with ``from`` no earlier than ``to`` −
+    ``MAX_RANGE_DAYS`` — the aggregate reads one query per day, so an unbounded
+    window would outlive the request."""
+    from_date, to_date = coerce_date(from_date), coerce_date(to_date)
+    try:
+        end = datetime.strptime(to_date, "%Y-%m-%d").date()
+        start = datetime.strptime(from_date, "%Y-%m-%d").date()
+    except ValueError:
+        return from_date, to_date, False
+    floor = end - timedelta(days=Q.MAX_RANGE_DAYS)
+    if start < floor:
+        return floor.isoformat(), to_date, True
+    return from_date, to_date, False
 
 
 def _days_desc(from_date: str, to_date: str) -> list:
@@ -91,14 +113,17 @@ def _today():
     return getdate(nowdate())
 
 
-def _week_of(day, today, memo: dict) -> tuple:
-    """``(ISO yearweek, unfinished)`` — unfinished when the week's Sunday is
-    today or later."""
+def _week_of(day, window, memo: dict) -> tuple:
+    """``(ISO yearweek, partial, sunday)``. ``window`` is ``(from, to, today)``;
+    a week is complete only when Monday ≥ from, Sunday ≤ to and Sunday < today."""
     out = memo.get(day)
     if out is None:
+        start, end, today = window
         iso = day.isocalendar()
-        sunday = day + timedelta(days=7 - iso[2])
-        out = memo[day] = (iso[0] * 100 + iso[1], sunday >= today)
+        monday = day - timedelta(days=iso[2] - 1)
+        sunday = monday + timedelta(days=6)
+        complete = monday >= start and sunday <= end and sunday < today
+        out = memo[day] = (iso[0] * 100 + iso[1], not complete, sunday)
     return out
 
 
@@ -109,10 +134,15 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
         filters["from_date"], filters["to_date"], filters["crop"], scope,
     )
     fold = Q.Fold()
-    latest: dict = {}  # house -> {"complete"|"partial": (yearweek, {station})}
-    today, memo = _today(), {}
+    latest: dict = {}  # house -> {"complete"|"partial": (yearweek, sunday, {station})}
+    memo: dict = {}
+    window = (getdate(filters["from_date"]), getdate(filters["to_date"]), _today()) if days else None
     if where != "1=0":
-        sql = _ROWS.format(where=where)
+        sql = _ROWS.format(
+            where=where,
+            pest_obs=obs_filter("pest", "p.pest", params),
+            disease_obs=obs_filter("disease", "d.disease", params),
+        )
         for i, day in enumerate(days):
             publish_progress(job_id, 5 + (80 * i) // max(len(days), 1), f"reading {day}")
             rows = frappe.db.sql(sql, {**params, "from_date": day, "to_date": day,
@@ -120,10 +150,10 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
             if not rows:
                 continue
             fold.add_day(rows)
-            _note_stations(latest, rows, today, memo)
+            _note_stations(latest, rows, window, memo)
 
     publish_progress(job_id, 88, "station coverage")
-    coverage = _coverage(latest)
+    coverage = _coverage(latest, getdate(filters["to_date"]) if days else None)
     houses = fold.house_rows(coverage)
     scouts = fold.scout_rows(_scout_names(list(fold.scouts)))
     kpis = fold.kpis(list(coverage.values()))
@@ -137,37 +167,38 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
     }
 
 
-def _note_stations(latest: dict, rows, today, memo: dict) -> None:
+def _note_stations(latest: dict, rows, window, memo: dict) -> None:
     """Days arrive newest first, so the first complete week seen for a house is
     its latest complete week (and the first unfinished one its current week);
     stations from older weeks are ignored."""
     for _s, day, wh, station, *_rest in rows:
         if not wh or not station:
             continue
-        yw, unfinished = _week_of(day, today, memo)
+        yw, partial, sunday = _week_of(day, window, memo)
         slots = latest.get(wh)
         if slots is None:
             slots = latest[wh] = {}
-        slot = "partial" if unfinished else "complete"
+        slot = "partial" if partial else "complete"
         cur = slots.get(slot)
         if cur is None:
-            slots[slot] = (yw, {station})
+            slots[slot] = (yw, sunday, {station})
         elif cur[0] == yw:
-            cur[1].add(station)
+            cur[2].add(station)
 
 
-def _coverage(latest: dict) -> dict:
+def _coverage(latest: dict, range_end) -> dict:
     """``{house: prevalence figure}`` for each house's latest complete week (or
     its partial current week when that is all the range holds) — stations,
     scouted (in its grid), coverage %, sections scouted — via ``StationWeeks``."""
     if not latest:
         return {}
     chosen = {wh: slots.get("complete") or slots["partial"] for wh, slots in latest.items()}
+    ended = {wh: sunday for wh, (_yw, sunday, _st) in chosen.items()}
     partial = {wh for wh, slots in latest.items() if not slots.get("complete")}
     R.prefetch_grids(chosen)
     weeks = R.StationWeeks(
         [{"wh": wh, "station": st, "yw": yw, "in_win": 1}
-         for wh, (yw, stations) in chosen.items() for st in stations],
+         for wh, (yw, _sunday, stations) in chosen.items() for st in stations],
         [],
     )
     out = {}
@@ -178,6 +209,7 @@ def _coverage(latest: dict) -> dict:
             out[wh] = {
                 "week": week,
                 "partial": wh in partial,
+                "stale_days": max(0, (range_end - ended[wh]).days),
                 "stations": fig.get("stations"),
                 "scouted": fig.get("scouted"),
                 "coverage": fig.get("coverage"),
@@ -210,5 +242,7 @@ def _thresholds() -> dict:
         "zoneMapSuspectPct": Q.ZONE_MAP_SUSPECT_PCT,
         "duplicatePct": Q.DUPLICATE_PCT,
         "metadataMinPct": Q.METADATA_MIN_PCT,
+        "staleDays": Q.STALE_DAYS,
+        "maxRangeDays": Q.MAX_RANGE_DAYS,
         "syncDelayFrom": Q.SYNC_DELAY_FROM,
     }

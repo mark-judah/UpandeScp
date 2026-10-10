@@ -76,9 +76,20 @@ class TestFold(unittest.TestCase):
         rows = [row(scout="A", wh="H1", station=f"a{i}", tm=i * 10, dist=9, buf=1) for i in range(4)]  # H1 4/4 off
         rows += [row(scout="B", wh="H1", station=f"b{i}", tm=i * 10, dist=0, buf=1) for i in range(4)]  # H1 → 50%
         rows += [row(scout="A", wh="H2", station=f"c{i}", tm=500 + i * 10, dist=0, buf=1) for i in range(12)]  # H2 0%
-        a = {r["scout"]: r for r in self.fold(rows).scout_rows({})}["A"]
-        # A: 4 fixes in H1 (50% off) + 12 in H2 (0% off) → baseline 12.5%; own 4/16 = 25%
-        self.assertEqual((a["offZonePct"], a["houseOffZonePct"]), (25.0, 12.5))
+        rows += [row(scout="C", wh="H2", station=f"d{i}", tm=i * 10, dist=9, buf=1) for i in range(4)]  # H2 others 100%
+        by = {r["scout"]: r for r in self.fold(rows).scout_rows({})}
+        # A's baseline leaves A out: H1 others (B) 0% × 4 fixes, H2 others (C) 100% × 12 → 75%
+        self.assertEqual((by["A"]["offZonePct"], by["A"]["houseOffZonePct"]), (25.0, 75.0))
+        # B: H1 others (A) 100% off
+        self.assertEqual(by["B"]["houseOffZonePct"], 100.0)
+
+    def test_a_scout_alone_in_their_houses_has_no_baseline(self):
+        s = self.fold([row(dist=9, buf=1)]).scout_rows({})[0]
+        self.assertIsNone(s["houseOffZonePct"])
+
+    def test_a_missing_or_zero_buffer_is_the_matchers_3_m_minimum(self):
+        h = self.fold([row(dist=2.9, buf=None), row(tm=9, station="Z2", dist=3.1, buf=0)]).house_rows({})[0]
+        self.assertEqual(h["offZonePct"], 50.0)
 
     def test_days_are_separate_for_gaps_and_duplicates(self):
         f = Q.Fold()
@@ -108,6 +119,7 @@ class TestFold(unittest.TestCase):
         self.assertEqual((h["stations"], h["stationsScouted"], h["coveragePct"], h["sectionsScouted"], h["week"]),
                          (90, 30, 33.3, 6, "2031-W40"))
         self.assertTrue(h["weekPartial"])
+        self.assertIsNone(h["staleDays"])
 
     def test_house_without_metadata_has_no_gps_figures(self):
         h = self.fold([row(), row(tm=50, station="Z2")]).house_rows({})[0]
@@ -174,6 +186,12 @@ class TestFlags(unittest.TestCase):
                          [("off_zone", "S1")])
         self.assertEqual(kinds(Q.flag_rows([], [scout(offZonePct=85.0, houseOffZonePct=60.0, fixes=49)], 50.0)), [])
         self.assertEqual(kinds(Q.flag_rows([], [scout(offZonePct=None, houseOffZonePct=None, fixes=0)], 50.0)), [])
+
+    def test_a_stale_house_is_not_scouted_recently_not_thin(self):
+        flags = Q.flag_rows([house(coveragePct=5.0, week="2031-W38", staleDays=15)], [], 0)
+        self.assertEqual(kinds(flags), [("not_scouted_recently", "GH1")])
+        self.assertIn("15 days", flags[0]["detail"])
+        self.assertEqual(kinds(Q.flag_rows([house(coveragePct=5.0, staleDays=14)], [], 0)), [("thin_coverage", "GH1")])
 
     def test_thin_coverage_on_a_partial_week_says_so(self):
         f = Q.flag_rows([house(coveragePct=10.0, week="2031-W41", weekPartial=True)], [], 0)[0]

@@ -34,6 +34,11 @@ The first real-data run (Rose, 4 weeks, 519k entries) flagged every scout, becau
 | C3 | **Off-zone (scout)** fires only when the scout's off-zone share exceeds the off-zone share of the houses they scouted (weighted by the scout's fixes in each) by ≥ 25 points, with ≥ 50 fixes. The map problem stays the house-level **map offset suspect** flag. When the scope's off-zone share > 30%, the off-zone KPI reads "zone map needs checking". |
 | C4 | **Thin coverage** uses each house's latest *complete* ISO week in range (a week whose Sunday is before today); the current, unfinished week is used only when nothing else is in range, and is then marked "partial week". |
 | C5 | **Sync delay** stays an informational column (no flag); the UI says it is entry creation minus capture time. |
+| I1 | A coverage week is **complete** only if the whole ISO week (Mon–Sun) lies inside the requested range and has ended; otherwise the house falls back to its latest cut/unfinished week, marked "partial week". |
+| I2 | A house whose coverage week ended **more than 14 days before the range end** gets its own flag, **not scouted recently**, instead of thin coverage. |
+| I3 | The range is **capped at 8 weeks**: `from_date` is clamped to `to_date − 56 days`; the payload carries `clamped: true` and the effective `range`, and the tab shows a note. |
+| I4 | **Nothing found** applies the crop's observation filter (D4): an entry is "found" only with a pest/disease row of the crop's pests/diseases. |
+| I5 | A missing or zero `zone_buffer` reads as the matcher's **3 m minimum**; a scout's off-zone baseline **excludes their own fixes** (leave-one-out; a house only they worked carries none); the scout table greys GPS cells by the server's metadata line; the tab shows a loading placeholder, never "Nothing needs attention", before data arrives. |
 
 ## Design
 

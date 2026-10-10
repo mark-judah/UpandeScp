@@ -35,9 +35,15 @@ OFF_ZONE_EXCESS = 25.0         # scout: off-zone share this many points over the
 ZONE_MAP_SUSPECT_PCT = 30.0    # scope: off-zone share above this → "zone map needs checking"
 DUPLICATE_PCT = 2.0            # scout: duplicate entries above this
 METADATA_MIN_PCT = 50.0        # house: below this GPS figures are incomplete (greyed)
+STALE_DAYS = 14                # house: coverage week ended more than this before the range end
+#: The zone matcher's minimum buffer (geo_utils: max(3, accuracy)); a missing or
+#: zero ``zone_buffer`` reads as this, never as 0 m (which would make every fix off).
+MIN_ZONE_BUFFER_M = 3.0
+#: Longest window the aggregate reads (I3): from_date is clamped to to_date − this.
+MAX_RANGE_DAYS = 56
 
 #: Tie-break order when two flags score the same.
-KINDS = ("map_offset", "thin_coverage", "too_fast", "nothing_found", "off_zone",
+KINDS = ("map_offset", "not_scouted_recently", "thin_coverage", "too_fast", "nothing_found", "off_zone",
          "duplicates", "metadata_gap")
 
 
@@ -106,7 +112,7 @@ class _Scout:
         self.fast = self.moves = self.nothing = self.fixes = self.off = self.dupes = 0
         self.hours = 0.0
         self.sync = {}
-        self.house_fixes = {}  # house -> this scout's fixes there
+        self.house_fixes = {}  # house -> [this scout's fixes there, of them off zone]
 
 
 class Fold:
@@ -131,7 +137,8 @@ class Fold:
             off = 0
             if dist is not None:
                 dist = float(dist)
-                off = 1 if dist > float(buf or 0) else 0
+                buf = float(buf or 0)
+                off = 1 if dist > (buf if buf > 0 else MIN_ZONE_BUFFER_M) else 0
                 h.fixes += 1
                 h.off += off
                 key = round(dist, 1)
@@ -158,7 +165,11 @@ class Fold:
             if dist is not None:
                 s.fixes += 1
                 s.off += off
-                s.house_fixes[wh] = s.house_fixes.get(wh, 0) + 1
+                hf = s.house_fixes.get(wh)
+                if hf is None:
+                    hf = s.house_fixes[wh] = [0, 0]
+                hf[0] += 1
+                hf[1] += off
             if delay is not None:
                 minute = max(0, int(delay)) // 60
                 s.sync[minute] = s.sync.get(minute, 0) + 1
@@ -190,6 +201,7 @@ class Fold:
                 "house": wh,
                 "week": cov.get("week"),
                 "weekPartial": bool(cov.get("partial")),
+                "staleDays": cov.get("stale_days"),
                 "stations": cov.get("stations"),
                 "stationsScouted": cov.get("scouted"),
                 "coveragePct": cov.get("coverage"),
@@ -211,9 +223,16 @@ class Fold:
         for scout in sorted(self.scouts):
             s = self.scouts[scout]
             median = percentile(s.sync, 0.5)
-            base_n = sum(s.house_fixes.values())
-            base = sum(n * self.houses[wh].off / self.houses[wh].fixes
-                       for wh, n in s.house_fixes.items()) if base_n else 0
+            # Leave-one-out: each house's off-zone share over the OTHER scouts'
+            # fixes, weighted by this scout's fixes there; houses only they
+            # worked carry no baseline.
+            base_n, base = 0, 0.0
+            for wh, (n, own_off) in s.house_fixes.items():
+                h = self.houses[wh]
+                others = h.fixes - n
+                if others > 0:
+                    base_n += n
+                    base += n * (h.off - own_off) / others
             out.append({
                 "scout": scout,
                 "scoutName": names.get(scout) or scout,
@@ -287,7 +306,12 @@ def flag_rows(houses, scouts, scope_nothing_pct) -> list:
                              _over(med, MAP_OFFSET_MEDIAN_M),
                              f"median fix {med:g} m from its zone over {h['fixes']} fixes — check the zone map"))
         cov = h.get("coveragePct")
-        if cov is not None and cov < THIN_COVERAGE_PCT:
+        stale = h.get("staleDays")
+        if stale is not None and stale > STALE_DAYS:
+            out.append(_flag("not_scouted_recently", "house", name, name, stale, STALE_DAYS, "days",
+                             _over(stale, STALE_DAYS),
+                             f"latest complete week {h.get('week')} ended {stale} days before the range end"))
+        elif cov is not None and cov < THIN_COVERAGE_PCT:
             out.append(_flag("thin_coverage", "house", name, name, cov, THIN_COVERAGE_PCT, "%",
                              _under(cov, THIN_COVERAGE_PCT),
                              f"{cov:g}% of stations scouted in {h.get('week') or 'its latest week'}"

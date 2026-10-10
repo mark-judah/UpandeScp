@@ -47,13 +47,14 @@ def insert(*, scout, date, seconds, greenhouse=None, zone=None, block=None, tree
          "t": tree, "row": row, "d": date, "tm": captured.strftime("%H:%M:%S"), "crop": crop},
     )
     if pest:
+        pest_name = pest if isinstance(pest, str) else "Thrips"
         frappe.db.sql(
             """insert into `tabPests Scouting Entry`
                (name, creation, modified, owner, modified_by, docstatus, idx, parent,
                 parenttype, parentfield, pest, stage, plant_section, `count`)
                values (%(n)s, %(c)s, %(c)s, 'Administrator', 'Administrator', 0, 1, %(p)s,
-                'Scouting Entry', 'pests_scouting_entry', 'Thrips', 'Adult', 'Leaf', 2)""",
-            {"n": frappe.generate_hash(length=12), "c": created, "p": name},
+                'Scouting Entry', 'pests_scouting_entry', %(pest)s, 'Adult', 'Leaf', 2)""",
+            {"n": frappe.generate_hash(length=12), "c": created, "p": name, "pest": pest_name},
         )
     if dist is not None:
         frappe.db.sql(
@@ -181,7 +182,8 @@ class TestFigures(QualityCase):
             insert(scout=self.s2, date=MON, seconds=8 * 3600 + i * 30, greenhouse=self.gh, zone=z[60 + i], dist=0.0)
         out = self.run_quality(greenhouse=self.gh)
         s1 = self.scout(out, self.s1)
-        self.assertEqual((s1["offZonePct"], s1["houseOffZonePct"]), (100.0, 50.0))
+        self.assertEqual((s1["offZonePct"], s1["houseOffZonePct"]), (100.0, 0.0))  # baseline = the others' fixes
+        self.assertEqual(self.scout(out, self.s2)["houseOffZonePct"], 100.0)
         got = {(f["kind"], f["name"]) for f in out["flags"]}
         self.assertIn(("off_zone", self.s1), got)
         self.assertNotIn(("off_zone", self.s2), got)
@@ -204,6 +206,55 @@ class TestCoverageWeek(QualityCase):
         self.assertEqual((h["week"], h["weekPartial"], h["stationsScouted"]), ("2031-W41", True, 1))
         thin = next(f for f in out["flags"] if f["kind"] == "thin_coverage")
         self.assertIn("partial week", thin["detail"])
+
+
+    def set_today(self, d):
+        self.today.stop()
+        self.today = patch.object(QM, "_today", return_value=d)
+        self.today.start()
+
+    def test_a_week_cut_by_the_range_start_is_not_complete(self):
+        self.set_today(date(2031, 10, 20))
+        for i in range(5):
+            insert(scout=self.s1, date=TUE, seconds=8 * 3600 + i * 30, greenhouse=self.gh, zone=self.zones[i])
+        insert(scout=self.s1, date=NEXT_MON, seconds=8 * 3600, greenhouse=self.gh, zone=self.zones[50])
+        out = DA.quality(from_date=TUE, to_date=NEXT_SUN, crop="Rose", greenhouse=self.gh, force="1")
+        h = self.house(out, self.gh)
+        self.assertEqual((h["week"], h["weekPartial"], h["stationsScouted"]), ("2031-W41", False, 1))
+
+    def test_a_week_cut_by_the_range_end_is_not_complete(self):
+        self.set_today(date(2031, 10, 20))
+        for i in range(5):
+            insert(scout=self.s1, date=MON, seconds=8 * 3600 + i * 30, greenhouse=self.gh, zone=self.zones[i])
+        insert(scout=self.s1, date=NEXT_MON, seconds=8 * 3600, greenhouse=self.gh, zone=self.zones[50])
+        out = DA.quality(from_date=MON, to_date="2031-10-08", crop="Rose", greenhouse=self.gh, force="1")
+        h = self.house(out, self.gh)
+        self.assertEqual((h["week"], h["weekPartial"], h["stationsScouted"]), ("2031-W40", False, 5))
+
+    def test_a_house_last_scouted_weeks_ago_is_not_scouted_recently(self):
+        self.set_today(date(2031, 10, 30))
+        insert(scout=self.s1, date=MON, seconds=8 * 3600, greenhouse=self.gh, zone=self.zones[0])
+        out = DA.quality(from_date=MON, to_date="2031-10-26", crop="Rose", greenhouse=self.gh, force="1")
+        self.assertEqual(self.house(out, self.gh)["staleDays"], 21)
+        kinds = {f["kind"] for f in out["flags"] if f["name"] == self.gh}
+        self.assertIn("not_scouted_recently", kinds)
+        self.assertNotIn("thin_coverage", kinds)
+
+
+class TestRangeAndScope(QualityCase):
+    def test_the_range_is_capped_at_8_weeks(self):
+        out = DA.quality(from_date="2031-01-01", to_date=SUN, crop="Rose", force="1")
+        self.assertTrue(out["clamped"])
+        self.assertEqual(out["range"], {"from_date": "2031-08-10", "to_date": SUN})
+        self.assertFalse(self.run_quality()["clamped"])
+        self.assertEqual(self.run_quality()["range"], {"from_date": MON, "to_date": SUN})
+
+    def test_nothing_found_ignores_other_crops_observations(self):
+        insert(scout=self.s1, date=MON, seconds=8 * 3600, greenhouse=self.gh, zone=self.zones[0],
+               pest="Fruit fly (Ceratitis)")
+        insert(scout=self.s1, date=MON, seconds=8 * 3600 + 60, greenhouse=self.gh, zone=self.zones[1], pest=True)
+        s1 = self.scout(self.run_quality(greenhouse=self.gh), self.s1)
+        self.assertEqual(s1["nothingFoundPct"], 50.0)  # the avocado pest on a rose entry is "nothing found"
 
 
 class TestScoping(QualityCase):

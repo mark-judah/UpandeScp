@@ -121,6 +121,12 @@ class TestHouseClusters(SpreadCase):
         self.assertEqual((now, out["unit"]), ([(4, "New", None)], "row"))
         self.assertEqual(out["clusters"][0]["label"], "rows 1–2, trees 1–2")
 
+    def test_a_week_that_does_not_exist_is_refused(self):
+        self.assertEqual(S.normalize_week("2031-W5"), "2031-W05")
+        self.assertEqual(S.normalize_week("2026-W53"), "2026-W53")           # a 53-week year
+        with self.assertRaises(frappe.ValidationError):
+            S.normalize_week("2031-W53")                                     # 2031 has 52
+
     def test_a_week_without_scouting_is_empty(self):
         SF.seed_cells(self.gh, SF.monday(31), SF.rect(0, 0, 1, 3))
         out = S.house_clusters("Rose", self.gh, "Thrips", "pest", None, "2031-W29")

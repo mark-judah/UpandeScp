@@ -174,6 +174,13 @@ class TestPins(PinCase):
             PN.save_pin("Rose", self.gh, "Area", "a line",
                         polygon=json.dumps({"type": "Polygon", "coordinates": [[[0, 0], [1, 1]]]}))
 
+    def test_an_area_polygon_is_capped_at_500_vertices(self):
+        self.as_user(U_OWNER)
+        ring = [[34.0 + i * 1e-7, -0.1 + (i % 2) * 1e-7] for i in range(PN.MAX_VERTICES + 1)]
+        with self.assertRaises(frappe.ValidationError):
+            PN.save_pin("Rose", self.gh, "Area", "too many",
+                        polygon=json.dumps({"type": "Polygon", "coordinates": [ring + [ring[0]]]}))
+
     def test_an_area_pin_on_a_block_resolves_its_tree(self):
         block = F.avocado_block()
         centroids = PN.station_centroids(block)
@@ -285,6 +292,20 @@ class TestPinCheck(PinCase):
             self.assertEqual(PN.check_pins()["notified"], 0)                 # the next hour is silent
             self.assertEqual(self.told(pin["name"]), [U_OWNER])
             self.assertFalse(mail.called)
+
+    def test_an_owner_who_can_no_longer_see_the_house_is_not_told(self):
+        self.seed_rise(5, 6)
+        pin = self.section_pin()
+        self.as_user("Administrator")
+        with patch.object(crop_scope, "allowed_crops", side_effect=lambda user=None: (
+                set() if (user or frappe.session.user) == U_OWNER else None)), \
+                patch.object(crop_scope, "allowed_farms", side_effect=lambda user=None: (
+                    set() if (user or frappe.session.user) == U_OWNER else None)):
+            crop_scope.clear_cache()
+            self.assertEqual(PN.check_pins()["notified"], 0)
+        self.assertEqual(frappe.session.user, "Administrator")               # restored
+        self.assertEqual(self.told(pin["name"]), [])
+        self.assertFalse(frappe.db.get_value("Scouting Pin", pin["name"], "last_notified_week"))
 
     def test_a_rise_under_ten_points_is_silent(self):
         self.seed_rise(5, 6, n=11)                                           # 45.5 % → 54.5 %

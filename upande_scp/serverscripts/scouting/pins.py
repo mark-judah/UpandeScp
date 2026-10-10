@@ -29,6 +29,8 @@ EDIT_ROLES = ("SCP General Manager", "System Manager")
 SERIES_WEEKS = 8
 #: How far back the series looks for those weeks (16 ISO weeks).
 SERIES_LOOKBACK_DAYS = 16 * 7
+#: A drawn area is a hand-drawn shape: more corners than this is a mistake or abuse.
+MAX_VERTICES = 500
 PIN_FIELDS = [
     "name", "title", "crop", "farm", "warehouse", "kind", "observation", "obs_kind", "stage",
     "section_row", "section_col", "stations", "polygon", "source_week", "shared", "notify",
@@ -221,6 +223,8 @@ def save_pin(crop, warehouse, kind, title, observation=None, obs_kind=None, stag
         geom = C.parse_geojson(polygon)
         if not C.polygons(geom):
             frappe.throw("Draw an area of at least three corners.", frappe.ValidationError)
+        if sum(len(ring) for poly in C.polygons(geom) for ring in poly) > MAX_VERTICES:
+            frappe.throw(f"An area may have at most {MAX_VERTICES} corners.", frappe.ValidationError)
         picked = C.stations_in_polygon(station_centroids(warehouse), geom)
         if not picked:
             frappe.throw(f"The area you drew holds no zone or tree of {warehouse}.", frappe.ValidationError)
@@ -311,6 +315,20 @@ def _notify_owner(pin, now, before, week) -> bool:
     ))
 
 
+def _owner_sees(pin) -> bool:
+    """The owner may have lost the farm or crop since they pinned: a notice
+    must not leak a house they can no longer see."""
+    previous = frappe.session.user
+    try:
+        frappe.set_user(pin.owner)
+        TC._assert_can_see(pin.crop, pin.farm)
+        return True
+    except frappe.PermissionError:
+        return False
+    finally:
+        frappe.set_user(previous)
+
+
 def _check_one(weeks, pin) -> bool:
     latest, previous = weeks.latest_pair(pin.warehouse)
     if not latest or not previous or pin.last_notified_week == latest:
@@ -318,7 +336,7 @@ def _check_one(weeks, pin) -> bool:
     stations = pin_stations(pin)
     now = _figure(weeks, pin, stations, latest)
     before = _figure(weeks, pin, stations, previous)
-    if not C.pin_rises(before, now) or not _notify_owner(pin, now, before, latest):
+    if not C.pin_rises(before, now) or not _owner_sees(pin) or not _notify_owner(pin, now, before, latest):
         return False
     # set_value, not save: validate re-checks the house, and a pin whose house
     # changed must not block its own notice.

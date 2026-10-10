@@ -44,7 +44,11 @@ def normalize_week(week) -> str:
     if not week:
         return ""
     m = _WEEK.match(week)
-    if not m or not 1 <= int(m.group(2)) <= 53:
+    try:
+        if not m:
+            raise ValueError(week)
+        date.fromisocalendar(int(m.group(1)), int(m.group(2)), 1)
+    except ValueError:
         frappe.throw(f"Unreadable ISO week: {week}.", frappe.ValidationError)
     return f"{m.group(1)}-W{int(m.group(2)):02d}"
 

@@ -66,6 +66,15 @@ export interface SprayPlanSettings {
   progress_email_enabled: number;
   progress_email_hour: number;
   /**
+   * Scouting capture (pieces 5–6), read by the scout app with its
+   * observations. 1 = the app draws the camera / the Comments tab; 0 = it does
+   * not offer them at all. The server reads an unset switch as 1.
+   */
+  allow_scout_photos: number;
+  allow_scout_comments: number;
+  /** Highest count one observation or trap pest may carry on the handset (1–10000). */
+  max_count_per_observation: number;
+  /**
    * How a sprayer confirms each chemical taken from the CSU.
    * "labels" requires scanning the printed QR; "tick" lets them tick to
    * confirm instead. The server reads anything unset or unknown as "labels",

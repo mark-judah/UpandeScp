@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ScoutCaptureCard, maxCountError } from "@/components/settings/ScoutCaptureCard";
 import {
   saveSprayPlanSettings,
   type SprayPlanSettings,
@@ -71,6 +72,8 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
     [draft, initial],
   );
 
+  const captureError = maxCountError(draft.max_count_per_observation);
+
   const addFarm = () => {
     if (!pickFarm || pickFarm === ALL_FARM_PICKER) return;
     if (draft.allowed_farms.some((f) => f.farm === pickFarm)) return;
@@ -97,6 +100,7 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
     );
 
   const save = async () => {
+    if (captureError) return;
     setSaving(true);
     setError(null);
     setOk(false);
@@ -427,6 +431,8 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
         </CardContent>
       </Card>
 
+      <ScoutCaptureCard value={draft} onChange={(key, value) => set(key, value)} />
+
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle className="text-base">Auto-cancel dormant plans</CardTitle>
@@ -722,7 +728,7 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
         {ok && !dirty && (
           <span className="text-xs text-emerald-600 font-medium">Saved.</span>
         )}
-        <Button onClick={save} disabled={!dirty || saving} size="lg">
+        <Button onClick={save} disabled={!dirty || saving || !!captureError} size="lg">
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (

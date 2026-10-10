@@ -17,6 +17,15 @@ const CREATOR = "SCP Spray Plan Creator";
 const STORE_KEEPER = "SCP Chemical Store Keeper";
 
 describe("canOpenView", () => {
+  it("opens finances to a general manager on every crop, and to nobody else", () => {
+    for (const crop of ["rose", "avocado", "coffee", "passion-fruit"]) {
+      expect(canOpenView("finances", crop, [GM])).toBe(true);
+      expect(canOpenView("finances", crop, ["System Manager"])).toBe(true);
+      expect(canOpenView("finances", crop, [CREATOR, APPROVER])).toBe(false);
+      expect(canOpenView("finances", crop, [])).toBe(false);
+    }
+  });
+
   it("denies approvals to a creator — the reported hole", () => {
     expect(canOpenView("approvals", "rose", [CREATOR])).toBe(false);
   });

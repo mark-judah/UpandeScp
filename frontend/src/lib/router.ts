@@ -37,7 +37,8 @@ export type View =
   | "chemical-loaning"
   | "procurement"
   | "postponements"
-  | "notifications";
+  | "notifications"
+  | "finances";
 
 const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "notifications",
@@ -64,6 +65,7 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "creator-stock",
   "chemical-progress",
   "chemical-loaning",
+  "finances",
 ]);
 
 export const DEFAULT_CROP_SLUG = "rose";

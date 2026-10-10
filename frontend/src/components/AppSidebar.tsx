@@ -6,6 +6,7 @@ import {
   Bell,
   CalendarClock,
   CheckSquare,
+  Coins,
   ClipboardList,
   Crosshair,
   Droplets,
@@ -86,6 +87,8 @@ interface NavSection {
 }
 
 const STORE_KEEPER_ROLE = "SCP Chemical Store Keeper";
+// Crop-protection finances: the same roles the server's FINANCE_ROLES admits.
+const FINANCE_ROLES = ["SCP General Manager", "System Manager", "Administrator"];
 
 const ROSE_NAV: NavSection[] = [
   // Store-Keeper exclusive section — only role that sees it, and the
@@ -220,6 +223,13 @@ const ROSE_NAV: NavSection[] = [
     hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
+      {
+        kind: "view",
+        view: "finances",
+        label: "Finances",
+        icon: Coins,
+        requireRoles: FINANCE_ROLES,
+      },
       // Varieties is hidden until the page is finished. The route and the page are
       // still here, so restoring it is one line — reachable meanwhile by URL for
       // whoever is working on it.
@@ -260,6 +270,13 @@ const AVOCADO_NAV: NavSection[] = [
     label: "Reports",
     items: [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
+      {
+        kind: "view",
+        view: "finances",
+        label: "Finances",
+        icon: Coins,
+        requireRoles: FINANCE_ROLES,
+      },
     ],
   },
   {
@@ -290,6 +307,13 @@ const COFFEE_NAV: NavSection[] = [
     label: "Reports",
     items: [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
+      {
+        kind: "view",
+        view: "finances",
+        label: "Finances",
+        icon: Coins,
+        requireRoles: FINANCE_ROLES,
+      },
     ],
   },
   {
@@ -318,6 +342,18 @@ const DEFAULT_CROP_NAV: NavSection[] = [
       { kind: "view", view: "observations", label: "Observations", icon: Search },
       { kind: "view", view: "heatmaps", label: "Heatmaps", icon: Flame },
       { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
+    ],
+  },
+  {
+    label: "Reports",
+    items: [
+      {
+        kind: "view",
+        view: "finances",
+        label: "Finances",
+        icon: Coins,
+        requireRoles: FINANCE_ROLES,
+      },
     ],
   },
 ];

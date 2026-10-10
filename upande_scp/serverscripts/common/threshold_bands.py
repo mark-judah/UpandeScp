@@ -15,6 +15,8 @@ plain pytest.
   Alarming < Scout first < Spray advised.
 """
 
+import math
+
 PERCENTAGE = "Percentage"
 COUNT = "Count"
 MEASURES = (PERCENTAGE, COUNT)
@@ -146,12 +148,47 @@ def section_reliability(n) -> str:
     return "Low"
 
 
+#: z for the Wilson 95 % lower bound a Percentage section is judged on.
+WILSON_Z = 1.96
+
+
+def wilson_lower(x, n, z=WILSON_Z):
+    """The Wilson score interval's lower bound for ``x`` infested of ``n``
+    scouted, as a 0–100 figure rounded to 1 dp; None without stations.
+    ``(p + z²/2n − z·sqrt(p(1−p)/n + z²/4n²)) / (1 + z²/n)``."""
+    try:
+        n, x = int(n or 0), int(x or 0)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0:
+        return None
+    x = min(max(x, 0), n)
+    p = x / n
+    z2 = z * z
+    centre = p + z2 / (2 * n)
+    spread = z * math.sqrt(p * (1 - p) / n + z2 / (4 * n * n))
+    return round(max(0.0, (centre - spread) / (1 + z2 / n)) * 100, 1)
+
+
+def _section_infested(section):
+    """The section's infested count; derived from its pct when a caller passes
+    only the rate."""
+    if section.get("infested") is not None:
+        return section["infested"]
+    pct, n = section.get("pct"), int(section.get("scouted") or 0)
+    return round(float(pct) * n / 100) if pct is not None else 0
+
+
 def section_readings(house_value, sections, bands, measure) -> list:
     """Every section with a figure, judged against its house (H2):
-    ``{"row", "col", "value", "scouted", "band", "reliability", "hot"}``.
+    ``{"row", "col", "value", "lower", "scouted", "band", "reliability", "hot"}``.
 
     ``hot`` when the section's band is at least Moderate, higher than the
-    house's band, and the section has ≥ HOTSPOT_MIN_N scouted stations.
+    house's band, and the section has ≥ HOTSPOT_MIN_N scouted stations. For a
+    **Percentage** the band is that of the section's Wilson 95 % lower bound
+    (``lower``, from infested / scouted) — a 5-station section at 3 of 5 is
+    noise, 5 of 5 is not (final review, 2026-10-10); ``value`` stays the
+    observed pct. A **Count** is judged on its average (``lower`` None).
     ``bands`` is a band spec (``{"low", "mod", "high"}``, as ``band_spec``
     returns). Nothing when the house has no figure or the bands are unset or
     misordered; a section without a figure (< 3 stations) is skipped — it is
@@ -166,11 +203,12 @@ def section_readings(house_value, sections, bands, measure) -> list:
         value = section_value(s, measure)
         if value is None:
             continue
-        band = band_of(value, low, mod, high) or ""
-        rank = BAND_RANK.get(band, 0)
         n = int(s.get("scouted") or 0)
+        lower = None if measure == COUNT else wilson_lower(_section_infested(s), n)
+        band = band_of(value if measure == COUNT else lower, low, mod, high) or ""
+        rank = BAND_RANK.get(band, 0)
         out.append({
-            "row": s["row"], "col": s["col"], "value": value, "scouted": n, "band": band,
+            "row": s["row"], "col": s["col"], "value": value, "lower": lower, "scouted": n, "band": band,
             "reliability": section_reliability(n),
             "hot": n >= HOTSPOT_MIN_N and rank >= BAND_RANK["moderate"] and rank > house_rank,
         })

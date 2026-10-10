@@ -22,9 +22,10 @@ findings, ``sweep`` resolves alerts no check will reach again (key no longer
 banded, or week older than the window).
 
 A **hot spot** (spec 2026-10-10-hot-spots) is a section of the 3 x 3 grid whose
-band is above the house's, at least Moderate, with >= 5 scouted stations. It is
-its own alert per (house, observation, stage, week, section), stay-alert only,
-sent to the Alarming audience, and re-announced only when its band rises.
+band is above the house's, at least Moderate, with >= 5 scouted stations (for a
+Percentage, the band of the section's Wilson 95 % lower bound). It is its own
+alert per (house, observation, stage, week, section), stay-alert only, sent to
+the Alarming audience, and re-announced only when its band rises.
 
 ``run_threshold_check`` (hourly) is gated by a Redis ``SET NX EX``: one run per
 50 minutes across workers. The 17:00 EAT digest (``alert_digest``) is the only

@@ -119,24 +119,25 @@ class TestKeys(HotCase):
 
 class TestHotSpots(HotCase):
     """Bands 5 / 20 / 50 unless a test says otherwise. seed_hot_section's default:
-    corner (0, 0) 4 of 5 = 80 % (High), the other 8 sections 0 of 5 → the house
-    reads 80 / 9 = 8.9 % (Low)."""
+    corner (0, 0) 4 of 5 = 80 % (Wilson lower bound 37.6 % → Moderate), the
+    other 8 sections 0 of 5 → the house reads 80 / 9 = 8.9 % (Low). 5 of 5 =
+    100 % (lower bound 56.6 % → High), house 11.1 % (Low)."""
 
     def test_a_hot_section_in_a_low_house_raises_one_hot_spot_for_the_alarming_audience(self):
         TF.set_bands("Rose", "Thrips", 5, 20, 50)
-        TF.seed_hot_section(self.gh, TF.WEEK_20[0])
+        TF.seed_hot_section(self.gh, TF.WEEK_20[0], hot_infested=5)      # 4 of 5 is only Moderate now
         TC.check_crop("Rose", SUN_20)
         self.assertIsNone(self.alert())                                    # the house is Low: no house alert
         s = self.spot()
         self.assertEqual(
             (s.alert_type, s.action, s.band, s.value, s.reliability, s.sections_scouted, s.section_label,
              s.status, s.notified_band, s.notified_action or None),
-            ("Hot spot", "Hot spot", "High", 80.0, "Fair", 5, LABEL, "Open", "High", None),
+            ("Hot spot", "Hot spot", "High", 100.0, "Fair", 5, LABEL, "Open", "High", None),
         )
         self.assertEqual(frappe.db.count("Scouting Alert", {"warehouse": self.gh, "alert_type": "Hot spot"}), 1)
         self.assertEqual([self.told(u, s.name) for u in (U_CREATOR, U_SUPER, U_APPROVER, U_GM)], [1, 1, 0, 0])
         subject = frappe.db.get_value("Notification Log", {"document_name": s.name, "for_user": U_CREATOR}, "subject")
-        self.assertEqual(subject, f"Hot spot in {self.gh}, {LABEL}: Thrips 80.0% (house 8.9%) — "
+        self.assertEqual(subject, f"Hot spot in {self.gh}, {LABEL}: Thrips 100.0% (house 11.1%) — "
                                   "high infestation in this area, stay alert")
         TC.check_crop("Rose", SUN_20)                                      # the next hour: silent
         self.assertEqual(self.told(U_CREATOR, s.name), 1)
@@ -149,12 +150,12 @@ class TestHotSpots(HotCase):
         self.assertEqual(frappe.db.get_value("Scouting Alert", old, ["alert_type", "action"]), ("House", "Alarming"))
 
     def test_a_section_rising_from_moderate_to_high_is_announced_again(self):
-        TF.set_bands("Rose", "Thrips", 5, 20, 70)
-        TF.seed_hot_section(self.gh, TF.WEEK_20[0], hot_infested=2)       # corner 40 % Moderate, house 4.4 %
+        TF.set_bands("Rose", "Thrips", 5, 20, 50)
+        TF.seed_hot_section(self.gh, TF.WEEK_20[0])                       # corner 4 of 5: lower 37.6 % Moderate
         TC.check_crop("Rose", SUN_20)
         s = self.spot()
         self.assertEqual((s.band, s.notified_band, self.told(U_CREATOR, s.name)), ("Moderate", "Moderate", 1))
-        TF.seed_hot_section(self.gh, TF.WEEK_20[0], hot_infested=4)       # corner 80 % High, house 8.9 % Low
+        TF.seed_hot_section(self.gh, TF.WEEK_20[0], hot_infested=5)       # 5 of 5: lower 56.6 % High, house 11.1 %
         TC.check_crop("Rose", SUN_20)
         s = self.spot()
         self.assertEqual((s.band, s.notified_band, self.told(U_CREATOR, s.name)), ("High", "High", 2))
@@ -201,8 +202,9 @@ class TestHotSpots(HotCase):
         self.assertEqual((self.spot().status, self.alert().status), ("Resolved", "Open"))
 
     def test_unscouted_sections_neither_raise_nor_resolve(self):
-        TF.set_bands("Rose", "Thrips", 5, 20, 50)
-        TF.seed_hot_section(self.gh, TF.WEEK_20[0], others={(1, 1)})      # 2 sections scouted, 7 not
+        # Corner 5 of 5 (lower 56.6 % High) over a house of 2 sections at 50 % (Moderate).
+        TF.set_bands("Rose", "Thrips", 5, 20, 55)
+        TF.seed_hot_section(self.gh, TF.WEEK_20[0], hot_infested=5, others={(1, 1)})   # 2 sections scouted, 7 not
         found = [f for f in TC.evaluate("Rose", SUN_20)
                  if f["warehouse"] == self.gh and f["alert_type"] == "Hot spot" and not f["stage"]]
         self.assertEqual(sorted((f["section_row"], f["section_col"], bool(f["action"])) for f in found),
@@ -228,9 +230,9 @@ class TestHotSpots(HotCase):
 
     def test_next_weeks_hot_spot_in_the_same_section_is_carried_silently(self):
         TF.set_bands("Rose", "Thrips", 5, 20, 50)
-        TF.seed_hot_section(self.gh, TF.WEEK_20[0])
+        TF.seed_hot_section(self.gh, TF.WEEK_20[0], hot_infested=5)
         TC.check_crop("Rose", SUN_20)
-        TF.seed_hot_section(self.gh, TF.WEEK_21[0])
+        TF.seed_hot_section(self.gh, TF.WEEK_21[0], hot_infested=5)
         TC.check_crop("Rose", date(2031, 5, 25))
         w21 = self.spot(week="2031-W21")
         self.assertEqual((w21.notified_band, self.told(U_CREATOR, w21.name)), ("High", 0))
@@ -243,12 +245,32 @@ class TestHotSpots(HotCase):
         TF.set_roster(farm, "creators", [U_CREATOR])
         TF.set_roster(farm, "supervisors", [U_SUPER])
         TF.set_bands("Avocado", "Mealybugs", 5, 20, 50)
-        TF.seed_hot_section(block, TF.WEEK_20[0], crop="Avocado", pest="Mealybugs", stage="Singles", block=True)
+        TF.seed_hot_section(block, TF.WEEK_20[0], crop="Avocado", pest="Mealybugs", stage="Singles", block=True,
+                            hot_infested=5)
         TC.check_crop("Avocado", SUN_20)
         s = self.spot(gh=block, obs="Mealybugs")
-        self.assertEqual((s.section_label, s.value, s.sections_scouted), ("first rows · front", 80.0, 5))
+        self.assertEqual((s.section_label, s.value, s.sections_scouted), ("first rows · front", 100.0, 5))
         subject = frappe.db.get_value("Notification Log", {"document_name": s.name, "for_user": U_CREATOR}, "subject")
-        self.assertIn(f"Hot spot in {block}, first rows · front: Mealybugs 80.0% (house 8.9%)", subject)
+        self.assertIn(f"Hot spot in {block}, first rows · front: Mealybugs 100.0% (house 11.1%)", subject)
+
+    def test_three_of_five_is_noise_on_the_alerts_and_the_grid(self):
+        # Final review: a Percentage section is judged on its Wilson lower bound.
+        TF.set_bands("Rose", "Thrips", 5, 30, 60)
+        TF.seed_hot_section(self.gh, TF.WEEK_20[0], hot_infested=3)       # 60 % seen, lower 23.1 % Low; house 6.7 %
+        TC.check_crop("Rose", SUN_20)
+        self.assertEqual(frappe.db.count("Scouting Alert", {"warehouse": self.gh, "alert_type": "Hot spot"}), 0)
+        self.assertEqual(self._ringed(), [])
+        TF.seed_hot_section(self.gh, TF.WEEK_20[0], hot_infested=5)       # lower 56.6 % Moderate; house 11.1 % Low
+        TC.check_crop("Rose", SUN_20)
+        s = self.spot()
+        self.assertEqual((s.band, s.value, s.status), ("Moderate", 100.0, "Open"))
+        self.assertEqual(self._ringed(), [(0, 0)])                         # the ring agrees with the alert
+
+    def _ringed(self):
+        out = DA.greenhouse_detail(greenhouse=self.gh, from_date=TF.WEEK_20[0], to_date=TF.WEEK_20[1],
+                                   crop="Rose", force="1")
+        thrips = next(p for p in out["prevalence"] if p["name"] == "Thrips")
+        return [(c["row"], c["col"]) for c in thrips["sections"] if c["hot"]]
 
     def test_hot_spot_recipients_are_the_alarming_audience(self):
         self.assertEqual(sorted(TC.recipients_for(self.farm, "Rose", B.HOT_SPOT)), sorted([U_CREATOR, U_SUPER]))

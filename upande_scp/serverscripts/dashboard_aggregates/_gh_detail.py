@@ -173,7 +173,9 @@ def _build(filters: dict, job_id: str = "") -> dict:
 def _mark_hot(crop, kind, obs, weeks, gh, fig) -> list:
     """The figure's 3 × 3 sections, each with ``hot``: the section meets
     hot-spots H2 against the house's all-stage band in the row's measure (a
-    Count row reads the section's average count). Judged from the same figures
+    Count row reads the section's average count; a Percentage row the band of
+    the section's Wilson lower bound — ``B.hotspots``, exactly as the alerts
+    judge it, so ring and alert agree). Judged from the same figures
     as the payload, so a cached payload never disagrees with itself."""
     sections = fig.get("sections") or []
     spec = band_spec(crop, kind, obs, "")

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLUSTERED, figureLine, figureTooltip, type PrevalenceFigures } from "./prevalence";
+import { CLUSTERED, figureLine, figureTooltip, pressureText, signsSuffix, type PrevalenceFigures } from "./prevalence";
 
 const base: PrevalenceFigures = {
   prevalence: 34,
@@ -55,5 +55,21 @@ describe("figureTooltip", () => {
   it("explains the signs line only when there is one", () => {
     expect(figureTooltip({ ...base, signs: { ...base, prevalence: 30 } })).toContain("Signs: share of scouted stations showing signs of it");
     expect(figureTooltip(base)).not.toContain("Signs:");
+  });
+});
+
+describe("signsSuffix and pressureText", () => {
+  it("writes ' · signs N%' and nothing when there are none", () => {
+    expect(signsSuffix(66.7)).toBe(" · signs 66.7%");
+    expect(signsSuffix(0)).toBe(" · signs 0%");
+    expect(signsSuffix(null)).toBe("");
+    expect(signsSuffix(undefined)).toBe("");
+  });
+
+  it("puts the row's signs beside a pressure bar's value", () => {
+    expect(pressureText(33.3, { payload: { signs: { prevalence: 66.7 } } })).toBe("33.3% · signs 66.7%");
+    expect(pressureText(33.3, { payload: { signs: null } })).toBe("33.3%");
+    expect(pressureText(33.3, undefined)).toBe("33.3%");
+    expect(pressureText(null, { payload: { signs: { prevalence: 1 } } })).toBe("—");
   });
 });

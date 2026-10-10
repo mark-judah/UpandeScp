@@ -61,14 +61,25 @@ export const VARIETY_MIN_N = 10;
 
 export const CLUSTERED = "too clustered to judge";
 
+/** " · signs 30%", or "" when there is no signs figure. */
+export function signsSuffix(signs: number | null | undefined): string {
+  return signs != null ? ` · signs ${signs}%` : "";
+}
+
 /** "34% (was 50%) · ±6 · 8/9 · signs 30%" — the one line the dashboard shows;
  *  the signs part only when the pest has a Sign stage. */
 export function figureLine(f: PrevalenceFigures): string {
   if (f.prevalence == null) return f.reason || "no stations set up";
   const was = f.prev != null ? ` (was ${f.prev}%)` : "";
   const margin = f.margin != null ? `±${f.margin}` : f.reason || CLUSTERED;
-  const signs = f.signs?.prevalence != null ? ` · signs ${f.signs.prevalence}%` : "";
-  return `${f.prevalence}%${was} · ${margin} · ${f.sections_scouted}/${f.sections_total ?? 9}${signs}`;
+  return `${f.prevalence}%${was} · ${margin} · ${f.sections_scouted}/${f.sections_total ?? 9}${signsSuffix(f.signs?.prevalence)}`;
+}
+
+/** A bar's tooltip value: "34%", plus " · signs 30%" when its row carries them. */
+export function pressureText(value: unknown, item: unknown): string {
+  if (value == null) return "—";
+  const row = (item as { payload?: { signs?: PrevalenceFigures | null } } | null)?.payload;
+  return `${value}%${signsSuffix(row?.signs?.prevalence)}`;
 }
 
 const RATINGS: Reliability[] = ["Good", "Fair", "Low"];

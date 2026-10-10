@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { VarietyTable } from "../VarietyTable";
-import type { VarietyRow } from "@/lib/prevalence";
+import { VARIETY_MIN_N, type VarietyRow } from "@/lib/prevalence";
 
 const ROWS: VarietyRow[] = [
   { variety: "Fuchsiana", beds: 6, scouted: 18, infested: 6, prevalence: 33.3, signs: 66.7, few: false },
@@ -45,5 +45,21 @@ describe("VarietyTable", () => {
     expect(container).toBeEmptyDOMElement();
     rerender(<VarietyTable rows={ROWS} />);
     expect(container.innerHTML).not.toMatch(/border-l-|border-left/);
+  });
+
+  it("states the threshold from VARIETY_MIN_N and titles a variety cell", () => {
+    render(<VarietyTable rows={ROWS} />);
+    const few = screen.getAllByTestId("variety-row")[1];
+    expect(few).toHaveAttribute("title", `Fewer than ${VARIETY_MIN_N} stations scouted: too few to read much into`);
+    expect(within(few).getByText("Red Naomi").closest("td")).toHaveAttribute("title", "Red Naomi");
+    expect(screen.getByText("No variety recorded").closest("td")).toHaveAttribute("title", "No variety recorded");
+  });
+
+  it("hides its own label when the surrounding card titles it", () => {
+    const { rerender } = render(<VarietyTable rows={ROWS} pest="Thrips" />);
+    expect(screen.getByText("By variety · Thrips")).toBeInTheDocument();
+    rerender(<VarietyTable rows={ROWS} pest="Thrips" titled />);
+    expect(screen.queryByText(/By variety/)).toBeNull();
+    expect(screen.getAllByTestId("variety-row")).toHaveLength(3);
   });
 });

@@ -79,6 +79,25 @@ describe("Pests tab severity rows", () => {
   });
 });
 
+describe("Pests tab by-variety card", () => {
+  const variety = { variety: "Fuchsiana", beds: 6, scouted: 18, infested: 6, prevalence: 33.3, signs: 66.7, few: false };
+  const base: PestsPayload = {
+    filterOptions: { pests: ["Thrips"], sections: [], stages: [] },
+    ranking: [], distribution: [], sectionSplit: [], greenhousePressure: [], dailyPercent: [],
+    trendSeries: { rows: [], keys: [] },
+    varieties: [variety],
+  };
+
+  it("says it is the all-stage live figure and titles the table once", () => {
+    render(<PestsTab data={base} pestName="Thrips" section="" stage="Adult" onFiltersChange={() => {}} />);
+    expect(screen.getByText(/All-stage live prevalence and signs of Thrips/)).toHaveTextContent(
+      /not the selected stage or section/,
+    );
+    expect(screen.getAllByText(/By variety/i)).toHaveLength(1);
+    expect(screen.getByText("By Variety")).toBeInTheDocument();
+  });
+});
+
 describe("Overview active alerts", () => {
   // Since thresholds piece 3a the card lists stored Scouting Alerts (see
   // OverviewAlerts.test.tsx); the cached payload's activeAlerts is not drawn.

@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { RevealLTR } from "@/components/RevealLTR";
+import { pressureText } from "@/lib/prevalence";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { DashFilterRow } from "./DashFilterRow";
@@ -349,7 +350,7 @@ export function PestsTab({
                       content={
                         <ChartTooltipContent
                           indicator="line"
-                          formatter={(v) => (v == null ? "—" : `${v}%`)}
+                          formatter={(v, _name, item) => pressureText(v, item)}
                         />
                       }
                     />
@@ -368,11 +369,11 @@ export function PestsTab({
             <CardHeader className="p-0 pb-2">
               <CardTitle>By Variety</CardTitle>
               <CardDescription>
-                Live prevalence and signs of {pestName} by rose variety · each greenhouse's latest scouted week
+                All-stage live prevalence and signs of {pestName} by rose variety (not the selected stage or section) · each greenhouse's latest scouted week
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
-              <VarietyTable rows={data?.varieties} />
+              <VarietyTable rows={data?.varieties} titled />
             </CardContent>
           </Card>
         )}

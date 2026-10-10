@@ -53,6 +53,7 @@ import {
   type PrevalencePoint,
 } from "./aggregate";
 import { RevealLTR } from "@/components/RevealLTR";
+import { signsSuffix } from "@/lib/prevalence";
 
 function SideLegend({
   items,
@@ -183,7 +184,7 @@ function describeSpray(e: SprayEvent): string {
  *  hid both numbers; making them visible is what lets a reader tell "62% of a
  *  thin sample" from "62% of a thorough one" instead of trusting a bare figure.
  */
-function IncidenceTooltip({
+export function IncidenceTooltip({
   active,
   payload: items,
   label,
@@ -238,6 +239,7 @@ function IncidenceTooltip({
                 return (
                   <div className="pl-3.5 font-mono text-[0.65rem] text-muted-foreground tabular-nums">
                     adjusted prevalence{p.margin != null ? ` ±${p.margin}` : " · too clustered to judge"} · {p.reliability}
+                    {signsSuffix(p.signs)}
                   </div>
                 );
               })()}

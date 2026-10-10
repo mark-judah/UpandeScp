@@ -40,6 +40,9 @@ MAX_FILE_NAME = 140
 _SUBJECT_LIMIT = 40
 _DIGEST_LEN = 10
 _PHOTO_ID_LIMIT = 64
+_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".heic")
+UNIDENTIFIED = "Unidentified"
+NOT_YOURS_MESSAGE = "Only the scout who made this entry may add photos to it."
 
 
 def _gm_recipients():
@@ -71,7 +74,7 @@ def _is_unidentified(name):
     return not name or "unidentified" in name.lower()
 
 
-def _short_file_name(raw_name, client_id, subject_name, photo_id=""):
+def _short_file_name(raw_name, client_id, subject_name, photo_id="", trap=""):
     """A short, portable, deterministic name for the stored photo.
 
     The client names the upload from the raw client_id, which percent-encodes
@@ -79,12 +82,20 @@ def _short_file_name(raw_name, client_id, subject_name, photo_id=""):
     used. Deterministic because the duplicate check matches on file_name: a
     retry after a lost response must find the first upload. Keyed on
     client_id + subject (Mona), plus the handset's per-photo `photo_id` when it
-    sends one, so two photos of one subject on one entry are two photos. An old
-    handset sends no photo_id and hashes exactly as before."""
-    ext = re.sub(r"[^A-Za-z0-9.]+", "", os.path.splitext(raw_name or "")[1])[:8] or ".jpg"
+    sends one, so two photos of one subject on one entry are two photos. A trap
+    submission queues one unidentified photo per trap under one client_id and
+    no photo_id, so the trap joins the key when there is no photo_id. Only an
+    image extension is kept; anything else is stored as .jpg."""
+    ext = os.path.splitext(raw_name or "")[1].lower()
+    if ext not in _IMAGE_EXTENSIONS:
+        ext = ".jpg"
     subject = re.sub(r"[^A-Za-z0-9]+", "-", subject_name or "").strip("-")
     subject = subject[:_SUBJECT_LIMIT] or "photo"
-    key = f"{client_id}|{subject_name}" + (f"|{photo_id}" if photo_id else "")
+    key = f"{client_id}|{subject_name}"
+    if photo_id:
+        key += f"|{photo_id}"
+    elif trap:
+        key += f"|{trap}"
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()
     return f"{subject}-{digest[:_DIGEST_LEN]}{ext}"[:MAX_FILE_NAME]
 
@@ -100,7 +111,8 @@ def attach_scouting_photo():
     photo_id = (frappe.form_dict.get("photo_id") or "").strip()[:_PHOTO_ID_LIMIT]
 
     # pest / disease stay ahead of `subject` for the handsets that only name them.
-    subject_name = pest or disease or (frappe.form_dict.get("subject") or "").strip()
+    kind = "disease" if disease and not pest else "pest"
+    subject_name = pest or disease or (frappe.form_dict.get("subject") or "").strip() or UNIDENTIFIED
     is_unidentified = _is_unidentified(subject_name)
 
     if not is_unidentified and not capture_settings.allows("photos"):
@@ -126,8 +138,21 @@ def attach_scouting_photo():
         frappe.response["data"] = {"status": "pending"}
         return
 
+    # Only the scout who made the entry (or someone allowed to edit it) may
+    # add to it: the endpoint is whitelisted and the client_id is not a secret.
+    if (
+        frappe.session.user != frappe.db.get_value("Scouting Entry", entry, "owner")
+        and not frappe.has_permission("Scouting Entry", "write", doc=entry)
+    ):
+        frappe.response["data"] = {
+            "status": "refused",
+            "reason": "not-yours",
+            "message": NOT_YOURS_MESSAGE,
+        }
+        return
+
     content = file_obj.stream.read()
-    fname = _short_file_name(file_obj.filename, client_id, subject_name, photo_id)
+    fname = _short_file_name(file_obj.filename, client_id, subject_name, photo_id, trap)
 
     # Idempotent against client retries after a lost success response.
     existing = frappe.db.get_value(
@@ -162,14 +187,14 @@ def attach_scouting_photo():
         if recipients:
             gh = frappe.db.get_value("Scouting Entry", entry, "greenhouse") or ""
             esc = frappe.utils.escape_html
-            label = subject_name or "Unidentified pest"
+            label = subject_name
             frappe.sendmail(
                 recipients=recipients,
-                subject=f"Unidentified pest photo — {label}",
+                subject=f"Unidentified {kind} photo — {label}",
                 message=(
-                    "<p>A scout flagged an unidentified pest and attached a photo.</p>"
+                    f"<p>A scout flagged an unidentified {kind} and attached a photo.</p>"
                     "<ul>"
-                    f"<li><b>Pest:</b> {esc(label)}</li>"
+                    f"<li><b>{kind.capitalize()}:</b> {esc(label)}</li>"
                     f"<li><b>Trap:</b> {esc(trap) or '—'}</li>"
                     f"<li><b>Greenhouse:</b> {esc(gh) or '—'}</li>"
                     f"<li><b>Scouting Entry:</b> {entry}</li>"
@@ -185,7 +210,7 @@ def attach_scouting_photo():
         "status": "ok",
         "file": saved.file_url,
         "entry": entry,
-        "subject": subject_name or "Unidentified",
+        "subject": subject_name,
         "caption": caption,
         "notified": is_unidentified,
     }

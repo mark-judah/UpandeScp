@@ -337,10 +337,12 @@ class TestPhotoUpload(CaptureCase):
         self._save = patch("frappe.utils.file_manager.save_file", side_effect=self._fake_save_file)
         self._save.start()
         self._prev_request = getattr(frappe.local, "request", None)
+        self._prev_form = getattr(frappe.local, "form_dict", None)
 
     def tearDown(self):
         self._save.stop()
         frappe.local.request = self._prev_request
+        frappe.local.form_dict = self._prev_form
         super().tearDown()
 
     def _fake_save_file(self, fname, content, dt, dn, is_private=1):
@@ -449,3 +451,62 @@ class TestPhotoUpload(CaptureCase):
         self.assertTrue(self.PI._is_unidentified(""))
         self.assertFalse(self.PI._is_unidentified("Downy Mildew"))
         self.assertFalse(self.PI._is_unidentified("General"))
+
+    def test_two_traps_in_one_submission_are_two_photos(self):
+        self.post(pest="Unidentified pest", trap="Trap 1")
+        self.post(pest="Unidentified pest", trap="Trap 2")
+        self.assertEqual(len(self.rows()), 2)
+        self.assertEqual(len({s["fname"] for s in self.saved}), 2)
+        # the same trap retried is still one photo
+        self.post(pest="Unidentified pest", trap="Trap 2")
+        self.assertEqual(len(self.rows()), 2)
+
+    def _plain_user(self):
+        return frappe.db.get_value(
+            "User", {"enabled": 1, "name": ["not in", ("Administrator", "Guest")]}, "name")
+
+    def test_the_owner_may_upload_a_stranger_may_not(self):
+        owner = self._plain_user()
+        stranger = frappe.db.get_value(
+            "User", {"enabled": 1, "name": ["not in", ("Administrator", "Guest", owner)]}, "name")
+        frappe.db.sql("UPDATE `tabScouting Entry` SET owner=%s WHERE name=%s", (owner, ENTRY))
+        with patch("frappe.has_permission", return_value=False):
+            frappe.set_user(owner)
+            self.assertEqual(self.post(subject="General", photo_id="o1")["status"], "ok")
+            frappe.set_user(stranger)
+            got = self.post(subject="General", caption="hijack", photo_id="o1")
+            self.assertEqual((got["status"], got["reason"]), ("refused", "not-yours"))
+            got = self.post(pest="Unidentified pest", trap="T9")
+            self.assertEqual(got["reason"], "not-yours")
+        self.assertEqual(len(self.saved), 1)
+        self.assertEqual([r.caption for r in self.rows()], [self.rows()[0].caption])
+        self.assertNotEqual(self.rows()[0].caption, "hijack")
+        self.sendmail.assert_not_called()
+
+    def test_a_user_with_write_permission_may_upload(self):
+        owner = self._plain_user()
+        frappe.db.sql("UPDATE `tabScouting Entry` SET owner=%s WHERE name=%s", (owner, ENTRY))
+        with patch("frappe.has_permission", return_value=True):
+            self.assertEqual(self.post(subject="General", photo_id="w1")["status"], "ok")
+        # Administrator, who is not the owner, has write permission
+        self.assertEqual(self.post(subject="General", photo_id="w2")["status"], "ok")
+
+    def test_only_image_extensions_survive(self):
+        n = self.PI._short_file_name
+        self.assertTrue(n("x.PNG", "c", "s").endswith(".png"))
+        self.assertTrue(n("x.heic", "c", "s").endswith(".heic"))
+        for bad in ("x.php", "x.html", "x.svg", "x.exe", "x"):
+            self.assertTrue(n(bad, "c", "s").endswith(".jpg"), bad)
+
+    def test_an_empty_subject_is_unidentified_everywhere(self):
+        got = self.post(disease="", pest="", subject="", trap="T1")
+        self.assertEqual((got["subject"], got["notified"]), ("Unidentified", True))
+        self.assertEqual([r.subject for r in self.rows()], ["Unidentified"])
+        self.assertIn("Unidentified", self.sendmail.call_args.kwargs["subject"])
+
+    def test_an_unidentified_disease_is_not_called_a_pest(self):
+        self.post(disease="Unidentified disease", trap="T1")
+        kw = self.sendmail.call_args.kwargs
+        self.assertIn("disease", kw["subject"])
+        self.assertNotIn("pest", kw["subject"].lower())
+        self.assertNotIn("pest", kw["message"].lower())

@@ -276,7 +276,7 @@ class TestScoping(QualityCase):
         self.assertEqual((out["houses"], out["scouts"], out["flags"]), ([], [], []))
         self.assertEqual(out["kpis"]["entries"], 0)
 
-    def test_cache_schema_is_dq1(self):
+    def test_cache_schema_is_gal1(self):
         from upande_scp.serverscripts.dashboard_aggregates import _common
-        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "dq1")
-        self.assertIn(":dq1:quality:", _common._build_key("quality", {"crop": "Rose"}))
+        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "gal1")
+        self.assertIn(":gal1:quality:", _common._build_key("quality", {"crop": "Rose"}))

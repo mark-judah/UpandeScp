@@ -35,6 +35,9 @@ from upande_scp.serverscripts.dashboard_aggregates._trends import (
 from upande_scp.serverscripts.dashboard_aggregates._quality import (
     quality as _quality,
 )
+from upande_scp.serverscripts.dashboard_aggregates._gallery import (
+    observation_gallery as _observation_gallery,
+)
 
 
 def _truthy(v) -> bool:
@@ -117,3 +120,8 @@ def trends(**kwargs):
 @frappe.whitelist()
 def quality(**kwargs):
     return _call(_quality, **kwargs)
+
+
+@frappe.whitelist()
+def observation_gallery(**kwargs):
+    return _call(_observation_gallery, **kwargs)

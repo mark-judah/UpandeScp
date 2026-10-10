@@ -103,6 +103,11 @@ K_ZONE_CENTROIDS = "scp:zone_centroids_v1"
 # invalidate_station_grid_for_doc whenever a Zone, Bed or Orchard Tree of that
 # house is saved or deleted.
 K_STATION_GRID_PREFIX = "scp:station_grid_v1"
+# Per-house fine ranks for spread patches (_prevalence_rows.station_ranks):
+# (bed rank, zone rank within the bed) or (row rank, tree rank within the row).
+# Suffix is the greenhouse/block name; dropped with the grid by
+# invalidate_station_grid_for_doc.
+K_STATION_RANKS_PREFIX = "scp:station_ranks_v1"
 
 
 def scouting_payload_version():
@@ -351,7 +356,7 @@ def invalidate_orchard_trees_for_doc(doc):
 
 
 def invalidate_station_grid_for_doc(doc):
-    """Drop the cached station grid of the house a Zone / Bed / Orchard Tree is in.
+    """Drop the cached station grid and ranks of the house a Zone / Bed / Orchard Tree is in.
 
     An avocado row is a Bed whose ``greenhouse`` is the block, so Bed covers both
     crops. A tree saved before ``block`` is set resolves it through its row.
@@ -367,7 +372,7 @@ def invalidate_station_grid_for_doc(doc):
     else:
         return
     if wh:
-        invalidate(f"{K_STATION_GRID_PREFIX}:{wh}")
+        invalidate(f"{K_STATION_GRID_PREFIX}:{wh}", f"{K_STATION_RANKS_PREFIX}:{wh}")
 
 
 def invalidate_farm_bundle_for_doc(doc):

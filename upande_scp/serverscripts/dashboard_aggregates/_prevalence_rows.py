@@ -45,13 +45,13 @@ def grid_key(warehouse: str) -> str:
     return f"{cache_utils.K_STATION_GRID_PREFIX}:{warehouse}"
 
 
-def _load_grids(warehouses) -> dict:
-    """``{house: {station: (row, col)}}`` for several houses in one scan each of
-    Zone (rose) and, for the houses with no zones, Orchard Tree (avocado).
-    ``tabZone`` has no index on ``greenhouse``, so one batched scan replaces one
-    full scan per house. Bed numbers come from ``Bed.bed``; zone numbers from
-    ``Zone.zone``; tree numbers from the tree's name (``Orchard Tree.tree`` is 0
-    on every tree). A house with neither keeps ``{}``."""
+def _station_rows(warehouses) -> dict:
+    """``{house: [{"name", "group", "group_no", "no"}]}`` for several houses in
+    one scan each of Zone (rose) and, for the houses with no zones, Orchard Tree
+    (avocado). ``tabZone`` has no index on ``greenhouse``, so one batched scan
+    replaces one full scan per house. Bed numbers come from ``Bed.bed``; zone
+    numbers from ``Zone.zone``; tree numbers from the tree's name (``Orchard
+    Tree.tree`` is 0 on every tree). A house with neither keeps ``[]``."""
     houses = sorted({wh for wh in (warehouses or ()) if wh})
     if not houses:
         return {}
@@ -81,7 +81,7 @@ def _load_grids(warehouses) -> dict:
         ):
             rows_by.setdefault(r.wh, []).append(r)
     return {
-        wh: P.grid_positions(
+        wh: [
             {
                 "name": r.name,
                 "group": r.grp or "",
@@ -89,9 +89,20 @@ def _load_grids(warehouses) -> dict:
                 "no": P.station_number(r.no, r.name),
             }
             for r in rows_by.get(wh, ())
-        )
+        ]
         for wh in houses
     }
+
+
+def _load_grids(warehouses) -> dict:
+    """``{house: {station: (row, col)}}``: every station's 3 × 3 cell."""
+    return {wh: P.grid_positions(rows) for wh, rows in _station_rows(warehouses).items()}
+
+
+def _load_ranks(warehouses) -> dict:
+    """``{house: {station: (group rank, rank in group)}}`` (spread spec §1), from
+    the same rows and the same ordering as ``_load_grids``."""
+    return {wh: P.rank_positions(rows) for wh, rows in _station_rows(warehouses).items()}
 
 
 def _load_grid(warehouse: str) -> dict:
@@ -105,6 +116,20 @@ def station_grid(warehouse: str) -> dict:
         return {}
     return cache_utils.get_or_set(
         grid_key(warehouse), lambda: _load_grid(warehouse), cache_utils.TTL_LONG,
+    )
+
+
+def ranks_key(warehouse: str) -> str:
+    return f"{cache_utils.K_STATION_RANKS_PREFIX}:{warehouse}"
+
+
+def station_ranks(warehouse: str) -> dict:
+    """Cached ``_load_ranks`` for one house, beside ``station_grid``; dropped by
+    the same ``cache_utils.invalidate_station_grid_for_doc``."""
+    if not warehouse:
+        return {}
+    return cache_utils.get_or_set(
+        ranks_key(warehouse), lambda: _load_ranks([warehouse]).get(warehouse, {}), cache_utils.TTL_LONG,
     )
 
 
@@ -374,6 +399,10 @@ class StationWeeks:
         return self._pairs[wh]
 
     # ── figures ────────────────────────────────────────────────────────────
+
+    def scouted_set(self, wh, week) -> set:
+        """The stations scouted at ``wh`` that ISO week (a copy)."""
+        return set(self._scouted.get((wh, week), ()))
 
     def infested_set(self, wh, week, kind, obs=ANY, stage=ANY, section=ANY) -> set:
         out: set = set()

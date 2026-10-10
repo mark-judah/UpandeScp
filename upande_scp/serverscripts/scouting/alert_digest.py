@@ -1,6 +1,6 @@
 """The daily scouting-alert digest: one email per person at 17:00 EAT (spec §3, D4).
 
-The hourly scheduler calls ``send_alert_digest``. It sends only in the 17:00
+The hourly scheduler calls ``send_alert_digest``. It sends from the 17:00
 hour on the farms' clock (Africa/Nairobi — not the site's System Settings time
 zone, Asia/Kolkata on kaitet.local, and not the server's UTC), and only once
 that EAT day (Redis ``SET NX`` per date, so two workers cannot both send).
@@ -20,7 +20,8 @@ from upande_scp.serverscripts.scouting import thresholds_check as TC
 
 DIGEST_HOUR = 17
 DIGEST_GATE_PREFIX = "scp:alert_digest"
-DIGEST_GATE_SECONDS = 2 * 24 * 3600
+DIGEST_LOCK_SECONDS = 10 * 60
+DIGEST_MARKER = "scp_alert_digest_on"
 
 
 def build_digests(day) -> dict:
@@ -90,27 +91,45 @@ def render(alerts, day) -> str:
     )
 
 
+def _done_on(user, day) -> bool:
+    return (frappe.defaults.get_user_default(DIGEST_MARKER, user) or "") >= day.isoformat()
+
+
 def send_alert_digest(now=None) -> dict:
-    """Hourly scheduler entry: sends in the 17:00 EAT hour, once per EAT day."""
+    """Hourly scheduler entry. From 17:00 EAT on, sends to each recipient whose
+    stored last-digest date is before today and who has an Open alert raised
+    today. The marker is a per-user default (DB), written only after that
+    user's send succeeds, so a failure is retried on the next hourly run and a
+    cache flush cannot cause a second round. The Redis key is only a short
+    concurrency lock around one run."""
     now = (now or TC.now_eat()).astimezone(TC.EAT)
-    if now.hour != DIGEST_HOUR:
+    if now.hour < DIGEST_HOUR:
         return {"skipped": "not the send hour", "hour": now.hour}
     day = now.date()
-    if not TC.take_gate(f"{DIGEST_GATE_PREFIX}:{day.isoformat()}", DIGEST_GATE_SECONDS):
-        return {"skipped": "already sent today"}
-    sent = []
-    for user, alerts in sorted(build_digests(day).items()):
-        email = _email_for(user)
-        if not email:
-            continue
-        try:
-            frappe.sendmail(
-                recipients=[email],
-                subject=f"Scouting alerts — {frappe.utils.formatdate(day, 'dd-MMM-yyyy')} ({len(alerts)})",
-                message=render(alerts, day),
-                reference_doctype=TC.DOCTYPE,
-            )
-            sent.append(email)
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), f"scouting alert digest: {email}")
-    return {"sent": len(sent), "recipients": sent}
+    lock = f"{DIGEST_GATE_PREFIX}:lock"
+    if not TC.take_gate(lock, DIGEST_LOCK_SECONDS):
+        return {"skipped": "already running"}
+    sent, failed = [], []
+    try:
+        for user, alerts in sorted(build_digests(day).items()):
+            if _done_on(user, day):
+                continue
+            try:
+                email = _email_for(user)
+                if not email:
+                    continue
+                frappe.sendmail(
+                    recipients=[email],
+                    subject=f"Scouting alerts — {frappe.utils.formatdate(day, 'dd-MMM-yyyy')} ({len(alerts)})",
+                    message=render(alerts, day),
+                    reference_doctype=TC.DOCTYPE,
+                )
+                frappe.defaults.set_user_default(DIGEST_MARKER, day.isoformat(), user)
+                frappe.db.commit()
+                sent.append(email)
+            except Exception:
+                failed.append(user)
+                frappe.log_error(frappe.get_traceback(), f"scouting alert digest: {user}")
+    finally:
+        TC.clear_gate(lock)
+    return {"sent": len(sent), "recipients": sent, "failed": failed}

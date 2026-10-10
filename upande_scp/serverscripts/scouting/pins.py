@@ -11,11 +11,12 @@ or a System Manager, and the doctype controller enforces that on every path.
 """
 
 import json
+from datetime import timedelta
 
 import frappe
 
 from upande_scp.serverscripts.common import clusters as C
-from upande_scp.serverscripts.common import crop_catalog
+from upande_scp.serverscripts.common import crop_catalog, notifications
 from upande_scp.serverscripts.common import prevalence as P
 from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows as R
 from upande_scp.serverscripts.scouting import thresholds_check as TC
@@ -24,6 +25,10 @@ DOCTYPE = "Scouting Pin"
 KINDS = ("Section", "Patch", "Area")
 OBS_KINDS = {"pest": "Pest", "disease": "Disease"}
 EDIT_ROLES = ("SCP General Manager", "System Manager")
+#: C7: the Pins panel's sparkline, over the house's last scouted weeks.
+SERIES_WEEKS = 8
+#: How far back the series looks for those weeks (16 ISO weeks).
+SERIES_LOOKBACK_DAYS = 16 * 7
 PIN_FIELDS = [
     "name", "title", "crop", "farm", "warehouse", "kind", "observation", "obs_kind", "stage",
     "section_row", "section_col", "stations", "polygon", "source_week", "shared", "notify",
@@ -154,12 +159,20 @@ def _visible_rows(crop, warehouse, user) -> list:
 
 
 @frappe.whitelist()
-def list_pins(crop, warehouse, with_series=0) -> list:
+def list_pins(crop, warehouse, with_series=1, weeks=SERIES_WEEKS) -> list:
     """C9: the house's pins this user may see: every shared pin plus their
-    own private ones, newest first. ``may_edit`` says whether Delete shows."""
+    own private ones, newest first. ``may_edit`` says whether Delete shows.
+    With ``with_series`` every pin carries its last ``weeks`` scouted weeks
+    (C7), all from one scouting load for the house."""
     crop, _farm, warehouse = _house(crop, warehouse)
     user = frappe.session.user
-    return [_public(r, user) for r in _visible_rows(crop, warehouse, user)]
+    rows = _visible_rows(crop, warehouse, user)
+    out = [_public(r, user) for r in rows]
+    if _truthy(with_series) and rows:
+        series = _series_for(crop, warehouse, rows, TC.now_eat().date(), _weeks(weeks))
+        for p in out:
+            p["series"] = series.get(p["name"], [])
+    return out
 
 
 @frappe.whitelist()
@@ -225,3 +238,119 @@ def delete_pin(name) -> dict:
     assert_may_edit(pin)
     frappe.delete_doc(DOCTYPE, pin.name, ignore_permissions=True)
     return {"name": pin.name}
+
+
+# ── the weekly figure (C7) ─────────────────────────────────────────────────
+
+
+def _weeks(n) -> int:
+    try:
+        return max(1, min(16, int(n)))
+    except (TypeError, ValueError):
+        return SERIES_WEEKS
+
+
+def _infested(weeks, pin, week) -> set:
+    """The pin's observation (one stage when it names one), or every pest and
+    disease when it names none."""
+    obs = (pin.observation or "").strip()
+    if obs:
+        kind = (pin.obs_kind or "Pest").strip().lower()
+        return weeks.infested_set(pin.warehouse, week, kind, obs, (pin.stage or "").strip() or R.ANY)
+    return weeks.infested_set(pin.warehouse, week, "pest") | weeks.infested_set(pin.warehouse, week, "disease")
+
+
+def _figure(weeks, pin, stations, week) -> dict:
+    return C.share(stations, weeks.scouted_set(pin.warehouse, week), _infested(weeks, pin, week))
+
+
+def _series_for(crop, warehouse, pins, today, n=SERIES_WEEKS) -> dict:
+    """``{pin: [{"week", "scouted", "infested", "value", "thin"}]}`` over the
+    house's last ``n`` scouted weeks within 16 weeks of ``today``. A week the
+    house was scouted but the pin's stations were not reads scouted 0, thin."""
+    if not pins:
+        return {}
+    start = (today - timedelta(days=SERIES_LOOKBACK_DAYS - 1)).isoformat()
+    weeks = R.StationWeeks.load(start, today.isoformat(), crop, [warehouse], lookback_days=0, weeks=R.WINDOW)
+    labels = weeks.weeks(warehouse)[-n:]
+    out = {}
+    for pin in pins:
+        stations = pin_stations(pin)
+        out[pin.name] = [{"week": w, **_figure(weeks, pin, stations, w)} for w in labels]
+    return out
+
+
+@frappe.whitelist()
+def pin_series(name, weeks=SERIES_WEEKS) -> list:
+    """One pin's last ``weeks`` scouted weeks (C7), for whoever may see it."""
+    pin = frappe.db.get_value(DOCTYPE, name, PIN_FIELDS, as_dict=True)
+    if not pin:
+        frappe.throw(f"No Scouting Pin {name}.", frappe.DoesNotExistError)
+    crop, _farm, warehouse = _house(pin.crop, pin.warehouse)
+    if not _visible(pin, frappe.session.user):
+        frappe.throw("This pin is private.", frappe.PermissionError)
+    return _series_for(crop, warehouse, [pin], TC.now_eat().date(), _weeks(weeks)).get(pin.name, [])
+
+
+# ── the owner's notice (C8) ────────────────────────────────────────────────
+
+
+def _notify_owner(pin, now, before, week) -> bool:
+    what = pin.observation or "every pest and disease"
+    rise = round(now["value"] - before["value"], 1)
+    subject = (
+        f"Pin {pin.title} in {pin.warehouse}: {what} {now['value']}% (was {before['value']}%) — "
+        f"up {rise} points in {week}"
+    )
+    body = (
+        f"{subject}. {now['infested']} of {now['scouted']} stations infested, "
+        f"{before['infested']} of {before['scouted']} the scouted week before."
+    )
+    return bool(notifications.notify(
+        [pin.owner], subject, body, DOCTYPE, pin.name, category="scouting", link=TC.dashboard_link(pin.crop),
+    ))
+
+
+def _check_one(weeks, pin) -> bool:
+    latest, previous = weeks.latest_pair(pin.warehouse)
+    if not latest or not previous or pin.last_notified_week == latest:
+        return False
+    stations = pin_stations(pin)
+    now = _figure(weeks, pin, stations, latest)
+    before = _figure(weeks, pin, stations, previous)
+    if not C.pin_rises(before, now) or not _notify_owner(pin, now, before, latest):
+        return False
+    # set_value, not save: validate re-checks the house, and a pin whose house
+    # changed must not block its own notice.
+    frappe.db.set_value(DOCTYPE, pin.name, "last_notified_week", latest, update_modified=False)
+    return True
+
+
+def check_pins(today=None) -> dict:
+    """C8, hourly after the alerts. For each pin with ``notify`` it compares the
+    figure in the house's latest scouted week (last 14 days, the alerts'
+    window) with the previous scouted week. A rise of >= 10 points, with >= 5
+    stations scouted both weeks, tells the owner in-app (category "scouting"),
+    at most once per ISO week (``last_notified_week``). One scouting load per
+    crop. A failing crop or pin is logged and never stops the others."""
+    if not frappe.db.table_exists(DOCTYPE):
+        return {"pins": 0, "notified": 0}
+    today = today or TC.now_eat().date()
+    rows = frappe.get_all(DOCTYPE, filters={"notify": 1}, fields=PIN_FIELDS, limit_page_length=0)
+    by_crop: dict = {}
+    for r in rows:
+        by_crop.setdefault(r.crop, []).append(r)
+    start = (today - timedelta(days=TC.EVAL_WINDOW_DAYS - 1)).isoformat()
+    told = 0
+    for crop, pins in sorted(by_crop.items()):
+        try:
+            weeks = R.StationWeeks.load(start, today.isoformat(), crop, sorted({p.warehouse for p in pins}))
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), f"pin check: {crop}")
+            continue
+        for pin in pins:
+            try:
+                told += 1 if _check_one(weeks, pin) else 0
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"pin check: {pin.name}")
+    return {"pins": len(rows), "notified": told}

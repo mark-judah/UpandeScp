@@ -599,6 +599,19 @@ def run_threshold_check(today=None, force=False, commit=True) -> dict:
                 frappe.db.rollback()
             frappe.log_error(frappe.get_traceback(), f"threshold check: {crop}")
             out["errors"].append(crop)
+    # Spread piece 3c (C8): pins after the alerts. A pin failure is logged and
+    # never blocks the alert check; pins.py imports this module, hence the late import.
+    try:
+        from upande_scp.serverscripts.scouting import pins
+
+        out["pins"] = pins.check_pins(today)
+        if commit:
+            frappe.db.commit()
+    except Exception:
+        if commit:
+            frappe.db.rollback()
+        frappe.log_error(frappe.get_traceback(), "threshold check: pins")
+        out["errors"].append("pins")
     return out
 
 

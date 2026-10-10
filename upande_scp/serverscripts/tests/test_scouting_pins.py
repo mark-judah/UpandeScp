@@ -219,3 +219,103 @@ class TestPinDoctypeGuards(PinCase):
                             "section_col": 0}).insert(ignore_permissions=True)
         ok = frappe.get_doc({**base, "kind": "Section", "section_row": 0, "section_col": 0}).insert(ignore_permissions=True)
         self.assertEqual(ok.farm, frappe.db.get_value("Warehouse", self.gh, "custom_farm"))
+
+
+class TestSeries(PinCase):
+    def seed_section(self, week, scouted, infested, **kw):
+        stations = SF.section_stations(self.gh, 0, 0, scouted)
+        SF.seed(self.gh, SF.monday(week), stations, infested=stations[:infested], **kw)
+
+    def test_the_series_is_infested_over_scouted_among_the_pins_stations(self):
+        self.seed_section(30, 6, 3)
+        self.seed_section(31, 6, 6)
+        self.seed_section(32, 4, 4)
+        pin = self.section_pin()
+        self.assertEqual(
+            [(p["week"], p["scouted"], p["infested"], p["value"], p["thin"]) for p in PN.pin_series(pin["name"])],
+            [("2031-W30", 6, 3, 50.0, False), ("2031-W31", 6, 6, 100.0, False), ("2031-W32", 4, 4, None, True)],
+        )
+        listed = PN.list_pins("Rose", self.gh)[0]
+        self.assertEqual([p["week"] for p in listed["series"]], ["2031-W30", "2031-W31", "2031-W32"])
+
+    def test_only_the_last_eight_scouted_weeks_are_shown(self):
+        for week in range(24, 33):
+            self.seed_section(week, 5, 1)
+        pin = self.section_pin()
+        self.assertEqual([p["week"] for p in PN.pin_series(pin["name"])], [f"2031-W{w}" for w in range(25, 33)])
+        self.assertEqual([p["value"] for p in PN.pin_series(pin["name"], weeks=3)], [20.0, 20.0, 20.0])
+
+    def test_a_pin_without_an_observation_watches_every_pest_and_disease(self):
+        stations = SF.section_stations(self.gh, 0, 0, 6)
+        SF.seed(self.gh, SF.monday(32), stations, infested=stations[:2], pest=None, disease="Downy Mildew")
+        SF.seed(self.gh, SF.monday(32), stations[2:3], pest="Thrips")
+        everything = self.section_pin(observation="", obs_kind="")
+        thrips = self.section_pin()
+        self.assertEqual(PN.pin_series(everything["name"])[-1]["infested"], 3)
+        self.assertEqual(PN.pin_series(thrips["name"])[-1]["infested"], 1)
+
+    def test_a_private_pins_series_is_its_owners_alone(self):
+        private = self.section_pin(shared=0)
+        self.as_user(U_OTHER)
+        with self.assertRaises(frappe.PermissionError):
+            PN.pin_series(private["name"])
+
+
+class TestPinCheck(PinCase):
+    def told(self, pin):
+        return frappe.get_all("Notification Log", filters={"document_type": "Scouting Pin", "document_name": pin},
+                              pluck="for_user")
+
+    def seed_rise(self, before, now, n=10):
+        stations = SF.section_stations(self.gh, 0, 0, n)
+        SF.seed(self.gh, SF.monday(31), stations, infested=stations[:before])
+        SF.seed(self.gh, SF.monday(32), stations, infested=stations[:now])
+
+    def test_a_ten_point_rise_tells_the_owner_once_a_week(self):
+        self.seed_rise(5, 6)                                                 # 50 % → 60 %
+        pin = self.section_pin()
+        self.as_user("Administrator")
+        with patch.object(frappe, "sendmail") as mail:
+            self.assertEqual(PN.check_pins()["notified"], 1)
+            self.assertEqual(self.told(pin["name"]), [U_OWNER])              # the owner only
+            subject = frappe.db.get_value("Notification Log", {"document_name": pin["name"]}, "subject")
+            self.assertIn(f"Pin Thrips · first third · front in {self.gh}: Thrips 60.0% (was 50.0%)", subject)
+            self.assertIn("up 10.0 points in 2031-W32", subject)
+            self.assertEqual(frappe.db.get_value("Scouting Pin", pin["name"], "last_notified_week"), "2031-W32")
+            self.assertEqual(PN.check_pins()["notified"], 0)                 # the next hour is silent
+            self.assertEqual(self.told(pin["name"]), [U_OWNER])
+            self.assertFalse(mail.called)
+
+    def test_a_rise_under_ten_points_is_silent(self):
+        self.seed_rise(5, 6, n=11)                                           # 45.5 % → 54.5 %
+        pin = self.section_pin()
+        self.as_user("Administrator")
+        self.assertEqual(PN.check_pins()["notified"], 0)
+        self.assertEqual(self.told(pin["name"]), [])
+
+    def test_a_thin_week_is_silent(self):
+        stations = SF.section_stations(self.gh, 0, 0, 10)
+        SF.seed(self.gh, SF.monday(31), stations, infested=stations[:5])     # 5 of 10
+        SF.seed(self.gh, SF.monday(32), stations[:4])                        # 4 of 4: too few scouted
+        pin = self.section_pin()
+        self.as_user("Administrator")
+        self.assertEqual(PN.check_pins(), {"pins": 1, "notified": 0})
+        self.assertEqual(self.told(pin["name"]), [])
+
+    def test_notify_off_is_never_checked(self):
+        self.seed_rise(5, 9)                                                 # 50 % → 90 %
+        pin = self.section_pin(notify=0)
+        self.as_user("Administrator")
+        self.assertEqual(PN.check_pins(), {"pins": 0, "notified": 0})
+        self.assertEqual(self.told(pin["name"]), [])
+
+    def test_the_hourly_check_runs_pins_after_alerts_and_survives_their_failure(self):
+        with patch.object(TC, "_crops_to_check", return_value=[]), \
+                patch.object(PN, "check_pins", return_value={"pins": 0, "notified": 0}) as ran:
+            out = TC.run_threshold_check(force=True, commit=False)
+        ran.assert_called_once()
+        self.assertEqual((out["pins"], out["errors"]), ({"pins": 0, "notified": 0}, []))
+        with patch.object(TC, "_crops_to_check", return_value=[]), \
+                patch.object(PN, "check_pins", side_effect=RuntimeError("boom")):
+            out = TC.run_threshold_check(force=True, commit=False)
+        self.assertEqual(out["errors"], ["pins"])

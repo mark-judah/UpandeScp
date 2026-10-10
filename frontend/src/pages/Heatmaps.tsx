@@ -91,6 +91,7 @@ import { WeatherCard } from "@/components/WeatherCard";
 import { ScoutRow, type Scout } from "@/components/ScoutAvatar";
 import { WeatherHistory, useWeatherHistory } from "@/components/WeatherHistory";
 import { cn } from "@/lib/utils";
+import { GalleryScopeProvider, ObservationName } from "@/components/gallery/ObservationGallery";
 
 /** "2026-W29" -> "Week 29". The payload's `date` is an ISO-week label now. */
 function weekLabel(v: string): string {
@@ -752,7 +753,12 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                     style={{ background: picked.color }}
                     aria-hidden
                   />
-                  {picked.greenhouse} · {picked.obsName}
+                  {picked.greenhouse} ·{" "}
+                  <GalleryScopeProvider
+                    scope={{ crop, from_date: from, to_date: to, farm: "", greenhouse: picked.greenhouse }}
+                  >
+                    <ObservationName kind={picked.obsKind} name={picked.obsName} />
+                  </GalleryScopeProvider>
                   {hasWebGL() && (
                     <button
                       type="button"

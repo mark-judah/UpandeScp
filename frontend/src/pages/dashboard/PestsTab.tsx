@@ -32,6 +32,7 @@ import { VarietyTable } from "./VarietyTable";
 import { PrevalenceFigure } from "./PrevalenceFigure";
 import { stagesFor, type PestsPayload } from "./pests-diseases-types";
 import { weekTickFormatter } from "@/lib/iso-week";
+import { ObservationName } from "@/components/gallery/ObservationGallery";
 
 export interface PestsTabProps {
   data: PestsPayload | null;
@@ -284,7 +285,7 @@ export function PestsTab({
                             style={{ background: pestColor(r.name) }}
                             aria-hidden
                           />
-                          <span className="truncate">{r.name}</span>
+                          <ObservationName kind="pest" name={r.name} className="truncate" />
                         </div>
                         <div className="mt-1.5 h-2 rounded-full overflow-hidden bg-[var(--sd-line)] flex">
                           <div

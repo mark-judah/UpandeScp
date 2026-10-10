@@ -23,6 +23,7 @@ import type { PrevalenceFigures, SectionCell, VarietyRow } from "@/lib/prevalenc
 import { PrevalenceFigure } from "./PrevalenceFigure";
 import { HouseSpread } from "./HouseSpread";
 import { VarietyTable } from "./VarietyTable";
+import { GalleryScopeProvider, ObservationName } from "@/components/gallery/ObservationGallery";
 
 const SERIES = {
   pests: { label: "Pests", color: "var(--sd-data-cyan)" },
@@ -80,6 +81,9 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent>
+        <GalleryScopeProvider
+          scope={{ crop, from_date: fromDate, to_date: toDate, farm: "", greenhouse: greenhouse ?? "" }}
+        >
         <DialogHeader>
           <DialogTitle>{greenhouse || "Greenhouse"}</DialogTitle>
           <DialogDescription>
@@ -108,7 +112,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
                     key={p.name}
                     className="flex justify-between text-xs px-2 py-1 rounded bg-[var(--sd-bg-soft)]"
                   >
-                    <span className="truncate">{p.name}</span>
+                    <ObservationName kind="pest" name={p.name} className="truncate" />
                     <span className="tabular-nums text-muted-foreground">
                       {p.count}
                     </span>
@@ -133,7 +137,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
                     key={d.name}
                     className="flex justify-between text-xs px-2 py-1 rounded bg-[var(--sd-bg-soft)]"
                   >
-                    <span className="truncate">{d.name}</span>
+                    <ObservationName kind="disease" name={d.name} className="truncate" />
                     <span className="tabular-nums text-muted-foreground">
                       {d.count}
                     </span>
@@ -271,6 +275,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
             )}
           </CardContent>
         </Card>
+        </GalleryScopeProvider>
       </DialogContent>
     </Dialog>
   );

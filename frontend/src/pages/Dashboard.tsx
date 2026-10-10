@@ -18,6 +18,7 @@ import { TrapsTab }     from "./dashboard/TrapsTab";
 import { FcmTab }       from "./dashboard/FcmTab";
 import { DataQualityTab } from "./dashboard/DataQualityTab";
 import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { GalleryScopeProvider } from "@/components/gallery/ObservationGallery";
 import { ymd } from "@/lib/utils";
 import type { OverviewPayload } from "./dashboard/overview-types";
 import type { PestsPayload, DiseasesPayload } from "./dashboard/pests-diseases-types";
@@ -109,6 +110,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
       </header>
 
       <div className="flex-1 px-4 py-4 md:px-6 md:py-6">
+        <GalleryScopeProvider scope={base}>
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="flex flex-col gap-4">
           {/* Switcher + filters on one row. Switcher = reference `.pillgroup`
               (native TabsList); filters = pill dropdowns + icon tools. */}
@@ -277,6 +279,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
             )}
           </TabsContent>
         </Tabs>
+        </GalleryScopeProvider>
       </div>
     </div>
   );

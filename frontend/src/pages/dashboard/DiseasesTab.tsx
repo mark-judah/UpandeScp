@@ -30,6 +30,7 @@ import { DashFilterRow } from "./DashFilterRow";
 import { PrevalenceFigure } from "./PrevalenceFigure";
 import { stagesFor, type DiseasesPayload } from "./pests-diseases-types";
 import { weekTickFormatter } from "@/lib/iso-week";
+import { ObservationName } from "@/components/gallery/ObservationGallery";
 
 export interface DiseasesTabProps {
   data: DiseasesPayload | null;
@@ -277,7 +278,7 @@ export function DiseasesTab({
                             style={{ background: diseaseColor(r.name) }}
                             aria-hidden
                           />
-                          <span className="truncate">{r.name}</span>
+                          <ObservationName kind="disease" name={r.name} className="truncate" />
                         </div>
                         <div className="mt-1.5 h-2 rounded-full overflow-hidden bg-[var(--sd-line)] flex">
                           <div

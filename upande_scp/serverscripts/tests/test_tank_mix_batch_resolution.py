@@ -390,6 +390,65 @@ class TestOnlineManufacture(LedgerCase):
         self.assertEqual(self.consumed(se, item), {own: 1.0})
 
 
+class TestTheCallersSessionSurvives(LedgerCase):
+    """C1: `frappe.set_user` (used for the elevated submit) replaces the live web
+    session's sid and data (user, csrf_token) and form_dict; all must be put back, or
+    the supervisor's cookie session breaks after Confirm Tank Mix."""
+
+    def test_sid_user_csrf_and_form_dict_survive_a_supervisor_manufacture(self):
+        item = self.item()
+        own = self.batch(item, "OWN")
+        self.receive(item, own, 1, days_ago=6)
+        self.plan(self.wo1, {item: 1})
+        self.transfer(self.wo1, item, own, 1, days_ago=5)
+        email = f"ttmb-{self.tag.lower()}@example.com"
+        frappe.get_doc({
+            "doctype": "User", "email": email, "first_name": "TTMB",
+            "send_welcome_email": 0, "user_type": "System User",
+            "roles": [{"role": "SCP Spray Supervisor"}],
+        }).insert(ignore_permissions=True)
+
+        frappe.set_user(email)
+        session = frappe.local.session
+        session.sid = "real-cookie-sid"
+        session.data = frappe._dict(user=email, csrf_token="tok-123", session_expiry="240:00:00")
+        form = frappe._dict(work_order=self.wo1)
+        frappe.local.form_dict = form
+
+        se = self.manufacture(self.wo1)
+
+        self.assertIs(frappe.local.session, session)
+        self.assertEqual(frappe.session.sid, "real-cookie-sid")
+        self.assertEqual(frappe.session.user, email)
+        self.assertEqual(frappe.session.data.user, email)
+        self.assertEqual(frappe.session.data.csrf_token, "tok-123")
+        self.assertIs(frappe.local.form_dict, form)
+        self.assertEqual(se.docstatus, 1)
+        self.assertEqual(self.consumed(se, item), {own: 1.0})
+
+
+    def test_a_frozen_stock_date_is_refused_for_the_real_user_despite_the_elevated_submit(self):
+        item = self.item()
+        own = self.batch(item, "OWN")
+        self.receive(item, own, 1, days_ago=6)
+        self.plan(self.wo1, {item: 1})
+        self.transfer(self.wo1, item, own, 1, days_ago=5)
+        email = f"ttmb-{self.tag.lower()}@example.com"
+        frappe.get_doc({
+            "doctype": "User", "email": email, "first_name": "TTMB",
+            "send_welcome_email": 0, "user_type": "System User",
+            "roles": [{"role": "SCP Spray Supervisor"}],
+        }).insert(ignore_permissions=True)
+        frappe.db.set_single_value("Stock Settings", "stock_frozen_upto", add_days(today(), -3))
+        frappe.db.set_single_value("Stock Settings", "stock_auth_role", "Stock Manager")
+        frappe.clear_document_cache("Stock Settings", "Stock Settings")
+        self.addCleanup(frappe.clear_document_cache, "Stock Settings", "Stock Settings")
+        frappe.set_user(email)
+        from erpnext.stock.doctype.stock_ledger_entry.stock_ledger_entry import StockFreezeError
+        with self.assertRaises(StockFreezeError):
+            self.manufacture(self.wo1, posting_moment=add_to_date(self.t0, days=-4))
+
+
 class TestOfflineReplay(LedgerCase):
     def _session(self, mix_at):
         return {

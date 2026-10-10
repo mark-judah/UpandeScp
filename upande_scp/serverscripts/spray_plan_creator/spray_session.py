@@ -498,26 +498,74 @@ def _make_outward_bundle(
 
 
 class _as_administrator:
-    """Run the Stock Entry submit as Administrator, then restore the caller.
+    """Run the Stock Entry submit as Administrator, then restore the caller exactly.
 
     ERPNext submits each row's Serial and Batch Bundle from inside the Stock
     Entry's submit with a fresh ``frappe.get_doc(...).submit()`` — no flag set on
-    the Stock Entry reaches it, so a supervisor without Stock User would hit a
-    PermissionError on the bundle (and, on live, on Batch). The caller's access
-    was checked before we got here; this is the narrowest scope that lets the
-    submit through without granting the role.
+    the Stock Entry reaches it, and the bundle cannot be submitted ahead of the
+    entry (its validation requires the entry's ledger rows to exist). So a
+    supervisor without Stock User would hit a PermissionError on the bundle (and,
+    on live, on Batch). The caller's access is checked before we get here.
+
+    ``frappe.set_user`` does more than switch the user: it overwrites the live
+    session's ``sid`` and replaces ``session.data`` (user, csrf_token, expiry) and
+    ``form_dict``. The session is persisted from those after the response, so a
+    plain switch back would break the caller's cookie session. Everything
+    ``set_user`` touches is snapshotted and put back in ``__exit__``, which runs
+    even when the submit throws.
     """
 
+    _LOCALS = (
+        "cache", "form_dict", "jenv_restricted", "jenv_unrestricted",
+        "role_permissions", "new_doc_templates", "user_perms",
+    )
+
     def __enter__(self):
-        self.user = frappe.session.user
+        session = frappe.local.session
+        self.session = session
+        self.user = session.user
+        self.sid = session.get("sid")
+        self.data = session.get("data")
+        self.locals = {k: getattr(frappe.local, k, None) for k in self._LOCALS}
         if self.user != "Administrator":
             frappe.set_user("Administrator")
         return self
 
     def __exit__(self, *exc):
-        if frappe.session.user != self.user:
-            frappe.set_user(self.user)
+        frappe.local.session = self.session
+        self.session.user = self.user
+        self.session.sid = self.sid
+        self.session.data = self.data
+        for k, v in self.locals.items():
+            setattr(frappe.local, k, v)
         return False
+
+
+def _assert_stock_not_frozen(posting_date, user: str) -> None:
+    """ERPNext's stock-freeze rule, checked as the real user.
+
+    The submit runs as Administrator, who holds every role — including the
+    freeze's authorised role — so ERPNext's own check would always pass there.
+    """
+    from erpnext.stock.doctype.stock_ledger_entry.stock_ledger_entry import StockFreezeError
+    from frappe.utils import add_days, cint, getdate
+
+    settings = frappe.get_cached_doc("Stock Settings")
+    roles = frappe.get_roles(user)
+    if settings.stock_auth_role and settings.stock_auth_role in roles:
+        return
+    posting_date = getdate(posting_date)
+    if settings.stock_frozen_upto and posting_date <= getdate(settings.stock_frozen_upto):
+        frappe.throw(
+            f"Stock transactions on or before {settings.stock_frozen_upto} are frozen.",
+            StockFreezeError,
+        )
+    days = cint(settings.stock_frozen_upto_days)
+    if days and add_days(posting_date, days) <= getdate(today()):
+        frappe.throw(
+            f"Not allowed to post stock transactions older than {days} days.",
+            StockFreezeError,
+        )
 
 
 def _promote_to_tank_mix_manufactured(
@@ -595,6 +643,7 @@ def _promote_to_tank_mix_manufactured(
         for it in se_doc.items or []:
             it.cost_center = cost_center
     se_doc.save(ignore_permissions=True)
+    _assert_stock_not_frozen(se_doc.posting_date, frappe.session.user)
     with _as_administrator():
         se_doc.submit()
 

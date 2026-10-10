@@ -143,6 +143,7 @@ type CardRecent = {
   coveragePct?: number | null;
   bedsScouted?: number;
   bedsTotal?: number;
+  bedsRetiredScouted?: number;
   /** Both bed parities present in real proportion — i.e. the whole greenhouse
    *  was actually seen. False for 101 of 229 greenhouse-weeks on this site, so
    *  it must be shown, not assumed. */
@@ -918,6 +919,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                               coveragePct={slice.coveragePct}
                               bedsScouted={slice.bedsScouted}
                               bedsTotal={slice.bedsTotal}
+                              bedsRetiredScouted={slice.bedsRetiredScouted}
                             />
                             <div className="text-[0.7rem] text-muted-foreground">
                               {Object.keys(slice.zoneObs).length} affected zone

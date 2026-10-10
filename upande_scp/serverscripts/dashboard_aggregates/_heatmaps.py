@@ -476,6 +476,19 @@ def _titleise(name: str) -> str:
     return " ".join(w.capitalize() for w in (name or "").split())
 
 
+def _active_bed_numbers(greenhouse: str):
+    """Bed numbers of the house's non-retired beds, or None when the site
+    records no retirement (then every scouted bed counts)."""
+    flag = scouting_metrics._bed_active_flag()
+    if not flag:
+        return None
+    rows = frappe.db.sql(
+        f"SELECT bed FROM `tabBed` WHERE greenhouse = %(gh)s AND {flag[0]}",
+        {"gh": greenhouse},
+    )
+    return {int(r[0]) for r in rows if r[0] is not None}
+
+
 def scouts_and_coverage(greenhouse: str, from_date: str, to_date: str, crop: str = "") -> dict:
     """``{week: {scouts: [...], bedsScouted, bedsTotal, coveragePct}}``.
 
@@ -509,6 +522,11 @@ def scouts_and_coverage(greenhouse: str, from_date: str, to_date: str, crop: str
 
     bed_totals = get_or_set(K_BED_COUNT_BY_GH, build_bed_count_by_gh, ttl=TTL_SHORT) or {}
     total_beds = int(bed_totals.get(greenhouse) or 0)
+    # Only active beds count towards coverage: the total excludes retired beds,
+    # so counting scouted retired beds too can push a house past 100% (Simotwo
+    # GH 07: 242 of 291 beds retired but still scouted read 157.1%). Those are
+    # reported separately as bedsRetiredScouted.
+    active = _active_bed_numbers(greenhouse)
 
     by_week: dict = {}
     for r in rows:
@@ -537,10 +555,12 @@ def scouts_and_coverage(greenhouse: str, from_date: str, to_date: str, crop: str
         scouts = sorted(b["scouts"].values(), key=lambda s: (-s["entries"], s["name"]))
         for s in scouts:
             s["initials"] = scout_initials(s["name"])
-        beds = len(b["beds"])
+        counted = b["beds"] & active if active is not None else b["beds"]
+        beds = len(counted)
         out[wk] = {
             "scouts": scouts,
             "bedsScouted": beds,
+            "bedsRetiredScouted": len(b["beds"]) - beds,
             "bedsTotal": total_beds,
             # 100% only when every bed in the house has at least one record.
             "coveragePct": round(100.0 * beds / total_beds, 1) if total_beds else None,

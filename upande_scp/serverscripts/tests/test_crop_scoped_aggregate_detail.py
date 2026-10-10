@@ -61,3 +61,14 @@ class TestCropScopedDetail(unittest.TestCase):
         wk = week_key("2031-01-15")
         self.assertIn(wk, cov)
         self.assertEqual(cov[wk]["bedsScouted"], 2)
+
+    def test_coverage_never_passes_100_on_retired_beds(self):
+        # Retire every bed of the house: scouted retired beds must not count
+        # towards coverage (Simotwo GH 07 read 157.1%), they are reported apart.
+        frappe.db.sql("update `tabBed` set custom_active=0 where greenhouse=%s", self.gh)
+        frappe.db.sql("update `tabBed` set custom_active=1 where greenhouse=%s and bed=2", self.gh)
+        cov = H.scouts_and_coverage(self.gh, FROM, TO, "Rose")
+        wk = week_key("2031-01-15")
+        self.assertEqual(cov[wk]["bedsScouted"], 1)
+        self.assertEqual(cov[wk]["bedsRetiredScouted"], 1)
+        self.assertLessEqual(cov[wk]["coveragePct"] or 0, 100.0)

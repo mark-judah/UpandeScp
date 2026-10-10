@@ -232,6 +232,21 @@ class TestAlerts(AlertCase):
         self.assertEqual(self.told(U_APPROVER, name), 0)
         self.assertEqual(self.told(U_CREATOR, name), 1)
 
+    def test_a_recurrence_after_a_converted_alert_and_a_clean_week_notifies(self):
+        # Only the immediately previous scouted week's alert is carried: a
+        # Converted W20 must not silence W22 once W21 was scouted clean.
+        TF.set_bands("Rose", "Thrips", 0, 30, 60)
+        TF.seed_week(self.gh, TF.WEEK_20[0], crop="Rose")
+        TC.check_crop("Rose", SUN_20)
+        frappe.db.set_value("Scouting Alert", self.alert().name, "status", "Converted to plan")
+        TF.seed_week(self.gh, TF.WEEK_21[0], crop="Rose", infested_per_section=0)   # scouted clean
+        TC.check_crop("Rose", SUN_21)
+        TF.seed_week(self.gh, TF.WEEK_22[0], crop="Rose")
+        TC.check_crop("Rose", SUN_22)
+        new = self.alert(week="2031-W22")
+        self.assertEqual((new.action, new.notified_action), ("Alarming", "Alarming"))
+        self.assertEqual(self.told(U_CREATOR, new.name), 1)
+
     def test_the_check_never_sends_email(self):
         with patch.object(frappe, "sendmail") as sendmail:
             name = self.raise_spray_advised()

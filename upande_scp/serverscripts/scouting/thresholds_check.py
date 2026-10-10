@@ -12,10 +12,10 @@ instead of duplicating, and the loser re-reads without notifying. A
 notification (in-app, category "scouting", never email) goes out only when the
 action escalates over the highest action already raised (D5). Within a week
 that is this alert's own ``notified_action``. Across weeks it is the house's
-live alert of an earlier week, so a new week at the same action is recorded
-silently. A newer week supersedes older Open / Acknowledged alerts (Resolved),
-a figure below Moderate resolves its week's alert, and a Converted alert is
-never touched.
+live alert of its immediately previous scouted week (only), so a consecutive
+week at the same action is recorded silently. A newer week supersedes older
+Open / Acknowledged alerts (Resolved), a figure below Moderate resolves its
+week's alert, and a Converted alert is never touched.
 
 ``run_threshold_check`` (hourly) is gated by a Redis ``SET NX EX``: one run per
 50 minutes across workers. The 17:00 EAT digest (``alert_digest``) is the only
@@ -109,7 +109,7 @@ def evaluate(crop, today=None) -> list:
     station = _common.station_word(crop)
     out = []
     for wh in weeks.warehouses():
-        week, _previous = weeks.latest_pair(wh)
+        week, previous = weeks.latest_pair(wh)
         if not week:
             continue
         for kind, obs, stage in keys:
@@ -122,7 +122,8 @@ def evaluate(crop, today=None) -> list:
             band = B.band_of(value, spec["low"], spec["mod"], spec["high"])
             out.append({
                 "crop": crop, "warehouse": wh, "kind": kind, "observation": obs,
-                "stage": stage, "iso_week": week, "measure": spec["measure"],
+                "stage": stage, "iso_week": week, "previous_week": previous,
+                "measure": spec["measure"],
                 "unit": B.unit_label(spec["measure"], station), "value": value,
                 "margin": fig.get("margin"), "reliability": fig.get("reliability") or "Low",
                 "sections_scouted": fig.get("sections_scouted") or 0,
@@ -159,12 +160,18 @@ def _existing(name, latest=False):
     return rows[0] if rows else None
 
 
-def _previous_live(params):
+def _previous_live(params, previous_week):
+    """The key's live alert of the house's IMMEDIATELY previous scouted week —
+    the only one whose action is carried (D5). An older alert (a Converted one,
+    or an Open one on a house that went unscouted) never silences a recurrence:
+    a clean or missing week in between means the new alert is news."""
+    if not previous_week:
+        return None
     rows = frappe.db.sql(
         f"""SELECT name, notified_action FROM `tabScouting Alert`
-            WHERE {_KEY_SQL} AND iso_week < %(week)s AND status IN %(live)s
-            ORDER BY iso_week DESC LIMIT 1""",
-        {**params, "live": LIVE_STATES},
+            WHERE {_KEY_SQL} AND iso_week = %(prev)s AND status IN %(live)s
+            LIMIT 1""",
+        {**params, "prev": previous_week, "live": LIVE_STATES},
         as_dict=True,
     )
     return rows[0] if rows else None
@@ -208,7 +215,7 @@ def upsert(finding, now=None, _retry=True):
         frappe.db.set_value(DOCTYPE, name, fields)
         already, status = existing.notified_action, existing.status
     else:
-        previous = _previous_live(params)
+        previous = _previous_live(params, finding.get("previous_week"))
         doc = frappe.get_doc({
             "doctype": DOCTYPE, "crop": finding["crop"],
             "farm": frappe.db.get_value("Warehouse", params["wh"], "custom_farm"),

@@ -61,3 +61,5 @@ upande_scp.patches.v1_0.rename_workspace_to_scp
 upande_scp.patches.v1_0.restore_block_boundaries
 # Pest/Disease Filter.measure from the old unit (thresholds & actions, piece 3a).
 upande_scp.patches.v1_0.set_threshold_measure
+# Stage roles (Life stage / Form / Sign) for live-pest prevalence (stage & variety, piece 4). Fills blanks only.
+upande_scp.patches.v1_0.seed_stage_roles

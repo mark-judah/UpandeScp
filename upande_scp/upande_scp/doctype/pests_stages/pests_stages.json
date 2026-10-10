@@ -8,6 +8,7 @@
  "field_order": [
   "stage",
   "reading_type",
+  "weight",
   "plant_sections",
   "thresholds_section",
   "low_threshold",
@@ -28,6 +29,14 @@
    "fieldtype": "Select",
    "label": "Reading Type",
    "options": "Count\nCheckbox\nRange"
+  },
+  {
+   "description": "This crop's weight for the stage in a Count. 0 = use the Stage's own weight.",
+   "fieldname": "weight",
+   "fieldtype": "Float",
+   "label": "Weight",
+   "non_negative": 1,
+   "precision": "3"
   },
   {
    "fieldname": "plant_sections",
@@ -71,7 +80,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-05-21 12:00:00.000000",
+ "modified": "2026-10-10 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Pests Stages",

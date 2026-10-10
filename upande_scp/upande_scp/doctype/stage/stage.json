@@ -8,7 +8,9 @@
  "field_order": [
   "stage_name",
   "icon_key",
-  "default_reading_type"
+  "default_reading_type",
+  "stage_role",
+  "weight"
  ],
  "fields": [
   {
@@ -34,12 +36,31 @@
    "in_list_view": 1,
    "label": "Default Reading Type",
    "options": "Count\nCheckbox\nRange"
+  },
+  {
+   "description": "Life stage and Form count as the live pest. A Sign (damage, webs, ragged margins) is reported beside the pest as its own figure and never counted as it. No column default on purpose: the seed patch fills blank roles only.",
+   "fieldname": "stage_role",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Stage Role",
+   "options": "Life stage\nForm\nSign"
+  },
+  {
+   "default": "1",
+   "description": "Scales this stage's count in a pest's Count measure (1 = as recorded, 0 = left out). A crop's Pest Filter stage row can override it.",
+   "fieldname": "weight",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Weight",
+   "non_negative": 1,
+   "precision": "3"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-01 00:00:00.000000",
+ "modified": "2026-10-10 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Stage",

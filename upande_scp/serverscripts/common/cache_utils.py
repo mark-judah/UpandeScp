@@ -637,9 +637,10 @@ _DOC_INVALIDATIONS = {
     "Weed": (K_OBSERVATION_TYPES,),
     "Incident": (K_OBSERVATION_TYPES,),
     "Physiological Disorder": (K_OBSERVATION_TYPES, K_SM_REFERENCE_IMAGES),
-    "Pests Stages": (K_OBSERVATION_TYPES,),
+    "Pests Stages": (K_OBSERVATION_TYPES, K_STAGE_ROLES),
     "Disease Stages": (K_OBSERVATION_TYPES,),
     "Predator Stages": (K_OBSERVATION_TYPES,),
+    "Stage": (K_STAGE_ROLES,),
     "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_BEDS_AND_ZONES_V2, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH, K_SM_UNITS_BY_WH, K_ZONE_CENTROIDS),
     "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_BEDS_AND_ZONES_V2, K_SM_BEDS_BY_GH, K_ZONE_CENTROIDS),
     "Warehouse": (K_GREENHOUSES_GEOJSON, K_BLOCKS_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_SM_UNITS_BY_WH, K_FARM_HIERARCHY, K_ZONE_CENTROIDS, K_CROP_CATALOG),
@@ -648,8 +649,8 @@ _DOC_INVALIDATIONS = {
     "Trap": (K_SM_TRAPS_BY_GH,),
     "Spray Equipment Details": (K_AFP_SPRAY_EQUIPMENT,),
     "Item": (K_CHEMICALS_LIST,),
-    "Crop Scouted": (K_CROPS_SCOUTED, K_SM_SEVERITY_THRESHOLDS, K_CROP_CATALOG),
-    "Pest Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS, K_CROP_CATALOG),
+    "Crop Scouted": (K_CROPS_SCOUTED, K_SM_SEVERITY_THRESHOLDS, K_CROP_CATALOG, K_STAGE_ROLES),
+    "Pest Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS, K_CROP_CATALOG, K_STAGE_ROLES),
     "Disease Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS, K_CROP_CATALOG),
     "Tank And Valve": (),
     # The chemical/foliar Item Groups configured here decide which Items count
@@ -693,8 +694,9 @@ _SCOUTING_PAYLOAD_INVALIDATORS = {
     "Disease Filter",
 }
 
-# The crop-catalog sources whose change also shifts the dashboard aggregates.
-_CROP_CATALOG_SOURCES = ("Crop Scouted", "Pest Filter", "Disease Filter")
+# The crop-catalog sources whose change also shifts the dashboard aggregates —
+# and Stage, whose role decides what counts as the live pest (stage & variety S3).
+_CROP_CATALOG_SOURCES = ("Crop Scouted", "Pest Filter", "Disease Filter", "Stage")
 
 
 def invalidate_on_change(doc, method=None):

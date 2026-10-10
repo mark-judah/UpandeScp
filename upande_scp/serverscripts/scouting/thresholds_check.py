@@ -47,7 +47,7 @@ LIVE_STATES = ("Open", "Acknowledged", "Converted to plan")
 ALERT_FIELDS = [
     "name", "crop", "farm", "warehouse", "kind", "observation", "stage", "iso_week",
     "measure", "value", "margin", "reliability", "sections_scouted", "sections_total",
-    "band", "action", "status", "raised_on", "acknowledged_by", "work_order",
+    "band", "action", "status", "raised_on", "raised_at", "acknowledged_by", "work_order",
 ]
 _KEY_SQL = (
     "warehouse = %(wh)s AND kind = %(kind)s AND observation = %(obs)s "
@@ -59,6 +59,12 @@ def now_eat() -> datetime:
     """Now on the farms' clock (Africa/Nairobi), whatever the site's System
     Settings time zone (Asia/Kolkata on kaitet.local) or the server (UTC) say."""
     return datetime.now(EAT)
+
+
+def eat_stamp(moment) -> str:
+    """``moment`` on the farms' clock as a naive ``YYYY-MM-DD HH:MM:SS`` — how
+    ``raised_at`` and the digest marker are stored (EAT, like ``raised_on``)."""
+    return moment.astimezone(EAT).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def alert_name(warehouse, kind, observation, stage, iso_week) -> str:
@@ -221,7 +227,7 @@ def upsert(finding, now=None, _retry=True):
             "farm": frappe.db.get_value("Warehouse", params["wh"], "custom_farm"),
             "warehouse": params["wh"], "kind": params["kind"], "observation": params["obs"],
             "stage": params["stage"], "iso_week": params["week"], **fields,
-            "status": "Open", "raised_on": now.date(),
+            "status": "Open", "raised_on": now.date(), "raised_at": eat_stamp(now),
             # Carried across weeks: the same action again is not news (D5).
             "notified_action": previous.notified_action if previous else None,
         })
@@ -239,9 +245,9 @@ def upsert(finding, now=None, _retry=True):
     updates = {}
     if status == "Resolved":
         # This week's figure dropped below Moderate and came back.
-        updates.update(status="Open", raised_on=now.date())
+        updates.update(status="Open", raised_on=now.date(), raised_at=eat_stamp(now))
     if B.escalates(already, action):
-        updates.update(notified_action=action, raised_on=now.date())
+        updates.update(notified_action=action, raised_on=now.date(), raised_at=eat_stamp(now))
         if status == "Acknowledged":
             updates["status"] = "Open"
         sent = _notify(name, finding, action)

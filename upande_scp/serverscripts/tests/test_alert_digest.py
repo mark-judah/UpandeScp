@@ -46,7 +46,7 @@ class TestDigest(AlertCase):
 
     def test_one_email_per_recipient_listing_their_alerts(self):
         self._two_alerts()
-        digests = D.build_digests(SUN_20)
+        digests = D.build_digests(at(SUN_20, 17, 5))
         self.assertEqual(sorted(a.observation for a in digests[U_CREATOR]), ["Aphids", "Thrips"])
         self.assertEqual([a.observation for a in digests[U_APPROVER]], ["Thrips"])   # Alarming is not theirs (D4)
         with patch.object(frappe, "sendmail") as sendmail:
@@ -71,7 +71,7 @@ class TestDigest(AlertCase):
         frappe.db.set_value("Scouting Alert", names[0], "status", "Acknowledged")
         for name in names[1:]:
             frappe.db.set_value("Scouting Alert", name, "status", "Resolved")
-        self.assertEqual(D.build_digests(SUN_20), {})
+        self.assertEqual(D.build_digests(at(SUN_20, 17, 5)), {})
 
     def test_the_digest_follows_nairobi_time_not_the_site_or_server_clock(self):
         self._two_alerts()
@@ -133,7 +133,7 @@ class TestDigest(AlertCase):
     def test_a_single_section_figure_says_too_clustered_to_judge(self):
         self._two_alerts()
         frappe.db.sql("UPDATE `tabScouting Alert` SET margin = 0, sections_scouted = 1 WHERE iso_week = '2031-W20'")
-        rows = D.build_digests(SUN_20)[U_CREATOR]
+        rows = D.build_digests(at(SUN_20, 17, 5))[U_CREATOR]
         self.assertIn("too clustered to judge", D.render(rows, SUN_20))
 
     def test_a_stale_user_permission_does_not_stop_the_digest(self):
@@ -157,3 +157,37 @@ class TestDigest(AlertCase):
         self.assertEqual({c.kwargs["recipients"][0] for c in sendmail.call_args_list},
                          {U_CREATOR, U_SUPER, U_APPROVER, U_GM})
         self.assertEqual(out["sent"], 4)
+
+    def test_an_alert_raised_after_the_days_digest_goes_out_the_next_day_once(self):
+        self._two_alerts()                                   # raised 09:00 EAT
+        with patch.object(frappe, "sendmail") as sendmail:
+            D.send_alert_digest(at(SUN_20, 17, 5))
+        self.assertEqual(sendmail.call_count, 4)
+        # 18:30 the same day: a new Spray advised alert on another key
+        TF.seed_week(self.gh, TF.WEEK_20[0], crop="Rose", pest="Aphids", stage="Singles")
+        self.clock.stop()
+        with patch.object(TC, "now_eat", return_value=at(SUN_20, 18, 30)):
+            TC.check_crop("Rose", SUN_20)
+        self.clock.start()
+        late = TC.alert_name(self.gh, "Pest", "Aphids", "", "2031-W20")
+        self.assertEqual(str(frappe.db.get_value("Scouting Alert", late, "raised_at")), "2031-05-18 18:30:00")
+        mon, tue = SUN_20 + timedelta(days=1), SUN_20 + timedelta(days=2)
+        with patch.object(frappe, "sendmail") as sendmail:
+            same_day = D.send_alert_digest(at(SUN_20, 19, 0))
+            next_day = D.send_alert_digest(at(mon, 17, 5))
+            TC.clear_gate(self.gate)
+            day_after = D.send_alert_digest(at(tue, 17, 5))
+        self.assertEqual(same_day["sent"], 0)                # one email per person per day
+        by_to = {c.kwargs["recipients"][0]: c.kwargs for c in sendmail.call_args_list}
+        self.assertEqual(sendmail.call_count, 2)             # Alarming → creator + supervisor only
+        self.assertEqual(set(by_to), {U_CREATOR, U_SUPER})
+        self.assertTrue(by_to[U_CREATOR]["subject"].endswith("(1)"))
+        self.assertIn("Aphids", by_to[U_CREATOR]["message"])
+        self.assertNotIn("Thrips", by_to[U_CREATOR]["message"])   # already in yesterday's digest
+        self.assertEqual((next_day["sent"], day_after["sent"]), (2, 0))
+
+    def test_a_first_ever_digest_covers_the_last_24_hours(self):
+        self._two_alerts()                                   # raised Sun 09:00
+        with patch.object(frappe, "sendmail") as sendmail:
+            D.send_alert_digest(at(SUN_20 + timedelta(days=1), 17, 5))   # Mon 17:05: 32 h later
+        sendmail.assert_not_called()

@@ -99,7 +99,7 @@ def run_estimate(farm=None, trap=None, dry_run=True):
         "Trap",
         filters=filters,
         fields=["name", "farm", "greenhouse", "location", "location_source",
-                "location_fixes", "location_spread_m", "geojson"],
+                "location_fixes", "location_spread_m", "location_flag", "geojson"],
         limit_page_length=0,
         ignore_permissions=True,
     )
@@ -152,6 +152,7 @@ def run_estimate(farm=None, trap=None, dry_run=True):
             prev is not None
             and (t.location_source or "") == SOURCE_GPS
             and int(t.location_fixes or 0) == est["fixes"]
+            and (t.location_flag or "") == (flag or "")
             and G.distance_m(prev[0], prev[1], est["lat"], est["lng"]) < 0.01
         )
         if same:

@@ -8,6 +8,8 @@ const DATA: QualityPayload = {
     entries: 1200, houses: 2, scouts: 2, coveragePct: 41.5, offZonePct: 22.4,
     zoneMapSuspect: true, tooFastPct: 12.1, metadataPct: 64.0, nothingFoundPct: 50.0,
   },
+  clamped: false,
+  range: { from_date: "2026-09-13", to_date: "2026-10-10" },
   flags: [
     { kind: "map_offset", subject: "house", name: "GH 2", label: "GH 2", value: 31.2, threshold: 20,
       unit: "m", score: 0.56, detail: "median fix 31.2 m from its zone over 400 fixes — check the zone map" },
@@ -15,10 +17,10 @@ const DATA: QualityPayload = {
       unit: "%", score: 0.4, detail: "28% of entries under 5 s after the previous" },
   ],
   houses: [
-    { house: "GH 1", week: "2026-W41", weekPartial: true, stations: 400, stationsScouted: 100, coveragePct: 25, sectionsScouted: 7,
+    { house: "GH 1", week: "2026-W41", weekPartial: true, staleDays: 0, stations: 400, stationsScouted: 100, coveragePct: 25, sectionsScouted: 7,
       entries: 500, scouts: 2, nothingFoundPct: 60, fixes: 0, metadataPct: 0, offZonePct: null,
       medianDistance: null, p90Distance: null, gpsReliable: false },
-    { house: "GH 2", week: "2026-W40", weekPartial: false, stations: 300, stationsScouted: 240, coveragePct: 80, sectionsScouted: 9,
+    { house: "GH 2", week: "2026-W40", weekPartial: false, staleDays: 0, stations: 300, stationsScouted: 240, coveragePct: 80, sectionsScouted: 9,
       entries: 700, scouts: 1, nothingFoundPct: 40, fixes: 700, metadataPct: 100, offZonePct: 40,
       medianDistance: 31.2, p90Distance: 55.0, gpsReliable: true },
   ],
@@ -33,7 +35,7 @@ const DATA: QualityPayload = {
   thresholds: {
     mapOffsetMedianM: 20, minFixes: 50, thinCoveragePct: 30, tooFastPct: 20, tooFastSeconds: 5,
     nothingFoundExcess: 25, nothingFoundMinEntries: 100, offZoneExcess: 25, zoneMapSuspectPct: 30, duplicatePct: 2,
-    metadataMinPct: 50, syncDelayFrom: "2026-09-02",
+    metadataMinPct: 50, staleDays: 14, maxRangeDays: 56, syncDelayFrom: "2026-09-02",
   },
 };
 
@@ -94,6 +96,26 @@ describe("DataQualityTab", () => {
   it("explains that sync is creation minus capture", () => {
     render(<DataQualityTab data={DATA} />);
     expect(screen.getByText(/creation minus capture/)).toBeInTheDocument();
+  });
+
+  it("shows a loading placeholder, not an empty verdict, before data arrives", () => {
+    render(<DataQualityTab data={null} />);
+    expect(screen.getByTestId("quality-loading")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing needs attention")).toBeNull();
+  });
+
+  it("notes when the server capped the range", () => {
+    render(<DataQualityTab data={{ ...DATA, clamped: true, range: { from_date: "2026-08-15", to_date: "2026-10-10" } }} />);
+    expect(screen.getByTestId("quality-clamped")).toHaveTextContent("capped at 8 weeks: showing 2026-08-15 to 2026-10-10");
+    render(<DataQualityTab data={DATA} />);
+    expect(screen.getAllByTestId("quality-clamped")).toHaveLength(1);
+  });
+
+  it("uses the server's metadata line to grey a scout's off zone", () => {
+    const data = { ...DATA, thresholds: { ...DATA.thresholds, metadataMinPct: 80 } };
+    render(<DataQualityTab data={data} />);
+    const e1 = screen.getAllByTestId("quality-scout").find((r) => r.getAttribute("data-scout") === "E1")!;
+    expect(within(e1).getByText("30% vs 22%").closest("td")!.className).toMatch(/opacity-60/);
   });
 
   it("shows an empty state with no data", () => {

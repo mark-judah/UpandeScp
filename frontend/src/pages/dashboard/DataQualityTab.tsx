@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
@@ -29,6 +30,7 @@ import type {
 /** Pill text and colour per flag kind — the accent lives in the pill, never a strip. */
 const KIND: Record<FlagKind, { label: string; color: string }> = {
   map_offset:    { label: "Map offset?",    color: "var(--sd-data-purple)" },
+  not_scouted_recently: { label: "Not scouted recently", color: "var(--sd-data-pink)" },
   thin_coverage: { label: "Thin coverage",  color: "var(--sd-target)" },
   metadata_gap:  { label: "No GPS detail",  color: "var(--sd-quiet)" },
   too_fast:      { label: "Too fast",       color: "var(--sd-data-red)" },
@@ -255,7 +257,15 @@ function HouseTable({ rows }: { rows: QualityHouse[] }) {
   );
 }
 
-function ScoutTable({ rows, scopeNothing }: { rows: QualityScout[]; scopeNothing: number | null }) {
+function ScoutTable({
+  rows,
+  scopeNothing,
+  metadataMinPct,
+}: {
+  rows: QualityScout[];
+  scopeNothing: number | null;
+  metadataMinPct: number;
+}) {
   const { sorted, sort, toggle } = useSorted<QualityScout, keyof QualityScout>(rows, "entries");
   const head = (label: string, col: keyof QualityScout, title?: string, right = true) => (
     <SortHead label={label} col={col} sort={sort} onSort={toggle} right={right} title={title} />
@@ -289,7 +299,7 @@ function ScoutTable({ rows, scopeNothing }: { rows: QualityScout[]; scopeNothing
             </TableHeader>
             <TableBody>
               {sorted.map((s) => {
-                const thin = (s.metadataPct ?? 0) < 50;
+                const thin = (s.metadataPct ?? 0) < metadataMinPct;
                 return (
                   <TableRow key={s.scout} data-testid="quality-scout" data-scout={s.scout}>
                     <TableCell className="font-medium whitespace-nowrap">{s.scoutName}</TableCell>
@@ -333,46 +343,66 @@ function ScoutTable({ rows, scopeNothing }: { rows: QualityScout[]; scopeNothing
 // ── tab ──────────────────────────────────────────────────────────────────
 
 export function DataQualityTab({ data }: { data: QualityPayload | null }) {
-  const k = data?.kpis;
-  const t = data?.thresholds;
-  const gpsThin = k?.metadataPct != null && t != null && k.metadataPct < t.metadataMinPct;
+  // Nothing fetched yet (or the fetch failed — Dashboard shows the error): no
+  // "Nothing needs attention", no empty tables, just a quiet placeholder.
+  if (!data) {
+    return (
+      <div data-testid="quality-loading" className="flex flex-col gap-4">
+        <KpiGrid cols={4}>
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-[132px] rounded-xl" />
+          ))}
+        </KpiGrid>
+        <Skeleton className="h-40 rounded-xl" />
+      </div>
+    );
+  }
+  const k = data.kpis;
+  const t = data.thresholds;
+  const gpsThin = k.metadataPct != null && k.metadataPct < t.metadataMinPct;
   const over = (v: number | null | undefined, line: number | undefined) =>
     v != null && line != null && v > line ? "warning" : "default";
 
   return (
     <div className="flex flex-col gap-4">
+      {data.clamped && (
+        <div data-testid="quality-clamped" className="text-[13px] text-[var(--sd-quiet)]">
+          Range capped at {data.thresholds.maxRangeDays / 7} weeks: showing {data.range.from_date} to{" "}
+          {data.range.to_date}.
+        </div>
+      )}
       <KpiGrid cols={4}>
         <Kpi
           label="Station coverage"
-          value={pct(k?.coveragePct)}
+          value={pct(k.coveragePct)}
           hint="stations scouted · each house's latest week"
           tone={
-            k?.coveragePct != null && t && k.coveragePct < t.thinCoveragePct ? "warning" : "default"
+            k.coveragePct != null && k.coveragePct < t.thinCoveragePct ? "warning" : "default"
           }
         />
         <Kpi
           label="Off-zone fixes"
-          value={pct(k?.offZonePct)}
+          value={pct(k.offZonePct)}
           hint={
             gpsThin
-              ? `GPS detail on only ${pct(k?.metadataPct)} of entries`
-              : k?.zoneMapSuspect
+              ? `GPS detail on only ${pct(k.metadataPct)} of entries`
+              : k.zoneMapSuspect
                 ? "fixes outside their zone — zone map needs checking"
                 : "fixes outside their zone"
           }
-          tone={k?.zoneMapSuspect ? "warning" : "default"}
+          tone={k.zoneMapSuspect ? "warning" : "default"}
           className={gpsThin ? "opacity-60" : undefined}
         />
         <Kpi
           label="Too fast"
-          value={pct(k?.tooFastPct)}
-          hint={`zone-to-zone moves under ${t?.tooFastSeconds ?? 5} s`}
-          tone={over(k?.tooFastPct, t?.tooFastPct)}
+          value={pct(k.tooFastPct)}
+          hint={`zone-to-zone moves under ${t.tooFastSeconds} s`}
+          tone={over(k.tooFastPct, t.tooFastPct)}
         />
         <Kpi
           label="GPS detail"
-          value={pct(k?.metadataPct)}
-          hint={`of ${num(k?.entries)} entries carry metadata`}
+          value={pct(k.metadataPct)}
+          hint={`of ${num(k.entries)} entries carry metadata`}
           tone={gpsThin ? "warning" : "default"}
         />
       </KpiGrid>
@@ -385,12 +415,16 @@ export function DataQualityTab({ data }: { data: QualityPayload | null }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <FlagList flags={data?.flags ?? []} />
+          <FlagList flags={data.flags} />
         </CardContent>
       </Card>
 
-      <HouseTable rows={data?.houses ?? []} />
-      <ScoutTable rows={data?.scouts ?? []} scopeNothing={k?.nothingFoundPct ?? null} />
+      <HouseTable rows={data.houses} />
+      <ScoutTable
+        rows={data.scouts}
+        scopeNothing={k.nothingFoundPct}
+        metadataMinPct={data.thresholds.metadataMinPct}
+      />
     </div>
   );
 }

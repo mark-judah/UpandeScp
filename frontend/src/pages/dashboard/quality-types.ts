@@ -2,6 +2,7 @@
 
 export type FlagKind =
   | "map_offset"
+  | "not_scouted_recently"
   | "thin_coverage"
   | "too_fast"
   | "nothing_found"
@@ -26,6 +27,8 @@ export interface QualityHouse {
   week: string | null;
   /** True when the house's only week in range is the current, unfinished one. */
   weekPartial: boolean;
+  /** Days between the coverage week's Sunday and the range end. */
+  staleDays: number | null;
   stations: number | null;
   stationsScouted: number | null;
   coveragePct: number | null;
@@ -75,6 +78,9 @@ export interface QualityPayload {
     metadataPct: number | null;
     nothingFoundPct: number | null;
   };
+  /** True when the server capped the range at `thresholds.maxRangeDays`. */
+  clamped: boolean;
+  range: { from_date: string; to_date: string };
   flags: QualityFlag[];
   houses: QualityHouse[];
   scouts: QualityScout[];
@@ -90,6 +96,8 @@ export interface QualityPayload {
     zoneMapSuspectPct: number;
     duplicatePct: number;
     metadataMinPct: number;
+    staleDays: number;
+    maxRangeDays: number;
     syncDelayFrom: string;
   };
 }

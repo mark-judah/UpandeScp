@@ -25,3 +25,11 @@ describe("ghActionBadge", () => {
     expect(ghActionBadge(undefined)).toBeNull();
   });
 });
+
+describe("alertFigureLine for a hot spot", () => {
+  it("prints the section figure and its station count, never a margin", () => {
+    expect(
+      alertFigureLine({ ...a({ value: 80, margin: null, sections_scouted: 5, sections_total: 1 }), alert_type: "Hot spot" }),
+    ).toBe("80% · 5 stations in this section");
+  });
+});

@@ -365,7 +365,13 @@ export function OverviewTab({
                     <ReliabilityPill value={a.reliability} />
                   </div>
                   <div className="text-[0.7rem] text-muted-foreground truncate">
-                    {a.warehouse} · {a.iso_week}
+                    {a.warehouse}
+                    {a.alert_type === "Hot spot" && a.section_label ? (
+                      <span data-testid="alert-section" className="text-foreground">
+                        {` · ${a.section_label}`}
+                      </span>
+                    ) : null}
+                    {` · ${a.iso_week}`}
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[0.7rem] tabular-nums">{alertFigureLine(a)}</span>

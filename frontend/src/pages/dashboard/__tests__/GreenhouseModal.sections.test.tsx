@@ -31,6 +31,24 @@ describe("SectionGrid", () => {
     expect(screen.getByText("Front")).toBeInTheDocument();
     expect(screen.getByText("Back")).toBeInTheDocument();
   });
+
+  it("rings the hot cells, explains the ring, and draws no left-border strip", () => {
+    const sections = cells(() => 33.3).map((s) => ({ ...s, hot: s.row === 0 && s.col === 0 }));
+    const { container } = render(<SectionGrid sections={sections} />);
+    const hot = screen.getByTestId("section-0-0");
+    expect(hot).toHaveAttribute("data-hot", "true");
+    expect(hot.className).toMatch(/\bring-2\b/);
+    expect(hot).toHaveAttribute("title", expect.stringContaining("hot spot"));
+    expect(screen.getByTestId("section-1-1")).toHaveAttribute("data-hot", "false");
+    expect(screen.getByTestId("section-1-1").className).not.toMatch(/\bring-2\b/);
+    expect(screen.getByText(/Ringed: hot spot/)).toBeInTheDocument();
+    expect(container.innerHTML).not.toMatch(/border-l-|border-left/);
+  });
+
+  it("shows no ring legend when no cell is hot", () => {
+    render(<SectionGrid sections={cells(() => 33.3)} />);
+    expect(screen.queryByText(/Ringed: hot spot/)).toBeNull();
+  });
 });
 
 describe("GreenhouseModal 3 × 3", () => {

@@ -34,6 +34,8 @@ export interface SectionCell {
   infested: number;
   /** null when fewer than 3 stations were scouted there ("not scouted") */
   pct: number | null;
+  /** this section is a hot spot: worse than the house's band, ≥ Moderate, ≥ 5 stations */
+  hot?: boolean;
 }
 
 export const CLUSTERED = "too clustered to judge";

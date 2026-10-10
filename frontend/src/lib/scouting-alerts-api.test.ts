@@ -27,9 +27,16 @@ describe("ghActionBadge", () => {
 });
 
 describe("alertFigureLine for a hot spot", () => {
+  const spot = a({ value: 80, margin: null, sections_scouted: 5, sections_total: 1 });
   it("prints the section figure and its station count, never a margin", () => {
+    expect(alertFigureLine({ ...spot, alert_type: "Hot spot" })).toBe("80% · 5 stations in this section");
+  });
+  it("puts the house figure beside it and names the crop's stations", () => {
+    expect(alertFigureLine({ ...spot, alert_type: "Hot spot", house_value: 8.9, station_word: "zone" })).toBe(
+      "80% (house 8.9%) · 5 zones in this section",
+    );
     expect(
-      alertFigureLine({ ...a({ value: 80, margin: null, sections_scouted: 5, sections_total: 1 }), alert_type: "Hot spot" }),
-    ).toBe("80% · 5 stations in this section");
+      alertFigureLine({ ...spot, unit: "per tree", value: 3, alert_type: "Hot spot", house_value: 0.4, station_word: "tree" }),
+    ).toBe("3 per tree (house 0.4 per tree) · 5 trees in this section");
   });
 });

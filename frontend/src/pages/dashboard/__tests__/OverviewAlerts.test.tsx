@@ -103,7 +103,7 @@ describe("Overview active alerts", () => {
   it("shows a hot spot with its pill and section label, after its house", async () => {
     const spot = {
       ...thrips, name: "SA-2031-W20-hot", alert_type: "Hot spot", section_row: 0, section_col: 0,
-      section_label: "first beds · front", value: 80, margin: null, reliability: "Fair",
+      section_label: "first beds · front", value: 80, house_value: 8.9, station_word: "zone", margin: null, reliability: "Fair",
       sections_scouted: 5, sections_total: 1, band: "High", action: "Hot spot",
     };
     listOpenAlerts.mockResolvedValue([{ ...thrips, alert_type: "House", section_label: "" }, spot]);
@@ -111,7 +111,7 @@ describe("Overview active alerts", () => {
     const rows = await screen.findAllByTestId("active-alert");
     expect(within(rows[1]).getByTestId("alert-action")).toHaveTextContent("Hot spot");
     expect(within(rows[1]).getByTestId("alert-section")).toHaveTextContent("first beds · front");
-    expect(within(rows[1]).getByText("80% · 5 stations in this section")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("80% (house 8.9%) · 5 zones in this section")).toBeInTheDocument();
     expect(within(rows[0]).queryByTestId("alert-section")).toBeNull();
     for (const row of rows) expect(row.className).not.toMatch(/border-l/);
   });

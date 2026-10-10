@@ -29,6 +29,10 @@ export interface ScoutingAlert {
   /** "%", "per zone" or "per tree" */
   unit: string;
   value: number | null;
+  /** A hot spot's house figure, same unit as ``value`` (0 / null for a House alert). */
+  house_value?: number | null;
+  /** The crop's station: "zone" (rose) or "tree" (avocado). */
+  station_word?: string | null;
   margin: number | null;
   reliability: "Good" | "Fair" | "Low";
   sections_scouted: number;
@@ -65,14 +69,23 @@ export async function acknowledgeAlert(name: string): Promise<{ name: string; st
   return call(`${BASE}.acknowledge_alert`, { name });
 }
 
+function inUnit(value: number | null | undefined, unit: string): string {
+  return value == null ? "—" : unit === "%" ? `${value}%` : `${value} ${unit}`;
+}
+
 /** "33.3% · ±18 · 9/9" — the figure in its unit, the margin, sections scouted.
- *  A hot spot has no margin: "80% · 5 stations in this section". */
+ *  A hot spot has no margin: "80% (house 8.9%) · 5 zones in this section"
+ *  ("trees" on an avocado block). */
 export function alertFigureLine(
   a: Pick<ScoutingAlert, "value" | "unit" | "margin" | "sections_scouted" | "sections_total"> &
-    Partial<Pick<ScoutingAlert, "alert_type">>,
+    Partial<Pick<ScoutingAlert, "alert_type" | "house_value" | "station_word">>,
 ): string {
-  const value = a.value == null ? "—" : a.unit === "%" ? `${a.value}%` : `${a.value} ${a.unit}`;
-  if (a.alert_type === "Hot spot") return `${value} · ${a.sections_scouted} stations in this section`;
+  const value = inUnit(a.value, a.unit);
+  if (a.alert_type === "Hot spot") {
+    const house = a.house_value != null ? ` (house ${inUnit(a.house_value, a.unit)})` : "";
+    const stations = a.station_word ? `${a.station_word}s` : "stations";
+    return `${value}${house} · ${a.sections_scouted} ${stations} in this section`;
+  }
   const margin = a.margin != null ? `±${a.margin}` : "too clustered to judge";
   return `${value} · ${margin} · ${a.sections_scouted}/${a.sections_total ?? 9}`;
 }

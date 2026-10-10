@@ -8,7 +8,7 @@
 
 import { call } from "./frappe";
 
-export type ScpCategory = "loan" | "transfer" | "procurement" | "stock";
+export type ScpCategory = "loan" | "transfer" | "procurement" | "stock" | "scouting" | "plan";
 
 export interface ScpNotification {
   name: string;
@@ -72,6 +72,8 @@ export const CATEGORY_LABEL: Record<ScpCategory, string> = {
   transfer: "Transfers",
   procurement: "Procurement",
   stock: "Stock",
+  scouting: "Scouting",
+  plan: "Spray plans",
 };
 
 /** Where a notification's reference should take the reader. Returns a route
@@ -85,6 +87,9 @@ export function routeForNotification(n: ScpNotification): string | null {
       return "#/rose/approvals";
     case "Material Request":
       return "#/rose/chemical-dashboard";
+    case "Scouting Alert":
+      // Active alerts are listed on the Overview (Scouting Alert doctype: Task 5).
+      return "#/rose/dashboard";
     default:
       return null;
   }

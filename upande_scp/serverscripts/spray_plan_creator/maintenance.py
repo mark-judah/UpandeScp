@@ -33,6 +33,20 @@ AFP_TYPE = "Application Floor Plan"
 DEFAULT_DORMANT_DAYS = 3
 
 
+def _dormant_days() -> int:
+    """The configured window. (``DORMANT_DAYS`` was referenced by the messages
+    below but never defined, so the notice and audit comment never landed.)"""
+    try:
+        return int(
+            frappe.db.get_single_value(
+                "Scouting and Crop Protection Settings", "auto_cancel_dormant_days"
+            )
+            or DEFAULT_DORMANT_DAYS
+        )
+    except Exception:
+        return DEFAULT_DORMANT_DAYS
+
+
 def _recently_postponed(work_order: str) -> bool:
     """Whether a plan has been deliberately moved, or has a move pending.
 
@@ -141,7 +155,7 @@ def _stop_submitted(wo) -> None:
         doc = frappe.get_doc("Work Order", wo.name)
         doc.add_comment(
             "Workflow",
-            f"Auto-cancelled: unapproved for more than {DORMANT_DAYS} days "
+            f"Auto-cancelled: unapproved for more than {_dormant_days()} days "
             f"(created {wo.creation}).",
         )
     except Exception:
@@ -149,26 +163,21 @@ def _stop_submitted(wo) -> None:
 
 
 def _notify_creator(wo) -> None:
-    """Drop a Notification Log entry for the plan's creator."""
+    """Tell the plan's creator, through the one SCP notification path (category
+    "plan", so it reaches the SCP bell). Best-effort: ``notify`` logs and swallows."""
     if not wo.owner or wo.owner in ("Administrator", "Guest"):
         return
-    try:
-        notif = frappe.get_doc({
-            "doctype": "Notification Log",
-            "for_user": wo.owner,
-            "type": "Alert",
-            "subject": (
-                f"Spray plan {wo.name} auto-cancelled — unapproved for over "
-                f"{DORMANT_DAYS} days"
-            ),
-            "email_content": (
-                f"Your spray plan for {wo.custom_greenhouse or 'a greenhouse'} "
-                f"(created {wo.creation}) was automatically cancelled because it "
-                f"was not approved within {DORMANT_DAYS} days."
-            ),
-            "document_type": "Work Order",
-            "document_name": wo.name,
-        })
-        notif.insert(ignore_permissions=True)
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "auto_cancel: notify failed")
+    from upande_scp.serverscripts.common import notifications
+
+    notifications.notify(
+        [wo.owner],
+        f"Spray plan {wo.name} auto-cancelled — unapproved for over {_dormant_days()} days",
+        (
+            f"Your spray plan for {wo.custom_greenhouse or 'a greenhouse'} "
+            f"(created {wo.creation}) was automatically cancelled because it "
+            f"was not approved within {_dormant_days()} days."
+        ),
+        "Work Order",
+        wo.name,
+        category="plan",
+    )

@@ -28,6 +28,8 @@ const CATEGORIES: Array<ScpCategory | ""> = [
   "transfer",
   "procurement",
   "stock",
+  "scouting",
+  "plan",
 ];
 
 export function Notifications() {
@@ -135,7 +137,7 @@ export function Notifications() {
             <CardDescription>
               {category || unreadOnly
                 ? "Nothing here with these filters."
-                : "Loan requests, transfers and procurement reviews will show up here."}
+                : "Loan requests, transfers, procurement reviews and scouting alerts will show up here."}
             </CardDescription>
           </Card>
         ) : (

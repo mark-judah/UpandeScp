@@ -20,6 +20,12 @@ describe("routeForNotification", () => {
     ).toBe("#/rose/chemical-loaning");
   });
 
+  it("routes a scouting alert to the overview, where active alerts are listed", () => {
+    expect(routeForNotification({ ...base, document_type: "Scouting Alert" })).toBe(
+      "#/rose/dashboard",
+    );
+  });
+
   it("returns null for a doctype with no page, rather than a dead link", () => {
     expect(routeForNotification({ ...base, document_type: "Sales Order" })).toBeNull();
     expect(routeForNotification(base)).toBeNull();
@@ -58,7 +64,7 @@ describe("CATEGORY_LABEL", () => {
   it("covers every category the server can send", () => {
     // Mirrors notifications.CATEGORIES — a missing label renders as blank.
     expect(Object.keys(CATEGORY_LABEL).sort()).toEqual(
-      ["loan", "procurement", "stock", "transfer"],
+      ["loan", "plan", "procurement", "scouting", "stock", "transfer"],
     );
   });
 });

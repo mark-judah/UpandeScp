@@ -516,7 +516,7 @@ def _field_spec() -> dict:
 				"fieldname": "scp_category",
 				"label": "SCP Category",
 				"fieldtype": "Select",
-				"options": "\nloan\ntransfer\nprocurement\nstock",
+				"options": "\nloan\ntransfer\nprocurement\nstock\nscouting\nplan",
 				"insert_after": "type",
 				"in_standard_filter": 1,
 				"description": (

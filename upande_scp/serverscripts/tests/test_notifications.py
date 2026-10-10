@@ -126,10 +126,11 @@ class TestNotifications(unittest.TestCase):
         self.assertIn("mine", subjects)
         self.assertNotIn("theirs", subjects)
 
+    # Categorised: since thresholds D9 the bell lists SCP-category rows only.
     def test_unread_count_is_per_user(self):
-        N.notify([U1], "a")
-        N.notify([U1], "b")
-        N.notify([U2], "c")
+        N.notify([U1], "a", category="loan")
+        N.notify([U1], "b", category="loan")
+        N.notify([U2], "c", category="loan")
         frappe.set_user(U1)
         self.assertEqual(N.unread_count(), 2)
         frappe.set_user(U2)
@@ -147,16 +148,16 @@ class TestNotifications(unittest.TestCase):
         )
 
     def test_mark_all_read_clears_only_the_session_user(self):
-        N.notify([U1], "a")
-        N.notify([U2], "b")
+        N.notify([U1], "a", category="loan")
+        N.notify([U2], "b", category="loan")
         frappe.set_user(U1)
         self.assertEqual(N.mark_read(all=1)["unread"], 0)
         frappe.set_user(U2)
         self.assertEqual(N.unread_count(), 1)
 
     def test_unread_only_filter(self):
-        N.notify([U1], "one")
-        N.notify([U1], "two")
+        N.notify([U1], "one", category="loan")
+        N.notify([U1], "two", category="loan")
         frappe.set_user(U1)
         first = N.list_notifications()["notifications"][0]["name"]
         N.mark_read(names=[first])
@@ -171,10 +172,55 @@ class TestNotifications(unittest.TestCase):
 
     def test_limit_is_clamped_and_offset_paginates(self):
         for i in range(5):
-            N.notify([U1], f"n{i}")
+            N.notify([U1], f"n{i}", category="loan")
         frappe.set_user(U1)
         self.assertEqual(len(N.list_notifications(limit=2)["notifications"]), 2)
         self.assertEqual(len(N.list_notifications(limit=99999)["notifications"]), 5)
         self.assertEqual(len(N.list_notifications(limit=2, offset=4)["notifications"]), 1)
         # Junk paging must not throw.
         self.assertTrue(N.list_notifications(limit="x", offset="y")["notifications"])
+
+    # -- SCP-only bell (thresholds spec D9) ------------------------------
+    def _foreign_row(self, user, subject="Leave approved"):
+        """A Notification Log row another app wrote: no scp_category."""
+        doc = frappe.get_doc({"doctype": "Notification Log", "for_user": user,
+                              "type": "Alert", "subject": subject})
+        doc.insert(ignore_permissions=True)
+        return doc.name
+
+    def test_the_bell_ignores_non_scp_rows(self):
+        foreign = self._foreign_row(U1)
+        N.notify([U1], "Spray advised: Thrips", category="scouting")
+        frappe.set_user(U1)
+        self.assertEqual([r.subject for r in N.list_notifications()["notifications"]],
+                         ["Spray advised: Thrips"])
+        self.assertEqual(N.unread_count(), 1)
+        N.mark_read(all=1)
+        frappe.set_user("Administrator")
+        self.assertEqual(frappe.db.get_value("Notification Log", foreign, "read"), 0,
+                         "mark-all-read touched another app's notification")
+
+    def test_an_unknown_category_filter_lists_nothing(self):
+        N.notify([U1], "loan one", category="loan")
+        frappe.set_user(U1)
+        self.assertEqual(N.list_notifications(category="hr")["notifications"], [])
+
+    def test_scouting_and_plan_are_scp_categories(self):
+        self.assertIn("scouting", N.CATEGORIES)
+        self.assertIn("plan", N.CATEGORIES)
+        self.assertEqual(N.notify([U1], "Alarming: Thrips", category="scouting"), [U1])
+        self.assertEqual(frappe.db.get_value("Notification Log", {"for_user": U1}, "scp_category"), "scouting")
+
+    def test_the_auto_cancel_notice_goes_through_notify_as_a_plan(self):
+        from unittest.mock import patch
+
+        from upande_scp.serverscripts.spray_plan_creator import maintenance as M
+
+        wo = frappe._dict(owner=U1, name="WO-TEST-0001", custom_greenhouse="GH X",
+                          creation="2031-01-01 08:00:00")
+        with patch.object(N, "notify") as notify:
+            M._notify_creator(wo)
+        args, kwargs = notify.call_args
+        self.assertEqual(args[0], [U1])
+        self.assertEqual(args[3:5], ("Work Order", "WO-TEST-0001"))
+        self.assertEqual(kwargs["category"], "plan")

@@ -22,7 +22,9 @@ EVENT = "scp:notification"
 #: (Alert / Share / Assignment / Energy Point), so the category lives in the
 #: custom field ``scp_category`` — encoding it in the subject would turn
 #: filtering into a substring search.
-CATEGORIES = ("loan", "transfer", "procurement", "stock")
+#: ``scouting`` = threshold alerts (piece 3a); ``plan`` = spray-plan lifecycle
+#: notices (auto-cancel). The bell lists only rows carrying one of these (D9).
+CATEGORIES = ("loan", "transfer", "procurement", "stock", "scouting", "plan")
 
 _NEVER_NOTIFY = {"Administrator", "Guest", "", None}
 
@@ -143,9 +145,14 @@ def notify(users, subject, body="", ref_doctype=None, ref_name=None, category=No
 
 @frappe.whitelist()
 def list_notifications(category=None, unread_only=0, limit=50, offset=0):
-    filters = {"for_user": frappe.session.user}
-    if category:
-        filters["scp_category"] = category
+    """The session user's SCP notifications. A Notification Log row without an
+    SCP category (HR, ERPNext, Desk) never reaches this bell (spec D9)."""
+    if category and category not in CATEGORIES:
+        return {"notifications": [], "unread": unread_count()}
+    filters = {
+        "for_user": frappe.session.user,
+        "scp_category": category or ["in", list(CATEGORIES)],
+    }
     if str(unread_only) in ("1", "true", "True"):
         filters["read"] = 0
     try:
@@ -171,20 +178,22 @@ def list_notifications(category=None, unread_only=0, limit=50, offset=0):
 @frappe.whitelist()
 def unread_count():
     return frappe.db.count(
-        "Notification Log", {"for_user": frappe.session.user, "read": 0}
+        "Notification Log",
+        {"for_user": frappe.session.user, "read": 0, "scp_category": ["in", list(CATEGORIES)]},
     )
 
 
 @frappe.whitelist()
 def mark_read(names=None, all=0):
-    """Mark specific notifications, or every one of the user's, as read."""
+    """Mark specific notifications, or every SCP one of the user's, as read."""
     import json
 
     user = frappe.session.user
     if str(all) in ("1", "true", "True"):
-        frappe.db.set_value(
-            "Notification Log", {"for_user": user, "read": 0}, "read", 1,
-            update_modified=False,
+        frappe.db.sql(
+            """UPDATE `tabNotification Log` SET `read` = 1
+               WHERE for_user = %(user)s AND `read` = 0 AND scp_category IN %(cats)s""",
+            {"user": user, "cats": CATEGORIES},
         )
         frappe.db.commit()
         return {"unread": 0}

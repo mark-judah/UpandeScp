@@ -77,6 +77,8 @@ class TestSectionRules(unittest.TestCase):
         self.assertEqual(B.section_label(1, 1, "bed"), "middle beds · middle")
         self.assertEqual(B.section_label(2, 2, "row"), "last rows · back")
         self.assertEqual(B.section_label(3, 0, "bed"), "")
+        self.assertEqual(B.section_label(-1, -1), "")
+        self.assertEqual(B.section_label(0, -1), "")
 
     def test_hot_spots_sort_with_alarming_and_types_are_named(self):
         self.assertEqual((B.HOUSE, B.HOT_SPOT), ("House", "Hot spot"))

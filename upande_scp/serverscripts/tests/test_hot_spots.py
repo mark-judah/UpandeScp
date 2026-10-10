@@ -255,3 +255,42 @@ class TestHotSpots(HotCase):
         TF.set_roster(self.farm, "creators", [])
         TF.set_roster(self.farm, "supervisors", [])
         self.assertEqual(TC.recipients_for(self.farm, "Rose", B.HOT_SPOT), [U_GM])   # empty rosters → GMs
+
+
+class TestSurfaces(HotCase):
+    def _house_alarming_and_spot(self):
+        TF.set_bands("Rose", "Thrips", 5, 20, 50)
+        TF.seed_hot_section(self.gh, TF.WEEK_20[0], hot_infested=5, others_infested=2)   # house 46.7 %, corner 100 %
+        TC.check_crop("Rose", SUN_20)
+        return self.alert().name, self.spot().name
+
+    def test_open_alerts_list_house_before_hot_spot_with_the_section(self):
+        house, spot = self._house_alarming_and_spot()
+        rows = TC.open_alerts("Rose", greenhouse=self.gh)
+        self.assertEqual([(r.name, r.alert_type, r.action) for r in rows],
+                         [(house, "House", "Alarming"), (spot, "Hot spot", "Hot spot")])
+        self.assertEqual((rows[1].section_label, rows[1].section_row, rows[1].section_col, rows[1].margin),
+                         (LABEL, 0, 0, None))
+        self.assertEqual((rows[0].section_label or "", rows[0].section_row), ("", -1))
+
+    def test_the_creator_never_sees_a_hot_spot(self):
+        _house, spot = self._house_alarming_and_spot()
+        self.assertEqual(TC.creator_alerts([self.gh]), {})              # Alarming house + hot spot
+        frappe.db.set_value("Scouting Alert", spot, "action", "Spray advised")   # even mislabelled
+        self.assertEqual(TC.creator_alerts([self.gh]), {})
+        with self.assertRaisesRegex(frappe.ValidationError, "hot spot"):
+            TC.assert_alert_for_plan(spot, self.gh)
+
+    def test_the_greenhouse_grid_rings_the_hot_section(self):
+        TF.set_bands("Rose", "Thrips", 5, 20, 50)
+        TF.seed_hot_section(self.gh, TF.WEEK_20[0])
+        out = DA.greenhouse_detail(greenhouse=self.gh, from_date=TF.WEEK_20[0], to_date=TF.WEEK_20[1],
+                                   crop="Rose", force="1")
+        thrips = next(p for p in out["prevalence"] if p["name"] == "Thrips")
+        self.assertEqual([(s["row"], s["col"]) for s in thrips["sections"] if s["hot"]], [(0, 0)])
+        self.assertEqual(len(thrips["sections"]), 9)
+        TF.clear_all_bands("Rose")
+        out = DA.greenhouse_detail(greenhouse=self.gh, from_date=TF.WEEK_20[0], to_date=TF.WEEK_20[1],
+                                   crop="Rose", force="1")
+        thrips = next(p for p in out["prevalence"] if p["name"] == "Thrips")
+        self.assertFalse(any(s["hot"] for s in thrips["sections"]))

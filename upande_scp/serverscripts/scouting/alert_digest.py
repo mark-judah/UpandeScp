@@ -55,7 +55,8 @@ def _candidates(now) -> dict:
             out.setdefault(user, []).append(r)
     for alerts in out.values():
         alerts.sort(key=lambda r: (
-            -B.ACTION_RANK.get(r.action, 0), r.farm or "", r.warehouse or "", r.observation or "",
+            -B.ALERT_RANK.get(r.action, 0), r.farm or "", r.warehouse or "",
+            r.alert_type == B.HOT_SPOT, r.observation or "",
         ))
     return out
 
@@ -89,8 +90,11 @@ def build_digests(now) -> dict:
 
 def _figure(a) -> str:
     """``33.3% ± 4.1`` — or ``33.3%`` + "too clustered to judge" when the stored
-    margin is meaningless (``_margin`` is the only correct reader of it)."""
+    margin is meaningless (``_margin`` is the only correct reader of it); a hot
+    spot shows its section's station count instead of a margin."""
     text = frappe.utils.escape_html(B.format_value(a.value, a.unit))
+    if a.get("alert_type") == B.HOT_SPOT:
+        return f"{text} <span style='color:#777'>({int(a.sections_scouted or 0)} stations in this section)</span>"
     margin = TC._margin(a)
     if margin is None:
         return f"{text} <span style='color:#777'>(too clustered to judge)</span>"
@@ -104,7 +108,7 @@ def render(alerts, day) -> str:
     rows = "".join(
         "<tr>"
         f"<td style='{cell}'><b>{esc(a.action)}</b></td>"
-        f"<td style='{cell}'>{esc(a.warehouse)}</td>"
+        f"<td style='{cell}'>{esc(a.warehouse)}{(' · ' + esc(a.section_label)) if a.get('section_label') else ''}</td>"
         f"<td style='{cell}'>{esc(a.observation)}{(' · ' + esc(a.stage)) if a.stage else ''}</td>"
         f"<td style='{cell};text-align:right'>{_figure(a)}</td>"
         f"<td style='{cell}'>{esc(a.reliability or '')}</td>"
@@ -118,11 +122,16 @@ def render(alerts, day) -> str:
                              ("Figure", "right"), ("Reliability", "left"), ("Week", "left"))
     )
     plural = "s" if len(alerts) != 1 else ""
+    hot_note = (
+        " Hot spot means one part of the house is clearly worse than the house as a whole: stay alert there."
+        if any(a.get("alert_type") == B.HOT_SPOT for a in alerts) else ""
+    )
     return (
         "<div style='font-family:Poppins,Arial,sans-serif;font-size:13px;color:#1a1a1a'>"
         f"<p>{len(alerts)} scouting alert{plural} raised or escalated on your farms since your last "
         f"digest ({frappe.utils.formatdate(day, 'dd-MMM-yyyy')}). "
-        "Scout first means the figure is unreliable: scout again before spraying.</p>"
+        "Scout first means the figure is unreliable: scout again before spraying."
+        f"{hot_note}</p>"
         f"<table style='border-collapse:collapse'><tr style='background:#f2f2f2'>{head}</tr>{rows}</table>"
         "</div>"
     )

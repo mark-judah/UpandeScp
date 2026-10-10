@@ -682,15 +682,18 @@ def acknowledge_alert(name: str) -> dict:
 
 
 def _margin(row):
-    """The stored margin, or None when fewer than two sections counted — the
-    one case the figure has none ("too clustered to judge"); see ``upsert``."""
+    """The stored margin, or None when it has none: fewer than two sections
+    counted ("too clustered to judge"; see ``upsert``), or a hot spot (one
+    section, judged by its station count instead)."""
+    if row.get("alert_type") == B.HOT_SPOT:
+        return None
     return None if (row.get("sections_scouted") or 0) < 2 else row.get("margin")
 
 
 @frappe.whitelist()
 def open_alerts(crop: str, farm: str | None = None, greenhouse: str | None = None) -> list:
     """Open + Acknowledged alerts of one crop on the farms the user may see,
-    worst action first. Uncached: Acknowledge must show at once."""
+    worst action first, a house before its hot spots. Uncached: Acknowledge must show at once."""
     crop = crop_catalog.resolve_crop(crop)
     if not crop or not frappe.db.table_exists(DOCTYPE):
         return []
@@ -714,8 +717,8 @@ def open_alerts(crop: str, farm: str | None = None, greenhouse: str | None = Non
         r["unit"] = B.unit_label(r.measure, station)
         r["margin"] = _margin(r)
     rows.sort(key=lambda r: (
-        -B.ACTION_RANK.get(r.action, 0), r.status != "Open", -(r.value or 0),
-        r.warehouse or "", r.observation or "", r.stage or "",
+        -B.ALERT_RANK.get(r.action, 0), r.alert_type == B.HOT_SPOT, r.status != "Open", -(r.value or 0),
+        r.warehouse or "", r.observation or "", r.stage or "", r.section_row or 0, r.section_col or 0,
     ))
     return rows
 
@@ -772,7 +775,8 @@ CREATOR_ACTIONS = (B.SPRAY_ADVISED, B.SCOUT_FIRST)
 
 def creator_alerts(warehouses) -> dict:
     """``{warehouse: [alert]}`` — Open / Acknowledged Spray advised and Scout
-    first alerts on these houses, worst first: the creator's badges."""
+    first alerts on these houses, worst first: the creator's badges. Hot spots
+    never: they are stay-alert only (hot-spots H3, H7)."""
     houses = sorted({w for w in (warehouses or ()) if w})
     if not houses or not frappe.db.table_exists(DOCTYPE):
         return {}
@@ -782,6 +786,7 @@ def creator_alerts(warehouses) -> dict:
             "warehouse": ["in", houses],
             "status": ["in", list(OPEN_STATES)],
             "action": ["in", list(CREATOR_ACTIONS)],
+            "alert_type": B.HOUSE,
         },
         fields=ALERT_FIELDS,
         limit_page_length=0,
@@ -805,10 +810,16 @@ def assert_alert_for_plan(alert, greenhouse, targets=None):
     the caller may see it, and (when ``targets`` is given) the plan treats its
     observation. Returns the alert row."""
     row = frappe.db.get_value(
-        DOCTYPE, alert, ["name", "crop", "farm", "warehouse", "status", "work_order"], as_dict=True,
+        DOCTYPE, alert, ["name", "crop", "farm", "warehouse", "status", "work_order", "alert_type"], as_dict=True,
     )
     if not row:
         frappe.throw(f"Scouting alert {alert} does not exist.", frappe.ValidationError)
+    if row.alert_type == B.HOT_SPOT:
+        frappe.throw(
+            f"Scouting alert {alert} is a hot spot: it asks the team to stay alert there, "
+            "and spraying follows the house's own alert.",
+            frappe.ValidationError,
+        )
     if row.warehouse != greenhouse:
         frappe.throw(f"Scouting alert {alert} is for {row.warehouse}, not {greenhouse}.", frappe.ValidationError)
     if row.status not in OPEN_STATES:

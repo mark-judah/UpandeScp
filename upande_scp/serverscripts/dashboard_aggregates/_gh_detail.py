@@ -3,8 +3,10 @@
 import frappe
 
 from upande_scp.serverscripts.common import prevalence as P
+from upande_scp.serverscripts.common import threshold_bands as B
 from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows
 from upande_scp.serverscripts.dashboard_aggregates._common import (
+    band_spec,
     cached_aggregate,
     house_value,
     obs_filter,
@@ -148,7 +150,7 @@ def _build(filters: dict, job_id: str = "") -> dict:
                 "kind": kind,
                 "name": t["name"],
                 **P.public(fig),
-                "sections": fig.get("sections") or [],
+                "sections": _mark_hot(filters["crop"], kind, t["name"], weeks, gh, fig),
             })
 
     payload = {
@@ -166,3 +168,21 @@ def _build(filters: dict, job_id: str = "") -> dict:
     }
     publish_progress(job_id, 100, "")
     return payload
+
+
+def _mark_hot(crop, kind, obs, weeks, gh, fig) -> list:
+    """The figure's 3 × 3 sections, each with ``hot``: the section meets
+    hot-spots H2 against the house's all-stage band in the row's measure (a
+    Count row reads the section's average count). Judged from the same figures
+    as the payload, so a cached payload never disagrees with itself."""
+    sections = fig.get("sections") or []
+    spec = band_spec(crop, kind, obs, "")
+    hot = set()
+    if spec:
+        if spec["measure"] == B.COUNT:
+            cfig = weeks.count_latest(gh, kind, obs, stages=spec["count_stages"]) or {}
+            house, judged = cfig.get("value"), cfig.get("sections") or []
+        else:
+            house, judged = fig.get("prevalence"), sections
+        hot = {(h["row"], h["col"]) for h in B.hotspots(house, judged, spec, spec["measure"])}
+    return [{**s, "hot": (s["row"], s["col"]) in hot} for s in sections]

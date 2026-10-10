@@ -209,3 +209,21 @@ class TestDigest(AlertCase):
         with patch.object(frappe, "sendmail") as sendmail:
             D.send_alert_digest(at(SUN_20 + timedelta(days=1), 17, 5))   # Mon 17:05: 32 h later
         sendmail.assert_not_called()
+
+    def test_a_hot_spot_reaches_the_digest_with_its_label(self):
+        TF.set_bands("Rose", "Thrips", 5, 20, 50)
+        TF.seed_hot_section(self.gh, TF.WEEK_20[0], hot_infested=5, others_infested=2)   # house Alarming + hot spot
+        TC.check_crop("Rose", SUN_20)
+        digests = D.build_digests(at(SUN_20, 17, 5))
+        self.assertEqual([(a.alert_type, a.action) for a in digests[U_CREATOR]],
+                         [("House", "Alarming"), ("Hot spot", "Hot spot")])     # each once, house first
+        self.assertNotIn(U_APPROVER, digests)
+        html = D.render(digests[U_CREATOR], SUN_20)
+        self.assertIn(f"{self.gh} · first beds · front", html)
+        self.assertIn("100.0% <span style='color:#777'>(5 stations in this section)</span>", html)
+        self.assertIn("Hot spot means one part of the house is clearly worse", html)
+        with patch.object(frappe, "sendmail") as sendmail:
+            D.send_alert_digest(at(SUN_20, 17, 5))
+        self.assertEqual(sorted(c.kwargs["recipients"][0] for c in sendmail.call_args_list),
+                         sorted([U_CREATOR, U_SUPER]))
+        self.assertTrue(all(c.kwargs["subject"].endswith("(2)") for c in sendmail.call_args_list))

@@ -199,6 +199,8 @@ def section_label(row, col, unit="bed") -> str:
     """``first beds · front`` / ``last rows · back`` — rows of the 3 × 3 grid are
     thirds of the beds (rows) in order, columns the front / middle / back."""
     try:
+        if not (0 <= int(row) <= 2 and 0 <= int(col) <= 2):
+            return ""
         return f"{_ROW_WORDS[int(row)]} {unit}s · {_COL_WORDS[int(col)]}"
     except (IndexError, TypeError, ValueError):
         return ""

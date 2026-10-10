@@ -146,3 +146,56 @@ class TestCaptureSettings(CaptureCase):
     def test_after_migrate_seeds_the_defaults(self):
         import upande_scp.hooks as H
         self.assertIn("upande_scp.serverscripts.scouting.capture_settings.ensure_defaults", H.after_migrate)
+
+
+class TestSettingsPage(CaptureCase):
+    def setUp(self):
+        super().setUp()
+        from upande_scp.serverscripts.spray_plan_creator import settings as S
+        self.S = S
+
+    def bundle(self):
+        return self.S.get_settings_bundle()["spray_plan"]
+
+    def test_the_bundle_carries_the_three_values(self):
+        _set(allow_scout_photos=0, allow_scout_comments=1, max_count_per_observation=40)
+        got = self.bundle()
+        self.assertEqual((got["allow_scout_photos"], got["allow_scout_comments"],
+                          got["max_count_per_observation"]), (0, 1, 40))
+
+    def test_the_bundle_reads_unset_as_on(self):
+        _unset()
+        got = self.bundle()
+        self.assertEqual((got["allow_scout_photos"], got["allow_scout_comments"],
+                          got["max_count_per_observation"]), (1, 1, 15))
+
+    def test_a_save_round_trips(self):
+        self.S.save_spray_plan_settings(json.dumps(
+            {"allow_scout_photos": 0, "allow_scout_comments": 0, "max_count_per_observation": 40}))
+        self.assertEqual(CS.as_payload(), {"photos": False, "comments": False, "max_count": 40})
+        self.S.save_spray_plan_settings(json.dumps({"allow_scout_photos": True, "allow_scout_comments": "1"}))
+        self.assertEqual((_raw("allow_scout_photos"), _raw("allow_scout_comments")), ("1", "1"))
+
+    def test_a_save_of_other_fields_leaves_capture_alone(self):
+        _unset()
+        hours = self.bundle()["loaning_timeout_hours"]
+        self.S.save_spray_plan_settings(json.dumps({"loaning_timeout_hours": hours}))
+        self.assertEqual(CS.as_payload(), {"photos": True, "comments": True, "max_count": 15})
+
+    def test_max_count_must_be_1_to_10000(self):
+        _set(max_count_per_observation=40)
+        for bad in (0, 10001, -1, 2.5, "lots", None):
+            with self.assertRaises(frappe.ValidationError, msg=repr(bad)) as ctx:
+                self.S.save_spray_plan_settings(json.dumps(
+                    {"max_count_per_observation": bad, "allow_scout_photos": 0}))
+            self.assertIn("whole number from 1 to 10000", str(ctx.exception))
+            self.assertEqual((CS.max_count(), CS.allows("photos")), (40, True))   # nothing saved
+
+    def test_only_a_gm_or_admin_may_read_or_save(self):
+        frappe.set_user("Guest")
+        with self.assertRaises(frappe.ValidationError):
+            self.S.save_spray_plan_settings(json.dumps({"allow_scout_photos": 0}))
+        with self.assertRaises(frappe.ValidationError):
+            self.S.get_settings_bundle()
+        frappe.set_user("Administrator")
+        self.assertTrue(CS.allows("photos"))

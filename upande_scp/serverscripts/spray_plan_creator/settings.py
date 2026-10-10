@@ -12,6 +12,10 @@ Desk only:
      and per-chemical target list (custom_targets child table).
   4. Targets — read-only list of Pests + Plant Diseases, used by the
      Chemicals tab when picking what a chemical treats.
+  5. Scouting capture — whether a scout may photograph what they find and
+     write a comment, and the highest count one observation may carry. Three
+     fields on the same Single, read on the handset's side through
+     ``serverscripts.scouting.capture_settings`` (pieces 5–6).
 
 All endpoints are gated to General Manager / System Manager via
 ``_require_admin`` from ``admin.py``.
@@ -21,6 +25,7 @@ from __future__ import annotations
 import frappe
 
 from upande_scp.serverscripts.common.cache_utils import K_AFP_WAREHOUSES, invalidate
+from upande_scp.serverscripts.scouting import capture_settings
 from upande_scp.serverscripts.common.crop_protection import (
     chemical_groups,
     foliar_groups,
@@ -119,6 +124,10 @@ def get_settings_bundle() -> dict:
                 if (settings.csu_scan_verification or "").strip().lower() == "tick"
                 else "labels"
             ),
+            # Scout capture (pieces 5–6). Read through capture_settings, never
+            # off `settings`: a loaded Single casts a missing Check to 0, which
+            # would show the GM "off" for a switch that is on.
+            **capture_settings.as_settings(),
             "allowed_farms": allowed_farms,
             "exclude_keywords": exclude_keywords,
             "station_warehouse_types": station_warehouse_types,
@@ -181,7 +190,23 @@ def save_spray_plan_settings(payload) -> dict:
         # rejects anything else on save rather than letting a bad value through
         # and silently dropping the CSU scan check.
         "csu_scan_verification",
+        # Scout capture (pieces 5–6), validated just below before anything is set.
+        "allow_scout_photos",
+        "allow_scout_comments",
+        "max_count_per_observation",
     ]
+    # A bad max count saves nothing (it throws before any field is set); the
+    # switches are stored as 0 / 1. `capture_explicit` tells the Single's
+    # validate which capture fields this save set on purpose, so its
+    # unset-means-default guard never overrides the GM.
+    if capture_settings.MAX_COUNT_FIELD in payload:
+        payload[capture_settings.MAX_COUNT_FIELD] = capture_settings.clean_max_count(
+            payload[capture_settings.MAX_COUNT_FIELD]
+        )
+    for f in (capture_settings.PHOTOS_FIELD, capture_settings.COMMENTS_FIELD):
+        if f in payload:
+            payload[f] = 1 if frappe.utils.cint(payload[f]) else 0
+    settings.flags.capture_explicit = {f for f in capture_settings.FIELDS if f in payload}
     for f in scalar_fields:
         if f in payload:
             settings.set(f, payload[f])

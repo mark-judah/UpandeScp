@@ -749,8 +749,94 @@ def get_manufacture_reconciliation(work_order: str) -> dict[str, Any]:
     }
 
 
+#: Roles that may manufacture any plan's tank mix without being on its roster.
+MANUFACTURE_OVERRIDE_ROLES = ("SCP General Manager", "System Manager", "Stock Manager")
+
+
+def _plan_supervisor_users(wo) -> set[str]:
+    """Users of the plan's own assigned supervisor(s): the per-plan team snapshot's
+    Supervisor rows, else the linked Spray Team's Supervisor rows."""
+    employees = {
+        row.employee
+        for row in (getattr(wo, "custom_spray_plan_team_members", None) or [])
+        if (getattr(row, "role", "") or "").strip().lower() == "supervisor"
+        and getattr(row, "employee", None)
+    }
+    team = getattr(wo, "custom_spray_team", None)
+    if not employees and team:
+        employees = {
+            r[0]
+            for r in frappe.db.sql(
+                """SELECT name1 FROM `tabSpray Team Details`
+                   WHERE parent = %s AND parenttype = 'Spray Team'
+                     AND LOWER(TRIM(role)) = 'supervisor' AND IFNULL(name1, '') != ''""",
+                (team,),
+            )
+        }
+    if not employees:
+        return set()
+    return {
+        u
+        for u in frappe.get_all(
+            "Employee", filters={"name": ["in", list(employees)]}, pluck="user_id"
+        )
+        if u
+    }
+
+
+def can_manufacture(wo, user: str | None) -> bool:
+    """May ``user`` confirm this plan's tank mix?
+
+    Administrator; a holder of SCP General Manager / System Manager / Stock
+    Manager; a Spray Supervisor rostered on the plan's farm (Farm →
+    spray_supervisors); or the plan's own assigned supervisor.
+    """
+    if not user or user == "Guest":
+        return False
+    if user == "Administrator":
+        return True
+    if set(frappe.get_roles(user)) & set(MANUFACTURE_OVERRIDE_ROLES):
+        return True
+    farm = None
+    if getattr(wo, "custom_greenhouse", None):
+        farm = frappe.db.get_value("Warehouse", wo.custom_greenhouse, "custom_farm")
+    if farm and frappe.db.exists(
+        "Farm Spray Supervisor",
+        {"parenttype": "Farm", "parent": farm, "parentfield": "spray_supervisors", "user": user},
+    ):
+        return True
+    return user in _plan_supervisor_users(wo)
+
+
+def assert_can_manufacture(wo, user: str | None = None) -> None:
+    user = user or frappe.session.user
+    if not can_manufacture(wo, user):
+        frappe.throw(
+            f"{user} cannot confirm the tank mix for {wo.name}: only a spray "
+            "supervisor rostered on its farm, the plan's own supervisor, or a "
+            "General Manager / Stock Manager may.",
+            frappe.PermissionError,
+        )
+
+
 @frappe.whitelist()
 def manufacture_tank_mix(work_order: str, posting_moment=None) -> dict[str, Any]:
+    """Confirm the tank mix — for the plan's supervisor (see ``can_manufacture``).
+
+    The caller is checked before any stock work: the Manufacture's submit runs
+    elevated (see ``_as_administrator``), so this check is what stands in front
+    of it. The offline replay checks the session's recorder itself and calls
+    ``_manufacture_tank_mix`` directly.
+    """
+    if not work_order:
+        frappe.throw("work_order is required.")
+    if not frappe.db.exists("Work Order", work_order):
+        frappe.throw(f"Work Order {work_order} not found.")
+    assert_can_manufacture(frappe.get_doc("Work Order", work_order))
+    return _manufacture_tank_mix(work_order, posting_moment=posting_moment)
+
+
+def _manufacture_tank_mix(work_order: str, posting_moment=None) -> dict[str, Any]:
     """Explicitly manufacture the tank mix for a fully-scanned WO.
 
     ``posting_moment`` back-dates the Manufacture to when the mix was actually made, for a

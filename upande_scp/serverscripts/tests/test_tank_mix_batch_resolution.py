@@ -443,5 +443,129 @@ class TestOfflineReplay(LedgerCase):
         )
 
 
+class TestWhoMayManufacture(LedgerCase):
+    """The submit runs elevated, so the caller check is what stands in front of it."""
+
+    def setUp(self):
+        super().setUp()
+        self.wo = frappe.get_doc("Work Order", self.wo1)
+        self.farm = frappe.db.get_value("Warehouse", self.wo.custom_greenhouse, "custom_farm")
+        made = mock.patch.object(SS, "_manufacture_tank_mix", return_value={"ok": True})
+        self.made = made.start()
+        self.addCleanup(made.stop)
+
+    def user(self, roles=(), roster=False):
+        email = f"ttmb-{frappe.generate_hash(length=6).lower()}@example.com"
+        frappe.get_doc({
+            "doctype": "User", "email": email, "first_name": "TTMB",
+            "send_welcome_email": 0, "user_type": "System User",
+            "roles": [{"role": r} for r in roles],
+        }).insert(ignore_permissions=True)
+        if roster:
+            if not self.farm:
+                self.skipTest("the borrowed plan's greenhouse has no farm")
+            frappe.get_doc({
+                "doctype": "Farm Spray Supervisor", "parent": self.farm,
+                "parenttype": "Farm", "parentfield": "spray_supervisors",
+                "user": email, "idx": 999,
+            }).db_insert()
+        return email
+
+    def test_a_supervisor_on_the_farm_roster_may(self):
+        frappe.set_user(self.user(["SCP Spray Supervisor"], roster=True))
+        self.assertEqual(SS.manufacture_tank_mix(self.wo1), {"ok": True})
+
+    def test_a_plain_user_is_refused_before_any_stock_work(self):
+        frappe.set_user(self.user(["SCP Scout"]))
+        with self.assertRaises(frappe.PermissionError):
+            SS.manufacture_tank_mix(self.wo1)
+        self.made.assert_not_called()
+
+    def test_a_supervisor_role_without_the_roster_is_refused(self):
+        frappe.set_user(self.user(["SCP Spray Supervisor"]))
+        with self.assertRaises(frappe.PermissionError):
+            SS.manufacture_tank_mix(self.wo1)
+
+    def test_a_general_manager_may(self):
+        frappe.set_user(self.user(["SCP General Manager"]))
+        self.assertEqual(SS.manufacture_tank_mix(self.wo1), {"ok": True})
+
+    def test_the_plans_assigned_supervisor_may(self):
+        email = self.user(["SCP Spray Supervisor"])
+        # Borrow an existing employee (rolled back) rather than insert one: this
+        # site's Employee validation is unrelated and strict.
+        emp_name = frappe.db.get_value("Employee", {"status": "Active"}, "name")
+        frappe.db.set_value("Employee", emp_name, "user_id", email, update_modified=False)
+        emp = frappe._dict(name=emp_name)
+        wo = frappe.get_doc("Work Order", self.wo1)
+        if not wo.meta.has_field("custom_spray_plan_team_members"):
+            self.skipTest("no per-plan team on this site")
+        child = wo.append("custom_spray_plan_team_members", {"employee": emp.name, "role": "Supervisor"})
+        child.db_insert()
+        frappe.set_user(email)
+        self.assertEqual(SS.manufacture_tank_mix(self.wo1), {"ok": True})
+
+    # ── offline replay ──
+
+    def _sync_as(self, syncer, recorder=None):
+        token = f"_ttmb-{frappe.generate_hash(length=6)}"
+        if recorder:
+            frappe.set_user(recorder)
+            frappe.get_doc({"doctype": OS.TOKEN, "token": token, "work_order": self.wo1,
+                            "status": "Refused"}).insert(ignore_permissions=True)
+        frappe.set_user(syncer)
+        payload = {"token": token, "work_order": self.wo1, "scans": []}
+        with mock.patch.object(OS, "preflight", return_value={
+            "ok": True, "problems": [], "notes": [], "anchor": None, "resolved": {}}), \
+             mock.patch.object(OS, "_replay_scans"), \
+             mock.patch.object(OS, "_upsert_token"), \
+             mock.patch.object(OS, "_stamp_result"), \
+             mock.patch.object(OS, "_result", return_value={"synced": True}):
+            frappe.db.set_value("Work Order", self.wo1, "workflow_state", SS.STATE_CHEMICAL_ISSUED)
+            return OS.sync_spray_session(payload)
+
+    def test_offline_replay_by_the_sessions_supervisor_goes_through(self):
+        sup = self.user(["SCP Spray Supervisor"], roster=True)
+        self.assertEqual(self._sync_as(sup), {"synced": True})
+        self.made.assert_called_once()
+
+    def test_offline_replay_recorded_by_a_supervisor_and_pushed_by_someone_else_goes_through(self):
+        sup = self.user(["SCP Spray Supervisor"], roster=True)
+        clerk = self.user(["SCP Scout"])
+        self.assertEqual(self._sync_as(clerk, recorder=sup), {"synced": True})
+        self.made.assert_called_once()
+
+    def test_offline_replay_by_a_plain_user_is_refused(self):
+        clerk = self.user(["SCP Scout"])
+        with self.assertRaises(frappe.PermissionError):
+            self._sync_as(clerk)
+        self.made.assert_not_called()
+
+
+class TestDeskDraftLeavesNoBundles(LedgerCase):
+    def test_deleting_a_desk_draft_manufacture_removes_its_bundles(self):
+        from erpnext.manufacturing.doctype.work_order.work_order import make_stock_entry
+
+        item = self.item()
+        own = self.batch(item, "OWN")
+        self.receive(item, own, 1, days_ago=6)
+        self.plan(self.wo1, {item: 1})
+        self.transfer(self.wo1, item, own, 1, days_ago=5)
+
+        se = frappe.get_doc(make_stock_entry(work_order_id=self.wo1, purpose="Manufacture"))
+        se.flags.ignore_permissions = True
+        se.insert()   # before_validate builds the batch bundle
+        bundles = [r.serial_and_batch_bundle for r in se.items if r.serial_and_batch_bundle]
+        self.assertEqual(len(bundles), 1)
+        self.assertEqual(
+            frappe.db.get_value("Serial and Batch Bundle", bundles[0], "voucher_no"), se.name
+        )
+        se.save()     # re-validate keeps the same bundle, makes no new one
+        self.assertEqual(
+            [r.serial_and_batch_bundle for r in se.items if r.serial_and_batch_bundle], bundles
+        )
+        frappe.delete_doc("Stock Entry", se.name, ignore_permissions=True)
+        self.assertFalse(frappe.db.exists("Serial and Batch Bundle", bundles[0]))
+
 if __name__ == "__main__":
     unittest.main()

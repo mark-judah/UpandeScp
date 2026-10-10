@@ -337,6 +337,8 @@ def sync_spray_session(payload) -> dict:
 	if existing == "Synced":
 		return _result(token, already=True)
 
+	_assert_replay_allowed(token, work_order)
+
 	check = preflight(payload)
 	doc = _upsert_token(token, payload, check)
 	if not check["ok"]:
@@ -358,7 +360,7 @@ def sync_spray_session(payload) -> dict:
 		#    manufacture is a separate explicit step, which is where the mix moment lands.
 		if wo_state == "Chemical Issued":
 			_replay_scans(payload, work_order)
-			made = SS.manufacture_tank_mix(
+			made = SS._manufacture_tank_mix(
 				work_order, posting_moment=moments["mix_at"]
 			)
 			produced["manufacture"] = (made or {}).get("manufacture_se")
@@ -401,6 +403,27 @@ def sync_spray_session(payload) -> dict:
 	_stamp_result(token, work_order, produced)
 	frappe.db.commit()
 	return _result(token)
+
+
+def _assert_replay_allowed(token: str, work_order: str) -> None:
+	"""Whoever recorded the session must be allowed to confirm its tank mix.
+
+	The replay posts the Manufacture elevated, so this is what stands in front of it,
+	checked before any stock work. The syncing user passes if they may manufacture the
+	plan themselves; otherwise the token's owner — the user who first pushed this
+	session, i.e. the supervisor's handset — is checked the same way, so a queued sync
+	re-pushed later from another login still goes through. Nothing in the payload is
+	trusted for this: an employee id there could name anyone.
+	"""
+	if not frappe.db.exists("Work Order", work_order):
+		return  # preflight refuses it with a proper message
+	wo = frappe.get_doc("Work Order", work_order)
+	if SS.can_manufacture(wo, frappe.session.user):
+		return
+	recorder = frappe.db.get_value(TOKEN, token, "owner")
+	if recorder and SS.can_manufacture(wo, recorder):
+		return
+	SS.assert_can_manufacture(wo, frappe.session.user)
 
 
 def _replay_scans(payload: dict, work_order: str) -> None:

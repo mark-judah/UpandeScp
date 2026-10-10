@@ -1,15 +1,14 @@
 /**
- * Settings → Thresholds editor.
+ * Settings → Thresholds editor (thresholds spec §1, D1, D3).
  *
- * Crop-scoped editor for the severity thresholds that drive the
- * dashboard alerts. The crop is the route's (`#/<crop>/settings`); the tab
- * loads every Pest Filter + Disease Filter row under it, plus the
- * per-stage children where they exist. Each row shows three Floats —
- * Low / Moderate / High — interpreted as ``% of zones in the
- * greenhouse with this (obs, stage)``. Per-stage rows override the
- * aggregate row for that stage; an aggregate row of all zeros means
- * "All stages" stays unconfigured and the dashboard skips alerting
- * for that obs.
+ * Per Pest/Disease Filter row of the route crop (`#/<crop>/settings`): a Measure
+ * — Percentage (share of scouted stations carrying it, sections averaged) or
+ * Count (average count per scouted station; only for a pest with a stage
+ * scouts record as a number) — and the Low / Moderate / High bands, suffixed
+ * in that measure's unit. Stage rows override the row for that stage; a
+ * tick-box stage under a Count row is judged as a share, so its bands read "%".
+ * Bands that are set must rise: a misordered row is flagged inline and Save
+ * waits until it is fixed. All zeros = unconfigured (no alerts).
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -21,13 +20,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -39,15 +31,25 @@ import {
   type ThresholdStageRow,
   type ThresholdsBundle,
 } from "@/lib/thresholds-api";
-
+import { bandsAscending, effectiveMeasure, unitFor, type Measure } from "@/lib/threshold-measure";
+import { cn } from "@/lib/utils";
 import { errorText } from "@/lib/errors";
+
 type FilterRow = ThresholdPestRow | ThresholdDiseaseRow;
 
 function isPest(row: FilterRow): row is ThresholdPestRow {
   return (row as ThresholdPestRow).pest !== undefined;
 }
 
-/** `crop` is the route crop (spec D7); the tab no longer carries its own picker. */
+/** The row's or any stage's bands do not rise. */
+export function rowInvalid(row: FilterRow): boolean {
+  return (
+    !bandsAscending(row.low, row.moderate, row.high) ||
+    row.stages.some((s) => !bandsAscending(s.low, s.moderate, s.high))
+  );
+}
+
+/** `crop` is the route crop (spec D7); the tab carries no picker of its own. */
 export function ThresholdsTab({ crop }: { crop: string }) {
   const [bundle, setBundle] = useState<ThresholdsBundle | null>(null);
   const [loading, setLoading] = useState(false);
@@ -65,12 +67,10 @@ export function ThresholdsTab({ crop }: { crop: string }) {
     setError(null);
     getThresholds(crop)
       .then((b) => {
-        if (cancelled) return;
-        setBundle(b);
+        if (!cancelled) setBundle(b);
       })
       .catch((e) => {
-        if (cancelled) return;
-        setError(errorText(e, "Failed to load thresholds"));
+        if (!cancelled) setError(errorText(e, "Failed to load thresholds"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -80,51 +80,33 @@ export function ThresholdsTab({ crop }: { crop: string }) {
     };
   }, [crop]);
 
-  const patchPest = (
-    i: number,
-    patch: Partial<ThresholdPestRow>,
-  ) => {
+  const patchRow = (key: "pests" | "diseases", i: number, patch: Partial<FilterRow>) => {
     if (!bundle) return;
-    const pests = bundle.pests.slice();
-    pests[i] = { ...pests[i], ...patch };
-    setBundle({ ...bundle, pests });
+    if (key === "pests") {
+      const pests = bundle.pests.slice();
+      pests[i] = { ...pests[i], ...patch } as ThresholdPestRow;
+      setBundle({ ...bundle, pests });
+    } else {
+      const diseases = bundle.diseases.slice();
+      diseases[i] = { ...diseases[i], ...patch } as ThresholdDiseaseRow;
+      setBundle({ ...bundle, diseases });
+    }
   };
-  const patchPestStage = (
-    pi: number,
-    si: number,
-    patch: Partial<ThresholdStageRow>,
-  ) => {
+  const patchStage = (key: "pests" | "diseases", i: number, si: number, patch: Partial<ThresholdStageRow>) => {
     if (!bundle) return;
-    const pests = bundle.pests.slice();
-    const stages = pests[pi].stages.slice();
+    const rows: FilterRow[] = key === "pests" ? bundle.pests : bundle.diseases;
+    const stages = rows[i].stages.slice();
     stages[si] = { ...stages[si], ...patch };
-    pests[pi] = { ...pests[pi], stages };
-    setBundle({ ...bundle, pests });
-  };
-  const patchDisease = (
-    i: number,
-    patch: Partial<ThresholdDiseaseRow>,
-  ) => {
-    if (!bundle) return;
-    const diseases = bundle.diseases.slice();
-    diseases[i] = { ...diseases[i], ...patch };
-    setBundle({ ...bundle, diseases });
-  };
-  const patchDiseaseStage = (
-    di: number,
-    si: number,
-    patch: Partial<ThresholdStageRow>,
-  ) => {
-    if (!bundle) return;
-    const diseases = bundle.diseases.slice();
-    const stages = diseases[di].stages.slice();
-    stages[si] = { ...stages[si], ...patch };
-    diseases[di] = { ...diseases[di], stages };
-    setBundle({ ...bundle, diseases });
+    patchRow(key, i, { stages } as Partial<FilterRow>);
   };
 
+  const invalidRows = useMemo(
+    () => (bundle ? [...bundle.pests, ...bundle.diseases].filter(rowInvalid).length : 0),
+    [bundle],
+  );
+
   const onSave = async () => {
-    if (!bundle || !crop) return;
+    if (!bundle || !crop || invalidRows) return;
     setSaving(true);
     setError(null);
     try {
@@ -142,12 +124,10 @@ export function ThresholdsTab({ crop }: { crop: string }) {
     const stages =
       bundle.pests.reduce((s, p) => s + p.stages.length, 0) +
       bundle.diseases.reduce((s, d) => s + d.stages.length, 0);
-    return {
-      pests: bundle.pests.length,
-      diseases: bundle.diseases.length,
-      stages,
-    };
+    return { pests: bundle.pests.length, diseases: bundle.diseases.length, stages };
   }, [bundle]);
+
+  const station = bundle?.station || "zone";
 
   return (
     <Card>
@@ -155,45 +135,40 @@ export function ThresholdsTab({ crop }: { crop: string }) {
         <div className="flex flex-col gap-1">
           <CardTitle className="text-base">Severity Thresholds{crop ? ` · ${crop}` : ""}</CardTitle>
           <CardDescription>
-            % of zones in a greenhouse with the observation. Per-stage
-            values override the aggregate. Zero = unconfigured (no
-            alerts trigger).
+            Each row is measured as a Percentage (share of scouted stations carrying it) or a
+            Count (average per scouted {station}). Moderate raises an Alarming notice, High a spray
+            advisory. Stage values override the row. Bands must rise; zero = not set (no alerts).
           </CardDescription>
         </div>
         <div className="flex items-end gap-2">
+          {invalidRows > 0 && (
+            <span className="text-[0.7rem] text-destructive">
+              {invalidRows} row{invalidRows !== 1 ? "s" : ""} need rising bands before saving.
+            </span>
+          )}
           <Button
             type="button"
             onClick={onSave}
-            disabled={saving || loading || !bundle}
+            disabled={saving || loading || !bundle || invalidRows > 0}
             className="h-9 gap-2"
           >
-            {saving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Save className="h-3.5 w-3.5" />
-            )}
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
             Save
           </Button>
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {error && (
-          <div className="text-xs text-destructive">{error}</div>
-        )}
+        {error && <div className="text-xs text-destructive whitespace-pre-line">{error}</div>}
         {!crop && (
           <div className="text-xs text-muted-foreground py-6 text-center">
             Open Settings from a crop's section to edit its thresholds.
           </div>
         )}
         {savedAt && !error && !saving && (
-          <div className="text-[0.7rem] text-muted-foreground">
-            Saved at {savedAt}.
-          </div>
+          <div className="text-[0.7rem] text-muted-foreground">Saved at {savedAt}.</div>
         )}
         {loading && !bundle && (
-          <div className="text-xs text-muted-foreground py-6 text-center">
-            Loading thresholds…
-          </div>
+          <div className="text-xs text-muted-foreground py-6 text-center">Loading thresholds…</div>
         )}
 
         {bundle && (
@@ -204,32 +179,26 @@ export function ThresholdsTab({ crop }: { crop: string }) {
               <Badge variant="outline">{summary.stages} stage rows</Badge>
             </div>
 
-            <Section
-              title="Pests"
-              icon={Bug}
-              empty="No Pest Filter rows on this crop."
-            >
+            <Section title="Pests" icon={Bug} empty="No Pest Filter rows on this crop.">
               {bundle.pests.map((p, i) => (
                 <FilterEditor
                   key={p.row}
                   row={p}
-                  onPatch={(patch) => patchPest(i, patch)}
-                  onStagePatch={(si, patch) => patchPestStage(i, si, patch)}
+                  station={station}
+                  onPatch={(patch) => patchRow("pests", i, patch)}
+                  onStagePatch={(si, patch) => patchStage("pests", i, si, patch)}
                 />
               ))}
             </Section>
 
-            <Section
-              title="Diseases"
-              icon={Hexagon}
-              empty="No Disease Filter rows on this crop."
-            >
+            <Section title="Diseases" icon={Hexagon} empty="No Disease Filter rows on this crop.">
               {bundle.diseases.map((d, i) => (
                 <FilterEditor
                   key={d.row}
                   row={d}
-                  onPatch={(patch) => patchDisease(i, patch)}
-                  onStagePatch={(si, patch) => patchDiseaseStage(i, si, patch)}
+                  station={station}
+                  onPatch={(patch) => patchRow("diseases", i, patch)}
+                  onStagePatch={(si, patch) => patchStage("diseases", i, si, patch)}
                 />
               ))}
             </Section>
@@ -270,54 +239,102 @@ function Section({
   );
 }
 
+function MeasureToggle({
+  name,
+  value,
+  countAllowed,
+  onChange,
+}: {
+  name: string;
+  value: Measure;
+  countAllowed: boolean;
+  onChange: (m: Measure) => void;
+}) {
+  return (
+    <div role="radiogroup" aria-label={`Measure for ${name}`} className="inline-flex rounded-md border p-0.5">
+      {(["Percentage", "Count"] as const).map((m) => {
+        const disabled = m === "Count" && !countAllowed;
+        return (
+          <button
+            key={m}
+            type="button"
+            role="radio"
+            aria-checked={value === m}
+            disabled={disabled}
+            onClick={() => onChange(m)}
+            className={cn(
+              "h-6 rounded px-2 text-[0.7rem] transition-colors",
+              value === m ? "bg-primary text-primary-foreground" : "hover:bg-muted",
+              disabled && "opacity-40 cursor-not-allowed hover:bg-transparent",
+            )}
+          >
+            {m}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function BandError({ testId }: { testId: string }) {
+  return (
+    <div data-testid={testId} role="alert" className="mt-1 text-[0.7rem] text-destructive">
+      Bands must rise: Low &lt; Moderate &lt; High (leave a band at 0 to skip it).
+    </div>
+  );
+}
+
 function FilterEditor({
   row,
+  station,
   onPatch,
   onStagePatch,
 }: {
   row: FilterRow;
+  station: string;
   onPatch: (patch: Partial<FilterRow>) => void;
   onStagePatch: (i: number, patch: Partial<ThresholdStageRow>) => void;
 }) {
   const name = isPest(row) ? row.pest : row.disease;
+  const measure: Measure = row.measure === "Count" ? "Count" : "Percentage";
   return (
-    <div className="border rounded-md p-2.5 bg-card">
+    <div className="border rounded-md p-2.5 bg-card" data-testid={`threshold-row-${row.row}`}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold">{name}</span>
-        <Select
-          value={row.unit}
-          onValueChange={(v) =>
-            onPatch({ unit: v } as Partial<FilterRow>)
-          }
-        >
-          <SelectTrigger className="h-7 w-36 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Per Zone %">Per Zone %</SelectItem>
-            <SelectItem value="Per Warehouse">Per Warehouse</SelectItem>
-            <SelectItem value="Per Hectare">Per Hectare</SelectItem>
-          </SelectContent>
-        </Select>
+        <MeasureToggle
+          name={name}
+          value={measure}
+          countAllowed={row.count_allowed}
+          onChange={(m) => onPatch({ measure: m } as Partial<FilterRow>)}
+        />
+        {!row.count_allowed && (
+          <span className="text-[0.65rem] text-muted-foreground" data-testid={`count-hint-${row.row}`}>
+            {isPest(row) ? "Count needs a stage scouts record as a number" : "Diseases are measured as a share"}
+          </span>
+        )}
         <ThresholdInputs
+          unit={unitFor(measure, station)}
           values={{ low: row.low, moderate: row.moderate, high: row.high }}
           onChange={(patch) => onPatch(patch as Partial<FilterRow>)}
         />
       </div>
+      {!bandsAscending(row.low, row.moderate, row.high) && <BandError testId={`band-error-${row.row}`} />}
       {row.stages.length > 0 && (
         <div className="mt-2 pl-3 flex flex-col gap-1.5">
           <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
             Per-stage overrides
           </div>
           {row.stages.map((s, i) => (
-            <div key={s.row} className="flex flex-wrap items-center gap-2">
-              <span className="text-xs min-w-20 text-muted-foreground">
-                {s.stage || "—"}
-              </span>
-              <ThresholdInputs
-                values={{ low: s.low, moderate: s.moderate, high: s.high }}
-                onChange={(patch) => onStagePatch(i, patch)}
-              />
+            <div key={s.row} className="flex flex-col">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs min-w-20 text-muted-foreground">{s.stage || "—"}</span>
+                <ThresholdInputs
+                  unit={unitFor(effectiveMeasure(measure, s.reading_type), station)}
+                  values={{ low: s.low, moderate: s.moderate, high: s.high }}
+                  onChange={(patch) => onStagePatch(i, patch)}
+                />
+              </div>
+              {!bandsAscending(s.low, s.moderate, s.high) && <BandError testId={`band-error-${s.row}`} />}
             </div>
           ))}
         </div>
@@ -327,56 +344,49 @@ function FilterEditor({
 }
 
 function ThresholdInputs({
+  unit,
   values,
   onChange,
 }: {
+  unit: string;
   values: { low: number; moderate: number; high: number };
   onChange: (patch: { low?: number; moderate?: number; high?: number }) => void;
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <ThInput
-        label="Low"
-        value={values.low}
-        onChange={(v) => onChange({ low: v })}
-      />
-      <ThInput
-        label="Mod"
-        value={values.moderate}
-        onChange={(v) => onChange({ moderate: v })}
-      />
-      <ThInput
-        label="High"
-        value={values.high}
-        onChange={(v) => onChange({ high: v })}
-      />
+      <ThInput label="Low" short="Low" unit={unit} value={values.low} onChange={(v) => onChange({ low: v })} />
+      <ThInput label="Moderate" short="Mod" unit={unit} value={values.moderate} onChange={(v) => onChange({ moderate: v })} />
+      <ThInput label="High" short="High" unit={unit} value={values.high} onChange={(v) => onChange({ high: v })} />
     </div>
   );
 }
 
 function ThInput({
   label,
+  short,
+  unit,
   value,
   onChange,
 }: {
   label: string;
+  short: string;
+  unit: string;
   value: number;
   onChange: (v: number) => void;
 }) {
   return (
     <div className="flex items-center gap-1">
-      <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
+      <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">{short}</span>
       <Input
         type="number"
         step="0.1"
         min="0"
+        aria-label={label}
         value={Number.isFinite(value) ? value : 0}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
         className="h-7 w-16 text-xs tabular-nums"
       />
-      <span className="text-[0.6rem] text-muted-foreground">%</span>
+      <span className="text-[0.6rem] text-muted-foreground">{unit}</span>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { countBandNote, formatBandValue, type MeasuredBand } from "@/lib/threshold-measure";
 import {
   Area,
   CartesianGrid,
@@ -107,6 +108,10 @@ export interface ThresholdBand {
   low?: number;
   moderate?: number;
   high?: number;
+  /** the row's measure (thresholds spec D1); a Count band is not drawn on a share axis */
+  measure?: "Percentage" | "Count";
+  /** "%", "per zone", "per tree" */
+  unit?: string;
 }
 
 /** Render a Recharts ReferenceLine label as a small SVG ``<g>`` with a
@@ -120,10 +125,11 @@ function renderThresholdLabel(
   obsLabel: string,
   stage: string | undefined,
   color: string,
+  unit: string,
 ) {
   const tip = stage
-    ? `${tier} threshold · ${obsLabel} · ${stage}: ${value}%`
-    : `${tier} threshold · ${obsLabel}: ${value}%`;
+    ? `${tier} threshold · ${obsLabel} · ${stage}: ${formatBandValue(value, unit)}`
+    : `${tier} threshold · ${obsLabel}: ${formatBandValue(value, unit)}`;
   // Recharts passes the line's viewBox via the ``props`` arg.
   return (props: { viewBox?: { x?: number; y?: number; width?: number } }) => {
     const vb = props.viewBox || {};
@@ -140,7 +146,7 @@ function renderThresholdLabel(
           fontSize={10}
           fontWeight={600}
         >
-          {tier === "Moderate" ? "Mod" : tier} {value}%
+          {tier === "Moderate" ? "Mod" : tier} {formatBandValue(value, unit)}
         </text>
       </g>
     );
@@ -446,10 +452,15 @@ export function ChartPanel({
   // stage's band, the parent panel uses the aggregate band. No band
   // when the user is on "All Observations" (mixed) — averaging
   // thresholds across pests would be misleading.
-  const band: ThresholdBand | null = useMemo(() => {
+  const measuredBand: ThresholdBand | null = useMemo(() => {
     if (!showThresholds || !thresholdLookup || !obs) return null;
     return thresholdLookup(obs.kind, obs.name, child?.stage || "");
   }, [showThresholds, thresholdLookup, obs, child?.stage]);
+  // Trends plots the share of scouted stations. A Count row's bands are in
+  // another unit, so they are described under the chart, not drawn on it.
+  const band = measuredBand && measuredBand.measure !== "Count" ? measuredBand : null;
+  const countNote =
+    measuredBand && measuredBand.measure === "Count" ? countBandNote(measuredBand as MeasuredBand) : null;
 
   // Adaptive Y-axis ceiling: fit the data (and any visible threshold band)
   // with headroom instead of a fixed 0–100%. Applies to every trends chart
@@ -586,6 +597,11 @@ export function ChartPanel({
       </CardHeader>
       <CardContent className="p-0">
         <div ref={exportRef} className="flex flex-col gap-3">
+        {countNote ? (
+          <div data-testid="count-band-note" className="text-[0.7rem] text-muted-foreground">
+            {countNote}
+          </div>
+        ) : null}
         <div
           className="flex flex-col md:flex-row gap-3 items-stretch"
         >
@@ -662,6 +678,7 @@ export function ChartPanel({
                         obs?.label || title,
                         child?.stage,
                         "var(--sd-data-green, #16a34a)",
+                        band.unit ?? "%",
                       )}
                     />
                   ) : null}
@@ -678,6 +695,7 @@ export function ChartPanel({
                         obs?.label || title,
                         child?.stage,
                         "var(--sd-target, #d97706)",
+                        band.unit ?? "%",
                       )}
                     />
                   ) : null}
@@ -694,6 +712,7 @@ export function ChartPanel({
                         obs?.label || title,
                         child?.stage,
                         "var(--sd-data-red, #dc2626)",
+                        band.unit ?? "%",
                       )}
                     />
                   ) : null}

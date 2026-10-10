@@ -3,6 +3,7 @@ import { ChevronDown, MapPin, Sparkles, RefreshCw, Gauge } from "lucide-react";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { DEFAULT_CROP } from "@/lib/scouting-api";
 import { getThresholds, type ThresholdsBundle } from "@/lib/thresholds-api";
+import { thresholdMapFromBundle } from "@/lib/threshold-measure";
 import {
   Select,
   SelectContent,
@@ -113,43 +114,10 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
     };
   }, [crop]);
 
-  // Flat lookup keyed by ``${kind}::${name}::${stage}`` (stage="" = aggregate).
-  // Per-stage row wins over aggregate; both rejected if all three are zero.
-  const thresholdMap = useMemo(() => {
-    const m = new Map<string, ThresholdBand>();
-    if (!thresholdBundle) return m;
-    const nonZero = (b: { low: number; moderate: number; high: number }) =>
-      (b.low || 0) > 0 || (b.moderate || 0) > 0 || (b.high || 0) > 0;
-    for (const p of thresholdBundle.pests) {
-      if (nonZero(p)) {
-        m.set(`pest::${p.pest}::`, {
-          low: p.low, moderate: p.moderate, high: p.high,
-        });
-      }
-      for (const s of p.stages) {
-        if (nonZero(s)) {
-          m.set(`pest::${p.pest}::${s.stage}`, {
-            low: s.low, moderate: s.moderate, high: s.high,
-          });
-        }
-      }
-    }
-    for (const d of thresholdBundle.diseases) {
-      if (nonZero(d)) {
-        m.set(`disease::${d.disease}::`, {
-          low: d.low, moderate: d.moderate, high: d.high,
-        });
-      }
-      for (const s of d.stages) {
-        if (nonZero(s)) {
-          m.set(`disease::${d.disease}::${s.stage}`, {
-            low: s.low, moderate: s.moderate, high: s.high,
-          });
-        }
-      }
-    }
-    return m;
-  }, [thresholdBundle]);
+  // Flat lookup keyed by `${kind}::${name}::${stage}` (stage "" = the row), each
+  // band carrying its measure and unit. Unset and misordered bands are left out,
+  // as the server leaves them out (thresholds spec §5).
+  const thresholdMap = useMemo(() => thresholdMapFromBundle(thresholdBundle), [thresholdBundle]);
 
   const thresholdLookup: ThresholdLookup = useCallback(
     (kind, name, stage) => {

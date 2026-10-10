@@ -8,6 +8,8 @@
  * formats it. Count per hectare stays a plain fact beside it.
  */
 
+import { formatBandValue } from "./threshold-measure";
+
 /** "" means judged and below the lowest band — NOT the same as `null`, which
  *  means it cannot be judged at all. */
 export type Band = "high" | "moderate" | "low" | "" | null;
@@ -42,7 +44,7 @@ export interface HouseFigure {
 /** "33.3%" / "1.2 per tree" — the figure the band was judged on. */
 export function judgedLabel(f: HouseFigure | null | undefined): string | null {
   if (!f || f.value == null) return null;
-  return f.unit === "%" ? `${f.value}%` : `${f.value} ${f.unit}`;
+  return formatBandValue(f.value, f.unit);
 }
 
 /** The week's count over the block's hectares (2 dp); null without an area. */

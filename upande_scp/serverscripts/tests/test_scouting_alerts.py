@@ -380,6 +380,25 @@ class TestAlerts(AlertCase):
         self.assertEqual((a.status, a.work_order), ("Open", None))
         self.assertEqual(str(a.raised_at), "2031-05-18 09:00:00")
 
+    def test_the_sweep_resolves_a_dead_plan_alert_whose_latest_finding_has_no_action(self):
+        # The key is still banded and W20 is still the latest week, but the
+        # latest reading is below Moderate: the breach is over, so the orphan
+        # is resolved — never reopened (and nobody is told its plan is gone).
+        name = self.raise_spray_advised()
+        frappe.db.set_value("Scouting Alert", name, {"status": "Converted to plan", "work_order": dead_plan()})
+        TF.set_bands("Rose", "Thrips", 0, 50, 90)               # 33.3 % now reads below Moderate
+        TC.check_crop("Rose", SUN_20)
+        a = frappe.db.get_value("Scouting Alert", name, ["status", "work_order"], as_dict=True)
+        self.assertEqual(a.status, "Resolved")
+        self.assertEqual(self.told(U_CREATOR, name), 1)          # only the original raise
+
+    def test_a_direct_sweep_checks_the_latest_finding_too(self):
+        name = self.raise_spray_advised()
+        frappe.db.set_value("Scouting Alert", name, {"status": "Converted to plan", "work_order": dead_plan()})
+        TF.set_bands("Rose", "Thrips", 0, 50, 90)
+        TC.sweep("Rose", SUN_20, latest={self.gh: "2031-W20"})
+        self.assertEqual(frappe.db.get_value("Scouting Alert", name, "status"), "Resolved")
+
     def test_a_converted_alert_with_a_cancelled_plan_reopens(self):
         name = self.raise_spray_advised()
         cancelled = frappe.db.get_value("Work Order", {"docstatus": 2}, "name")

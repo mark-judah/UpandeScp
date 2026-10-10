@@ -422,13 +422,16 @@ def reopen_for_plan(work_order) -> int:
     return len(names)
 
 
-def sweep(crop, today=None, latest=None) -> int:
+def sweep(crop, today=None, latest=None, actionable=None) -> int:
     """Resolve the crop's Open / Acknowledged alerts that no check will ever
     touch again: their key is no longer banded, or their ISO week ended before
     the evaluation window (a house no longer scouted). Converted alerts are
-    left to their plan, unless that plan is dead: such an alert is reopened when
-    its week is still its house's latest week (``latest``: warehouse → ISO week,
-    from this run's findings), else resolved. Returns how many were resolved."""
+    left to their plan, unless that plan is dead: such an alert is reopened only
+    when its week is still its house's latest week (``latest``: warehouse → ISO
+    week) AND its key's latest finding still has an action (``actionable``:
+    ``finding_key``s) — else resolved, because a breach that has since cleared
+    is nobody's to plan. Both come from this run's findings; either missing is
+    derived from ``evaluate``. Returns how many were resolved."""
     crop = crop_catalog.canonical(crop) or crop
     if not crop:
         return 0
@@ -445,19 +448,23 @@ def sweep(crop, today=None, latest=None) -> int:
     ]
     for name in stale:
         frappe.db.set_value(DOCTYPE, name, "status", "Resolved")
-    if latest is None:
-        latest = {f["warehouse"]: f["iso_week"] for f in evaluate(crop, today)}
+    if latest is None or actionable is None:
+        findings = evaluate(crop, today)
+        if latest is None:
+            latest = {f["warehouse"]: f["iso_week"] for f in findings}
+        if actionable is None:
+            actionable = {finding_key(f) for f in findings if f["action"]}
     now = now_eat()
     orphans = frappe.get_all(
         DOCTYPE, filters={"crop": crop, "status": "Converted to plan"},
-        fields=["name", "warehouse", "kind", "observation", "stage", "iso_week", "work_order"],
+        fields=["name", "warehouse", "kind", "observation", "stage", "iso_week", "work_order",
+                "alert_type", "section_row", "section_col"],
         limit_page_length=0,
     )
     for r in orphans:
         if not plan_is_dead(r.work_order):
             continue
-        is_latest = latest.get(r.warehouse) == r.iso_week
-        if is_latest and (r.kind, r.observation, r.stage or "") in banded:
+        if latest.get(r.warehouse) == r.iso_week and _row_key(r) in actionable:
             frappe.db.set_value(DOCTYPE, r.name, {
                 "status": "Open", "work_order": None,
                 "raised_on": now.date(), "raised_at": eat_stamp(now),
@@ -472,7 +479,8 @@ def check_crop(crop, today=None) -> dict:
     findings = evaluate(crop, today)
     alerts = [n for n in (upsert(f) for f in findings) if n]
     latest = {f["warehouse"]: f["iso_week"] for f in findings}
-    return {"findings": len(findings), "alerts": len(alerts), "swept": sweep(crop, today, latest)}
+    actionable = {finding_key(f) for f in findings if f["action"]}
+    return {"findings": len(findings), "alerts": len(alerts), "swept": sweep(crop, today, latest, actionable)}
 
 
 def _crops_to_check() -> list:

@@ -74,6 +74,35 @@ class TestPlanItem(unittest.TestCase):
         self.assertEqual(plan["fallback"], [])
         self.assertIn("carried no batch", TB.notes_for("CHEM", plan)[0])
 
+    def test_taking_past_the_lot_from_the_own_batch_is_noted(self):
+        """The extra may be another plan's share of the same batch."""
+        plan = TB.plan_item(
+            1.0, [{"batch_no": "A", "qty": 0.6}], {"A": 5.0}, ["A"]
+        )
+        self.assertEqual(
+            [(p["batch_no"], round(p["qty"], 6)) for p in plan["pieces"]], [("A", 1.0)]
+        )
+        notes = TB.notes_for("CHEM", plan)
+        self.assertEqual(len(notes), 1)
+        self.assertIn("took 0.4 of CHEM from batch A", notes[0])
+        self.assertIn("beyond the 0.6 transferred for this WO", notes[0])
+
+    def test_pieces_are_rounded_to_the_row_precision_and_never_zero(self):
+        pieces = [
+            {"batch_no": "A", "qty": 0.996, "source": "transferred"},
+            {"batch_no": "B", "qty": 0.004, "source": "fallback"},
+        ]
+        self.assertEqual(
+            [(p["batch_no"], p["qty"]) for p in TB.round_pieces(pieces, 1.0, 2)], [("A", 1.0)]
+        )
+        pieces = [
+            {"batch_no": "A", "qty": 1 / 3, "source": "transferred"},
+            {"batch_no": "B", "qty": 2 / 3, "source": "transferred"},
+        ]
+        out = TB.round_pieces(pieces, 1.0, 2)
+        self.assertEqual([(p["batch_no"], p["qty"]) for p in out], [("A", 0.33), ("B", 0.67)])
+        self.assertAlmostEqual(sum(p["qty"] for p in out), 1.0)
+
     def test_nothing_in_the_csu_is_short(self):
         plan = TB.plan_item(1.0, [{"batch_no": "A", "qty": 1.0}], {}, [])
         self.assertEqual(plan["pieces"], [])
@@ -271,6 +300,32 @@ class TestOnlineManufacture(LedgerCase):
         self.assertEqual([b["batch_no"] for b in chem["batches"]], [own])
         self.assertTrue(chem["batches"][0]["transferred"])
 
+    def test_over_lot_take_from_the_own_batch_is_in_the_reconciliation(self):
+        """Own lot of 0.6 of a batch the CSU holds 2.0 of (the rest another plan's);
+        the plan needs 1.0 by its transfers, so 0.4 is past its lot and noted."""
+        item = self.item()
+        shared = self.batch(item, "SHARED")
+        self.receive(item, shared, 3, days_ago=7)
+        self.plan(self.wo1, {item: 1})
+        self.plan(self.wo2, {item: 1.4})
+        self.transfer(self.wo2, item, shared, 1.4, days_ago=6)
+        self.transfer(self.wo1, item, shared, 0.6, days_ago=5)
+        # Inflate the plan's need past its lot (a second, unbatched-looking row is the
+        # simplest real way): transfer 0.4 more of the same batch with no SLE batch.
+        mtm = self.transfer(self.wo1, item, shared, 0.4, days_ago=4)
+        frappe.db.sql(
+            """UPDATE `tabStock Ledger Entry` SET warehouse = %s
+               WHERE voucher_no = %s AND actual_qty > 0""",
+            (self.store, mtm.name),
+        )  # the 0.4 counts toward the need, but is not a lot in the CSU
+        se = self.manufacture(self.wo1)
+        self.assertEqual(self.consumed(se, item), {shared: 1.0})
+        rec = SS.build_manufacture_reconciliation(frappe.get_doc("Work Order", self.wo1), se)
+        self.assertTrue(
+            any("beyond the 0.6 transferred for this WO" in n for n in rec["batch_notes"]),
+            rec["batch_notes"],
+        )
+
     def test_two_transferred_batches_are_split(self):
         item = self.item()
         a, c = self.batch(item, "A"), self.batch(item, "C")
@@ -349,6 +404,25 @@ class TestOnlineManufacture(LedgerCase):
         row = next(r for r in se.items if r.item_code == item)
         self.assertTrue(row.serial_and_batch_bundle)
         self.assertFalse(row.batch_no)
+
+    def test_a_transfer_in_another_uom_is_consumed_in_stock_uom(self):
+        """Need is the transfer's stock qty, not its row qty in the transfer UOM."""
+        item = self.item()
+        own = self.batch(item, "OWN")
+        self.receive(item, own, 1, days_ago=6)
+        self.plan(self.wo1, {item: 0.5})
+        mtm = self.transfer(self.wo1, item, own, 0.5, days_ago=5)
+        # ERPNext's own WO transfer check compares units loosely, so a real
+        # Millilitre transfer can't be posted here; restate the posted row as one
+        # (same stock qty, 0.5 L = 500 ml), which is what a non-stock-UOM row is.
+        frappe.db.sql(
+            """UPDATE `tabStock Entry Detail` SET uom = 'Millilitre', qty = 500,
+               conversion_factor = 0.001 WHERE parent = %s""",
+            mtm.name,
+        )
+
+        se = self.manufacture(self.wo1)
+        self.assertEqual(self.consumed(se, item), {own: 0.5})
 
     def test_non_batch_item_is_one_plain_row(self):
         item = self.item(batched=False)

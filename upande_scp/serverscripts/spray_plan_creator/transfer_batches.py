@@ -80,7 +80,12 @@ def plan_item(
     pieces: dict[str, dict] = {}
     fallback: list[dict] = []
     legacy: list[dict] = []
+    over_lot: list[dict] = []
     transferred = {l.get("batch_no") for l in lots or [] if l.get("batch_no")}
+    lot_qty: dict[str, float] = {}
+    for l in lots or []:
+        if l.get("batch_no"):
+            lot_qty[l["batch_no"]] = lot_qty.get(l["batch_no"], 0.0) + flt(l.get("qty"))
 
     def take(batch_no, qty, source):
         nonlocal remaining
@@ -121,11 +126,15 @@ def plan_item(
         )
         if got > EPS and not is_own:
             fallback.append({"batch_no": batch_no, "qty": got})
+        elif got > EPS:
+            # Past this WO's own lot of the batch: may be another plan's share of it.
+            over_lot.append({"batch_no": batch_no, "qty": got, "lot": lot_qty[batch_no]})
 
     return {
         "pieces": list(pieces.values()),
         "fallback": fallback,
         "legacy": legacy,
+        "over_lot": over_lot,
         "short": remaining if remaining > EPS else 0.0,
     }
 
@@ -209,6 +218,13 @@ def batch_movements(item_code: str, warehouse: str) -> list[dict]:
     )
 
 
+def qty_precision() -> int:
+    """The precision a Manufacture row's qty is stored at."""
+    from frappe.model.meta import get_field_precision
+
+    return get_field_precision(frappe.get_meta("Stock Entry Detail").get_field("qty"))
+
+
 def is_batch_item(item_code: str) -> bool:
     return bool(frappe.get_cached_value("Item", item_code, "has_batch_no"))
 
@@ -237,6 +253,7 @@ def resolve_item(
         (b for b in order if is_placeholder(b)), None
     )
     plan = plan_item(need, lots, available, order, placeholder)
+    plan["pieces"] = round_pieces(plan["pieces"], need, qty_precision())
     plan["available_total"] = sum(available[b] for b in with_stock)
     plan["expiry"] = {b: (meta[b].expiry_date if b in meta else None) for b in with_stock}
     return plan
@@ -272,8 +289,38 @@ def placeholder_note(item_code: str, batch_no: str, qty: float) -> str:
     )
 
 
+def over_lot_note(item_code: str, batch_no: str, qty: float, lot: float) -> str:
+    return (
+        f"took {flt(qty):g} of {item_code} from batch {batch_no} beyond the "
+        f"{flt(lot):g} transferred for this WO"
+    )
+
+
+def round_pieces(pieces: list[dict], need: float, precision: int) -> list[dict]:
+    """Pieces at the row's qty precision, summing to ``need`` at that precision.
+
+    A piece that rounds to nothing is dropped (a zero-qty row is refused), and the
+    rounding residue goes to the largest piece so the total still equals the need —
+    otherwise the row (rounded by ERPNext) and its bundle would disagree.
+    """
+    out = []
+    for p in pieces or []:
+        q = flt(p["qty"], precision)
+        if q > 0:
+            out.append(dict(p, qty=q))
+    if out:
+        residue = flt(flt(need, precision) - sum(p["qty"] for p in out), precision)
+        if residue:
+            big = max(out, key=lambda p: p["qty"])
+            big["qty"] = flt(big["qty"] + residue, precision)
+            out = [p for p in out if p["qty"] > 0]
+    return out
+
+
 def notes_for(item_code: str, plan: dict) -> list[str]:
     notes = [fallback_note(item_code, f["batch_no"], f["qty"]) for f in plan.get("fallback") or []]
     for p in plan.get("legacy") or []:
         notes.append(placeholder_note(item_code, p["batch_no"], p["qty"]))
+    for p in plan.get("over_lot") or []:
+        notes.append(over_lot_note(item_code, p["batch_no"], p["qty"], p["lot"]))
     return notes

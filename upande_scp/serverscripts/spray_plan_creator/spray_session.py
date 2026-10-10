@@ -307,10 +307,12 @@ def register_csu_scan(
 
 def _transferred_into_csu(wo_name: str, wip: str) -> dict[str, float]:
     """item_code -> qty actually transferred into the CSU for THIS Work Order
-    (from its submitted Material Transfer for Manufacture entries)."""
+    (from its submitted Material Transfer for Manufacture entries), in stock UOM:
+    the manufacture rows are written in stock UOM and the batch lots are ledger
+    (stock UOM) quantities."""
     out: dict[str, float] = {}
     rows = frappe.db.sql(
-        """SELECT sed.item_code AS item, SUM(sed.qty) AS qty
+        """SELECT sed.item_code AS item, SUM(sed.transfer_qty) AS qty
            FROM `tabStock Entry Detail` sed
            JOIN `tabStock Entry` se ON se.name = sed.parent
            WHERE se.work_order = %s
@@ -743,7 +745,12 @@ def _consumed_batches(wo, manufacture_se) -> tuple[dict, list[str]]:
     if not bundles:
         return {}, []
     lots = TB.transferred_lots(wo.name, wip) if wip else []
-    own = {(l["item_code"], l["batch_no"]) for l in lots if l["batch_no"]}
+    own: dict[tuple, float] = {}
+    for l in lots:
+        if l["batch_no"]:
+            key = (l["item_code"], l["batch_no"])
+            own[key] = own.get(key, 0.0) + flt(l["qty"])
+    taken: dict[tuple, float] = {}
     unbatched = {l["item_code"] for l in lots if not l["batch_no"]}
     out: dict[str, list] = {}
     notes: list[str] = []
@@ -767,6 +774,12 @@ def _consumed_batches(wo, manufacture_se) -> tuple[dict, list[str]]:
             notes.append(TB.placeholder_note(ic, e.batch_no, qty))
         elif not transferred:
             notes.append(TB.fallback_note(ic, e.batch_no, qty))
+        else:
+            taken[(ic, e.batch_no)] = taken.get((ic, e.batch_no), 0.0) + qty
+    for (ic, batch_no), qty in taken.items():
+        extra = qty - own[(ic, batch_no)]
+        if extra > 1e-6:
+            notes.append(TB.over_lot_note(ic, batch_no, extra, own[(ic, batch_no)]))
     return out, notes
 
 

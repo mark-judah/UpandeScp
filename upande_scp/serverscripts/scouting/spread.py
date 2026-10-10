@@ -130,3 +130,26 @@ def get_house_clusters(crop, warehouse, observation, kind, stage=None, week=None
         lambda: house_clusters(crop, warehouse, observation, filters["kind"], filters["stage"], filters["week"]),
         force=str(force).strip().lower() in ("1", "true", "yes"),
     )
+
+
+def patch_note(crop, warehouse, kind, observation, iso_week, section_row, section_col) -> str:
+    """C5, for the digest: ``patch of 7 zones, grew`` for the largest patch of
+    this house-week (all stages) with a station in the hot section; ``""`` when
+    none lies there, for a House row (−1), or when the week was not scouted.
+    The word is the crop's station (zones / trees)."""
+    try:
+        cell = (int(section_row), int(section_col))
+    except (TypeError, ValueError):
+        return ""
+    week = normalize_week(iso_week)
+    if cell[0] < 0 or cell[1] < 0 or not week:
+        return ""
+    data = house_clusters(crop, warehouse, observation, kind, None, week)
+    if data["week"] != week:
+        return ""
+    grid = R.station_grid(warehouse)
+    word = STATION_WORDS.get(data["unit"], "zones")
+    for c in data["clusters"]:
+        if any(tuple(grid.get(s) or ()) == cell for s in c["stations"]):
+            return f"patch of {c['size']} {word}, {c['change'].lower()}"
+    return ""

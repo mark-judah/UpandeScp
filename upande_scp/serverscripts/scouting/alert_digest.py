@@ -19,6 +19,7 @@ import frappe
 from upande_scp.serverscripts.common import threshold_bands as B
 from upande_scp.serverscripts.dashboard_aggregates import _common
 from upande_scp.serverscripts.reports.send_chemical_progress_email import _email_for
+from upande_scp.serverscripts.scouting import spread
 from upande_scp.serverscripts.scouting import thresholds_check as TC
 
 DIGEST_HOUR = 17
@@ -108,14 +109,32 @@ def _figure(a) -> str:
     return f"{text} <span style='color:#777'>± {frappe.utils.escape_html(str(margin))}</span>"
 
 
+def _patch_suffix(a, memo) -> str:
+    """`` · patch of 7 zones, grew`` on a hot-spot row whose section holds part
+    of a patch (spread spec C5); ``""`` otherwise, or when it cannot be read —
+    the digest never fails over a patch."""
+    if a.get("alert_type") != B.HOT_SPOT:
+        return ""
+    key = (a.crop, a.warehouse, a.kind, a.observation, a.iso_week, a.get("section_row"), a.get("section_col"))
+    if key not in memo:
+        try:
+            memo[key] = spread.patch_note(*key)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "alert digest: patch note")
+            memo[key] = ""
+    return f" · {frappe.utils.escape_html(memo[key])}" if memo[key] else ""
+
+
 def render(alerts, day) -> str:
     """Compact HTML: one table, worst first. No emoji, no accent strips."""
     esc = frappe.utils.escape_html
     cell = "padding:4px 8px"
+    notes: dict = {}
     rows = "".join(
         "<tr>"
         f"<td style='{cell}'><b>{esc(a.action)}</b></td>"
-        f"<td style='{cell}'>{esc(a.warehouse)}{(' · ' + esc(a.section_label)) if a.get('section_label') else ''}</td>"
+        f"<td style='{cell}'>{esc(a.warehouse)}{(' · ' + esc(a.section_label)) if a.get('section_label') else ''}"
+        f"{_patch_suffix(a, notes)}</td>"
         f"<td style='{cell}'>{esc(a.observation)}{(' · ' + esc(a.stage)) if a.stage else ''}</td>"
         f"<td style='{cell};text-align:right'>{_figure(a)}</td>"
         f"<td style='{cell}'>{esc(a.reliability or '')}</td>"

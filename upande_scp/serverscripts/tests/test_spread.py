@@ -141,3 +141,37 @@ class TestHouseClusters(SpreadCase):
 
     def test_the_dashboard_cache_schema_moves_to_pin1(self):
         self.assertEqual(_common.K_DASH_AGG_SCHEMA, "pin1")
+
+
+class TestDigestNote(SpreadCase):
+    def setUp(self):
+        super().setUp()
+        SF.seed_cells(self.gh, SF.monday(31), SF.rect(0, 0, 2, 3))         # 6 zones in "first beds · front"
+
+    def test_a_hot_section_inside_a_patch_names_it(self):
+        self.assertEqual(S.patch_note("Rose", self.gh, "Pest", "Thrips", "2031-W31", 0, 0), "patch of 6 zones, new")
+        self.assertEqual(S.patch_note("Rose", self.gh, "Pest", "Thrips", "2031-W31", 2, 2), "")
+        self.assertEqual(S.patch_note("Rose", self.gh, "Pest", "Thrips", "2031-W30", 0, 0), "")
+        self.assertEqual(S.patch_note("Rose", self.gh, "Pest", "Thrips", "2031-W31", -1, -1), "")
+
+    def test_an_avocado_patch_says_trees(self):
+        block = F.avocado_block()
+        SF.seed_cells(block, SF.monday(31), SF.rect(0, 0, 2, 2), crop="Avocado", pest=SF.AVOCADO_PEST, block=True)
+        self.assertEqual(
+            S.patch_note("Avocado", block, "Pest", SF.AVOCADO_PEST, "2031-W31", 0, 0), "patch of 4 trees, new")
+
+    def test_the_digest_adds_the_note_to_hot_spot_rows_only(self):
+        from upande_scp.serverscripts.scouting import alert_digest as D
+
+        base = frappe._dict(
+            crop="Rose", farm=frappe.db.get_value("Warehouse", self.gh, "custom_farm"), warehouse=self.gh,
+            kind="Pest", observation="Thrips", stage="", iso_week="2031-W31", measure="Percentage", unit="%",
+            value=50.0, margin=None, reliability="Fair", sections_scouted=6, band="High", station_word="zone",
+        )
+        spot = frappe._dict(base, action="Hot spot", alert_type="Hot spot", section_row=0, section_col=0,
+                            section_label="first beds · front", sections_total=1, house_value=20.0)
+        house = frappe._dict(base, action="Alarming", alert_type="House", section_row=-1, section_col=-1,
+                             section_label="", sections_total=9)
+        html = D.render([house, spot], date(2031, 8, 3))
+        self.assertEqual(html.count("patch of 6 zones, new"), 1)
+        self.assertIn("first beds · front · patch of 6 zones, new", html)

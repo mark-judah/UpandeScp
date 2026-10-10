@@ -91,7 +91,7 @@ class AlertCase(unittest.TestCase):
 class TestEvaluate(AlertCase):
     def _found(self):
         return {f["warehouse"]: f for f in TC.evaluate("Rose", SUN_20)
-                if f["observation"] == "Thrips" and not f["stage"]}
+                if f["observation"] == "Thrips" and not f["stage"] and f["alert_type"] == "House"}
 
     def test_bands_map_to_alarming_spray_advised_and_scout_first(self):
         TF.seed_week(self.gh, TF.WEEK_20[0], crop="Rose")

@@ -21,6 +21,11 @@ alert is never touched (one whose plan died reopens). After each crop's
 findings, ``sweep`` resolves alerts no check will reach again (key no longer
 banded, or week older than the window).
 
+A **hot spot** (spec 2026-10-10-hot-spots) is a section of the 3 x 3 grid whose
+band is above the house's, at least Moderate, with >= 5 scouted stations. It is
+its own alert per (house, observation, stage, week, section), stay-alert only,
+sent to the Alarming audience, and re-announced only when its band rises.
+
 ``run_threshold_check`` (hourly) is gated by a Redis ``SET NX EX``: one run per
 50 minutes across workers. The 17:00 EAT digest (``alert_digest``) is the only
 email.
@@ -117,8 +122,10 @@ def _figure(weeks, wh, week, kind, obs, stage, spec):
 
 def evaluate(crop, today=None) -> list:
     """Findings for every house scouted in its latest ISO week of the window ×
-    every banded key. ``band`` "" (below Low) or "low" carries ``action`` None —
-    those findings resolve alerts rather than raise them."""
+    every banded key: the house finding (``alert_type`` House), then one
+    hot-spot finding per section with a figure (``_section_findings``). A
+    finding with ``action`` None resolves rather than raises: a house below
+    Moderate ("" or "low"), or a section that does not meet hot-spots H2."""
     crop = crop_catalog.canonical(crop)
     keys = sorted(_common.load_thresholds(crop)) if crop else []
     if not keys:
@@ -128,6 +135,7 @@ def evaluate(crop, today=None) -> list:
     kinds = tuple(sorted({kind for kind, _obs, _stage in keys}))
     weeks = R.StationWeeks.load(from_date, today.isoformat(), crop, None, kinds=kinds, lookback_days=0)
     station = _common.station_word(crop)
+    unit_word = B.section_unit(station)
     out = []
     for wh in weeks.warehouses():
         week, previous = weeks.latest_pair(wh)
@@ -141,16 +149,40 @@ def evaluate(crop, today=None) -> list:
             if value is None:
                 continue
             band = B.band_of(value, spec["low"], spec["mod"], spec["high"])
-            out.append({
+            house = {
                 "crop": crop, "warehouse": wh, "kind": kind, "observation": obs,
                 "stage": stage, "iso_week": week, "previous_week": previous,
+                "alert_type": B.HOUSE, "section_row": -1, "section_col": -1, "section_label": "",
                 "measure": spec["measure"],
                 "unit": B.unit_label(spec["measure"], station), "value": value,
                 "margin": fig.get("margin"), "reliability": fig.get("reliability") or "Low",
                 "sections_scouted": fig.get("sections_scouted") or 0,
                 "sections_total": fig.get("sections_total") or P.SECTIONS,
                 "band": band, "action": B.action_for(band, fig.get("reliability")),
-            })
+            }
+            out.append(house)
+            out.extend(_section_findings(house, fig, spec, unit_word))
+    return out
+
+
+def _section_findings(house, fig, spec, unit_word) -> list:
+    """Hot-spots H2 for each section of the house's figure, in the row's
+    measure (section ``pct`` for a Percentage, ``avg`` for a Count): no extra
+    query. A section that meets H2 raises ``Hot spot``. Every other section
+    with a figure is a clear reading (action None) that resolves its hot spot:
+    this week's always, older weeks' only when the section is Fair/Good
+    (n ≥ 5) or its week is over (3a's thin-sample rule, H6). A section without
+    a figure (< 3 stations scouted) yields nothing."""
+    out = []
+    for r in B.section_readings(house["value"], fig.get("sections"), spec, spec["measure"]):
+        out.append({
+            **house,
+            "alert_type": B.HOT_SPOT, "section_row": r["row"], "section_col": r["col"],
+            "section_label": B.section_label(r["row"], r["col"], unit_word),
+            "house_value": house["value"], "value": r["value"], "margin": None,
+            "reliability": r["reliability"], "sections_scouted": r["scouted"], "sections_total": 1,
+            "band": r["band"], "action": B.HOT_SPOT if r["hot"] else None,
+        })
     return out
 
 
@@ -270,24 +302,30 @@ def _clean_may_supersede(finding, now) -> bool:
 
 
 def upsert(finding, now=None, _retry=True):
-    """Write one finding. Returns the alert's name, or None for a finding below
-    Moderate (which resolves the key's open alerts up to its week)."""
+    """Write one finding. Returns the alert's name, or None for a finding with
+    no action (a house below Moderate, a section no longer meeting H2), which
+    resolves the key's open alerts up to its week. A house alert escalates by
+    its action (D5); a hot spot by its section's band, Moderate → High
+    (hot-spots H5). The two never share a key (``_key_params``)."""
     now = now or now_eat()
     params = _key_params(finding)
+    hot = params["type"] == B.HOT_SPOT
     action = finding["action"]
     if not action:
         _resolve(params, include_week=True, older=_clean_may_supersede(finding, now))
         return None
 
     name = _name_for(params)
+    band = B.BAND_LABEL[finding["band"]]
     fields = {
         # ``margin`` is a NOT NULL Float: a clustered figure (m < 2, margin
-        # None) is stored as 0 and read back as None by ``_margin``.
+        # None) or a hot spot (one section, no margin) is stored as 0 and read
+        # back as None by ``_margin``.
         "measure": finding["measure"], "value": finding["value"], "margin": finding["margin"] or 0,
         "reliability": finding["reliability"], "sections_scouted": finding["sections_scouted"],
-        "sections_total": finding["sections_total"], "band": B.BAND_LABEL[finding["band"]],
-        "action": action,
+        "sections_total": finding["sections_total"], "band": band, "action": action,
     }
+    level, level_field = (band, "notified_band") if hot else (action, "notified_action")
     existing = _existing(name, latest=not _retry)
     reopened = False
     if existing and existing.status == "Converted to plan":
@@ -302,17 +340,21 @@ def upsert(finding, now=None, _retry=True):
         reopened = True
     if existing:
         frappe.db.set_value(DOCTYPE, name, fields)
-        already, status = existing.notified_action, existing.status
+        already, status = existing.get(level_field), existing.status
     else:
         previous = _previous_live(params, finding.get("previous_week"))
         doc = frappe.get_doc({
             "doctype": DOCTYPE, "crop": finding["crop"],
             "farm": frappe.db.get_value("Warehouse", params["wh"], "custom_farm"),
             "warehouse": params["wh"], "kind": params["kind"], "observation": params["obs"],
-            "stage": params["stage"], "iso_week": params["week"], **fields,
+            "stage": params["stage"], "iso_week": params["week"],
+            "alert_type": params["type"], "section_row": params["row"], "section_col": params["col"],
+            "section_label": finding.get("section_label") or "",
+            **fields,
             "status": "Open", "raised_on": now.date(), "raised_at": eat_stamp(now),
-            # Carried across weeks: the same action again is not news (D5).
-            "notified_action": previous.notified_action if previous else None,
+            # Carried across weeks: the same action (house) or band (hot spot)
+            # again is not news (D5, H5).
+            level_field: previous.get(level_field) if previous else None,
         })
         try:
             doc.insert(ignore_permissions=True)
@@ -322,7 +364,7 @@ def upsert(finding, now=None, _retry=True):
             if not _retry:
                 return name
             return upsert(finding, now, _retry=False)
-        already, status = doc.notified_action, "Open"
+        already, status = doc.get(level_field), "Open"
         existing = frappe._dict(notified="")
 
     updates = {}
@@ -330,10 +372,11 @@ def upsert(finding, now=None, _retry=True):
         # A live breach lost its plan: land in the next digest.
         updates.update(raised_on=now.date(), raised_at=eat_stamp(now))
     if status == "Resolved":
-        # This week's figure dropped below Moderate and came back.
+        # This week's figure dropped out and came back.
         updates.update(status="Open", raised_on=now.date(), raised_at=eat_stamp(now))
-    if B.escalates(already, action):
-        updates.update(notified_action=action, raised_on=now.date(), raised_at=eat_stamp(now))
+    escalated = B.band_escalates(already, level) if hot else B.escalates(already, level)
+    if escalated:
+        updates.update({level_field: level, "raised_on": now.date(), "raised_at": eat_stamp(now)})
         if status == "Acknowledged":
             updates["status"] = "Open"
         sent = _notify(name, finding, action, PLAN_GONE if reopened else "")
@@ -364,23 +407,44 @@ def _notify(name, finding, action, note="") -> list:
     except Exception:
         frappe.log_error(frappe.get_traceback(), "threshold check: recipients")
         return []
-    stage = f" · {finding['stage']}" if finding["stage"] else ""
-    value = B.format_value(finding["value"], finding["unit"])
-    tail = " — the figure is unreliable, scout again before spraying" if action == B.SCOUT_FIRST else ""
-    subject = (
-        f"{action}: {finding['observation']}{stage} {value} in {finding['warehouse']} "
-        f"({finding['iso_week']}){tail}"
-    )
-    margin = f"±{finding['margin']}" if finding["margin"] is not None else "too clustered to judge"
-    body = (
-        f"{note + ' ' if note else ''}{subject}. {finding['crop']} · {margin} · "
-        f"{finding['sections_scouted']}/{finding['sections_total']} sections scouted · "
-        f"reliability {finding['reliability']}."
-    )
+    if finding.get("alert_type") == B.HOT_SPOT:
+        subject, body = _hot_spot_text(finding)
+    else:
+        stage = f" · {finding['stage']}" if finding["stage"] else ""
+        value = B.format_value(finding["value"], finding["unit"])
+        tail = " — the figure is unreliable, scout again before spraying" if action == B.SCOUT_FIRST else ""
+        subject = (
+            f"{action}: {finding['observation']}{stage} {value} in {finding['warehouse']} "
+            f"({finding['iso_week']}){tail}"
+        )
+        margin = f"±{finding['margin']}" if finding["margin"] is not None else "too clustered to judge"
+        body = (
+            f"{note + ' ' if note else ''}{subject}. {finding['crop']} · {margin} · "
+            f"{finding['sections_scouted']}/{finding['sections_total']} sections scouted · "
+            f"reliability {finding['reliability']}."
+        )
     return notifications.notify(
         users, subject, body, DOCTYPE, name, category="scouting",
         link=dashboard_link(finding["crop"]),
     )
+
+
+def _hot_spot_text(finding) -> tuple:
+    """Hot-spots §3: "Hot spot in <house>, <section>: Thrips 45% (house 12%) —
+    high infestation in this area, stay alert". No spray advice (H3)."""
+    stage = f" · {finding['stage']}" if finding["stage"] else ""
+    value = B.format_value(finding["value"], finding["unit"])
+    house = B.format_value(finding.get("house_value"), finding["unit"])
+    subject = (
+        f"Hot spot in {finding['warehouse']}, {finding['section_label']}: {finding['observation']}{stage} "
+        f"{value} (house {house}) — high infestation in this area, stay alert"
+    )
+    body = (
+        f"{subject}. {finding['crop']} · {finding['iso_week']} · {finding['sections_scouted']} stations "
+        f"scouted in this section · band {B.BAND_LABEL.get(finding['band'], '')} · "
+        "spraying follows the house's own alert."
+    )
+    return subject, body
 
 
 def dashboard_link(crop) -> str:
@@ -475,9 +539,25 @@ def sweep(crop, today=None, latest=None, actionable=None) -> int:
     return len(stale)
 
 
+def _live_hotspot_keys(crop) -> set:
+    """``finding_key``s (week-less) of the crop's Open / Acknowledged hot spots:
+    a clear section reading only matters where one is live."""
+    rows = frappe.get_all(
+        DOCTYPE, filters={"crop": crop, "alert_type": B.HOT_SPOT, "status": ["in", list(OPEN_STATES)]},
+        fields=["warehouse", "kind", "observation", "stage", "alert_type", "section_row", "section_col"],
+        limit_page_length=0,
+    )
+    return {_row_key(r) for r in rows}
+
+
 def check_crop(crop, today=None) -> dict:
     findings = evaluate(crop, today)
-    alerts = [n for n in (upsert(f) for f in findings) if n]
+    # Up to nine clear section readings per key per house: write only the ones
+    # that can resolve something, so the hourly run issues no blind UPDATEs.
+    live = _live_hotspot_keys(crop_catalog.canonical(crop) or crop)
+    todo = [f for f in findings
+            if f["alert_type"] == B.HOUSE or f["action"] or finding_key(f) in live]
+    alerts = [n for n in (upsert(f) for f in todo) if n]
     latest = {f["warehouse"]: f["iso_week"] for f in findings}
     actionable = {finding_key(f) for f in findings if f["action"]}
     return {"findings": len(findings), "alerts": len(alerts), "swept": sweep(crop, today, latest, actionable)}
@@ -534,12 +614,12 @@ def _gms(farm, crop) -> list:
 
 
 def recipients_for(farm, crop, action) -> list:
-    """D4. Alarming → the farm's Spray Plan Creators + Spray Supervisors, or its
+    """D4. Alarming and Hot spot → the farm's Spray Plan Creators + Spray Supervisors, or its
     crop-scoped GMs when both rosters are empty (somebody must hear). Spray
     advised / Scout first → those + the farm's Spray Plan Approvers + the
     crop-scoped SCP General Managers."""
     base = _roster("Farm Spray Plan Creator", farm) + _roster("Farm Spray Supervisor", farm)
-    if action == B.ALARMING:
+    if action in (B.ALARMING, B.HOT_SPOT):
         users = base or _gms(farm, crop)
     else:
         users = base + _roster("Farm Spray Plan Approver", farm) + _gms(farm, crop)

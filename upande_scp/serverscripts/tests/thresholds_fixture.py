@@ -101,3 +101,22 @@ def ensure_user(email) -> str:
         }).insert(ignore_permissions=True)
         frappe.db.commit()
     return email
+
+
+ALL_SECTIONS = frozenset((r, c) for r in range(3) for c in range(3))
+
+
+def seed_hot_section(warehouse, date, *, crop="Rose", hot=(0, 0), hot_infested=4, others=None,
+                     others_infested=0, per_section=5, pest="Thrips", stage="Adult", block=False) -> list:
+    """`per_section` stations scouted in section `hot` (the first `hot_infested`
+    carry `pest`) and in each of `others` (default: the other 8; the first
+    `others_infested` carry it). Same stations on every call, so a later call
+    with a larger count only adds infested stations."""
+    others = (ALL_SECTIONS - {tuple(hot)}) if others is None else set(others)
+    names = seed_week(warehouse, date, crop=crop, per_section=per_section, infested_per_section=hot_infested,
+                      pest=pest, stage=stage, sections={tuple(hot)}, block=block)
+    if others:
+        names += seed_week(warehouse, date, crop=crop, per_section=per_section,
+                           infested_per_section=others_infested, pest=pest, stage=stage,
+                           sections=others, block=block)
+    return names

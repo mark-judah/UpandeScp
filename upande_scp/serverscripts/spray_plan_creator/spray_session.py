@@ -869,8 +869,12 @@ def assert_can_manufacture(wo, user: str | None = None) -> None:
 
 
 @frappe.whitelist()
-def manufacture_tank_mix(work_order: str, posting_moment=None) -> dict[str, Any]:
+def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
     """Confirm the tank mix — for the plan's supervisor (see ``can_manufacture``).
+
+    Posts at now. There is deliberately no client-supplied posting moment here: a
+    back-dated mix comes only from the offline replay, which clamps the moment
+    (``offline_session.resolve_moments``) and calls ``_manufacture_tank_mix``.
 
     The caller is checked before any stock work: the Manufacture's submit runs
     elevated (see ``_as_administrator``), so this check is what stands in front
@@ -882,7 +886,7 @@ def manufacture_tank_mix(work_order: str, posting_moment=None) -> dict[str, Any]
     if not frappe.db.exists("Work Order", work_order):
         frappe.throw(f"Work Order {work_order} not found.")
     assert_can_manufacture(frappe.get_doc("Work Order", work_order))
-    return _manufacture_tank_mix(work_order, posting_moment=posting_moment)
+    return _manufacture_tank_mix(work_order)
 
 
 def _manufacture_tank_mix(work_order: str, posting_moment=None) -> dict[str, Any]:

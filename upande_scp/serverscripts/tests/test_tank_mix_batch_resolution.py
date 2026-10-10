@@ -545,6 +545,20 @@ class TestWhoMayManufacture(LedgerCase):
         with self.assertRaises(frappe.PermissionError):
             SS.manufacture_tank_mix(self.wo1)
 
+    def test_the_public_endpoint_ignores_a_client_posting_moment(self):
+        """I2: only the offline replay may back-date, and it clamps the moment."""
+        import inspect
+
+        self.assertNotIn(
+            "posting_moment", inspect.signature(SS.manufacture_tank_mix).parameters
+        )
+        frappe.set_user(self.user(["SCP General Manager"]))
+        frappe.call(
+            "upande_scp.serverscripts.spray_plan_creator.spray_session.manufacture_tank_mix",
+            work_order=self.wo1, posting_moment="2020-01-01 00:00:00",
+        )
+        self.made.assert_called_once_with(self.wo1)
+
     def test_a_general_manager_may(self):
         frappe.set_user(self.user(["SCP General Manager"]))
         self.assertEqual(SS.manufacture_tank_mix(self.wo1), {"ok": True})
@@ -593,6 +607,29 @@ class TestWhoMayManufacture(LedgerCase):
         clerk = self.user(["SCP Scout"])
         self.assertEqual(self._sync_as(clerk, recorder=sup), {"synced": True})
         self.made.assert_called_once()
+
+    def test_a_recorders_token_resent_for_another_plan_is_refused(self):
+        """I1: a GM's/supervisor's stale token must not authorise a different plan."""
+        gm = self.user(["SCP General Manager"])
+        clerk = self.user(["SCP Scout"])
+        token = f"_ttmb-{frappe.generate_hash(length=6)}"
+        frappe.set_user(gm)
+        frappe.get_doc({"doctype": OS.TOKEN, "token": token, "work_order": self.wo2,
+                        "status": "Refused"}).insert(ignore_permissions=True)
+        frappe.set_user(clerk)
+        with self.assertRaises(frappe.PermissionError):
+            OS.sync_spray_session({"token": token, "work_order": self.wo1, "scans": []})
+        self.made.assert_not_called()
+        frappe.set_user("Administrator")
+        self.assertEqual(frappe.db.get_value(OS.TOKEN, token, "work_order"), self.wo2)
+
+    def test_a_token_is_never_retargeted_to_another_plan(self):
+        token = f"_ttmb-{frappe.generate_hash(length=6)}"
+        frappe.get_doc({"doctype": OS.TOKEN, "token": token, "work_order": self.wo2,
+                        "status": "Refused"}).insert(ignore_permissions=True)
+        with self.assertRaises(frappe.PermissionError):
+            OS._upsert_token(token, {"work_order": self.wo1}, {"resolved": {}})
+        self.assertEqual(frappe.db.get_value(OS.TOKEN, token, "work_order"), self.wo2)
 
     def test_offline_replay_by_a_plain_user_is_refused(self):
         clerk = self.user(["SCP Scout"])

@@ -369,7 +369,12 @@ class TestEndpointSignatures(unittest.TestCase):
 
         from upande_scp.serverscripts.spray_plan_creator import spray_session as SS
 
+        # The replay's internal entry takes the (clamped) moment; the public endpoint
+        # deliberately does not, so a client cannot back-date a mix.
         self.assertIn(
+            "posting_moment", inspect.signature(SS._manufacture_tank_mix).parameters
+        )
+        self.assertNotIn(
             "posting_moment", inspect.signature(SS.manufacture_tank_mix).parameters
         )
 

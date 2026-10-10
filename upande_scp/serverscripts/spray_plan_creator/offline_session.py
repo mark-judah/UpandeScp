@@ -408,22 +408,38 @@ def sync_spray_session(payload) -> dict:
 def _assert_replay_allowed(token: str, work_order: str) -> None:
 	"""Whoever recorded the session must be allowed to confirm its tank mix.
 
-	The replay posts the Manufacture elevated, so this is what stands in front of it,
+	The replay posts the Manufacture with an elevated submit, so this is what stands in front of it,
 	checked before any stock work. The syncing user passes if they may manufacture the
 	plan themselves; otherwise the token's owner — the user who first pushed this
 	session, i.e. the supervisor's handset — is checked the same way, so a queued sync
 	re-pushed later from another login still goes through. Nothing in the payload is
 	trusted for this: an employee id there could name anyone.
 	"""
+	stored = frappe.db.get_value(TOKEN, token, ["work_order", "owner"], as_dict=True)
+	_refuse_retarget(token, stored, work_order)
 	if not frappe.db.exists("Work Order", work_order):
 		return  # preflight refuses it with a proper message
 	wo = frappe.get_doc("Work Order", work_order)
 	if SS.can_manufacture(wo, frappe.session.user):
 		return
-	recorder = frappe.db.get_value(TOKEN, token, "owner")
-	if recorder and SS.can_manufacture(wo, recorder):
+	# The recorder's authority is for the plan the session was recorded against, and
+	# nothing else: a token is bound to its Work Order (see `_refuse_retarget`).
+	if stored and stored.work_order == work_order and stored.owner and SS.can_manufacture(
+		wo, stored.owner
+	):
 		return
 	SS.assert_can_manufacture(wo, frappe.session.user)
+
+
+def _refuse_retarget(token: str, stored, work_order: str) -> None:
+	"""A session token belongs to the plan it was first pushed for. Re-sending it with a
+	different plan would borrow its recorder's authority for that plan."""
+	if stored and stored.get("work_order") and stored.get("work_order") != work_order:
+		frappe.throw(
+			f"Session {token} was recorded for {stored.get('work_order')}, not {work_order}; "
+			"it cannot be applied to another plan.",
+			frappe.PermissionError,
+		)
 
 
 def _replay_scans(payload: dict, work_order: str) -> None:
@@ -494,6 +510,7 @@ def _upsert_token(token: str, payload: dict, check: dict):
 
 	if frappe.db.exists(TOKEN, token):
 		doc = frappe.get_doc(TOKEN, token)
+		_refuse_retarget(token, {"work_order": doc.work_order}, work_order)
 	else:
 		doc = frappe.new_doc(TOKEN)
 		doc.token = token

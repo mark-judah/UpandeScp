@@ -221,7 +221,7 @@ class TestShadingFollowsTheFigure(unittest.TestCase):
 
 class TestThresholdAndAreaLoading(unittest.TestCase):
 	def test_blocks_without_an_area_are_absent_not_zero(self):
-		"""`_block_areas` must omit them, so `_band` sees None and refuses to judge
+		"""`_block_areas` must omit them, so `_per_hectare` sees None and refuses to divide
 		rather than dividing by nought."""
 		frappe.set_user("Administrator")
 		blocks = R._blocks_for_farm("Lokitela")

@@ -28,7 +28,7 @@ import {
 import { HEADER_PILL } from "@/components/header-controls";
 import { BlockSprayPlan } from "./BlockSprayPlan";
 import { BAND_COLOR, BAND_LABEL, bandRank, judgedLabel, perHectare, type Band, type HouseFigure } from "@/lib/pest-bands";
-import { fetchHouseFigures } from "@/lib/threshold-figures-api";
+import { useHouseFigures } from "@/hooks/use-house-figures";
 import { ALL, MapHeader, type MapFilterValue } from "../maps/MapHeader";
 import {
   fetchBlockAreas,
@@ -118,8 +118,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   const [showBoundary, setShowBoundary] = useState(false);
   const [showTrees, setShowTrees] = useState(true);
   const [planOpen, setPlanOpen] = useState(false);
-  // The server's per-pest figures for the selected block, and block areas for count per hectare.
-  const [houseFigs, setHouseFigs] = useState<Record<string, HouseFigure>>({});
+  // Block areas, for count per hectare.
   const [blockAreas, setBlockAreas] = useState<Record<string, number>>({});
   // Which pests this plan is aimed at. The rose planner asks the same question
   // — what are we spraying for — and the answer rides onto the plan's scope.
@@ -269,20 +268,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
 
   // Each pest of the selected block, judged on the server exactly as the
   // alerts and the weekly sheet judge it (thresholds D8).
-  const selectedBlock = selectedAgg?.block ?? null;
-  useEffect(() => {
-    if (!selectedBlock) {
-      setHouseFigs({});
-      return;
-    }
-    let cancelled = false;
-    void fetchHouseFigures(filters.crop, selectedBlock, filters.from, filters.to).then((f) => {
-      if (!cancelled) setHouseFigs(f);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedBlock, filters.crop, filters.from, filters.to]);
+  const houseFigs = useHouseFigures(filters.crop, selectedAgg?.block ?? null, filters.from, filters.to);
 
   const onMapReady = (map: maplibregl.Map) => {
     mapRef.current = map;

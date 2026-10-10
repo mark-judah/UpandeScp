@@ -213,7 +213,7 @@ def _block_areas(blocks: list[str]) -> dict:
 	has surfaced the same figure for the dashboards all along.
 
 	A block with no area is returned absent rather than as zero — see
-	`_band`. On Lokitela all 78 blocks carry one (213.27 ha); Endebess's 64
+	`_per_hectare`. On Lokitela all 78 blocks carry one (213.27 ha); Endebess's 64
 	coffee blocks carry none, which is a setup gap and has to read as one.
 	"""
 	if not blocks:

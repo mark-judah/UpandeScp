@@ -31,7 +31,7 @@ export interface ScoutCaptureValues {
 export function maxCountError(value: number): string | null {
   return Number.isInteger(value) && value >= MAX_COUNT_MIN && value <= MAX_COUNT_MAX
     ? null
-    : "Max count must be a whole number from 1 to 10000.";
+    : "Max count per observation must be a whole number from 1 to 10000.";
 }
 
 export function ScoutCaptureCard({
@@ -106,9 +106,12 @@ export function ScoutCaptureCard({
               )
             }
             aria-invalid={error ? true : undefined}
+            aria-describedby="max_count_per_observation_help"
             className="h-9 w-32 tabular-nums"
           />
           <p
+            id="max_count_per_observation_help"
+            role={error ? "alert" : undefined}
             className={
               error
                 ? "text-[0.65rem] text-destructive leading-snug"

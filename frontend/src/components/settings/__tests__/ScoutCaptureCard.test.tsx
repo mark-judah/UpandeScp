@@ -61,7 +61,8 @@ describe("maxCountError", () => {
   it("takes whole numbers from 1 to 10000 only", () => {
     expect([1, 15, 10000].map(maxCountError)).toEqual([null, null, null]);
     for (const bad of [0, 10001, -1, 2.5, Number.NaN]) {
-      expect(maxCountError(bad)).toMatch(/whole number from 1 to 10000/);
+      // The server's spec string, word for word.
+      expect(maxCountError(bad)).toBe("Max count per observation must be a whole number from 1 to 10000.");
     }
   });
 });
@@ -99,7 +100,10 @@ describe("SprayPlanTab scouting capture", () => {
     const max = screen.getByLabelText(/max count per observation/i);
     await userEvent.clear(max);
     await userEvent.type(max, "0");
-    expect(screen.getByText(/whole number from 1 to 10000/)).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Max count per observation must be a whole number from 1 to 10000.",
+    );
+    expect(max).toHaveAccessibleDescription(/whole number from 1 to 10000/);
     expect(screen.getByRole("button", { name: /save settings/i })).toBeDisabled();
     await userEvent.clear(max);
     await userEvent.type(max, "10001");

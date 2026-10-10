@@ -193,6 +193,75 @@ def figures(grid: dict, scouted, infested, scouted_counts=None):
     }
 
 
+def count_figures(grid: dict, scouted, counts, scouted_counts=None):
+    """Average count per scouted station for one house, ISO week and observation
+    (thresholds spec §2, D2).
+
+    ``counts`` is ``{station: total count}``; a scouted station absent from it
+    counted 0. Per section j with n_j ≥ MIN_SECTION_N scouted: a_j = Σcount_j / n_j.
+    ``value`` is the mean of the a_j over those m sections. The margin is
+    1.96 · sqrt(s²/m + v/N), with s² the sample variance of the a_j, N = Σ n_j over
+    them and v = max(value, 1) — a Poisson floor, so an all-zero sample never
+    reads ±0. m < 2 → margin None ("too clustered to judge"); m = 0 → the raw
+    Σcount / scouted. Reliability is ``reliability(m, margin / max(value, 1))``:
+    the percentage rule applied to the margin relative to the figure.
+
+    Same shape as ``figures`` plus ``value`` (1 dp); ``prevalence`` is None.
+    """
+    scouted = set(scouted or ())
+    if not scouted:
+        return None
+    per = {s: float(c or 0) for s, c in (counts or {}).items() if s in scouted}
+    raw = sum(per.values()) / len(scouted)
+    infested = sum(1 for c in per.values() if c > 0)
+    if not grid:
+        return {
+            "stations": 0, "scouted": len(scouted), "infested": infested,
+            "coverage": None, "raw": round(raw, 1), "value": None, "prevalence": None,
+            "margin": None, "sections_scouted": 0, "sections_total": SECTIONS,
+            "reliability": "Low", "reason": NO_STATIONS, "sections": [],
+        }
+    n_by = scouted_counts if scouted_counts is not None else section_counts(grid, scouted)
+    sums = [0.0] * SECTIONS
+    for station, c in per.items():
+        pos = grid.get(station)
+        if pos is not None:
+            sums[pos[0] * GRID + pos[1]] += c
+    avgs, sections, n_total = [], [], 0
+    for j in range(SECTIONS):
+        n = n_by[j]
+        avg = None
+        if n >= MIN_SECTION_N:
+            avg = sums[j] / n
+            avgs.append(avg)
+            n_total += n
+        sections.append({
+            "row": j // GRID, "col": j % GRID, "scouted": n,
+            "total": round(sums[j], 1), "avg": None if avg is None else round(avg, 1),
+        })
+    m = len(avgs)
+    value = sum(avgs) / m if m else raw
+    margin = None
+    if m >= 2:
+        s2 = sum((a - value) ** 2 for a in avgs) / (m - 1)
+        margin = Z95 * math.sqrt(s2 / m + max(value, 1.0) / n_total)
+    return {
+        "stations": len(grid),
+        "scouted": len(scouted),
+        "infested": infested,
+        "coverage": _pct(sum(n_by) / len(grid)),
+        "raw": round(raw, 1),
+        "value": round(value, 1),
+        "prevalence": None,
+        "margin": None if margin is None else round(margin, 1),
+        "sections_scouted": m,
+        "sections_total": SECTIONS,
+        "reliability": reliability(m, None if margin is None else margin / max(value, 1.0)),
+        "reason": CLUSTERED if m < 2 else None,
+        "sections": sections,
+    }
+
+
 def combine(figs):
     """Scope-wide figures from per-house ones (several greenhouses / blocks).
 

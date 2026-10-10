@@ -390,6 +390,9 @@ scheduler_events = {
         # Thresholds → Scouting Alerts → in-app notifications (category
         # "scouting", never email). Self-gated: one run per 50 min across workers.
         "upande_scp.serverscripts.scouting.thresholds_check.run_threshold_check",
+        # The day's scouting alerts, one email per person, at 17:00 EAT
+        # (gated on Africa/Nairobi, whatever the site time zone; once per day).
+        "upande_scp.serverscripts.scouting.alert_digest.send_alert_digest",
     ],
 }
 

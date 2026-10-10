@@ -73,8 +73,8 @@ class TestOverviewPrevalence(unittest.TestCase):
         self.assertEqual(cell["reason"], "no stations set up")
 
     def test_aggregate_keys_carry_the_stg1_schema(self):
-        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "cov1")
-        self.assertIn(":cov1:overview:", _common._build_key("overview", {"crop": "Rose"}))
+        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "dq1")
+        self.assertIn(":dq1:overview:", _common._build_key("overview", {"crop": "Rose"}))
 
 
 class TestGreenhouseDetailPrevalence(unittest.TestCase):

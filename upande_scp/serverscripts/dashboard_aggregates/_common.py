@@ -338,6 +338,7 @@ K_DASH_AGG_PREFIX = "scp:dash_agg"
 # entries count under their greenhouse's crop and off-crop pests/diseases drop out.
 # "thr1": severity is judged in the row's measure (Percentage or Count) by
 # threshold_bands.band_of, so a payload cached under "prev1" may be mis-classed.
+# "dq1": the quality aggregate (data quality spec, roadmap item 7) joins the namespace.
 # "cov1": heatmap bed coverage counts active beds only (bedsRetiredScouted
 # apart), so no house reads over 100%.
 # "stg1": pest prevalence counts live stages only and payloads carry ``signs`` /
@@ -347,7 +348,7 @@ K_DASH_AGG_PREFIX = "scp:dash_agg"
 # "hot1": greenhouse_detail sections carry ``hot`` (hot-spots spec H7).
 # "prev1": percentages are station prevalence per ISO week over stations SCOUTED
 # (common/prevalence.py), and payloads carry margin / sections / reliability.
-K_DASH_AGG_SCHEMA = "cov1"
+K_DASH_AGG_SCHEMA = "dq1"
 # Versioning the key with K_SCOUTING_PAYLOAD_VERSION was the original design,
 # but every Scouting Entry insert/update bumps that stamp via
 # cache_utils.invalidate_on_change — on a busy site (mobile syncs) the

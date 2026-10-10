@@ -266,8 +266,8 @@ class TestSignsOnPayloads(StageCase):
         self.assertEqual([r for r in out["signsByStation"] if r[2] == aphids], [])
 
     def test_aggregate_keys_carry_the_stg1_schema(self):
-        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "cov1")
-        self.assertIn(":cov1:pests:", _common._build_key("pests", {"crop": "Rose"}))
+        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "dq1")
+        self.assertIn(":dq1:pests:", _common._build_key("pests", {"crop": "Rose"}))
 
 
 class TestVarieties(StageCase):

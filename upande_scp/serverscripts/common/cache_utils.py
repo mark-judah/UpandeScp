@@ -76,6 +76,9 @@ K_CROPS_SCOUTED = "scp:crops_scouted_v1"
 # One site-wide entry (see common/crop_catalog.py); built with raw SQL so no
 # user's permission scope is ever stored in it.
 K_CROP_CATALOG = "scp:crop_catalog_v1"
+#: Stage roles (Life stage / Form / Sign), master weights and per-crop weight
+#: overrides — common/stage_roles.py (stage & variety spec S1–S6).
+K_STAGE_ROLES = "scp:stage_roles_v1"
 # Pest / Plant Disease legend colours (the per-name hex stored on the
 # doctype). Cached separately from the heavy scouting payload so a colour
 # tweak invalidates instantly without rebuilding the per-month entries.

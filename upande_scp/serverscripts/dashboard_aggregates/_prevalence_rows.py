@@ -11,6 +11,8 @@ A station is ``Scouting Entry.zone`` (a rose ``Zone``) or, when the entry is on 
 block, ``Scouting Entry.tree`` (an avocado ``Orchard Tree``). An entry with
 neither (bed-only legacy rows) places no station and stays out of prevalence.
 
+Pest rows carry a stage **role** (``common/stage_roles``): an all-stage pest figure counts Life stage and Form rows only (``LIVE``), and ``SIGNS`` reads the Sign rows on their own (stage & variety S3, S4).
+
 Week choice (spec D4): per house, the latest ISO week with scouting dated inside
 the window, and the most recent scouted week before it — looked up to
 ``PREVIOUS_LOOKBACK_DAYS`` before the window (snapped back to that ISO Monday),
@@ -27,6 +29,7 @@ import frappe
 
 from upande_scp.serverscripts.common import cache_utils
 from upande_scp.serverscripts.common import prevalence as P
+from upande_scp.serverscripts.common import stage_roles
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     obs_filter,
     parent_filter_conditions,
@@ -35,6 +38,15 @@ from upande_scp.serverscripts.dashboard_aggregates._common import (
 #: "any value" for the observation / stage / section selectors.
 ANY = None
 PREVIOUS_LOOKBACK_DAYS = 35
+#: Role selectors for an all-stage pest figure (stage & variety S3, S4).
+LIVE = "live"     # Life stage + Form rows: the live pest (the default)
+SIGNS = "signs"   # Sign rows: damage, webs, ragged margins
+_SIGN_ROLES = frozenset({stage_roles.SIGN})
+
+
+def _weights_key(weights):
+    """A hashable memo key for ``weights`` (``((stage, w), …)`` or a dict)."""
+    return tuple(sorted(dict(weights).items())) if weights else None
 
 _WH = "COALESCE(NULLIF(se.block, ''), se.greenhouse)"
 _STATION = "CASE WHEN COALESCE(se.block, '') <> '' THEN se.tree ELSE se.zone END"
@@ -267,11 +279,15 @@ def _fetch_infested(where: str, params: dict, kinds, pairs=None) -> list:
 class StationWeeks:
     """Scouted / infested station sets per (house, ISO week) and the figures over them."""
 
-    def __init__(self, scouted_rows, infested_rows, grid_loader=None):
+    def __init__(self, scouted_rows, infested_rows, grid_loader=None, roles=None):
         """``scouted_rows`` / ``infested_rows`` are dicts (``wh``, ``station``,
         ``yw``, ``in_win`` / ``kind``, ``obs``, ``stage``, ``section``) — the
-        hand-built shape the pure tests use. ``load`` fills the sets directly."""
+        hand-built shape the pure tests use. ``load`` fills the sets directly.
+        ``roles`` is ``{stage: role}``; None (the hand-built path) is the S2 seed,
+        and ``load`` passes the Stage master's."""
         self._grid_loader = grid_loader
+        self._roles = dict(stage_roles.SEED_ROLES) if roles is None else dict(roles)
+        self._role_memo: dict = {}
         self._scouted: dict = {}    # (wh, week) -> {station}
         self._in_window: dict = {}  # wh -> {week with scouting inside the window}
         self._all_weeks: dict = {}  # wh -> {every scouted week scanned}
@@ -319,7 +335,7 @@ class StationWeeks:
 
     @classmethod
     def load(cls, from_date, to_date, crop, scope, kinds=("pest", "disease"),
-             lookback_days=PREVIOUS_LOOKBACK_DAYS, grid_loader=None, weeks=LATEST):
+             lookback_days=PREVIOUS_LOOKBACK_DAYS, grid_loader=None, weeks=LATEST, roles=None):
         """Three scans, all through piece 1's crop scoping:
 
         1. house-weeks (no station column) over the lookback + window → which
@@ -334,7 +350,8 @@ class StationWeeks:
         ``combined_latest`` are meaningful; the per-week helpers need ``WINDOW``."""
         start = lookback_start(from_date, lookback_days)
         where, params = parent_filter_conditions(start, to_date, crop, scope)
-        out = cls([], [], grid_loader=grid_loader)
+        out = cls([], [], grid_loader=grid_loader,
+                  roles=stage_roles.role_map() if roles is None else roles)
         house_weeks: dict = {}
         for wh, yw, in_win in _fetch_house_weeks(where, params, from_date):
             wh = (wh or "").strip()
@@ -404,7 +421,22 @@ class StationWeeks:
         """The stations scouted at ``wh`` that ISO week (a copy)."""
         return set(self._scouted.get((wh, week), ()))
 
-    def infested_set(self, wh, week, kind, obs=ANY, stage=ANY, section=ANY) -> set:
+    def _wanted_roles(self, kind, stage, role):
+        """S3/S4: an all-stage pest figure reads Life stage + Form rows (``LIVE``)
+        or Sign rows (``SIGNS``). A named stage, or a disease, reads its rows
+        whatever their role — a stage-specific figure on a Sign measures the sign."""
+        if kind != "pest" or stage is not ANY:
+            return None
+        return _SIGN_ROLES if role == SIGNS else stage_roles.LIVE_ROLES
+
+    def _role(self, stage) -> str:
+        role = self._role_memo.get(stage)
+        if role is None:
+            role = self._role_memo[stage] = stage_roles.role_of(stage, self._roles)
+        return role
+
+    def infested_set(self, wh, week, kind, obs=ANY, stage=ANY, section=ANY, role=LIVE) -> set:
+        wanted = self._wanted_roles(kind, stage, role)
         out: set = set()
         for (k, o, g, s), stations in self._infested.get((wh, week), {}).items():
             if k != kind:
@@ -415,11 +447,13 @@ class StationWeeks:
                 continue
             if section is not ANY and s != section:
                 continue
+            if wanted is not None and self._role(g) not in wanted:
+                continue
             out |= stations
         return out
 
-    def figures(self, wh, week, kind, obs=ANY, stage=ANY, section=ANY):
-        key = (wh, week, kind, obs, stage, section)
+    def figures(self, wh, week, kind, obs=ANY, stage=ANY, section=ANY, role=LIVE):
+        key = (wh, week, kind, obs, stage, section, role)
         if key not in self._memo:
             scouted = self._scouted.get((wh, week))
             fig = None
@@ -429,7 +463,7 @@ class StationWeeks:
                     self._counts[(wh, week)] = P.section_counts(grid, scouted)
                 fig = P.figures(
                     grid, scouted,
-                    self.infested_set(wh, week, kind, obs, stage, section),
+                    self.infested_set(wh, week, kind, obs, stage, section, role),
                     scouted_counts=self._counts[(wh, week)],
                 )
                 if fig is not None:
@@ -437,26 +471,26 @@ class StationWeeks:
             self._memo[key] = fig
         return self._memo[key]
 
-    def latest(self, wh, kind, obs=ANY, stage=ANY, section=ANY):
+    def latest(self, wh, kind, obs=ANY, stage=ANY, section=ANY, role=LIVE):
         latest, previous = self.latest_pair(wh)
         if latest is None:
             return None
-        fig = self.figures(wh, latest, kind, obs, stage, section)
+        fig = self.figures(wh, latest, kind, obs, stage, section, role)
         if fig is None:
             return None
-        prev = self.figures(wh, previous, kind, obs, stage, section) if previous else None
+        prev = self.figures(wh, previous, kind, obs, stage, section, role) if previous else None
         return {**fig, "prev": prev["prevalence"] if prev else None}
 
-    def previous(self, wh, kind, obs=ANY, stage=ANY, section=ANY):
+    def previous(self, wh, kind, obs=ANY, stage=ANY, section=ANY, role=LIVE):
         _latest, previous = self.latest_pair(wh)
-        return self.figures(wh, previous, kind, obs, stage, section) if previous else None
+        return self.figures(wh, previous, kind, obs, stage, section, role) if previous else None
 
-    def combined(self, week, kind, obs=ANY, stage=ANY, section=ANY):
+    def combined(self, week, kind, obs=ANY, stage=ANY, section=ANY, role=LIVE):
         """Scope-wide figures for one ISO week: every house scouted that week,
         station-weighted (``prevalence.combine``). ``None`` when no house has a
         figure that week."""
         return P.combine([
-            self.figures(wh, week, kind, obs, stage, section)
+            self.figures(wh, week, kind, obs, stage, section, role)
             for wh in self.warehouses_in(week)
         ])
 
@@ -481,13 +515,13 @@ class StationWeeks:
             out[wh] = per
         return out
 
-    def combined_latest(self, kind, obs=ANY, stage=ANY, section=ANY):
+    def combined_latest(self, kind, obs=ANY, stage=ANY, section=ANY, role=LIVE):
         """Scope-wide figures: every house's latest week, station-weighted."""
         houses = self.warehouses()
-        out = P.combine([self.latest(wh, kind, obs, stage, section) for wh in houses])
+        out = P.combine([self.latest(wh, kind, obs, stage, section, role) for wh in houses])
         if out is None:
             return None
-        prev = P.combine([self.previous(wh, kind, obs, stage, section) for wh in houses])
+        prev = P.combine([self.previous(wh, kind, obs, stage, section, role) for wh in houses])
         return {**out, "prev": prev["prevalence"] if prev else None}
 
     # ── counts (thresholds spec §2) ────────────────────────────────────────
@@ -496,9 +530,13 @@ class StationWeeks:
         """Observations of ``kind`` recorded at ``wh`` that ISO week, sorted."""
         return sorted({o for (k, o, _g, _s) in self._infested.get((wh, week), {}) if k == kind and o})
 
-    def station_counts(self, wh, week, kind, obs=ANY, stages=ANY, section=ANY) -> dict:
-        """``{station: Σcount}`` that week; ``stages`` (a frozenset) keeps only
-        those stages — a Count row sums its counted stages, never its ticks."""
+    def station_counts(self, wh, week, kind, obs=ANY, stages=ANY, section=ANY, weights=None) -> dict:
+        """``{station: Σ weight × count}`` that week; ``stages`` (a frozenset)
+        keeps only those stages — a Count row sums its counted stages, never its
+        ticks. ``weights`` (``((stage, w), …)`` or a dict; S5) scales each
+        stage's count; a stage it does not name counts at 1.0, and a weight of 0
+        drops the stage."""
+        factors = dict(weights or ())
         out: dict = {}
         for (k, o, g, s), per in self._station_counts.get((wh, week), {}).items():
             if k != kind:
@@ -509,12 +547,15 @@ class StationWeeks:
                 continue
             if section is not ANY and s != section:
                 continue
+            factor = float(factors.get(g, 1.0))
+            if not factor:
+                continue
             for station, c in per.items():
-                out[station] = out.get(station, 0.0) + c
+                out[station] = out.get(station, 0.0) + c * factor
         return out
 
-    def count_figures(self, wh, week, kind, obs=ANY, stages=ANY, section=ANY):
-        key = (wh, week, kind, obs, stages, section)
+    def count_figures(self, wh, week, kind, obs=ANY, stages=ANY, section=ANY, weights=None):
+        key = (wh, week, kind, obs, stages, section, _weights_key(weights))
         if key not in self._count_memo:
             scouted = self._scouted.get((wh, week))
             fig = None
@@ -524,7 +565,7 @@ class StationWeeks:
                     self._counts[(wh, week)] = P.section_counts(grid, scouted)
                 fig = P.count_figures(
                     grid, scouted,
-                    self.station_counts(wh, week, kind, obs, stages, section),
+                    self.station_counts(wh, week, kind, obs, stages, section, weights),
                     scouted_counts=self._counts[(wh, week)],
                 )
                 if fig is not None:
@@ -532,14 +573,14 @@ class StationWeeks:
             self._count_memo[key] = fig
         return self._count_memo[key]
 
-    def count_latest(self, wh, kind, obs=ANY, stages=ANY, section=ANY):
+    def count_latest(self, wh, kind, obs=ANY, stages=ANY, section=ANY, weights=None):
         """``count_figures`` for the house's latest week, ``prev`` = the previous
         scouted week's value (mirrors ``latest``)."""
         latest, previous = self.latest_pair(wh)
         if latest is None:
             return None
-        fig = self.count_figures(wh, latest, kind, obs, stages, section)
+        fig = self.count_figures(wh, latest, kind, obs, stages, section, weights)
         if fig is None:
             return None
-        prev = self.count_figures(wh, previous, kind, obs, stages, section) if previous else None
+        prev = self.count_figures(wh, previous, kind, obs, stages, section, weights) if previous else None
         return {**fig, "prev": prev["value"] if prev else None}

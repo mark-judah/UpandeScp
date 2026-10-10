@@ -11,7 +11,16 @@
   "greenhouse",
   "trap_number",
   "location",
-  "type"
+  "type",
+  "location_section",
+  "location_source",
+  "location_fixes",
+  "location_spread_m",
+  "location_column",
+  "location_updated",
+  "location_flag",
+  "map_section",
+  "geojson"
  ],
  "fields": [
   {
@@ -43,12 +52,63 @@
    "fieldtype": "Select",
    "label": "Type",
    "options": "General\nFCM\nMcPhail\nDelta\nFemtrack Lure\nCrytrack Lure\nCSR Trap"
+  },
+  {
+   "fieldname": "location_section",
+   "fieldtype": "Section Break",
+   "label": "Fixed Location"
+  },
+  {
+   "fieldname": "location_source",
+   "fieldtype": "Select",
+   "label": "Location Source",
+   "options": "\nGPS estimate\nManual",
+   "description": "GPS estimate: refined daily from scouts' high-accuracy fixes. Manual: set by hand and never overwritten by the estimator. Editing the map below sets it to Manual."
+  },
+  {
+   "fieldname": "location_fixes",
+   "fieldtype": "Int",
+   "label": "GPS Fixes Used",
+   "read_only": 1
+  },
+  {
+   "fieldname": "location_spread_m",
+   "fieldtype": "Float",
+   "label": "Fix Spread (m, p90)",
+   "read_only": 1,
+   "precision": "2"
+  },
+  {
+   "fieldname": "location_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "location_updated",
+   "fieldtype": "Datetime",
+   "label": "Location Updated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "location_flag",
+   "fieldtype": "Data",
+   "label": "Location Flag",
+   "read_only": 1,
+   "description": "\"outside house\" when the point is > 30 m from its house's beds (> 100 m for Outdoor traps)."
+  },
+  {
+   "fieldname": "map_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "geojson",
+   "fieldtype": "Geolocation",
+   "label": "Location (GeoJSON)"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-11-11 06:51:59.501547",
+ "modified": "2026-10-10 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Trap",

@@ -1,18 +1,31 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { fetchTrapLocations, type TrapLocations } from "@/lib/scouting-api";
 import { AvocadoTreeMap } from "./AvocadoTreeMap";
 import type { AvocadoView } from "./tree-map-types";
 import { deriveTrapMarkers } from "./derive-traps";
 
 export function AvocadoTraps() {
+  // Fixed trap locations (Trap.geojson); traps without one fall back to the
+  // average of their entries' coordinates.
+  const [fixed, setFixed] = useState<TrapLocations>({});
+  useEffect(() => {
+    let cancelled = false;
+    fetchTrapLocations().then((r) => {
+      if (!cancelled) setFixed(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const view = useMemo<AvocadoView>(
     () => ({
       title: "Traps",
       subtitle: "Orchard trees · trap catches sized by count",
       // Trees stay plain (unscouted colour); trap catches are the signal.
       deriveColors: () => new Map<string, string>(),
-      deriveMarkers: deriveTrapMarkers,
+      deriveMarkers: (data) => deriveTrapMarkers(data, fixed),
       renderPanel: (data) => {
-        const traps = deriveTrapMarkers(data);
+        const traps = deriveTrapMarkers(data, fixed);
         return (
           <>
             <div className="border-b px-3 py-2.5">
@@ -37,7 +50,7 @@ export function AvocadoTraps() {
         );
       },
     }),
-    [],
+    [fixed],
   );
 
   return <AvocadoTreeMap view={view} />;

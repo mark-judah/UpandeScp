@@ -88,4 +88,20 @@ describe("deriveTrapMarkers", () => {
     expect(m).toHaveLength(1);
     expect(m[0]).toMatchObject({ label: "TR1", count: 3, lng: 2, lat: 1 });
   });
+
+  it("places a trap with a fixed location there and counts every catch", () => {
+    const d = data([
+      { latitude: 1, longitude: 2, trap_scouting_entry: [{ trap: "TR1", count: 3 }] },
+      { latitude: 0, longitude: 0, trap_scouting_entry: [{ trap: "TR1", count: 7 }] },
+      { latitude: 0, longitude: 0, trap_scouting_entry: [{ trap: "TR2", count: 1 }] },
+    ]);
+    const fixed = {
+      TR1: { lat: 9, lng: 8, source: "GPS estimate" as const, fixes: 5, spread_m: 3, flag: "" },
+      TR2: { lat: 4, lng: 5, source: "Manual" as const, fixes: 0, spread_m: 0, flag: "" },
+    };
+    const m = deriveTrapMarkers(d, fixed);
+    expect(m).toHaveLength(2);
+    expect(m[0]).toMatchObject({ label: "TR1", count: 10, lat: 9, lng: 8 });
+    expect(m[1]).toMatchObject({ label: "TR2", count: 1, lat: 4, lng: 5 });
+  });
 });

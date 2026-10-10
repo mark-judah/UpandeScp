@@ -14,7 +14,13 @@ import { Button } from "@/components/ui/button";
 import { ALL, RangeHeader, type RangeFilterValue } from "./maps/RangeHeader";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HEADER_PILL } from "@/components/header-controls";
-import { DEFAULT_CROP, fetchFarmsAndWarehouses } from "@/lib/scouting-api";
+import {
+  DEFAULT_CROP,
+  fetchFarmsAndWarehouses,
+  fetchTrapLocations,
+  type TrapLocation,
+  type TrapLocations,
+} from "@/lib/scouting-api";
 import { flyToFarm, useMapSettings } from "@/hooks/use-map-settings";
 import {
   pestColor,
@@ -61,6 +67,16 @@ interface TrapAgg {
   latSum: number;
   lngSum: number;
   latN: number;
+  /** The trap's fixed location (Trap.geojson), when it has one. */
+  fixed?: TrapLocation;
+}
+
+/** Where a trap is drawn: its fixed location when it has one, else the
+ *  average of its entries' coordinates, else nowhere. */
+export function trapPosition(t: TrapAgg): { lat: number; lng: number } | null {
+  if (t.fixed) return { lat: t.fixed.lat, lng: t.fixed.lng };
+  if (t.latN === 0) return null;
+  return { lat: t.latSum / t.latN, lng: t.lngSum / t.latN };
 }
 
 function readCoord(v: any): number | null {
@@ -84,7 +100,10 @@ function readEntryCoords(
 const ghShort = (gh: string) =>
   gh ? gh.split(" - ")[0] : "";
 
-function aggregateTraps(entries: ScoutingEntry[]): TrapAgg[] {
+export function aggregateTraps(
+  entries: ScoutingEntry[],
+  fixed: TrapLocations = {},
+): TrapAgg[] {
   const map = new Map<string, TrapAgg>();
   for (const e of entries) {
     const coords = readEntryCoords(e);
@@ -109,6 +128,7 @@ function aggregateTraps(entries: ScoutingEntry[]): TrapAgg[] {
           latSum: 0,
           lngSum: 0,
           latN: 0,
+          fixed: fixed[t.trap],
         };
         map.set(key, agg);
       }
@@ -128,6 +148,16 @@ function aggregateTraps(entries: ScoutingEntry[]): TrapAgg[] {
     }
   }
   return Array.from(map.values());
+}
+
+function placementNote(t: TrapAgg): string {
+  const f = t.fixed;
+  if (f?.source === "Manual") return "Fixed location · placed manually";
+  if (f) {
+    const flag = f.flag ? ` · <span style="color:#b45309">${f.flag}</span>` : "";
+    return `Fixed location · GPS estimate from ${f.fixes} fixes (±${Math.round(f.spread_m)} m)${flag}`;
+  }
+  return `No fixed location · avg of ${t.latN} entr${t.latN === 1 ? "y" : "ies"}`;
 }
 
 type LocationFilter = "all" | "Indoor" | "Outdoor";
@@ -275,9 +305,22 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     crop: filters.crop,
   });
 
+  // Fixed trap locations (Trap.geojson). A trap without one is drawn at the
+  // average of its entries' coordinates, as before.
+  const [trapLocations, setTrapLocations] = useState<TrapLocations>({});
+  useEffect(() => {
+    let cancelled = false;
+    fetchTrapLocations().then((r) => {
+      if (!cancelled) setTrapLocations(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const traps = useMemo(
-    () => (data ? aggregateTraps(data.entries) : []),
-    [data],
+    () => (data ? aggregateTraps(data.entries, trapLocations) : []),
+    [data, trapLocations],
   );
 
   // Available farm / greenhouse / pest options derived from the aggregated
@@ -394,9 +437,9 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     const bounds = L.latLngBounds([]);
     const maxTotal = Math.max(1, ...visibleTraps.map((t) => t.totalCount || 0));
     for (const t of visibleTraps) {
-      if (t.latN === 0) continue;
-      const lat = t.latSum / t.latN;
-      const lng = t.lngSum / t.latN;
+      const pos = trapPosition(t);
+      if (!pos) continue;
+      const { lat, lng } = pos;
       // Marker size encodes the catch count (sqrt-scaled so heavy traps
       // don't dominate); a zero-catch trap is a small dot. Colour is a
       // subtle gold (grey for zero), not a vivid per-pest disc.
@@ -440,7 +483,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
                <div><span style="color:#6b7280">Greenhouse:</span> ${t.greenhouseShort || "—"}</div>
                <div><span style="color:#6b7280">Zone:</span> ${t.zone || "—"}</div>
                <div style="color:#9ca3af;font-size:10.5px;margin-top:2px">
-                 Marker at avg of ${t.latN} entr${t.latN === 1 ? "y" : "ies"}
+                 ${placementNote(t)}
                </div>
              </div>
            </div>
@@ -492,7 +535,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
   const totalCatches = visibleTraps.reduce((s, t) => s + t.totalCount, 0);
   const indoorCount = visibleTraps.filter((t) => t.location === "Indoor").length;
   const outdoorCount = visibleTraps.filter((t) => t.location === "Outdoor").length;
-  const plottable = visibleTraps.filter((t) => t.latN > 0).length;
+  const plottable = visibleTraps.filter((t) => trapPosition(t)).length;
   const noCoordHint = traps.length > 0 && plottable === 0;
 
   return (

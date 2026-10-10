@@ -385,6 +385,9 @@ scheduler_events = {
         "upande_scp.serverscripts.scouting.scouting_prewarm.daily_prewarm",
         # Cancel AFP spray plans left unapproved for more than 3 days.
         "upande_scp.serverscripts.spray_plan_creator.maintenance.auto_cancel_dormant_plans",
+        # Refine every trap's GPS-estimated fixed location with the day's fixes
+        # (Manual locations are never touched).
+        "upande_scp.serverscripts.traps.trap_location.daily_refresh",
     ],
     "hourly": [
         # Keep the current + previous ISO week of scouting payload warm in Redis

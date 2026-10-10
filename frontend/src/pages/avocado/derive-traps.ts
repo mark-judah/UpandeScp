@@ -1,4 +1,5 @@
 import type { ProcessedData } from "@/lib/scouting-types";
+import type { TrapLocations } from "@/lib/scouting-api";
 import type { MarkerPoint } from "./tree-map-types";
 
 // Catch-intensity ramp (matches the rose TrapsMap severity stops).
@@ -18,10 +19,15 @@ function coord(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** One marker per trap at its averaged coordinate; count = summed catches,
- *  colour = severity of that total. Traps with no usable coordinate are dropped
- *  ((0,0) is the Atlantic → treated as missing). */
-export function deriveTrapMarkers(data: ProcessedData | null): MarkerPoint[] {
+/** One marker per trap; count = summed catches, colour = severity of that
+ *  total. A trap with a fixed location (`fixed`, from Trap.geojson) sits there
+ *  and counts every catch. Otherwise it sits at the average of its entries'
+ *  coordinates and counts only located catches; with no usable coordinate it
+ *  is dropped ((0,0) is the Atlantic → treated as missing). */
+export function deriveTrapMarkers(
+  data: ProcessedData | null,
+  fixed: TrapLocations = {},
+): MarkerPoint[] {
   if (!data) return [];
   const agg = new Map<string, { latSum: number; lngSum: number; n: number; count: number }>();
   for (const e of data.entries) {
@@ -36,7 +42,9 @@ export function deriveTrapMarkers(data: ProcessedData | null): MarkerPoint[] {
         a = { latSum: 0, lngSum: 0, n: 0, count: 0 };
         agg.set(t.trap, a);
       }
-      if (hasCoord) {
+      if (fixed[t.trap]) {
+        a.count += t.count || 0;
+      } else if (hasCoord) {
         a.count += t.count || 0;
         a.latSum += lat as number;
         a.lngSum += lng as number;
@@ -46,10 +54,11 @@ export function deriveTrapMarkers(data: ProcessedData | null): MarkerPoint[] {
   }
   const out: MarkerPoint[] = [];
   for (const [trap, a] of agg) {
-    if (!a.n) continue; // no coordinate → can't place it
+    const f = fixed[trap];
+    if (!f && !a.n) continue; // no coordinate → can't place it
     out.push({
-      lng: a.lngSum / a.n,
-      lat: a.latSum / a.n,
+      lng: f ? f.lng : a.lngSum / a.n,
+      lat: f ? f.lat : a.latSum / a.n,
       count: a.count,
       color: severityColor(a.count),
       label: trap,

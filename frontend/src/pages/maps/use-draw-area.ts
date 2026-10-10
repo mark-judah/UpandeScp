@@ -72,3 +72,15 @@ export function useDrawArea(onFinish: (ring: Pt[]) => void): DrawArea {
 
   return { active, vertices, start, add, finish, cancel };
 }
+
+/** For a Radix Dialog's ``onEscapeKeyDown``: the dialog catches Esc before the
+ *  hook's window listener, so while drawing Esc must cancel the draw and keep
+ *  the dialog open (C10). Not drawing → the dialog closes as usual. */
+export function drawEscapeHandler(draw: Pick<DrawArea, "active" | "cancel">) {
+  return (e: KeyboardEvent) => {
+    if (draw.active) {
+      e.preventDefault();
+      draw.cancel();
+    }
+  };
+}

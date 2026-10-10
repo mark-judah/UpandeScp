@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getHouseClusters, listPins, patchLine, type HouseClusters, type ScoutingPin } from "@/lib/spread-api";
 import type { BedOverlay } from "./BedSvg";
 
@@ -29,16 +29,25 @@ export function useHouseOverlays(args: {
     };
   }, [crop, warehouse, observation, kind, week]);
 
+  // Only the latest request may set pins: a house switch (or a save's reload)
+  // must not be overwritten by an older, slower response.
+  const pinsReq = useRef(0);
   const reloadPins = useCallback(() => {
+    const req = ++pinsReq.current;
     if (!warehouse) {
       setPins([]);
       return;
     }
     listPins(crop, warehouse, withSeries)
-      .then(setPins)
-      .catch(() => setPins([]));
+      .then((r) => req === pinsReq.current && setPins(r))
+      .catch(() => req === pinsReq.current && setPins([]));
   }, [crop, warehouse, withSeries]);
-  useEffect(() => reloadPins(), [reloadPins]);
+  useEffect(() => {
+    reloadPins();
+    return () => {
+      pinsReq.current++;
+    };
+  }, [reloadPins]);
 
   return { clusters, pins, reloadPins };
 }

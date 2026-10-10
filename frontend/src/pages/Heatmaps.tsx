@@ -65,7 +65,7 @@ import {
 } from "./maps/BedSvg";
 import { savePin } from "@/lib/spread-api";
 import type { Pt } from "@/lib/hull";
-import { useDrawArea } from "./maps/use-draw-area";
+import { drawEscapeHandler, useDrawArea } from "./maps/use-draw-area";
 import { bedOverlays, useHouseOverlays } from "./maps/use-house-overlays";
 import { DrawAreaBar } from "./maps/DrawAreaBar";
 import { StageLegend } from "./maps/StageLegend";
@@ -738,7 +738,10 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
       </div>
 
       <Dialog open={!!picked} onOpenChange={(o) => !o && setPicked(null)}>
-        <DialogContent className="max-w-[min(92vw,1080px)] max-h-[80vh] overflow-y-auto">
+        <DialogContent
+          className="max-w-[min(92vw,1080px)] max-h-[80vh] overflow-y-auto"
+          onEscapeKeyDown={drawEscapeHandler(draw)}
+        >
           {picked && (
             <>
               <DialogHeader>

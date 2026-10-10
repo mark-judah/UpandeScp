@@ -206,11 +206,14 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
   }, [block, obs?.name, obs?.kind, cancelDraw]);
   const blockNames = useMemo(
     () =>
-      (blocks?.features ?? [])
-        .filter((f) => filters.farm === ALL || f.properties?.farm === filters.farm)
-        .map((f) => String(f.properties?.block ?? ""))
-        .filter(Boolean)
-        .sort(),
+      [
+        ...new Set(
+          (blocks?.features ?? [])
+            .filter((f) => filters.farm === ALL || f.properties?.farm === filters.farm)
+            .map((f) => String(f.properties?.block ?? ""))
+            .filter(Boolean),
+        ),
+      ].sort(),
     [blocks, filters.farm],
   );
   const saveArea = async (title: string, shared: boolean) => {

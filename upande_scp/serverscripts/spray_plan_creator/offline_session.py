@@ -355,6 +355,9 @@ def sync_spray_session(payload) -> dict:
 	wo_state = frappe.db.get_value("Work Order", work_order, "workflow_state") or ""
 	produced: dict = {}
 
+	# The recorder was checked for this plan above; the steps below are the
+	# session's own, so their per-step gates defer to that (scoped to this plan).
+	frappe.flags.scp_replay_work_order = work_order
 	try:
 		# 1. the scans, each at the moment it was taken. They do not build anything —
 		#    manufacture is a separate explicit step, which is where the mix moment lands.
@@ -392,6 +395,7 @@ def sync_spray_session(payload) -> dict:
 			produced["issue"] = (closed or {}).get("material_issue")
 			produced["sal"] = (closed or {}).get("sal_submitted") or produced.get("sal")
 	except Exception as e:
+		frappe.flags.scp_replay_work_order = None
 		frappe.db.rollback()
 		frappe.db.set_value(TOKEN, token, {
 			"status": "Refused",
@@ -400,6 +404,7 @@ def sync_spray_session(payload) -> dict:
 		frappe.db.commit()
 		raise
 
+	frappe.flags.scp_replay_work_order = None
 	_stamp_result(token, work_order, produced)
 	frappe.db.commit()
 	return _result(token)

@@ -502,8 +502,8 @@ class TestOfflineReplay(LedgerCase):
         )
 
 
-class TestWhoMayManufacture(LedgerCase):
-    """The submit runs elevated, so the caller check is what stands in front of it."""
+class GateCase(LedgerCase):
+    """Throwaway users, optionally rostered on the borrowed plan's farm."""
 
     def setUp(self):
         super().setUp()
@@ -529,6 +529,10 @@ class TestWhoMayManufacture(LedgerCase):
                 "user": email, "idx": 999,
             }).db_insert()
         return email
+
+
+class TestWhoMayManufacture(GateCase):
+    """The submit runs elevated, so the caller check is what stands in front of it."""
 
     def test_a_supervisor_on_the_farm_roster_may(self):
         frappe.set_user(self.user(["SCP Spray Supervisor"], roster=True))
@@ -637,6 +641,59 @@ class TestWhoMayManufacture(LedgerCase):
             self._sync_as(clerk)
         self.made.assert_not_called()
 
+
+class TestFieldStepGates(GateCase):
+    """I3: scan / start / end are gated too. Scan and start admit the plan's spray
+    team; end (Material Issue + completion) is supervisor/manager only."""
+
+    def _team_member(self):
+        email = self.user(["SCP Scout"])
+        emp_name = frappe.db.get_value("Employee", {"status": "Active"}, "name")
+        frappe.db.set_value("Employee", emp_name, "user_id", email, update_modified=False)
+        wo = frappe.get_doc("Work Order", self.wo1)
+        if not wo.meta.has_field("custom_spray_plan_team_members"):
+            self.skipTest("no per-plan team on this site")
+        wo.append("custom_spray_plan_team_members", {"employee": emp_name, "role": "Sprayer"}).db_insert()
+        return email
+
+    @staticmethod
+    def gate(fn, *args, **kwargs):
+        """'refused' on the caller check; 'passed' when the call got past it (it may
+        still fail later on the plan's state — that is not what is tested here)."""
+        try:
+            fn(*args, **kwargs)
+        except frappe.PermissionError:
+            return "refused"
+        except Exception:
+            pass
+        return "passed"
+
+    def steps(self):
+        item = frappe.db.get_value("Work Order Item", {"parent": self.wo1}, "item_code") or "X"
+        return {
+            "scan": self.gate(SS.register_csu_scan, self.wo1, item),
+            "start": self.gate(SS.start_spray_session, self.wo1),
+            "end": self.gate(SS.end_spray_session, self.wo1),
+        }
+
+    def test_a_plain_user_is_refused_every_step(self):
+        frappe.set_user(self.user(["SCP Scout"]))
+        self.assertEqual(self.steps(), {"scan": "refused", "start": "refused", "end": "refused"})
+
+    def test_a_spray_team_member_may_scan_and_start_but_not_end(self):
+        frappe.set_user(self._team_member())
+        self.assertEqual(self.steps(), {"scan": "passed", "start": "passed", "end": "refused"})
+
+    def test_a_rostered_supervisor_may_do_every_step(self):
+        frappe.set_user(self.user(["SCP Spray Supervisor"], roster=True))
+        self.assertEqual(self.steps(), {"scan": "passed", "start": "passed", "end": "passed"})
+
+    def test_the_replay_scope_covers_only_its_own_plan(self):
+        frappe.set_user(self.user(["SCP Scout"]))
+        frappe.flags.scp_replay_work_order = self.wo1
+        self.addCleanup(setattr, frappe.flags, "scp_replay_work_order", None)
+        self.assertEqual(self.gate(SS.end_spray_session, self.wo1), "passed")
+        self.assertEqual(self.gate(SS.end_spray_session, self.wo2), "refused")
 
 class TestDeskDraftLeavesNoBundles(LedgerCase):
     def test_deleting_a_desk_draft_manufacture_removes_its_bundles(self):

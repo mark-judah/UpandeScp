@@ -202,6 +202,7 @@ def register_csu_scan(
     """
     if not work_order or not item_code:
         frappe.throw("work_order and item_code are required.")
+    assert_can_operate(work_order, "scan")
 
     current_state = _lock_wo(work_order)
     wo = frappe.get_doc("Work Order", work_order)
@@ -868,6 +869,72 @@ def assert_can_manufacture(wo, user: str | None = None) -> None:
         )
 
 
+def _plan_team_users(wo) -> set[str]:
+    """Users of every member of the plan's spray team (per-plan snapshot, else the
+    linked Spray Team), whatever their role on it."""
+    employees = {
+        row.employee
+        for row in (getattr(wo, "custom_spray_plan_team_members", None) or [])
+        if getattr(row, "employee", None)
+    }
+    team = getattr(wo, "custom_spray_team", None)
+    if not employees and team:
+        employees = {
+            r[0]
+            for r in frappe.db.sql(
+                """SELECT name1 FROM `tabSpray Team Details`
+                   WHERE parent = %s AND parenttype = 'Spray Team'
+                     AND IFNULL(name1, '') != ''""",
+                (team,),
+            )
+        }
+    if not employees:
+        return set()
+    return {
+        u
+        for u in frappe.get_all(
+            "Employee", filters={"name": ["in", list(employees)]}, pluck="user_id"
+        )
+        if u
+    }
+
+
+def _replay_authorised(work_order: str) -> bool:
+    """The offline replay checked its recorder for this plan already
+    (``offline_session._assert_replay_allowed``) and is now driving the steps."""
+    return bool(work_order) and frappe.flags.get("scp_replay_work_order") == work_order
+
+
+def assert_can_operate(work_order: str, action: str) -> None:
+    """Gate for the field steps of a plan.
+
+    ``scan`` / ``start``: whoever may manufacture (``can_manufacture``) or any member
+    of the plan's spray team. ``end`` posts the Material Issue and completes the plan,
+    so it is the manufacture rule only.
+    """
+    if _replay_authorised(work_order):
+        return
+    if not frappe.db.exists("Work Order", work_order):
+        frappe.throw(f"Work Order {work_order} not found.")
+    wo = frappe.get_doc("Work Order", work_order)
+    user = frappe.session.user
+    if can_manufacture(wo, user):
+        return
+    if action in ("scan", "start") and user in _plan_team_users(wo):
+        return
+    who = (
+        "a spray supervisor rostered on its farm, a member of its spray team, or a "
+        "General Manager / Stock Manager"
+        if action in ("scan", "start")
+        else "a spray supervisor rostered on its farm, the plan's own supervisor, or a "
+        "General Manager / Stock Manager"
+    )
+    frappe.throw(
+        f"{user} cannot {action} the spray for {work_order}: only {who} may.",
+        frappe.PermissionError,
+    )
+
+
 @frappe.whitelist()
 def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
     """Confirm the tank mix — for the plan's supervisor (see ``can_manufacture``).
@@ -1132,6 +1199,8 @@ def start_spray_session(
     if not work_order:
         frappe.throw("work_order is required.")
 
+    assert_can_operate(work_order, "start")
+
     current_state = _lock_wo(work_order)
     wo = frappe.get_doc("Work Order", work_order)
     _ensure_afp(wo)
@@ -1381,6 +1450,8 @@ def end_spray_session(work_order: str, ended_at=None) -> dict[str, Any]:
     """
     if not work_order:
         frappe.throw("work_order is required.")
+
+    assert_can_operate(work_order, "end")
 
     current_state = _lock_wo(work_order)
     wo = frappe.get_doc("Work Order", work_order)

@@ -91,8 +91,29 @@ def render(alerts, day) -> str:
     )
 
 
+def _marker(user) -> str:
+    """The user's last-digest marker, read straight from ``tabDefaultValue``.
+    Not ``frappe.defaults.get_user_default``: that loads the user's User
+    Permissions, and one pointing at a deleted doctype (kaitet.local has three)
+    raises DoesNotExistError."""
+    return frappe.db.get_value("DefaultValue", {"parent": user, "defkey": DIGEST_MARKER}, "defvalue") or ""
+
+
+def _set_marker(user, value) -> None:
+    """Upsert the marker row without the permission machinery."""
+    name = frappe.db.get_value("DefaultValue", {"parent": user, "defkey": DIGEST_MARKER}, "name")
+    if name:
+        frappe.db.set_value("DefaultValue", name, "defvalue", value, update_modified=False)
+    else:
+        frappe.get_doc({
+            "doctype": "DefaultValue", "parent": user, "parenttype": "__default",
+            "parentfield": "system_defaults", "defkey": DIGEST_MARKER, "defvalue": value,
+        }).db_insert()
+    frappe.defaults.clear_defaults_cache(user)
+
+
 def _done_on(user, day) -> bool:
-    return (frappe.defaults.get_user_default(DIGEST_MARKER, user) or "") >= day.isoformat()
+    return _marker(user) >= day.isoformat()
 
 
 def send_alert_digest(now=None) -> dict:
@@ -112,9 +133,9 @@ def send_alert_digest(now=None) -> dict:
     sent, failed = [], []
     try:
         for user, alerts in sorted(build_digests(day).items()):
-            if _done_on(user, day):
-                continue
             try:
+                if _done_on(user, day):
+                    continue
                 email = _email_for(user)
                 if not email:
                     continue
@@ -124,7 +145,7 @@ def send_alert_digest(now=None) -> dict:
                     message=render(alerts, day),
                     reference_doctype=TC.DOCTYPE,
                 )
-                frappe.defaults.set_user_default(DIGEST_MARKER, day.isoformat(), user)
+                _set_marker(user, day.isoformat())
                 frappe.db.commit()
                 sent.append(email)
             except Exception:

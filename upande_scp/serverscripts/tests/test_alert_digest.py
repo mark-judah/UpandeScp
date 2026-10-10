@@ -135,3 +135,25 @@ class TestDigest(AlertCase):
         frappe.db.sql("UPDATE `tabScouting Alert` SET margin = 0, sections_scouted = 1 WHERE iso_week = '2031-W20'")
         rows = D.build_digests(SUN_20)[U_CREATOR]
         self.assertIn("too clustered to judge", D.render(rows, SUN_20))
+
+    def test_a_stale_user_permission_does_not_stop_the_digest(self):
+        # kaitet.local has User Permissions pointing at deleted doctypes; the
+        # permission machinery raises DoesNotExistError on them. Reading the
+        # marker must not go through it, and one bad user must not stop others.
+        self._two_alerts()
+        frappe.db.sql(
+            """insert into `tabUser Permission` (name, creation, modified, owner, modified_by,
+               docstatus, idx, user, allow, for_value, is_default, apply_to_all_doctypes)
+               values (%s, now(), now(), 'Administrator', 'Administrator', 0, 0, %s,
+               '_Deleted Doctype SCP', 'x', 0, 1)""",
+            ("_TEST-UP-" + frappe.generate_hash(length=8), U_APPROVER),
+        )
+        frappe.cache.hdel("user_permissions", U_APPROVER)
+        try:
+            with patch.object(frappe, "sendmail") as sendmail, patch.object(frappe, "log_error"):
+                out = D.send_alert_digest(at(SUN_20, 17, 5))
+        finally:
+            frappe.cache.hdel("user_permissions", U_APPROVER)
+        self.assertEqual({c.kwargs["recipients"][0] for c in sendmail.call_args_list},
+                         {U_CREATOR, U_SUPER, U_APPROVER, U_GM})
+        self.assertEqual(out["sent"], 4)

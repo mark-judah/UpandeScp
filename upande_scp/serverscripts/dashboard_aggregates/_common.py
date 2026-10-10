@@ -126,6 +126,22 @@ def _threshold_cache() -> dict:
     return cache
 
 
+def clear_threshold_cache() -> None:
+    """Drop the per-request threshold memo — after any band or measure write."""
+    if hasattr(frappe.local, _THRESHOLD_CACHE_ATTR):
+        delattr(frappe.local, _THRESHOLD_CACHE_ATTR)
+
+
+def station_word(crop: str) -> str:
+    """The station a Count is "per": ``"tree"`` for a crop scouted on Block
+    warehouses (Orchard Trees — Lokitela's avocado), else ``"zone"``. Read from
+    the crop's houses, so a new block crop needs no code change."""
+    houses = crop_catalog.greenhouses_for_crop(crop) if crop else []
+    if houses and frappe.db.count("Warehouse", {"name": ["in", houses], "warehouse_type": "Block"}):
+        return "tree"
+    return "zone"
+
+
 def _zero_band(low, mod, high) -> bool:
     """All three thresholds at 0 → treat as unconfigured. We can't
     distinguish a real ``everything is High`` band from a default-zero

@@ -10,6 +10,7 @@
   "crop_scouted",
   "pest",
   "unit",
+  "measure",
   "low_threshold",
   "moderate_threshold",
   "high_threshold",
@@ -43,6 +44,15 @@
    "in_list_view": 1,
    "label": "Unit",
    "options": "Per Zone %\nPer Warehouse\nPer Hectare"
+  },
+  {
+   "default": "Percentage",
+   "description": "How the bands are read. Percentage: adjusted share of scouted stations carrying it (0–100). Count: average count per scouted station — only for a pest with a stage scouts record as a number.",
+   "fieldname": "measure",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Measure",
+   "options": "Percentage\nCount"
   },
   {
    "description": "Pest count at which severity becomes Low (threshold value).",
@@ -85,7 +95,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-30 00:00:00.000000",
+ "modified": "2026-10-10 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Pest Filter",

@@ -59,3 +59,5 @@ upande_scp.patches.v1_0.rename_workspace_to_scp
 # v15->v16 migration never carried custom_raw_geojson — so the avocado map draws
 # no blocks there and the jobsheet has nothing to click. Fills blanks only.
 upande_scp.patches.v1_0.restore_block_boundaries
+# Pest/Disease Filter.measure from the old unit (thresholds & actions, piece 3a).
+upande_scp.patches.v1_0.set_threshold_measure

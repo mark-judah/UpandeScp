@@ -1,14 +1,19 @@
 """Per-crop, per-stage threshold editor backend.
 
-Powers the Settings → Thresholds tab. Returns and persists the
-``low / moderate / high`` numbers stored on every Pest Filter / Disease
-Filter row (and their Pests Stages / Disease Stages children) under
-each ``Crop Scouted`` doc.
+Powers the Settings → Thresholds tab. Returns and persists the ``measure`` and
+the ``low / moderate / high`` bands on every Pest Filter / Disease Filter row of
+one crop, and the bands on their Pests Stages / Disease Stages children.
 
-Permissions: System Manager / Administrator / General Manager — same
-gate the rest of Settings uses for write paths. Read is whitelisted so
-the page can populate before an operator with read-only access tries
-to view it.
+Measures (thresholds spec D1): **Percentage** = piece 2's adjusted prevalence;
+**Count** = average count per scouted station, offered only for a pest with a
+stage scouts record as a number. Bands must rise strictly over the ones that are
+set (D3); all-zero is "unconfigured". A row stored with misordered bands comes
+back ``invalid: true`` so the editor flags it; a save that would store one is
+refused whole, before any write. The old ``unit`` column stays in the schema but
+is neither returned nor written.
+
+Permissions: System Manager / Administrator / SCP General Manager write. Read is
+whitelisted so the page can populate for read-only viewers.
 """
 
 import json
@@ -16,6 +21,8 @@ import json
 import frappe
 
 from upande_scp.serverscripts.common import crop_catalog
+from upande_scp.serverscripts.common import threshold_bands as B
+from upande_scp.serverscripts.dashboard_aggregates import _common
 
 
 _WRITE_ROLES = {"System Manager", "Administrator", "SCP General Manager"}
@@ -51,116 +58,90 @@ def list_crops() -> list:
     return [r["crop"] for r in rows if r.get("crop")]
 
 
+def _f(value) -> float:
+    return float(value or 0)
+
+
+def _filter_rows(crop: str, doctype: str, child: str, obs_col: str, kind: str) -> list:
+    measure_col = "measure" if frappe.db.has_column(doctype, "measure") else "'Percentage'"
+    parents = frappe.db.sql(
+        f"""
+        SELECT name, `{obs_col}` AS obs, {measure_col} AS measure,
+               low_threshold, moderate_threshold, high_threshold
+        FROM `tab{doctype}`
+        WHERE crop_scouted = %(crop)s
+        ORDER BY idx
+        """,
+        {"crop": crop},
+        as_dict=True,
+    )
+    stages = frappe.db.sql(
+        f"""
+        SELECT name, parent, stage, reading_type,
+               low_threshold, moderate_threshold, high_threshold
+        FROM `tab{child}`
+        WHERE parenttype = %(pt)s AND parent IN %(parents)s
+        ORDER BY parent, idx
+        """,
+        {"pt": doctype, "parents": [r["name"] for r in parents] or [""]},
+        as_dict=True,
+    )
+    by_parent: dict = {}
+    for s in stages:
+        by_parent.setdefault(s["parent"], []).append(s)
+
+    out = []
+    for r in parents:
+        stage_rows = [
+            {
+                "row": s["name"],
+                "stage": s["stage"] or "",
+                "reading_type": s["reading_type"] or "",
+                "low": _f(s["low_threshold"]),
+                "moderate": _f(s["moderate_threshold"]),
+                "high": _f(s["high_threshold"]),
+                "invalid": not B.bands_ascending(
+                    s["low_threshold"], s["moderate_threshold"], s["high_threshold"],
+                ),
+            }
+            for s in by_parent.get(r["name"], [])
+        ]
+        row_invalid = not B.bands_ascending(
+            r["low_threshold"], r["moderate_threshold"], r["high_threshold"],
+        )
+        out.append({
+            "row": r["name"],
+            obs_col: r["obs"],
+            "measure": r["measure"] if r["measure"] in B.MEASURES else B.PERCENTAGE,
+            "count_allowed": B.count_allowed(kind, [s["reading_type"] for s in stage_rows]),
+            "low": _f(r["low_threshold"]),
+            "moderate": _f(r["moderate_threshold"]),
+            "high": _f(r["high_threshold"]),
+            "invalid": row_invalid or any(s["invalid"] for s in stage_rows),
+            "stages": stage_rows,
+        })
+    return out
+
+
 @frappe.whitelist()
 def get_thresholds(crop: str) -> dict:
-    """Return the editor payload for one Crop Scouted.
+    """The editor payload for one crop.
 
-    ``pests`` and ``diseases`` lists each contain rows with the
-    aggregate low/mod/high plus a ``stages`` list of per-stage
-    thresholds (only stages that already exist on the doc — the GM
-    adds new stage rows from the doctype itself for now).
+    ``station`` is what a Count is "per" (``zone`` / ``tree``). Each row carries
+    ``measure``, ``count_allowed`` (a stage with ``reading_type = Count``; never
+    for a disease), its bands, ``invalid`` (misordered bands on the row or any
+    stage) and ``stages`` with their ``reading_type``, bands and ``invalid``.
+    Stage rows are the ones on the doc; the GM adds stages from the doctype.
     """
     crop = crop_catalog.resolve_crop(crop)
     if not crop:
-        return {"crop": "", "pests": [], "diseases": []}
-
-    pest_filters = frappe.db.sql(
-        """
-        SELECT name, pest, unit,
-               low_threshold, moderate_threshold, high_threshold
-        FROM `tabPest Filter`
-        WHERE crop_scouted = %(crop)s
-        ORDER BY idx
-        """,
-        {"crop": crop},
-        as_dict=True,
-    )
-    pest_stages = frappe.db.sql(
-        """
-        SELECT name, parent, stage,
-               low_threshold, moderate_threshold, high_threshold
-        FROM `tabPests Stages`
-        WHERE parenttype = 'Pest Filter' AND parent IN %(parents)s
-        ORDER BY parent, idx
-        """,
-        {"parents": [r["name"] for r in pest_filters] or [""]},
-        as_dict=True,
-    )
-    stages_by_pest_row: dict = {}
-    for s in pest_stages:
-        stages_by_pest_row.setdefault(s["parent"], []).append(s)
-
-    pests = [
-        {
-            "row":  r["name"],
-            "pest": r["pest"],
-            "unit": r["unit"] or "Per Zone %",
-            "low":       float(r["low_threshold"] or 0),
-            "moderate":  float(r["moderate_threshold"] or 0),
-            "high":      float(r["high_threshold"] or 0),
-            "stages": [
-                {
-                    "row":   s["name"],
-                    "stage": s["stage"] or "",
-                    "low":       float(s["low_threshold"] or 0),
-                    "moderate":  float(s["moderate_threshold"] or 0),
-                    "high":      float(s["high_threshold"] or 0),
-                }
-                for s in stages_by_pest_row.get(r["name"], [])
-            ],
-        }
-        for r in pest_filters
-    ]
-
-    disease_filters = frappe.db.sql(
-        """
-        SELECT name, disease, unit,
-               low_threshold, moderate_threshold, high_threshold
-        FROM `tabDisease Filter`
-        WHERE crop_scouted = %(crop)s
-        ORDER BY idx
-        """,
-        {"crop": crop},
-        as_dict=True,
-    )
-    disease_stages = frappe.db.sql(
-        """
-        SELECT name, parent, stage,
-               low_threshold, moderate_threshold, high_threshold
-        FROM `tabDisease Stages`
-        WHERE parenttype = 'Disease Filter' AND parent IN %(parents)s
-        ORDER BY parent, idx
-        """,
-        {"parents": [r["name"] for r in disease_filters] or [""]},
-        as_dict=True,
-    )
-    stages_by_disease_row: dict = {}
-    for s in disease_stages:
-        stages_by_disease_row.setdefault(s["parent"], []).append(s)
-
-    diseases = [
-        {
-            "row":     r["name"],
-            "disease": r["disease"],
-            "unit":    r["unit"] or "Per Zone %",
-            "low":       float(r["low_threshold"] or 0),
-            "moderate":  float(r["moderate_threshold"] or 0),
-            "high":      float(r["high_threshold"] or 0),
-            "stages": [
-                {
-                    "row":   s["name"],
-                    "stage": s["stage"] or "",
-                    "low":       float(s["low_threshold"] or 0),
-                    "moderate":  float(s["moderate_threshold"] or 0),
-                    "high":      float(s["high_threshold"] or 0),
-                }
-                for s in stages_by_disease_row.get(r["name"], [])
-            ],
-        }
-        for r in disease_filters
-    ]
-
-    return {"crop": crop, "pests": pests, "diseases": diseases}
+        return {"crop": "", "station": "zone", "pests": [], "diseases": []}
+    return {
+        "crop": crop,
+        "station": _common.station_word(crop),
+        "pests": _filter_rows(crop, "Pest Filter", "Pests Stages", "pest", "pest"),
+        "diseases": _filter_rows(crop, "Disease Filter", "Disease Stages", "disease", "disease"),
+    }
 
 
 _KINDS = (
@@ -199,17 +180,53 @@ def _assert_rows_belong(crop: str, payload: dict) -> None:
                 frappe.throw(f"{child} rows {', '.join(stray)} do not belong to {r['row']}.", frappe.ValidationError)
 
 
+def _validate(payload: dict) -> None:
+    """Refuse the whole save on any bad row, before the first write (D1, D3).
+
+    Count is checked against the stages' reading types in the database, never
+    against what the client claims. All problems are reported at once.
+    """
+    errors = []
+    for key, doctype, child in _KINDS:
+        kind = "pest" if key == "pests" else "disease"
+        rows = [r for r in (payload.get(key) or []) if r.get("row")]
+        if not rows:
+            continue
+        reading_types: dict = {}
+        for parent, rt in frappe.db.sql(
+            f"select parent, reading_type from `tab{child}` where parenttype = %(pt)s and parent in %(n)s",
+            {"pt": doctype, "n": [r["row"] for r in rows]},
+        ):
+            reading_types.setdefault(parent, []).append(rt or "")
+        for r in rows:
+            label = r.get("pest") or r.get("disease") or r["row"]
+            # No key = an old client that does not know measure: the stored one stands.
+            measure = r.get("measure") if "measure" in r else None
+            if measure is None:
+                pass
+            elif measure not in B.MEASURES:
+                errors.append(f"{label}: unknown measure {measure}.")
+            elif measure == B.COUNT and not B.count_allowed(kind, reading_types.get(r["row"])):
+                errors.append(f"{label}: Count needs a stage scouts record as a number.")
+            if not B.bands_ascending(r.get("low"), r.get("moderate"), r.get("high")):
+                errors.append(f"{label}: bands must rise, Low < Moderate < High.")
+            for s in r.get("stages") or []:
+                if not B.bands_ascending(s.get("low"), s.get("moderate"), s.get("high")):
+                    errors.append(
+                        f"{label} · {s.get('stage') or s.get('row')}: bands must rise, Low < Moderate < High."
+                    )
+    if errors:
+        frappe.throw("\n".join(errors), frappe.ValidationError)
+
+
 @frappe.whitelist()
 def save_thresholds(crop: str, payload: str | dict) -> dict:
-    """Persist threshold edits in bulk. ``payload`` is the same shape
-    ``get_thresholds`` returns (the editor sends back the whole doc).
+    """Persist measure + band edits in bulk. ``payload`` is the shape
+    ``get_thresholds`` returns (the editor sends back the whole crop).
 
-    We update existing rows by their ``row`` (Frappe doc name) — adding
-    or deleting filter rows / stage rows is done via the doctype list
-    view, so this endpoint never inserts or deletes; it just refreshes
-    the four float columns. That keeps the contract narrow and avoids
-    accidentally wiping legacy stage rows that don't appear in the
-    editor."""
+    Updates existing rows by their ``row`` name only — rows and stages are added
+    or removed from the doctype, never here. Validation runs before any write.
+    """
     _check_write_perm()
 
     crop = crop_catalog.resolve_crop(crop)
@@ -218,69 +235,41 @@ def save_thresholds(crop: str, payload: str | dict) -> dict:
     if isinstance(payload, str):
         payload = json.loads(payload)
     _assert_rows_belong(crop, payload)
+    _validate(payload)
 
     updated = {"pests": 0, "pest_stages": 0, "diseases": 0, "disease_stages": 0}
-
-    for p in payload.get("pests") or []:
-        if not p.get("row"):
-            continue
-        frappe.db.set_value(
-            "Pest Filter", p["row"],
-            {
-                "unit": p.get("unit") or "Per Zone %",
-                "low_threshold":      float(p.get("low") or 0),
-                "moderate_threshold": float(p.get("moderate") or 0),
-                "high_threshold":     float(p.get("high") or 0),
-            },
-            update_modified=True,
-        )
-        updated["pests"] += 1
-        for s in p.get("stages") or []:
-            if not s.get("row"):
+    for key, doctype, child in _KINDS:
+        stage_key = "pest_stages" if key == "pests" else "disease_stages"
+        for r in payload.get(key) or []:
+            if not r.get("row"):
                 continue
-            frappe.db.set_value(
-                "Pests Stages", s["row"],
-                {
-                    "low_threshold":      float(s.get("low") or 0),
-                    "moderate_threshold": float(s.get("moderate") or 0),
-                    "high_threshold":     float(s.get("high") or 0),
-                },
-                update_modified=True,
-            )
-            updated["pest_stages"] += 1
+            values = {
+                "low_threshold": _f(r.get("low")),
+                "moderate_threshold": _f(r.get("moderate")),
+                "high_threshold": _f(r.get("high")),
+            }
+            if "measure" in r:
+                values["measure"] = r["measure"] or B.PERCENTAGE
+            frappe.db.set_value(doctype, r["row"], values, update_modified=True)
+            updated[key] += 1
+            for s in r.get("stages") or []:
+                if not s.get("row"):
+                    continue
+                frappe.db.set_value(
+                    child, s["row"],
+                    {
+                        "low_threshold": _f(s.get("low")),
+                        "moderate_threshold": _f(s.get("moderate")),
+                        "high_threshold": _f(s.get("high")),
+                    },
+                    update_modified=True,
+                )
+                updated[stage_key] += 1
 
-    for d in payload.get("diseases") or []:
-        if not d.get("row"):
-            continue
-        frappe.db.set_value(
-            "Disease Filter", d["row"],
-            {
-                "unit": d.get("unit") or "Per Zone %",
-                "low_threshold":      float(d.get("low") or 0),
-                "moderate_threshold": float(d.get("moderate") or 0),
-                "high_threshold":     float(d.get("high") or 0),
-            },
-            update_modified=True,
-        )
-        updated["diseases"] += 1
-        for s in d.get("stages") or []:
-            if not s.get("row"):
-                continue
-            frappe.db.set_value(
-                "Disease Stages", s["row"],
-                {
-                    "low_threshold":      float(s.get("low") or 0),
-                    "moderate_threshold": float(s.get("moderate") or 0),
-                    "high_threshold":     float(s.get("high") or 0),
-                },
-                update_modified=True,
-            )
-            updated["disease_stages"] += 1
-
-    # Drop the dashboard threshold cache so the next aggregate call sees
-    # the new numbers immediately.
+    # The next aggregate call must see the new bands immediately.
+    _common.clear_threshold_cache()
     cache = frappe.cache()
-    for key in cache.get_keys("scp:dash_agg:*"):
-        cache.delete_value(key)
+    for k in cache.get_keys("scp:dash_agg:*"):
+        cache.delete_value(k)
     frappe.db.commit()
     return {"ok": True, "updated": updated}

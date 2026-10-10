@@ -431,7 +431,8 @@ def open_alerts(crop: str, farm: str | None = None, greenhouse: str | None = Non
         filters["farm"] = ["in", sorted(farms)]
     if greenhouse:
         filters["warehouse"] = greenhouse
-    rows = frappe.get_all(DOCTYPE, filters=filters, fields=ALERT_FIELDS, limit_page_length=500)
+    rows = frappe.get_all(DOCTYPE, filters=filters, fields=ALERT_FIELDS, 
+                          limit_page_length=0)   # no cap: it would cut before the severity sort
     station = _common.station_word(crop)
     for r in rows:
         r["unit"] = B.unit_label(r.measure, station)

@@ -340,6 +340,29 @@ class TestEndpoints(AlertCase):
         with self.assertRaises(frappe.PermissionError):
             TC.open_alerts("Avocado")
 
+    def test_the_worst_alerts_survive_the_row_cap(self):
+        TF.seed_week(self.gh, TF.WEEK_20[0], crop="Rose")
+        TF.seed_week(self.gh2, TF.WEEK_20[0], crop="Rose", sections={(0, 0)})   # one section: Low
+        TF.set_bands("Rose", "Thrips", 0, 10, 30)
+        TC.check_crop("Rose", SUN_20)
+        worst = self.alert().name                                   # Spray advised
+        lesser = self.alert(gh=self.gh2).name                       # Scout first
+        # the worst is the OLDEST row: a modified-ordered cap would drop it
+        frappe.db.set_value("Scouting Alert", worst, "modified", "2000-01-01 00:00:00", update_modified=False)
+        rows = TC.open_alerts("Rose")
+        self.assertEqual([r.name for r in rows], [worst, lesser])
+        # more rows than the old 500 cap: the worst is still there, still first
+        gh = frappe.get_doc("Scouting Alert", worst).as_dict()
+        for i in range(501):
+            d = frappe.get_doc({**{k: gh[k] for k in ("crop", "farm", "warehouse", "kind", "observation",
+                                                      "measure", "band", "reliability", "sections_total")},
+                                "doctype": "Scouting Alert", "stage": f"s{i}", "iso_week": "2031-W19",
+                                "action": "Alarming", "status": "Open", "value": 1, "sections_scouted": 9})
+            d.insert(ignore_permissions=True)
+        rows = TC.open_alerts("Rose")
+        self.assertGreater(len(rows), 500)
+        self.assertEqual(rows[0].name, worst)
+
     def test_resolved_alerts_are_not_open(self):
         name = self.raise_spray_advised()
         frappe.db.set_value("Scouting Alert", name, "status", "Resolved")

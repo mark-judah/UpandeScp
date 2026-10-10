@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AreaChart,
   Area,
@@ -33,7 +33,16 @@ import { RevealLTR } from "@/components/RevealLTR";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { GreenhouseModal } from "./GreenhouseModal";
-import { PrevalenceFigure } from "./PrevalenceFigure";
+import { ReliabilityPill } from "./PrevalenceFigure";
+import { Button } from "@/components/ui/button";
+import { AlertActionPill } from "@/components/AlertActionPill";
+import { cn } from "@/lib/utils";
+import {
+  acknowledgeAlert,
+  alertFigureLine,
+  listOpenAlerts,
+  type ScoutingAlert,
+} from "@/lib/scouting-alerts-api";
 import type { OverviewPayload } from "./overview-types";
 import { weekTickFormatter } from "@/lib/iso-week";
 
@@ -55,12 +64,16 @@ export function OverviewTab({
   fromDate,
   toDate,
   crop = "",
+  farm = "",
+  greenhouse = "",
 }: {
   data: OverviewPayload | null;
   scoutLookup: Record<string, string>;
   fromDate: string;
   toDate: string;
   crop?: string;
+  farm?: string;
+  greenhouse?: string;
 }) {
   const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, blockCount: 0, highAlerts: 0 };
   // Avocado scouting uses Blocks (open-field), everything else uses Greenhouses.
@@ -94,7 +107,39 @@ export function OverviewTab({
     ...r,
     scout: scoutLookup[r.scoutId] || r.scoutId,
   }));
-  const alerts = data?.activeAlerts ?? [];
+  // Active alerts are the stored Scouting Alerts (thresholds spec §5), read
+  // uncached so an Acknowledge shows at once. The cached payload's
+  // `activeAlerts` is no longer drawn.
+  const [alerts, setAlerts] = useState<ScoutingAlert[]>([]);
+  const [acking, setAcking] = useState<string | null>(null);
+  useEffect(() => {
+    if (!crop) {
+      setAlerts([]);
+      return;
+    }
+    let cancelled = false;
+    listOpenAlerts({ crop, farm, greenhouse })
+      .then((rows) => {
+        if (!cancelled) setAlerts(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setAlerts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [crop, farm, greenhouse]);
+  const acknowledge = async (name: string) => {
+    setAcking(name);
+    try {
+      const r = await acknowledgeAlert(name);
+      setAlerts((rows) => rows.map((a) => (a.name === name ? { ...a, status: r.status } : a)));
+    } catch {
+      // Left Open; the next load shows the truth.
+    } finally {
+      setAcking(null);
+    }
+  };
   const scoutsDaily = data?.scoutsPerDay ?? [];
   const perf = (data?.scoutPerformance ?? []).map((p) => ({
     ...p,
@@ -282,33 +327,54 @@ export function OverviewTab({
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Active Alerts</CardTitle>
-            <CardDescription>{alerts.length} flagged</CardDescription>
+            <CardDescription>
+              {alerts.filter((a) => a.status === "Open").length} open · thresholds crossed in the
+              latest scouted week
+            </CardDescription>
           </CardHeader>
           <CardContent className="p-0 flex flex-col gap-1.5">
             {alerts.length ? (
-              alerts.map((a, i) => (
+              alerts.map((a) => (
                 <div
-                  key={`${a.name}-${a.greenhouse}-${a.date}-${i}`}
-                  className="flex flex-col gap-1 px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]"
+                  key={a.name}
+                  data-testid="active-alert"
+                  className={cn(
+                    "flex flex-col gap-1 px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]",
+                    a.status !== "Open" && "opacity-70",
+                  )}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate">{a.name}</span>
-                    <Badge
-                      variant={a.severity === "high" ? "destructive" : "secondary"}
-                      className="text-[0.6rem]"
-                    >
-                      {a.severity}
-                    </Badge>
+                    <span className="text-sm font-medium truncate">
+                      {a.observation}
+                      {a.stage ? ` · ${a.stage}` : ""}
+                    </span>
+                    <AlertActionPill action={a.action} />
+                    <ReliabilityPill value={a.reliability} />
                   </div>
                   <div className="text-[0.7rem] text-muted-foreground truncate">
-                    {a.greenhouse}
-                    {a.zone ? ` · ${a.zone}` : ""}
+                    {a.warehouse} · {a.iso_week}
                   </div>
-                  <PrevalenceFigure fig={a} />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[0.7rem] tabular-nums">{alertFigureLine(a)}</span>
+                    {a.status === "Open" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-[0.65rem]"
+                        disabled={acking === a.name}
+                        onClick={() => void acknowledge(a.name)}
+                      >
+                        Acknowledge
+                      </Button>
+                    ) : (
+                      <span className="text-[0.65rem] text-muted-foreground">Acknowledged</span>
+                    )}
+                  </div>
                 </div>
               ))
             ) : (
-              <EmptyHint title="No active alerts" hint="No high-severity observations." />
+              <EmptyHint title="No active alerts" hint="No threshold crossed in the latest scouted week." />
             )}
           </CardContent>
         </Card>

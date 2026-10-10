@@ -80,7 +80,9 @@ describe("Pests tab severity rows", () => {
 });
 
 describe("Overview active alerts", () => {
-  it("carry the figure line under the greenhouse", () => {
+  // Since thresholds piece 3a the card lists stored Scouting Alerts (see
+  // OverviewAlerts.test.tsx); the cached payload's activeAlerts is not drawn.
+  it("no longer draws the cached payload's alerts", () => {
     const data: OverviewPayload = {
       kpis: { totalScouts: 1, zonesScouted: 27, greenhouseCount: 1, blockCount: 0, highAlerts: 1 },
       daily: [],
@@ -97,6 +99,6 @@ describe("Overview active alerts", () => {
       }],
     };
     render(<OverviewTab data={data} scoutLookup={{}} fromDate="2031-03-03" toDate="2031-03-09" />);
-    expect(screen.getByText("33.3% (was 50%) · ±6 · 8/9")).toBeInTheDocument();
+    expect(screen.queryByText("33.3% (was 50%) · ±6 · 8/9")).toBeNull();
   });
 });

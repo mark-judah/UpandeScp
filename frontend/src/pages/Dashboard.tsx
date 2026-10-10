@@ -199,6 +199,8 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               fromDate={from}
               toDate={to}
               crop={base.crop}
+              farm={base.farm}
+              greenhouse={base.greenhouse}
             />
             {overview.loading && (
               <LoadingOverlay

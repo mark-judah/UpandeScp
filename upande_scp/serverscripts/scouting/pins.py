@@ -53,15 +53,47 @@ def assert_may_edit(pin, user=None) -> None:
                      frappe.PermissionError)
 
 
-def _house(crop, warehouse) -> tuple:
-    """(canonical crop, farm, warehouse) once the user may see the house."""
+def _check_house(crop, warehouse) -> tuple:
+    """(canonical crop, farm, warehouse) once the warehouse exists and belongs
+    to the crop. No visibility test: the doctype controller runs this on every
+    insert and save, whoever the user is."""
     crop = crop_catalog.resolve_crop(crop)
     warehouse = (warehouse or "").strip()
     if not crop or not warehouse:
         frappe.throw("A pin needs a crop and a greenhouse or block.", frappe.ValidationError)
     farm = frappe.db.get_value("Warehouse", warehouse, "custom_farm")
+    if not farm:
+        frappe.throw(f"{warehouse} is not a greenhouse or block of a farm.", frappe.ValidationError)
+    if crop_catalog.crop_for_farm(farm) != crop:
+        frappe.throw(f"{warehouse} is not a {crop} house.", frappe.ValidationError)
+    return crop, farm, warehouse
+
+
+def _house(crop, warehouse) -> tuple:
+    """``_check_house`` plus: the user may see the house (crop scope + farm)."""
+    crop, farm, warehouse = _check_house(crop, warehouse)
     TC._assert_can_see(crop, farm)
     return crop, farm, warehouse
+
+
+def normalise(pin) -> None:
+    """Controller hook: whatever the path (endpoint, Desk, script), the farm is
+    the house's, and kind, cell and stations are in range and this house's."""
+    pin.crop, pin.farm, pin.warehouse = _check_house(pin.crop, pin.warehouse)
+    if pin.kind not in KINDS:
+        frappe.throw(f"A pin is a Section, a Patch or an Area, not {pin.kind or 'nothing'}.", frappe.ValidationError)
+    if pin.kind == "Section":
+        row, col = int(pin.section_row if pin.section_row is not None else -1), int(
+            pin.section_col if pin.section_col is not None else -1)
+        if not (0 <= row < P.GRID and 0 <= col < P.GRID):
+            frappe.throw("A section pin needs a row and a column of the 3 × 3 grid.", frappe.ValidationError)
+        return
+    pin.section_row = pin.section_col = -1
+    mine = set(R.station_ranks(pin.warehouse))
+    picked = sorted({s for s in _json_list(pin.stations) if s in mine})
+    if not picked:
+        frappe.throw(f"None of those stations is in {pin.warehouse}.", frappe.ValidationError)
+    pin.stations = json.dumps(picked)
 
 
 def _json_list(value) -> list:

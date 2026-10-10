@@ -5,13 +5,16 @@ from frappe.model.document import Document
 
 
 class ScoutingPin(Document):
-	# C9: only the owner, an SCP General Manager or a System Manager may change
-	# or delete a pin, whichever path the change takes (endpoint, Desk, script).
+	# C6/C9: the whitelisted endpoints are the only normal path (the doctype
+	# grants System Manager alone). Whatever path a save takes, the house and
+	# the stations are re-checked, and only the owner, an SCP General Manager
+	# or a System Manager may change or delete a pin.
 	def validate(self):
-		if not self.is_new():
-			from upande_scp.serverscripts.scouting.pins import assert_may_edit
+		from upande_scp.serverscripts.scouting.pins import assert_may_edit, normalise
 
+		if not self.is_new():
 			assert_may_edit(self)
+		normalise(self)
 
 	def on_trash(self):
 		from upande_scp.serverscripts.scouting.pins import assert_may_edit

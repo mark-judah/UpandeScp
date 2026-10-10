@@ -165,6 +165,8 @@ class TestPins(PinCase):
         self.as_user(U_OWNER)
         pin = PN.save_pin("Rose", self.gh, "Area", "one zone", polygon=json.dumps(area))
         self.assertEqual((pin["stations"], pin["polygon"]), ([zone], area))
+        self.assertTrue(33 < centroids[zone][0] < 42, centroids[zone])   # lng first, Kenya
+        self.assertTrue(-5 < centroids[zone][1] < 5, centroids[zone])
         far = {"type": "Polygon", "coordinates": [[[0, 0], [0.001, 0], [0.001, 0.001], [0, 0]]]}
         with self.assertRaises(frappe.ValidationError):
             PN.save_pin("Rose", self.gh, "Area", "nowhere", polygon=json.dumps(far))
@@ -179,3 +181,41 @@ class TestPins(PinCase):
         self.as_user(U_OWNER)
         pin = PN.save_pin("Avocado", block, "Area", "one tree", polygon=json.dumps(square(*centroids[tree])))
         self.assertEqual(pin["stations"], [tree])
+
+
+class TestPinDoctypeGuards(PinCase):
+    def test_a_roleless_user_cannot_insert_or_read_a_pin_through_the_document_api(self):
+        pin = self.section_pin()
+        self.as_user(U_STRANGER)
+        with self.assertRaises(frappe.PermissionError):
+            frappe.get_doc({"doctype": "Scouting Pin", "title": "x", "crop": "Rose", "warehouse": self.gh,
+                            "kind": "Section", "section_row": 0, "section_col": 0}).insert()
+        with self.assertRaises(frappe.PermissionError):
+            frappe.get_list("Scouting Pin", fields=["name"], ignore_permissions=False)
+        self.assertTrue(frappe.db.exists("Scouting Pin", pin["name"]))
+
+    def test_a_gm_list_with_permissions_applied_shows_no_private_pin(self):
+        self.section_pin(shared=0)
+        self.as_user(U_GM)
+        with patch.object(frappe, "get_roles", return_value=["SCP General Manager"]):
+            try:
+                rows = frappe.get_list("Scouting Pin", fields=["name"])
+            except frappe.PermissionError:
+                rows = []
+        self.assertEqual(rows, [])
+
+    def test_validate_rejects_foreign_stations_and_a_crop_mismatched_house_on_direct_insert(self):
+        foreign = sorted(R.station_ranks(PF.rose_greenhouses(2)[1]))[:2]
+        base = {"doctype": "Scouting Pin", "title": "x", "crop": "Rose", "warehouse": self.gh}
+        with self.assertRaises(frappe.ValidationError):
+            frappe.get_doc({**base, "kind": "Patch", "stations": json.dumps(foreign)}).insert(ignore_permissions=True)
+        with self.assertRaises(frappe.ValidationError):
+            frappe.get_doc({**base, "kind": "Section", "section_row": 7, "section_col": 0}).insert(ignore_permissions=True)
+        with self.assertRaises(frappe.ValidationError):
+            frappe.get_doc({**base, "crop": "Avocado", "kind": "Section", "section_row": 0,
+                            "section_col": 0}).insert(ignore_permissions=True)
+        with self.assertRaises(frappe.ValidationError):
+            frappe.get_doc({**base, "warehouse": "No Such House - X", "kind": "Section", "section_row": 0,
+                            "section_col": 0}).insert(ignore_permissions=True)
+        ok = frappe.get_doc({**base, "kind": "Section", "section_row": 0, "section_col": 0}).insert(ignore_permissions=True)
+        self.assertEqual(ok.farm, frappe.db.get_value("Warehouse", self.gh, "custom_farm"))

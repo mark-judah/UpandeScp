@@ -172,48 +172,6 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
-  },
-  {
-   "create": 1,
-   "delete": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "SCP General Manager",
-   "write": 1
-  },
-  {
-   "create": 1,
-   "delete": 1,
-   "if_owner": 1,
-   "read": 1,
-   "role": "SCP Spray Plan Creator",
-   "write": 1
-  },
-  {
-   "create": 1,
-   "delete": 1,
-   "if_owner": 1,
-   "read": 1,
-   "role": "SCP Spray Plan Approver",
-   "write": 1
-  },
-  {
-   "create": 1,
-   "delete": 1,
-   "if_owner": 1,
-   "read": 1,
-   "role": "SCP Spray Supervisor",
-   "write": 1
-  },
-  {
-   "create": 1,
-   "delete": 1,
-   "if_owner": 1,
-   "read": 1,
-   "role": "SCP Scout",
-   "write": 1
   }
  ],
  "row_format": "Dynamic",

@@ -22,7 +22,7 @@
    "unique": 1
   },
   {
-   "description": "Identifier the apps map to a bundled SVG icon (e.g. 'egg', 'larva', 'adult'). Unknown keys fall back to a default icon.",
+   "description": "Shape from the shared icon set: circle, triangle, pentagon, diamond, cross, plus, square, hexagon, star or chevron. Unknown keys fall back to circle.",
    "fieldname": "icon_key",
    "fieldtype": "Data",
    "in_list_view": 1,

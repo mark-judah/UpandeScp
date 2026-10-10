@@ -66,6 +66,17 @@ Fields: crop, farm, warehouse (greenhouse or block), kind (Pest/Disease), observ
 
 `CATEGORIES` gains `scouting` (Select options too). `list_notifications`, `unread_count`, and `mark_read(all)` filter `scp_category in CATEGORIES`. Existing SCP callers already pass categories; `spray_plan_creator/maintenance.py`'s direct Notification Log insert is switched to `notify(..., category=…)`.
 
+## Clarifications from planning (2026-10-10)
+
+- Count reliability judges the margin relative to the figure (`margin ÷ max(value, 1)`); Spray advised vs Scout first depends only on Low vs not-Low, identical for both measures.
+- One alert per (house, observation, stage, week): a crossed stage band is its own alert.
+- If a farm's Spray Plan Creator and Spray Supervisor rosters are both empty, Alarming falls back to the crop's SCP General Managers.
+- Acknowledge is allowed for the alert's recipients and SCP General Manager / System Manager.
+- Overview lists Open and Acknowledged alerts (Acknowledged dimmed).
+- The diagnose payload is out of scope for 3a; creator badges come from the bootstrap.
+- Reports judge on row bands only (stage bands are dashboards/alerts only).
+- Extra notification category `plan` (auto-cancel notice); bell rows for Scouting Alert link to the alert.
+
 ## Out of scope
 
 Hot spots (3b), spread & pins (3c), per-hectare bands (later, once all areas exist), push notifications to the phone, the email provider fix (last roadmap step), seeding band values (agronomist sets them).

@@ -42,7 +42,7 @@ _DIGEST_LEN = 10
 _PHOTO_ID_LIMIT = 64
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".heic")
 UNIDENTIFIED = "Unidentified"
-NOT_YOURS_MESSAGE = "Only the scout who made this entry may add photos to it."
+NOT_YOURS_MESSAGE = "Only the scout who made this entry, or a General Manager, may add photos to it."
 
 
 def _gm_recipients():
@@ -63,6 +63,16 @@ def _gm_recipients():
         if addr and "@" in addr:
             out.append(addr)
     return out
+
+
+def _may_attach(entry):
+    """The entry's scout (createScoutingEntry inserts as the scout, so `owner`
+    is the scout), a General Manager, or a System Manager. Not "anyone with
+    write": every SCP scout role holds write on Scouting Entry."""
+    user = frappe.session.user
+    if user == "Administrator" or user == frappe.db.get_value("Scouting Entry", entry, "owner"):
+        return True
+    return bool({"SCP General Manager", "System Manager"} & set(frappe.get_roles(user)))
 
 
 def _is_unidentified(name):
@@ -140,10 +150,7 @@ def attach_scouting_photo():
 
     # Only the scout who made the entry (or someone allowed to edit it) may
     # add to it: the endpoint is whitelisted and the client_id is not a secret.
-    if (
-        frappe.session.user != frappe.db.get_value("Scouting Entry", entry, "owner")
-        and not frappe.has_permission("Scouting Entry", "write", doc=entry)
-    ):
+    if not _may_attach(entry):
         frappe.response["data"] = {
             "status": "refused",
             "reason": "not-yours",

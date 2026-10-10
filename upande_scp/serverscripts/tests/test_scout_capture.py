@@ -461,35 +461,35 @@ class TestPhotoUpload(CaptureCase):
         self.post(pest="Unidentified pest", trap="Trap 2")
         self.assertEqual(len(self.rows()), 2)
 
-    def _plain_user(self):
-        return frappe.db.get_value(
-            "User", {"enabled": 1, "name": ["not in", ("Administrator", "Guest")]}, "name")
-
-    def test_the_owner_may_upload_a_stranger_may_not(self):
-        owner = self._plain_user()
-        stranger = frappe.db.get_value(
-            "User", {"enabled": 1, "name": ["not in", ("Administrator", "Guest", owner)]}, "name")
+    def test_the_owner_and_a_gm_may_upload_another_scout_may_not(self):
+        # Real committed users with real roles (the TF.ensure_user pattern):
+        # every SCP scout role holds write on Scouting Entry, so a permission
+        # check alone would let one scout photograph another's entry.
+        from upande_scp.serverscripts.tests import thresholds_fixture as TF
+        owner = TF.ensure_user("_test_scp_capture_owner@example.com")
+        other = TF.ensure_user("_test_scp_capture_other@example.com")
+        gm = TF.ensure_user("_test_scp_capture_gm@example.com")
+        for user, role in ((owner, "SCP Scout"), (other, "SCP Scout"), (gm, "SCP General Manager")):
+            frappe.get_doc("User", user).add_roles(role)
         frappe.db.sql("UPDATE `tabScouting Entry` SET owner=%s WHERE name=%s", (owner, ENTRY))
-        with patch("frappe.has_permission", return_value=False):
+        try:
             frappe.set_user(owner)
             self.assertEqual(self.post(subject="General", photo_id="o1")["status"], "ok")
-            frappe.set_user(stranger)
+            frappe.set_user(other)
             got = self.post(subject="General", caption="hijack", photo_id="o1")
             self.assertEqual((got["status"], got["reason"]), ("refused", "not-yours"))
-            got = self.post(pest="Unidentified pest", trap="T9")
-            self.assertEqual(got["reason"], "not-yours")
-        self.assertEqual(len(self.saved), 1)
-        self.assertEqual([r.caption for r in self.rows()], [self.rows()[0].caption])
-        self.assertNotEqual(self.rows()[0].caption, "hijack")
+            self.assertEqual(self.post(pest="Unidentified pest", trap="T9")["reason"], "not-yours")
+            frappe.set_user(gm)
+            self.assertEqual(self.post(subject="General", photo_id="g9")["status"], "ok")
+        finally:
+            frappe.set_user("Administrator")
+        self.assertEqual(len(self.saved), 2)
+        self.assertNotIn("hijack", [r.caption for r in self.rows()])
         self.sendmail.assert_not_called()
 
-    def test_a_user_with_write_permission_may_upload(self):
-        owner = self._plain_user()
-        frappe.db.sql("UPDATE `tabScouting Entry` SET owner=%s WHERE name=%s", (owner, ENTRY))
-        with patch("frappe.has_permission", return_value=True):
-            self.assertEqual(self.post(subject="General", photo_id="w1")["status"], "ok")
-        # Administrator, who is not the owner, has write permission
-        self.assertEqual(self.post(subject="General", photo_id="w2")["status"], "ok")
+    def test_administrator_may_upload_to_anyones_entry(self):
+        frappe.db.sql("UPDATE `tabScouting Entry` SET owner='Guest' WHERE name=%s", ENTRY)
+        self.assertEqual(self.post(subject="General", photo_id="a1")["status"], "ok")
 
     def test_only_image_extensions_survive(self):
         n = self.PI._short_file_name

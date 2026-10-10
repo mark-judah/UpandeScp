@@ -33,6 +33,7 @@ from upande_scp.serverscripts.spray_plan_creator.auto_material_issue import (
     build_and_submit_material_issue,
     resolve_supervisor_employee,
 )
+from upande_scp.serverscripts.spray_plan_creator import transfer_batches as TB
 from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
 from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
 from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_MIX
@@ -323,7 +324,34 @@ def _transferred_into_csu(wo_name: str, wip: str) -> dict[str, float]:
     return out
 
 
-def _rebuild_manufacture_from_transfer(se_doc, wo_name: str, wip: str) -> None:
+def _append_raw_row(se_doc, item_code: str, qty: float, wip: str, proto):
+    suom = frappe.db.get_value("Item", item_code, "stock_uom")
+    val = flt(
+        frappe.db.get_value(
+            "Bin", {"item_code": item_code, "warehouse": wip}, "valuation_rate"
+        )
+    )
+    row = se_doc.append("items", {})
+    row.item_code = item_code
+    row.qty = qty
+    row.transfer_qty = qty
+    row.s_warehouse = wip
+    row.t_warehouse = None
+    row.uom = suom
+    row.stock_uom = suom
+    row.conversion_factor = 1.0
+    row.is_finished_item = 0
+    row.allow_zero_valuation_rate = 1
+    if val > 0:
+        row.basic_rate = val
+    if proto is not None and proto.get("expense_account"):
+        row.expense_account = proto.expense_account
+    return row
+
+
+def _rebuild_manufacture_from_transfer(
+    se_doc, wo_name: str, wip: str, moment=None
+) -> list[str]:
     """Floor-plan-is-truth: replace the BOM-backflushed raw consumption lines
     with the chemicals ACTUALLY transferred into the CSU for this WO.
 
@@ -333,6 +361,18 @@ def _rebuild_manufacture_from_transfer(se_doc, wo_name: str, wip: str) -> None:
     and wrong quantities. The transfer == what was issued/scanned == the plan,
     so we consume exactly that. The finished-good line(s) are preserved; raises
     if the CSU received nothing for this WO.
+
+    A batch-tracked chemical gets one row per batch, the batches decided by
+    ``transfer_batches`` (this WO's transferred lots first, then the rest of the
+    CSU, noted), each row carrying a pre-built Outward bundle naming its batch —
+    so ERPNext's own first-in-first-out pick over the shared CSU never runs.
+    ``moment`` is the posting moment for a backdated (offline) manufacture.
+
+    Idempotent: this also runs from ``Stock Entry.before_validate`` on every
+    save and submit (``stock_entry_state``). When the rows already say what the
+    resolver says, they are left alone; otherwise they are rebuilt and the
+    superseded draft bundles are deleted. Returns the notes for any batch taken
+    that was not transferred for this WO.
     """
     tmap = _transferred_into_csu(wo_name, wip)
     if not tmap:
@@ -340,42 +380,144 @@ def _rebuild_manufacture_from_transfer(se_doc, wo_name: str, wip: str) -> None:
             f"Cannot manufacture {wo_name}: no chemicals were transferred into "
             f"the CSU {wip!r}. Issue the chemicals first."
         )
-    proto = None
-    for r in (se_doc.items or []):
-        if not r.get("is_finished_item"):
-            proto = r
-            break
-    keep = [r for r in (se_doc.items or []) if r.get("is_finished_item")]
-    se_doc.items = keep
+    plans = TB.resolve_consumption(wo_name, wip, tmap, moment)
+    desired = []
+    notes: list[str] = []
     for ic in tmap:
         qty = flt(tmap[ic])
         if qty <= 0:
             continue
-        suom = frappe.db.get_value("Item", ic, "stock_uom")
-        val = flt(
-            frappe.db.get_value(
-                "Bin", {"item_code": ic, "warehouse": wip}, "valuation_rate"
+        plan = plans.get(ic)
+        if plan is None:
+            desired.append((ic, None, qty))
+            continue
+        if plan["short"] > TB.EPS:
+            when = f" as of {get_datetime(moment):%Y-%m-%d %H:%M}" if moment else ""
+            frappe.throw(
+                f"Cannot manufacture {wo_name}: {ic} needs {qty:g} from the CSU "
+                f"{wip!r} but its batches there hold only "
+                f"{flt(plan['available_total']):g}{when}."
             )
-        )
-        row = se_doc.append("items", {})
-        row.item_code = ic
-        row.qty = qty
-        row.transfer_qty = qty
-        row.s_warehouse = wip
-        row.t_warehouse = None
-        row.uom = suom
-        row.stock_uom = suom
-        row.conversion_factor = 1.0
-        row.is_finished_item = 0
-        row.allow_zero_valuation_rate = 1
-        if val > 0:
-            row.basic_rate = val
-        if proto is not None and proto.get("expense_account"):
-            row.expense_account = proto.expense_account
+        notes.extend(TB.notes_for(ic, plan))
+        for piece in plan["pieces"]:
+            desired.append((ic, piece["batch_no"], flt(piece["qty"])))
+
+    if _current_consumption(se_doc, wip) == _consumption_key(desired):
+        return notes
+
+    proto = None
+    old_bundles = []
+    for r in (se_doc.items or []):
+        if r.get("is_finished_item"):
+            continue
+        if proto is None:
+            proto = r
+        if r.get("serial_and_batch_bundle"):
+            old_bundles.append(r.serial_and_batch_bundle)
+    keep = [r for r in (se_doc.items or []) if r.get("is_finished_item")]
+    se_doc.items = keep
+    posting = get_datetime(moment) if moment else now_datetime()
+    for ic, batch_no, qty in desired:
+        row = _append_raw_row(se_doc, ic, qty, wip, proto)
+        if batch_no:
+            row.serial_and_batch_bundle = _make_outward_bundle(
+                ic, wip, batch_no, qty, posting, se_doc.company
+            )
+            row.use_serial_batch_fields = 0
+            row.batch_no = None
     idx = 1
     for r in se_doc.items:
         r.idx = idx
         idx = idx + 1
+    for name in old_bundles:
+        if frappe.db.get_value("Serial and Batch Bundle", name, "docstatus") == 0:
+            frappe.delete_doc(
+                "Serial and Batch Bundle", name, force=True, ignore_permissions=True
+            )
+    if notes:
+        line = "Batches: " + "; ".join(notes)
+        if line not in (se_doc.get("remarks") or ""):
+            se_doc.remarks = "\n".join(filter(None, [se_doc.get("remarks"), line]))
+    return notes
+
+
+def _consumption_key(rows) -> list[tuple]:
+    return sorted((ic, b or "", round(flt(q), 6)) for ic, b, q in rows)
+
+
+def _current_consumption(se_doc, wip: str) -> list[tuple] | None:
+    """What the raw rows already consume, as (item, batch, qty) — or None when a
+    batch item's row has no bundle yet (ERPNext would FIFO-pick it)."""
+    rows = []
+    for r in (se_doc.items or []):
+        if r.get("is_finished_item"):
+            continue
+        if r.get("s_warehouse") != wip or r.get("t_warehouse"):
+            return None
+        if not TB.is_batch_item(r.item_code):
+            rows.append((r.item_code, None, flt(r.qty)))
+            continue
+        if not r.get("serial_and_batch_bundle"):
+            return None
+        entries = frappe.get_all(
+            "Serial and Batch Entry",
+            filters={"parent": r.serial_and_batch_bundle},
+            fields=["batch_no", "qty"],
+        )
+        if len(entries) != 1:
+            return None
+        rows.append((r.item_code, entries[0].batch_no, abs(flt(entries[0].qty))))
+    return _consumption_key(rows)
+
+
+def _make_outward_bundle(
+    item_code: str, warehouse: str, batch_no: str, qty: float, posting, company
+) -> str:
+    """A draft Outward bundle naming exactly one batch.
+
+    Built here rather than by ERPNext's auto-pick: the auto-pick ignores an expired
+    batch (against today, even for a backdated posting), and saves as the session
+    user. The batch is decided already; this only writes it down.
+    """
+    bundle = frappe.new_doc("Serial and Batch Bundle")
+    bundle.company = company
+    bundle.item_code = item_code
+    bundle.warehouse = warehouse
+    bundle.has_batch_no = 1
+    bundle.type_of_transaction = "Outward"
+    bundle.voucher_type = "Stock Entry"
+    bundle.posting_datetime = get_datetime(posting)
+    bundle.append(
+        "entries",
+        {"batch_no": batch_no, "qty": -abs(flt(qty)), "warehouse": warehouse},
+    )
+    bundle.flags.ignore_permissions = True
+    bundle.flags.ignore_links = True
+    bundle.insert(ignore_permissions=True)
+    return bundle.name
+
+
+class _as_administrator:
+    """Run the Stock Entry submit as Administrator, then restore the caller.
+
+    ERPNext submits each row's Serial and Batch Bundle from inside the Stock
+    Entry's submit with a fresh ``frappe.get_doc(...).submit()`` — no flag set on
+    the Stock Entry reaches it, so a supervisor without Stock User would hit a
+    PermissionError on the bundle (and, on live, on Batch). The caller's access
+    was checked before we got here; this is the narrowest scope that lets the
+    submit through without granting the role.
+    """
+
+    def __enter__(self):
+        self.user = frappe.session.user
+        if self.user != "Administrator":
+            frappe.set_user("Administrator")
+        return self
+
+    def __exit__(self, *exc):
+        if frappe.session.user != self.user:
+            frappe.set_user(self.user)
+        return False
 
 
 def _promote_to_tank_mix_manufactured(
@@ -423,7 +565,9 @@ def _promote_to_tank_mix_manufactured(
         frappe.throw(
             f"Cannot manufacture {wo.name}: no CSU (wip_warehouse) set."
         )
-    _rebuild_manufacture_from_transfer(se_doc, wo.name, wip)
+    batch_notes = _rebuild_manufacture_from_transfer(
+        se_doc, wo.name, wip, moment=posting_moment
+    )
 
     # Stamp the greenhouse cost center on every SE row (raw consumption + FG)
     # so the per-chemical manufacture GL postings attribute to the greenhouse
@@ -451,7 +595,8 @@ def _promote_to_tank_mix_manufactured(
         for it in se_doc.items or []:
             it.cost_center = cost_center
     se_doc.save(ignore_permissions=True)
-    se_doc.submit()
+    with _as_administrator():
+        se_doc.submit()
 
     sal_name = _create_sal_draft(wo, se_doc)
 
@@ -476,6 +621,16 @@ def _promote_to_tank_mix_manufactured(
             frappe.get_traceback(),
             "register_csu_scan: add_comment failed",
         )
+    if batch_notes:
+        try:
+            wo.add_comment(
+                "Comment",
+                f"Manufacture {se_doc.name}: " + "; ".join(batch_notes) + ".",
+            )
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(), "manufacture: batch note comment failed"
+            )
     return se_doc.name, sal_name
 
 
@@ -498,6 +653,7 @@ def build_manufacture_reconciliation(wo, manufacture_se) -> dict[str, Any]:
             consumed[it.item_code] = consumed.get(it.item_code, 0.0) + flt(it.qty)
         if it.t_warehouse and not it.s_warehouse:
             produced += flt(it.qty)
+    batches, batch_notes = _consumed_batches(wo, manufacture_se)
     scanned_codes = _scanned_codes(wo)
     chemicals = []
     quantities_match = True
@@ -509,6 +665,7 @@ def build_manufacture_reconciliation(wo, manufacture_se) -> dict[str, Any]:
             "item_code": r.item_code, "item_name": r.item_name,
             "consumed": c, "transferred": t, "required": rq,
             "scanned": r.item_code in scanned_codes,
+            "batches": batches.get(r.item_code, []),
         })
     return {
         "manufactured": True,
@@ -516,7 +673,51 @@ def build_manufacture_reconciliation(wo, manufacture_se) -> dict[str, Any]:
         "chemicals": chemicals,
         "all_scanned": _required_chemical_codes(wo).issubset(scanned_codes),
         "quantities_match": quantities_match,
+        "batch_notes": batch_notes,
     }
+
+
+def _consumed_batches(wo, manufacture_se) -> tuple[dict, list[str]]:
+    """item -> [{batch_no, qty, transferred, fallback}] the Manufacture consumed,
+    plus a note for every batch that was not transferred for this WO.
+
+    Read back from the Manufacture's own bundles, so it describes what was
+    posted, not what the resolver would pick today.
+    """
+    wip = getattr(wo, "wip_warehouse", None)
+    bundles = {
+        it.serial_and_batch_bundle: it.item_code
+        for it in (manufacture_se.items or [])
+        if it.s_warehouse and not it.t_warehouse and it.get("serial_and_batch_bundle")
+    }
+    if not bundles:
+        return {}, []
+    lots = TB.transferred_lots(wo.name, wip) if wip else []
+    own = {(l["item_code"], l["batch_no"]) for l in lots if l["batch_no"]}
+    unbatched = {l["item_code"] for l in lots if not l["batch_no"]}
+    out: dict[str, list] = {}
+    notes: list[str] = []
+    for e in frappe.get_all(
+        "Serial and Batch Entry",
+        filters={"parent": ["in", list(bundles)]},
+        fields=["parent", "batch_no", "qty"],
+        order_by="creation asc, idx asc",
+    ):
+        ic = bundles[e.parent]
+        qty = abs(flt(e.qty))
+        transferred = (ic, e.batch_no) in own
+        legacy = (
+            not transferred and ic in unbatched and TB.is_placeholder(e.batch_no)
+        )
+        out.setdefault(ic, []).append({
+            "batch_no": e.batch_no, "qty": qty,
+            "transferred": transferred, "fallback": not transferred and not legacy,
+        })
+        if legacy:
+            notes.append(TB.placeholder_note(ic, e.batch_no, qty))
+        elif not transferred:
+            notes.append(TB.fallback_note(ic, e.batch_no, qty))
+    return out, notes
 
 
 @frappe.whitelist()

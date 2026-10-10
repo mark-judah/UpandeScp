@@ -52,6 +52,7 @@ from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
 from upande_scp.serverscripts.common.timezone import to_site_naive
 from upande_scp.serverscripts.spray_plan_creator import spray_session as SS
+from upande_scp.serverscripts.spray_plan_creator import transfer_batches as TB
 
 TOKEN = "Spray Session Token"
 AFP_TYPE = "Application Floor Plan"
@@ -211,11 +212,35 @@ def preflight(payload) -> dict:
 	if extra:
 		problems.append(f"scanned but not on the plan: {', '.join(extra)}")
 
+	moments = resolve_moments(payload, anchor)
+
 	# Every raw has to be in the CSU as of the anchor, or the manufacture cannot consume
 	# it. Checked here so the message names the chemical rather than a warehouse.
+	#
+	# A batch-tracked chemical is checked the way the manufacture will consume it: by
+	# batch, at the mix moment the replay posts at, against the lowest balance from then
+	# on (`transfer_batches`). A plain item total would pass here and then fail at sync.
 	if anchor and wo.wip_warehouse:
+		transferred = SS._transferred_into_csu(work_order, wo.wip_warehouse)
+		lots = TB.transferred_lots(work_order, wo.wip_warehouse)
 		for row in (wo.required_items or []):
 			if not row.item_code:
+				continue
+			if TB.is_batch_item(row.item_code):
+				need = flt(transferred.get(row.item_code)) or flt(row.required_qty)
+				plan = TB.resolve_item(
+					work_order, wo.wip_warehouse, row.item_code, need, moments["mix_at"],
+					lots=[l for l in lots if l["item_code"] == row.item_code],
+				)
+				if plan["short"] > TB.EPS:
+					problems.append(
+						f"{row.item_code}: {need:g} needed from the CSU's batches on "
+						f"{moments['mix_at']:%Y-%m-%d %H:%M} but only "
+						f"{flt(plan['available_total']):g} can be taken without a later "
+						"entry going negative"
+					)
+				else:
+					notes.extend(TB.notes_for(row.item_code, plan))
 				continue
 			have = _qty_as_of(row.item_code, wo.wip_warehouse, anchor)
 			if have + 0.0001 < flt(row.required_qty):
@@ -224,7 +249,6 @@ def preflight(payload) -> dict:
 					f"{anchor:%Y-%m-%d %H:%M} but only {have:g} was there"
 				)
 
-	moments = resolve_moments(payload, anchor)
 	reported = _moment(payload.get("ended_at"))
 	if reported and moments["ended_at"] > reported:
 		notes.append(

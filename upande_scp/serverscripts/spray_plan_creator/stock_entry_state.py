@@ -25,7 +25,7 @@ transaction, including the Stock Entry's docstatus=1 write.
 from __future__ import annotations
 
 import frappe
-from frappe.utils import cint, flt
+from frappe.utils import cint, flt, get_datetime
 
 AFP_TYPE = "Application Floor Plan"
 CHEMICAL_ISSUED = "Chemical Issued"
@@ -143,7 +143,13 @@ def _before_validate_manufacture(doc):
         return out
 
     before = raw_totals(doc)
-    _rebuild_manufacture_from_transfer(doc, wo_name, wip)
+    # A back-dated entry resolves its batches as of its own posting moment (the
+    # offline replay sets one); otherwise as of now. The rebuild is idempotent, so
+    # running again on every save/submit keeps the batches it already chose.
+    moment = None
+    if getattr(doc, "set_posting_time", 0) and doc.get("posting_date"):
+        moment = get_datetime(f"{doc.posting_date} {doc.posting_time or '00:00:00'}")
+    _rebuild_manufacture_from_transfer(doc, wo_name, wip, moment=moment)
 
     # Stamp the greenhouse cost center on every row so the per-chemical GL
     # attributes to the greenhouse, not the company default.

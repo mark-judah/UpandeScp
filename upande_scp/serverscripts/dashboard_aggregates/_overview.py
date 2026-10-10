@@ -206,7 +206,7 @@ def _classify_cells(obs: list, crop: str, weeks) -> tuple:
     Scouted doc — see ``_common.severity_for`` — fed the adjusted prevalence. Traps
     keep the legacy ``count > 10`` rule because trap thresholds aren't part of the
     Crop Scouted threshold model yet."""
-    from upande_scp.serverscripts.dashboard_aggregates._common import severity_for
+    from upande_scp.serverscripts.dashboard_aggregates._common import house_value, severity_for
 
     by_gh: dict = {}
     scouts_by_gh: dict = {}
@@ -250,7 +250,8 @@ def _classify_cells(obs: list, crop: str, weeks) -> tuple:
         if not fig:
             continue
         pct = fig["prevalence"]
-        sev = severity_for(crop, kind, obs_name, stage, pct) if pct is not None else None
+        value = house_value(crop, kind, obs_name, stage, weeks, gh, fig)
+        sev = severity_for(crop, kind, obs_name, stage, value) if value is not None else None
         if sev == "high":
             by_gh[gh]["alerts"] += 1
             total_alerts += 1

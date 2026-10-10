@@ -11,6 +11,7 @@ import re
 import frappe
 
 from upande_scp.serverscripts.common import crop_catalog
+from upande_scp.serverscripts.common import threshold_bands as B
 
 
 
@@ -150,12 +151,15 @@ def _zero_band(low, mod, high) -> bool:
 
 
 def load_thresholds(crop: str) -> dict:
-    """Return ``{(kind, obs_name, stage): {low, mod, high}}`` for one Crop
-    Scouted doc, plus aggregate fallbacks keyed by ``(kind, obs_name, "")``.
+    """``{(kind, obs_name, stage): spec}`` for one Crop Scouted; ``stage=""`` is
+    the row's own (all-stage) band.
 
-    ``kind`` is ``"pest"`` or ``"disease"``. ``stage=""`` is the
-    aggregate-fallback entry. Empty crop returns an empty map (severity
-    classifier will just return None for everything).
+    A spec is ``{"low", "mod", "high", "measure", "row_measure", "count_stages",
+    "reading_types"}``. ``measure`` is what this key is judged in
+    (``threshold_bands.effective_measure``). ``count_stages`` are the stages a
+    Count figure sums: every counted stage for the row key, the stage itself for
+    a stage key. Unset (all-zero) and misordered bands are left out, so they
+    classify nothing. Memoised per request; ``clear_threshold_cache`` drops it.
     """
     crop = (crop or "").strip()
     if not crop:
@@ -184,21 +188,20 @@ def load_thresholds(crop: str) -> dict:
     return out
 
 
-def _load_kind(out: dict, crop: str, *, parent_table: str, child_table: str, obs_col: str, kind: str) -> None:
-    """Populate ``out`` for one kind (pest/disease) with a single LEFT JOIN
-    query instead of one parent query + one child query per parent row.
+def _usable(low, mod, high) -> bool:
+    return B.is_configured(low, mod, high) and B.bands_ascending(low, mod, high)
 
-    The LEFT JOIN means a filter row with no stage children comes back as
-    one row with every ``s_*`` column NULL — that must NOT be treated as a
-    stage="" entry (it would shadow/duplicate the aggregate fallback), so
-    it is skipped explicitly rather than relying on ``_zero_band`` (NULL,
-    NULL, NULL) happening to be falsy-zero.
-    """
+
+def _load_kind(out: dict, crop: str, *, parent_table: str, child_table: str, obs_col: str, kind: str) -> None:
+    """Populate ``out`` for one kind with one LEFT JOIN. A filter row with no
+    stage children comes back once with every ``s_*`` column NULL; that is not a
+    stage entry. Count is honoured only for a pest with a counted stage (D1)."""
+    measure_col = "pf.measure" if frappe.db.has_column(parent_table, "measure") else "'Percentage'"
     rows = frappe.db.sql(
         f"""
-        SELECT pf.name AS row_name, pf.`{obs_col}` AS obs,
+        SELECT pf.name AS row_name, pf.`{obs_col}` AS obs, {measure_col} AS measure,
                pf.low_threshold, pf.moderate_threshold, pf.high_threshold,
-               s.stage AS s_stage, s.low_threshold AS s_low,
+               s.stage AS s_stage, s.reading_type AS s_rt, s.low_threshold AS s_low,
                s.moderate_threshold AS s_mod, s.high_threshold AS s_high
         FROM `tab{parent_table}` pf
         LEFT JOIN `tab{child_table}` s
@@ -208,51 +211,88 @@ def _load_kind(out: dict, crop: str, *, parent_table: str, child_table: str, obs
         {"crop": crop, "parent_table": parent_table},
         as_dict=True,
     )
-
-    seen_rows = set()
+    by_row: dict = {}
     for r in rows:
-        obs = r["obs"]
-        if r["row_name"] not in seen_rows:
-            seen_rows.add(r["row_name"])
-            if not _zero_band(r["low_threshold"], r["moderate_threshold"], r["high_threshold"]):
-                out[(kind, obs, "")] = {
-                    "low":  float(r["low_threshold"] or 0),
-                    "mod":  float(r["moderate_threshold"] or 0),
-                    "high": float(r["high_threshold"] or 0),
-                }
+        by_row.setdefault(r["row_name"], []).append(r)
 
-        if r["s_stage"] is None:
-            continue  # no stage child row (LEFT JOIN miss) -- not a real stage entry
-        if _zero_band(r["s_low"], r["s_mod"], r["s_high"]):
-            continue
-        out[(kind, obs, r["s_stage"].strip())] = {
-            "low":  float(r["s_low"] or 0),
-            "mod":  float(r["s_mod"] or 0),
-            "high": float(r["s_high"] or 0),
-        }
+    for group in by_row.values():
+        head = group[0]
+        obs = head["obs"]
+        stages = [r for r in group if r["s_stage"] is not None]
+        reading_types = {(r["s_stage"] or "").strip(): (r["s_rt"] or "") for r in stages}
+        counted = frozenset(s for s, rt in reading_types.items() if rt == B.COUNT)
+        row_measure = head["measure"] if head["measure"] in B.MEASURES else B.PERCENTAGE
+        if kind != "pest" or not counted:
+            row_measure = B.PERCENTAGE
+        shared = {"row_measure": row_measure, "reading_types": reading_types}
+
+        if _usable(head["low_threshold"], head["moderate_threshold"], head["high_threshold"]):
+            out[(kind, obs, "")] = {
+                "low":  float(head["low_threshold"] or 0),
+                "mod":  float(head["moderate_threshold"] or 0),
+                "high": float(head["high_threshold"] or 0),
+                "measure": row_measure,
+                "count_stages": counted,
+                **shared,
+            }
+        for r in stages:
+            if not _usable(r["s_low"], r["s_mod"], r["s_high"]):
+                continue
+            stage = (r["s_stage"] or "").strip()
+            out[(kind, obs, stage)] = {
+                "low":  float(r["s_low"] or 0),
+                "mod":  float(r["s_mod"] or 0),
+                "high": float(r["s_high"] or 0),
+                "measure": B.effective_measure(row_measure, reading_types.get(stage, "")),
+                "count_stages": frozenset({stage}),
+                **shared,
+            }
 
 
 def severity_from_pct(
     pct: float,
     thresholds: dict | None,
 ) -> str | None:
-    """Classify a zone-coverage percentage against {low, mod, high}.
-
-    Returns ``"high" | "moderate" | "low" | None``. ``thresholds=None``
-    or unconfigured → None. Bands are inclusive of the high end so a
-    pct exactly at the high threshold classifies as High."""
+    """Classify a figure against {low, mod, high} with the one band classifier
+    (``threshold_bands.band_of``). Returns ``"high" | "moderate" | "low" | None``;
+    ``thresholds=None``, unconfigured, misordered or below every band → None."""
     if not thresholds:
         return None
-    high = thresholds.get("high") or 0
-    mod = thresholds.get("mod") or 0
-    low = thresholds.get("low") or 0
-    if high > 0 and pct >= high:
-        return "high"
-    if mod > 0 and pct >= mod:
-        return "moderate"
-    if low > 0 and pct >= low:
-        return "low"
-    return None
+    return B.band_of(pct, thresholds.get("low"), thresholds.get("mod"), thresholds.get("high")) or None
+
+
+def band_spec(crop: str, kind: str, obs_name: str, stage: str = "") -> dict | None:
+    """The bands a (kind, observation, stage) figure is judged against, and the
+    measure it is judged in: the stage's own bands first, else the row's bands
+    read in the stage's measure (a tick-box stage under a Count row is a share,
+    and its Count — were it counted — would be that stage's alone)."""
+    thresholds = load_thresholds(crop)
+    if not thresholds:
+        return None
+    stage = (stage or "").strip()
+    if stage:
+        own = thresholds.get((kind, obs_name, stage))
+        if own:
+            return own
+    row = thresholds.get((kind, obs_name, ""))
+    if not row or not stage:
+        return row
+    return {
+        **row,
+        "measure": B.effective_measure(row["row_measure"], row["reading_types"].get(stage, "")),
+        "count_stages": frozenset({stage}),
+    }
+
+
+def house_value(crop: str, kind: str, obs_name: str, stage: str, weeks, wh: str, fig) -> float | None:
+    """A house's latest-week figure in the measure its bands are read in:
+    ``fig["prevalence"]`` for a Percentage, the average count per scouted
+    station (``weeks.count_latest``) for a Count. None when there is none."""
+    spec = band_spec(crop, kind, obs_name, stage)
+    if spec and spec["measure"] == B.COUNT:
+        cfig = weeks.count_latest(wh, kind, obs_name, stages=spec["count_stages"])
+        return cfig["value"] if cfig else None
+    return fig.get("prevalence") if fig else None
 
 
 def severity_for(
@@ -260,26 +300,24 @@ def severity_for(
     kind: str,
     obs_name: str,
     stage: str,
-    pct: float,
+    value: float | None,
 ) -> str | None:
-    """Look up thresholds for (crop, kind, obs_name, stage) — stage rule
-    first, aggregate fallback — and classify ``pct``."""
-    thresholds = load_thresholds(crop)
-    if not thresholds:
+    """Classify ``value`` — already in the measure ``band_spec`` names; get it
+    with ``house_value`` — against the stage band, else the row band."""
+    if value is None:
         return None
-    stage_key = (kind, obs_name, (stage or "").strip())
-    agg_key = (kind, obs_name, "")
-    band = thresholds.get(stage_key) or thresholds.get(agg_key)
-    return severity_from_pct(pct, band)
+    return severity_from_pct(value, band_spec(crop, kind, obs_name, stage))
 
 
 K_DASH_AGG_PREFIX = "scp:dash_agg"
 # Bumped when an aggregate's meaning changes without its filters changing, so a
 # deploy never serves a payload computed under the old rules. "crop2": crop-less
 # entries count under their greenhouse's crop and off-crop pests/diseases drop out.
+# "thr1": severity is judged in the row's measure (Percentage or Count) by
+# threshold_bands.band_of, so a payload cached under "prev1" may be mis-classed.
 # "prev1": percentages are station prevalence per ISO week over stations SCOUTED
 # (common/prevalence.py), and payloads carry margin / sections / reliability.
-K_DASH_AGG_SCHEMA = "prev1"
+K_DASH_AGG_SCHEMA = "thr1"
 # Versioning the key with K_SCOUTING_PAYLOAD_VERSION was the original design,
 # but every Scouting Entry insert/update bumps that stamp via
 # cache_utils.invalidate_on_change — on a busy site (mobile syncs) the

@@ -6,6 +6,7 @@ from upande_scp.serverscripts.common import prevalence as P
 from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
+    house_value,
     obs_filter,
     parent_filter_conditions,
     publish_progress,
@@ -122,7 +123,8 @@ def _build(filters: dict, job_id: str = "") -> dict:
             for obs_name, fig in weeks.latest_by_house(kind, stage=stage).get(gh, {}).items():
                 if fig["prevalence"] is None:
                     continue
-                if severity_for(filters["crop"], kind, obs_name, stage, fig["prevalence"]) == "high":
+                value = house_value(filters["crop"], kind, obs_name, stage, weeks, gh, fig)
+                if severity_for(filters["crop"], kind, obs_name, stage, value) == "high":
                     alerts += 1
 
     def _top(d, n=6):

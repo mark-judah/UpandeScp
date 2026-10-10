@@ -13,6 +13,7 @@ from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows
 from upande_scp.serverscripts.dashboard_aggregates._prevalence_rows import ANY
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
+    house_value,
     obs_filter,
     parent_filter_conditions,
     publish_progress,
@@ -145,7 +146,7 @@ def _ranking(kind: str, rows: list, crop: str, weeks) -> list:
         fig = weeks.latest(wh, kind, obs_name, stage)
         if not fig or fig["prevalence"] is None:
             continue
-        sev = severity_for(crop, kind, obs_name, stage, fig["prevalence"])
+        sev = severity_for(crop, kind, obs_name, stage, house_value(crop, kind, obs_name, stage, weeks, wh, fig))
         if sev:
             _bucket(obs_name)[sev] += 1
 

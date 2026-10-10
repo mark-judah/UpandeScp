@@ -206,16 +206,19 @@ def _fetch_scouted(where: str, params: dict, pairs=None) -> list:
 
 
 def _fetch_infested(where: str, params: dict, kinds, pairs=None) -> list:
-    """(house, station, ISO week, kind, observation, stage, section) per child row.
+    """(house, station, ISO week, kind, observation, stage, section, count) per
+    child row.
 
     A pest infests when the row has a count > 0 or a recorded stage; a disease
-    when the row exists (spec §1). Not DISTINCT — deduplicated into sets."""
+    when the row exists (spec §1). ``count`` is the pest row's count (0 for a
+    disease) — the Count measure sums it per station (thresholds spec §2). Not
+    DISTINCT — deduplicated into sets."""
     restrict = _pairs_clause(pairs)
     parts = []
     if "pest" in kinds:
         parts.append(f"""
         SELECT {_WH}, {_STATION}, {_WEEK}, 'pest', c.pest,
-               COALESCE(c.stage, ''), COALESCE(c.plant_section, '')
+               COALESCE(c.stage, ''), COALESCE(c.plant_section, ''), COALESCE(c.`count`, 0)
         FROM `tabScouting Entry` se
         JOIN `tabPests Scouting Entry` c ON c.parent = se.name
         WHERE {where}{obs_filter("pest", "c.pest", params)}
@@ -225,7 +228,7 @@ def _fetch_infested(where: str, params: dict, kinds, pairs=None) -> list:
     if "disease" in kinds:
         parts.append(f"""
         SELECT {_WH}, {_STATION}, {_WEEK}, 'disease', c.disease,
-               COALESCE(c.stage, ''), COALESCE(c.plant_section, '')
+               COALESCE(c.stage, ''), COALESCE(c.plant_section, ''), 0
         FROM `tabScouting Entry` se
         JOIN `tabDiseases Scouting Entry` c ON c.parent = se.name
         WHERE {where}{obs_filter("disease", "c.disease", params)}
@@ -253,11 +256,13 @@ class StationWeeks:
         self._pairs: dict = {}
         self._memo: dict = {}
         self._labels: dict = {}
+        self._station_counts: dict = {}  # (wh, week) -> {(kind, obs, stage, section): {station: Σcount}}
+        self._count_memo: dict = {}
         for r in scouted_rows or []:
             if self._add_scouted(r["wh"], r["station"], r["yw"]) and int(r["in_win"] or 0):
                 self._in_window.setdefault((r["wh"] or "").strip(), set()).add(self._label(r["yw"]))
         for r in infested_rows or []:
-            self._add_infested(r["wh"], r["station"], r["yw"], r["kind"], r["obs"], r["stage"], r["section"])
+            self._add_infested(r["wh"], r["station"], r["yw"], r["kind"], r["obs"], r["stage"], r["section"], r.get("count", 0))
 
     def _label(self, yw) -> str:
         label = self._labels.get(yw)
@@ -275,7 +280,7 @@ class StationWeeks:
         self._all_weeks.setdefault(wh, set()).add(week)
         return True
 
-    def _add_infested(self, wh, station, yw, kind, obs, stage, section):
+    def _add_infested(self, wh, station, yw, kind, obs, stage, section, count=0):
         wh = (wh or "").strip()
         station = (station or "").strip()
         week = self._label(yw)
@@ -283,6 +288,9 @@ class StationWeeks:
             return
         key = (kind, (obs or "").strip(), (stage or "").strip(), (section or "").strip())
         self._infested.setdefault((wh, week), {}).setdefault(key, set()).add(station)
+        if count:
+            per = self._station_counts.setdefault((wh, week), {}).setdefault(key, {})
+            per[station] = per.get(station, 0.0) + float(count)
 
     @classmethod
     def load(cls, from_date, to_date, crop, scope, kinds=("pest", "disease"),
@@ -333,8 +341,8 @@ class StationWeeks:
             params["sw_pairs"] = pairs
         for wh, station, yw in _fetch_scouted(where, params, pairs):
             out._add_scouted(wh, station, yw)
-        for wh, station, yw, kind, obs, stage, section in _fetch_infested(where, params, kinds, pairs):
-            out._add_infested(wh, station, yw, kind, obs, stage, section)
+        for wh, station, yw, kind, obs, stage, section, count in _fetch_infested(where, params, kinds, pairs):
+            out._add_infested(wh, station, yw, kind, obs, stage, section, count)
         return out
 
     # ── structure ──────────────────────────────────────────────────────────
@@ -452,3 +460,57 @@ class StationWeeks:
             return None
         prev = P.combine([self.previous(wh, kind, obs, stage, section) for wh in houses])
         return {**out, "prev": prev["prevalence"] if prev else None}
+
+    # ── counts (thresholds spec §2) ────────────────────────────────────────
+
+    def observations(self, wh, week, kind) -> list:
+        """Observations of ``kind`` recorded at ``wh`` that ISO week, sorted."""
+        return sorted({o for (k, o, _g, _s) in self._infested.get((wh, week), {}) if k == kind and o})
+
+    def station_counts(self, wh, week, kind, obs=ANY, stages=ANY, section=ANY) -> dict:
+        """``{station: Σcount}`` that week; ``stages`` (a frozenset) keeps only
+        those stages — a Count row sums its counted stages, never its ticks."""
+        out: dict = {}
+        for (k, o, g, s), per in self._station_counts.get((wh, week), {}).items():
+            if k != kind:
+                continue
+            if obs is not ANY and o != obs:
+                continue
+            if stages is not ANY and g not in stages:
+                continue
+            if section is not ANY and s != section:
+                continue
+            for station, c in per.items():
+                out[station] = out.get(station, 0.0) + c
+        return out
+
+    def count_figures(self, wh, week, kind, obs=ANY, stages=ANY, section=ANY):
+        key = (wh, week, kind, obs, stages, section)
+        if key not in self._count_memo:
+            scouted = self._scouted.get((wh, week))
+            fig = None
+            if scouted:
+                grid = self.grid(wh)
+                if (wh, week) not in self._counts:
+                    self._counts[(wh, week)] = P.section_counts(grid, scouted)
+                fig = P.count_figures(
+                    grid, scouted,
+                    self.station_counts(wh, week, kind, obs, stages, section),
+                    scouted_counts=self._counts[(wh, week)],
+                )
+                if fig is not None:
+                    fig["week"] = week
+            self._count_memo[key] = fig
+        return self._count_memo[key]
+
+    def count_latest(self, wh, kind, obs=ANY, stages=ANY, section=ANY):
+        """``count_figures`` for the house's latest week, ``prev`` = the previous
+        scouted week's value (mirrors ``latest``)."""
+        latest, previous = self.latest_pair(wh)
+        if latest is None:
+            return None
+        fig = self.count_figures(wh, latest, kind, obs, stages, section)
+        if fig is None:
+            return None
+        prev = self.count_figures(wh, previous, kind, obs, stages, section) if previous else None
+        return {**fig, "prev": prev["value"] if prev else None}

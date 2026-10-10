@@ -50,12 +50,17 @@ OPEN_STATES = ("Open", "Acknowledged")
 LIVE_STATES = ("Open", "Acknowledged", "Converted to plan")
 ALERT_FIELDS = [
     "name", "crop", "farm", "warehouse", "kind", "observation", "stage", "iso_week",
+    "alert_type", "section_row", "section_col", "section_label",
     "measure", "value", "margin", "reliability", "sections_scouted", "sections_total",
     "band", "action", "status", "raised_on", "raised_at", "acknowledged_by", "work_order",
 ]
+#: Every key-based statement matches the alert type and section too, so a house
+#: alert and a hot spot on the same (house, observation, stage, week) never
+#: resolve, supersede or carry each other (hot-spots spec §2).
 _KEY_SQL = (
     "warehouse = %(wh)s AND kind = %(kind)s AND observation = %(obs)s "
-    "AND COALESCE(stage, '') = %(stage)s"
+    "AND COALESCE(stage, '') = %(stage)s AND COALESCE(alert_type, 'House') = %(type)s "
+    "AND section_row = %(row)s AND section_col = %(col)s"
 )
 
 
@@ -71,9 +76,15 @@ def eat_stamp(moment) -> str:
     return moment.astimezone(EAT).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def alert_name(warehouse, kind, observation, stage, iso_week) -> str:
-    """A Scouting Alert's name: its unique key, hashed (spec §4)."""
-    key = "|".join([warehouse or "", kind or "", observation or "", stage or "", iso_week or ""])
+def alert_name(warehouse, kind, observation, stage, iso_week,
+               alert_type=B.HOUSE, section_row=-1, section_col=-1) -> str:
+    """A Scouting Alert's name: its unique key, hashed (spec §4). A House key
+    hashes exactly as before hot spots (no existing alert is renamed); a hot
+    spot's key adds its type and section."""
+    parts = [warehouse or "", kind or "", observation or "", stage or "", iso_week or ""]
+    if alert_type == B.HOT_SPOT:
+        parts += [B.HOT_SPOT, str(int(section_row)), str(int(section_col))]
+    key = "|".join(parts)
     return f"SA-{iso_week}-{hashlib.sha1(key.encode()).hexdigest()[:10]}"
 
 
@@ -147,11 +158,37 @@ def evaluate(crop, today=None) -> list:
 
 
 def _key_params(finding) -> dict:
+    hot = finding.get("alert_type") == B.HOT_SPOT
     return {
         "wh": finding["warehouse"], "kind": KIND_LABEL[finding["kind"]],
         "obs": finding["observation"], "stage": finding["stage"] or "",
         "week": finding["iso_week"],
+        "type": B.HOT_SPOT if hot else B.HOUSE,
+        "row": int(finding["section_row"]) if hot else -1,
+        "col": int(finding["section_col"]) if hot else -1,
     }
+
+
+def _name_for(params) -> str:
+    return alert_name(params["wh"], params["kind"], params["obs"], params["stage"], params["week"],
+                      params["type"], params["row"], params["col"])
+
+
+def finding_key(finding) -> tuple:
+    """A finding's alert key without its week:
+    (house, kind label, observation, stage, type, row, col)."""
+    p = _key_params(finding)
+    return (p["wh"], p["kind"], p["obs"], p["stage"], p["type"], p["row"], p["col"])
+
+
+def _row_key(row) -> tuple:
+    """``finding_key`` for a stored Scouting Alert row."""
+    hot = (row.get("alert_type") or B.HOUSE) == B.HOT_SPOT
+    return (
+        row.get("warehouse"), row.get("kind"), row.get("observation"), row.get("stage") or "",
+        B.HOT_SPOT if hot else B.HOUSE,
+        int(row.get("section_row")) if hot else -1, int(row.get("section_col")) if hot else -1,
+    )
 
 
 def _existing(name, latest=False):
@@ -160,10 +197,10 @@ def _existing(name, latest=False):
     transaction's snapshot and would not see the winner's committed row."""
     if not latest:
         return frappe.db.get_value(
-            DOCTYPE, name, ["name", "status", "notified_action", "notified", "work_order"], as_dict=True,
+            DOCTYPE, name, ["name", "status", "notified_action", "notified_band", "notified", "work_order"], as_dict=True,
         )
     rows = frappe.db.sql(
-        """SELECT name, status, notified_action, notified, work_order FROM `tabScouting Alert`
+        """SELECT name, status, notified_action, notified_band, notified, work_order FROM `tabScouting Alert`
            WHERE name = %s FOR UPDATE""",
         (name,), as_dict=True,
     )
@@ -178,7 +215,7 @@ def _previous_live(params, previous_week):
     if not previous_week:
         return None
     rows = frappe.db.sql(
-        f"""SELECT name, notified_action, status, work_order FROM `tabScouting Alert`
+        f"""SELECT name, notified_action, notified_band, status, work_order FROM `tabScouting Alert`
             WHERE {_KEY_SQL} AND iso_week = %(prev)s AND status IN %(live)s
             LIMIT 1""",
         {**params, "prev": previous_week, "live": LIVE_STATES},
@@ -242,7 +279,7 @@ def upsert(finding, now=None, _retry=True):
         _resolve(params, include_week=True, older=_clean_may_supersede(finding, now))
         return None
 
-    name = alert_name(params["wh"], params["kind"], params["obs"], params["stage"], params["week"])
+    name = _name_for(params)
     fields = {
         # ``margin`` is a NOT NULL Float: a clustered figure (m < 2, margin
         # None) is stored as 0 and read back as None by ``_margin``.

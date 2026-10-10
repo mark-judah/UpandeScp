@@ -11,6 +11,10 @@
   "observation",
   "stage",
   "iso_week",
+  "alert_type",
+  "section_row",
+  "section_col",
+  "section_label",
   "figure_section",
   "measure",
   "value",
@@ -28,6 +32,7 @@
   "acknowledged_on",
   "work_order",
   "notified_action",
+  "notified_band",
   "notified"
  ],
  "fields": [
@@ -85,6 +90,35 @@
    "search_index": 1
   },
   {
+   "default": "House",
+   "description": "House = the whole greenhouse/block; Hot spot = one section of its 3 × 3 grid clearly worse than the house.",
+   "fieldname": "alert_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Alert Type",
+   "options": "House\nHot spot"
+  },
+  {
+   "default": "-1",
+   "description": "Grid row (0 first, 1 middle, 2 last third of the beds / rows); -1 for a House alert.",
+   "fieldname": "section_row",
+   "fieldtype": "Int",
+   "label": "Section Row"
+  },
+  {
+   "default": "-1",
+   "description": "Grid column (0 front, 1 middle, 2 back); -1 for a House alert.",
+   "fieldname": "section_col",
+   "fieldtype": "Int",
+   "label": "Section Column"
+  },
+  {
+   "fieldname": "section_label",
+   "fieldtype": "Data",
+   "label": "Section"
+  },
+  {
    "fieldname": "figure_section",
    "fieldtype": "Section Break",
    "label": "Figure"
@@ -140,7 +174,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Action",
-   "options": "Alarming\nSpray advised\nScout first"
+   "options": "Alarming\nSpray advised\nScout first\nHot spot"
   },
   {
    "default": "Open",
@@ -190,6 +224,13 @@
    "options": "\nAlarming\nScout first\nSpray advised"
   },
   {
+   "description": "A hot spot's highest band announced (Moderate → High re-notifies; hot-spots spec H5).",
+   "fieldname": "notified_band",
+   "fieldtype": "Select",
+   "label": "Highest Band Announced",
+   "options": "\nModerate\nHigh"
+  },
+  {
    "fieldname": "notified",
    "fieldtype": "Small Text",
    "label": "Notified Users"
@@ -197,7 +238,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2026-10-10 13:00:00.000000",
+ "modified": "2026-10-10 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting Alert",

@@ -89,7 +89,11 @@
   "general_store_section",
   "general_store_keepers",
   "scouting_tab",
-  "scouting_note"
+  "scouting_note",
+  "scout_capture_section",
+  "allow_scout_photos",
+  "allow_scout_comments",
+  "max_count_per_observation"
  ],
  "fields": [
   {
@@ -635,12 +639,40 @@
    "fieldtype": "Small Text",
    "label": "Scouting Settings",
    "read_only": 1
+  },
+  {
+   "description": "What a scout may record on a round beyond the counts. The scout app reads these with its observations; switched off, the camera or the Comments tab is not shown at all.",
+   "fieldname": "scout_capture_section",
+   "fieldtype": "Section Break",
+   "label": "Scout capture"
+  },
+  {
+   "default": "1",
+   "description": "A scout may photograph what they find, one photo button per observed pest, disease or other finding plus a General photo, each with its own caption, at most 5 per entry. A photo of something unidentified is always accepted.",
+   "fieldname": "allow_scout_photos",
+   "fieldtype": "Check",
+   "label": "Scouts can attach photos"
+  },
+  {
+   "default": "1",
+   "description": "A free-text note on the entry. Off: the Comments tab does not appear in the app.",
+   "fieldname": "allow_scout_comments",
+   "fieldtype": "Check",
+   "label": "Scouts can write comments"
+  },
+  {
+   "default": "15",
+   "description": "The highest count the scout app accepts for one observation or one trap pest (1-10000).",
+   "fieldname": "max_count_per_observation",
+   "fieldtype": "Int",
+   "label": "Max count per observation",
+   "non_negative": 1
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-08 09:00:00.000000",
+ "modified": "2026-10-10 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting and Crop Protection Settings",

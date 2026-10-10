@@ -4,6 +4,8 @@
 import frappe
 from frappe.model.document import Document
 
+from upande_scp.serverscripts.scouting import capture_settings
+
 
 class ScoutingandCropProtectionSettings(Document):
     def validate(self):
@@ -15,6 +17,16 @@ class ScoutingandCropProtectionSettings(Document):
                 "An Item Group cannot be both a Chemical and a Foliar group: "
                 + ", ".join(sorted(overlap))
             )
+
+        # Scout capture (pieces 5–6). A loaded Single reads a missing Check as 0
+        # and saves a None Int as 0; never let that switch capture off or zero
+        # the cap. An Int cannot tell 0 from unset, so 0 means the default.
+        capture_settings.fill_unset(self)
+        if not self.max_count_per_observation:
+            self.max_count_per_observation = capture_settings.DEFAULT_MAX_COUNT
+        self.max_count_per_observation = capture_settings.clean_max_count(
+            self.max_count_per_observation
+        )
 
 
 def get_allowed_farms():

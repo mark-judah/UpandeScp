@@ -148,6 +148,10 @@ after_migrate = [
 	# units are Bands, so SCP appends that option itself rather than editing another
 	# app's doctype. Append-only, so a site's own options survive.
 	"upande_scp.serverscripts.geo.field_unit_types.after_migrate",
+	# Scout capture defaults (photos / comments on, max count 15) as real rows on
+	# the Single: a missing Check row is cast to 0 on load, so a farm that never
+	# opened the settings page would otherwise be switched off by its first save.
+	"upande_scp.serverscripts.scouting.capture_settings.ensure_defaults",
 ]
 
 before_uninstall = [

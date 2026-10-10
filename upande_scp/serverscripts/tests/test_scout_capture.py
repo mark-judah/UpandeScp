@@ -199,3 +199,78 @@ class TestSettingsPage(CaptureCase):
             self.S.get_settings_bundle()
         frappe.set_user("Administrator")
         self.assertTrue(CS.allows("photos"))
+
+
+class TestTablesAndComments(CaptureCase):
+    def test_the_child_doctypes(self):
+        photo = frappe.get_meta("Scouting Entry Photo")
+        self.assertTrue(photo.istable)
+        self.assertEqual({f: photo.get_field(f).fieldtype for f in ("image", "caption", "subject", "captured_on")},
+                         {"image": "Attach Image", "caption": "Small Text", "subject": "Data",
+                          "captured_on": "Datetime"})
+        comment = frappe.get_meta("Comments Scouting Entry")
+        self.assertTrue(comment.istable)
+        self.assertEqual(comment.get_field("comment").fieldtype, "Small Text")
+
+    def test_the_entry_has_both_tables_after_incidents(self):
+        meta = frappe.get_meta("Scouting Entry")
+        for field, options in (("comments_scouting_entry", "Comments Scouting Entry"),
+                               ("photos_scouting_entry", "Scouting Entry Photo")):
+            df = meta.get_field(field)
+            self.assertEqual((df.fieldtype, df.options), ("Table", options))
+        order = [f.fieldname for f in meta.fields]
+        at = order.index("incidents_scouting_entry")
+        self.assertEqual(order[at + 1:at + 3], ["comments_scouting_entry", "photos_scouting_entry"])
+
+    def test_comments_are_trimmed_and_blanks_dropped(self):
+        from upande_scp.serverscripts.mobile import create_scouting_entry as CSE
+        doc = frappe.new_doc("Scouting Entry")
+        CSE._add_child_items(doc, "comments_scouting_entry", [
+            {"comment": "  Webbing under the leaves  "}, {"comment": "   "}, {}, None, {"comment": None},
+        ])
+        self.assertEqual([r.comment for r in doc.comments_scouting_entry], ["Webbing under the leaves"])
+        self.assertEqual(doc.comments_scouting_entry[0].doctype, "Comments Scouting Entry")
+
+    def test_the_other_tables_fill_as_before(self):
+        from upande_scp.serverscripts.mobile import create_scouting_entry as CSE
+        doc = frappe.new_doc("Scouting Entry")
+        CSE._add_child_items(doc, "pests_scouting_entry",
+                             [{"pest": "Thrips", "plant_section": "buds", "stage": "Adult", "count": 3}])
+        CSE._add_child_items(doc, "incidents_scouting_entry", "not a list")
+        row = doc.pests_scouting_entry[0]
+        self.assertEqual((row.pest, row.plant_section, row.stage, row.count), ("Thrips", "buds", "Adult", 3))
+        self.assertEqual(doc.incidents_scouting_entry, [])
+
+    def test_create_scouting_entry_writes_the_comments(self):
+        from upande_scp.serverscripts.mobile import create_scouting_entry as CSE
+        zone, bed, gh = frappe.db.sql(
+            "SELECT z.name, z.bed, b.greenhouse FROM tabZone z JOIN tabBed b ON b.name = z.bed LIMIT 1")[0]
+        user = frappe.db.get_value("Employee", {"status": "Active", "user_id": ["like", "%@%"]}, "user_id")
+        entry = {
+            "client_id": CLIENT_ID + "|comments", "scouts_name": user, "greenhouse": gh, "bed": bed,
+            "latitude": "-0.1", "longitude": "35.1", "accuracy": 3, "crop_scouted": "Rose",
+            "date_of_capture": "2031-05-12", "time_of_capture": "08:00:00",
+            "comments_scouting_entry": [{"comment": "  Webbing under the leaves  "}, {"comment": " "}],
+        }
+        prev = getattr(frappe.local, "request", None)
+        try:
+            frappe.local.request = SimpleNamespace(get_json=lambda: entry)
+            frappe.local.response = frappe._dict()
+            with patch.object(CSE, "get_zone_from_coordinates",
+                              return_value=(zone, 0.9, {"distance": "0.1", "buffer": "0.5", "fallback": False})), \
+                 patch.object(frappe, "publish_realtime"):
+                CSE.createScoutingEntry()
+            result = frappe.local.response["data"][0]
+        finally:
+            frappe.local.request = prev
+        self.assertEqual(result["status"], "success", result)
+        self.assertEqual(
+            frappe.get_all("Comments Scouting Entry", filters={"parent": result["name"]}, pluck="comment"),
+            ["Webbing under the leaves"])
+
+    def test_a_caption_survives_on_the_row(self):
+        doc = frappe.new_doc("Scouting Entry")
+        doc.append("photos_scouting_entry", {"image": "/private/files/x.jpg",
+                                             "caption": "Webbing on the underside", "subject": "Spider Mites"})
+        row = doc.photos_scouting_entry[0]
+        self.assertEqual((row.caption, row.subject), ("Webbing on the underside", "Spider Mites"))

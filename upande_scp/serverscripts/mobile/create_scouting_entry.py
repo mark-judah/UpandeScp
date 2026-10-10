@@ -111,6 +111,73 @@ def _is_duplicate_by_time_window(
     return bool(frappe.db.get_value("Scouting Entry", filters, "name"))
 
 
+def _add_child_items(parent_doc, parent_field, items_list):
+    """Append one child row per item of `items_list` to `parent_field`.
+
+    Lifted out of createScoutingEntry unchanged so it can be tested; the one
+    addition is `comments_scouting_entry` (piece 5, ported from Mona 8be897b):
+    free text, stripped, and a whitespace-only comment is dropped rather than
+    carried into every report that reads the table."""
+    if not items_list or not isinstance(items_list, list):
+        return
+    for item in items_list:
+        if not item:
+            continue
+
+        if parent_field == "comments_scouting_entry":
+            comment = (item.get("comment") or "").strip()
+            if comment:
+                parent_doc.append(parent_field, {"comment": comment})
+            continue
+
+        child_row = parent_doc.append(parent_field, {})
+
+        if parent_field == "predators_scouting_entry":
+            child_row.plant_section = item.get("plant_section")
+            child_row.predator      = item.get("predator")
+            child_row.stage         = item.get("stage")
+            child_row.count         = item.get("count")
+
+        elif parent_field == "diseases_scouting_entry":
+            child_row.plant_section = item.get("plant_section")
+            child_row.disease       = item.get("disease")
+            child_row.count         = item.get("count")
+            child_row.stage         = item.get("stage")
+
+        elif parent_field == "physiological_disorders_entry":
+            child_row.plant_section           = item.get("plant_section")
+            child_row.physiological_disorders = item.get("physiological_disorders")
+
+        elif parent_field == "crop_husbandry_practices_entry":
+            child_row.plant_section            = item.get("plant_section")
+            child_row.crop_husbandry_practices = item.get("crop_husbandry_practices")
+
+        elif parent_field == "weeds_scouting_entry":
+            child_row.weed = item.get("weed")
+
+        elif parent_field == "pests_scouting_entry":
+            child_row.plant_section = item.get("plant_section")
+            child_row.pest          = item.get("pest")
+            child_row.stage         = item.get("stage")
+            child_row.count         = item.get("count")
+
+        elif parent_field == "incidents_scouting_entry":
+            child_row.incident = item.get("incident")
+
+        elif parent_field == "trap_scouting_entry":
+            child_row.trap     = item.get("trap")
+            child_row.pest     = item.get("pest")
+            child_row.location = item.get("location", "Indoor")
+            child_row.count    = item.get("count")
+
+        elif parent_field == "crop_modelling_entry":
+            child_row.tree        = item.get("tree")
+            child_row.leaf_size   = item.get("leaf_size")
+            child_row.leaf_color  = item.get("leaf_color")
+            child_row.fruit_stage = item.get("fruit_stage")
+            child_row.root_flush  = 1 if item.get("root_flush") else 0
+
+
 @frappe.whitelist()
 def createScoutingEntry():
     try:
@@ -310,68 +377,16 @@ def createScoutingEntry():
                 scout_metadata_doc.zone_buffer      = zone_message["buffer"]
                 scout_metadata_doc.distance         = zone_message["distance"]
 
-                def add_child_items(parent_doc, parent_field, items_list):
-                    if not items_list or not isinstance(items_list, list):
-                        return
-                    for item in items_list:
-                        if not item:
-                            continue
-                        child_row = parent_doc.append(parent_field, {})
-
-                        if parent_field == "predators_scouting_entry":
-                            child_row.plant_section = item.get("plant_section")
-                            child_row.predator      = item.get("predator")
-                            child_row.stage         = item.get("stage")
-                            child_row.count         = item.get("count")
-
-                        elif parent_field == "diseases_scouting_entry":
-                            child_row.plant_section = item.get("plant_section")
-                            child_row.disease       = item.get("disease")
-                            child_row.count         = item.get("count")
-                            child_row.stage         = item.get("stage")
-
-                        elif parent_field == "physiological_disorders_entry":
-                            child_row.plant_section           = item.get("plant_section")
-                            child_row.physiological_disorders = item.get("physiological_disorders")
-
-                        elif parent_field == "crop_husbandry_practices_entry":
-                            child_row.plant_section            = item.get("plant_section")
-                            child_row.crop_husbandry_practices = item.get("crop_husbandry_practices")
-
-                        elif parent_field == "weeds_scouting_entry":
-                            child_row.weed = item.get("weed")
-
-                        elif parent_field == "pests_scouting_entry":
-                            child_row.plant_section = item.get("plant_section")
-                            child_row.pest          = item.get("pest")
-                            child_row.stage         = item.get("stage")
-                            child_row.count         = item.get("count")
-
-                        elif parent_field == "incidents_scouting_entry":
-                            child_row.incident = item.get("incident")
-
-                        elif parent_field == "trap_scouting_entry":
-                            child_row.trap     = item.get("trap")
-                            child_row.pest     = item.get("pest")
-                            child_row.location = item.get("location", "Indoor")
-                            child_row.count    = item.get("count")
-
-                        elif parent_field == "crop_modelling_entry":
-                            child_row.tree        = item.get("tree")
-                            child_row.leaf_size   = item.get("leaf_size")
-                            child_row.leaf_color  = item.get("leaf_color")
-                            child_row.fruit_stage = item.get("fruit_stage")
-                            child_row.root_flush  = 1 if item.get("root_flush") else 0
-
-                add_child_items(scout_doc, "predators_scouting_entry",       entry_data.get("predators_scouting_entry"))
-                add_child_items(scout_doc, "diseases_scouting_entry",        entry_data.get("diseases_scouting_entry"))
-                add_child_items(scout_doc, "physiological_disorders_entry",  entry_data.get("physiological_disorders_entry"))
-                add_child_items(scout_doc, "crop_husbandry_practices_entry", entry_data.get("crop_husbandry_practices_entry"))
-                add_child_items(scout_doc, "weeds_scouting_entry",           entry_data.get("weeds_scouting_entry"))
-                add_child_items(scout_doc, "pests_scouting_entry",           entry_data.get("pests_scouting_entry"))
-                add_child_items(scout_doc, "incidents_scouting_entry",       entry_data.get("incidents_scouting_entry"))
-                add_child_items(scout_doc, "trap_scouting_entry",            entry_data.get("trap_scouting_entry"))
-                add_child_items(scout_doc, "crop_modelling_entry",           entry_data.get("crop_modelling_entry"))
+                _add_child_items(scout_doc, "predators_scouting_entry",       entry_data.get("predators_scouting_entry"))
+                _add_child_items(scout_doc, "diseases_scouting_entry",        entry_data.get("diseases_scouting_entry"))
+                _add_child_items(scout_doc, "physiological_disorders_entry",  entry_data.get("physiological_disorders_entry"))
+                _add_child_items(scout_doc, "crop_husbandry_practices_entry", entry_data.get("crop_husbandry_practices_entry"))
+                _add_child_items(scout_doc, "weeds_scouting_entry",           entry_data.get("weeds_scouting_entry"))
+                _add_child_items(scout_doc, "pests_scouting_entry",           entry_data.get("pests_scouting_entry"))
+                _add_child_items(scout_doc, "incidents_scouting_entry",       entry_data.get("incidents_scouting_entry"))
+                _add_child_items(scout_doc, "trap_scouting_entry",            entry_data.get("trap_scouting_entry"))
+                _add_child_items(scout_doc, "crop_modelling_entry",           entry_data.get("crop_modelling_entry"))
+                _add_child_items(scout_doc, "comments_scouting_entry",        entry_data.get("comments_scouting_entry"))
 
                 scout_doc.insert()
 

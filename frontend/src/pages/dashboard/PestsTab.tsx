@@ -27,6 +27,7 @@ import { RevealLTR } from "@/components/RevealLTR";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
 import { DashFilterRow } from "./DashFilterRow";
+import { VarietyTable } from "./VarietyTable";
 import { PrevalenceFigure } from "./PrevalenceFigure";
 import { stagesFor, type PestsPayload } from "./pests-diseases-types";
 import { weekTickFormatter } from "@/lib/iso-week";
@@ -361,6 +362,20 @@ export function PestsTab({
             )}
           </CardContent>
         </Card>
+
+        {pestName && (data?.varieties?.length ?? 0) > 0 && (
+          <Card className="p-4">
+            <CardHeader className="p-0 pb-2">
+              <CardTitle>By Variety</CardTitle>
+              <CardDescription>
+                Live prevalence and signs of {pestName} by rose variety · each greenhouse's latest scouted week
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <VarietyTable rows={data?.varieties} />
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

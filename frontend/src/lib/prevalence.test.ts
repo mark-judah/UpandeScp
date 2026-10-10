@@ -34,6 +34,12 @@ describe("figureLine", () => {
   it("reports the reason when there are no stations", () => {
     expect(figureLine({ ...base, prevalence: null, reason: "no stations set up" })).toBe("no stations set up");
   });
+  it("adds the pest's signs at the end when it has any", () => {
+    const signs = { ...base, prevalence: 66.7, prev: null };
+    expect(figureLine({ ...base, prev: null, signs })).toBe("34% · ±6 · 8/9 · signs 66.7%");
+    expect(figureLine({ ...base, prev: null, signs: null })).toBe("34% · ±6 · 8/9");
+    expect(figureLine({ ...base, prevalence: null, reason: "no stations set up", signs })).toBe("no stations set up");
+  });
 });
 
 describe("figureTooltip", () => {
@@ -44,5 +50,10 @@ describe("figureTooltip", () => {
     expect(lines[1]).toMatch(/^Was:/);
     expect(lines[2]).toMatch(/^±:/);
     expect(lines[3]).toMatch(/^8\/9:/);
+  });
+
+  it("explains the signs line only when there is one", () => {
+    expect(figureTooltip({ ...base, signs: { ...base, prevalence: 30 } })).toContain("Signs: share of scouted stations showing signs of it");
+    expect(figureTooltip(base)).not.toContain("Signs:");
   });
 });

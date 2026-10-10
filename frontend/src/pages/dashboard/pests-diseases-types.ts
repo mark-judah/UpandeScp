@@ -1,4 +1,4 @@
-import type { PrevalenceFigures, Reliability } from "@/lib/prevalence";
+import type { PrevalenceFigures, Reliability, VarietyRow } from "@/lib/prevalence";
 
 export interface ItemPercent { name: string; pct: number; zones: number }
 /** Distribution / pressure row: `pct` is the adjusted prevalence (null when no
@@ -40,6 +40,8 @@ export interface PestsPayload {
   greenhousePressure: PrevalenceItem[];
   dailyPercent: DailyPctRow[];
   trendSeries: TrendSeries;
+  /** the selected pest by rose variety (S7); [] without a selected pest or variety */
+  varieties?: VarietyRow[];
 }
 
 export interface DiseasesPayload extends Omit<PestsPayload, "filterOptions"> {

@@ -19,9 +19,10 @@ import { Badge } from "@/components/ui/badge";
 import { RevealLTR } from "@/components/RevealLTR";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { weekTickFormatter } from "@/lib/iso-week";
-import type { PrevalenceFigures, SectionCell } from "@/lib/prevalence";
+import type { PrevalenceFigures, SectionCell, VarietyRow } from "@/lib/prevalence";
 import { PrevalenceFigure } from "./PrevalenceFigure";
 import { HouseSpread } from "./HouseSpread";
+import { VarietyTable } from "./VarietyTable";
 
 const SERIES = {
   pests: { label: "Pests", color: "var(--sd-data-cyan)" },
@@ -35,6 +36,8 @@ export interface GhPrevalence extends PrevalenceFigures {
   kind: "pest" | "disease";
   name: string;
   sections: SectionCell[];
+  /** pests only (S7); null for a disease */
+  varieties?: VarietyRow[] | null;
 }
 
 export interface GhDetailPayload {
@@ -202,6 +205,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
                 week={current.week}
                 sections={current.sections}
               />
+              {current.kind === "pest" && <VarietyTable rows={current.varieties} pest={current.name} />}
             </CardContent>
           </Card>
         )}

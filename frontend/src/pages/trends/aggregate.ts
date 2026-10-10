@@ -501,6 +501,8 @@ export interface PrevalencePoint {
   lo: number | null;
   /** prevalence + margin, capped at 100; null when the margin is unknown */
   hi: number | null;
+  /** signs of the pest at this station that week (S4); absent when it has none */
+  signs?: number | null;
 }
 
 export interface PrevalenceIndex {
@@ -527,6 +529,10 @@ export function buildPrevalenceIndex(payload: TrendsPayload): PrevalenceIndex {
   const station = new Map<string, PrevalencePoint>();
   for (const row of payload.prevalenceByStation ?? []) {
     station.set(`${row[0]}|${row[1]}|${row[2]}`, toPoint(row, rel));
+  }
+  for (const row of payload.signsByStation ?? []) {
+    const point = station.get(`${row[0]}|${row[1]}|${row[2]}`);
+    if (point) point.signs = row[3];
   }
   const farm = new Map<string, PrevalencePoint>();
   for (const row of payload.prevalenceByFarm ?? []) {

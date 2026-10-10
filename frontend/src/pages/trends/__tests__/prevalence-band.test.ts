@@ -111,3 +111,12 @@ describe("prevalence band lookups", () => {
     expect(lineConnectsNulls(false)).toBe(true);
   });
 });
+
+describe("signs beside the station prevalence", () => {
+  it("attaches the signs share to the matching station point only", () => {
+    const idx = buildPrevalenceIndex(payload({ signsByStation: [[0, 0, 0, 66.7]] }));
+    expect(idx.station.get("0|0|0")?.signs).toBe(66.7);
+    expect(idx.farm.get("0|0|0")?.signs).toBeUndefined();
+    expect(buildPrevalenceIndex(payload()).station.get("0|0|0")?.signs).toBeUndefined();
+  });
+});

@@ -38,6 +38,10 @@ export interface TrendsVocab {
 /** [weekIdx, stationIdx | farmIdx, obsIdx, prevalence %, margin % | null, reliabilityIdx] */
 export type PrevalenceRow = [number, number, number, number, number | null, number];
 
+/** [weekIdx, stationIdx, obsIdx, signs %] — beside a per-station prevalence row
+ *  of a pest with a Sign stage (stage & variety S4) */
+export type SignsRow = [number, number, number, number];
+
 export interface TrendsOptions {
   farmStations: Record<string, Record<string, number>>;
   pests: Record<string, number>;
@@ -88,6 +92,8 @@ export interface TrendsPayload {
   prevalenceByStation?: PrevalenceRow[];
   /** The same, combined over every house of a farm scouted that week. */
   prevalenceByFarm?: PrevalenceRow[];
+  /** Signs of a pest beside its live per-station figure. */
+  signsByStation?: SignsRow[];
 }
 
 export interface SprayEvent {

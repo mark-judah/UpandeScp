@@ -25,6 +25,10 @@ export interface PrevalenceFigures {
   reliability_mix?: Partial<Record<Reliability, number>> | null;
   /** scope-wide figures only: houses combined */
   houses?: number;
+  /** stage & variety S4: the same figures for SIGNS of the pest (damage, webs,
+   *  ragged margins) — reported beside the live figure, never counted as it.
+   *  null / absent: the pest has no Sign stage. */
+  signs?: PrevalenceFigures | null;
 }
 
 export interface SectionCell {
@@ -38,14 +42,33 @@ export interface SectionCell {
   hot?: boolean;
 }
 
+/** stage & variety S7: one rose variety's stations for the selected pest
+ *  (each house's latest scouted week). Raw shares, 0–100. */
+export interface VarietyRow {
+  /** "" = stations on beds with no variety recorded */
+  variety: string;
+  beds: number;
+  scouted: number;
+  infested: number;
+  prevalence: number | null;
+  /** null when the pest has no Sign stage */
+  signs: number | null;
+  /** fewer than VARIETY_MIN_N stations scouted: greyed "too few" */
+  few: boolean;
+}
+
+export const VARIETY_MIN_N = 10;
+
 export const CLUSTERED = "too clustered to judge";
 
-/** "34% (was 50%) · ±6 · 8/9" — the one line the dashboard shows. */
+/** "34% (was 50%) · ±6 · 8/9 · signs 30%" — the one line the dashboard shows;
+ *  the signs part only when the pest has a Sign stage. */
 export function figureLine(f: PrevalenceFigures): string {
   if (f.prevalence == null) return f.reason || "no stations set up";
   const was = f.prev != null ? ` (was ${f.prev}%)` : "";
   const margin = f.margin != null ? `±${f.margin}` : f.reason || CLUSTERED;
-  return `${f.prevalence}%${was} · ${margin} · ${f.sections_scouted}/${f.sections_total ?? 9}`;
+  const signs = f.signs?.prevalence != null ? ` · signs ${f.signs.prevalence}%` : "";
+  return `${f.prevalence}%${was} · ${margin} · ${f.sections_scouted}/${f.sections_total ?? 9}${signs}`;
 }
 
 const RATINGS: Reliability[] = ["Good", "Fair", "Low"];
@@ -71,6 +94,9 @@ export function figureTooltip(f: PrevalenceFigures): string {
     "Was: the same figure for the previous scouted week",
     "±: 95% margin, from how much the parts of the house disagree and how many stations were scouted",
     `${f.sections_scouted}/${f.sections_total ?? 9}: parts of the house (3 × 3 grid) with at least 3 stations scouted`,
+    ...(f.signs?.prevalence != null
+      ? ["Signs: share of scouted stations showing signs of it (damage, webs, ragged margins) — beside the pest, never counted as it"]
+      : []),
     ...(mix ? [`Houses by reliability: ${mixLabel(mix)}`] : []),
   ].join("\n");
 }

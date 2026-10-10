@@ -19,6 +19,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CurativeAlerts } from "@/components/spray-plan/CurativeAlerts";
+import { ghActionBadge, type CreatorAlert } from "@/lib/scouting-alerts-api";
 import { PageHeader } from "@/components/PageHeader";
 import { BomPicker } from "@/components/BomPicker";
 import { DatePicker } from "@/components/DatePicker";
@@ -264,6 +266,10 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   // Spray Plan Settings.allowed_farms for the current user.
   const [farmFilter, setFarmFilter] = useState<string>("");
   const [greenhouse, setGreenhouse] = useState<string>("");
+  // The Scouting Alert a curative plan is being made from (thresholds D7). The
+  // prefill ref survives the greenhouse/classification reset effect below.
+  const [curativeAlert, setCurativeAlert] = useState<string>("");
+  const prefillRef = useRef<{ greenhouse: string; target: string } | null>(null);
   const [diag, setDiag] = useState<DiagnoseFilters>({
     pest: ALL,
     stage: ALL,
@@ -562,8 +568,30 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   }, [scope, greenhouse]);
 
   useEffect(() => {
+    const p = prefillRef.current;
+    prefillRef.current = null;
+    if (p && p.greenhouse === greenhouse && classification === "Curative") {
+      setSelectedTargets(new Set([p.target]));
+      return;
+    }
     setSelectedTargets(new Set());
+    setCurativeAlert("");
   }, [greenhouse, classification]);
+
+  const startCurative = useCallback(
+    (a: CreatorAlert) => {
+      if (greenhouse !== a.warehouse || classification !== "Curative") {
+        prefillRef.current = { greenhouse: a.warehouse, target: a.observation };
+      }
+      setFarmFilter("");
+      setGreenhouse(a.warehouse);
+      setClassification("Curative");
+      setCurativeAlert(a.name);
+      // When neither changed the effect does not run; set the target directly.
+      setSelectedTargets(new Set([a.observation]));
+    },
+    [greenhouse, classification],
+  );
 
   // Varieties present in the picked greenhouse (legacy "Specific Variety"
   // multi-select source).
@@ -808,15 +836,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   const coveragePct = totalZones
     ? Math.round((affectedZones / totalZones) * 1000) / 10
     : 0;
-  const recommendation =
-    coveragePct >= 30
-      ? "Heavy infestation — consider full greenhouse spray"
-      : coveragePct >= 10
-        ? "Moderate spread — spot-treat affected beds or spray full"
-        : coveragePct > 0
-          ? "Light pressure — spot-treat the flagged zones"
-          : "No observations match this filter";
-
   const allowedFarms = useMemo(
     () => bootstrap?.scope.farms || [],
     [bootstrap],
@@ -1398,6 +1417,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
         })),
         custom_scheduled_application_time: sprayDate || null,
         spray_rule_overrides: overrides ?? [],
+        alert: curativeAlert || undefined,
       };
       const r = await createDraftSprayPlan(draftPayload as Parameters<typeof createDraftSprayPlan>[0]);
       const woName = r?.work_order;
@@ -1413,6 +1433,21 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       }
       if (r?.compliance?.status === "Awaiting Override") {
         pushToast("ok", "Saved. An SCP General Manager must override before approval.");
+      }
+      if (curativeAlert) {
+        // Converted on the server; drop its badge without a reload.
+        const done = curativeAlert;
+        setBootstrap((b) =>
+          b
+            ? {
+                ...b,
+                alerts: Object.fromEntries(
+                  Object.entries(b.alerts || {}).map(([w, list]) => [w, list.filter((x) => x.name !== done)]),
+                ),
+              }
+            : b,
+        );
+        setCurativeAlert("");
       }
       // Full reset — operator explicitly asked for a clean slate after
       // every Add-to-batch so the next plan starts from scratch (incl.
@@ -1604,11 +1639,24 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                 <SelectValue placeholder="Pick a greenhouse" />
               </SelectTrigger>
               <SelectContent>
-                {ghList.map((g) => (
-                  <SelectItem key={g} value={g}>
-                    {g}
-                  </SelectItem>
-                ))}
+                {ghList.map((g) => {
+                  const badge = ghActionBadge(bootstrap?.alerts?.[g]);
+                  return (
+                    <SelectItem key={g} value={g}>
+                      <span className="flex items-center gap-2">
+                        {g}
+                        {badge ? (
+                          <Badge
+                            variant={badge === "Spray advised" ? "destructive" : "secondary"}
+                            className="text-[0.6rem]"
+                          >
+                            {badge}
+                          </Badge>
+                        ) : null}
+                      </span>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -1830,23 +1878,13 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
 
                 <div className="rounded-md border bg-[var(--sd-bg-soft)] p-2.5">
                   <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground mb-1">
-                    Chemical Requirements
+                    Thresholds
                   </div>
-                  <div className="text-xs text-foreground">{recommendation}</div>
-                  <div className="mt-2 h-2 rounded-full bg-[var(--sd-line)] overflow-hidden">
-                    <div
-                      className="h-full"
-                      style={{
-                        width: `${Math.min(100, coveragePct)}%`,
-                        background:
-                          coveragePct >= 30
-                            ? "var(--sd-data-red)"
-                            : coveragePct >= 10
-                              ? "var(--sd-target)"
-                              : "var(--sd-data-green)",
-                      }}
-                    />
-                  </div>
+                  <CurativeAlerts
+                    alerts={(greenhouse && bootstrap?.alerts?.[greenhouse]) || []}
+                    activeAlert={curativeAlert}
+                    onCreate={startCurative}
+                  />
                   <div className="text-[0.65rem] text-muted-foreground mt-1 tabular-nums">
                     {coveragePct}% of zones flagged
                   </div>

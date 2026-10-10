@@ -487,3 +487,72 @@ def house_figures(crop: str, warehouse: str, from_date: str, to_date: str) -> di
         return {}
     _assert_can_see(crop, frappe.db.get_value("Warehouse", warehouse, "custom_farm"))
     return figures_for_houses(crop, [warehouse], from_date, to_date).get(warehouse, {})
+
+
+# ── the spray plan creator (D7) ────────────────────────────────────────────
+
+CREATOR_ACTIONS = (B.SPRAY_ADVISED, B.SCOUT_FIRST)
+
+
+def creator_alerts(warehouses) -> dict:
+    """``{warehouse: [alert]}`` — Open / Acknowledged Spray advised and Scout
+    first alerts on these houses, worst first: the creator's badges."""
+    houses = sorted({w for w in (warehouses or ()) if w})
+    if not houses or not frappe.db.table_exists(DOCTYPE):
+        return {}
+    rows = frappe.get_all(
+        DOCTYPE,
+        filters={
+            "warehouse": ["in", houses],
+            "status": ["in", list(OPEN_STATES)],
+            "action": ["in", list(CREATOR_ACTIONS)],
+        },
+        fields=ALERT_FIELDS,
+        limit_page_length=0,
+    )
+    stations: dict = {}
+    out: dict = {}
+    for r in rows:
+        if r.crop not in stations:
+            stations[r.crop] = _common.station_word(r.crop)
+        r["unit"] = B.unit_label(r.measure, stations[r.crop])
+        r["margin"] = _margin(r)
+        out.setdefault(r.warehouse, []).append(r)
+    for alerts in out.values():
+        alerts.sort(key=lambda r: (-B.ACTION_RANK.get(r.action, 0), r.observation or "", r.stage or ""))
+    return out
+
+
+def assert_alert_for_plan(alert, greenhouse):
+    """R15: the checks that must pass BEFORE a plan is inserted from ``alert`` —
+    it exists, is Open/Acknowledged, is for this greenhouse and its crop, and
+    the caller may see it. Returns the alert row."""
+    row = frappe.db.get_value(
+        DOCTYPE, alert, ["name", "crop", "farm", "warehouse", "status", "work_order"], as_dict=True,
+    )
+    if not row:
+        frappe.throw(f"Scouting alert {alert} does not exist.", frappe.ValidationError)
+    if row.warehouse != greenhouse:
+        frappe.throw(f"Scouting alert {alert} is for {row.warehouse}, not {greenhouse}.", frappe.ValidationError)
+    if row.status not in OPEN_STATES:
+        frappe.throw(
+            f"Scouting alert {alert} is {row.status}; only an Open or Acknowledged alert can start a plan.",
+            frappe.ValidationError,
+        )
+    plan_crop = crop_catalog.crop_for_greenhouse(greenhouse)
+    if plan_crop and plan_crop != row.crop:
+        frappe.throw(f"Scouting alert {alert} is for {row.crop}, not {plan_crop}.", frappe.ValidationError)
+    _assert_can_see(row.crop, row.farm)
+    return row
+
+
+def convert_to_plan(alert, work_order, greenhouse):
+    """Link the curative plan saved from ``alert`` and mark it Converted (D7).
+    Refuses a bad alert (``assert_alert_for_plan``); an already-converted alert
+    keeps its first plan."""
+    row = frappe.db.get_value(DOCTYPE, alert, ["name", "warehouse", "status", "work_order"], as_dict=True)
+    if row and row.warehouse == greenhouse and row.status == "Converted to plan" and row.work_order:
+        return row.work_order
+    assert_alert_for_plan(alert, greenhouse)
+    frappe.db.set_value(DOCTYPE, alert, {"status": "Converted to plan", "work_order": work_order})
+    return work_order

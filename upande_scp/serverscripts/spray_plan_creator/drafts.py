@@ -420,6 +420,13 @@ def create_draft_spray_plan(payload):
     _assert_in_scope(payload, scope)
     _validate_payload(payload, scope)
 
+    # R15: a bad alert must refuse BEFORE the plan is inserted.
+    alert = (payload.get("alert") or "").strip()
+    if alert:
+        from upande_scp.serverscripts.scouting import thresholds_check
+
+        thresholds_check.assert_alert_for_plan(alert, payload["custom_greenhouse"])
+
     company = _derive_plan_company(payload)
     cost_center = _resolve_cost_center_with_override(
         payload.get("custom_cost_center"),
@@ -494,6 +501,11 @@ def create_draft_spray_plan(payload):
     # The plan BOM was minted before the WO had a name; backfill the 1:1 backlink.
     if plan_bom:
         set_plan_bom_wo(plan_bom, wo.name)
+
+    # Saved from a Scouting Alert's "Create curative plan" (thresholds D7): link
+    # the plan to the alert and mark it Converted (validated above, pre-insert).
+    if alert:
+        thresholds_check.convert_to_plan(alert, wo.name, payload["custom_greenhouse"])
 
     warnings: list[str] = []
     dup_warning = _build_duplicate_warning(

@@ -13,6 +13,7 @@
  * in the UI as an Access-Denied banner.
  */
 
+import type { CreatorAlert } from "./scouting-alerts-api";
 import type { CheckResult, OverrideInput, ReviewCompliance } from "@/lib/spray-compliance-api";
 import { call } from "./frappe";
 
@@ -110,6 +111,8 @@ export interface CreatorBootstrap {
   irac_window_days: number;
   frac_window_days: number;
   farm_stores: Record<string, CreatorFarmStores>;
+  /** open Spray advised / Scout first alerts per greenhouse (thresholds D7) */
+  alerts?: Record<string, CreatorAlert[]>;
 }
 
 /** `crop` is the route crop: the server narrows farms, greenhouses, blocks and
@@ -161,6 +164,8 @@ export interface DraftPayload {
   custom_scheduled_application_time?: string | null;
   /** Overrides a GM gives on save; the server ignores them from anyone else. */
   spray_rule_overrides?: OverrideInput[];
+  /** the Scouting Alert this curative plan answers; saving marks it Converted */
+  alert?: string;
 }
 
 export interface DraftSummary {

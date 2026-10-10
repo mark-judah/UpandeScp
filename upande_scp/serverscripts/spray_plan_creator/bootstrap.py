@@ -5,6 +5,7 @@ import frappe
 
 from upande_scp.serverscripts.common import crop_catalog, crop_scope
 from upande_scp.serverscripts.common.tank_mix import tank_mix_item_group
+from upande_scp.serverscripts.scouting import thresholds_check
 from frappe.utils import flt
 
 from upande_scp.serverscripts.geo.warehouse_filter import (
@@ -203,6 +204,11 @@ def fetch_creator_bootstrap(crop: str | None = None) -> dict:
         "disease_catalog": disease_catalog,
         "cost_centers": cost_centers,
         "farm_stores": farm_stores,
+        # Open spray actions per greenhouse/block (thresholds D7) — the picker's
+        # "Spray advised" / "Scout first" badges and "Create curative plan".
+        "alerts": thresholds_check.creator_alerts(
+            [g["name"] for g in greenhouses] + [b["name"] for b in blocks]
+        ),
         "weather_settings": {
             "wind_green_max_kmh": settings.weather_wind_green_max_kmh,
             "wind_red_min_kmh":   settings.weather_wind_red_min_kmh,
@@ -223,7 +229,7 @@ def _empty_bootstrap() -> dict:
         "scope": {"farms": [], "allowed_warehouses": []},
         "greenhouses": [], "blocks": [], "kits": [], "spray_teams": [], "tank_mixes": [],
         "rate_limits": {}, "pest_catalog": [], "disease_catalog": [],
-        "cost_centers": [], "farm_stores": {},
+        "cost_centers": [], "farm_stores": {}, "alerts": {},
         "weather_settings": {}, "irac_window_days": 14, "frac_window_days": 21,
     }
 

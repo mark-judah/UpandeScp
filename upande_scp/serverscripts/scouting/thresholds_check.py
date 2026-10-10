@@ -178,13 +178,18 @@ def _previous_live(params, previous_week):
     if not previous_week:
         return None
     rows = frappe.db.sql(
-        f"""SELECT name, notified_action FROM `tabScouting Alert`
+        f"""SELECT name, notified_action, status, work_order FROM `tabScouting Alert`
             WHERE {_KEY_SQL} AND iso_week = %(prev)s AND status IN %(live)s
             LIMIT 1""",
         {**params, "prev": previous_week, "live": LIVE_STATES},
         as_dict=True,
     )
-    return rows[0] if rows else None
+    if not rows:
+        return None
+    row = rows[0]
+    if row.status == "Converted to plan" and plan_is_dead(row.work_order):
+        return None   # its plan is gone: the breach is nobody's, so not carried
+    return row
 
 
 def _resolve(params, include_week: bool, older: bool = True) -> None:
@@ -247,6 +252,7 @@ def upsert(finding, now=None, _retry=True):
         "action": action,
     }
     existing = _existing(name, latest=not _retry)
+    reopened = False
     if existing and existing.status == "Converted to plan":
         if not plan_is_dead(existing.work_order):
             # A live curative plan owns this alert: never overwrite or re-notify it.
@@ -256,6 +262,7 @@ def upsert(finding, now=None, _retry=True):
         # below decide whether anyone is told.
         frappe.db.set_value(DOCTYPE, name, {"status": "Open", "work_order": None})
         existing.status = "Open"
+        reopened = True
     if existing:
         frappe.db.set_value(DOCTYPE, name, fields)
         already, status = existing.notified_action, existing.status
@@ -282,6 +289,9 @@ def upsert(finding, now=None, _retry=True):
         existing = frappe._dict(notified="")
 
     updates = {}
+    if reopened:
+        # A live breach lost its plan: land in the next digest.
+        updates.update(raised_on=now.date(), raised_at=eat_stamp(now))
     if status == "Resolved":
         # This week's figure dropped below Moderate and came back.
         updates.update(status="Open", raised_on=now.date(), raised_at=eat_stamp(now))
@@ -289,7 +299,13 @@ def upsert(finding, now=None, _retry=True):
         updates.update(notified_action=action, raised_on=now.date(), raised_at=eat_stamp(now))
         if status == "Acknowledged":
             updates["status"] = "Open"
-        sent = _notify(name, finding, action)
+        sent = _notify(name, finding, action, PLAN_GONE if reopened else "")
+        if sent:
+            told = set(filter(None, (existing.notified or "").split("\n"))) | set(sent)
+            updates["notified"] = "\n".join(sorted(told))
+    elif reopened:
+        # Same action as already announced, but the plan is gone: say so.
+        sent = _notify(name, finding, action, PLAN_GONE)
         if sent:
             told = set(filter(None, (existing.notified or "").split("\n"))) | set(sent)
             updates["notified"] = "\n".join(sorted(told))
@@ -299,7 +315,10 @@ def upsert(finding, now=None, _retry=True):
     return name
 
 
-def _notify(name, finding, action) -> list:
+PLAN_GONE = "The linked plan was cancelled, stopped or removed, so this breach has no plan again."
+
+
+def _notify(name, finding, action, note="") -> list:
     """In-app only (category "scouting"). Returns who was told. A recipient
     failure is logged and never blocks the alert."""
     try:
@@ -317,7 +336,7 @@ def _notify(name, finding, action) -> list:
     )
     margin = f"±{finding['margin']}" if finding["margin"] is not None else "too clustered to judge"
     body = (
-        f"{subject}. {finding['crop']} · {margin} · "
+        f"{note + ' ' if note else ''}{subject}. {finding['crop']} · {margin} · "
         f"{finding['sections_scouted']}/{finding['sections_total']} sections scouted · "
         f"reliability {finding['reliability']}."
     )
@@ -357,16 +376,22 @@ def reopen_for_plan(work_order) -> int:
     names = frappe.get_all(
         DOCTYPE, filters={"work_order": work_order, "status": "Converted to plan"}, pluck="name",
     )
+    now = now_eat()
     for name in names:
-        frappe.db.set_value(DOCTYPE, name, {"status": "Open", "work_order": None})
+        # Silent (the creator knows) but it lands in the next digest.
+        frappe.db.set_value(DOCTYPE, name, {
+            "status": "Open", "work_order": None, "raised_on": now.date(), "raised_at": eat_stamp(now),
+        })
     return len(names)
 
 
-def sweep(crop, today=None) -> int:
+def sweep(crop, today=None, latest=None) -> int:
     """Resolve the crop's Open / Acknowledged alerts that no check will ever
     touch again: their key is no longer banded, or their ISO week ended before
     the evaluation window (a house no longer scouted). Converted alerts are
-    left to their plan. Returns how many were resolved."""
+    left to their plan, unless that plan is dead: such an alert is reopened when
+    its week is still its house's latest week (``latest``: warehouse → ISO week,
+    from this run's findings), else resolved. Returns how many were resolved."""
     crop = crop_catalog.canonical(crop) or crop
     if not crop:
         return 0
@@ -383,13 +408,34 @@ def sweep(crop, today=None) -> int:
     ]
     for name in stale:
         frappe.db.set_value(DOCTYPE, name, "status", "Resolved")
+    if latest is None:
+        latest = {f["warehouse"]: f["iso_week"] for f in evaluate(crop, today)}
+    now = now_eat()
+    orphans = frappe.get_all(
+        DOCTYPE, filters={"crop": crop, "status": "Converted to plan"},
+        fields=["name", "warehouse", "kind", "observation", "stage", "iso_week", "work_order"],
+        limit_page_length=0,
+    )
+    for r in orphans:
+        if not plan_is_dead(r.work_order):
+            continue
+        is_latest = latest.get(r.warehouse) == r.iso_week
+        if is_latest and (r.kind, r.observation, r.stage or "") in banded:
+            frappe.db.set_value(DOCTYPE, r.name, {
+                "status": "Open", "work_order": None,
+                "raised_on": now.date(), "raised_at": eat_stamp(now),
+            })
+        else:
+            frappe.db.set_value(DOCTYPE, r.name, "status", "Resolved")
+            stale.append(r.name)
     return len(stale)
 
 
 def check_crop(crop, today=None) -> dict:
     findings = evaluate(crop, today)
     alerts = [n for n in (upsert(f) for f in findings) if n]
-    return {"findings": len(findings), "alerts": len(alerts), "swept": sweep(crop, today)}
+    latest = {f["warehouse"]: f["iso_week"] for f in findings}
+    return {"findings": len(findings), "alerts": len(alerts), "swept": sweep(crop, today, latest)}
 
 
 def _crops_to_check() -> list:

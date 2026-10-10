@@ -186,6 +186,24 @@ class TestDigest(AlertCase):
         self.assertNotIn("Thrips", by_to[U_CREATOR]["message"])   # already in yesterday's digest
         self.assertEqual((next_day["sent"], day_after["sent"]), (2, 0))
 
+    def test_a_reopened_dead_plan_alert_appears_in_the_next_digest(self):
+        from upande_scp.serverscripts.tests.test_scouting_alerts import dead_plan
+        self._two_alerts()
+        with patch.object(frappe, "sendmail"):
+            D.send_alert_digest(at(SUN_20, 17, 5))
+        name = TC.alert_name(self.gh, "Pest", "Thrips", "", "2031-W20")
+        frappe.db.set_value("Scouting Alert", name, {"status": "Converted to plan", "work_order": dead_plan()})
+        self.clock.stop()
+        with patch.object(TC, "now_eat", return_value=at(SUN_20, 18, 30)):
+            TC.check_crop("Rose", SUN_20)
+        self.clock.start()
+        mon = SUN_20 + timedelta(days=1)
+        with patch.object(frappe, "sendmail") as sendmail:
+            D.send_alert_digest(at(mon, 17, 5))
+        by_to = {c.kwargs["recipients"][0]: c.kwargs for c in sendmail.call_args_list}
+        self.assertIn("Thrips", by_to[U_CREATOR]["message"])
+        self.assertNotIn("Aphids", by_to[U_CREATOR]["message"])
+
     def test_a_first_ever_digest_covers_the_last_24_hours(self):
         self._two_alerts()                                   # raised Sun 09:00
         with patch.object(frappe, "sendmail") as sendmail:

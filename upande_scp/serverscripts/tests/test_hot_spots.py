@@ -11,6 +11,7 @@ import frappe
 
 from upande_scp.serverscripts import dashboard_aggregates as DA
 from upande_scp.serverscripts.common import threshold_bands as B
+from upande_scp.serverscripts.scouting import alert_digest as D
 from upande_scp.serverscripts.scouting import thresholds_check as TC
 from upande_scp.serverscripts.tests import crop_scoping_fixture as F
 from upande_scp.serverscripts.tests import thresholds_fixture as TF
@@ -154,13 +155,27 @@ class TestHotSpots(HotCase):
         TF.seed_hot_section(self.gh, TF.WEEK_20[0])                       # corner 4 of 5: lower 37.6 % Moderate
         TC.check_crop("Rose", SUN_20)
         s = self.spot()
-        self.assertEqual((s.band, s.notified_band, self.told(U_CREATOR, s.name)), ("Moderate", "Moderate", 1))
+        # A Moderate hot spot is recorded (notified_band) but pings nobody.
+        self.assertEqual((s.band, s.notified_band, self.told(U_CREATOR, s.name)), ("Moderate", "Moderate", 0))
         TF.seed_hot_section(self.gh, TF.WEEK_20[0], hot_infested=5)       # 5 of 5: lower 56.6 % High, house 11.1 %
         TC.check_crop("Rose", SUN_20)
         s = self.spot()
-        self.assertEqual((s.band, s.notified_band, self.told(U_CREATOR, s.name)), ("High", "High", 2))
+        self.assertEqual((s.band, s.notified_band), ("High", "High"))
+        self.assertEqual([self.told(u, s.name) for u in (U_CREATOR, U_SUPER)], [1, 1])   # exactly one each
         TC.check_crop("Rose", SUN_20)
-        self.assertEqual(self.told(U_CREATOR, s.name), 2)
+        self.assertEqual(self.told(U_CREATOR, s.name), 1)
+
+    def test_a_moderate_hot_spot_pings_nobody_but_shows_in_open_alerts_and_the_digest(self):
+        TF.set_bands("Rose", "Thrips", 5, 20, 50)
+        TF.seed_hot_section(self.gh, TF.WEEK_20[0])                       # corner lower 37.6 % Moderate
+        TC.check_crop("Rose", SUN_20)
+        s = self.spot()
+        self.assertEqual((s.band, s.status), ("Moderate", "Open"))
+        self.assertEqual([self.scouting_told(u) for u in (U_CREATOR, U_SUPER, U_APPROVER, U_GM)], [0, 0, 0, 0])
+        self.assertIn(s.name, [r.name for r in TC.open_alerts("Rose", greenhouse=self.gh)])
+        digests = D.build_digests(at(SUN_20, 17, 5))
+        self.assertIn(s.name, [a.name for a in digests[U_CREATOR]])
+        self.assertIn(s.name, [a.name for a in digests[U_SUPER]])
 
     def test_the_house_rising_to_the_sections_band_resolves_the_hot_spot(self):
         TF.set_bands("Rose", "Thrips", 5, 20, 50)

@@ -376,15 +376,19 @@ def upsert(finding, now=None, _retry=True):
         # This week's figure dropped out and came back.
         updates.update(status="Open", raised_on=now.date(), raised_at=eat_stamp(now))
     escalated = B.band_escalates(already, level) if hot else B.escalates(already, level)
+    # A Moderate hot spot is recorded (notified_band, raised_at → the digest,
+    # open_alerts, the grid) but pings nobody; only a High one, on raise or on
+    # escalating Moderate → High, sends the in-app notification (final review).
+    pings = not hot or level == B.BAND_LABEL["high"]
     if escalated:
         updates.update({level_field: level, "raised_on": now.date(), "raised_at": eat_stamp(now)})
         if status == "Acknowledged":
             updates["status"] = "Open"
-        sent = _notify(name, finding, action, PLAN_GONE if reopened else "")
+        sent = _notify(name, finding, action, PLAN_GONE if reopened else "") if pings else []
         if sent:
             told = set(filter(None, (existing.notified or "").split("\n"))) | set(sent)
             updates["notified"] = "\n".join(sorted(told))
-    elif reopened:
+    elif reopened and pings:
         # Same action as already announced, but the plan is gone: say so.
         sent = _notify(name, finding, action, PLAN_GONE)
         if sent:

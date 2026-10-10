@@ -160,3 +160,34 @@ class TestWeightedCounts(unittest.TestCase):
         vals = [self.w.count_figures("GH A", WEEK, "pest", "Spidermites", self.stages, weights=w)["value"]
                 for w in (None, (("Eggs", 0.5),), None, (("Eggs", 1.0),))]
         self.assertEqual(vals, [3.0, 2.0, 3.0, 3.0])
+
+
+V = import_module("upande_scp.serverscripts.dashboard_aggregates._variety")
+
+
+class TestGroupByVariety(unittest.TestCase):
+    def test_groups_by_bed_variety_and_greys_below_ten(self):
+        beds = {("GH", f"Z{i:02d}"): (f"B{i // 4}", "Red" if i < 12 else "White") for i in range(16)}
+        rows = V.group_by_variety(beds, set(beds), {("GH", "Z00"), ("GH", "Z12")}, {("GH", "Z01")})
+        self.assertEqual(rows, [
+            {"variety": "Red", "beds": 3, "scouted": 12, "infested": 1, "prevalence": 8.3, "signs": 8.3, "few": False},
+            {"variety": "White", "beds": 1, "scouted": 4, "infested": 1, "prevalence": 25.0, "signs": 0.0, "few": True},
+        ])
+
+    def test_ten_stations_are_enough(self):
+        self.assertEqual(V.VARIETY_MIN_N, 10)
+        beds = {("GH", f"Z{i}"): ("B1", "Red") for i in range(10)}
+        self.assertFalse(V.group_by_variety(beds, set(beds), set())[0]["few"])
+
+    def test_no_variety_anywhere_is_no_table_and_unvaried_stations_come_last(self):
+        beds = {("GH", "Z1"): ("B1", ""), ("GH", "Z2"): ("B1", "")}
+        self.assertEqual(V.group_by_variety(beds, set(beds), set()), [])
+        beds[("GH", "Z3")] = ("B2", "Red")
+        rows = V.group_by_variety(beds, set(beds) | {("GH", "Z9")}, set())    # Z9: no bed row at all
+        self.assertEqual([(r["variety"], r["scouted"], r["beds"], r["signs"]) for r in rows],
+                         [("Red", 1, 1, None), ("", 3, 1, None)])
+
+    def test_only_scouted_stations_count(self):
+        beds = {("GH", "Z1"): ("B1", "Red"), ("GH", "Z2"): ("B1", "Red")}
+        rows = V.group_by_variety(beds, {("GH", "Z1")}, {("GH", "Z2")})
+        self.assertEqual((rows[0]["scouted"], rows[0]["infested"]), (1, 0))

@@ -268,3 +268,77 @@ class TestSignsOnPayloads(StageCase):
     def test_aggregate_keys_carry_the_stg1_schema(self):
         self.assertEqual(_common.K_DASH_AGG_SCHEMA, "stg1")
         self.assertIn(":stg1:pests:", _common._build_key("pests", {"crop": "Rose"}))
+
+
+class TestVarieties(StageCase):
+    """Thrips Adult on station 0, Damages on stations 0 and 1, of each section."""
+
+    def setUp(self):
+        super().setUp()
+        for stage, role in (("Adult", "Life stage"), ("Larvae", "Life stage"), ("Damages", "Sign"),
+                            ("Singles", "Form"), ("Colonies", "Form")):
+            SV.set_role(stage, role)
+
+    def _seed(self, date=SV.WEEK_44[0]):
+        TF.seed_week(self.gh, date, crop="Rose", stage="Adult", infested_per_section=1)
+        TF.seed_week(self.gh, date, crop="Rose", stage="Damages", infested_per_section=2)
+
+    def _varieties(self, pest="Thrips", to_date=SV.WEEK_44[1]):
+        out = DA.greenhouse_detail(greenhouse=self.gh, from_date=SV.WEEK_44[0], to_date=to_date,
+                                   crop="Rose", force="1")
+        return next(p for p in out["prevalence"] if p["name"] == pest)["varieties"]
+
+    def test_varieties_group_by_bed_variety_and_grey_the_small_ones(self):
+        self._seed()
+        beds_a = SV.set_bed_variety(SV.seeded_stations(self.gh, rows=(0, 1)), "_TEST Variety A")
+        beds_b = SV.set_bed_variety(SV.seeded_stations(self.gh, rows=(2,)), "_TEST Variety B")
+        self.assertFalse(beds_a & beds_b)                          # a bed lies in one third of the house
+        self.assertEqual(self._varieties(), [
+            {"variety": "_TEST Variety A", "beds": len(beds_a), "scouted": 18, "infested": 6,
+             "prevalence": 33.3, "signs": 66.7, "few": False},
+            {"variety": "_TEST Variety B", "beds": len(beds_b), "scouted": 9, "infested": 3,
+             "prevalence": 33.3, "signs": 66.7, "few": True},
+        ])
+
+    def test_stations_on_beds_without_a_variety_are_grouped_last(self):
+        self._seed()
+        SV.set_bed_variety(SV.seeded_stations(self.gh, rows=(0, 1)), "_TEST Variety A")
+        SV.set_bed_variety(SV.seeded_stations(self.gh, rows=(2,)), None)
+        self.assertEqual([(r["variety"], r["scouted"]) for r in self._varieties()],
+                         [("_TEST Variety A", 18), ("", 9)])
+
+    def test_no_variety_anywhere_hides_the_table(self):
+        self._seed()
+        SV.set_bed_variety(SV.seeded_stations(self.gh), None)
+        self.assertEqual(self._varieties(), [])
+
+    def test_only_each_houses_latest_week_is_grouped(self):
+        self._seed()                                                # W44: 27 stations
+        TF.seed_week(self.gh, SV.WEEK_45[0], crop="Rose", stage="Adult", infested_per_section=3,
+                     sections={(0, 0), (0, 1), (0, 2)})            # W45: 9 stations, all live
+        SV.set_bed_variety(SV.seeded_stations(self.gh), "_TEST Variety A")
+        rows = self._varieties(to_date=SV.WEEK_45[1])
+        self.assertEqual([(r["variety"], r["scouted"], r["prevalence"], r["few"]) for r in rows],
+                         [("_TEST Variety A", 9, 100.0, True)])
+
+    def test_an_avocado_block_has_no_variety_table(self):
+        block = F.avocado_block()
+        TF.seed_week(block, SV.WEEK_44[0], crop="Avocado", pest="Mealybugs", stage="Singles", block=True)
+        out = DA.greenhouse_detail(greenhouse=block, from_date=SV.WEEK_44[0], to_date=SV.WEEK_44[1],
+                                   crop="Avocado", force="1")
+        self.assertEqual(next(p for p in out["prevalence"] if p["name"] == "Mealybugs")["varieties"], [])
+
+    def test_a_disease_row_has_no_variety_table(self):
+        PF.seed_even_week(self.gh, SV.WEEK_44[0], crop="Rose", disease="Powdery Mildew")
+        out = DA.greenhouse_detail(greenhouse=self.gh, from_date=SV.WEEK_44[0], to_date=SV.WEEK_44[1],
+                                   crop="Rose", force="1")
+        self.assertIsNone(next(p for p in out["prevalence"] if p["kind"] == "disease")["varieties"])
+
+    def test_the_pests_tab_carries_the_table_for_the_selected_pest_only(self):
+        self._seed()
+        SV.set_bed_variety(SV.seeded_stations(self.gh), "_TEST Variety A")
+        base = {"from_date": SV.WEEK_44[0], "to_date": SV.WEEK_44[1], "crop": "Rose", "force": "1"}
+        self.assertEqual(DA.pests(**base)["varieties"], [])
+        rows = DA.pests(observation="Thrips", **base)["varieties"]
+        self.assertEqual([(r["variety"], r["scouted"], r["prevalence"], r["signs"]) for r in rows],
+                         [("_TEST Variety A", 27, 33.3, 66.7)])

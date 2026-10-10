@@ -10,6 +10,7 @@ import frappe
 from upande_scp.serverscripts.common import prevalence as P
 from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows
+from upande_scp.serverscripts.dashboard_aggregates import _variety
 from upande_scp.serverscripts.dashboard_aggregates._prevalence_rows import ANY
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
@@ -108,6 +109,11 @@ def _build(kind: str, filters: dict, scope, job_id: str = "") -> dict:
         "greenhousePressure": _gh_pressure(kind, filters, weeks),
         "dailyPercent":       _daily_percent(kind, filters, weeks),
         "trendSeries":        _trend_series(rows, kind),
+        # S7: the selected pest by rose variety (each house's latest scouted week).
+        "varieties": (
+            _variety.variety_breakdown(weeks, filters["crop"], filters["observation"])
+            if kind == "pest" and filters["observation"] else []
+        ),
     }
     publish_progress(job_id, 100, "")
     return payload

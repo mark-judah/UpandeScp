@@ -4,7 +4,7 @@ import frappe
 
 from upande_scp.serverscripts.common import prevalence as P
 from upande_scp.serverscripts.common import threshold_bands as B
-from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows
+from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows, _variety
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     band_spec,
     cached_aggregate,
@@ -140,6 +140,9 @@ def _build(filters: dict, job_id: str = "") -> dict:
     top_diseases = _top(disease_map)
 
     # The 3 × 3 picture (spec §3) for the top observations, latest scouted week.
+    # S7: the house's latest-week stations by bed variety, one scan for every top pest.
+    variety_weeks = _variety.latest_weeks(weeks, [gh])
+    variety_beds = _variety.station_beds(filters["crop"], variety_weeks) if top_pests else {}
     prevalence_rows = []
     for kind, top in (("pest", top_pests), ("disease", top_diseases)):
         for t in top[:_GRID_TOP_N]:
@@ -152,6 +155,10 @@ def _build(filters: dict, job_id: str = "") -> dict:
                 **P.public(fig),
                 "signs": _prevalence_rows.signs_latest(weeks, filters["crop"], gh, t["name"]) if kind == "pest" else None,
                 "sections": _mark_hot(filters["crop"], kind, t["name"], weeks, gh, fig),
+                "varieties": (
+                    _variety.breakdown(weeks, filters["crop"], t["name"], variety_weeks, variety_beds)
+                    if kind == "pest" else None
+                ),
             })
 
     payload = {

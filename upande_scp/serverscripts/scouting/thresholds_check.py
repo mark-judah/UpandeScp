@@ -17,7 +17,9 @@ week at the same action is recorded silently. A newer week supersedes older
 Open / Acknowledged alerts (Resolved), a figure below Moderate resolves its
 week's alert (and older weeks' only when it is Fair/Good or its week is over,
 so a thin Monday sample cannot clear last week's alert), and a live Converted
-alert is never touched.
+alert is never touched (one whose plan died reopens). After each crop's
+findings, ``sweep`` resolves alerts no check will reach again (key no longer
+banded, or week older than the window).
 
 ``run_threshold_check`` (hourly) is gated by a Redis ``SET NX EX``: one run per
 50 minutes across workers. The 17:00 EAT digest (``alert_digest``) is the only
@@ -158,10 +160,10 @@ def _existing(name, latest=False):
     transaction's snapshot and would not see the winner's committed row."""
     if not latest:
         return frappe.db.get_value(
-            DOCTYPE, name, ["name", "status", "notified_action", "notified"], as_dict=True,
+            DOCTYPE, name, ["name", "status", "notified_action", "notified", "work_order"], as_dict=True,
         )
     rows = frappe.db.sql(
-        """SELECT name, status, notified_action, notified FROM `tabScouting Alert`
+        """SELECT name, status, notified_action, notified, work_order FROM `tabScouting Alert`
            WHERE name = %s FOR UPDATE""",
         (name,), as_dict=True,
     )
@@ -246,8 +248,14 @@ def upsert(finding, now=None, _retry=True):
     }
     existing = _existing(name, latest=not _retry)
     if existing and existing.status == "Converted to plan":
-        # A curative plan owns this alert: never overwrite or re-notify it.
-        return name
+        if not plan_is_dead(existing.work_order):
+            # A live curative plan owns this alert: never overwrite or re-notify it.
+            return name
+        # Its plan was deleted, cancelled, stopped (auto-cancel / rejection) or
+        # closed: the breach is nobody's again. Reopen it; escalation rules
+        # below decide whether anyone is told.
+        frappe.db.set_value(DOCTYPE, name, {"status": "Open", "work_order": None})
+        existing.status = "Open"
     if existing:
         frappe.db.set_value(DOCTYPE, name, fields)
         already, status = existing.notified_action, existing.status
@@ -327,10 +335,70 @@ def dashboard_link(crop) -> str:
     return f"{APP_PATH}#/{slug}/dashboard"
 
 
+DEAD_PLAN_STATUSES = ("Cancelled", "Stopped", "Closed")
+
+
+def plan_is_dead(work_order) -> bool:
+    """True when a Converted alert's curative plan no longer owns it: the Work
+    Order is gone (a deleted draft), cancelled, or Stopped / Closed (the
+    auto-cancel and the approver's rejection both stop it)."""
+    if not work_order:
+        return True
+    row = frappe.db.get_value("Work Order", work_order, ["docstatus", "status"], as_dict=True)
+    return not row or row.docstatus == 2 or row.status in DEAD_PLAN_STATUSES
+
+
+def reopen_for_plan(work_order) -> int:
+    """Give a deleted plan's Converted alerts back to the Overview (Open, no
+    plan). Called before a draft plan is deleted; the hourly check catches a
+    plan that is cancelled or stopped (``plan_is_dead``)."""
+    if not work_order or not frappe.db.table_exists(DOCTYPE):
+        return 0
+    names = frappe.get_all(
+        DOCTYPE, filters={"work_order": work_order, "status": "Converted to plan"}, pluck="name",
+    )
+    for name in names:
+        frappe.db.set_value(DOCTYPE, name, {"status": "Open", "work_order": None})
+    return len(names)
+
+
+def sweep(crop, today=None) -> int:
+    """Resolve the crop's Open / Acknowledged alerts that no check will ever
+    touch again: their key is no longer banded, or their ISO week ended before
+    the evaluation window (a house no longer scouted). Converted alerts are
+    left to their plan. Returns how many were resolved."""
+    crop = crop_catalog.canonical(crop) or crop
+    if not crop:
+        return 0
+    today = today or now_eat().date()
+    window_start = today - timedelta(days=EVAL_WINDOW_DAYS - 1)
+    banded = {(KIND_LABEL[k], obs, stage or "") for k, obs, stage in _common.load_thresholds(crop)}
+    rows = frappe.get_all(
+        DOCTYPE, filters={"crop": crop, "status": ["in", list(OPEN_STATES)]},
+        fields=["name", "kind", "observation", "stage", "iso_week"], limit_page_length=0,
+    )
+    stale = [
+        r.name for r in rows
+        if (r.kind, r.observation, r.stage or "") not in banded or _week_ended(r.iso_week, window_start)
+    ]
+    for name in stale:
+        frappe.db.set_value(DOCTYPE, name, "status", "Resolved")
+    return len(stale)
+
+
 def check_crop(crop, today=None) -> dict:
     findings = evaluate(crop, today)
     alerts = [n for n in (upsert(f) for f in findings) if n]
-    return {"findings": len(findings), "alerts": len(alerts)}
+    return {"findings": len(findings), "alerts": len(alerts), "swept": sweep(crop, today)}
+
+
+def _crops_to_check() -> list:
+    """Banded crops, plus any crop still holding Open / Acknowledged alerts (its
+    bands may all have been cleared: the sweep must still resolve them)."""
+    with_alerts = frappe.get_all(
+        DOCTYPE, filters={"status": ["in", list(OPEN_STATES)]}, pluck="crop", distinct=True,
+    )
+    return sorted(set(banded_crops()) | {c for c in with_alerts if c})
 
 
 def run_threshold_check(today=None, force=False, commit=True) -> dict:
@@ -342,7 +410,7 @@ def run_threshold_check(today=None, force=False, commit=True) -> dict:
         return {"skipped": "no Scouting Alert doctype"}
     _common.clear_threshold_cache()
     out = {"crops": {}, "errors": []}
-    for crop in banded_crops():
+    for crop in _crops_to_check():
         try:
             out["crops"][crop] = check_crop(crop, today)
             if commit:

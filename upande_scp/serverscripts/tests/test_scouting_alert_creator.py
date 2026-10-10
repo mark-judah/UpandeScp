@@ -10,7 +10,7 @@ from upande_scp.serverscripts.scouting import thresholds_check as TC
 from upande_scp.serverscripts.spray_plan_creator import bootstrap as BOOT
 from upande_scp.serverscripts.spray_plan_creator import drafts as D
 from upande_scp.serverscripts.tests import crop_scoping_fixture as F
-from upande_scp.serverscripts.tests.test_scouting_alerts import SUN_20, AlertCase
+from upande_scp.serverscripts.tests.test_scouting_alerts import SUN_20, AlertCase, live_plan
 
 
 class TestCreatorAlerts(AlertCase):
@@ -37,7 +37,7 @@ class TestCreatorAlerts(AlertCase):
 
     def test_convert_to_plan_links_the_work_order_and_marks_the_alert(self):
         name = self.raise_spray_advised()
-        wo = frappe.db.get_value("Work Order", {}, "name")
+        wo = live_plan()
         self.assertEqual(TC.convert_to_plan(name, wo, self.gh), wo)
         status, linked = frappe.db.get_value("Scouting Alert", name, ["status", "work_order"])
         self.assertEqual((status, linked), ("Converted to plan", wo))
@@ -45,6 +45,18 @@ class TestCreatorAlerts(AlertCase):
         TC.check_crop("Rose", SUN_20)
         self.assertEqual(frappe.db.get_value("Scouting Alert", name, "status"), "Converted to plan")
         self.assertEqual(TC.convert_to_plan(name, "WO-LATER", self.gh), wo)
+
+    def test_deleting_the_draft_plan_reopens_its_alert(self):
+        name = self.raise_spray_advised()
+        wo = live_plan()
+        TC.convert_to_plan(name, wo, self.gh)
+        with patch.object(D, "_require_creator", return_value="Administrator"), \
+             patch.object(D, "_own_draft", return_value=frappe._dict(name=wo)), \
+             patch.object(frappe, "delete_doc") as delete_doc:
+            self.assertEqual(D.delete_draft_plan(wo), {"deleted": wo})
+        delete_doc.assert_called_once()
+        self.assertEqual(_real_get(name), ("Open", None))
+        self.assertIn(name, [r.name for r in TC.open_alerts("Rose")])
 
     def test_convert_refuses_a_bad_alert(self):
         name = self.raise_spray_advised()

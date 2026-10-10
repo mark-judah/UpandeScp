@@ -668,6 +668,10 @@ def update_draft_plan(name: str, payload):
 def delete_draft_plan(name: str) -> dict:
     _require_creator()
     wo = _own_draft(name)
+    # A curative plan's alert goes back to Open instead of pointing at nothing.
+    from upande_scp.serverscripts.scouting import thresholds_check
+
+    thresholds_check.reopen_for_plan(wo.name)
     frappe.delete_doc("Work Order", wo.name, force=1, ignore_permissions=True)
     return {"deleted": name}
 

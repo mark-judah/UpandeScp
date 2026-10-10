@@ -24,6 +24,16 @@ U_STRANGER = "_test_scp_alert_stranger@example.com"   # on no roster, no role
 SUN_20, SUN_21, SUN_22 = date(2031, 5, 18), date(2031, 5, 25), date(2031, 6, 1)
 
 
+def live_plan():
+    """A submitted, running Work Order: a curative plan that still owns its alert."""
+    return frappe.db.get_value("Work Order", {"docstatus": 1, "status": "Not Started"}, "name")
+
+
+def dead_plan():
+    """A Stopped Work Order (auto-cancelled or rejected)."""
+    return frappe.db.get_value("Work Order", {"docstatus": 1, "status": "Stopped"}, "name")
+
+
 def at(day, hour=9, minute=0):
     return datetime(day.year, day.month, day.day, hour, minute, tzinfo=TC.EAT)
 
@@ -261,7 +271,7 @@ class TestAlerts(AlertCase):
         TF.seed_week(self.gh, TF.WEEK_20[0], crop="Rose")
         TC.check_crop("Rose", SUN_20)
         name = self.alert().name
-        frappe.db.set_value("Scouting Alert", name, "status", "Converted to plan")
+        frappe.db.set_value("Scouting Alert", name, {"status": "Converted to plan", "work_order": live_plan()})
         TF.seed_week(self.gh, "2031-05-15", crop="Rose", infested_per_section=2)  # would escalate
         TC.check_crop("Rose", SUN_20)
         a = self.alert()
@@ -275,7 +285,8 @@ class TestAlerts(AlertCase):
         TF.set_bands("Rose", "Thrips", 0, 30, 60)
         TF.seed_week(self.gh, TF.WEEK_20[0], crop="Rose")
         TC.check_crop("Rose", SUN_20)
-        frappe.db.set_value("Scouting Alert", self.alert().name, "status", "Converted to plan")
+        frappe.db.set_value("Scouting Alert", self.alert().name,
+                            {"status": "Converted to plan", "work_order": live_plan()})
         TF.seed_week(self.gh, TF.WEEK_21[0], crop="Rose", infested_per_section=0)   # scouted clean
         TC.check_crop("Rose", SUN_21)
         TF.seed_week(self.gh, TF.WEEK_22[0], crop="Rose")
@@ -283,6 +294,31 @@ class TestAlerts(AlertCase):
         new = self.alert(week="2031-W22")
         self.assertEqual((new.action, new.notified_action), ("Alarming", "Alarming"))
         self.assertEqual(self.told(U_CREATOR, new.name), 1)
+
+    def test_a_converted_alert_whose_plan_died_reopens_and_escalates_normally(self):
+        TF.set_bands("Rose", "Thrips", 0, 30, 60)
+        TF.seed_week(self.gh, TF.WEEK_20[0], crop="Rose")
+        TC.check_crop("Rose", SUN_20)                                   # Alarming
+        name = self.alert().name
+        for plan in (dead_plan(), "WO-DELETED-SCP-TEST"):              # Stopped / deleted
+            frappe.db.set_value("Scouting Alert", name, {"status": "Converted to plan", "work_order": plan})
+            TC.check_crop("Rose", SUN_20)
+            a = frappe.db.get_value("Scouting Alert", name, ["status", "work_order"], as_dict=True)
+            self.assertEqual((a.status, a.work_order), ("Open", None), plan)
+        self.assertEqual(self.told(U_CREATOR, name), 1)                 # same action: not re-announced
+        frappe.db.set_value("Scouting Alert", name, {"status": "Converted to plan", "work_order": dead_plan()})
+        TF.seed_week(self.gh, "2031-05-15", crop="Rose", infested_per_section=2)   # escalates
+        TC.check_crop("Rose", SUN_20)
+        a = self.alert()
+        self.assertEqual((a.status, a.action, a.notified_action), ("Open", "Spray advised", "Spray advised"))
+        self.assertEqual(self.told(U_APPROVER, name), 1)
+
+    def test_a_converted_alert_with_a_cancelled_plan_reopens(self):
+        name = self.raise_spray_advised()
+        cancelled = frappe.db.get_value("Work Order", {"docstatus": 2}, "name")
+        frappe.db.set_value("Scouting Alert", name, {"status": "Converted to plan", "work_order": cancelled})
+        TC.check_crop("Rose", SUN_20)
+        self.assertEqual(self.alert().status, "Open")
 
     def test_the_check_never_sends_email(self):
         with patch.object(frappe, "sendmail") as sendmail:
@@ -305,6 +341,38 @@ class TestAlerts(AlertCase):
             self.raise_spray_advised()
         self.assertEqual(self.alert().action, "Spray advised")
         log_error.assert_called()
+
+
+class TestSweep(AlertCase):
+    def test_an_alert_whose_key_is_no_longer_banded_is_resolved(self):
+        name = self.raise_spray_advised()
+        TF.set_bands("Rose", "Aphids", 0, 10, 30)          # the crop stays banded
+        TF.set_bands("Rose", "Thrips", 0, 0, 0)            # Thrips' band removed
+        TC.check_crop("Rose", SUN_20)
+        self.assertEqual(self.alert().status, "Resolved")
+        self.assertNotIn(name, [r.name for r in TC.open_alerts("Rose")])
+
+    def test_a_crop_with_no_bands_left_is_still_swept(self):
+        self.raise_spray_advised()
+        TF.clear_all_bands("Rose")
+        TC.run_threshold_check(today=SUN_20, force=True, commit=False)
+        self.assertEqual(self.alert().status, "Resolved")
+
+    def test_an_alert_older_than_the_window_is_resolved(self):
+        self.raise_spray_advised()                         # W20, house never scouted again
+        TC.check_crop("Rose", SUN_21)                       # W20 still in the 14-day window
+        self.assertEqual(self.alert().status, "Open")
+        TC.check_crop("Rose", date(2031, 6, 8))             # window starts 05-26: W20 is out
+        self.assertEqual(self.alert().status, "Resolved")
+
+    def test_a_current_or_converted_alert_is_untouched(self):
+        name = self.raise_spray_advised()
+        frappe.db.set_value("Scouting Alert", name, "status", "Acknowledged")
+        TC.check_crop("Rose", SUN_20)
+        self.assertEqual(self.alert().status, "Acknowledged")
+        frappe.db.set_value("Scouting Alert", name, {"status": "Converted to plan", "work_order": live_plan()})
+        TC.check_crop("Rose", date(2031, 6, 8))
+        self.assertEqual(self.alert().status, "Converted to plan")
 
 
 class TestRecipients(AlertCase):

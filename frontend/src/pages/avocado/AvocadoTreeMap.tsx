@@ -24,6 +24,12 @@ import {
 import { lastMonthsRange } from "@/lib/utils";
 import type { AvocadoView, MarkerPoint } from "./tree-map-types";
 import { SCOUT_PALETTE } from "./derive-scouts";
+import { savePin } from "@/lib/spread-api";
+import type { Pt } from "@/lib/hull";
+import { useDrawArea } from "../maps/use-draw-area";
+import { useHouseOverlays } from "../maps/use-house-overlays";
+import { DrawAreaBar } from "../maps/DrawAreaBar";
+import { areaPinFeatures, draftFeatures, patchFeatures } from "./patch-features";
 
 /** Compute a polygon's bounds quickly for fitBounds. */
 function geometryBounds(
@@ -175,6 +181,62 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
     }
     return m;
   }, [treePoints]);
+
+  // Spread (piece 3c): patches of the view's picked observation on a picked
+  // block, its patch / area pins, and drawing an area pin (C5, C10).
+  const obs = view.patchObservation ?? null;
+  const [block, setBlock] = useState<string | null>(null);
+  const spread = useHouseOverlays({
+    crop: filters.crop,
+    warehouse: obs ? block : null,
+    observation: obs?.name ?? null,
+    kind: obs?.kind ?? "pest",
+    week: null,
+  });
+  const [pendingArea, setPendingArea] = useState<Pt[] | null>(null);
+  const [areaBusy, setAreaBusy] = useState(false);
+  const [areaError, setAreaError] = useState<string | null>(null);
+  const draw = useDrawArea(setPendingArea);
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
+  const cancelDraw = draw.cancel;
+  useEffect(() => {
+    cancelDraw();
+    setPendingArea(null);
+  }, [block, obs?.name, obs?.kind, cancelDraw]);
+  const blockNames = useMemo(
+    () =>
+      (blocks?.features ?? [])
+        .filter((f) => filters.farm === ALL || f.properties?.farm === filters.farm)
+        .map((f) => String(f.properties?.block ?? ""))
+        .filter(Boolean)
+        .sort(),
+    [blocks, filters.farm],
+  );
+  const saveArea = async (title: string, shared: boolean) => {
+    if (!pendingArea || !block || !obs) return;
+    setAreaBusy(true);
+    setAreaError(null);
+    try {
+      await savePin({
+        crop: filters.crop,
+        warehouse: block,
+        kind: "Area",
+        title,
+        observation: obs.name,
+        obs_kind: obs.kind,
+        shared,
+        polygon: { type: "Polygon", coordinates: [[...pendingArea, pendingArea[0]]] },
+        source_week: spread.clusters?.week ?? null,
+      });
+      setPendingArea(null);
+      spread.reloadPins();
+    } catch (e) {
+      setAreaError(e instanceof Error ? e.message : "Could not save the area");
+    } finally {
+      setAreaBusy(false);
+    }
+  };
 
   // Optional point overlay (e.g. trap catches) driven by the view.
   const markers = useMemo<MarkerPoint[]>(
@@ -388,6 +450,43 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
     }
   }, [tracks, mapReady, view.showTracks]);
 
+  // Patch outlines (red), patch / area pins (purple, dashed) and the area being
+  // drawn. MapLibre paint takes literal colours: these mirror --sd-data-red /
+  // --sd-data-purple. Lines only; the draft alone gets a faint fill.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const put = (id: string, data: GeoJsonFC, paint: Record<string, unknown>) => {
+      const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
+      if (src) {
+        src.setData(data as never);
+        return;
+      }
+      map.addSource(id, { type: "geojson", data: data as never });
+      map.addLayer({ id: `${id}-line`, type: "line", source: id, paint: paint as never });
+    };
+    put("patches", patchFeatures(spread.clusters, treeCoords), { "line-color": "#C2453A", "line-width": 2.5, "line-opacity": 0.9 });
+    put("pin-areas", areaPinFeatures(spread.pins, treeCoords), { "line-color": "#8466C7", "line-width": 2, "line-dasharray": [2, 1.5] });
+    put("draw-area", draftFeatures(draw.vertices), { "line-color": "#8466C7", "line-width": 2, "line-dasharray": [1, 1] });
+    if (!map.getLayer("draw-area-fill")) {
+      map.addLayer({
+        id: "draw-area-fill",
+        type: "fill",
+        source: "draw-area",
+        filter: ["==", ["geometry-type"], "Polygon"] as never,
+        paint: { "fill-color": "#8466C7", "fill-opacity": 0.08 },
+      });
+    }
+  }, [spread.clusters, spread.pins, treeCoords, draw.vertices, mapReady]);
+
+  // While drawing, a double-click closes the area instead of zooming.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (draw.active) map.doubleClickZoom.disable();
+    else map.doubleClickZoom.enable();
+  }, [draw.active, mapReady]);
+
   // Show/hide the boundary (blocks) + tanks layers per the Layers toggle.
   useEffect(() => {
     const map = mapRef.current;
@@ -445,8 +544,11 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
       setMapReady(true);
     });
     map.on("click", "blocks-fill", (e) => {
+      if (drawRef.current.active) return;
       const f = e.features?.[0];
       if (!f) return;
+      const name = (f.properties as Record<string, unknown> | null)?.block;
+      if (name) setBlock(String(name));
       const b = geometryBounds((f as any).geometry);
       if (!b) return;
       map.fitBounds(b, {
@@ -455,6 +557,16 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
         duration: 1000,
         bearing: 0,
       });
+    });
+    map.on("click", (e) => {
+      const d = drawRef.current;
+      if (d.active) d.add([e.lngLat.lng, e.lngLat.lat]);
+    });
+    map.on("dblclick", (e) => {
+      const d = drawRef.current;
+      if (!d.active) return;
+      e.preventDefault();
+      d.finish();
     });
     map.on("mouseenter", "blocks-fill", () => {
       map.getCanvas().style.cursor = "pointer";
@@ -508,10 +620,48 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
         }
       />
 
-      <div className="flex items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b">
+      <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b">
         <span className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-[#7c8b6a]" /> Unscouted
         </span>
+        {obs ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Block for patches"
+              value={block ?? ""}
+              onChange={(e) => setBlock(e.target.value || null)}
+              className="rounded border bg-card px-1.5 py-0.5 text-xs"
+            >
+              <option value="">Pick a block</option>
+              {blockNames.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+            {block ? (
+              <span className="tabular-nums">
+                {obs.name}: {spread.clusters?.clusters.length ?? 0} patch
+                {(spread.clusters?.clusters.length ?? 0) === 1 ? "" : "es"}
+                {spread.clusters?.week ? ` · ${spread.clusters.week}` : ""}
+              </span>
+            ) : null}
+            <DrawAreaBar
+              draw={draw}
+              pending={pendingArea}
+              busy={areaBusy}
+              disabled={!block}
+              defaultTitle={`${obs.name} · area`}
+              onSave={saveArea}
+              onDiscard={() => setPendingArea(null)}
+            />
+            {areaError ? (
+              <span role="alert" className="text-[var(--sd-data-red)]">
+                {areaError}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         <span className="ml-auto tabular-nums">
           {blockCount} blocks · {treeCount} trees · {scoutedTreeCount} visited
           {treesPlacing && treeCount > 0 ? " · drawing trees…" : ""}

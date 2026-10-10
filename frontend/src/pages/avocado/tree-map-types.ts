@@ -24,4 +24,7 @@ export interface AvocadoView {
   headerControls?: ReactNode;
   /** Draw the per-scout movement trails layer (scouting only). */
   showTracks?: boolean;
+  /** The observation whose patches the map outlines on a picked block
+   *  (spread spec C5); null/absent = no patches. */
+  patchObservation?: { kind: "pest" | "disease"; name: string } | null;
 }

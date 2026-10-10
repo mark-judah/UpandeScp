@@ -7,7 +7,9 @@
  * via `<use href="#scp-m-*">`.
  */
 
+import type { MouseEvent as ReactMouseEvent } from "react";
 import type { ProjectedGeometry } from "@/pages/maps/bed-projection";
+import { convexHull, outlinePath, type Pt } from "@/lib/hull";
 import {
   MARKER_ID,
   shapeForKind,
@@ -62,6 +64,46 @@ export interface BedMarker {
   stage?: string;
 }
 
+/** A patch or pin outline: the hull of its zones' centroids, or explicit
+ *  points in SVG space. Stroke only — never a fill over the markers. */
+export interface BedOverlay {
+  id: string;
+  zones?: string[];
+  points?: Pt[];
+  tone: "patch" | "pin";
+  label?: string;
+}
+
+const OVERLAY_COLOR: Record<BedOverlay["tone"], string> = {
+  patch: "var(--sd-data-red)",
+  pin: "var(--sd-data-purple)",
+};
+
+function overlayPoints(o: BedOverlay, centroids: ProjectedGeometry["zoneCentroids"]): Pt[] {
+  if (o.points) return o.points;
+  const out: Pt[] = [];
+  for (const z of o.zones ?? []) {
+    const c = centroids[z];
+    if (c) out.push([c.cx, c.cy]);
+  }
+  return out;
+}
+
+/** Client → SVG user space; the raw client point where the browser (or jsdom)
+ *  has no screen CTM. */
+function svgPoint(e: ReactMouseEvent<SVGSVGElement>): Pt {
+  const svg = e.currentTarget;
+  const ctm = typeof svg.getScreenCTM === "function" ? svg.getScreenCTM() : null;
+  if (ctm && typeof svg.createSVGPoint === "function") {
+    const p = svg.createSVGPoint();
+    p.x = e.clientX;
+    p.y = e.clientY;
+    const q = p.matrixTransform(ctm.inverse());
+    return [q.x, q.y];
+  }
+  return [e.clientX, e.clientY];
+}
+
 export interface BedSvgProps {
   geometry: ProjectedGeometry;
   markers: BedMarker[];
@@ -76,6 +118,12 @@ export interface BedSvgProps {
    *  Beds whose ID doesn't parse as a number are always labeled. */
   labelEvery?: number;
   className?: string;
+  /** Patch / pin outlines drawn over the markers (spread spec C5). */
+  overlays?: BedOverlay[];
+  /** The area being drawn, in SVG space; null/undefined when not drawing. */
+  draft?: Pt[] | null;
+  onCanvasClick?: (pt: Pt) => void;
+  onCanvasDoubleClick?: () => void;
 }
 
 function shouldLabel(bedId: string, every: number): boolean {
@@ -96,6 +144,10 @@ export function BedSvg({
   labelFontSize = 3,
   labelEvery = 7,
   className,
+  overlays,
+  draft,
+  onCanvasClick,
+  onCanvasDoubleClick,
 }: BedSvgProps) {
   return (
     <svg
@@ -103,6 +155,9 @@ export function BedSvg({
       xmlns="http://www.w3.org/2000/svg"
       preserveAspectRatio="xMidYMid meet"
       className={className}
+      onClick={onCanvasClick ? (e) => onCanvasClick(svgPoint(e)) : undefined}
+      onDoubleClick={onCanvasDoubleClick ? () => onCanvasDoubleClick() : undefined}
+      style={draft ? { cursor: "crosshair" } : undefined}
     >
       {/* Bed line layer. */}
       <g>
@@ -174,6 +229,48 @@ export function BedSvg({
           );
         })}
       </g>
+
+      {/* Patch and pin outlines (spread spec C5): stroke only, on top. */}
+      {overlays?.length ? (
+        <g data-testid="bed-overlays" fill="none">
+          {overlays.map((o) => {
+            const hull = convexHull(overlayPoints(o, geometry.zoneCentroids));
+            if (!hull.length) return null;
+            const common = {
+              stroke: OVERLAY_COLOR[o.tone],
+              strokeWidth: o.tone === "pin" ? 0.9 : 1.2,
+              strokeDasharray: o.tone === "pin" ? "2.5 1.5" : undefined,
+              strokeLinejoin: "round" as const,
+              strokeLinecap: "round" as const,
+              fill: "none",
+            };
+            return hull.length === 1 ? (
+              <circle key={o.id} data-testid={`overlay-${o.id}`} cx={hull[0][0]} cy={hull[0][1]} r={markerSize} {...common}>
+                <title>{o.label}</title>
+              </circle>
+            ) : (
+              <path key={o.id} data-testid={`overlay-${o.id}`} d={outlinePath(hull)} {...common}>
+                <title>{o.label}</title>
+              </path>
+            );
+          })}
+        </g>
+      ) : null}
+
+      {/* The area being drawn (C10). */}
+      {draft && draft.length ? (
+        <g data-testid="draw-draft" data-vertices={draft.length} fill="none">
+          <polyline
+            points={draft.map((p) => `${p[0]},${p[1]}`).join(" ")}
+            stroke="var(--sd-data-purple)"
+            strokeWidth={0.9}
+            strokeDasharray="2 1.5"
+          />
+          {draft.map((p, i) => (
+            <circle key={i} cx={p[0]} cy={p[1]} r={1.2} stroke="var(--sd-data-purple)" strokeWidth={0.6} />
+          ))}
+        </g>
+      ) : null}
     </svg>
   );
 }

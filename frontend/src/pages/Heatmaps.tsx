@@ -63,6 +63,11 @@ import {
   type BedMarker,
   type ZoneStage,
 } from "./maps/BedSvg";
+import { savePin } from "@/lib/spread-api";
+import type { Pt } from "@/lib/hull";
+import { useDrawArea } from "./maps/use-draw-area";
+import { bedOverlays, useHouseOverlays } from "./maps/use-house-overlays";
+import { DrawAreaBar } from "./maps/DrawAreaBar";
 import { StageLegend } from "./maps/StageLegend";
 import { hasWebGL } from "@/lib/webgl";
 import type { TerrainWeekData } from "./maps/Terrain3D";
@@ -441,6 +446,54 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   // which would otherwise be a false statement of fact while the detail
   // fetch (measured ~542ms cold) is still in flight.
   const isLoadingDetail = picked !== null && pickedDetail === null;
+
+  // Spread (piece 3c): the latest week's patches and this house's patch / area
+  // pins, outlined on the "Latest week" panel, and a draw mode for area pins.
+  const latestWeek = modalRecent.length ? modalRecent[modalRecent.length - 1].date : null;
+  const spread = useHouseOverlays({
+    crop,
+    warehouse: picked?.greenhouse ?? null,
+    observation: picked?.obsName ?? null,
+    kind: picked?.obsKind ?? "pest",
+    week: latestWeek,
+  });
+  const overlays = useMemo(() => bedOverlays(spread.clusters, spread.pins), [spread.clusters, spread.pins]);
+  const [pendingArea, setPendingArea] = useState<Pt[] | null>(null);
+  const [areaBusy, setAreaBusy] = useState(false);
+  const [areaError, setAreaError] = useState<string | null>(null);
+  const draw = useDrawArea(setPendingArea);
+  const cancelDraw = draw.cancel;
+  useEffect(() => {
+    cancelDraw();
+    setPendingArea(null);
+    setAreaError(null);
+  }, [picked, cancelDraw]);
+  const saveArea = async (title: string, shared: boolean) => {
+    const geom = picked ? geometryByGh[picked.greenhouse] : null;
+    if (!picked || !pendingArea || !geom?.unproject) return;
+    const ring = pendingArea.map(([x, y]) => geom.unproject!(x, y));
+    setAreaBusy(true);
+    setAreaError(null);
+    try {
+      await savePin({
+        crop,
+        warehouse: picked.greenhouse,
+        kind: "Area",
+        title,
+        observation: picked.obsName,
+        obs_kind: picked.obsKind,
+        shared,
+        polygon: { type: "Polygon", coordinates: [[...ring, ring[0]]] },
+        source_week: latestWeek,
+      });
+      setPendingArea(null);
+      spread.reloadPins();
+    } catch (e) {
+      setAreaError(e instanceof Error ? e.message : "Could not save the area");
+    } finally {
+      setAreaBusy(false);
+    }
+  };
 
   return (
     <div className="flex flex-col min-h-svh">
@@ -825,8 +878,37 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                             <BedSvg
                               geometry={geom}
                               markers={dayMarkers}
+                              overlays={fromEnd === 0 ? overlays : undefined}
+                              draft={fromEnd === 0 && draw.active ? draw.vertices : null}
+                              onCanvasClick={fromEnd === 0 && draw.active ? draw.add : undefined}
+                              onCanvasDoubleClick={fromEnd === 0 && draw.active ? draw.finish : undefined}
                               className="min-h-[420px] [&_svg]:max-h-[520px] [&_svg]:w-full"
                             />
+                            {fromEnd === 0 ? (
+                              <div className="flex flex-col gap-1 text-[0.7rem] text-muted-foreground">
+                                <span>
+                                  {spread.clusters?.clusters.length ?? 0} patch
+                                  {(spread.clusters?.clusters.length ?? 0) === 1 ? "" : "es"} outlined
+                                  {spread.clusters?.clusters.length
+                                    ? ` · ${spread.clusters.clusters.map((p) => `${p.size} ${p.change.toLowerCase()}`).join(", ")}`
+                                    : ""}
+                                </span>
+                                <DrawAreaBar
+                                  draw={draw}
+                                  pending={pendingArea}
+                                  busy={areaBusy}
+                                  disabled={!geom.unproject}
+                                  defaultTitle={`${picked.obsName} · area`}
+                                  onSave={saveArea}
+                                  onDiscard={() => setPendingArea(null)}
+                                />
+                                {areaError ? (
+                                  <span role="alert" className="text-[var(--sd-data-red)]">
+                                    {areaError}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
                             <StageLegend markers={dayMarkers} className="px-1" />
                             <ScoutRow
                               scouts={slice.scouts}

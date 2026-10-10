@@ -48,6 +48,9 @@ export interface ProjectedGeometry {
   /** Centroid for every zone that had at least one valid feature. Coords
    *  are in the same SVG space as ``beds`` (post-projection, padded). */
   zoneCentroids: Record<string, { cx: number; cy: number }>;
+  /** SVG point → [lng, lat]: the exact inverse of the projection, so an area
+   *  drawn on the SVG is saved as real coordinates (spread spec C10). */
+  unproject?: (x: number, y: number) => [number, number];
 }
 
 interface RawRing {
@@ -247,5 +250,12 @@ export function projectGeometry(
     height: svgH,
     beds,
     zoneCentroids,
+    unproject: (sx: number, sy: number): [number, number] => {
+      const x = minX + (sx - LABEL_MARGIN) / scale;
+      const y = maxY - (sy - PAD) / scale;
+      const x0 = x * cosR + y * sinR;
+      const y0 = -x * sinR + y * cosR;
+      return [(x0 + cxRaw) / latScale, y0 + cyRaw];
+    },
   };
 }

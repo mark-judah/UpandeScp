@@ -196,6 +196,43 @@ class TestAlerts(AlertCase):
         TC.check_crop("Rose", SUN_22)
         self.assertEqual(self.told(U_CREATOR, self.alert(week="2031-W22").name), 1)
 
+    def test_a_thin_clean_start_to_the_week_does_not_resolve_last_weeks_alert(self):
+        # Monday: the house's latest week switches to W21 with one clean
+        # section (reliability Low). That must not resolve W20's Spray advised,
+        # or W21 filling up would re-announce the same action to everyone.
+        name = self.raise_spray_advised()                                   # W20 Spray advised
+        mon = date(2031, 5, 19)
+        self.clock.stop()
+        self.clock = patch.object(TC, "now_eat", return_value=at(mon, 10))
+        self.clock.start()
+        TF.seed_week(self.gh, "2031-05-19", crop="Rose", infested_per_section=0, sections={(0, 0)})
+        thin = next(f for f in TC.evaluate("Rose", mon) if f["warehouse"] == self.gh and not f["stage"])
+        self.assertEqual((thin["iso_week"], thin["band"], thin["reliability"]), ("2031-W21", "", "Low"))
+        TC.check_crop("Rose", mon)
+        self.assertEqual(self.alert(week="2031-W20").status, "Open")
+        TF.seed_week(self.gh, "2031-05-20", crop="Rose")                    # W21 fills: 33.3 %, Fair
+        TC.check_crop("Rose", date(2031, 5, 20))
+        new = self.alert(week="2031-W21")
+        self.assertEqual((new.action, new.notified_action), ("Spray advised", "Spray advised"))
+        self.assertEqual(self.told(U_CREATOR, new.name), 0)                 # carried, not re-announced
+        self.assertEqual(self.told(U_CREATOR, name), 1)
+        self.assertEqual(self.alert(week="2031-W20").status, "Resolved")    # superseded by W21
+
+    def test_a_reliable_clean_week_or_an_ended_week_resolves_older_alerts(self):
+        self.raise_spray_advised()
+        TF.seed_week(self.gh, TF.WEEK_21[0], crop="Rose", infested_per_section=0)   # full clean week
+        TC.check_crop("Rose", SUN_21)
+        self.assertEqual(self.alert(week="2031-W20").status, "Resolved")
+
+    def test_a_thin_clean_week_resolves_older_alerts_once_the_week_has_ended(self):
+        self.raise_spray_advised()
+        TF.seed_week(self.gh, "2031-05-19", crop="Rose", infested_per_section=0, sections={(0, 0)})
+        self.clock.stop()
+        self.clock = patch.object(TC, "now_eat", return_value=at(date(2031, 5, 26), 10))  # W21 is over
+        self.clock.start()
+        TC.check_crop("Rose", SUN_21)
+        self.assertEqual(self.alert(week="2031-W20").status, "Resolved")
+
     def test_acknowledged_stays_acknowledged_until_it_escalates(self):
         TF.set_bands("Rose", "Thrips", 0, 30, 60)
         TF.seed_week(self.gh, TF.WEEK_20[0], crop="Rose")

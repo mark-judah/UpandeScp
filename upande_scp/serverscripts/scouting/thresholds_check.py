@@ -15,7 +15,9 @@ that is this alert's own ``notified_action``. Across weeks it is the house's
 live alert of its immediately previous scouted week (only), so a consecutive
 week at the same action is recorded silently. A newer week supersedes older
 Open / Acknowledged alerts (Resolved), a figure below Moderate resolves its
-week's alert, and a Converted alert is never touched.
+week's alert (and older weeks' only when it is Fair/Good or its week is over,
+so a thin Monday sample cannot clear last week's alert), and a live Converted
+alert is never touched.
 
 ``run_threshold_check`` (hourly) is gated by a Redis ``SET NX EX``: one run per
 50 minutes across workers. The 17:00 EAT digest (``alert_digest``) is the only
@@ -23,7 +25,7 @@ email.
 """
 
 import hashlib
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -183,15 +185,44 @@ def _previous_live(params, previous_week):
     return rows[0] if rows else None
 
 
-def _resolve(params, include_week: bool) -> None:
-    """Resolve the key's Open / Acknowledged alerts of earlier weeks (and of
-    this week when ``include_week``). Converted alerts are left alone."""
-    op = "<=" if include_week else "<"
+def _resolve(params, include_week: bool, older: bool = True) -> None:
+    """Resolve the key's Open / Acknowledged alerts of earlier weeks (when
+    ``older``) and of this week (when ``include_week``). Converted alerts are
+    left alone."""
+    if include_week and older:
+        op = "<="
+    elif older:
+        op = "<"
+    elif include_week:
+        op = "="
+    else:
+        return
     frappe.db.sql(
         f"""UPDATE `tabScouting Alert` SET status = 'Resolved', modified = %(now)s
             WHERE {_KEY_SQL} AND iso_week {op} %(week)s AND status IN %(open)s""",
         {**params, "open": OPEN_STATES, "now": frappe.utils.now()},
     )
+
+
+RELIABLE = ("Good", "Fair")
+
+
+def _week_ended(iso_week, today) -> bool:
+    """True once the ISO week's Sunday is behind ``today`` (EAT)."""
+    try:
+        year, week = iso_week.split("-W")
+        return date.fromisocalendar(int(year), int(week), 7) < today
+    except (ValueError, AttributeError):
+        return False
+
+
+def _clean_may_supersede(finding, now) -> bool:
+    """A below-Moderate figure may resolve OLDER weeks' alerts only when it can
+    be trusted: reliability Fair/Good, or its ISO week is over. A thin Monday
+    sample (one clean section) only clears its own week, so last week's alert
+    stays live and is carried when the week fills (D5) instead of being
+    resolved and re-announced."""
+    return finding.get("reliability") in RELIABLE or _week_ended(finding["iso_week"], now.date())
 
 
 def upsert(finding, now=None, _retry=True):
@@ -201,7 +232,7 @@ def upsert(finding, now=None, _retry=True):
     params = _key_params(finding)
     action = finding["action"]
     if not action:
-        _resolve(params, include_week=True)
+        _resolve(params, include_week=True, older=_clean_may_supersede(finding, now))
         return None
 
     name = alert_name(params["wh"], params["kind"], params["obs"], params["stage"], params["week"])

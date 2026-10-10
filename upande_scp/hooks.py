@@ -387,6 +387,9 @@ scheduler_events = {
         # Daily Chemical Planning Progress Update — sends at the GM-configured
         # EAT hour (self-gated; once per day).
         "upande_scp.serverscripts.reports.send_chemical_progress_email.send_chemical_progress_email",
+        # Thresholds → Scouting Alerts → in-app notifications (category
+        # "scouting", never email). Self-gated: one run per 50 min across workers.
+        "upande_scp.serverscripts.scouting.thresholds_check.run_threshold_check",
     ],
 }
 

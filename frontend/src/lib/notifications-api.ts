@@ -19,6 +19,8 @@ export interface ScpNotification {
   document_type?: string | null;
   document_name?: string | null;
   scp_category?: ScpCategory | null;
+  /** Notification Log.link — e.g. "/scp_app#/avocado/dashboard" for a Scouting Alert. */
+  link?: string | null;
 }
 
 const BASE = "upande_scp.serverscripts.common.notifications";
@@ -87,9 +89,12 @@ export function routeForNotification(n: ScpNotification): string | null {
       return "#/rose/approvals";
     case "Material Request":
       return "#/rose/chemical-dashboard";
-    case "Scouting Alert":
-      // Active alerts are listed on the Overview (Scouting Alert doctype: Task 5).
-      return "#/rose/dashboard";
+    case "Scouting Alert": {
+      // Active alerts are listed on the alert's crop's Overview; the server
+      // stores that route in `link`. Rose's Overview when it is missing.
+      const hash = (n.link || "").indexOf("#/");
+      return hash >= 0 ? (n.link as string).slice(hash) : "#/rose/dashboard";
+    }
     default:
       return null;
   }

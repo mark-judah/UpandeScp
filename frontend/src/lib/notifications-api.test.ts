@@ -20,10 +20,23 @@ describe("routeForNotification", () => {
     ).toBe("#/rose/chemical-loaning");
   });
 
-  it("routes a scouting alert to the overview, where active alerts are listed", () => {
+  it("routes a scouting alert to its crop's overview, where active alerts are listed", () => {
+    expect(
+      routeForNotification({
+        ...base,
+        document_type: "Scouting Alert",
+        link: "/scp_app#/avocado/dashboard",
+      }),
+    ).toBe("#/avocado/dashboard");
+  });
+
+  it("falls back to the rose overview for a scouting alert without a link", () => {
     expect(routeForNotification({ ...base, document_type: "Scouting Alert" })).toBe(
       "#/rose/dashboard",
     );
+    expect(
+      routeForNotification({ ...base, document_type: "Scouting Alert", link: "/app/scouting-alert/x" }),
+    ).toBe("#/rose/dashboard");
   });
 
   it("returns null for a doctype with no page, rather than a dead link", () => {

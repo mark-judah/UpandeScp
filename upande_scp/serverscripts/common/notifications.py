@@ -90,8 +90,11 @@ def users_for_farm(farm, include_planners=True, include_keepers=True):
     return _clean(users)
 
 
-def notify(users, subject, body="", ref_doctype=None, ref_name=None, category=None):
+def notify(users, subject, body="", ref_doctype=None, ref_name=None, category=None, link=None):
     """Send one in-app notification to each user. Returns the users notified.
+
+    ``link`` (optional) is stored on ``Notification Log.link``: the Desk bell
+    uses it as the row's href, and the SCP bell routes by its ``#/…`` hash.
 
     Best-effort by design: a failure here is logged and swallowed, because the
     caller's real work (approving a loan, publishing an allocation) must not be
@@ -121,6 +124,8 @@ def notify(users, subject, body="", ref_doctype=None, ref_name=None, category=No
             })
             if category:
                 doc.scp_category = category
+            if link:
+                doc.link = link
             doc.insert(ignore_permissions=True)
             sent.append(user)
         except Exception:
@@ -166,7 +171,7 @@ def list_notifications(category=None, unread_only=0, limit=50, offset=0):
         filters=filters,
         fields=[
             "name", "subject", "email_content", "read", "creation",
-            "document_type", "document_name", "scp_category",
+            "document_type", "document_name", "scp_category", "link",
         ],
         order_by="creation desc",
         limit_page_length=limit,

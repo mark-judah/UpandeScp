@@ -76,6 +76,24 @@ describe("Overview active alerts", () => {
     expect(within(first).getByRole("button", { name: "Acknowledge" })).toBeInTheDocument();
   });
 
+  it("shows the worst 50 and a Show all toggle for the rest", async () => {
+    const many = Array.from({ length: 73 }, (_, i) => ({ ...thrips, name: `SA-2031-W20-${i}`, stage: `s${i}` }));
+    listOpenAlerts.mockResolvedValue(many);
+    renderTab();
+    await waitFor(() => expect(screen.getAllByTestId("active-alert")).toHaveLength(50));
+    expect(within(screen.getAllByTestId("active-alert")[0]).getByText("Thrips · s0")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Show all (73)" }));
+    expect(screen.getAllByTestId("active-alert")).toHaveLength(73);
+    await userEvent.click(screen.getByRole("button", { name: "Show fewer" }));
+    expect(screen.getAllByTestId("active-alert")).toHaveLength(50);
+  });
+
+  it("offers no toggle when 50 or fewer", async () => {
+    renderTab();
+    await screen.findAllByTestId("active-alert");
+    expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull();
+  });
+
   it("asks for nothing without a crop", () => {
     render(<OverviewTab data={null} scoutLookup={{}} fromDate="" toDate="" />);
     expect(listOpenAlerts).not.toHaveBeenCalled();

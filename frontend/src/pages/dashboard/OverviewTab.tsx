@@ -52,6 +52,9 @@ const series: ChartConfig = {
   traps: { label: "Traps", color: "var(--sd-data-purple)" },
 };
 
+/** The Active Alerts card shows this many (the server sends them worst first); the rest behind "Show all". */
+const ALERTS_SHOWN = 50;
+
 const STATUS_DOT: Record<string, string> = {
   good: "bg-[var(--sd-data-green)]",
   warning: "bg-[var(--sd-target)]",
@@ -113,6 +116,7 @@ export function OverviewTab({
   const [alerts, setAlerts] = useState<ScoutingAlert[]>([]);
   const [acking, setAcking] = useState<string | null>(null);
   const [ackNote, setAckNote] = useState<Record<string, string>>({});
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
   useEffect(() => {
     if (!crop) {
       setAlerts([]);
@@ -343,7 +347,7 @@ export function OverviewTab({
           </CardHeader>
           <CardContent className="p-0 flex flex-col gap-1.5">
             {alerts.length ? (
-              alerts.map((a) => (
+              (showAllAlerts ? alerts : alerts.slice(0, ALERTS_SHOWN)).map((a) => (
                 <div
                   key={a.name}
                   data-testid="active-alert"
@@ -390,6 +394,17 @@ export function OverviewTab({
             ) : (
               <EmptyHint title="No active alerts" hint="No threshold crossed in the latest scouted week." />
             )}
+            {alerts.length > ALERTS_SHOWN ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 self-start px-2 text-[0.7rem]"
+                onClick={() => setShowAllAlerts((v) => !v)}
+              >
+                {showAllAlerts ? "Show fewer" : `Show all (${alerts.length})`}
+              </Button>
+            ) : null}
           </CardContent>
         </Card>
       </div>

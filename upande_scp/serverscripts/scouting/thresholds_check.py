@@ -523,10 +523,11 @@ def creator_alerts(warehouses) -> dict:
     return out
 
 
-def assert_alert_for_plan(alert, greenhouse):
+def assert_alert_for_plan(alert, greenhouse, targets=None):
     """R15: the checks that must pass BEFORE a plan is inserted from ``alert`` —
     it exists, is Open/Acknowledged, is for this greenhouse and its crop, and
-    the caller may see it. Returns the alert row."""
+    the caller may see it, and (when ``targets`` is given) the plan treats its
+    observation. Returns the alert row."""
     row = frappe.db.get_value(
         DOCTYPE, alert, ["name", "crop", "farm", "warehouse", "status", "work_order"], as_dict=True,
     )
@@ -543,6 +544,14 @@ def assert_alert_for_plan(alert, greenhouse):
     if plan_crop and plan_crop != row.crop:
         frappe.throw(f"Scouting alert {alert} is for {row.crop}, not {plan_crop}.", frappe.ValidationError)
     _assert_can_see(row.crop, row.farm)
+    if targets is not None:
+        observation = frappe.db.get_value(DOCTYPE, alert, "observation")
+        wanted = {(t.get("target") if isinstance(t, dict) else t) for t in targets}
+        if observation not in wanted:
+            frappe.throw(
+                f"Scouting alert {alert} is for {observation}, which this plan does not target.",
+                frappe.ValidationError,
+            )
     return row
 
 

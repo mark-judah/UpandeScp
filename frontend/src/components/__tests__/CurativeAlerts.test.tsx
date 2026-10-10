@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { CurativeAlerts } from "@/components/spray-plan/CurativeAlerts";
+import { CurativeAlerts, alertLinkFor } from "@/components/spray-plan/CurativeAlerts";
 import type { CreatorAlert } from "@/lib/scouting-alerts-api";
 
 const alert: CreatorAlert = {
@@ -31,5 +31,16 @@ describe("CurativeAlerts", () => {
     expect(screen.getByTestId("no-curative-alerts")).toHaveTextContent(
       "No spray threshold crossed in the latest scouted week.",
     );
+  });
+});
+
+describe("alertLinkFor", () => {
+  it("keeps the link while the alert's pest is a target", () => {
+    expect(alertLinkFor([alert], "SA-1", new Set(["Thrips", "Mites"]))).toBe("SA-1");
+  });
+  it("drops it when the pest is deselected or the alert is gone", () => {
+    expect(alertLinkFor([alert], "SA-1", new Set(["Mites"]))).toBe("");
+    expect(alertLinkFor([], "SA-1", new Set(["Thrips"]))).toBe("");
+    expect(alertLinkFor([alert], "", new Set(["Thrips"]))).toBe("");
   });
 });

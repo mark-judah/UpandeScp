@@ -19,7 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CurativeAlerts } from "@/components/spray-plan/CurativeAlerts";
+import { CurativeAlerts, alertLinkFor } from "@/components/spray-plan/CurativeAlerts";
 import { ghActionBadge, type CreatorAlert } from "@/lib/scouting-alerts-api";
 import { PageHeader } from "@/components/PageHeader";
 import { BomPicker } from "@/components/BomPicker";
@@ -577,6 +577,12 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     setSelectedTargets(new Set());
     setCurativeAlert("");
   }, [greenhouse, classification]);
+
+  // Deselecting the alert's pest unlinks the plan from it (saves as an
+  // ordinary curative plan); the server refuses the mismatch too.
+  useEffect(() => {
+    setCurativeAlert((cur) => alertLinkFor(bootstrap?.alerts?.[greenhouse], cur, selectedTargets));
+  }, [selectedTargets, bootstrap, greenhouse]);
 
   const startCurative = useCallback(
     (a: CreatorAlert) => {
@@ -1479,6 +1485,8 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       window.dispatchEvent(new CustomEvent("spray-plan:draft-added"));
     } catch (e: any) {
       dismissToast(loaderId);
+      // A refused alert link must not trap the user: save again as a plain plan.
+      if (/Scouting alert/i.test(errorText(e))) setCurativeAlert("");
       pushError(e, "The spray plan could not be added to your batch.");
     } finally {
       setBusy(false);

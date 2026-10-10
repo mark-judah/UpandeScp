@@ -25,4 +25,9 @@ describe("ApplicationPlan curative alerts (thresholds D7)", () => {
     expect(page).toContain("prefillRef.current = { greenhouse: a.warehouse, target: a.observation }");
     expect(page).toContain('setClassification("Curative")');
   });
+
+  it("unlinks the alert when its pest is deselected and when the server refuses it", () => {
+    expect(page).toContain("alertLinkFor(bootstrap?.alerts?.[greenhouse], cur, selectedTargets)");
+    expect(page).toContain('if (/Scouting alert/i.test(errorText(e))) setCurativeAlert("")');
+  });
 });

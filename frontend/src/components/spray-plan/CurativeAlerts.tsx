@@ -48,3 +48,18 @@ export function CurativeAlerts({
     </div>
   );
 }
+
+/**
+ * The alert link a plan keeps: dropped (returns "") once the plan no longer
+ * targets the alert's pest, so the alert is never marked Converted by a plan
+ * that does not treat it.
+ */
+export function alertLinkFor(
+  alerts: CreatorAlert[] | undefined,
+  linked: string,
+  targets: ReadonlySet<string>,
+): string {
+  if (!linked) return "";
+  const a = (alerts || []).find((x) => x.name === linked);
+  return a && targets.has(a.observation) ? linked : "";
+}

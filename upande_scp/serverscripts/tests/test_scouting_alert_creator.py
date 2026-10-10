@@ -69,9 +69,9 @@ class TestCreatorAlerts(AlertCase):
         self.assertLess(src.index("wo.insert("), src.index("convert_to_plan("))
         self.assertIn('thresholds_check.convert_to_plan(alert, wo.name, payload["custom_greenhouse"])', src)
 
-    def test_create_draft_spray_plan_converts_the_alert_it_was_given(self):
-        """The real call: the alert becomes Converted with the new plan linked."""
-        name = self.raise_spray_advised()
+    def _create(self, name, gh=None, targets=("Thrips",)):
+        """Run the real create_draft_spray_plan with the heavy collaborators
+        stubbed; returns (result_or_None, inserted, exception_or_None)."""
         inserted = []
 
         class FakeWO:
@@ -82,10 +82,8 @@ class TestCreatorAlerts(AlertCase):
             def insert(self, **kw):
                 inserted.append(1)
 
-        payload = {"custom_greenhouse": self.gh, "alert": name, "custom_classification": "Curative",
-                   "custom_targets": [{"target": "Thrips"}], "_skip_bom_validation": True,
-                   "_skip_target_validation": True, "_allow_zero_chems": True,
-                   "custom_water_volume": 1, "production_item": "BOM-X"}
+        payload = {"custom_greenhouse": gh or self.gh, "alert": name, "custom_classification": "Curative",
+                   "custom_targets": list(targets), "custom_water_volume": 1, "production_item": "BOM-X"}
         with patch.object(D, "_require_creator", return_value="Administrator"), \
              patch.object(D, "_resolve_user_scope", return_value={"farms": [self.farm], "warehouses": []}), \
              patch.object(D, "_assert_in_scope"), \
@@ -102,11 +100,33 @@ class TestCreatorAlerts(AlertCase):
              patch.object(D, "_summarize", return_value={}), \
              patch("frappe.new_doc", return_value=FakeWO()), \
              patch("frappe.db.get_value", side_effect=_gv):
-            out = D.create_draft_spray_plan(payload)
+            try:
+                return D.create_draft_spray_plan(payload), inserted, None
+            except frappe.ValidationError as e:
+                return None, inserted, e
+
+    def test_create_draft_spray_plan_converts_the_alert_it_was_given(self):
+        name = self.raise_spray_advised()
+        out, inserted, err = self._create(name)
+        self.assertIsNone(err)
         self.assertEqual(inserted, [1])
         self.assertEqual(out["work_order"], "WO-ALERT-TEST")
-        status, linked = _real_get(name)
-        self.assertEqual((status, linked), ("Converted to plan", "WO-ALERT-TEST"))
+        self.assertEqual(_real_get(name), ("Converted to plan", "WO-ALERT-TEST"))
+
+    def test_an_alert_whose_pest_is_not_a_target_is_refused_and_nothing_inserted(self):
+        name = self.raise_spray_advised()
+        out, inserted, err = self._create(name, targets=("Mites",))
+        self.assertIsNotNone(err)
+        self.assertIn("does not target", str(err))
+        self.assertEqual(inserted, [])
+        self.assertEqual(_real_get(name), ("Open", None))
+
+    def test_an_alert_for_another_greenhouse_is_refused_and_nothing_inserted(self):
+        name = self.raise_spray_advised()
+        out, inserted, err = self._create(name, gh=self.gh2)
+        self.assertIsNotNone(err)
+        self.assertEqual(inserted, [])
+        self.assertEqual(_real_get(name), ("Open", None))
 
 
 _orig_gv = frappe.db.get_value
@@ -119,4 +139,4 @@ def _gv(doctype, *a, **kw):
 
 
 def _real_get(name):
-    return _orig_gv("Scouting Alert", name, ["status", "work_order"])
+    return tuple(_orig_gv("Scouting Alert", name, ["status", "work_order"]))

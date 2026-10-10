@@ -425,7 +425,9 @@ def create_draft_spray_plan(payload):
     if alert:
         from upande_scp.serverscripts.scouting import thresholds_check
 
-        thresholds_check.assert_alert_for_plan(alert, payload["custom_greenhouse"])
+        thresholds_check.assert_alert_for_plan(
+            alert, payload["custom_greenhouse"], payload.get("custom_targets") or []
+        )
 
     company = _derive_plan_company(payload)
     cost_center = _resolve_cost_center_with_override(

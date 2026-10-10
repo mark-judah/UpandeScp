@@ -10,6 +10,7 @@ which is patched out, and frappe.sendmail is patched so nothing is ever sent.
 import hashlib
 import io
 import json
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -313,6 +314,18 @@ class TestObservationsPayload(CaptureCase):
         self.assertEqual(cats.count("Comments"), 1)
 
 
+def _seed_entry():
+    """One raw, rolled-back Scouting Entry with its Metadata (client_id)."""
+    frappe.db.sql("""INSERT INTO `tabScouting Entry` (name, creation, modified, owner, modified_by, docstatus, idx,
+                         greenhouse, date_of_capture, time_of_capture, crop_scouted)
+                     VALUES (%s, NOW(), '2031-05-12 08:00:00', 'Administrator', 'Administrator', 0, 0,
+                             %s, '2031-05-12', '08:00:00', 'Rose')""", (ENTRY, GH))
+    frappe.db.sql("""INSERT INTO `tabScouting Entry Metadata` (name, creation, modified, owner, modified_by,
+                         docstatus, idx, scouting_entry, client_id)
+                     VALUES ('_TEST-SEM-CAP-1', NOW(), NOW(), 'Administrator', 'Administrator', 0, 0, %s, %s)""",
+                  (ENTRY, CLIENT_ID))
+
+
 class _Upload:
     def __init__(self, data=b"\xff\xd8jpeg", filename="Thrips-_test.jpg"):
         self.filename = filename
@@ -325,14 +338,7 @@ class TestPhotoUpload(CaptureCase):
         from upande_scp.serverscripts.mobile import pest_image as PI
         self.PI = PI
         self.saved = []
-        frappe.db.sql("""INSERT INTO `tabScouting Entry` (name, creation, modified, owner, modified_by, docstatus, idx,
-                             greenhouse, date_of_capture, time_of_capture, crop_scouted)
-                         VALUES (%s, NOW(), '2031-05-12 08:00:00', 'Administrator', 'Administrator', 0, 0,
-                                 %s, '2031-05-12', '08:00:00', 'Rose')""", (ENTRY, GH))
-        frappe.db.sql("""INSERT INTO `tabScouting Entry Metadata` (name, creation, modified, owner, modified_by,
-                             docstatus, idx, scouting_entry, client_id)
-                         VALUES ('_TEST-SEM-CAP-1', NOW(), NOW(), 'Administrator', 'Administrator', 0, 0, %s, %s)""",
-                      (ENTRY, CLIENT_ID))
+        _seed_entry()
         _set(allow_scout_photos=1)
         self._save = patch("frappe.utils.file_manager.save_file", side_effect=self._fake_save_file)
         self._save.start()
@@ -510,3 +516,84 @@ class TestPhotoUpload(CaptureCase):
         self.assertIn("disease", kw["subject"])
         self.assertNotIn("pest", kw["subject"].lower())
         self.assertNotIn("pest", kw["message"].lower())
+
+
+def _noise_image(fmt):
+    """A small real image of random pixels: a unique content hash site-wide,
+    and bytes that a text decoder cannot swallow (Frappe tries cp1252)."""
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.frombytes("RGB", (48, 48), os.urandom(48 * 48 * 3)).save(out, format=fmt)
+    return out.getvalue()
+
+
+class TestPhotoUploadRealSaveFile(CaptureCase):
+    """The REAL save_file. Frappe dedupes identical bytes by content hash and
+    hands the second File the first one's file_url (and, without EXIF
+    stripping, its file_name too). Every file written to disk during a test
+    is deleted again in tearDown."""
+
+    SUBJECTS = ("Thrips", "Aphids")
+
+    def setUp(self):
+        super().setUp()
+        from upande_scp.serverscripts.mobile import pest_image as PI
+        self.PI = PI
+        _seed_entry()
+        _set(allow_scout_photos=1)
+        self.dir = frappe.get_site_path("private", "files")
+        os.makedirs(self.dir, exist_ok=True)
+        self.before = set(os.listdir(self.dir))
+        self._prev_request = getattr(frappe.local, "request", None)
+        self._prev_form = getattr(frappe.local, "form_dict", None)
+
+    def tearDown(self):
+        try:
+            for name in set(os.listdir(self.dir)) - self.before:
+                if name.startswith(tuple(f"{s}-" for s in self.SUBJECTS)):
+                    os.remove(os.path.join(self.dir, name))
+        finally:
+            frappe.local.request = self._prev_request
+            frappe.local.form_dict = self._prev_form
+            super().tearDown()
+
+    def post(self, upload, **form):
+        form.setdefault("client_id", CLIENT_ID)
+        frappe.local.form_dict = frappe._dict(form)
+        frappe.local.request = SimpleNamespace(host=None, files={"file": upload()})
+        frappe.local.response = frappe._dict()
+        self.PI.attach_scouting_photo()
+        return frappe.local.response.get("data")
+
+    def rows(self):
+        return frappe.get_all("Scouting Entry Photo", filters={"parent": ENTRY, "parenttype": "Scouting Entry"},
+                              fields=["image", "caption", "subject"], order_by="idx")
+
+    def files(self):
+        return frappe.get_all("File", filters={"attached_to_doctype": "Scouting Entry", "attached_to_name": ENTRY},
+                              fields=["name", "file_url"])
+
+    def _two_subjects_one_picture(self, fmt, ext):
+        data = _noise_image(fmt)
+        upload = lambda: _Upload(data=data, filename=f"x.{ext}")  # noqa: E731
+        a = self.post(upload, pest="Thrips", subject="Thrips", caption="on the leaf", photo_id="p1")
+        b = self.post(upload, pest="Aphids", subject="Aphids", caption="on the bud", photo_id="p2")
+        self.assertEqual((a["status"], b["status"]), ("ok", "ok"))
+        self.assertEqual(sorted((r.subject, r.caption) for r in self.rows()),
+                         [("Aphids", "on the bud"), ("Thrips", "on the leaf")])
+        self.assertEqual(len({r.image for r in self.rows()}), 1)  # one picture, shared
+        files = len(self.files())
+
+        # A retry of the second subject finds its upload and adds no File and no row.
+        again = self.post(upload, pest="Aphids", subject="Aphids", caption="on the bud, later", photo_id="p2")
+        self.assertEqual((again["status"], again["duplicate"]), ("ok", True))
+        self.assertEqual(sorted((r.subject, r.caption) for r in self.rows()),
+                         [("Aphids", "on the bud, later"), ("Thrips", "on the leaf")])
+        self.assertEqual(len(self.files()), files)
+
+    def test_identical_png_bytes_under_two_subjects_keep_their_own_captions(self):
+        self._two_subjects_one_picture("PNG", "png")
+
+    def test_identical_jpeg_bytes_under_two_subjects_keep_their_own_captions(self):
+        self._two_subjects_one_picture("JPEG", "jpg")

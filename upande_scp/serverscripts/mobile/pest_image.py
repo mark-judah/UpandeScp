@@ -161,30 +161,22 @@ def attach_scouting_photo():
     content = file_obj.stream.read()
     fname = _short_file_name(file_obj.filename, client_id, subject_name, photo_id, trap)
 
-    # Idempotent against client retries after a lost success response.
-    existing = frappe.db.get_value(
-        "File",
-        {
-            "attached_to_doctype": "Scouting Entry",
-            "attached_to_name": entry,
-            "file_name": fname,
-        },
-        "name",
-    )
-    if existing:
-        # Already here; a retry may still carry a caption the first attempt
-        # never delivered, so the row is reconciled either way.
-        _record_on_entry(entry, frappe.db.get_value("File", existing, "file_url"), caption, subject_name)
+    file_url = _already_uploaded(entry, fname, content)
+    if not file_url:
+        # Frappe's File.write_file() does NOT create the files directory.
+        os.makedirs(frappe.get_site_path("private", "files"), exist_ok=True)
+
+        from frappe.utils.file_manager import save_file
+
+        file_url = save_file(fname, content, "Scouting Entry", entry, is_private=1).file_url
+
+    if not _record_on_entry(entry, file_url, caption, subject_name):
+        # A retry after a lost success response: the row is already there (a
+        # retry may still carry a caption the first attempt never delivered,
+        # so its words were reconciled), and the GM has had the email.
+        frappe.db.commit()
         frappe.response["data"] = {"status": "ok", "duplicate": True, "entry": entry}
         return
-
-    # Frappe's File.write_file() does NOT create the files directory.
-    os.makedirs(frappe.get_site_path("private", "files"), exist_ok=True)
-
-    from frappe.utils.file_manager import save_file
-
-    saved = save_file(fname, content, "Scouting Entry", entry, is_private=1)
-    _record_on_entry(entry, saved.file_url, caption, subject_name)
     frappe.db.commit()
 
     # Best-effort GM email (P8: only for something unnamed) — a mail failure
@@ -215,7 +207,7 @@ def attach_scouting_photo():
 
     frappe.response["data"] = {
         "status": "ok",
-        "file": saved.file_url,
+        "file": file_url,
         "entry": entry,
         "subject": subject_name,
         "caption": caption,
@@ -229,18 +221,37 @@ def attach_scouting_photo():
 attach_unidentified_pest_image = attach_scouting_photo
 
 
+def _already_uploaded(entry, fname, content):
+    """The file_url of this picture if it is already attached to the entry.
+
+    Frappe's save_file dedupes identical bytes: the second File copies the
+    first one's file_url and, unless the JPEG's EXIF was stripped on the way
+    in, its file_name too. So a retry is found by our deterministic file_name
+    OR by the content hash on this same entry."""
+    from frappe.utils.file_manager import get_content_hash
+
+    attached = {"attached_to_doctype": "Scouting Entry", "attached_to_name": entry}
+    return frappe.db.get_value("File", {**attached, "file_name": fname}, "file_url") or frappe.db.get_value(
+        "File", {**attached, "content_hash": get_content_hash(content)}, "file_url"
+    )
+
+
 def _record_on_entry(entry, file_url, caption, subject_name):
-    """Put the picture on the entry itself, not only in the File table. Keyed
-    by file_url, so a retry updates the words rather than adding a picture."""
+    """Put the picture on the entry itself, not only in the File table.
+
+    Keyed by (file_url, subject): identical bytes under two subjects share one
+    file_url (Frappe's hash dedupe), and each subject keeps its own row and
+    caption. A retry updates the words rather than adding a picture. Returns
+    True when a row was added, False when it was already there."""
     if not file_url:
-        return
+        return False
 
     doc = frappe.get_doc("Scouting Entry", entry)
     for row in doc.get("photos_scouting_entry") or []:
-        if row.image == file_url:
+        if row.image == file_url and row.subject == subject_name:
             if caption and row.caption != caption:
                 row.db_set("caption", caption, update_modified=False)
-            return
+            return False
 
     row = doc.append(
         "photos_scouting_entry",
@@ -255,3 +266,4 @@ def _record_on_entry(entry, file_url, caption, subject_name):
     # upload is decoupled from the sync on purpose, and re-saving the entry
     # would re-run its validation and hooks for a picture.
     row.insert(ignore_permissions=True)
+    return True

@@ -1,5 +1,7 @@
 import frappe
 
+from upande_scp.serverscripts.scouting import capture_settings
+
 # Maps a category key -> (filter doctype, link field, field linking to the crop).
 # Pest Filter / Disease Filter are standalone DocTypes linked via `crop_scouted`;
 # the other four are still child tables of Crop Scouted, linked via `parent`.
@@ -347,6 +349,20 @@ def getObservationsDetails(crop=None):
             "fields": predator_fields
         })
 
+    # COMMENTS — a free-text note on the entry as a whole (piece 5, Mona
+    # f5f6392). Not driven by master data like the categories above; driven by
+    # the GM's switch. The app shows the tab only when this category is
+    # present, so the switch has to reach the category itself, not only the
+    # flag in `capture`. The app supplies its own field when `fields` is empty
+    # (use-scouting-utils.ts, `commentField`); rows arrive as
+    # comments_scouting_entry.
+    if capture_settings.allows("comments"):
+        observation_types.append({
+            "category": "Comments",
+            "type": "text",
+            "fields": [],
+        })
+
     # Plant sections allowed for this crop (empty on the crop → no filter → None).
     allowed_plant_sections = None
     if crop:
@@ -361,6 +377,10 @@ def getObservationsDetails(crop=None):
     frappe.response["message"] = {
         "data": observation_types,
         "allowed_plant_sections": allowed_plant_sections,
+        # What the handset may offer on the ground, and its count cap
+        # (pieces 5–6). Rides here because the app decides what to draw while
+        # it builds the round; a second request is one more thing to fail.
+        "capture": capture_settings.as_payload(),
     }
 
     return frappe.response["message"]

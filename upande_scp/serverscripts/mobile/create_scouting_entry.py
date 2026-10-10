@@ -125,7 +125,13 @@ def _add_child_items(parent_doc, parent_field, items_list):
             continue
 
         if parent_field == "comments_scouting_entry":
-            comment = (item.get("comment") or "").strip()
+            # An old handset may send a bare string; keep it as the text.
+            if isinstance(item, str):
+                comment = item.strip()
+            elif isinstance(item, dict):
+                comment = (item.get("comment") or "").strip()
+            else:
+                continue
             if comment:
                 parent_doc.append(parent_field, {"comment": comment})
             continue

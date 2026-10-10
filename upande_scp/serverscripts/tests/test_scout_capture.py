@@ -231,6 +231,12 @@ class TestTablesAndComments(CaptureCase):
         self.assertEqual([r.comment for r in doc.comments_scouting_entry], ["Webbing under the leaves"])
         self.assertEqual(doc.comments_scouting_entry[0].doctype, "Comments Scouting Entry")
 
+    def test_a_bare_string_comment_from_an_old_handset_is_kept_not_a_crash(self):
+        from upande_scp.serverscripts.mobile import create_scouting_entry as CSE
+        doc = frappe.new_doc("Scouting Entry")
+        CSE._add_child_items(doc, "comments_scouting_entry", ["  old handset note ", 42, "   "])
+        self.assertEqual([r.comment for r in doc.comments_scouting_entry], ["old handset note"])
+
     def test_the_other_tables_fill_as_before(self):
         from upande_scp.serverscripts.mobile import create_scouting_entry as CSE
         doc = frappe.new_doc("Scouting Entry")
@@ -274,3 +280,172 @@ class TestTablesAndComments(CaptureCase):
                                              "caption": "Webbing on the underside", "subject": "Spider Mites"})
         row = doc.photos_scouting_entry[0]
         self.assertEqual((row.caption, row.subject), ("Webbing on the underside", "Spider Mites"))
+
+
+class TestObservationsPayload(CaptureCase):
+    def observations(self, crop=None):
+        from upande_scp.serverscripts.mobile import get_observations_details as GOD
+        frappe.local.response = frappe._dict()
+        return GOD.getObservationsDetails(crop)
+
+    def test_the_payload_carries_capture(self):
+        _set(allow_scout_photos=1, allow_scout_comments=0, max_count_per_observation=40)
+        got = self.observations()
+        self.assertEqual(got["capture"], {"photos": True, "comments": False, "max_count": 40})
+        self.assertIn("data", got)
+        self.assertIn("allowed_plant_sections", got)
+
+    def test_nothing_stored_sends_the_defaults(self):
+        _unset()
+        self.assertEqual(self.observations()["capture"], {"photos": True, "comments": True, "max_count": 15})
+
+    def test_the_comments_category_follows_its_switch(self):
+        _set(allow_scout_comments=0)
+        self.assertNotIn("Comments", [c["category"] for c in self.observations()["data"]])
+        _set(allow_scout_comments=1)
+        data = self.observations()["data"]
+        self.assertEqual(data[-1], {"category": "Comments", "type": "text", "fields": []})
+
+    def test_the_crop_payload_is_otherwise_unchanged(self):
+        _set(allow_scout_comments=1)
+        cats = [c["category"] for c in self.observations("Rose")["data"]]
+        self.assertIn("Pests", cats)
+        self.assertEqual(cats.count("Comments"), 1)
+
+
+class _Upload:
+    def __init__(self, data=b"\xff\xd8jpeg", filename="Thrips-_test.jpg"):
+        self.filename = filename
+        self.stream = io.BytesIO(data)
+
+
+class TestPhotoUpload(CaptureCase):
+    def setUp(self):
+        super().setUp()
+        from upande_scp.serverscripts.mobile import pest_image as PI
+        self.PI = PI
+        self.saved = []
+        frappe.db.sql("""INSERT INTO `tabScouting Entry` (name, creation, modified, owner, modified_by, docstatus, idx,
+                             greenhouse, date_of_capture, time_of_capture, crop_scouted)
+                         VALUES (%s, NOW(), '2031-05-12 08:00:00', 'Administrator', 'Administrator', 0, 0,
+                                 %s, '2031-05-12', '08:00:00', 'Rose')""", (ENTRY, GH))
+        frappe.db.sql("""INSERT INTO `tabScouting Entry Metadata` (name, creation, modified, owner, modified_by,
+                             docstatus, idx, scouting_entry, client_id)
+                         VALUES ('_TEST-SEM-CAP-1', NOW(), NOW(), 'Administrator', 'Administrator', 0, 0, %s, %s)""",
+                      (ENTRY, CLIENT_ID))
+        _set(allow_scout_photos=1)
+        self._save = patch("frappe.utils.file_manager.save_file", side_effect=self._fake_save_file)
+        self._save.start()
+        self._prev_request = getattr(frappe.local, "request", None)
+
+    def tearDown(self):
+        self._save.stop()
+        frappe.local.request = self._prev_request
+        super().tearDown()
+
+    def _fake_save_file(self, fname, content, dt, dn, is_private=1):
+        """Stands in for save_file: a raw, rolled-back File row and no disk write."""
+        url = f"/private/files/{fname}"
+        frappe.db.sql("""INSERT INTO tabFile (name, creation, modified, owner, modified_by, docstatus, idx,
+                             file_name, file_url, attached_to_doctype, attached_to_name, is_private, is_folder)
+                         VALUES (%s, NOW(), NOW(), 'Administrator', 'Administrator', 0, 0, %s, %s, %s, %s, %s, 0)""",
+                      (f"_TEST-FILE-CAP-{len(self.saved) + 1}", fname, url, dt, dn, is_private))
+        self.saved.append({"fname": fname, "dt": dt, "dn": dn, "is_private": is_private})
+        return frappe._dict(file_url=url)
+
+    def post(self, file=True, **form):
+        form.setdefault("client_id", CLIENT_ID)
+        frappe.local.form_dict = frappe._dict(form)
+        frappe.local.request = SimpleNamespace(files={"file": _Upload()} if file else {})
+        frappe.local.response = frappe._dict()
+        self.PI.attach_scouting_photo()
+        return frappe.local.response.get("data")
+
+    def rows(self):
+        return frappe.get_all("Scouting Entry Photo", filters={"parent": ENTRY, "parenttype": "Scouting Entry"},
+                              fields=["image", "caption", "subject", "captured_on"], order_by="idx")
+
+    def test_photos_off_refuses_a_documentation_photo(self):
+        _set(allow_scout_photos=0)
+        got = self.post(pest="Thrips", subject="Thrips", photo_id="p1")
+        self.assertEqual((got["status"], got["reason"]), ("refused", "photos-off"))
+        self.assertEqual((self.saved, self.rows()), ([], []))
+        self.sendmail.assert_not_called()
+
+    def test_an_unidentified_photo_is_accepted_with_photos_off(self):
+        _set(allow_scout_photos=0)
+        got = self.post(pest="Unidentified pest", trap="Trap 3")
+        self.assertEqual((got["status"], got["notified"]), ("ok", True))
+        self.assertEqual(len(self.rows()), 1)
+        self.sendmail.assert_called_once()
+        self.assertIn("Unidentified pest photo", self.sendmail.call_args.kwargs["subject"])
+
+    def test_pending_until_the_entry_syncs(self):
+        got = self.post(client_id="_test-scp-capture|never-synced", subject="General", photo_id="p1")
+        self.assertEqual(got, {"status": "pending"})
+        self.assertEqual(self.saved, [])
+
+    def test_a_photo_lands_on_the_entry_with_its_caption(self):
+        before = frappe.db.get_value("Scouting Entry", ENTRY, "modified")
+        got = self.post(pest="Thrips", subject="Thrips", caption="  Webbing on the underside ", photo_id="p1")
+        self.assertEqual((got["status"], got["subject"], got["caption"], got["notified"]),
+                         ("ok", "Thrips", "Webbing on the underside", False))
+        [row] = self.rows()
+        self.assertEqual((row.subject, row.caption, row.image), ("Thrips", "Webbing on the underside", got["file"]))
+        self.assertIsNotNone(row.captured_on)
+        [saved] = self.saved
+        self.assertEqual((saved["dt"], saved["dn"], saved["is_private"]), ("Scouting Entry", ENTRY, 1))
+        self.assertTrue(saved["fname"].startswith("Thrips-"))
+        self.assertLessEqual(len(saved["fname"]), self.PI.MAX_FILE_NAME)
+        self.sendmail.assert_not_called()
+        # The child row is written directly: the 2 M-row parent is never re-saved.
+        self.assertEqual(frappe.db.get_value("Scouting Entry", ENTRY, "modified"), before)
+
+    def test_a_general_photo_needs_no_pest(self):
+        got = self.post(subject="General", caption="Broken vent", photo_id="g1")
+        self.assertEqual((got["status"], got["notified"]), ("ok", False))
+        self.assertEqual([r.subject for r in self.rows()], ["General"])
+        self.sendmail.assert_not_called()
+
+    def test_a_retry_of_the_same_photo_is_one_row_and_its_caption_updates(self):
+        self.post(subject="General", caption="first words", photo_id="g1")
+        again = self.post(subject="General", caption="Updated", photo_id="g1")
+        self.assertEqual((again["status"], again["duplicate"]), ("ok", True))
+        self.assertEqual([(r.subject, r.caption) for r in self.rows()], [("General", "Updated")])
+        self.assertEqual(len(self.saved), 1)
+
+    def test_two_photos_of_one_subject_are_two_rows(self):
+        self.post(subject="General", caption="north vent", photo_id="g1")
+        self.post(subject="General", caption="south vent", photo_id="g2")
+        self.assertEqual([r.caption for r in self.rows()], ["north vent", "south vent"])
+        self.assertEqual(len({s["fname"] for s in self.saved}), 2)
+
+    def test_an_old_handset_name_hashes_as_before(self):
+        # A handset without photo_id keeps Mona's deterministic name, so its
+        # retries still find the first upload.
+        digest = hashlib.sha1(f"{CLIENT_ID}|Unidentified pest".encode()).hexdigest()[:10]
+        self.assertEqual(self.PI._short_file_name("x.jpg", CLIENT_ID, "Unidentified pest"),
+                         f"Unidentified-pest-{digest}.jpg")
+        self.assertNotEqual(self.PI._short_file_name("x.jpg", CLIENT_ID, "Unidentified pest", "p1"),
+                            self.PI._short_file_name("x.jpg", CLIENT_ID, "Unidentified pest"))
+
+    def test_a_long_client_id_still_fits(self):
+        name = self.PI._short_file_name("IMG_0042.jpg", "x" * 300, "y" * 300, "z" * 64)
+        self.assertLessEqual(len(name), self.PI.MAX_FILE_NAME)
+        self.assertTrue(name.endswith(".jpg"))
+
+    def test_the_old_endpoint_name_is_the_same_endpoint(self):
+        self.assertIs(self.PI.attach_unidentified_pest_image, self.PI.attach_scouting_photo)
+        self.assertIn(self.PI.attach_scouting_photo, frappe.whitelisted)
+
+    def test_missing_file_or_client_id_throws(self):
+        with self.assertRaises(frappe.ValidationError):
+            self.post(file=False, subject="General", photo_id="g1")
+        with self.assertRaises(frappe.ValidationError):
+            self.post(client_id="", subject="General", photo_id="g1")
+
+    def test_is_unidentified_mirrors_the_handset(self):
+        self.assertTrue(self.PI._is_unidentified("Unidentified pest"))
+        self.assertTrue(self.PI._is_unidentified(""))
+        self.assertFalse(self.PI._is_unidentified("Downy Mildew"))
+        self.assertFalse(self.PI._is_unidentified("General"))

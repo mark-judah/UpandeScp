@@ -22,6 +22,7 @@ whitelisted so the page can populate for read-only viewers.
 """
 
 import json
+import math
 
 import frappe
 
@@ -65,6 +66,26 @@ def list_crops() -> list:
 
 def _f(value) -> float:
     return float(value or 0)
+
+
+WEIGHT_MAX = 100
+
+
+def _weight_problem(value) -> str:
+    """Why a stage weight cannot be stored, or "" when it can (finite, 0..WEIGHT_MAX)."""
+    if value is None or value == "":
+        return ""
+    try:
+        w = float(value)
+    except (TypeError, ValueError):
+        return "weight must be a number."
+    if not math.isfinite(w):
+        return "weight must be a finite number."
+    if w < 0:
+        return "weight cannot be negative."
+    if w > WEIGHT_MAX:
+        return f"weight cannot exceed {WEIGHT_MAX}."
+    return ""
 
 
 def _filter_rows(crop: str, doctype: str, child: str, obs_col: str, kind: str) -> list:
@@ -227,8 +248,10 @@ def _validate(payload: dict) -> None:
                     errors.append(
                         f"{label} · {s.get('stage') or s.get('row')}: bands must rise, Low < Moderate < High."
                     )
-                if kind == "pest" and "weight" in s and _f(s.get("weight")) < 0:
-                    errors.append(f"{label} · {s.get('stage') or s.get('row')}: weight cannot be negative.")
+                if kind == "pest" and "weight" in s:
+                    problem = _weight_problem(s.get("weight"))
+                    if problem:
+                        errors.append(f"{label} · {s.get('stage') or s.get('row')}: {problem}")
     if errors:
         frappe.throw("\n".join(errors), frappe.ValidationError)
 

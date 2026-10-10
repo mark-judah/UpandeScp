@@ -144,4 +144,14 @@ describe("ThresholdsTab", () => {
     const stages = saveThresholds.mock.calls[0][1].pests[0].stages;
     expect([stages[0].weight, stages[1].weight]).toEqual([0.5, 0]);
   });
+
+  it("flags an out-of-range weight inline instead of clamping it", async () => {
+    getThresholds.mockResolvedValue(rose);
+    render(<ThresholdsTab crop="Rose" />);
+    const thrips = await screen.findByTestId("threshold-row-p1");
+    fireEvent.change(within(thrips).getByLabelText("Weight for Adult"), { target: { value: "101" } });
+    expect(within(thrips).getByTestId("weight-error-Adult")).toHaveTextContent("0 to 100");
+    fireEvent.change(within(thrips).getByLabelText("Weight for Adult"), { target: { value: "100" } });
+    expect(within(thrips).queryByTestId("weight-error-Adult")).toBeNull();
+  });
 });

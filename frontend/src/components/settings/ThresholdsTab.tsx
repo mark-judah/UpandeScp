@@ -409,6 +409,9 @@ function ThInput({
   );
 }
 
+/** Largest stage weight the server accepts. */
+const WEIGHT_MAX = 100;
+
 const ROLE_TONE: Record<string, string> = {
   "Life stage": "var(--sd-data-green)",
   Form: "var(--sd-data-cyan)",
@@ -449,6 +452,8 @@ function WeightInput({
   useEffect(() => {
     setText((t) => ((parseFloat(t) || 0) === value ? t : value > 0 ? String(value) : ""));
   }, [value]);
+  const typed = text.trim();
+  const bad = typed !== "" && !(Number.isFinite(Number(typed)) && Number(typed) >= 0 && Number(typed) <= WEIGHT_MAX);
   return (
     <div className="flex items-center gap-1">
       <span className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">Weight</span>
@@ -460,10 +465,17 @@ function WeightInput({
         value={text}
         onChange={(e) => {
           setText(e.target.value);
-          onChange(Math.max(0, parseFloat(e.target.value) || 0));
+          // Sent as typed: the server refuses an out-of-range weight, never clamps it.
+          onChange(parseFloat(e.target.value) || 0);
         }}
+        aria-invalid={bad || undefined}
         className="h-7 w-14 text-xs tabular-nums"
       />
+      {bad && (
+        <span role="alert" className="text-[0.6rem] text-destructive" data-testid={`weight-error-${stage}`}>
+          0 to {WEIGHT_MAX}
+        </span>
+      )}
     </div>
   );
 }

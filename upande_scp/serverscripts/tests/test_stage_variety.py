@@ -396,3 +396,24 @@ class TestEditor(StageCase):
         with patch.object(frappe.db, "commit"):
             TA.save_thresholds("Rose", {"pests": [row], "diseases": []})
         self.assertEqual(frappe.db.get_value("Pests Stages", {"parent": row["row"], "stage": "Eggs"}, "weight"), 0.25)
+
+    def _save_weight(self, weight):
+        row = self._row()
+        row["low"] = 0.5
+        next(s for s in row["stages"] if s["stage"] == "Eggs")["weight"] = weight
+        with patch.object(frappe.db, "commit"):
+            TA.save_thresholds("Rose", {"pests": [row], "diseases": []})
+        return row
+
+    def test_a_weight_outside_zero_to_100_or_not_a_number_is_refused_with_nothing_saved(self):
+        for bad in (float("nan"), float("inf"), -float("inf"), 101, 1e9, "abc"):
+            with self.subTest(weight=bad), self.assertRaises(frappe.ValidationError):
+                row = self._save_weight(bad)
+            row = self._row()
+            self.assertEqual(frappe.db.get_value("Pest Filter", row["row"], "low_threshold"), 0.0)
+            self.assertEqual(frappe.db.get_value("Pests Stages", {"parent": row["row"], "stage": "Eggs"}, "weight"), 0.0)
+
+    def test_weights_of_0_and_100_are_accepted(self):
+        for ok in (100, 0):
+            row = self._save_weight(ok)
+            self.assertEqual(frappe.db.get_value("Pests Stages", {"parent": row["row"], "stage": "Eggs"}, "weight"), float(ok))

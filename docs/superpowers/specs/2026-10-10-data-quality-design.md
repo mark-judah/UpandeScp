@@ -23,6 +23,18 @@ Date: 2026-10-10. Roadmap item 7. Answers "can we trust the scouting data, and w
 | Q7 | Avocado uses trees/rows; coffee shows whatever stations exist. |
 | Q8 | To make the GPS figures real on kaitet.local, pull the last 8 weeks of Scouting Entry Metadata from live read-only (same paced System Console method as the scouting pull), INSERT IGNORE by name. |
 
+### Clarifications from build (2026-10-10)
+
+The first real-data run (Rose, 4 weeks, 519k entries) flagged every scout, because scouts log one entry per observation, seconds apart, on the same zone. Controller rulings that amend Q3/Q4:
+
+| # | Clarification |
+|---|---|
+| C1 | **Duplicate** = same scout + same zone/tree + same date + same `time_of_capture` to the second (a true double-submit). Same scout/zone/date at different seconds is normal. The > 2% flag stays, on this definition. |
+| C2 | **Too fast** measures only moves *between* stations: consecutive entries by the same scout on the same day, on a different zone/tree, < 5 s apart, as a share of that scout's zone-to-zone moves. Same-zone multi-observation entries are not moves. The > 20% flag stays, on that share. |
+| C3 | **Off-zone (scout)** fires only when the scout's off-zone share exceeds the off-zone share of the houses they scouted (weighted by the scout's fixes in each) by ≥ 25 points, with ≥ 50 fixes. The map problem stays the house-level **map offset suspect** flag. When the scope's off-zone share > 30%, the off-zone KPI reads "zone map needs checking". |
+| C4 | **Thin coverage** uses each house's latest *complete* ISO week in range (a week whose Sunday is before today); the current, unfinished week is used only when nothing else is in range, and is then marked "partial week". |
+| C5 | **Sync delay** stays an informational column (no flag); the UI says it is entry creation minus capture time. |
+
 ## Design
 
 1. `common/quality_rules.py` (pure): constants; `too_fast_share(times)`, `active_hours(times)`, `flag_rows(houses, scouts)` → ranked flags.

@@ -5,7 +5,9 @@ kaitet.local has no real scouting in 2031.
 """
 
 import unittest
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from importlib import import_module
+from unittest.mock import patch
 
 import frappe
 
@@ -17,6 +19,8 @@ from upande_scp.serverscripts.tests import crop_scoping_fixture as F
 from upande_scp.serverscripts.tests import prevalence_fixture as PF
 
 MON, TUE, SUN = "2031-09-29", "2031-09-30", "2031-10-05"
+NEXT_MON, NEXT_SUN = "2031-10-06", "2031-10-12"  # 2031-W41
+QM = import_module("upande_scp.serverscripts.dashboard_aggregates._quality")
 
 
 def scouts(n=2) -> list:
@@ -71,14 +75,17 @@ class QualityCase(unittest.TestCase):
         self.gh = F.rose_greenhouse()
         self.zones = sorted(R._load_grid(self.gh))
         self.s1, self.s2 = scouts(2)
+        self.today = patch.object(QM, "_today", return_value=date(2031, 10, 10))  # Fri of W41
+        self.today.start()
 
     def tearDown(self):
+        self.today.stop()
         frappe.set_user("Administrator")
         crop_scope.clear_cache()
         frappe.db.rollback()
 
-    def run_quality(self, crop="Rose", **kw):
-        return DA.quality(from_date=MON, to_date=SUN, crop=crop, force="1", **kw)
+    def run_quality(self, crop="Rose", to_date=SUN, **kw):
+        return DA.quality(from_date=MON, to_date=to_date, crop=crop, force="1", **kw)
 
     def house(self, out, wh):
         return next(h for h in out["houses"] if h["house"] == wh)
@@ -88,18 +95,24 @@ class QualityCase(unittest.TestCase):
 
 
 class TestFigures(QualityCase):
+    @staticmethod
+    def s1_times():
+        t, out = 8 * 3600, []
+        for i in range(60):
+            t += 2 if i >= 50 else 10
+            out.append(t)
+        return out
+
     def seed(self):
         z = self.zones
         # s1, Monday: 60 entries 10 s apart on 60 zones, 2 s gaps for the last 10,
-        # every fix 25 m out (buffer 5) → map offset + off-zone; pests on the first 30.
-        t = 8 * 3600
-        for i in range(60):
-            t += 2 if i >= 50 else 10
+        # every fix 25 m out (buffer 5) → map offset; pests on the first 30.
+        for i, t in enumerate(self.s1_times()):
             insert(scout=self.s1, date=MON, seconds=t, greenhouse=self.gh, zone=z[i],
                    pest=i < 30, dist=25.0, sync_s=300)
-        # s1 repeats zone 0 once on Monday → one duplicate.
-        insert(scout=self.s1, date=MON, seconds=t + 600, greenhouse=self.gh, zone=z[0], pest=True,
-               dist=1.0, sync_s=300)
+        # s1 submits zone 0 twice in the same second → one duplicate, no move.
+        insert(scout=self.s1, date=MON, seconds=self.s1_times()[0], greenhouse=self.gh, zone=z[0],
+               pest=True, dist=1.0, sync_s=300)
         # s2, Tuesday: 4 entries, no metadata, nothing found on all.
         for i in range(4):
             insert(scout=self.s2, date=TUE, seconds=9 * 3600 + i * 60, greenhouse=self.gh, zone=z[100 + i])
@@ -113,11 +126,11 @@ class TestFigures(QualityCase):
         self.assertEqual(h["stationsScouted"], 64)
         self.assertEqual(h["stations"], len(self.zones))
         self.assertEqual(h["coveragePct"], round(100 * 64 / len(self.zones), 1))
-        self.assertEqual(h["week"], "2031-W40")
+        self.assertEqual((h["week"], h["weekPartial"]), ("2031-W40", False))
 
         s1 = self.scout(out, self.s1)
         self.assertEqual((s1["entries"], s1["activeDays"], s1["duplicates"]), (61, 1, 1))
-        self.assertEqual(s1["tooFastPct"], round(100 * 10 / 61, 1))
+        self.assertEqual((s1["moves"], s1["tooFastPct"]), (59, round(100 * 10 / 59, 1)))
         self.assertEqual(s1["nothingFoundPct"], round(100 * 30 / 61, 1))
         self.assertEqual(s1["medianSyncMin"], 5.0)
         s2 = self.scout(out, self.s2)
@@ -130,20 +143,18 @@ class TestFigures(QualityCase):
     def test_too_fast_matches_the_pure_rule(self):
         self.seed()
         out = self.run_quality(greenhouse=self.gh)
-        t, times = 8 * 3600, []
-        for i in range(60):
-            t += 2 if i >= 50 else 10
-            times.append(t)
-        times.append(t + 600)
-        self.assertEqual(self.scout(out, self.s1)["tooFastPct"], Q.too_fast_share(times))
+        entries = [(t, self.zones[i]) for i, t in enumerate(self.s1_times())]
+        entries.append((self.s1_times()[0], self.zones[0]))
+        self.assertEqual(self.scout(out, self.s1)["tooFastPct"], Q.too_fast_share(entries))
 
     def test_flags_fire(self):
         self.seed()
         out = self.run_quality(greenhouse=self.gh)
         got = {(f["kind"], f["name"]) for f in out["flags"]}
         self.assertIn(("map_offset", self.gh), got)       # median 25 m > 20 over 61 fixes
-        self.assertIn(("off_zone", self.s1), got)         # 98% of 61 fixes outside
-        self.assertNotIn(("too_fast", self.s1), got)      # 16.4% ≤ 20
+        self.assertNotIn(("off_zone", self.s1), got)      # 98% off, but so is the house: the map, not the scout
+        self.assertTrue(out["kpis"]["zoneMapSuspect"])
+        self.assertNotIn(("too_fast", self.s1), got)      # 16.9% of moves ≤ 20
         self.assertIn(("thin_coverage", self.gh), got)    # 64 of hundreds of zones
         self.assertNotIn(("metadata_gap", self.gh), got)  # 93.8% ≥ 50
         self.assertNotIn(("off_zone", self.s2), got)      # no fixes
@@ -153,7 +164,7 @@ class TestFigures(QualityCase):
         z = self.zones
         for i in range(10):
             insert(scout=self.s1, date=MON, seconds=8 * 3600 + i * 30, greenhouse=self.gh, zone=z[i])
-        insert(scout=self.s1, date=MON, seconds=9 * 3600, greenhouse=self.gh, zone=z[0])
+        insert(scout=self.s1, date=MON, seconds=8 * 3600, greenhouse=self.gh, zone=z[0])  # double-submit
         out = self.run_quality(greenhouse=self.gh)
         h = self.house(out, self.gh)
         self.assertFalse(h["gpsReliable"])
@@ -161,6 +172,38 @@ class TestFigures(QualityCase):
         got = {(f["kind"], f["name"]) for f in out["flags"]}
         self.assertIn(("metadata_gap", self.gh), got)
         self.assertIn(("duplicates", self.s1), got)       # 1 of 11 = 9.1% > 2
+
+
+    def test_off_zone_flags_a_scout_25_points_over_their_houses(self):
+        z = self.zones
+        for i in range(60):
+            insert(scout=self.s1, date=MON, seconds=8 * 3600 + i * 30, greenhouse=self.gh, zone=z[i], dist=25.0)
+            insert(scout=self.s2, date=MON, seconds=8 * 3600 + i * 30, greenhouse=self.gh, zone=z[60 + i], dist=0.0)
+        out = self.run_quality(greenhouse=self.gh)
+        s1 = self.scout(out, self.s1)
+        self.assertEqual((s1["offZonePct"], s1["houseOffZonePct"]), (100.0, 50.0))
+        got = {(f["kind"], f["name"]) for f in out["flags"]}
+        self.assertIn(("off_zone", self.s1), got)
+        self.assertNotIn(("off_zone", self.s2), got)
+        self.assertNotIn(("map_offset", self.gh), got)     # median 0 m
+
+
+class TestCoverageWeek(QualityCase):
+    def test_the_unfinished_week_is_skipped_for_the_last_complete_one(self):
+        z = self.zones
+        for i in range(5):
+            insert(scout=self.s1, date=MON, seconds=8 * 3600 + i * 30, greenhouse=self.gh, zone=z[i])
+        insert(scout=self.s1, date=NEXT_MON, seconds=8 * 3600, greenhouse=self.gh, zone=z[50])
+        h = self.house(self.run_quality(to_date=NEXT_SUN, greenhouse=self.gh), self.gh)
+        self.assertEqual((h["week"], h["weekPartial"], h["stationsScouted"]), ("2031-W40", False, 5))
+
+    def test_falls_back_to_the_current_week_marked_partial(self):
+        insert(scout=self.s1, date=NEXT_MON, seconds=8 * 3600, greenhouse=self.gh, zone=self.zones[0])
+        out = DA.quality(from_date=NEXT_MON, to_date=NEXT_SUN, crop="Rose", greenhouse=self.gh, force="1")
+        h = self.house(out, self.gh)
+        self.assertEqual((h["week"], h["weekPartial"], h["stationsScouted"]), ("2031-W41", True, 1))
+        thin = next(f for f in out["flags"] if f["kind"] == "thin_coverage")
+        self.assertIn("partial week", thin["detail"])
 
 
 class TestScoping(QualityCase):

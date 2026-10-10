@@ -267,6 +267,8 @@ def _classify_cells(obs: list, crop: str, weeks) -> tuple:
             "count":      cell["count_sum"],
             "date":       cell["latest_date"],
             **P.public(fig),
+            # S4: the pest's signs beside its live figure (pest-level, every stage cell).
+            "signs":      _prevalence_rows.signs_latest(weeks, crop, gh, obs_name) if kind == "pest" else None,
         })
 
     for gh, bucket in by_gh.items():
@@ -299,6 +301,7 @@ def _active_alerts_from_cells(cells: list, n: int = 8) -> list:
             "zone":       f"{c['zones']}/{c['total']} scouted · {c['week']}",
             "date":       c["date"],
             "stage":      c["stage"],
+            "signs":      c.get("signs"),
             **{k: c.get(k) for k in P.PUBLIC_KEYS},
         }
         for c in flagged

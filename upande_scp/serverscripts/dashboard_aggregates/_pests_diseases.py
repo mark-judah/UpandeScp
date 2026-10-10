@@ -152,6 +152,9 @@ def _ranking(kind: str, rows: list, crop: str, weeks) -> list:
 
     for name, bucket in by_name.items():
         bucket.update(P.public(weeks.combined_latest(kind, name or "")))
+        bucket["signs"] = (
+            _prevalence_rows.signs_combined_latest(weeks, crop, name or "") if kind == "pest" else None
+        )
 
     # by_name is keyed by obs_name, so it's a total-order tie-break.
     return sorted(by_name.values(), key=lambda x: (-x["total"], x["name"]))
@@ -279,6 +282,10 @@ def _gh_pressure(kind: str, filters, weeks) -> list:
             "zones": (fig or {}).get("infested") or 0,
             "pct": (fig or {}).get("prevalence"),
             **P.public(fig),
+            "signs": (
+                _prevalence_rows.signs_latest(weeks, filters["crop"], wh, obs, section)
+                if kind == "pest" and stage is ANY else None
+            ),
         })
     # One row per house, so name is a total-order tie-break.
     out.sort(key=lambda x: (x["pct"] is None, -(x["pct"] or 0), x["name"]))

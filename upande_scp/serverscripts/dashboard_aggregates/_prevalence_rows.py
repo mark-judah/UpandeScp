@@ -584,3 +584,25 @@ class StationWeeks:
             return None
         prev = self.count_figures(wh, previous, kind, obs, stages, section, weights) if previous else None
         return {**fig, "prev": prev["value"] if prev else None}
+
+
+# ── signs (stage & variety S4) ─────────────────────────────────────────────
+
+
+def signs_latest(weeks, crop, wh, obs=ANY, section=ANY):
+    """A pest's Sign figure for the house's latest week (``prevalence.public``
+    keys), or None when the crop's Pest Filter lists no Sign stage for it (for
+    any pest when ``obs`` is ANY) — so a pest without signs never reads
+    "signs 0%"."""
+    if not stage_roles.sign_stages(crop, None if obs is ANY else obs):
+        return None
+    fig = weeks.latest(wh, "pest", obs, ANY, section, role=SIGNS)
+    return P.public(fig) if fig else None
+
+
+def signs_combined_latest(weeks, crop, obs=ANY, section=ANY):
+    """``signs_latest`` scope-wide: every house's latest week, station-weighted."""
+    if not stage_roles.sign_stages(crop, None if obs is ANY else obs):
+        return None
+    fig = weeks.combined_latest("pest", obs, ANY, section, role=SIGNS)
+    return P.public(fig) if fig else None

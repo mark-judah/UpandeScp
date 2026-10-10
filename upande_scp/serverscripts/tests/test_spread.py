@@ -145,8 +145,8 @@ class TestHouseClusters(SpreadCase):
         with self.assertRaises(frappe.PermissionError):
             S.get_house_clusters("Rose", self.gh, "Thrips", "pest", week="2031-W31", force=1)
 
-    def test_the_dashboard_cache_schema_moves_to_pin1(self):
-        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "pin1")
+    def test_the_dashboard_cache_schema_moves_to_stg1(self):
+        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "stg1")
 
 
 class TestDigestNote(SpreadCase):

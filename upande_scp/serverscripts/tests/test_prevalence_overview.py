@@ -72,9 +72,9 @@ class TestOverviewPrevalence(unittest.TestCase):
         self.assertIsNone(cell["severity"])
         self.assertEqual(cell["reason"], "no stations set up")
 
-    def test_aggregate_keys_carry_the_pin1_schema(self):
-        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "pin1")
-        self.assertIn(":pin1:overview:", _common._build_key("overview", {"crop": "Rose"}))
+    def test_aggregate_keys_carry_the_stg1_schema(self):
+        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "stg1")
+        self.assertIn(":stg1:overview:", _common._build_key("overview", {"crop": "Rose"}))
 
 
 class TestGreenhouseDetailPrevalence(unittest.TestCase):

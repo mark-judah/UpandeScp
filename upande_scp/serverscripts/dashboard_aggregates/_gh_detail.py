@@ -150,6 +150,7 @@ def _build(filters: dict, job_id: str = "") -> dict:
                 "kind": kind,
                 "name": t["name"],
                 **P.public(fig),
+                "signs": _prevalence_rows.signs_latest(weeks, filters["crop"], gh, t["name"]) if kind == "pest" else None,
                 "sections": _mark_hot(filters["crop"], kind, t["name"], weeks, gh, fig),
             })
 

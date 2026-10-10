@@ -206,3 +206,65 @@ class TestLiveFigure(StageCase):
         SV.set_master_weight("Eggs", 0.5)
         self.assertEqual(_common.band_spec("Rose", "pest", "Spidermites", "Eggs")["count_weights"], ())
         self.assertEqual(self._value(weeks, "Eggs"), 2.0)                    # 6 / 3, unweighted
+
+
+O = import_module("upande_scp.serverscripts.dashboard_aggregates._overview")
+
+
+class TestSignsOnPayloads(StageCase):
+    """Thrips Adult on station 0 of each section (live 33.3 %), Damages on
+    stations 0 and 1 (signs 66.7 %); Aphids Singles on station 0 (no Sign stage)."""
+
+    def setUp(self):
+        super().setUp()
+        for stage, role in (("Adult", "Life stage"), ("Larvae", "Life stage"), ("Damages", "Sign"),
+                            ("Singles", "Form"), ("Colonies", "Form")):
+            SV.set_role(stage, role)
+        TF.seed_week(self.gh, SV.WEEK_44[0], crop="Rose", stage="Adult", infested_per_section=1)
+        TF.seed_week(self.gh, SV.WEEK_44[0], crop="Rose", stage="Damages", infested_per_section=2)
+        TF.seed_week(self.gh, SV.WEEK_44[0], crop="Rose", pest="Aphids", stage="Singles", infested_per_section=1)
+        self.range = {"from_date": SV.WEEK_44[0], "to_date": SV.WEEK_44[1], "crop": "Rose", "force": "1"}
+
+    def test_overview_cells_and_alerts_carry_the_signs(self):
+        TF.set_bands("Rose", "Thrips", 5, 20, 50)          # the Adult cell (33.3 %) reads Moderate
+        where, params = _common.parent_filter_conditions(*SV.WEEK_44, "Rose", None)
+        weeks = R.StationWeeks.load(*SV.WEEK_44, "Rose", None)
+        cells = O._classify_cells(O._observation_rows(where, params), "Rose", weeks)[1]
+        adult = next(c for c in cells
+                     if c["greenhouse"] == self.gh and c["obs_name"] == "Thrips" and c["stage"] == "Adult")
+        self.assertEqual((adult["prevalence"], adult["signs"]["prevalence"]), (33.3, 66.7))
+        aphids = next(c for c in cells if c["greenhouse"] == self.gh and c["obs_name"] == "Aphids")
+        self.assertIsNone(aphids["signs"])                  # Singles / Colonies: no Sign stage on the row
+        alert = next(a for a in O._active_alerts_from_cells(cells) if a["name"] == "Thrips" and a["stage"] == "Adult")
+        self.assertEqual(alert["signs"]["prevalence"], 66.7)
+
+    def test_pests_ranking_and_pressure_carry_the_signs(self):
+        out = DA.pests(**self.range)
+        thrips = next(r for r in out["ranking"] if r["name"] == "Thrips")
+        self.assertEqual((thrips["prevalence"], thrips["signs"]["prevalence"]), (33.3, 66.7))
+        self.assertIsNone(next(r for r in out["ranking"] if r["name"] == "Aphids")["signs"])
+        picked = DA.pests(observation="Thrips", **self.range)
+        row = next(r for r in picked["greenhousePressure"] if r["name"] == self.gh)
+        self.assertEqual((row["pct"], row["signs"]["prevalence"]), (33.3, 66.7))
+        staged = DA.pests(observation="Thrips", stage="Damages", **self.range)
+        row = next(r for r in staged["greenhousePressure"] if r["name"] == self.gh)
+        self.assertEqual((row["pct"], row["signs"]), (66.7, None))             # a named stage: no signs beside it
+
+    def test_the_greenhouse_detail_row_carries_the_signs(self):
+        out = DA.greenhouse_detail(greenhouse=self.gh, **self.range)
+        thrips = next(p for p in out["prevalence"] if p["name"] == "Thrips")
+        self.assertEqual((thrips["prevalence"], thrips["signs"]["prevalence"]), (33.3, 66.7))
+
+    def test_trends_carry_signs_rows_beside_the_live_rows(self):
+        out = DA.trends(**self.range)
+        v = out["vocab"]
+        w, s, o = v["weeks"].index("2031-W44"), v["stations"].index(self.gh), v["obs"].index("pest:Thrips")
+        live = next(r for r in out["prevalenceByStation"] if r[:3] == [w, s, o])
+        self.assertEqual(live[3], 33.3)
+        self.assertIn([w, s, o, 66.7], out["signsByStation"])
+        aphids = v["obs"].index("pest:Aphids")
+        self.assertEqual([r for r in out["signsByStation"] if r[2] == aphids], [])
+
+    def test_aggregate_keys_carry_the_stg1_schema(self):
+        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "stg1")
+        self.assertIn(":stg1:pests:", _common._build_key("pests", {"crop": "Rose"}))

@@ -49,6 +49,7 @@ from datetime import date, datetime
 import frappe
 
 from upande_scp.serverscripts.common import prevalence
+from upande_scp.serverscripts.common import stage_roles
 from upande_scp.serverscripts.scouting import scouting_metrics
 from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows
 from upande_scp.serverscripts.dashboard_aggregates._common import (
@@ -98,7 +99,7 @@ def _build(from_date: str, to_date: str, crop: str, job_id: str = "") -> dict:
     weeks = _prevalence_rows.StationWeeks.load(
         from_date, to_date, crop, None, lookback_days=0, weeks=_prevalence_rows.WINDOW,
     )
-    payload.update(_prevalence_tables(payload, weeks))
+    payload.update(_prevalence_tables(payload, weeks, crop))
 
     publish_progress(job_id, 95, "loading unit counts")
     # Structural unit count per station, inferred from the warehouse type:
@@ -527,7 +528,7 @@ def _aggregate(rows: list, scouted_rows: list | None = None) -> dict:
     }
 
 
-def _prevalence_tables(payload: dict, weeks) -> dict:
+def _prevalence_tables(payload: dict, weeks, crop: str = "") -> dict:
     """Adjusted station prevalence beside the incidence tables.
 
     * ``prevalenceByStation`` rows ``[week, station, obs, prevalence, margin, rel]``
@@ -539,6 +540,10 @@ def _prevalence_tables(payload: dict, weeks) -> dict:
       likewise for every week any house of the farm was scouted, with
       ``StationWeeks.combined``-style weighting over EVERY house of the farm
       scouted that week, clean ones included.
+
+    * ``signsByStation`` rows ``[week, station, obs, signs %]`` — beside each
+      per-station row of a pest whose crop row lists a Sign stage (stage &
+      variety S4); none without a crop.
 
     ``weeks`` must be loaded in ``WINDOW`` mode. ``margin`` is ``None`` when too
     clustered to judge; ``rel`` indexes ``vocab.reliability``; ``farm`` indexes
@@ -563,7 +568,15 @@ def _prevalence_tables(payload: dict, weeks) -> dict:
         seen_at_house.add((s_i, o_i))
         seen_on_farm.add((farm_of(vocab["stations"][s_i]), o_i))
 
+    has_signs: dict = {}
+
+    def _signs_for(name) -> bool:
+        if name not in has_signs:
+            has_signs[name] = bool(crop) and bool(stage_roles.sign_stages(crop, name))
+        return has_signs[name]
+
     by_station = []
+    signs_rows = []
     for s_i, o_i in sorted(seen_at_house):
         station = vocab["stations"][s_i]
         kind, _sep, name = vocab["obs"][o_i].partition(":")
@@ -574,6 +587,10 @@ def _prevalence_tables(payload: dict, weeks) -> dict:
             fig = weeks.figures(station, week, kind, name)
             if fig and fig.get("prevalence") is not None:
                 by_station.append(_row(w_i, s_i, o_i, fig))
+                if kind == "pest" and _signs_for(name):
+                    sfig = weeks.figures(station, week, kind, name, role=_prevalence_rows.SIGNS)
+                    if sfig and sfig.get("prevalence") is not None:
+                        signs_rows.append([w_i, s_i, o_i, sfig["prevalence"]])
 
     farms = sorted({farm_of(s) for s in vocab["stations"]})
     idx_farm = {f: i for i, f in enumerate(farms)}
@@ -595,5 +612,6 @@ def _prevalence_tables(payload: dict, weeks) -> dict:
     return {
         "prevalenceByStation": sorted(by_station, key=lambda r: r[:3]),
         "prevalenceByFarm": sorted(by_farm, key=lambda r: r[:3]),
+        "signsByStation": sorted(signs_rows, key=lambda r: r[:3]),
         "vocab": {**vocab, "farms": farms, "reliability": list(prevalence.RELIABILITY)},
     }

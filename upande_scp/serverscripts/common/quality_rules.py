@@ -15,6 +15,7 @@ Metadata row; the sync delay is None for entries the bulk load stamped (Q3).
 """
 
 import math
+from datetime import date
 
 #: A move between stations by the same scout faster than this is "too fast"
 #: (Q3, clarified: only zone-to-zone moves count — several observations on one
@@ -45,6 +46,14 @@ MAX_RANGE_DAYS = 56
 #: Tie-break order when two flags score the same.
 KINDS = ("map_offset", "not_scouted_recently", "thin_coverage", "too_fast", "nothing_found", "off_zone",
          "duplicates", "metadata_gap")
+
+
+def _iso_week(day) -> int:
+    """ISO yearweek (``202640``) of a date or a ``YYYY-MM-DD`` string."""
+    if isinstance(day, str):
+        day = date.fromisoformat(day[:10])
+    iso = day.isocalendar()
+    return iso[0] * 100 + iso[1]
 
 
 def _pct(n, d, digits=1):
@@ -105,10 +114,14 @@ class _House:
 
 class _Scout:
     __slots__ = ("entries", "days", "hours", "timed_entries", "beds", "fast", "moves",
-                 "nothing", "fixes", "off", "dupes", "sync", "house_fixes")
+                 "nothing", "fixes", "off", "dupes", "sync", "house_fixes",
+                 "stations", "house_entries", "weeks", "last")
 
     def __init__(self):
-        self.entries = self.days = self.timed_entries = self.beds = 0
+        self.entries = self.days = self.timed_entries = self.beds = self.stations = 0
+        self.house_entries = {}  # house -> entries (the scout record's houses and shares)
+        self.weeks = {}  # ISO yearweek -> entries (the scout record's trend)
+        self.last = None  # latest capture date
         self.fast = self.moves = self.nothing = self.fixes = self.off = self.dupes = 0
         self.hours = 0.0
         self.sync = {}
@@ -162,6 +175,7 @@ class Fold:
                 s = self.scouts[scout] = _Scout()
             s.entries += 1
             s.nothing += nothing
+            s.house_entries[wh] = s.house_entries.get(wh, 0) + 1
             if dist is not None:
                 s.fixes += 1
                 s.off += off
@@ -173,9 +187,18 @@ class Fold:
             if delay is not None:
                 minute = max(0, int(delay)) // 60
                 s.sync[minute] = s.sync.get(minute, 0) + 1
-        for (scout, _day), (entries, stations, beds) in days.items():
+        week_memo: dict = {}
+        for (scout, day), (entries, stations, beds) in days.items():
             s = self.scouts[scout]
             s.days += 1
+            s.stations += len({st for _t, st in entries if st})
+            yw = week_memo.get(day)
+            if yw is None:
+                yw = week_memo[day] = _iso_week(day)
+            s.weeks[yw] = s.weeks.get(yw, 0) + len(entries)
+            iso_day = str(day)[:10]
+            if s.last is None or iso_day > s.last:
+                s.last = iso_day
             fast, moves = too_fast_moves(entries)
             s.fast += fast
             s.moves += moves
@@ -251,6 +274,12 @@ class Fold:
                 "duplicatePct": _pct(s.dupes, s.entries),
                 "medianSyncMin": None if median is None else float(median),
                 "syncSample": sum(s.sync.values()),
+                # The Personnel ▸ Scouts page reads these (personnel spec P4, P5).
+                "stationsPerDay": round(s.stations / s.days, 1) if s.days else None,
+                "houses": [{"house": wh, "entries": n} for wh, n in
+                           sorted(s.house_entries.items(), key=lambda kv: (-kv[1], kv[0]))],
+                "weeks": [{"week": yw, "entries": n} for yw, n in sorted(s.weeks.items())],
+                "lastDate": s.last,
             })
         return out
 

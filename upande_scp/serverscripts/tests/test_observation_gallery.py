@@ -267,9 +267,9 @@ class TestScoping(GalleryCase):
         with self.assertRaises(frappe.PermissionError):
             self.gallery(name="FCM", crop="Avocado")
 
-    def test_cache_schema_is_gal1(self):
-        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "gal1")
-        self.assertIn(":gal1:observation_gallery:", _common._build_key("observation_gallery", {"crop": "Rose"}))
+    def test_cache_schema_is_psn1(self):
+        self.assertEqual(_common.K_DASH_AGG_SCHEMA, "psn1")
+        self.assertIn(":psn1:observation_gallery:", _common._build_key("observation_gallery", {"crop": "Rose"}))
 
 
 if __name__ == "__main__":

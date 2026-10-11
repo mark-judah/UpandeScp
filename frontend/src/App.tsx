@@ -128,6 +128,15 @@ const Finance = lazy(() =>
 const Teams = lazy(() =>
   import("@/pages/Teams").then((m) => ({ default: m.Teams })),
 );
+const Sprayers = lazy(() =>
+  import("@/pages/Sprayers").then((m) => ({ default: m.Sprayers })),
+);
+const Scouts = lazy(() =>
+  import("@/pages/Scouts").then((m) => ({ default: m.Scouts })),
+);
+const Coverage = lazy(() =>
+  import("@/pages/Coverage").then((m) => ({ default: m.Coverage })),
+);
 // Throwaway POC route — gated on a hash that the normal router doesn't
 // recognise so it never appears in the sidebar. Open with
 // ``#/poc-heatmap?gh=<Greenhouse>&obs=<Name>&kind=pest|disease``.
@@ -169,6 +178,9 @@ const PREFETCH: Array<() => Promise<unknown>> = [
   () => import("@/pages/Postponements"),
   () => import("@/pages/Finance"),
   () => import("@/pages/Teams"),
+  () => import("@/pages/Sprayers"),
+  () => import("@/pages/Scouts"),
+  () => import("@/pages/Coverage"),
 ];
 
 /**
@@ -287,9 +299,16 @@ function renderView(crop: string, view: View): ReactNode {
     case "finances":
       // Crop-scoped: the route crop limits the farms the report reads.
       return <Finance initialCrop={cropName} />;
+    // Personnel (crop-scoped): scouts, the sprayer register, spray teams.
     case "teams":
-      // Crop-scoped: spray teams and sprayers of this crop's farms.
       return <Teams initialCrop={cropName} />;
+    case "sprayers":
+      return <Sprayers initialCrop={cropName} />;
+    case "scouts":
+      return <Scouts initialCrop={cropName} />;
+    // Reports ▸ Coverage: the scouting data-quality view.
+    case "coverage":
+      return <Coverage initialCrop={cropName} />;
     // Not crop-scoped: reached from the header bell, not a crop sidebar.
     case "notifications":
       return <Notifications />;

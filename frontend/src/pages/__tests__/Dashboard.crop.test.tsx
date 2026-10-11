@@ -44,12 +44,11 @@ describe("Dashboard follows the route crop", () => {
     expect(screen.queryByLabelText("Crop")).toBeNull();
   });
 
-  it("asks for the quality aggregate with the same scope as the other tabs", () => {
+  it("has no Data quality tab; it points at Reports ▸ Coverage instead", () => {
     render(<Dashboard initialCrop="Rose" />);
-    const quality = useDashboardAggregate.mock.calls.find((c) => c[0] === "quality");
-    expect(quality?.[1]).toMatchObject({ crop: "Rose", farm: "", greenhouse: "" });
-    expect(quality?.[2]).toBe(false);  // only fetched while its tab is open
-    expect(screen.getByRole("tab", { name: "Data quality" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Data quality" })).toBeNull();
+    expect(useDashboardAggregate.mock.calls.some((c) => c[0] === "quality")).toBe(false);
+    expect(screen.getByRole("link", { name: /Coverage/ })).toHaveAttribute("href", "#/rose/coverage");
   });
 
   it("sends Rose as Rose, not as the old empty string", () => {

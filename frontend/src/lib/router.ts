@@ -39,6 +39,9 @@ export type View =
   | "postponements"
   | "notifications"
   | "finances"
+  | "coverage"
+  | "scouts"
+  | "sprayers"
   | "teams";
 
 const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
@@ -67,6 +70,9 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "chemical-progress",
   "chemical-loaning",
   "finances",
+  "coverage",
+  "scouts",
+  "sprayers",
   "teams",
 ]);
 

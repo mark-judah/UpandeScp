@@ -12,6 +12,7 @@ import {
   Droplets,
   FileText,
   Flame,
+  Gauge,
   History,
   Layers,
   LayoutDashboard,
@@ -23,7 +24,9 @@ import {
   Scale,
   Search,
   Settings,
+  SprayCan,
   Sprout,
+  UserRoundSearch,
   Truck,
   Users,
   Warehouse,
@@ -90,19 +93,55 @@ interface NavSection {
 const STORE_KEEPER_ROLE = "SCP Chemical Store Keeper";
 // Crop-protection finances: the same roles the server's FINANCE_ROLES admits.
 const FINANCE_ROLES = ["SCP General Manager", "System Manager", "Administrator"];
-// Teams & KPIs: the same roles serverscripts/sprayers/api.py admits.
-const TEAMS_ROLES = [
+// Personnel (spec P3): the same roles serverscripts/sprayers/api.py and
+// serverscripts/scouts/api.py admit. A creator or supervisor is held to their
+// rostered farms by the server; the nav only decides whether the page shows.
+const SPRAY_PERSONNEL_ROLES = [
   "SCP General Manager",
+  "SCP Spray Plan Creator",
   "SCP Spray Supervisor",
   "System Manager",
   "Administrator",
 ];
-const TEAMS_ITEM: NavItem = {
+const SCOUT_PERSONNEL_ROLES = [
+  "SCP General Manager",
+  "SCP Scouting User",
+  "System Manager",
+  "Administrator",
+];
+const PERSONNEL_SECTION: NavSection = {
+  label: "Personnel",
+  hideForRoles: [STORE_KEEPER_ROLE],
+  items: [
+    {
+      kind: "view",
+      view: "scouts",
+      label: "Scouts",
+      icon: UserRoundSearch,
+      requireRoles: SCOUT_PERSONNEL_ROLES,
+    },
+    {
+      kind: "view",
+      view: "sprayers",
+      label: "Sprayers",
+      icon: SprayCan,
+      requireRoles: SPRAY_PERSONNEL_ROLES,
+    },
+    {
+      kind: "view",
+      view: "teams",
+      label: "Teams",
+      icon: Users,
+      requireRoles: SPRAY_PERSONNEL_ROLES,
+    },
+  ],
+};
+// Coverage (spec P2): the scouting data-quality report, open to whoever sees Reports.
+const COVERAGE_ITEM: NavItem = {
   kind: "view",
-  view: "teams",
-  label: "Teams & KPIs",
-  icon: Users,
-  requireRoles: TEAMS_ROLES,
+  view: "coverage",
+  label: "Coverage",
+  icon: Gauge,
 };
 
 const ROSE_NAV: NavSection[] = [
@@ -245,12 +284,13 @@ const ROSE_NAV: NavSection[] = [
         icon: Coins,
         requireRoles: FINANCE_ROLES,
       },
-      TEAMS_ITEM,
+      COVERAGE_ITEM,
       // Varieties is hidden until the page is finished. The route and the page are
       // still here, so restoring it is one line — reachable meanwhile by URL for
       // whoever is working on it.
     ],
   },
+  PERSONNEL_SECTION,
 ];
 
 // Avocado is its own app: a parallel sidebar reached via the crop switcher.
@@ -293,9 +333,10 @@ const AVOCADO_NAV: NavSection[] = [
         icon: Coins,
         requireRoles: FINANCE_ROLES,
       },
-      TEAMS_ITEM,
+      COVERAGE_ITEM,
     ],
   },
+  PERSONNEL_SECTION,
   {
     // Settings is per-crop now: this crop's spray-plan overrides, its farms'
     // rosters and map, its thresholds and ordering. The site-wide tabs are
@@ -331,9 +372,10 @@ const COFFEE_NAV: NavSection[] = [
         icon: Coins,
         requireRoles: FINANCE_ROLES,
       },
-      TEAMS_ITEM,
+      COVERAGE_ITEM,
     ],
   },
+  PERSONNEL_SECTION,
   {
     // Settings is per-crop now: this crop's spray-plan overrides, its farms'
     // rosters and map, its thresholds and ordering. The site-wide tabs are
@@ -372,9 +414,10 @@ const DEFAULT_CROP_NAV: NavSection[] = [
         icon: Coins,
         requireRoles: FINANCE_ROLES,
       },
-      TEAMS_ITEM,
+      COVERAGE_ITEM,
     ],
   },
+  PERSONNEL_SECTION,
 ];
 
 function navForCrop(crop: string): NavSection[] {

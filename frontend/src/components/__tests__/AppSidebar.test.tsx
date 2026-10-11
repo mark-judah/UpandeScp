@@ -71,3 +71,47 @@ describe("AppSidebar crop-scoped nav", () => {
     expect(screen.queryByText("Job Sheets")).toBeNull();
   });
 });
+
+describe("Personnel group and Coverage (personnel spec P1–P3)", () => {
+  beforeEach(() => clearRoles());
+  afterEach(() => clearRoles());
+
+  const personnel = () => screen.queryByText("Personnel");
+
+  it("shows all three pages to a general manager, on every crop", () => {
+    for (const crop of ["rose", "avocado", "coffee", "macadamia"]) {
+      withRoles(["SCP General Manager"]);
+      const r = renderSidebar(crop);
+      expect(personnel()).toBeInTheDocument();
+      for (const label of ["Scouts", "Sprayers", "Teams", "Coverage"]) {
+        expect(screen.getByText(label)).toBeInTheDocument();
+      }
+      expect(screen.queryByText("Teams & KPIs")).toBeNull();
+      r.unmount();
+    }
+  });
+
+  it("gives a spray plan creator Sprayers and Teams but not Scouts", () => {
+    withRoles(["SCP Spray Plan Creator"]);
+    renderSidebar("rose");
+    expect(personnel()).toBeInTheDocument();
+    expect(screen.getByText("Sprayers")).toBeInTheDocument();
+    expect(screen.getByText("Teams")).toBeInTheDocument();
+    expect(screen.queryByText("Scouts")).toBeNull();
+  });
+
+  it("gives a scouting user Scouts only", () => {
+    withRoles(["SCP Scouting User"]);
+    renderSidebar("rose");
+    expect(screen.getByText("Scouts")).toBeInTheDocument();
+    expect(screen.queryByText("Sprayers")).toBeNull();
+    expect(screen.queryByText("Teams")).toBeNull();
+  });
+
+  it("hides the group from someone with none of its roles", () => {
+    withRoles(["SCP Spray Plan Approver"]);
+    renderSidebar("rose");
+    expect(personnel()).toBeNull();
+    expect(screen.getByText("Coverage")).toBeInTheDocument();
+  });
+});

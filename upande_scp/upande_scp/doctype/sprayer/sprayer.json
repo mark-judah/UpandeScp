@@ -1,0 +1,173 @@
+{
+ "actions": [],
+ "autoname": "SPR-.#####",
+ "creation": "2026-10-11 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "employee",
+  "employee_name",
+  "column_break_id",
+  "farm",
+  "spray_team",
+  "role",
+  "status",
+  "exposure_section",
+  "hours_30d",
+  "weighted_30d",
+  "column_break_tot",
+  "hours_total",
+  "weighted_total",
+  "last_exposure"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1,
+   "search_index": 1,
+   "unique": 1
+  },
+  {
+   "fetch_from": "employee.employee_name",
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "label": "Employee Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_id",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "farm",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Farm",
+   "options": "Farm",
+   "search_index": 1
+  },
+  {
+   "fieldname": "spray_team",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Spray Team",
+   "options": "Spray Team"
+  },
+  {
+   "default": "Sprayer",
+   "fieldname": "role",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Role",
+   "options": "Sprayer\nPump Operator\nMixer\nSupervisor"
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Active\nInactive"
+  },
+  {
+   "description": "Recomputed from Sprayer Exposure after every logsheet and nightly. Weighted hours = hours \u00d7 the product's hazard weight (WHO class I = 4 \u2026 IV = 1, unknown = 2).",
+   "fieldname": "exposure_section",
+   "fieldtype": "Section Break",
+   "label": "Exposure"
+  },
+  {
+   "fieldname": "hours_30d",
+   "fieldtype": "Float",
+   "label": "Hours (30 days)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "weighted_30d",
+   "fieldtype": "Float",
+   "label": "Weighted Hours (30 days)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_tot",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "hours_total",
+   "fieldtype": "Float",
+   "label": "Hours (total)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "weighted_total",
+   "fieldtype": "Float",
+   "label": "Weighted Hours (total)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_exposure",
+   "fieldtype": "Date",
+   "label": "Last Exposure",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Sprayer",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP General Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Supervisor"
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "employee,employee_name,farm",
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "employee_name"
+}

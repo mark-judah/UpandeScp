@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 import frappe
-from frappe.utils import flt
+from frappe.utils import flt, getdate
 
 from ..common import crop_catalog, crop_protection
 from ..spray_compliance import api as compliance
@@ -368,6 +368,26 @@ def _apply_payload(wo, payload: dict) -> None:
     )
 
 
+def _crew_warnings(wo) -> list[str]:
+    """Crew members on leave (or leave pending) on the plan date — warnings only.
+
+    Planning never refuses on availability: the plan date may be days away, and leave
+    is often entered late. The refusal, if the setting asks for one, comes when the
+    crew is confirmed on the morning (``spray_session.update_work_order_team``).
+    """
+    from upande_scp.serverscripts.common import crew_availability as CA
+
+    day = wo.planned_start_date or wo.custom_scheduled_application_time
+    employees = [r.employee for r in (wo.custom_spray_plan_team_members or []) if r.employee]
+    if not day or not employees:
+        return []
+    try:
+        return CA.check_crew(employees, getdate(day), can_block=False)["messages"]
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "drafts: crew availability check failed")
+        return []
+
+
 def _compliance_payload(wo, payload: dict) -> dict:
     """The plan as the spray check sees it, read off the WO after
     `_apply_payload`: resolved item codes, and the stored greenhouse/targets/
@@ -521,6 +541,7 @@ def create_draft_spray_plan(payload):
     )
     if dup_warning:
         warnings.append(dup_warning)
+    warnings.extend(_crew_warnings(wo))
 
     return {"work_order": wo.name, "summary": _summarize(wo), "warnings": warnings,
             "compliance": compliance_result}
@@ -660,6 +681,7 @@ def update_draft_plan(name: str, payload):
     )
     if dup_warning:
         warnings.append(dup_warning)
+    warnings.extend(_crew_warnings(wo))
     return {"work_order": wo.name, "summary": _summarize(wo), "warnings": warnings,
             "compliance": compliance_result}
 

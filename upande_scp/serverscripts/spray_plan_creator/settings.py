@@ -26,6 +26,7 @@ import frappe
 
 from upande_scp.serverscripts.common.cache_utils import K_AFP_WAREHOUSES, invalidate
 from upande_scp.serverscripts.scouting import capture_settings
+from upande_scp.serverscripts.common import crew_availability
 from upande_scp.serverscripts.common.crop_protection import (
     chemical_groups,
     foliar_groups,
@@ -111,6 +112,10 @@ def get_settings_bundle() -> dict:
             "spray_cutoff_time": str(settings.spray_cutoff_time or "10:00:00"),
             "postponement_max_days": settings.postponement_max_days or 7,
             "postponement_grace_minutes": int(settings.postponement_grace_minutes or 0),
+            # Crew availability. Blank reads back as Warn — the same default
+            # crew_availability.normalise_mode applies when enforcing.
+            "crew_leave_check": crew_availability.normalise_mode(settings.get("crew_leave_check")),
+            "crew_require_checkin": int(settings.get("crew_require_checkin") or 0),
             "loaning_enabled": int(settings.loaning_enabled or 0),
             "loaning_depletion_pct": settings.loaning_depletion_pct or 15,
             "loaning_timeout_hours": settings.loaning_timeout_hours or 72,
@@ -181,6 +186,8 @@ def save_spray_plan_settings(payload) -> dict:
         "spray_cutoff_time",
         "postponement_max_days",
         "postponement_grace_minutes",
+        "crew_leave_check",
+        "crew_require_checkin",
         "loaning_enabled",
         "loaning_depletion_pct",
         "loaning_timeout_hours",
@@ -207,6 +214,10 @@ def save_spray_plan_settings(payload) -> dict:
         if f in payload:
             payload[f] = 1 if frappe.utils.cint(payload[f]) else 0
     settings.flags.capture_explicit = {f for f in capture_settings.FIELDS if f in payload}
+    if "crew_leave_check" in payload:
+        payload["crew_leave_check"] = crew_availability.normalise_mode(payload["crew_leave_check"])
+    if "crew_require_checkin" in payload:
+        payload["crew_require_checkin"] = 1 if frappe.utils.cint(payload["crew_require_checkin"]) else 0
     for f in scalar_fields:
         if f in payload:
             settings.set(f, payload[f])

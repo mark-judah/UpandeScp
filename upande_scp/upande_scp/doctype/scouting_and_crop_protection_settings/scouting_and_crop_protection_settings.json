@@ -57,6 +57,10 @@
   "postponement_max_days",
   "cb_postponement",
   "postponement_grace_minutes",
+  "crew_availability_section",
+  "crew_leave_check",
+  "cb_crew_availability",
+  "crew_require_checkin",
   "loaning_section",
   "loaning_enabled",
   "loaning_depletion_pct",
@@ -431,6 +435,30 @@
    "label": "Grace after cutoff (minutes)"
   },
   {
+   "fieldname": "crew_availability_section",
+   "fieldtype": "Section Break",
+   "label": "Crew availability"
+  },
+  {
+   "default": "Warn",
+   "description": "Checks the confirmed spray crew against approved Leave Applications on the spray date. Off: no check. Warn: the crew is saved, the plan gets a comment and the supervisor is warned. Block: a member on approved leave cannot be confirmed. Offline syncs and planning only ever warn.",
+   "fieldname": "crew_leave_check",
+   "fieldtype": "Select",
+   "label": "Crew leave check",
+   "options": "Off\nWarn\nBlock"
+  },
+  {
+   "fieldname": "cb_crew_availability",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "When ON, a crew member must also have an IN check-in (Employee Checkin) on the spray date to be confirmable. Follows the leave check mode above.",
+   "fieldname": "crew_require_checkin",
+   "fieldtype": "Check",
+   "label": "Require a check-in on the spray date"
+  },
+  {
    "fieldname": "loaning_section",
    "fieldtype": "Section Break",
    "label": "Farm-to-Farm Chemical Loaning"
@@ -672,7 +700,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-10 20:00:00.000000",
+ "modified": "2026-10-11 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting and Crop Protection Settings",

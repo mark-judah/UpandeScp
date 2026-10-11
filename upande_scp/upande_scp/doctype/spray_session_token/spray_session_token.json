@@ -18,6 +18,7 @@
   "ended_at",
   "device_skew_seconds",
   "past_cutoff",
+  "crew_warnings",
   "sec_scans",
   "scans",
   "sec_result",
@@ -115,6 +116,13 @@
    "read_only": 1
   },
   {
+   "description": "Crew members who were on leave (or not clocked in) on the spray date. Recorded, never refused: the spray already happened.",
+   "fieldname": "crew_warnings",
+   "fieldtype": "Small Text",
+   "label": "Crew warnings",
+   "read_only": 1
+  },
+  {
    "fieldname": "sec_scans",
    "fieldtype": "Section Break",
    "label": "Scanned Chemicals"
@@ -178,7 +186,7 @@
  "index_web_pages_for_search": 0,
  "istable": 0,
  "links": [],
- "modified": "2026-08-17 00:00:00.000000",
+ "modified": "2026-10-11 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Spray Session Token",

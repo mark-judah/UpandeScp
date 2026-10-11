@@ -22,7 +22,7 @@ import json
 from typing import Any
 
 import frappe
-from frappe.utils import flt, get_datetime, now_datetime, today
+from frappe.utils import flt, get_datetime, getdate, now_datetime, today
 
 from upande_scp.serverscripts.common.timezone import to_site_naive
 from upande_scp.serverscripts.spray_plan_ops.spray_plan_approval import (
@@ -1237,6 +1237,16 @@ def start_spray_session(
 
         postponement.assert_within_cutoff(work_order)
 
+    # Crew availability on the spray date — the day it is being started, or for a
+    # replay the day it was. A replay never refuses (the spray happened); it records.
+    crew_day = get_datetime(started_at).date() if started_at else getdate(today())
+    crew_check = _check_crew(
+        wo.name,
+        [getattr(r, "employee", None) for r in (wo.custom_spray_plan_team_members or [])],
+        crew_day,
+        can_block=enforce_cutoff,
+    )
+
     sal_name = wo.custom_spray_application_logsheet
     if not sal_name:
         frappe.throw(
@@ -1297,6 +1307,7 @@ def start_spray_session(
         "sprayer_movement_session": sms.name,
         "sal": sal_name,
         "started_at": now.isoformat(),
+        "crew_warnings": crew_check["messages"],
     }
 
 
@@ -1349,8 +1360,64 @@ def _team_applicators(wo) -> list[dict[str, Any]]:
     return out
 
 
+def _check_crew(work_order: str, employees, on_date, can_block: bool = True) -> dict:
+    """Run the crew leave check for one plan and act on it.
+
+    Block mode (and ``can_block``) refuses with the names and reasons. Otherwise the
+    warnings go on the Work Order as comments — once each — and back to the caller.
+    """
+    from upande_scp.serverscripts.common import crew_availability as CA
+
+    result = CA.check_crew([e for e in employees if e], on_date, can_block=can_block)
+    if result["blocked"]:
+        frappe.throw(CA.refusal_message(result["blocked"], on_date), title="Crew not available")
+    if result["messages"]:
+        CA.comment_on_work_order(work_order, result["messages"])
+    return result
+
+
 @frappe.whitelist()
-def update_work_order_team(work_order: str = None, team=None) -> dict[str, Any]:
+def get_crew_availability(work_order: str = None, employees=None, on_date=None) -> dict[str, Any]:
+    """Who on a crew is on leave / leave pending / not clocked in, for a date.
+
+    For the badges shown before a crew is confirmed. ``employees`` defaults to the
+    plan's crew and ``on_date`` to its planned start date (today when neither is given).
+    Read-only: never refuses, never comments.
+    """
+    from upande_scp.serverscripts.common import crew_availability as CA
+
+    if isinstance(employees, str):
+        employees = json.loads(employees or "[]") if employees.strip().startswith("[") else [employees]
+    employees = [str(e).strip() for e in (employees or []) if e]
+    if work_order:
+        if not frappe.has_permission("Work Order", "read", work_order):
+            frappe.throw(f"Not permitted to read {work_order}.", frappe.PermissionError)
+        if not employees:
+            employees = frappe.get_all(
+                "Custom Spray Plan Team Member",
+                filters={"parent": work_order, "parenttype": "Work Order",
+                         "parentfield": "custom_spray_plan_team_members"},
+                pluck="employee",
+                order_by="idx asc",
+            )
+        if not on_date:
+            planned = frappe.db.get_value("Work Order", work_order, "planned_start_date")
+            on_date = getdate(planned) if planned else None
+    day = getdate(on_date) if on_date else getdate(today())
+    cfg = CA.settings()
+    avail = CA.availability(employees, day, cfg["require_checkin"]) if cfg["mode"] != CA.OFF else {}
+    return {
+        "mode": cfg["mode"],
+        "require_checkin": cfg["require_checkin"],
+        "on_date": str(day),
+        "members": avail,
+    }
+
+
+@frappe.whitelist()
+def update_work_order_team(
+    work_order: str = None, team=None, enforce_leave: bool = True
+) -> dict[str, Any]:
     """Record who is spraying, just before the spray starts.
 
     Reached at the bare path ``/api/method/update_work_order_team``, which had no
@@ -1407,6 +1474,19 @@ def update_work_order_team(work_order: str = None, team=None) -> dict[str, Any]:
     if not rows:
         frappe.throw("A spray team needs at least one member with an employee.")
 
+    # Crew availability on the plan date, before anything is written: Block refuses,
+    # Warn saves and comments. ``enforce_leave=False`` is the offline replay — the spray
+    # already happened, so it is recorded rather than refused.
+    if isinstance(enforce_leave, str):
+        enforce_leave = enforce_leave.strip().lower() not in ("0", "false", "no", "")
+    planned = frappe.db.get_value("Work Order", work_order, "planned_start_date")
+    crew_check = _check_crew(
+        work_order,
+        [r["employee"] for r in rows],
+        getdate(planned) if planned else getdate(today()),
+        can_block=bool(enforce_leave),
+    )
+
     frappe.db.delete(
         "Custom Spray Plan Team Member",
         {
@@ -1440,7 +1520,12 @@ def update_work_order_team(work_order: str = None, team=None) -> dict[str, Any]:
         update_modified=False,
     )
 
-    return {"success": True, "work_order": work_order, "members": len(rows)}
+    return {
+        "success": True,
+        "work_order": work_order,
+        "members": len(rows),
+        "crew_warnings": crew_check["messages"],
+    }
 
 
 @frappe.whitelist()

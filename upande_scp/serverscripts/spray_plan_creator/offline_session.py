@@ -377,12 +377,20 @@ def sync_spray_session(payload) -> dict:
 			# enforcing it here would silently discard the only record of real work. The
 			# session is flagged `past_cutoff` on the token instead, so it is visible and
 			# reportable rather than lost.
-			SS.start_spray_session(
+			#
+			# The crew leave check follows the same reasoning: it never refuses here. A
+			# crew member who was on leave is recorded on the plan (comment) and on the
+			# token, so it is visible rather than a reason to lose the session.
+			team = payload.get("team")
+			if isinstance(team, list) and team:
+				SS.update_work_order_team(work_order, team, enforce_leave=False)
+			started = SS.start_spray_session(
 				work_order,
 				started_at=moments["started_at"],
 				enforce_cutoff=False,
 				employee=payload.get("employee") or _supervisor_of(work_order),
 			)
+			produced["crew_warnings"] = (started or {}).get("crew_warnings") or []
 
 		# 3. end — submits the logsheet and fires the Material Issue at the spray's own
 		#    moment, which is the entry that decides the costing month.
@@ -584,6 +592,7 @@ def _stamp_result(token: str, work_order: str, produced: dict) -> None:
 		"synced_at": now_datetime(),
 		"synced_by": frappe.session.user,
 		"refusal": None,
+		"crew_warnings": "\n".join(produced.get("crew_warnings") or []) or None,
 	}, update_modified=True)
 
 
@@ -592,7 +601,7 @@ def _result(token: str, already: bool = False) -> dict:
 		TOKEN, token,
 		["token", "work_order", "status", "mix_at", "started_at", "ended_at",
 		 "manufacture_stock_entry", "issue_stock_entry", "logsheet", "past_cutoff",
-		 "device_skew_seconds", "refusal"],
+		 "device_skew_seconds", "refusal", "crew_warnings"],
 		as_dict=True,
 	) or {}
 	row["already_synced"] = already

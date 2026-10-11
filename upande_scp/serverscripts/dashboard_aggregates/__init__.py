@@ -119,6 +119,23 @@ def trends(**kwargs):
 
 @frappe.whitelist()
 def quality(**kwargs):
+    """Coverage report: names scouts and their flags, so it is gated like the
+    Scouts page — role first, then the user's own farms (and a named
+    greenhouse must sit on one of them). The cache key is built from these
+    already-checked filters, so one user's payload is never widened for another."""
+    from upande_scp.serverscripts.scouting import scouting_metrics
+    from upande_scp.serverscripts.scouts import api as scouts_api
+
+    scouts_api._assert_role()
+    crop = crop_catalog.resolve_crop(kwargs.get("crop")) if kwargs.get("crop") else None
+    farms_map = scouting_metrics.get_farms_and_warehouses() or {}
+    fs = scouts_api.farm_scope(crop, kwargs.get("farm"), farms_map)
+    kwargs["farm"] = fs["farm"]
+    greenhouse = (kwargs.get("greenhouse") or "").strip()
+    if greenhouse:
+        allowed = {w for f in fs["farms"] for w in (farms_map.get(f) or [])}
+        if greenhouse not in allowed:
+            frappe.throw(f"You cannot see greenhouse {greenhouse}.", frappe.PermissionError)
     return _call(_quality, **kwargs)
 
 

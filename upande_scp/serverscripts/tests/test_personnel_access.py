@@ -142,3 +142,36 @@ class TestScoutsScope(_Base):
 	def test_default_range_is_the_last_four_complete_weeks(self):
 		self.assertEqual(scouts_api.default_range("2026-10-11"), ("2026-09-07", "2026-10-04"))  # a Sunday
 		self.assertEqual(scouts_api.default_range("2026-10-12"), ("2026-09-14", "2026-10-11"))  # a Monday
+
+
+class TestCoverageGate(_Base):
+	"""The Coverage report's ``quality`` endpoint is gated like the Scouts page."""
+
+	def setUp(self):
+		super().setUp()
+		from upande_scp.serverscripts import dashboard_aggregates as da
+
+		self.da, self.asked = da, []
+		self.q = patch.object(da, "_quality", side_effect=lambda args, force=False: self.asked.append(args) or {})
+		self.map = patch.object(scouts_api.scouting_metrics, "get_farms_and_warehouses",
+		                        return_value={MINE: ["GH-A"], OTHER: ["GH-B"]})
+
+	def test_other_roles_are_refused(self):
+		_user(NOBODY, "SCP Spray Supervisor")
+		self.as_user(NOBODY)
+		with self.q, self.map, self.assertRaises(frappe.PermissionError):
+			self.da.quality(crop="Rose")
+		self.assertEqual(self.asked, [])
+
+	def test_scouting_user_is_held_to_their_farms_and_greenhouses(self):
+		_user(SCOUTING, "SCP Scouting User")
+		self.as_user(SCOUTING)
+		with self.q, self.map, patch.object(crop_scope, "allowed_farms", return_value={MINE}):
+			self.da.quality(crop="Rose")
+			self.assertEqual(self.asked[-1]["farm"], MINE)
+			with self.assertRaises(frappe.PermissionError):
+				self.da.quality(crop="Rose", farm=OTHER)
+			with self.assertRaises(frappe.PermissionError):
+				self.da.quality(crop="Rose", greenhouse="GH-B")
+			self.da.quality(crop="Rose", greenhouse="GH-A")
+			self.assertEqual(self.asked[-1]["greenhouse"], "GH-A")

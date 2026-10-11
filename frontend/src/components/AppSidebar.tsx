@@ -5,6 +5,7 @@ import {
   Beaker,
   Bell,
   CalendarClock,
+  CalendarDays,
   CheckSquare,
   Coins,
   ClipboardList,
@@ -211,6 +212,22 @@ const ROSE_NAV: NavSection[] = [
         view: "application-plan",
         label: "Application Plan",
         icon: ClipboardList,
+      },
+      {
+        // Plans, crews and crew leave as a calendar or a Gantt. Same roles the
+        // server's schedule.SCHEDULE_ROLES admits.
+        kind: "view",
+        view: "schedule",
+        label: "Schedule",
+        icon: CalendarDays,
+        requireRoles: [
+          "SCP Spray Plan Creator",
+          "SCP Spray Plan Approver",
+          "SCP Spray Supervisor",
+          "SCP General Manager",
+          "System Manager",
+          "Administrator",
+        ],
       },
       {
         kind: "view",

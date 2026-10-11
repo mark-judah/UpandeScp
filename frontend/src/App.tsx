@@ -120,6 +120,9 @@ const Procurement = lazy(() =>
 const Postponements = lazy(() =>
   import("@/pages/Postponements").then((m) => ({ default: m.Postponements })),
 );
+const Schedule = lazy(() =>
+  import("@/pages/Schedule").then((m) => ({ default: m.Schedule })),
+);
 const ChemicalLoaning = lazy(() =>
   import("@/pages/ChemicalLoaning").then((m) => ({
     default: m.ChemicalLoaning,
@@ -180,6 +183,7 @@ const PREFETCH: Array<() => Promise<unknown>> = [
   () => import("@/pages/ChemicalLoaning"),
   () => import("@/pages/Procurement"),
   () => import("@/pages/Postponements"),
+  () => import("@/pages/Schedule"),
   () => import("@/pages/Finance"),
   () => import("@/pages/Teams"),
   () => import("@/pages/Sprayers"),
@@ -302,6 +306,8 @@ function renderView(crop: string, view: View): ReactNode {
       return <Procurement />;
     case "postponements":
       return <Postponements />;
+    case "schedule":
+      return <Schedule initialCrop={cropName} />;
     case "finances":
       // Crop-scoped: the route crop limits the farms the report reads.
       return <Finance initialCrop={cropName} />;

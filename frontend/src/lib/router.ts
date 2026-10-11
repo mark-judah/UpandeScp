@@ -38,6 +38,7 @@ export type View =
   | "chemical-loaning"
   | "procurement"
   | "postponements"
+  | "schedule"
   | "notifications"
   | "finances"
   | "coverage"
@@ -49,6 +50,7 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "notifications",
   "procurement",
   "postponements",
+  "schedule",
   "dashboard",
   "trends",
   "observations",

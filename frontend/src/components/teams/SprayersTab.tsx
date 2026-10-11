@@ -194,7 +194,19 @@ function SprayerDetailDialog({
   );
 }
 
-export function SprayersTab({ data, crop }: { data: SprayersPayload; crop: string }) {
+export function SprayersTab({
+  data,
+  crop,
+  onSelect,
+  showFlags = true,
+}: {
+  data: SprayersPayload;
+  crop: string;
+  /** false when the page already shows the register's flag counts */
+  showFlags?: boolean;
+  /** When given, a row opens this sprayer's record instead of the exposure dialog. */
+  onSelect?: (sprayer: SprayerRow) => void;
+}) {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "weighted_30d", dir: -1 });
   const [open, setOpen] = useState<SprayerRow | null>(null);
@@ -231,13 +243,13 @@ export function SprayersTab({ data, crop }: { data: SprayersPayload; crop: strin
           <span>
             <span className="font-medium tabular-nums text-foreground">{rows.length}</span> sprayers
           </span>
-          {flags.no_duration > 0 && (
+          {showFlags && flags.no_duration > 0 && (
             <span className="flex items-center gap-1" title="Logsheets with no start/stop time: counted as 0 h">
               <TriangleAlert className="h-3.5 w-3.5 text-amber-600" />
               <span className="tabular-nums">{flags.no_duration}</span> rows with no duration
             </span>
           )}
-          {flags.hazard_unknown > 0 && (
+          {showFlags && flags.hazard_unknown > 0 && (
             <span
               className="flex items-center gap-1"
               title="Products with no toxicity class on their Spray Product: weighted 2 until classified"
@@ -277,7 +289,7 @@ export function SprayersTab({ data, crop }: { data: SprayersPayload; crop: strin
                 <TableRow
                   key={r.name}
                   className="cursor-pointer"
-                  onClick={() => setOpen(r)}
+                  onClick={() => (onSelect ? onSelect(r) : setOpen(r))}
                   data-testid={`sprayer-${r.name}`}
                 >
                   <TableCell className="font-mono text-xs">{r.name}</TableCell>

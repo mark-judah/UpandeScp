@@ -28,7 +28,7 @@ import type {
 } from "./quality-types";
 
 /** Pill text and colour per flag kind — the accent lives in the pill, never a strip. */
-const KIND: Record<FlagKind, { label: string; color: string }> = {
+export const KIND: Record<FlagKind, { label: string; color: string }> = {
   map_offset:    { label: "Map offset?",    color: "var(--sd-data-purple)" },
   not_scouted_recently: { label: "Not scouted recently", color: "var(--sd-data-pink)" },
   thin_coverage: { label: "Thin coverage",  color: "var(--sd-target)" },

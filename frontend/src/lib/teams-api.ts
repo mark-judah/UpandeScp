@@ -1,8 +1,8 @@
 /**
- * Teams & KPIs page endpoints.
+ * Personnel ▸ Teams and Sprayers endpoints.
  * Backend: upande_scp.serverscripts.sprayers.api
- * GM / System Manager act on their visible farms; an SCP Spray Supervisor on
- * the farms they are rostered on. Enforced server-side.
+ * GM / System Manager act on their visible farms; an SCP Spray Supervisor or
+ * SCP Spray Plan Creator on the farms they are rostered on. Enforced server-side.
  */
 import { call } from "./frappe";
 
@@ -50,6 +50,8 @@ export interface SprayerRow {
   role: string;
   status: "Active" | "Inactive";
   designation?: string | null;
+  /** Employee.image — a Frappe file URL, empty when none is on file. */
+  image?: string | null;
   hours_30d: number;
   weighted_30d: number;
   hours_total: number;
@@ -90,6 +92,9 @@ export interface ExposureSession {
   hours: number;
   weighted_hours: number;
   products: string;
+  /** distinct WHO classes of the session's products, "II, III" */
+  toxicity?: string | null;
+  hazard_weight?: number | null;
   flags: string | null;
 }
 

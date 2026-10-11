@@ -62,26 +62,21 @@ vi.mock("@/lib/teams-api", async (importOriginal) => ({
   saveSprayTeam: (...a: unknown[]) => saveMock(...(a as [string, { members?: { employee: string; role: string }[] }])),
 }));
 
-vi.mock("@/components/teams/ScoutingKpisTab", () => ({
-  ScoutingKpisTab: ({ active }: { active: boolean }) => <div>kpis {active ? "on" : "off"}</div>,
-}));
-
 const { Teams } = await import("@/pages/Teams");
+const { Sprayers } = await import("@/pages/Sprayers");
 
-describe("Teams & KPIs page", () => {
+describe("Personnel ▸ Teams and Sprayers", () => {
   beforeEach(() => {
     saveMock.mockClear();
     searchMock.mockClear();
     detailMock.mockClear();
   });
 
-  it("has the three tabs and opens on spray teams", async () => {
+  it("Teams is the spray team page only", async () => {
     render(<Teams initialCrop="Rose" />);
-    expect(screen.getByRole("tab", { name: "Scouting KPIs" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Sprayers" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Teams" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("Alice Chebet")).toBeInTheDocument());
-    await userEvent.click(screen.getByRole("tab", { name: "Scouting KPIs" }));
-    expect(screen.getByText("kpis on")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Scouting KPIs" })).toBeNull();
   });
 
   it("edits a team: remove one, add one, save sends the new roster", async () => {
@@ -107,9 +102,9 @@ describe("Teams & KPIs page", () => {
     ]);
   });
 
-  it("lists the register sorted by weighted 30d, sortable, searchable, with flag counts", async () => {
-    render(<Teams initialCrop="Rose" />);
-    await userEvent.click(screen.getByRole("tab", { name: "Sprayers" }));
+  it("All sprayers: the register sorted by weighted 30d, sortable, searchable, with flag counts", async () => {
+    render(<Sprayers initialCrop="Rose" />);
+    await userEvent.click(await screen.findByRole("tab", { name: "All sprayers" }));
     const table = await screen.findByRole("table", { name: "Sprayers" });
     let rows = within(table).getAllByRole("row").slice(1);
     expect(within(rows[0]).getByText("SPR-00001")).toBeInTheDocument();
@@ -126,16 +121,39 @@ describe("Teams & KPIs page", () => {
     expect(rows).toHaveLength(1);
   });
 
-  it("opens a sprayer's exposure per product and latest sessions", async () => {
-    render(<Teams initialCrop="Rose" />);
-    await userEvent.click(screen.getByRole("tab", { name: "Sprayers" }));
-    await userEvent.click(await screen.findByTestId("sprayer-SPR-00001"));
+  it("Records: list beside a portrait record with exposure per product and recent sprays", async () => {
+    render(<Sprayers initialCrop="Rose" />);
+    const record = await screen.findByTestId("sprayer-record");
+    // opens on the top of the list (highest weighted 30d)
+    expect(within(record).getAllByText("Alice Chebet").length).toBeGreaterThan(0);
     await waitFor(() => expect(detailMock).toHaveBeenCalledWith("SPR-00001", "Rose"));
     const products = await screen.findByRole("table", { name: "Exposure per product" });
     expect(within(products).getByText("IMPULSE EC500")).toBeInTheDocument();
     expect(within(products).getByText("Class II")).toBeInTheDocument();
     expect(within(products).getByText("Unknown")).toBeInTheDocument();
-    const sessions = screen.getByRole("table", { name: "Latest sessions" });
-    expect(within(sessions).getByText("SAL-2026-0001")).toBeInTheDocument();
+    expect(screen.getByText(/Chepsito GH 01 - KR/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Exposure" })).toBeInTheDocument();
+    // initials stand in for the missing photo
+    expect(screen.getByLabelText("Alice Chebet — no photograph")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("person-SPR-00002"));
+    await waitFor(() => expect(detailMock).toHaveBeenCalledWith("SPR-00002", "Rose"));
+
+    await userEvent.click(screen.getByRole("button", { name: /Compare against the farm/ }));
+    expect(await screen.findByRole("table", { name: "Comparison figures" })).toBeInTheDocument();
+  });
+
+  it("a row of All sprayers opens that person's record", async () => {
+    render(<Sprayers initialCrop="Rose" />);
+    await userEvent.click(await screen.findByRole("tab", { name: "All sprayers" }));
+    await userEvent.click(await screen.findByTestId("sprayer-SPR-00002"));
+    const record = await screen.findByTestId("sprayer-record");
+    expect(within(record).getAllByText("Bob Kiprop").length).toBeGreaterThan(0);
+  });
+
+  it("draws no left-border accent strips", async () => {
+    const { container } = render(<Sprayers initialCrop="Rose" />);
+    await screen.findByTestId("sprayer-record");
+    expect(container.innerHTML).not.toMatch(/border-l-|border-left/);
   });
 });

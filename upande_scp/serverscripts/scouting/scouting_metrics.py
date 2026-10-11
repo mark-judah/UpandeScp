@@ -42,6 +42,10 @@ import frappe
 # producing artificially large totals.
 MOTH_OTHERS = ("Spodoptera", "Duponchella", "Unidentified Moth")
 
+# A disabled Greenhouse/Block warehouse stays a scoutable station while it has
+# Scouting Entries this recent (see get_farms_and_warehouses).
+STILL_SCOUTED_DAYS = 90
+
 
 # ---------------------------------------------------------------------------
 # Inventory lookups
@@ -325,6 +329,43 @@ def get_severity_thresholds():
     return out
 
 
+def _disabled_but_scouted():
+    """Disabled Greenhouse/Block warehouses that still have Scouting Entries in
+    the last ``STILL_SCOUTED_DAYS`` days.
+
+    A station's entries name its warehouse, so a disabled one that keeps
+    receiving entries (a house renamed upstream, or a local warehouse master
+    behind a bulk data pull) would otherwise drop out of every farm picker and
+    farm→greenhouse scope while its data sits in the DB. On kaitet.local
+    "Torongo GH 17/18 - KR" and "Chepsito GH 15 - KR" are disabled yet hold
+    5.4k entries in the two newest ISO weeks, and the picker offered only the
+    enabled "Torongo GH18 - KR", whose data ends in July.
+
+    One indexed EXISTS probe per disabled warehouse (scouting_gh_date_idx /
+    scouting_block_date_idx); disabled stations are a handful.
+    """
+    cutoff = frappe.utils.add_days(frappe.utils.nowdate(), -STILL_SCOUTED_DAYS)
+    out = []
+    for r in frappe.db.sql(
+        """
+        SELECT name, warehouse_type, custom_farm AS farm
+        FROM   `tabWarehouse`
+        WHERE  warehouse_type IN ('Greenhouse', 'Block')
+          AND  disabled = 1
+          AND  is_group = 0
+        """,
+        as_dict=True,
+    ):
+        col = "greenhouse" if r.warehouse_type == "Greenhouse" else "block"
+        if frappe.db.sql(
+            f"SELECT 1 FROM `tabScouting Entry` WHERE `{col}` = %s"
+            " AND date_of_capture >= %s LIMIT 1",
+            (r.name, cutoff),
+        ):
+            out.append(r)
+    return out
+
+
 def get_farms_and_warehouses():
     """Return {farm: [warehouse_name, ...]} including both greenhouses and blocks.
 
@@ -339,6 +380,9 @@ def get_farms_and_warehouses():
     keywords (``tunnel``, ``phase``, ``ipm``, ``wetland``, ``csu``).
     Orphans (no ``custom_farm``) drop out. Block-type warehouses bypass
     the greenhouse filter — orchards don't follow the GH convention.
+
+    Active warehouses only, plus disabled ones still being scouted
+    (``_disabled_but_scouted``).
     """
     from upande_scp.serverscripts.geo.warehouse_filter import (
         is_greenhouse_allowed,
@@ -356,6 +400,8 @@ def get_farms_and_warehouses():
         """,
         as_dict=True,
     )
+    rows += _disabled_but_scouted()
+    rows.sort(key=lambda r: (r.farm or "", r.name))
     allowed, exclude = load_settings()
     allowed_lower = tuple(f.lower() for f in allowed)
     grouped = defaultdict(list)

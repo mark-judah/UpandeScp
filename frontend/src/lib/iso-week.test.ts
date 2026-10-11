@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { weekLabelTickFormatter, weekTickFormatter } from "./iso-week";
+import { recentWeeksRange, weekLabelTickFormatter, weekTickFormatter } from "./iso-week";
 
 describe("weekLabelTickFormatter", () => {
   it("renders an ISO week label as Week N", () => {
@@ -24,5 +24,20 @@ describe("weekLabelTickFormatter", () => {
     // dashboard charts still pass YYYY-MM-DD to weekTickFormatter.
     expect(weekTickFormatter("2026-W29")).toBe("");
     expect(weekLabelTickFormatter("2026-07-13")).toBe("");
+  });
+});
+
+describe("recentWeeksRange", () => {
+  it("covers the two newest whole ISO weeks on a Sunday (2026-10-11 → W40+W41)", () => {
+    expect(recentWeeksRange(new Date(2026, 9, 11))).toEqual({ from: "2026-09-28", to: "2026-10-11" });
+  });
+
+  it("starts at the previous Monday on a Monday", () => {
+    expect(recentWeeksRange(new Date(2026, 9, 12))).toEqual({ from: "2026-10-05", to: "2026-10-12" });
+  });
+
+  it("crosses a month/year boundary", () => {
+    // Fri 2027-01-01 is in ISO 2026-W53; previous week starts Mon 2026-12-21.
+    expect(recentWeeksRange(new Date(2027, 0, 1))).toEqual({ from: "2026-12-21", to: "2027-01-01" });
   });
 });

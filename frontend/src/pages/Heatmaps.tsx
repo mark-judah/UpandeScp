@@ -55,6 +55,7 @@ import {
 import { useCropFarms } from "@/hooks/use-crop-farms";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
 import { ymd } from "@/lib/utils";
+import { recentWeeksRange } from "@/lib/iso-week";
 import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { MarkerDefs, type MarkerKind } from "./maps/MarkerDefs";
 import {
@@ -118,13 +119,10 @@ function ghOf(zoneName: string): string {
 }
 
 function defaultRange(): { from: string; to: string } {
-  // Previous one week. Even though the page won't fetch until the
-  // operator picks a farm or greenhouse, having a sensible range
-  // pre-filled means the first pick lands a meaningful result.
-  const today = new Date();
-  const from = new Date(today);
-  from.setDate(today.getDate() - 7);
-  return { from: ymd(from), to: ymd(today) };
+  // The previous and current ISO weeks, whole. Even though the page won't
+  // fetch until the operator picks a farm or greenhouse, having a sensible
+  // range pre-filled means the first pick lands a meaningful result.
+  return recentWeeksRange();
 }
 
 type CardRecent = {

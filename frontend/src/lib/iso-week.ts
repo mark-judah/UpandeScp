@@ -53,3 +53,18 @@ export function weekLabelTickFormatter(value: string, refYear?: number): string 
     ? `W${week} '${String(year).slice(2)}`
     : `Week ${week}`;
 }
+
+/** Default "recent" range for week-bucketed pages: Monday of the PREVIOUS ISO
+ *  week through ``today``, so the newest two ISO weeks are always whole.
+ *
+ *  ``today - 7`` (the old Heatmaps default) lands on a Sunday when today is a
+ *  Sunday, so the previous week contributed one unscouted day and the page's
+ *  "last scouted weeks" history showed it empty. Local dates throughout —
+ *  scouting dates are farm-local calendar days. */
+export function recentWeeksRange(today: Date = new Date()): { from: string; to: string } {
+  const day = today.getDay() || 7; // Sunday → 7, Monday → 1
+  const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (day - 1) - 7);
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return { from: fmt(from), to: fmt(today) };
+}

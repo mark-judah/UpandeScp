@@ -22,6 +22,8 @@ export interface TeamMember {
   designation?: string | null;
   status?: string | null;
   role: TeamRole;
+  /** Employee.image — a Frappe file URL, empty when none is on file. */
+  image?: string | null;
   /** the member's Sprayer ID, once the register has them */
   sprayer?: string | null;
 }
@@ -39,6 +41,7 @@ export interface EmployeeHit {
   employee_name: string;
   designation?: string | null;
   company?: string | null;
+  image?: string | null;
 }
 
 export interface SprayerRow {

@@ -85,6 +85,26 @@ class TestCreatorTeams(_Base):
 			self.assertEqual(api.get_context()["farms"], [MINE])
 			api.get_sprayers()  # the register opens, scoped the same way
 
+	def test_creator_cannot_add_a_member_from_another_company(self):
+		"""Edit-team-from-plan (E5): the same endpoint refuses an outsider."""
+		_user(CREATOR, "SCP Spray Plan Creator")
+		_roster(MINE, CREATOR)
+		company = frappe.db.get_value("Farm", MINE, "company")
+		outsider = frappe.db.get_value(
+			"Employee", {"status": "Active", "company": ["not in", [company or ""]]}, "name"
+		)
+		if not company or not outsider:
+			self.skipTest("needs a farm company and an active employee of another company")
+		mine = _team("_TEST PSN MINE", MINE)
+		self.as_user(CREATOR)
+		with self.scope:
+			with self.assertRaises(frappe.ValidationError) as cm:
+				api.save_spray_team(mine.name, members=[{"employee": outsider, "role": "Sprayer"}])
+			self.assertNotIsInstance(cm.exception, frappe.PermissionError)
+			self.assertIn("is not in", str(cm.exception))
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.get_doc("Spray Team", mine.name).team, [])
+
 	def test_unrostered_creator_sees_no_team(self):
 		_user(CREATOR, "SCP Spray Plan Creator")
 		_team("_TEST PSN OTHER", OTHER)

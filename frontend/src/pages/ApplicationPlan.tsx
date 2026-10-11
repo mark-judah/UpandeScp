@@ -2094,6 +2094,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                   onTeamChange={setSprayTeam}
                   members={teamMembers}
                   onMembersChange={setTeamMembers}
+                  crop={initialCrop}
                 />
               </div>
 

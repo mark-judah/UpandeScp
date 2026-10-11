@@ -76,7 +76,7 @@ def _members(team_names):
 	rows = frappe.db.sql(
 		"""SELECT d.parent AS team, d.name1 AS employee, d.role,
 		          COALESCE(e.employee_name, d.name1) AS employee_name,
-		          e.designation, e.status, s.name AS sprayer
+		          e.designation, e.status, e.image, s.name AS sprayer
 		     FROM `tabSpray Team Details` d
 		     LEFT JOIN `tabEmployee` e ON e.name = d.name1
 		     LEFT JOIN `tabSprayer` s ON s.employee = d.name1
@@ -130,7 +130,7 @@ def search_employees(farm=None, txt="", crop=None):
 		"Employee",
 		filters=filters,
 		or_filters=or_filters,
-		fields=["name as employee", "employee_name", "designation", "company"],
+		fields=["name as employee", "employee_name", "designation", "company", "image"],
 		order_by="employee_name",
 		limit_page_length=20,
 	)

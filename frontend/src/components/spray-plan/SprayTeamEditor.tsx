@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Plus, Search, Trash2, Users, X } from "lucide-react";
+import { Loader2, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,6 +41,8 @@ import {
   type CreatorSprayTeam,
   type EmployeeSearchHit,
 } from "@/lib/spray-plan-creator-api";
+import { fetchSprayTeams, type SprayTeam } from "@/lib/teams-api";
+import { EditTeamDialog } from "@/components/teams/EditTeamDialog";
 
 /** Row shape held in component state. Mirrors `Custom Spray Plan Team Member`
  *  plus a display name we pre-resolved client-side. */
@@ -60,6 +62,28 @@ interface Props {
   onTeamChange: (next: string) => void;
   members: TeamMemberRow[];
   onMembersChange: (next: TeamMemberRow[]) => void;
+  /** crop the plan is for — scopes which master teams the user may edit */
+  crop?: string;
+}
+
+/** Same people with the same roles, in any order. "Not customised" (E3). */
+export function rosterMatches(
+  plan: { employee: string; role?: string | null }[],
+  master: { employee: string; role?: string | null }[],
+): boolean {
+  if (plan.length !== master.length) return false;
+  const key = (m: { employee: string; role?: string | null }) => `${m.employee}\u0000${m.role || ""}`;
+  const want = new Set(master.map(key));
+  return plan.every((m) => want.has(key(m)));
+}
+
+function rowsOf(team: { members: CreatorSprayTeam["members"] | SprayTeam["members"] }): TeamMemberRow[] {
+  return (team.members || []).map((m) => ({
+    employee: m.employee,
+    employee_name: m.employee_name || m.employee,
+    designation: m.designation,
+    role: m.role || "",
+  }));
 }
 
 /** Build "GK" from "GLADYS JEPKOECH KOSGEI" — used in the avatar circle. */
@@ -83,8 +107,40 @@ export function SprayTeamEditor({
   onTeamChange,
   members,
   onMembersChange,
+  crop,
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Master teams this user may edit — the server decides (E5); a refusal
+  // means no "Edit team" button at all.
+  const [manageable, setManageable] = useState<Record<string, SprayTeam>>({});
+  const [editOpen, setEditOpen] = useState(false);
+  /** a team saved while this plan kept its own roster (E3) */
+  const [updated, setUpdated] = useState<SprayTeam | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetchSprayTeams(crop)
+      .then((rows) => alive && setManageable(Object.fromEntries((rows || []).map((t) => [t.name, t]))))
+      .catch(() => alive && setManageable({}));
+    return () => {
+      alive = false;
+    };
+  }, [crop]);
+
+  const canEditAny = Object.keys(manageable).length > 0;
+  const editable = team ? manageable[team] || null : null;
+  const showEdit = canEditAny && (!team || !!editable);
+
+  const onTeamSaved = (saved: SprayTeam, before: SprayTeam) => {
+    setManageable((m) => ({ ...m, [saved.name]: saved }));
+    if (team !== saved.name) return;
+    if (rosterMatches(members, before.members)) {
+      onMembersChange(rowsOf(saved));
+      setUpdated(null);
+    } else {
+      setUpdated(saved);
+    }
+  };
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<EmployeeSearchHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -113,15 +169,12 @@ export function SprayTeamEditor({
   // the master team without losing customizations.
   const onPickTeam = (next: string) => {
     onTeamChange(next);
+    setUpdated(null);
     if (!next) return;
-    const t = teams.find((x) => x.name === next);
-    const seeded: TeamMemberRow[] = (t?.members || []).map((m) => ({
-      employee: m.employee,
-      employee_name: m.employee_name || m.employee,
-      designation: m.designation,
-      role: m.role || "",
-    }));
-    onMembersChange(seeded);
+    // A team saved from this page seeds from what was saved, not the
+    // (older) list the page loaded with.
+    const t = manageable[next] || teams.find((x) => x.name === next);
+    onMembersChange(t ? rowsOf(t) : []);
   };
 
   const addEmployee = (hit: EmployeeSearchHit) => {
@@ -175,8 +228,9 @@ export function SprayTeamEditor({
             </button>
           )}
         </Label>
+        <div className="flex items-center gap-2">
         <Select value={team} onValueChange={onPickTeam}>
-          <SelectTrigger className="h-9">
+          <SelectTrigger className="h-9 min-w-0 flex-1">
             <SelectValue placeholder="Pick a team to seed the roster…" />
           </SelectTrigger>
           <SelectContent>
@@ -192,10 +246,60 @@ export function SprayTeamEditor({
             ))}
           </SelectContent>
         </Select>
+        {showEdit && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0 gap-1.5"
+            disabled={!editable}
+            onClick={() => setEditOpen(true)}
+            title={editable ? "Edit this team for all future plans" : "Pick a team to edit it"}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit team
+          </Button>
+        )}
+        </div>
         <p className="text-[0.65rem] text-muted-foreground leading-snug">
           Picking a team copies its members below. Add or remove individuals for
-          this plan — the master team list is left untouched.
+          this plan — the master team list is left untouched. Use Edit team to
+          change the team itself.
         </p>
+        {updated && updated.name === team && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/60 px-3 py-2 text-[0.72rem]"
+          >
+            <span className="text-muted-foreground">
+              {updated.team_name || updated.name} was updated. This plan keeps its own roster.
+            </span>
+            <span className="flex items-center gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 text-[0.7rem]"
+                onClick={() => {
+                  onMembersChange(rowsOf(updated));
+                  setUpdated(null);
+                }}
+              >
+                Use the updated team for this plan
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                aria-label="Dismiss"
+                onClick={() => setUpdated(null)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
@@ -316,6 +420,14 @@ export function SprayTeamEditor({
           </ul>
         )}
       </div>
+
+      <EditTeamDialog
+        team={editable}
+        open={editOpen && !!editable}
+        onOpenChange={setEditOpen}
+        crop={crop}
+        onSaved={onTeamSaved}
+      />
 
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
         <DialogContent className="max-w-lg">

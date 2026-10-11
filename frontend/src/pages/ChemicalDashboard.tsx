@@ -19,6 +19,7 @@ import { ChemicalStoreComparison } from "@/components/ChemicalStoreComparison";
 import { CsuLevels } from "@/components/CsuLevels";
 import { StoreBucketPanel } from "@/components/StoreBucketPanel";
 import { cn } from "@/lib/utils";
+import { KpiValueSkeleton, TableRowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 
 import { errorText } from "@/lib/errors";
 function fmt(n: number): string {
@@ -44,6 +45,10 @@ export function ChemicalDashboard() {
   };
 
   useEffect(load, []);
+
+  // First load only (`loading` is still false on the very first paint). The
+  // panels take this as their `loading`: a reload keeps the figures on screen.
+  const skeleton = firstLoad(loading || (!data && !error), !!data);
 
   const itemNames = useMemo(
     () =>
@@ -81,7 +86,10 @@ export function ChemicalDashboard() {
         </HeaderIconButton>
       </PageHeader>
 
-      <div className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4">
+      <div
+        className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4"
+        aria-busy={loading || undefined}
+      >
         {error && (
           <Card className="border-destructive/40 p-3">
             <CardDescription className="text-destructive">
@@ -93,22 +101,22 @@ export function ChemicalDashboard() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Kpi
             label="Total stock"
-            value={fmt(overallTotals.qty)}
+            value={skeleton ? null : fmt(overallTotals.qty)}
             sublabel="across all warehouses"
           />
           <Kpi
             label="Chemicals"
-            value={String(overallTotals.items)}
+            value={skeleton ? null : String(overallTotals.items)}
             sublabel="distinct items in stock"
           />
           <Kpi
             label="Warehouses"
-            value={String(overallTotals.warehouses)}
+            value={skeleton ? null : String(overallTotals.warehouses)}
             sublabel="holding chemical stock"
           />
           <Kpi
             label="As of"
-            value={data?.as_of ? data.as_of.replace("T", " ") : "—"}
+            value={skeleton ? null : data?.as_of ? data.as_of.replace("T", " ") : "—"}
             sublabel="latest sync"
           />
         </div>
@@ -117,18 +125,18 @@ export function ChemicalDashboard() {
           <StoreBucketPanel
             title="Chemical Stores"
             bucket={data?.buckets?.chemical}
-            loading={loading}
+            loading={skeleton}
             itemNames={itemNames}
           />
           <StoreBucketPanel
             title="Fertilizer Stores"
             bucket={data?.buckets?.fertilizer}
-            loading={loading}
+            loading={skeleton}
             itemNames={itemNames}
           />
         </div>
 
-        <CsuLevels data={data} loading={loading} />
+        <CsuLevels data={data} loading={skeleton} />
 
         <ChemicalStoreComparison />
 
@@ -137,14 +145,14 @@ export function ChemicalDashboard() {
           bucket={data?.buckets?.chemical}
           itemNames={itemNames}
           query={query}
-          loading={loading}
+          loading={skeleton}
         />
         <BucketMatrixTable
           title="Fertilizers by store"
           bucket={data?.buckets?.fertilizer}
           itemNames={itemNames}
           query={query}
-          loading={loading}
+          loading={skeleton}
         />
       </div>
     </div>
@@ -200,8 +208,14 @@ function BucketMatrixTable({
       <CardHeader className="pb-1">
         <CardTitle className="text-base">{title}</CardTitle>
         <CardDescription>
-          {rows.length} item{rows.length === 1 ? "" : "s"} · {stores.length}{" "}
-          store{stores.length === 1 ? "" : "s"}
+          {loading && empty ? (
+            <TextSkeleton width="8rem" />
+          ) : (
+            <>
+              {rows.length} item{rows.length === 1 ? "" : "s"} · {stores.length}{" "}
+              store{stores.length === 1 ? "" : "s"}
+            </>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
@@ -219,6 +233,7 @@ function BucketMatrixTable({
               </tr>
             </thead>
             <tbody>
+              {loading && empty && <TableRowsSkeleton cols={2} rows={6} />}
               {rows.map((i) => (
                 <tr
                   key={i.item_code}
@@ -250,17 +265,13 @@ function BucketMatrixTable({
                   </td>
                 </tr>
               ))}
-              {!rows.length && (
+              {!rows.length && !(loading && empty) && (
                 <tr>
                   <td
                     colSpan={stores.length + 2}
                     className="px-4 py-6 text-center text-xs text-muted-foreground"
                   >
-                    {loading
-                      ? "Loading…"
-                      : empty
-                        ? "No stores in scope."
-                        : "No chemicals match."}
+                    {empty ? "No stores in scope." : "No chemicals match."}
                   </td>
                 </tr>
               )}
@@ -278,7 +289,8 @@ function Kpi({
   sublabel,
 }: {
   label: string;
-  value: string;
+  /** null: not loaded yet — the label stays, the figure pulses */
+  value: string | null;
   sublabel?: string;
 }) {
   return (
@@ -288,7 +300,7 @@ function Kpi({
           {label}
         </div>
         <div className="text-lg font-semibold tabular-nums leading-tight">
-          {value}
+          {value === null ? <KpiValueSkeleton className="h-[1.4rem] w-16" /> : value}
         </div>
         {sublabel ? (
           <div className="text-[0.65rem] text-muted-foreground">

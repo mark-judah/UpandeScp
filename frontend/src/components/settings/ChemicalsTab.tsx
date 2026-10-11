@@ -6,12 +6,12 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import {
   Beaker,
   ChevronLeft,
   ChevronRight,
   Leaf,
-  Loader2,
   Pencil,
   Search,
   Sparkles,
@@ -233,8 +233,8 @@ export function ChemicalsTab() {
               </Label>
             </div>
             <span className="text-xs text-muted-foreground tabular-nums ml-auto">
-              {loading
-                ? "Loading…"
+              {loading && !data
+                ? <TextSkeleton width="14ch" />
                 : data
                   ? `${data.total} matching item${data.total === 1 ? "" : "s"}`
                   : "—"}
@@ -248,17 +248,12 @@ export function ChemicalsTab() {
 
       <Card>
         <CardContent className="p-0">
-          {loading && !data ? (
-            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading chemicals…
-            </div>
-          ) : !data?.items.length ? (
+          {!(loading && !data) && !data?.items.length ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
               No items match.
             </div>
           ) : (
-            <Table>
+            <Table aria-busy={(loading && !data) || undefined}>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-20 text-center">Enabled</TableHead>
@@ -272,7 +267,8 @@ export function ChemicalsTab() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.items.map((r) => (
+                {loading && !data && <TableRowsSkeleton cols={8} rows={8} />}
+                {(data?.items || []).map((r) => (
                   <TableRow
                     key={r.item_code}
                     className={r.enabled ? "" : "opacity-60"}

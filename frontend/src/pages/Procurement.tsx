@@ -19,13 +19,13 @@
  *   and looking correct.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Bar, RowsSkeleton, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import {
   AlertTriangle,
   ArrowRightLeft,
   CheckCircle2,
   ClipboardList,
   FileText,
-  Loader2,
   Lock,
   Plus,
   RefreshCw,
@@ -154,16 +154,28 @@ export function Procurement() {
   const [farms, setFarms] = useState<string[]>([]);
   const [farm, setFarm] = useState<string>("");
   const [newOpen, setNewOpen] = useState(false);
+  // Until the cycles land, "No cycle open" would be a guess: the frame is
+  // drawn and the cycle, eyebrow and tab body pend.
+  const [shellLoaded, setShellLoaded] = useState(false);
+  const [shellError, setShellError] = useState<string | null>(null);
 
   const loadShell = useCallback(async () => {
-    const [cs, mf] = await Promise.all([
-      listCycles(),
-      fetchMyFarms().catch(() => ({ farms: [] as string[], enabled: false })),
-    ]);
-    setCycles(cs);
-    setFarms(mf.farms || []);
-    setCycleId((prev) => prev || cs[0]?.name || "");
-    setFarm((prev) => prev || mf.farms?.[0] || "");
+    setShellError(null);
+    try {
+      const [cs, mf] = await Promise.all([
+        listCycles(),
+        fetchMyFarms().catch(() => ({ farms: [] as string[], enabled: false })),
+      ]);
+      setCycles(cs);
+      setFarms(mf.farms || []);
+      setCycleId((prev) => prev || cs[0]?.name || "");
+      setFarm((prev) => prev || mf.farms?.[0] || "");
+    } catch (e) {
+      // Not "No cycle open": the cycles could not be read at all.
+      setShellError(errText(e));
+    } finally {
+      setShellLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -176,7 +188,15 @@ export function Procurement() {
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <PageHeader
         title="Chemical Procurement"
-        eyebrow={cycle ? `${cycle.cycle_name} · ${cycle.status}` : "No cycle open"}
+        eyebrow={
+          cycle ? (
+            `${cycle.cycle_name} · ${cycle.status}`
+          ) : shellLoaded && !shellError ? (
+            "No cycle open"
+          ) : (
+            <TextSkeleton width="14ch" />
+          )
+        }
         switcher={
           <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
             <TabsList>
@@ -199,7 +219,7 @@ export function Procurement() {
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={cycleId} onValueChange={setCycleId}>
+        <Select value={cycleId} onValueChange={setCycleId} disabled={!shellLoaded}>
           <SelectTrigger className="w-[260px]">
             <SelectValue placeholder="Cycle" />
           </SelectTrigger>
@@ -232,7 +252,11 @@ export function Procurement() {
         )}
       </div>
 
-      {!cycleId ? (
+      {!shellLoaded ? (
+        <TableCardSkeleton heads={TAB_HEADS[tab]} />
+      ) : shellError && !cycleId ? (
+        <LoadFailed message={shellError} onRetry={() => void loadShell()} />
+      ) : !cycleId ? (
         <EmptyState
           icon={ClipboardList}
           title="No cycle open"
@@ -311,6 +335,51 @@ function EmptyState({
   );
 }
 
+/** Each tab's main table, by its column headings — drawn while its data (or
+ *  the cycle it belongs to) is still on the way. */
+const TAB_HEADS: Record<TabKey, string[]> = {
+  requirement: ["Chemical", "Quantity", "UOM"],
+  review: ["Farm", "Status", "Lines", ""],
+  consolidated: ["Chemical", "Requested", "Reduce by", "Value", "Approved", ""],
+  allocation: ["Farm", "Requested", "Allocated"],
+  pool: ["Chemical", "Farm", "Carried", "Since"],
+};
+
+/** A tab whose first load failed: says so, with a retry, instead of pulsing on. */
+function LoadFailed({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <Card>
+      <CardContent role="alert" className="flex flex-wrap items-center justify-between gap-3 py-4 text-sm">
+        <span className="text-destructive">{message}</span>
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          <RefreshCw className="mr-1 size-4" /> Try again
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TableCardSkeleton({ heads, rows = 5 }: { heads: string[]; rows?: number }) {
+  return (
+    <Card aria-busy="true">
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {heads.map((h, i) => (
+                <TableHead key={i}>{h}</TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRowsSkeleton cols={heads.length} rows={rows} />
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── my requirement ────────────────────────────────────────────────────────
 
 function RequirementTab({
@@ -334,11 +403,20 @@ function RequirementTab({
   const [amendReason, setAmendReason] = useState("");
   const [amendRows, setAmendRows] = useState<Record<string, string>>({});
 
+  const [reqError, setReqError] = useState<string | null>(null);
+  // Another cycle or farm: the previous requirement must not stay on screen
+  // (or behind Save / Submit) while this one loads.
+  useEffect(() => {
+    setReq(null);
+    setReqError(null);
+  }, [cycle, farm]);
+
   const load = useCallback(async () => {
     if (!cycle || !farm) return;
     try {
       const r = await myRequirement(cycle, farm);
       setReq(r);
+      setReqError(null);
       setRows(
         r.items.map((i) => ({
           item_code: i.item_code,
@@ -350,6 +428,7 @@ function RequirementTab({
       );
     } catch (e) {
       push(errText(e), "err");
+      setReqError(errText(e));
     }
   }, [cycle, farm, push]);
 
@@ -435,7 +514,25 @@ function RequirementTab({
       />
     );
   }
-  if (!req) return <Loader2 className="mx-auto size-6 animate-spin" />;
+  if (!req && reqError) {
+    return <LoadFailed message={reqError} onRetry={() => void load()} />;
+  }
+  if (!req) {
+    return (
+      <div className="flex flex-col gap-4" aria-busy="true">
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <div className="flex flex-col gap-1.5">
+              <TextSkeleton width="22ch" />
+              <TextSkeleton width="30ch" />
+            </div>
+            <Bar className="h-9 w-48" />
+          </CardContent>
+        </Card>
+        <TableCardSkeleton heads={TAB_HEADS.requirement} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -662,14 +759,27 @@ function ReviewTab({
   const [amendments, setAmendments] = useState<Amendment[]>([]);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Another cycle: its rows pulse until they land, not the old cycle's.
+  useEffect(() => {
+    setLoaded(false);
+    setLoadError(null);
+  }, [cycle]);
 
   const load = useCallback(async () => {
-    const [r, a] = await Promise.all([
-      requirementsFor(cycle),
-      listAmendments(cycle, "Pending"),
-    ]);
-    setReqs(r);
-    setAmendments(a);
+    try {
+      const [r, a] = await Promise.all([
+        requirementsFor(cycle),
+        listAmendments(cycle, "Pending"),
+      ]);
+      setReqs(r);
+      setAmendments(a);
+      setLoadError(null);
+      setLoaded(true);
+    } catch (e) {
+      setLoadError(errText(e));
+    }
   }, [cycle]);
 
   useEffect(() => {
@@ -764,8 +874,19 @@ function ReviewTab({
                 <TableHead className="w-64" />
               </TableRow>
             </TableHeader>
-            <TableBody>
-              {reqs.length === 0 && (
+            <TableBody aria-busy={(!loaded && !loadError) || undefined}>
+              {!loaded && !loadError && <TableRowsSkeleton cols={4} rows={5} />}
+              {!loaded && loadError && (
+                <TableRow>
+                  <TableCell colSpan={4} role="alert" className="py-6 text-center text-destructive">
+                    {loadError}{" "}
+                    <Button variant="link" size="sm" onClick={() => void load()}>
+                      Try again
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {loaded && reqs.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
                     No requirements on this cycle yet.
@@ -856,13 +977,20 @@ function ConsolidatedTab({
   setBusy: (b: boolean) => void;
 }) {
   const [detail, setDetail] = useState<CycleDetail | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { mode: ReductionMode; value: string }>>({});
+  useEffect(() => {
+    setDetail(null);
+    setLoadError(null);
+  }, [cycle]);
 
   const load = useCallback(async () => {
     try {
       setDetail(await getCycle(cycle));
+      setLoadError(null);
     } catch (e) {
       push(errText(e), "err");
+      setLoadError(errText(e));
     }
   }, [cycle, push]);
 
@@ -883,7 +1011,24 @@ function ConsolidatedTab({
     }
   }
 
-  if (!detail) return <Loader2 className="mx-auto size-6 animate-spin" />;
+  if (!detail && loadError) {
+    return <LoadFailed message={loadError} onRetry={() => void load()} />;
+  }
+  if (!detail) {
+    return (
+      <div className="flex flex-col gap-4" aria-busy="true">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" disabled>
+            <Scale className="mr-1 size-4" /> Consolidate requirements
+          </Button>
+          <Button disabled>
+            <FileText className="mr-1 size-4" /> Raise Material Request
+          </Button>
+        </div>
+        <TableCardSkeleton heads={TAB_HEADS.consolidated} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -1066,6 +1211,11 @@ function AllocationTab({
   const [mode, setMode] = useState<AllocationMode>("simple");
   const [received, setReceived] = useState<Record<string, string>>({});
   const [detail, setDetail] = useState<CycleDetail | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  useEffect(() => {
+    setDetail(null);
+    setLoadError(null);
+  }, [cycle]);
 
   const receivedMap = useMemo(() => {
     const out: Record<string, number> = {};
@@ -1084,8 +1234,10 @@ function AllocationTab({
       setLines(p.lines);
       setMode(p.mode || "simple");
       setDetail(d);
+      setLoadError(null);
     } catch (e) {
       push(errText(e), "err");
+      setLoadError(errText(e));
     }
   }, [cycle, receivedMap, push]);
 
@@ -1101,7 +1253,12 @@ function AllocationTab({
         * worse than a cruder one, and the two modes differ by whole steps. */}
       <Card>
         <CardContent className="py-3 text-sm text-muted-foreground">
-          {balanced ? (
+          {!detail ? (
+            <span className="flex flex-col gap-1.5" aria-hidden>
+              <TextSkeleton width="90%" />
+              <TextSkeleton width="60%" />
+            </span>
+          ) : balanced ? (
             <>
               <strong className="text-foreground">Balanced split.</strong> Leftover
               measurable amounts go to the farms with the largest fractions, and each
@@ -1226,9 +1383,12 @@ function AllocationTab({
         </Card>
       ))}
 
+      {!detail && loadError && <LoadFailed message={loadError} onRetry={() => void load()} />}
+      {!detail && !loadError && <TableCardSkeleton heads={TAB_HEADS.allocation} rows={4} />}
+
       {detail?.allocations.length ? <BudgetTable cycle={cycle} /> : null}
 
-      {lines.length === 0 && (
+      {detail && lines.length === 0 && (
         <EmptyState
           icon={Scale}
           title="Nothing to split"
@@ -1263,16 +1423,24 @@ function PoolTab({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ChemicalItem[]>([]);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
   const load = useCallback(async () => {
-    const [s, inc, out] = await Promise.all([
-      poolStatus(),
-      isKeeper ? listPoolRequests("incoming") : Promise.resolve([]),
-      listPoolRequests("outgoing"),
-    ]);
-    setStatus(s);
-    setIncoming(inc.filter((r) => r.workflow_state === "Pending Approval"));
-    setOutgoing(out);
+    try {
+      const [s, inc, out] = await Promise.all([
+        poolStatus(),
+        isKeeper ? listPoolRequests("incoming") : Promise.resolve([]),
+        listPoolRequests("outgoing"),
+      ]);
+      setStatus(s);
+      setIncoming(inc.filter((r) => r.workflow_state === "Pending Approval"));
+      setOutgoing(out);
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(errText(e));
+    }
   }, [isKeeper]);
+  // Still waiting for the first answer (a failure ends the skeletons).
+  const pending = !status && !loadError;
 
   useEffect(() => {
     void load();
@@ -1342,10 +1510,11 @@ function PoolTab({
 
   return (
     <div className="flex flex-col gap-4">
+      {!status && loadError && <LoadFailed message={loadError} onRetry={() => void load()} />}
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary" className="gap-1">
           <Warehouse className="size-3.5" />
-          {status?.store || "no general store"}
+          {status ? status.store || "no general store" : pending ? <TextSkeleton width="12ch" /> : "—"}
         </Badge>
         {farm && (
           <Button variant="outline" disabled={busy} onClick={() => setAskOpen(true)}>
@@ -1358,7 +1527,8 @@ function PoolTab({
         <Card>
           <CardContent className="flex flex-col gap-3 py-4">
             <p className="font-medium">Requests waiting on you</p>
-            {incoming.length === 0 && (
+            {pending && <RowsSkeleton rows={2} />}
+            {status && incoming.length === 0 && (
               <p className="text-sm text-muted-foreground">Nothing waiting.</p>
             )}
             {incoming.map((r) => (
@@ -1416,7 +1586,9 @@ function PoolTab({
           <p className="text-sm text-muted-foreground">
             Stock stays here when a farm's exact share is smaller than the store can
             measure.{" "}
-            {status?.mode === "balanced" ? (
+            {!status ? (
+              pending ? <TextSkeleton width="28ch" /> : null
+            ) : status.mode === "balanced" ? (
               <>These credits are added to that farm's next request.</>
             ) : (
               <>
@@ -1435,8 +1607,9 @@ function PoolTab({
                 <TableHead>Since</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
-              {credits.length === 0 && (
+            <TableBody aria-busy={pending || undefined}>
+              {pending && <TableRowsSkeleton cols={4} rows={3} />}
+              {status && credits.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
                     Nothing outstanding.
@@ -1690,6 +1863,7 @@ function BudgetTable({ cycle }: { cycle: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    setLoaded(false);
     void (async () => {
       try {
         const out = await consumptionVsAllocation(cycle);
@@ -1706,7 +1880,6 @@ function BudgetTable({ cycle }: { cycle: string }) {
   }, [cycle]);
 
   const over = rows.filter((r) => r.over > 0);
-  if (!loaded) return null;
 
   return (
     <Card>
@@ -1727,8 +1900,9 @@ function BudgetTable({ cycle }: { cycle: string }) {
               <TableHead className="text-right">Over</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
-            {rows.length === 0 && (
+          <TableBody aria-busy={!loaded || undefined}>
+            {!loaded && <TableRowsSkeleton cols={5} rows={3} />}
+            {loaded && rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
                   Nothing to reconcile yet.

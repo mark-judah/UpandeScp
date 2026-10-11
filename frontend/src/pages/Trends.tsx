@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/DatePicker";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { LoadProgress, firstLoad } from "@/components/Loading";
 import {
   Popover,
   PopoverContent,
@@ -135,6 +135,9 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
   );
 
   const stagesByObsId: Record<string, string[]> = data?.options.stagesByObs || {};
+  // The pickers' options come with the payload: on the first load they stand,
+  // disabled, rather than opening onto "No farms in date range".
+  const first = firstLoad(loading || (!data && !error), !!data);
 
   return (
     <div className="flex flex-col min-h-svh">
@@ -147,7 +150,7 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className={HEADER_PILL}>
+            <Button variant="outline" size="sm" className={HEADER_PILL} disabled={first}>
               <MapPin className="h-3.5 w-3.5" />
               Farms
               <span className="text-muted-foreground tabular-nums">
@@ -169,7 +172,7 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className={HEADER_PILL}>
+            <Button variant="outline" size="sm" className={HEADER_PILL} disabled={first}>
               <Sparkles className="h-3.5 w-3.5" />
               Observations
               <span className="text-muted-foreground tabular-nums">
@@ -206,13 +209,25 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
         </HeaderIconButton>
       </PageHeader>
 
+      {/* Inline under the header, not a full-screen overlay (skeleton spec K4). */}
+      <div className="px-4 md:px-6">
+        <LoadProgress
+          active={loading}
+          progress={progress?.percent ?? null}
+          label={progress?.label}
+        />
+      </div>
+
       {error && (
         <div className="text-xs text-[var(--sd-data-red)]">
           Failed to load: {error}
         </div>
       )}
 
-      <div className="flex-1 px-4 py-4 md:px-6 md:py-6 flex flex-col gap-4">
+      <div
+        className="flex-1 px-4 py-4 md:px-6 md:py-6 flex flex-col gap-4"
+        aria-busy={first || undefined}
+      >
         {!selections.length ? (
           <Card className="p-12 flex flex-col items-center justify-center text-center gap-2">
             <div className="h-10 w-10 rounded-full bg-[var(--sd-pistachio)] flex items-center justify-center">
@@ -257,11 +272,6 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
           </>
         ) : null}
       </div>
-      <LoadingOverlay
-        open={loading}
-        progress={progress?.percent ?? null}
-        label={progress?.label}
-      />
     </div>
   );
 }

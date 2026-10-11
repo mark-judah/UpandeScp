@@ -3,7 +3,7 @@ import L from "leaflet";
 import { ChevronDown } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -188,6 +188,8 @@ interface MultiPickerProps {
   onChange: (next: Set<string>) => void;
   swatch?: (item: string) => string | undefined;
   count?: (item: string) => number | undefined;
+  /** While the options (which come with the data) are loading. */
+  disabled?: boolean;
 }
 
 function MultiPicker({
@@ -197,6 +199,7 @@ function MultiPicker({
   onChange,
   swatch,
   count,
+  disabled = false,
 }: MultiPickerProps) {
   const allOn = items.length > 0 && items.every((i) => selected.has(i));
   const summary = allOn
@@ -207,7 +210,7 @@ function MultiPicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className={HEADER_PILL}>
+        <Button variant="outline" size="sm" className={HEADER_PILL} disabled={disabled}>
           <span className="font-medium">{label}</span>
           <span className="text-muted-foreground tabular-nums">{summary}</span>
           <ChevronDown className="h-3 w-3 text-muted-foreground" />
@@ -317,7 +320,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
   }, [filters.crop]);
 
   const ghForCall = filters.greenhouse === ALL ? undefined : filters.greenhouse;
-  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
+  const { data, loading, progress, error } = useScouting({
     from: filters.from,
     to: filters.to,
     greenhouse: ghForCall,
@@ -600,6 +603,12 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
   const plottable = visibleTraps.filter((t) => trapPosition(t)).length;
   const noCoordHint = traps.length > 0 && plottable === 0;
 
+  // First load (nothing processed yet): the tabs, pickers, legend and panel
+  // titles stand; the counts and the pest rows are skeletons.
+  // A failed load ends the skeletons and says so (below), rather than pulsing on.
+  const first = firstLoad(loading || (!data && !error), !!data);
+  const countOr = (n: number) => (first ? <TextSkeleton width="2ch" /> : n);
+
   return (
     <div className="flex flex-col h-svh overflow-hidden">
       <RangeHeader
@@ -618,16 +627,16 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
               <TabsTrigger value="all">
                 All
                 <span className="tabular-nums opacity-70">
-                  {visibleTraps.length}
+                  {countOr(visibleTraps.length)}
                 </span>
               </TabsTrigger>
               <TabsTrigger value="Indoor">
                 Indoor
-                <span className="tabular-nums opacity-70">{indoorCount}</span>
+                <span className="tabular-nums opacity-70">{countOr(indoorCount)}</span>
               </TabsTrigger>
               <TabsTrigger value="Outdoor">
                 Outdoor
-                <span className="tabular-nums opacity-70">{outdoorCount}</span>
+                <span className="tabular-nums opacity-70">{countOr(outdoorCount)}</span>
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -639,12 +648,14 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
               items={farmOptions}
               selected={farmSel ?? new Set(farmOptions)}
               onChange={setFarmSel}
+              disabled={first}
             />
             <MultiPicker
               label="Greenhouses"
               items={ghOptions}
               selected={ghSel ?? new Set(ghOptions)}
               onChange={setGhSel}
+              disabled={first}
             />
             <MultiPicker
               label="Pests"
@@ -653,14 +664,29 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
               onChange={setPestSel}
               swatch={resolvePestColor}
               count={(p) => pestCounts[p] ?? 0}
+              disabled={first}
             />
           </>
         }
       />
 
       {/* Slim stats line — switcher + filters now live in the header row. */}
-      <div className="flex justify-end px-4 md:px-6 pb-1 text-xs text-muted-foreground tabular-nums">
-        {plottable}/{visibleTraps.length} mapped · {totalCatches} catches
+      {/* The load's progress sits on the left of this line (was a full-screen
+          overlay), so the map and panel stay visible while the weeks load. */}
+      <div className="flex items-center justify-between gap-3 px-4 md:px-6 pb-1 text-xs text-muted-foreground tabular-nums">
+        {error && !data && !loading && (
+          <span role="alert" className="text-destructive">{error}</span>
+        )}
+        <LoadProgress active={loading} progress={progress} />
+        <span className="ml-auto">
+          {first ? (
+            <TextSkeleton width="18ch" />
+          ) : (
+            <>
+              {plottable}/{visibleTraps.length} mapped · {totalCatches} catches
+            </>
+          )}
+        </span>
       </div>
 
       {noCoordHint && (
@@ -707,11 +733,16 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
         </div>
 
         {/* Docked right sidebar (mirrors the scouting map). */}
-        <div className="m-4 md:m-6 lg:ml-0 flex max-h-[45vh] flex-col gap-3 overflow-auto rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] lg:max-h-none">
+        <div
+          className="m-4 md:m-6 lg:ml-0 flex max-h-[45vh] flex-col gap-3 overflow-auto rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] lg:max-h-none"
+          aria-busy={first || undefined}
+        >
           <div className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground mb-2">
             Pests in view
           </div>
-          {pestOptions.length === 0 ? (
+          {first ? (
+            <RowsSkeleton rows={5} />
+          ) : pestOptions.length === 0 ? (
             <div className="text-[0.72rem] text-muted-foreground">
               No pest data
             </div>
@@ -757,12 +788,6 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
         </div>
       </div>
 
-      <LoadingOverlay
-        open={loading}
-        progress={progress}
-        weeksLoaded={weeksLoaded}
-        weeksTotal={weeksTotal}
-      />
     </div>
   );
 }

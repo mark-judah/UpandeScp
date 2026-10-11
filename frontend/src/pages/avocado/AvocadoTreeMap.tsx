@@ -3,7 +3,7 @@ import maplibregl from "maplibre-gl";
 import { ChevronDown, Layers } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
 import { Map3D } from "@/components/Map3D";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { LoadProgress, TextSkeleton, firstLoad } from "@/components/Loading";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -101,7 +101,7 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
     // long default window is cheap — default to the last 10 months.
     ...lastMonthsRange(10),
   }));
-  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
+  const { data, loading, progress, error } = useScouting({
     from: filters.from,
     to: filters.to,
     greenhouse: filters.greenhouse === ALL ? undefined : filters.greenhouse,
@@ -681,6 +681,10 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
     });
   };
 
+  // First load (no scouting processed yet): the legend, header and panel
+  // headings stand, the counts and the panel's list are skeletons.
+  // A failed load ends the skeletons and says so (below), rather than pulsing on.
+  const first = firstLoad(loading || (!data && !error), !!data);
   const treeCount = treePoints?.names.length || 0;
   const blockCount = blocks?.features.length || 0;
   const scoutedTreeCount = treeColors.size;
@@ -726,6 +730,22 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
       />
 
       <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b">
+        {/* Was a full-screen overlay; inline here so the live map shows through.
+            Deliberately NOT gated on ``treesPlacing``. Placing the orchard-tree
+            instances is the single most expensive thing this page does — measured
+            on kaitetv16, ~28s of a 32s load, and unchanged by network throttling
+            because it is CPU, not transfer. Holding a full-screen overlay over it
+            hid a map that was ready to use, while the bar read "45 of 45 weeks ·
+            100%" — the scouting data finishes at ~2s — so everyone diagnosed the
+            fetch instead. Trees stream in over a live map now; the header says so. */}
+        {error && !data && !loading && (
+          <span role="alert" className="text-destructive">{error}</span>
+        )}
+        <LoadProgress
+          active={loading || loadingGeo}
+          progress={loading ? progress : 100}
+          label={loading ? "Loading scouting data" : "Loading map"}
+        />
         <span className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-[#7c8b6a]" /> Unscouted
         </span>
@@ -768,8 +788,14 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
           </div>
         ) : null}
         <span className="ml-auto tabular-nums">
-          {blockCount} blocks · {treeCount} trees · {scoutedTreeCount} visited
-          {treesPlacing && treeCount > 0 ? " · drawing trees…" : ""}
+          {first || !blocks ? (
+            <TextSkeleton width="26ch" />
+          ) : (
+            <>
+              {blockCount} blocks · {treeCount} trees · {scoutedTreeCount} visited
+              {treesPlacing && treeCount > 0 ? " · drawing trees…" : ""}
+            </>
+          )}
         </span>
       </div>
 
@@ -786,28 +812,23 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
         </div>
 
         {/* Docked side panel — content supplied by the view. */}
-        <aside className="hidden lg:flex flex-col min-h-0 overflow-hidden rounded-[20px] border border-border bg-card shadow-[var(--sd-shadow-1)]">
-          {view.renderPanel(data)}
+        <aside
+          className="hidden lg:flex flex-col min-h-0 overflow-hidden rounded-[20px] border border-border bg-card shadow-[var(--sd-shadow-1)]"
+          aria-busy={first || undefined}
+        >
+          {view.renderPanel(data, first)}
           <div className="border-t px-3 py-2 text-[0.7rem] tabular-nums text-muted-foreground">
-            {scoutedTreeCount} of {treeCount} trees visited
+            {first || !treePoints ? (
+              <TextSkeleton width="16ch" />
+            ) : (
+              <>
+                {scoutedTreeCount} of {treeCount} trees visited
+              </>
+            )}
           </div>
         </aside>
       </div>
 
-      {/* Deliberately NOT gated on ``treesPlacing``. Placing the orchard-tree
-          instances is the single most expensive thing this page does — measured
-          on kaitetv16, ~28s of a 32s load, and unchanged by network throttling
-          because it is CPU, not transfer. Holding a full-screen overlay over it
-          hid a map that was ready to use, while the bar read "45 of 45 weeks ·
-          100%" — the scouting data finishes at ~2s — so everyone diagnosed the
-          fetch instead. Trees stream in over a live map now; the header says so. */}
-      <LoadingOverlay
-        open={loading || loadingGeo}
-        progress={loading ? progress : 100}
-        label={loading ? "Loading scouting data" : "Loading map"}
-        weeksLoaded={weeksLoaded}
-        weeksTotal={weeksTotal}
-      />
     </div>
   );
 }

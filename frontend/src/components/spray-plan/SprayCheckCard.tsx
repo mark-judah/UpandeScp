@@ -4,6 +4,7 @@
  * Used by the creator (live, as the mix changes) and the approval page.
  */
 import { CheckCircle2, AlertTriangle, ShieldAlert, Loader2 } from "lucide-react";
+import { TextSkeleton } from "@/components/Loading";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,8 +52,14 @@ export function SprayCheckCard({
           )}
         </div>
       </CardHeader>
-      <CardContent className="p-0 flex flex-col gap-3 text-xs">
-        {!result ? (
+      <CardContent className="p-0 flex flex-col gap-3 text-xs" aria-busy={(loading && !result) || undefined}>
+        {!result && loading ? (
+          // First check in flight: not "pick targets" — the plan has them.
+          <span className="flex flex-col gap-1.5 py-0.5">
+            <TextSkeleton width="70%" />
+            <TextSkeleton width="45%" />
+          </span>
+        ) : !result ? (
           <span className="text-muted-foreground">Pick targets and a tank mix to check this plan.</span>
         ) : result.status === "Check failed" ? (
           <span className="inline-flex items-start gap-1.5 text-muted-foreground">

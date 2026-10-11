@@ -3,6 +3,7 @@ import { AvocadoTreeMap } from "./AvocadoTreeMap";
 import type { AvocadoView } from "./tree-map-types";
 import { deriveScoutColors, deriveScoutRoster } from "./derive-scouts";
 import { fetchScoutLookup } from "@/lib/scouting-api";
+import { RowsSkeleton } from "@/components/Loading";
 
 export function AvocadoScouting() {
   const [scoutNames, setScoutNames] = useState<Record<string, string>>({});
@@ -17,7 +18,7 @@ export function AvocadoScouting() {
       subtitle: "Orchard trees · per-scout coloring · click a block to fly in",
       showTracks: true,
       deriveColors: deriveScoutColors,
-      renderPanel: (data) => {
+      renderPanel: (data, loading) => {
         const roster = deriveScoutRoster(data);
         return (
           <>
@@ -31,7 +32,9 @@ export function AvocadoScouting() {
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ background: "#7c8b6a" }} aria-hidden />
                 <span className="flex-1 truncate text-muted-foreground">Unscouted</span>
               </div>
-              {roster.length ? (
+              {loading ? (
+                <RowsSkeleton rows={6} />
+              ) : roster.length ? (
                 roster.map((s) => (
                   <div key={s.key} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-muted">
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ background: s.color }} aria-hidden />

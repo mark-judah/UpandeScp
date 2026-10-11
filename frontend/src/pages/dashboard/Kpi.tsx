@@ -1,4 +1,5 @@
 import { Card } from "@/components/ui/card";
+import { KpiValueSkeleton, TextSkeleton } from "@/components/Loading";
 import { cn } from "@/lib/utils";
 
 export interface KpiProps {
@@ -7,6 +8,8 @@ export interface KpiProps {
   hint?: string;
   tone?: "default" | "warning" | "critical" | "good";
   className?: string;
+  /** First load: the label stays, the figure and hint are placeholders. */
+  loading?: boolean;
 }
 
 const TONE: Record<NonNullable<KpiProps["tone"]>, string> = {
@@ -16,7 +19,7 @@ const TONE: Record<NonNullable<KpiProps["tone"]>, string> = {
   good: "text-[var(--sd-data-green)]",
 };
 
-export function Kpi({ label, value, hint, tone = "default", className }: KpiProps) {
+export function Kpi({ label, value, hint, tone = "default", className, loading = false }: KpiProps) {
   // Thousands separators for large counts (e.g. 648361 → 648,361).
   const display =
     typeof value === "number" ? value.toLocaleString("en-US") : value;
@@ -36,15 +39,23 @@ export function Kpi({ label, value, hint, tone = "default", className }: KpiProp
         {label}
       </div>
       {/* .kpi__value — hero 44px number, tight tracking, tabular */}
-      <div
-        className={cn(
-          "text-[36px] md:text-[44px] font-semibold leading-none tracking-[-0.03em] tabular-nums",
-          TONE[tone],
-        )}
-      >
-        {display}
-      </div>
-      {hint && (
+      {loading ? (
+        <KpiValueSkeleton className="h-[36px] md:h-[44px] w-20" />
+      ) : (
+        <div
+          className={cn(
+            "text-[36px] md:text-[44px] font-semibold leading-none tracking-[-0.03em] tabular-nums",
+            TONE[tone],
+          )}
+        >
+          {display}
+        </div>
+      )}
+      {loading ? (
+        <div className="mt-2 text-[13px] leading-5">
+          <TextSkeleton width="10ch" />
+        </div>
+      ) : hint && (
         <div className="mt-2 text-[13px] text-[var(--sd-quiet)] line-clamp-2">
           {hint}
         </div>

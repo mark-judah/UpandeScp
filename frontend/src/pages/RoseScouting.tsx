@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { Bar, LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 import {
   Card,
   CardContent,
@@ -125,7 +125,7 @@ export function RoseScouting() {
   const ghForCall =
     filters.greenhouse === ALL ? undefined : filters.greenhouse;
   // Single-day query: from === to. Cache is day-precise.
-  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
+  const { data, loading, progress, error } = useScouting({
     from: filters.from,
     to: filters.to,
     greenhouse: ghForCall,
@@ -526,6 +526,11 @@ export function RoseScouting() {
       return next;
     });
 
+  // First load (nothing processed yet): the rail's cards and labels stand, the
+  // figures and the scout list are skeletons. A refresh keeps the old figures.
+  // A failed load ends the skeletons and says so (below), rather than pulsing on.
+  const first = firstLoad(loading || (!data && !error), !!data);
+
   return (
     <div className="flex flex-col h-svh overflow-hidden">
       <RangeHeader
@@ -534,6 +539,15 @@ export function RoseScouting() {
         value={filters}
         onChange={setFilters}
       />
+
+      {/* Inline under the header, not a full-screen overlay (skeleton spec K4):
+          the basemap and the rail stay visible while the weeks load. */}
+      <div className="px-4 md:px-6">
+        {error && !data && !loading && (
+          <span role="alert" className="text-destructive">{error}</span>
+        )}
+        <LoadProgress active={loading} progress={progress} />
+      </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[3fr_1fr]">
         <div className="relative min-h-[55vh] lg:min-h-0">
@@ -549,7 +563,10 @@ export function RoseScouting() {
         {/* Right rail — clicked-zone detail, then the coverage summary below
             it. Scrolls on its own; capped height on small screens so the map
             above stays usable. */}
-        <div className="m-4 md:m-6 lg:ml-0 rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] overflow-auto flex flex-col gap-3 max-h-[45vh] lg:max-h-none">
+        <div
+          className="m-4 md:m-6 lg:ml-0 rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] overflow-auto flex flex-col gap-3 max-h-[45vh] lg:max-h-none"
+          aria-busy={first || undefined}
+        >
           {detail ? (
             <Card className="p-3 shadow-none border">
               <CardHeader className="p-0 pb-2">
@@ -654,10 +671,14 @@ export function RoseScouting() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0 mt-3">
-                <Badge variant="outline" className="text-[0.65rem]">
-                  {aggByZone.size} scouted zone
-                  {aggByZone.size === 1 ? "" : "s"}
-                </Badge>
+                {first ? (
+                  <Bar className="h-5 w-28 rounded-full" />
+                ) : (
+                  <Badge variant="outline" className="text-[0.65rem]">
+                    {aggByZone.size} scouted zone
+                    {aggByZone.size === 1 ? "" : "s"}
+                  </Badge>
+                )}
               </CardContent>
             </Card>
           )}
@@ -686,7 +707,9 @@ export function RoseScouting() {
                   <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
                     {label}
                   </div>
-                  <div className="text-sm font-semibold tabular-nums">{v}</div>
+                  <div className="text-sm font-semibold tabular-nums">
+                    {first ? <TextSkeleton width="3ch" /> : v}
+                  </div>
                 </div>
               ))}
             </div>
@@ -715,7 +738,9 @@ export function RoseScouting() {
               </div>
             </div>
 
-            {scoutInfo.list.length === 0 ? (
+            {first ? (
+              <RowsSkeleton rows={5} />
+            ) : scoutInfo.list.length === 0 ? (
               <div className="text-[0.72rem] text-muted-foreground py-3 text-center">
                 No scouting in this range.
               </div>
@@ -753,12 +778,6 @@ export function RoseScouting() {
         </div>
       </div>
 
-      <LoadingOverlay
-        open={loading}
-        progress={progress}
-        weeksLoaded={weeksLoaded}
-        weeksTotal={weeksTotal}
-      />
     </div>
   );
 }

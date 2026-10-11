@@ -19,6 +19,7 @@ import { DatePicker } from "@/components/DatePicker";
 import { PageHeader } from "@/components/PageHeader";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
 import { NO_PHOTOS_TEXT } from "@/components/gallery/ObservationGallery";
+import { LoadProgress, firstLoad } from "@/components/Loading";
 import { useCropFarms } from "@/hooks/use-crop-farms";
 import {
   fetchPhotoFeed,
@@ -51,7 +52,7 @@ const KIND_LABEL: Record<PhotoKind, string> = { pest: "Pest", disease: "Disease"
 
 export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   const crop = initialCrop ?? DEFAULT_CROP;
-  const { farms } = useCropFarms(crop);
+  const { farms, loading: farmsLoading } = useCropFarms(crop);
   const [farm, setFarm] = useState<string>(ALL);
   const [greenhouse, setGreenhouse] = useState<string>(ALL);
   const [kind, setKind] = useState<string>(ALL);
@@ -65,6 +66,9 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Whether any page has landed: the first load draws the masonry skeleton, a
+  // filter change keeps the old photos under the inline progress bar.
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<number | null>(null);
 
@@ -97,6 +101,7 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
         setPage(0);
         setHasMore(Boolean(d.hasMore));
         if (d.facets) setFacets(d.facets);
+        setLoaded(true);
       })
       .catch((e) => gen === generation.current && setError(errorText(e, "Could not load the gallery")))
       .finally(() => gen === generation.current && setLoading(false));
@@ -157,6 +162,7 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Select
             value={farm}
+            disabled={farmsLoading}
             onValueChange={(v) => {
               setFarm(v);
               setGreenhouse(ALL);
@@ -172,7 +178,7 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
               ))}
             </SelectContent>
           </Select>
-          <Select value={greenhouse} onValueChange={setGreenhouse}>
+          <Select value={greenhouse} onValueChange={setGreenhouse} disabled={farmsLoading}>
             <SelectTrigger aria-label="Gallery greenhouse" className={HEADER_PILL}>
               <SelectValue />
             </SelectTrigger>
@@ -200,7 +206,7 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
               <SelectItem value="other">Other</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={subject} onValueChange={setSubject}>
+          <Select value={subject} onValueChange={setSubject} disabled={!facets}>
             <SelectTrigger aria-label="Gallery observation" className={HEADER_PILL}>
               <SelectValue />
             </SelectTrigger>
@@ -213,7 +219,7 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
               ))}
             </SelectContent>
           </Select>
-          <Select value={scout} onValueChange={setScout}>
+          <Select value={scout} onValueChange={setScout} disabled={!facets}>
             <SelectTrigger aria-label="Gallery scout" className={HEADER_PILL}>
               <SelectValue />
             </SelectTrigger>
@@ -230,9 +236,10 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
           <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
         </div>
 
+        <LoadProgress active={loading && loaded} />
         {error ? <div className="text-xs text-[var(--sd-data-red)]">{error}</div> : null}
 
-        {loading ? (
+        {firstLoad(loading, loaded) ? (
           <MasonrySkeleton />
         ) : photos.length ? (
           <>
@@ -341,9 +348,9 @@ function KindPill({ kind }: { kind: PhotoKind }) {
 function MasonrySkeleton() {
   const heights = [180, 240, 150, 210, 260, 170, 200, 230];
   return (
-    <div className="columns-2 gap-3 sm:columns-3 lg:columns-4 2xl:columns-5" aria-busy>
+    <div className="columns-2 gap-3 sm:columns-3 lg:columns-4 2xl:columns-5" aria-busy="true">
       {heights.map((h, i) => (
-        <div key={i} className="mb-3 break-inside-avoid animate-pulse rounded-xl border bg-muted/60" style={{ height: h }} />
+        <div key={i} aria-hidden data-skeleton="tile" className="mb-3 break-inside-avoid animate-pulse rounded-xl border bg-muted/60" style={{ height: h }} />
       ))}
     </div>
   );

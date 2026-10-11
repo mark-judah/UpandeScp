@@ -37,6 +37,8 @@ export interface AggregateProgress {
 
 export interface AggregateState<T> {
   data: T | null;
+  /** The filters `data` was fetched with (null before the first success). */
+  dataFilters: AggregateFilters | null;
   loading: boolean;
   error: string | null;
   /** Non-null only once a cold-path fetch has reported a stage. Warm-cache hits
@@ -81,6 +83,10 @@ export function useDashboardAggregate<T>(
   enabled: boolean,
 ): AggregateState<T> {
   const [data, setData] = useState<T | null>(null);
+  // The filters `data` was fetched with: a page can tell a refresh of the same
+  // scope (keep the old figures up) from a switch to another one (don't show
+  // one greenhouse's counts under the next one's title).
+  const [dataFilters, setDataFilters] = useState<AggregateFilters | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<AggregateProgress | null>(null);
@@ -113,6 +119,7 @@ export function useDashboardAggregate<T>(
         if (tokenRef.current !== token) return;
         const payload = (resp as any)?.message ?? (resp as T);
         setData(payload);
+        setDataFilters(filters);
       } catch (e: any) {
         if (tokenRef.current !== token) return;
         setError(errorText(e, "Failed to load dashboard data"));
@@ -157,6 +164,7 @@ export function useDashboardAggregate<T>(
 
   return {
     data,
+    dataFilters,
     loading,
     error,
     progress: merged,

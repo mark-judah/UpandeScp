@@ -23,6 +23,8 @@ export interface DashFilterRowProps {
   stageOptions: string[];
   value: DashFilters;
   onChange: (next: DashFilters) => void;
+  /** While the first payload (which carries the options) is loading. */
+  disabled?: boolean;
 }
 
 /**
@@ -38,6 +40,7 @@ export function DashFilterRow({
   stageOptions,
   value,
   onChange,
+  disabled = false,
 }: DashFilterRowProps) {
   const set = (k: keyof DashFilters) => (v: string) =>
     onChange({ ...value, [k]: v === ALL_TOKEN ? ALL_FILTER : v });
@@ -49,6 +52,7 @@ export function DashFilterRow({
         <Select
           value={value.observation || ALL_TOKEN}
           onValueChange={set("observation")}
+          disabled={disabled}
         >
           <SelectTrigger className="h-8 text-xs">
             <SelectValue />
@@ -66,7 +70,7 @@ export function DashFilterRow({
 
       <div className="flex flex-col gap-1 min-w-32">
         <Label>Section</Label>
-        <Select value={value.section || ALL_TOKEN} onValueChange={set("section")}>
+        <Select value={value.section || ALL_TOKEN} onValueChange={set("section")} disabled={disabled}>
           <SelectTrigger className="h-8 text-xs">
             <SelectValue />
           </SelectTrigger>
@@ -83,7 +87,7 @@ export function DashFilterRow({
 
       <div className="flex flex-col gap-1 min-w-32">
         <Label>Stage</Label>
-        <Select value={value.stage || ALL_TOKEN} onValueChange={set("stage")}>
+        <Select value={value.stage || ALL_TOKEN} onValueChange={set("stage")} disabled={disabled}>
           <SelectTrigger className="h-8 text-xs">
             <SelectValue />
           </SelectTrigger>

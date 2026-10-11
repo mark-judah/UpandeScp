@@ -4,6 +4,7 @@ import type { AvocadoView } from "./tree-map-types";
 import { deriveObservationColors, deriveObservationRoster } from "./derive-observations";
 import { useObservationColors, type ObsKind } from "@/lib/observation-colors";
 import { HEADER_PILL } from "@/components/header-controls";
+import { RowsSkeleton } from "@/components/Loading";
 
 export function AvocadoObservations() {
   const [kind, setKind] = useState<ObsKind>("pest");
@@ -34,7 +35,7 @@ export function AvocadoObservations() {
           ))}
         </div>
       ),
-      renderPanel: (data) => {
+      renderPanel: (data, loading) => {
         const roster = deriveObservationRoster(data, kind);
         return (
           <>
@@ -44,7 +45,9 @@ export function AvocadoObservations() {
               </div>
             </div>
             <div className="flex-1 min-h-0 space-y-0.5 overflow-y-auto p-2">
-              {roster.length ? (
+              {loading ? (
+                <RowsSkeleton rows={6} />
+              ) : roster.length ? (
                 roster.map((o) => (
                   <button
                     key={o.name}

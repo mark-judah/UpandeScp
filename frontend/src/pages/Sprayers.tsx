@@ -11,8 +11,8 @@
  * Server: serverscripts/sprayers/api.py (get_sprayers, get_sprayer_detail); a
  * creator or supervisor sees only their rostered farms.
  */
-import { useEffect, useMemo, useState } from "react";
-import { BarChart3, ChevronLeft, Droplets, Info, Loader2, TriangleAlert } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { BarChart3, ChevronLeft, Droplets, Info, TriangleAlert } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,8 @@ import {
 } from "@/components/ui/table";
 import { Figure, FigureRow } from "@/components/people/Figure";
 import { PersonList } from "@/components/people/PersonList";
-import { PersonPortrait } from "@/components/people/PersonPortrait";
-import { KpiRadar, type RadarAxis } from "@/components/people/KpiRadar";
+import { PersonPortrait, PersonPortraitSkeleton } from "@/components/people/PersonPortrait";
+import { KpiRadar, KpiRadarSkeleton, type RadarAxis } from "@/components/people/KpiRadar";
 import { ActivityFeed, ActivityFeedSkeleton, type FeedItem } from "@/components/people/ActivityFeed";
 import { CompareDialog } from "@/components/people/CompareDialog";
 import { SprayersTab } from "@/components/teams/SprayersTab";
@@ -36,6 +36,7 @@ import {
   type SprayerRow,
   type SprayersPayload,
 } from "@/lib/teams-api";
+import { TableRowsSkeleton } from "@/components/Loading";
 import { cn } from "@/lib/utils";
 
 const hrs = (n: number | null | undefined) =>
@@ -73,15 +74,75 @@ function farmStats(rows: SprayerRow[]) {
   return out;
 }
 
-function Pending({ error }: { error: string | null }) {
+/** The record's frame on the first load: figure labels, card titles, the
+ *  product table's columns and the portrait's fact labels are real. */
+function SprayerRecordSkeleton() {
   return (
-    <Card>
-      <CardContent
-        className={cn("flex items-center justify-center py-12 text-sm", error ? "text-destructive" : "text-muted-foreground")}
-      >
-        {error ? error : (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…</>)}
-      </CardContent>
-    </Card>
+    <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,280px)]">
+      <div className="flex min-w-0 flex-col gap-5">
+        <FigureRow>
+          {MEASURES.map((m) => (
+            <Figure key={m.key} label={m.label} value="" loading />
+          ))}
+        </FigureRow>
+        <div className="-mt-2">
+          <Button variant="outline" size="sm" disabled>
+            <BarChart3 className="mr-1.5 h-3.5 w-3.5" />
+            Compare against the farm
+          </Button>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Exposure per product</CardTitle>
+            <CardDescription>WHO class I weighs 4 … IV 1; an unclassified product counts 2.</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ProductTableFrame>
+              <TableRowsSkeleton cols={5} rows={3} />
+            </ProductTableFrame>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent sprays</CardTitle>
+            <CardDescription>The latest 20 sessions, newest first.</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ActivityFeedSkeleton />
+          </CardContent>
+        </Card>
+      </div>
+      <div className="flex min-w-0 flex-col gap-5">
+        <PersonPortraitSkeleton facts={["Employee", "Farm", "Team", "Designation", "Status", "Last exposure"]} />
+        <Card>
+          <CardHeader className="pb-0">
+            <CardTitle className="text-[14px]">Exposure shape</CardTitle>
+            <CardDescription>Outward is more exposure; the ring is the farm's highest.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <KpiRadarSkeleton />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/** The exposure-per-product table's heading row, around its body rows. */
+function ProductTableFrame({ children }: { children: ReactNode }) {
+  return (
+    <Table aria-label="Exposure per product">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Product</TableHead>
+          <TableHead>Toxicity</TableHead>
+          <TableHead className="text-right">Sessions</TableHead>
+          <TableHead className="text-right">Hours</TableHead>
+          <TableHead className="text-right">Weighted</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>{children}</TableBody>
+    </Table>
   );
 }
 
@@ -108,6 +169,9 @@ export function Sprayers({ initialCrop }: { initialCrop?: string } = {}) {
       alive = false;
     };
   }, [crop]);
+
+  // First load: the tabs, list and record frame are drawn; the data pending.
+  const pending = !data && !error;
 
   const byId = useMemo(() => new Map((data?.sprayers || []).map((r) => [r.name, r])), [data]);
   const selected = selectedId ? byId.get(selectedId) ?? null : null;
@@ -184,6 +248,7 @@ export function Sprayers({ initialCrop }: { initialCrop?: string } = {}) {
           placeholder="ID, name, farm or team…"
           label="Find a sprayer"
           noun="sprayers"
+          loading={pending}
         />
       </CardContent>
     </Card>
@@ -193,8 +258,10 @@ export function Sprayers({ initialCrop }: { initialCrop?: string } = {}) {
     <div className="flex min-h-svh w-full min-w-0 flex-col">
       <PageHeader eyebrow="Personnel · Exposure" title="Sprayers" />
       <div className="flex min-w-0 flex-1 flex-col px-4 py-4 md:px-6 md:py-6">
-        {!data ? (
-          <Pending error={error} />
+        {error && !data ? (
+          <Card>
+            <CardContent className="flex items-center justify-center py-12 text-sm text-destructive">{error}</CardContent>
+          </Card>
         ) : (
           <Tabs value={view} onValueChange={(v) => setView(v as "records" | "table")} className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -203,13 +270,13 @@ export function Sprayers({ initialCrop }: { initialCrop?: string } = {}) {
                 <TabsTrigger value="table">All sprayers</TabsTrigger>
               </TabsList>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                {data.flags.no_duration > 0 && (
+                {data && data.flags.no_duration > 0 && (
                   <span className="flex items-center gap-1" title="Logsheets with no start/stop time: counted as 0 h">
                     <TriangleAlert className="h-3.5 w-3.5 text-amber-600" />
                     <span className="tabular-nums">{data.flags.no_duration}</span> rows with no duration
                   </span>
                 )}
-                {data.flags.hazard_unknown > 0 && (
+                {data && data.flags.hazard_unknown > 0 && (
                   <span className="flex items-center gap-1" title="Products with no toxicity class: weighted 2 until classified">
                     <Info className="h-3.5 w-3.5" />
                     <span className="tabular-nums">{data.flags.products_unclassified}</span> products lack a hazard class
@@ -218,7 +285,7 @@ export function Sprayers({ initialCrop }: { initialCrop?: string } = {}) {
               </div>
             </div>
             <TabsContent value="records" className="mt-0">
-              <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
+              <div aria-busy={pending || undefined} className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
                 <aside className={cn("min-w-0 xl:sticky xl:top-6 xl:self-start", selected && "hidden xl:block")}>{list}</aside>
                 {selected ? (
                   <div className="flex min-w-0 flex-col gap-5" data-testid="sprayer-record">
@@ -251,43 +318,34 @@ export function Sprayers({ initialCrop }: { initialCrop?: string } = {}) {
                           </CardHeader>
                           <CardContent className="pt-0">
                             {!detail ? (
-                              <ActivityFeedSkeleton rows={3} />
+                              <ProductTableFrame>
+                                <TableRowsSkeleton cols={5} rows={3} />
+                              </ProductTableFrame>
                             ) : (
-                              <Table aria-label="Exposure per product">
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead>Product</TableHead>
-                                    <TableHead>Toxicity</TableHead>
-                                    <TableHead className="text-right">Sessions</TableHead>
-                                    <TableHead className="text-right">Hours</TableHead>
-                                    <TableHead className="text-right">Weighted</TableHead>
+                              <ProductTableFrame>
+                                {detail.products.map((p) => (
+                                  <TableRow key={p.spray_product || p.product_name}>
+                                    <TableCell>{p.product_name}</TableCell>
+                                    <TableCell>
+                                      {p.toxicity ? (
+                                        <Badge variant="secondary">Class {p.toxicity}</Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-amber-700 dark:text-amber-500">Unknown</Badge>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="text-right tabular-nums">{p.sessions}</TableCell>
+                                    <TableCell className="text-right tabular-nums">{hrs(p.hours)}</TableCell>
+                                    <TableCell className="text-right tabular-nums">{hrs(p.weighted_hours)}</TableCell>
                                   </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {detail.products.map((p) => (
-                                    <TableRow key={p.spray_product || p.product_name}>
-                                      <TableCell>{p.product_name}</TableCell>
-                                      <TableCell>
-                                        {p.toxicity ? (
-                                          <Badge variant="secondary">Class {p.toxicity}</Badge>
-                                        ) : (
-                                          <Badge variant="outline" className="text-amber-700 dark:text-amber-500">Unknown</Badge>
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="text-right tabular-nums">{p.sessions}</TableCell>
-                                      <TableCell className="text-right tabular-nums">{hrs(p.hours)}</TableCell>
-                                      <TableCell className="text-right tabular-nums">{hrs(p.weighted_hours)}</TableCell>
-                                    </TableRow>
-                                  ))}
-                                  {!detail.products.length && (
-                                    <TableRow>
-                                      <TableCell colSpan={5} className="py-4 text-center text-sm text-muted-foreground">
-                                        No recorded exposure.
-                                      </TableCell>
-                                    </TableRow>
-                                  )}
-                                </TableBody>
-                              </Table>
+                                ))}
+                                {!detail.products.length && (
+                                  <TableRow>
+                                    <TableCell colSpan={5} className="py-4 text-center text-sm text-muted-foreground">
+                                      No recorded exposure.
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </ProductTableFrame>
                             )}
                           </CardContent>
                         </Card>
@@ -332,10 +390,12 @@ export function Sprayers({ initialCrop }: { initialCrop?: string } = {}) {
                       </div>
                     </div>
                   </div>
+                ) : pending ? (
+                  <SprayerRecordSkeleton />
                 ) : (
                   <Card className="hidden xl:block">
                     <CardContent className="flex min-h-[420px] items-center justify-center text-[13px] text-[var(--sd-muted)]">
-                      {data.sprayers.length ? "Pick a sprayer." : "Nobody on the register for your farms yet."}
+                      {data?.sprayers.length ? "Pick a sprayer." : "Nobody on the register for your farms yet."}
                     </CardContent>
                   </Card>
                 )}

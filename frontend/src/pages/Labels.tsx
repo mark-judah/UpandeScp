@@ -75,6 +75,7 @@ import {
 } from "@/components/ui/table";
 import { planLabel, MIN_DIM_FLOOR_MM } from "@/lib/label-tiers";
 import { cn } from "@/lib/utils";
+import { Bar, TableRowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 
 import { errorText } from "@/lib/errors";
 const ALL_FARMS = "__all__";
@@ -346,6 +347,8 @@ export function Labels() {
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  // An empty list is a valid answer, so "has data" is "a response has landed".
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -454,6 +457,7 @@ export function Labels() {
       .then((r) => {
         setRows(r.rows);
         setFarms(r.farms);
+        setLoaded(true);
         // Drop selections that no longer exist after a reload.
         setSelected((prev) => {
           const live = new Set(r.rows.map((x) => x.name));
@@ -467,6 +471,10 @@ export function Labels() {
   };
 
   useEffect(load, [fromDate, toDate]);
+
+  // First load only (`loading` is still false on the very first paint). A
+  // date change or refresh keeps the transfers on screen.
+  const skeleton = firstLoad(loading || (!loaded && !error), loaded);
 
   const visibleRows = useMemo(() => {
     if (farm === ALL_FARMS) return rows;
@@ -641,7 +649,7 @@ export function Labels() {
           </>
         }
       >
-        <Select value={farm} onValueChange={setFarm}>
+        <Select value={farm} onValueChange={setFarm} disabled={skeleton}>
           <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
             <SelectValue placeholder="All farms" />
           </SelectTrigger>
@@ -663,21 +671,27 @@ export function Labels() {
 
       <div className="grid flex-1 grid-cols-1 lg:grid-cols-3 gap-4 p-4 md:p-6 lg:items-start">
         {/* ── Left: selection tree ─────────────────────────────── */}
-        <Card className="lg:col-span-2 flex flex-col min-h-0">
+        <Card
+          className="lg:col-span-2 flex flex-col min-h-0"
+          aria-busy={loading || undefined}
+        >
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-sm">Transfers</CardTitle>
               <div className="text-xs text-muted-foreground tabular-nums">
-                {selectableSelectedCount} of {totalSelectable} selected
+                {skeleton ? (
+                  <TextSkeleton width="6rem" />
+                ) : (
+                  <>
+                    {selectableSelectedCount} of {totalSelectable} selected
+                  </>
+                )}
               </div>
             </div>
           </CardHeader>
           <CardContent className="flex-1 overflow-auto pt-0">
-            {loading ? (
-              <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading transfers…
-              </div>
+            {skeleton ? (
+              <TransferGroupsSkeleton />
             ) : byGreenhouse.length === 0 ? (
               <div className="py-12 text-center text-sm text-muted-foreground">
                 No submitted transfers match this filter.
@@ -1222,15 +1236,27 @@ export function Labels() {
           <DialogHeader>
             <DialogTitle className="font-mono text-sm">{detailSe}</DialogTitle>
             <DialogDescription>
-              {detailLoading
-                ? "Loading chemicals…"
-                : `${detailItems.length} chemical${detailItems.length !== 1 ? "s" : ""} on this transfer`}
+              {detailLoading ? (
+                <TextSkeleton width="11rem" />
+              ) : (
+                `${detailItems.length} chemical${detailItems.length !== 1 ? "s" : ""} on this transfer`
+              )}
             </DialogDescription>
           </DialogHeader>
           {detailLoading ? (
-            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading…
+            <div className="rounded-md border overflow-hidden" aria-busy="true">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Chemical</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead>UoM</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRowsSkeleton cols={3} rows={4} />
+                </TableBody>
+              </Table>
             </div>
           ) : detailItems.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
@@ -1269,6 +1295,43 @@ export function Labels() {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** The transfer list before it lands: the select-all line and two greenhouse
+ *  groups, each a header strip over transfer rows, with the text pulsing. */
+function TransferGroupsSkeleton() {
+  return (
+    <div className="space-y-3" aria-hidden>
+      <div className="flex items-center gap-2">
+        <Bar className="h-4 w-4" />
+        <TextSkeleton width="9rem" />
+      </div>
+      {[4, 3].map((n, g) => (
+        <div key={g} className="rounded-md border bg-card" data-skeleton="group">
+          <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b">
+            <Bar className="h-4 w-4" />
+            <span className="flex-1">
+              <TextSkeleton width="8rem" />
+            </span>
+            <TextSkeleton width="4.5rem" />
+          </div>
+          <div className="divide-y">
+            {Array.from({ length: n }, (_, i) => (
+              <div key={i} className="flex items-center gap-2 px-3 py-2 text-sm">
+                <Bar className="h-4 w-4" />
+                <span className="flex-1">
+                  <TextSkeleton width={i % 2 ? "9rem" : "11rem"} />
+                </span>
+                <Bar className="h-5 w-16 rounded-full" />
+                <Bar className="h-5 w-10 rounded-full" />
+                <TextSkeleton width="5rem" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

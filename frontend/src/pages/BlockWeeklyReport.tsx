@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, Loader2, AlertCircle, Layers } from "lucide-react";
+import { Download, AlertCircle, Layers } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/PageHeader";
+import { TextSkeleton } from "@/components/Loading";
 import { call } from "@/lib/frappe";
 
 const NS = "upande_scp.serverscripts.reports.block_weekly_report";
@@ -60,6 +61,7 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [week, setWeek] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [weeksLoading, setWeeksLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -78,13 +80,15 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
       setWeek("");
       return;
     }
+    setWeeksLoading(true);
     call<WeekOption[]>(`${NS}.report_weeks`, { crop, farm })
       .then((r) => {
         const arr = Array.isArray(r) ? r : [];
         setWeeks(arr);
         setWeek(arr.length ? `${arr[0].year}-${arr[0].week}` : "");
       })
-      .catch(() => setWeeks([]));
+      .catch(() => setWeeks([]))
+      .finally(() => setWeeksLoading(false));
   }, [crop, farm]);
 
   const download = () => {
@@ -116,13 +120,10 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
             walked and found clean shows zeros rather than disappearing.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {loading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Checking which farms have
-              blocks&hellip;
-            </div>
-          ) : ready.length === 0 ? (
+        <CardContent className="space-y-4" aria-busy={loading || weeksLoading || undefined}>
+          {/* While availability loads the pickers stand, disabled, with a bar
+              where the choice will be — the same row the data fills in. */}
+          {!loading && ready.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No farm growing {crop} has blocks set up yet, so there is nothing to
               report on.
@@ -131,9 +132,9 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1">
                 <Label>Farm</Label>
-                <Select value={farm} onValueChange={setFarm}>
+                <Select value={farm} onValueChange={setFarm} disabled={loading}>
                   <SelectTrigger className="w-56">
-                    <SelectValue placeholder="Pick a farm" />
+                    <SelectValue placeholder={loading ? <TextSkeleton width="16ch" /> : "Pick a farm"} />
                   </SelectTrigger>
                   <SelectContent>
                     {ready.map((f) => (
@@ -147,11 +148,17 @@ export function BlockWeeklyReport({ crop }: { crop: string }) {
 
               <div className="space-y-1">
                 <Label>Week</Label>
-                <Select value={week} onValueChange={setWeek}>
+                <Select value={week} onValueChange={setWeek} disabled={loading || weeksLoading}>
                   <SelectTrigger className="w-72">
                     <SelectValue
                       placeholder={
-                        weeks.length ? "Pick a week" : "No scouting on this farm yet"
+                        loading || weeksLoading ? (
+                          <TextSkeleton width="20ch" />
+                        ) : weeks.length ? (
+                          "Pick a week"
+                        ) : (
+                          "No scouting on this farm yet"
+                        )
                       }
                     />
                   </SelectTrigger>

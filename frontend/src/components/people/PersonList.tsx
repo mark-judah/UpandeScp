@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
+import { AvatarSkeleton, TextSkeleton } from "@/components/Loading";
 import { cn } from "@/lib/utils";
 
 export interface PersonListItem {
@@ -38,6 +39,7 @@ export function PersonList({
   placeholder = "Name, ID or farm…",
   label = "Find a person",
   noun = "people",
+  loading = false,
 }: {
   groups: PersonListGroup[];
   selectedId: string | null;
@@ -45,6 +47,9 @@ export function PersonList({
   placeholder?: string;
   label?: string;
   noun?: string;
+  /** First load: the search box and the count line stay, the rows are
+   *  placeholders and the "no people" line is not shown. */
+  loading?: boolean;
 }) {
   const [term, setTerm] = useState("");
   const total = groups.reduce((n, g) => n + g.items.length, 0);
@@ -69,6 +74,7 @@ export function PersonList({
           onChange={(e) => setTerm(e.target.value)}
           placeholder={placeholder}
           aria-label={label}
+          disabled={loading}
           className="h-11 rounded-[var(--sd-radius-pill)] border-[var(--sd-line)] bg-[var(--sd-bg-soft)] pl-9 pr-9 text-[13px]"
         />
         {term && (
@@ -83,9 +89,19 @@ export function PersonList({
         )}
       </div>
       <p className="px-1 text-[11.5px] text-[var(--sd-quiet)]">
-        {matches === total ? `${total} ${noun}` : `${matches} of ${total}`}
+        {loading ? (
+          <TextSkeleton width="9ch" />
+        ) : matches === total ? (
+          `${total} ${noun}`
+        ) : (
+          `${matches} of ${total}`
+        )}
       </p>
-      <div className={cn("flex min-h-0 flex-col gap-3 overflow-y-auto", CAP)}>
+      <div
+        className={cn("flex min-h-0 flex-col gap-3 overflow-y-auto", CAP)}
+        aria-busy={loading || undefined}
+      >
+        {loading && <PersonListSkeleton />}
         {shown.map((g, gi) =>
           g.items.length ? (
             <section key={g.title || gi} className="flex flex-col gap-1">
@@ -139,12 +155,33 @@ export function PersonList({
             </section>
           ) : null,
         )}
-        {!matches && (
+        {!matches && !loading && (
           <p className="rounded-[var(--sd-radius-lg)] bg-[var(--sd-bg-soft)] px-3 py-6 text-center text-[12.5px] text-[var(--sd-muted)]">
             {term ? `Nobody matches “${term}”.` : `No ${noun} in this range.`}
           </p>
         )}
       </div>
     </div>
+  );
+}
+
+/** Rows at the real row's size: photo, name, the second line, the figure. */
+function PersonListSkeleton({ rows = 8 }: { rows?: number }) {
+  const widths = ["68%", "52%", "74%", "60%", "56%", "70%", "48%", "64%"];
+  return (
+    <ul className="flex flex-col gap-1" aria-hidden data-skeleton="person-list">
+      {Array.from({ length: rows }, (_, i) => (
+        <li key={i} className="flex items-center gap-3 px-3 py-2.5">
+          <AvatarSkeleton size={32} />
+          <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span
+              className="block h-[13px] animate-pulse rounded bg-[var(--sd-bg-soft)]"
+              style={{ width: widths[i % widths.length] }}
+            />
+            <span className="block h-[10px] w-[40%] animate-pulse rounded bg-[var(--sd-bg-soft)]" />
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

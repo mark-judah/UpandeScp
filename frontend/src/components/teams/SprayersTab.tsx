@@ -7,7 +7,7 @@
  * an unclassified product counts 2 and is flagged, never read as harmless).
  */
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Info, Loader2, Search, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, Info, Search, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ import {
   type SprayerRow,
   type SprayersPayload,
 } from "@/lib/teams-api";
+import { TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 
 type SortKey =
   | "name"
@@ -99,13 +100,8 @@ function SprayerDetailDialog({
           </DialogDescription>
         </DialogHeader>
         {error && <p className="text-sm text-destructive">{error}</p>}
-        {!detail && !error && (
-          <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…
-          </div>
-        )}
-        {detail && (
-          <div className="flex flex-col gap-5">
+        {!error && (
+          <div className="flex flex-col gap-5" aria-busy={!detail || undefined}>
             <section>
               <h3 className="mb-2 text-sm font-semibold">Exposure per product</h3>
               <Table aria-label="Exposure per product">
@@ -119,7 +115,8 @@ function SprayerDetailDialog({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {detail.products.map((p) => (
+                  {!detail && <TableRowsSkeleton cols={5} rows={3} />}
+                  {detail?.products.map((p) => (
                     <TableRow key={p.spray_product || p.product_name}>
                       <TableCell>{p.product_name}</TableCell>
                       <TableCell>
@@ -136,7 +133,7 @@ function SprayerDetailDialog({
                       <TableCell className="text-right tabular-nums">{hrs(p.weighted_hours)}</TableCell>
                     </TableRow>
                   ))}
-                  {!detail.products.length && (
+                  {detail && !detail.products.length && (
                     <TableRow>
                       <TableCell colSpan={5} className="py-4 text-center text-sm text-muted-foreground">
                         No recorded exposure.
@@ -159,7 +156,8 @@ function SprayerDetailDialog({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {detail.sessions.map((s) => (
+                  {!detail && <TableRowsSkeleton cols={5} rows={4} />}
+                  {detail?.sessions.map((s) => (
                     <TableRow key={s.logsheet}>
                       <TableCell className="whitespace-nowrap">
                         {s.date}
@@ -200,7 +198,9 @@ export function SprayersTab({
   onSelect,
   showFlags = true,
 }: {
-  data: SprayersPayload;
+  /** null on the first load: the search, headings and columns are drawn and
+   *  the rows are placeholders. */
+  data: SprayersPayload | null;
   crop: string;
   /** false when the page already shows the register's flag counts */
   showFlags?: boolean;
@@ -217,15 +217,15 @@ export function SprayersTab({
       !needle ||
       [r.name, r.employee, r.employee_name, r.farm, r.spray_team, r.role]
         .some((v) => (v || "").toLowerCase().includes(needle));
-    return data.sprayers
+    return (data?.sprayers || [])
       .filter(hit)
       .sort((a, b) => sort.dir * compare(a, b, sort.key));
-  }, [data.sprayers, q, sort]);
+  }, [data, q, sort]);
 
   const toggle = (key: SortKey, numeric?: boolean) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: numeric ? -1 : 1 }));
 
-  const { flags } = data;
+  const flags = data?.flags;
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -236,20 +236,26 @@ export function SprayersTab({
             placeholder="Search ID, name, farm, team"
             className="pl-8"
             value={q}
+            disabled={!data}
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span>
-            <span className="font-medium tabular-nums text-foreground">{rows.length}</span> sprayers
+            {data ? (
+              <span className="font-medium tabular-nums text-foreground">{rows.length}</span>
+            ) : (
+              <TextSkeleton width="3ch" />
+            )}{" "}
+            sprayers
           </span>
-          {showFlags && flags.no_duration > 0 && (
+          {showFlags && flags && flags.no_duration > 0 && (
             <span className="flex items-center gap-1" title="Logsheets with no start/stop time: counted as 0 h">
               <TriangleAlert className="h-3.5 w-3.5 text-amber-600" />
               <span className="tabular-nums">{flags.no_duration}</span> rows with no duration
             </span>
           )}
-          {showFlags && flags.hazard_unknown > 0 && (
+          {showFlags && flags && flags.hazard_unknown > 0 && (
             <span
               className="flex items-center gap-1"
               title="Products with no toxicity class on their Spray Product: weighted 2 until classified"
@@ -262,7 +268,7 @@ export function SprayersTab({
       </div>
       <Card>
         <CardContent className="p-0">
-          <Table aria-label="Sprayers">
+          <Table aria-label="Sprayers" aria-busy={!data || undefined}>
             <TableHeader>
               <TableRow>
                 {COLUMNS.map((c) => (
@@ -285,6 +291,7 @@ export function SprayersTab({
               </TableRow>
             </TableHeader>
             <TableBody>
+              {!data && <TableRowsSkeleton cols={COLUMNS.length} />}
               {rows.map((r) => (
                 <TableRow
                   key={r.name}
@@ -309,7 +316,7 @@ export function SprayersTab({
                   <TableCell className="hidden whitespace-nowrap lg:table-cell">{r.last_exposure || "—"}</TableCell>
                 </TableRow>
               ))}
-              {!rows.length && (
+              {data && !rows.length && (
                 <TableRow>
                   <TableCell colSpan={COLUMNS.length} className="py-8 text-center text-sm text-muted-foreground">
                     No sprayers match.

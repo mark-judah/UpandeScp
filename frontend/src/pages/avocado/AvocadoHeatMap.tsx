@@ -17,7 +17,7 @@ import maplibregl from "maplibre-gl";
 import { ChevronDown, ClipboardList, Layers, X } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
 import { Map3D } from "@/components/Map3D";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -105,7 +105,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     // Sparse crop, crop-scoped fetch → default to a long 10-month window.
     ...lastMonthsRange(10),
   }));
-  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
+  const { data, loading, progress, error } = useScouting({
     from: filters.from,
     to: filters.to,
     greenhouse: filters.greenhouse === ALL ? undefined : filters.greenhouse,
@@ -430,6 +430,11 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       .slice(0, 8);
   }, [selectedAgg, houseFigs]);
 
+  // First load (no scouting processed yet): the legend and panel headings
+  // stand, the counts and the affected-block list are skeletons.
+  // A failed load ends the skeletons and says so (below), rather than pulsing on.
+  const first = firstLoad(loading || (!data && !error), !!data);
+
   return (
     <div className="flex flex-col h-svh overflow-hidden">
       <MapHeader
@@ -482,6 +487,11 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       />
 
       <div className="flex items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground border-b">
+        {/* Was a full-screen overlay; inline here so the map shows through. */}
+        {error && !data && !loading && (
+          <span role="alert" className="text-destructive">{error}</span>
+        )}
+        <LoadProgress active={loading || loadingGeo} progress={loading ? progress : 100} />
         <span className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full" style={{ background: "#5bb45d" }} /> Low
         </span>
@@ -492,7 +502,13 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
           <span className="h-2 w-2 rounded-full" style={{ background: "#dc2626" }} /> High
         </span>
         <span className="ml-auto tabular-nums">
-          {affected.length} affected blocks · {totalObs} observations
+          {first ? (
+            <TextSkeleton width="24ch" />
+          ) : (
+            <>
+              {affected.length} affected blocks · {totalObs} observations
+            </>
+          )}
         </span>
       </div>
 
@@ -527,9 +543,11 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
               </button>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto p-2">
+            <div className="flex-1 min-h-0 overflow-y-auto p-2" aria-busy={first || undefined}>
               {!selectedAgg ? (
-                affected.length ? (
+                first ? (
+                  <RowsSkeleton rows={6} />
+                ) : affected.length ? (
                   affected.map((b) => (
                     <button
                       key={b.block}
@@ -671,12 +689,6 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
         )}
       </div>
 
-      <LoadingOverlay
-        open={loading || loadingGeo}
-        progress={loading ? progress : 100}
-        weeksLoaded={weeksLoaded}
-        weeksTotal={weeksTotal}
-      />
     </div>
   );
 }

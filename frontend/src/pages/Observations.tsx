@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 import { CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -92,7 +92,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
   // is a single-day slice of an already-resident dataset.
   const ghForCall =
     filters.greenhouse === ALL ? undefined : filters.greenhouse;
-  const { data, loading, progress, weeksLoaded, weeksTotal } = useScouting({
+  const { data, loading, progress, error } = useScouting({
     from: filters.from,
     to: filters.to,
     greenhouse: ghForCall,
@@ -379,6 +379,11 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
     </Tabs>
   );
 
+  // First load (nothing processed yet): the panel's labels stand, the figures
+  // and the legend rows are skeletons. A refresh keeps the old figures.
+  // A failed load ends the skeletons and says so (below), rather than pulsing on.
+  const first = firstLoad(loading || (!data && !error), !!data);
+
   return (
     <div className="flex flex-col h-svh overflow-hidden">
       <RangeHeader
@@ -390,8 +395,22 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
       />
 
       {/* Slim stats line — the kind switcher now lives in the header row. */}
-      <div className="flex justify-end px-4 md:px-6 pb-1 text-xs text-muted-foreground tabular-nums">
-        {zoneTotals.size} scouted zone{zoneTotals.size === 1 ? "" : "s"}
+      {/* The load's progress sits on the left of this line (was a full-screen
+          overlay), so the map and panel stay visible while the weeks load. */}
+      <div className="flex items-center justify-between gap-3 px-4 md:px-6 pb-1 text-xs text-muted-foreground tabular-nums">
+        {error && !data && !loading && (
+          <span role="alert" className="text-destructive">{error}</span>
+        )}
+        <LoadProgress active={loading} progress={progress} />
+        <span className="ml-auto">
+          {first ? (
+            <TextSkeleton width="12ch" />
+          ) : (
+            <>
+              {zoneTotals.size} scouted zone{zoneTotals.size === 1 ? "" : "s"}
+            </>
+          )}
+        </span>
       </div>
 
       {/* Map + floating panel. ``isolate z-0`` keeps the leaflet panes
@@ -411,7 +430,10 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
 
         {/* Docked right sidebar (mirrors the scouting map) — no longer a
             hovering overlay. */}
-        <div className="m-4 md:m-6 lg:ml-0 flex max-h-[45vh] flex-col gap-3 overflow-auto rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] lg:max-h-none">
+        <div
+          className="m-4 md:m-6 lg:ml-0 flex max-h-[45vh] flex-col gap-3 overflow-auto rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] lg:max-h-none"
+          aria-busy={first || undefined}
+        >
           <CardHeader className="p-0 pb-2">
             <CardTitle className="text-sm">{KIND_LABEL[kind]} summary</CardTitle>
             <CardDescription className="text-[0.7rem] tabular-nums">
@@ -433,7 +455,9 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
                 <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
                   {label}
                 </div>
-                <div className="text-sm font-semibold tabular-nums">{v}</div>
+                <div className="text-sm font-semibold tabular-nums">
+                  {first ? <TextSkeleton width="3ch" /> : v}
+                </div>
               </div>
             ))}
           </div>
@@ -462,7 +486,9 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
             </div>
           </div>
 
-          {legendRows.length === 0 ? (
+          {first ? (
+            <RowsSkeleton rows={6} />
+          ) : legendRows.length === 0 ? (
             <div className="text-[0.72rem] text-muted-foreground py-3 text-center">
               No {KIND_LABEL[kind].toLowerCase()} in this range.
             </div>
@@ -498,12 +524,6 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
         </div>
       </div>
 
-      <LoadingOverlay
-        open={loading}
-        progress={progress}
-        weeksLoaded={weeksLoaded}
-        weeksTotal={weeksTotal}
-      />
     </div>
   );
 }

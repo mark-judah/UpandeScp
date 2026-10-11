@@ -12,7 +12,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, XAxis, YAxis } from "recharts";
-import { BarChart3, Search, X, Loader2 } from "lucide-react";
+import { BarChart3, Search, X } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -35,6 +35,7 @@ import {
 } from "@/lib/store-keeper-api";
 import { cn } from "@/lib/utils";
 import { RevealLTR } from "@/components/RevealLTR";
+import { ChartSkeleton, RowsSkeleton, TableRowsSkeleton } from "@/components/Loading";
 
 const MAX_SELECT = 5;
 // Distinct, legible series colours (max 5 chemicals at once).
@@ -376,11 +377,10 @@ export function ChemicalStoreComparison() {
 
   if (loading) {
     return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading store levels…
-        </CardContent>
-      </Card>
+      <>
+        <StoreLevelComparisonSkeleton title="Compare chemical levels across farms" />
+        <StoreLevelComparisonSkeleton title="Compare fertilizer levels across farms" />
+      </>
     );
   }
 
@@ -406,6 +406,64 @@ export function ChemicalStoreComparison() {
         emptyMessage="No farms have a fertilizer store mapped."
         bucket={data.fertilizer}
       />
+    </>
+  );
+}
+
+/** One bucket's two cards before the levels land: the real titles, picker
+ *  search and table heading, with the chemical list, chart and rows pulsing. */
+function StoreLevelComparisonSkeleton({ title }: { title: string }) {
+  return (
+    <>
+      <Card aria-busy="true">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BarChart3 className="h-4 w-4" />
+            {title}
+          </CardTitle>
+          <CardDescription>
+            Pick up to {MAX_SELECT} chemicals to compare their levels per farm.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-1 flex flex-col gap-2">
+            <div className="min-h-7" />
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input placeholder="Find a chemical…" className="h-8 pl-8 text-xs" disabled />
+            </div>
+            <div className="rounded-md border max-h-64 overflow-hidden">
+              <RowsSkeleton rows={6} className="gap-0" />
+            </div>
+          </div>
+          <div className="lg:col-span-2 min-w-0">
+            <ChartSkeleton height={320} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card aria-busy="true">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Levels by farm</CardTitle>
+          <CardDescription>
+            Every chemical on rows, each farm's mapped store a column.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <table className="w-full text-xs border-collapse">
+            <thead className="text-[0.65rem] uppercase tracking-wide text-muted-foreground border-b">
+              <tr>
+                <th className="text-left px-3 py-2 min-w-44">Chemical</th>
+                <th className="px-3 py-2" />
+                <th className="px-3 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              <TableRowsSkeleton cols={3} rows={5} />
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
     </>
   );
 }

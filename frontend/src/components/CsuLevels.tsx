@@ -14,6 +14,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, XAxis, YAxis } from "recharts";
 import { Warehouse, Search, X } from "lucide-react";
 import {
+  Bar as SkeletonBar,
+  ChartSkeleton,
+  RowsSkeleton,
+  TextSkeleton,
+} from "@/components/Loading";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -190,6 +196,9 @@ export function CsuLevels({
       return [...prev, code];
     });
 
+  // First load: the page passes `loading` only until the overview has landed.
+  const skeleton = !!loading && !data;
+
   const toggleCsu = (wh: string) => {
     if (!stockCsus.has(wh)) return; // empty CSU — disabled, not selectable
     setSelectedCsus((prev) =>
@@ -198,7 +207,7 @@ export function CsuLevels({
   };
 
   return (
-    <Card>
+    <Card aria-busy={skeleton || undefined}>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <Warehouse className="h-4 w-4" />
@@ -206,8 +215,15 @@ export function CsuLevels({
         </CardTitle>
         <CardDescription>
           Pick the CSUs to check and up to {MAX_SELECT} chemicals to compare —
-          which chemical is where, and how much. {stockCsus.size} of {csus.length}{" "}
-          CSU{csus.length === 1 ? "" : "s"} hold stock; empty ones are disabled.
+          which chemical is where, and how much.{" "}
+          {skeleton ? (
+            <TextSkeleton width="8rem" />
+          ) : (
+            <>
+              {stockCsus.size} of {csus.length} CSU{csus.length === 1 ? "" : "s"}
+            </>
+          )}{" "}
+          hold stock; empty ones are disabled.
           {selected.length >= MAX_SELECT && " Max reached — deselect one to swap."}
         </CardDescription>
       </CardHeader>
@@ -260,9 +276,13 @@ export function CsuLevels({
                 </button>
               );
             })}
-            {!csus.length && (
+            {skeleton &&
+              [0, 1, 2, 3, 4, 5].map((i) => (
+                <SkeletonBar key={i} className="h-[22px] w-16 rounded-full" />
+              ))}
+            {!csus.length && !skeleton && (
               <span className="text-xs text-muted-foreground">
-                {loading ? "Loading…" : "No CSU warehouses holding stock."}
+                No CSU warehouses holding stock.
               </span>
             )}
           </div>
@@ -284,7 +304,8 @@ export function CsuLevels({
                   </button>
                 </Badge>
               ))}
-              {!selected.length && (
+              {skeleton && <SkeletonBar className="h-5 w-24 rounded-full" />}
+              {!selected.length && !skeleton && (
                 <span className="text-xs text-muted-foreground">
                   Pick a chemical.
                 </span>
@@ -300,6 +321,7 @@ export function CsuLevels({
               />
             </div>
             <div className="rounded-md border max-h-64 overflow-auto divide-y">
+              {skeleton && <RowsSkeleton rows={6} className="gap-0" />}
               {pickList.map((it) => {
                 const on = selected.includes(it.item_code);
                 const disabled = !on && selected.length >= MAX_SELECT;
@@ -321,7 +343,7 @@ export function CsuLevels({
                   </button>
                 );
               })}
-              {!pickList.length && (
+              {!pickList.length && !skeleton && (
                 <div className="px-2.5 py-2 text-xs text-muted-foreground">
                   No chemicals match.
                 </div>
@@ -331,7 +353,9 @@ export function CsuLevels({
 
           {/* Grouped bar chart: one group per selected CSU */}
           <div className="lg:col-span-2 min-w-0">
-            {selected.length && shownCsus.length ? (
+            {skeleton ? (
+              <ChartSkeleton height={320} />
+            ) : selected.length && shownCsus.length ? (
               <RevealLTR>
                 <ChartContainer config={chartConfig} className="w-full h-80">
                   <BarChart

@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ChartSkeleton, TextSkeleton } from "@/components/Loading";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RevealLTR } from "@/components/RevealLTR";
@@ -59,13 +60,30 @@ export interface GreenhouseModalProps {
   onClose: () => void;
 }
 
+/** The modal's small count rows (`px-2 py-1 text-xs`) before they arrive. */
+function MiniRowsSkeleton() {
+  return (
+    <div className="flex flex-col gap-1" aria-hidden data-skeleton="rows">
+      {["70%", "55%", "62%", "48%"].map((w) => (
+        <div key={w} className="flex items-center justify-between rounded bg-[var(--sd-bg-soft)] px-2 py-1">
+          <span className="block h-3 animate-pulse rounded bg-[var(--sd-line)]" style={{ width: w }} />
+          <span className="block h-3 w-5 animate-pulse rounded bg-[var(--sd-line)]" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }: GreenhouseModalProps) {
   const open = greenhouse !== null && greenhouse !== "";
-  const { data } = useDashboardAggregate<GhDetailPayload>(
+  const { data, loading: fetching, error } = useDashboardAggregate<GhDetailPayload>(
     "greenhouse_detail",
     { from_date: fromDate, to_date: toDate, crop, greenhouse: greenhouse ?? "" },
     open,
   );
+  // Each open is a different greenhouse, so any fetch is a "first load" here:
+  // the previous house's figures must not sit under this house's title.
+  const loading = open && (fetching || (!data && !error));
 
   const detail = data ?? { topPests: [], topDiseases: [], traps: [], daily: [],
                            scouts: 0, alerts: 0, prevalence: [] };
@@ -87,10 +105,17 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
         <DialogHeader>
           <DialogTitle>{greenhouse || "Greenhouse"}</DialogTitle>
           <DialogDescription>
-            {fromDate} → {toDate} · {detail.scouts} scout
-            {detail.scouts !== 1 ? "s" : ""} · {total} observation
-            {total !== 1 ? "s" : ""}
-            {detail.alerts > 0 && (
+            {fromDate} → {toDate} ·{" "}
+            {loading ? (
+              <TextSkeleton width="16ch" />
+            ) : (
+              <>
+                {detail.scouts} scout
+                {detail.scouts !== 1 ? "s" : ""} · {total} observation
+                {total !== 1 ? "s" : ""}
+              </>
+            )}
+            {!loading && detail.alerts > 0 && (
               <Badge variant="destructive" className="ml-2 text-[0.65rem]">
                 {detail.alerts} alert{detail.alerts !== 1 ? "s" : ""}
               </Badge>
@@ -98,7 +123,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3" aria-busy={loading || undefined}>
           <Card className="p-3">
             <CardHeader className="p-0 pb-1.5">
               <CardTitle className="text-[0.78rem] uppercase tracking-wide text-muted-foreground">
@@ -106,7 +131,9 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 flex flex-col gap-1">
-              {detail.topPests.length ? (
+              {loading ? (
+                <MiniRowsSkeleton />
+              ) : detail.topPests.length ? (
                 detail.topPests.map((p) => (
                   <div
                     key={p.name}
@@ -131,7 +158,9 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 flex flex-col gap-1">
-              {detail.topDiseases.length ? (
+              {loading ? (
+                <MiniRowsSkeleton />
+              ) : detail.topDiseases.length ? (
                 detail.topDiseases.map((d) => (
                   <div
                     key={d.name}
@@ -156,7 +185,9 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 flex flex-col gap-1">
-              {detail.traps.length ? (
+              {loading ? (
+                <MiniRowsSkeleton />
+              ) : detail.traps.length ? (
                 detail.traps.map((t) => (
                   <div
                     key={t.pest}
@@ -175,7 +206,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
           </Card>
         </div>
 
-        {current && (
+        {!loading && current && (
           <Card className="p-4">
             <CardHeader className="p-0 pb-2">
               <CardTitle>Where it is · {current.week ?? "latest scouted week"}</CardTitle>
@@ -218,8 +249,10 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
           <CardHeader className="p-0 pb-2">
             <CardTitle>Daily Trend</CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            {detail.daily.length ? (
+          <CardContent className="p-0" aria-busy={loading || undefined}>
+            {loading ? (
+              <ChartSkeleton height={192} />
+            ) : detail.daily.length ? (
               <RevealLTR>
                 <ChartContainer config={SERIES} className="h-48">
                   <LineChart

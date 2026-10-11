@@ -6,6 +6,7 @@
  */
 import { useState } from "react";
 import { tintFor } from "@/components/people/PersonAvatar";
+import { TextSkeleton } from "@/components/Loading";
 import { initialsOf } from "@/lib/scouts-api";
 
 export interface Fact {
@@ -79,8 +80,26 @@ export function PersonPortrait({
   );
 }
 
-export function PersonPortraitSkeleton() {
-  return (
+/** The photo frame pending; given `facts`, their labels are drawn for real
+ *  under it with only the values pending, so the card keeps its height. */
+export function PersonPortraitSkeleton({ facts }: { facts?: string[] } = {}) {
+  const frame = (
     <div className="aspect-[4/5] w-full animate-pulse rounded-[var(--sd-radius-card)] bg-[var(--sd-bg-soft)]" aria-hidden />
+  );
+  if (!facts?.length) return frame;
+  return (
+    <div className="flex flex-col gap-4">
+      {frame}
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+        {facts.map((label) => (
+          <div key={label} className="flex min-w-0 flex-col gap-0.5">
+            <dt className="text-[10px] font-medium uppercase tracking-[0.13em] text-[var(--sd-quiet)]">{label}</dt>
+            <dd className="h-[19.5px] py-[3px]">
+              <TextSkeleton width="9ch" />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }

@@ -89,6 +89,7 @@ import {
   type ProductEligibility,
 } from "@/lib/spray-compliance-api";
 import { WeatherCard } from "@/components/WeatherCard";
+import { Bar, LoadProgress, RowsSkeleton, TableRowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 import {
   SprayTeamEditor,
   type TeamMemberRow,
@@ -254,6 +255,8 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   const [bootstrap, setBootstrap] = useState<CreatorBootstrap | null>(null);
   const [bootstrapError, setBootstrapError] = useState<{ status: number; message: string } | null>(null);
   const [varietyTree, setVarietyTree] = useState<VarietyNode[]>([]);
+  /** the zone polygons have been fetched (or failed): a house with none is then "no map", not loading */
+  const [zonesLoaded, setZonesLoaded] = useState(false);
   const [bedsByGh, setBedsByGh] = useState<Record<string, BedAreaRow[]>>({});
   const [zonesByGh, setZonesByGh] = useState<Record<string, number>>({});
   // Per-chemical application-rate bounds (Item.custom_lower/upper_rate_limit).
@@ -339,6 +342,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   const [newBomHardness, setNewBomHardness] = useState<string>("100");
   const [newBomChems, setNewBomChems] = useState<NewBomChem[]>([]);
   const [newBomSearch, setNewBomSearch] = useState<string>("");
+  const [newBomCatalogLoaded, setNewBomCatalogLoaded] = useState(false);
   const [newBomSearchResults, setNewBomSearchResults] = useState<ChemicalItem[]>(
     [],
   );
@@ -386,8 +390,15 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     diagnoseFilters as any,
     !!greenhouse,
   );
-  const diagnose = diagnoseState.data;
+  // Counts fetched for ANOTHER greenhouse are not shown under this one's title
+  // (nor fed to targets); a filter change within the same house keeps them up.
+  const diagnose =
+    diagnoseState.dataFilters?.greenhouse === greenhouse ? diagnoseState.data : null;
   const loading = diagnoseState.loading;
+  // The diagnose aggregate's first load for this greenhouse: the step's frame
+  // (labels, chips row, heatmap box) stands; its figures pulse.
+  const diagSkeleton =
+    !!greenhouse && firstLoad(loading || (!diagnose && !diagnoseState.error), !!diagnose);
 
   useEffect(() => {
     let cancelled = false;
@@ -405,7 +416,10 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
           setBootstrapError({ status: 0, message: errorText(e) });
         }
       });
-    fetchBedsAndZones().then((v) => !cancelled && setVarietyTree(v));
+    fetchBedsAndZones()
+      .then((v) => !cancelled && setVarietyTree(v))
+      .catch(() => {})
+      .finally(() => !cancelled && setZonesLoaded(true));
     fetchZonesByGreenhouse().then((z) => !cancelled && setZonesByGh(z));
     fetchBedsByGreenhouse().then((b) => !cancelled && setBedsByGh(b));
     return () => {
@@ -541,7 +555,10 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     if (newBomSearchTimerRef.current)
       clearTimeout(newBomSearchTimerRef.current);
     newBomSearchTimerRef.current = setTimeout(() => {
-      searchChemicalItems(newBomSearch).then(setNewBomSearchResults);
+      searchChemicalItems(newBomSearch)
+        .then(setNewBomSearchResults)
+        .catch(() => setNewBomSearchResults([]))
+        .finally(() => setNewBomCatalogLoaded(true));
     }, 200);
     return () => {
       if (newBomSearchTimerRef.current)
@@ -1603,6 +1620,17 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
             </div>
           </div>
         </div>
+        {/* A refresh keeps this house's counts up; say it is fetching. */}
+        <LoadProgress
+          active={!!greenhouse && loading && !!diagnose}
+          progress={diagnoseState.progress?.percent ?? null}
+          label={diagnoseState.progress?.label}
+        />
+        {!!greenhouse && diagnoseState.error && !loading && (
+          <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {diagnoseState.error}
+          </p>
+        )}
 
         <div className="flex flex-wrap items-end gap-2">
           {allowedFarms.length > 1 && (
@@ -1628,7 +1656,12 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
           )}
           <div className="flex flex-col gap-1 min-w-56">
             <Label>Greenhouse</Label>
-            <Select value={greenhouse || ""} onValueChange={setGreenhouse}>
+            {/* Disabled, not hidden, until its options have loaded. */}
+            <Select
+              value={greenhouse || ""}
+              onValueChange={setGreenhouse}
+              disabled={!ghList.length && !greenhouse}
+            >
               <SelectTrigger className="h-9">
                 <SelectValue placeholder="Pick a greenhouse" />
               </SelectTrigger>
@@ -1657,10 +1690,12 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
           <div className="flex flex-col gap-1 text-xs text-muted-foreground">
             <span>Latest scouting</span>
             <span className="font-medium tabular-nums text-foreground">
-              {loading && !latestScoutingDate
-                ? "Loading…"
-                : latestScoutingDate ||
-                  (greenhouse ? "No entries in 60 days" : "—")}
+              {diagSkeleton ? (
+                <TextSkeleton width="6rem" />
+              ) : (
+                latestScoutingDate ||
+                  (greenhouse ? "No entries in 60 days" : "—")
+              )}
             </span>
           </div>
           {greenhouse && (
@@ -1743,14 +1778,27 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
           )}
           {greenhouse && (
             <div className="ml-auto text-xs text-muted-foreground tabular-nums">
-              {affectedZones} / {totalZones} zones · {coveragePct}%
+              {diagSkeleton ? (
+                <TextSkeleton width="9rem" />
+              ) : (
+                <>
+                  {affectedZones} / {totalZones} zones · {coveragePct}%
+                </>
+              )}
             </div>
           )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <div className="relative">
-            {greenhouse && geometry ? (
+          <div className="relative" aria-busy={diagSkeleton || undefined}>
+            {greenhouse && !geometry && !zonesLoaded ? (
+              // The heatmap's own box while the zone polygons are parsed.
+              <div
+                className="min-h-[640px] w-full animate-pulse rounded-md border bg-[var(--sd-bg-soft)]"
+                aria-label="Loading the greenhouse map"
+                data-skeleton="heatmap"
+              />
+            ) : greenhouse && geometry ? (
               <button
                 type="button"
                 onClick={() => setHeatmapModal(true)}
@@ -1767,17 +1815,18 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                   Click for full view
                 </span>
               </button>
+            ) : greenhouse ? (
+              <Card className="p-8 flex flex-col items-center justify-center text-center min-h-[640px]">
+                <CardTitle className="text-sm">No zone map for {greenhouse}</CardTitle>
+                <CardDescription className="mt-1">
+                  This greenhouse has no zone polygons yet, so the heatmap cannot be drawn.
+                </CardDescription>
+              </Card>
             ) : (
               <Card className="p-8 flex flex-col items-center justify-center text-center min-h-[640px]">
-                <CardTitle className="text-sm">
-                  {greenhouse ? "Loading geometry…" : "No greenhouse selected"}
-                </CardTitle>
+                <CardTitle className="text-sm">No greenhouse selected</CardTitle>
                 <CardDescription className="mt-1">
-                  {greenhouse
-                    ? "Zone polygons are being parsed in the background."
-                    : loading
-                      ? "Loading scouting entries in the background…"
-                      : "Pick a greenhouse to load the scouting heatmap."}
+                  Pick a greenhouse to load the scouting heatmap.
                 </CardDescription>
               </Card>
             )}
@@ -1807,6 +1856,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                       active={diag.pest === ALL}
                       onClick={() => setDiag({ ...diag, pest: ALL })}
                     />
+                    {diagSkeleton && <ChipsSkeleton />}
                     {filterOpts.pests.map((p) => (
                       <DiagChip
                         key={p}
@@ -1828,6 +1878,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                       active={diag.stage === ALL}
                       onClick={() => setDiag({ ...diag, stage: ALL })}
                     />
+                    {diagSkeleton && <ChipsSkeleton n={3} />}
                     {stagesForPest.map((s) => (
                       <DiagChip
                         key={s}
@@ -1854,6 +1905,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                       active={diag.section === ALL}
                       onClick={() => setDiag({ ...diag, section: ALL })}
                     />
+                    {diagSkeleton && <ChipsSkeleton n={3} />}
                     {sectionsForPest.map((s) => (
                       <DiagChip
                         key={s}
@@ -1880,7 +1932,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                     onCreate={startCurative}
                   />
                   <div className="text-[0.65rem] text-muted-foreground mt-1 tabular-nums">
-                    {coveragePct}% of zones flagged
+                    {diagSkeleton ? <TextSkeleton width="3ch" /> : coveragePct}% of zones flagged
                   </div>
                 </div>
               </CardContent>
@@ -2194,9 +2246,36 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
               </div>
 
               {bomLoading && (
-                <div className="text-xs text-muted-foreground flex items-center gap-2">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Loading chemicals…
+                // The tank mix's own frame — water fields, the chemicals table
+                // heading — with the values and rows pulsing.
+                <div className="flex flex-col gap-3" aria-busy="true" data-skeleton="bom">
+                  <div className="grid grid-cols-3 gap-2">
+                    {["Water pH", "Hardness", "Water Volume (L)"].map((l) => (
+                      <div key={l} className="flex flex-col gap-1">
+                        <Label className="text-[0.65rem]">{l}</Label>
+                        <Bar className="h-8" />
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <Label>Chemicals (per 1000 L)</Label>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Chemical</TableHead>
+                          <TableHead className="text-right">Rate / 1000 L</TableHead>
+                          <TableHead>UoM</TableHead>
+                          <TableHead className="text-right">Available</TableHead>
+                          <TableHead className="w-8" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        <TableRowsSkeleton cols={5} rows={4} />
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               )}
 
@@ -2897,12 +2976,17 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                     </button>
                   ))}
                 </div>
-              ) : (
+              ) : newBomSearch ? (
                 <p className="px-1 py-2 text-xs text-muted-foreground">
-                  {newBomSearch
-                    ? `Nothing matches "${newBomSearch}".`
-                    : "Loading chemicals…"}
+                  Nothing matches "{newBomSearch}".
                 </p>
+              ) : !newBomCatalogLoaded ? (
+                // The catalogue's first page has not landed: its list box, pulsing.
+                <div className="rounded-md border bg-card max-h-40 overflow-hidden" aria-busy="true">
+                  <RowsSkeleton rows={4} className="gap-0" />
+                </div>
+              ) : (
+                <p className="px-1 py-2 text-xs text-muted-foreground">No chemicals found.</p>
               )}
             </div>
             {newBomChems.length > 0 && (
@@ -3069,6 +3153,18 @@ function NumInput({
         className="h-8 text-xs tabular-nums"
       />
     </div>
+  );
+}
+
+/** Pest / stage / section chips that have not arrived, at a chip's own size. */
+function ChipsSkeleton({ n = 5 }: { n?: number }) {
+  const widths = ["w-16", "w-24", "w-20", "w-14", "w-28"];
+  return (
+    <>
+      {Array.from({ length: n }, (_, i) => (
+        <Bar key={i} className={`h-[22px] rounded-full ${widths[i % widths.length]}`} />
+      ))}
+    </>
   );
 }
 

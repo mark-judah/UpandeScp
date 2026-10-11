@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Bar, TextSkeleton } from "@/components/Loading";
 import { errorText } from "@/lib/errors";
 import {
   fetchCropSettings,
@@ -173,7 +174,7 @@ export function CropOverridesCard({ crop }: { crop: string }) {
         <CardTitle className="flex items-center gap-2">
           What {crop} does differently
           <span className="rounded-full bg-muted px-2 py-0.5 text-[0.7rem] font-medium tabular-nums text-muted-foreground">
-            {overriddenNow} of {total} overridden
+            {loading && !data ? <TextSkeleton width="10ch" /> : <>{overriddenNow} of {total} overridden</>}
           </span>
         </CardTitle>
         <CardDescription>
@@ -181,11 +182,32 @@ export function CropOverridesCard({ crop }: { crop: string }) {
           type here applies to {crop} only — every other crop keeps the default.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5">
-        {loading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading {crop}'s settings…
-          </div>
+      <CardContent className="space-y-5" aria-busy={(loading && !data) || undefined}>
+        {loading && !data ? (
+          // The groups and their field labels are fixed; only the inherited
+          // defaults and the inputs' values are pending.
+          GROUPS.map((group) => (
+            <div key={group.title} className="space-y-2">
+              <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
+                {group.title}
+              </div>
+              {group.keys.map((key) => (
+                <div
+                  key={key}
+                  className="grid grid-cols-1 gap-1 sm:grid-cols-[1fr_170px] sm:items-center"
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium">{LABELS[key] || key}</div>
+                    <TextSkeleton width="12ch" />
+                  </div>
+                  <div className="flex items-center gap-1" aria-hidden>
+                    <Bar className="h-8 flex-1" />
+                    <span className="h-8 w-8 shrink-0" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))
         ) : error ? (
           <div className="text-sm text-destructive">{error}</div>
         ) : data ? (

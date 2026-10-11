@@ -53,6 +53,7 @@ import {
 import { FrappeError } from "@/lib/frappe";
 
 import { errorText } from "@/lib/errors";
+import { firstLoad, TableRowsSkeleton } from "@/components/Loading";
 /** Sentinel for "no warehouse selected" — Radix Select rejects an empty
  *  string as an item value, so we need a non-empty placeholder value. */
 const NO_STORE = "__none__";
@@ -238,17 +239,9 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
     for (const r of dirty) await saveRow(r.farm);
   };
 
-  if (loading) {
-    return (
-      <Card>
-        <CardContent className="py-8 flex items-center justify-center text-sm text-muted-foreground gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading farms…
-        </CardContent>
-      </Card>
-    );
-  }
-  if (error?.status === 403) {
+  // First load: the roster table's columns are drawn, its rows pending.
+  const pending = firstLoad(loading, !!rows);
+  if (!loading && error?.status === 403) {
     return (
       <Card className="border-destructive/40">
         <CardHeader>
@@ -263,7 +256,7 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
       </Card>
     );
   }
-  if (error) {
+  if (!loading && error) {
     return (
       <Card className="border-destructive/40">
         <CardHeader>
@@ -317,7 +310,7 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
         </div>
       )}
       <Card>
-        <CardContent className="p-0">
+        <CardContent className="p-0" aria-busy={pending || undefined}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -332,6 +325,7 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {pending && <TableRowsSkeleton cols={8} rows={5} />}
               {(rows ?? []).map((r) => {
                 const dirty = isDirty(r);
                 return (

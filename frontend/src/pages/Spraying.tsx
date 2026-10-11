@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapBase } from "@/components/MapBase";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { KpiValueSkeleton, LoadProgress, RowsSkeleton, TextSkeleton } from "@/components/Loading";
 import {
   Card,
   CardContent,
@@ -114,6 +114,8 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
   const [zones, setZones] = useState<ZoneFeature[]>([]);
   const [logs, setLogs] = useState<SprayerGpsLog[]>([]);
   const [loading, setLoading] = useState(false);
+  // An empty day is a valid answer, so "has data" is "a response has landed".
+  const [loaded, setLoaded] = useState(false);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [hiddenSprayers, setHiddenSprayers] = useState<Set<string>>(new Set());
 
@@ -131,7 +133,10 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
     const gh = filters.greenhouse === ALL ? undefined : filters.greenhouse;
     fetchSprayerGpsLogs(filters.from, filters.to, gh)
       .then((rows) => {
-        if (alive) setLogs(rows);
+        if (alive) {
+          setLogs(rows);
+          setLoaded(true);
+        }
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -381,6 +386,10 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
         }))
     : [];
 
+  // First load: `loading` is still false on the very first paint, before the
+  // effect fires. A filter change keeps the old tracks on screen.
+  const skeleton = !loaded;
+
   const toggleSprayer = (key: string) =>
     setHiddenSprayers((prev) => {
       const next = new Set(prev);
@@ -408,7 +417,19 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
             />
           </div>
 
-          <Card className="absolute bottom-4 right-4 z-10 w-72 max-h-[70vh] overflow-y-auto bg-card/95 backdrop-blur shadow-md p-3">
+          {/* No fraction to report for this fetch — null sweeps, 0 would sit
+              empty and read as stuck. Floats on the map's top edge so the
+              basemap and the tracks already drawn stay in view. */}
+          <LoadProgress
+            active={loading}
+            progress={null}
+            className="absolute left-8 top-8 z-10 rounded-md bg-card/95 px-2 py-1.5 shadow-md backdrop-blur md:left-10 md:top-10"
+          />
+
+          <Card
+            className="absolute bottom-4 right-4 z-10 w-72 max-h-[70vh] overflow-y-auto bg-card/95 backdrop-blur shadow-md p-3"
+            aria-busy={loading || undefined}
+          >
             <CardHeader className="p-0 pb-2">
               <CardTitle className="text-sm">Spraying summary</CardTitle>
               <CardDescription className="text-[0.7rem] tabular-nums">
@@ -430,7 +451,9 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
                   <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
                     {label}
                   </div>
-                  <div className="text-sm font-semibold tabular-nums">{v}</div>
+                  <div className="text-sm font-semibold tabular-nums">
+                    {skeleton ? <KpiValueSkeleton className="mx-auto h-5 w-8" /> : v}
+                  </div>
                 </div>
               ))}
             </div>
@@ -459,7 +482,9 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
               </div>
             </div>
 
-            {sprayerInfo.list.length === 0 ? (
+            {skeleton ? (
+              <RowsSkeleton rows={4} className="gap-0.5" />
+            ) : sprayerInfo.list.length === 0 ? (
               <div className="text-[0.72rem] text-muted-foreground py-3 text-center">
                 No spraying on this date.
               </div>
@@ -546,7 +571,8 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
               </CardHeader>
               <CardContent className="p-0 mt-3">
                 <Badge variant="outline" className="text-[0.65rem]">
-                  {aggByZone.size} zone{aggByZone.size === 1 ? "" : "s"} covered
+                  {skeleton ? <TextSkeleton width="2ch" /> : aggByZone.size} zone
+                  {!skeleton && aggByZone.size === 1 ? "" : "s"} covered
                 </Badge>
               </CardContent>
             </Card>
@@ -554,9 +580,6 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
         </div>
       </div>
 
-      {/* No fraction to report for this fetch — null sweeps, 0 would sit
-          empty and read as stuck. */}
-      <LoadingOverlay open={loading} progress={null} />
     </div>
   );
 }

@@ -18,6 +18,12 @@ import {
 } from "recharts";
 import { PackageSearch } from "lucide-react";
 import {
+  ChartSkeleton,
+  KpiValueSkeleton,
+  TableRowsSkeleton,
+  TextSkeleton,
+} from "@/components/Loading";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -121,10 +127,13 @@ export function StoreBucketPanel({
   };
 
   const empty = !stores.length;
+  // `loading` with nothing yet is the first load: the frame stays, the data
+  // slots pulse. A reload with stores already shown keeps them.
+  const skeleton = !!loading && empty;
   const selectId = `sbp-chemical-${title.toLowerCase().replace(/\s+/g, "-")}`;
 
   return (
-    <Card>
+    <Card aria-busy={skeleton || undefined}>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <PackageSearch className="h-4 w-4" />
@@ -132,8 +141,8 @@ export function StoreBucketPanel({
         </CardTitle>
         <CardDescription>
           {empty
-            ? loading
-              ? "Loading…"
+            ? skeleton
+              ? <TextSkeleton width="12rem" />
               : "No stores in scope."
             : `${stores.length} store${stores.length === 1 ? "" : "s"} · ${fmt(bucket?.total_qty || 0)} total qty`}
         </CardDescription>
@@ -144,14 +153,14 @@ export function StoreBucketPanel({
             Total stock
           </div>
           <div className="text-xl font-semibold tabular-nums leading-tight">
-            {fmt(bucket?.total_qty || 0)}
+            {skeleton ? <KpiValueSkeleton className="h-[1.56rem] w-20" /> : fmt(bucket?.total_qty || 0)}
           </div>
         </div>
 
-        {!empty && (
+        {(!empty || skeleton) && (
           <div className="flex flex-col gap-1 max-w-72">
             <Label htmlFor={selectId}>Chemical</Label>
-            <Select value={selected} onValueChange={setSelected}>
+            <Select value={selected} onValueChange={setSelected} disabled={skeleton}>
               <SelectTrigger id={selectId} className="h-9">
                 <SelectValue />
               </SelectTrigger>
@@ -167,9 +176,11 @@ export function StoreBucketPanel({
           </div>
         )}
 
-        {empty ? (
+        {skeleton ? (
+          <ChartSkeleton height={256} />
+        ) : empty ? (
           <div className="text-xs text-muted-foreground py-8 text-center">
-            {loading ? "Loading stock…" : "No stores in scope for this bucket."}
+            No stores in scope for this bucket.
           </div>
         ) : (
           <div className="min-w-0">
@@ -219,6 +230,7 @@ export function StoreBucketPanel({
               </tr>
             </thead>
             <tbody>
+              {skeleton && <TableRowsSkeleton cols={stores.length + 2} rows={5} />}
               {matrixRows.map((i) => (
                 <tr
                   key={i.item_code}
@@ -250,13 +262,13 @@ export function StoreBucketPanel({
                   </td>
                 </tr>
               ))}
-              {!matrixRows.length && (
+              {!matrixRows.length && !skeleton && (
                 <tr>
                   <td
                     colSpan={stores.length + 2}
                     className="px-4 py-6 text-center text-xs text-muted-foreground"
                   >
-                    {loading ? "Loading…" : "No chemicals in scope."}
+                    No chemicals in scope.
                   </td>
                 </tr>
               )}

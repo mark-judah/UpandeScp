@@ -24,7 +24,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { RevealLTR } from "@/components/RevealLTR";
+import { ChartSkeleton } from "@/components/Loading";
 import { Kpi, KpiGrid } from "./Kpi";
+import { CardRowsSkeleton } from "./slot-skeletons";
 import { EmptyHint } from "./EmptyHint";
 import { DashFilterRow } from "./DashFilterRow";
 import { PrevalenceFigure } from "./PrevalenceFigure";
@@ -38,6 +40,8 @@ export interface DiseasesTabProps {
   section: string;
   stage: string;
   onFiltersChange: (next: { observation: string; section: string; stage: string }) => void;
+  /** First load (no payload yet): the cards stand, their contents are skeletons. */
+  loading?: boolean;
 }
 
 export function DiseasesTab({
@@ -46,6 +50,7 @@ export function DiseasesTab({
   section,
   stage,
   onFiltersChange,
+  loading = false,
 }: DiseasesTabProps) {
   const { disease: diseaseColor } = useObservationColors();
 
@@ -82,17 +87,19 @@ export function DiseasesTab({
   const filters = { observation: diseaseName, section, stage: effectiveStage };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" aria-busy={loading || undefined}>
       <KpiGrid cols={4}>
-        <Kpi label="Disease Zones" value={ranking.length} hint="distinct diseases" />
-        <Kpi label="Active Diseases" value={total} hint="incidents" />
+        <Kpi loading={loading} label="Disease Zones" value={ranking.length} hint="distinct diseases" />
+        <Kpi loading={loading} label="Active Diseases" value={total} hint="incidents" />
         <Kpi
+          loading={loading}
           label="Severe Cases"
           value={severe}
           tone={severe > 0 ? "critical" : "default"}
           hint="high-severity"
         />
         <Kpi
+          loading={loading}
           label="Top Disease"
           value={top?.name || "—"}
           hint={top ? `${top.total} incidents` : "no diseases recorded"}
@@ -115,11 +122,14 @@ export function DiseasesTab({
               stageOptions={stageOptions}
               value={filters}
               onChange={onFiltersChange}
+              disabled={loading}
             />
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {trend.rows.length ? (
+          {loading ? (
+            <ChartSkeleton height={256} />
+          ) : trend.rows.length ? (
             <RevealLTR>
               <ChartContainer config={lineConfig} className="h-64">
                 <LineChart data={trend.rows} margin={{ left: 4, right: 8, top: 8 }}>
@@ -172,7 +182,9 @@ export function DiseasesTab({
             <CardDescription>Adjusted prevalence across the scope · latest scouted week</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {distribution.length ? (
+            {loading ? (
+              <ChartSkeleton height={288} />
+            ) : distribution.length ? (
               <RevealLTR>
                 <ChartContainer config={distConfig} className="h-72">
                   <BarChart
@@ -224,7 +236,9 @@ export function DiseasesTab({
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {sectionSplit.length ? (
+            {loading ? (
+              <ChartSkeleton height={288} />
+            ) : sectionSplit.length ? (
               <RevealLTR>
                 <ChartContainer config={distConfig} className="h-72">
                   <BarChart data={sectionSplit} margin={{ left: 12, right: 12, top: 8 }}>
@@ -262,7 +276,9 @@ export function DiseasesTab({
             <CardDescription>Per disease · high · moderate · low</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {ranking.length ? (
+            {loading ? (
+              <CardRowsSkeleton rows={6} twoLine />
+            ) : ranking.length ? (
               <div className="flex flex-col gap-1.5">
                 {ranking.slice(0, 8).map((r) => {
                   const tot = Math.max(1, r.high + r.moderate + r.low);
@@ -317,7 +333,9 @@ export function DiseasesTab({
             <CardDescription>Adjusted prevalence · each greenhouse's latest scouted week</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {ghPressure.length ? (
+            {loading ? (
+              <ChartSkeleton height={288} />
+            ) : ghPressure.length ? (
               <RevealLTR>
                 <ChartContainer config={distConfig} className="h-72">
                   <BarChart

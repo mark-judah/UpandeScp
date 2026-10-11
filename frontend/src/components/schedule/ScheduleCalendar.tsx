@@ -3,6 +3,7 @@ import { format, isSameDay } from "date-fns";
 import { AlertTriangle, ChevronsLeft } from "lucide-react";
 import type { SchedulePlan } from "@/lib/schedule-api";
 import { cn } from "@/lib/utils";
+import { Bar } from "@/components/Loading";
 import { CrewPopover, hasUnavailable } from "./CrewPopover";
 import { chipProps } from "./schedule-colors";
 import { calendarDayOf, calendarDays, shortGreenhouse, startsBefore, ymd } from "./schedule-utils";
@@ -15,12 +16,15 @@ export function ScheduleCalendar({
   from,
   to,
   today = new Date(),
+  loading = false,
   onOpen,
 }: {
   plans: SchedulePlan[];
   from: string;
   to: string;
   today?: Date;
+  /** first load: the real grid with pulsing chips in place of plans */
+  loading?: boolean;
   onOpen: (plan: SchedulePlan) => void;
 }) {
   const days = useMemo(() => calendarDays(from, to), [from, to]);
@@ -38,7 +42,11 @@ export function ScheduleCalendar({
   }, [plans, from]);
 
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card" data-testid="schedule-calendar">
+    <div
+      className="overflow-x-auto rounded-xl border bg-card"
+      data-testid="schedule-calendar"
+      aria-busy={loading || undefined}
+    >
       <div className="grid min-w-[720px] grid-cols-7">
         {WEEKDAYS.map((w) => (
           <div
@@ -48,7 +56,7 @@ export function ScheduleCalendar({
             {w}
           </div>
         ))}
-        {days.map((d) => {
+        {days.map((d, i) => {
           const key = ymd(d);
           const inRange = key >= from && key <= to;
           const list = byDay.get(key) || [];
@@ -70,6 +78,11 @@ export function ScheduleCalendar({
                 {format(d, "d")}
               </div>
               <div className="flex flex-col gap-1">
+                {/* A chip on some in-range days, none on others — a block of
+                    identical chips reads as a graphic, not as plans to come. */}
+                {loading && inRange && i % 3 !== 2 && (
+                  <Bar className={cn("h-8 w-full rounded-md", i % 2 ? "opacity-70" : "")} />
+                )}
                 {list.map((p) => {
                   const paint = chipProps(p.workflow_state);
                   const short = hasUnavailable(p);

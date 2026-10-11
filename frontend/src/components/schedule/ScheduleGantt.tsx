@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { AlertTriangle, ChevronsLeft } from "lucide-react";
 import type { ScheduleLeave, SchedulePlan } from "@/lib/schedule-api";
 import { cn } from "@/lib/utils";
+import { Bar } from "@/components/Loading";
 import { CrewPopover, hasUnavailable } from "./CrewPopover";
 import { chipProps } from "./schedule-colors";
 import { colOf, daysOf, overlaps, packLanes, shortGreenhouse, startsBefore, ymd } from "./schedule-utils";
@@ -30,6 +31,7 @@ export function ScheduleGantt({
   to,
   rowsBy,
   today = new Date(),
+  loading = false,
   onOpen,
 }: {
   plans: SchedulePlan[];
@@ -38,6 +40,8 @@ export function ScheduleGantt({
   to: string;
   rowsBy: GanttRowsBy;
   today?: Date;
+  /** first load: the real day header with pulsing rows beneath it */
+  loading?: boolean;
   onOpen: (plan: SchedulePlan) => void;
 }) {
   const days = useMemo(() => daysOf(from, to), [from, to]);
@@ -73,7 +77,11 @@ export function ScheduleGantt({
   const todayCol = todayKey >= from && todayKey <= to ? colOf(todayKey, from, to) : -1;
 
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card" data-testid="schedule-gantt">
+    <div
+      className="overflow-x-auto rounded-xl border bg-card"
+      data-testid="schedule-gantt"
+      aria-busy={loading || undefined}
+    >
       <div className="relative" style={{ width }}>
         {todayCol >= 0 && (
           <div
@@ -100,6 +108,34 @@ export function ScheduleGantt({
             </div>
           ))}
         </div>
+
+        {loading &&
+          rows.length === 0 &&
+          [0, 1, 2, 3, 4, 5].map((r) => {
+            // Bars staggered across the range, each a few days long.
+            const start = Math.min((r * 5) % Math.max(1, days.length), Math.max(0, days.length - 3));
+            const span = Math.min(2 + (r % 3), days.length - start);
+            return (
+              <div
+                key={r}
+                aria-hidden
+                data-skeleton="row"
+                className="grid border-b"
+                style={{ gridTemplateColumns: cols, gridTemplateRows: `${LANE_H}px` }}
+              >
+                <div className="sticky left-0 z-10 flex items-center bg-card px-2">
+                  <Bar className="h-3 w-24" />
+                </div>
+                {/* `Bar` takes classes only, and this one needs a grid column. */}
+                {span > 0 && (
+                  <span
+                    className="mx-0.5 my-1 block animate-pulse rounded-md bg-[var(--sd-bg-soft)]"
+                    style={{ gridRow: 1, gridColumn: `${start + 2} / ${start + span + 2}` }}
+                  />
+                )}
+              </div>
+            );
+          })}
 
         {rows.map((row) => {
           const laneCount = Math.max(1, ...row.lanes.map((l) => l.lane + 1));

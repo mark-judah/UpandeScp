@@ -16,7 +16,7 @@ import { PestsTab }     from "./dashboard/PestsTab";
 import { DiseasesTab }  from "./dashboard/DiseasesTab";
 import { TrapsTab }     from "./dashboard/TrapsTab";
 import { FcmTab }       from "./dashboard/FcmTab";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { LoadProgress, firstLoad } from "@/components/Loading";
 import { GalleryScopeProvider } from "@/components/gallery/ObservationGallery";
 import { ymd } from "@/lib/utils";
 import type { OverviewPayload } from "./dashboard/overview-types";
@@ -43,7 +43,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
   const [farm, setFarm] = useState<string>(ALL_FARMS);
   const [greenhouse, setGreenhouse] = useState<string>(ALL_GH);
   const [{ from, to }, setRange] = useState(defaultRange);
-  const { farms } = useCropFarms(crop);
+  const { farms, loading: farmsLoading } = useCropFarms(crop);
   const [scoutLookup, setScoutLookup] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -86,6 +86,13 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
     const h = ({overview, pests, diseases, traps, fcm} as const)[tab];
     h.reload({ force: true });
   };
+
+  // First load = no payload yet (and no error): the tab draws its cards with
+  // skeletons inside. A refresh keeps the old payload on screen and only shows
+  // the inline progress bar. "Not yet fetched" counts as loading too, so a tab
+  // opened for the first time never flashes its empty-state wording.
+  const firstOf = (h: { data: unknown; loading: boolean; error: string | null }) =>
+    firstLoad(h.loading || (!h.data && !h.error), !!h.data);
 
   return (
     <div className="flex flex-col min-h-svh">
@@ -134,6 +141,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
             <div className="flex flex-wrap items-center gap-2">
               <Select
                 value={farm}
+                disabled={farmsLoading}
                 onValueChange={(v) => {
                   setFarm(v);
                   setGreenhouse(ALL_GH);
@@ -198,11 +206,22 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
             const active = ({ overview, pests, diseases, traps, fcm } as const)[
               tab
             ];
-            return active.error ? (
-              <div className="text-xs text-[var(--sd-data-red)]">
-                Failed to load: {active.error}
-              </div>
-            ) : null;
+            return (
+              <>
+                {/* Was a full-screen overlay; now inline under the tabs so the
+                    frame and any old data stay visible (skeleton spec K4). */}
+                <LoadProgress
+                  active={active.loading}
+                  progress={active.progress?.percent ?? null}
+                  label={active.progress?.label}
+                />
+                {active.error ? (
+                  <div className="text-xs text-[var(--sd-data-red)]">
+                    Failed to load: {active.error}
+                  </div>
+                ) : null}
+              </>
+            );
           })()}
 
           <TabsContent value="overview" className="mt-0">
@@ -214,14 +233,8 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               crop={base.crop}
               farm={base.farm}
               greenhouse={base.greenhouse}
+              loading={firstOf(overview)}
             />
-            {overview.loading && (
-              <LoadingOverlay
-                open
-                progress={overview.progress?.percent ?? null}
-                label={overview.progress?.label}
-              />
-            )}
           </TabsContent>
           <TabsContent value="pests" className="mt-0">
             <PestsTab
@@ -230,14 +243,8 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               section={pestFilters.section}
               stage={pestFilters.stage}
               onFiltersChange={setPestFilters}
+              loading={firstOf(pests)}
             />
-            {pests.loading && (
-              <LoadingOverlay
-                open
-                progress={pests.progress?.percent ?? null}
-                label={pests.progress?.label}
-              />
-            )}
           </TabsContent>
           <TabsContent value="diseases" className="mt-0">
             <DiseasesTab
@@ -246,34 +253,14 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               section={diseaseFilters.section}
               stage={diseaseFilters.stage}
               onFiltersChange={setDiseaseFilters}
+              loading={firstOf(diseases)}
             />
-            {diseases.loading && (
-              <LoadingOverlay
-                open
-                progress={diseases.progress?.percent ?? null}
-                label={diseases.progress?.label}
-              />
-            )}
           </TabsContent>
           <TabsContent value="traps" className="mt-0">
-            <TrapsTab data={traps.data} />
-            {traps.loading && (
-              <LoadingOverlay
-                open
-                progress={traps.progress?.percent ?? null}
-                label={traps.progress?.label}
-              />
-            )}
+            <TrapsTab data={traps.data} loading={firstOf(traps)} />
           </TabsContent>
           <TabsContent value="fcm" className="mt-0">
-            <FcmTab data={fcm.data} />
-            {fcm.loading && (
-              <LoadingOverlay
-                open
-                progress={fcm.progress?.percent ?? null}
-                label={fcm.progress?.label}
-              />
-            )}
+            <FcmTab data={fcm.data} loading={firstOf(fcm)} />
           </TabsContent>
         </Tabs>
         </GalleryScopeProvider>

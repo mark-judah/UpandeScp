@@ -47,6 +47,7 @@ import {
   type CsuCohort,
   type CsuItem,
 } from "@/lib/spray-plan-creator-api";
+import { Bar, TextSkeleton } from "@/components/Loading";
 import { cn } from "@/lib/utils";
 
 import { errorText } from "@/lib/errors";
@@ -170,6 +171,10 @@ export function CreatorStock() {
 
   useEffect(load, []);
 
+  // First load: the cards, titles and KPI labels are drawn and only the
+  // figures and rows pend. A reload keeps the old stock on screen.
+  const pending = !data && !error;
+
   const matchesQuery = (item_name: string, item_code: string): boolean => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
@@ -283,6 +288,7 @@ export function CreatorStock() {
                 placeholder="Find a chemical…"
                 className="h-9 pl-8 min-w-56"
                 value={query}
+                disabled={pending}
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
@@ -309,7 +315,10 @@ export function CreatorStock() {
         </div>
       </PageHeader>
 
-      <div className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4">
+      <div
+        className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4"
+        aria-busy={pending || undefined}
+      >
         {error && (
           <Card className="border-destructive/40 p-3">
             <CardDescription className="text-destructive">
@@ -329,25 +338,28 @@ export function CreatorStock() {
 
         <AlertsCard
           alerts={alerts}
-          loading={loading}
+          loading={pending}
           csuMaxAgeDays={data?.csu_max_age_days ?? 3}
         />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Kpi
             label="Low-stock items"
+            pending={pending}
             value={String(scopedData?.low_stock_count ?? 0)}
             sublabel="chemical stores below threshold"
             accent={scopedData?.low_stock_count ? "warn" : undefined}
           />
           <Kpi
             label="Aged CSU batches"
+            pending={pending}
             value={String(scopedData?.aged_csu_count ?? 0)}
             sublabel={`sitting > ${data?.csu_max_age_days ?? 3} days`}
             accent={scopedData?.aged_csu_count ? "warn" : undefined}
           />
           <Kpi
             label="Chemical store stock"
+            pending={pending}
             value={fmt(totals.store)}
             sublabel={`${scopedData?.chemical_stores.length ?? 0} store${
               (scopedData?.chemical_stores.length ?? 0) === 1 ? "" : "s"
@@ -355,6 +367,7 @@ export function CreatorStock() {
           />
           <Kpi
             label="CSU stock"
+            pending={pending}
             value={fmt(totals.csu)}
             sublabel={
               totals.expired > 0
@@ -369,18 +382,18 @@ export function CreatorStock() {
           />
         </div>
 
-        <StockHealthCard rows={bullets} loading={loading} />
+        <StockHealthCard rows={bullets} loading={pending} />
 
         <CsuSection
           rows={filteredCsus}
-          loading={loading}
+          loading={pending}
           filtered={Boolean(query || onlyAlerts)}
           csuMaxAgeDays={data?.csu_max_age_days ?? 3}
         />
 
         <StoreSection
           rows={filteredStores}
-          loading={loading}
+          loading={pending}
           filtered={Boolean(query || onlyAlerts)}
         />
 
@@ -407,7 +420,18 @@ function AlertsCard({
   const agedCount = alerts.filter((a) => a.kind === "aged").length;
 
   if (loading && alerts.length === 0) {
-    return null;
+    // The "All clear" card's footprint, until we know which card it is.
+    return (
+      <Card aria-hidden data-skeleton="alerts">
+        <CardContent className="py-3 px-4 flex items-center gap-3">
+          <div className="h-2.5 w-2.5 rounded-full bg-[var(--sd-bg-soft)] shrink-0" />
+          <div className="flex flex-col gap-1.5">
+            <TextSkeleton width="8ch" />
+            <TextSkeleton width="32ch" />
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   if (alerts.length === 0) {
@@ -520,7 +544,7 @@ function StockHealthCard({
           <WarehouseIcon className="h-4 w-4" />
           Chemical store health
           <span className="ml-auto text-[0.7rem] font-normal text-muted-foreground">
-            {rows.length} chemical{rows.length === 1 ? "" : "s"} · at-risk first
+            {loading ? <TextSkeleton width="7ch" /> : <>{rows.length} chemical{rows.length === 1 ? "" : "s"}</>} · at-risk first
           </span>
         </CardTitle>
         <CardDescription className="text-[0.7rem]">
@@ -530,9 +554,11 @@ function StockHealthCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="px-2 py-2">
-        {rows.length === 0 ? (
+        {loading ? (
+          <BulletBarsSkeleton />
+        ) : rows.length === 0 ? (
           <div className="text-xs text-muted-foreground py-6 text-center">
-            {loading ? "Loading…" : "No chemicals in stock."}
+            No chemicals in stock.
           </div>
         ) : (
           <div className="flex flex-col">
@@ -629,18 +655,18 @@ function StoreSection({
           <WarehouseIcon className="h-4 w-4" />
           Chemical stores
           <span className="ml-auto text-[0.7rem] font-normal text-muted-foreground">
-            {rows.length} location{rows.length === 1 ? "" : "s"} · storage
+            {loading ? <TextSkeleton width="8ch" /> : <>{rows.length} location{rows.length === 1 ? "" : "s"}</>} · storage
           </span>
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        {rows.length === 0 ? (
+        {loading ? (
+          <WarehouseRowsSkeleton />
+        ) : rows.length === 0 ? (
           <div className="text-xs text-muted-foreground py-8 text-center">
-            {loading
-              ? "Loading…"
-              : filtered
-                ? "No chemical store rows match the current filter."
-                : "No chemical store stock on hand."}
+            {filtered
+              ? "No chemical store rows match the current filter."
+              : "No chemical store stock on hand."}
           </div>
         ) : (
           <div className="divide-y">
@@ -776,19 +802,19 @@ function CsuSection({
           <Building2 className="h-4 w-4" />
           CSUs &middot; mixing units
           <span className="ml-auto text-[0.7rem] font-normal text-muted-foreground">
-            {rows.length} location{rows.length === 1 ? "" : "s"} · should
+            {loading ? <TextSkeleton width="8ch" /> : <>{rows.length} location{rows.length === 1 ? "" : "s"}</>} · should
             consume within {csuMaxAgeDays} days
           </span>
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        {rows.length === 0 ? (
+        {loading ? (
+          <WarehouseRowsSkeleton />
+        ) : rows.length === 0 ? (
           <div className="text-xs text-muted-foreground py-8 text-center">
-            {loading
-              ? "Loading…"
-              : filtered
-                ? "No CSU rows match the current filter."
-                : "Nothing in your CSUs right now."}
+            {filtered
+              ? "No CSU rows match the current filter."
+              : "Nothing in your CSUs right now."}
           </div>
         ) : (
           <div className="divide-y">
@@ -1363,12 +1389,30 @@ function Kpi({
   value,
   sublabel,
   accent,
+  pending = false,
 }: {
   label: string;
   value: string;
   sublabel?: string;
   accent?: "warn";
+  /** first load: the label stays, the figure and its note pend */
+  pending?: boolean;
 }) {
+  if (pending) {
+    return (
+      <Card>
+        <CardContent className="py-3 px-4 flex flex-col gap-0.5">
+          <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground font-semibold">
+            {label}
+          </div>
+          <div className="flex h-[1.4rem] items-center">
+            <Bar className="h-5 w-12" />
+          </div>
+          <TextSkeleton width="14ch" />
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card className={cn(accent === "warn" && "border-amber-500/40")}>
       <CardContent className="py-3 px-4 flex flex-col gap-0.5">
@@ -1390,5 +1434,51 @@ function Kpi({
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+/** Bullet rows at the real row's size: name and group, the bar, the figure. */
+function BulletBarsSkeleton({ rows = 6 }: { rows?: number }) {
+  const widths = ["72%", "48%", "64%", "36%", "58%", "80%"];
+  return (
+    <div className="flex flex-col" aria-hidden data-skeleton="bullets">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="grid grid-cols-[10rem_1fr_7rem] gap-3 items-center px-2 py-1.5">
+          <div className="flex flex-col gap-1">
+            <TextSkeleton width="9ch" />
+            <span className="block h-[8px] w-[5ch] animate-pulse rounded bg-[var(--sd-bg-soft)]" />
+          </div>
+          <div className="relative h-3 rounded-full bg-muted">
+            <div
+              className="absolute inset-y-0 left-0 animate-pulse rounded-full bg-[var(--sd-bg-soft)]"
+              style={{ width: widths[i % widths.length] }}
+            />
+          </div>
+          <div className="flex justify-end">
+            <TextSkeleton width="6ch" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Collapsed warehouse rows: name and farm line, then the total. */
+function WarehouseRowsSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="divide-y" aria-hidden data-skeleton="warehouses">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center justify-between gap-3 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <div className="flex flex-col gap-1.5">
+              <TextSkeleton width="18ch" />
+              <span className="block h-[9px] w-[12ch] animate-pulse rounded bg-[var(--sd-bg-soft)]" />
+            </div>
+          </div>
+          <TextSkeleton width="6ch" />
+        </div>
+      ))}
+    </div>
   );
 }

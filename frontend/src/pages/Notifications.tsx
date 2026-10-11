@@ -6,11 +6,13 @@
  * imply the notifications were crop-specific.
  */
 
+import { errorText } from "@/lib/errors";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, Check, CheckCheck } from "lucide-react";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
+import { TextSkeleton } from "@/components/Loading";
 import { cn } from "@/lib/utils";
 import {
   CATEGORY_LABEL,
@@ -37,11 +39,19 @@ export function Notifications() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [rows, setRows] = useState<ScpNotification[] | null>(null);
   const [unread, setUnread] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const r = await fetchNotifications({ category, unreadOnly, limit: 100 });
-    setRows(r.notifications);
-    setUnread(r.unread);
+    try {
+      const r = await fetchNotifications({ category, unreadOnly, limit: 100 });
+      setRows(r.notifications);
+      setUnread(r.unread);
+      setLoadError(null);
+    } catch (e) {
+      // Ends the skeleton: an empty list under the error, not rows pulsing on.
+      setLoadError(errorText(e, "Could not load notifications."));
+      setRows((prev) => prev ?? []);
+    }
   }, [category, unreadOnly]);
 
   useEffect(() => {
@@ -75,7 +85,7 @@ export function Notifications() {
           unread
             ? `${unread} unread`
             : rows === null
-            ? "Loading…"
+            ? <TextSkeleton width="9ch" />
             : "Nothing unread"
         }
       />
@@ -121,11 +131,29 @@ export function Notifications() {
         </Button>
       </div>
 
-      <div className="px-4 md:px-6 pb-6">
+      <div className="px-4 md:px-6 pb-6" aria-busy={rows === null || undefined}>
+        {loadError && (
+          <p role="alert" className="mb-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {loadError}
+          </p>
+        )}
         {rows === null ? (
-          <div className="flex flex-col gap-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-14 animate-pulse rounded-md bg-muted/40" />
+          // Rows at the real row's size: the unread dot, subject and preview
+          // lines, the category pill and the time.
+          <div className="flex flex-col gap-1.5" aria-hidden>
+            {["62%", "48%", "70%", "54%", "66%"].map((w, i) => (
+              <div
+                key={i}
+                data-skeleton="row"
+                className="flex items-start gap-3 rounded-md border border-[var(--sd-line-soft)] bg-card px-3 py-2.5"
+              >
+                <span className="mt-1 h-2 w-2 shrink-0" />
+                <span className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
+                  <TextSkeleton width={w} />
+                  <span className="block h-[10px] w-[40%] animate-pulse rounded bg-[var(--sd-bg-soft)]" />
+                </span>
+                <TextSkeleton width="7ch" />
+              </div>
             ))}
           </div>
         ) : !grouped.length ? (

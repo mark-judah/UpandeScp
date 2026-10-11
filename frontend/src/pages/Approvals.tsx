@@ -66,6 +66,7 @@ import {
   type DateBasis,
 } from "@/lib/approval-grouping";
 import { LoadingStrip } from "@/components/LoadingStrip";
+import { TableRowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 import { ymd, cn } from "@/lib/utils";
 import {
   approveWorkOrder,
@@ -163,6 +164,10 @@ export function Approvals() {
   const [stopConfirm, setStopConfirm] = useState(false);
   const [progress, setProgress] = useState<ProgressState>(INITIAL_PROGRESS);
   const [summary, setSummary] = useState<LifecycleSummaryRow[]>([]);
+  // The lists start empty, so "has data" is "a response has landed" — one flag
+  // per feed, since the stage summary arrives after the approval list.
+  const [loaded, setLoaded] = useState(false);
+  const [summaryLoaded, setSummaryLoaded] = useState(false);
   const [stageExpanded, setStageExpanded] = useState<string | null>(null);
   const reloadTimerRef = useRef<number | null>(null);
 
@@ -185,6 +190,7 @@ export function Approvals() {
         date_basis: dateBasis,
       });
       setAllWos(r.work_orders || []);
+      setLoaded(true);
       setChecked(new Set());
       setExpanded(new Set());
       // Post-approval stages come from the lifecycle summary. Best-effort —
@@ -196,7 +202,8 @@ export function Approvals() {
         greenhouse: greenhouse === ALL ? undefined : greenhouse,
       })
         .then(setSummary)
-        .catch(() => setSummary([]));
+        .catch(() => setSummary([]))
+        .finally(() => setSummaryLoaded(true));
     } catch (e: any) {
       setAllWos([]);
       setErrorMsg(
@@ -231,6 +238,10 @@ export function Approvals() {
   }, [farm, farmsData, greenhouse]);
 
   // ── Derived ───────────────────────────────────────────────────────
+  // First load only: a filter change keeps the old list on screen (with the
+  // LoadingStrip) instead of blanking it into skeletons.
+  const skeleton = firstLoad(loading, loaded);
+  const stageSkeleton = !summaryLoaded && !errorMsg;
   const pendingCount = useMemo(
     () => allWos.filter((w) => !w.is_forwarded).length,
     [allWos],
@@ -558,7 +569,7 @@ export function Approvals() {
         >
           {groupFarms ? "Grouped by farm" : "Group by farm"}
         </Button>
-        <Select value={farm} onValueChange={setFarm}>
+        <Select value={farm} onValueChange={setFarm} disabled={!farmsData.farms.length}>
           <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
             <SelectValue />
           </SelectTrigger>
@@ -595,7 +606,10 @@ export function Approvals() {
         </Button>
       </PageHeader>
 
-      <div className="px-4 md:px-6 py-4 flex-1 flex flex-col gap-3">
+      <div
+        className="px-4 md:px-6 py-4 flex-1 flex flex-col gap-3"
+        aria-busy={loading || undefined}
+      >
         <Tabs
           value={statusFilter}
           onValueChange={(v) => setStatusFilter(v as StatusFilter)}
@@ -603,15 +617,16 @@ export function Approvals() {
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="pending">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-500 mr-1.5" />
-              Pending · {pendingCount}
+              Pending · {skeleton ? <TextSkeleton width="1.5ch" /> : pendingCount}
             </TabsTrigger>
             <TabsTrigger value="forwarded">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 mr-1.5" />
-              Forwarded · {forwardedCount}
+              Forwarded · {skeleton ? <TextSkeleton width="1.5ch" /> : forwardedCount}
             </TabsTrigger>
             {STAGE_TABS.map((t) => (
               <TabsTrigger key={t.key} value={t.key}>
-                {t.label} · {stageCounts[t.key] || 0}
+                {t.label} ·{" "}
+                {stageSkeleton ? <TextSkeleton width="1.5ch" /> : stageCounts[t.key] || 0}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -643,7 +658,7 @@ export function Approvals() {
         {isStageTab && !errorMsg && (
           <StageTable
             rows={stageRows}
-            loading={loading}
+            loading={stageSkeleton}
             expanded={stageExpanded}
             onToggle={(name) =>
               setStageExpanded((prev) => (prev === name ? null : name))
@@ -651,7 +666,7 @@ export function Approvals() {
           />
         )}
 
-        {!isStageTab && !errorMsg && visibleWos.length > 0 && (
+        {!isStageTab && !errorMsg && (visibleWos.length > 0 || skeleton) && (
           <Card className="p-0">
             <CardContent className="p-0">
               <div className="flex items-center gap-2 px-3 py-2 border-b text-xs">
@@ -661,8 +676,14 @@ export function Approvals() {
                   aria-label="Select all"
                 />
                 <span className="text-muted-foreground">
-                  {visibleWos.length} work order
-                  {visibleWos.length !== 1 ? "s" : ""}
+                  {skeleton ? (
+                    <TextSkeleton width="7rem" />
+                  ) : (
+                    <>
+                      {visibleWos.length} work order
+                      {visibleWos.length !== 1 ? "s" : ""}
+                    </>
+                  )}
                 </span>
                 {/* Which of the two dates the range is filtering on. The page
                     used to answer only "scheduled for", which is why a range
@@ -691,6 +712,7 @@ export function Approvals() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {skeleton && <TableRowsSkeleton cols={8} rows={8} />}
                   {(groupFarms
                     ? farmGroups.flatMap((g) =>
                         g.plans.map((p, i) => ({ ...p, __farmHead: i === 0 ? g : null })),
@@ -1041,6 +1063,7 @@ function StageTable({
             </TableRow>
           </TableHeader>
           <TableBody>
+            {loading && !rows.length && <TableRowsSkeleton cols={5} rows={6} />}
             {rows.map((r) => {
               const open = expanded === r.name;
               return (

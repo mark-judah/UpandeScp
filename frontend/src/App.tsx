@@ -1,8 +1,15 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { useRoute, cropDisplayName, type View } from "@/lib/router";
-import { AppSidebar, canOpenView } from "@/components/AppSidebar";
+import { AppSidebar, canOpenView, viewNavMeta } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { PageSkeleton, MapPageSkeleton } from "@/components/Loading";
+import {
+  Bar,
+  ChartSkeleton,
+  MapPageSkeleton,
+  PageSkeleton,
+  RowsSkeleton,
+} from "@/components/Loading";
+import { PageHeader } from "@/components/PageHeader";
 import { PerfClock } from "@/components/PerfClock";
 import {
   primeBedsAndZones,
@@ -332,9 +339,28 @@ function renderView(crop: string, view: View): ReactNode {
 /* The route fallback. This used to be a sweeping progress bar on an empty
  * surface: honest about having no fraction to report, but silent about what is
  * arriving, so every first visit to a screen flashed a blank and then reflowed
- * into a layout. A skeleton is the same wait with the shape already in place. */
-function PageFallback() {
-  return <PageSkeleton />;
+ * into a layout. A skeleton is the same wait with the shape already in place —
+ * and the heading is real: the page's sidebar label as the title and its
+ * section as the eyebrow, from the same nav definition the sidebar draws. */
+export function routeHeading(
+  crop: string,
+  view: View,
+): { title: string; eyebrow?: string } {
+  const meta = viewNavMeta(view, crop);
+  if (meta) return { title: meta.label, eyebrow: meta.section };
+  // Not in any sidebar (Notifications, drill-downs): the slug, in words.
+  const words = view.replace(/-/g, " ");
+  return { title: words.charAt(0).toUpperCase() + words.slice(1) };
+}
+
+export function PageFallback({ crop, view }: { crop?: string; view?: View }) {
+  if (!view) return <PageSkeleton />;
+  const { title, eyebrow } = routeHeading(crop ?? "", view);
+  return MAP_VIEWS.has(view) ? (
+    <MapPageSkeleton title={title} eyebrow={eyebrow} />
+  ) : (
+    <PageSkeleton title={title} eyebrow={eyebrow} />
+  );
 }
 
 /* Full-bleed map pages do not have KPI cards, so PageSkeleton would draw the
@@ -346,38 +372,58 @@ const MAP_VIEWS = new Set<View>([
   "heatmaps",
 ]);
 
-/* Page-shaped skeleton for ApplicationPlan. Matches the real header + two-column
- * layout so the user sees structure instantly while the heavy chunk (recharts,
- * leaflet, the 1500-line module) parses. */
-function ApplicationPlanSkeleton() {
-  return (
-    <div className="flex flex-col min-h-svh animate-pulse">
-      <header className="sticky top-0 z-40 flex flex-col gap-3 border-b bg-card/80 backdrop-blur px-4 py-3 md:px-6 md:py-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="h-6 w-6 rounded bg-muted" />
-            <div className="space-y-1.5">
-              <div className="h-4 w-56 rounded bg-muted" />
-              <div className="h-2.5 w-40 rounded bg-muted/70" />
-            </div>
-          </div>
-          <div className="h-3 w-24 rounded bg-muted/70" />
-        </div>
-      </header>
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 p-4 md:p-6">
-        <div className="lg:col-span-1 space-y-3">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="rounded-md border bg-card p-3 space-y-2">
-              <div className="h-3 w-24 rounded bg-muted" />
-              <div className="h-8 w-full rounded bg-muted/70" />
-            </div>
-          ))}
-        </div>
-        <div className="lg:col-span-2 rounded-md border bg-card p-4">
-          <div className="h-4 w-40 rounded bg-muted mb-3" />
-          <div className="h-72 w-full rounded bg-muted/60" />
-        </div>
+/* Page-shaped skeleton for ApplicationPlan: the real header and the two step
+ * headings in the page's own words, with only the pickers and panels pending,
+ * while the heavy chunk (recharts, leaflet, the 1500-line module) parses. */
+export function ApplicationPlanSkeleton() {
+  const step = (n: number, title: string, hint: string) => (
+    <div className="flex items-center gap-3">
+      <div className="h-7 w-7 rounded-full bg-[var(--sd-accent)] text-white flex items-center justify-center text-xs font-semibold">
+        {n}
       </div>
+      <div>
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="text-xs text-muted-foreground">{hint}</div>
+      </div>
+    </div>
+  );
+  return (
+    <div
+      className="flex flex-col min-h-svh"
+      aria-busy="true"
+      aria-label="Loading the page"
+    >
+      <PageHeader
+        title="New Application Floor Plan"
+        eyebrow="Diagnose · Prescribe · Submit for approval"
+      >
+        <a
+          href="/scp_app#/historical"
+          className="text-xs text-muted-foreground underline"
+        >
+          View past plans →
+        </a>
+      </PageHeader>
+      <section className="px-4 md:px-6 py-4 flex flex-col gap-3">
+        {step(1, "Diagnose", "Pick a greenhouse, review the heatmap, choose what to filter.")}
+        <div className="flex flex-wrap items-end gap-2" aria-hidden>
+          <div className="flex flex-col gap-1 min-w-56">
+            <span className="text-sm font-medium">Greenhouse</span>
+            <Bar className="h-9 w-56" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" aria-hidden>
+          <div className="lg:col-span-2">
+            <ChartSkeleton height={288} />
+          </div>
+          <div className="rounded-md border bg-card p-3">
+            <RowsSkeleton rows={6} />
+          </div>
+        </div>
+      </section>
+      <section className="px-4 md:px-6 py-4 border-t flex flex-col gap-3">
+        {step(2, "Prescribe", "Set the application details and pick the BOM, then submit.")}
+      </section>
     </div>
   );
 }
@@ -514,10 +560,8 @@ export function App() {
             const fallback =
               kView === "application-plan" ? (
                 <ApplicationPlanSkeleton />
-              ) : MAP_VIEWS.has(kView) ? (
-                <MapPageSkeleton />
               ) : (
-                <PageFallback />
+                <PageFallback crop={kCrop} view={kView} />
               );
             return (
               <KeepAlive key={k} active={active}>

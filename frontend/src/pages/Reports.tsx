@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/PageHeader";
 import { BlockWeeklyReport } from "./BlockWeeklyReport";
 import { LoadingStrip } from "@/components/LoadingStrip";
+import { TextSkeleton } from "@/components/Loading";
 import { call } from "@/lib/frappe";
 import { errorText } from "@/lib/errors";
 import { cn } from "@/lib/utils";
@@ -125,6 +126,10 @@ export function Reports({ initialCrop }: { initialCrop?: string } = {}) {
 
 function RoseReports() {
   const [farms, setFarms] = useState<FarmOption[]>([]);
+  // The pickers stand from the first paint, disabled, with a placeholder bar
+  // while their options load — never "No weeks with data" before we know.
+  const [farmsLoading, setFarmsLoading] = useState(true);
+  const [weeksLoading, setWeeksLoading] = useState(false);
   const [farm, setFarm] = useState<string>("");
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [week, setWeek] = useState<string>("");
@@ -141,7 +146,8 @@ function RoseReports() {
         setFarms(arr);
         if (arr.length && !farm) setFarm(arr[0].farm);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setFarmsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -152,6 +158,7 @@ function RoseReports() {
       setWeek("");
       return;
     }
+    setWeeksLoading(true);
     call<WeekOption[]>(
       "upande_scp.serverscripts.reports.send_fcm_weekly_excel_report.list_report_weeks",
       { farm },
@@ -164,7 +171,8 @@ function RoseReports() {
       .catch(() => {
         setWeeks([]);
         setWeek("");
-      });
+      })
+      .finally(() => setWeeksLoading(false));
   }, [farm]);
 
   const sendEmail = async (spec: ReportSpec) => {
@@ -254,7 +262,7 @@ function RoseReports() {
             </CardHeader>
             <CardContent className="p-0 flex flex-col gap-2 mt-auto">
               {r.needsFarm && (
-                <>
+                <div className="contents" aria-busy={farmsLoading || weeksLoading || undefined}>
                   <div className="flex flex-col gap-1">
                     <Label>Farm</Label>
                     <Select
@@ -263,7 +271,9 @@ function RoseReports() {
                       disabled={!farms.length}
                     >
                       <SelectTrigger className="h-9">
-                        <SelectValue placeholder={farms.length ? "Pick a farm" : "Loading…"} />
+                        <SelectValue
+                          placeholder={farmsLoading ? <TextSkeleton width="14ch" /> : "Pick a farm"}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {farms.map((f) => (
@@ -285,7 +295,9 @@ function RoseReports() {
                       <SelectTrigger className="h-9">
                         <SelectValue
                           placeholder={
-                            !farm
+                            farmsLoading || weeksLoading
+                              ? <TextSkeleton width="14ch" />
+                              : !farm
                               ? "Pick a farm first"
                               : weeks.length
                                 ? "Pick a week"
@@ -302,7 +314,7 @@ function RoseReports() {
                       </SelectContent>
                     </Select>
                   </div>
-                </>
+                </div>
               )}
               <div className="flex gap-2">
                 <Button

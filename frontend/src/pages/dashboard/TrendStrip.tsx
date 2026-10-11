@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ChartSkeleton } from "@/components/Loading";
 import { EmptyHint } from "./EmptyHint";
 import { RevealLTR } from "@/components/RevealLTR";
 import { weekTickFormatter } from "@/lib/iso-week";
@@ -40,14 +41,17 @@ export function TrendStrip({
   rows,
   keys,
   unit = "",
+  loading = false,
 }: {
   title: string;
   description: string;
   rows: Array<Record<string, string | number>>;
   keys: string[];
   unit?: string;
+  /** First load: the card and its title stand, the chart is a skeleton. */
+  loading?: boolean;
 }) {
-  if (!rows.length || !keys.length) {
+  if (loading || !rows.length || !keys.length) {
     return (
       <Card className="p-4">
         <CardHeader className="p-0 pb-2">
@@ -55,7 +59,11 @@ export function TrendStrip({
           <CardDescription>{description}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <EmptyHint title="No trend data" hint="Nothing recorded in this range." />
+          {loading ? (
+            <ChartSkeleton height={224} />
+          ) : (
+            <EmptyHint title="No trend data" hint="Nothing recorded in this range." />
+          )}
         </CardContent>
       </Card>
     );

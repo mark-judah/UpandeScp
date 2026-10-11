@@ -8,10 +8,9 @@
  * the page shows what it returns and surfaces its refusals.
  */
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
-import { SprayTeamsTab } from "@/components/teams/SprayTeamsTab";
+import { SprayTeamsSkeleton, SprayTeamsTab } from "@/components/teams/SprayTeamsTab";
 import { DEFAULT_CROP } from "@/lib/scouting-api";
 import {
   fetchSprayTeams,
@@ -50,14 +49,14 @@ export function Teams({ initialCrop }: { initialCrop?: string } = {}) {
       <div className="flex min-w-0 flex-1 flex-col px-4 py-4 md:px-6 md:py-6">
         {ctx && teams ? (
           <SprayTeamsTab teams={teams} ctx={ctx} crop={crop} onSaved={onSaved} />
-        ) : (
+        ) : error ? (
           <Card>
-            <CardContent
-              className={`flex items-center justify-center py-12 text-sm ${error ? "text-destructive" : "text-muted-foreground"}`}
-            >
-              {error ? error : (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…</>)}
+            <CardContent className="flex items-center justify-center py-12 text-sm text-destructive">
+              {error}
             </CardContent>
           </Card>
+        ) : (
+          <SprayTeamsSkeleton />
         )}
       </div>
     </div>

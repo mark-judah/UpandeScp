@@ -12,10 +12,10 @@ import {
   AlertTriangle,
   MinusCircle,
   Ban,
-  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Bar, TextSkeleton } from "@/components/Loading";
 import {
   fetchLifecycle,
   type Lifecycle,
@@ -139,15 +139,32 @@ export function LifecycleTimeline({
   className?: string;
 }) {
   if (loading) {
+    // The timeline's own frame — heading, then step rows down a rail — with
+    // the state badge and each step's label and time pulsing.
     return (
-      <div
-        className={cn(
-          "flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground",
-          className,
-        )}
-      >
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        Loading lifecycle…
+      <div className={cn("flex flex-col gap-3", className)} aria-busy="true">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground font-medium">
+            Lifecycle
+          </span>
+          <Bar className="h-5 w-24 rounded-full" />
+        </div>
+        <ol className="flex flex-col" aria-hidden>
+          {["9rem", "11rem", "8rem", "10rem", "7rem"].map((w, i, all) => (
+            <li key={i} className="flex gap-3" data-skeleton="step">
+              <div className="flex flex-col items-center">
+                <span className="h-4 w-4 shrink-0 animate-pulse rounded-full bg-[var(--sd-bg-soft)]" />
+                {i < all.length - 1 && <span className="w-px flex-1 my-1 bg-border" />}
+              </div>
+              <div className={cn("pb-4 min-w-0 flex-1 flex items-center gap-2", i === all.length - 1 && "pb-0")}>
+                <TextSkeleton width={w} />
+                <span className="ml-auto">
+                  <TextSkeleton width="5rem" />
+                </span>
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
     );
   }

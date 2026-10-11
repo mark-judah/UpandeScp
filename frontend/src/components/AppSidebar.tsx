@@ -535,6 +535,26 @@ export function canOpenView(view: View, crop: string, userRoles: string[]): bool
   return true;
 }
 
+/** The sidebar's own label for `view` and the section it sits under, so the
+ *  route fallback can title a page whose code is still loading with the very
+ *  words the operator just clicked. The crop's nav first, then any crop's;
+ *  `null` for a view no sidebar lists (Notifications, drill-downs). */
+export function viewNavMeta(
+  view: View,
+  crop: string,
+): { label: string; section: string } | null {
+  for (const nav of [navForCrop(crop), ROSE_NAV, AVOCADO_NAV, COFFEE_NAV, DEFAULT_CROP_NAV]) {
+    for (const section of nav) {
+      for (const item of section.items) {
+        if (item.kind === "view" && item.view === view) {
+          return { label: item.label, section: section.label };
+        }
+      }
+    }
+  }
+  return null;
+}
+
 /** The crop the rail is scoped to, for the brand subtitle. The route carries it
  *  lower-cased and singular ("rose"); the chip names the crop the way the farm
  *  says it — "Roses" — and an unknown or missing crop falls back to naming the

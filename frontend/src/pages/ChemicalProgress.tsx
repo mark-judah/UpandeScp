@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { DatePicker } from "@/components/DatePicker";
 import { LoadingStrip } from "@/components/LoadingStrip";
+import { TableRowsSkeleton, firstLoad } from "@/components/Loading";
 import { LifecycleTimeline } from "@/components/spray-plan/LifecycleTimeline";
 import {
   fetchLifecycle,
@@ -69,6 +70,8 @@ export function ChemicalProgress() {
   const [farm, setFarm] = useState(ALL);
   const [rows, setRows] = useState<LifecycleSummaryRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // An empty list is a valid answer, so "has data" is "a response landed".
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [lifecycle, setLifecycle] = useState<Lifecycle | null>(null);
@@ -78,7 +81,10 @@ export function ChemicalProgress() {
     setLoading(true);
     setError(null);
     fetchLifecycleSummary({ from_date: from, to_date: to })
-      .then(setRows)
+      .then((r) => {
+        setRows(r);
+        setLoaded(true);
+      })
       .catch((e) =>
         setError(
           e?.message?.includes("permission")
@@ -100,6 +106,8 @@ export function ChemicalProgress() {
     () => (farm === ALL ? rows : rows.filter((r) => farmOf(r.greenhouse) === farm)),
     [rows, farm],
   );
+
+  const skeleton = firstLoad(loading, loaded);
 
   const missedCount = useMemo(() => visible.filter((r) => r.missed).length, [visible]);
 
@@ -138,7 +146,7 @@ export function ChemicalProgress() {
       <div className="flex flex-wrap items-center gap-2 px-4 md:px-6">
         <DatePicker value={from} onChange={setFrom} />
         <DatePicker value={to} onChange={setTo} />
-        <Select value={farm} onValueChange={setFarm}>
+        <Select value={farm} onValueChange={setFarm} disabled={skeleton}>
           <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
             <SelectValue />
           </SelectTrigger>
@@ -153,7 +161,7 @@ export function ChemicalProgress() {
         </Select>
       </div>
 
-      <div className="px-4 md:px-6 py-4 flex-1">
+      <div className="px-4 md:px-6 py-4 flex-1" aria-busy={loading || undefined}>
         {error && (
           <Card className="border-destructive/40 bg-destructive/5">
             <CardContent className="p-4 text-sm text-destructive">{error}</CardContent>
@@ -168,7 +176,7 @@ export function ChemicalProgress() {
           </Card>
         )}
 
-        {!error && visible.length > 0 && (
+        {!error && (visible.length > 0 || skeleton) && (
           <Card className="p-0">
             <CardContent className="p-0">
               <Table>
@@ -182,6 +190,7 @@ export function ChemicalProgress() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {skeleton && <TableRowsSkeleton cols={5} rows={8} />}
                   {visible.map((r) => {
                     const open = expanded === r.name;
                     return (

@@ -42,6 +42,7 @@ import {
   type DraftSummary,
 } from "@/lib/spray-plan-creator-api";
 import { FrappeError } from "@/lib/frappe";
+import { Bar, TextSkeleton, firstLoad } from "@/components/Loading";
 
 import { errorText } from "@/lib/errors";
 interface Props {
@@ -57,21 +58,30 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<DraftPlanDetail | null>(null);
+  // An empty batch is a valid answer, so "has data" is "a response has landed".
+  // After that a refresh (a draft added, one removed) keeps the list on screen.
+  const [loaded, setLoaded] = useState(false);
 
   const refresh = useCallback(() => {
     setLoading(true);
     setError(null);
     listMyDraftPlans()
-      .then((rows) => setDrafts(rows))
+      .then((rows) => {
+        setDrafts(rows);
+        setLoaded(true);
+      })
       .catch((e) => {
         if (e instanceof FrappeError && e.status === 403) {
           setDrafts([]);
+          setLoaded(true);
         } else {
           setError(errorText(e));
         }
       })
       .finally(() => setLoading(false));
   }, []);
+
+  const skeleton = firstLoad(loading, loaded);
 
   useEffect(() => {
     refresh();
@@ -139,7 +149,9 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center justify-between gap-3">
-            <span>Draft batch ({drafts.length})</span>
+            <span>
+              Draft batch ({skeleton ? <TextSkeleton width="1.5ch" /> : drafts.length})
+            </span>
             {drafts.length > 0 && (
               <Button
                 onClick={submitAll}
@@ -157,11 +169,25 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          {loading && (
-            <div className="px-4 py-3 text-xs text-muted-foreground flex items-center gap-2">
-              <Loader2 className="h-3 w-3 animate-spin" /> Loading drafts…
-            </div>
+        <CardContent className="p-0" aria-busy={loading || undefined}>
+          {skeleton && (
+            <ul className="divide-y" aria-hidden>
+              {["9rem", "7rem"].map((w, i) => (
+                <li key={i} className="px-3 py-2" data-skeleton="row">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0 flex flex-col gap-1">
+                      <TextSkeleton width={w} />
+                      <Bar className="h-2.5 w-40" />
+                    </div>
+                    <Bar className="h-2.5 w-24 hidden sm:block" />
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Bar className="h-6 w-6" />
+                      <Bar className="h-6 w-6" />
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
           {error && (
             <div className="px-4 py-3 text-xs text-destructive flex items-start gap-1">
@@ -169,13 +195,13 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
               <span>{error}</span>
             </div>
           )}
-          {!loading && !error && drafts.length === 0 && (
+          {!skeleton && !loading && !error && drafts.length === 0 && (
             <div className="px-4 py-3 text-xs text-muted-foreground">
               No drafts yet. Build a plan above, click <b>Add to batch</b>,
               and it appears here.
             </div>
           )}
-          {!loading && !error && drafts.length > 0 && (
+          {!skeleton && !error && drafts.length > 0 && (
             <ul className="divide-y">
               {drafts.map((d) => (
                 <li
@@ -264,13 +290,23 @@ export function DraftBatchPanel({ onToast, onDismiss }: Props) {
               {detail ? (
                 <span className="font-mono">{detail.name}</span>
               ) : detailLoading ? (
-                "Loading…"
+                <TextSkeleton width="8rem" />
               ) : null}
             </DialogDescription>
           </DialogHeader>
           {detailLoading && (
-            <div className="text-xs text-muted-foreground flex items-center gap-2 py-6">
-              <Loader2 className="h-3 w-3 animate-spin" /> Loading draft…
+            // The detail's own field grid, labels real, values pulsing.
+            <div className="space-y-3 text-xs" aria-busy="true">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                {["Classification", "Spray type", "Scope", "Scope details", "Kit", "Spray team", "Scheduled", "Cost center", "Water", "Area"].map(
+                  (l) => (
+                    <div key={l}>
+                      <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">{l}</div>
+                      <TextSkeleton width="7rem" />
+                    </div>
+                  ),
+                )}
+              </div>
             </div>
           )}
           {!detailLoading && detail && (

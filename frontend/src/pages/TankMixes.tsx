@@ -20,6 +20,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL } from "@/components/header-controls";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import {
+  KpiValueSkeleton,
+  TableRowsSkeleton,
+  TextSkeleton,
+  firstLoad,
+} from "@/components/Loading";
+import {
   Table,
   TableBody,
   TableCell,
@@ -68,6 +74,10 @@ export function TankMixes() {
     farms: [],
   });
   const [loading, setLoading] = useState(true);
+  // The payload starts as an empty list, so "has data" means "a response has
+  // landed" — an empty answer is still an answer and must not pulse forever.
+  const [loaded, setLoaded] = useState(false);
+  const skeleton = firstLoad(loading, loaded);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +91,10 @@ export function TankMixes() {
       },
     )
       .then((r) => {
-        if (!cancelled) setData(r);
+        if (!cancelled) {
+          setData(r);
+          setLoaded(true);
+        }
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -95,7 +108,12 @@ export function TankMixes() {
     <div className="flex flex-col min-h-svh">
       <PageHeader
         title="Tank Mixes"
-        eyebrow={<>Tank mixes · {data.tank_mixes.length} loaded</>}
+        eyebrow={
+          <>
+            Tank mixes ·{" "}
+            {skeleton ? <TextSkeleton width="3ch" /> : data.tank_mixes.length} loaded
+          </>
+        }
       >
           <div className="relative min-w-56">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -137,7 +155,12 @@ export function TankMixes() {
           </Select>
       </PageHeader>
 
-      <div className="flex-1 px-4 md:px-6 py-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div
+        className="flex-1 px-4 md:px-6 py-4 grid grid-cols-1 lg:grid-cols-2 gap-3"
+        aria-busy={loading || undefined}
+      >
+        {skeleton && [0, 1, 2, 3].map((i) => <TankMixCardSkeleton key={i} />)}
+
         {data.tank_mixes.length === 0 && !loading && (
           <Card className="p-8 text-center col-span-full">
             <CardTitle className="text-sm">No tank mixes match</CardTitle>
@@ -255,6 +278,54 @@ export function TankMixes() {
 
       <LoadingStrip active={loading} />
     </div>
+  );
+}
+
+/** One tank-mix card before the list lands: the card's own frame (stat labels,
+ *  table headings, footer link) with its data slots pulsing. */
+function TankMixCardSkeleton() {
+  return (
+    <Card className="p-4 flex flex-col gap-3" data-skeleton="card">
+      <CardHeader className="p-0">
+        <div className="flex items-center justify-between gap-3">
+          <TextSkeleton width="14rem" />
+          <TextSkeleton width="3.5rem" />
+        </div>
+        <CardDescription>
+          <TextSkeleton width="9rem" />
+        </CardDescription>
+      </CardHeader>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        {["Mix size", "Chemicals", "Water pH", "Hardness"].map((l) => (
+          <Stat key={l} label={l} value={<KpiValueSkeleton className="h-5 w-12" />} />
+        ))}
+      </div>
+
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Chemical</TableHead>
+              <TableHead className="text-right">Qty</TableHead>
+              <TableHead>UOM</TableHead>
+              <TableHead className="text-right">Rate</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRowsSkeleton cols={4} rows={4} />
+          </TableBody>
+        </Table>
+      </CardContent>
+
+      <div className="flex items-center justify-between text-[0.7rem] text-muted-foreground mt-auto">
+        <TextSkeleton width="10rem" />
+        <span className="inline-flex items-center gap-1">
+          <ExternalLink className="h-3 w-3" />
+          Open BOM
+        </span>
+      </div>
+    </Card>
   );
 }
 

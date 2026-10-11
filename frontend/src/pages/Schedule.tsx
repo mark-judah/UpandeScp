@@ -24,6 +24,7 @@ import { bootstrap } from "@/lib/frappe";
 import { fetchSchedule, type Schedule as ScheduleData } from "@/lib/schedule-api";
 import { errorText } from "@/lib/errors";
 import { cn } from "@/lib/utils";
+import { TextSkeleton, firstLoad } from "@/components/Loading";
 
 type ViewKind = "calendar" | "gantt" | "scouts";
 type Span = "month" | "week";
@@ -185,6 +186,9 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
   const shownFrom = data?.clamped ? data.from_date : range.from;
   const shownTo = data?.clamped ? data.to_date : range.to;
   const flagged = plans.filter((p) => p.on_leave_count > 0).length;
+  // First load only (nothing yet, no error — `loading` is still false on the very
+  // first paint, before the effect fires). A refresh keeps the old plans on screen.
+  const skeleton = firstLoad(loading || (!data && !error), !!data);
 
   return (
     <div className="flex min-w-0 flex-col">
@@ -195,7 +199,9 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
             ? "Weekly scout plan"
             : data
               ? `${plans.length} plan${plans.length === 1 ? "" : "s"} · ${flagged} with crew on leave · leave check ${data.leave_check}`
-              : "Spray plans and crew leave"
+              : skeleton && sprayOk
+                ? <TextSkeleton width="18rem" />
+                : "Spray plans and crew leave"
         }
         switcher={
           <Toggle<ViewKind>
@@ -262,13 +268,13 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          <select aria-label="Farm" className={selectCls} value={farm} onChange={(e) => setFarm(e.target.value)}>
+          <select aria-label="Farm" className={selectCls} disabled={skeleton} value={farm} onChange={(e) => setFarm(e.target.value)}>
             <option value="">All farms</option>
             {(data?.farms || []).map((f) => (
               <option key={f} value={f}>{f}</option>
             ))}
           </select>
-          <select aria-label="Team" className={selectCls} value={team} onChange={(e) => setTeam(e.target.value)}>
+          <select aria-label="Team" className={selectCls} disabled={skeleton} value={team} onChange={(e) => setTeam(e.target.value)}>
             <option value="">All teams</option>
             {[...new Set([...teamOptions, ...(team ? [team] : [])])].map((t) => (
               <option key={t} value={t}>{t}</option>
@@ -351,13 +357,20 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
           </div>
         )}
 
-        {data && plans.length > 0 &&
+        {((data && plans.length > 0) || skeleton) &&
           (view === "calendar" ? (
-            <ScheduleCalendar plans={plans} from={shownFrom} to={shownTo} onOpen={(p) => openPlan(p.name)} />
+            <ScheduleCalendar
+              plans={plans}
+              from={shownFrom}
+              to={shownTo}
+              loading={skeleton}
+              onOpen={(p) => openPlan(p.name)}
+            />
           ) : (
             <ScheduleGantt
               plans={plans}
-              leaves={data.leaves}
+              leaves={data?.leaves || []}
+              loading={skeleton}
               from={shownFrom}
               to={shownTo}
               rowsBy={rowsBy}

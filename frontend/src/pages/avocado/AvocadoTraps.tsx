@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { RowsSkeleton } from "@/components/Loading";
 import { fetchTrapLocations, type TrapLocations } from "@/lib/scouting-api";
 import { AvocadoTreeMap } from "./AvocadoTreeMap";
 import type { AvocadoView } from "./tree-map-types";
@@ -47,7 +48,7 @@ export function AvocadoTraps() {
             onClose={onClose}
           />
         ) : null,
-      renderPanel: (data) => {
+      renderPanel: (data, loading) => {
         const traps = deriveTrapMarkers(data, fixed);
         return (
           <>
@@ -57,7 +58,9 @@ export function AvocadoTraps() {
               </div>
             </div>
             <div className="flex-1 min-h-0 space-y-0.5 overflow-y-auto p-2">
-              {traps.length ? (
+              {loading ? (
+                <RowsSkeleton rows={6} />
+              ) : traps.length ? (
                 traps.map((t) => (
                   <div key={t.label} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-muted">
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ background: t.color }} aria-hidden />

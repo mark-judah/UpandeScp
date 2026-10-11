@@ -11,9 +11,10 @@
  *   Only users who manage the farm see the editing controls.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { addWeeks, format, startOfWeek } from "date-fns";
+import { addDays, addWeeks, format, startOfWeek } from "date-fns";
 import { Check, ChevronLeft, ChevronRight, Copy, Eraser, Save, Undo2, X } from "lucide-react";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
+import { AvatarSkeleton, Bar, firstLoad } from "@/components/Loading";
 import { Button } from "@/components/ui/button";
 import { errorText } from "@/lib/errors";
 import {
@@ -95,6 +96,9 @@ export function ScoutPlanView({
   useEffect(() => {
     load();
   }, [load]);
+
+  // First load only; `loading` is still false on the first paint, before the effect.
+  const skeleton = firstLoad(loading || (!data && !error), !!data);
 
   const scouts = useMemo(() => new Map((data?.scouts || []).map((s) => [s.scout, s])), [data]);
   const nameOf = (id: string) => scouts.get(id)?.name || id;
@@ -233,6 +237,7 @@ export function ScoutPlanView({
         <select
           aria-label="Scout plan farm"
           className={selectCls}
+          disabled={skeleton}
           value={farm || data?.farm || ""}
           onChange={(e) => {
             if (dirty && !window.confirm("Discard unsaved changes to this week?")) return;
@@ -547,7 +552,49 @@ export function ScoutPlanView({
           </div>
         </div>
       )}
-      {loading && !data && <div className="text-sm text-muted-foreground">Loading the scout plan…</div>}
+      {skeleton && <ScoutGridSkeleton week={week} cols={cols} rowsBy={rowsBy} />}
+    </div>
+  );
+}
+
+/** The week grid before the plan lands: the real day headings (the week is known
+ *  before the server answers) over rows whose labels and chips pulse. */
+function ScoutGridSkeleton({ week, cols, rowsBy }: { week: string; cols: string; rowsBy: ScoutRowsBy }) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(day(week), i));
+  return (
+    <div
+      className="min-w-0 overflow-x-auto rounded-xl border bg-card"
+      data-testid="scout-grid-skeleton"
+      aria-busy="true"
+      aria-label="Loading the scout plan"
+    >
+      <div className="grid min-w-[780px]" style={{ gridTemplateColumns: cols }}>
+        <div className="sticky left-0 z-10 border-b bg-muted px-2 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+          {rowsBy === "greenhouse" ? "Greenhouse" : "Scout"}
+        </div>
+        {days.map((d) => (
+          <div key={ymd(d)} className="border-b bg-muted/40 px-1 py-1 text-center text-[0.65rem] tabular-nums text-muted-foreground">
+            {format(d, "EEE d")}
+          </div>
+        ))}
+        {[0, 1, 2, 3, 4, 5].map((r) => (
+          <div key={r} className="contents" aria-hidden data-skeleton="row">
+            <div className="sticky left-0 z-10 flex items-center border-b bg-card px-2 py-1">
+              <Bar className="h-3 w-16" />
+            </div>
+            {days.map((d, c) => (
+              <div key={ymd(d)} className="flex min-h-[44px] flex-wrap content-start gap-1 border-b border-l p-1">
+                {(r + c) % 3 !== 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full py-0.5 pl-0.5 pr-1.5">
+                    {rowsBy === "greenhouse" && <AvatarSkeleton size={18} />}
+                    <Bar className="h-2.5 w-10" />
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

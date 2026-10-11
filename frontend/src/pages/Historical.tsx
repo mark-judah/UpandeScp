@@ -28,6 +28,7 @@ import { HEADER_PILL } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
 import { Button } from "@/components/ui/button";
 import { LoadingStrip } from "@/components/LoadingStrip";
+import { TableRowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 import {
   Dialog,
   DialogContent,
@@ -90,6 +91,9 @@ export function Historical() {
     farms: string[];
   }>({ work_orders: [], greenhouses: [], farms: [] });
   const [loading, setLoading] = useState(true);
+  // Whether any list has landed yet: the first load draws skeleton rows, a
+  // filter change keeps the old rows under the loading strip.
+  const [loaded, setLoaded] = useState(false);
   const [openName, setOpenName] = useState<string | null>(null);
   // Names whose scheduled spray window passed without spraying starting.
   const [missed, setMissed] = useState<Set<string>>(new Set());
@@ -108,7 +112,10 @@ export function Historical() {
       },
     )
       .then((r) => {
-        if (!cancelled) setData(r);
+        if (!cancelled) {
+          setData(r);
+          setLoaded(true);
+        }
       })
       .finally(() => !cancelled && setLoading(false));
     // Pull the lifecycle summary in parallel so we can flag plans whose
@@ -138,11 +145,17 @@ export function Historical() {
     [data.greenhouses, farm],
   );
 
+  const first = firstLoad(loading, loaded);
+
   return (
     <div className="flex flex-col min-h-svh">
       <PageHeader
         title="Application Work Orders"
-        eyebrow={<>Historical · {data.work_orders.length} records</>}
+        eyebrow={
+          <>
+            Historical · {first ? <TextSkeleton width="3ch" /> : data.work_orders.length} records
+          </>
+        }
       >
           <DatePicker value={from} onChange={setFrom} />
           <DatePicker value={to} onChange={setTo} />
@@ -170,7 +183,7 @@ export function Historical() {
             </SelectContent>
           </Select>
           )}
-          <Select value={greenhouse} onValueChange={setGreenhouse}>
+          <Select value={greenhouse} onValueChange={setGreenhouse} disabled={first}>
             <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
               <SelectValue />
             </SelectTrigger>
@@ -200,7 +213,7 @@ export function Historical() {
       </PageHeader>
 
       <div className="flex-1 px-4 md:px-6 py-4">
-        <Card className="p-0">
+        <Card className="p-0" aria-busy={first || undefined}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -214,6 +227,7 @@ export function Historical() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {first && <TableRowsSkeleton cols={7} rows={8} />}
               {data.work_orders.map((w) => (
                 <TableRow
                   key={w.name}
@@ -331,6 +345,7 @@ function WorkOrderDialog({
 
   const wo = data?.work_order;
   const chemicals: any[] = data?.chemicals || [];
+  const first = firstLoad(loading, !!data);
 
   return (
     <Dialog open={!!name} onOpenChange={(v) => !v && onClose()}>
@@ -338,11 +353,24 @@ function WorkOrderDialog({
         <DialogHeader>
           <DialogTitle>{name || "Work Order"}</DialogTitle>
           <DialogDescription>
-            {data?.status_label || (loading ? "Loading…" : "")}
-            {wo?.custom_greenhouse && ` · ${wo.custom_greenhouse}`}
+            {first ? (
+              <TextSkeleton width="18ch" />
+            ) : (
+              <>
+                {data?.status_label || ""}
+                {wo?.custom_greenhouse && ` · ${wo.custom_greenhouse}`}
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
+        {first && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs" aria-busy="true">
+            {["Variety", "Scope", "Spray Type", "Kit", "Scheduled", "Area"].map((label) => (
+              <Cell key={label} label={label} value={<TextSkeleton width="8ch" />} />
+            ))}
+          </div>
+        )}
         {wo && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
             <Cell label="Variety" value={wo.custom_variety} />
@@ -364,12 +392,18 @@ function WorkOrderDialog({
           <CardHeader className="p-0 pb-2">
             <CardTitle className="text-sm">Chemical Mix</CardTitle>
             <CardDescription>
-              {chemicals.length} chemical
-              {chemicals.length !== 1 ? "s" : ""} from tank mix {wo?.bom_no || "—"}
+              {first ? (
+                <TextSkeleton width="20ch" />
+              ) : (
+                <>
+                  {chemicals.length} chemical
+                  {chemicals.length !== 1 ? "s" : ""} from tank mix {wo?.bom_no || "—"}
+                </>
+              )}
             </CardDescription>
           </CardHeader>
-          <CardContent className="p-0">
-            {chemicals.length ? (
+          <CardContent className="p-0" aria-busy={first || undefined}>
+            {first || chemicals.length ? (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -381,6 +415,7 @@ function WorkOrderDialog({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {first && <TableRowsSkeleton cols={5} rows={3} />}
                   {chemicals.map((c, i) => (
                     <TableRow key={c.item_code + i}>
                       <TableCell className="text-xs">
@@ -405,7 +440,7 @@ function WorkOrderDialog({
               </Table>
             ) : (
               <div className="text-xs text-muted-foreground py-4 text-center">
-                {loading ? "Loading…" : "No chemicals on this tank mix."}
+                No chemicals on this tank mix.
               </div>
             )}
           </CardContent>

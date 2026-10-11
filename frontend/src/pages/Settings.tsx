@@ -18,7 +18,6 @@ import {
   Beaker,
   Gauge,
   ListOrdered,
-  Loader2,
   MapPin,
   Scale,
   Settings as SettingsIcon,
@@ -28,6 +27,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
+import { RowsSkeleton } from "@/components/Loading";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccessTab } from "@/components/settings/AccessTab";
 import { AccountsTab } from "@/components/settings/AccountsTab";
@@ -69,6 +69,28 @@ function SiteWideNote() {
       <span className="font-medium text-foreground">Site-wide.</span> These
       settings are shared by every crop — changing them here changes them
       everywhere.
+    </div>
+  );
+}
+
+/** A form tab before the settings bundle lands: its cards and their titles are
+ *  drawn, the fields pending. */
+function FormCardsSkeleton({ titles, columns = 2 }: { titles: string[]; columns?: 1 | 2 }) {
+  return (
+    <div
+      className={columns === 2 ? "grid grid-cols-1 lg:grid-cols-2 gap-4" : "flex flex-col gap-4"}
+      aria-busy="true"
+    >
+      {titles.map((t) => (
+        <Card key={t}>
+          <CardHeader>
+            <CardTitle className="text-base">{t}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RowsSkeleton rows={3} />
+          </CardContent>
+        </Card>
+      ))}
     </div>
   );
 }
@@ -140,15 +162,6 @@ export function Settings({ initialCrop }: { initialCrop?: string } = {}) {
       />
 
       <section className="px-4 md:px-6 py-4">
-        {loading && (
-          <Card>
-            <CardContent className="py-8 flex items-center justify-center text-sm text-muted-foreground gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading settings…
-            </CardContent>
-          </Card>
-        )}
-
         {!loading && error?.status === 403 && (
           <Card className="border-destructive/40">
             <CardHeader>
@@ -176,7 +189,7 @@ export function Settings({ initialCrop }: { initialCrop?: string } = {}) {
           </Card>
         )}
 
-        {!loading && !error && bundle && (() => {
+        {!error && (loading || bundle) && (() => {
           // Access and Farms & Map are per-FARM already, and farms belong to
           // crops — so on a crop's page they show that crop's farms rather than
           // asking someone to find theirs among twelve. Falls back to all farms
@@ -187,9 +200,14 @@ export function Settings({ initialCrop }: { initialCrop?: string } = {}) {
           // none tagged: adding the farm to the crop is what makes it appear,
           // and listing all seventeen on the avocado page put sixteen farms in
           // front of somebody who wanted one.
-          const farms = crop
-            ? bundle.farms.filter((f) => (cropSettings?.farms || []).includes(f))
-            : bundle.farms;
+          // The tabs are drawn from the first paint. Access, Thresholds, Ordering
+          // and Chemicals load their own data; the three that edit the
+          // settings bundle show their cards' frames until it lands.
+          const farms = !bundle
+            ? []
+            : crop
+              ? bundle.farms.filter((f) => (cropSettings?.farms || []).includes(f))
+              : bundle.farms;
           return (
           <Tabs value={tab} onValueChange={handleTab} className="w-full">
             <TabsList>
@@ -230,22 +248,43 @@ export function Settings({ initialCrop }: { initialCrop?: string } = {}) {
               {crop ? <CropOverridesCard crop={crop} /> : null}
               {crop ? <div className="h-4" /> : null}
               {crop ? <SiteWideNote /> : null}
-              <SprayPlanTab
-                initial={bundle.spray_plan}
-                farms={farms}
-                onSaved={(saved) =>
-                  setBundle({ ...bundle, spray_plan: saved })
-                }
-              />
+              {bundle ? (
+                <SprayPlanTab
+                  initial={bundle.spray_plan}
+                  farms={farms}
+                  onSaved={(saved) =>
+                    setBundle({ ...bundle, spray_plan: saved })
+                  }
+                />
+              ) : (
+                <FormCardsSkeleton
+                  titles={[
+                    "Resistance rotation windows",
+                    "Weather spray-friendliness thresholds",
+                    "Allowed farms",
+                    "Exclude keywords",
+                  ]}
+                />
+              )}
             </TabsContent>
             <TabsContent value="accounts">
               {crop ? <SiteWideNote /> : null}
-              <AccountsTab
-                initial={bundle.spray_plan}
-                onSaved={(saved) =>
-                  setBundle({ ...bundle, spray_plan: saved })
-                }
-              />
+              {bundle ? (
+                <AccountsTab
+                  initial={bundle.spray_plan}
+                  onSaved={(saved) =>
+                    setBundle({ ...bundle, spray_plan: saved })
+                  }
+                />
+              ) : (
+                <FormCardsSkeleton
+                  titles={[
+                    "Cost centre attribution",
+                    "Material issue defaults",
+                    "Stock accounting — mixing & spray",
+                  ]}
+                />
+              )}
             </TabsContent>
             <TabsContent value="thresholds">
               <ThresholdsTab crop={crop} />
@@ -254,13 +293,17 @@ export function Settings({ initialCrop }: { initialCrop?: string } = {}) {
               <OrderingTab />
             </TabsContent>
             <TabsContent value="farms">
-              <FarmMapTab
-                initial={bundle.map_settings}
-                farms={farms}
-                onSaved={(saved) =>
-                  setBundle({ ...bundle, map_settings: saved })
-                }
-              />
+              {bundle ? (
+                <FarmMapTab
+                  initial={bundle.map_settings}
+                  farms={farms}
+                  onSaved={(saved) =>
+                    setBundle({ ...bundle, map_settings: saved })
+                  }
+                />
+              ) : (
+                <FormCardsSkeleton titles={["Global default", "Per-farm coordinates"]} columns={1} />
+              )}
             </TabsContent>
             <TabsContent value="chemicals">
               {crop ? <SiteWideNote /> : null}

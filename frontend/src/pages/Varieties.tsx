@@ -3,6 +3,7 @@ import L from "leaflet";
 import { MapBase } from "@/components/MapBase";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { PageHeader } from "@/components/PageHeader";
+import { Bar, TextSkeleton } from "@/components/Loading";
 import { fetchBedsAndZones } from "@/lib/scouting-api";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
 
@@ -89,11 +90,28 @@ export function Varieties() {
     <div className="flex flex-col h-svh overflow-hidden">
       <PageHeader title="Varieties" eyebrow="Zones colored by variety">
         <div className="ml-auto text-xs text-muted-foreground tabular-nums">
-          {varietyList.length} varieties · {zones.length} zones
+          {loading ? (
+            <TextSkeleton width="16ch" />
+          ) : (
+            <>
+              {varietyList.length} varieties · {zones.length} zones
+            </>
+          )}
         </div>
       </PageHeader>
 
-      <div className="flex flex-wrap items-center gap-2 px-4 md:px-6 py-2 text-xs border-b">
+      <div
+        className="flex flex-wrap items-center gap-2 px-4 md:px-6 py-2 text-xs border-b"
+        aria-busy={loading || undefined}
+      >
+        {/* Legend chips at their own size until the zones say which varieties exist. */}
+        {loading &&
+          ["9ch", "7ch", "11ch", "8ch", "10ch", "6ch"].map((w) => (
+            <span key={w} className="inline-flex items-center gap-1.5" aria-hidden>
+              <Bar className="h-2.5 w-2.5 rounded-sm" />
+              <TextSkeleton width={w} />
+            </span>
+          ))}
         {varietyList.map((v) => (
           <span key={v} className="inline-flex items-center gap-1.5">
             <span

@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/table";
 import { useToast, type ToastItem } from "@/components/Toast";
 import { cn } from "@/lib/utils";
+import { Bar, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import { bootstrap, FrappeError } from "@/lib/frappe";
 import { errorText } from "@/lib/errors";
 import {
@@ -103,6 +104,10 @@ export function Postponements() {
   const [reason, setReason] = useState("");
   const [rejecting, setRejecting] = useState<Postponement | null>(null);
   const [note, setNote] = useState("");
+  // The lists start empty, so "has data" is "the first load has settled".
+  // Until then the tabs, table headings and buttons stand; the rows pulse.
+  const [loaded, setLoaded] = useState(false);
+  const skeleton = !loaded;
 
   const load = useCallback(async () => {
     const [s, p, pend, all] = await Promise.all([
@@ -118,7 +123,10 @@ export function Postponements() {
   }, []);
 
   useEffect(() => {
-    void load();
+    // A failed first load still ends the skeleton: the empty states then speak.
+    void load()
+      .catch(() => undefined)
+      .finally(() => setLoaded(true));
   }, [load]);
 
   const dueToday = useMemo(
@@ -174,16 +182,23 @@ export function Postponements() {
         eyebrow={
           settings
             ? `Cutoff ${shortTime(settings.cutoff_time)} · up to ${settings.max_days} days`
-            : "Postponement"
+            : skeleton
+              ? <TextSkeleton width="12rem" />
+              : "Postponement"
         }
         switcher={
           <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
             <TabsList>
-              <TabsTrigger value="plans">Plans · {dueToday.length}</TabsTrigger>
-              <TabsTrigger value="pending">
-                Awaiting a decision · {pending.length}
+              <TabsTrigger value="plans">
+                Plans · {skeleton ? <TextSkeleton width="1.5ch" /> : dueToday.length}
               </TabsTrigger>
-              <TabsTrigger value="history">Decided · {history.length}</TabsTrigger>
+              <TabsTrigger value="pending">
+                Awaiting a decision ·{" "}
+                {skeleton ? <TextSkeleton width="1.5ch" /> : pending.length}
+              </TabsTrigger>
+              <TabsTrigger value="history">
+                Decided · {skeleton ? <TextSkeleton width="1.5ch" /> : history.length}
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         }
@@ -197,16 +212,19 @@ export function Postponements() {
         </HeaderIconButton>
       </PageHeader>
 
-      <div className="flex flex-col gap-4 px-4 pb-6 md:px-6">
-        {settings && (
+      <div
+        className="flex flex-col gap-4 px-4 pb-6 md:px-6"
+        aria-busy={skeleton || undefined}
+      >
+        {(settings || skeleton) && (
           <Card>
             <CardContent className="py-3 text-sm text-muted-foreground">
               A plan can be postponed until{" "}
               <strong className="text-foreground">
-                {shortTime(settings.cutoff_time)}
+                {settings ? shortTime(settings.cutoff_time) : <TextSkeleton width="3rem" />}
               </strong>{" "}
               on its own spray date
-              {settings.grace_minutes
+              {settings?.grace_minutes
                 ? `, plus ${settings.grace_minutes} minutes of grace`
                 : ""}
               . After the cutoff the spray can no longer be started either — a late
@@ -231,7 +249,8 @@ export function Postponements() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {plans.length === 0 && (
+                  {skeleton && <TableRowsSkeleton cols={5} rows={5} />}
+                  {plans.length === 0 && !skeleton && (
                     <TableRow>
                       <TableCell
                         colSpan={5}
@@ -301,7 +320,24 @@ export function Postponements() {
 
         {tab === "pending" && (
           <div className="flex flex-col gap-3">
-            {pending.length === 0 && (
+            {skeleton &&
+              [0, 1].map((i) => (
+                <Card key={i} aria-hidden data-skeleton="card">
+                  <CardContent className="flex flex-wrap items-start justify-between gap-3 py-4">
+                    <div className="flex flex-col gap-2">
+                      <TextSkeleton width="10rem" />
+                      <TextSkeleton width="16rem" />
+                      <TextSkeleton width="20rem" />
+                      <TextSkeleton width="12rem" />
+                    </div>
+                    <div className="flex gap-2">
+                      <Bar className="h-8 w-24" />
+                      {canDecide && <Bar className="h-8 w-20" />}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            {pending.length === 0 && !skeleton && (
               <Card>
                 <CardContent className="py-8 text-center text-muted-foreground">
                   Nothing awaiting a decision.
@@ -393,7 +429,8 @@ export function Postponements() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {history.length === 0 && (
+                  {skeleton && <TableRowsSkeleton cols={4} rows={5} />}
+                  {history.length === 0 && !skeleton && (
                     <TableRow>
                       <TableCell
                         colSpan={4}

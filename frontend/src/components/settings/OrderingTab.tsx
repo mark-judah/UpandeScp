@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { Bar, RowsSkeleton } from "@/components/Loading";
 import { ListOrdered, Bug, Hexagon, Save, Loader2 } from "lucide-react";
 import {
   Card,
@@ -212,8 +213,24 @@ export function OrderingTab() {
           </div>
         )}
         {loading && !bundle && (
-          <div className="text-xs text-muted-foreground py-6 text-center">
-            Loading ordering…
+          // The two matrices' headings are fixed; their rows are pending.
+          <div className="flex flex-col gap-4" aria-busy="true">
+            <div className="flex flex-wrap gap-2" aria-hidden>
+              <Bar className="h-5 w-24 rounded-full" />
+              <Bar className="h-5 w-20 rounded-full" />
+            </div>
+            {([["Pests", Bug], ["Diseases", Hexagon]] as const).map(([title, Icon]) => (
+              <div key={title} className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <ListOrdered className="h-3.5 w-3.5" />
+                  <Icon className="h-3.5 w-3.5" />
+                  {title}
+                </div>
+                <div className="rounded-md border">
+                  <RowsSkeleton rows={4} />
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

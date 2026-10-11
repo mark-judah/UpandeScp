@@ -17,6 +17,7 @@
  * lenders, which meant every farm could see the request.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -527,7 +528,9 @@ function BorrowForm(props: {
                       </span>
                     </TableCell>
                     <TableCell className="text-right text-xs tabular-nums">
-                      {s ? (
+                      {!s && stockLoading ? (
+                        <TextSkeleton width="5ch" />
+                      ) : s ? (
                         <span
                           className={cn(
                             short
@@ -639,10 +642,35 @@ function RequestList({
   pushToast: (kind: ToastItem["kind"], text: string) => void;
 }) {
   if (rows === null) {
+    // Request cards at their real shape: the farm/summary line pending, the
+    // lines table's columns drawn.
     return (
-      <div className="flex flex-col gap-2">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="h-20 animate-pulse rounded-md bg-muted/40" />
+      <div className="flex flex-col gap-3" aria-busy="true">
+        {[0, 1].map((i) => (
+          <Card key={i} className="p-3" data-skeleton="loan">
+            <CardContent className="flex flex-col gap-2 p-0">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <TextSkeleton width="12ch" />
+                <TextSkeleton width="9ch" />
+                <TextSkeleton width="10ch" />
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Item</TableHead>
+                    <TableHead className="text-right">Asked</TableHead>
+                    <TableHead className="text-right">
+                      {role === "lender" ? "Give" : "Approved"}
+                    </TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRowsSkeleton cols={4} rows={2} />
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         ))}
       </div>
     );

@@ -13,7 +13,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { CircleSlash, Info, Loader2, Split, Target, TriangleAlert } from "lucide-react";
+import { CircleSlash, Info, Split, Target, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { DatePicker } from "@/components/DatePicker";
 import {
@@ -34,6 +34,8 @@ import {
   type ChemicalCostReport,
   type CostCell,
 } from "@/lib/finance-api";
+import { LoadProgress, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
+import { Table, TableBody } from "@/components/ui/table";
 import { ymd } from "@/lib/utils";
 
 function monthStart(): string {
@@ -65,6 +67,10 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
       alive = false;
     };
   }, [from, to, initialCrop]);
+
+  // First load: the note, the totals' labels and the tables' headings are
+  // drawn and only the figures pend. A date change keeps the old report up.
+  const pending = !data && !error;
 
   const money = useMemo(() => {
     const cur = data?.currency || "KES";
@@ -131,8 +137,12 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
           </div>
         </PageHeader>
 
-        <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
-          {data && (
+        <div
+          className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6"
+          aria-busy={loading || pending || undefined}
+        >
+          <LoadProgress active={loading && !!data} />
+          {(data || pending) && (
             <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <p>
@@ -144,6 +154,17 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
                 between farms, tank mixing and receipts are not spend. Values are the
                 stock valuation at posting.
               </p>
+            </div>
+          )}
+
+          {pending && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              <span>
+                Total spend: <TextSkeleton width="10ch" />
+              </span>
+              <span>
+                {from} → {to}
+              </span>
             </div>
           )}
 
@@ -171,12 +192,8 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
             </div>
           )}
 
-          {loading ? (
-            <Card>
-              <CardContent className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading…
-              </CardContent>
-            </Card>
+          {pending ? (
+            <FinanceSkeleton />
           ) : error ? (
             <Card>
               <CardContent className="py-8 text-center text-sm text-destructive">
@@ -473,5 +490,74 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
         </div>
       </div>
     </TooltipProvider>
+  );
+}
+
+/** The report's first two cards before any figures: their titles and column
+ *  headings are real, the rows (and the farm's name) pending. */
+function FinanceSkeleton() {
+  const head = "text-[0.7rem] uppercase tracking-wide text-muted-foreground border-b";
+  return (
+    <>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Target className="h-4 w-4 text-muted-foreground" />
+            Cost per target
+          </CardTitle>
+          <CardDescription>
+            What treating each pest and disease cost over the period, across
+            every greenhouse. Share is of all pest and disease spend; Nutrition
+            and unattributed spend are not in it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="min-w-0 p-0">
+          <Table aria-label="Cost per target" className="text-sm">
+            <thead className={head}>
+              <tr>
+                <th className="text-left px-3 py-2">Target</th>
+                <th className="text-left px-3 py-2">Kind</th>
+                <th className="text-right px-3 py-2">Spend</th>
+                <th className="text-right px-3 py-2">Share</th>
+                <th className="text-right px-3 py-2">Houses</th>
+              </tr>
+            </thead>
+            <TableBody>
+              <TableRowsSkeleton cols={5} rows={5} />
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">
+            <TextSkeleton width="10ch" />
+          </CardTitle>
+          <CardDescription className="text-[0.7rem]">
+            <TextSkeleton width="16ch" />
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="min-w-0 p-0">
+          <Table className="text-sm">
+            <thead className={head}>
+              <tr>
+                <th className="text-left px-3 py-2">Greenhouse</th>
+                <th className="text-left px-3 py-2">Kind</th>
+                <th className="text-right px-3 py-2" aria-hidden>
+                  <TextSkeleton width="8ch" />
+                </th>
+                <th className="text-right px-3 py-2" aria-hidden>
+                  <TextSkeleton width="8ch" />
+                </th>
+                <th className="text-right px-3 py-2 font-semibold">Total</th>
+              </tr>
+            </thead>
+            <TableBody>
+              <TableRowsSkeleton cols={5} rows={6} />
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </>
   );
 }

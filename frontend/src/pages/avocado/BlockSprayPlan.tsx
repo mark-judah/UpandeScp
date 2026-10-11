@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TextSkeleton } from "@/components/Loading";
 import {
   Select,
   SelectContent,
@@ -143,14 +144,10 @@ export function BlockSprayPlan({
   if (error && !boot) {
     return <p className="px-1 py-2 text-xs text-destructive">{error}</p>;
   }
-  if (!boot) {
-    return (
-      <div className="flex items-center gap-2 px-1 py-2 text-xs text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading planning data…
-      </div>
-    );
-  }
-  if (!blockInfo) {
+  // While the planning data loads the form stands, disabled, with bars where
+  // the block's figures and the team / kit choices will be.
+  const pending = !boot;
+  if (!pending && !blockInfo) {
     return (
       <p className="px-1 py-2 text-xs text-muted-foreground">
         {block} is not a block you can plan on — you are not rostered as a spray plan
@@ -167,16 +164,18 @@ export function BlockSprayPlan({
   }
 
   return (
-    <div className="space-y-3 pt-1">
+    <div className="space-y-3 pt-1" aria-busy={pending || undefined}>
       <div className="rounded-md bg-muted/50 px-2 py-1.5 text-[0.7rem]">
         <div className="flex justify-between">
           <span className="text-muted-foreground">Area</span>
-          <span className="font-medium tabular-nums">{areaHa.toFixed(2)} ha</span>
+          <span className="font-medium tabular-nums">
+            {pending ? <TextSkeleton width="6ch" /> : `${areaHa.toFixed(2)} ha`}
+          </span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Water volume</span>
           <span className="font-medium tabular-nums">
-            {waterVolumeL.toFixed(0)} L
+            {pending ? <TextSkeleton width="6ch" /> : `${waterVolumeL.toFixed(0)} L`}
           </span>
         </div>
       </div>
@@ -201,9 +200,9 @@ export function BlockSprayPlan({
         ) : null}
 
         <Label className="text-[0.7rem]">Spray team</Label>
-        <Select value={team} onValueChange={setTeam}>
+        <Select value={team} onValueChange={setTeam} disabled={pending}>
           <SelectTrigger className="h-8 text-xs">
-            <SelectValue placeholder="Pick a team" />
+            <SelectValue placeholder={pending ? <TextSkeleton width="12ch" /> : "Pick a team"} />
           </SelectTrigger>
           <SelectContent>
             {teams.map((t) => (
@@ -217,9 +216,9 @@ export function BlockSprayPlan({
 
       <div className="space-y-1">
         <Label className="text-[0.7rem]">Equipment (kit)</Label>
-        <Select value={kit} onValueChange={setKit}>
+        <Select value={kit} onValueChange={setKit} disabled={pending}>
           <SelectTrigger className="h-8 text-xs">
-            <SelectValue placeholder="Pick a kit" />
+            <SelectValue placeholder={pending ? <TextSkeleton width="12ch" /> : "Pick a kit"} />
           </SelectTrigger>
           <SelectContent>
             {kits.map((k) => (
@@ -237,7 +236,8 @@ export function BlockSprayPlan({
           <button
             type="button"
             onClick={addRow}
-            className="text-[0.7rem] text-primary hover:underline"
+            disabled={pending}
+            className="text-[0.7rem] text-primary hover:underline disabled:opacity-50"
           >
             + add
           </button>
@@ -287,12 +287,12 @@ export function BlockSprayPlan({
         size="sm"
         className="w-full"
         onClick={submit}
-        disabled={busy || areaHa <= 0 || !rows.some((r) => r.item_code && r.rate > 0)}
+        disabled={pending || busy || areaHa <= 0 || !rows.some((r) => r.item_code && r.rate > 0)}
       >
         {busy ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
         Create draft plan
       </Button>
-      {areaHa <= 0 && (
+      {!pending && areaHa <= 0 && (
         <p className="text-center text-[0.7rem] text-muted-foreground">
           This block has no area recorded, so no quantities can be derived.
         </p>

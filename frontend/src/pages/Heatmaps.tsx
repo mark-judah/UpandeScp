@@ -56,7 +56,7 @@ import { useCropFarms } from "@/hooks/use-crop-farms";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
 import { ymd } from "@/lib/utils";
 import { recentWeeksRange } from "@/lib/iso-week";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { Bar, LoadProgress, TextSkeleton, firstLoad } from "@/components/Loading";
 import { MarkerDefs, type MarkerKind } from "./maps/MarkerDefs";
 import {
   BedSvg,
@@ -280,7 +280,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   }, [picked, from, to, crop]);
 
   // Farm → greenhouse map for the tree, for the route crop only (server-side).
-  const { farms: cropFarms, error: cropFarmsError } = useCropFarms(crop);
+  const { farms: cropFarms, error: cropFarmsError, loading: farmsLoading } = useCropFarms(crop);
   useEffect(() => {
     const ghToFarm: Record<string, string> = {};
     Object.entries(cropFarms).forEach(([farm, ghs]) => {
@@ -340,6 +340,9 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     hasScope,
   );
   const cards = gridState.data?.cards ?? [];
+  // First load for this scope: skeleton cards in the grid. A refresh (dates,
+  // stations, reload) keeps the old cards on screen under the progress bar.
+  const firstGrid = hasScope && firstLoad(gridState.loading, !!gridState.data);
   // Most recent scouting date on file. The page defaults to the last seven
   // days, so once data is older than that every card vanishes and the page
   // reads as broken rather than as out of range — say so instead.
@@ -508,7 +511,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
         {/* Multi-select: check any farms and/or greenhouses to plot. */}
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className={HEADER_PILL}>
+            <Button variant="outline" size="sm" className={HEADER_PILL} disabled={farmsLoading}>
               <MapPin className="h-3.5 w-3.5" />
               Farms
               <span className="text-muted-foreground tabular-nums">
@@ -548,10 +551,23 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
         </div>
       )}
 
+      {/* The grid's progress sits on the left of the stats line (was a
+          full-screen overlay), so the frame and any old cards stay visible. */}
       <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground">
+        <LoadProgress
+          active={hasScope && gridState.loading}
+          progress={gridState.progress?.percent ?? null}
+          label={gridState.progress?.label}
+        />
         <span className="ml-auto tabular-nums">
-          {distinctGh} greenhouses · {totalZones} zones · {totalObs}{" "}
-          observation{totalObs === 1 ? "" : "s"}
+          {firstGrid ? (
+            <TextSkeleton width="26ch" />
+          ) : (
+            <>
+              {distinctGh} greenhouses · {totalZones} zones · {totalObs}{" "}
+              observation{totalObs === 1 ? "" : "s"}
+            </>
+          )}
         </span>
       </div>
 
@@ -572,13 +588,9 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               until you narrow the scope.
             </CardDescription>
           </Card>
-        ) : gridState.loading ? (
-          <LoadingOverlay
-            open
-            progress={gridState.progress?.percent ?? null}
-            label={gridState.progress?.label}
-          />
-        ) : !visibleCards.length ? (
+        ) : firstGrid ? (
+          <HeatmapCardsSkeleton />
+        ) : !visibleCards.length && !gridState.loading ? (
           <Card className="p-12 text-center">
             <CardTitle className="text-base">
               {latestOutsideRange
@@ -703,7 +715,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                 Observation filter
               </CardTitle>
               <CardDescription className="text-[0.7rem]">
-                {obsChipOptions.length
+                {obsChipOptions.length || firstGrid
                   ? "Pick one, or 'All' to see every observation."
                   : hasScope
                     ? "No observations in date range."
@@ -717,6 +729,16 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                   active={!selectedObs}
                   onClick={() => setObsChecks(new Set())}
                 />
+                {firstGrid &&
+                  ["10ch", "8ch", "12ch", "9ch"].map((w) => (
+                    <span
+                      key={w}
+                      aria-hidden
+                      data-skeleton="chip"
+                      className="inline-flex h-6 animate-pulse rounded-full bg-[var(--sd-bg-soft)]"
+                      style={{ width: `calc(${w} + 1.5rem)` }}
+                    />
+                  ))}
                 {obsChipOptions.map((opt) => (
                   <ObsChip
                     key={opt.id}
@@ -789,14 +811,14 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
 
               {show3D ? (
                 terrain === null ? (
-                  <div className="p-6 text-center text-sm text-muted-foreground">
-                    Building terrain…
+                  <div aria-busy="true" aria-label="Building terrain">
+                    <Bar className="min-h-[420px] w-full rounded-md" />
                   </div>
                 ) : (
                   <Suspense
                     fallback={
-                      <div className="p-6 text-center text-sm text-muted-foreground">
-                        Loading 3D…
+                      <div aria-busy="true" aria-label="Loading 3D">
+                        <Bar className="min-h-[420px] w-full rounded-md" />
                       </div>
                     }
                   >
@@ -937,8 +959,9 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                             Projecting bed geometry…
                           </div>
                         ) : isLoadingDetail ? (
-                          <div className="flex-1 flex items-center justify-center min-h-[260px] text-[0.72rem] text-muted-foreground border-dashed border rounded-md bg-[var(--sd-bg-soft)]">
-                            Loading…
+                          <div className="flex flex-1 flex-col gap-2" aria-busy="true">
+                            <TextSkeleton width="9ch" />
+                            <Bar className="min-h-[420px] w-full flex-1 rounded-md" />
                           </div>
                         ) : (
                           <div className="flex-1 flex items-center justify-center min-h-[260px] text-[0.72rem] text-muted-foreground border-dashed border rounded-md bg-[var(--sd-bg-soft)]">
@@ -1032,6 +1055,35 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
 /** Single-select chip used in the right-column observation filter.
  *  When ``color`` is set it tints the indicator dot and (for active
  *  chips) the chip's border so the legend matches the map markers. */
+/** The grid's cards before the first payload: the real card box (header line,
+ *  count badge, bed plan at its min height, footer line), contents pulsing. */
+function HeatmapCardsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3" aria-busy="true" data-skeleton="cards">
+      {[0, 1, 2, 3].map((i) => (
+        <Card key={i} className="p-3" aria-hidden>
+          <CardHeader className="p-0 pb-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <Bar className="h-3.5 w-32" />
+                <Bar className="h-2.5 w-44" />
+              </div>
+              <Bar className="h-5 w-8 rounded-full" />
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Bar className="min-h-[340px] w-full rounded-md" />
+            <div className="mt-2 flex items-center justify-between">
+              <Bar className="h-2.5 w-24" />
+              <Bar className="h-2.5 w-12" />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 function ObsChip({
   label,
   color,

@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, ShieldCheck, ShieldAlert, RotateCcw, Check } from "lucide-react";
+import { firstLoad, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import {
@@ -144,11 +145,13 @@ export function SprayPlanAccess() {
         eyebrow="Assign Spray Plan Creators to farms"
       >
         <div className="flex items-center gap-4">
-          {rows && (
+          {rows ? (
             <span className="text-xs text-muted-foreground tabular-nums">
               {rows.length} farms · {totalCreators} creators
             </span>
-          )}
+          ) : loading ? (
+            <TextSkeleton width="16ch" />
+          ) : null}
           {dirtyCount > 0 && (
             <Button onClick={saveAll} size="sm" className="h-8">
               Save all ({dirtyCount})
@@ -158,15 +161,6 @@ export function SprayPlanAccess() {
       </PageHeader>
 
       <section className="px-4 md:px-6 py-4">
-        {loading && (
-          <Card>
-            <CardContent className="py-8 flex items-center justify-center text-sm text-muted-foreground gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading farms…
-            </CardContent>
-          </Card>
-        )}
-
         {!loading && error?.status === 403 && (
           <Card className="border-destructive/40">
             <CardHeader>
@@ -206,9 +200,9 @@ export function SprayPlanAccess() {
           </Card>
         )}
 
-        {!loading && !error && rows && rows.length > 0 && (
+        {(firstLoad(loading, !!rows) || (!loading && !error && rows && rows.length > 0)) && (
           <Card>
-            <CardContent className="p-0">
+            <CardContent className="p-0" aria-busy={loading || undefined}>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -219,7 +213,8 @@ export function SprayPlanAccess() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((r) => {
+                  {!rows && <TableRowsSkeleton cols={4} rows={6} />}
+                  {(rows || []).map((r) => {
                     const dirty = !rosterEqual(r.saved, r.draft);
                     return (
                       <TableRow key={r.farm} className={dirty ? "bg-amber-50/30" : ""}>

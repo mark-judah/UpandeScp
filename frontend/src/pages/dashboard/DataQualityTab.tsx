@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
+import { RowsSkeleton, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import { cn } from "@/lib/utils";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
@@ -178,7 +178,7 @@ function GpsCell({ value, thin, none }: { value: string; thin: boolean; none: bo
   );
 }
 
-function HouseTable({ rows }: { rows: QualityHouse[] }) {
+function HouseTable({ rows, loading = false }: { rows: QualityHouse[]; loading?: boolean }) {
   const { sorted, sort, toggle } = useSorted<QualityHouse, keyof QualityHouse>(rows, "entries");
   const anyThin = rows.some((r) => !r.gpsReliable);
   const head = (label: string, col: keyof QualityHouse, title?: string, right = true) => (
@@ -200,7 +200,7 @@ function HouseTable({ rows }: { rows: QualityHouse[] }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto p-0">
-        {rows.length ? (
+        {loading || rows.length ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -216,7 +216,7 @@ function HouseTable({ rows }: { rows: QualityHouse[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sorted.map((h) => {
+              {loading ? <TableRowsSkeleton cols={9} rows={6} /> : sorted.map((h) => {
                 const thin = !h.gpsReliable;
                 const none = !h.fixes;
                 return (
@@ -261,10 +261,12 @@ function ScoutTable({
   rows,
   scopeNothing,
   metadataMinPct,
+  loading = false,
 }: {
   rows: QualityScout[];
   scopeNothing: number | null;
   metadataMinPct: number;
+  loading?: boolean;
 }) {
   const { sorted, sort, toggle } = useSorted<QualityScout, keyof QualityScout>(rows, "entries");
   const head = (label: string, col: keyof QualityScout, title?: string, right = true) => (
@@ -275,13 +277,14 @@ function ScoutTable({
       <CardHeader className="p-0 pb-2">
         <CardTitle>Scouts</CardTitle>
         <CardDescription>
-          Nothing found is compared with the scope's {pct(scopeNothing)}; off zone with the houses
+          Nothing found is compared with the scope's{" "}
+          {loading ? <TextSkeleton width="4ch" /> : pct(scopeNothing)}; off zone with the houses
           the scout worked. Sync is informational: entry creation minus capture time, for entries
           created after the bulk load.
         </CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto p-0">
-        {rows.length ? (
+        {loading || rows.length ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -298,7 +301,7 @@ function ScoutTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sorted.map((s) => {
+              {loading ? <TableRowsSkeleton cols={10} rows={6} /> : sorted.map((s) => {
                 const thin = (s.metadataPct ?? 0) < metadataMinPct;
                 return (
                   <TableRow key={s.scout} data-testid="quality-scout" data-scout={s.scout}>
@@ -343,29 +346,23 @@ function ScoutTable({
 // ── tab ──────────────────────────────────────────────────────────────────
 
 export function DataQualityTab({ data }: { data: QualityPayload | null }) {
-  // Nothing fetched yet (or the fetch failed — Dashboard shows the error): no
-  // "Nothing needs attention", no empty tables, just a quiet placeholder.
-  if (!data) {
-    return (
-      <div data-testid="quality-loading" className="flex flex-col gap-4">
-        <KpiGrid cols={4}>
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-[132px] rounded-xl" />
-          ))}
-        </KpiGrid>
-        <Skeleton className="h-40 rounded-xl" />
-      </div>
-    );
-  }
-  const k = data.kpis;
-  const t = data.thresholds;
-  const gpsThin = k.metadataPct != null && k.metadataPct < t.metadataMinPct;
+  // Nothing fetched yet (a failed first load is not rendered — the page shows the error): the
+  // tiles, cards and table headings stand, their contents are skeletons. No
+  // "Nothing needs attention", no empty tables (skeleton spec K1/K2).
+  const loading = !data;
+  const k = data?.kpis;
+  const t = data?.thresholds;
+  const gpsThin = k != null && t != null && k.metadataPct != null && k.metadataPct < t.metadataMinPct;
   const over = (v: number | null | undefined, line: number | undefined) =>
     v != null && line != null && v > line ? "warning" : "default";
 
   return (
-    <div className="flex flex-col gap-4">
-      {data.clamped && (
+    <div
+      className="flex flex-col gap-4"
+      data-testid={loading ? "quality-loading" : undefined}
+      aria-busy={loading || undefined}
+    >
+      {data?.clamped && (
         <div data-testid="quality-clamped" className="text-[13px] text-[var(--sd-quiet)]">
           Range capped at {data.thresholds.maxRangeDays / 7} weeks: showing {data.range.from_date} to{" "}
           {data.range.to_date}.
@@ -373,36 +370,40 @@ export function DataQualityTab({ data }: { data: QualityPayload | null }) {
       )}
       <KpiGrid cols={4}>
         <Kpi
+          loading={loading}
           label="Station coverage"
-          value={pct(k.coveragePct)}
+          value={pct(k?.coveragePct)}
           hint="stations scouted · each house's latest week"
           tone={
-            k.coveragePct != null && k.coveragePct < t.thinCoveragePct ? "warning" : "default"
+            k?.coveragePct != null && t != null && k.coveragePct < t.thinCoveragePct ? "warning" : "default"
           }
         />
         <Kpi
+          loading={loading}
           label="Off-zone fixes"
-          value={pct(k.offZonePct)}
+          value={pct(k?.offZonePct)}
           hint={
             gpsThin
-              ? `GPS detail on only ${pct(k.metadataPct)} of entries`
-              : k.zoneMapSuspect
+              ? `GPS detail on only ${pct(k?.metadataPct)} of entries`
+              : k?.zoneMapSuspect
                 ? "fixes outside their zone — zone map needs checking"
                 : "fixes outside their zone"
           }
-          tone={k.zoneMapSuspect ? "warning" : "default"}
+          tone={k?.zoneMapSuspect ? "warning" : "default"}
           className={gpsThin ? "opacity-60" : undefined}
         />
         <Kpi
+          loading={loading}
           label="Too fast"
-          value={pct(k.tooFastPct)}
-          hint={`zone-to-zone moves under ${t.tooFastSeconds} s`}
-          tone={over(k.tooFastPct, t.tooFastPct)}
+          value={pct(k?.tooFastPct)}
+          hint={`zone-to-zone moves under ${t?.tooFastSeconds ?? "—"} s`}
+          tone={over(k?.tooFastPct, t?.tooFastPct)}
         />
         <Kpi
+          loading={loading}
           label="GPS detail"
-          value={pct(k.metadataPct)}
-          hint={`of ${num(k.entries)} entries carry metadata`}
+          value={pct(k?.metadataPct)}
+          hint={`of ${num(k?.entries)} entries carry metadata`}
           tone={gpsThin ? "warning" : "default"}
         />
       </KpiGrid>
@@ -415,15 +416,16 @@ export function DataQualityTab({ data }: { data: QualityPayload | null }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <FlagList flags={data.flags} />
+          {data ? <FlagList flags={data.flags} /> : <RowsSkeleton rows={4} />}
         </CardContent>
       </Card>
 
-      <HouseTable rows={data.houses} />
+      <HouseTable rows={data?.houses ?? []} loading={loading} />
       <ScoutTable
-        rows={data.scouts}
-        scopeNothing={k.nothingFoundPct}
-        metadataMinPct={data.thresholds.metadataMinPct}
+        rows={data?.scouts ?? []}
+        scopeNothing={k?.nothingFoundPct ?? null}
+        metadataMinPct={t?.metadataMinPct ?? 0}
+        loading={loading}
       />
     </div>
   );

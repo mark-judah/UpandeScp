@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   getApprovalReview,
@@ -20,6 +20,7 @@ import {
 import { overrideSprayPlan, type OverrideInput } from "@/lib/spray-compliance-api";
 import { SprayCheckCard } from "@/components/spray-plan/SprayCheckCard";
 import { OverrideDialog } from "@/components/spray-plan/OverrideDialog";
+import { Bar } from "@/components/Loading";
 
 import { errorText } from "@/lib/errors";
 interface Props {
@@ -66,11 +67,42 @@ export function ApprovalChemicalsTable({ woName }: Props) {
     [woName],
   );
 
-  if (loading) {
+  // First load only: after an override the old review stays until the new one lands.
+  if (loading && !review) {
     return (
-      <div className="text-xs text-muted-foreground flex items-center gap-2 px-2 py-3">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        Loading chemical review…
+      <div className="px-3 py-2 border-t bg-muted/20" aria-busy="true">
+        <div className="mb-2">
+          <SprayCheckCard result={null} loading names={{}} />
+        </div>
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+              <th className="py-1">Chemical</th>
+              <th>Codes</th>
+              <th className="text-right">Rate</th>
+              <th>Status</th>
+              <th>Resistance</th>
+            </tr>
+          </thead>
+          <tbody aria-hidden>
+            {["62%", "48%", "56%"].map((w, i) => (
+              <tr key={i} className="border-t border-border/40" data-skeleton="row">
+                <td className="py-1.5">
+                  {/* widths vary down the column, like names that have not arrived */}
+                  <span
+                    className="mb-1 block h-3 animate-pulse rounded bg-[var(--sd-bg-soft)]"
+                    style={{ width: w }}
+                  />
+                  <Bar className="h-2.5 w-16" />
+                </td>
+                <td><Bar className="h-4 w-14 rounded-full" /></td>
+                <td><Bar className="ml-auto h-3 w-12" /></td>
+                <td><Bar className="h-3 w-8" /></td>
+                <td><Bar className="h-3 w-20" /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     );
   }

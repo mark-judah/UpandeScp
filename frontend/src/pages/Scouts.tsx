@@ -22,12 +22,12 @@ import {
 } from "@/components/ui/select";
 import { HEADER_PILL } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { LoadProgress, TextSkeleton } from "@/components/Loading";
 import { Figure, FigureRow } from "@/components/people/Figure";
 import { PersonList, type PersonListGroup } from "@/components/people/PersonList";
 import { PersonPortrait, PersonPortraitSkeleton } from "@/components/people/PersonPortrait";
 import { KpiRadar, KpiRadarSkeleton, type RadarAxis } from "@/components/people/KpiRadar";
-import { ActivityFeed, type FeedItem } from "@/components/people/ActivityFeed";
+import { ActivityFeed, ActivityFeedSkeleton, type FeedItem } from "@/components/people/ActivityFeed";
 import { CompareDialog } from "@/components/people/CompareDialog";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { DEFAULT_CROP } from "@/lib/scouting-api";
@@ -120,6 +120,8 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
     true,
   );
   const data = q.data;
+  // First load (nothing to show yet): the frame is drawn, the figures pending.
+  const pending = !data && !q.error;
 
   const everyone = useMemo(
     () => (data ? [...data.ranked, ...data.notEnoughDays] : []),
@@ -186,7 +188,7 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
       <PageHeader eyebrow="Personnel · Scouting" title="Scouts" />
       <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Select value={farm || data?.farm || ALL} onValueChange={(v) => setFarm(v)}>
+          <Select value={farm || data?.farm || ALL} onValueChange={(v) => setFarm(v)} disabled={!data}>
             <SelectTrigger aria-label="Scouts farm" className={HEADER_PILL}>
               <SelectValue />
             </SelectTrigger>
@@ -200,6 +202,12 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
           <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
           <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
         </div>
+        <LoadProgress
+          active={q.loading && !!data}
+          progress={q.progress?.percent ?? null}
+          label={q.progress?.label}
+          className="self-end"
+        />
         {q.error && <div className="text-xs text-[var(--sd-data-red)]">Failed to load: {q.error}</div>}
         {data?.clamped && (
           <p className="text-xs text-[var(--sd-muted)]">
@@ -207,7 +215,10 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
           </p>
         )}
 
-        <div className="relative grid min-w-0 gap-5 xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
+        <div
+          className="relative grid min-w-0 gap-5 xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)]"
+          aria-busy={pending || undefined}
+        >
           <aside className={cn("min-w-0 xl:sticky xl:top-6 xl:self-start", selected && "hidden xl:block")}>
             <Card className="flex min-h-0 flex-col overflow-hidden">
               <CardContent className="flex min-h-0 flex-col p-4">
@@ -217,6 +228,7 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
                   onSelect={setSelectedId}
                   label="Find a scout"
                   noun="scouts"
+                  loading={pending}
                 />
               </CardContent>
             </Card>
@@ -420,22 +432,9 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
             </div>
           ) : data ? (
             <Pending label={everyone.length ? "Pick a scout" : "No scouting in this range"} />
-          ) : (
-            <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,280px)]">
-              <FigureRow>
-                {["Score", "Effort", "Integrity", "GPS"].map((l) => (
-                  <Figure key={l} label={l} value="" loading />
-                ))}
-              </FigureRow>
-              <div className="flex flex-col gap-5">
-                <PersonPortraitSkeleton />
-                <KpiRadarSkeleton />
-              </div>
-            </div>
-          )}
-          {q.loading && (
-            <LoadingOverlay open progress={q.progress?.percent ?? null} label={q.progress?.label} />
-          )}
+          ) : pending ? (
+            <ScoutRecordSkeleton />
+          ) : null}
         </div>
       </div>
 
@@ -451,6 +450,85 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
           benchmarkLabel={selected.farm ? `${selected.farm} median` : "Farm median"}
         />
       )}
+    </div>
+  );
+}
+
+/** The record's own frame on the first load: the figure labels, card titles,
+ *  the median table's measures and the portrait's fact labels are real; only
+ *  the numbers, rows, photo and radar are pending. */
+function ScoutRecordSkeleton() {
+  return (
+    <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,280px)]">
+      <div className="flex min-w-0 flex-col gap-5">
+        <FigureRow>
+          {["Score", "Effort", "Integrity", "GPS"].map((l) => (
+            <Figure key={l} label={l} value="" loading />
+          ))}
+        </FigureRow>
+        <div className="-mt-2">
+          <Button variant="outline" size="sm" disabled>
+            <BarChart3 className="mr-1.5 h-3.5 w-3.5" />
+            Compare against the farm
+          </Button>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Against the farm median</CardTitle>
+            <CardDescription><TextSkeleton width="22ch" /></CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <table className="w-full border-collapse text-[13px]" aria-label="Against the farm median">
+              <thead>
+                <tr className="border-b border-[var(--sd-line)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--sd-quiet)]">
+                  <th className="py-2 pr-3">Measure</th>
+                  <th className="py-2 pr-3 text-right"><TextSkeleton width="6ch" /></th>
+                  <th className="py-2 text-right">Farm median</th>
+                </tr>
+              </thead>
+              <tbody>
+                {MEDIAN_ROWS.map((r) => (
+                  <tr key={r.key} className="border-b border-[var(--sd-line-soft)] last:border-0">
+                    <td className="py-2 pr-3 text-[var(--sd-muted)]">{r.label}</td>
+                    <td className="py-2 pr-3 text-right"><TextSkeleton width="4ch" /></td>
+                    <td className="py-2 text-right"><TextSkeleton width="4ch" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Open quality flags</CardTitle>
+            <CardDescription>From the Coverage report, for this range.</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <TextSkeleton width="16ch" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Houses scouted</CardTitle>
+            <CardDescription><TextSkeleton width="18ch" /></CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ActivityFeedSkeleton rows={3} />
+          </CardContent>
+        </Card>
+      </div>
+      <div className="flex min-w-0 flex-col gap-5">
+        <PersonPortraitSkeleton facts={["Farm", "Active days", "Entries", "Last active"]} />
+        <Card>
+          <CardHeader className="pb-0">
+            <CardTitle className="text-[14px]">Score parts</CardTitle>
+            <CardDescription>Outward is better on every axis.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <KpiRadarSkeleton />
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

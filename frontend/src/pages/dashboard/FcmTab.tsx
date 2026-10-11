@@ -22,13 +22,22 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ChartSkeleton } from "@/components/Loading";
 import { Kpi, KpiGrid } from "./Kpi";
+import { CardRowsSkeleton } from "./slot-skeletons";
 import { EmptyHint } from "./EmptyHint";
 import { RevealLTR } from "@/components/RevealLTR";
 import type { FcmPayload } from "./fcm-types";
 import { weekTickFormatter } from "@/lib/iso-week";
 
-export function FcmTab({ data }: { data: FcmPayload | null }) {
+export function FcmTab({
+  data,
+  loading = false,
+}: {
+  data: FcmPayload | null;
+  /** First load (no payload yet): the cards stand, their contents are skeletons. */
+  loading?: boolean;
+}) {
   const k = data?.kpis ?? { trapTotal: 0, pestTotal: 0, focusZones: 0, greenhouseCount: 0 };
   const daily = data?.daily ?? [];
   const breakdown = data?.pestBreakdown ?? [];
@@ -42,12 +51,12 @@ export function FcmTab({ data }: { data: FcmPayload | null }) {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" aria-busy={loading || undefined}>
       <KpiGrid cols={4}>
-        <Kpi label="Trap Counts" value={k.trapTotal} hint="focus pests · traps" />
-        <Kpi label="Non-Trap Counts" value={k.pestTotal} hint="focus pests · scouting" />
-        <Kpi label="Focus Zones" value={k.focusZones} hint="zones with focus pests" />
-        <Kpi label="Greenhouses" value={k.greenhouseCount} hint="impacted" />
+        <Kpi loading={loading} label="Trap Counts" value={k.trapTotal} hint="focus pests · traps" />
+        <Kpi loading={loading} label="Non-Trap Counts" value={k.pestTotal} hint="focus pests · scouting" />
+        <Kpi loading={loading} label="Focus Zones" value={k.focusZones} hint="zones with focus pests" />
+        <Kpi loading={loading} label="Greenhouses" value={k.greenhouseCount} hint="impacted" />
       </KpiGrid>
 
       <Card className="p-4">
@@ -56,7 +65,9 @@ export function FcmTab({ data }: { data: FcmPayload | null }) {
           <CardDescription>Daily catches and scouting counts</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          {daily.length ? (
+          {loading ? (
+            <ChartSkeleton height={256} />
+          ) : daily.length ? (
             <RevealLTR>
               <ChartContainer config={lineConfig} className="h-64">
                 <LineChart data={daily} margin={{ left: 4, right: 8, top: 8 }}>
@@ -104,7 +115,9 @@ export function FcmTab({ data }: { data: FcmPayload | null }) {
             <CardDescription>Focus-pest catches</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {breakdown.length ? (
+            {loading ? (
+              <ChartSkeleton height={240} />
+            ) : breakdown.length ? (
               <RevealLTR>
                 <ChartContainer config={barConfig} className="h-60">
                   <BarChart data={breakdown}>
@@ -128,7 +141,9 @@ export function FcmTab({ data }: { data: FcmPayload | null }) {
             <CardDescription>Top focus pests by scouting</CardDescription>
           </CardHeader>
           <CardContent className="p-0 flex flex-col gap-1.5">
-            {(data?.focusPests ?? []).length ? (
+            {loading ? (
+              <CardRowsSkeleton rows={6} />
+            ) : (data?.focusPests ?? []).length ? (
               (data?.focusPests ?? []).slice(0, 10).map((r) => (
                 <div
                   key={r.name}

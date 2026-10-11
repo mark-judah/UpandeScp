@@ -30,7 +30,9 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RevealLTR } from "@/components/RevealLTR";
+import { AvatarSkeleton, ChartSkeleton, TextSkeleton } from "@/components/Loading";
 import { Kpi, KpiGrid } from "./Kpi";
+import { CardRowsSkeleton } from "./slot-skeletons";
 import { EmptyHint } from "./EmptyHint";
 import { GreenhouseModal } from "./GreenhouseModal";
 import { ReliabilityPill } from "./PrevalenceFigure";
@@ -69,6 +71,7 @@ export function OverviewTab({
   crop = "",
   farm = "",
   greenhouse = "",
+  loading = false,
 }: {
   data: OverviewPayload | null;
   scoutLookup: Record<string, string>;
@@ -77,6 +80,8 @@ export function OverviewTab({
   crop?: string;
   farm?: string;
   greenhouse?: string;
+  /** First load (no payload yet): the cards stand, their contents are skeletons. */
+  loading?: boolean;
 }) {
   const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, blockCount: 0, highAlerts: 0 };
   // Avocado scouting uses Blocks (open-field), everything else uses Greenhouses.
@@ -114,6 +119,7 @@ export function OverviewTab({
   // uncached so an Acknowledge shows at once. The cached payload's
   // `activeAlerts` is no longer drawn.
   const [alerts, setAlerts] = useState<ScoutingAlert[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
   const [acking, setAcking] = useState<string | null>(null);
   const [ackNote, setAckNote] = useState<Record<string, string>>({});
   const [showAllAlerts, setShowAllAlerts] = useState(false);
@@ -123,12 +129,16 @@ export function OverviewTab({
       return;
     }
     let cancelled = false;
+    setAlertsLoading(true);
     listOpenAlerts({ crop, farm, greenhouse })
       .then((rows) => {
         if (!cancelled) setAlerts(rows);
       })
       .catch(() => {
         if (!cancelled) setAlerts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAlertsLoading(false);
       });
     return () => {
       cancelled = true;
@@ -161,9 +171,10 @@ export function OverviewTab({
   const [openGh, setOpenGh] = useState<string | null>(null);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" aria-busy={loading || undefined}>
       <KpiGrid cols={4}>
         <Kpi
+          loading={loading}
           label="Total Scouts"
           value={k.totalScouts}
           hint={
@@ -174,13 +185,15 @@ export function OverviewTab({
               : "no scouts in range"
           }
         />
-        <Kpi label="Zones Scouted" value={k.zonesScouted} hint="zone visits" />
+        <Kpi loading={loading} label="Zones Scouted" value={k.zonesScouted} hint="zone visits" />
         <Kpi
+          loading={loading}
           label={unitLabel}
           value={unitValue}
           hint="monitored"
         />
         <Kpi
+          loading={loading}
           label="High Alerts"
           value={k.highAlerts}
           tone={k.highAlerts > 0 ? "critical" : "default"}
@@ -195,7 +208,9 @@ export function OverviewTab({
             <CardDescription>Daily observations</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {daily.length ? (
+            {loading ? (
+              <ChartSkeleton height={256} />
+            ) : daily.length ? (
               <RevealLTR>
                 <ChartContainer config={series} className="h-64">
                   <AreaChart data={daily} margin={{ left: 4, right: 8, top: 8 }}>
@@ -253,7 +268,9 @@ export function OverviewTab({
             <CardDescription>Category split</CardDescription>
           </CardHeader>
           <CardContent className="p-0 relative">
-            {totalsMax > 1 ? (
+            {loading ? (
+              <ChartSkeleton height={224} />
+            ) : totalsMax > 1 ? (
               <>
                 <RevealLTR>
                   <ChartContainer config={series} className="h-56">
@@ -301,7 +318,9 @@ export function OverviewTab({
             <CardDescription>Unique scouts contributing each day</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {scoutsDaily.length ? (
+            {loading ? (
+              <ChartSkeleton height={192} />
+            ) : scoutsDaily.length ? (
               <RevealLTR>
                 <ChartContainer
                   config={{ scouts: { label: "Scouts", color: "var(--sd-data-indigo)" } }}
@@ -341,12 +360,18 @@ export function OverviewTab({
           <CardHeader className="p-0 pb-2">
             <CardTitle>Active Alerts</CardTitle>
             <CardDescription>
-              {alerts.filter((a) => a.status === "Open").length} open · thresholds crossed in the
-              latest scouted week
+              {alertsLoading && !alerts.length ? (
+                <TextSkeleton width="2ch" />
+              ) : (
+                alerts.filter((a) => a.status === "Open").length
+              )}{" "}
+              open · thresholds crossed in the latest scouted week
             </CardDescription>
           </CardHeader>
-          <CardContent className="p-0 flex flex-col gap-1.5">
-            {alerts.length ? (
+          <CardContent className="p-0 flex flex-col gap-1.5" aria-busy={(alertsLoading && !alerts.length) || undefined}>
+            {alertsLoading && !alerts.length ? (
+              <CardRowsSkeleton rows={3} twoLine />
+            ) : alerts.length ? (
               (showAllAlerts ? alerts : alerts.slice(0, ALERTS_SHOWN)).map((a) => (
                 <div
                   key={a.name}
@@ -421,7 +446,9 @@ export function OverviewTab({
           <CardDescription>Zones · pests · diseases per scout</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          {perf.length ? (
+          {loading ? (
+            <ChartSkeleton height={256} />
+          ) : perf.length ? (
             <RevealLTR>
               <ChartContainer
                 config={{
@@ -460,10 +487,14 @@ export function OverviewTab({
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Greenhouse Health</CardTitle>
-            <CardDescription>{ghs.length} monitored · click for details</CardDescription>
+            <CardDescription>
+              {loading ? <TextSkeleton width="2ch" /> : ghs.length} monitored · click for details
+            </CardDescription>
           </CardHeader>
           <CardContent className="p-0 flex flex-col gap-1.5">
-            {ghs.length ? (
+            {loading ? (
+              <CardRowsSkeleton rows={6} />
+            ) : ghs.length ? (
               ghs.slice(0, 12).map((g) => (
                 <button
                   type="button"
@@ -502,7 +533,9 @@ export function OverviewTab({
             <CardDescription>Most recent zone visits</CardDescription>
           </CardHeader>
           <CardContent className="p-0 flex flex-col gap-1.5">
-            {recent.length ? (
+            {loading ? (
+              <CardRowsSkeleton rows={6} twoLine />
+            ) : recent.length ? (
               recent.map((r) => (
                 <div
                   key={r.name}
@@ -538,7 +571,19 @@ export function OverviewTab({
           <CardDescription>By zone visits</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          {scouts.length ? (
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2" aria-hidden data-skeleton="rows">
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]">
+                  <AvatarSkeleton size={28} />
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <TextSkeleton width="14ch" />
+                    <TextSkeleton width="7ch" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : scouts.length ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
               {scouts.map((s, i) => (
                 <div

@@ -13,6 +13,7 @@
  * fails with PermissionError, which we surface as an error state.
  */
 
+import { useToast } from "@/components/Toast";
 import {
   Fragment,
   useEffect,
@@ -1172,7 +1173,12 @@ function ProgressDialog({
 
 // ── QR section + print window ──────────────────────────────────────
 function QrSection({ labels }: { labels: QrLabel[] }) {
-  const print = () => openQrPrintWindow(labels);
+  const toast = useToast();
+  const print = () => {
+    if (!openQrPrintWindow(labels)) {
+      toast.show("Pop-ups are blocked.", "err", { hint: "Allow pop-ups for this site to print labels." });
+    }
+  };
   const preview = labels.slice(0, 8);
   return (
     <div className="rounded-md border p-3 space-y-2 bg-card">
@@ -1220,12 +1226,10 @@ function QrSection({ labels }: { labels: QrLabel[] }) {
 /** 25×15 mm minimal QR-only label sheet. One QR per page, no text —
  *  all order context (chemical, qty, WO, farm, etc.) is encoded in the
  *  QR and recovered on scan. */
-function openQrPrintWindow(labels: QrLabel[]) {
+/** False when the browser blocked the pop-up. */
+function openQrPrintWindow(labels: QrLabel[]): boolean {
   const win = window.open("", "_blank", "width=480,height=640");
-  if (!win) {
-    alert("Pop-ups are blocked. Allow pop-ups for this site to print labels.");
-    return;
-  }
+  if (!win) return false;
 
   const rows = labels
     .map(
@@ -1258,4 +1262,5 @@ body{font-family:Arial,Helvetica,sans-serif;background:#e5e7eb;padding:16px}
 <div class="sheet">${rows}</div>
 </body></html>`);
   win.document.close();
+  return true;
 }

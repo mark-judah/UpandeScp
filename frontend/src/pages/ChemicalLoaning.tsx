@@ -58,7 +58,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Toaster, type ToastItem } from "@/components/Toaster";
+import { useToast, type ToastItem } from "@/components/Toast";
 import { cn } from "@/lib/utils";
 import { errorText } from "@/lib/errors";
 import { fmtQty } from "@/lib/uom";
@@ -89,15 +89,13 @@ const newRowId = () => `r${++rowSeq}`;
 
 export function ChemicalLoaning() {
   const [tab, setTab] = useState<"request" | "incoming" | "outgoing">("request");
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const dismissToast = useCallback((id: number) => {
-    setToasts((t) => t.filter((x) => x.id !== id));
-  }, []);
-  const pushToast = useCallback((kind: ToastItem["kind"], text: string) => {
-    const id = Date.now() + Math.floor(Math.random() * 1000);
-    setToasts((t) => [...t, { id, kind, text }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000);
-  }, []);
+  const toast = useToast();
+  const pushToast = useCallback(
+    (kind: ToastItem["kind"], text: string) => {
+      toast.show(text, kind);
+    },
+    [toast],
+  );
 
   // -- scope ---------------------------------------------------------------
   const [farms, setFarms] = useState<string[]>([]);
@@ -406,7 +404,6 @@ export function ChemicalLoaning() {
         </DialogContent>
       </Dialog>
 
-      <Toaster items={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

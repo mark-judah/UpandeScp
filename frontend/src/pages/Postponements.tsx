@@ -45,7 +45,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Toaster, type ToastItem } from "@/components/Toaster";
+import { useToast, type ToastItem } from "@/components/Toast";
 import { cn } from "@/lib/utils";
 import { bootstrap, FrappeError } from "@/lib/frappe";
 import { errorText } from "@/lib/errors";
@@ -83,15 +83,12 @@ export function Postponements() {
   const roles = bootstrap().roles || [];
   const canDecide = roles.some((r) => APPROVER_ROLES.includes(r));
 
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const push = useCallback((text: string, kind: ToastItem["kind"] = "info") => {
-    const id = Date.now() + Math.floor(Math.random() * 1000);
-    setToasts((t) => [...t, { id, kind, text }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000);
-  }, []);
-  const dismiss = useCallback(
-    (id: number) => setToasts((t) => t.filter((x) => x.id !== id)),
-    [],
+  const toast = useToast();
+  const push = useCallback(
+    (text: string, kind: ToastItem["kind"] = "info") => {
+      toast.show(text, kind);
+    },
+    [toast],
   );
 
   const [tab, setTab] = useState<TabKey>(canDecide ? "pending" : "plans");
@@ -508,7 +505,6 @@ export function Postponements() {
         </DialogContent>
       </Dialog>
 
-      <Toaster items={toasts} onDismiss={dismiss} />
     </div>
   );
 }

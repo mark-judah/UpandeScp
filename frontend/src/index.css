@@ -83,8 +83,19 @@ html { font-size: 85%; }
 
   /* Type */
   --sd-font: "Poppins", "Inter", "Helvetica Neue", Arial, sans-serif;
-  --sd-font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas,
-    monospace;
+  /* One typeface. IDs and figures used to switch to a system monospace
+     (`font-mono`), which read as a different font beside Poppins; they stay in
+     Poppins and line up through tabular figures instead (see .font-mono). */
+  --sd-font-mono: var(--sd-font);
+
+  /* Alert washes, taken from Frappe's desk alert (--alert-bg-danger/warning/
+     info/success) — the same values as the Livestock app, so a toast from SCP,
+     Livestock and the desk are the same object. Tone = fill + icon, never a strip. */
+  --sd-alert-error: #fff7f7;
+  --sd-alert-warn: #fffcef;
+  --sd-alert-info: #f7fbfd;
+  --sd-alert-ok: #e4f5e9;
+  --sd-radius-toast: 16px;
 
   /* Geometry */
   --sd-radius-xs: 4px;
@@ -216,6 +227,23 @@ html { font-size: 85%; }
     line-height: 1.5;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
+  }
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+  .sd-toast-in {
+    animation: sd-toast-in 200ms ease-out;
+  }
+  @keyframes sd-toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sd-toast-in {
+      animation: none;
+    }
   }
   ::selection {
     background: rgba(75, 85, 99, 0.18);

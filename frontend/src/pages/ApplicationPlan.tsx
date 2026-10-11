@@ -25,7 +25,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { BomPicker } from "@/components/BomPicker";
 import { DatePicker } from "@/components/DatePicker";
 import { TimePicker } from "@/components/TimePicker";
-import { Toaster, type ToastItem } from "@/components/Toaster";
+import { useToast, type ToastItem } from "@/components/Toast";
 import {
   Dialog,
   DialogContent,
@@ -350,33 +350,21 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   // Heatmap fullscreen modal
   const [heatmapModal, setHeatmapModal] = useState(false);
 
-  // Inline toaster pinned just below the header.
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const toastIdRef = useRef(0);
+  // Floating toasts (components/Toast.tsx), the same as Livestock and the desk.
+  const toast = useToast();
   const pushToast = (
     kind: ToastItem["kind"],
     text: string,
-    autoMs = 4000,
+    autoMs?: number,
     hint?: string,
-  ) => {
-    const id = ++toastIdRef.current;
-    setToasts((prev) => [...prev, { id, kind, text: asStatement(text), hint }]);
-    if (kind !== "loading" && autoMs > 0) {
-      setTimeout(
-        () => setToasts((prev) => prev.filter((t) => t.id !== id)),
-        autoMs,
-      );
-    }
-    return id;
-  };
+  ) => toast.show(asStatement(text), kind, { hint, ms: autoMs });
   /** Server errors get the statement on one line and what to do on the next,
    *  rather than one long run-on sentence. */
   const pushError = (e: unknown, fallback?: string) => {
     const h = explainError(e, fallback);
     return pushToast("err", h.text, h.kind === "bug" ? 12000 : 8000, h.hint);
   };
-  const dismissToast = (id: number) =>
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+  const dismissToast = toast.dismiss;
 
   // Diagnose-step data: per-zone counts + filter options for the currently
   // selected greenhouse. One server endpoint replaces the old
@@ -1601,8 +1589,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
           View past plans →
         </a>
       </PageHeader>
-
-      <Toaster items={toasts} onDismiss={dismissToast} />
 
       {/* ── STEP 1 · DIAGNOSE ────────────────────────────────────── */}
       <section className="px-4 md:px-6 py-4 flex flex-col gap-3">

@@ -7,11 +7,12 @@
 * ``get_schedule`` scopes to visible farms and flags plans whose crew is on leave.
 """
 
+import json
 import unittest
 from unittest import mock
 
 import frappe
-from frappe.utils import getdate
+from frappe.utils import getdate, today
 
 from upande_scp.serverscripts.common import crew_availability as CA
 from upande_scp.serverscripts.spray_plan_creator import offline_session as OS
@@ -36,31 +37,25 @@ class TestCrewLeaveCheck(unittest.TestCase):
 		self.wo = row[0]["name"]
 		self.day = getdate(row[0]["planned_start_date"])
 		self.greenhouse = row[0]["custom_greenhouse"]
+		self.today = getdate(today())
+		lo, hi = min(self.day, self.today), max(self.day, self.today)
 		emps = frappe.db.sql(
 			"""SELECT e.name, e.employee_name FROM tabEmployee e
 			    WHERE e.status='Active' AND NOT EXISTS (
 			          SELECT 1 FROM `tabLeave Application` l WHERE l.employee=e.name
 			             AND l.from_date <= %s AND l.to_date >= %s AND l.docstatus < 2)
 			    LIMIT 2""",
-			(self.day, self.day),
+			(hi, lo),
 			as_dict=True,
 		)
 		if len(emps) < 2:
 			self.skipTest("need two employees without leave")
 		self.away, self.here = emps[0], emps[1]
-		leave = frappe.new_doc("Leave Application")
-		leave.update({
-			"employee": self.away["name"],
-			"employee_name": self.away["employee_name"],
-			"leave_type": frappe.db.get_value("Leave Type", {}, "name") or "Annual Leave",
-			"from_date": self.day,
-			"to_date": self.day,
-			"status": "Approved",
-			"docstatus": 1,
-			"company": frappe.db.get_value("Employee", self.away["name"], "company"),
-		})
-		leave.name = "TEST-CREW-LEAVE-0001"
-		leave.db_insert()
+		# Leave on the plan's planned date (planning, schedule) and on today (crew
+		# confirmation and start — R3). One record when the two coincide.
+		self._leave("TEST-CREW-LEAVE-0001", self.day)
+		if self.today != self.day:
+			self._leave("TEST-CREW-LEAVE-0002", self.today)
 		self.team = [
 			{"id": self.away["name"], "name": self.away["employee_name"], "role": "Sprayer"},
 			{"id": self.here["name"], "name": self.here["employee_name"], "role": "Supervisor"},
@@ -70,6 +65,21 @@ class TestCrewLeaveCheck(unittest.TestCase):
 			filters={"parent": self.wo, "parentfield": "custom_spray_plan_team_members"},
 			pluck="employee",
 		)
+
+	def _leave(self, name, day):
+		leave = frappe.new_doc("Leave Application")
+		leave.update({
+			"employee": self.away["name"],
+			"employee_name": self.away["employee_name"],
+			"leave_type": frappe.db.get_value("Leave Type", {}, "name") or "Annual Leave",
+			"from_date": day,
+			"to_date": day,
+			"status": "Approved",
+			"docstatus": 1,
+			"company": frappe.db.get_value("Employee", self.away["name"], "company"),
+		})
+		leave.name = name
+		leave.db_insert()
 
 	def tearDown(self):
 		frappe.db.rollback()
@@ -133,7 +143,7 @@ class TestCrewLeaveCheck(unittest.TestCase):
 
 	def test_offline_replay_never_refuses_even_in_block(self):
 		self._mode("Block")
-		out = SS.update_work_order_team(self.wo, self.team, enforce_leave=False)
+		out = SS._update_work_order_team(self.wo, self.team, enforce_leave=False)
 		self.assertTrue(out["success"])
 		self.assertEqual(len(out["crew_warnings"]), 1)
 		# the start path's check, as the replay calls it (enforce_cutoff=False)
@@ -142,6 +152,89 @@ class TestCrewLeaveCheck(unittest.TestCase):
 		self.assertEqual(len(res["messages"]), 1)
 		with self.assertRaises(frappe.ValidationError):
 			SS._check_crew(self.wo, [self.away["name"]], self.day, can_block=True)
+
+	# ── R2: the replay switches are not reachable over HTTP ──────────────────────
+
+	def test_http_call_with_enforce_leave_0_still_refuses_in_block(self):
+		self._mode("Block")
+		# frappe.call is what the request handler uses: it drops arguments the
+		# whitelisted function does not declare, so enforce_leave=0 has no effect.
+		with self.assertRaises(frappe.ValidationError):
+			frappe.call(
+				SS.update_work_order_team,
+				work_order=self.wo, team=json.dumps(self.team), enforce_leave="0",
+			)
+
+	def test_whitelisted_signatures_carry_no_bypass(self):
+		import inspect
+
+		self.assertNotIn("enforce_leave", inspect.signature(SS.update_work_order_team).parameters)
+		self.assertNotIn("enforce_cutoff", inspect.signature(SS.start_spray_session).parameters)
+		from frappe import is_whitelisted
+
+		is_whitelisted(SS.start_spray_session)
+		is_whitelisted(SS.update_work_order_team)
+		with self.assertRaises(frappe.PermissionError):
+			is_whitelisted(SS._start_spray_session)
+		with self.assertRaises(frappe.PermissionError):
+			is_whitelisted(SS._update_work_order_team)
+
+	def test_http_start_always_enforces(self):
+		with mock.patch.object(SS, "_start_spray_session", return_value={"ok": 1}) as inner:
+			frappe.call(SS.start_spray_session, work_order=self.wo, enforce_cutoff="0")
+		self.assertTrue(inner.call_args.kwargs["enforce_cutoff"])
+
+	# ── R3: confirmation and start check TODAY; planning checks the planned date ─
+
+	def test_confirmation_checks_today_not_the_planned_date(self):
+		if self.today == self.day:
+			self.skipTest("latest plan is dated today")
+		self._mode("Block")
+		frappe.db.delete("Leave Application", {"name": "TEST-CREW-LEAVE-0002"})
+		# on leave on the planned date only: today the crew is available
+		out = SS.update_work_order_team(self.wo, self.team)
+		self.assertTrue(out["success"])
+		self.assertEqual(out["crew_warnings"], [])
+
+	def test_confirmation_refuses_leave_today_even_if_planned_date_is_clear(self):
+		if self.today == self.day:
+			self.skipTest("latest plan is dated today")
+		self._mode("Block")
+		frappe.db.delete("Leave Application", {"name": "TEST-CREW-LEAVE-0001"})
+		with self.assertRaises(frappe.ValidationError):
+			SS.update_work_order_team(self.wo, self.team)
+
+	def _start_crew_day(self, **kw):
+		"""The date the start path hands to the crew check (stops right there)."""
+		class Stop(Exception):
+			pass
+
+		seen = {}
+
+		def fake_check(wo, emps, day, can_block=True):
+			seen["day"], seen["can_block"] = getdate(day), can_block
+			raise Stop
+
+		from upande_scp.serverscripts.spray_plan_creator import postponement
+
+		with mock.patch.object(SS, "assert_can_operate"), \
+			mock.patch.object(SS, "_lock_wo", return_value=SS.STATE_TANK_MIX_MANUFACTURED), \
+			mock.patch.object(SS, "_ensure_afp"), \
+			mock.patch.object(postponement, "assert_within_cutoff"), \
+			mock.patch.object(SS, "_check_crew", side_effect=fake_check):
+			with self.assertRaises(Stop):
+				SS._start_spray_session(self.wo, **kw)
+		return seen
+
+	def test_start_checks_today(self):
+		seen = self._start_crew_day(started_at="2001-02-03 06:00:00", enforce_cutoff=True)
+		self.assertEqual(seen["day"], self.today)
+		self.assertTrue(seen["can_block"])
+
+	def test_replay_checks_the_day_it_happened_and_never_blocks(self):
+		seen = self._start_crew_day(started_at="2001-02-03 06:00:00", enforce_cutoff=False)
+		self.assertEqual(seen["day"], getdate("2001-02-03"))
+		self.assertFalse(seen["can_block"])
 
 	def test_offline_sync_records_the_warning_on_the_token(self):
 		token = frappe.get_doc({
@@ -211,3 +304,24 @@ class TestCrewLeaveCheck(unittest.TestCase):
 		frappe.set_user("Guest")
 		with self.assertRaises(frappe.PermissionError):
 			SCH.get_schedule()
+
+	def test_schedule_clamps_a_long_range(self):
+		out = SCH.get_schedule(from_date="2020-01-01", to_date="2020-12-31")
+		self.assertTrue(out["clamped"])
+		self.assertEqual(out["to_date"], "2020-12-31")
+		self.assertEqual(out["from_date"], str(getdate("2020-12-31") - __import__("datetime").timedelta(days=SCH.MAX_RANGE_DAYS)))
+		self.assertEqual(out["range"], {"from_date": out["from_date"], "to_date": out["to_date"]})
+		short = SCH.get_schedule(from_date="2020-01-01", to_date="2020-01-31")
+		self.assertFalse(short["clamped"])
+		self.assertEqual(short["from_date"], "2020-01-01")
+		self.assertEqual(SCH.MAX_RANGE_DAYS, 93)
+
+	def test_schedule_team_options_ignore_the_team_filter(self):
+		self._mode("Off")
+		all_ = SCH.get_schedule(from_date=str(self.day), to_date=str(self.day))
+		if not all_["plans"]:
+			self.skipTest("no plans on the day")
+		picked = all_["plans"][0]["team"]
+		one = SCH.get_schedule(from_date=str(self.day), to_date=str(self.day), team=picked)
+		self.assertTrue(all(p["team"] == picked for p in one["plans"]))
+		self.assertEqual(one["teams"], all_["teams"])

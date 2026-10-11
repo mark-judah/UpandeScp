@@ -1187,6 +1187,23 @@ def _create_sal_draft(wo, manufacture_se) -> str:
 def start_spray_session(
     work_order: str,
     started_at=None,
+    employee: str | None = None,
+) -> dict[str, Any]:
+    """Open a Sprayer Movement Session — the HTTP entry point.
+
+    Always enforces the daily cutoff and (per the setting) the crew leave check. The
+    replay switch lives on ``_start_spray_session`` and is not reachable over HTTP: a
+    whitelisted ``enforce_cutoff`` argument let any caller skip both rules by sending
+    ``enforce_cutoff=0``.
+    """
+    return _start_spray_session(
+        work_order, started_at=started_at, enforce_cutoff=True, employee=employee
+    )
+
+
+def _start_spray_session(
+    work_order: str,
+    started_at=None,
     enforce_cutoff: bool = True,
     employee: str | None = None,
 ) -> dict[str, Any]:
@@ -1237,9 +1254,13 @@ def start_spray_session(
 
         postponement.assert_within_cutoff(work_order)
 
-    # Crew availability on the spray date — the day it is being started, or for a
-    # replay the day it was. A replay never refuses (the spray happened); it records.
-    crew_day = get_datetime(started_at).date() if started_at else getdate(today())
+    # Crew availability on the spray date. A live start checks TODAY — the day the crew
+    # is actually out spraying, whatever the plan said. A replay checks the day the spray
+    # happened, and never refuses (the spray happened); it records.
+    if enforce_cutoff or not started_at:
+        crew_day = getdate(today())
+    else:
+        crew_day = get_datetime(started_at).date()
     crew_check = _check_crew(
         wo.name,
         [getattr(r, "employee", None) for r in (wo.custom_spray_plan_team_members or [])],
@@ -1415,7 +1436,14 @@ def get_crew_availability(work_order: str = None, employees=None, on_date=None) 
 
 
 @frappe.whitelist()
-def update_work_order_team(
+def update_work_order_team(work_order: str = None, team=None) -> dict[str, Any]:
+    """Record who is spraying — the HTTP entry point. Always enforces the leave check
+    per the setting; the non-refusing replay path is ``_update_work_order_team``, which
+    is server-internal so a client cannot send ``enforce_leave=0`` to bypass Block."""
+    return _update_work_order_team(work_order, team, enforce_leave=True)
+
+
+def _update_work_order_team(
     work_order: str = None, team=None, enforce_leave: bool = True
 ) -> dict[str, Any]:
     """Record who is spraying, just before the spray starts.
@@ -1474,16 +1502,15 @@ def update_work_order_team(
     if not rows:
         frappe.throw("A spray team needs at least one member with an employee.")
 
-    # Crew availability on the plan date, before anything is written: Block refuses,
-    # Warn saves and comments. ``enforce_leave=False`` is the offline replay — the spray
-    # already happened, so it is recorded rather than refused.
-    if isinstance(enforce_leave, str):
-        enforce_leave = enforce_leave.strip().lower() not in ("0", "false", "no", "")
-    planned = frappe.db.get_value("Work Order", work_order, "planned_start_date")
+    # Crew availability TODAY — the crew is confirmed on the morning it sprays, so that
+    # is the day that matters, not the plan's planned date (planning uses that one).
+    # Checked before anything is written: Block refuses, Warn saves and comments.
+    # ``enforce_leave=False`` is the offline replay — the spray already happened, so it is
+    # recorded rather than refused.
     crew_check = _check_crew(
         work_order,
         [r["employee"] for r in rows],
-        getdate(planned) if planned else getdate(today()),
+        getdate(today()),
         can_block=bool(enforce_leave),
     )
 

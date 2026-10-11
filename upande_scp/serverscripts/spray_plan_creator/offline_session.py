@@ -383,8 +383,8 @@ def sync_spray_session(payload) -> dict:
 			# token, so it is visible rather than a reason to lose the session.
 			team = payload.get("team")
 			if isinstance(team, list) and team:
-				SS.update_work_order_team(work_order, team, enforce_leave=False)
-			started = SS.start_spray_session(
+				SS._update_work_order_team(work_order, team, enforce_leave=False)
+			started = SS._start_spray_session(
 				work_order,
 				started_at=moments["started_at"],
 				enforce_cutoff=False,

@@ -31,8 +31,8 @@ SCHEDULE_ROLES = {
 	"Administrator",
 }
 NO_TEAM = "No team"
-#: Ranges longer than this are refused — the page asks for a month or a week.
-MAX_RANGE_DAYS = 186
+#: Longer ranges are clamped (from_date pulled up to to_date − this) and flagged.
+MAX_RANGE_DAYS = 93
 
 
 def _require_role() -> None:
@@ -109,13 +109,19 @@ def get_schedule(
 	end = getdate(to_date) if to_date else getdate(add_days(start.replace(day=28), 4)).replace(day=1) - timedelta(days=1)
 	if end < start:
 		start, end = end, start
-	if (end - start).days > MAX_RANGE_DAYS:
-		frappe.throw(f"Pick a range of at most {MAX_RANGE_DAYS} days.")
+	# Capped like the quality aggregate: from_date is pulled up to to_date − 93 days and
+	# the page told (``clamped``), rather than refusing or reading an unbounded span.
+	clamped = (end - start).days > MAX_RANGE_DAYS
+	if clamped:
+		start = end - timedelta(days=MAX_RANGE_DAYS)
 
 	houses, offered_farms = _greenhouses(crop, farm)
 	payload = {
 		"from_date": str(start),
 		"to_date": str(end),
+		"clamped": clamped,
+		"range": {"from_date": str(start), "to_date": str(end)},
+		"max_range_days": MAX_RANGE_DAYS,
 		"crop": crop,
 		"farms": offered_farms,
 		"teams": [],
@@ -180,9 +186,13 @@ def get_schedule(
 
 	out_plans: list[dict] = []
 	emp_teams: dict[str, set[str]] = {}
+	all_teams: set[str] = set()
 	for p in plans:
 		crew = crew_by_plan.get(p["name"], [])
 		team_name = resolve_team(p.get("spray_team"), [m["employee"] for m in crew], team_names, team_members)
+		# Before the team filter: the page's team options must not shrink to the one
+		# team picked, or there is nothing else to pick.
+		all_teams.add(team_name)
 		if team and team_name != team:
 			continue
 		day = _as_day(p["planned_start_date"])
@@ -218,7 +228,7 @@ def get_schedule(
 		})
 
 	payload["plans"] = out_plans
-	payload["teams"] = sorted({p["team"] for p in out_plans})
+	payload["teams"] = sorted(all_teams)
 	payload["states"] = sorted({p["workflow_state"] for p in out_plans if p["workflow_state"]})
 	shown = set(emp_teams)
 	payload["leaves"] = [

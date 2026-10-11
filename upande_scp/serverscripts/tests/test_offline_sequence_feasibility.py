@@ -99,7 +99,7 @@ class TestStateMachineGuards(unittest.TestCase):
         self.assertEqual(SS.STATE_SPRAYING_IN_PROGRESS, "Spraying In Progress")
         import inspect
 
-        start_src = inspect.getsource(SS.start_spray_session)
+        start_src = inspect.getsource(SS._start_spray_session)
         end_src = inspect.getsource(SS.end_spray_session)
         self.assertIn("STATE_TANK_MIX_MANUFACTURED", start_src)
         self.assertIn("STATE_SPRAYING_IN_PROGRESS", end_src)

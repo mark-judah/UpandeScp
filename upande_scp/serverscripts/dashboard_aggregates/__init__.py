@@ -38,6 +38,9 @@ from upande_scp.serverscripts.dashboard_aggregates._quality import (
 from upande_scp.serverscripts.dashboard_aggregates._gallery import (
     observation_gallery as _observation_gallery,
 )
+from upande_scp.serverscripts.dashboard_aggregates._photo_feed import (
+    photo_feed as _photo_feed_impl,
+)
 
 
 def _truthy(v) -> bool:
@@ -142,3 +145,8 @@ def quality(**kwargs):
 @frappe.whitelist()
 def observation_gallery(**kwargs):
     return _call(_observation_gallery, **kwargs)
+
+
+@frappe.whitelist()
+def photo_feed(**kwargs):
+    return _call(_photo_feed_impl, **kwargs)

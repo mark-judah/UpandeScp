@@ -30,6 +30,7 @@ import { useDrawArea } from "../maps/use-draw-area";
 import { useHouseOverlays } from "../maps/use-house-overlays";
 import { DrawAreaBar } from "../maps/DrawAreaBar";
 import { areaPinFeatures, draftFeatures, patchFeatures } from "./patch-features";
+import { prefersReducedMotion, pulsePhase, trapPulse } from "@/lib/trap-pulse";
 
 /** Compute a polygon's bounds quickly for fitBounds. */
 function geometryBounds(
@@ -397,37 +398,132 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
     treesLayerRef.current?.updateColors(treeColors);
   }, [treeColors]);
 
-  // Optional marker overlay (e.g. trap catches), driven by the view.
+  // Optional marker overlay (e.g. trap catches), driven by the view. Size and
+  // pulse grow with the count on a capped log scale (lib/trap-pulse, spec TM1);
+  // the pulse is a second circle layer under the core whose radius / opacity
+  // follow a per-feature phase, so only on-screen traps cost anything.
+  const markersRef = useRef<MarkerPoint[]>([]);
+  markersRef.current = markers;
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     const fc = {
       type: "FeatureCollection" as const,
-      features: markers.map((m) => ({
-        type: "Feature" as const,
-        geometry: { type: "Point" as const, coordinates: [m.lng, m.lat] },
-        properties: { count: m.count, color: m.color, label: m.label || "" },
-      })),
+      features: markers.map((m) => {
+        const p = trapPulse(m.count);
+        return {
+          type: "Feature" as const,
+          geometry: { type: "Point" as const, coordinates: [m.lng, m.lat] },
+          properties: {
+            count: m.count,
+            color: m.color,
+            label: m.label || "",
+            r: p.size / 2,
+            scale: p.scale,
+            dur: p.duration || 1,
+            off: pulsePhase(m.label || `${m.lng},${m.lat}`),
+            pulse: p.pulse ? 1 : 0,
+          },
+        };
+      }),
     };
     if (!map.getSource("markers")) {
       map.addSource("markers", { type: "geojson", data: fc });
+      map.addLayer({
+        id: "markers-pulse",
+        type: "circle",
+        source: "markers",
+        filter: ["==", ["get", "pulse"], 1],
+        paint: {
+          "circle-radius": ["get", "r"],
+          "circle-color": ["get", "color"],
+          "circle-opacity": 0,
+          "circle-stroke-color": ["get", "color"],
+          "circle-stroke-width": 1.5,
+          "circle-stroke-opacity": 0,
+        },
+      });
       map.addLayer({
         id: "markers-circle",
         type: "circle",
         source: "markers",
         paint: {
-          // sqrt-scaled radius so heavy traps read bigger without dwarfing the rest
-          "circle-radius": ["max", 4, ["*", 2.2, ["sqrt", ["get", "count"]]]],
+          "circle-radius": ["get", "r"],
           "circle-color": ["get", "color"],
           "circle-opacity": 0.85,
           "circle-stroke-color": "#1a1a18",
           "circle-stroke-width": 1,
         },
       });
+      map.on("click", "markers-circle", (e) => {
+        if (drawRef.current.active) return;
+        const label = (e.features?.[0]?.properties as Record<string, unknown> | null)?.label;
+        const m = markersRef.current.find((x) => x.label === label);
+        if (m) focusMarkerRef.current(m);
+      });
+      map.on("mouseenter", "markers-circle", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "markers-circle", () => {
+        map.getCanvas().style.cursor = "";
+      });
     } else {
       (map.getSource("markers") as maplibregl.GeoJSONSource).setData(fc);
     }
   }, [markers, mapReady]);
+
+  // The pulse clock: ~30 fps paint updates while any marker pulses, none under
+  // reduced motion or while the tab is hidden.
+  const anyPulse = useMemo(() => markers.some((m) => m.count > 0), [markers]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !anyPulse || prefersReducedMotion()) return;
+    let raf = 0;
+    let last = 0;
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      if (document.hidden || now - last < 33 || !map.getLayer("markers-pulse")) return;
+      last = now;
+      const t = now / 1000;
+      const phase = ["%", ["+", ["/", t, ["get", "dur"]], ["get", "off"]], 1];
+      map.setPaintProperty("markers-pulse", "circle-radius",
+        ["*", ["get", "r"], ["+", 1, ["*", ["-", ["get", "scale"], 1], phase]]] as never);
+      map.setPaintProperty("markers-pulse", "circle-opacity", ["*", 0.45, ["-", 1, phase]] as never);
+      map.setPaintProperty("markers-pulse", "circle-stroke-opacity", ["*", 0.8, ["-", 1, phase]] as never);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [anyPulse, mapReady]);
+
+  // Click a marker → fly to it, then the view's card (spec TM3).
+  const [selectedMarker, setSelectedMarker] = useState<MarkerPoint | null>(null);
+  const focusMarkerRef = useRef<(m: MarkerPoint) => void>(() => {});
+  focusMarkerRef.current = (m: MarkerPoint) => {
+    const map = mapRef.current;
+    if (!map || !view.markerCard) return;
+    setSelectedMarker(null);
+    const zoom = Math.max(map.getZoom(), 18.5);
+    if (prefersReducedMotion()) {
+      map.jumpTo({ center: [m.lng, m.lat], zoom });
+      setSelectedMarker(m);
+      return;
+    }
+    let done = false;
+    const reveal = () => {
+      if (done) return;
+      done = true;
+      setSelectedMarker(m);
+    };
+    map.once("moveend", reveal);
+    window.setTimeout(reveal, 1400);
+    map.flyTo({ center: [m.lng, m.lat], zoom, duration: 900, essential: false });
+  };
+  // A marker gone from the data (range / farm change) closes its card.
+  useEffect(() => {
+    setSelectedMarker((cur) =>
+      cur ? markers.find((m) => m.label === cur.label) ?? null : null,
+    );
+  }, [markers]);
 
   // Scout movement tracks — a faint per-scout polyline layer over the map.
   useEffect(() => {
@@ -548,6 +644,9 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
     });
     map.on("click", "blocks-fill", (e) => {
       if (drawRef.current.active) return;
+      // A trap marker over the block takes the click.
+      if (map.getLayer("markers-circle") &&
+          map.queryRenderedFeatures(e.point, { layers: ["markers-circle"] }).length) return;
       const f = e.features?.[0];
       if (!f) return;
       const name = (f.properties as Record<string, unknown> | null)?.block;
@@ -672,8 +771,15 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4 px-4 pb-4 md:px-6 md:pb-6">
-        <div className="h-full w-full min-h-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+        <div className="relative h-full w-full min-h-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
           <Map3D onReady={onMapReady} />
+          {selectedMarker && view.markerCard ? (
+            <div className="absolute bottom-4 left-4 z-10">
+              {view.markerCard(selectedMarker, { from: filters.from, to: filters.to }, () =>
+                setSelectedMarker(null),
+              )}
+            </div>
+          ) : null}
         </div>
 
         {/* Docked side panel — content supplied by the view. */}

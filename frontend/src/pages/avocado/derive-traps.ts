@@ -29,7 +29,8 @@ export function deriveTrapMarkers(
   fixed: TrapLocations = {},
 ): MarkerPoint[] {
   if (!data) return [];
-  const agg = new Map<string, { latSum: number; lngSum: number; n: number; count: number }>();
+  type Latest = NonNullable<MarkerPoint["latest"]>;
+  const agg = new Map<string, { latSum: number; lngSum: number; n: number; count: number; latest?: Latest }>();
   for (const e of data.entries) {
     const lat = coord(e.latitude);
     const lng = coord(e.longitude);
@@ -41,6 +42,16 @@ export function deriveTrapMarkers(
       if (!a) {
         a = { latSum: 0, lngSum: 0, n: 0, count: 0 };
         agg.set(t.trap, a);
+      }
+      const stamp = `${e.date_of_capture || ""} ${e.time_of_capture || ""}`;
+      if (!a.latest || stamp > `${a.latest.date} ${a.latest.time}`) {
+        a.latest = {
+          date: e.date_of_capture || "",
+          time: (e.time_of_capture || "").split(".")[0],
+          scout: e.scouts_name || "",
+          count: t.count || 0,
+          pest: t.pest || "",
+        };
       }
       if (fixed[t.trap]) {
         a.count += t.count || 0;
@@ -62,6 +73,7 @@ export function deriveTrapMarkers(
       count: a.count,
       color: severityColor(a.count),
       label: trap,
+      latest: a.latest,
     });
   }
   return out.sort((x, y) => y.count - x.count);

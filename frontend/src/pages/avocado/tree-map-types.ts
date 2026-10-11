@@ -8,6 +8,8 @@ export interface MarkerPoint {
   count: number; // drives the sqrt-scaled radius
   color: string;
   label?: string;
+  /** The newest reading in the window (traps), for the click card. */
+  latest?: { date: string; time: string; scout: string; count: number; pest: string };
 }
 
 /** What a view (Scouting / Observations / Traps / …) supplies to the shell. */
@@ -22,6 +24,12 @@ export interface AvocadoView {
   renderPanel: (data: ProcessedData | null) => ReactNode;
   /** Optional controls for MapHeader's rightSlot (e.g. a pest/disease toggle). */
   headerControls?: ReactNode;
+  /** Card shown over the map after a marker click has flown to it (traps). */
+  markerCard?: (
+    marker: MarkerPoint,
+    range: { from: string; to: string },
+    onClose: () => void,
+  ) => ReactNode;
   /** Draw the per-scout movement trails layer (scouting only). */
   showTracks?: boolean;
   /** The observation whose patches the map outlines on a picked block

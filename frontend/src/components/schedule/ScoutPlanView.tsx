@@ -460,24 +460,37 @@ export function ScoutPlanView({
                     const ghosts = ghostsIn(gr.id, d);
                     const target = canEdit ? cellTarget(gr.id, d) : null;
                     const isBlocked = canEdit && blocked(gr.id, d);
+                    const place = () => {
+                      if (!target) return;
+                      if (isBlocked) {
+                        setNote({ tone: "error", text: `${nameOf(target.scout)} is on approved leave on ${d}.` });
+                        return;
+                      }
+                      assign(target);
+                    };
                     return (
                       <div
                         key={d}
                         data-testid={`scout-cell-${gr.id}-${d}`}
                         data-blocked={isBlocked ? "true" : undefined}
-                        onClick={() => {
-                          if (!target) return;
-                          if (isBlocked) {
-                            setNote({ tone: "error", text: `${nameOf(target.scout)} is on approved leave on ${d}.` });
-                            return;
+                        // Keyboard path: with a scout picked, Tab to a cell and press Enter/Space.
+                        role={target ? "button" : undefined}
+                        tabIndex={target ? 0 : undefined}
+                        aria-disabled={target && isBlocked ? true : undefined}
+                        aria-label={target ? `Assign ${nameOf(target.scout)} to ${gr.label}, ${d}` : undefined}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            place();
                           }
-                          assign(target);
                         }}
+                        onClick={place}
                         onDragOver={(e) => canEdit && e.preventDefault()}
                         onDrop={(e) => canEdit && onDrop(e, gr.id, d)}
                         className={cn(
                           "flex min-h-[44px] flex-wrap content-start gap-1 border-b border-l p-1",
-                          target && !isBlocked && "cursor-copy hover:bg-primary/5",
+                          target && !isBlocked && "cursor-copy hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           isBlocked && "cursor-not-allowed bg-muted/60",
                         )}
                       >

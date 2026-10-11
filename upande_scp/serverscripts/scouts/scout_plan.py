@@ -77,12 +77,15 @@ def _context(crop, farm, week_start) -> dict:
 	if not farm:
 		frappe.throw("You have no farm whose scout plan you can see.", frappe.PermissionError)
 	days = R.week_days(week_start or nowdate())
+	# Only the crop's own houses: a farm's warehouse list is crop-agnostic.
+	crop_houses = set(crop_catalog.greenhouses_for_crop(crop)) if crop else set()
+	houses = [h for h in farms_map.get(farm, []) if not crop_houses or h in crop_houses]
 	return {
 		"crop": crop,
 		"farm": farm,
 		"farms": fs["farms"],
 		"farms_map": farms_map,
-		"houses": list(farms_map.get(farm, [])),
+		"houses": houses,
 		"days": days,
 		"today": getdate(nowdate()),
 	}

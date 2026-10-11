@@ -78,8 +78,10 @@ def approved_leave_days(scouts, from_date, to_date) -> dict:
 		if hi < lo:
 			continue
 		days = float((hi - lo).days + 1)
-		if int(lv.get("half_day") or 0) and (lv.get("half_day_date") or lv["from_date"] == lv["to_date"]):
-			days -= 0.5
+		if int(lv.get("half_day") or 0):
+			hd = lv.get("half_day_date") or (lv["from_date"] if lv["from_date"] == lv["to_date"] else None)
+			if hd and lo <= getdate(hd) <= hi:
+				days -= 0.5
 		out[lv["employee"]] = out.get(lv["employee"], 0.0) + days
 	# overlapping applications cannot excuse more than the range
 	span = (end - start).days + 1

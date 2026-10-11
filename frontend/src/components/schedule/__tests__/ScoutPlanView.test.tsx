@@ -83,6 +83,18 @@ describe("Scout plan grid (C4–C6)", () => {
     expect(await screen.findByTestId("scout-note")).toBeTruthy();
   });
 
+  it("assigns from the keyboard: a picked scout lands on a focused cell with Enter", async () => {
+    render(<ScoutPlanView crop="Rose" initialWeek="2026-10-08" />);
+    await screen.findByTestId("scout-grid");
+    await userEvent.click(picker("Ann"));
+    const target = cell(GH[1], DAYS[3]);
+    expect(target.getAttribute("role")).toBe("button");
+    expect(target.getAttribute("aria-label")).toMatch(/^Assign /);
+    target.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(within(target).getByTestId("plan-chip").getAttribute("data-status")).toBe("Planned");
+  });
+
   it("greys a scout on approved leave and refuses the drop; pending leave only warns", async () => {
     render(<ScoutPlanView crop="Rose" initialWeek="2026-10-08" />);
     await screen.findByTestId("scout-grid");

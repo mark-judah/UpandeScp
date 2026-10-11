@@ -1,4 +1,4 @@
-"""Teams & KPIs page: spray teams of the user's farms, and the sprayer register.
+"""Personnel ▸ Teams and Sprayers pages: spray teams of the user's farms, and the sprayer register.
 
 Who may do what (spec S9):
 
@@ -6,7 +6,9 @@ Who may do what (spec S9):
   (`crop_scope.visible_farms` with no roster — company scope, ∩ crop). They
   also see teams with no farm yet, so they can give them one.
 * **SCP Spray Supervisor** acts only on the farms they are rostered on
-  (`Farm.spray_supervisors`).
+  (`Farm.spray_supervisors`), and an **SCP Spray Plan Creator** only on the
+  farms of the `Farm.spray_plan_creators` roster (personnel spec P3). Holding
+  both roles unions the two rosters.
 
 Reads are limited to the same farms. Anyone else is refused.
 """
@@ -23,6 +25,9 @@ from upande_scp.serverscripts.sprayers import register
 
 MANAGER_ROLES = ("SCP General Manager", "System Manager")
 SUPERVISOR_ROLE = "SCP Spray Supervisor"
+CREATOR_ROLE = "SCP Spray Plan Creator"
+#: Rostered (non-manager) roles and the Farm roster each one is scoped by.
+ROSTERED_ROLES = {SUPERVISOR_ROLE: "spray_supervisors", CREATOR_ROLE: "spray_plan_creators"}
 TEAM_ROLES = ("Supervisor", "Sprayer", "Pump Operator")
 
 
@@ -38,8 +43,9 @@ def scope(crop=None, user=None) -> dict:
 	crop = _crop(crop, user)
 	if user == "Administrator" or roles & set(MANAGER_ROLES):
 		return {"manager": True, "farms": crop_scope.visible_farms(None, crop, user)}
-	if SUPERVISOR_ROLE in roles:
-		return {"manager": False, "farms": crop_scope.visible_farms("spray_supervisors", crop, user)}
+	rosters = tuple(field for role, field in ROSTERED_ROLES.items() if role in roles)
+	if rosters:
+		return {"manager": False, "farms": crop_scope.visible_farms(rosters, crop, user)}
 	frappe.throw("You do not have access to spray teams.", frappe.PermissionError)
 
 

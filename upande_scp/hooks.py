@@ -348,6 +348,17 @@ doc_events = {
             "upande_scp.serverscripts.spray_plan_creator.loaning.capture_baseline_on_receipt",
         ],
     },
+    # Sprayer exposure ledger: a submitted logsheet writes one row per person
+    # x product; a cancelled one removes them. Never blocks the submit.
+    "Spray Application Logsheet": {
+        "on_submit": "upande_scp.serverscripts.sprayers.exposure.on_submit",
+        "on_cancel": "upande_scp.serverscripts.sprayers.exposure.on_cancel",
+    },
+    # A saved team re-syncs its members (and anyone just removed) into the
+    # sprayer register.
+    "Spray Team": {
+        "on_update": "upande_scp.serverscripts.sprayers.register.on_spray_team_update",
+    },
     # Purchase Receipts into a farm chemical store also refresh the baseline.
     "Purchase Receipt": {
         "on_submit": "upande_scp.serverscripts.spray_plan_creator.loaning.capture_baseline_on_receipt",
@@ -388,6 +399,9 @@ scheduler_events = {
         # Refine every trap's GPS-estimated fixed location with the day's fixes
         # (Manual locations are never touched).
         "upande_scp.serverscripts.traps.trap_location.daily_refresh",
+        # Refresh the sprayer register from Employees / teams / logsheets and
+        # roll each sprayer's 30-day exposure window forward.
+        "upande_scp.serverscripts.sprayers.register.daily",
     ],
     "hourly": [
         # Keep the current + previous ISO week of scouting payload warm in Redis

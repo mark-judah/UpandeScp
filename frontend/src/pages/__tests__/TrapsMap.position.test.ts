@@ -30,3 +30,12 @@ describe("trap placement", () => {
     expect(trapPosition(aggregateTraps([entry(0, 0, "T2")])[0])).toBeNull();
   });
 });
+
+describe("latest reading per trap", () => {
+  it("keeps the newest reading's scout, time, count and pest", () => {
+    const e = (date: string, time: string, scout: string, count: number) =>
+      ({ ...entry(1, 2, "T1", count), date_of_capture: date, time_of_capture: time, scouts_name: scout }) as ScoutingEntry;
+    const [t] = aggregateTraps([e("2026-10-01", "08:00:00", "A", 5), e("2026-10-02", "07:30:00.000", "B", 2), e("2026-10-02", "06:00:00", "C", 9)]);
+    expect(t.latest).toEqual({ date: "2026-10-02", time: "07:30:00", scout: "B", count: 2, pest: "FCM" });
+  });
+});

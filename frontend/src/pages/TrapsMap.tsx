@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { ChevronDown } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
@@ -29,6 +29,8 @@ import {
 } from "@/lib/observation-colors";
 import { currentWeekRange } from "@/lib/utils";
 import type { ScoutingEntry } from "@/lib/scouting-types";
+import { prefersReducedMotion, trapMarkerHtml, trapPulse } from "@/lib/trap-pulse";
+import { TrapReadingCard } from "@/components/traps/TrapReadingCard";
 
 
 /** Severity ramp — used as a thin outer ring on each trap marker so the
@@ -69,6 +71,12 @@ interface TrapAgg {
   latN: number;
   /** The trap's fixed location (Trap.geojson), when it has one. */
   fixed?: TrapLocation;
+  /** The newest reading in the window — who recorded it, when, how many. */
+  latest: { date: string; time: string; scout: string; count: number; pest: string } | null;
+}
+
+function stampOf(e: ScoutingEntry): string {
+  return `${e.date_of_capture || ""} ${e.time_of_capture || ""}`;
 }
 
 /** Where a trap is drawn: its fixed location when it has one, else the
@@ -129,6 +137,7 @@ export function aggregateTraps(
           lngSum: 0,
           latN: 0,
           fixed: fixed[t.trap],
+          latest: null,
         };
         map.set(key, agg);
       }
@@ -137,6 +146,16 @@ export function aggregateTraps(
       if (c > agg.maxCount) {
         agg.maxCount = c;
         agg.maxDate = e.date_of_capture || "";
+      }
+      const stamp = stampOf(e);
+      if (!agg.latest || stamp > `${agg.latest.date} ${agg.latest.time}`) {
+        agg.latest = {
+          date: e.date_of_capture || "",
+          time: (e.time_of_capture || "").split(".")[0],
+          scout: e.scouts_name || "",
+          count: c,
+          pest: t.pest || "",
+        };
       }
       agg.entryCount += 1;
       if (e.date_of_capture) agg.days.add(e.date_of_capture);
@@ -152,10 +171,10 @@ export function aggregateTraps(
 
 function placementNote(t: TrapAgg): string {
   const f = t.fixed;
-  if (f?.source === "Manual") return "Fixed location · placed manually";
+  if (f?.source === "Manual") return "Fixed · placed manually";
   if (f) {
-    const flag = f.flag ? ` · <span style="color:#b45309">${f.flag}</span>` : "";
-    return `Fixed location · GPS estimate from ${f.fixes} fixes (±${Math.round(f.spread_m)} m)${flag}`;
+    const flag = f.flag ? ` · ${f.flag}` : "";
+    return `GPS estimate · ${f.fixes} fixes (±${Math.round(f.spread_m)} m)${flag}`;
   }
   return `No fixed location · avg of ${t.latN} entr${t.latN === 1 ? "y" : "ies"}`;
 }
@@ -425,6 +444,37 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
 
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
+  const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const [selected, setSelected] = useState<string | null>(null);
+  const selectTimer = useRef<number | null>(null);
+
+  // Click a trap → fly to it, then show the recorder card once the map has
+  // settled (spec TM3). Reduced motion jumps instead of flying.
+  const focusTrap = useCallback((trap: string, lat: number, lng: number) => {
+    const m = mapRef.current;
+    if (!m) return;
+    if (selectTimer.current) window.clearTimeout(selectTimer.current);
+    setSelected(null);
+    const zoom = Math.min(m.getMaxZoom() || 19, Math.max(m.getZoom() + 1, 18));
+    const reveal = () => {
+      if (selectTimer.current) window.clearTimeout(selectTimer.current);
+      selectTimer.current = null;
+      setSelected(trap);
+    };
+    if (prefersReducedMotion()) {
+      m.setView([lat, lng], zoom, { animate: false });
+      reveal();
+      return;
+    }
+    m.once("moveend", reveal);
+    // A fly of zero distance may not fire moveend; never leave the click dead.
+    selectTimer.current = window.setTimeout(reveal, 1200);
+    m.flyTo([lat, lng], zoom, { duration: 0.8 });
+  }, []);
+
+  useEffect(() => () => {
+    if (selectTimer.current) window.clearTimeout(selectTimer.current);
+  }, []);
 
   useEffect(() => {
     const m = mapRef.current;
@@ -432,65 +482,41 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     if (!layerRef.current) layerRef.current = L.layerGroup().addTo(m);
     const layer = layerRef.current;
     layer.clearLayers();
+    markersRef.current.clear();
     if (!visibleTraps.length) return;
 
     const bounds = L.latLngBounds([]);
-    const maxTotal = Math.max(1, ...visibleTraps.map((t) => t.totalCount || 0));
+    const reduced = prefersReducedMotion();
     for (const t of visibleTraps) {
       const pos = trapPosition(t);
       if (!pos) continue;
       const { lat, lng } = pos;
-      // Marker size encodes the catch count (sqrt-scaled so heavy traps
-      // don't dominate); a zero-catch trap is a small dot. Colour is a
+      // Size and pulse grow with the catch count on a capped log scale
+      // (lib/trap-pulse); a zero-catch trap is a small static dot. Colour is a
       // subtle gold (grey for zero), not a vivid per-pest disc.
       const count = t.totalCount || 0;
-      const size =
-        count <= 0
-          ? 8
-          : Math.round(14 + (Math.sqrt(count) / Math.sqrt(maxTotal)) * 24); // 14 → 38 px
+      const { size } = trapPulse(count);
       const isZero = count <= 0;
-      const bg = isZero ? "rgba(10,10,10,0.20)" : "rgba(217,165,20,0.35)";
-      const bd = isZero ? "rgba(10,10,10,0.28)" : "rgba(217,165,20,0.80)";
-
-      const html = `
-        <div style="
-          width:${size}px;height:${size}px;border-radius:50%;
-          background:${bg};
-          border:1.5px solid ${bd};
-          box-shadow:0 1px 2px rgba(10,10,10,0.12);
-        "></div>`;
       const icon = L.divIcon({
         className: "scp-trap-marker",
-        html,
+        html: trapMarkerHtml({
+          key: t.trap,
+          count,
+          fill: isZero ? "rgba(10,10,10,0.20)" : "rgba(217,165,20,0.35)",
+          stroke: isZero ? "rgba(10,10,10,0.28)" : "rgba(217,165,20,0.80)",
+          reducedMotion: reduced,
+        }),
         iconSize: [size, size],
         iconAnchor: [size / 2, size / 2],
       });
-
-      const marker = L.marker([lat, lng], { icon });
-      const peakLine = t.maxCount > 0
-        ? `${t.maxCount}${t.maxDate ? ` <span style="color:#9ca3af">on ${t.maxDate}</span>` : ""}`
-        : "0";
-      marker.bindPopup(
-        `<div style="font:12px Inter,Arial,sans-serif;color:#374151;min-width:230px">
-           <div style="font-weight:700;font-size:13px;margin-bottom:6px;color:#111827">${t.trap}</div>
-           <div style="display:grid;gap:3px;font-size:11.5px">
-             <div><span style="color:#6b7280">Pest:</span> <strong>${t.pest || "—"}</strong></div>
-             <div><span style="color:#6b7280">Cumulative catches:</span> <strong>${t.totalCount}</strong></div>
-             <div><span style="color:#6b7280">Highest single count:</span> <strong>${peakLine}</strong></div>
-             <div><span style="color:#6b7280">Entries:</span> ${t.entryCount} · <span style="color:#6b7280">days:</span> ${t.days.size}</div>
-             <div><span style="color:#6b7280">Location:</span> ${t.location || "—"}</div>
-             <div style="margin-top:3px;padding-top:3px;border-top:1px solid #f3f4f6">
-               <div><span style="color:#6b7280">Greenhouse:</span> ${t.greenhouseShort || "—"}</div>
-               <div><span style="color:#6b7280">Zone:</span> ${t.zone || "—"}</div>
-               <div style="color:#9ca3af;font-size:10.5px;margin-top:2px">
-                 ${placementNote(t)}
-               </div>
-             </div>
-           </div>
-         </div>`,
-        { closeButton: false },
-      );
+      const marker = L.marker([lat, lng], {
+        icon,
+        title: `${t.trap} · ${count} catches`,
+        keyboard: true,
+      });
+      marker.on("click", () => focusTrap(t.trap, lat, lng));
       marker.addTo(layer);
+      markersRef.current.set(t.trap, marker);
       bounds.extend([lat, lng]);
     }
     if (bounds.isValid()) {
@@ -505,7 +531,37 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
         { animate: false },
       );
     }
-  }, [visibleTraps, mapSettings, filters.farm]);
+  }, [visibleTraps, mapSettings, filters.farm, focusTrap]);
+
+  // Off-screen traps hold their pulse; re-checked whenever the view settles.
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m) return;
+    const sync = () => {
+      const view = m.getBounds().pad(0.2);
+      markersRef.current.forEach((mk) => {
+        mk.getElement()?.classList.toggle("scp-trap-offscreen", !view.contains(mk.getLatLng()));
+      });
+    };
+    sync();
+    m.on("moveend", sync);
+    return () => {
+      m.off("moveend", sync);
+    };
+  }, [visibleTraps]);
+
+  // The selected trap's marker is ringed.
+  useEffect(() => {
+    markersRef.current.forEach((mk, trap) => {
+      mk.getElement()?.classList.toggle("scp-trap-selected", trap === selected);
+    });
+  }, [selected, visibleTraps]);
+
+  // A trap filtered out of view closes its card.
+  const selectedTrap = useMemo(
+    () => (selected ? visibleTraps.find((t) => t.trap === selected) ?? null : null),
+    [selected, visibleTraps],
+  );
 
   // Fly to the picked farm whenever the operator changes the Farm dropdown.
   // Skips the very first render so the trap-fitBounds above wins on boot.
@@ -542,7 +598,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     <div className="flex flex-col h-svh overflow-hidden">
       <RangeHeader
         title="Traps"
-        subtitle="Per-trap catches · up to one week · color = total count"
+        subtitle="Per-trap catches · size and pulse = total count · click a trap for its latest reading"
         value={filters}
         onChange={setFilters}
         showFarm={false}
@@ -617,6 +673,30 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
                 mapRef.current = m;
               }}
             />
+            {selectedTrap ? (
+              <TrapReadingCard
+                key={selectedTrap.trap}
+                trap={selectedTrap.trap}
+                from={filters.from}
+                to={filters.to}
+                local={selectedTrap.latest ?? undefined}
+                details={[
+                  { label: "Cumulative", value: selectedTrap.totalCount },
+                  {
+                    label: "Highest",
+                    value: selectedTrap.maxCount > 0
+                      ? `${selectedTrap.maxCount}${selectedTrap.maxDate ? ` · ${selectedTrap.maxDate}` : ""}`
+                      : "0",
+                  },
+                  { label: "Entries", value: `${selectedTrap.entryCount} · ${selectedTrap.days.size} days` },
+                  { label: "House", value: [selectedTrap.greenhouseShort, selectedTrap.zone].filter(Boolean).join(" · ") || "—" },
+                  { label: "Location", value: selectedTrap.location || "—" },
+                  { label: "Placement", value: placementNote(selectedTrap) },
+                ]}
+                onClose={() => setSelected(null)}
+                className="absolute bottom-4 left-4 z-[1000]"
+              />
+            ) : null}
           </div>
         </div>
 

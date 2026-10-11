@@ -42,6 +42,23 @@ export function overlaps(start: string, end: string, from: string, to: string): 
   return start.slice(0, 10) <= to && end.slice(0, 10) >= from;
 }
 
+/** True when a plan began before the visible range (it runs into it from the left). */
+export function startsBefore(p: { start: string | null }, from: string): boolean {
+  return !!p.start && p.start.slice(0, 10) < from;
+}
+
+/**
+ * The calendar day a plan's chip goes on: its start, or the first visible day when it
+ * began earlier and is still running inside the range. Null when it ended before it.
+ */
+export function calendarDayOf(p: { start: string | null; end: string | null }, from: string): string | null {
+  if (!p.start) return null;
+  const s = p.start.slice(0, 10);
+  if (s >= from) return s;
+  const e = (p.end || p.start).slice(0, 10);
+  return e >= from ? from : null;
+}
+
 /** Greedy lane packing: items that overlap in days go on separate lanes. */
 export function packLanes<T>(items: T[], span: (t: T) => [number, number]): Array<{ item: T; lane: number }> {
   const sorted = [...items].sort((a, b) => span(a)[0] - span(b)[0]);

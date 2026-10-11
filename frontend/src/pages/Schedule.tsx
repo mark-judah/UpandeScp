@@ -8,7 +8,7 @@
  * A plan whose crew includes someone on approved leave on the plan date carries a
  * warning. Built on date-fns + CSS grid — no calendar library.
  */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { addMonths, addWeeks } from "date-fns";
 import { CalendarDays, ChevronLeft, ChevronRight, GanttChart, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
@@ -102,16 +102,32 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Team options outlive a team-filtered response: picking a team must not leave it
+  // as the only choice. Replaced by unfiltered responses, merged into by filtered ones.
+  const [teamOptions, setTeamOptions] = useState<string[]>([]);
+  // Stepping months quickly fires overlapping requests; only the newest may land.
+  const requestId = useRef(0);
+
   const load = useCallback(() => {
+    const id = ++requestId.current;
     setLoading(true);
     setError(null);
     fetchSchedule({ crop: initialCrop, farm, team, state, from_date: range.from, to_date: range.to })
-      .then((r) => setData(r))
+      .then((r) => {
+        if (id !== requestId.current) return;
+        setData(r);
+        setTeamOptions((prev) =>
+          team ? [...new Set([...prev, ...(r.teams || [])])].sort() : [...(r.teams || [])],
+        );
+      })
       .catch((e) => {
+        if (id !== requestId.current) return;
         setData(null);
         setError(errorText(e));
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (id === requestId.current) setLoading(false);
+      });
   }, [initialCrop, farm, team, state, range.from, range.to]);
 
   useEffect(() => {
@@ -141,6 +157,9 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
   };
 
   const plans = data?.plans || [];
+  // The grid follows the range the server actually read (it may have been clamped).
+  const shownFrom = data?.clamped ? data.from_date : range.from;
+  const shownTo = data?.clamped ? data.to_date : range.to;
   const flagged = plans.filter((p) => p.on_leave_count > 0).length;
 
   return (
@@ -211,7 +230,7 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
           </select>
           <select aria-label="Team" className={selectCls} value={team} onChange={(e) => setTeam(e.target.value)}>
             <option value="">All teams</option>
-            {[...new Set([...(data?.teams || []), ...(team ? [team] : [])])].map((t) => (
+            {[...new Set([...teamOptions, ...(team ? [team] : [])])].map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
@@ -245,6 +264,17 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
           )}
         </div>
 
+        {data?.clamped && (
+          <div
+            role="status"
+            data-testid="schedule-clamped"
+            className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200"
+          >
+            Showing {data.from_date} to {data.to_date} — the schedule covers at most{" "}
+            {data.max_range_days ?? 93} days at a time.
+          </div>
+        )}
+
         {error && (
           <div role="alert" className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
             {error}
@@ -264,13 +294,13 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
 
         {data && plans.length > 0 &&
           (view === "calendar" ? (
-            <ScheduleCalendar plans={plans} from={range.from} to={range.to} onOpen={(p) => openPlan(p.name)} />
+            <ScheduleCalendar plans={plans} from={shownFrom} to={shownTo} onOpen={(p) => openPlan(p.name)} />
           ) : (
             <ScheduleGantt
               plans={plans}
               leaves={data.leaves}
-              from={range.from}
-              to={range.to}
+              from={shownFrom}
+              to={shownTo}
               rowsBy={rowsBy}
               onOpen={(p) => openPlan(p.name)}
             />

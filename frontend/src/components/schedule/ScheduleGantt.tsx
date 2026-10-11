@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { format } from "date-fns";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ChevronsLeft } from "lucide-react";
 import type { ScheduleLeave, SchedulePlan } from "@/lib/schedule-api";
 import { cn } from "@/lib/utils";
-import { colOf, daysOf, overlaps, packLanes, shortGreenhouse, stateTone, ymd } from "./schedule-utils";
+import { colOf, daysOf, overlaps, packLanes, shortGreenhouse, startsBefore, stateTone, ymd } from "./schedule-utils";
 
 export type GanttRowsBy = "greenhouse" | "team";
 
@@ -117,19 +117,25 @@ export function ScheduleGantt({
                 {row.lanes.map(({ item: p, lane }) => {
                   const s = colOf(p.start!, from, to);
                   const e = colOf(p.end || p.start!, from, to);
+                  // Began before the range: the bar is clipped at the left edge (square
+                  // corner, no margin) with a chevron saying it continues.
+                  const clipped = startsBefore(p, from);
                   return (
                     <button
                       key={p.name}
                       type="button"
                       data-testid="gantt-bar"
+                      data-clipped={clipped ? "start" : undefined}
                       onClick={() => onOpen(p)}
-                      title={`${p.name} · ${p.greenhouse} · ${p.team} · ${p.workflow_state}`}
+                      title={`${p.name} · ${p.greenhouse} · ${p.team} · ${p.workflow_state}${clipped ? ` · continues from ${p.start!.slice(0, 10)}` : ""}`}
                       className={cn(
                         "mx-0.5 my-1 flex min-w-0 items-center gap-1 overflow-hidden rounded-md px-1.5 text-[0.62rem] font-semibold hover:opacity-80",
+                        clipped && "ml-0 rounded-l-none pl-0.5",
                         stateTone(p.workflow_state),
                       )}
                       style={{ gridRow: lane + 1, gridColumn: `${s + 2} / ${e + 3}` }}
                     >
+                      {clipped && <ChevronsLeft className="h-3 w-3 shrink-0 opacity-70" />}
                       <span className="truncate">
                         {rowsBy === "team" ? shortGreenhouse(p.greenhouse, p.farm) : p.team}
                       </span>

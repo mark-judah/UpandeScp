@@ -88,8 +88,14 @@ export interface ScheduleLeave {
 }
 
 export interface Schedule {
+  /** the effective range — from_date is pulled up when the request was too long */
   from_date: string;
   to_date: string;
+  /** true when the server shortened the range to `max_range_days` */
+  clamped?: boolean;
+  range?: { from_date: string; to_date: string };
+  max_range_days?: number;
+  /** every team in the range, ignoring the team filter */
   crop: string | null;
   farms: string[];
   teams: string[];

@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { format, isSameDay } from "date-fns";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ChevronsLeft } from "lucide-react";
 import type { SchedulePlan } from "@/lib/schedule-api";
 import { cn } from "@/lib/utils";
-import { calendarDays, shortGreenhouse, stateTone, ymd } from "./schedule-utils";
+import { calendarDayOf, calendarDays, shortGreenhouse, startsBefore, stateTone, ymd } from "./schedule-utils";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -26,11 +26,14 @@ export function ScheduleCalendar({
     const m = new Map<string, SchedulePlan[]>();
     for (const p of plans) {
       if (!p.start) continue;
-      const k = p.start.slice(0, 10);
+      // A plan that began before the visible range but runs into it shows on the
+      // first visible day, marked as continuing.
+      const k = calendarDayOf(p, from);
+      if (k === null) continue;
       m.set(k, [...(m.get(k) || []), p]);
     }
     return m;
-  }, [plans]);
+  }, [plans, from]);
 
   return (
     <div className="overflow-x-auto rounded-xl border bg-card" data-testid="schedule-calendar">
@@ -71,12 +74,19 @@ export function ScheduleCalendar({
                     type="button"
                     data-testid="cal-chip"
                     onClick={() => onOpen(p)}
-                    title={`${p.name} · ${p.greenhouse} · ${p.team} · ${p.workflow_state}`}
+                    title={`${p.name} · ${p.greenhouse} · ${p.team} · ${p.workflow_state}${startsBefore(p, from) ? ` · continues from ${p.start!.slice(0, 10)}` : ""}`}
                     className={cn(
                       "flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-left text-[0.65rem] leading-tight hover:opacity-80",
                       stateTone(p.workflow_state),
                     )}
                   >
+                    {startsBefore(p, from) && (
+                      <ChevronsLeft
+                        data-testid="cal-continues"
+                        aria-label={`continues from ${p.start!.slice(0, 10)}`}
+                        className="h-3 w-3 shrink-0 opacity-70"
+                      />
+                    )}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-semibold">
                         {shortGreenhouse(p.greenhouse, p.farm)}

@@ -286,6 +286,12 @@ class TestCrewLeaveCheck(unittest.TestCase):
 		self.assertIn(plan["team"], leave["teams"])
 		for key in ("from_date", "to_date", "farms", "teams", "states", "latest_plan_date"):
 			self.assertIn(key, out)
+		# C2: the popover's crew list — photo, name, role, status — and the count.
+		avail = {a["employee"]: a for a in plan["crewAvailability"]}
+		self.assertEqual(avail[self.away["name"]]["status"], CA.ON_LEAVE)
+		self.assertEqual(avail[self.here["name"]]["status"], CA.OK)
+		self.assertEqual(set(avail[self.away["name"]]), {"employee", "name", "image", "role", "status"})
+		self.assertEqual(plan["available_count"], sum(a["status"] == CA.OK for a in plan["crewAvailability"]))
 
 	def test_schedule_is_scoped_to_visible_farms(self):
 		with mock.patch.object(SCH.crop_scope, "visible_farms", return_value=set()):

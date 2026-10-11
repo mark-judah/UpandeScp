@@ -174,11 +174,19 @@ def get_schedule(
 
 	team_names, team_members = _team_index()
 	everyone = sorted({m["employee"] for crew in crew_by_plan.values() for m in crew})
-	emp_names = {
-		r["name"]: r.get("employee_name") or r["name"]
-		for r in frappe.get_all("Employee", filters={"name": ["in", everyone or [""]]},
-								fields=["name", "employee_name"])
+	emp_rows = frappe.get_all("Employee", filters={"name": ["in", everyone or [""]]},
+							  fields=["name", "employee_name", "image"])
+	emp_names = {r["name"]: r.get("employee_name") or r["name"] for r in emp_rows}
+	emp_images = {r["name"]: r.get("image") or "" for r in emp_rows}
+	# "Today" rules (C2): a check-in only counts on the day itself, so it is read
+	# only for the crews of today's plans, and only when the setting asks for it.
+	require_checkin = CA.settings()["require_checkin"]
+	today_crew = {
+		m["employee"]
+		for p in plans if _as_day(p["planned_start_date"]) == today
+		for m in crew_by_plan.get(p["name"], [])
 	}
+	punched_today = CA.checked_in(today_crew, today) if (require_checkin and today_crew) else set()
 	leaves = CA.leaves_between(everyone, start, end) if everyone else []
 	leaves_by_emp: dict[str, list[dict]] = {}
 	for lv in leaves:
@@ -197,9 +205,15 @@ def get_schedule(
 			continue
 		day = _as_day(p["planned_start_date"])
 		members = []
+		availability = []
 		on_leave = pending = 0
 		for m in crew:
-			st = CA.classify(day, leaves_by_emp.get(m["employee"], []))
+			is_today = day == today
+			st = CA.classify(
+				day, leaves_by_emp.get(m["employee"], []),
+				checked_in=m["employee"] in punched_today,
+				require_checkin=require_checkin and is_today,
+			)
 			on_leave += st["status"] == CA.ON_LEAVE
 			pending += st["status"] == CA.LEAVE_PENDING
 			emp_teams.setdefault(m["employee"], set()).add(team_name)
@@ -209,6 +223,13 @@ def get_schedule(
 				"role": m.get("role") or "",
 				"status": st["status"],
 				"half_day": st["half_day"],
+			})
+			availability.append({
+				"employee": m["employee"],
+				"name": members[-1]["employee_name"],
+				"image": emp_images.get(m["employee"], ""),
+				"role": members[-1]["role"],
+				"status": st["status"],
 			})
 		out_plans.append({
 			"name": p["name"],
@@ -225,6 +246,9 @@ def get_schedule(
 			"crew": members,
 			"on_leave_count": on_leave,
 			"pending_count": pending,
+			# C2: the crew as the popover shows it — photo, name, role, status.
+			"crewAvailability": availability,
+			"available_count": sum(1 for a in availability if a["status"] == CA.OK),
 		})
 
 	payload["plans"] = out_plans

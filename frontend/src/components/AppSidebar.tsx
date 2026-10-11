@@ -25,6 +25,7 @@ import {
   Settings,
   Sprout,
   Truck,
+  Users,
   Warehouse,
 } from "lucide-react";
 import {
@@ -89,6 +90,20 @@ interface NavSection {
 const STORE_KEEPER_ROLE = "SCP Chemical Store Keeper";
 // Crop-protection finances: the same roles the server's FINANCE_ROLES admits.
 const FINANCE_ROLES = ["SCP General Manager", "System Manager", "Administrator"];
+// Teams & KPIs: the same roles serverscripts/sprayers/api.py admits.
+const TEAMS_ROLES = [
+  "SCP General Manager",
+  "SCP Spray Supervisor",
+  "System Manager",
+  "Administrator",
+];
+const TEAMS_ITEM: NavItem = {
+  kind: "view",
+  view: "teams",
+  label: "Teams & KPIs",
+  icon: Users,
+  requireRoles: TEAMS_ROLES,
+};
 
 const ROSE_NAV: NavSection[] = [
   // Store-Keeper exclusive section — only role that sees it, and the
@@ -230,6 +245,7 @@ const ROSE_NAV: NavSection[] = [
         icon: Coins,
         requireRoles: FINANCE_ROLES,
       },
+      TEAMS_ITEM,
       // Varieties is hidden until the page is finished. The route and the page are
       // still here, so restoring it is one line — reachable meanwhile by URL for
       // whoever is working on it.
@@ -277,6 +293,7 @@ const AVOCADO_NAV: NavSection[] = [
         icon: Coins,
         requireRoles: FINANCE_ROLES,
       },
+      TEAMS_ITEM,
     ],
   },
   {
@@ -314,6 +331,7 @@ const COFFEE_NAV: NavSection[] = [
         icon: Coins,
         requireRoles: FINANCE_ROLES,
       },
+      TEAMS_ITEM,
     ],
   },
   {
@@ -354,6 +372,7 @@ const DEFAULT_CROP_NAV: NavSection[] = [
         icon: Coins,
         requireRoles: FINANCE_ROLES,
       },
+      TEAMS_ITEM,
     ],
   },
 ];

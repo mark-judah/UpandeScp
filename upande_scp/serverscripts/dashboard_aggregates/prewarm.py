@@ -30,6 +30,7 @@ for, and the per-greenhouse path is already fast once the indexes exist.
 """
 
 import datetime
+import time
 
 import frappe
 
@@ -110,4 +111,64 @@ def prewarm_dashboard_aggregates():
                     "SCP dash prewarm",
                 )
 
+    try:
+        prewarm_quality()
+        warmed += 1
+    except Exception:
+        failed += 1
+        frappe.log_error("prewarm quality failed", "SCP dash prewarm")
+
     return {"warmed": warmed, "failed": failed, "from": from_date, "to": to_date}
+
+
+#: Wall-clock budget for one run's quality partial fill. A cold fill (after a
+#: flush) is ~1 min for Rose; what is left over is picked up ten minutes later.
+QUALITY_BUDGET_S = 180
+
+
+def prewarm_quality(budget_s: float = QUALITY_BUDGET_S) -> dict:
+    """Keep the Data quality / Personnel ▸ Scouts day partials warm: every date
+    of the longest range the aggregate reads (``MAX_RANGE_DAYS``, ending today),
+    for each crop at "all farms" and at each of its farms — the scopes the Scouts
+    page and the Coverage report open on. Only missing dates are read, so a warm
+    run is two Redis round trips per scope. Then the Scouts page's default range
+    is assembled for each crop, so its payload is warm too."""
+    from upande_scp.serverscripts.common import crop_catalog, crop_scope
+    from upande_scp.serverscripts.common import quality_rules as Q
+    from upande_scp.serverscripts.dashboard_aggregates import _common as C
+    from upande_scp.serverscripts.dashboard_aggregates._quality import _days_desc, day_partials
+    from upande_scp.serverscripts.dashboard_aggregates._quality import quality as _quality
+    from upande_scp.serverscripts.scouting import scouting_metrics
+    from upande_scp.serverscripts.scouts import api as scouts_api
+
+    started = time.monotonic()
+    today = _today()
+    from_date = (today - datetime.timedelta(days=Q.MAX_RANGE_DAYS)).isoformat()
+    days = _days_desc(from_date, today.isoformat())
+    farms_map = scouting_metrics.get_farms_and_warehouses() or {}
+    units = scouting_metrics.get_units_by_warehouse() or {}
+    done = skipped = 0
+    for crop in _crops()[1:]:  # named crops: the Scouts page always sends one
+        crop = crop_catalog.resolve_crop(crop) or crop
+        crop_farms = crop_scope.farms_for_crop(crop) or set()
+        for farm in [""] + sorted(f for f in farms_map if f in crop_farms):
+            if time.monotonic() - started > budget_s:
+                skipped += 1
+                continue
+            scope = C.resolve_greenhouse_scope("", farm, farms_map)
+            where, params = C.parent_filter_conditions(from_date, today.isoformat(), crop, scope,
+                                                       units=units)
+            if where == "1=0":
+                continue
+            # A week at a time, so the budget is checked between reads.
+            for i in range(0, len(days), 7):
+                if time.monotonic() - started > budget_s:
+                    skipped += 1
+                    break
+                day_partials(where, params, days[i:i + 7], fill_only=True)
+            done += 1
+        if time.monotonic() - started <= budget_s:
+            lo, hi = scouts_api.default_range(today)
+            _quality({"crop": crop, "farm": "", "greenhouse": "", "from_date": lo, "to_date": hi},
+                     farms_map=farms_map)
+    return {"scopes": done, "skipped": skipped, "seconds": round(time.monotonic() - started, 1)}

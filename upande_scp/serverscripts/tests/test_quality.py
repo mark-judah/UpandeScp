@@ -280,3 +280,83 @@ class TestScoping(QualityCase):
         from upande_scp.serverscripts.dashboard_aggregates import _common
         self.assertEqual(_common.K_DASH_AGG_SCHEMA, "psn1")
         self.assertIn(":psn1:quality:", _common._build_key("quality", {"crop": "Rose"}))
+
+
+def _scan(filters, scope):
+    """The pre-partials ``_build``: one Fold fed every date newest first, stations
+    noted row by row — the reference the day partials must reproduce exactly."""
+    from frappe.utils import getdate
+
+    from upande_scp.serverscripts.dashboard_aggregates._common import obs_filter, parent_filter_conditions
+
+    days = QM._days_desc(filters["from_date"], filters["to_date"])
+    where, params = parent_filter_conditions(filters["from_date"], filters["to_date"], filters["crop"], scope)
+    fold, latest, memo = Q.Fold(), {}, {}
+    window = (getdate(filters["from_date"]), getdate(filters["to_date"]), QM._today())
+    sql = QM._ROWS.format(where=where, pest_obs=obs_filter("pest", "p.pest", params),
+                          disease_obs=obs_filter("disease", "d.disease", params))
+    for day in days:
+        rows = frappe.db.sql(sql, {**params, "from_date": day, "to_date": day, "sync_from": Q.SYNC_DELAY_FROM})
+        if not rows:
+            continue
+        fold.add_day(rows)
+        for _s, d, wh, station, *_r in rows:
+            if wh and station:
+                QM._note_stations(latest, d, {wh: [station]}, window, memo)
+    coverage = QM._coverage(latest, getdate(filters["to_date"]))
+    houses = fold.house_rows(coverage)
+    scouts = fold.scout_rows(QM._scout_names(list(fold.scouts)))
+    kpis = fold.kpis(list(coverage.values()))
+    return {"kpis": kpis, "flags": Q.flag_rows(houses, scouts, kpis["nothingFoundPct"]),
+            "houses": houses, "scouts": scouts, "thresholds": QM._thresholds()}
+
+
+class TestDayPartials(QualityCase):
+    """Spec 2026-10-11-quality-weekly-partials-design: a range assembled from
+    cached per-date partials equals the single scan, whole weeks or cut ones."""
+
+    def seed(self):
+        z = self.zones
+        for d_i, day in enumerate((MON, TUE, "2031-10-02", SUN, NEXT_MON, "2031-10-08")):
+            for i in range(12):
+                for s_i, scout in enumerate((self.s1, self.s2)):
+                    insert(scout=scout, date=day, seconds=8 * 3600 + i * (3 + 4 * s_i) + d_i,
+                           greenhouse=self.gh, zone=z[(i * 7 + d_i + s_i * 40) % len(z)],
+                           pest=(i + d_i) % 3 == 0, dist=None if i % 5 == 0 else (i * 3.7 + d_i) % 30,
+                           sync_s=60 + 37 * i)
+        insert(scout=self.s1, date=TUE, seconds=8 * 3600, greenhouse=self.gh, zone=z[1], dist=2.0)
+
+    def filters(self, frm, to):
+        return {"from_date": frm, "to_date": to, "crop": "Rose", "farm": "", "greenhouse": self.gh}
+
+    def test_assembled_equals_the_scan(self):
+        self.seed()
+        for frm, to in ((MON, SUN), (MON, NEXT_SUN), (TUE, "2031-10-08"), ("2031-10-02", NEXT_MON)):
+            f = self.filters(frm, to)
+            ref = _scan(f, [self.gh])
+            self.assertEqual(QM._build(f, [self.gh], force=True), ref, (frm, to))
+            self.assertEqual(QM._build(f, [self.gh]), ref, (frm, to))  # from the cached partials
+
+    def test_a_write_drops_only_its_date(self):
+        from upande_scp.serverscripts.common import cache_utils
+
+        self.seed()
+        f = self.filters(MON, SUN)
+        before = QM._build(f, [self.gh], force=True)
+        insert(scout=self.s2, date=TUE, seconds=12 * 3600, greenhouse=self.gh, zone=self.zones[3])
+        self.assertEqual(QM._build(f, [self.gh]), before)  # no event fired: still the cached day
+        cache_utils.invalidate_quality_days(TUE)
+        after = QM._build(f, [self.gh])
+        self.assertEqual(after["kpis"]["entries"], before["kpis"]["entries"] + 1)
+        self.assertEqual(after, _scan(f, [self.gh]))
+
+    def test_the_metadata_row_drops_its_entrys_date(self):
+        from upande_scp.serverscripts.common import cache_utils
+
+        name = insert(scout=self.s1, date=TUE, seconds=8 * 3600, greenhouse=self.gh, zone=self.zones[0])
+        cache = frappe.cache()
+        key = cache.make_key(cache_utils.quality_day_gen_key(TUE))
+        gen = cache.get(key)
+        doc = frappe._dict(doctype="Scouting Entry Metadata", scouting_entry=name)
+        cache_utils.invalidate_quality_for_doc(doc)
+        self.assertNotEqual(cache.get(key), gen)

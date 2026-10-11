@@ -103,6 +103,11 @@ def percentile(hist: dict, q: float):
     return None
 
 
+def _add_counts(into: dict, src: dict) -> None:
+    for k, v in src.items():
+        into[k] = into.get(k, 0) + v
+
+
 class _House:
     __slots__ = ("entries", "scouts", "fixes", "off", "dist", "nothing")
 
@@ -209,6 +214,59 @@ class Fold:
                 s.timed_entries += len(times)
             s.beds += len(beds)
             s.dupes += sum(c - 1 for c in stations.values() if c > 1)
+
+    def merge(self, other: "Fold") -> None:
+        """Fold in another Fold's figures — a cached per-day partial. Every figure
+        is a sum, a set union, a histogram merge or a max, so merging the days'
+        partials newest first gives exactly what ``add_day`` over the same days in
+        the same order gives: dict insertion order (which the float sums in
+        ``scout_rows`` / ``kpis`` follow) and the float ``hours`` sum included.
+
+        ``other``'s objects are adopted, not copied: pass a Fold you will not use
+        again (an unpickled partial)."""
+        houses = self.houses
+        for wh, oh in other.houses.items():
+            h = houses.get(wh)
+            if h is None:
+                houses[wh] = oh
+                continue
+            h.entries += oh.entries
+            h.fixes += oh.fixes
+            h.off += oh.off
+            h.nothing += oh.nothing
+            h.scouts |= oh.scouts
+            _add_counts(h.dist, oh.dist)
+        scouts = self.scouts
+        for scout, o in other.scouts.items():
+            s = scouts.get(scout)
+            if s is None:
+                scouts[scout] = o
+                continue
+            s.entries += o.entries
+            s.days += o.days
+            s.timed_entries += o.timed_entries
+            s.beds += o.beds
+            s.stations += o.stations
+            s.fast += o.fast
+            s.moves += o.moves
+            s.nothing += o.nothing
+            s.fixes += o.fixes
+            s.off += o.off
+            s.dupes += o.dupes
+            if o.hours > 0:
+                s.hours += o.hours
+            _add_counts(s.sync, o.sync)
+            _add_counts(s.house_entries, o.house_entries)
+            _add_counts(s.weeks, o.weeks)
+            for wh, (n, off) in o.house_fixes.items():
+                hf = s.house_fixes.get(wh)
+                if hf is None:
+                    s.house_fixes[wh] = [n, off]
+                else:
+                    hf[0] += n
+                    hf[1] += off
+            if o.last is not None and (s.last is None or o.last > s.last):
+                s.last = o.last
 
     # ── rows ───────────────────────────────────────────────────────────────
 

@@ -90,6 +90,7 @@ def get_scouts(crop=None, farm=None, from_date=None, to_date=None, job_id=None, 
 		{"crop": crop, "farm": fs["farm"], "greenhouse": "", "from_date": from_date,
 		 "to_date": to_date, "job_id": job_id or ""},
 		force=str(force or "").lower() in ("1", "true"),
+		farms_map=farms_map,
 	)
 	farm_of_house = {wh: f for f, whs in farms_map.items() for wh in whs}
 	out = SR.rank(q.get("scouts") or [], farm_of_house)

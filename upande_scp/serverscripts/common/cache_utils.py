@@ -242,6 +242,68 @@ def invalidate_scouting_week_for_doc(doc):
         invalidate_scouting_week(iso[0], iso[1], crop)
 
 
+# ── Data-quality day partials (dashboard_aggregates/_quality.day_partials) ──
+# One generation stamp per capture date; a partial's key carries the stamp it
+# was built under, so replacing the stamp drops every scope's partial for that
+# date at once (no key scan). A stamp is a fresh unique value, never a counter,
+# so one evicted or flushed and re-created can never re-match an old partial.
+K_QUALITY_DAY_GEN = "scp:dash_agg:qgen"
+
+
+def quality_day_gen_key(day) -> str:
+    return f"{K_QUALITY_DAY_GEN}:{str(day)[:10]}"
+
+
+def new_quality_gen() -> str:
+    import time
+    import uuid
+
+    return f"{time.time_ns():x}{uuid.uuid4().hex[:6]}"
+
+
+def invalidate_quality_days(*days) -> None:
+    """Drop the quality partials of these capture dates — now, and again after
+    the commit, so a partial read between the write and its commit (which
+    cannot see the row yet) is not kept."""
+    days = sorted({str(d)[:10] for d in days if d})
+    if not days:
+        return
+
+    def bump():
+        cache = frappe.cache()
+        for d in days:
+            cache.set(cache.make_key(quality_day_gen_key(d)), new_quality_gen())
+
+    bump()
+    try:
+        frappe.db.after_commit.add(bump)
+    except Exception:
+        pass
+
+
+def invalidate_quality_for_doc(doc, method=None):
+    """Doc event: a Scouting Entry (or its pest / disease row, or its Metadata
+    row) changed — drop its capture date's quality partials, and the date it
+    had before the save when an edit moved it."""
+    try:
+        dt = getattr(doc, "doctype", None)
+        days = []
+        if dt == "Scouting Entry Metadata":
+            entry = getattr(doc, "scouting_entry", None)
+            if entry:
+                days.append(frappe.db.get_value("Scouting Entry", entry, "date_of_capture"))
+        else:
+            days.append(_resolve_scouting_date(doc))
+            if dt == "Scouting Entry":
+                before = doc.get_doc_before_save() if hasattr(doc, "get_doc_before_save") else None
+                if before is not None:
+                    days.append(getattr(before, "date_of_capture", None))
+        invalidate_quality_days(*days)
+    except Exception:
+        frappe.log_error(f"invalidate_quality_for_doc failed for {getattr(doc, 'doctype', '?')}",
+                         "SCP Cache")
+
+
 def _resolve_scouting_month(doc):
     """Best-effort YYYY-MM string for a scouting-related doc.
 
@@ -722,6 +784,7 @@ def invalidate_on_change(doc, method=None):
     # denominators across many weeks fall through to the global version bump.
     if doc.doctype in _SCOUTING_ENTRY_FAMILY:
         invalidate_scouting_week_for_doc(doc)
+        invalidate_quality_for_doc(doc)
     elif doc.doctype in _SCOUTING_PAYLOAD_INVALIDATORS:
         invalidate_scouting_payload()
     if doc.doctype in _CROP_CATALOG_SOURCES:

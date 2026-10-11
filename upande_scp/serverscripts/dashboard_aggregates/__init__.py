@@ -139,7 +139,12 @@ def quality(**kwargs):
         allowed = {w for f in fs["farms"] for w in (farms_map.get(f) or [])}
         if greenhouse not in allowed:
             frappe.throw(f"You cannot see greenhouse {greenhouse}.", frappe.PermissionError)
-    return _call(_quality, **kwargs)
+    # _call's force / crop handling, inline so the farms map read above is
+    # passed on rather than read a second time.
+    force = _truthy(kwargs.pop("force", "")) if "force" in kwargs else False
+    if "crop" in kwargs:
+        kwargs["crop"] = crop_catalog.resolve_crop(kwargs.get("crop"))
+    return _quality(kwargs, force=force, farms_map=farms_map)
 
 
 @frappe.whitelist()

@@ -136,6 +136,51 @@ class TestFold(unittest.TestCase):
         self.assertEqual((k["scouts"], k["houses"]), (1, 1))
 
 
+class TestMerge(unittest.TestCase):
+    """Per-day partials (spec 2026-10-11-quality-weekly-partials-design): days
+    folded apart and merged newest first equal one fold over them all."""
+
+    @staticmethod
+    def days(n=9, seed=7):
+        import random
+        from datetime import timedelta
+
+        rnd = random.Random(seed)
+        out = []
+        for d in range(n):
+            day = D1 + timedelta(days=d)
+            rows = []
+            for _ in range(rnd.randint(0, 60)):
+                fix = rnd.random() < 0.7
+                rows.append(row(
+                    scout=rnd.choice(["S1", "S2", "S3", None]), day=day,
+                    wh=rnd.choice(["GH1", "GH2", "B9", None]), station=rnd.choice(["Z1", "Z2", "Z3", ""]),
+                    bed=rnd.choice(["B1", "B2", None]), tm=rnd.choice([None, rnd.randint(0, 40000)]),
+                    delay=rnd.choice([None, rnd.randint(-5, 9000)]),
+                    dist=round(rnd.uniform(0, 40), 3) if fix else None, buf=rnd.choice([None, 0, 3.5, 8]),
+                    nothing=rnd.randint(0, 1)))
+            out.append(rows)
+        return out[::-1]  # newest first, as the aggregate reads them
+
+    def test_merged_days_equal_one_fold(self):
+        days = self.days()
+        whole = Q.Fold()
+        for rows in days:
+            if rows:
+                whole.add_day(rows)
+        merged = Q.Fold()
+        for rows in days:
+            part = Q.Fold()
+            if rows:
+                part.add_day(rows)
+            merged.merge(part)
+        cov = {"GH1": {"stations": 9, "scouted": 3, "coverage": 33.3, "week": "2031-W40"}}
+        self.assertEqual(merged.house_rows(cov), whole.house_rows(cov))
+        self.assertEqual(merged.scout_rows({}), whole.scout_rows({}))
+        self.assertEqual(merged.kpis(list(cov.values())), whole.kpis(list(cov.values())))
+        self.assertEqual(list(merged.houses), list(whole.houses))  # the order float sums follow
+
+
 def house(**kw):
     base = {"house": "GH1", "entries": 500, "fixes": 400, "metadataPct": 80.0, "medianDistance": 2.0,
             "coveragePct": 80.0, "gpsReliable": True}

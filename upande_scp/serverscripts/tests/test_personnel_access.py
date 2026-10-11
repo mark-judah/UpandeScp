@@ -102,7 +102,7 @@ class TestCreatorTeams(_Base):
 
 
 class TestScoutsScope(_Base):
-	def fake_quality(self, args, force=False):
+	def fake_quality(self, args, force=False, farms_map=None):
 		self.asked.append(args)
 		return {"scouts": [], "flags": [], "range": {"from_date": args["from_date"], "to_date": args["to_date"]},
 		        "clamped": False}
@@ -152,7 +152,7 @@ class TestCoverageGate(_Base):
 		from upande_scp.serverscripts import dashboard_aggregates as da
 
 		self.da, self.asked = da, []
-		self.q = patch.object(da, "_quality", side_effect=lambda args, force=False: self.asked.append(args) or {})
+		self.q = patch.object(da, "_quality", side_effect=lambda args, force=False, farms_map=None: self.asked.append(args) or {})
 		self.map = patch.object(scouts_api.scouting_metrics, "get_farms_and_warehouses",
 		                        return_value={MINE: ["GH-A"], OTHER: ["GH-B"]})
 

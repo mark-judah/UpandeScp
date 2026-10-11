@@ -332,6 +332,13 @@ doc_events = {
     "Pests Scouting Entry": _SCP_SCOUTING_EVENTS,
     "Diseases Scouting Entry": _SCP_SCOUTING_EVENTS,
     "Trap Scouting Entry": _SCP_SCOUTING_EVENTS,
+    # The Data quality / Scouts figures read the entry's fix-to-zone distance from
+    # its Metadata row, which the mobile sync inserts after the entry — drop that
+    # capture date's quality partials when it lands or changes.
+    "Scouting Entry Metadata": {
+        "on_update": "upande_scp.serverscripts.common.cache_utils.invalidate_quality_for_doc",
+        "on_trash": "upande_scp.serverscripts.common.cache_utils.invalidate_quality_for_doc",
+    },
     # Stamp Application Floor Plan Work Orders with their lifecycle state when
     # related Stock Entries are submitted (e.g. Material Transfer for
     # Manufacture -> "Chemical Issued"). Material Issue is fired later from

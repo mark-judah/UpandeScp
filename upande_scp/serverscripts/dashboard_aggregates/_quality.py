@@ -21,18 +21,28 @@ sync-delay median — costs 12.2 s + 9.8 s + 4.5 s + 1.6 s, because each is its 
 pass over half a million rows. A single pass reading the same rows is 6.8 s, and
 the Python fold over it ~1 s. Reading per date keeps the worker's memory to one
 day's rows (~20k) and gives the progress bar a real figure.
+
+Each capture date's fold is cached as a per-date partial (``day_partials``,
+spec 2026-10-11-quality-weekly-partials-design), so a range is assembled from
+Redis and only dates never read — or dropped by a scouting write — touch the DB.
+Measured on kaitet.local, Rose 4 weeks all farms: 11.5 s cold, 0.36 s from warm
+partials; ``prewarm.prewarm_quality`` keeps the last 8 weeks warm.
 """
 
+import pickle
+import zlib
 from datetime import datetime, timedelta
 
 import frappe
 from frappe.utils import getdate, nowdate
 
+from upande_scp.serverscripts.common import cache_utils
 from upande_scp.serverscripts.common import quality_rules as Q
 from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows as R
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     coerce_date,
+    filter_hash,
     obs_filter,
     parent_filter_conditions,
     publish_progress,
@@ -56,8 +66,11 @@ WHERE {{where}}
 """
 
 
-def quality(args: dict, force: bool = False) -> dict:
-    farms_map = scouting_metrics.get_farms_and_warehouses() or {}
+def quality(args: dict, force: bool = False, farms_map: dict | None = None) -> dict:
+    """``farms_map`` — the caller's ``get_farms_and_warehouses()``, when it has
+    already read it (one indexed probe per disabled house; ~0.3 s on kaitet)."""
+    if farms_map is None:
+        farms_map = scouting_metrics.get_farms_and_warehouses() or {}
     scope = resolve_greenhouse_scope(
         (args.get("greenhouse") or "").strip(),
         (args.get("farm") or "").strip(),
@@ -73,7 +86,7 @@ def quality(args: dict, force: bool = False) -> dict:
         "greenhouse":(args.get("greenhouse") or "").strip(),
     }
     payload = cached_aggregate(
-        "quality", filters, lambda: _build(filters, scope, job_id), force=force,
+        "quality", filters, lambda: _build(filters, scope, job_id, force=force), force=force,
     )
     return {**payload, "clamped": clamped, "range": {"from_date": from_date, "to_date": to_date}}
 
@@ -127,7 +140,7 @@ def _week_of(day, window, memo: dict) -> tuple:
     return out
 
 
-def _build(filters: dict, scope, job_id: str = "") -> dict:
+def _build(filters: dict, scope, job_id: str = "", force: bool = False) -> dict:
     publish_progress(job_id, 5, "resolving filters")
     days = _days_desc(filters["from_date"], filters["to_date"])
     where, params = parent_filter_conditions(
@@ -137,20 +150,14 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
     latest: dict = {}  # house -> {"complete"|"partial": (yearweek, sunday, {station})}
     memo: dict = {}
     window = (getdate(filters["from_date"]), getdate(filters["to_date"]), _today()) if days else None
-    if where != "1=0":
-        sql = _ROWS.format(
-            where=where,
-            pest_obs=obs_filter("pest", "p.pest", params),
-            disease_obs=obs_filter("disease", "d.disease", params),
-        )
-        for i, day in enumerate(days):
-            publish_progress(job_id, 5 + (80 * i) // max(len(days), 1), f"reading {day}")
-            rows = frappe.db.sql(sql, {**params, "from_date": day, "to_date": day,
-                                       "sync_from": Q.SYNC_DELAY_FROM})
-            if not rows:
-                continue
-            fold.add_day(rows)
-            _note_stations(latest, rows, window, memo)
+    if where != "1=0" and days:
+        # Newest first, as the scan read them: the merge order is what keeps the
+        # figures identical to one fold over the whole range (Fold.merge).
+        partials = day_partials(where, params, days, job_id=job_id, force=force)
+        for day in days:
+            day_fold, stations = partials[day]
+            fold.merge(day_fold)
+            _note_stations(latest, getdate(day), stations, window, memo)
 
     publish_progress(job_id, 88, "station coverage")
     coverage = _coverage(latest, getdate(filters["to_date"]) if days else None)
@@ -167,23 +174,136 @@ def _build(filters: dict, scope, job_id: str = "") -> dict:
     }
 
 
-def _note_stations(latest: dict, rows, window, memo: dict) -> None:
+# ── per-day partials (spec 2026-10-11-quality-weekly-partials-design) ─────────
+#
+# Every figure the fold makes is per row or per scout-day, so one capture date's
+# Fold is a self-contained, mergeable building block. Each (query scope, date)
+# Fold is cached in Redis; a range is the merge of its days' Folds, newest first.
+# A scouting write drops only its date (a per-date generation stamp), so the
+# warm history survives the day being scouted.
+
+K_QP_PREFIX = "scp:dash_agg:qpart"
+#: Bump when the partial's contents change meaning (the row SQL or the Fold).
+K_QP_SCHEMA = "qp1"
+#: Dates within this many days of today change under late syncs and edits; their
+#: partials live shorter. Writes drop a partial at once either way — the TTL only
+#: bounds out-of-band writes (raw SQL loads) that fire no doc event.
+QP_RECENT_DAYS = 7
+QP_TTL_RECENT = 3600
+QP_TTL_OLD = 86400
+
+
+def _scope_sig(where: str, params: dict) -> str:
+    """The query a day's partial was read with, minus its dates: the crop, its
+    pests/diseases and houses (D4, D5), the greenhouse scope. A change to any of
+    them — a house moved between farms, a pest linked to the crop — is a new
+    signature, so no partial is ever served for a query it was not read with."""
+    rest = {k: v for k, v in params.items() if k not in ("from_date", "to_date")}
+    return filter_hash({"where": where, "params": rest, "sync": Q.SYNC_DELAY_FROM})
+
+
+def _partial_key(sig: str, day: str, gen: str) -> str:
+    return f"{K_QP_PREFIX}:{K_QP_SCHEMA}:{sig}:{day}:{gen}"
+
+
+def _gens(cache, days: list) -> dict:
+    """``{day: generation}`` — created (unique) where missing, so a flushed or
+    evicted stamp can never re-match a partial built under an older one."""
+    keys = [cache.make_key(cache_utils.quality_day_gen_key(d)) for d in days]
+    raw = cache.mget(keys) if keys else []
+    out = {}
+    for day, key, val in zip(days, keys, raw):
+        if val is None:
+            cache.set(key, cache_utils.new_quality_gen(), nx=True)
+            val = cache.get(key)
+        out[day] = val.decode() if isinstance(val, bytes) else str(val)
+    return out
+
+
+def _load(blob):
+    try:
+        return pickle.loads(zlib.decompress(blob))
+    except Exception:
+        return None
+
+
+def day_partials(where: str, params: dict, days: list, job_id: str = "",
+                 force: bool = False, fill_only: bool = False) -> dict:
+    """``{day: (Fold, {house: [station, …]})}`` for each date in ``days`` — from
+    Redis where cached, else read from the DB (one query per date, as the scan
+    always did) and cached. ``force`` re-reads every date; ``fill_only`` (the
+    warmer) only builds the missing dates and returns just those."""
+    cache = frappe.cache()
+    sig = _scope_sig(where, params)
+    gens = _gens(cache, days)
+    keys = {d: cache.make_key(_partial_key(sig, d, gens[d])) for d in days}
+    out: dict = {}
+    if fill_only and not force:
+        pipe = cache.pipeline()
+        for d in days:
+            pipe.exists(keys[d])
+        present = {d for d, hit in zip(days, pipe.execute()) if hit}
+        missing = [d for d in days if d not in present]
+    else:
+        if not force:
+            for day, blob in zip(days, cache.mget([keys[d] for d in days])):
+                if blob is not None:
+                    got = _load(blob)
+                    if got is not None:
+                        out[day] = got
+        missing = [d for d in days if d not in out]
+    if not missing:
+        return out
+    sql = _ROWS.format(
+        where=where,
+        pest_obs=obs_filter("pest", "p.pest", params),
+        disease_obs=obs_filter("disease", "d.disease", params),
+    )
+    recent = (_today() - timedelta(days=QP_RECENT_DAYS)).isoformat()
+    for i, day in enumerate(missing):
+        publish_progress(job_id, 5 + (80 * i) // len(missing), f"reading {day}")
+        rows = frappe.db.sql(sql, {**params, "from_date": day, "to_date": day,
+                                   "sync_from": Q.SYNC_DELAY_FROM})
+        out[day] = part = _day_partial(rows)
+        cache.set(keys[day], zlib.compress(pickle.dumps(part, pickle.HIGHEST_PROTOCOL), 1),
+                  ex=QP_TTL_RECENT if day >= recent else QP_TTL_OLD)
+    return out
+
+
+def _day_partial(rows) -> tuple:
+    """One capture date's ``(Fold, {house: [station, …]})``; the stations keep
+    their first-seen order."""
+    fold = Q.Fold()
+    stations: dict = {}
+    if rows:
+        fold.add_day(rows)
+        for _s, _day, wh, station, *_rest in rows:
+            if not wh or not station:
+                continue
+            seen = stations.get(wh)
+            if seen is None:
+                seen = stations[wh] = {}
+            seen[station] = None
+    return fold, {wh: list(st) for wh, st in stations.items()}
+
+
+def _note_stations(latest: dict, day, stations: dict, window, memo: dict) -> None:
     """Days arrive newest first, so the first complete week seen for a house is
     its latest complete week (and the first unfinished one its current week);
     stations from older weeks are ignored."""
-    for _s, day, wh, station, *_rest in rows:
-        if not wh or not station:
-            continue
-        yw, partial, sunday = _week_of(day, window, memo)
+    if not stations:
+        return
+    yw, partial, sunday = _week_of(day, window, memo)
+    slot = "partial" if partial else "complete"
+    for wh, sts in stations.items():
         slots = latest.get(wh)
         if slots is None:
             slots = latest[wh] = {}
-        slot = "partial" if partial else "complete"
         cur = slots.get(slot)
         if cur is None:
-            slots[slot] = (yw, sunday, {station})
+            slots[slot] = (yw, sunday, set(sts))
         elif cur[0] == yw:
-            cur[2].add(station)
+            cur[2].update(sts)
 
 
 def _coverage(latest: dict, range_end) -> dict:

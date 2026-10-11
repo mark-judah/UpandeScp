@@ -52,6 +52,18 @@ class TestRank(unittest.TestCase):
         self.assertEqual([r["scout"] for r in out["notEnoughDays"]], ["S2"])
         self.assertNotIn("score", out["notEnoughDays"][0])
 
+    def test_approved_leave_is_excused_from_the_minimum(self):
+        # 28-day range, 14 days on leave: ceil(5 × 14 / 28) = 3 active days suffice.
+        self.assertEqual(SR.required_active_days(14, 28), 3)
+        self.assertEqual(SR.required_active_days(0, 28), 5)
+        self.assertEqual(SR.required_active_days(28, 28), 1)
+        self.assertEqual(SR.required_active_days(3, 28), 5)  # ceil(4.46)
+        out = SR.rank([scout("S1", days=3), scout("S2", days=3)], FARM_OF, {"S1": 14}, 28)
+        self.assertEqual([r["scout"] for r in out["ranked"]], ["S1"])
+        self.assertEqual(out["ranked"][0]["leaveDays"], 14)
+        self.assertEqual(out["ranked"][0]["requiredDays"], 3)
+        self.assertEqual(out["notEnoughDays"][0]["leaveDays"], 0)
+
     def test_effort_against_own_farm_median(self):
         rows = [scout("A1", spd=10), scout("A2", spd=20), scout("A3", spd=30),
                 scout("B1", spd=5, houses=(("GH9", 100),))]

@@ -211,6 +211,8 @@ def build(ctx: dict) -> dict:
 	)
 
 	done = {(a["date"], a["scout"], a["greenhouse"]) for a in week_actuals}
+	leaves = _leave_days(scout_ids, days)
+	away = lambda scout, d: (leaves.get(scout) or {}).get(str(d)) == CA.ON_LEAVE  # noqa: E731
 	assignments = [
 		{
 			"name": r["name"],
@@ -219,7 +221,8 @@ def build(ctx: dict) -> dict:
 			"scoutName": r.get("scout_name") or (people.get(r["scout"]) or {}).get("employee_name") or r["scout"],
 			"greenhouse": r["greenhouse"],
 			"notes": r.get("notes") or "",
-			"status": R.assignment_status(r["date"], today, (str(r["date"]), r["scout"], r["greenhouse"]) in done),
+			"status": R.assignment_status(r["date"], today, (str(r["date"]), r["scout"], r["greenhouse"]) in done,
+										  away(r["scout"], r["date"])),
 		}
 		for r in rows
 	]
@@ -243,9 +246,9 @@ def build(ctx: dict) -> dict:
 							for r in last_rows],
 			"actuals": last_actuals,
 		},
-		"leaves": _leave_days(scout_ids, days),
+		"leaves": leaves,
 		"elsewhere": elsewhere,
-		"check": R.weekly_check(houses, assignments, elsewhere, farm),
+		"check": R.weekly_check(houses, assignments, elsewhere, farm, leaves),
 	}
 
 

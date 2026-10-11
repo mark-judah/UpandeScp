@@ -12,9 +12,12 @@ scout's score is out of 100 and is always shown with its three parts:
   their houses to compare with) gets the farm's average and a note.
 
 Only scouts with ``MIN_ACTIVE_DAYS`` or more are ranked; ties go to the one with
-more entries. The weights are constants here, not settings. Nothing in this
+more entries. Approved-leave days are excused (spec C9): the requirement is scaled
+to the days of the range the scout was not on leave (``required_active_days``). The weights are constants here, not settings. Nothing in this
 module touches the database.
 """
+
+import math
 
 EFFORT_WEIGHT = 0.4
 INTEGRITY_WEIGHT = 0.3
@@ -27,6 +30,18 @@ NOTE_NO_BASELINE = "no other scout in their houses to compare GPS with"
 #: Figures the scout record compares with the farm median.
 MEDIAN_FIELDS = ("stationsPerDay", "entriesPerDay", "entriesPerHour", "tooFastPct",
                  "duplicatePct", "offZonePct", "nothingFoundPct")
+
+
+def required_active_days(leave_days=0, range_days=None) -> int:
+    """``MIN_ACTIVE_DAYS`` scaled to the days not on approved leave:
+    ``max(1, ceil(MIN × (range − leave) / range))``. Without a range or leave it
+    is ``MIN_ACTIVE_DAYS``."""
+    leave = max(0.0, float(leave_days or 0))
+    if not leave or not range_days:
+        return MIN_ACTIVE_DAYS
+    span = float(range_days)
+    working = max(0.0, span - min(leave, span))
+    return max(1, math.ceil(MIN_ACTIVE_DAYS * working / span - 1e-9))
 
 
 def median(values):
@@ -73,14 +88,17 @@ def _farms(row, farm_of_house):
     return [f for f, _n in sorted(by.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
-def _with_derived(row, farm_of_house):
+def _with_derived(row, farm_of_house, leave_days=None, range_days=None):
     out = dict(row)
+    leave = (leave_days or {}).get(row["scout"], 0) or 0
     farms = _farms(row, farm_of_house)
     out["farms"] = farms
     out["farm"] = farms[0] if farms else None
     days = row.get("activeDays") or 0
     out["entriesPerDay"] = round(row["entries"] / days, 1) if days else None
-    out["eligible"] = days >= MIN_ACTIVE_DAYS
+    out["leaveDays"] = leave
+    out["requiredDays"] = required_active_days(leave, range_days)
+    out["eligible"] = days >= out["requiredDays"]
     return out
 
 
@@ -98,14 +116,16 @@ def farm_medians(rows) -> dict:
     return out
 
 
-def rank(scouts, farm_of_house) -> dict:
+def rank(scouts, farm_of_house, leave_days=None, range_days=None) -> dict:
     """``{"ranked": [...], "notEnoughDays": [...], "medians": {farm: {...}}}``.
 
     ``scouts`` are ``Fold.scout_rows``; ``farm_of_house`` maps a house to its farm.
     Each ranked row gains ``farm``, ``farms``, ``effort``, ``integrity``, ``gps``,
-    ``gpsNote``, ``score`` and ``rank``.
+    ``gpsNote``, ``score`` and ``rank``; every row gains ``leaveDays`` and
+    ``requiredDays``. ``leave_days`` maps scout → approved-leave days in the range
+    of ``range_days`` days.
     """
-    rows = [_with_derived(r, farm_of_house) for r in scouts]
+    rows = [_with_derived(r, farm_of_house, leave_days, range_days) for r in scouts]
     medians = farm_medians(rows)
     eligible = [r for r in rows if r["eligible"]]
     for r in eligible:

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-PLANNED, DONE, MISSED = "Planned", "Done", "Missed"
+PLANNED, DONE, MISSED, ON_LEAVE = "Planned", "Done", "Missed", "On leave"
 #: A scout whose planned house-days differ from the farm median by more than this
 #: share of the median is flagged high / low.
 LOAD_TOLERANCE = 0.5
@@ -43,10 +43,14 @@ def week_days(week_start) -> list[date]:
 	return [monday + timedelta(days=i) for i in range(7)]
 
 
-def assignment_status(day, today, done: bool) -> str:
-	"""Done as soon as the entries exist; Missed only once the day is over."""
+def assignment_status(day, today, done: bool, on_leave: bool = False) -> str:
+	"""Done as soon as the entries exist; On leave when approved leave covers the
+	day (C9 — leave approved after the plan was saved; not the scout's miss);
+	Missed only once the day is over."""
 	if done:
 		return DONE
+	if on_leave:
+		return ON_LEAVE
 	return MISSED if as_date(day) < as_date(today) else PLANNED
 
 
@@ -62,13 +66,15 @@ def _key(row: dict) -> tuple[str, str, str]:
 	return (str(as_date(row["date"])), row["scout"], row["greenhouse"])
 
 
-def weekly_check(houses, assignments, elsewhere=(), farm: str | None = None) -> dict:
+def weekly_check(houses, assignments, elsewhere=(), farm: str | None = None, leaves=None) -> dict:
 	"""The week's warnings.
 
 	``houses``      — the farm's greenhouses / blocks.
 	``assignments`` — this farm's week, ``{date, scout, greenhouse}``.
 	``elsewhere``   — the same scouts' assignments on other farms that week,
 	                  ``{date, scout, farm}``.
+	``leaves``      — scout → {date: on_leave | leave_pending}; planned days on
+	                  approved leave are listed under ``onLeave`` to reassign (C9).
 	"""
 	planned_houses = {a["greenhouse"] for a in assignments}
 	unplanned = [h for h in houses if h not in planned_houses]
@@ -95,7 +101,17 @@ def weekly_check(houses, assignments, elsewhere=(), farm: str | None = None) -> 
 		{"scout": s, "date": d, "farms": sorted(({farm} if farm else set()) | farms)}
 		for (s, d), farms in sorted(clash.items(), key=lambda kv: (kv[0][1], kv[0][0]))
 	]
-	return {"unplanned": unplanned, "median": median, "load": load, "conflicts": conflicts}
+	leaves = leaves or {}
+	on_leave = sorted(
+		(
+			{"scout": a["scout"], "date": str(as_date(a["date"])), "greenhouse": a["greenhouse"]}
+			for a in assignments
+			if (leaves.get(a["scout"]) or {}).get(str(as_date(a["date"]))) == "on_leave"
+		),
+		key=lambda r: (r["date"], r["scout"], r["greenhouse"]),
+	)
+	return {"unplanned": unplanned, "median": median, "load": load, "conflicts": conflicts,
+			"onLeave": on_leave}
 
 
 def unplanned_actuals(actuals, assignments) -> list[dict]:
@@ -104,13 +120,21 @@ def unplanned_actuals(actuals, assignments) -> list[dict]:
 	return [a for a in actuals if _key(a) not in planned]
 
 
-def copy_week(rows, days: int = 7) -> list[dict]:
-	"""Rows moved ``days`` on, deduplicated on (date, scout, greenhouse)."""
+def copy_week(rows, days: int = 7, leaves=None) -> tuple[list[dict], int]:
+	"""``(rows moved `days` on, skipped)`` — deduplicated on (date, scout, greenhouse);
+	a scout on approved leave on the target day is skipped and counted (C9)."""
+	leaves = leaves or {}
 	out: dict[tuple, dict] = {}
+	skipped = 0
 	for r in rows:
 		moved = {"date": str(as_date(r["date"]) + timedelta(days=days)),
 				 "scout": r["scout"], "greenhouse": r["greenhouse"]}
 		if r.get("notes"):
 			moved["notes"] = r["notes"]
-		out.setdefault(_key(moved), moved)
-	return list(out.values())
+		if _key(moved) in out:
+			continue
+		if (leaves.get(moved["scout"]) or {}).get(moved["date"]) == "on_leave":
+			skipped += 1
+			continue
+		out[_key(moved)] = moved
+	return list(out.values()), skipped

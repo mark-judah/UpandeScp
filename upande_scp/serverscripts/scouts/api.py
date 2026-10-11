@@ -19,6 +19,7 @@ from importlib import import_module
 import frappe
 from frappe.utils import getdate, nowdate
 
+from upande_scp.serverscripts.common import crew_availability as CA
 from upande_scp.serverscripts.common import crop_catalog, crop_scope
 from upande_scp.serverscripts.common import scout_ranking as SR
 from upande_scp.serverscripts.scouting import scouting_metrics
@@ -67,6 +68,24 @@ def farm_scope(crop, farm, farms_map, user=None) -> dict:
 	return {"farm": farm, "farms": options, "allFarms": all_ok}
 
 
+def approved_leave_days(scouts, from_date, to_date) -> dict:
+	"""scout → approved-leave days inside the range (C9), via crew_availability.
+	A half day counts half. Open applications are not excused."""
+	start, end = getdate(from_date), getdate(to_date)
+	out: dict = {}
+	for lv in CA.leaves_between(scouts, start, end, include_open=False):
+		lo, hi = max(getdate(lv["from_date"]), start), min(getdate(lv["to_date"]), end)
+		if hi < lo:
+			continue
+		days = float((hi - lo).days + 1)
+		if int(lv.get("half_day") or 0) and (lv.get("half_day_date") or lv["from_date"] == lv["to_date"]):
+			days -= 0.5
+		out[lv["employee"]] = out.get(lv["employee"], 0.0) + days
+	# overlapping applications cannot excuse more than the range
+	span = (end - start).days + 1
+	return {k: min(v, span) for k, v in out.items()}
+
+
 def _images(ids) -> dict:
 	if not ids:
 		return {}
@@ -93,7 +112,11 @@ def get_scouts(crop=None, farm=None, from_date=None, to_date=None, job_id=None, 
 		farms_map=farms_map,
 	)
 	farm_of_house = {wh: f for f, whs in farms_map.items() for wh in whs}
-	out = SR.rank(q.get("scouts") or [], farm_of_house)
+	rng = q.get("range") or {"from_date": from_date, "to_date": to_date}
+	scouts = q.get("scouts") or []
+	leave = approved_leave_days([r["scout"] for r in scouts], rng["from_date"], rng["to_date"])
+	span = (getdate(rng["to_date"]) - getdate(rng["from_date"])).days + 1
+	out = SR.rank(scouts, farm_of_house, leave, span)
 	flags: dict = {}
 	for f in q.get("flags") or []:
 		if f.get("subject") == "scout":

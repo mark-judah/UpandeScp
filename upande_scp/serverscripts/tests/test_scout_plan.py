@@ -145,3 +145,43 @@ class TestScoutPlan(unittest.TestCase):
 		stored = frappe.db.get_value("Scout Assignment", {"date": TUE, "scout": self.a["name"]}, "status")
 		self.assertEqual(stored, R.DONE)
 		self.assertIn(self.a["name"], {s["scout"] for s in out["scouts"]})
+
+	# ── C9: scouting respects approved leave ──
+	def test_leave_approved_after_saving_shows_on_leave_and_asks_to_reassign(self):
+		self._save([self._row(WED, self.b, self.houses[1]), self._row(WED, self.b, self.houses[2]),
+					self._row(TUE, self.a, self.houses[0])])
+		self._leave("TEST-SP-LEAVE-3", self.b, WED)  # approved after the plan
+		got = SP.get_scout_plan(crop="Rose", farm=self.farm, week_start=WEEK)
+		status = {(a["date"], a["scout"], a["greenhouse"]): a["status"] for a in got["assignments"]}
+		self.assertEqual(status[(WED, self.b["name"], self.houses[1])], R.ON_LEAVE)
+		self.assertEqual(status[(TUE, self.a["name"], self.houses[0])], R.MISSED)
+		self.assertEqual(
+			got["check"]["onLeave"],
+			[{"scout": self.b["name"], "date": WED, "greenhouse": h} for h in sorted(self.houses[1:3])],
+		)
+
+	def test_ranking_excuses_approved_leave_days(self):
+		from upande_scp.serverscripts.scouts import api as SA
+
+		self._leave("TEST-SP-LEAVE-4", self.a, "2020-01-01")
+		lv = frappe.new_doc("Leave Application")
+		lv.update({"employee": self.a["name"], "leave_type": frappe.db.get_value("Leave Type", {}, "name") or "Annual Leave",
+				   "from_date": "2020-01-03", "to_date": "2020-01-20", "status": "Approved", "docstatus": 1,
+				   "company": self.a["company"]})
+		lv.name = "TEST-SP-LEAVE-5"
+		lv.db_insert()
+		self._leave("TEST-SP-LEAVE-6", self.b, "2020-01-02", status="Open", docstatus=0)  # pending: not excused
+		days = SA.approved_leave_days([self.a["name"], self.b["name"]], "2020-01-01", "2020-01-14")
+		self.assertEqual(days, {self.a["name"]: 13.0})  # the 1st + the 3rd–14th
+
+		row = {"scout": self.a["name"], "scoutName": "A", "entries": 50, "activeDays": 2, "stationsPerDay": 5.0,
+			   "tooFastPct": 0, "duplicatePct": 0, "offZonePct": 0, "houseOffZonePct": 0, "fixes": 10,
+			   "entriesPerHour": None, "nothingFoundPct": None, "houses": [{"house": self.houses[0], "entries": 50}]}
+		fake = {"scouts": [row, {**row, "scout": self.b["name"]}], "flags": [],
+				"range": {"from_date": "2020-01-01", "to_date": "2020-01-14"}, "clamped": False}
+		with mock.patch.object(SA._quality, "quality", return_value=fake):
+			out = SA.get_scouts(crop="Rose", farm=self.farm, from_date="2020-01-01", to_date="2020-01-14")
+		# 14-day range, 13 on leave: 1 active day suffices; B (pending only) still needs 5
+		self.assertEqual([r["scout"] for r in out["ranked"]], [self.a["name"]])
+		self.assertEqual(out["ranked"][0]["leaveDays"], 13.0)
+		self.assertEqual(out["notEnoughDays"][0]["leaveDays"], 0)

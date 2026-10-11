@@ -83,12 +83,12 @@
   },
   {
    "default": "Planned",
-   "description": "Computed: Done when the scout logged entries in the house that day, Missed when a past day has none.",
+   "description": "Computed: Done when the scout logged entries in the house that day, Missed when a past day has none, On leave when approved leave now covers the day.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Planned\nDone\nMissed",
+   "options": "Planned\nDone\nMissed\nOn leave",
    "read_only": 1
   },
   {

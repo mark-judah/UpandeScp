@@ -64,5 +64,31 @@ def test_unplanned_actuals_are_those_with_no_assignment():
 
 def test_copy_week_moves_seven_days_and_dedupes():
 	rows = [_a("2026-09-28", "S1", "GH1"), {**_a("2026-09-28", "S1", "GH1"), "entries": 3}, _a("2026-10-04", "S2", "GH2")]
-	out = R.copy_week(rows)
+	out, skipped = R.copy_week(rows)
 	assert sorted((r["date"], r["scout"]) for r in out) == [("2026-10-05", "S1"), ("2026-10-11", "S2")]
+	assert skipped == 0
+
+
+def test_copy_week_skips_approved_leave_on_the_target_day_and_counts_it():
+	rows = [_a("2026-09-28", "S1", "GH1"), _a("2026-09-29", "S1", "GH1"), _a("2026-09-28", "S2", "GH2")]
+	leaves = {"S1": {"2026-10-05": "on_leave", "2026-10-06": "leave_pending"}}
+	out, skipped = R.copy_week(rows, leaves=leaves)
+	assert skipped == 1
+	assert sorted((r["date"], r["scout"]) for r in out) == [("2026-10-05", "S2"), ("2026-10-06", "S1")]
+
+
+def test_status_on_leave_beats_missed_but_not_done():
+	today = date(2026, 10, 8)
+	assert R.assignment_status("2026-10-06", today, False, on_leave=True) == R.ON_LEAVE
+	assert R.assignment_status("2026-10-10", today, False, on_leave=True) == R.ON_LEAVE
+	assert R.assignment_status("2026-10-06", today, True, on_leave=True) == R.DONE
+
+
+def test_check_lists_planned_scouts_now_on_leave():
+	rows = [_a("2026-10-06", "S1", "GH1"), _a("2026-10-06", "S1", "GH2"), _a("2026-10-07", "S2", "GH1")]
+	leaves = {"S1": {"2026-10-06": "on_leave"}, "S2": {"2026-10-07": "leave_pending"}}
+	out = R.weekly_check(["GH1", "GH2"], rows, leaves=leaves)
+	assert out["onLeave"] == [
+		{"scout": "S1", "date": "2026-10-06", "greenhouse": "GH1"},
+		{"scout": "S1", "date": "2026-10-06", "greenhouse": "GH2"},
+	]

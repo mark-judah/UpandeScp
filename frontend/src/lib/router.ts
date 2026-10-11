@@ -19,6 +19,7 @@ export type View =
   | "observations"
   | "traps"
   | "heatmaps"
+  | "gallery"
   | "scouting-map"
   | "spraying"
   | "varieties"
@@ -53,6 +54,7 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "observations",
   "traps",
   "heatmaps",
+  "gallery",
   "scouting-map",
   "spraying",
   "varieties",

@@ -62,3 +62,51 @@ export async function fetchObservationGallery(
   });
   return ((resp as { message?: GalleryPayload })?.message ?? resp) as GalleryPayload;
 }
+
+/* ── Gallery page (spec 2026-10-11 GP2) ─────────────────────────────── */
+
+export type PhotoKind = ObservationKind | "other";
+
+export interface FeedPhoto extends GalleryPhoto {
+  subject: string;
+  kind: PhotoKind;
+  /** Employee.image of the scout — initials only when empty. */
+  scoutImage: string;
+}
+
+export interface FeedFacets {
+  subjects: Array<{ name: string; kind: PhotoKind; count: number }>;
+  scouts: Array<{ scout: string; scoutName: string; image: string; count: number }>;
+}
+
+export interface FeedFilters extends GalleryScope {
+  kind?: PhotoKind | "";
+  name?: string;
+  scout?: string;
+}
+
+export interface FeedPayload {
+  photos: FeedPhoto[];
+  page: number;
+  hasMore: boolean;
+  pageSize: number;
+  /** Page 0 only. */
+  facets?: FeedFacets;
+}
+
+export const PHOTO_FEED_METHOD = "upande_scp.serverscripts.dashboard_aggregates.photo_feed";
+
+export async function fetchPhotoFeed(filters: FeedFilters, page = 0): Promise<FeedPayload> {
+  const resp = await call<{ message?: FeedPayload } | FeedPayload>(PHOTO_FEED_METHOD, {
+    crop: filters.crop,
+    from_date: filters.from_date,
+    to_date: filters.to_date,
+    farm: filters.farm || "",
+    greenhouse: filters.greenhouse || "",
+    kind: filters.kind || "",
+    name: filters.name || "",
+    scout: filters.scout || "",
+    page,
+  });
+  return ((resp as { message?: FeedPayload })?.message ?? resp) as FeedPayload;
+}

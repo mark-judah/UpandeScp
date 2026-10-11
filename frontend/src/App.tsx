@@ -32,6 +32,9 @@ const Observations = lazy(() =>
 const TrapsMap = lazy(() =>
   import("@/pages/TrapsMap").then((m) => ({ default: m.TrapsMap })),
 );
+const Gallery = lazy(() =>
+  import("@/pages/Gallery").then((m) => ({ default: m.Gallery })),
+);
 const Heatmaps = lazy(() =>
   import("@/pages/Heatmaps").then((m) => ({ default: m.Heatmaps })),
 );
@@ -153,6 +156,7 @@ const PREFETCH: Array<() => Promise<unknown>> = [
   () => import("@/pages/Observations"),
   () => import("@/pages/TrapsMap"),
   () => import("@/pages/Heatmaps"),
+  () => import("@/pages/Gallery"),
   () => import("@/pages/RoseScouting"),
   () => import("@/pages/avocado/AvocadoScouting"),
   () => import("@/pages/avocado/AvocadoObservations"),
@@ -250,6 +254,8 @@ function renderView(crop: string, view: View): ReactNode {
       ) : (
         <AvocadoHeatMap initialCrop={cropName} />
       );
+    case "gallery":
+      return <Gallery initialCrop={cropName} />;
     case "scouting-map":
       return crop === "rose" ? (
         <RoseScouting />

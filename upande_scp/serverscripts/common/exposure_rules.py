@@ -29,6 +29,7 @@ MAX_HOURS = 12
 FLAG_NO_DURATION = "no duration"
 FLAG_HAZARD_UNKNOWN = "hazard unknown"
 FLAG_CAPPED = "over 12 h"
+FLAG_TIMES_REVERSED = "times reversed"
 
 SOURCE_CUSTOM = "custom datetimes"
 SOURCE_TIMES = "date + times"
@@ -107,15 +108,16 @@ def resolve_duration(
 	"""The application's duration, by the first source that gives one.
 
 	1. ``custom_start``/``custom_stop`` — full datetimes;
-	2. ``on_date`` + ``start_time``/``stop_time`` — a stop before the start
-	   crossed midnight, so it moves to the next day;
+	2. ``on_date`` + ``start_time``/``stop_time`` — a stop before the start is
+	   a typing slip (nobody sprays overnight), so these times are skipped and
+	   flagged "times reversed";
 	3. ``sessions`` — (started_at, ended_at) pairs from the work order's
 	   Sprayer Movement Sessions, earliest start to latest end.
 
 	Returns {started_at, ended_at, hours, source, flags}. No source → hours 0
 	and the "no duration" flag. Over MAX_HOURS → capped and flagged.
 	"""
-	span, source = None, None
+	span, source, flags = None, None, []
 
 	span = _span(_as_datetime(custom_start), _as_datetime(custom_stop))
 	if span:
@@ -127,7 +129,7 @@ def resolve_duration(
 			start = datetime.combine(d, t0)
 			end = datetime.combine(d, t1)
 			if end < start:
-				end += timedelta(days=1)
+				flags.append(FLAG_TIMES_REVERSED)
 			span = _span(start, end)
 			if span:
 				source = SOURCE_TIMES
@@ -148,12 +150,11 @@ def resolve_duration(
 			"ended_at": None,
 			"hours": 0.0,
 			"source": None,
-			"flags": [FLAG_NO_DURATION],
+			"flags": flags + [FLAG_NO_DURATION],
 		}
 
 	start, end = span
 	hours = (end - start).total_seconds() / 3600.0
-	flags = []
 	if hours > MAX_HOURS:
 		hours = float(MAX_HOURS)
 		flags.append(FLAG_CAPPED)

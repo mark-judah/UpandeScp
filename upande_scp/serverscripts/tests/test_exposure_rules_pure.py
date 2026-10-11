@@ -30,10 +30,20 @@ def test_date_plus_times_when_custom_missing():
 	assert d["hours"] == 0.75
 
 
-def test_overnight_stop_moves_to_next_day():
-	d = R.resolve_duration(on_date="2026-07-01", start_time="23:00:00", stop_time="01:00:00")
-	assert d["ended_at"] == datetime(2026, 7, 2, 1, 0)
-	assert d["hours"] == 2.0
+def test_reversed_times_are_skipped_and_flagged():
+	d = R.resolve_duration(on_date="2026-07-01", start_time="16:00:00", stop_time="08:00:00")
+	assert d["hours"] == 0.0
+	assert R.FLAG_TIMES_REVERSED in d["flags"] and R.FLAG_NO_DURATION in d["flags"]
+
+
+def test_reversed_times_fall_back_to_the_session():
+	d = R.resolve_duration(
+		on_date="2026-07-01", start_time="16:00:00", stop_time="08:00:00",
+		sessions=[("2026-07-01 08:00:00", "2026-07-01 09:00:00")],
+	)
+	assert d["hours"] == 1.0
+	assert d["source"] == R.SOURCE_SESSION
+	assert d["flags"] == [R.FLAG_TIMES_REVERSED]
 
 
 def test_session_fallback_spans_earliest_to_latest():
@@ -52,7 +62,7 @@ def test_session_fallback_spans_earliest_to_latest():
 
 
 def test_over_twelve_hours_is_capped_and_flagged():
-	d = R.resolve_duration(on_date="2026-07-01", start_time="08:52:36", stop_time="05:47:00")
+	d = R.resolve_duration(custom_start="2026-07-01 06:00:00", custom_stop="2026-07-01 20:30:00")
 	assert d["hours"] == 12.0
 	assert R.FLAG_CAPPED in d["flags"]
 

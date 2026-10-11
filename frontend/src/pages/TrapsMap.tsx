@@ -447,6 +447,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const [selected, setSelected] = useState<string | null>(null);
   const selectTimer = useRef<number | null>(null);
+  const revealRef = useRef<(() => void) | null>(null);
 
   // Click a trap → fly to it, then show the recorder card once the map has
   // settled (spec TM3). Reduced motion jumps instead of flying.
@@ -454,22 +455,27 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     const m = mapRef.current;
     if (!m) return;
     if (selectTimer.current) window.clearTimeout(selectTimer.current);
+    if (revealRef.current) m.off("moveend", revealRef.current);
     setSelected(null);
     const zoom = Math.min(m.getMaxZoom() || 19, Math.max(m.getZoom() + 1, 18));
     const reveal = () => {
       if (selectTimer.current) window.clearTimeout(selectTimer.current);
       selectTimer.current = null;
+      m.off("moveend", reveal);
+      revealRef.current = null;
       setSelected(trap);
     };
+    revealRef.current = reveal;
     if (prefersReducedMotion()) {
       m.setView([lat, lng], zoom, { animate: false });
       reveal();
       return;
     }
+    // Listen only after flyTo starts: stopping an earlier flight fires moveend.
+    m.flyTo([lat, lng], zoom, { duration: 0.8 });
     m.once("moveend", reveal);
     // A fly of zero distance may not fire moveend; never leave the click dead.
     selectTimer.current = window.setTimeout(reveal, 1200);
-    m.flyTo([lat, lng], zoom, { duration: 0.8 });
   }, []);
 
   useEffect(() => () => {

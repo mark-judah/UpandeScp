@@ -482,7 +482,8 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
     let last = 0;
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
-      if (document.hidden || now - last < 33 || !map.getLayer("markers-pulse")) return;
+      // ~15 fps: each paint update repaints the whole map, trees included.
+      if (document.hidden || now - last < 66 || !map.getLayer("markers-pulse")) return;
       last = now;
       const t = now / 1000;
       const phase = ["%", ["+", ["/", t, ["get", "dur"]], ["get", "off"]], 1];
@@ -514,9 +515,11 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
       done = true;
       setSelectedMarker(m);
     };
+    // Listen only after flyTo starts: stopping an earlier flight fires
+    // moveend synchronously, which would reveal this card too early.
+    map.flyTo({ center: [m.lng, m.lat], zoom, duration: 900, essential: false });
     map.once("moveend", reveal);
     window.setTimeout(reveal, 1400);
-    map.flyTo({ center: [m.lng, m.lat], zoom, duration: 900, essential: false });
   };
   // A marker gone from the data (range / farm change) closes its card.
   useEffect(() => {

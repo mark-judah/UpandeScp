@@ -104,19 +104,22 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   }, [key]);
 
   const loadingMoreRef = useRef(false);
-  const loadMore = useCallback(async () => {
-    if (loadingMoreRef.current || !hasMore) return;
+  /** Resolves true when a page arrived, false when nothing was added. */
+  const loadMore = useCallback(async (): Promise<boolean> => {
+    if (loadingMoreRef.current || !hasMore) return false;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     const gen = generation.current;
     try {
       const d = await fetchPhotoFeed(filters, page + 1);
-      if (gen !== generation.current) return;
+      if (gen !== generation.current) return false;
       setPhotos((prev) => [...prev, ...(d.photos ?? [])]);
       setPage(page + 1);
       setHasMore(Boolean(d.hasMore));
+      return (d.photos ?? []).length > 0;
     } catch (e) {
       if (gen === generation.current) setError(errorText(e, "Could not load more photos"));
+      return false;
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);
@@ -358,7 +361,7 @@ export function Lightbox({
   index: number;
   hasMore: boolean;
   onIndex: (i: number) => void;
-  onLoadMore: () => Promise<void> | void;
+  onLoadMore: () => Promise<boolean | void> | void;
   onClose: () => void;
 }) {
   const p = photos[index];
@@ -377,7 +380,12 @@ export function Lightbox({
     if (!atEnd) onIndex(index + 1);
     else if (hasMore) {
       pendingNext.current = true;
-      void onLoadMore();
+      // A failed page must not leave a later move auto-advancing.
+      // A failed or empty page must not leave a later move auto-advancing.
+      void Promise.resolve(onLoadMore()).then(
+        (ok) => { if (ok === false) pendingNext.current = false; },
+        () => { pendingNext.current = false; },
+      );
     }
   };
 

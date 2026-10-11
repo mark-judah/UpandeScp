@@ -31,7 +31,7 @@ import { ActivityFeed, type FeedItem } from "@/components/people/ActivityFeed";
 import { CompareDialog } from "@/components/people/CompareDialog";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { DEFAULT_CROP } from "@/lib/scouting-api";
-import { weekLabel, type FarmMedians, type ScoutRecord, type ScoutsPayload } from "@/lib/scouts-api";
+import { onLeaveText, weekLabel, type FarmMedians, type ScoutRecord, type ScoutsPayload } from "@/lib/scouts-api";
 import { KIND } from "@/pages/dashboard/DataQualityTab";
 import { cn, ymd } from "@/lib/utils";
 
@@ -136,7 +136,8 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
 
   const groups: PersonListGroup[] = useMemo(() => {
     if (!data) return [];
-    const sub = (s: ScoutRecord) => [s.farm, `${s.activeDays} days`].filter(Boolean).join(" · ");
+    const sub = (s: ScoutRecord) =>
+      [s.farm, `${s.activeDays} days`, s.leaveDays ? onLeaveText(s.leaveDays) : null].filter(Boolean).join(" · ");
     return [
       {
         title: "Ranking",
@@ -147,7 +148,7 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
       },
       {
         title: "Not enough days",
-        note: `Fewer than ${data.minActiveDays} active days in the range — not ranked.`,
+        note: `Fewer than ${data.minActiveDays} active days in the range (fewer needed for days on approved leave) — not ranked.`,
         items: data.notEnoughDays.map((s) => ({
           id: s.scout, name: s.scoutName, image: s.image, sub: sub(s), keywords: s.farms.join(" "),
         })),
@@ -263,7 +264,8 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
                     {!selected.eligible && (
                       <span className="text-[12.5px] text-[var(--sd-muted)]">
                         {selected.activeDays} active {selected.activeDays === 1 ? "day" : "days"} — ranked from{" "}
-                        {data?.minActiveDays}.
+                        {selected.requiredDays ?? data?.minActiveDays}
+                        {selected.leaveDays ? ` (${onLeaveText(selected.leaveDays)} excused)` : ""}.
                       </span>
                     )}
                     {data && (
@@ -397,6 +399,9 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
                     facts={[
                       { label: selected.farms.length > 1 ? "Farms" : "Farm", value: selected.farms.join(", ") || "—" },
                       { label: "Active days", value: String(selected.activeDays) },
+                      ...(selected.leaveDays
+                        ? [{ label: "Approved leave", value: onLeaveText(selected.leaveDays) }]
+                        : []),
                       { label: "Entries", value: selected.entries.toLocaleString("en-US") },
                       { label: "Last active", value: selected.lastDate || "—" },
                     ]}

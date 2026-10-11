@@ -10,28 +10,44 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { addMonths, addWeeks } from "date-fns";
-import { CalendarDays, ChevronLeft, ChevronRight, GanttChart, RefreshCw } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, GanttChart, RefreshCw, UsersRound } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScheduleCalendar } from "@/components/schedule/ScheduleCalendar";
 import { ScheduleGantt, type GanttRowsBy } from "@/components/schedule/ScheduleGantt";
-import {
-  STATE_LEGEND,
-  day,
-  monthRange,
-  openPlan,
-  stateTone,
-  weekRange,
-} from "@/components/schedule/schedule-utils";
+import { ScoutPlanView } from "@/components/schedule/ScoutPlanView";
+import { hasUnavailable } from "@/components/schedule/CrewPopover";
+import { chipProps } from "@/components/schedule/schedule-colors";
+import { STATE_LEGEND, day, monthRange, openPlan, weekRange } from "@/components/schedule/schedule-utils";
+import { bootstrap } from "@/lib/frappe";
 import { fetchSchedule, type Schedule as ScheduleData } from "@/lib/schedule-api";
 import { errorText } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 
-type ViewKind = "calendar" | "gantt";
+type ViewKind = "calendar" | "gantt" | "scouts";
 type Span = "month" | "week";
 
 const VIEW_KEY = "scp.schedule.view";
+const UNAVAILABLE_KEY = "scp.schedule.unavailableOnly";
+
+/** The spray views follow schedule.SCHEDULE_ROLES; the scout plan scout_plan.READ_ROLES. */
+const SPRAY_ROLES = [
+  "SCP Spray Plan Creator",
+  "SCP Spray Plan Approver",
+  "SCP Spray Supervisor",
+  "SCP General Manager",
+  "System Manager",
+  "Administrator",
+];
+const SCOUT_ROLES = [...SPRAY_ROLES, "SCP Scouting User"];
+
+function canSee(allowed: string[]): boolean {
+  const b = bootstrap();
+  // No bootstrap (tests, the dev server): show everything; the server still judges.
+  if (!b.user) return true;
+  return b.user === "Administrator" || b.roles.some((r) => allowed.includes(r));
+}
 const ROWS_KEY = "scp.schedule.rows";
 
 function readLocal<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
@@ -87,8 +103,14 @@ function Toggle<T extends string>({
 }
 
 export function Schedule({ initialCrop }: { initialCrop?: string }) {
-  const [view, setView] = useState<ViewKind>(() =>
-    readLocal<ViewKind>(VIEW_KEY, ["calendar", "gantt"], "calendar"),
+  const sprayOk = canSee(SPRAY_ROLES);
+  const scoutOk = canSee(SCOUT_ROLES);
+  const [view, setView] = useState<ViewKind>(() => {
+    const v = readLocal<ViewKind>(VIEW_KEY, ["calendar", "gantt", "scouts"], "calendar");
+    return sprayOk ? (v === "scouts" && !scoutOk ? "calendar" : v) : "scouts";
+  });
+  const [unavailableOnly, setUnavailableOnly] = useState(
+    () => readLocal(UNAVAILABLE_KEY, ["1", "0"], "0") === "1",
   );
   const [rowsBy, setRowsBy] = useState<GanttRowsBy>(() =>
     readLocal<GanttRowsBy>(ROWS_KEY, ["greenhouse", "team"], "greenhouse"),
@@ -131,8 +153,8 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
   }, [initialCrop, farm, team, state, range.from, range.to]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (view !== "scouts" && sprayOk) load();
+  }, [load, view, sprayOk]);
 
   const changeView = (v: ViewKind) => {
     setView(v);
@@ -156,7 +178,9 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
     setRange(span === "week" ? weekRange(anchor) : monthRange(anchor));
   };
 
-  const plans = data?.plans || [];
+  const allPlans = data?.plans || [];
+  // "Show unavailable only" (C2): plans with someone not available on the plan date.
+  const plans = unavailableOnly ? allPlans.filter(hasUnavailable) : allPlans;
   // The grid follows the range the server actually read (it may have been clamped).
   const shownFrom = data?.clamped ? data.from_date : range.from;
   const shownTo = data?.clamped ? data.to_date : range.to;
@@ -167,9 +191,11 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
       <PageHeader
         title="Schedule"
         eyebrow={
-          data
-            ? `${plans.length} plan${plans.length === 1 ? "" : "s"} · ${flagged} with crew on leave · leave check ${data.leave_check}`
-            : "Spray plans and crew leave"
+          view === "scouts"
+            ? "Weekly scout plan"
+            : data
+              ? `${plans.length} plan${plans.length === 1 ? "" : "s"} · ${flagged} with crew on leave · leave check ${data.leave_check}`
+              : "Spray plans and crew leave"
         }
         switcher={
           <Toggle<ViewKind>
@@ -177,17 +203,31 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
             value={view}
             onChange={changeView}
             options={[
-              { value: "calendar", label: "Calendar", icon: <CalendarDays className="h-3.5 w-3.5" /> },
-              { value: "gantt", label: "Gantt", icon: <GanttChart className="h-3.5 w-3.5" /> },
+              ...(sprayOk
+                ? [
+                    { value: "calendar" as const, label: "Calendar", icon: <CalendarDays className="h-3.5 w-3.5" /> },
+                    { value: "gantt" as const, label: "Gantt", icon: <GanttChart className="h-3.5 w-3.5" /> },
+                  ]
+                : []),
+              ...(scoutOk
+                ? [{ value: "scouts" as const, label: "Scout plan", icon: <UsersRound className="h-3.5 w-3.5" /> }]
+                : []),
             ]}
           />
         }
       >
-        <Button variant="outline" size="sm" onClick={load} disabled={loading} aria-label="Refresh">
-          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-        </Button>
+        {view !== "scouts" && (
+          <Button variant="outline" size="sm" onClick={load} disabled={loading} aria-label="Refresh">
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          </Button>
+        )}
       </PageHeader>
 
+      {view === "scouts" ? (
+        <div className="flex min-w-0 flex-col gap-3 px-4 pb-6 md:px-6">
+          <ScoutPlanView crop={initialCrop} initialFarm={farm} initialWeek={range.from} />
+        </div>
+      ) : (
       <div className="flex min-w-0 flex-col gap-3 px-4 pb-6 md:px-6">
         <div className="flex flex-wrap items-center gap-2">
           <Toggle<Span>
@@ -254,11 +294,26 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 text-[0.62rem]">
-          {STATE_LEGEND.map((s) => (
-            <span key={s} className={cn("rounded-full px-2 py-0.5 font-medium", stateTone(s))}>
-              {s}
-            </span>
-          ))}
+          {STATE_LEGEND.map((s) => {
+            const paint = chipProps(s);
+            return (
+              <span key={s} className={cn("rounded-full px-2 py-0.5 font-medium", paint.className)} style={paint.style}>
+                {s}
+              </span>
+            );
+          })}
+          <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5 text-xs text-foreground">
+            <input
+              type="checkbox"
+              data-testid="unavailable-only"
+              checked={unavailableOnly}
+              onChange={(e) => {
+                setUnavailableOnly(e.target.checked);
+                writeLocal(UNAVAILABLE_KEY, e.target.checked ? "1" : "0");
+              }}
+            />
+            Show unavailable only
+          </label>
           {view === "gantt" && rowsBy === "team" && (
             <span className="text-muted-foreground">Hatched: crew leave (amber = pending)</span>
           )}
@@ -283,7 +338,11 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
 
         {data && plans.length === 0 && !loading && (
           <div className="flex flex-col items-start gap-2 rounded-xl border bg-card px-4 py-6 text-sm">
-            <span className="text-muted-foreground">No spray plans in this range.</span>
+            <span className="text-muted-foreground">
+              {unavailableOnly && allPlans.length
+                ? `No plan in this range has an unavailable crew member (${allPlans.length} plans hidden).`
+                : "No spray plans in this range."}
+            </span>
             {data.latest_plan_date && (
               <Button size="sm" variant="secondary" onClick={jumpToLatest}>
                 Jump to latest plans ({data.latest_plan_date})
@@ -306,6 +365,7 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
             />
           ))}
       </div>
+      )}
     </div>
   );
 }

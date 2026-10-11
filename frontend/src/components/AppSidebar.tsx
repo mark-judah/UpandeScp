@@ -214,8 +214,9 @@ const ROSE_NAV: NavSection[] = [
         icon: ClipboardList,
       },
       {
-        // Plans, crews and crew leave as a calendar or a Gantt. Same roles the
-        // server's schedule.SCHEDULE_ROLES admits.
+        // Plans, crews and crew leave as a calendar or a Gantt, and the weekly
+        // scout plan. The server's schedule.SCHEDULE_ROLES plus scout_plan's
+        // SCP Scouting User (who sees only the Scout plan view).
         kind: "view",
         view: "schedule",
         label: "Schedule",
@@ -225,6 +226,7 @@ const ROSE_NAV: NavSection[] = [
           "SCP Spray Plan Approver",
           "SCP Spray Supervisor",
           "SCP General Manager",
+          "SCP Scouting User",
           "System Manager",
           "Administrator",
         ],

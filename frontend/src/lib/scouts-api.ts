@@ -16,6 +16,10 @@ export interface ScoutRecord extends QualityScout {
   farm: string | null;
   entriesPerDay: number | null;
   eligible: boolean;
+  /** approved-leave days in the range — excused from the minimum (C9) */
+  leaveDays?: number;
+  /** active days this scout needs to be ranked: the minimum scaled to days not on leave */
+  requiredDays?: number;
   image: string;
   flags: QualityFlag[];
   /** only on ranked scouts */
@@ -61,4 +65,10 @@ export function initialsOf(name: string): string {
   const parts = (name || "").trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+}
+
+/** "on leave 3 days" — approved leave in the range, excused from ranking (C9). */
+export function onLeaveText(days: number): string {
+  const n = Number.isInteger(days) ? String(days) : days.toFixed(1);
+  return `on leave ${n} ${days === 1 ? "day" : "days"}`;
 }

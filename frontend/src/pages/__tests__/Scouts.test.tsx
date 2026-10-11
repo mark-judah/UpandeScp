@@ -97,6 +97,26 @@ describe("Personnel ▸ Scouts", () => {
     expect(within(record).getByRole("button", { name: /Compare against the farm/ })).toBeDisabled();
   });
 
+  it("C9: shows approved leave on the record and the list, excused from the minimum", async () => {
+    useDashboardAggregate.mockImplementation(() => ({
+      data: {
+        ...PAYLOAD,
+        ranked: [scout({ leaveDays: 12, requiredDays: 3, activeDays: 4 }), PAYLOAD.ranked[1]],
+        notEnoughDays: [{ ...PAYLOAD.notEnoughDays[0], leaveDays: 7, requiredDays: 4 }],
+      },
+      loading: false, error: null, progress: null, reload: vi.fn(),
+    }));
+    render(<Scouts initialCrop="Rose" />);
+    expect(within(screen.getByTestId("person-HR-1")).getByText(/on leave 12 days/)).toBeInTheDocument();
+    const record = screen.getByTestId("scout-record");
+    expect(within(record).getByText("Approved leave")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("person-HR-3"));
+    expect(within(screen.getByTestId("scout-record")).getByText(/ranked from 4 \(on leave 7 days excused\)/)).toBeInTheDocument();
+    useDashboardAggregate.mockImplementation(() => ({
+      data: PAYLOAD, loading: false, error: null, progress: null, reload: vi.fn(),
+    }));
+  });
+
   it("draws no left-border accent strips", () => {
     const { container } = render(<Scouts initialCrop="Rose" />);
     expect(container.innerHTML).not.toMatch(/border-l-|border-left/);

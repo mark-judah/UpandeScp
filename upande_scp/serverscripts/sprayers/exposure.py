@@ -11,6 +11,7 @@ the data those rules need and writes the result.
 
 from __future__ import annotations
 
+import hashlib
 import time
 
 import frappe
@@ -63,6 +64,14 @@ def _sessions(work_order):
 	)
 
 
+def _row_key(sal_name, emp, product_key) -> str:
+	"""Unique per (logsheet, person, product); hashed when it would overflow."""
+	key = f"{sal_name}|{emp}|{product_key}"
+	if len(key) <= 140:
+		return key
+	return f"{sal_name}|{emp}|{hashlib.md5(product_key.encode()).hexdigest()}"[:140]
+
+
 def build_rows(sal, products=None) -> list[dict]:
 	"""The exposure rows a submitted logsheet implies. ``sal`` is a doc or dict."""
 	get = sal.get
@@ -76,9 +85,8 @@ def build_rows(sal, products=None) -> list[dict]:
 	if not people:
 		return []
 
-	session_pairs = []
-	if not (get("custom_application_start_at") and get("custom_application_stop_at")):
-		session_pairs = _sessions(get("work_order"))
+	# Always offered: the custom pair or the times may turn out unusable.
+	session_pairs = _sessions(get("work_order"))
 	dur = R.resolve_duration(
 		custom_start=get("custom_application_start_at"),
 		custom_stop=get("custom_application_stop_at"),
@@ -98,7 +106,7 @@ def build_rows(sal, products=None) -> list[dict]:
 		hit = products.get(label.lower())
 		product, toxicity = (hit if hit else (None, None))
 		toxicity = R.normalise_toxicity(toxicity) or R.normalise_toxicity(p.get("toxicity_class"))
-		key = product or label
+		key = product or label.lower()
 		if key in seen:
 			continue
 		seen.add(key)
@@ -128,7 +136,7 @@ def build_rows(sal, products=None) -> list[dict]:
 				"farm": get("farm"),
 				"greenhouse": get("target_gh"),
 				"source": source,
-				"row_key": f"{get('name')}|{emp}|{product or label}"[:140],
+				"row_key": _row_key(get("name"), emp, product or label.lower()),
 				"spray_product": product,
 				"product_name": label,
 				"toxicity": toxicity,
@@ -182,9 +190,16 @@ def rebuild(sal, products=None, totals=True) -> dict:
 	people += [sal.persons_mixing_1, sal.persons_mixing_2, sal.supervisor_name]
 	register.sync_sprayers([p for p in people if p])
 
-	touched = set(delete_for([sal.name]))
-	rows = build_rows(sal, products)
-	_insert(rows)
+	# Delete + insert as one unit: a failed insert must not leave the
+	# logsheet with no exposure at all.
+	frappe.db.savepoint("sprayer_exposure_rebuild")
+	try:
+		touched = set(delete_for([sal.name]))
+		rows = build_rows(sal, products)
+		_insert(rows)
+	except Exception:
+		frappe.db.rollback(save_point="sprayer_exposure_rebuild")
+		raise
 	touched |= {r["sprayer"] for r in rows if r["sprayer"]}
 	if totals:
 		register.recompute_totals(sorted(touched))
@@ -211,6 +226,27 @@ def on_cancel(doc, method=None):
 		register.recompute_totals(delete_for([doc.name]))
 	except Exception:
 		frappe.log_error(title=f"Sprayer exposure cancel: {doc.name}")
+
+
+def rebuild_missing() -> dict:
+	"""Nightly repair: submitted logsheets with people but no exposure rows
+	(e.g. a write that failed at submit) are rebuilt."""
+	names = frappe.db.sql_list(
+		f"""SELECT s.name FROM `tab{SAL}` s
+		     WHERE s.docstatus = 1
+		       AND NOT EXISTS (SELECT 1 FROM `tab{EXPOSURE}` e
+		                        WHERE e.spray_application_logsheet = s.name)"""
+	)
+	products = product_index() if names else None
+	rebuilt, failed = 0, 0
+	for name in names:
+		try:
+			if rebuild(name, products)["rows"]:
+				rebuilt += 1
+		except Exception:
+			failed += 1
+			frappe.log_error(title=f"Sprayer exposure repair: {name}")
+	return {"checked": len(names), "rebuilt": rebuilt, "failed": failed}
 
 
 # ───────────────────────────── backfill ──────────────────────────────────

@@ -46,7 +46,7 @@ def test_reversed_times_fall_back_to_the_session():
 	assert d["flags"] == [R.FLAG_TIMES_REVERSED]
 
 
-def test_session_fallback_spans_earliest_to_latest():
+def test_session_fallback_merges_overlapping_sessions():
 	d = R.resolve_duration(
 		on_date="2026-07-01",
 		start_time="10:00:00",
@@ -105,3 +105,12 @@ def test_match_team_farm_longest_wins():
 	assert R.match_team_farm("SIMOTWO CSU 2", farms) == "Simotwo"
 	assert R.match_team_farm("CHEPSITO CSU 1", farms) == "Chepsito"
 	assert R.match_team_farm("CROP PROTECTION IPM", farms) is None
+
+
+def test_sessions_on_different_days_count_their_own_time():
+	d = R.resolve_duration(sessions=[
+		("2026-07-01 08:00:00", "2026-07-01 09:00:00"),
+		("2026-07-03 08:00:00", "2026-07-03 08:30:00"),
+	])
+	assert d["hours"] == 1.5
+	assert R.FLAG_CAPPED not in d["flags"]

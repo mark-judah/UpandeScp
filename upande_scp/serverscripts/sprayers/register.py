@@ -217,7 +217,7 @@ def sprayer_map(employees) -> dict:
 def recompute_totals(sprayers=None) -> int:
 	"""Roll Sprayer Exposure up onto each Sprayer. Returns how many were written."""
 	cutoff = add_days(getdate(nowdate()), -30)
-	cond, params = "", {"cutoff": cutoff}
+	cond, params = "", {"cutoff": cutoff, "today": getdate(nowdate())}
 	if sprayers is not None:
 		sprayers = [s for s in sprayers if s]
 		if not sprayers:
@@ -226,8 +226,8 @@ def recompute_totals(sprayers=None) -> int:
 		params["sprayers"] = tuple(sprayers)
 	rows = frappe.db.sql(
 		f"""SELECT sp.name,
-		           COALESCE(SUM(CASE WHEN e.date >= %(cutoff)s THEN e.hours END), 0) AS hours_30d,
-		           COALESCE(SUM(CASE WHEN e.date >= %(cutoff)s THEN e.weighted_hours END), 0) AS weighted_30d,
+		           COALESCE(SUM(CASE WHEN e.date >= %(cutoff)s AND e.date <= %(today)s THEN e.hours END), 0) AS hours_30d,
+		           COALESCE(SUM(CASE WHEN e.date >= %(cutoff)s AND e.date <= %(today)s THEN e.weighted_hours END), 0) AS weighted_30d,
 		           COALESCE(SUM(e.hours), 0) AS hours_total,
 		           COALESCE(SUM(e.weighted_hours), 0) AS weighted_total,
 		           MAX(e.date) AS last_exposure,
@@ -268,7 +268,10 @@ def recompute_totals(sprayers=None) -> int:
 
 def daily():
 	"""Scheduler: refresh the register, then roll the 30-day window forward."""
+	from upande_scp.serverscripts.sprayers import exposure
+
 	sync_sprayers()
+	exposure.rebuild_missing()
 	recompute_totals()
 
 
@@ -279,7 +282,11 @@ def on_spray_team_update(doc, method=None):
 	if before:
 		members |= {r.name1 for r in before.get("team") or [] if r.name1}
 	if members:
-		sync_sprayers(sorted(members))
+		try:
+			sync_sprayers(sorted(members))
+		except Exception:
+			# The team save matters more; the nightly sync catches up.
+			frappe.log_error(title=f"Sprayer sync on team save: {doc.name}")
 
 
 @frappe.whitelist()

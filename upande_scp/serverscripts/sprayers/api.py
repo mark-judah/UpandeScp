@@ -111,10 +111,10 @@ def search_employees(farm=None, txt="", crop=None):
 	_assert_farm(sc, farm)
 	filters = {"status": "Active"}
 	company = _farm_company(farm)
-	if company:
-		filters["company"] = company
-	elif not sc["manager"]:
+	if not company:
+		# No company → no safe pool to add from; set the team's farm first.
 		return []
+	filters["company"] = company
 	txt = (txt or "").strip()
 	or_filters = None
 	if txt:
@@ -170,7 +170,9 @@ def save_spray_team(team, members=None, farm=None, enabled=None, crop=None):
 			if not existing:
 				if info.status != "Active":
 					frappe.throw(f"Employee {emp} is not active.")
-				if company and info.company != company:
+				if not company:
+					frappe.throw("Set the team's farm (with a company) before adding members.")
+				if info.company != company:
 					frappe.throw(f"Employee {emp} is not in {company}.")
 			seen.add(emp)
 			rows.append({"name1": emp, "role": role})

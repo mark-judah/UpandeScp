@@ -143,6 +143,16 @@ def resolve_duration(
 		if pairs:
 			span = (min(s for s, _ in pairs), max(e for _, e in pairs))
 			source = SOURCE_SESSION
+			# Sessions may sit on different days: count the time in them,
+			# not the gap between the first start and the last end.
+			# Overlapping sessions (two crew phones) are merged, not added twice.
+			merged = []
+			for s, e in sorted(pairs):
+				if merged and s <= merged[-1][1]:
+					merged[-1][1] = max(merged[-1][1], e)
+				else:
+					merged.append([s, e])
+			session_hours = sum((e - s).total_seconds() for s, e in merged) / 3600.0
 
 	if not span:
 		return {
@@ -155,6 +165,8 @@ def resolve_duration(
 
 	start, end = span
 	hours = (end - start).total_seconds() / 3600.0
+	if source == SOURCE_SESSION:
+		hours = session_hours
 	if hours > MAX_HOURS:
 		hours = float(MAX_HOURS)
 		flags.append(FLAG_CAPPED)

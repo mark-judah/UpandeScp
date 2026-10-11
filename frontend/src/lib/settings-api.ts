@@ -53,6 +53,15 @@ export interface SprayPlanSettings {
   postponement_max_days: number;
   /** Extra minutes for declaring only — never for starting a late spray. */
   postponement_grace_minutes: number;
+  /**
+   * Crew availability on the spray date. Off: no check. Warn: the crew is saved,
+   * the plan gets a comment and the supervisor a warning. Block: a member on
+   * approved leave (or not clocked in, when required) cannot be confirmed.
+   * Offline syncs and planning only ever warn. Blank reads back as Warn.
+   */
+  crew_leave_check: "Off" | "Warn" | "Block";
+  /** 1 = a crew member also needs an IN check-in on the spray date. */
+  crew_require_checkin: number;
   loaning_enabled: number;
   /**
    * OFF (default): each farm's proportional share of a chemical purchase is

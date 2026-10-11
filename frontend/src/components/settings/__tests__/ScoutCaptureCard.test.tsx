@@ -39,6 +39,8 @@ const initial: SprayPlanSettings = {
   spray_cutoff_time: "10:00:00",
   postponement_max_days: 7,
   postponement_grace_minutes: 0,
+  crew_leave_check: "Warn",
+  crew_require_checkin: 0,
   loaning_enabled: 0,
   allocation_balancing_enabled: 0,
   loaning_depletion_pct: 15,

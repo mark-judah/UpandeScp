@@ -2095,6 +2095,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                   members={teamMembers}
                   onMembersChange={setTeamMembers}
                   crop={initialCrop}
+                  onDate={(sprayDate || "").slice(0, 10) || undefined}
                 />
               </div>
 

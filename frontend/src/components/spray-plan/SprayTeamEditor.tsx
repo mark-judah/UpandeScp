@@ -43,6 +43,11 @@ import {
 } from "@/lib/spray-plan-creator-api";
 import { fetchSprayTeams, type SprayTeam } from "@/lib/teams-api";
 import { EditTeamDialog } from "@/components/teams/EditTeamDialog";
+import { CrewBadge } from "@/components/spray-plan/CrewBadge";
+import {
+  fetchCrewAvailability,
+  type CrewAvailability,
+} from "@/lib/schedule-api";
 
 /** Row shape held in component state. Mirrors `Custom Spray Plan Team Member`
  *  plus a display name we pre-resolved client-side. */
@@ -64,6 +69,8 @@ interface Props {
   onMembersChange: (next: TeamMemberRow[]) => void;
   /** crop the plan is for — scopes which master teams the user may edit */
   crop?: string;
+  /** yyyy-mm-dd plan date: when given, each member shows a leave badge for it */
+  onDate?: string;
 }
 
 /** Same people with the same roles, in any order. "Not customised" (E3). */
@@ -108,6 +115,7 @@ export function SprayTeamEditor({
   members,
   onMembersChange,
   crop,
+  onDate,
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   // Master teams this user may edit — the server decides (E5); a refusal
@@ -126,6 +134,33 @@ export function SprayTeamEditor({
       alive = false;
     };
   }, [crop]);
+
+  // Leave / check-in badges for the plan date. Advisory only: planning never
+  // refuses on availability, the morning confirmation does (per the setting).
+  const [avail, setAvail] = useState<CrewAvailability | null>(null);
+  const memberKey = members.map((m) => m.employee).sort().join(",");
+  useEffect(() => {
+    if (!onDate || !memberKey) {
+      setAvail(null);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(() => {
+      fetchCrewAvailability({ employees: memberKey.split(","), on_date: onDate })
+        .then((r) => alive && setAvail(r))
+        .catch(() => alive && setAvail(null));
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [onDate, memberKey]);
+  const unavailable = avail
+    ? members.filter((m) => {
+        const st = avail.members?.[m.employee]?.status;
+        return st && st !== "ok";
+      }).length
+    : 0;
 
   const canEditAny = Object.keys(manageable).length > 0;
   const editable = team ? manageable[team] || null : null;
@@ -325,6 +360,14 @@ export function SprayTeamEditor({
                 {counts.pump > 0 && `${counts.pump} pump`}
               </span>
             )}
+            {unavailable > 0 && avail && (
+              <span
+                className="text-[0.62rem] font-semibold text-red-700 dark:text-red-300 whitespace-nowrap"
+                title={`Crew leave check: ${avail.mode}. Planning only warns; the morning confirmation ${avail.mode === "Block" ? "refuses" : "warns"}.`}
+              >
+                {unavailable} unavailable on {avail.on_date}
+              </span>
+            )}
           </div>
           <Button
             type="button"
@@ -373,8 +416,14 @@ export function SprayTeamEditor({
                   {initialsOf(m.employee_name || m.employee)}
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[0.82rem] font-semibold text-foreground truncate">
-                    {m.employee_name || m.employee}
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[0.82rem] font-semibold text-foreground truncate">
+                      {m.employee_name || m.employee}
+                    </span>
+                    <CrewBadge
+                      status={avail?.members?.[m.employee]?.status}
+                      halfDay={avail?.members?.[m.employee]?.half_day}
+                    />
                   </div>
                   <div className="text-[0.65rem] text-muted-foreground font-mono tabular-nums truncate">
                     #{m.employee}

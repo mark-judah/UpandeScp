@@ -574,6 +574,60 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
 
       <Card className="lg:col-span-2">
         <CardHeader>
+          <CardTitle className="text-base">Crew availability</CardTitle>
+          <CardDescription>
+            Checks the spray crew against approved leave on the spray date when the
+            supervisor confirms it in the morning.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <Label className="text-[0.7rem]">Crew leave check</Label>
+            <Select
+              value={draft.crew_leave_check || "Warn"}
+              onValueChange={(v) =>
+                set("crew_leave_check", v as SprayPlanSettings["crew_leave_check"])
+              }
+            >
+              <SelectTrigger className="h-9 w-40" aria-label="Crew leave check">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Off">Off</SelectItem>
+                <SelectItem value="Warn">Warn</SelectItem>
+                <SelectItem value="Block">Block</SelectItem>
+              </SelectContent>
+            </Select>
+            <ul className="mt-1 space-y-0.5 text-[0.65rem] leading-snug text-muted-foreground">
+              <li><strong>Off:</strong> no check.</li>
+              <li><strong>Warn:</strong> the crew is saved; the plan gets a comment and the supervisor a warning.</li>
+              <li><strong>Block:</strong> a member on approved leave cannot be confirmed. Offline syncs and planning still only warn.</li>
+            </ul>
+          </div>
+          <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+            <Checkbox
+              id="crew_require_checkin"
+              checked={!!draft.crew_require_checkin}
+              onCheckedChange={(v) => set("crew_require_checkin", v ? 1 : 0)}
+            />
+            <div className="flex flex-col gap-1">
+              <Label
+                htmlFor="crew_require_checkin"
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Require a check-in on the spray date
+              </Label>
+              <p className="text-[0.65rem] text-muted-foreground leading-snug">
+                A member also needs an IN clock-in since midnight to be confirmable
+                (follows the mode above). Leave pending approval only ever warns.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader>
           <CardTitle className="text-base">Chemical allocation</CardTitle>
           <CardDescription>
             How a purchase received into the general store is split back to the

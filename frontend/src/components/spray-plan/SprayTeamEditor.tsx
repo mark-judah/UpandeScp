@@ -475,6 +475,7 @@ export function SprayTeamEditor({
         open={editOpen && !!editable}
         onOpenChange={setEditOpen}
         crop={crop}
+        onDate={onDate}
         onSaved={onTeamSaved}
       />
 

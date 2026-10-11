@@ -3,9 +3,14 @@
  * remove per row and an Employee search (limited server-side to the farm's
  * company) to add. Shared by the Teams page cards and the "Edit team" modal on
  * the Application Plan.
+ *
+ * Each member (and each search hit) shows their approved or pending leave over
+ * the next two weeks from the plan date (else today), so whoever edits the team
+ * sees who is away. Informational only: leave never stops a member being added.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { CalendarOff, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { format, parseISO } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,10 +20,15 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
+import { CrewBadge } from "@/components/spray-plan/CrewBadge";
+import { cn } from "@/lib/utils";
 import {
   TEAM_ROLES,
+  fetchMemberLeave,
   searchEmployees,
   type EmployeeHit,
+  type MemberLeave,
+  type MemberLeaveResult,
   type TeamMember,
   type TeamRole,
 } from "@/lib/teams-api";
@@ -29,14 +39,72 @@ export function sameMembers(a: TeamMember[], b: TeamMember[]): boolean {
   return a.every((m, i) => m.employee === b[i].employee && m.role === b[i].role);
 }
 
+/** Leave for a set of employees from a date; refetched when the set changes. */
+function useMemberLeave(ids: string[], onDate?: string, crop?: string): MemberLeaveResult | null {
+  const [res, setRes] = useState<MemberLeaveResult | null>(null);
+  const key = [...ids].sort().join(",");
+  useEffect(() => {
+    if (!key) {
+      setRes(null);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(() => {
+      fetchMemberLeave(key.split(","), onDate, crop)
+        .then((r) => alive && setRes(r))
+        .catch(() => alive && setRes(null));
+    }, 200);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [key, onDate, crop]);
+  return res;
+}
+
+function span(from: string, to: string): string {
+  const a = parseISO(from);
+  const b = parseISO(to);
+  if (from === to) return format(a, "d MMM");
+  return a.getMonth() === b.getMonth()
+    ? `${format(a, "d")}–${format(b, "d MMM")}`
+    : `${format(a, "d MMM")}–${format(b, "d MMM")}`;
+}
+
+/** "On leave" pill for the first day, then each leave in the window ("Leave 14–17 Oct"). */
+export function MemberLeaveNote({ leave, className }: { leave?: MemberLeave; className?: string }) {
+  if (!leave || (leave.status === "ok" && leave.leaves.length === 0)) return null;
+  return (
+    <div data-testid="member-leave" className={cn("flex flex-wrap items-center gap-1", className)}>
+      <CrewBadge status={leave.status} halfDay={leave.half_day} />
+      {leave.leaves.map((l) => (
+        <span
+          key={`${l.from_date}-${l.state}`}
+          data-state={l.state}
+          className={cn(
+            "inline-flex items-center gap-0.5 whitespace-nowrap text-[0.65rem]",
+            l.state === "approved" ? "text-red-700 dark:text-red-300" : "text-amber-700 dark:text-amber-300",
+          )}
+        >
+          <CalendarOff className="h-3 w-3" />
+          {l.state === "approved" ? "Leave" : "Leave pending"} {span(l.from_date, l.to_date)}
+          {l.half_day ? " (half day)" : ""}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function MemberSearch({
   farm,
   crop,
+  onDate,
   exclude,
   onPick,
 }: {
   farm: string | null;
   crop?: string;
+  onDate?: string;
   exclude: Set<string>;
   onPick: (hit: EmployeeHit) => void;
 }) {
@@ -64,6 +132,7 @@ function MemberSearch({
   }, [txt, farm, crop]);
 
   const shown = hits.filter((h) => !exclude.has(h.employee));
+  const leave = useMemberLeave(shown.map((h) => h.employee), onDate, crop);
   return (
     <div className="flex flex-col gap-1.5">
       <div className="relative">
@@ -97,9 +166,12 @@ function MemberSearch({
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <PersonAvatar id={h.employee} name={h.employee_name} image={h.image} size={24} />
-                  <span className="truncate">
-                    {h.employee_name}{" "}
-                    <span className="font-mono text-xs text-muted-foreground">{h.employee}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate">
+                      {h.employee_name}{" "}
+                      <span className="font-mono text-xs text-muted-foreground">{h.employee}</span>
+                    </span>
+                    <MemberLeaveNote leave={leave?.members?.[h.employee]} />
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
@@ -120,19 +192,39 @@ export function TeamMembersEditor({
   onChange,
   farm,
   crop,
+  onDate,
 }: {
   members: TeamMember[];
   onChange: (next: TeamMember[]) => void;
   /** the team's farm — Employee search is limited to its company */
   farm: string | null;
   crop?: string;
+  /** yyyy-mm-dd: leave is shown from this day (the plan date); today when absent */
+  onDate?: string;
 }) {
   const memberIds = useMemo(() => new Set(members.map((m) => m.employee)), [members]);
+  const leave = useMemberLeave(members.map((m) => m.employee), onDate, crop);
+  const away = leave ? members.filter((m) => (leave.members?.[m.employee]?.leaves.length ?? 0) > 0) : [];
+  const awayNow = away.filter((m) => leave?.members?.[m.employee]?.status === "on_leave");
   const setMember = (i: number, patch: Partial<TeamMember>) =>
     onChange(members.map((m, j) => (j === i ? { ...m, ...patch } : m)));
 
   return (
     <div className="flex flex-col gap-3">
+      {leave && away.length > 0 && (
+        <p
+          role="status"
+          data-testid="team-leave-summary"
+          className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
+        >
+          <CalendarOff className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            {away.length} of {members.length} {members.length === 1 ? "member has" : "members have"} leave
+            between {format(parseISO(leave.from_date), "d MMM")} and {format(parseISO(leave.to_date), "d MMM")}
+            {awayNow.length > 0 ? ` — ${awayNow.length} on leave on ${format(parseISO(leave.from_date), "d MMM")}` : ""}.
+          </span>
+        </p>
+      )}
       <Table>
         <TableHeader>
           <TableRow>
@@ -154,6 +246,7 @@ export function TeamMembersEditor({
                       {m.employee}
                       {m.sprayer ? ` · ${m.sprayer}` : ""}
                     </div>
+                    <MemberLeaveNote leave={leave?.members?.[m.employee]} className="mt-0.5" />
                   </div>
                 </div>
               </TableCell>
@@ -198,6 +291,7 @@ export function TeamMembersEditor({
       <MemberSearch
         farm={farm}
         crop={crop}
+        onDate={onDate}
         exclude={memberIds}
         onPick={(h) =>
           onChange([

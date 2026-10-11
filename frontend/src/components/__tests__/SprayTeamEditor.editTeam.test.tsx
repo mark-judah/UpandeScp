@@ -36,8 +36,30 @@ const searchMock = vi.fn(async () => [
   { employee: "KR-003", employee_name: "Carol Jeptoo", designation: "Applicator", image: null },
 ]);
 
+const leaveMock = vi.fn(async (employees: string[], fromDate?: string) => ({
+  from_date: fromDate || "2026-10-11",
+  to_date: "2026-10-25",
+  members: Object.fromEntries(
+    employees.map((e) => [
+      e,
+      e === "KR-002"
+        ? { status: "on_leave", half_day: false, leave_type: "Annual Leave",
+            leaves: [{ from_date: "2026-10-09", to_date: "2026-10-14", state: "approved", leave_type: "Annual Leave", half_day: false }] }
+        : e === "KR-003"
+          ? { status: "ok", half_day: false, leave_type: null,
+              leaves: [{ from_date: "2026-10-20", to_date: "2026-10-21", state: "pending", leave_type: "Sick Leave", half_day: false }] }
+          : { status: "ok", half_day: false, leave_type: null, leaves: [] },
+    ]),
+  ),
+}));
+
+vi.mock("@/lib/schedule-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/schedule-api")>()),
+  fetchCrewAvailability: async () => ({ mode: "Warn", require_checkin: false, on_date: "2026-10-12", members: {} }),
+}));
 vi.mock("@/lib/teams-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/teams-api")>()),
+  fetchMemberLeave: (...a: unknown[]) => leaveMock(...(a as [string[], string?])),
   fetchSprayTeams: (...a: unknown[]) => fetchMock(...(a as [])),
   saveSprayTeam: (...a: unknown[]) => saveMock(...a),
   searchEmployees: (...a: unknown[]) => searchMock(...(a as [])),
@@ -56,7 +78,11 @@ const seed = (): Row[] =>
   }));
 
 let latest: Row[] = [];
-function Harness({ initialTeam = "CSU 1", initialMembers = seed() }: { initialTeam?: string; initialMembers?: Row[] }) {
+function Harness({
+  initialTeam = "CSU 1",
+  initialMembers = seed(),
+  onDate,
+}: { initialTeam?: string; initialMembers?: Row[]; onDate?: string }) {
   const [team, setTeam] = useState(initialTeam);
   const [members, setMembers] = useState<Row[]>(initialMembers);
   latest = members;
@@ -68,6 +94,7 @@ function Harness({ initialTeam = "CSU 1", initialMembers = seed() }: { initialTe
       members={members}
       onMembersChange={setMembers}
       crop="Rose"
+      onDate={onDate}
     />
   );
 }
@@ -176,6 +203,30 @@ describe("Application Plan ▸ Edit team (master team)", () => {
     expect(within(dialog).getByRole("button", { name: /save to team/i })).toBeEnabled();
     // the plan roster is untouched
     expect(latest.map((m) => m.employee)).toEqual(["KR-001", "KR-002"]);
+  });
+
+  it("shows members' leave from the plan date, in the team and in the search hits", async () => {
+    render(<Harness onDate="2026-10-12" />);
+    await userEvent.click(await screen.findByRole("button", { name: /edit team/i }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(leaveMock).toHaveBeenCalledWith(["KR-001", "KR-002"], "2026-10-12", "Rose"));
+    expect(await within(dialog).findByTestId("team-leave-summary")).toHaveTextContent(
+      "1 of 2 members have leave between 12 Oct and 25 Oct — 1 on leave on 12 Oct",
+    );
+    const bobRow = within(dialog).getByText("Bob Kiprop").closest("tr")!;
+    expect(within(bobRow).getByTestId("crew-badge")).toHaveTextContent("On leave");
+    expect(within(bobRow).getByText(/Leave 9–14 Oct/)).toBeInTheDocument();
+    const aliceRow = within(dialog).getByText("Alice Chebet").closest("tr")!;
+    expect(within(aliceRow).queryByTestId("member-leave")).toBeNull();
+
+    // a search hit with pending leave says so before it is added
+    await userEvent.type(within(dialog).getByLabelText("Add member"), "Car");
+    const hit = await within(dialog).findByRole("option", { name: /Carol Jeptoo/ });
+    await waitFor(() => expect(within(hit).getByText(/Leave pending 20–21 Oct/)).toBeInTheDocument());
+    // leave never stops a member being added
+    await userEvent.click(hit);
+    expect(within(dialog).getByText("Carol Jeptoo").closest("tr")).not.toBeNull();
+    expect(dialog.innerHTML).not.toMatch(/border-l-|border-left/);
   });
 
   it("rosterMatches ignores order but not roles", () => {

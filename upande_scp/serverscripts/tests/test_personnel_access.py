@@ -121,6 +121,54 @@ class TestCreatorTeams(_Base):
 			self.assertEqual(api.scope()["farms"], {MINE, OTHER})
 
 
+def _leave(employee, frm, to, docstatus=1, status="Approved"):
+	doc = frappe.get_doc({
+		"doctype": "Leave Application", "employee": employee, "leave_type": "Casual Leave",
+		"from_date": frm, "to_date": to, "status": status, "docstatus": docstatus,
+		"posting_date": frm, "company": frappe.db.get_value("Employee", employee, "company"),
+	})
+	doc.name = frappe.generate_hash(length=12)
+	doc.db_insert()
+	return doc.name
+
+
+class TestMemberLeave(_Base):
+	"""Team editor leave (members on leave while editing a team permanently)."""
+
+	def test_leave_in_window_and_company_scope(self):
+		company = frappe.db.get_value("Farm", MINE, "company")
+		mine = frappe.db.get_value("Employee", {"status": "Active", "company": company}, "name") if company else None
+		outsider = frappe.db.get_value(
+			"Employee", {"status": "Active", "company": ["not in", [company or ""]]}, "name"
+		)
+		if not mine or not outsider:
+			self.skipTest("needs a farm company and employees of two companies")
+		frappe.db.sql("DELETE FROM `tabLeave Application` WHERE employee IN %s AND to_date >= '2030-01-01'",
+			((mine, outsider),))
+		_leave(mine, "2030-01-01", "2030-01-03")
+		_leave(mine, "2030-01-10", "2030-01-11", docstatus=0, status="Open")
+		_leave(mine, "2030-02-01", "2030-02-02")  # outside the 14-day window
+		_leave(outsider, "2030-01-01", "2030-01-03")
+		_user(CREATOR, "SCP Spray Plan Creator")
+		_roster(MINE, CREATOR)
+		self.as_user(CREATOR)
+		with self.scope:
+			res = api.get_member_leave([mine, outsider], "2030-01-02")
+		self.assertEqual(res["to_date"], "2030-01-16")
+		self.assertNotIn(outsider, res["members"])  # another company's staff are not shown
+		m = res["members"][mine]
+		self.assertEqual(m["status"], "on_leave")
+		self.assertEqual(
+			[(l["from_date"], l["state"]) for l in m["leaves"]],
+			[("2030-01-01", "approved"), ("2030-01-10", "pending")],
+		)
+		frappe.set_user("Administrator")
+		_user(NOBODY)
+		self.as_user(NOBODY)
+		with self.scope, self.assertRaises(frappe.PermissionError):
+			api.get_member_leave([mine], "2030-01-02")
+
+
 class TestScoutsScope(_Base):
 	def fake_quality(self, args, force=False, farms_map=None):
 		self.asked.append(args)

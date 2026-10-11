@@ -136,3 +136,34 @@ export const fetchSprayers = (c?: string) =>
 
 export const fetchSprayerDetail = (sprayer: string, c?: string) =>
   call<SprayerDetail>(`${API}.get_sprayer_detail`, { sprayer, ...crop(c) });
+
+export interface MemberLeaveSpan {
+  from_date: string;
+  to_date: string;
+  /** approved = Leave Application submitted; pending = still Open */
+  state: "approved" | "pending";
+  leave_type: string | null;
+  half_day: boolean;
+}
+
+export interface MemberLeave {
+  /** on the window's first day (the plan date, else today) */
+  status: "on_leave" | "leave_pending" | "ok";
+  half_day: boolean;
+  leave_type: string | null;
+  leaves: MemberLeaveSpan[];
+}
+
+export interface MemberLeaveResult {
+  from_date: string;
+  to_date: string;
+  members: Record<string, MemberLeave>;
+}
+
+/** Approved and pending leave for team members over the look-ahead window (default 14 days). */
+export const fetchMemberLeave = (employees: string[], fromDate?: string, c?: string) =>
+  call<MemberLeaveResult>(`${API}.get_member_leave`, {
+    employees: JSON.stringify(employees),
+    ...(fromDate ? { from_date: fromDate } : {}),
+    ...crop(c),
+  });

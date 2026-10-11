@@ -18,12 +18,15 @@ export function EditTeamDialog({
   open,
   onOpenChange,
   crop,
+  onDate,
   onSaved,
 }: {
   team: SprayTeam | null;
   open: boolean;
   onOpenChange: (next: boolean) => void;
   crop?: string;
+  /** yyyy-mm-dd plan date: members' leave is shown from it */
+  onDate?: string;
   /** the saved team, and the master team as it was before the save */
   onSaved: (saved: SprayTeam, before: SprayTeam) => void;
 }) {
@@ -75,7 +78,7 @@ export function EditTeamDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <TeamMembersEditor members={members} onChange={setMembers} farm={team.farm} crop={crop} />
+        <TeamMembersEditor members={members} onChange={setMembers} farm={team.farm} crop={crop} onDate={onDate} />
 
         {error && (
           <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">

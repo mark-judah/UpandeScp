@@ -136,6 +136,72 @@ def search_employees(farm=None, txt="", crop=None):
 	)
 
 
+#: How far ahead the team editor looks for leave (it edits the team for every future plan).
+LEAVE_LOOKAHEAD_DAYS = 14
+_MAX_LEAVE_EMPLOYEES = 200
+
+
+@frappe.whitelist()
+def get_member_leave(employees=None, from_date=None, days=None, crop=None):
+	"""Leave for team members (or Employee search hits) while a team is being edited.
+
+	Returns ``{from_date, to_date, members: {employee: {status, half_day, leave_type,
+	leaves: [{from_date, to_date, state, leave_type, half_day}]}}}``. ``status`` is the
+	member's state on ``from_date`` (``on_leave`` / ``leave_pending`` / ``ok``) and
+	``leaves`` every approved or pending application overlapping the look-ahead window.
+
+	Informational only — shown whatever ``crew_leave_check`` is set to; it never refuses
+	a member. Limited to employees of the companies of the user's farms.
+	"""
+	from frappe.utils import add_days, getdate, today
+
+	from upande_scp.serverscripts.common import crew_availability as CA
+
+	sc = scope(crop)
+	if isinstance(employees, str):
+		employees = json.loads(employees or "[]") if employees.strip().startswith("[") else [employees]
+	emps = [e for e in dict.fromkeys(str(e).strip() for e in (employees or []) if e)][:_MAX_LEAVE_EMPLOYEES]
+	start = getdate(from_date) if from_date else getdate(today())
+	span = max(0, min(int(days or LEAVE_LOOKAHEAD_DAYS), 62))
+	end = getdate(add_days(start, span))
+	out = {"from_date": str(start), "to_date": str(end), "members": {}}
+	if not emps:
+		return out
+
+	if sc["farms"] is not None:
+		companies = {
+			c for c in frappe.get_all(
+				"Farm", filters={"name": ["in", list(sc["farms"]) or [""]]}, pluck="company"
+			) if c
+		}
+		emps = frappe.get_all(
+			"Employee", filters={"name": ["in", emps], "company": ["in", list(companies) or [""]]},
+			pluck="name",
+		)
+	by_emp: dict = {}
+	for lv in CA.leaves_between(emps, start, end):
+		by_emp.setdefault(lv["employee"], []).append(lv)
+	for emp in emps:
+		rows = by_emp.get(emp, [])
+		st = CA.classify(start, rows, True, False)
+		out["members"][emp] = {
+			"status": st["status"],
+			"half_day": st["half_day"],
+			"leave_type": st["leave_type"],
+			"leaves": [
+				{
+					"from_date": str(lv["from_date"]),
+					"to_date": str(lv["to_date"]),
+					"state": "approved" if int(lv.get("docstatus") or 0) == 1 else "pending",
+					"leave_type": lv.get("leave_type"),
+					"half_day": bool(int(lv.get("half_day") or 0)),
+				}
+				for lv in rows
+			],
+		}
+	return out
+
+
 @frappe.whitelist(methods=["POST"])
 def save_spray_team(team, members=None, farm=None, enabled=None, crop=None):
 	"""Replace a team's members, and optionally its farm and enabled flag.

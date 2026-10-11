@@ -223,7 +223,7 @@ def get_sprayers(crop=None):
 	rows = frappe.db.sql(
 		f"""SELECT s.name, s.employee, s.employee_name, s.farm, s.spray_team, s.role,
 		           s.status, s.hours_30d, s.weighted_30d, s.hours_total,
-		           s.weighted_total, s.last_exposure, e.designation
+		           s.weighted_total, s.last_exposure, e.designation, e.image
 		      FROM `tabSprayer` s
 		      LEFT JOIN `tabEmployee` e ON e.name = s.employee
 		     WHERE {cond}
@@ -261,7 +261,7 @@ def get_sprayer_detail(sprayer, crop=None):
 	row = frappe.db.sql(
 		f"""SELECT s.name, s.employee, s.employee_name, s.farm, s.spray_team, s.role,
 		           s.status, s.hours_30d, s.weighted_30d, s.hours_total,
-		           s.weighted_total, s.last_exposure, e.designation
+		           s.weighted_total, s.last_exposure, e.designation, e.image
 		      FROM `tabSprayer` s LEFT JOIN `tabEmployee` e ON e.name = s.employee
 		     WHERE s.name = %(name)s AND {cond}""",
 		params,
@@ -284,6 +284,8 @@ def get_sprayer_detail(sprayer, crop=None):
 		          MAX(greenhouse) AS greenhouse, MAX(role) AS role, MAX(ppe_condition) AS ppe_condition,
 		          MAX(hours) AS hours, SUM(weighted_hours) AS weighted_hours,
 		          GROUP_CONCAT(DISTINCT product_name ORDER BY product_name SEPARATOR ', ') AS products,
+		          GROUP_CONCAT(DISTINCT toxicity ORDER BY toxicity SEPARATOR ', ') AS toxicity,
+		          MAX(hazard_weight) AS hazard_weight,
 		          MAX(flags) AS flags
 		     FROM `tabSprayer Exposure` WHERE sprayer = %s
 		    GROUP BY spray_application_logsheet

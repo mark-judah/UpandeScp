@@ -55,6 +55,15 @@ export interface ScheduleCrewMember {
   half_day: boolean;
 }
 
+/** One crew member as the plan's availability popover shows them (spec C2). */
+export interface CrewAvailabilityRow {
+  employee: string;
+  name: string;
+  image: string;
+  role: string;
+  status: CrewStatus;
+}
+
 export interface SchedulePlan {
   name: string;
   greenhouse: string;
@@ -72,6 +81,9 @@ export interface SchedulePlan {
   crew: ScheduleCrewMember[];
   on_leave_count: number;
   pending_count: number;
+  /** the crew on the plan's date; check-in counts only when the plan is today */
+  crewAvailability?: CrewAvailabilityRow[];
+  available_count?: number;
 }
 
 export interface ScheduleLeave {

@@ -3,7 +3,9 @@ import { format } from "date-fns";
 import { AlertTriangle, ChevronsLeft } from "lucide-react";
 import type { ScheduleLeave, SchedulePlan } from "@/lib/schedule-api";
 import { cn } from "@/lib/utils";
-import { colOf, daysOf, overlaps, packLanes, shortGreenhouse, startsBefore, stateTone, ymd } from "./schedule-utils";
+import { CrewPopover, hasUnavailable } from "./CrewPopover";
+import { chipProps } from "./schedule-colors";
+import { colOf, daysOf, overlaps, packLanes, shortGreenhouse, startsBefore, ymd } from "./schedule-utils";
 
 export type GanttRowsBy = "greenhouse" | "team";
 
@@ -120,32 +122,41 @@ export function ScheduleGantt({
                   // Began before the range: the bar is clipped at the left edge (square
                   // corner, no margin) with a chevron saying it continues.
                   const clipped = startsBefore(p, from);
+                  const paint = chipProps(p.workflow_state);
+                  const short = hasUnavailable(p);
                   return (
-                    <button
+                    <div
                       key={p.name}
-                      type="button"
                       data-testid="gantt-bar"
                       data-clipped={clipped ? "start" : undefined}
-                      onClick={() => onOpen(p)}
+                      data-unavailable={short ? "true" : undefined}
                       title={`${p.name} · ${p.greenhouse} · ${p.team} · ${p.workflow_state}${clipped ? ` · continues from ${p.start!.slice(0, 10)}` : ""}`}
                       className={cn(
-                        "mx-0.5 my-1 flex min-w-0 items-center gap-1 overflow-hidden rounded-md px-1.5 text-[0.62rem] font-semibold hover:opacity-80",
+                        "mx-0.5 my-1 flex min-w-0 items-center gap-1 overflow-hidden rounded-md px-1 text-[0.62rem] font-semibold",
                         clipped && "ml-0 rounded-l-none pl-0.5",
-                        stateTone(p.workflow_state),
+                        paint.className,
+                        short && "ring-2 ring-inset ring-red-500/70",
                       )}
-                      style={{ gridRow: lane + 1, gridColumn: `${s + 2} / ${e + 3}` }}
+                      style={{ ...paint.style, gridRow: lane + 1, gridColumn: `${s + 2} / ${e + 3}` }}
                     >
-                      {clipped && <ChevronsLeft className="h-3 w-3 shrink-0 opacity-70" />}
-                      <span className="truncate">
-                        {rowsBy === "team" ? shortGreenhouse(p.greenhouse, p.farm) : p.team}
-                      </span>
-                      {p.on_leave_count > 0 && (
-                        <AlertTriangle
-                          data-testid="leave-warning"
-                          className="h-3 w-3 shrink-0 text-red-600"
-                        />
-                      )}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpen(p)}
+                        className="flex min-w-0 flex-1 items-center gap-1 text-left hover:underline"
+                      >
+                        {clipped && <ChevronsLeft className="h-3 w-3 shrink-0" />}
+                        <span className="truncate">
+                          {rowsBy === "team" ? shortGreenhouse(p.greenhouse, p.farm) : p.team}
+                        </span>
+                        {p.on_leave_count > 0 && (
+                          <AlertTriangle
+                            data-testid="leave-warning"
+                            className="h-3 w-3 shrink-0 text-red-700 dark:text-red-300"
+                          />
+                        )}
+                      </button>
+                      <CrewPopover plan={p} compact={e - s < 3} onOpenPlan={() => onOpen(p)} />
+                    </div>
                   );
                 })}
               </div>

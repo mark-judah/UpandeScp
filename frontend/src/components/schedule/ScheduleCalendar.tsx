@@ -3,7 +3,9 @@ import { format, isSameDay } from "date-fns";
 import { AlertTriangle, ChevronsLeft } from "lucide-react";
 import type { SchedulePlan } from "@/lib/schedule-api";
 import { cn } from "@/lib/utils";
-import { calendarDayOf, calendarDays, shortGreenhouse, startsBefore, stateTone, ymd } from "./schedule-utils";
+import { CrewPopover, hasUnavailable } from "./CrewPopover";
+import { chipProps } from "./schedule-colors";
+import { calendarDayOf, calendarDays, shortGreenhouse, startsBefore, ymd } from "./schedule-utils";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -68,43 +70,55 @@ export function ScheduleCalendar({
                 {format(d, "d")}
               </div>
               <div className="flex flex-col gap-1">
-                {list.map((p) => (
-                  <button
-                    key={p.name}
-                    type="button"
-                    data-testid="cal-chip"
-                    onClick={() => onOpen(p)}
-                    title={`${p.name} · ${p.greenhouse} · ${p.team} · ${p.workflow_state}${startsBefore(p, from) ? ` · continues from ${p.start!.slice(0, 10)}` : ""}`}
-                    className={cn(
-                      "flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-left text-[0.65rem] leading-tight hover:opacity-80",
-                      stateTone(p.workflow_state),
-                    )}
-                  >
-                    {startsBefore(p, from) && (
-                      <ChevronsLeft
-                        data-testid="cal-continues"
-                        aria-label={`continues from ${p.start!.slice(0, 10)}`}
-                        className="h-3 w-3 shrink-0 opacity-70"
-                      />
-                    )}
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-semibold">
-                        {shortGreenhouse(p.greenhouse, p.farm)}
-                      </span>
-                      <span className="block truncate opacity-75">{p.team}</span>
-                    </span>
-                    {p.on_leave_count > 0 && (
-                      <span
-                        data-testid="leave-warning"
-                        className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-red-600 px-1 text-[0.58rem] font-bold text-white"
-                        title={`${p.on_leave_count} crew member(s) on approved leave`}
+                {list.map((p) => {
+                  const paint = chipProps(p.workflow_state);
+                  const short = hasUnavailable(p);
+                  return (
+                    <div
+                      key={p.name}
+                      data-testid="cal-chip"
+                      data-unavailable={short ? "true" : undefined}
+                      className={cn(
+                        "flex w-full flex-col gap-0.5 rounded-md px-1.5 py-1 text-[0.65rem] leading-tight",
+                        paint.className,
+                        short && "ring-2 ring-red-500/70",
+                      )}
+                      style={paint.style}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onOpen(p)}
+                        title={`${p.name} · ${p.greenhouse} · ${p.team} · ${p.workflow_state}${startsBefore(p, from) ? ` · continues from ${p.start!.slice(0, 10)}` : ""}`}
+                        className="flex w-full items-center gap-1 text-left hover:underline"
                       >
-                        <AlertTriangle className="h-2.5 w-2.5" />
-                        {p.on_leave_count}
-                      </span>
-                    )}
-                  </button>
-                ))}
+                        {startsBefore(p, from) && (
+                          <ChevronsLeft
+                            data-testid="cal-continues"
+                            aria-label={`continues from ${p.start!.slice(0, 10)}`}
+                            className="h-3 w-3 shrink-0"
+                          />
+                        )}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-semibold">
+                            {shortGreenhouse(p.greenhouse, p.farm)}
+                          </span>
+                          <span className="block truncate">{p.team}</span>
+                        </span>
+                        {p.on_leave_count > 0 && (
+                          <span
+                            data-testid="leave-warning"
+                            className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-red-700 px-1 text-[0.58rem] font-bold text-white"
+                            title={`${p.on_leave_count} crew member(s) on approved leave`}
+                          >
+                            <AlertTriangle className="h-2.5 w-2.5" />
+                            {p.on_leave_count}
+                          </span>
+                        )}
+                      </button>
+                      <CrewPopover plan={p} onOpenPlan={() => onOpen(p)} />
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );

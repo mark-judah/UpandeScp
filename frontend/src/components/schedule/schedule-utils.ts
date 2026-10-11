@@ -85,28 +85,6 @@ export function calendarDays(from: string, to: string): Date[] {
 
 export { addDays };
 
-/** Chip / bar colour by workflow state. Fills, never a left-border strip. */
-export function stateTone(state: string): string {
-  switch (state) {
-    case "Pending Submission":
-    case "Awaiting Approval":
-      return "bg-amber-500/20 text-amber-900 dark:text-amber-200";
-    case "Approved":
-      return "bg-sky-500/20 text-sky-900 dark:text-sky-200";
-    case "Chemical Issued":
-    case "Chemicals Issued Direct":
-      return "bg-indigo-500/20 text-indigo-900 dark:text-indigo-200";
-    case "Tank Mix Manufactured":
-      return "bg-violet-500/20 text-violet-900 dark:text-violet-200";
-    case "Spraying In Progress":
-      return "bg-emerald-500/30 text-emerald-900 dark:text-emerald-200";
-    case "Completed":
-      return "bg-green-600/15 text-green-900 dark:text-green-200";
-    default:
-      return "bg-slate-500/15 text-slate-800 dark:text-slate-200";
-  }
-}
-
 export const STATE_LEGEND = [
   "Awaiting Approval",
   "Approved",

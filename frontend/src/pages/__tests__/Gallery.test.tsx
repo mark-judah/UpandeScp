@@ -60,7 +60,9 @@ function page(photos: FeedPhoto[], more: boolean, n = 0): FeedPayload {
   };
 }
 
-beforeEach(() => fetchPhotoFeed.mockReset());
+beforeEach(() => {
+  fetchPhotoFeed.mockReset();
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Scouting ▸ Gallery", () => {

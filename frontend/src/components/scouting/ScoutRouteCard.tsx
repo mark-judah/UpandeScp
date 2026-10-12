@@ -23,6 +23,8 @@ export interface ScoutTrail {
   start: string;
   end: string;
   beds: string[];
+  /** Every greenhouse the scout covered in the range, best covered first. */
+  houses?: { greenhouse: string; covered: number; total: number; pct: number }[];
 }
 
 /** "08:05:00" → minutes since midnight (NaN when absent). */
@@ -99,7 +101,7 @@ export function ScoutRouteCard({
       aria-label={`Route of ${trail.name}`}
       data-testid="scout-route-card"
       className={cn(
-        "w-[min(320px,calc(100%-2rem))] rounded-2xl border bg-card/95 p-4 shadow-[var(--sd-shadow-2,0_8px_24px_rgba(0,0,0,0.18))] backdrop-blur",
+        "max-h-[calc(100%-2rem)] w-[min(320px,calc(100%-2rem))] overflow-auto rounded-2xl border bg-card/95 p-4 shadow-[var(--sd-shadow-2,0_8px_24px_rgba(0,0,0,0.18))] backdrop-blur",
         "scp-card-in",
         className,
       )}
@@ -151,6 +153,30 @@ export function ScoutRouteCard({
           {trail.beds.length ? bedRanges(trail.beds) : "—"}
         </dd>
       </dl>
+
+      {trail.houses?.length ? (
+        <div className="mt-3 border-t pt-3" data-testid="scout-card-houses">
+          <div className="mb-2 flex items-baseline justify-between text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>Greenhouses covered</span>
+            <span className="tabular-nums">{trail.houses.length}</span>
+          </div>
+          <ul className="max-h-40 space-y-1.5 overflow-auto pr-1">
+            {trail.houses.map((h) => (
+              <li key={h.greenhouse} className="text-[0.72rem]" title={`${h.covered} of ${h.total || "?"} zones`}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className={cn("truncate", h.greenhouse === trail.greenhouse && "font-semibold")}>
+                    {h.greenhouse.replace(/\s+-\s+[A-Z0-9]+$/, "")}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">{h.pct}%</span>
+                </div>
+                <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+                  <div className="h-full rounded-full" style={{ width: `${h.pct}%`, background: trail.color }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }

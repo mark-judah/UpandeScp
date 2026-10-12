@@ -85,6 +85,13 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 }
 
+/** "9:05:00" → "09:05:00". Times arrive unpadded, and "9:59" sorts after
+ *  "10:00" as text, which put route steps (and first/last times) out of order. */
+export function padTime(t?: string | null): string {
+  if (!t) return "";
+  return t.replace(/^(\d):/, "0$1:");
+}
+
 /** The scout's initials in a small circle of their colour, at the route's end. */
 function badgeIcon(initials: string, color: string, selected: boolean): L.DivIcon {
   const size = selected ? 30 : 24;
@@ -248,7 +255,7 @@ export function RoseScouting() {
       row.totalEntries += 1;
       if (e.bed) row.beds.add(e.bed);
       if (e.date_of_capture) row.days.add(e.date_of_capture);
-      const ts = `${e.date_of_capture} ${e.time_of_capture || ""}`.trim();
+      const ts = `${e.date_of_capture} ${padTime(e.time_of_capture)}`.trim();
       if (ts > row.lastTs) row.lastTs = ts;
       const sk = e.scouts_name || "";
       if (sk) row.scoutEntries.set(sk, (row.scoutEntries.get(sk) || 0) + 1);
@@ -316,8 +323,8 @@ export function RoseScouting() {
   // ── Visits in time order — drives the per-scout flow polyline. ──
   const visitsByScout = useMemo(() => {
     const ordered = [...dayEntries].sort((a, b) => {
-      const ta = `${a.date_of_capture} ${a.time_of_capture || ""}`;
-      const tb = `${b.date_of_capture} ${b.time_of_capture || ""}`;
+      const ta = `${a.date_of_capture} ${padTime(a.time_of_capture)}`;
+      const tb = `${b.date_of_capture} ${padTime(b.time_of_capture)}`;
       return ta < tb ? -1 : ta > tb ? 1 : 0;
     });
     const out = new Map<string, ScoutVisit[]>();
@@ -341,7 +348,7 @@ export function RoseScouting() {
         bed: zf?.bedName || e.bed || "",
         zoneNo: zoneNumber(e.zone),
         greenhouse: e.greenhouse || e.block || "",
-        ts: `${e.date_of_capture} ${e.time_of_capture || ""}`,
+        ts: `${e.date_of_capture} ${padTime(e.time_of_capture)}`,
         centroid: c,
       });
     }
@@ -565,7 +572,6 @@ export function RoseScouting() {
           lineCap: "round",
           bubblingMouseEvents: false,
         })
-          .bindTooltip(tip, { sticky: true })
           .on("click", open)
           .addTo(layer),
       );
@@ -708,7 +714,31 @@ export function RoseScouting() {
       start: t.firstTime,
       end: t.lastTime,
       beds: t.beds,
+      houses: housesCovered(t.scout),
     };
+    // Every greenhouse this scout covered in the range: distinct zones over
+    // the house's zones, all days together.
+    function housesCovered(scout: string) {
+      const byHouse = new Map<string, Set<string>>();
+      for (const x of trails) {
+        if (x.scout !== scout) continue;
+        const gh = ghOf(x.beds[0] || x.greenhouse);
+        let z = byHouse.get(gh);
+        if (!z) byHouse.set(gh, (z = new Set()));
+        x.zones.forEach((zone) => z!.add(zone));
+      }
+      return [...byHouse.entries()]
+        .map(([greenhouse, zones]) => {
+          const total = zonesPerGreenhouse.get(greenhouse) || 0;
+          return {
+            greenhouse,
+            covered: zones.size,
+            total,
+            pct: total ? Math.min(100, Math.round((zones.size / total) * 100)) : 0,
+          };
+        })
+        .sort((a, b) => b.pct - a.pct || a.greenhouse.localeCompare(b.greenhouse));
+    }
   }, [selectedTrail, trails, nameOf, scoutImages, scoutInfo, zonesPerGreenhouse]);
 
   // Esc closes the route card first, then the zone card.
@@ -772,7 +802,7 @@ export function RoseScouting() {
               key={openTrail.key}
               trail={openTrail}
               onClose={() => setSelectedTrail(null)}
-              className="absolute right-4 top-14 z-[1000]"
+              className="absolute bottom-4 right-4 z-[1000]"
             />
           ) : null}
 

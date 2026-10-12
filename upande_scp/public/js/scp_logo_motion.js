@@ -1,28 +1,26 @@
 // The SCP tile on the desk's apps screen, animated on hover.
 //
-// The artwork and the story are the Upande Webstore mark's: a cart rolls in, a
-// rose blooms in its basket, and the Upande arrow rises out of it while the
-// cart falls away. The Webstore plays it once on load; SCP plays it on hover —
-// eased in while the pointer (or keyboard focus) is on the tile, eased back out
-// to the resting arrow badge when it leaves. Leaving part-way reverses from
-// wherever it had got to, so it never snaps.
+// At rest the tile is the plain Upande mark (scp_logo.svg draws exactly
+// upande_logo.png). On hover SCP's own scene eases in — the arrow steps aside,
+// a rose grows, and the scouting round plays: a magnifier finds a pest on a
+// leaf, a ring marks it, spray falls and it is gone. The round loops while the
+// pointer (or keyboard focus) stays; on leave everything eases back out to the
+// plain mark, reversing from wherever it had got to, never snapping.
 //
-// Why script at all: the desk draws app tiles as <img>, and hover never reaches
-// an SVG inside an <img>. So the tile's <img> is swapped for the same file
-// inlined, and the Web Animations API drives it (a CSS animation cannot be
-// reversed from its current point). If any of this fails the <img> stays — the
-// resting mark, which is what the file draws on its own.
+// The desk draws app tiles as <img>, and hover never reaches an SVG inside an
+// <img>, so the tile's <img> is swapped for the same file inlined and the Web
+// Animations API drives it. The keyframes come from the file's own <metadata>
+// (written by scripts/build_scp_logo.py, which also writes the splash loader).
+// The inlined SVG takes the <img>'s rendered size — the desk sizes that image
+// past its container's padding, so "100% of the container" came out smaller.
+// If anything fails the <img> stays: the plain mark.
 (function () {
 	var SRC = "/assets/upande_scp/images/scp_logo.svg";
-	var DURATION = 1800;
-	var EASE = "cubic-bezier(.3,.7,.2,1)";
 	var svgText = null;
 	var loading = null;
 
 	if (typeof Element === "undefined" || !Element.prototype.animate) return;
-	var reduce =
-		window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-	if (reduce) return;
+	if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
 	function fetchSvg() {
 		if (svgText) return Promise.resolve(svgText);
@@ -40,89 +38,91 @@
 		return loading;
 	}
 
-	// One timeline from the resting badge (0) to the cart holding the rose (1):
-	// the arrow lifts and shrinks, sinks into the basket as the cart rolls in
-	// under it, then the rose blooms. Played forward on hover, backward on leave.
-	function effects(svg) {
-		var all = function (sel) {
-			return Array.prototype.slice.call(svg.querySelectorAll(sel));
-		};
+	function build(svg, tracks, timing) {
 		var out = [];
-		var timing = { duration: DURATION, easing: EASE, fill: "both" };
-		all(".goods").forEach(function (el) {
-			out.push(
-				el.animate(
-					[
-						{ opacity: 0, transform: "translate(0, 10px)", offset: 0 },
-						{ opacity: 1, transform: "translate(0, 0)", offset: 0.25 },
-						{ opacity: 1, transform: "translate(0, 0)", offset: 1 },
-					],
-					timing
-				)
-			);
-		});
-		all(".cart").forEach(function (el) {
-			out.push(
-				el.animate(
-					[
-						{ transform: "translate(-70px, 0)", offset: 0 },
-						{ transform: "translate(0, 0)", offset: 0.45 },
-						{ transform: "translate(0, 0)", offset: 1 },
-					],
-					timing
-				)
-			);
-		});
-		all(".rose").forEach(function (el) {
-			el.style.transformBox = "view-box";
-			el.style.transformOrigin = "50px 46px";
-			out.push(
-				el.animate(
-					[
-						{ transform: "scale(0)", offset: 0 },
-						{ transform: "scale(0)", offset: 0.5 },
-						{ transform: "scale(1)", offset: 0.85 },
-						{ transform: "scale(1)", offset: 1 },
-					],
-					timing
-				)
-			);
-		});
-		all(".arrow").forEach(function (el) {
-			el.style.transformBox = "view-box";
-			el.style.transformOrigin = "50px 50px";
-			out.push(
-				el.animate(
-					[
-						{ transform: "translate(0, 0) scale(1)", opacity: 1, offset: 0 },
-						{ transform: "translate(0, -18px) scale(.36)", opacity: 1, offset: 0.3 },
-						{ transform: "translate(0, -18px) scale(.36)", opacity: 1, offset: 0.4 },
-						{ transform: "translate(0, 14px) scale(.3)", opacity: 0, offset: 0.62 },
-						{ transform: "translate(0, 14px) scale(.3)", opacity: 0, offset: 1 },
-					],
-					timing
-				)
-			);
-		});
-		out.forEach(function (a) {
-			a.pause();
-			a.currentTime = 0;
+		tracks.forEach(function (t) {
+			var els = svg.querySelectorAll(t.sel);
+			for (var i = 0; i < els.length; i++) {
+				var el = els[i];
+				if (t.origin) {
+					el.style.transformBox = "view-box";
+					el.style.transformOrigin = t.origin;
+				}
+				var a = el.animate(t.frames, timing);
+				a.pause();
+				a.currentTime = 0;
+				out.push(a);
+			}
 		});
 		return out;
 	}
 
-	function drive(anims, forward) {
-		anims.forEach(function (a) {
-			var t = Number(a.currentTime) || 0;
-			// play() on a finished animation seeks to the far end: already at the
-			// end it is heading for, it stays put instead of jumping.
-			if (forward ? t >= DURATION : t <= 0) {
-				a.pause();
-				return;
-			}
-			a.playbackRate = forward ? 1 : -1;
-			a.play();
+	function wire(svg, tile, spec) {
+		var enter = build(svg, spec.enter, {
+			duration: spec.enterMs,
+			easing: spec.ease,
+			fill: "both",
 		});
+		var loop = build(svg, spec.loop, {
+			duration: spec.loopMs,
+			easing: "ease-in-out",
+			iterations: Infinity,
+			fill: "both",
+		});
+		var hovered = false;
+
+		function at(anims) {
+			return anims.length ? Number(anims[0].currentTime) || 0 : 0;
+		}
+		function run(anims, forward) {
+			anims.forEach(function (a) {
+				var t = Number(a.currentTime) || 0;
+				// play() on a finished animation seeks to the far end; at the end it
+				// is heading for already, it stays put instead of jumping.
+				if (forward ? t >= spec.enterMs : t <= 0) {
+					a.pause();
+					return;
+				}
+				a.playbackRate = forward ? 1 : -1;
+				a.play();
+			});
+		}
+
+		enter.forEach(function (a) {
+			a.onfinish = function () {
+				// Fully in and still hovered: start the scouting round.
+				if (hovered && a === enter[0] && at(enter) >= spec.enterMs) {
+					loop.forEach(function (l) {
+						l.play();
+					});
+				}
+			};
+		});
+
+		function on() {
+			hovered = true;
+			// A round only ever starts from its beginning (lens away, pest present).
+			if (at(enter) <= 0) {
+				loop.forEach(function (l) {
+					l.pause();
+					l.currentTime = 0;
+				});
+			}
+			run(enter, true);
+		}
+		function off() {
+			hovered = false;
+			// The round holds where it is; the scene fades out around it as the
+			// enter timeline reverses, and the next hover starts it afresh.
+			loop.forEach(function (l) {
+				l.pause();
+			});
+			run(enter, false);
+		}
+		tile.addEventListener("mouseenter", on);
+		tile.addEventListener("mouseleave", off);
+		tile.addEventListener("focusin", on);
+		tile.addEventListener("focusout", off);
 	}
 
 	function upgrade(img) {
@@ -134,54 +134,57 @@
 				var holder = document.createElement("div");
 				holder.innerHTML = text;
 				var svg = holder.querySelector("svg");
-				if (!svg) return;
+				var meta = svg && svg.querySelector("#scp-motion");
+				if (!svg || !meta) return;
+				var spec = JSON.parse(meta.textContent);
+
+				var box = img.getBoundingClientRect();
+				var cs = getComputedStyle(img);
 				svg.setAttribute("class", img.className || "app-icon");
 				svg.setAttribute("aria-label", img.alt || "SCP");
 				svg.removeAttribute("width");
 				svg.removeAttribute("height");
-				svg.style.width = "100%";
-				svg.style.height = "100%";
+				// Exactly the <img>'s size: the same tile as before.
+				svg.style.width = box.width ? box.width + "px" : cs.width;
+				svg.style.height = box.height ? box.height + "px" : cs.height;
 				svg.style.display = "block";
+				svg.style.overflow = "visible";
 				img.replaceWith(svg);
 
-				var anims = effects(svg);
-				var tile = svg.closest(".desktop-icon") || svg.parentElement;
-				var on = function () {
-					drive(anims, true);
-				};
-				var off = function () {
-					drive(anims, false);
-				};
-				tile.addEventListener("mouseenter", on);
-				tile.addEventListener("mouseleave", off);
-				tile.addEventListener("focusin", on);
-				tile.addEventListener("focusout", off);
+				wire(svg, svg.closest(".desktop-icon") || svg.parentElement, spec);
 			})
 			.catch(function () {
-				// Keep the <img>: the resting mark.
+				// Keep the <img>: the plain mark.
 			});
 	}
 
-	function scan(root) {
-		var imgs = (root || document).querySelectorAll(
-			'.desktop-icon img.app-icon[src*="scp_logo.svg"]'
-		);
-		for (var i = 0; i < imgs.length; i++) upgrade(imgs[i]);
+	function scan() {
+		var imgs = document.querySelectorAll('.desktop-icon img.app-icon[src*="scp_logo.svg"]');
+		for (var i = 0; i < imgs.length; i++) {
+			// Not laid out yet (hidden page): try again on the next mutation.
+			if (!imgs[i].getBoundingClientRect().width) continue;
+			upgrade(imgs[i]);
+		}
 	}
 
-	// The apps screen is re-rendered on navigation and on edits; watch for tiles.
+	// The apps screen re-renders on navigation and edits; watch for tiles.
 	var queued = false;
 	function onMutate() {
 		if (queued) return;
 		queued = true;
 		requestAnimationFrame(function () {
 			queued = false;
-			scan(document);
+			scan();
 		});
 	}
 	function start() {
-		scan(document);
-		new MutationObserver(onMutate).observe(document.body, { childList: true, subtree: true });
+		scan();
+		new MutationObserver(onMutate).observe(document.body, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeFilter: ["class", "style"],
+		});
 	}
 	if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
 	else start();

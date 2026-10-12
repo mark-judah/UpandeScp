@@ -19,9 +19,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
+import { X } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
-import { Bar, LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
+import { Bar, LoadProgress, TextSkeleton, firstLoad } from "@/components/Loading";
 import {
   Card,
   CardContent,
@@ -29,14 +30,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   ALL,
   RangeHeader,
   type RangeFilterValue,
 } from "./maps/RangeHeader";
-import { fetchBedsAndZones, fetchScoutLookup } from "@/lib/scouting-api";
+import { fetchBedsAndZones, fetchScoutImages, fetchScoutLookup } from "@/lib/scouting-api";
+import { initialsOf } from "@/lib/scouts-api";
+import { ScoutRouteCard, type ScoutTrail } from "@/components/scouting/ScoutRouteCard";
 import { flyToFarm, useMapSettings } from "@/hooks/use-map-settings";
 import {
   pestColor,
@@ -47,9 +48,19 @@ import { currentWeekRange } from "@/lib/utils";
 import {
   flattenZones,
   geometryCentroid,
+  houseOf,
+  zonesPerHouse,
   zonePolygonFromGeometry,
   type ZoneFeature,
 } from "./maps/zone-utils";
+import {
+  neatRoute,
+  routeEnd,
+  zoneNumber,
+  type BedGeometry,
+  type Pt,
+  type RouteSegment,
+} from "./maps/neat-route";
 import type { ScoutingEntry } from "@/lib/scouting-types";
 
 /** Per-scout palette — verbatim port of the legacy `palette` array, so a
@@ -67,10 +78,25 @@ const SCOUT_PALETTE = [
   "#fb923c",
 ];
 
-function ghOf(zoneOrBed: string): string {
-  const i = zoneOrBed.indexOf(" - Bed ");
-  return i >= 0 ? zoneOrBed.slice(0, i) : zoneOrBed.split(" - ")[0];
+/** Route line opacity at rest (dimmed/raised while a route card is open). */
+const ROUTE_OPACITY = 0.5;
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 }
+
+/** The scout's initials in a small circle of their colour, at the route's end. */
+function badgeIcon(initials: string, color: string, selected: boolean): L.DivIcon {
+  const size = selected ? 30 : 24;
+  return L.divIcon({
+    className: "",
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:${color};color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font:600 ${selected ? 11 : 9}px var(--sd-font),Poppins,Arial,sans-serif;letter-spacing:.02em">${escapeHtml(initials)}</div>`,
+  });
+}
+
+const ghOf = houseOf;
 
 function scoutLabel(s: string): string {
   if (!s) return "Unknown";
@@ -86,11 +112,28 @@ function scoutLabel(s: string): string {
 interface ScoutVisit {
   scout: string;
   zone: string;
+  bed: string;
+  zoneNo: number;
   /** Greenhouse the zone belongs to — the trail is cut when this changes. */
   greenhouse: string;
   /** Sortable timestamp — falls back to time_of_capture string. */
   ts: string;
   centroid: [number, number];
+}
+
+/** One scout's walk through one greenhouse on one day — drawn as a neat route. */
+interface Trail {
+  key: string;
+  scout: string;
+  greenhouse: string;
+  date: string;
+  segments: RouteSegment[];
+  start: Pt;
+  end: Pt;
+  zones: Set<string>;
+  beds: string[];
+  firstTime: string;
+  lastTime: string;
 }
 
 interface ZoneRoll {
@@ -120,7 +163,7 @@ export function RoseScouting() {
   }, [filters.from, filters.to]);
   const [zones, setZones] = useState<ZoneFeature[]>([]);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
-  const [hiddenScouts, setHiddenScouts] = useState<Set<string>>(new Set());
+  const [selectedTrail, setSelectedTrail] = useState<string | null>(null);
 
   const ghForCall =
     filters.greenhouse === ALL ? undefined : filters.greenhouse;
@@ -147,6 +190,10 @@ export function RoseScouting() {
   const [scoutNames, setScoutNames] = useState<Record<string, string>>({});
   useEffect(() => {
     fetchScoutLookup().then(setScoutNames);
+  }, []);
+  const [scoutImages, setScoutImages] = useState<Record<string, string>>({});
+  useEffect(() => {
+    fetchScoutImages().then(setScoutImages);
   }, []);
   const nameOf = useCallback(
     (key: string) => scoutNames[key] || scoutLabel(key),
@@ -276,7 +323,6 @@ export function RoseScouting() {
     const out = new Map<string, ScoutVisit[]>();
     for (const e of ordered) {
       if (!e.scouts_name || !e.zone) continue;
-      if (hiddenScouts.has(e.scouts_name)) continue;
       const c = centroidByZone.get(e.zone);
       if (!c) continue;
       let path = out.get(e.scouts_name);
@@ -288,16 +334,19 @@ export function RoseScouting() {
       // should connect zone-to-zone, not redraw the same vertex.
       const last = path[path.length - 1];
       if (last && last.zone === e.zone) continue;
+      const zf = zoneByName.get(e.zone);
       path.push({
         scout: e.scouts_name,
         zone: e.zone,
+        bed: zf?.bedName || e.bed || "",
+        zoneNo: zoneNumber(e.zone),
         greenhouse: e.greenhouse || e.block || "",
         ts: `${e.date_of_capture} ${e.time_of_capture || ""}`,
         centroid: c,
       });
     }
     return out;
-  }, [dayEntries, centroidByZone, hiddenScouts]);
+  }, [dayEntries, centroidByZone, zoneByName]);
 
   // ── KPIs (Scouts · Beds · Zones · Entries). ──
   const stats = useMemo(() => {
@@ -306,7 +355,6 @@ export function RoseScouting() {
     let entries = 0;
     aggByZone.forEach((row) => {
       row.scoutEntries.forEach((n, s) => {
-        if (hiddenScouts.has(s)) return;
         scouts.add(s);
         entries += n;
       });
@@ -318,7 +366,105 @@ export function RoseScouting() {
       zones: aggByZone.size,
       entries,
     };
-  }, [aggByZone, hiddenScouts]);
+  }, [aggByZone]);
+
+  // ── Neat routes. Each scout's visits are cut into trails (one per day and
+  //    greenhouse — a line never hops across either), and every trail is run
+  //    through neatRoute so the bed starts/ends are closed up on screen. ──
+  const bedZones = useMemo(() => {
+    const m = new Map<string, Map<number, ZoneFeature>>();
+    for (const z of zones) {
+      const n = zoneNumber(z.zoneName);
+      if (!Number.isFinite(n)) continue;
+      let b = m.get(z.bedName);
+      if (!b) m.set(z.bedName, (b = new Map()));
+      b.set(n, z);
+    }
+    return m;
+  }, [zones]);
+
+  // Zones per greenhouse — the denominator for "covered N of M".
+  const zonesPerGreenhouse = useMemo(() => zonesPerHouse(zones), [zones]);
+
+  // Bed spacing (median gap between neighbouring beds' first zones), so the
+  // route can tell a neighbouring bed from a far jump by distance as well as
+  // by bed number. Longitude is scaled to metres-ish by cos(latitude).
+  const bedWidth = useMemo(() => {
+    const first = new Map<string, Pt>();
+    bedZones.forEach((zs, bed) => {
+      const c = zs.get(1) && geometryCentroid(zs.get(1)!.geometry);
+      if (c) first.set(bed, c);
+    });
+    const gaps: number[] = [];
+    first.forEach((pt, bed) => {
+      if (gaps.length >= 300) return;
+      const m = /^(.*Bed\s+)(\d+)$/i.exec(bed);
+      const nb = m && first.get(`${m[1]}${Number(m[2]) + 1}`);
+      if (nb) gaps.push(Math.hypot(pt[0] - nb[0], (pt[1] - nb[1]) * Math.cos((pt[0] * Math.PI) / 180)));
+    });
+    gaps.sort((a, b) => a - b);
+    return gaps.length ? gaps[gaps.length >> 1] : 0;
+  }, [bedZones]);
+
+  const trails = useMemo(() => {
+    const near = (a: Pt, b: Pt) =>
+      bedWidth > 0 &&
+      Math.hypot(a[0] - b[0], (a[1] - b[1]) * Math.cos((a[0] * Math.PI) / 180)) <= 1.5 * bedWidth;
+    const geoCache = new Map<string, BedGeometry | undefined>();
+    const bedOf = (bed: string): BedGeometry | undefined => {
+      if (geoCache.has(bed)) return geoCache.get(bed);
+      const zs = bedZones.get(bed);
+      let geo: BedGeometry | undefined;
+      if (zs) {
+        const pts = new Map<number, Pt>();
+        zs.forEach((z, n) => {
+          const c = geometryCentroid(z.geometry);
+          if (c) pts.set(n, c);
+        });
+        geo = { zoneCount: Math.max(...zs.keys()), point: (n) => pts.get(n) };
+      }
+      geoCache.set(bed, geo);
+      return geo;
+    };
+    const out: Trail[] = [];
+    visitsByScout.forEach((visits, scout) => {
+      let cur: ScoutVisit[] = [];
+      let prevKey = "";
+      const flush = () => {
+        if (!cur.length) return;
+        const segments = neatRoute(
+          cur.map((v) => ({ bed: v.bed, zone: v.zoneNo })),
+          bedOf,
+          { near },
+        );
+        const beds: string[] = [];
+        for (const v of cur) if (v.bed && !beds.includes(v.bed)) beds.push(v.bed);
+        const date = (cur[0].ts || "").slice(0, 10);
+        out.push({
+          key: `${scout}|${date}|${cur[0].greenhouse}`,
+          scout,
+          greenhouse: cur[0].greenhouse,
+          date,
+          segments,
+          start: cur[0].centroid,
+          end: routeEnd(segments, cur[cur.length - 1].centroid)!,
+          zones: new Set(cur.map((v) => v.zone)),
+          beds,
+          firstTime: (cur[0].ts || "").slice(11),
+          lastTime: (cur[cur.length - 1].ts || "").slice(11),
+        });
+        cur = [];
+      };
+      for (const v of visits) {
+        const key = `${(v.ts || "").slice(0, 10)}|${v.greenhouse}`;
+        if (key !== prevKey) flush();
+        prevKey = key;
+        cur.push(v);
+      }
+      flush();
+    });
+    return out;
+  }, [visitsByScout, bedZones, bedWidth]);
 
   // ── Map plumbing. ──
   const mapRef = useRef<L.Map | null>(null);
@@ -328,7 +474,6 @@ export function RoseScouting() {
     let bestKey: string | null = null;
     let bestN = -1;
     row.scoutEntries.forEach((n, k) => {
-      if (hiddenScouts.has(k)) return;
       if (n > bestN || (n === bestN && (bestKey == null || k < bestKey))) {
         bestN = n;
         bestKey = k;
@@ -343,6 +488,7 @@ export function RoseScouting() {
     if (!layerRef.current) layerRef.current = L.layerGroup().addTo(m);
     const layer = layerRef.current;
     layer.clearLayers();
+    trailLayers.current.clear();
     if (!aggByZone.size) return;
 
     const bounds = L.latLngBounds([]);
@@ -384,80 +530,57 @@ export function RoseScouting() {
       }
     });
 
-    // 2. Per-scout flow polylines, split into contiguous SEGMENTS. A line
-    //    never connects across days OR across greenhouses — when the scout's
-    //    next visit is in a different greenhouse the trail is CUT and a fresh
-    //    segment starts there (previously the path hopped greenhouse-to-
-    //    greenhouse, producing cross-field spaghetti). The trail itself is a
-    //    single faint neutral colour; only the start/end dots carry the
-    //    scout's colour so the person stays identifiable.
-    visitsByScout.forEach((visits, scout) => {
-      // Per-scout colour, drawn faint so it reads as a subtle tint — a red
-      // scout shows as a muted greyish red, not a vivid line.
-      const color = scoutInfo.colorMap.get(scout) || "#5BB45D";
-      const segments: ScoutVisit[][] = [];
-      let cur: ScoutVisit[] = [];
-      let prevKey = "";
-      for (const v of visits) {
-        const key = `${(v.ts || "").slice(0, 10)}|${v.greenhouse}`;
-        if (key !== prevKey && cur.length) {
-          segments.push(cur);
-          cur = [];
-        }
-        prevKey = key;
-        cur.push(v);
-      }
-      if (cur.length) segments.push(cur);
 
-      segments.forEach((seg) => {
-        if (seg.length >= 2) {
-          const points = seg.map((v) => v.centroid as L.LatLngExpression);
-          L.polyline(points, {
-            color,
-            weight: 2,
-            opacity: 0.4,
-            lineJoin: "round",
-            lineCap: "round",
-          })
-            .bindTooltip(
-              `<div style="font:11px var(--sd-font),Arial,sans-serif">
-                 <b>${nameOf(scout)}</b><br/>
-                 ${seg[0].greenhouse || "—"} · ${seg.length} zones · ${(seg[0].ts || "").slice(0, 10)}
-               </div>`,
-              { sticky: true },
-            )
-            .addTo(layer);
-        }
-        // Start / end markers so the direction of each greenhouse walk is clear.
-        L.circleMarker(seg[0].centroid, {
-          radius: 5,
-          color: "#ffffff",
+    // 2. Neat scout routes. Real-ping stretches are solid; stretches implied by
+    //    neatRoute across a 2+ zone gap are dotted. The end node carries the
+    //    scout's initials; clicking it or the line opens the route card.
+    trailLayers.current.clear();
+    trails.forEach((t) => {
+      const color = scoutInfo.colorMap.get(t.scout) || "#5BB45D";
+      const name = nameOf(t.scout);
+      const tip = `<div style="font:11px var(--sd-font),Arial,sans-serif">
+                 <b>${escapeHtml(name)}</b><br/>
+                 ${escapeHtml(t.greenhouse || "—")} · ${t.zones.size} zones · ${t.date}
+               </div>`;
+      const open = () => setSelectedTrail(t.key);
+      const lines = t.segments.map((seg) =>
+        L.polyline(seg.points as L.LatLngExpression[], {
+          color,
           weight: 2,
-          fillColor: color,
-          fillOpacity: 1,
+          opacity: ROUTE_OPACITY,
+          dashArray: seg.dashed ? "2 6" : undefined,
+          lineJoin: "round",
+          lineCap: "round",
+          bubblingMouseEvents: false,
         })
-          .bindTooltip(
-            `Start · ${seg[0].zone} · ${(seg[0].ts || "").slice(11) || "—"}`,
-            { sticky: true },
-          )
-          .addTo(layer);
-        if (seg.length > 1) {
-          const lastV = seg[seg.length - 1];
-          L.circleMarker(lastV.centroid, {
-            radius: 5,
-            color,
-            weight: 2,
-            fillColor: "#ffffff",
-            fillOpacity: 1,
-          })
-            .bindTooltip(
-              `End · ${lastV.zone} · ${(lastV.ts || "").slice(11) || "—"}`,
-              { sticky: true },
-            )
-            .addTo(layer);
-        }
-      });
+          .bindTooltip(tip, { sticky: true })
+          .on("click", open)
+          .addTo(layer),
+      );
+      // Start dot, so the direction of the walk is clear.
+      const startDot = L.circleMarker(t.start, {
+        radius: 4,
+        color: "#ffffff",
+        weight: 2,
+        fillColor: color,
+        fillOpacity: 1,
+        bubblingMouseEvents: false,
+      })
+        .bindTooltip(`Start · ${t.firstTime || "—"}`, { sticky: true })
+        .on("click", open)
+        .addTo(layer);
+      const badge = L.marker(t.end, {
+        icon: badgeIcon(initialsOf(name), color, false),
+        bubblingMouseEvents: false,
+        keyboard: false,
+      })
+        .bindTooltip(tip, { direction: "top", offset: [0, -12] })
+        .on("click", open)
+        .addTo(layer);
+      trailLayers.current.set(t.key, { lines, startDot, badge, color, initials: initialsOf(name) });
+      for (const seg of t.segments) for (const pt of seg.points) bounds.extend(pt);
     });
+    applySelection(selectedRef.current);
 
     if (bounds.isValid()) {
       m.fitBounds(bounds.pad(0.05), { animate: false });
@@ -470,7 +593,35 @@ export function RoseScouting() {
         { animate: false },
       );
     }
-  }, [aggByZone, zoneByName, visitsByScout, scoutInfo, mapSettings, filters.farm, nameOf]);
+  }, [aggByZone, zoneByName, trails, scoutInfo, mapSettings, filters.farm, nameOf]);
+
+  // Highlight the open route and dim the rest (all back to normal when none).
+  const trailLayers = useRef(
+    new Map<
+      string,
+      { lines: L.Polyline[]; startDot: L.CircleMarker; badge: L.Marker; color: string; initials: string }
+    >(),
+  );
+  const selectedRef = useRef<string | null>(null);
+  function applySelection(sel: string | null) {
+    trailLayers.current.forEach((t, key) => {
+      const on = sel === key;
+      const dim = sel != null && !on;
+      t.lines.forEach((l) =>
+        l.setStyle({ weight: on ? 3.5 : 2, opacity: on ? 0.95 : dim ? 0.12 : ROUTE_OPACITY }),
+      );
+      t.startDot.setStyle({ opacity: dim ? 0.2 : 1, fillOpacity: dim ? 0.2 : 1 });
+      t.badge.setIcon(badgeIcon(t.initials, t.color, on));
+      t.badge.setOpacity(dim ? 0.35 : 1);
+      t.badge.setZIndexOffset(on ? 1000 : 0);
+      if (on) t.lines.forEach((l) => l.bringToFront());
+    });
+  }
+  useEffect(() => {
+    selectedRef.current = selectedTrail;
+    applySelection(selectedTrail);
+  }, [selectedTrail]);
+
 
   // Fly to the farm whenever the operator changes the Farm dropdown.
   const farmFlyMounted = useRef(false);
@@ -495,6 +646,7 @@ export function RoseScouting() {
     );
   }, [filters.farm, mapSettings]);
 
+
   // ── Side detail card. ──
   const detail = selectedZone ? aggByZone.get(selectedZone) : null;
   const topPests = detail
@@ -518,17 +670,40 @@ export function RoseScouting() {
         }))
     : [];
 
-  const toggleScout = (key: string) =>
-    setHiddenScouts((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  // The open route's card: scout, photo, house, date, coverage, times, beds.
+  const openTrail = useMemo<ScoutTrail | null>(() => {
+    const t = selectedTrail ? trails.find((x) => x.key === selectedTrail) : null;
+    if (!t) return null;
+    return {
+      key: t.key,
+      scoutId: t.scout,
+      name: nameOf(t.scout),
+      image: scoutImages[t.scout],
+      color: scoutInfo.colorMap.get(t.scout) || "#5BB45D",
+      greenhouse: t.greenhouse,
+      date: t.date,
+      zonesCovered: t.zones.size,
+      zonesTotal: zonesPerGreenhouse.get(ghOf(t.beds[0] || t.greenhouse)) || 0,
+      start: t.firstTime,
+      end: t.lastTime,
+      beds: t.beds,
+    };
+  }, [selectedTrail, trails, nameOf, scoutImages, scoutInfo, zonesPerGreenhouse]);
 
-  // First load (nothing processed yet): the rail's cards and labels stand, the
-  // figures and the scout list are skeletons. A refresh keeps the old figures.
-  // A failed load ends the skeletons and says so (below), rather than pulsing on.
+  // Esc closes the route card first, then the zone card.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (selectedTrail) setSelectedTrail(null);
+      else if (selectedZone) setSelectedZone(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedTrail, selectedZone]);
+
+  // First load (nothing processed yet): the figures are skeletons. A refresh
+  // keeps the old figures. A failed load ends the skeletons and says so
+  // (below), rather than pulsing on.
   const first = firstLoad(loading || (!data && !error), !!data);
 
   return (
@@ -541,7 +716,7 @@ export function RoseScouting() {
       />
 
       {/* Inline under the header, not a full-screen overlay (skeleton spec K4):
-          the basemap and the rail stay visible while the weeks load. */}
+          the basemap stays visible while the weeks load. */}
       <div className="px-4 md:px-6">
         {error && !data && !loading && (
           <span role="alert" className="text-destructive">{error}</span>
@@ -549,36 +724,62 @@ export function RoseScouting() {
         <LoadProgress active={loading} progress={progress} />
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[3fr_1fr]">
-        <div className="relative min-h-[55vh] lg:min-h-0">
-          <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
-            <MapBase
-              onReady={(m) => {
-                mapRef.current = m;
-              }}
-            />
-          </div>
-        </div>
+      <div className="relative flex-1 min-h-[55vh] lg:min-h-0" aria-busy={first || undefined}>
+        <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+          <MapBase
+            onReady={(m) => {
+              mapRef.current = m;
+            }}
+          />
 
-        {/* Right rail — clicked-zone detail, then the coverage summary below
-            it. Scrolls on its own; capped height on small screens so the map
-            above stays usable. */}
-        <div
-          className="m-4 md:m-6 lg:ml-0 rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] overflow-auto flex flex-col gap-3 max-h-[45vh] lg:max-h-none"
-          aria-busy={first || undefined}
-        >
+          {/* Coverage figures, a quiet pill over the top edge. */}
+          <div className="pointer-events-none absolute left-1/2 top-3 z-[1000] -translate-x-1/2 rounded-full border bg-card/95 px-3 py-1 text-[0.7rem] tabular-nums shadow-[var(--sd-shadow-1)] backdrop-blur">
+            {first || loading ? (
+              <Bar className="h-4 w-40 rounded-full" />
+            ) : (
+              <>
+                {stats.scouts} scouts · {stats.beds} beds · {stats.zones} zones · {stats.entries} entries
+                <span className="ml-2 text-muted-foreground">
+                  {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
+                </span>
+              </>
+            )}
+          </div>
+
+          {openTrail ? (
+            <ScoutRouteCard
+              key={openTrail.key}
+              trail={openTrail}
+              onClose={() => setSelectedTrail(null)}
+              className="absolute right-4 top-14 z-[1000]"
+            />
+          ) : null}
+
+          {/* Clicked-zone detail, floating bottom-left like the trap card. */}
           {detail ? (
-            <Card className="p-3 shadow-none border">
+            <Card className="scp-card-in absolute bottom-4 left-4 z-[1000] max-h-[60%] w-[min(320px,calc(100%-2rem))] overflow-auto bg-card/95 p-3 backdrop-blur">
               <CardHeader className="p-0 pb-2">
-                <CardTitle className="text-sm">{detail.zone}</CardTitle>
-                <CardDescription className="text-[0.7rem]">
-                  {detail.totalEntries} entr
-                  {detail.totalEntries === 1 ? "y" : "ies"}
-                  {!isSingleDay
-                    ? ` · covered ${detail.days.size} of ${rangeDayCount} days`
-                    : ""}
-                  {detail.lastTs ? ` · last ${detail.lastTs.slice(11)}` : ""}
-                </CardDescription>
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <CardTitle className="text-sm">{detail.zone}</CardTitle>
+                    <CardDescription className="text-[0.7rem]">
+                      {detail.totalEntries} entr
+                      {detail.totalEntries === 1 ? "y" : "ies"}
+                      {!isSingleDay
+                        ? ` · covered ${detail.days.size} of ${rangeDayCount} days`
+                        : ""}
+                      {detail.lastTs ? ` · last ${detail.lastTs.slice(11)}` : ""}
+                    </CardDescription>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Close zone card"
+                    onClick={() => setSelectedZone(null)}
+                    className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </CardHeader>
               <CardContent className="p-0 flex flex-col gap-3">
                 {detailScouts.length > 0 && (
@@ -607,177 +808,41 @@ export function RoseScouting() {
                     </div>
                   </div>
                 )}
-
-                <div>
-                  <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground mb-1">
-                    Top Pests
+                {([
+                  ["Top Pests", topPests, pestColor],
+                  ["Top Diseases", topDiseases, diseaseColor],
+                ] as const).map(([title, rows, colourOf]) => (
+                  <div key={title}>
+                    <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground mb-1">
+                      {title}
+                    </div>
+                    {rows.length ? (
+                      rows.map(([name, count]) => (
+                        <div
+                          key={name}
+                          className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-[var(--sd-bg-soft)] mb-1"
+                        >
+                          <span
+                            className="h-2.5 w-2.5 rounded-full border shrink-0"
+                            style={{ background: colourOf(name) }}
+                            aria-hidden
+                          />
+                          <span className="truncate flex-1">{name}</span>
+                          <span className="tabular-nums text-muted-foreground">
+                            {count}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground">None</span>
+                    )}
                   </div>
-                  {topPests.length ? (
-                    topPests.map(([name, count]) => (
-                      <div
-                        key={name}
-                        className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-[var(--sd-bg-soft)] mb-1"
-                      >
-                        <span
-                          className="h-2.5 w-2.5 rounded-full border shrink-0"
-                          style={{ background: pestColor(name) }}
-                          aria-hidden
-                        />
-                        <span className="truncate flex-1">{name}</span>
-                        <span className="tabular-nums text-muted-foreground">
-                          {count}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <span className="text-xs text-muted-foreground">None</span>
-                  )}
-                </div>
-
-                <div>
-                  <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground mb-1">
-                    Top Diseases
-                  </div>
-                  {topDiseases.length ? (
-                    topDiseases.map(([name, count]) => (
-                      <div
-                        key={name}
-                        className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-[var(--sd-bg-soft)] mb-1"
-                      >
-                        <span
-                          className="h-2.5 w-2.5 rounded-full border shrink-0"
-                          style={{ background: diseaseColor(name) }}
-                          aria-hidden
-                        />
-                        <span className="truncate flex-1">{name}</span>
-                        <span className="tabular-nums text-muted-foreground">
-                          {count}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <span className="text-xs text-muted-foreground">None</span>
-                  )}
-                </div>
+                ))}
               </CardContent>
             </Card>
-          ) : (
-            <Card className="p-4">
-              <CardHeader className="p-0">
-                <CardTitle className="text-sm">Pick a zone</CardTitle>
-                <CardDescription className="text-[0.7rem]">
-                  Click any coloured zone on the map to see who walked it
-                  and what they observed.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-0 mt-3">
-                {first ? (
-                  <Bar className="h-5 w-28 rounded-full" />
-                ) : (
-                  <Badge variant="outline" className="text-[0.65rem]">
-                    {aggByZone.size} scouted zone
-                    {aggByZone.size === 1 ? "" : "s"}
-                  </Badge>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Coverage summary — KPIs + scout legend. Now lives under the
-              zone detail in the rail (was a floating map overlay). */}
-          <Card className="p-3 shadow-none border">
-            <CardHeader className="p-0 pb-2">
-              <CardTitle className="text-sm">Coverage summary</CardTitle>
-              <CardDescription className="text-[0.7rem] tabular-nums">
-                {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
-              </CardDescription>
-            </CardHeader>
-
-            <div className="grid grid-cols-4 gap-2 mb-3">
-              {[
-                ["Scouts", stats.scouts],
-                ["Beds", stats.beds],
-                ["Zones", stats.zones],
-                ["Entries", stats.entries],
-              ].map(([label, v]) => (
-                <div
-                  key={label as string}
-                  className="rounded border bg-[var(--sd-bg-soft)] px-1.5 py-1 text-center"
-                >
-                  <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
-                    {label}
-                  </div>
-                  <div className="text-sm font-semibold tabular-nums">
-                    {first ? <TextSkeleton width="3ch" /> : v}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground">
-                Scouts in view
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  className="text-[0.65rem] px-2 py-0.5 rounded border bg-card hover:bg-muted"
-                  onClick={() => setHiddenScouts(new Set())}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  className="text-[0.65rem] px-2 py-0.5 rounded border bg-card hover:bg-muted"
-                  onClick={() =>
-                    setHiddenScouts(new Set(scoutInfo.list.map((s) => s.key)))
-                  }
-                >
-                  None
-                </button>
-              </div>
-            </div>
-
-            {first ? (
-              <RowsSkeleton rows={5} />
-            ) : scoutInfo.list.length === 0 ? (
-              <div className="text-[0.72rem] text-muted-foreground py-3 text-center">
-                No scouting in this range.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-0.5">
-                {scoutInfo.list.map((s) => {
-                  const off = hiddenScouts.has(s.key);
-                  const color = scoutInfo.colorMap.get(s.key) || "#9ca3af";
-                  return (
-                    <label
-                      key={s.key}
-                      className={`flex items-center gap-2 px-1.5 py-1 rounded hover:bg-muted cursor-pointer transition-opacity ${off ? "opacity-50" : ""}`}
-                    >
-                      <Checkbox
-                        checked={!off}
-                        onCheckedChange={() => toggleScout(s.key)}
-                      />
-                      <span
-                        className="h-3 w-3 rounded-full border shrink-0"
-                        style={{ background: color }}
-                        aria-hidden
-                      />
-                      <span className="text-[0.72rem] flex-1 truncate">
-                        {s.label}
-                      </span>
-                      <span className="text-[0.65rem] tabular-nums px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
-                        {s.zones}z · {s.entries}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
+          ) : null}
         </div>
       </div>
-
     </div>
   );
 }

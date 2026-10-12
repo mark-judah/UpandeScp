@@ -22,7 +22,7 @@
 				"justify-content:center;background:#ffffff"
 		);
 		var img = document.createElement("img");
-		img.src = "/assets/upande_scp/images/upande_mark.svg";
+		img.src = "/assets/upande_scp/images/scp_logo_loader.svg";
 		img.alt = "Upande SCP";
 		img.setAttribute("style", "width:106px;height:auto;display:block");
 		el.appendChild(img);

@@ -30,10 +30,10 @@
 				background: #ffffff;
 				transition: opacity 280ms ease;
 			}
-			/* No radius and no box: the mark is its own silhouette on nothing.
-			   Static, too — the cover holds for about a second, and a logo
-			   breathing at you for that long is fidgeting rather than telling
-			   you anything. Frappe's own splash is still for the same reason. */
+			/* No radius and no box: the badge on nothing. It is the loader —
+			   the Upande Webstore animation (cart, rose, the arrow rising out),
+			   looping inside the SVG itself while the cover is up; reduced
+			   motion shows the resting badge only. */
 			.scp-splash img { width: 106px; height: auto; display: block; }
 			.scp-splash.scp-leaving { opacity: 0; pointer-events: none; }
 		</style>
@@ -41,7 +41,7 @@
 	<body>
 		<div id="scp-root"></div>
 		<div class="scp-splash" id="scp-splash">
-			<img src="/assets/upande_scp/images/upande_mark.svg" alt="Upande SCP" />
+			<img src="/assets/upande_scp/images/scp_logo_loader.svg" alt="Upande SCP" />
 		</div>
 
 		<script type="application/json" id="scp-bootstrap">{{ bootstrap_json | safe }}</script>

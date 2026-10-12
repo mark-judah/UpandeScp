@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="Upande SCP">
+  <!--
+    SCP splash loader — the Upande Webstore animation on a loop while the app
+    loads: the cart rolls in, a rose blooms in its basket, the Upande arrow
+    rises out and grows to full size while the cart falls away, then a short
+    rest on the plain arrow badge before it goes round again. The story keeps
+    the Webstore timings (2.4s), held for 0.8s at rest: a 3.2s cycle, so each
+    keyframe below is the Webstore one × 0.75.
+
+    Pure CSS (the splash shows it through <img>). Reduced motion: the resting
+    mark only.
+  -->
+  <style>
+    .cart   { animation: roll 3.2s cubic-bezier(.3,.7,.2,1) infinite both; }
+    .rose   { transform-box: view-box; transform-origin: 50px 46px;
+              animation: bloom 3.2s cubic-bezier(.3,1.4,.5,1) infinite both; }
+    .goods  { animation: away 3.2s ease-in infinite both; }
+    .arrow  { transform-box: view-box; transform-origin: 50px 50px;
+              animation: rise 3.2s cubic-bezier(.3,.7,.2,1) infinite both; }
+    @keyframes roll {
+      0%        { transform: translate(-70px, 0); }
+      19.5%, 100% { transform: translate(0, 0); }
+    }
+    @keyframes bloom {
+      0%, 18%   { transform: scale(0); }
+      31.5%, 100% { transform: scale(1); }
+    }
+    @keyframes rise {
+      0%, 33%   { transform: translate(0, 14px) scale(.3); opacity: 0; }
+      37.5%     { opacity: 1; }
+      48%, 52.5% { transform: translate(0, -18px) scale(.36); opacity: 1; }
+      70.5%, 100% { transform: translate(0, 0) scale(1); opacity: 1; }
+    }
+    @keyframes away {
+      0%, 46.5% { opacity: 1; transform: translate(0, 0); }
+      60%, 100% { opacity: 0; transform: translate(0, 10px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cart, .rose, .arrow { animation: none; }
+      .goods { display: none; }
+    }
+  </style>
+
+  <!-- the cart rolls in from outside the badge; keep it inside the circle -->
+  <clipPath id="scp-badge"><circle cx="50" cy="50" r="49"/></clipPath>
+
+  <circle cx="50" cy="50" r="49.3" fill="#ffffff" stroke="#1c1b19" stroke-width="0.7"/>
+
+  <g clip-path="url(#scp-badge)">
+  <g class="goods">
+    <g class="cart">
+      <!-- the rose, standing in the basket; drawn first so the basket front hides its stem -->
+      <g class="rose">
+        <path d="M50 58 C50 50 49 44 50 36" fill="none" stroke="#4f7a3a" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M50 47 C44 45 41 41 41 38 C46 38 49 42 50 47 Z" fill="#6a9a4c"/>
+        <path d="M50 44 C56 42 59 38 59 35 C54 35 51 39 50 44 Z" fill="#5a8a42"/>
+        <circle cx="50" cy="29" r="8.2" fill="#c43b52"/>
+        <path d="M44.5 27 C46 22 54 22 55.5 27 C53 25 47 25 44.5 27 Z" fill="#a8293f"/>
+        <path d="M46.5 30.5 C47 26.5 53 26.5 53.5 30.5 C52 28.8 48 28.8 46.5 30.5 Z" fill="#e0647a"/>
+        <circle cx="50" cy="29.6" r="1.6" fill="#8e1f33"/>
+      </g>
+      <!-- handle -->
+      <polyline points="14,33 21,33 27,45" fill="none" stroke="#45433f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+
+  <!-- the Upande arrow (upande_logo.png); rises out of the basket -->
+  <g class="arrow">
+    <polygon points="24.4,23.8 64,23.8 64,36.3 24.4,36.3" fill="#635e59"/>
+    <polygon points="59.2,23.8 64,23.8 64,36.3 59.2,36.3" fill="#5a5752"/>
+    <polygon points="64,23.8 76.5,23.8 76.5,76.2 64,76.2" fill="#45433f"/>
+    <polygon points="24.4,64.6 50.5,38.5 64,36.3 64,47.9 35.8,76.2 24.4,76.2" fill="#45433f"/>
+    <polygon points="50,39.2 64,36.3 64,47.9 60.4,51.4 60.4,40.6" fill="#1c1b19"/>
+  </g>
+
+  <g class="goods">
+    <g class="cart">
+      <!-- basket front, in front of the arrow and the rose's stem -->
+      <path d="M26 45 L78 45 L72 66 Q71 68 69 68 L33 68 Q31 68 30.5 66 Z"
+            fill="#f6f4f1" stroke="#45433f" stroke-width="2.2" stroke-linejoin="round"/>
+      <line x1="28.5" y1="52" x2="76" y2="52" stroke="#45433f" stroke-width="1.2"/>
+      <line x1="30.5" y1="59" x2="74" y2="59" stroke="#45433f" stroke-width="1.2"/>
+      <line x1="42" y1="45" x2="43" y2="68" stroke="#45433f" stroke-width="1.2"/>
+      <line x1="52" y1="45" x2="52" y2="68" stroke="#45433f" stroke-width="1.2"/>
+      <line x1="62" y1="45" x2="61" y2="68" stroke="#45433f" stroke-width="1.2"/>
+      <!-- wheels -->
+      <circle cx="36" cy="75" r="4" fill="#45433f"/>
+      <circle cx="66" cy="75" r="4" fill="#45433f"/>
+      <circle cx="36" cy="75" r="1.4" fill="#ffffff"/>
+      <circle cx="66" cy="75" r="1.4" fill="#ffffff"/>
+    </g>
+  </g>
+  </g>
+</svg>

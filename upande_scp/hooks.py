@@ -16,7 +16,7 @@ app_logo_url = "/assets/upande_scp/images/upande_logo.png"
 add_to_apps_screen = [
 	{
 		"name": "upande_scp",
-		"logo": "/assets/upande_scp/images/upande_logo.png",
+		"logo": "/assets/upande_scp/images/scp_logo.svg",
 		"title": "SCP",
 		"route": "/app/scp",
 	}
@@ -45,7 +45,11 @@ add_to_apps_screen = [
 # app_include_css = "/assets/upande_scp/css/upande_scp.css"
 # Same-tab navigation for the /scp_app workspace-sidebar links (Frappe forces
 # target="_blank" on URL sidebar items, which we override in scp_desk.js).
-app_include_js = "/assets/upande_scp/js/scp_desk.js"
+app_include_js = [
+	"/assets/upande_scp/js/scp_desk.js",
+	# The SCP apps-screen tile plays the Upande Webstore animation on hover.
+	"/assets/upande_scp/js/scp_logo_motion.js",
+]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/upande_scp/css/upande_scp.css"

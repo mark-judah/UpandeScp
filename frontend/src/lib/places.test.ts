@@ -10,17 +10,17 @@ const FARMS = {
 };
 
 describe("shortHouse / houseLabel", () => {
-  it("drops the company suffix and the farm prefix", () => {
-    expect(shortHouse("Chepsito GH 16 - KR", "Chepsito")).toBe("GH 16");
+  it("drops only the company suffix, keeping the farm in the name", () => {
+    expect(shortHouse("Chepsito GH 16 - KR", "Chepsito")).toBe("Chepsito GH 16");
     expect(shortHouse("Chepsito GH 16 - KR")).toBe("Chepsito GH 16");
-    expect(shortHouse("_Test SCP Units BLK 3 - TPC", "_Test SCP Units")).toBe("BLK 3");
+    expect(shortHouse("_Test SCP Units BLK 3 - TPC", "_Test SCP Units")).toBe("_Test SCP Units BLK 3");
     expect(shortHouse("Q - KL", "Endebess")).toBe("Q");
     expect(shortHouse("", "Chepsito")).toBe("");
   });
 
-  it("writes the house with its farm", () => {
-    expect(houseLabel("Chepsito GH 16 - KR", "Chepsito")).toBe("Chepsito · GH 16");
-    expect(houseLabel("Q - KL", "Endebess")).toBe("Endebess · Q");
+  it("writes the pill as the full name, not farm · house", () => {
+    expect(houseLabel("Chepsito GH 16 - KR", "Chepsito")).toBe("Chepsito GH 16");
+    expect(houseLabel("Q - KL", "Endebess")).toBe("Q");
     expect(houseLabel("Chepsito GH 16 - KR")).toBe("Chepsito GH 16");
   });
 });

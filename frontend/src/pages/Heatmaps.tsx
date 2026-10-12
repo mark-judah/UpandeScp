@@ -56,6 +56,7 @@ import { useCropFarms } from "@/hooks/use-crop-farms";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
 import { ymd } from "@/lib/utils";
 import { recentWeeksRange } from "@/lib/iso-week";
+import { WIDEN_WEEKS, isWideEnough, targetLabel, widenedRange } from "@/lib/widen-range";
 import { Bar, LoadProgress, TextSkeleton, firstLoad } from "@/components/Loading";
 import { MarkerDefs, type MarkerKind } from "./maps/MarkerDefs";
 import {
@@ -222,6 +223,8 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     start.setDate(end.getDate() - 6);
     setRange({ from: ymd(start), to: ymd(end) });
   };
+  /** Reach back WIDEN_WEEKS weeks from the range's end. */
+  const widen = () => setRange((r) => widenedRange(r.to, WIDEN_WEEKS));
   const [show3D, setShow3D] = useState(false);
   /** Farm of the opened card, for its weather history in the modal. */
   const pickedFarm = picked ? farmsByGh[picked.greenhouse] || "" : "";
@@ -348,6 +351,16 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   // reads as broken rather than as out of range — say so instead.
   const latestScouting = gridState.data?.latestScoutingDate || "";
   const latestOutsideRange = !!latestScouting && latestScouting < from;
+  const selectedTargets = useMemo(
+    () => Array.from(new Set(Array.from(obsChecks).map(parseObs).filter((o): o is NonNullable<typeof o> => !!o).map((o) => o.name))),
+    [obsChecks],
+  );
+  // Each card shows its newest week in range, so one distinct week across all
+  // cards means the range is yielding a single week of scouting.
+  const thinData =
+    cards.length > 0 &&
+    new Set(cards.map((c) => c.lastDate)).size <= 1 &&
+    !isWideEnough(from, to);
 
   // Client-side obs filter from the tristate selections. Empty = all.
   const obsFilter = useMemo(() => {
@@ -591,38 +604,43 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
         ) : firstGrid ? (
           <HeatmapCardsSkeleton />
         ) : !visibleCards.length && !gridState.loading ? (
-          <Card className="p-12 text-center">
+          <Card className="p-12 text-center" data-testid="heatmap-empty">
             <CardTitle className="text-base">
-              {latestOutsideRange
-                ? "No scouting in this date range"
-                : "No matching observations"}
+              {latestOutsideRange ? "No scouting in this date range" : "No matching observations"}
             </CardTitle>
             <CardDescription className="mt-1">
-              {latestOutsideRange ? (
+              No scouting in {from} to {to} for{" "}
+              <strong>{targetLabel(greenhouseFilter, selectedTargets) || "this selection"}</strong>.
+              {!isWideEnough(from, to) && " Widen the date range to see earlier entries."}
+              {latestOutsideRange && (
                 <>
-                  Nothing was scouted between {from} and {to}. The most recent
-                  scouting entry is <strong>{latestScouting}</strong>.
-                </>
-              ) : (
-                <>
-                  Widen the date range, pick more stations, or clear the
-                  observation filter.
+                  {" "}The most recent scouting entry on file is <strong>{latestScouting}</strong>.
                 </>
               )}
             </CardDescription>
-            {latestOutsideRange && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="mt-3 mx-auto"
-                onClick={() => jumpToLatest(latestScouting)}
-              >
-                Show the week of {latestScouting}
-              </Button>
-            )}
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              {!isWideEnough(from, to) && (
+                <Button type="button" variant="outline" size="sm" onClick={widen}>
+                  Widen to the last {WIDEN_WEEKS} weeks
+                </Button>
+              )}
+              {latestOutsideRange && (
+                <Button type="button" variant="outline" size="sm" onClick={() => jumpToLatest(latestScouting)}>
+                  Show the week of {latestScouting}
+                </Button>
+              )}
+            </div>
           </Card>
         ) : (
+          <>
+          {thinData && (
+            <p data-testid="heatmap-thin-note" className="mb-2 text-xs text-muted-foreground">
+              Only one week of scouting in this range.{" "}
+              <button type="button" onClick={widen} className="underline underline-offset-2 hover:text-foreground">
+                Widen to the last {WIDEN_WEEKS} weeks
+              </button>
+            </p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {visibleCards.map((c) => {
               const geom = geometryByGh[c.greenhouse];
@@ -703,6 +721,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               );
             })}
           </div>
+          </>
         )}
         </div>
 

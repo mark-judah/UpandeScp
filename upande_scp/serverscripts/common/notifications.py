@@ -189,6 +189,31 @@ def unread_count():
 
 
 @frappe.whitelist()
+def category_counts():
+    """Per-category counts for the page's tab bubbles, in one grouped read.
+
+    ``unread`` per category sums to exactly ``unread_count()`` (same user, same
+    category set), so the bell's total and the tab bubbles always agree.
+    """
+    rows = frappe.db.sql(
+        """SELECT scp_category AS category, COUNT(*) AS total, SUM(`read` = 0) AS unread
+           FROM `tabNotification Log`
+           WHERE for_user = %(user)s AND scp_category IN %(cats)s
+           GROUP BY scp_category""",
+        {"user": frappe.session.user, "cats": CATEGORIES},
+        as_dict=True,
+    )
+    counts = {c: {"total": 0, "unread": 0} for c in CATEGORIES}
+    for r in rows:
+        counts[r["category"]] = {"total": int(r["total"] or 0), "unread": int(r["unread"] or 0)}
+    return {
+        "counts": counts,
+        "total": sum(c["total"] for c in counts.values()),
+        "unread": sum(c["unread"] for c in counts.values()),
+    }
+
+
+@frappe.whitelist()
 def mark_read(names=None, all=0):
     """Mark specific notifications, or every SCP one of the user's, as read."""
     import json

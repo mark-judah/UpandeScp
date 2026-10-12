@@ -92,12 +92,12 @@ describe("Schedule review fixes", () => {
       .mockImplementation(async () => base({ plans: [plan({ name: "WO-NEW", greenhouse: "Chepsito GH 99 - KR", start: NEXT.from, end: NEXT.from })] }));
     render(<Schedule initialCrop="Rose" />);
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
-    await screen.findByText("GH 99");
+    await screen.findByText("Chepsito GH 99");
     await act(async () => {
       releaseFirst(base({ plans: [plan({ name: "WO-OLD", greenhouse: "Chepsito GH 11 - KR", start: NEXT.from, end: NEXT.from })] }));
     });
-    expect(screen.queryByText("GH 11")).toBeNull();
-    expect(screen.getByText("GH 99")).toBeTruthy();
+    expect(screen.queryByText("Chepsito GH 11")).toBeNull();
+    expect(screen.getByText("Chepsito GH 99")).toBeTruthy();
   });
 });
 

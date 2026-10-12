@@ -15,18 +15,16 @@ export type Place = { farm: string; greenhouse: string };
 export const ALL_FARMS_LABEL = "All farms";
 export const ALL_GREENHOUSES_LABEL = "All greenhouses";
 
-/** "Chepsito GH 16 - KR" → "GH 16" with the farm, "Chepsito GH 16" without.
- *  Drops the company suffix (" - KR") and, when given, the farm prefix. */
-export function shortHouse(name: string, farm?: string | null): string {
-  let s = (name || "").replace(/\s+-\s+[A-Z]{1,4}$/, "");
-  if (farm && s.toLowerCase().startsWith(farm.toLowerCase() + " ")) s = s.slice(farm.length + 1);
-  return s;
+/** "Chepsito GH 16 - KR" → "Chepsito GH 16": the full warehouse name minus the
+ *  company suffix (" - KR"). The farm argument is accepted for old callers and
+ *  ignored: the house is written in full everywhere (user preference). */
+export function shortHouse(name: string, _farm?: string | null): string {
+  return (name || "").replace(/\s+-\s+[A-Z]{1,4}$/, "");
 }
 
-/** "Chepsito · GH 16" — the house with its farm, for a pill or a title. */
-export function houseLabel(name: string, farm?: string | null): string {
-  const short = shortHouse(name, farm);
-  return farm ? `${farm} · ${short}` : short;
+/** The house as a pill or title reads: "Chepsito GH 16". */
+export function houseLabel(name: string, _farm?: string | null): string {
+  return shortHouse(name);
 }
 
 /** The farm a greenhouse belongs to: from the farm data when it lists the

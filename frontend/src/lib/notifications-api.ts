@@ -55,6 +55,41 @@ export async function fetchUnreadCount(): Promise<number> {
   }
 }
 
+export interface CategoryCounts {
+  counts: Record<ScpCategory, { total: number; unread: number }>;
+  total: number;
+  unread: number;
+}
+
+/** Per-category totals for the tab bubbles, in one lightweight call. Null on
+ *  failure, so the page shows no bubbles rather than wrong ones. */
+export async function fetchCategoryCounts(): Promise<CategoryCounts | null> {
+  try {
+    const r = await call<CategoryCounts>(`${BASE}.category_counts`, {});
+    return r?.counts ? r : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The tab that holds the most unread notifications, or null when none has any. */
+export function busiestCategory(counts: CategoryCounts | null): ScpCategory | null {
+  if (!counts) return null;
+  let best: ScpCategory | null = null;
+  let max = 0;
+  for (const [c, v] of Object.entries(counts.counts) as [ScpCategory, { unread: number }][]) {
+    if (v.unread > max) {
+      max = v.unread;
+      best = c;
+    }
+  }
+  return best;
+}
+
+export function capCount(n: number): string {
+  return n > 99 ? "99+" : String(n);
+}
+
 export async function markRead(
   arg: { names?: string[]; all?: boolean } = {},
 ): Promise<number> {

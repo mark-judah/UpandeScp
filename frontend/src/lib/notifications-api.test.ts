@@ -81,3 +81,25 @@ describe("CATEGORY_LABEL", () => {
     );
   });
 });
+
+import { busiestCategory, capCount, type CategoryCounts } from "./notifications-api";
+
+describe("tab count helpers", () => {
+  const mk = (u: Record<string, number>): CategoryCounts => ({
+    counts: Object.fromEntries(
+      ["loan", "transfer", "procurement", "stock", "scouting", "plan"].map((c) => [c, { total: u[c] ?? 0, unread: u[c] ?? 0 }]),
+    ) as CategoryCounts["counts"],
+    total: 0,
+    unread: 0,
+  });
+  it("caps at 99+", () => {
+    expect(capCount(7)).toBe("7");
+    expect(capCount(99)).toBe("99");
+    expect(capCount(100)).toBe("99+");
+  });
+  it("finds the busiest tab, or none when nothing is unread", () => {
+    expect(busiestCategory(mk({ loan: 250, transfer: 30 }))).toBe("loan");
+    expect(busiestCategory(mk({}))).toBeNull();
+    expect(busiestCategory(null)).toBeNull();
+  });
+});

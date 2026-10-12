@@ -145,7 +145,7 @@ describe("Scout plan grid (C4–C6)", () => {
     expect(within(cell(GH[1], DAYS[1])).getByTestId("plan-chip").getAttribute("data-status")).toBe("Missed");
     const box = screen.getByTestId("check-on-leave");
     expect(box.textContent).toMatch(/Planned scouts now on leave — reassign \(1\)/);
-    expect(box.textContent).toMatch(/Ben Otieno · Wed 7 · GH 02/);
+    expect(box.textContent).toMatch(/Ben Otieno · Wed 7 · Chepsito GH 02/);
   });
 
   it("C9: the picker notes each scout's leave days in the week", async () => {
@@ -162,7 +162,7 @@ describe("Scout plan grid (C4–C6)", () => {
     render(<ScoutPlanView crop="Rose" initialWeek="2026-10-08" />);
     await screen.findByTestId("scout-grid");
     await userEvent.click(screen.getByRole("button", { name: "Scout rows" }));
-    expect(within(cell("S1", DAYS[0])).getByTestId("plan-chip").textContent).toContain("GH 01");
+    expect(within(cell("S1", DAYS[0])).getByTestId("plan-chip").textContent).toContain("Chepsito GH 01");
   });
 
   it("is read-only for users who do not manage the farm, and has no accent strips", async () => {

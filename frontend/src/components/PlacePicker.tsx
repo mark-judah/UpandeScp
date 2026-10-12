@@ -2,9 +2,9 @@
  * The one farm and greenhouse picker (place picker spec 2026-10-12 G1–G5).
  *
  * A single pill that opens a searchable list: "All farms", then each farm
- * with its greenhouses indented beneath it, written short ("GH 16"). Picking
+ * with its greenhouses indented beneath it, written in full ("Chepsito GH 16"). Picking
  * a farm filters to the farm; picking a greenhouse filters to that house and
- * its farm. The pill reads "All farms" · "Chepsito" · "Chepsito · GH 16".
+ * its farm. The pill reads "All farms" · "Chepsito" · "Chepsito GH 16".
  *
  * `level` narrows it: "farm" lists farms only; "greenhouse" needs a house and
  * shows the farms as headers only. The last place picked is remembered per

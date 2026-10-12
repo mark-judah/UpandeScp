@@ -73,7 +73,7 @@ describe("Schedule page", () => {
     render(<Schedule initialCrop="Rose" />);
     await userEvent.click(await screen.findByRole("button", { name: /Jump to latest plans/ }));
     const cell = await screen.findByTestId("cal-day-2026-09-02");
-    expect(within(cell).getByText("GH 16")).toBeTruthy();
+    expect(within(cell).getByText("Chepsito GH 16")).toBeTruthy();
     expect(within(cell).getByTestId("leave-warning").textContent).toContain("1");
     const other = screen.getByTestId("cal-day-2026-09-04");
     expect(within(other).queryByTestId("leave-warning")).toBeNull();

@@ -16,7 +16,11 @@ import { TextSkeleton } from "@/components/Loading";
 import { cn } from "@/lib/utils";
 import {
   CATEGORY_LABEL,
+  busiestCategory,
+  capCount,
+  fetchCategoryCounts,
   fetchNotifications,
+  type CategoryCounts,
   markRead,
   relativeTime,
   routeForNotification,
@@ -34,11 +38,46 @@ const CATEGORIES: Array<ScpCategory | ""> = [
   "plan",
 ];
 
+/** Unread count on a tab: muted pill, filled accent on the busiest tab. */
+export function CountBubble({
+  loading, value, emphasised, active,
+}: { loading: boolean; value: number | undefined; emphasised?: boolean; active?: boolean }) {
+  if (loading) {
+    return (
+      <span
+        data-testid="count-skeleton"
+        aria-hidden
+        className="inline-block h-4 min-w-[1.25rem] animate-pulse rounded-full bg-[var(--sd-bg-soft)]"
+      />
+    );
+  }
+  if (value === undefined) return null;
+  return (
+    <span
+      data-testid="count-bubble"
+      data-emphasised={emphasised || undefined}
+      title={`${value} unread`}
+      className={cn(
+        "inline-flex h-4 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[0.65rem] font-medium tabular-nums",
+        emphasised
+          ? "bg-primary text-primary-foreground"
+          : active
+            ? "bg-background/20 text-background"
+            : "bg-muted text-muted-foreground",
+      )}
+    >
+      {capCount(value)}
+    </span>
+  );
+}
+
 export function Notifications() {
   const [category, setCategory] = useState<ScpCategory | "">("");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [rows, setRows] = useState<ScpNotification[] | null>(null);
   const [unread, setUnread] = useState(0);
+  const [tabCounts, setTabCounts] = useState<CategoryCounts | null>(null);
+  const [countsLoading, setCountsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -58,6 +97,17 @@ export function Notifications() {
     void load();
   }, [load]);
 
+  // Bubbles come from one grouped count, so every tab shows on first paint
+  // even though the list below loads one category at a time.
+  const loadCounts = useCallback(async () => {
+    setTabCounts(await fetchCategoryCounts());
+    setCountsLoading(false);
+  }, []);
+  useEffect(() => {
+    void loadCounts();
+  }, [loadCounts]);
+  const busiest = busiestCategory(tabCounts);
+
   const onOpen = async (n: ScpNotification) => {
     if (!n.read) {
       await markRead({ names: [n.name] });
@@ -65,6 +115,7 @@ export function Notifications() {
         (prev ?? []).map((r) => (r.name === n.name ? { ...r, read: 1 } : r)),
       );
       setUnread((u) => Math.max(0, u - 1));
+      void loadCounts();
     }
     const route = routeForNotification(n);
     if (route) window.location.hash = route.replace(/^#/, "");
@@ -73,6 +124,7 @@ export function Notifications() {
   const onMarkAll = async () => {
     setUnread(await markRead({ all: true }));
     setRows((prev) => (prev ?? []).map((r) => ({ ...r, read: 1 })));
+    void loadCounts();
   };
 
   const grouped = useMemo(() => rows ?? [], [rows]);
@@ -97,13 +149,19 @@ export function Notifications() {
             type="button"
             onClick={() => setCategory(c)}
             className={cn(
-              "h-7 rounded-full border px-2.5 text-xs transition-colors",
+              "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs transition-colors",
               category === c
                 ? "border-foreground bg-foreground text-background"
                 : "hover:bg-muted",
             )}
           >
             {c ? CATEGORY_LABEL[c] : "All"}
+            <CountBubble
+              loading={countsLoading}
+              value={c ? tabCounts?.counts[c]?.unread : tabCounts?.unread}
+              emphasised={!!c && c === busiest}
+              active={category === c}
+            />
           </button>
         ))}
         <button

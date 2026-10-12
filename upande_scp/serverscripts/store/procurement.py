@@ -46,12 +46,12 @@ import json
 import frappe
 from frappe.utils import flt, getdate, now_datetime, nowdate
 
+from upande_scp.serverscripts.common import crop_catalog, crop_scope
 from upande_scp.serverscripts.common.notifications import notify, users_for_farm
+from upande_scp.serverscripts.finance.cost_centres import farm_company as _farm_company
 from upande_scp.serverscripts.spray_plan_creator.loaning import (
 	ELEVATED,
-	_assert_farm_access,
 	_ensure_creator,
-	_user_farms,
 )
 from upande_scp.serverscripts.spray_plan_creator.loaning_v2 import (
 	farm_company,
@@ -97,10 +97,84 @@ def _assert_gm(what: str = "do this") -> None:
 		)
 
 
+GM_ROLE = "SCP General Manager"
+
+
+def visible_farms(crop: str | None = None) -> set[str] | None:
+	"""The farms this user may read or act on in procurement; None is unrestricted.
+
+	* Administrator / System Manager: everything (narrowed to the crop's farms when
+	  a crop is given).
+	* SCP General Manager: every farm of their own company or companies, within the
+	  crop. Never another company's.
+	* anyone else (a spray plan creator): only the farms they are rostered on, again
+	  within their company and the crop.
+
+	`crop` is the page's route crop. An empty set means nothing is visible.
+	"""
+	user = frappe.session.user
+	canon = crop_catalog.resolve_crop(crop) if crop else None
+	if crop_scope.is_unrestricted(user) or GM_ROLE in frappe.get_roles(user):
+		return crop_scope.scoped_farms(canon or None, user)
+	return crop_scope.visible_farms("spray_plan_creators", canon or None, user)
+
+
+def visible_companies(crop: str | None = None) -> set[str] | None:
+	"""Companies whose cycles this user may see: those of their visible farms, plus
+	the GM's own companies and the companies whose general store they keep."""
+	farms = visible_farms(crop)
+	if farms is None:
+		return None
+	user = frappe.session.user
+	cos = {c for c in (_farm_company(f) for f in farms) if c}
+	if not crop and GM_ROLE in frappe.get_roles(user):
+		cos |= crop_scope.allowed_companies(user) or set()
+	for wh in frappe.get_all("Farm Store Keeper", filters={"user": user}, pluck="warehouse"):
+		c = wh and frappe.db.get_value("Warehouse", wh, "company")
+		if c:
+			cos.add(c)
+	return cos
+
+
+def assert_farm_scope(farm: str, crop: str | None = None) -> None:
+	allowed = visible_farms(crop)
+	if allowed is not None and farm not in allowed:
+		frappe.throw(f"You are not assigned to {farm}.", frappe.PermissionError)
+
+
+def assert_company_scope(company: str | None, crop: str | None = None) -> None:
+	allowed = visible_companies(crop)
+	if allowed is not None and company not in allowed:
+		frappe.throw(f"{company or 'That company'} is not one of your companies.", frappe.PermissionError)
+
+
+def assert_cycle_access(cycle: str, crop: str | None = None) -> str:
+	"""Refuse a cycle of a company the user may not see. Returns the cycle's company."""
+	company = frappe.db.get_value(CYCLE, cycle, "company")
+	if company is None and not frappe.db.exists(CYCLE, cycle):
+		frappe.throw(f"{cycle} does not exist.", frappe.DoesNotExistError)
+	assert_company_scope(company, crop)
+	return company
+
+
+def _assert_farm_in_cycle(farm: str, company: str | None) -> None:
+	"""A cycle is one company's: a farm of another company cannot take part in it."""
+	owner = _farm_company(farm)
+	if company and owner != company:
+		frappe.throw(
+			f"{farm} belongs to {owner or 'no company'}, but this cycle is {company}'s.",
+			frappe.PermissionError,
+		)
+
+
+def _counted_farm_ok(farm: str, company: str | None) -> bool:
+	return not company or _farm_company(farm) == company
+
+
 def _assert_can_edit(req) -> None:
 	"""A planner may edit their own farm's requirement, while it is editable."""
 	_ensure_creator()
-	_assert_farm_access(req.farm)
+	assert_farm_scope(req.farm)
 	if req.status not in EDITABLE_STATES:
 		frappe.throw(
 			f"{req.name} is {req.status.lower()} and can no longer be edited "
@@ -223,7 +297,7 @@ def general_store_for(company: str) -> str | None:
 
 
 @frappe.whitelist()
-def companies_for_cycle() -> list[dict]:
+def companies_for_cycle(crop: str | None = None) -> list[dict]:
 	"""Companies a cycle can run in: the ones that have a general store.
 
 	Filtered rather than listing every company, because a cycle without a pool
@@ -231,7 +305,10 @@ def companies_for_cycle() -> list[dict]:
 	deliver. Better to not offer the choice than to let it fail three steps later.
 	"""
 	out = []
+	allowed = visible_companies(crop)
 	for company in frappe.get_all("Company", pluck="name"):
+		if allowed is not None and company not in allowed:
+			continue
 		store = general_store_for(company)
 		if store:
 			out.append({"company": company, "general_store": store})
@@ -241,6 +318,7 @@ def companies_for_cycle() -> list[dict]:
 @frappe.whitelist()
 def create_cycle(cycle_name: str, company: str, period_start: str, period_end: str) -> str:
 	_assert_gm("open a procurement cycle")
+	assert_company_scope(company)
 	doc = frappe.get_doc({
 		"doctype": CYCLE,
 		"cycle_name": cycle_name,
@@ -256,10 +334,16 @@ def create_cycle(cycle_name: str, company: str, period_start: str, period_end: s
 
 
 @frappe.whitelist()
-def list_cycles(status: str | None = None, limit: int = 20) -> list[dict]:
+def list_cycles(status: str | None = None, limit: int = 20, crop: str | None = None) -> list[dict]:
+	"""Cycles of the companies this user may see for this crop — no others."""
 	filters = {}
 	if status:
 		filters["status"] = status
+	allowed = visible_companies(crop)
+	if allowed is not None:
+		if not allowed:
+			return []
+		filters["company"] = ("in", sorted(allowed))
 	return frappe.get_all(
 		CYCLE,
 		filters=filters,
@@ -301,10 +385,11 @@ def _requirement_dict(doc) -> dict:
 
 
 @frappe.whitelist()
-def my_requirement(cycle: str, farm: str) -> dict:
+def my_requirement(cycle: str, farm: str, crop: str | None = None) -> dict:
 	"""The farm's requirement for this cycle, created as a Draft if absent."""
 	_ensure_creator()
-	_assert_farm_access(farm)
+	assert_farm_scope(farm, crop)
+	_assert_farm_in_cycle(farm, assert_cycle_access(cycle, crop))
 	name = frappe.db.get_value(
 		REQUIREMENT, {"cycle": cycle, "farm": farm, "status": ("!=", "Superseded")}, "name"
 	)
@@ -374,7 +459,7 @@ def review_requirement(name: str, decision: str, reason: str | None = None) -> d
 	"""
 	doc = frappe.get_doc(REQUIREMENT, name)
 	_ensure_creator()
-	_assert_farm_access(doc.farm)
+	assert_farm_scope(doc.farm)
 	if doc.status not in ("Submitted", "Amendment Requested"):
 		frappe.throw(f"{name} is {doc.status.lower()}; there is nothing to review.")
 
@@ -417,7 +502,7 @@ def request_amendment(requirement: str, items, reason: str) -> str:
 		frappe.throw("An amendment needs a reason.")
 	req = frappe.get_doc(REQUIREMENT, requirement)
 	_ensure_creator()
-	_assert_farm_access(req.farm)
+	assert_farm_scope(req.farm)
 
 	if isinstance(items, str):
 		items = json.loads(items or "[]")
@@ -475,7 +560,7 @@ def decide_amendment(name: str, decision: str, note: str | None = None) -> dict:
 	if doc.status != "Pending":
 		frappe.throw(f"{name} was already {doc.status.lower()}.")
 	_ensure_creator()
-	_assert_farm_access(doc.farm)
+	assert_farm_scope(doc.farm)
 
 	decision = (decision or "").lower()
 	if decision not in ("grant", "decline"):
@@ -522,13 +607,16 @@ def decide_amendment(name: str, decision: str, note: str | None = None) -> dict:
 
 
 @frappe.whitelist()
-def list_amendments(cycle: str | None = None, status: str | None = None) -> list[dict]:
+def list_amendments(
+	cycle: str | None = None, status: str | None = None, crop: str | None = None
+) -> list[dict]:
 	filters = {}
 	if cycle:
+		assert_cycle_access(cycle, crop)
 		filters["cycle"] = cycle
 	if status:
 		filters["status"] = status
-	allowed = _user_farms()
+	allowed = visible_farms(crop)
 	if allowed is not None:
 		filters["farm"] = ("in", list(allowed) or [""])
 	rows = frappe.get_all(
@@ -563,13 +651,19 @@ def consolidate(cycle: str) -> dict:
 	quietly move it.
 	"""
 	_assert_gm("consolidate a cycle")
+	assert_cycle_access(cycle)
 	doc = frappe.get_doc(CYCLE, cycle)
 
-	reqs = frappe.get_all(
-		REQUIREMENT,
-		filters={"cycle": cycle, "status": ("in", COUNTED_STATES)},
-		pluck="name",
-	)
+	# Only the cycle's own company: a requirement from a farm of another company is
+	# never part of this cycle's total, whatever got filed against it.
+	reqs = [
+		r.name for r in frappe.get_all(
+			REQUIREMENT,
+			filters={"cycle": cycle, "status": ("in", COUNTED_STATES)},
+			fields=["name", "farm"],
+		)
+		if _counted_farm_ok(r.farm, doc.company)
+	]
 	totals: dict[str, float] = {}
 	if reqs:
 		rows = frappe.get_all(
@@ -653,6 +747,7 @@ def _resolve_reduction(total: float, mode: str | None, value: float | None) -> f
 def set_reduction(cycle: str, item_code: str, mode: str, value=None, reason: str | None = None) -> dict:
 	"""Review 2: the GM's financial call on one chemical."""
 	_assert_gm("reduce a chemical's total")
+	assert_cycle_access(cycle)
 	doc = frappe.get_doc(CYCLE, cycle)
 	line = _assert_line_open(doc, item_code)
 
@@ -681,6 +776,7 @@ def set_reduction(cycle: str, item_code: str, mode: str, value=None, reason: str
 def finalise_line(cycle: str, item_code: str) -> dict:
 	"""Lock a line: "the one approved as final is not changed"."""
 	_assert_gm("approve a figure as final")
+	assert_cycle_access(cycle)
 	doc = frappe.get_doc(CYCLE, cycle)
 	line = _assert_line_open(doc, item_code)
 	line.final_approved = 1
@@ -693,6 +789,10 @@ def finalise_line(cycle: str, item_code: str) -> dict:
 	return get_cycle(cycle)
 
 
+def _cycle_company(cycle: str) -> str | None:
+	return frappe.db.get_value(CYCLE, cycle, "company")
+
+
 def _farms_requesting(cycle: str, item_code: str) -> list[str]:
 	rows = frappe.db.sql(
 		"""SELECT DISTINCT r.farm
@@ -702,12 +802,15 @@ def _farms_requesting(cycle: str, item_code: str) -> list[str]:
 		(cycle, item_code, COUNTED_STATES),
 		as_dict=True,
 	)
-	return [r.farm for r in rows if r.farm]
+	company = _cycle_company(cycle)
+	return [r.farm for r in rows if r.farm and _counted_farm_ok(r.farm, company)]
 
 
 @frappe.whitelist()
-def get_cycle(cycle: str) -> dict:
+def get_cycle(cycle: str, crop: str | None = None) -> dict:
+	assert_cycle_access(cycle, crop)
 	doc = frappe.get_doc(CYCLE, cycle)
+	visible = visible_farms(crop)
 	return {
 		"name": doc.name,
 		"cycle_name": doc.cycle_name,
@@ -750,15 +853,17 @@ def get_cycle(cycle: str) -> dict:
 				"transferred": bool(a.transferred),
 			}
 			for a in doc.allocations
+			if visible is None or a.farm in visible
 		],
 	}
 
 
 @frappe.whitelist()
-def requirements_for(cycle: str) -> list[dict]:
+def requirements_for(cycle: str, crop: str | None = None) -> list[dict]:
 	"""Every farm's requirement on a cycle, scoped to what the user may see."""
+	company = assert_cycle_access(cycle, crop)
 	filters = {"cycle": cycle}
-	allowed = _user_farms()
+	allowed = visible_farms(crop)
 	if allowed is not None:
 		filters["farm"] = ("in", list(allowed) or [""])
 	rows = frappe.get_all(
@@ -767,6 +872,7 @@ def requirements_for(cycle: str) -> list[dict]:
 		fields=["name", "farm", "status", "total_lines", "reviewed_by", "rejection_reason"],
 		order_by="farm asc",
 	)
+	rows = [r for r in rows if _counted_farm_ok(r.farm, company)]
 	for r in rows:
 		r["items"] = frappe.get_all(
 			"Chemical Purchase Requirement Item",
@@ -804,7 +910,10 @@ def _mr_rows(cycle: str) -> dict:
 			"uom": l["uom"] or frappe.db.get_value("Item", l["item_code"], "stock_uom"),
 			"farm": l["farm"],
 			"cost_center": l["cost_center"],
+			"business_unit": l.get("business_unit"),
 			"expense_account": l["account"],
+			# per line UOM (stock rate x conversion factor), so qty x rate is the cost
+			"conversion_factor": flt(l.get("conversion_factor")) or 1.0,
 			"rate": flt(l["rate"]),
 			"amount": round(flt(l["approved_qty"]) * flt(l["rate"]), 2),
 			"rate_source": l["rate_source"],
@@ -854,6 +963,8 @@ def _one_row_per_item(rows: list[dict]) -> list[dict]:
 			o["farm"] = None
 		if o["cost_center"] != r["cost_center"]:
 			o["cost_center"] = None
+		if o.get("business_unit") != r.get("business_unit"):
+			o["business_unit"] = None
 	return list(out.values())
 
 
@@ -861,6 +972,7 @@ def _one_row_per_item(rows: list[dict]) -> list[dict]:
 def preview_material_request(cycle: str) -> dict:
 	"""The rows `create_material_request` would write, without writing anything."""
 	_assert_gm("preview the Material Request")
+	assert_cycle_access(cycle)
 	out = _mr_rows(cycle)
 	rows = out["rows"]
 	return {
@@ -892,6 +1004,7 @@ def create_material_request(cycle: str, schedule_date: str | None = None) -> str
 	(B3) for the GM to review and submit in ERPNext.
 	"""
 	_assert_gm("raise the Material Request")
+	assert_cycle_access(cycle)
 	doc = frappe.get_doc(CYCLE, cycle)
 	if doc.material_request and frappe.db.exists("Material Request", doc.material_request):
 		frappe.throw(
@@ -927,8 +1040,11 @@ def create_material_request(cycle: str, schedule_date: str | None = None) -> str
 			"uom": r["uom"],
 			"warehouse": doc.general_store,
 			"schedule_date": when,
+			"conversion_factor": r.get("conversion_factor") or 1,
 			"rate": r["rate"],
 		}
+		if r.get("business_unit") and _has_field("Material Request Item", "business_unit"):
+			row["business_unit"] = r["business_unit"]
 		if r["cost_center"]:
 			row["cost_center"] = r["cost_center"]
 		if r["expense_account"]:
@@ -990,7 +1106,7 @@ def _restamp_mr_rows(mr, rows) -> None:
 	"""
 	changed = False
 	for item, r in zip(mr.items, rows):
-		for field in ("cost_center", "expense_account", "rate"):
+		for field in ("cost_center", "expense_account", "business_unit", "conversion_factor", "rate"):
 			want = r.get(field)
 			if want and item.get(field) != want:
 				item.set(field, want)
@@ -1072,11 +1188,30 @@ def _requested_by_farm(cycle: str, item_code: str) -> dict[str, float]:
 		(cycle, item_code, COUNTED_STATES),
 		as_dict=True,
 	)
-	return {r.farm: flt(r.q) for r in rows if r.farm}
+	company = _cycle_company(cycle)
+	return {r.farm: flt(r.q) for r in rows if r.farm and _counted_farm_ok(r.farm, company)}
 
 
 @frappe.whitelist()
-def preview_allocation(cycle: str, received: str | None = None) -> dict:
+def preview_allocation(cycle: str, received: str | None = None, crop: str | None = None) -> dict:
+	"""`_preview_allocation`, for the caller: their company's cycle, their farms' rows.
+
+	The split itself is always computed over every farm of the cycle's company (a
+	farm's share depends on the others'); only what is shown is narrowed.
+	"""
+	assert_cycle_access(cycle, crop)
+	out = _preview_allocation(cycle, received)
+	visible = visible_farms(crop)
+	if visible is not None:
+		for line in out["lines"]:
+			line["allocations"] = [a for a in line["allocations"] if a["farm"] in visible]
+			line["carried_forward"] = {
+				f: q for f, q in line["carried_forward"].items() if f in visible
+			}
+	return out
+
+
+def _preview_allocation(cycle: str, received: str | None = None) -> dict:
 	"""What the split would look like, without writing anything.
 
 	`received` optionally maps item_code -> quantity actually received, for when
@@ -1144,8 +1279,9 @@ def publish_allocation(cycle: str, received: str | None = None) -> dict:
 	resume from an emptied ledger.
 	"""
 	_assert_gm("publish an allocation")
+	assert_cycle_access(cycle)
 	doc = frappe.get_doc(CYCLE, cycle)
-	preview = preview_allocation(cycle, received)
+	preview = _preview_allocation(cycle, received)
 	mode = preview.get("mode", MODE_SIMPLE)
 
 	before = {(a.item_code, a.farm): flt(a.allocated_qty) for a in doc.allocations}
@@ -1242,6 +1378,7 @@ def transfer_allocation(cycle: str) -> dict:
 	to see.
 	"""
 	_assert_gm("transfer an allocation")
+	assert_cycle_access(cycle)
 	doc = frappe.get_doc(CYCLE, cycle)
 	if not doc.general_store:
 		frappe.throw("This cycle has no general store to transfer from.")
@@ -1302,13 +1439,14 @@ def transfer_allocation(cycle: str) -> dict:
 
 
 @frappe.whitelist()
-def pool_status(company: str | None = None) -> dict:
+def pool_status(company: str | None = None, crop: str | None = None) -> dict:
 	"""What is sitting in the general store, and who is owed it.
 
 	The keeper's question is not "how much is here" but "why is it here and who
 	should get it next" — so on-hand and the outstanding credits are one view.
 	"""
-	store = general_store_for(company or frappe.defaults.get_user_default("Company"))
+	company = _pool_company(company, crop)
+	store = general_store_for(company)
 	on_hand = []
 	if store:
 		on_hand = frappe.get_all(
@@ -1322,6 +1460,15 @@ def pool_status(company: str | None = None) -> dict:
 		fields=["farm", "item_code", "item_name", "uom", "credit_qty", "last_cycle"],
 		order_by="item_code asc, credit_qty desc",
 	)
+	# This company's farms only; the keeper (and the GM) see all of them, a planner
+	# just their own.
+	seen = visible_farms(crop)
+	credits = [
+		c for c in credits
+		if _counted_farm_ok(c.farm, company) and (
+			seen is None or c.farm in seen or (store and _keeper_of(store))
+		)
+	]
 	owed: dict[str, float] = {}
 	for c in credits:
 		if flt(c.credit_qty) > 0:
@@ -1359,8 +1506,30 @@ def _farm_consumption_warehouses(farm: str) -> list[str]:
 	return sorted(whs)
 
 
+def _consumed(warehouses: list[str], item_codes: list[str], start, end) -> dict[str, float]:
+	"""Consumption (B10) per item over a window: issues and tank-mix manufacture out of
+	`warehouses`, not transfers or loans. One query for all the items."""
+	if not (warehouses and item_codes and start and end):
+		return {}
+	rows = frappe.db.sql(
+		"""SELECT sle.item_code, COALESCE(SUM(-sle.actual_qty), 0) q
+		   FROM `tabStock Ledger Entry` sle
+		   JOIN `tabStock Entry` se ON se.name = sle.voucher_no
+		   WHERE sle.voucher_type = 'Stock Entry'
+		     AND se.purpose IN %s
+		     AND IFNULL(se.stock_entry_type, '') != 'Chemical Loaning'
+		     AND sle.item_code IN %s AND sle.warehouse IN %s
+		     AND sle.posting_date BETWEEN %s AND %s
+		     AND sle.actual_qty < 0 AND sle.is_cancelled = 0
+		   GROUP BY sle.item_code""",
+		(CONSUMPTION_PURPOSES, tuple(item_codes), tuple(warehouses), start, end),
+		as_dict=True,
+	)
+	return {r.item_code: flt(r.q) for r in rows}
+
+
 @frappe.whitelist()
-def consumption_vs_allocation(cycle: str) -> list[dict]:
+def consumption_vs_allocation(cycle: str, crop: str | None = None) -> list[dict]:
 	"""Allocation against what each farm actually consumed — the budget question.
 
 	Consumption (B10) is product used: issues (a Chemical Spray included) and the
@@ -1371,30 +1540,21 @@ def consumption_vs_allocation(cycle: str) -> list[dict]:
 	Borrowed stock still counts once it is used: a farm that borrows has consumed
 	more than it was allocated, and the reconciliation should say so.
 	"""
+	assert_cycle_access(cycle, crop)
 	doc = frappe.get_doc(CYCLE, cycle)
 	start, end = doc.period_start, doc.period_end
+	visible = visible_farms(crop)
 	out = []
 	where: dict[str, list[str]] = {}
 	for a in doc.allocations:
+		if visible is not None and a.farm not in visible:
+			continue
 		consumed = 0.0
 		if a.farm not in where:
 			where[a.farm] = _farm_consumption_warehouses(a.farm)
 		whs = where[a.farm]
 		if whs and start and end:
-			row = frappe.db.sql(
-				"""SELECT COALESCE(SUM(-sle.actual_qty), 0) q
-				   FROM `tabStock Ledger Entry` sle
-				   JOIN `tabStock Entry` se ON se.name = sle.voucher_no
-				   WHERE sle.voucher_type = 'Stock Entry'
-				     AND se.purpose IN %s
-				     AND IFNULL(se.stock_entry_type, '') != 'Chemical Loaning'
-				     AND sle.item_code = %s AND sle.warehouse IN %s
-				     AND sle.posting_date BETWEEN %s AND %s
-				     AND sle.actual_qty < 0 AND sle.is_cancelled = 0""",
-				(CONSUMPTION_PURPOSES, a.item_code, tuple(whs), start, end),
-				as_dict=True,
-			)
-			consumed = flt(row[0]["q"]) if row else 0.0
+			consumed = _consumed(whs, [a.item_code], start, end).get(a.item_code, 0.0)
 		out.append({
 			"farm": a.farm,
 			"item_code": a.item_code,
@@ -1416,6 +1576,19 @@ def consumption_vs_allocation(cycle: str) -> list[dict]:
 # to the store keeper, not to another farm's planner.
 
 TRANSFER_REQUEST = "Chemical Transfer Request"
+
+
+def _pool_company(company: str | None, crop: str | None = None) -> str | None:
+	"""The company a pool call is about: the one asked for, refused if it is not the
+	caller's; else their default, else the first company they may see."""
+	if company:
+		assert_company_scope(company, crop)
+		return company
+	allowed = visible_companies(crop)
+	default = frappe.defaults.get_user_default("Company")
+	if allowed is None or default in allowed:
+		return default
+	return sorted(allowed)[0] if allowed else None
 
 
 def _pool_on_hand(store: str, item_code: str) -> float:
@@ -1458,9 +1631,9 @@ def _keeper_of(store: str, user: str | None = None) -> bool:
 
 
 @frappe.whitelist()
-def pool_availability(company: str | None = None, item_codes=None) -> dict:
+def pool_availability(company: str | None = None, item_codes=None, crop: str | None = None) -> dict:
 	"""Pool stock for named items, net of what is already promised."""
-	store = general_store_for(company or frappe.defaults.get_user_default("Company"))
+	store = general_store_for(_pool_company(company, crop))
 	if isinstance(item_codes, str):
 		item_codes = json.loads(item_codes or "[]")
 	out = {}
@@ -1480,7 +1653,7 @@ def pool_availability(company: str | None = None, item_codes=None) -> dict:
 def request_from_pool(requesting_farm: str, items, reason: str | None = None) -> dict:
 	"""A planner asks the general store keeper for stock from the shared pool."""
 	_ensure_creator()
-	_assert_farm_access(requesting_farm)
+	assert_farm_scope(requesting_farm)
 	if isinstance(items, str):
 		items = json.loads(items or "[]")
 	if not items:
@@ -1553,11 +1726,19 @@ def _keepers_of(store: str) -> list[str]:
 
 
 @frappe.whitelist()
-def list_pool_requests(box: str = "incoming") -> list[dict]:
-	"""`incoming` = waiting on the keeper; `outgoing` = raised by my farms."""
+def list_pool_requests(box: str = "incoming", crop: str | None = None) -> list[dict]:
+	"""`incoming` = waiting on the keeper; `outgoing` = raised by my farms.
+
+	Only requests of the caller's companies (by the pool the request draws on), and
+	for `outgoing` only their own farms'.
+	"""
 	filters = {"from_general_store": 1}
+	allowed_cos = visible_companies(crop)
+	if allowed_cos is not None:
+		stores = [general_store_for(c) for c in allowed_cos]
+		filters["lender_warehouse"] = ("in", [w for w in stores if w] or [""])
 	if box == "outgoing":
-		allowed = _user_farms()
+		allowed = visible_farms(crop)
 		if allowed is not None:
 			filters["requesting_farm"] = ("in", list(allowed) or [""])
 	rows = frappe.get_all(
@@ -1593,6 +1774,7 @@ def decide_pool_request(request: str, decisions, reason: str | None = None) -> d
 	doc = frappe.get_doc(TRANSFER_REQUEST, request)
 	if not doc.from_general_store:
 		frappe.throw(f"{request} is not a pool request.")
+	assert_company_scope(frappe.db.get_value("Warehouse", doc.lender_warehouse, "company"))
 	if not _keeper_of(doc.lender_warehouse):
 		frappe.throw(
 			"Only the keeper of the general store can decide this request.",
@@ -1692,3 +1874,189 @@ def _move_from_pool(doc, rows) -> str:
 	se.insert(ignore_permissions=True)
 	se.submit()
 	return se.name
+
+
+# ─────────────────────── per-farm quantities by item (Review) ────────────────
+
+#: A requirement the GM can already see an ask from, though it may not count yet.
+BREAKDOWN_STATES = ("Submitted", "Amendment Requested") + COUNTED_STATES
+
+
+@frappe.whitelist()
+def item_breakdown(cycle: str, crop: str | None = None) -> dict:
+	"""Each requested chemical with a column per requesting farm: what the farm asked
+	for and, once the cycle is consolidated, the farm's share of the approved figure
+	(after the GM's cut), the totals, and their value (qty x the commit's rate).
+
+	Shown before a requirement is approved, so a farm's ask counts only when its
+	requirement is Planner Approved (`counted`); the others are shown but marked. Only
+	the cycle's company's farms, and only the ones the caller may see — totals are of
+	those farms.
+	"""
+	from upande_scp.serverscripts.finance import accounts as acc
+	from upande_scp.serverscripts.finance.budgets import (
+		PUBLISHED_STATES,
+		_published_preview,
+		fold_remainder,
+	)
+
+	company = assert_cycle_access(cycle, crop)
+	visible = visible_farms(crop)
+	reqs = [
+		r for r in frappe.get_all(
+			REQUIREMENT,
+			filters={"cycle": cycle, "status": ("in", BREAKDOWN_STATES)},
+			fields=["name", "farm", "status"],
+			order_by="farm asc",
+		)
+		if _counted_farm_ok(r.farm, company) and (visible is None or r.farm in visible)
+	]
+	by_req = {r.name: r for r in reqs}
+	rows = frappe.get_all(
+		"Chemical Purchase Requirement Item",
+		filters={"parent": ("in", list(by_req) or [""])},
+		fields=["parent", "item_code", "item_name", "uom", "requested_qty"],
+		order_by="idx asc",
+	) if by_req else []
+
+	doc = frappe.get_doc(CYCLE, cycle)
+	approved: dict[tuple, float] = {}
+	if doc.lines:
+		preview = (
+			_published_preview(doc) if doc.status in PUBLISHED_STATES and doc.allocations
+			else _preview_allocation(cycle)
+		)
+		for pl in preview["lines"]:
+			for farm, q in fold_remainder(pl["allocations"], pl["remainder"]).items():
+				approved[(pl["item_code"], farm)] = q
+
+	items: dict[str, dict] = {}
+	for r in rows:
+		req = by_req[r.parent]
+		it = items.get(r.item_code)
+		if it is None:
+			rate = acc.resolve_rate(r.item_code, company)
+			it = items[r.item_code] = {
+				"item_code": r.item_code,
+				"item_name": r.item_name or r.item_code,
+				"uom": r.uom,
+				"rate": flt(rate["rate"]) * acc.uom_factor(r.item_code, r.uom),
+				"rate_source": rate["source"],
+				"by_farm": {},
+			}
+		cell = it["by_farm"].setdefault(req.farm, {
+			"requested": 0.0, "approved": None, "status": req.status,
+			"counted": req.status in COUNTED_STATES,
+		})
+		cell["requested"] += flt(r.requested_qty)
+		if cell["counted"] and (r.item_code, req.farm) in approved:
+			cell["approved"] = approved[(r.item_code, req.farm)]
+
+	out = []
+	for it in sorted(items.values(), key=lambda i: i["item_name"].lower()):
+		cells = it["by_farm"].values()
+		it["total_requested"] = sum(c["requested"] for c in cells)
+		has_approved = any(c["approved"] is not None for c in cells)
+		it["total_approved"] = sum(c["approved"] or 0.0 for c in cells) if has_approved else None
+		it["requested_value"] = round(it["total_requested"] * it["rate"], 2)
+		it["approved_value"] = (
+			round(it["total_approved"] * it["rate"], 2) if it["total_approved"] is not None else None
+		)
+		out.append(it)
+	return {
+		"cycle": cycle,
+		"currency": frappe.db.get_value("Company", company, "default_currency") or "KES",
+		"farms": [{"farm": r.farm, "status": r.status, "requirement": r.name} for r in reqs],
+		"items": out,
+	}
+
+
+# ───────────────────────── the planner's farm list + insights ────────────────
+
+
+@frappe.whitelist()
+def my_farms(crop: str | None = None, cycle: str | None = None) -> dict:
+	"""Farms the picker may offer: the caller's visible farms for this crop, and — when a
+	cycle is given — only that cycle's company's, since a cycle is one company's."""
+	_ensure_creator()
+	farms = visible_farms(crop)
+	if farms is None:
+		farms = set(frappe.get_all("Farm", pluck="name"))
+	if cycle:
+		company = assert_cycle_access(cycle, crop)
+		farms = {f for f in farms if _counted_farm_ok(f, company)}
+	return {"farms": sorted(farms)}
+
+
+INSIGHT_WEEKS = 8
+
+
+@frappe.whitelist()
+def insights(farm: str, item_codes, cycle: str | None = None, weeks: int = INSIGHT_WEEKS) -> dict:
+	"""What a planner wants to know when they add a chemical: on hand, recent use, what
+	the farm was approved last cycle, what it is owed, and the going rate.
+
+	Batched per farm and item list. Consumption is the commit's definition
+	(``_consumed``: issues and tank-mix manufacture, not transfers) over the last
+	`weeks` weeks, across the farm's stores and CSUs. "Last approved" is the farm's
+	allocated share in the most recent published cycle of the farm's company other than
+	this one. The rate is per the item's stock UOM.
+	"""
+	from datetime import timedelta
+
+	from upande_scp.serverscripts.common import stores as farm_stores
+	from upande_scp.serverscripts.finance import accounts as acc
+
+	_ensure_creator()
+	assert_farm_scope(farm)
+	if isinstance(item_codes, str):
+		item_codes = json.loads(item_codes or "[]")
+	codes = sorted({c for c in item_codes or [] if c})
+	company = _farm_company(farm)
+	end = getdate(nowdate())
+	start = end - timedelta(weeks=int(weeks or INSIGHT_WEEKS))
+	if not codes:
+		return {"farm": farm, "weeks": int(weeks), "currency": None, "items": {}}
+
+	whs = sorted(set(farm_stores.farm_stores(farm, "chemical") + farm_stores.farm_stores(farm, "foliar")))
+	on_hand: dict[str, float] = {}
+	if whs:
+		for r in frappe.db.sql(
+			"""SELECT item_code, SUM(actual_qty) q FROM `tabBin`
+			   WHERE warehouse IN %s AND item_code IN %s GROUP BY item_code""",
+			(tuple(whs), tuple(codes)),
+			as_dict=True,
+		):
+			on_hand[r.item_code] = flt(r.q)
+	used = _consumed(_farm_consumption_warehouses(farm), codes, start, end)
+
+	last: dict[str, dict] = {}
+	if company:
+		rows = frappe.db.sql(
+			"""SELECT a.item_code, a.allocated_qty, a.uom, c.name cycle
+			   FROM `tabChemical Procurement Allocation` a
+			   JOIN `tabChemical Procurement Cycle` c ON c.name = a.parent
+			   WHERE c.company = %s AND c.status IN ('Allocated', 'Closed')
+			     AND a.farm = %s AND a.item_code IN %s AND c.name != %s
+			   ORDER BY c.period_start DESC, c.creation DESC""",
+			(company, farm, tuple(codes), cycle or ""),
+			as_dict=True,
+		)
+		for r in rows:
+			last.setdefault(r.item_code, {"qty": flt(r.allocated_qty), "cycle": r.cycle, "uom": r.uom})
+
+	out = {}
+	for code in codes:
+		rate = acc.resolve_rate(code, company) if company else {"rate": 0.0, "source": None}
+		out[code] = {
+			"on_hand": on_hand.get(code, 0.0),
+			"consumed": used.get(code, 0.0),
+			"last_approved": last.get(code, {}).get("qty"),
+			"last_cycle": last.get(code, {}).get("cycle"),
+			"credit": credits_for(code).get(farm, 0.0),
+			"rate": flt(rate.get("rate")),
+			"rate_source": rate.get("source"),
+			"uom": frappe.db.get_value("Item", code, "stock_uom"),
+		}
+	currency = frappe.db.get_value("Company", company, "default_currency") if company else None
+	return {"farm": farm, "weeks": int(weeks or INSIGHT_WEEKS), "currency": currency or "KES", "items": out}

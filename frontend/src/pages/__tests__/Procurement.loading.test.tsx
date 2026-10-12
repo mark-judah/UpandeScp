@@ -11,12 +11,10 @@ function deferred<T>(): Deferred<T> {
 const cycles = deferred<unknown[]>();
 const requirement = deferred<unknown>();
 
-vi.mock("@/lib/loaning-api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/loaning-api")>()),
-  fetchMyFarms: async () => ({ farms: ["Chepsito"], enabled: true }),
-}));
 vi.mock("@/lib/procurement-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/procurement-api")>()),
+  procurementFarms: async () => ["Chepsito"],
+  itemBreakdown: async () => ({ cycle: "PC-1", currency: "KES", farms: [], items: [] }),
   listCycles: () => cycles.promise,
   myRequirement: () => requirement.promise,
 }));

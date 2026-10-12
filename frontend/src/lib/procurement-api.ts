@@ -194,21 +194,39 @@ export interface PoolRequest {
 
 // ── cycles ────────────────────────────────────────────────────────────────
 
-export async function listCycles(status?: CycleStatus): Promise<Cycle[]> {
+/** `crop` is the page's route crop: the server returns only the cycles of the
+ *  companies the user may see for it (a Roses user never gets Kaitet Ltd.'s). */
+export async function listCycles(status?: CycleStatus, crop?: string): Promise<Cycle[]> {
   try {
-    return (await call<Cycle[]>(`${NS}.list_cycles`, status ? { status } : {})) || [];
+    return (
+      (await call<Cycle[]>(`${NS}.list_cycles`, {
+        ...(status ? { status } : {}),
+        ...(crop ? { crop } : {}),
+      })) || []
+    );
   } catch {
     return [];
   }
 }
 
-export async function companiesForCycle(): Promise<
+/** The farms the picker offers: the user's own (a planner: rostered; the GM: their
+ *  company's) within the crop, and — given a cycle — only that cycle's company's. */
+export async function procurementFarms(crop?: string, cycle?: string): Promise<string[]> {
+  const r = await call<{ farms: string[] }>(`${NS}.my_farms`, {
+    ...(crop ? { crop } : {}),
+    ...(cycle ? { cycle } : {}),
+  });
+  return r?.farms || [];
+}
+
+export async function companiesForCycle(crop?: string): Promise<
   { company: string; general_store: string }[]
 > {
   try {
     return (
       (await call<{ company: string; general_store: string }[]>(
         `${NS}.companies_for_cycle`,
+        crop ? { crop } : {},
       )) || []
     );
   } catch {
@@ -225,8 +243,8 @@ export function createCycle(payload: {
   return call<string>(`${NS}.create_cycle`, payload);
 }
 
-export function getCycle(cycle: string): Promise<CycleDetail> {
-  return call<CycleDetail>(`${NS}.get_cycle`, { cycle });
+export function getCycle(cycle: string, crop?: string): Promise<CycleDetail> {
+  return call<CycleDetail>(`${NS}.get_cycle`, crop ? { cycle, crop } : { cycle });
 }
 
 export function consolidateCycle(cycle: string): Promise<CycleDetail> {
@@ -265,8 +283,8 @@ export function createMaterialRequest(
 
 // ── requirements ──────────────────────────────────────────────────────────
 
-export function myRequirement(cycle: string, farm: string): Promise<Requirement> {
-  return call<Requirement>(`${NS}.my_requirement`, { cycle, farm });
+export function myRequirement(cycle: string, farm: string, crop?: string): Promise<Requirement> {
+  return call<Requirement>(`${NS}.my_requirement`, crop ? { cycle, farm, crop } : { cycle, farm });
 }
 
 export function saveRequirement(
@@ -293,14 +311,14 @@ export function reviewRequirement(
   return call<Requirement>(`${NS}.review_requirement`, { name, decision, reason });
 }
 
-export async function requirementsFor(cycle: string): Promise<
+export async function requirementsFor(cycle: string, crop?: string): Promise<
   (Requirement & { total_lines: number })[]
 > {
   try {
     return (
       (await call<(Requirement & { total_lines: number })[]>(
         `${NS}.requirements_for`,
-        { cycle },
+        crop ? { cycle, crop } : { cycle },
       )) || []
     );
   } catch {
@@ -333,9 +351,10 @@ export function decideAmendment(
 export async function listAmendments(
   cycle?: string,
   status?: string,
+  crop?: string,
 ): Promise<Amendment[]> {
   try {
-    return (await call<Amendment[]>(`${NS}.list_amendments`, { cycle, status })) || [];
+    return (await call<Amendment[]>(`${NS}.list_amendments`, { cycle, status, crop })) || [];
   } catch {
     return [];
   }
@@ -373,9 +392,9 @@ export function transferAllocation(cycle: string): Promise<{
 
 // ── the pool ──────────────────────────────────────────────────────────────
 
-export async function poolStatus(company?: string): Promise<PoolStatus> {
+export async function poolStatus(company?: string, crop?: string): Promise<PoolStatus> {
   try {
-    return await call<PoolStatus>(`${NS}.pool_status`, { company });
+    return await call<PoolStatus>(`${NS}.pool_status`, { company, crop });
   } catch {
     return { store: null, on_hand: [], credits: [], owed_by_item: {}, mode: "simple" };
   }
@@ -411,9 +430,10 @@ export function requestFromPool(
 
 export async function listPoolRequests(
   box: "incoming" | "outgoing",
+  crop?: string,
 ): Promise<PoolRequest[]> {
   try {
-    return (await call<PoolRequest[]>(`${NS}.list_pool_requests`, { box })) || [];
+    return (await call<PoolRequest[]>(`${NS}.list_pool_requests`, { box, crop })) || [];
   } catch {
     return [];
   }
@@ -439,6 +459,74 @@ export function consumptionVsAllocation(cycle: string): Promise<
   { farm: string; item_code: string; allocated: number; consumed: number; over: number }[]
 > {
   return call(`${NS}.consumption_vs_allocation`, { cycle });
+}
+
+// ── per-farm quantities by item (Review) ─────────────────────────────────
+
+export interface BreakdownCell {
+  requested: number;
+  /** The farm's share of the approved figure, once consolidated; null before. */
+  approved: number | null;
+  status: RequirementStatus;
+  /** Only a Planner Approved requirement counts towards the cycle. */
+  counted: boolean;
+}
+
+export interface BreakdownItem {
+  item_code: string;
+  item_name: string;
+  uom?: string;
+  rate: number;
+  rate_source?: string | null;
+  by_farm: Record<string, BreakdownCell>;
+  total_requested: number;
+  total_approved: number | null;
+  requested_value: number;
+  approved_value: number | null;
+}
+
+export interface ItemBreakdown {
+  cycle: string;
+  currency: string;
+  farms: { farm: string; status: RequirementStatus; requirement: string }[];
+  items: BreakdownItem[];
+}
+
+export function itemBreakdown(cycle: string, crop?: string): Promise<ItemBreakdown> {
+  return call<ItemBreakdown>(`${NS}.item_breakdown`, crop ? { cycle, crop } : { cycle });
+}
+
+// ── insights when a chemical is added ─────────────────────────────────────
+
+export interface ItemInsight {
+  on_hand: number;
+  consumed: number;
+  last_approved: number | null;
+  last_cycle: string | null;
+  credit: number;
+  /** Per the item's stock UOM. */
+  rate: number;
+  rate_source?: string | null;
+  uom?: string;
+}
+
+export interface FarmInsights {
+  farm: string;
+  weeks: number;
+  currency: string | null;
+  items: Record<string, ItemInsight>;
+}
+
+export function fetchInsights(
+  farm: string,
+  itemCodes: string[],
+  cycle?: string,
+): Promise<FarmInsights> {
+  return call<FarmInsights>(`${NS}.insights`, {
+    farm,
+    item_codes: JSON.stringify(itemCodes),
+    ...(cycle ? { cycle } : {}),
+  });
 }
 
 // ── presentation helpers (pure, unit-tested) ──────────────────────────────

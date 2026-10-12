@@ -124,10 +124,27 @@ def budget_vs_actual(from_date: str, to_date: str, crop: str | None = None) -> d
 	outside: list[dict] = []
 	notes: list[str] = []
 	years: dict[str, list[str]] = {}
+	# Farms that share a cost-centre group: the group's ledger and budgets cannot be
+	# split between them, so they are credited to neither and said so.
+	ambiguous: set[str] = set()
 
 	for company in companies:
 		kind_accounts = {k: acc.accounts_for_kind(company, k) for k in KINDS}
-		account_kind = {a: k for k in KINDS for a in kind_accounts[k]}
+		account_kind: dict[str, str] = {}
+		shared: list[str] = []
+		for k in KINDS:
+			for a in kind_accounts[k]:
+				if a in account_kind:
+					# One account for both kinds: its ledger and budget are counted ONCE,
+					# under the first kind (chemical), never overwritten and never doubled.
+					shared.append(a)
+				else:
+					account_kind[a] = k
+		if shared:
+			notes.append(
+				f"{company}: {', '.join(sorted(set(shared)))} is the expense account for both "
+				"chemical and foliar, so its ledger and budget are shown once, under chemical."
+			)
 		if not account_kind:
 			notes.append(f"{company}: no chemical or foliar expense account is configured.")
 			continue
@@ -151,10 +168,11 @@ def budget_vs_actual(from_date: str, to_date: str, crop: str | None = None) -> d
 		] if frappe.db.has_column("Farm", "custom_cost_center") else []
 		for r in gl:
 			k = account_kind.get(r.account)
-			owner = next(
-				(f for f, t in trees.items() if t and r.lft is not None and t[0] <= r.lft <= t[1]), None
-			)
-			if owner:
+			owners = [f for f, t in trees.items() if t and r.lft is not None and t[0] <= r.lft <= t[1]]
+			owner = owners[0] if len(owners) == 1 else None
+			if len(owners) > 1:
+				ambiguous.update(owners)
+			elif owner:
 				kinds[owner][k]["actual"] += flt(r.amt)
 			elif not any(t and r.lft is not None and t[0] <= r.lft <= t[1] for t in all_trees) and flt(r.amt):
 				outside.append({"company": company, "cost_center": r.cost_center or "(none)",
@@ -164,20 +182,27 @@ def budget_vs_actual(from_date: str, to_date: str, crop: str | None = None) -> d
 		fys = _fiscal_years(company, from_date, to_date)
 		years[company] = fys
 		if fys and trees:
+			# Overlap, not "from_fiscal_year IN": a budget runs from its first fiscal year's
+			# start to its last one's end, and counts when that span meets the report's.
 			buds = frappe.db.sql(
 				"""SELECT b.cost_center, b.account, b.budget_amount, b.docstatus, cc.lft
 				   FROM `tabBudget` b JOIN `tabCost Center` cc ON cc.name = b.cost_center
+				   JOIN `tabFiscal Year` fyf ON fyf.name = b.from_fiscal_year
+				   JOIN `tabFiscal Year` fyt ON fyt.name = b.to_fiscal_year
 				   WHERE b.docstatus < 2 AND b.company = %s AND b.budget_against = 'Cost Center'
-				     AND b.account IN %s AND b.from_fiscal_year IN %s""",
-				(company, tuple(account_kind), tuple(fys)),
+				     AND b.account IN %s AND fyf.year_start_date <= %s AND fyt.year_end_date >= %s""",
+				(company, tuple(account_kind), to_date, from_date),
 				as_dict=True,
 			)
 			for b in buds:
-				owner = next((f for f, t in trees.items() if t and t[0] <= b.lft <= t[1]), None)
-				if not owner:
+				owners = [f for f, t in trees.items() if t and t[0] <= b.lft <= t[1]]
+				if len(owners) > 1:
+					ambiguous.update(owners)
+					continue
+				if not owners:
 					continue
 				key = "budget" if b.docstatus == 1 else "draft_budget"
-				kinds[owner][account_kind[b.account]][key] += flt(b.budget_amount)
+				kinds[owners[0]][account_kind[b.account]][key] += flt(b.budget_amount)
 
 		# approved cycle value, for cycles whose period overlaps
 		cycles = frappe.get_all(
@@ -223,6 +248,11 @@ def budget_vs_actual(from_date: str, to_date: str, crop: str | None = None) -> d
 			"No cost-centre group on " + ", ".join(unmapped)
 			+ " — set the farm's cost-centre group (Farm.custom_cost_center; the mapping"
 			" audit proposes one) to read their ledger."
+		)
+	if ambiguous:
+		notes.append(
+			"Farms " + ", ".join(sorted(ambiguous)) + " share one cost-centre group, so its ledger and "
+			"budgets are credited to none of them. Give each farm its own group."
 		)
 	mapped = [o for o in out if o["mapped"]]
 	return {

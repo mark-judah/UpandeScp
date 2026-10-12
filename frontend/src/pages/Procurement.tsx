@@ -19,12 +19,14 @@
  *   and looking correct.
  */
 import { DatePicker } from "@/components/DatePicker";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Bar, RowsSkeleton, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import {
   AlertTriangle,
   ArrowRightLeft,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   ClipboardList,
   FileText,
   Lock,
@@ -72,7 +74,8 @@ import { bootstrap, FrappeError } from "@/lib/frappe";
 import { errorText } from "@/lib/errors";
 import { fmtQty } from "@/lib/uom";
 import { searchChemicalItems, type ChemicalItem } from "@/lib/scouting-api";
-import { fetchMyFarms } from "@/lib/loaning-api";
+import { FarmBreakdown } from "@/components/procurement/FarmBreakdown";
+import { InsightLine, insightState } from "@/components/procurement/InsightLine";
 import {
   companiesForCycle,
   consolidateCycle,
@@ -85,8 +88,13 @@ import {
   decidePoolRequest,
   describeCredit,
   describeRequirement,
+  fetchInsights,
   finaliseLine,
   getCycle,
+  itemBreakdown,
+  type FarmInsights,
+  type ItemBreakdown,
+  procurementFarms,
   isEditable,
   listAmendments,
   listCycles,
@@ -114,6 +122,10 @@ import {
   type ReductionMode,
   type Requirement,
 } from "@/lib/procurement-api";
+
+/** The route's crop. Every read passes it so the server scopes cycles and farms to the
+ *  companies the crop grows in: a Roses user never gets Kaitet Ltd.'s. */
+const CropCtx = createContext<string | undefined>(undefined);
 
 const GM_ROLES = ["SCP General Manager", "System Manager", "Administrator"];
 const KEEPER_ROLE = "SCP Chemical Store Keeper";
@@ -144,7 +156,7 @@ function errText(e: unknown): string {
   return errorText(e);
 }
 
-export function Procurement() {
+export function Procurement({ initialCrop }: { initialCrop?: string } = {}) {
   const roles = bootstrap().roles || [];
   const isGm = roles.some((r) => GM_ROLES.includes(r));
   const isKeeper = roles.includes(KEEPER_ROLE);
@@ -162,34 +174,51 @@ export function Procurement() {
   // drawn and the cycle, eyebrow and tab body pend.
   const [shellLoaded, setShellLoaded] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
+  // The farm list is the cycle's company's, so it follows the cycle.
+  const [farmsReady, setFarmsReady] = useState(false);
 
   const loadShell = useCallback(async () => {
     setShellError(null);
     try {
-      const [cs, mf] = await Promise.all([
-        listCycles(),
-        fetchMyFarms().catch(() => ({ farms: [] as string[], enabled: false })),
-      ]);
+      const cs = await listCycles(undefined, initialCrop);
       setCycles(cs);
-      setFarms(mf.farms || []);
-      setCycleId((prev) => prev || cs[0]?.name || "");
-      setFarm((prev) => prev || mf.farms?.[0] || "");
+      setCycleId((prev) => (prev && cs.some((c) => c.name === prev) ? prev : cs[0]?.name || ""));
     } catch (e) {
       // Not "No cycle open": the cycles could not be read at all.
       setShellError(errText(e));
     } finally {
       setShellLoaded(true);
     }
-  }, []);
+  }, [initialCrop]);
 
   useEffect(() => {
     void loadShell();
   }, [loadShell]);
 
+  useEffect(() => {
+    if (!shellLoaded) return;
+    let alive = true;
+    setFarmsReady(false);
+    procurementFarms(initialCrop, cycleId || undefined)
+      .catch(() => [] as string[])
+      .then((fs) => {
+        if (!alive) return;
+        setFarms(fs);
+        setFarm((prev) => (fs.includes(prev) ? prev : fs[0] || ""));
+        setFarmsReady(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [shellLoaded, initialCrop, cycleId]);
+
   const cycle = cycles.find((c) => c.name === cycleId);
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
+    <CropCtx.Provider value={initialCrop}>
+    <div className="flex min-w-0 flex-col gap-4 pb-4 md:pb-6">
+      {/* No padding on this wrapper: PageHeader pads itself, and the body below pads
+          to match, so the tab bar, title and filters share one left edge. */}
       <PageHeader
         title="Chemical Procurement"
         eyebrow={
@@ -222,6 +251,7 @@ export function Procurement() {
         </HeaderIconButton>
       </PageHeader>
 
+      <div className="flex flex-col gap-4 px-4 md:px-6">
       <div className="flex flex-wrap items-center gap-2">
         <Select value={cycleId} onValueChange={setCycleId} disabled={!shellLoaded}>
           <SelectTrigger aria-label="Cycle" className={HEADER_PILL}>
@@ -242,19 +272,19 @@ export function Procurement() {
         )}
         {/* The planner's farm (place picker G2): always shown once there is a
             farm, a single farm reading as itself; there is no "all" here. */}
-        {(!shellLoaded || farms.length > 0) && (
+        {(!shellLoaded || !farmsReady || farms.length > 0) && (
           <PlacePicker
             level="farm"
             farms={farms}
             allLabel={false}
             value={{ farm, greenhouse: "" }}
             onChange={(p) => setFarm(p.farm)}
-            disabled={!shellLoaded}
+            disabled={!shellLoaded || !farmsReady}
           />
         )}
       </div>
 
-      {!shellLoaded ? (
+      {!shellLoaded || (!farmsReady && tab === "requirement") ? (
         <TableCardSkeleton heads={TAB_HEADS[tab]} />
       ) : shellError && !cycleId ? (
         <LoadFailed message={shellError} onRetry={() => void loadShell()} />
@@ -312,8 +342,9 @@ export function Procurement() {
           }}
         />
       )}
-
+      </div>
     </div>
+    </CropCtx.Provider>
   );
 }
 
@@ -397,6 +428,7 @@ function RequirementTab({
   busy: boolean;
   setBusy: (b: boolean) => void;
 }) {
+  const crop = useContext(CropCtx);
   const [req, setReq] = useState<Requirement | null>(null);
   const [rows, setRows] = useState<BasketRow[]>([]);
   const [query, setQuery] = useState("");
@@ -416,7 +448,7 @@ function RequirementTab({
   const load = useCallback(async () => {
     if (!cycle || !farm) return;
     try {
-      const r = await myRequirement(cycle, farm);
+      const r = await myRequirement(cycle, farm, crop);
       setReq(r);
       setReqError(null);
       setRows(
@@ -432,11 +464,36 @@ function RequirementTab({
       push(errText(e), "err");
       setReqError(errText(e));
     }
-  }, [cycle, farm, push]);
+  }, [cycle, farm, push, crop]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Insights for the chemicals on the list: one batched call per farm, re-asked only
+  // when the set of chemicals changes (not on every keystroke in a quantity).
+  const [ins, setIns] = useState<{ data?: FarmInsights; loading: boolean; failed: boolean }>({
+    loading: false,
+    failed: false,
+  });
+  const codesKey = useMemo(() => rows.map((r) => r.item_code).sort().join("|"), [rows]);
+  useEffect(() => {
+    setIns({ loading: false, failed: false });
+  }, [farm, cycle]);
+  useEffect(() => {
+    if (!farm || !codesKey) return;
+    let alive = true;
+    setIns((s) => ({ ...s, loading: true, failed: false }));
+    const t = setTimeout(() => {
+      fetchInsights(farm, codesKey.split("|"), cycle)
+        .then((data) => alive && setIns({ data, loading: false, failed: false }))
+        .catch(() => alive && setIns((s) => ({ ...s, loading: false, failed: true })));
+    }, 200);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [farm, cycle, codesKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -649,6 +706,19 @@ function RequirementTab({
                   <TableCell>
                     <div className="font-medium">{r.item_name}</div>
                     <div className="text-xs text-muted-foreground">{r.item_code}</div>
+                    {editable && (
+                      <InsightLine
+                        state={insightState(
+                          ins.loading && !ins.data?.items?.[r.item_code],
+                          ins.failed,
+                          ins.data?.items,
+                          r.item_code,
+                        )}
+                        qty={Number(r.qty) || 0}
+                        weeks={ins.data?.weeks}
+                        currency={ins.data?.currency || undefined}
+                      />
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     {editable ? (
@@ -757,7 +827,10 @@ function ReviewTab({
   busy: boolean;
   setBusy: (b: boolean) => void;
 }) {
+  const crop = useContext(CropCtx);
   const [reqs, setReqs] = useState<(Requirement & { total_lines: number })[]>([]);
+  const [breakdown, setBreakdown] = useState<ItemBreakdown | null>(null);
+  const [breakdownError, setBreakdownError] = useState<string | null>(null);
   const [amendments, setAmendments] = useState<Amendment[]>([]);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [reason, setReason] = useState("");
@@ -767,13 +840,24 @@ function ReviewTab({
   useEffect(() => {
     setLoaded(false);
     setLoadError(null);
+    setBreakdown(null);
   }, [cycle]);
 
+  const loadBreakdown = useCallback(async () => {
+    try {
+      setBreakdown(await itemBreakdown(cycle, crop));
+      setBreakdownError(null);
+    } catch (e) {
+      setBreakdownError(errText(e));
+    }
+  }, [cycle, crop]);
+
   const load = useCallback(async () => {
+    void loadBreakdown();
     try {
       const [r, a] = await Promise.all([
-        requirementsFor(cycle),
-        listAmendments(cycle, "Pending"),
+        requirementsFor(cycle, crop),
+        listAmendments(cycle, "Pending", crop),
       ]);
       setReqs(r);
       setAmendments(a);
@@ -782,7 +866,7 @@ function ReviewTab({
     } catch (e) {
       setLoadError(errText(e));
     }
-  }, [cycle]);
+  }, [cycle, crop, loadBreakdown]);
 
   useEffect(() => {
     void load();
@@ -864,6 +948,8 @@ function ReviewTab({
           </CardContent>
         </Card>
       )}
+
+      <FarmBreakdown data={breakdown} error={breakdownError} onRetry={() => void loadBreakdown()} />
 
       <Card>
         <CardContent className="p-0">
@@ -978,7 +1064,10 @@ function ConsolidatedTab({
   busy: boolean;
   setBusy: (b: boolean) => void;
 }) {
+  const crop = useContext(CropCtx);
   const [detail, setDetail] = useState<CycleDetail | null>(null);
+  const [breakdown, setBreakdown] = useState<ItemBreakdown | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { mode: ReductionMode; value: string }>>({});
   useEffect(() => {
@@ -988,13 +1077,15 @@ function ConsolidatedTab({
 
   const load = useCallback(async () => {
     try {
-      setDetail(await getCycle(cycle));
+      setDetail(await getCycle(cycle, crop));
       setLoadError(null);
+      // The farm columns behind each total, for reading before a line is approved.
+      itemBreakdown(cycle, crop).then(setBreakdown).catch(() => setBreakdown(null));
     } catch (e) {
       push(errText(e), "err");
       setLoadError(errText(e));
     }
-  }, [cycle, push]);
+  }, [cycle, push, crop]);
 
   useEffect(() => {
     void load();
@@ -1089,10 +1180,29 @@ function ConsolidatedTab({
                 const dirty =
                   draft.mode !== l.reduction_mode ||
                   Number(draft.value || 0) !== l.reduction_value;
+                const expanded = open.has(l.item_code);
                 return (
-                  <TableRow key={l.item_code} className={cn(l.final_approved && "bg-muted/40")}>
+                  <Fragment key={l.item_code}>
+                  <TableRow className={cn(l.final_approved && "bg-muted/40")}>
                     <TableCell>
                       <div className="flex items-center gap-2 font-medium">
+                        <button
+                          type="button"
+                          aria-label={`Farms for ${l.item_name || l.item_code}`}
+                          aria-expanded={expanded}
+                          disabled={!breakdown}
+                          className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+                          onClick={() =>
+                            setOpen((o) => {
+                              const n = new Set(o);
+                              if (n.has(l.item_code)) n.delete(l.item_code);
+                              else n.add(l.item_code);
+                              return n;
+                            })
+                          }
+                        >
+                          {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                        </button>
                         {l.final_approved && <Lock className="size-3.5 text-muted-foreground" />}
                         {l.item_name || l.item_code}
                       </div>
@@ -1181,6 +1291,14 @@ function ConsolidatedTab({
                       )}
                     </TableCell>
                   </TableRow>
+                  {expanded && breakdown && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="bg-muted/20 p-3">
+                        <FarmBreakdown data={breakdown} onlyItem={l.item_code} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  </Fragment>
                 );
               })}
             </TableBody>
@@ -1545,6 +1663,7 @@ function PoolTab({
   busy: boolean;
   setBusy: (b: boolean) => void;
 }) {
+  const crop = useContext(CropCtx);
   const [status, setStatus] = useState<PoolStatus | null>(null);
   const [incoming, setIncoming] = useState<PoolRequest[]>([]);
   const [outgoing, setOutgoing] = useState<PoolRequest[]>([]);
@@ -1558,9 +1677,9 @@ function PoolTab({
   const load = useCallback(async () => {
     try {
       const [s, inc, out] = await Promise.all([
-        poolStatus(),
-        isKeeper ? listPoolRequests("incoming") : Promise.resolve([]),
-        listPoolRequests("outgoing"),
+        poolStatus(undefined, crop),
+        isKeeper ? listPoolRequests("incoming", crop) : Promise.resolve([]),
+        listPoolRequests("outgoing", crop),
       ]);
       setStatus(s);
       setIncoming(inc.filter((r) => r.workflow_state === "Pending Approval"));
@@ -1569,7 +1688,7 @@ function PoolTab({
     } catch (e) {
       setLoadError(errText(e));
     }
-  }, [isKeeper]);
+  }, [isKeeper, crop]);
   // Still waiting for the first answer (a failure ends the skeletons).
   const pending = !status && !loadError;
 
@@ -1890,6 +2009,7 @@ function NewCycleDialog({
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [busy, setBusy] = useState(false);
+  const crop = useContext(CropCtx);
 
   // Only companies with a general store: a cycle without a pool has nowhere to
   // receive the purchase, and finding that out at the Material Request is late.
@@ -1897,7 +2017,7 @@ function NewCycleDialog({
     if (!open) return;
     let cancelled = false;
     void (async () => {
-      const cs = await companiesForCycle();
+      const cs = await companiesForCycle(crop);
       if (cancelled) return;
       setCompanies(cs);
       setCompany((prev) => prev || cs[0]?.company || "");
@@ -1905,7 +2025,7 @@ function NewCycleDialog({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, crop]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

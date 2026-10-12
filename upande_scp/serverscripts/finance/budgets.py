@@ -20,7 +20,11 @@ import frappe
 from frappe.utils import cint, flt, getdate
 
 from upande_scp.serverscripts.finance import accounts as acc
-from upande_scp.serverscripts.finance.cost_centres import farm_cost_center, farm_purchase_cost_center
+from upande_scp.serverscripts.finance.cost_centres import (
+	business_unit_for,
+	farm_cost_center,
+	farm_purchase_cost_center,
+)
 
 CYCLE = "Chemical Procurement Cycle"
 TAG = "custom_scp_procurement_cycle"
@@ -70,8 +74,9 @@ def group_budget_rows(lines: list[dict]) -> tuple[list[dict], list[dict]]:
 		key = (l["farm_group"], l["account"])
 		r = rows.setdefault(key, {
 			"cost_center": l["farm_group"], "account": l["account"], "farm": l.get("farm"),
-			"amount": 0.0, "items": set(), "cycles": set(),
+			"amount": 0.0, "items": set(), "cycles": set(), "business_unit": None,
 		})
+		r["business_unit"] = r["business_unit"] or l.get("business_unit")
 		r["amount"] += flt(l["value"])
 		r["items"].add(l.get("item_code"))
 		if l.get("cycle"):
@@ -100,6 +105,32 @@ def _fiscal_year(date, company) -> str | None:
 		return None
 
 
+#: A cycle in one of these has published its allocation.
+PUBLISHED_STATES = ("Allocated", "Closed")
+
+
+def _published_preview(doc) -> dict:
+	"""`preview_allocation`'s shape, rebuilt from the cycle's published rows. Pure of credits."""
+	by_item: dict[str, list] = {}
+	for a in doc.allocations:
+		by_item.setdefault(a.item_code, []).append(a)
+	lines = []
+	for l in doc.lines:
+		rows = by_item.get(l.item_code, [])
+		lines.append({
+			"item_code": l.item_code,
+			"item_name": l.item_name,
+			"uom": l.uom,
+			"received": flt(l.allocated_total) + flt(l.remainder),
+			"remainder": flt(l.remainder),
+			"allocations": [
+				{"farm": a.farm, "requested": flt(a.requested_qty), "allocated": flt(a.allocated_qty)}
+				for a in rows
+			],
+		})
+	return {"cycle": doc.name, "lines": lines}
+
+
 def cycle_lines(cycle: str, _cache: dict | None = None) -> dict:
 	"""Every item x farm line of a cycle, costed. Writes nothing."""
 	from upande_scp.serverscripts.store import procurement as P
@@ -107,7 +138,10 @@ def cycle_lines(cycle: str, _cache: dict | None = None) -> dict:
 	cache = _cache if _cache is not None else {}
 	doc = frappe.get_doc(CYCLE, cycle)
 	company = doc.company
-	preview = P.preview_allocation(cycle)
+	# Once the split is published it is a fact on the cycle; re-previewing would read
+	# today's credits and move the figures (and the Budgets drafted from them).
+	preview = _published_preview(doc) if doc.status in PUBLISHED_STATES and doc.allocations \
+		else P._preview_allocation(cycle)
 	published = {(a.item_code, a.farm): flt(a.allocated_qty) for a in doc.allocations}
 
 	lines, warnings = [], []
@@ -118,7 +152,11 @@ def cycle_lines(cycle: str, _cache: dict | None = None) -> dict:
 		rk = ("rate", code, company)
 		if rk not in cache:
 			cache[rk] = acc.resolve_rate(code, company)
-		rate = cache[rk]
+		stock_rate = cache[rk]
+		# The resolved rate is per stock UOM; the line's quantity is in its own UOM, so
+		# cost it as qty x conversion factor x stock rate, i.e. a rate per line UOM.
+		cf = acc.uom_factor(code, pl.get("uom"))
+		rate = {**stock_rate, "rate": flt(stock_rate["rate"]) * cf}
 		if rate["warning"]:
 			warnings.append(f"{code}: {rate['warning']}")
 		kind = P.item_kind(code)
@@ -136,8 +174,8 @@ def cycle_lines(cycle: str, _cache: dict | None = None) -> dict:
 			warnings.append(f"{code}: {unowned:g} approved with no farm requesting it")
 			lines.append({
 				"cycle": cycle, "item_code": code, "item_name": pl.get("item_name") or code,
-				"uom": pl.get("uom"), "kind": kind, "farm": None, "farm_group": None,
-				"cost_center": None, "requested_qty": 0.0, "approved_qty": unowned,
+				"uom": pl.get("uom"), "conversion_factor": cf, "kind": kind, "farm": None, "farm_group": None,
+				"cost_center": None, "business_unit": None, "requested_qty": 0.0, "approved_qty": unowned,
 				"allocated_qty": 0.0, "rate": rate["rate"], "rate_source": rate["source"],
 				"account": account["account"], "account_source": account["source"],
 				"value": round(unowned * rate["rate"], 2),
@@ -147,16 +185,22 @@ def cycle_lines(cycle: str, _cache: dict | None = None) -> dict:
 			if fk not in cache:
 				cache[fk] = (farm_cost_center(farm), farm_purchase_cost_center(farm))
 			group, purchase = cache[fk]
+			bk = ("bu", farm, company)
+			if bk not in cache:
+				cache[bk] = business_unit_for(farm, company)
+			bu = cache[bk]
 			qty = flt(split.get(farm))
 			lines.append({
 				"cycle": cycle,
 				"item_code": code,
 				"item_name": pl.get("item_name") or code,
 				"uom": pl.get("uom"),
+				"conversion_factor": cf,
 				"kind": kind,
 				"farm": farm,
 				"farm_group": group,
 				"cost_center": purchase,
+				"business_unit": bu,
 				"requested_qty": requested.get(farm, 0.0),
 				"approved_qty": qty,
 				"allocated_qty": published.get((code, farm), 0.0),
@@ -205,7 +249,15 @@ def _fy_cycles(company: str, fy: str, include: str) -> list[str]:
 
 @frappe.whitelist()
 def cycle_money(cycle: str) -> dict:
-	"""B5: the cycle in money, per farm, next to its Budget."""
+	"""B5: the cycle in money, per farm, next to its Budget.
+
+	Gated like the other procurement reads: the cycle's company must be one the
+	caller may see, and a planner gets only the farms they may see.
+	"""
+	from upande_scp.serverscripts.store import procurement as P
+
+	P.assert_cycle_access(cycle)
+	visible = P.visible_farms()
 	cache: dict = {}
 	data = cycle_lines(cycle, cache)
 	doc, company, lines = data["doc"], data["company"], data["lines"]
@@ -243,6 +295,8 @@ def cycle_money(cycle: str) -> dict:
 
 	out = []
 	for name in sorted(farms):
+		if visible is not None and name not in visible:
+			continue
 		f = farms[name]
 		mine = [b for b in budgets if b.cost_center == f["cost_center"]]
 		submitted = sum(flt(b.budget_amount) for b in mine if b.docstatus == 1)
@@ -269,7 +323,7 @@ def cycle_money(cycle: str) -> dict:
 		"fiscal_year": fy,
 		"currency": frappe.db.get_value("Company", company, "default_currency") or "KES",
 		"farms": out,
-		"lines": lines,
+		"lines": [l for l in lines if visible is None or l["farm"] in visible],
 		"warnings": data["warnings"],
 		"over_budget": [f["farm"] for f in out if f["over_budget"]],
 		"totals": {
@@ -283,7 +337,7 @@ def cycle_money(cycle: str) -> dict:
 # ─────────────────────────────── drafting ────────────────────────────────────
 
 
-def _budget_doc_values(company, cc, account, fy, amount, cycle, farm) -> dict:
+def _budget_doc_values(company, cc, account, fy, amount, cycle, farm, business_unit=None) -> dict:
 	values = {
 		"doctype": "Budget",
 		"company": company,
@@ -312,6 +366,8 @@ def _budget_doc_values(company, cc, account, fy, amount, cycle, farm) -> dict:
 		values[TAG] = cycle
 	if farm and frappe.db.has_column("Budget", "farm"):
 		values["farm"] = farm
+	if business_unit and frappe.db.has_column("Budget", "business_unit"):
+		values["business_unit"] = business_unit
 	return values
 
 
@@ -366,9 +422,10 @@ def draft_budgets(cycle: str, dry_run=False) -> dict:
 
 	Does not commit; a whitelisted call is committed by the request.
 	"""
-	from upande_scp.serverscripts.store.procurement import _assert_gm
+	from upande_scp.serverscripts.store.procurement import _assert_gm, assert_cycle_access
 
 	_assert_gm("draft budgets")
+	assert_cycle_access(cycle)
 	dry_run = bool(cint(dry_run))
 	doc = frappe.get_doc(CYCLE, cycle)
 	company = doc.company
@@ -418,11 +475,13 @@ def draft_budgets(cycle: str, dry_run=False) -> dict:
 			if b:
 				bd = frappe.get_doc("Budget", b.name)
 				bd.update({k: v for k, v in _budget_doc_values(
-					company, r["cost_center"], r["account"], fy, r["amount"], cycle, r["farm"]
+					company, r["cost_center"], r["account"], fy, r["amount"], cycle, r["farm"],
+					r.get("business_unit"),
 				).items() if k != "doctype"})
 			else:
 				bd = frappe.get_doc(_budget_doc_values(
-					company, r["cost_center"], r["account"], fy, r["amount"], cycle, r["farm"]
+					company, r["cost_center"], r["account"], fy, r["amount"], cycle, r["farm"],
+					r.get("business_unit"),
 				))
 			_save_budget(bd, spent)
 			row["budget"] = bd.name

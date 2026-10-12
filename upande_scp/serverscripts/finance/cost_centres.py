@@ -139,3 +139,43 @@ def flush_notes(doc) -> None:
 			doc.add_comment("Comment", msg)
 		except Exception:
 			frappe.log_error(title="SCP cost centre note", message=frappe.get_traceback())
+
+
+#: Where a farm's Business Unit (an ERPNext accounting dimension, fieldname
+#: ``business_unit``) can be read from, in order: the farm itself, then its
+#: cost centres. Each is checked for the column, because they are site fields.
+_BU_FARM_FIELDS = ("custom_business_unit", "business_unit")
+
+
+def dimension_default(company: str | None, dimension: str = "Business Unit") -> str | None:
+	"""The accounting dimension's own default for the company, if one is configured."""
+	if not company or not frappe.db.exists("Accounting Dimension", dimension):
+		return None
+	return frappe.db.get_value(
+		"Accounting Dimension Detail",
+		{"parent": dimension, "company": company, "default_dimension": ("is", "set")},
+		"default_dimension",
+	) or None
+
+
+def business_unit_for(farm: str | None, company: str | None = None) -> str | None:
+	"""The Business Unit a farm's spend belongs to, or None.
+
+	Resolution: a Business Unit on the Farm -> on the farm's purchase or group cost
+	centre -> the dimension's default for the company. Nothing is invented: a farm
+	with none of these resolves to None and the document is left blank.
+	"""
+	if not _has_column("Material Request Item", "business_unit"):
+		return None
+	if farm:
+		for col in _BU_FARM_FIELDS:
+			if _has_column("Farm", col):
+				v = frappe.db.get_value("Farm", farm, col)
+				if v:
+					return v
+		if _has_column("Cost Center", "business_unit"):
+			for cc in (farm_purchase_cost_center(farm), farm_cost_center(farm)):
+				v = cc and frappe.db.get_value("Cost Center", cc, "business_unit")
+				if v:
+					return v
+	return dimension_default(company or farm_company(farm))

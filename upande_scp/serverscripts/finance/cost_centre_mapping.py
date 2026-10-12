@@ -306,12 +306,21 @@ def _bust_caches() -> None:
 			cache_utils.invalidate(*keys)
 
 
+def _fiscal_year_start(company):
+	"""Start of the company's current fiscal year; the calendar year if none covers today."""
+	from upande_scp.serverscripts.finance.budgets import _fiscal_year
+
+	fy = _fiscal_year(nowdate(), company)
+	start = frappe.db.get_value("Fiscal Year", fy, "year_start_date") if fy else None
+	return getdate(start) if start else getdate(nowdate()).replace(month=1, day=1)
+
+
 def _off_farm_expense(company, ccs, by_name, farm_groups) -> list[dict]:
 	"""Year-to-date chemical/foliar GL on cost centres under no farm group."""
 	accounts = acc.accounts_for_kind(company, "chemical") + acc.accounts_for_kind(company, "foliar")
 	if not accounts:
 		return []
-	start = getdate(nowdate()).replace(month=1, day=1)
+	start = _fiscal_year_start(company)
 	rows = frappe.db.sql(
 		"""SELECT cost_center, SUM(debit - credit) amt FROM `tabGL Entry`
 		   WHERE company = %s AND is_cancelled = 0 AND account IN %s AND posting_date >= %s

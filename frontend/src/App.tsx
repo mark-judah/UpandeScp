@@ -310,7 +310,7 @@ function renderView(crop: string, view: View): ReactNode {
     case "chemical-loaning":
       return <ChemicalLoaning />;
     case "procurement":
-      return <Procurement />;
+      return <Procurement initialCrop={cropName} />;
     case "postponements":
       return <Postponements />;
     case "schedule":

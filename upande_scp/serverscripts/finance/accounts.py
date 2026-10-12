@@ -209,3 +209,18 @@ def rate_candidates(item_code: str, company: str) -> list:
 
 def resolve_rate(item_code: str, company: str) -> dict:
 	return pick_rate(rate_candidates(item_code, company))
+
+
+def uom_factor(item_code: str, uom: str | None) -> float:
+	"""Stock-UOM units in one `uom` (1 for the stock UOM, or when nothing says otherwise).
+
+	``resolve_rate`` is per stock UOM; a quantity in any other UOM is costed as
+	qty x factor x rate. Pure of the line: the Item's own conversion table decides.
+	"""
+	if not uom:
+		return 1.0
+	stock = frappe.db.get_value("Item", item_code, "stock_uom")
+	if not stock or stock == uom:
+		return 1.0
+	cf = frappe.db.get_value("UOM Conversion Detail", {"parent": item_code, "uom": uom}, "conversion_factor")
+	return flt(cf) if flt(cf) > 0 else 1.0

@@ -29,12 +29,10 @@ const MONEY: CycleMoney = {
 
 window.SCP = { bootstrap: { roles: ["SCP General Manager"] } } as typeof window.SCP;
 
-vi.mock("@/lib/loaning-api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/loaning-api")>()),
-  fetchMyFarms: async () => ({ farms: ["Chepsito"], enabled: true }),
-}));
 vi.mock("@/lib/procurement-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/procurement-api")>()),
+  procurementFarms: async () => ["Chepsito"],
+  itemBreakdown: async () => ({ cycle: "CPC-1", currency: "KES", farms: [], items: [] }),
   listCycles: async () => [{ name: "CPC-1", cycle_name: "October", status: "GM Review" }],
   myRequirement: async () => ({ name: "R", farm: "Chepsito", cycle: "CPC-1", status: "Draft", items: [] }),
   getCycle: async () => ({

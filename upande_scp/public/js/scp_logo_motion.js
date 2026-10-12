@@ -2,8 +2,9 @@
 //
 // At rest the tile is the plain Upande mark (scp_logo.svg draws exactly
 // upande_logo.png). On hover SCP's own scene eases in — the arrow steps aside,
-// a rose grows, and the scouting round plays: a magnifier finds a pest on a
-// leaf, a ring marks it, spray falls and it is gone. The round loops while the
+// a leaf unfurls (one leaf for every crop: roses, avocado, coffee), and the
+// scouting round plays: a magnifier checks its disease lesions, then a pest,
+// spray falls and the pest is gone. The round loops while the
 // pointer (or keyboard focus) stays; on leave everything eases back out to the
 // plain mark, reversing from wherever it had got to, never snapping.
 //
@@ -45,7 +46,7 @@
 			for (var i = 0; i < els.length; i++) {
 				var el = els[i];
 				if (t.origin) {
-					el.style.transformBox = "view-box";
+					el.style.transformBox = t.box || "view-box";
 					el.style.transformOrigin = t.origin;
 				}
 				var a = el.animate(t.frames, timing);

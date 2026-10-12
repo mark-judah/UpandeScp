@@ -41,21 +41,30 @@ def _afp_cost_center(wo_name):
     the greenhouse chain). Older plans predate that field, so the greenhouse is
     resolved again as a fallback.
     """
-    from upande_scp.serverscripts.spray_plan_creator.validation import (
-        match_cost_center,
-    )
+    from upande_scp.serverscripts.finance import cost_centres
 
     cc = frappe.db.get_value("Work Order", wo_name, "custom_cost_center")
     if cc:
         return cc
-    return match_cost_center(
+    # The greenhouse's own cost centre, else its farm's purchase cost centre (B9).
+    cc, _ = cost_centres.resolve(
         frappe.db.get_value("Work Order", wo_name, "custom_greenhouse")
     )
+    return cc
 
 
-def _stamp_rows(doc, cc):
-    """Attribute every line to `cc` so the GL splits by greenhouse."""
+def _stamp_rows(doc, cc, wo_name=None):
+    """Attribute every line to `cc` so the GL splits by greenhouse.
+
+    With nothing resolved the rows are left to ERPNext's own chain, as before —
+    but no longer silently: the entry gets a note saying so (B9).
+    """
     if not cc:
+        from upande_scp.serverscripts.finance import cost_centres
+
+        cost_centres.report_missing(
+            doc, f"spray plan {wo_name}" if wo_name else "this spray stock entry"
+        )
         return
     for it in (doc.items or []):
         it.cost_center = cc
@@ -96,7 +105,7 @@ def before_validate(doc, method):
             and frappe.db.get_value("Work Order", wo_name, "custom_type") == AFP_TYPE
             and _transfer_stamp_enabled()
         ):
-            _stamp_rows(doc, _afp_cost_center(wo_name))
+            _stamp_rows(doc, _afp_cost_center(wo_name), wo_name)
         return None
 
     return _before_validate_manufacture(doc)
@@ -153,7 +162,7 @@ def _before_validate_manufacture(doc):
 
     # Stamp the greenhouse cost center on every row so the per-chemical GL
     # attributes to the greenhouse, not the company default.
-    _stamp_rows(doc, _afp_cost_center(wo_name))
+    _stamp_rows(doc, _afp_cost_center(wo_name), wo_name)
 
     after = raw_totals(doc)
     if before != after:

@@ -45,6 +45,7 @@ from upande_scp.serverscripts.spray_plan_creator.loaning import (
     _primary_store,
     _user_farms,
 )
+from upande_scp.serverscripts.finance import cost_centres
 from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
 from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_LOAN
 
@@ -438,6 +439,7 @@ def _transfer_approved(doc, rows) -> str:
         )
 
     fallback_cc = _company_cost_center(se.company)
+    unresolved: list[str] = []
     for row in rows:
         src = store_for(doc.lender_farm, row.item_code)
         dst = store_for(doc.requesting_farm, row.item_code)
@@ -456,13 +458,25 @@ def _transfer_approved(doc, rows) -> str:
             "s_warehouse": src,
             "t_warehouse": dst,
         }
-        cc = match_cost_center(src) or fallback_cc
+        # B9: the lender store's own cost centre, else the lender farm's purchase
+        # cost centre. The company default is still the last resort — Cost Center
+        # is mandatory on these rows — but it is no longer taken silently.
+        cc, _ = cost_centres.resolve(src, farm=doc.lender_farm)
+        if not cc:
+            cc = fallback_cc
+            unresolved.append(row.item_code)
         if cc:
             item["cost_center"] = cc
         se.append("items", item)
 
     se.flags.ignore_links = True
     se.insert(ignore_permissions=True)
+    if unresolved:
+        cost_centres.report_missing(
+            se,
+            f"the loan of {', '.join(unresolved)} out of {doc.lender_farm}",
+            fallback=fallback_cc,
+        )
     se.submit()
     for row in rows:
         row.stock_entry = se.name

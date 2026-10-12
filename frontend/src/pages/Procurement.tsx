@@ -79,6 +79,8 @@ import {
   consumptionVsAllocation,
   createCycle,
   createMaterialRequest,
+  cycleMoney,
+  type CycleMoney,
   decideAmendment,
   decidePoolRequest,
   describeCredit,
@@ -1190,7 +1192,136 @@ function ConsolidatedTab({
         figure. Locking a line marks it final — after that it takes an amendment,
         not an edit.
       </p>
+      <MoneyCard cycle={cycle} version={detail} />
     </div>
+  );
+}
+
+/** B5: the cycle in money next to its quantities — per farm, the value of what
+ *  was asked, approved and allocated, what the farm has committed this fiscal
+ *  year, and its ERPNext Budget. Over budget warns; it never blocks. */
+function MoneyCard({ cycle, version }: { cycle: string; version: unknown }) {
+  const [money, setMoney] = useState<CycleMoney | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setFailed(null);
+    cycleMoney(cycle)
+      .then((m) => alive && setMoney(m))
+      .catch((e) => alive && setFailed(errText(e)));
+    return () => {
+      alive = false;
+    };
+  }, [cycle, version]);
+
+  const fmt = useMemo(() => {
+    const cur = money?.currency || "KES";
+    const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+    return (n: number | null | undefined) =>
+      n === null || n === undefined ? "—" : `${cur} ${nf.format(Math.round(n))}`;
+  }, [money?.currency]);
+
+  const over = (money?.farms || []).filter((f) => f.over_budget);
+  const heads = ["Farm", "Requirement", "Approved", "Allocated", "Committed this year", "Budget"];
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3 py-4">
+        <div>
+          <p className="font-medium">Money by farm</p>
+          <p className="text-sm text-muted-foreground">
+            Quantities valued at each chemical's last purchase rate (else its valuation
+            rate). Committed this year adds the farm's other approved cycles in fiscal
+            year {money?.fiscal_year || "—"}; budget is the submitted ERPNext Budget on
+            the farm's cost centre. Approving drafts the year's Budgets for you to submit
+            in ERPNext.
+          </p>
+        </div>
+        {over.length > 0 && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <p>
+              Over budget:{" "}
+              {over
+                .map((f) => `${f.farm} commits ${fmt(f.fy_committed)} against ${fmt(f.budget)}`)
+                .join("; ")}
+              . Approving still goes ahead — this is a warning, not a stop.
+            </p>
+          </div>
+        )}
+        {failed ? (
+          <p className="text-sm text-destructive">{failed}</p>
+        ) : (
+          <Table aria-label="Money by farm">
+            <TableHeader>
+              <TableRow>
+                {heads.map((h, i) => (
+                  <TableHead key={h} className={i ? "text-right" : undefined}>
+                    {h}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody aria-busy={!money || undefined}>
+              {!money && <TableRowsSkeleton cols={heads.length} rows={3} />}
+              {money && money.farms.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={heads.length} className="py-6 text-center text-muted-foreground">
+                    Nothing approved to value yet.
+                  </TableCell>
+                </TableRow>
+              )}
+              {money?.farms.map((f) => (
+                <TableRow key={f.farm}>
+                  <TableCell>
+                    <div className="font-medium">{f.farm}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {f.cost_center || (
+                        <Badge variant="secondary">No cost centre</Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{fmt(f.requirement_value)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmt(f.approved_value)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmt(f.allocated_value)}</TableCell>
+                  <TableCell
+                    className={cn(
+                      "text-right tabular-nums",
+                      f.over_budget && "font-medium text-amber-700 dark:text-amber-500",
+                    )}
+                  >
+                    {fmt(f.fy_committed)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {f.budget !== null ? (
+                      fmt(f.budget)
+                    ) : f.draft_budget !== null ? (
+                      <span className="text-muted-foreground">{fmt(f.draft_budget)} draft</span>
+                    ) : (
+                      <span className="text-muted-foreground">none</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {!!money?.warnings.length && (
+          <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {money.warnings.map((w) => (
+              <li key={w} className="flex items-start gap-1.5">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
+                {w}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

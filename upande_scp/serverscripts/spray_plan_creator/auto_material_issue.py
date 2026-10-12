@@ -71,23 +71,21 @@ def resolve_supervisor_employee(wo) -> str:
 def resolve_expense_account(item_code: str, company: str) -> str:
     """Return the expense account to write on a Material Issue row.
 
-    1. ``Item Default.expense_account`` for ``(item_code, company)`` if set.
-    2. Fallback: ``Scouting and Crop Protection Settings.default_chemical_expense_account``.
-    3. Both missing -> throw with remediation guidance.
+    The shared order (finance.accounts, B6): Item Default -> Item Group default
+    (up the tree) -> the settings row for the company -> the old single
+    ``default_chemical_expense_account``. The company's default expense account
+    is deliberately NOT a fallback here: a tank-mix issue booked to Cost of Goods
+    Sold is wrong in a way nobody would notice, so a missing account still throws.
     """
-    item_default = frappe.db.get_value(
-        "Item Default",
-        {"parent": item_code, "company": company},
-        "expense_account",
-    )
-    if item_default:
-        return item_default
+    from upande_scp.serverscripts.finance import accounts
 
-    fallback = frappe.db.get_single_value(
-        "Scouting and Crop Protection Settings", "default_chemical_expense_account"
-    )
-    if fallback:
-        return fallback
+    candidates = [
+        c for c in accounts.expense_account_candidates(item_code, company)
+        if c[0] != "company default"
+    ]
+    account, _ = accounts.first_present(candidates)
+    if account:
+        return account
 
     frappe.throw(
         f"Cannot auto-issue tank-mix: item {item_code} has no Item Default "
@@ -104,10 +102,19 @@ def build_material_issue(
 
     Throws (rolling back the triggering transaction) on any missing input.
     """
-    if not getattr(wo, "custom_cost_center", None):
+    cost_center = getattr(wo, "custom_cost_center", None)
+    if not cost_center:
+        # B9: the greenhouse's own cost centre, else its farm's purchase cost
+        # centre — never the company default.
+        from upande_scp.serverscripts.finance import cost_centres
+
+        cost_center = cost_centres.resolve(getattr(wo, "custom_greenhouse", None))[0]
+    if not cost_center:
         frappe.throw(
             f"Cannot auto-issue tank-mix: Work Order {wo.name} has no "
-            "custom_cost_center. Re-derive the cost center on the WO.",
+            "custom_cost_center, and neither its greenhouse nor its farm resolves "
+            "one. Re-derive the cost center on the WO or set the farm's purchase "
+            "cost centre.",
             title="Auto Material Issue",
         )
 
@@ -147,7 +154,7 @@ def build_material_issue(
             "conversion_factor": getattr(r, "conversion_factor", 1) or 1,
             "s_warehouse": greenhouse,
             "expense_account": resolve_expense_account(r.item_code, manufacture_se.company),
-            "cost_center": wo.custom_cost_center,
+            "cost_center": cost_center,
             "farm": farm,
         })
 

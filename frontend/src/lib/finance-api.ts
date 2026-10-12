@@ -110,3 +110,65 @@ export async function fetchChemicalCostByTarget(
     },
   );
 }
+
+// ── Budget view (B7) ─────────────────────────────────────────────────────
+
+export interface BudgetFigures {
+  /** GL Entry on the farm's cost-centre subtree; null when the farm has no cost centre. */
+  actual: number | null;
+  /** Submitted ERPNext Budgets (annual amounts) for the fiscal years in the period. */
+  budget: number;
+  /** SCP-drafted Budgets awaiting the GM's submit. */
+  draft_budget: number;
+  /** Value of procurement cycles approved for periods overlapping this one. */
+  approved: number;
+  /** The target report's figure: product valued as it leaves the store for use. */
+  stock_based: number;
+  /** stock_based minus actual — mostly product moved into a CSU but not yet sprayed. */
+  reconciling: number | null;
+}
+
+export interface BudgetFarm extends BudgetFigures {
+  farm: string;
+  company: string | null;
+  cost_center: string | null;
+  mapped: boolean;
+  kinds: Record<ProductKind, BudgetFigures>;
+}
+
+export interface OutsideSpend {
+  company: string;
+  cost_center: string;
+  kind: ProductKind;
+  amount: number;
+}
+
+export interface BudgetReport {
+  as_of: string;
+  currency: string;
+  from_date: string;
+  to_date: string;
+  fiscal_years: Record<string, string[]>;
+  farms: BudgetFarm[];
+  /** Same accounts, booked on cost centres under no mapped farm (e.g. Main - KR). */
+  outside: OutsideSpend[];
+  outside_total: number;
+  stock_unassigned: number;
+  totals: Omit<BudgetFigures, "actual" | "reconciling"> & { actual: number; reconciling: number };
+  notes: string[];
+}
+
+export async function fetchBudgetVsActual(
+  fromDate: string,
+  toDate: string,
+  opts: { crop?: string } = {},
+): Promise<BudgetReport> {
+  return call<BudgetReport>(
+    "upande_scp.serverscripts.reports.finance_budget.budget_vs_actual",
+    {
+      from_date: fromDate,
+      to_date: toDate,
+      ...(opts.crop ? { crop: opts.crop } : {}),
+    },
+  );
+}

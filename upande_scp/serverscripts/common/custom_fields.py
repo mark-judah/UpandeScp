@@ -445,6 +445,34 @@ def _field_spec() -> dict:
 				"options": "Farm Store Keeper",
 				"insert_after": "spray_supervisors",
 			},
+			# B4: the farm's place in ERPNext's cost-centre tree. The group is what
+			# Budgets and the Finance Budget view work on; the leaf is where
+			# farm-level purchases and issues with no greenhouse book.
+			{
+				"fieldname": "custom_cost_center",
+				"label": "Cost Centre (farm group)",
+				"fieldtype": "Link",
+				"options": "Cost Center",
+				"insert_after": "store_keepers",
+				"link_filters": '[["Cost Center","is_group","=",1]]',
+				"description": (
+					"The farm's cost-centre group. Its greenhouse cost centres sit under "
+					"it; budgets and the Finance budget view sum this subtree."
+				),
+			},
+			{
+				"fieldname": "custom_purchase_cost_center",
+				"label": "Purchase Cost Centre",
+				"fieldtype": "Link",
+				"options": "Cost Center",
+				"insert_after": "custom_cost_center",
+				"link_filters": '[["Cost Center","is_group","=",0]]',
+				"description": (
+					"Leaf cost centre for this farm's purchases and for issues with no "
+					"greenhouse. Empty: '<Farm> Crop Protection - <abbr>' is used if it "
+					"exists. Never Main."
+				),
+			},
 		],
 		"Warehouse": [
 			{
@@ -509,6 +537,22 @@ def _field_spec() -> dict:
 				"options": "Chemical Requirements",
 				"insert_after": TAB,
 				"hidden": 1,
+			},
+		],
+		# B3: the Budgets SCP drafts from a procurement cycle carry the cycle, so
+		# SCP only ever updates its own drafts — never a submitted Budget, never
+		# one Accounts made by hand.
+		"Budget": [
+			{
+				"fieldname": "custom_scp_procurement_cycle",
+				"label": "SCP Procurement Cycle",
+				"fieldtype": "Link",
+				"options": "Chemical Procurement Cycle",
+				"insert_after": "account",
+				"read_only": 1,
+				"no_copy": 1,
+				"search_index": 1,
+				"description": "Drafted by SCP from this procurement cycle's approved quantities.",
 			},
 		],
 		"Notification Log": [

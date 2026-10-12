@@ -44,7 +44,7 @@ from __future__ import annotations
 import json
 
 import frappe
-from frappe.utils import flt, now_datetime, nowdate
+from frappe.utils import flt, getdate, now_datetime, nowdate
 
 from upande_scp.serverscripts.common.notifications import notify, users_for_farm
 from upande_scp.serverscripts.spray_plan_creator.loaning import (
@@ -780,18 +780,116 @@ def requirements_for(cycle: str) -> list[dict]:
 # ─────────────────────────── the Material Request ────────────────────────────
 
 
+def _mr_rows(cycle: str) -> dict:
+	"""B2: the Material Request's rows, one per item x farm, costed. Writes nothing.
+
+	Each row carries the farm's purchase cost centre, the Farm dimension, the
+	resolved expense account and a rate, so the MR's own budget check has
+	something to check and the row says whose money it is. The quantities are the
+	allocation the cycle will publish, with the rounding remainder on the largest
+	share, so they add up to exactly what was approved.
+	"""
+	from upande_scp.serverscripts.finance import budgets
+
+	data = budgets.cycle_lines(cycle)
+	doc = data["doc"]
+	rows, missing_cc = [], []
+	for l in data["lines"]:
+		if flt(l["approved_qty"]) <= 0:
+			continue
+		rows.append({
+			"item_code": l["item_code"],
+			"item_name": l["item_name"],
+			"qty": flt(l["approved_qty"]),
+			"uom": l["uom"] or frappe.db.get_value("Item", l["item_code"], "stock_uom"),
+			"farm": l["farm"],
+			"cost_center": l["cost_center"],
+			"expense_account": l["account"],
+			"rate": flt(l["rate"]),
+			"amount": round(flt(l["approved_qty"]) * flt(l["rate"]), 2),
+			"rate_source": l["rate_source"],
+			"account_source": l["account_source"],
+		})
+		if not l["cost_center"]:
+			missing_cc.append(f"{l['item_code']} for {l['farm'] or 'no farm'}")
+	warnings = list(data["warnings"])
+	per_farm = _multiple_items_allowed()
+	if not per_farm:
+		rows = _one_row_per_item(rows)
+		warnings.append(
+			"Buying Settings does not allow an item more than once in a transaction, so the "
+			"request has one row per item and no farm cost centre. Turn on 'Allow Item to be "
+			"added multiple times in a transaction' for a row per item and farm."
+		)
+		missing_cc = [f"{r['item_code']} (all farms)" for r in rows if not r["cost_center"]]
+	return {
+		"doc": doc, "rows": rows, "warnings": warnings, "missing_cost_center": missing_cc,
+		"per_farm": per_farm,
+	}
+
+
+def _multiple_items_allowed() -> bool:
+	"""ERPNext refuses a repeated item on an MR or PO unless Buying Settings allows it."""
+	return bool(frappe.db.get_single_value("Buying Settings", "allow_multiple_items"))
+
+
+def _one_row_per_item(rows: list[dict]) -> list[dict]:
+	"""Fold item x farm rows back to one per item. Pure.
+
+	Used only where the site forbids a repeated item. The farm and cost centre
+	survive only where every farm on the item agrees, so nothing is attributed to a
+	farm that did not ask for it.
+	"""
+	out: dict[str, dict] = {}
+	for r in rows:
+		o = out.get(r["item_code"])
+		if o is None:
+			out[r["item_code"]] = {**r, "farms": [r["farm"]] if r["farm"] else []}
+			continue
+		o["qty"] = round(o["qty"] + r["qty"], 9)
+		o["amount"] = round(o["amount"] + r["amount"], 2)
+		if r["farm"] and r["farm"] not in o["farms"]:
+			o["farms"].append(r["farm"])
+		if o["farm"] != r["farm"]:
+			o["farm"] = None
+		if o["cost_center"] != r["cost_center"]:
+			o["cost_center"] = None
+	return list(out.values())
+
+
+@frappe.whitelist()
+def preview_material_request(cycle: str) -> dict:
+	"""The rows `create_material_request` would write, without writing anything."""
+	_assert_gm("preview the Material Request")
+	out = _mr_rows(cycle)
+	rows = out["rows"]
+	return {
+		"cycle": cycle,
+		"rows": rows,
+		"per_farm": out["per_farm"],
+		"total": round(sum(r["amount"] for r in rows), 2),
+		"warnings": out["warnings"],
+		"missing_cost_center": out["missing_cost_center"],
+	}
+
+
 @frappe.whitelist()
 def create_material_request(cycle: str, schedule_date: str | None = None) -> str:
 	"""One Material Request for the whole cycle, delivering into the general store.
 
 	One document rather than one per chemical or per farm: that consolidation is
 	the manual step this feature exists to remove, and a single MR is what the
-	purchasing side already expects.
+	purchasing side already expects. Inside it there is a row per item x farm
+	(B2), so the farm's cost centre, the expense account and a rate travel with
+	the quantity into purchasing and the budget check.
 
 	Left as a **draft** on purpose. Submitting is purchasing's decision, made in
 	ERPNext with its own validations (price lists, letter heads, approvals) — and
 	auto-submitting from a crop-protection screen would remove that checkpoint
 	from a document that commits money.
+
+	Raising it approves the cycle, and approving drafts the fiscal year's Budgets
+	(B3) for the GM to review and submit in ERPNext.
 	"""
 	_assert_gm("raise the Material Request")
 	doc = frappe.get_doc(CYCLE, cycle)
@@ -805,27 +903,38 @@ def create_material_request(cycle: str, schedule_date: str | None = None) -> str
 			"This cycle has no general store, so there is nowhere for the purchase "
 			"to land. Set one before raising the request.",
 		)
-	lines = [l for l in doc.lines if flt(l.approved_qty) > 0]
-	if not lines:
+	if not [l for l in doc.lines if flt(l.approved_qty) > 0]:
 		frappe.throw("Nothing approved to order yet.")
 
+	built = _mr_rows(cycle)
+	# ERPNext refuses a Required By date before the request's own date, so a cycle
+	# whose period has already ended asks for delivery today.
+	when = schedule_date or max(getdate(doc.period_end or nowdate()), getdate(nowdate()))
 	mr = frappe.get_doc({
 		"doctype": "Material Request",
 		"material_request_type": "Purchase",
 		"company": doc.company,
 		"transaction_date": nowdate(),
-		"schedule_date": schedule_date or doc.period_end or nowdate(),
+		"schedule_date": when,
 		"set_warehouse": doc.general_store,
 	})
 	purpose = f"Chemical procurement cycle {doc.name} ({doc.cycle_name})"
-	for l in lines:
+	has_farm_dim = _has_field("Material Request Item", "farm")
+	for r in built["rows"]:
 		row = {
-			"item_code": l.item_code,
-			"qty": flt(l.approved_qty),
-			"uom": l.uom or frappe.db.get_value("Item", l.item_code, "stock_uom"),
+			"item_code": r["item_code"],
+			"qty": r["qty"],
+			"uom": r["uom"],
 			"warehouse": doc.general_store,
-			"schedule_date": schedule_date or doc.period_end or nowdate(),
+			"schedule_date": when,
+			"rate": r["rate"],
 		}
+		if r["cost_center"]:
+			row["cost_center"] = r["cost_center"]
+		if r["expense_account"]:
+			row["expense_account"] = r["expense_account"]
+		if has_farm_dim and r["farm"]:
+			row["farm"] = r["farm"]
 		if _has_field("Material Request Item", "custom_purpose"):
 			row["custom_purpose"] = purpose
 		mr.append("items", row)
@@ -836,20 +945,110 @@ def create_material_request(cycle: str, schedule_date: str | None = None) -> str
 	if _has_field("Material Request", "custom_purpose"):
 		mr.custom_purpose = "Production"
 	if _has_field("Material Request", "custom_farm"):
-		# Deliberately left blank: a consolidated cycle order belongs to the
-		# company, not to one farm, and naming an arbitrary farm would make the
-		# order look like that farm's. Mandatory-checking is waived for this one
-		# document rather than inventing an owner.
-		mr.flags.ignore_mandatory = True
+		farms = {r["farm"] for r in built["rows"] if r["farm"]}
+		if len(farms) == 1:
+			mr.custom_farm = farms.pop()
+		else:
+			# A consolidated order belongs to the company, not to one farm; each row
+			# names its own farm instead. Mandatory-checking is waived for the header.
+			mr.flags.ignore_mandatory = True
 
 	mr.flags.ignore_permissions = True
 	mr.insert(ignore_permissions=True)
+	_restamp_mr_rows(mr, built["rows"])
+
+	if built["missing_cost_center"]:
+		from upande_scp.serverscripts.finance import cost_centres
+
+		# ERPNext fills a blank row cost centre with the company default on
+		# validate; the note says so, which is the difference between a fallback
+		# and a silent one (B9).
+		cost_centres.report_missing(
+			mr,
+			"procurement rows " + ", ".join(built["missing_cost_center"]),
+			fallback=cost_centres.company_default(doc.company),
+		)
+	if built["warnings"]:
+		mr.add_comment("Comment", "SCP costing: " + "; ".join(built["warnings"]))
+	_warn_over_budget(cycle, mr)
 
 	doc.material_request = mr.name
 	doc.status = "Approved"
 	doc.save(ignore_permissions=True)
+
+	_draft_budgets_on_approval(doc)
 	frappe.db.commit()
 	return mr.name
+
+
+def _restamp_mr_rows(mr, rows) -> None:
+	"""Put back what ERPNext's own defaults overwrote on insert.
+
+	MR validation fills cost centre and expense account from item and company
+	defaults where it thinks they are missing; the farm's figures are the point of
+	B2, so they are written back row by row if anything moved them.
+	"""
+	changed = False
+	for item, r in zip(mr.items, rows):
+		for field in ("cost_center", "expense_account", "rate"):
+			want = r.get(field)
+			if want and item.get(field) != want:
+				item.set(field, want)
+				changed = True
+	if changed:
+		mr.save(ignore_permissions=True)
+
+
+def _warn_over_budget(cycle: str, mr=None) -> list[str]:
+	"""B5: name the farms whose committed value for the year exceeds their Budget.
+
+	Warns, never blocks (B1): the note goes on the MR and to the screen.
+	"""
+	from upande_scp.serverscripts.finance import budgets
+
+	try:
+		money = budgets.cycle_money(cycle)
+	except Exception:
+		frappe.log_error(title=f"SCP cycle money {cycle}", message=frappe.get_traceback())
+		return []
+	over = [f for f in money["farms"] if f["over_budget"]]
+	if not over:
+		return []
+	msg = "Over budget: " + "; ".join(
+		f"{f['farm']} commits {f['fy_committed']:,.0f} this year against a budget of {f['budget']:,.0f}"
+		for f in over
+	)
+	if mr is not None:
+		mr.add_comment("Comment", msg)
+	frappe.msgprint(msg, title="Budget warning", indicator="orange")
+	return [f["farm"] for f in over]
+
+
+def _draft_budgets_on_approval(doc) -> None:
+	"""B3: approving the cycle drafts its Budgets. Never blocks the approval."""
+	from upande_scp.serverscripts.finance import budgets
+
+	try:
+		out = budgets.draft_budgets(doc.name)
+	except Exception:
+		frappe.log_error(title=f"SCP draft budgets {doc.name}", message=frappe.get_traceback())
+		doc.add_comment("Comment", "Draft budgets could not be written; see the Error Log.")
+		return
+	made = [r for r in out.get("rows", []) if r.get("action") in ("create", "update")]
+	lines = [
+		f"{r['action']} {r.get('budget') or ''}: {r['cost_center']} / {r['account']} = {r['amount']:,.2f}"
+		+ (f" ({r['warning']})" if r.get("warning") else "")
+		for r in out.get("rows", [])
+	]
+	lines += [f"skipped {s.get('farm')} {s.get('item_code')}: {s.get('why')}" for s in out.get("skipped", [])]
+	if out.get("error"):
+		lines.append(out["error"])
+	if lines:
+		doc.add_comment(
+			"Comment",
+			f"Draft budgets for {out.get('fiscal_year') or 'no fiscal year'} "
+			f"({len(made)} written): " + "; ".join(lines),
+		)
 
 
 # ──────────────────────── allocation + carry-forward ─────────────────────────
@@ -1139,28 +1338,60 @@ def pool_status(company: str | None = None) -> dict:
 	}
 
 
+#: What counts as consumption (B10): product leaving stock for use, not moving.
+#: A Chemical Spray is a Material Issue. The raw chemicals of a tank mix leave
+#: stock on the Manufacture (``Chemical Mixing``) in the CSU — the spray issues the
+#: mix, not the chemical — so that consumption is counted where it happens.
+CONSUMPTION_PURPOSES = ("Material Issue", "Manufacture")
+
+
+def _farm_consumption_warehouses(farm: str) -> list[str]:
+	"""The farm's stores (both kinds) and its CSUs."""
+	from upande_scp.serverscripts.common import stores as farm_stores
+	from upande_scp.serverscripts.reports.finances import _wip_matcher
+
+	whs = set(farm_stores.farm_stores(farm, "chemical") + farm_stores.farm_stores(farm, "foliar"))
+	is_wip = _wip_matcher()
+	whs |= {
+		w for w in frappe.get_all("Warehouse", filters={"custom_farm": farm, "is_group": 0}, pluck="name")
+		if is_wip(w)
+	}
+	return sorted(whs)
+
+
 @frappe.whitelist()
 def consumption_vs_allocation(cycle: str) -> list[dict]:
 	"""Allocation against what each farm actually consumed — the budget question.
 
-	Loans count: a farm that borrows raises its consumption without raising its
-	allocation, so leaving loans out would make every borrower look like an
-	overspender.
+	Consumption (B10) is product used: issues (a Chemical Spray included) and the
+	tank-mix manufacture, out of the farm's stores and CSUs. Moving stock between
+	the farm's own stores — store to CSU, a loan out — is not consumption, and
+	counting it made every CSU top-up look like use.
+
+	Borrowed stock still counts once it is used: a farm that borrows has consumed
+	more than it was allocated, and the reconciliation should say so.
 	"""
 	doc = frappe.get_doc(CYCLE, cycle)
 	start, end = doc.period_start, doc.period_end
 	out = []
+	where: dict[str, list[str]] = {}
 	for a in doc.allocations:
-		store = a.target_warehouse
 		consumed = 0.0
-		if store and start and end:
+		if a.farm not in where:
+			where[a.farm] = _farm_consumption_warehouses(a.farm)
+		whs = where[a.farm]
+		if whs and start and end:
 			row = frappe.db.sql(
 				"""SELECT COALESCE(SUM(-sle.actual_qty), 0) q
 				   FROM `tabStock Ledger Entry` sle
-				   WHERE sle.item_code = %s AND sle.warehouse = %s
+				   JOIN `tabStock Entry` se ON se.name = sle.voucher_no
+				   WHERE sle.voucher_type = 'Stock Entry'
+				     AND se.purpose IN %s
+				     AND IFNULL(se.stock_entry_type, '') != 'Chemical Loaning'
+				     AND sle.item_code = %s AND sle.warehouse IN %s
 				     AND sle.posting_date BETWEEN %s AND %s
 				     AND sle.actual_qty < 0 AND sle.is_cancelled = 0""",
-				(a.item_code, store, start, end),
+				(CONSUMPTION_PURPOSES, a.item_code, tuple(whs), start, end),
 				as_dict=True,
 			)
 			consumed = flt(row[0]["q"]) if row else 0.0

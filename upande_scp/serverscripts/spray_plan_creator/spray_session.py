@@ -627,6 +627,11 @@ def _promote_to_tank_mix_manufactured(
     cost_center = getattr(wo, "custom_cost_center", None) or match_cost_center(
         wo.custom_greenhouse
     )
+    if not cost_center:
+        # B9: the greenhouse's farm's purchase cost centre before ERPNext's default.
+        from upande_scp.serverscripts.finance import cost_centres
+
+        cost_center = cost_centres.resolve(wo.custom_greenhouse)[0]
     if cost_center:
         for it in se_doc.items or []:
             it.cost_center = cost_center

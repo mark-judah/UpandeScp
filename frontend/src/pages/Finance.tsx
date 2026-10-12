@@ -36,7 +36,13 @@ import {
 } from "@/lib/finance-api";
 import { LoadProgress, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import { Table, TableBody } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BudgetView } from "@/components/finance/BudgetView";
 import { ymd } from "@/lib/utils";
+
+/** "target": stock leaving the store, by greenhouse and pest (the per-target
+ *  breakdown). "budget": the ledger per farm against its ERPNext Budget (B7). */
+type FinanceView = "target" | "budget";
 
 function monthStart(): string {
   const d = new Date();
@@ -49,6 +55,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
+  const [view, setView] = useState<FinanceView>("target");
   const [from, setFrom] = useState<string>(monthStart);
   const [to, setTo] = useState<string>(() => ymd(new Date()));
   const [data, setData] = useState<ChemicalCostReport | null>(null);
@@ -56,6 +63,7 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (view !== "target") return;
     let alive = true;
     setLoading(true);
     setError(null);
@@ -66,7 +74,7 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
     return () => {
       alive = false;
     };
-  }, [from, to, initialCrop]);
+  }, [from, to, initialCrop, view]);
 
   // First load: the note, the totals' labels and the tables' headings are
   // drawn and only the figures pend. A date change keeps the old report up.
@@ -124,8 +132,22 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
     <TooltipProvider delayDuration={150}>
       <div className="flex min-h-svh w-full min-w-0 flex-col">
         <PageHeader
-          eyebrow={<>Chemical &amp; foliar spend by greenhouse and target · all product consumed</>}
+          eyebrow={
+            view === "budget" ? (
+              <>Chemical &amp; foliar expense by farm · ledger against budget</>
+            ) : (
+              <>Chemical &amp; foliar spend by greenhouse and target · all product consumed</>
+            )
+          }
           title={<>Finances</>}
+          switcher={
+            <Tabs value={view} onValueChange={(v) => setView(v as FinanceView)}>
+              <TabsList>
+                <TabsTrigger value="target">By target</TabsTrigger>
+                <TabsTrigger value="budget">Budget</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          }
         >
           <div className="flex flex-wrap items-end gap-2">
             <div className="flex items-center">
@@ -137,6 +159,11 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
           </div>
         </PageHeader>
 
+        {view === "budget" ? (
+          <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
+            <BudgetView from={from} to={to} crop={initialCrop} />
+          </div>
+        ) : (
         <div
           className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6"
           aria-busy={loading || pending || undefined}
@@ -488,6 +515,7 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
             </>
           )}
         </div>
+        )}
       </div>
     </TooltipProvider>
   );

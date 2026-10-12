@@ -493,3 +493,63 @@ export function describeRequirement(req: Requirement): string {
       return req.status;
   }
 }
+
+// ── money (B2, B3, B5) ────────────────────────────────────────────────────
+
+const FIN = "upande_scp.serverscripts.finance.budgets";
+
+export interface FarmMoney {
+  farm: string;
+  /** The farm's cost-centre group, where its Budget sits. */
+  cost_center: string | null;
+  purchase_cost_center: string | null;
+  requirement_value: number;
+  approved_value: number;
+  allocated_value: number;
+  /** This cycle plus every other approved cycle in the fiscal year. */
+  fy_committed: number;
+  /** Submitted Budgets on the farm group; null when there is none. */
+  budget: number | null;
+  draft_budget: number | null;
+  budgets: string[];
+  over_budget: boolean;
+}
+
+export interface CycleMoney {
+  cycle: string;
+  company: string;
+  fiscal_year: string | null;
+  currency: string;
+  farms: FarmMoney[];
+  warnings: string[];
+  over_budget: string[];
+  totals: { requirement_value: number; approved_value: number; allocated_value: number };
+}
+
+export function cycleMoney(cycle: string): Promise<CycleMoney> {
+  return call<CycleMoney>(`${FIN}.cycle_money`, { cycle });
+}
+
+export interface DraftBudgetRow {
+  cost_center: string;
+  account: string;
+  farm: string | null;
+  amount: number;
+  fiscal_year: string;
+  budget: string | null;
+  action: "create" | "update" | "unchanged" | "left alone";
+  warning: string | null;
+}
+
+export function draftBudgets(
+  cycle: string,
+  dryRun = false,
+): Promise<{
+  cycle: string;
+  fiscal_year: string | null;
+  rows: DraftBudgetRow[];
+  skipped: { farm: string | null; item_code: string; why: string }[];
+  error?: string;
+}> {
+  return call(`${FIN}.draft_budgets`, { cycle, dry_run: dryRun ? 1 : 0 });
+}

@@ -75,6 +75,7 @@
   "cost_center_section",
   "stamp_transfer_cost_center",
   "material_issue_section",
+  "company_expense_accounts",
   "default_chemical_expense_account",
   "default_chemical_difference_account",
   "stock_accounting_section",
@@ -550,7 +551,14 @@
    "label": "Material Issue Defaults"
   },
   {
-   "description": "Used as the fallback expense account on auto-Material-Issue rows when the tank-mix Item has no Item Default for the Work Order's company.",
+   "description": "Per company: the chemical and foliar expense accounts used when neither the Item nor its Item Group names one. Order: Item Default, Item Group default, this table, the single field below, then the company's default expense account.",
+   "fieldname": "company_expense_accounts",
+   "fieldtype": "Table",
+   "label": "Expense Accounts by Company",
+   "options": "SCP Company Expense Account"
+  },
+  {
+   "description": "Fallback for a company with no row above, and only where this account belongs to that company. Kept for sites that predate the per-company table.",
    "fieldname": "default_chemical_expense_account",
    "fieldtype": "Link",
    "label": "Default Chemical Expense Account",
@@ -700,7 +708,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-11 09:00:00.000000",
+ "modified": "2026-10-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting and Crop Protection Settings",

@@ -560,6 +560,11 @@ class TestProcurement(unittest.TestCase):
         P.consolidate(self.cycle)
         P.set_reduction(self.cycle, ITEM_A, "Absolute", 40)
         mr = None
+        # Approval drafts the year's Budgets (B3) and this test commits; drafting is
+        # proved in test_finance_budget_db under a rollback, so it is kept out of
+        # here rather than leaving Budgets tagged with a cycle tearDown deletes.
+        drafting = P._draft_budgets_on_approval
+        P._draft_budgets_on_approval = lambda doc: None
         try:
             mr = P.create_material_request(self.cycle)
             self.assertTrue(frappe.db.exists("Material Request", mr))
@@ -567,14 +572,18 @@ class TestProcurement(unittest.TestCase):
                 frappe.db.get_value("Material Request", mr, "docstatus"), 0,
                 "the MR must be left as a draft for purchasing to submit",
             )
+            per_farm = frappe.db.get_single_value("Buying Settings", "allow_multiple_items")
             self.assertEqual(
-                frappe.db.count("Material Request Item", {"parent": mr}), 1,
-                "one consolidated request, one line per chemical",
+                frappe.db.count("Material Request Item", {"parent": mr}),
+                2 if per_farm else 1,
+                "one consolidated request: a line per chemical and farm where the "
+                "site allows a repeated item, else a line per chemical",
             )
             with self.assertRaises(frappe.ValidationError) as cm:
                 P.create_material_request(self.cycle)
             self.assertIn("already", str(cm.exception).lower())
         finally:
+            P._draft_budgets_on_approval = drafting
             if mr and frappe.db.exists("Material Request", mr):
                 frappe.delete_doc("Material Request", mr, force=True, ignore_permissions=True)
             frappe.db.set_value(P.CYCLE, self.cycle, "material_request", None)

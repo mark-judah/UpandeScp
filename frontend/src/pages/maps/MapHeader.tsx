@@ -1,18 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
-import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
+import { HeaderIconButton } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
 import { DatePicker } from "@/components/DatePicker";
 import { useCropFarms } from "@/hooks/use-crop-farms";
 
 export const ALL = "__all__";
+const fromAll = (v: string) => (v === ALL ? "" : v);
 
 export interface MapFilterValue {
   crop: string;
@@ -54,11 +49,11 @@ export function MapHeader({
   rightSlot,
 }: MapHeaderProps) {
   // Farms for the route crop only, narrowed on the server (spec D3).
-  const { farms } = useCropFarms(value.crop);
+  const { farms, loading } = useCropFarms(value.crop);
   const farmList = Object.keys(farms);
 
   // Single-farm crop (e.g. avocado → Lokitela): auto-select that farm on load
-  // instead of leaving it on "All Farms" — several map layers (orchard trees,
+  // instead of leaving it on "All farms" — several map layers (orchard trees,
   // per-farm geometry) only load once a specific farm is chosen. Done once, and
   // only while the picker is still untouched (ALL), so it never fights the user.
   const autoSelectedRef = useRef(false);
@@ -71,49 +66,18 @@ export function MapHeader({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [farmList.length]);
 
-  const greenhouseList =
-    value.farm === ALL
-      ? Array.from(new Set(farmList.flatMap((f) => farms[f] || []))).sort()
-      : (farms[value.farm] || []).slice().sort();
 
   return (
     <PageHeader title={title} eyebrow={subtitle}>
-      <Select
-        value={value.farm}
-        onValueChange={(v) => onChange({ ...value, farm: v, greenhouse: ALL })}
-      >
-        <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>All Farms</SelectItem>
-          {farmList.map((f) => (
-            <SelectItem key={f} value={f}>
-              {f}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {showGreenhouse && (
-        <Select
-          value={value.greenhouse}
-          onValueChange={(v) => onChange({ ...value, greenhouse: v })}
-          disabled={!greenhouseList.length}
-        >
-          <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
-            <SelectValue placeholder="All" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All Greenhouses</SelectItem>
-            {greenhouseList.map((g) => (
-              <SelectItem key={g} value={g}>
-                {g}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
+      {/* One place pill (place picker spec G1); the page keeps ALL as "all". */}
+      <PlacePicker
+        farms={farms}
+        crop={value.crop}
+        level={showGreenhouse ? "both" : "farm"}
+        value={{ farm: fromAll(value.farm), greenhouse: showGreenhouse ? fromAll(value.greenhouse) : "" }}
+        onChange={(p) => onChange({ ...value, farm: p.farm || ALL, greenhouse: p.greenhouse || ALL })}
+        disabled={loading}
+      />
 
       <DatePicker
         value={value.from}

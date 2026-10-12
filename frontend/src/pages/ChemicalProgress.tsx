@@ -9,7 +9,8 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
+import { HeaderIconButton } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
 import { PageHeader } from "@/components/PageHeader";
 import {
   Table,
@@ -19,13 +20,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { DatePicker } from "@/components/DatePicker";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { TableRowsSkeleton, firstLoad } from "@/components/Loading";
@@ -37,6 +31,7 @@ import {
   type LifecycleSummaryRow,
 } from "@/lib/lifecycle-api";
 import { ymd, cn } from "@/lib/utils";
+import { farmPrefix } from "@/lib/places";
 
 const ALL = "__all__";
 
@@ -50,12 +45,6 @@ const STATE_TONE: Record<string, string> = {
   "Spraying In Progress": "bg-blue-500/15 text-blue-600",
   Completed: "bg-emerald-500/15 text-emerald-600",
 };
-
-function farmOf(greenhouse: string | null): string {
-  if (!greenhouse) return "";
-  const m = greenhouse.match(/^(.+?)\s+GH\b/i);
-  return m ? m[1].trim() : greenhouse.split(" ")[0];
-}
 
 function defaultRange(): { from: string; to: string } {
   const today = new Date();
@@ -97,13 +86,15 @@ export function ChemicalProgress() {
 
   useEffect(load, [from, to]);
 
+  // The summary rows carry no farm, so the farm is read off the house name
+  // (lib/places `farmPrefix`, the one shared copy of that rule).
   const farms = useMemo(
-    () => Array.from(new Set(rows.map((r) => farmOf(r.greenhouse)).filter(Boolean))).sort(),
+    () => Array.from(new Set(rows.map((r) => farmPrefix(r.greenhouse)).filter(Boolean))).sort(),
     [rows],
   );
 
   const visible = useMemo(
-    () => (farm === ALL ? rows : rows.filter((r) => farmOf(r.greenhouse) === farm)),
+    () => (farm === ALL ? rows : rows.filter((r) => farmPrefix(r.greenhouse) === farm)),
     [rows, farm],
   );
 
@@ -146,19 +137,13 @@ export function ChemicalProgress() {
       <div className="flex flex-wrap items-center gap-2 px-4 md:px-6">
         <DatePicker value={from} onChange={setFrom} />
         <DatePicker value={to} onChange={setTo} />
-        <Select value={farm} onValueChange={setFarm} disabled={skeleton}>
-          <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All Farms</SelectItem>
-            {farms.map((f) => (
-              <SelectItem key={f} value={f}>
-                {f}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <PlacePicker
+          level="farm"
+          farms={farms}
+          value={{ farm: farm === ALL ? "" : farm, greenhouse: "" }}
+          onChange={(p) => setFarm(p.farm || ALL)}
+          disabled={skeleton}
+        />
       </div>
 
       <div className="px-4 md:px-6 py-4 flex-1" aria-busy={loading || undefined}>

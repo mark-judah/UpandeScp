@@ -10,7 +10,7 @@
  * * Edits stay local until Save, which replaces the farm's week on the server.
  *   Only users who manage the farm see the editing controls.
  */
-import { FilterSelect } from "@/components/FilterSelect";
+import { PlacePicker } from "@/components/PlacePicker";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { addDays, addWeeks, format, startOfWeek } from "date-fns";
 import { Check, ChevronLeft, ChevronRight, Copy, Eraser, Save, Undo2, X } from "lucide-react";
@@ -27,7 +27,8 @@ import {
 } from "@/lib/scout-plan-api";
 import { cn } from "@/lib/utils";
 import { ASSIGNMENT_COLORS, paint } from "./schedule-colors";
-import { day, shortGreenhouse } from "./schedule-utils";
+import { day } from "./schedule-utils";
+import { shortHouse } from "@/lib/places";
 import {
   addAssignment,
   copyLastWeek,
@@ -190,7 +191,7 @@ export function ScoutPlanView({
   // ── the grid ──
   const gridRows =
     rowsBy === "greenhouse"
-      ? (data?.greenhouses || []).map((h) => ({ id: h, label: shortGreenhouse(h, data?.farm) }))
+      ? (data?.greenhouses || []).map((h) => ({ id: h, label: shortHouse(h, data?.farm) }))
       : [...new Set([...(data?.scouts || []).map((s) => s.scout), ...rows.map((r) => r.scout)])]
           .map((s) => ({ id: s, label: nameOf(s) }))
           .sort((a, b) => a.label.localeCompare(b.label));
@@ -213,7 +214,7 @@ export function ScoutPlanView({
         }))
       : (data?.greenhouses || []).map((h) => ({
           id: h,
-          label: shortGreenhouse(h, data?.farm),
+          label: shortHouse(h, data?.farm),
           image: undefined as string | undefined,
           leave: undefined,
           sub: "",
@@ -234,14 +235,17 @@ export function ScoutPlanView({
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <FilterSelect
+        <PlacePicker
+          level="farm"
+          farms={data?.farms || (farm ? [farm] : [])}
+          crop={crop}
           label="Scout plan farm"
-          value={farm || data?.farm || ""}
-          onChange={(v) => {
+          allLabel={false}
+          value={{ farm: farm || data?.farm || "", greenhouse: "" }}
+          onChange={(p) => {
             if (dirty && !window.confirm("Discard unsaved changes to this week?")) return;
-            setFarm(v);
+            setFarm(p.farm);
           }}
-          options={data?.farms || (farm ? [farm] : [])}
           disabled={skeleton}
         />
         <div role="group" aria-label="Scout rows" className="inline-flex rounded-lg bg-muted p-0.5">
@@ -324,7 +328,7 @@ export function ScoutPlanView({
                 ? "Every house has a scout."
                 : check.unplanned.map((h) => (
                     <span key={h} className="rounded-full bg-muted px-1.5 py-0.5 text-foreground">
-                      {shortGreenhouse(h, data.farm)}
+                      {shortHouse(h, data.farm)}
                     </span>
                   ))}
             </div>
@@ -356,7 +360,7 @@ export function ScoutPlanView({
               </div>
               {check.onLeave.map((o) => (
                 <div key={`${o.scout}-${o.date}-${o.greenhouse}`} className="text-muted-foreground">
-                  {nameOf(o.scout)} · {format(day(o.date), "EEE d")} · {shortGreenhouse(o.greenhouse, data.farm)}
+                  {nameOf(o.scout)} · {format(day(o.date), "EEE d")} · {shortHouse(o.greenhouse, data.farm)}
                 </div>
               ))}
             </div>
@@ -498,7 +502,7 @@ export function ScoutPlanView({
                         {here.map((r) => {
                           const st = statusFor(r, data.actuals, today, leaves);
                           const tone = paint(ASSIGNMENT_COLORS[st]);
-                          const label = rowsBy === "greenhouse" ? firstName(nameOf(r.scout)) : shortGreenhouse(r.greenhouse, data.farm);
+                          const label = rowsBy === "greenhouse" ? firstName(nameOf(r.scout)) : shortHouse(r.greenhouse, data.farm);
                           return (
                             <button
                               key={rowKey(r)}
@@ -535,7 +539,7 @@ export function ScoutPlanView({
                               <PersonAvatar id={a.scout} name={nameOf(a.scout)} image={scouts.get(a.scout)?.image} size={16} className="opacity-70" />
                             )}
                             <span className="truncate">
-                              {rowsBy === "greenhouse" ? firstName(nameOf(a.scout)) : shortGreenhouse(a.greenhouse, data.farm)}
+                              {rowsBy === "greenhouse" ? firstName(nameOf(a.scout)) : shortHouse(a.greenhouse, data.farm)}
                             </span>
                           </span>
                         ))}

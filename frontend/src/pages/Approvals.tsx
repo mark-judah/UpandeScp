@@ -51,6 +51,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/PageHeader";
+import { PlacePicker } from "@/components/PlacePicker";
 import { HEADER_PILL } from "@/components/header-controls";
 import {
   Dialog,
@@ -228,15 +229,6 @@ export function Approvals() {
     };
   }, [reload]);
 
-  // Reset greenhouse when farm changes and the previous selection is no
-  // longer in the cascaded list.
-  useEffect(() => {
-    if (greenhouse === ALL) return;
-    const list =
-      farm !== ALL ? farmsData.greenhouses_by_farm[farm] || [] : [];
-    if (!list.includes(greenhouse)) setGreenhouse(ALL);
-  }, [farm, farmsData, greenhouse]);
-
   // ── Derived ───────────────────────────────────────────────────────
   // First load only: a filter change keeps the old list on screen (with the
   // LoadingStrip) instead of blanking it into skeletons.
@@ -289,10 +281,11 @@ export function Approvals() {
     });
   }, [visibleWos]);
 
-  const ghOptions = useMemo(() => {
-    if (farm === ALL) return [];
-    return farmsData.greenhouses_by_farm[farm] || [];
-  }, [farm, farmsData]);
+  // farm → greenhouses for the place picker.
+  const placeFarms = useMemo(
+    () => Object.fromEntries(farmsData.farms.map((f) => [f, farmsData.greenhouses_by_farm[f] || []])),
+    [farmsData],
+  );
 
   const allChecked =
     visibleWos.length > 0 && visibleWos.every((w) => checked.has(w.name));
@@ -569,38 +562,15 @@ export function Approvals() {
         >
           {groupFarms ? "Grouped by farm" : "Group by farm"}
         </Button>
-        <Select value={farm} onValueChange={setFarm} disabled={!farmsData.farms.length}>
-          <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All Farms</SelectItem>
-            {farmsData.farms.map((f) => (
-              <SelectItem key={f} value={f}>
-                {f}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={greenhouse}
-          onValueChange={setGreenhouse}
-          disabled={farm === ALL}
-        >
-          <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
-            <SelectValue
-              placeholder={farm === ALL ? "Pick a farm first" : "All"}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All</SelectItem>
-            {ghOptions.map((g) => (
-              <SelectItem key={g} value={g}>
-                {g}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <PlacePicker
+          farms={placeFarms}
+          value={{ farm: farm === ALL ? "" : farm, greenhouse: greenhouse === ALL ? "" : greenhouse }}
+          onChange={(p) => {
+            setFarm(p.farm || ALL);
+            setGreenhouse(p.greenhouse || ALL);
+          }}
+          disabled={!farmsData.farms.length}
+        />
         <Button variant="ghost" size="sm" className="h-9" onClick={clearFilters}>
           Clear
         </Button>

@@ -6,10 +6,8 @@ import {
 import { useCropFarms } from "@/hooks/use-crop-farms";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
+import { HeaderIconButton } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
 import { OverviewTab }  from "./dashboard/OverviewTab";
 import { PestsTab }     from "./dashboard/PestsTab";
@@ -25,8 +23,6 @@ import type { TrapsPayload } from "./dashboard/traps-types";
 import type { FcmPayload } from "./dashboard/fcm-types";
 import { cropSlug, routeHash } from "@/lib/router";
 
-const ALL_FARMS = "__all__";
-const ALL_GH = "__all__";
 
 function defaultRange() {
   const today = new Date();
@@ -40,8 +36,9 @@ type TabId = "overview" | "pests" | "diseases" | "traps" | "fcm";
 export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
   // The crop is the route's (spec D1); the page carries no crop picker.
   const crop = initialCrop ?? DEFAULT_CROP;
-  const [farm, setFarm] = useState<string>(ALL_FARMS);
-  const [greenhouse, setGreenhouse] = useState<string>(ALL_GH);
+  // "" is "all" at each level (the place picker's value).
+  const [farm, setFarm] = useState("");
+  const [greenhouse, setGreenhouse] = useState("");
   const [{ from, to }, setRange] = useState(defaultRange);
   const { farms, loading: farmsLoading } = useCropFarms(crop);
   const [scoutLookup, setScoutLookup] = useState<Record<string, string>>({});
@@ -50,15 +47,6 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
     fetchScoutLookup().then(setScoutLookup);
     void fetchZonesByGreenhouse();
   }, []);
-
-  // Already the crop's farms, narrowed on the server.
-  const farmList = Object.keys(farms);
-
-  const greenhouseList = (() => {
-    if (farm === ALL_FARMS)
-      return Array.from(new Set(farmList.flatMap((f) => farms[f] || []))).sort();
-    return (farms[farm] || []).slice().sort();
-  })();
 
   const [tab, setTab] = useState<TabId>("overview");
   const [pestFilters, setPestFilters] = useState({
@@ -72,8 +60,8 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
     from_date: from,
     to_date: to,
     crop,
-    farm: farm === ALL_FARMS ? "" : farm,
-    greenhouse: greenhouse === ALL_GH ? "" : greenhouse,
+    farm,
+    greenhouse,
   };
 
   const overview  = useDashboardAggregate<OverviewPayload>("overview",  base, tab === "overview");
@@ -139,44 +127,16 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Select
-                value={farm}
-                disabled={farmsLoading}
-                onValueChange={(v) => {
-                  setFarm(v);
-                  setGreenhouse(ALL_GH);
+              <PlacePicker
+                farms={farms}
+                crop={crop}
+                value={{ farm, greenhouse }}
+                onChange={(p) => {
+                  setFarm(p.farm);
+                  setGreenhouse(p.greenhouse);
                 }}
-              >
-                <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_FARMS}>All Farms</SelectItem>
-                  {farmList.map((f) => (
-                    <SelectItem key={f} value={f}>
-                      {f}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={greenhouse}
-                onValueChange={setGreenhouse}
-                disabled={!greenhouseList.length}
-              >
-                <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
-                  <SelectValue placeholder="All" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_GH}>All Greenhouses</SelectItem>
-                  {greenhouseList.map((g) => (
-                    <SelectItem key={g} value={g}>
-                      {g}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                disabled={farmsLoading}
+              />
 
               <DatePicker
                 value={from}

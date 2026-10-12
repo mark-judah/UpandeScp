@@ -22,7 +22,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
-import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
+import { HeaderIconButton } from "@/components/header-controls";
 import { Separator } from "@/components/ui/separator";
 import {
   Card,
@@ -37,6 +37,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/DatePicker";
+import { PlacePicker } from "@/components/PlacePicker";
 import {
   Select,
   SelectContent,
@@ -649,19 +650,13 @@ export function Labels() {
           </>
         }
       >
-        <Select value={farm} onValueChange={setFarm} disabled={skeleton}>
-          <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-            <SelectValue placeholder="All farms" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_FARMS}>All farms</SelectItem>
-            {farms.map((f) => (
-              <SelectItem key={f} value={f}>
-                {f}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <PlacePicker
+          level="farm"
+          farms={farms}
+          value={{ farm: farm === ALL_FARMS ? "" : farm, greenhouse: "" }}
+          onChange={(p) => setFarm(p.farm || ALL_FARMS)}
+          disabled={skeleton}
+        />
         <DatePicker value={fromDate} onChange={setFromDate} />
         <DatePicker value={toDate} onChange={setToDate} />
         <HeaderIconButton onClick={load} disabled={loading} title="Refresh">

@@ -15,6 +15,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { PlacePicker } from "@/components/PlacePicker";
+import { farmOf } from "@/lib/places";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -267,7 +269,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   // to the chosen farm. ``""`` means "all my allowed farms"; the list comes
   // from ``bootstrap.scope.farms`` which is already trimmed server-side to
   // Spray Plan Settings.allowed_farms for the current user.
-  const [farmFilter, setFarmFilter] = useState<string>("");
   const [greenhouse, setGreenhouse] = useState<string>("");
   // The Scouting Alert a curative plan is being made from (thresholds D7). The
   // prefill ref survives the greenhouse/classification reset effect below.
@@ -594,7 +595,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       if (greenhouse !== a.warehouse || classification !== "Curative") {
         prefillRef.current = { greenhouse: a.warehouse, target: a.observation };
       }
-      setFarmFilter("");
       setGreenhouse(a.warehouse);
       setClassification("Curative");
       setCurativeAlert(a.name);
@@ -851,33 +851,38 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     () => bootstrap?.scope.farms || [],
     [bootstrap],
   );
-  // Effective farm for the weather card: explicit filter > selected
-  // greenhouse's farm > single allowed farm. Stays empty when ambiguous
-  // (multiple farms allowed, no selection yet) so we don't pick wrong.
+  // Effective farm for the weather card: the selected greenhouse's farm >
+  // single allowed farm. Stays empty when ambiguous (multiple farms allowed,
+  // no selection yet) so we don't pick wrong.
   const weatherFarm = useMemo(() => {
-    if (farmFilter) return farmFilter;
     if (greenhouse) {
       const g = bootstrap?.greenhouses.find((x) => x.name === greenhouse);
       if (g?.custom_farm) return g.custom_farm;
     }
     if (allowedFarms.length === 1) return allowedFarms[0];
     return "";
-  }, [farmFilter, greenhouse, bootstrap, allowedFarms]);
+  }, [greenhouse, bootstrap, allowedFarms]);
   const ghList = useMemo(
-    () =>
-      (bootstrap?.greenhouses || [])
-        .filter((g) => !farmFilter || g.custom_farm === farmFilter)
-        .map((g) => g.name),
-    [bootstrap, farmFilter],
+    () => (bootstrap?.greenhouses || []).map((g) => g.name),
+    [bootstrap],
   );
 
-  // If the user flips farms while a greenhouse from the old farm is still
-  // selected, drop the stale pick so downstream calcs don't run on a GH
-  // the user can no longer see in the picker.
+  // Drop a pick the bootstrap no longer lists, so downstream calcs don't run
+  // on a GH the user can no longer see in the picker.
   useEffect(() => {
     if (!greenhouse) return;
     if (!ghList.includes(greenhouse)) setGreenhouse("");
   }, [ghList, greenhouse]);
+  // farm → greenhouses for the picker; a house with no farm link falls back to
+  // the farm its name starts with.
+  const ghByFarm = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const g of bootstrap?.greenhouses || []) {
+      const f = g.custom_farm || farmOf(g.name, allowedFarms) || "Other";
+      (out[f] ||= []).push(g.name);
+    }
+    return out;
+  }, [bootstrap, allowedFarms]);
   const derivedCostCenter = useMemo(() => {
     if (!greenhouse) return null;
     const match = bootstrap?.greenhouses.find((g) => g.name === greenhouse);
@@ -1464,7 +1469,6 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       // every Add-to-batch so the next plan starts from scratch (incl.
       // farm/greenhouse). Anything tied to the previous greenhouse would
       // mislead the operator if it lingered.
-      setFarmFilter("");
       setGreenhouse("");
       setSprayDate(todayAt("06:00"));
       setSprayType("");
@@ -1633,59 +1637,32 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
         )}
 
         <div className="flex flex-wrap items-end gap-2">
-          {allowedFarms.length > 1 && (
-            <div className="flex flex-col gap-1 min-w-44">
-              <Label>Farm</Label>
-              <Select
-                value={farmFilter || "__all__"}
-                onValueChange={(v) => setFarmFilter(v === "__all__" ? "" : v)}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">All my farms</SelectItem>
-                  {allowedFarms.map((f) => (
-                    <SelectItem key={f} value={f}>
-                      {f}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
           <div className="flex flex-col gap-1 min-w-56">
             <Label>Greenhouse</Label>
-            {/* Disabled, not hidden, until its options have loaded. */}
-            <Select
-              value={greenhouse || ""}
-              onValueChange={setGreenhouse}
+            {/* One searchable picker, farms as headers (place picker G2): it
+                replaces the separate farm filter. Disabled, not hidden, until
+                its options have loaded. */}
+            <PlacePicker
+              level="greenhouse"
+              variant="field"
+              farms={ghByFarm}
+              crop={initialCrop}
+              label="Greenhouse"
+              value={{ farm: "", greenhouse: greenhouse || "" }}
+              onChange={(p) => setGreenhouse(p.greenhouse)}
               disabled={!ghList.length && !greenhouse}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Pick a greenhouse" />
-              </SelectTrigger>
-              <SelectContent>
-                {ghList.map((g) => {
-                  const badge = ghActionBadge(bootstrap?.alerts?.[g]);
-                  return (
-                    <SelectItem key={g} value={g}>
-                      <span className="flex items-center gap-2">
-                        {g}
-                        {badge ? (
-                          <Badge
-                            variant={badge === "Spray advised" ? "destructive" : "secondary"}
-                            className="text-[0.6rem]"
-                          >
-                            {badge}
-                          </Badge>
-                        ) : null}
-                      </span>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
+              houseExtra={(g) => {
+                const badge = ghActionBadge(bootstrap?.alerts?.[g]);
+                return badge ? (
+                  <Badge
+                    variant={badge === "Spray advised" ? "destructive" : "secondary"}
+                    className="text-[0.6rem]"
+                  >
+                    {badge}
+                  </Badge>
+                ) : null;
+              }}
+            />
           </div>
           <div className="flex flex-col gap-1 text-xs text-muted-foreground">
             <span>Latest scouting</span>

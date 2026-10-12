@@ -1,3 +1,4 @@
+import { shortHouse } from "@/lib/places";
 import type {
   ObsKey,
   PrevalenceRow,
@@ -27,7 +28,8 @@ export function buildStationTree(
         .sort()
         .map((s) => ({
           id: `station:${farm}|${s}`,
-          label: s,
+          label: shortHouse(s, farm),
+          search: `${farm} ${s}`,
           count: stations[s],
         }));
       return {

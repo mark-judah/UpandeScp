@@ -17,10 +17,7 @@ import { BarChart3, CalendarDays, ChevronLeft, MapPinned } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { HEADER_PILL } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
 import { DatePicker } from "@/components/DatePicker";
 import { LoadProgress, TextSkeleton } from "@/components/Loading";
 import { Figure, FigureRow } from "@/components/people/Figure";
@@ -188,17 +185,16 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
       <PageHeader eyebrow="Personnel · Scouting" title="Scouts" />
       <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Select value={farm || data?.farm || ALL} onValueChange={(v) => setFarm(v)} disabled={!data}>
-            <SelectTrigger aria-label="Scouts farm" className={HEADER_PILL}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(data?.allFarms ?? true) && <SelectItem value={ALL}>All Farms</SelectItem>}
-              {(data?.farms || []).map((f) => (
-                <SelectItem key={f} value={f}>{f}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <PlacePicker
+            level="farm"
+            farms={data?.farms || []}
+            crop={crop}
+            label="Scouts farm"
+            allLabel={(data?.allFarms ?? true) ? undefined : false}
+            value={{ farm: farm === ALL ? "" : farm || data?.farm || "", greenhouse: "" }}
+            onChange={(p) => setFarm(p.farm || ALL)}
+            disabled={!data}
+          />
           <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
           <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
         </div>

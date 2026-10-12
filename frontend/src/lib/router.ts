@@ -125,6 +125,12 @@ function parseHash(): Route {
   return { crop: DEFAULT_CROP_SLUG, view: DEFAULT_VIEW };
 }
 
+/** The current route's crop display name ("Rose"), read from the live hash —
+ *  for components that live on crop-less pages but keep per-crop state. */
+export function routeCrop(): string {
+  return cropDisplayName(parseHash().crop);
+}
+
 export function routeHash(route: Route): string {
   return `#/${route.crop}/${route.view}`;
 }

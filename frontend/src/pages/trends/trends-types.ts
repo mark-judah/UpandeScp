@@ -1,6 +1,9 @@
 export type TreeNode = {
   id: string;
   label: string;
+  /** what search matches when it differs from the label (a short house name
+   *  still finds "Chepsito GH 16"); defaults to the label */
+  search?: string;
   count?: number;
   children?: TreeNode[];
 };

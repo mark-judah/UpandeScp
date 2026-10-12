@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
 import { DatePicker } from "@/components/DatePicker";
 import { Button } from "@/components/ui/button";
 import { LoadingStrip } from "@/components/LoadingStrip";
@@ -89,6 +90,7 @@ export function Historical() {
     work_orders: WorkOrderRow[];
     greenhouses: string[];
     farms: string[];
+    greenhouses_by_farm?: Record<string, string[]>;
   }>({ work_orders: [], greenhouses: [], farms: [] });
   const [loading, setLoading] = useState(true);
   // Whether any list has landed yet: the first load draws skeleton rows, a
@@ -137,12 +139,11 @@ export function Historical() {
     };
   }, [from, to, farm, greenhouse, status]);
 
-  const ghOpts = useMemo(
-    () =>
-      farm === ALL
-        ? data.greenhouses
-        : data.greenhouses.filter((g) => g.includes(farm)),
-    [data.greenhouses, farm],
+  // farm → houses from the server's Warehouse.custom_farm link — the same link
+  // its farm filter uses, so every house sits under the farm that finds it.
+  const placeFarms = useMemo(
+    () => data.greenhouses_by_farm || Object.fromEntries(data.farms.map((f) => [f, []])),
+    [data.greenhouses_by_farm, data.farms],
   );
 
   const first = firstLoad(loading, loaded);
@@ -159,43 +160,17 @@ export function Historical() {
       >
           <DatePicker value={from} onChange={setFrom} />
           <DatePicker value={to} onChange={setTo} />
-          {/* Only worth showing when there is a choice to make. The server
-              returns the farms this user may see, so a single-farm user gets a
-              picker with exactly one option — noise, not a control. */}
-          {data.farms.length > 1 && (
-          <Select
-            value={farm}
-            onValueChange={(v) => {
-              setFarm(v);
-              setGreenhouse(ALL);
+          {/* One place pill (place picker spec G1). The server returns the
+              farms this user may see; a single-farm user sees that farm. */}
+          <PlacePicker
+            farms={placeFarms}
+            value={{ farm: farm === ALL ? "" : farm, greenhouse: greenhouse === ALL ? "" : greenhouse }}
+            onChange={(p) => {
+              setFarm(p.farm || ALL);
+              setGreenhouse(p.greenhouse || ALL);
             }}
-          >
-            <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All Farms</SelectItem>
-              {data.farms.map((f) => (
-                <SelectItem key={f} value={f}>
-                  {f}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          )}
-          <Select value={greenhouse} onValueChange={setGreenhouse} disabled={first}>
-            <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All Greenhouses</SelectItem>
-              {ghOpts.map((g) => (
-                <SelectItem key={g} value={g}>
-                  {g}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            disabled={first}
+          />
           <Select
             value={status || ALL}
             onValueChange={(v) => setStatus(v === ALL ? "" : v)}

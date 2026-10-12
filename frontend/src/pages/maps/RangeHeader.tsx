@@ -9,19 +9,13 @@
  */
 
 import { useEffect, useState, type ReactNode } from "react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
-import { HEADER_PILL } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
 import { WeekPicker } from "@/components/WeekPicker";
 import { useCropFarms } from "@/hooks/use-crop-farms";
 
 export const ALL = "__all__";
+const fromAll = (v: string) => (v === ALL ? "" : v);
 
 /** Inclusive max span: 7 calendar days (from + 6). */
 export const MAX_RANGE_DAYS = 6;
@@ -93,55 +87,20 @@ export function RangeHeader({
   switcher,
 }: RangeHeaderProps) {
   // Farms for the route crop only, narrowed on the server (spec D3).
-  const { farms } = useCropFarms(value.crop);
-  const farmList = Object.keys(farms);
-
-  const greenhouseList =
-    value.farm === ALL
-      ? Array.from(new Set(farmList.flatMap((f) => farms[f] || []))).sort()
-      : (farms[value.farm] || []).slice().sort();
+  const { farms, loading } = useCropFarms(value.crop);
 
   return (
     <PageHeader title={title} eyebrow={subtitle} switcher={switcher}>
+      {/* One place pill (place picker spec G1); the page keeps ALL as "all". */}
       {showFarm && (
-        <Select
-          value={value.farm}
-          onValueChange={(v) =>
-            onChange({ ...value, farm: v, greenhouse: ALL })
-          }
-        >
-          <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All Farms</SelectItem>
-            {farmList.map((f) => (
-              <SelectItem key={f} value={f}>
-                {f}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-
-      {showGreenhouse && (
-        <Select
-          value={value.greenhouse}
-          onValueChange={(v) => onChange({ ...value, greenhouse: v })}
-          disabled={!greenhouseList.length}
-        >
-          <SelectTrigger aria-label="Greenhouse" className={HEADER_PILL}>
-            <SelectValue placeholder="All" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All Greenhouses</SelectItem>
-            {greenhouseList.map((g) => (
-              <SelectItem key={g} value={g}>
-                {g}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <PlacePicker
+          farms={farms}
+          crop={value.crop}
+          level={showGreenhouse ? "both" : "farm"}
+          value={{ farm: fromAll(value.farm), greenhouse: showGreenhouse ? fromAll(value.greenhouse) : "" }}
+          onChange={(p) => onChange({ ...value, farm: p.farm || ALL, greenhouse: p.greenhouse || ALL })}
+          disabled={loading}
+        />
       )}
 
       <WeekPicker

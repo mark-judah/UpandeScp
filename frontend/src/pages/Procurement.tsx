@@ -42,6 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -237,19 +238,17 @@ export function Procurement() {
             <Plus className="mr-1 size-4" /> New cycle
           </Button>
         )}
-        {farms.length > 1 && (
-          <Select value={farm} onValueChange={setFarm}>
-            <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-              <SelectValue placeholder="Farm" />
-            </SelectTrigger>
-            <SelectContent>
-              {farms.map((f) => (
-                <SelectItem key={f} value={f}>
-                  {f}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {/* The planner's farm (place picker G2): always shown once there is a
+            farm, a single farm reading as itself; there is no "all" here. */}
+        {(!shellLoaded || farms.length > 0) && (
+          <PlacePicker
+            level="farm"
+            farms={farms}
+            allLabel={false}
+            value={{ farm, greenhouse: "" }}
+            onChange={(p) => setFarm(p.farm)}
+            disabled={!shellLoaded}
+          />
         )}
       </div>
 

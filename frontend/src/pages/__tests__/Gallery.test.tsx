@@ -89,9 +89,12 @@ describe("Scouting ▸ Gallery", () => {
     fetchPhotoFeed.mockResolvedValue(page([photo(1)], false));
     render(<Gallery initialCrop="Rose" />);
     await screen.findByTestId("gallery-masonry");
-    fireEvent.change(screen.getByLabelText("Gallery farm"), { target: { value: "Chepsito" } });
+    // The place picker: one pill, a farm row then a house row.
+    fireEvent.click(screen.getByRole("button", { name: "Gallery place" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Chepsito" }));
     await waitFor(() => expect(fetchPhotoFeed).toHaveBeenLastCalledWith(expect.objectContaining({ farm: "Chepsito" }), 0));
-    fireEvent.change(screen.getByLabelText("Gallery greenhouse"), { target: { value: "GH2 - KR" } });
+    fireEvent.click(screen.getByRole("button", { name: "Gallery place" }));
+    fireEvent.click(await screen.findByRole("option", { name: "GH2" }));
     fireEvent.change(screen.getByLabelText("Gallery kind"), { target: { value: "pest" } });
     fireEvent.change(screen.getByLabelText("Gallery observation"), { target: { value: "Thrips" } });
     fireEvent.change(screen.getByLabelText("Gallery scout"), { target: { value: "EMP-1" } });

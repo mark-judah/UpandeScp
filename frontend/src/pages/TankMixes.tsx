@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import {
   KpiValueSkeleton,
@@ -124,23 +125,15 @@ export function TankMixes() {
               className="h-9 pl-7"
             />
           </div>
-          {/* See Historical: a one-option picker is noise. `farms` is already
-              scoped server-side to what this user may see. */}
-          {farms.length > 1 && (
-          <Select value={farm} onValueChange={setFarm}>
-            <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_FARMS}>All Farms</SelectItem>
-              {farms.map((f) => (
-                <SelectItem key={f} value={f}>
-                  {f}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          )}
+          {/* One place pill (place picker G2). `farms` is already scoped
+              server-side to what this user may see; one farm reads as itself. */}
+          <PlacePicker
+            level="farm"
+            farms={farms}
+            value={{ farm: farm === ALL_FARMS ? "" : farm, greenhouse: "" }}
+            onChange={(p) => setFarm(p.farm || ALL_FARMS)}
+            disabled={skeleton}
+          />
           <Select
             value={activeOnly ? "active" : "all"}
             onValueChange={(v) => setActiveOnly(v === "active")}

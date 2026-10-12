@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils";
 import { Bar } from "@/components/Loading";
 import { CrewPopover, hasUnavailable } from "./CrewPopover";
 import { chipProps } from "./schedule-colors";
-import { colOf, daysOf, overlaps, packLanes, shortGreenhouse, startsBefore, ymd } from "./schedule-utils";
+import { colOf, daysOf, overlaps, packLanes, startsBefore, ymd } from "./schedule-utils";
+import { shortHouse } from "@/lib/places";
 
 export type GanttRowsBy = "greenhouse" | "team";
 
@@ -59,7 +60,7 @@ export function ScheduleGantt({
       .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
       .map(([key, list]) => ({
         key,
-        label: rowsBy === "team" ? key : shortGreenhouse(key, list[0]?.farm),
+        label: rowsBy === "team" ? key : shortHouse(key, list[0]?.farm),
         lanes: packLanes(list, (p) => [
           colOf(p.start!, from, to),
           colOf(p.end || p.start!, from, to),
@@ -182,7 +183,7 @@ export function ScheduleGantt({
                       >
                         {clipped && <ChevronsLeft className="h-3 w-3 shrink-0" />}
                         <span className="truncate">
-                          {rowsBy === "team" ? shortGreenhouse(p.greenhouse, p.farm) : p.team}
+                          {rowsBy === "team" ? shortHouse(p.greenhouse, p.farm) : p.team}
                         </span>
                         {p.on_leave_count > 0 && (
                           <AlertTriangle

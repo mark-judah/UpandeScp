@@ -94,12 +94,6 @@ export const STATE_LEGEND = [
   "Completed",
 ];
 
-/** "Chepsito GH 16 - KR" → "GH 16" for a chip; the full name stays in the title. */
-export function shortGreenhouse(name: string, farm?: string | null): string {
-  let s = (name || "").replace(/\s+-\s+[A-Z]{1,4}$/, "");
-  if (farm && s.toLowerCase().startsWith(farm.toLowerCase() + " ")) s = s.slice(farm.length + 1);
-  return s;
-}
 
 export function openPlan(name: string): void {
   window.open(`/app/work-order/${encodeURIComponent(name)}`, "_blank", "noopener");

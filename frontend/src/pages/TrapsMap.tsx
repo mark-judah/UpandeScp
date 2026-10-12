@@ -30,6 +30,7 @@ import {
 import { currentWeekRange } from "@/lib/utils";
 import type { ScoutingEntry } from "@/lib/scouting-types";
 import { prefersReducedMotion, trapMarkerHtml, trapPulse } from "@/lib/trap-pulse";
+import { shortHouse } from "@/lib/places";
 import { TrapReadingCard } from "@/components/traps/TrapReadingCard";
 
 
@@ -105,9 +106,6 @@ function readEntryCoords(
   return { lat, lng };
 }
 
-const ghShort = (gh: string) =>
-  gh ? gh.split(" - ")[0] : "";
-
 export function aggregateTraps(
   entries: ScoutingEntry[],
   fixed: TrapLocations = {},
@@ -125,7 +123,7 @@ export function aggregateTraps(
           trap: t.trap,
           pest: t.pest || "—",
           greenhouse: fullGh,
-          greenhouseShort: ghShort(fullGh),
+          greenhouseShort: shortHouse(fullGh),
           zone: e.zone || e.tree || "",
           location: t.location || "",
           totalCount: 0,
@@ -307,7 +305,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
           (ghs || []).forEach((g) => {
             out[g] = farm;
             // Pickers compare on the short greenhouse code (split on " - ").
-            const short = ghShort(g);
+            const short = shortHouse(g);
             if (short && !out[short]) out[short] = farm;
           });
         });
@@ -410,7 +408,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
 
   // Keep the multi-select Farms picker in sync with the header's single
   // Farm dropdown — picking a farm at the top narrows the multi-select to
-  // just that farm; switching back to "All Farms" restores everything.
+  // just that farm; switching back to "All farms" restores everything.
   useEffect(() => {
     if (filters.farm === ALL) {
       if (farmOptions.length) setFarmSel(new Set(farmOptions));

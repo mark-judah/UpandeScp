@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils";
 import { Bar } from "@/components/Loading";
 import { CrewPopover, hasUnavailable } from "./CrewPopover";
 import { chipProps } from "./schedule-colors";
-import { calendarDayOf, calendarDays, shortGreenhouse, startsBefore, ymd } from "./schedule-utils";
+import { calendarDayOf, calendarDays, startsBefore, ymd } from "./schedule-utils";
+import { shortHouse } from "@/lib/places";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -113,7 +114,7 @@ export function ScheduleCalendar({
                         )}
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-semibold">
-                            {shortGreenhouse(p.greenhouse, p.farm)}
+                            {shortHouse(p.greenhouse, p.farm)}
                           </span>
                           <span className="block truncate">{p.team}</span>
                         </span>

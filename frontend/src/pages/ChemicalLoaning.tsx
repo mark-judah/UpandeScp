@@ -35,7 +35,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
-import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
+import { HeaderIconButton } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -306,19 +307,17 @@ export function ChemicalLoaning() {
           </Tabs>
         }
       >
-        {farms.length > 1 ? (
-          <Select value={myFarm} onValueChange={setMyFarm}>
-            <SelectTrigger aria-label="My farm" className={HEADER_PILL}>
-              <SelectValue placeholder="My farm" />
-            </SelectTrigger>
-            <SelectContent>
-              {farms.map((f) => (
-                <SelectItem key={f} value={f}>
-                  {f}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {/* My farm (place picker G2): shown once the farms land, a single
+            farm reading as itself; there is no "all" here. */}
+        {farms.length > 0 ? (
+          <PlacePicker
+            level="farm"
+            farms={farms}
+            label="My farm"
+            allLabel={false}
+            value={{ farm: myFarm, greenhouse: "" }}
+            onChange={(p) => setMyFarm(p.farm)}
+          />
         ) : null}
         <HeaderIconButton onClick={() => void reload()} title="Reload">
           <RefreshCw className="h-4 w-4" />

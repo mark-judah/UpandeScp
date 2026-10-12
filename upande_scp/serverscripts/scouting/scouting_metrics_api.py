@@ -414,10 +414,17 @@ def list_application_work_orders(
     if visible is not None:
         seen_ghs = [g for g in seen_ghs if farm_by_gh.get(g) in visible]
     farms = sorted({farm_by_gh[g] for g in seen_ghs if farm_by_gh.get(g)})
+    # farm → its houses, by the Warehouse.custom_farm link the farm filter uses,
+    # so the picker groups each house under the farm that will actually find it.
+    by_farm: dict[str, list[str]] = {f: [] for f in farms}
+    for g in seen_ghs:
+        if farm_by_gh.get(g) in by_farm:
+            by_farm[farm_by_gh[g]].append(g)
     return {
         "work_orders": rows,
         "greenhouses": seen_ghs,
         "farms": farms,
+        "greenhouses_by_farm": by_farm,
     }
 
 

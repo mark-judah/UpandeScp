@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/DatePicker";
 import { FilterSelect } from "@/components/FilterSelect";
+import { PlacePicker } from "@/components/PlacePicker";
 import { HeaderIconButton } from "@/components/header-controls";
 import { ScheduleCalendar } from "@/components/schedule/ScheduleCalendar";
 import { ScheduleGantt, type GanttRowsBy } from "@/components/schedule/ScheduleGantt";
@@ -223,12 +224,12 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
       >
         {view !== "scouts" && (
           <>
-            <FilterSelect
-              label="Farm"
-              allLabel="All farms"
-              value={farm}
-              onChange={setFarm}
-              options={data?.farms || []}
+            <PlacePicker
+              level="farm"
+              farms={data?.farms || []}
+              crop={initialCrop}
+              value={{ farm, greenhouse: "" }}
+              onChange={(p) => setFarm(p.farm)}
               disabled={skeleton}
             />
             <FilterSelect

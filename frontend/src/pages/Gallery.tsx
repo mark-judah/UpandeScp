@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogTitle,
 } from "@/components/ui/dialog";
 import { HEADER_PILL } from "@/components/header-controls";
+import { PlacePicker } from "@/components/PlacePicker";
 import { DatePicker } from "@/components/DatePicker";
 import { PageHeader } from "@/components/PageHeader";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
@@ -31,6 +32,7 @@ import {
 import { errorText } from "@/lib/errors";
 import { DEFAULT_CROP } from "@/lib/scouting-api";
 import { cn, ymd } from "@/lib/utils";
+import { shortHouse } from "@/lib/places";
 import { formatCapture } from "@/lib/capture-time";
 
 const ALL = "__all__";
@@ -44,17 +46,14 @@ function lastThirtyDays() {
 
 export { formatCapture };
 
-function shortHouse(h: string): string {
-  return h ? h.split(" - ")[0] : "";
-}
-
 const KIND_LABEL: Record<PhotoKind, string> = { pest: "Pest", disease: "Disease", other: "Other" };
 
 export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   const crop = initialCrop ?? DEFAULT_CROP;
   const { farms, loading: farmsLoading } = useCropFarms(crop);
-  const [farm, setFarm] = useState<string>(ALL);
-  const [greenhouse, setGreenhouse] = useState<string>(ALL);
+  // "" is "all" at each level (the place picker's value).
+  const [farm, setFarm] = useState("");
+  const [greenhouse, setGreenhouse] = useState("");
   const [kind, setKind] = useState<string>(ALL);
   const [subject, setSubject] = useState<string>(ALL);
   const [scout, setScout] = useState<string>(ALL);
@@ -77,8 +76,8 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
       crop,
       from_date: from,
       to_date: to,
-      farm: farm === ALL ? "" : farm,
-      greenhouse: greenhouse === ALL ? "" : greenhouse,
+      farm,
+      greenhouse,
       kind: kind === ALL ? "" : (kind as PhotoKind),
       name: subject === ALL ? "" : subject,
       scout: scout === ALL ? "" : scout,
@@ -145,11 +144,6 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
     return () => io.disconnect();
   }, [hasMore, loadMore]);
 
-  const farmNames = useMemo(() => Object.keys(farms).sort(), [farms]);
-  const houses = useMemo(() => {
-    const list = farm === ALL ? Object.values(farms).flat() : farms[farm] || [];
-    return Array.from(new Set(list)).sort();
-  }, [farms, farm]);
   const subjects = useMemo(
     () => (facets?.subjects ?? []).filter((s) => kind === ALL || s.kind === kind),
     [facets, kind],
@@ -160,35 +154,17 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
       <PageHeader eyebrow="Scouting · Photos from the field" title="Gallery" />
       <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Select
-            value={farm}
-            disabled={farmsLoading}
-            onValueChange={(v) => {
-              setFarm(v);
-              setGreenhouse(ALL);
+          <PlacePicker
+            farms={farms}
+            crop={crop}
+            label="Gallery place"
+            value={{ farm, greenhouse }}
+            onChange={(p) => {
+              setFarm(p.farm);
+              setGreenhouse(p.greenhouse);
             }}
-          >
-            <SelectTrigger aria-label="Gallery farm" className={HEADER_PILL}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All Farms</SelectItem>
-              {farmNames.map((f) => (
-                <SelectItem key={f} value={f}>{f}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={greenhouse} onValueChange={setGreenhouse} disabled={farmsLoading}>
-            <SelectTrigger aria-label="Gallery greenhouse" className={HEADER_PILL}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All Houses</SelectItem>
-              {houses.map((h) => (
-                <SelectItem key={h} value={h}>{shortHouse(h)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            disabled={farmsLoading}
+          />
           <Select
             value={kind}
             onValueChange={(v) => {

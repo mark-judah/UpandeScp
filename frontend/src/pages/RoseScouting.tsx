@@ -535,6 +535,18 @@ export function RoseScouting() {
     //    neatRoute across a 2+ zone gap are dotted. The end node carries the
     //    scout's initials; clicking it or the line opens the route card.
     trailLayers.current.clear();
+    // One badge per scout — on their latest trail (per greenhouse once a
+    // greenhouse is picked). A week at farm level is ~5 days × many houses per
+    // scout, and a badge on every trail buries the map. Other trails stay
+    // clickable by their line and show their badge while open.
+    const oneHouse = filters.greenhouse !== ALL;
+    const badgeKey = (t: Trail) => (oneHouse ? `${t.scout}|${t.greenhouse}` : t.scout);
+    const latest = new Map<string, Trail>();
+    for (const t of trails) {
+      const k = badgeKey(t);
+      const prev = latest.get(k);
+      if (!prev || `${t.date} ${t.lastTime}` > `${prev.date} ${prev.lastTime}`) latest.set(k, t);
+    }
     trails.forEach((t) => {
       const color = scoutInfo.colorMap.get(t.scout) || "#5BB45D";
       const name = nameOf(t.scout);
@@ -575,9 +587,12 @@ export function RoseScouting() {
         keyboard: false,
       })
         .bindTooltip(tip, { direction: "top", offset: [0, -12] })
-        .on("click", open)
-        .addTo(layer);
-      trailLayers.current.set(t.key, { lines, startDot, badge, color, initials: initialsOf(name) });
+        .on("click", open);
+      if (latest.get(badgeKey(t)) === t) badge.addTo(layer);
+      trailLayers.current.set(t.key, {
+        lines, startDot, badge, color, initials: initialsOf(name),
+        showBadge: latest.get(badgeKey(t)) === t,
+      });
       for (const seg of t.segments) for (const pt of seg.points) bounds.extend(pt);
     });
     applySelection(selectedRef.current);
@@ -593,13 +608,13 @@ export function RoseScouting() {
         { animate: false },
       );
     }
-  }, [aggByZone, zoneByName, trails, scoutInfo, mapSettings, filters.farm, nameOf]);
+  }, [aggByZone, zoneByName, trails, scoutInfo, mapSettings, filters.farm, filters.greenhouse, nameOf]);
 
   // Highlight the open route and dim the rest (all back to normal when none).
   const trailLayers = useRef(
     new Map<
       string,
-      { lines: L.Polyline[]; startDot: L.CircleMarker; badge: L.Marker; color: string; initials: string }
+      { lines: L.Polyline[]; startDot: L.CircleMarker; badge: L.Marker; color: string; initials: string; showBadge: boolean }
     >(),
   );
   const selectedRef = useRef<string | null>(null);
@@ -614,6 +629,12 @@ export function RoseScouting() {
       t.badge.setIcon(badgeIcon(t.initials, t.color, on));
       t.badge.setOpacity(dim ? 0.35 : 1);
       t.badge.setZIndexOffset(on ? 1000 : 0);
+      // An earlier day's trail has no badge of its own; show it while open.
+      const layer = layerRef.current;
+      if (layer && !t.showBadge) {
+        if (on) t.badge.addTo(layer);
+        else t.badge.remove();
+      }
       if (on) t.lines.forEach((l) => l.bringToFront());
     });
   }

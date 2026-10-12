@@ -18,6 +18,7 @@
  *   0.4 from last cycle" is the difference between the split looking arbitrary
  *   and looking correct.
  */
+import { DatePicker } from "@/components/DatePicker";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bar, RowsSkeleton, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import {
@@ -40,7 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
-import { HeaderIconButton } from "@/components/header-controls";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -220,7 +221,7 @@ export function Procurement() {
 
       <div className="flex flex-wrap items-center gap-2">
         <Select value={cycleId} onValueChange={setCycleId} disabled={!shellLoaded}>
-          <SelectTrigger className="w-[260px]">
+          <SelectTrigger aria-label="Cycle" className={HEADER_PILL}>
             <SelectValue placeholder="Cycle" />
           </SelectTrigger>
           <SelectContent>
@@ -238,7 +239,7 @@ export function Procurement() {
         )}
         {farms.length > 1 && (
           <Select value={farm} onValueChange={setFarm}>
-            <SelectTrigger className="w-[200px]">
+            <SelectTrigger aria-label="Farm" className={HEADER_PILL}>
               <SelectValue placeholder="Farm" />
             </SelectTrigger>
             <SelectContent>
@@ -1812,12 +1813,8 @@ function NewCycleDialog({
             </p>
           )}
           <div className="flex gap-2">
-            <Input
-              type="date"
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-            />
-            <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+            <DatePicker variant="field" label="Cycle start" value={start} onChange={setStart} />
+            <DatePicker variant="field" label="Cycle end" value={end} onChange={setEnd} />
           </div>
           <Button
             disabled={busy || !name.trim() || !company || !start || !end}

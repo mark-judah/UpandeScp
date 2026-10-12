@@ -13,7 +13,9 @@ import { addMonths, addWeeks } from "date-fns";
 import { CalendarDays, ChevronLeft, ChevronRight, GanttChart, RefreshCw, UsersRound } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/DatePicker";
+import { FilterSelect } from "@/components/FilterSelect";
+import { HeaderIconButton } from "@/components/header-controls";
 import { ScheduleCalendar } from "@/components/schedule/ScheduleCalendar";
 import { ScheduleGantt, type GanttRowsBy } from "@/components/schedule/ScheduleGantt";
 import { ScoutPlanView } from "@/components/schedule/ScoutPlanView";
@@ -67,9 +69,6 @@ function writeLocal(key: string, value: string) {
     /* private mode / blocked storage: the toggle still works for this visit */
   }
 }
-
-const selectCls =
-  "h-9 rounded-md border border-input bg-background px-2 text-sm min-w-0 max-w-full";
 
 function Toggle<T extends string>({
   value,
@@ -223,9 +222,34 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
         }
       >
         {view !== "scouts" && (
-          <Button variant="outline" size="sm" onClick={load} disabled={loading} aria-label="Refresh">
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-          </Button>
+          <>
+            <FilterSelect
+              label="Farm"
+              allLabel="All farms"
+              value={farm}
+              onChange={setFarm}
+              options={data?.farms || []}
+              disabled={skeleton}
+            />
+            <FilterSelect
+              label="Team"
+              allLabel="All teams"
+              value={team}
+              onChange={setTeam}
+              options={[...teamOptions, ...(team ? [team] : [])]}
+              disabled={skeleton}
+            />
+            <FilterSelect
+              label="State"
+              allLabel="All states"
+              value={state}
+              onChange={setState}
+              options={[...STATE_LEGEND, ...(data?.states || [])]}
+            />
+            <HeaderIconButton onClick={load} disabled={loading} aria-label="Refresh" tooltip="Reload the plans">
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            </HeaderIconButton>
+          </>
         )}
       </PageHeader>
 
@@ -249,43 +273,21 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
             <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Previous" onClick={() => step(-1)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Input
-              type="date"
-              aria-label="From"
+            <DatePicker
+              label="From"
               value={range.from}
-              onChange={(e) => e.target.value && setRange((r) => ({ ...r, from: e.target.value }))}
-              className="h-9 w-[9.5rem]"
+              onChange={(v) => v && setRange((r) => ({ ...r, from: v }))}
             />
             <span className="text-xs text-muted-foreground">to</span>
-            <Input
-              type="date"
-              aria-label="To"
+            <DatePicker
+              label="To"
               value={range.to}
-              onChange={(e) => e.target.value && setRange((r) => ({ ...r, to: e.target.value }))}
-              className="h-9 w-[9.5rem]"
+              onChange={(v) => v && setRange((r) => ({ ...r, to: v }))}
             />
             <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Next" onClick={() => step(1)}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          <select aria-label="Farm" className={selectCls} disabled={skeleton} value={farm} onChange={(e) => setFarm(e.target.value)}>
-            <option value="">All farms</option>
-            {(data?.farms || []).map((f) => (
-              <option key={f} value={f}>{f}</option>
-            ))}
-          </select>
-          <select aria-label="Team" className={selectCls} disabled={skeleton} value={team} onChange={(e) => setTeam(e.target.value)}>
-            <option value="">All teams</option>
-            {[...new Set([...teamOptions, ...(team ? [team] : [])])].map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-          <select aria-label="State" className={selectCls} value={state} onChange={(e) => setState(e.target.value)}>
-            <option value="">All states</option>
-            {[...new Set([...STATE_LEGEND, ...(data?.states || [])])].map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
           {view === "gantt" && (
             <Toggle<GanttRowsBy>
               label="Rows"

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { FilterSelect } from "@/components/FilterSelect";
 import maplibregl from "maplibre-gl";
 import { ChevronDown, Layers } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
@@ -751,19 +752,13 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
         </span>
         {obs ? (
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              aria-label="Block for patches"
+            <FilterSelect
+              label="Block for patches"
+              allLabel="Pick a block"
               value={block ?? ""}
-              onChange={(e) => setBlock(e.target.value || null)}
-              className="rounded border bg-card px-1.5 py-0.5 text-xs"
-            >
-              <option value="">Pick a block</option>
-              {blockNames.map((b) => (
-                <option key={b} value={b}>
-                  {b}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setBlock(v || null)}
+              options={blockNames}
+            />
             {block ? (
               <span className="tabular-nums">
                 {obs.name}: {spread.clusters?.clusters.length ?? 0} patch

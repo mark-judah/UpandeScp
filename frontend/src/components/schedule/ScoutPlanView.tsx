@@ -10,6 +10,7 @@
  * * Edits stay local until Save, which replaces the farm's week on the server.
  *   Only users who manage the farm see the editing controls.
  */
+import { FilterSelect } from "@/components/FilterSelect";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { addDays, addWeeks, format, startOfWeek } from "date-fns";
 import { Check, ChevronLeft, ChevronRight, Copy, Eraser, Save, Undo2, X } from "lucide-react";
@@ -43,7 +44,6 @@ export type ScoutRowsBy = "greenhouse" | "scout";
 const ymd = (d: Date) => format(d, "yyyy-MM-dd");
 export const mondayOf = (s: string) => ymd(startOfWeek(day(s), { weekStartsOn: 1 }));
 const firstName = (n: string) => (n || "").split(/\s+/)[0] || n;
-const selectCls = "h-9 rounded-md border border-input bg-background px-2 text-sm min-w-0 max-w-full";
 
 export function ScoutPlanView({
   crop,
@@ -234,20 +234,16 @@ export function ScoutPlanView({
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <select
-          aria-label="Scout plan farm"
-          className={selectCls}
-          disabled={skeleton}
+        <FilterSelect
+          label="Scout plan farm"
           value={farm || data?.farm || ""}
-          onChange={(e) => {
+          onChange={(v) => {
             if (dirty && !window.confirm("Discard unsaved changes to this week?")) return;
-            setFarm(e.target.value);
+            setFarm(v);
           }}
-        >
-          {(data?.farms || (farm ? [farm] : [])).map((f) => (
-            <option key={f} value={f}>{f}</option>
-          ))}
-        </select>
+          options={data?.farms || (farm ? [farm] : [])}
+          disabled={skeleton}
+        />
         <div role="group" aria-label="Scout rows" className="inline-flex rounded-lg bg-muted p-0.5">
           {(["greenhouse", "scout"] as const).map((v) => (
             <button

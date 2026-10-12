@@ -35,7 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
-import { HeaderIconButton } from "@/components/header-controls";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -308,7 +308,7 @@ export function ChemicalLoaning() {
       >
         {farms.length > 1 ? (
           <Select value={myFarm} onValueChange={setMyFarm}>
-            <SelectTrigger className="h-9 w-44 text-xs">
+            <SelectTrigger aria-label="My farm" className={HEADER_PILL}>
               <SelectValue placeholder="My farm" />
             </SelectTrigger>
             <SelectContent>

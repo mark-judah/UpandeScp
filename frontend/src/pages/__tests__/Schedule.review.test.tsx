@@ -5,7 +5,16 @@
  */
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Radix Select needs these in jsdom.
+beforeAll(() => {
+  const proto = Element.prototype as unknown as Record<string, unknown>;
+  proto.hasPointerCapture ??= () => false;
+  proto.setPointerCapture ??= () => {};
+  proto.releasePointerCapture ??= () => {};
+  proto.scrollIntoView ??= () => {};
+});
 import type { Schedule as ScheduleData, SchedulePlan } from "@/lib/schedule-api";
 import { ScheduleCalendar } from "@/components/schedule/ScheduleCalendar";
 import { ScheduleGantt } from "@/components/schedule/ScheduleGantt";
@@ -62,14 +71,17 @@ describe("Schedule review fixes", () => {
         : base({ plans: [plan({ start: NOW.from, end: NOW.from }), plan({ name: "WO-2", team: "CSU 2", start: NOW.from, end: NOW.from })] }),
     );
     render(<Schedule initialCrop="Rose" />);
-    const select = (await screen.findByRole("combobox", { name: "Team" })) as HTMLSelectElement;
-    await waitFor(() => expect(within(select).queryByRole("option", { name: "CSU 2" })).toBeTruthy());
-    await userEvent.selectOptions(select, "CSU 1");
+    // The pill dropdown (FilterSelect): open it, read its options, pick one.
+    const trigger = await screen.findByRole("combobox", { name: "Team" });
+    await waitFor(() => expect(trigger).toBeEnabled());
+    await userEvent.click(trigger);
+    await userEvent.click(await screen.findByRole("option", { name: "CSU 1" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenLastCalledWith(expect.objectContaining({ team: "CSU 1" })),
     );
     await waitFor(() => expect(screen.getAllByTestId("cal-chip")).toHaveLength(1));
-    const names = within(select).getAllByRole("option").map((o) => o.textContent);
+    await userEvent.click(screen.getByRole("combobox", { name: "Team" }));
+    const names = (await screen.findAllByRole("option")).map((o) => o.textContent);
     expect(names).toEqual(["All teams", "CSU 1", "CSU 2"]);
   });
 

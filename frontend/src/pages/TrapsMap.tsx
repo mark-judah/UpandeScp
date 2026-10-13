@@ -36,24 +36,6 @@ import { shortHouse } from "@/lib/places";
 import { TrapReadingCard } from "@/components/traps/TrapReadingCard";
 
 
-/** Severity ramp — used as a thin outer ring on each trap marker so the
- *  pest colour reads as the primary signal but operators still see catch
- *  intensity at a glance. Stops match the original HTML page. */
-const SEVERITY_STOPS: Array<[number, string, string, string]> = [
-  [0, "#e5e7eb", "0", "No catches"],
-  [5, "#fde68a", "1–5", "Very low"],
-  [15, "#fcd34d", "6–15", "Low"],
-  [30, "#facc15", "16–30", "Moderate"],
-  [50, "#fb923c", "31–50", "Elevated"],
-  [75, "#f97316", "51–75", "High"],
-  [100, "#dc2626", "76–100", "Very high"],
-  [Infinity, "#7c2d12", "100+", "Critical"],
-];
-
-function severityColor(count: number): string {
-  for (const [max, color] of SEVERITY_STOPS) if (count <= max) return color;
-  return SEVERITY_STOPS[SEVERITY_STOPS.length - 1][1];
-}
 
 interface TrapAgg {
   trap: string;
@@ -76,6 +58,14 @@ interface TrapAgg {
   fixed?: TrapLocation;
   /** The newest reading in the window — who recorded it, when, how many. */
   latest: { date: string; time: string; scout: string; count: number; pest: string } | null;
+}
+
+/** "#d9a514" + 0.45 → "rgba(217,165,20,0.45)"; anything else → fallback. */
+export function withAlpha(hex: string | undefined, a: number, fallback: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim());
+  if (!m) return fallback;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
 function stampOf(e: ScoutingEntry): string {
@@ -500,19 +490,21 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
       const pos = trapPosition(t);
       if (!pos) continue;
       const { lat, lng } = pos;
-      // Size and pulse grow with the catch count on a capped log scale
-      // (lib/trap-pulse); a zero-catch trap is a small static dot. Colour is a
-      // subtle gold (grey for zero), not a vivid per-pest disc.
+      // Size and pulse carry the severity: both grow with the catch count on
+      // a capped log scale (lib/trap-pulse), and a zero-catch trap is a small
+      // static dot. Colour says only which pest — the same colour as the
+      // legend and everywhere else in SCP (grey for zero).
       const count = t.totalCount || 0;
       const { size } = trapPulse(count);
       const isZero = count <= 0;
+      const pestHex = resolvePestColor(t.pest);
       const icon = L.divIcon({
         className: "scp-trap-marker",
         html: trapMarkerHtml({
           key: t.trap,
           count,
-          fill: isZero ? "rgba(10,10,10,0.20)" : "rgba(217,165,20,0.35)",
-          stroke: isZero ? "rgba(10,10,10,0.28)" : "rgba(217,165,20,0.80)",
+          fill: isZero ? "rgba(10,10,10,0.20)" : withAlpha(pestHex, 0.45, "rgba(217,165,20,0.35)"),
+          stroke: isZero ? "rgba(10,10,10,0.28)" : withAlpha(pestHex, 0.9, "rgba(217,165,20,0.80)"),
           reducedMotion: reduced,
         }),
         iconSize: [size, size],
@@ -540,7 +532,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
         { animate: false },
       );
     }
-  }, [visibleTraps, mapSettings, filters.farm, focusTrap]);
+  }, [visibleTraps, mapSettings, filters.farm, focusTrap, resolvePestColor]);
 
   // Off-screen traps hold their pulse; re-checked whenever the view settles.
   useEffect(() => {
@@ -706,8 +698,13 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
             )}
           </MapKpiPill>
 
-          {/* Pest legend + severity key float under the zoom buttons. */}
-          <MapControlPanel title="Pests in view" count={first ? undefined : pestOptions.length}>
+          {/* Pest legend, bottom-right; the trap card takes that corner while open. */}
+          {!selectedTrap ? (
+          <MapControlPanel
+            title="Pests in view"
+            count={first ? undefined : pestOptions.length}
+            className="bottom-4 left-auto right-4 top-auto"
+          >
           {first ? (
             <RowsSkeleton rows={5} />
           ) : pestOptions.length === 0 ? (
@@ -733,27 +730,11 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
               ))}
             </div>
           )}
-          <div className="mt-3 pt-2 border-t">
-            <div className="text-[0.65rem] uppercase tracking-wide font-semibold text-muted-foreground mb-1.5">
-              Severity ring
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {SEVERITY_STOPS.map(([, color, range]) => (
-                <span
-                  key={range}
-                  className="inline-flex items-center gap-1 text-[0.65rem] text-muted-foreground"
-                  title={range}
-                >
-                  <span
-                    className="h-2 w-2 rounded-full border"
-                    style={{ background: color }}
-                  />
-                  {range}
-                </span>
-              ))}
-            </div>
+          <div className="mt-3 pt-2 border-t text-[0.65rem] text-muted-foreground">
+            Dot size and pulse show how many were caught.
           </div>
           </MapControlPanel>
+          ) : null}
 
             {selectedTrap ? (
               <TrapReadingCard

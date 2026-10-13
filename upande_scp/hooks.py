@@ -404,7 +404,9 @@ scheduler_events = {
         # Every run after the first in a window is a plain Redis read.
         # Measured cold vs warm on kaitetv16: 16,178 ms vs 2,555 ms.
         "*/10 * * * *": [
-            "upande_scp.serverscripts.dashboard_aggregates.prewarm.prewarm_dashboard_aggregates"
+            "upande_scp.serverscripts.dashboard_aggregates.prewarm.prewarm_dashboard_aggregates",
+            # Tell production when a sprayed house is safe to re-enter / harvest.
+            "upande_scp.serverscripts.spray_plan_creator.reentry.notify_cleared",
         ],
     },
     "daily": [
@@ -645,7 +647,7 @@ fixtures = [
         "filters": [["name", "in", [
             "SCP General Manager", "SCP Spray Supervisor", "SCP Spray Plan Creator",
             "SCP Spray Plan Approver", "SCP Scout", "SCP Chemical Store Keeper",
-            "SCP Scouting User"
+            "SCP Scouting User", "SCP Production Supervisor"
         ]]]
     }
     # NOTE: We deliberately do NOT export permissions (Custom DocPerm) from

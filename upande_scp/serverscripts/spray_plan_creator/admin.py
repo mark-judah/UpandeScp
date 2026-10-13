@@ -85,6 +85,14 @@ def list_farms_with_creators(crop: str | None = None) -> list[dict]:
             )
         else:
             supervisors = []
+        if frappe.db.table_exists("Farm Production Supervisor"):
+            production_supervisors = frappe.get_all(
+                "Farm Production Supervisor",
+                filters={"parent": f["name"], "parenttype": "Farm"},
+                fields=["user", "full_name"],
+            )
+        else:
+            production_supervisors = []
         farm_stores = frappe.db.get_value(
             "Farm", f["name"],
             ["custom_chemical_store", "custom_fertilizer_store"], as_dict=True
@@ -97,6 +105,7 @@ def list_farms_with_creators(crop: str | None = None) -> list[dict]:
             "approvers": approvers,
             "supervisors": supervisors,
             "store_keepers": store_keepers,
+            "production_supervisors": production_supervisors,
             "chemical_store": farm_stores.get("custom_chemical_store"),
             "fertilizer_store": farm_stores.get("custom_fertilizer_store"),
         })
@@ -256,6 +265,23 @@ def set_farm_store_keepers(farm: str, users: list[str] | str) -> dict:
         users,
         role="SCP Chemical Store Keeper",
         child_field="store_keepers",
+    )
+
+
+@frappe.whitelist()
+def list_production_supervisor_candidates(q: str | None = None) -> list[dict]:
+    return _candidates_for_role("SCP Production Supervisor", q)
+
+
+@frappe.whitelist()
+def set_farm_production_supervisors(farm: str, users: list[str] | str) -> dict:
+    """Roster who is told when a house on this farm is sprayed and when it is
+    safe to enter / harvest again."""
+    return _set_farm_roster(
+        farm,
+        users,
+        role="SCP Production Supervisor",
+        child_field="production_supervisors",
     )
 
 

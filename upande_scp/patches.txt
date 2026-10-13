@@ -65,3 +65,5 @@ upande_scp.patches.v1_0.set_threshold_measure
 upande_scp.patches.v1_0.seed_stage_roles
 # The SCP apps-screen tile uses the animated mark (Upande Webstore animation on hover).
 upande_scp.patches.v1_0.animated_scp_logo
+# Re-entry & PHI: production supervisor role, admitted to the SCP workspace.
+upande_scp.patches.v1_0.setup_production_supervisor_role

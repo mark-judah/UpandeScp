@@ -371,6 +371,12 @@ def _apply_payload(wo, payload: dict) -> None:
     wo.custom_reentry_time = crop_protection.reentry_time(
         wo.custom_scheduled_application_time, wo.custom_reentry_period_hrs
     )
+    # Pre-harvest interval, same source (Spray Product) and same max-over-the-mix
+    # rule. Only the days are an estimate here; `harvest_after` is stamped when the
+    # spray actually ends (spray_plan_creator.reentry.apply_spray_end).
+    wo.custom_phi_days = crop_protection.max_phi_days(
+        [r.item_code for r in wo.required_items if r.item_code]
+    )
 
 
 def _crew_warnings(wo) -> list[str]:

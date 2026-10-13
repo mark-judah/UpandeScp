@@ -23,8 +23,8 @@ EVENT = "scp:notification"
 #: custom field ``scp_category`` — encoding it in the subject would turn
 #: filtering into a substring search.
 #: ``scouting`` = threshold alerts (piece 3a); ``plan`` = spray-plan lifecycle
-#: notices (auto-cancel). The bell lists only rows carrying one of these (D9).
-CATEGORIES = ("loan", "transfer", "procurement", "stock", "scouting", "plan")
+#: notices (auto-cancel); ``reentry`` = a house was sprayed / is safe to enter / may be harvested. The bell lists only rows carrying one of these (D9).
+CATEGORIES = ("loan", "transfer", "procurement", "stock", "scouting", "plan", "reentry")
 
 _NEVER_NOTIFY = {"Administrator", "Guest", "", None}
 

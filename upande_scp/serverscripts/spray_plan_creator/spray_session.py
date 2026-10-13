@@ -1670,6 +1670,16 @@ def end_spray_session(work_order: str, ended_at=None) -> dict[str, Any]:
         },
         update_modified=True,
     )
+    # The re-entry and pre-harvest clocks start now, at the real end of the spray
+    # (``now`` is the offline session's recorded end when it is a replay). Tells
+    # production. Never allowed to fail the spray end.
+    try:
+        from upande_scp.serverscripts.spray_plan_creator import reentry
+
+        reentry.apply_spray_end(wo, now)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "end_spray_session: re-entry stamp failed")
+
     try:
         wo.add_comment(
             "Workflow",

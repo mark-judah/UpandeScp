@@ -251,6 +251,30 @@ def reentry_time(scheduled, hours):
 	return get_datetime(scheduled) + timedelta(hours=flt(hours))
 
 
+def get_phi_days(item_code):
+	"""Pre-harvest interval (days) from the product's Spray Product, or 0.
+
+	Same record, same lookup as the re-entry interval: both are properties of
+	the product label, so they live on the one sidecar (`Spray Product.phi_days`).
+	"""
+	name = _product_name(item_code)
+	return flt(frappe.db.get_value(PRODUCT, name, "phi_days")) if name else 0.0
+
+
+def max_phi_days(item_codes):
+	"""Longest pre-harvest interval across `item_codes` — the binding one for a
+	tank mix, since the crop cannot be picked until the slowest product clears."""
+	return max((get_phi_days(c) for c in (item_codes or []) if c), default=0.0)
+
+
+def harvest_after(ended_at, phi_days):
+	"""When harvest may resume: spray end + PHI days. None when there is no PHI
+	(0 days is "no restriction", not "harvest at the moment of spraying")."""
+	if not ended_at or flt(phi_days) <= 0:
+		return None
+	return get_datetime(ended_at) + timedelta(days=flt(phi_days))
+
+
 def crop_protection_item_codes(kind=None):
 	"""Item codes under the configured chemical/foliar groups.
 

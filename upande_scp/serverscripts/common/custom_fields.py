@@ -183,11 +183,58 @@ def _field_spec() -> dict:
 				"hidden": 1,
 				"read_only": 1,
 			},
+			# Pre-harvest interval and the re-entry/PHI notice flags. The estimate
+			# (scheduled + hrs) is replaced by the real clock when the spray ends
+			# (spray_plan_creator.reentry.apply_spray_end). The flags make each
+			# notice go out exactly once, whichever process gets there first.
+			{
+				"fieldname": "custom_phi_days",
+				"label": "Pre-harvest Interval (days)",
+				"fieldtype": "Float",
+				"insert_after": "custom_reentry_time",
+				"hidden": 1,
+				"read_only": 1,
+			},
+			{
+				"fieldname": "custom_harvest_after",
+				"label": "Harvest After",
+				"fieldtype": "Datetime",
+				"insert_after": "custom_phi_days",
+				"hidden": 1,
+				"read_only": 1,
+			},
+			{
+				"fieldname": "custom_reentry_notified",
+				"label": "Re-entry Notice Sent",
+				"fieldtype": "Check",
+				"insert_after": "custom_harvest_after",
+				"hidden": 1,
+				"read_only": 1,
+				"no_copy": 1,
+			},
+			{
+				"fieldname": "custom_reentry_cleared_notified",
+				"label": "Re-entry Cleared Notice Sent",
+				"fieldtype": "Check",
+				"insert_after": "custom_reentry_notified",
+				"hidden": 1,
+				"read_only": 1,
+				"no_copy": 1,
+			},
+			{
+				"fieldname": "custom_phi_cleared_notified",
+				"label": "PHI Cleared Notice Sent",
+				"fieldtype": "Check",
+				"insert_after": "custom_reentry_cleared_notified",
+				"hidden": 1,
+				"read_only": 1,
+				"no_copy": 1,
+			},
 			{
 				"fieldname": "custom_scope",
 				"label": "Scope",
 				"fieldtype": "Data",
-				"insert_after": "custom_reentry_time",
+				"insert_after": "custom_phi_cleared_notified",
 			},
 			{
 				"fieldname": "custom_scope_details",
@@ -464,12 +511,26 @@ def _field_spec() -> dict:
 			# B4: the farm's place in ERPNext's cost-centre tree. The group is what
 			# Budgets and the Finance Budget view work on; the leaf is where
 			# farm-level purchases and issues with no greenhouse book.
+			# Who must be told when a house is sprayed and when it is safe again.
+			# The people who send pickers in. Role: SCP Production Supervisor.
+			{
+				"fieldname": "production_supervisors",
+				"label": "Production Supervisors",
+				"fieldtype": "Table",
+				"options": "Farm Production Supervisor",
+				"insert_after": "store_keepers",
+				"description": (
+					"Users told when a house here is sprayed, when it is safe to "
+					"re-enter and when harvest may resume. Only users with the SCP "
+					"Production Supervisor role may be added."
+				),
+			},
 			{
 				"fieldname": "custom_cost_center",
 				"label": "Cost Centre (farm group)",
 				"fieldtype": "Link",
 				"options": "Cost Center",
-				"insert_after": "store_keepers",
+				"insert_after": "production_supervisors",
 				"link_filters": '[["Cost Center","is_group","=",1]]',
 				"description": (
 					"The farm's cost-centre group. Its greenhouse cost centres sit under "
@@ -576,7 +637,7 @@ def _field_spec() -> dict:
 				"fieldname": "scp_category",
 				"label": "SCP Category",
 				"fieldtype": "Select",
-				"options": "\nloan\ntransfer\nprocurement\nstock\nscouting\nplan",
+				"options": "\nloan\ntransfer\nprocurement\nstock\nscouting\nplan\nreentry",
 				"insert_after": "type",
 				"in_standard_filter": 1,
 				"description": (

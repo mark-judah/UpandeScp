@@ -281,6 +281,7 @@ ROSTER_FIELDS = {
 	"spray_plan_approvers": "Farm Spray Plan Approver",
 	"spray_supervisors": "Farm Spray Supervisor",
 	"store_keepers": "Farm Store Keeper",
+	"production_supervisors": "Farm Production Supervisor",
 }
 
 
@@ -288,7 +289,9 @@ ROSTER_FIELDS = {
 #: "which farms is this person involved with at all", which is the right
 #: question for a history view: an approver who is not also a creator still
 #: needs to see the plans he approved.
-ANY_ROSTER = tuple(ROSTER_FIELDS)
+# Production supervisors are deliberately not "involved" in this sense: they are
+# told about sprays but have no business in the plan history.
+ANY_ROSTER = tuple(f for f in ROSTER_FIELDS if f != "production_supervisors")
 
 
 def rostered_farms(roster_field, user: str | None = None) -> set[str]:

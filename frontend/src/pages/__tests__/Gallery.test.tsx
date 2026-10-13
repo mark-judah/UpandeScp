@@ -171,19 +171,53 @@ describe("Scouting ▸ Gallery", () => {
     expect(big.getAttribute("srcset")).toMatch(/w=960 960w, .*w=1600 1600w/);
     const w = within(panel);
     expect(w.getByTestId("lightbox-scout")).toHaveTextContent("Imelda Mutua");
-    expect(w.getByTestId("finding-where")).toHaveTextContent("Chepsito · GH1");
+    expect(w.getByTestId("finding-where")).toHaveTextContent("GH1 · Bed 4");
     expect(w.getByText(/Bed 4/)).toBeInTheDocument();
     expect(w.getByText(/Chepsito - 101/)).toBeInTheDocument();
     expect(w.getByTestId("finding-when")).toHaveTextContent("1 Oct 2026 · 08:05");
     expect(w.getByText("Highest count")).toBeInTheDocument();
     expect(w.getByTestId("finding-notes")).toHaveTextContent("DEMO trap catch");
+    expect(w.queryByTestId("finding-map")).toBeNull();
     fireEvent.click(w.getByRole("button", { name: "View photo full size" }));
-    expect(screen.getByTestId("finding-zoom")).toBeInTheDocument();
-    expect(screen.getByTestId("finding-zoom").querySelector("img")!.getAttribute("src")).toMatch(/^\/private\/files\//);
+    const viewer = screen.getByTestId("finding-viewer");
+    expect(within(viewer).getByRole("tab", { name: "Photo" })).toHaveAttribute("aria-selected", "true");
+    expect(within(viewer).getByTestId("viewer-image").getAttribute("src")).toContain("&w=1600");
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByTestId("finding-zoom")).toBeNull();
+    expect(screen.queryByTestId("finding-viewer")).toBeNull();
     expect(screen.getByTestId("finding-panel")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("finding-panel")).toBeNull();
+  });
+
+  it("View on map opens the viewer on the Location tab; the tabs switch", async () => {
+    fetchPhotoFeed.mockResolvedValueOnce(page([photo(1, { farm: "Lokitela", greenhouse: "Lokitela", block: "B3", tree: "12" })], false));
+    render(<Gallery initialCrop="Avocado" />);
+    await screen.findByTestId("gallery-masonry");
+    fireEvent.click(screen.getByRole("button", { name: /Open photo: Thrips/ }));
+    const panel = await screen.findByTestId("finding-panel");
+    fireEvent.click(within(panel).getByRole("button", { name: /View on map/ }));
+    const viewer = screen.getByTestId("finding-viewer");
+    expect(within(viewer).getByRole("tab", { name: "Location" })).toHaveAttribute("aria-selected", "true");
+    expect(await within(viewer).findByText("No bed map for this block yet")).toBeInTheDocument();
+    expect(within(viewer).getByTestId("viewer-caption")).toHaveTextContent("Lokitela · Block B3 · Tree 12");
+    expect(within(viewer).getByRole("link", { name: /Open in Heatmaps/ }).getAttribute("href")).toContain("#/avocado/heatmaps?gh=Lokitela&obs=Thrips&kind=pest");
+    fireEvent.click(within(viewer).getByRole("tab", { name: "Photo" }));
+    expect(within(viewer).getByTestId("viewer-image")).toBeInTheDocument();
+  });
+
+  it("closes the panel and viewer when the route changes", async () => {
+    fetchPhotoFeed.mockResolvedValueOnce(page([photo(1)], false));
+    render(<Gallery initialCrop="Rose" />);
+    await screen.findByTestId("gallery-masonry");
+    fireEvent.click(screen.getByRole("button", { name: /Open photo: Thrips/ }));
+    const panel = await screen.findByTestId("finding-panel");
+    fireEvent.click(within(panel).getByRole("button", { name: /View photo$/ }));
+    expect(screen.getByTestId("finding-viewer")).toBeInTheDocument();
+    act(() => {
+      window.location.hash = "#/rose/scouting-map";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    expect(screen.queryByTestId("finding-viewer")).toBeNull();
     expect(screen.queryByTestId("finding-panel")).toBeNull();
   });
 

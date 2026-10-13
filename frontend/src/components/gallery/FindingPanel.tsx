@@ -2,16 +2,17 @@
  * Visual findings ▸ the detail panel: a floating card fixed to the right of the
  * viewport (the map card's look, pinned to the screen). The large photo, then
  * who found it, where, when and what. ← / → step through the photos, Esc / ✕
- * close. The photo opens full-size on click.
+ * close. The photo, and the View photo / View on map buttons, open the large
+ * FindingViewer (zoomable photo, whole-greenhouse map).
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, ExternalLink, ImageOff, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, ImageOff, MapPin, Maximize2, X } from "lucide-react";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
 import type { FeedPhoto, PhotoKind } from "@/lib/gallery-api";
 import { formatCapture } from "@/lib/capture-time";
-import { shortHouse } from "@/lib/places";
+import { formatFindingPlace } from "@/lib/finding-place";
 import { cn } from "@/lib/utils";
-import { FindingLocationMap } from "@/components/gallery/FindingLocationMap";
+import { FindingViewer, type ViewerTab } from "@/components/gallery/FindingViewer";
 import { preloadImage, thumbSrcSet, thumbUrl, isThumbable } from "@/lib/thumbs";
 
 const KIND_LABEL: Record<PhotoKind, string> = { pest: "Pest", disease: "Disease", other: "Other" };
@@ -40,13 +41,6 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** "Bed 4", "Zone 2" — the finest place the entry names. */
-function spot(p: FeedPhoto): string {
-  return [p.bed && `Bed ${p.bed}`, p.zone && `Zone ${p.zone}`, p.tree && `Tree ${p.tree}`]
-    .filter(Boolean)
-    .join(" · ");
-}
-
 export function FindingPanel({
   photos,
   index,
@@ -66,7 +60,7 @@ export function FindingPanel({
 }) {
   const p = photos[index];
   const atEnd = index >= photos.length - 1;
-  const [zoomed, setZoomed] = useState(false);
+  const [viewer, setViewer] = useState<ViewerTab | null>(null);
   const [broken, setBroken] = useState(false);
 
   // "Next" past the last loaded photo loads the next page, then steps on.
@@ -85,7 +79,6 @@ export function FindingPanel({
   }, [prevImage, nextImage]);
   useEffect(() => {
     setBroken(false);
-    setZoomed(false);
   }, [p?.image]);
 
   const prev = () => index > 0 && onIndex(index - 1);
@@ -104,7 +97,7 @@ export function FindingPanel({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (zoomed) setZoomed(false);
+        if (viewer) setViewer(null);
         else onClose();
       } else if (e.key === "ArrowLeft") prev();
       else if (e.key === "ArrowRight") next();
@@ -114,10 +107,7 @@ export function FindingPanel({
   });
 
   if (!p) return null;
-  const where = [p.farm, p.greenhouse ? shortHouse(p.greenhouse) : p.house ? shortHouse(p.house) : ""]
-    .filter(Boolean)
-    .join(" · ");
-  const place = spot(p);
+  const where = formatFindingPlace(p);
   const isTrap = Boolean(p.trap);
 
   return (
@@ -162,7 +152,7 @@ export function FindingPanel({
               <button
                 type="button"
                 aria-label="View photo full size"
-                onClick={() => setZoomed(true)}
+                onClick={() => setViewer("photo")}
                 className="block w-full cursor-zoom-in"
               >
                 <img
@@ -207,7 +197,6 @@ export function FindingPanel({
             <dl className="grid grid-cols-[4.5rem_1fr] gap-x-3 gap-y-1.5 text-xs">
               <Row label="Where">
                 <span data-testid="finding-where">{where || "—"}</span>
-                {place ? <span className="text-muted-foreground"> · {place}</span> : null}
               </Row>
               {isTrap ? (
                 <Row label="Trap">
@@ -238,7 +227,22 @@ export function FindingPanel({
                 <p className="whitespace-pre-line text-[0.8rem]" data-testid="finding-notes">{p.notes}</p>
               </div>
             ) : null}
-            <FindingLocationMap photo={p} crop={crop} />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setViewer("photo")}
+                className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+              >
+                <Maximize2 className="h-3.5 w-3.5" /> View photo
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewer("location")}
+                className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+              >
+                <MapPin className="h-3.5 w-3.5" /> View on map
+              </button>
+            </div>
             <a
               href={`/app/scouting-entry/${encodeURIComponent(p.entry)}`}
               target="_blank"
@@ -253,15 +257,18 @@ export function FindingPanel({
         </div>
       </aside>
 
-      {zoomed ? (
-        <div
-          role="presentation"
-          data-testid="finding-zoom"
-          onClick={() => setZoomed(false)}
-          className="fixed inset-0 z-[60] grid cursor-zoom-out place-items-center bg-black/85 p-4"
-        >
-          <img src={p.image} alt={p.caption || `${p.subject || "Scouting"} photo, full size`} className="max-h-full max-w-full object-contain" />
-        </div>
+      {viewer ? (
+        <FindingViewer
+          photo={p}
+          crop={crop}
+          tab={viewer}
+          onTab={setViewer}
+          onClose={() => setViewer(null)}
+          onPrev={prev}
+          onNext={next}
+          canPrev={index > 0}
+          canNext={!atEnd || hasMore}
+        />
       ) : null}
     </>
   );

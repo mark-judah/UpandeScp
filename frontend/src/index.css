@@ -420,3 +420,31 @@ html { font-size: 85%; }
     animation: none;
   }
 }
+
+/* Viewer tab content fades in. */
+@keyframes scp-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.scp-fade-in {
+  animation: scp-fade-in 180ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scp-fade-in {
+    animation: none;
+  }
+}
+
+/* Soft heatmap tokens (lib/heat-style.ts + BedSvg): hairline beds, muted
+   numbers, dark-neutral stage glyphs; inverted on a dark theme. */
+:root {
+  --heat-bed: rgba(10, 10, 10, 0.5);
+  --heat-label: rgba(10, 10, 10, 0.6);
+  --heat-glyph: #3a3a34;
+}
+.dark,
+[data-theme="dark"] {
+  --heat-bed: rgba(250, 250, 246, 0.5);
+  --heat-label: rgba(250, 250, 246, 0.6);
+  --heat-glyph: #e6e4dc;
+}

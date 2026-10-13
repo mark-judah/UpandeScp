@@ -76,6 +76,15 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<number | null>(null);
+  // Pages stay mounted (hidden) after you leave them, and the viewer is a
+  // portal, so it must close itself when the route moves on.
+  const isOpen = open != null;
+  useEffect(() => {
+    if (!isOpen) return;
+    const close = () => setOpen(null);
+    window.addEventListener("hashchange", close);
+    return () => window.removeEventListener("hashchange", close);
+  }, [isOpen]);
   const gridRef = useRef<HTMLDivElement | null>(null);
 
   // Keep the selected tile in view once the grid has reflowed for the panel.

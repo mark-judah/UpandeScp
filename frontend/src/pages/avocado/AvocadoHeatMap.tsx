@@ -1,7 +1,9 @@
 /**
- * Avocado Heat maps — a top-down (2D) view of the orchard where a smooth
- * MapLibre heatmap field shows where pest/disease pressure is concentrated
- * (green → yellow → red), with faint tree dots underneath for orientation.
+ * Avocado/coffee Jobsheet — a top-down (2D) view of the orchard showing ONE pest or
+ * disease at a time (searchable pill). Every located scouting entry is a sample,
+ * zero where scouted and not found; fixed-trap catches count for pests; the gaps
+ * are filled by inverse-distance weighting (lib/idw.ts) across the block polygons
+ * and drawn as a canvas image, faded with distance to the nearest scout.
  *
  * Reuses the shared avocado map plumbing (Map3D, MapHeader filters + single-farm
  * auto-select, cached useScouting, lean tree points) but renders a heatmap +
@@ -41,7 +43,17 @@ import {
 } from "@/lib/scouting-api";
 import { lastMonthsRange } from "@/lib/utils";
 import { useObservationColors } from "@/lib/observation-colors";
+import { fetchTrapLocations, type TrapLocations } from "@/lib/scouting-api";
+import { classOf } from "@/lib/idw";
+import { computeField, FIELD_RADIUS_M, observationOptions, type ObsOption } from "@/lib/pest-heat";
+import { ObservationPicker, obsKey } from "./ObservationPicker";
 
+/** Band colours of the field: none/low, medium, high. */
+const FIELD_COLORS: [string, string, string] = ["#5bb45d", "#e9a23b", "#dc2626"];
+/** A block's name as scouting entries carry it (same match `selectBlock` uses). */
+const blockTag = (p: any): string => p?.block || p?.block_label || p?.name || "";
+
+const fmt = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) / 100) : "-");
 function toNum(v: unknown): number | null {
   const n = typeof v === "number" ? v : parseFloat(String(v));
   return Number.isFinite(n) ? n : null;
@@ -81,10 +93,6 @@ function allBlocksBounds(
         [maxX, maxY],
       ]
     : null;
-}
-/** Colour a block's dot in the sidebar by observation magnitude. */
-function magnitudeDot(obs: number): string {
-  return obs >= 20 ? "#dc2626" : obs >= 8 ? "#e9a23b" : "#5bb45d";
 }
 
 interface BlockAgg {
@@ -126,6 +134,9 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
   // — what are we spraying for — and the answer rides onto the plan's scope.
   const [targets, setTargets] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  // The one pest or disease the field shows (null = the most-seen pest).
+  const [pickedObs, setPickedObs] = useState<string | null>(null);
+  const [fixedTraps, setFixedTraps] = useState<TrapLocations>({});
   // Targets belong to the block they were chosen on. Carrying them across would
   // quietly plan a spray for pests nobody looked at on the new block.
 
@@ -169,28 +180,41 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     };
   }, [filters.farm]);
 
-  // Heat field points: one per scouting entry with coords, weighted by the
-  // total pest + disease observations recorded there.
-  const heatFC = useMemo(() => {
-    const features: any[] = [];
-    if (data) {
-      for (const e of data.entries) {
-        const lat = toNum(e.latitude);
-        const lng = toNum(e.longitude);
-        if (!validCoord(lat, lng)) continue;
-        let w = 0;
-        for (const p of e.pests_scouting_entry || []) w += p.count || 1;
-        w += (e.diseases_scouting_entry || []).length;
-        if (w <= 0) continue;
-        features.push({
-          type: "Feature",
-          geometry: { type: "Point", coordinates: [lng, lat] },
-          properties: { w },
-        });
-      }
-    }
-    return { type: "FeatureCollection", features } as const;
-  }, [data]);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchTrapLocations(filters.farm === ALL ? undefined : filters.farm).then((t) => {
+      if (!cancelled) setFixedTraps(t);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.farm]);
+
+  // The observations seen in the window; the field shows one of them.
+  const obsOptions = useMemo(() => (data ? observationOptions(data.entries) : []), [data]);
+  const obs: ObsOption | null =
+    obsOptions.find((o) => obsKey(o) === pickedObs) ??
+    obsOptions.find((o) => o.kind === "pest" && o.count > 0) ??
+    obsOptions[0] ??
+    null;
+  const obsId = obs ? obsKey(obs) : null;
+
+  // The field for the picked observation: every located entry is a sample
+  // (0 where scouted and not found), IDW-filled across the block polygons.
+  const fieldResult = useMemo(
+    () => (data && obs && blocks ? computeField(data.entries, obs, blocks, fixedTraps, blockTag, FIELD_COLORS) : null),
+    [data, obs, blocks, fixedTraps],
+  );
+  const heat = fieldResult?.kind === "ok" ? fieldResult : null;
+  // Why the map is blank, said plainly (coffee blocks may not be keyed in yet).
+  const emptyMsg =
+    !data || loading || loadingGeo || !blocks
+      ? null
+      : blocks.features.length === 0 || fieldResult?.kind === "no-blocks"
+        ? "No blocks mapped for this crop yet"
+        : !obs || fieldResult?.kind === "no-samples"
+          ? "No geo-tagged scouting for this crop in this window"
+          : null;
 
   // Faint tree dots for orientation under the heat field.
   const treeFC = useMemo(() => {
@@ -257,8 +281,15 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     return Array.from(m.values()).sort((x, y) => y.obs - x.obs);
   }, [data]);
 
-  const affected = blockAggs.filter((b) => b.obs > 0);
-  const totalObs = blockAggs.reduce((s, b) => s + b.obs, 0);
+  // Blocks ranked by the picked observation: mean of the filled field, and the
+  // share of the filled area in the red band (not by total observations).
+  const ranked = useMemo(
+    () =>
+      (heat?.blocks ?? [])
+        .filter((b) => b.tag && b.coverage > 0)
+        .sort((x, y) => y.mean - x.mean || y.redShare - x.redShare),
+    [heat],
+  );
   useEffect(() => {
     setTargets([]);
   }, [selected]);
@@ -277,39 +308,48 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
     map.on("load", () => setMapReady(true));
   };
 
-  // Heat field.
+  // Heat field: the IDW grid as a canvas image over the grid's bounding box
+  // (below the tree dots and the block outlines).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    if (!map.getSource("heat")) {
-      map.addSource("heat", { type: "geojson", data: heatFC as never });
-      map.addLayer({
-        id: "heat",
-        type: "heatmap",
-        source: "heat",
-        paint: {
-          "heatmap-weight": ["interpolate", ["linear"], ["get", "w"], 0, 0, 8, 1],
-          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 12, 0.6, 18, 1.4],
-          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 12, 10, 16, 22, 20, 40],
-          "heatmap-opacity": 0.6,
-          "heatmap-color": [
-            "interpolate",
-            ["linear"],
-            ["heatmap-density"],
-            0, "rgba(0,0,0,0)",
-            0.15, "rgba(130,185,132,0.4)",
-            0.4, "rgba(224,175,100,0.5)",
-            0.7, "rgba(216,134,86,0.62)",
-            1, "rgba(200,88,84,0.72)",
-          ],
-        },
-      });
-    } else {
-      (map.getSource("heat") as maplibregl.GeoJSONSource).setData(heatFC as never);
+    if (!heat) {
+      if (map.getLayer("heat")) map.setLayoutProperty("heat", "visibility", "none");
+      return;
     }
-  }, [heatFC, mapReady]);
+    const { grid } = heat;
+    const canvas = document.createElement("canvas");
+    canvas.width = grid.cols;
+    canvas.height = grid.rows;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.putImageData(new ImageData(heat.rgba as unknown as Uint8ClampedArray<ArrayBuffer>, grid.cols, grid.rows), 0, 0);
+    const url = canvas.toDataURL("image/png");
+    const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
+      [grid.west, grid.north],
+      [grid.east, grid.north],
+      [grid.east, grid.south],
+      [grid.west, grid.south],
+    ];
+    const src = map.getSource("heat") as maplibregl.ImageSource | undefined;
+    if (!src) {
+      map.addSource("heat", { type: "image", url, coordinates });
+      map.addLayer(
+        {
+          id: "heat",
+          type: "raster",
+          source: "heat",
+          paint: { "raster-opacity": 1, "raster-fade-duration": 0, "raster-resampling": "linear" },
+        },
+        map.getLayer("tree-dots") ? "tree-dots" : undefined,
+      );
+    } else {
+      src.updateImage({ url, coordinates });
+      map.setLayoutProperty("heat", "visibility", "visible");
+    }
+  }, [heat, mapReady]);
 
-  // Faint tree dots (kept below the heat layer).
+  // Faint tree dots (above the heat field).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -325,7 +365,6 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
             "circle-color": "rgba(58,58,52,0.35)",
           },
         },
-        map.getLayer("heat") ? "heat" : undefined,
       );
     } else {
       (map.getSource("tree-dots") as maplibregl.GeoJSONSource).setData(
@@ -444,7 +483,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
         // landed on it; the heading still said "Heat maps", so the page a
         // manager was sent to did not match the name they were sent to.
         title="Jobsheet"
-        subtitle="Orchard pest & disease intensity · red = most affected"
+        subtitle={obs ? `${obs.name} · zeros count · estimated between scouts` : "Orchard pest & disease"}
         value={filters}
         onChange={setFilters}
         showGreenhouse={false}
@@ -494,27 +533,56 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
           <span role="alert" className="text-destructive">{error}</span>
         )}
         <LoadProgress active={loading || loadingGeo} progress={loading ? progress : 100} />
+        <ObservationPicker options={obsOptions} value={obs} onChange={(o) => setPickedObs(obsKey(o))} />
+        {[
+          ["None / low", FIELD_COLORS[0]],
+          ["Medium", FIELD_COLORS[1]],
+          ["High", FIELD_COLORS[2]],
+        ].map(([label, c]) => (
+          <span key={label} className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full" style={{ background: c }} /> {label}
+          </span>
+        ))}
         <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full" style={{ background: "#5bb45d" }} /> Low
+          <span className="h-2 w-4 rounded-full opacity-40" style={{ background: "linear-gradient(90deg, #e9a23b, transparent)" }} />
+          Estimated (no scout within {FIELD_RADIUS_M} m)
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full" style={{ background: "#e9a23b" }} /> Medium
+          <span
+            className="h-2 w-4 rounded-sm"
+            style={{ background: "repeating-linear-gradient(135deg, rgba(90,90,84,0.5) 0 1px, transparent 1px 3px)" }}
+          />
+          Not scouted
         </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full" style={{ background: "#dc2626" }} /> High
-        </span>
+        {heat && (
+          <span className="hidden lg:inline">
+            Bands are thirds of the non-zero values (no per-observation threshold):
+            medium from {fmt(heat.cuts.mid)}, high from {fmt(heat.cuts.high)}
+          </span>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 px-4 pb-4 md:px-6 md:pb-6">
         <div className="relative h-full w-full min-h-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
           <Map3D onReady={onMapReady} initialPitch={0} />
 
+          {emptyMsg && (
+            <div
+              role="status"
+              className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-card px-4 py-2 text-xs font-medium text-muted-foreground shadow-[var(--sd-shadow-2)]"
+            >
+              {emptyMsg}
+            </div>
+          )}
+
           <MapKpiPill>
             {first ? (
               <TextSkeleton width="24ch" />
             ) : (
               <>
-                {affected.length} affected blocks · {totalObs} observations
+                {heat
+                  ? `${ranked.length} blocks · ${heat.samples} samples (${heat.hits} with ${obs?.name ?? "it"}${heat.traps ? `, ${heat.traps} traps` : ""})`
+                  : "No located samples"}
               </>
             )}
           </MapKpiPill>
@@ -535,30 +603,30 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
               {!selectedAgg ? (
                 first ? (
                   <RowsSkeleton rows={6} />
-                ) : affected.length ? (
-                  affected.map((b) => (
+                ) : ranked.length ? (
+                  ranked.map((b) => (
                     <button
-                      key={b.block}
+                      key={b.tag}
                       type="button"
-                      onClick={() => selectBlock(b.block)}
+                      onClick={() => selectBlock(b.tag)}
                       className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-muted"
                     >
                       <span
                         className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ background: magnitudeDot(b.obs) }}
+                        style={{ background: FIELD_COLORS[heat ? classOf(b.mean, heat.cuts) : 0] }}
                         aria-hidden
                       />
-                      <span className="flex-1 truncate" title={b.block}>
-                        {b.block}
+                      <span className="flex-1 truncate" title={b.tag}>
+                        {b.tag}
                       </span>
-                      <span className="tabular-nums text-muted-foreground">
-                        {b.obs}
+                      <span className="tabular-nums text-muted-foreground" title="Mean of the filled field · share of it in the red band">
+                        {fmt(b.mean)} · {Math.round(b.redShare * 100)}% red
                       </span>
                     </button>
                   ))
                 ) : (
                   <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    No affected blocks this week
+                    No located samples for this observation
                   </div>
                 )
               ) : (

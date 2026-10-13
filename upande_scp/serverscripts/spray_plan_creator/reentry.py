@@ -497,3 +497,10 @@ def get_entry_status(farm=None, crop=None):
 	farm = (farm or "").strip() or None
 	crop = (crop or "").strip() or None
 	return build_status(farm=farm, crop=crop, farms=_visible_farms(crop))
+
+
+@frappe.whitelist()
+def get_entry_board(farm=None, crop=None):
+	"""What the Re-entry board draws: the same houses as ``get_entry_status`` plus
+	the server's clock, so a countdown is right whatever the browser's timezone."""
+	return {"now": now_datetime(), "houses": get_entry_status(farm=farm, crop=crop)}

@@ -113,7 +113,7 @@ class TestOnAWorkOrder(unittest.TestCase):
 			"custom_harvest_after": None, "custom_reentry_time": None,
 		}, update_modified=False)
 		self._patches = [
-			mock.patch.object(R, "_production_supervisors", return_value=[U1]),
+			mock.patch.object(R, "_recipients", return_value=([U1], [U1])),
 			mock.patch.object(CP, "max_reentry_interval_hrs", return_value=12.0),
 			mock.patch.object(CP, "max_phi_days", return_value=3.0),
 		]
@@ -135,6 +135,18 @@ class TestOnAWorkOrder(unittest.TestCase):
 			"Notification Log", filters={"for_user": U1, "scp_category": "reentry"},
 			fields=["subject", "link"], order_by="creation",
 		)
+
+	def test_recipients_are_the_farms_production_supervisors_plus_the_creator(self):
+		mock.patch.stopall()
+		with mock.patch.object(R, "_production_supervisors", return_value=[U1]):
+			wo = self._wo()
+			wo.owner = U2
+			bell, mail = R._recipients(wo, "Chepsito")
+		self.assertEqual(sorted(bell), sorted([U1, U2]))
+		self.assertEqual(mail, bell)
+		with mock.patch.object(R, "_production_supervisors", return_value=[]):
+			wo.owner = U2
+			self.assertEqual(R._recipients(wo, "Chepsito")[0], [U2])
 
 	def test_spray_end_stamps_the_clocks_from_the_actual_end(self):
 		out = R.apply_spray_end(self._wo(), T0)

@@ -5,6 +5,8 @@
  *   • Spray Plan Creators — users who may draft plans for the farm.
  *   • Spray Plan Approvers — users who may approve those plans.
  *   • Store Keepers — users who may action store-side steps for the farm.
+ *   • Production Supervisors — told when a house is sprayed, when it is safe
+ *     to re-enter and when harvest may resume.
  *   • Chemical Store / Fertilizer Store — the warehouses that back the
  *     farm's chemical and fertilizer issues.
  *
@@ -43,10 +45,12 @@ import {
   listStoreWarehouseCandidates,
   setFarmApprovers,
   setFarmCreators,
+  setFarmProductionSupervisors,
   setFarmStoreKeepers,
   setFarmStores,
   type FarmApproverRow,
   type FarmCreatorRow,
+  type FarmProductionSupervisorRow,
   type FarmStoreKeeperRow,
   type StoreWarehouseCandidate,
 } from "@/lib/spray-plan-admin-api";
@@ -67,6 +71,8 @@ interface RowState {
   approvers_draft: FarmApproverRow[];
   store_keepers_saved: FarmStoreKeeperRow[];
   store_keepers_draft: FarmStoreKeeperRow[];
+  production_saved: FarmProductionSupervisorRow[];
+  production_draft: FarmProductionSupervisorRow[];
   chemical_store_saved: string | null;
   chemical_store_draft: string | null;
   fertilizer_store_saved: string | null;
@@ -109,6 +115,8 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
             approvers_draft: f.approvers,
             store_keepers_saved: f.store_keepers,
             store_keepers_draft: f.store_keepers,
+            production_saved: f.production_supervisors,
+            production_draft: f.production_supervisors,
             chemical_store_saved: f.chemical_store,
             chemical_store_draft: f.chemical_store,
             fertilizer_store_saved: f.fertilizer_store,
@@ -159,6 +167,8 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
     !rosterEqual(r.approvers_saved, r.approvers_draft);
   const isStoreKeepersDirty = (r: RowState) =>
     !rosterEqual(r.store_keepers_saved, r.store_keepers_draft);
+  const isProductionDirty = (r: RowState) =>
+    !rosterEqual(r.production_saved, r.production_draft);
   const isStoresDirty = (r: RowState) =>
     r.chemical_store_saved !== r.chemical_store_draft ||
     r.fertilizer_store_saved !== r.fertilizer_store_draft;
@@ -166,6 +176,7 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
     isCreatorsDirty(r) ||
     isApproversDirty(r) ||
     isStoreKeepersDirty(r) ||
+    isProductionDirty(r) ||
     isStoresDirty(r);
 
   const saveRow = async (farm: string) => {
@@ -198,6 +209,14 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
         patch.store_keepers_saved = fresh.store_keepers;
         patch.store_keepers_draft = fresh.store_keepers;
       }
+      if (isProductionDirty(row)) {
+        const fresh = await setFarmProductionSupervisors(
+          farm,
+          row.production_draft.map((d) => d.user),
+        );
+        patch.production_saved = fresh.production_supervisors;
+        patch.production_draft = fresh.production_supervisors;
+      }
       if (isStoresDirty(row)) {
         const fresh = await setFarmStores(
           farm,
@@ -223,6 +242,7 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
       creators_draft: row.creators_saved,
       approvers_draft: row.approvers_saved,
       store_keepers_draft: row.store_keepers_saved,
+      production_draft: row.production_saved,
       chemical_store_draft: row.chemical_store_saved,
       fertilizer_store_draft: row.fertilizer_store_saved,
       error: null,
@@ -319,13 +339,14 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
                 <TableHead>Spray Plan Creators</TableHead>
                 <TableHead>Spray Plan Approvers</TableHead>
                 <TableHead>Store Keepers</TableHead>
+                <TableHead>Production Supervisors</TableHead>
                 <TableHead className="w-40">Chemical Store</TableHead>
                 <TableHead className="w-40">Fertilizer Store</TableHead>
                 <TableHead className="w-32 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pending && <TableRowsSkeleton cols={8} rows={5} />}
+              {pending && <TableRowsSkeleton cols={9} rows={5} />}
               {(rows ?? []).map((r) => {
                 const dirty = isDirty(r);
                 return (
@@ -362,6 +383,16 @@ export function AccessTab({ crop }: { crop?: string } = {}) {
                         value={r.store_keepers_draft}
                         onChange={(next) =>
                           updateRow(r.farm, { store_keepers_draft: next })
+                        }
+                        disabled={r.saving}
+                      />
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <CreatorChipPicker
+                        kind="production"
+                        value={r.production_draft}
+                        onChange={(next) =>
+                          updateRow(r.farm, { production_draft: next })
                         }
                         disabled={r.saving}
                       />

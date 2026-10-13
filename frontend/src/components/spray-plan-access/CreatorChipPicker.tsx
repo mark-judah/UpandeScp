@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import {
   listApproverCandidates,
   listCreatorCandidates,
+  listProductionSupervisorCandidates,
   listStoreKeeperCandidates,
   type CreatorCandidate,
   type FarmCreatorRow,
@@ -28,7 +29,7 @@ interface Props {
   disabled?: boolean;
   /** Which role's candidate list to search. Defaults to "creator" so the
    *  existing AccessTab callsites keep working unchanged. */
-  kind?: "creator" | "approver" | "storekeeper";
+  kind?: "creator" | "approver" | "storekeeper" | "production";
 }
 
 export function CreatorChipPicker({
@@ -42,13 +43,17 @@ export function CreatorChipPicker({
       ? listApproverCandidates
       : kind === "storekeeper"
         ? listStoreKeeperCandidates
-        : listCreatorCandidates;
+        : kind === "production"
+          ? listProductionSupervisorCandidates
+          : listCreatorCandidates;
   const roleLabel =
     kind === "approver"
       ? "SCP Spray Plan Approver"
       : kind === "storekeeper"
         ? "SCP Chemical Store Keeper"
-        : "SCP Spray Plan Creator";
+        : kind === "production"
+          ? "SCP Production Supervisor"
+          : "SCP Spray Plan Creator";
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CreatorCandidate[]>([]);

@@ -9,6 +9,7 @@ const counts = vi.hoisted(() => ({
     stock: { total: 0, unread: 0 },
     scouting: { total: 0, unread: 0 },
     plan: { total: 0, unread: 0 },
+    reentry: { total: 0, unread: 0 },
   },
   total: 324,
   unread: 271,
@@ -29,8 +30,8 @@ import { Notifications } from "@/pages/Notifications";
 describe("Notifications tab bubbles", () => {
   it("shows skeletons, then a capped bubble per tab with the busiest emphasised", async () => {
     render(<Notifications />);
-    expect(screen.getAllByTestId("count-skeleton")).toHaveLength(7);
-    await waitFor(() => expect(screen.getAllByTestId("count-bubble")).toHaveLength(7));
+    expect(screen.getAllByTestId("count-skeleton")).toHaveLength(8);
+    await waitFor(() => expect(screen.getAllByTestId("count-bubble")).toHaveLength(8));
     const tab = (name: RegExp) => screen.getByRole("button", { name });
     expect(within(tab(/^All/)).getByTestId("count-bubble")).toHaveTextContent("99+");
     expect(within(tab(/^Loans/)).getByTestId("count-bubble")).toHaveTextContent("99+");

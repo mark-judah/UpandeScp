@@ -81,3 +81,14 @@ describe("canOpenView — Personnel", () => {
     expect(canOpenView("coverage", "rose", [])).toBe(true);
   });
 });
+
+describe("canOpenView — Re-entry", () => {
+  it("is open to production and the spray roles on every crop, and to nobody else", () => {
+    for (const crop of ["rose", "avocado", "coffee", "passion-fruit"]) {
+      expect(canOpenView("reentry", crop, ["SCP Production Supervisor"])).toBe(true);
+      expect(canOpenView("reentry", crop, ["SCP Spray Supervisor"])).toBe(true);
+      expect(canOpenView("reentry", crop, ["SCP Scout"])).toBe(false);
+      expect(canOpenView("reentry", crop, [])).toBe(false);
+    }
+  });
+});

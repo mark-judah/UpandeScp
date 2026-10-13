@@ -138,6 +138,9 @@ const ChemicalLoaning = lazy(() =>
 const Finance = lazy(() =>
   import("@/pages/Finance").then((m) => ({ default: m.Finance })),
 );
+const Reentry = lazy(() =>
+  import("@/pages/Reentry").then((m) => ({ default: m.Reentry })),
+);
 const Teams = lazy(() =>
   import("@/pages/Teams").then((m) => ({ default: m.Teams })),
 );
@@ -192,6 +195,7 @@ const PREFETCH: Array<() => Promise<unknown>> = [
   () => import("@/pages/Postponements"),
   () => import("@/pages/Schedule"),
   () => import("@/pages/Finance"),
+  () => import("@/pages/Reentry"),
   () => import("@/pages/Teams"),
   () => import("@/pages/Sprayers"),
   () => import("@/pages/Scouts"),
@@ -313,6 +317,8 @@ function renderView(crop: string, view: View): ReactNode {
       return <Procurement initialCrop={cropName} />;
     case "postponements":
       return <Postponements />;
+    case "reentry":
+      return <Reentry initialCrop={cropName} />;
     case "schedule":
       return <Schedule initialCrop={cropName} />;
     case "finances":

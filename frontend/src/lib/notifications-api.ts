@@ -8,7 +8,7 @@
 
 import { call } from "./frappe";
 
-export type ScpCategory = "loan" | "transfer" | "procurement" | "stock" | "scouting" | "plan";
+export type ScpCategory = "loan" | "transfer" | "procurement" | "stock" | "scouting" | "plan" | "reentry";
 
 export interface ScpNotification {
   name: string;
@@ -111,6 +111,7 @@ export const CATEGORY_LABEL: Record<ScpCategory, string> = {
   stock: "Stock",
   scouting: "Scouting",
   plan: "Spray plans",
+  reentry: "Re-entry",
 };
 
 /** Where a notification's reference should take the reader. Returns a route
@@ -120,8 +121,14 @@ export function routeForNotification(n: ScpNotification): string | null {
   switch (n.document_type) {
     case "Chemical Transfer Request":
       return "#/rose/chemical-loaning";
-    case "Work Order":
+    case "Work Order": {
+      // Re-entry notices carry the board's own route (the farm's crop).
+      if (n.scp_category === "reentry") {
+        const hash = (n.link || "").indexOf("#/");
+        return hash >= 0 ? (n.link as string).slice(hash) : "#/rose/reentry";
+      }
       return "#/rose/approvals";
+    }
     case "Material Request":
       return "#/rose/chemical-dashboard";
     case "Scouting Alert": {

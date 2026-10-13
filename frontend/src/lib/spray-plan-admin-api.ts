@@ -23,6 +23,9 @@ export type FarmApproverRow = FarmCreatorRow;
  *  of Creators/Approvers. */
 export type FarmStoreKeeperRow = FarmCreatorRow;
 
+/** Production supervisors: told when a house is sprayed and when it clears. */
+export type FarmProductionSupervisorRow = FarmCreatorRow;
+
 export interface FarmWithCreators {
   farm: string;
   farm_name: string | null;
@@ -30,6 +33,7 @@ export interface FarmWithCreators {
   creators: FarmCreatorRow[];
   approvers: FarmApproverRow[];
   store_keepers: FarmStoreKeeperRow[];
+  production_supervisors: FarmProductionSupervisorRow[];
   chemical_store: string | null;
   fertilizer_store: string | null;
 }
@@ -63,6 +67,7 @@ export async function listFarmsWithCreators(
     ...row,
     approvers: row.approvers ?? [],
     store_keepers: row.store_keepers ?? [],
+    production_supervisors: row.production_supervisors ?? [],
     chemical_store: row.chemical_store ?? null,
     fertilizer_store: row.fertilizer_store ?? null,
   }));
@@ -90,6 +95,25 @@ export async function listStoreKeeperCandidates(q?: string): Promise<CreatorCand
     { q: q ?? "" },
   );
   return r ?? [];
+}
+
+export async function listProductionSupervisorCandidates(q?: string): Promise<CreatorCandidate[]> {
+  const r = await call<CreatorCandidate[]>(
+    `${PREFIX}.list_production_supervisor_candidates`,
+    { q: q ?? "" },
+  );
+  return r ?? [];
+}
+
+export async function setFarmProductionSupervisors(
+  farm: string,
+  users: string[],
+): Promise<{ farm: string; production_supervisors: FarmProductionSupervisorRow[] }> {
+  const r = await call<{ farm: string; roster: FarmProductionSupervisorRow[] }>(
+    `${PREFIX}.set_farm_production_supervisors`,
+    { farm, users: JSON.stringify(users) },
+  );
+  return { farm: r.farm, production_supervisors: r.roster ?? [] };
 }
 
 export async function listStoreWarehouseCandidates(

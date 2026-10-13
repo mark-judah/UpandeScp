@@ -77,7 +77,7 @@ describe("CATEGORY_LABEL", () => {
   it("covers every category the server can send", () => {
     // Mirrors notifications.CATEGORIES — a missing label renders as blank.
     expect(Object.keys(CATEGORY_LABEL).sort()).toEqual(
-      ["loan", "plan", "procurement", "scouting", "stock", "transfer"],
+      ["loan", "plan", "procurement", "reentry", "scouting", "stock", "transfer"],
     );
   });
 });
@@ -87,7 +87,7 @@ import { busiestCategory, capCount, type CategoryCounts } from "./notifications-
 describe("tab count helpers", () => {
   const mk = (u: Record<string, number>): CategoryCounts => ({
     counts: Object.fromEntries(
-      ["loan", "transfer", "procurement", "stock", "scouting", "plan"].map((c) => [c, { total: u[c] ?? 0, unread: u[c] ?? 0 }]),
+      ["loan", "transfer", "procurement", "stock", "scouting", "plan", "reentry"].map((c) => [c, { total: u[c] ?? 0, unread: u[c] ?? 0 }]),
     ) as CategoryCounts["counts"],
     total: 0,
     unread: 0,

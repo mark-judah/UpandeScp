@@ -26,6 +26,7 @@ import {
   Scale,
   Search,
   Settings,
+  ShieldAlert,
   SprayCan,
   Sprout,
   UserRoundSearch,
@@ -146,6 +147,23 @@ const COVERAGE_ITEM: NavItem = {
   icon: Gauge,
 };
 
+const REENTRY_ITEM: NavItem = {
+  kind: "view",
+  view: "reentry",
+  label: "Re-entry",
+  icon: ShieldAlert,
+  // The same roles serverscripts/spray_plan_creator/reentry.ENTRY_ROLES admits.
+  requireRoles: [
+    "SCP Production Supervisor",
+    "SCP General Manager",
+    "SCP Spray Plan Creator",
+    "SCP Spray Plan Approver",
+    "SCP Spray Supervisor",
+    "System Manager",
+    "Administrator",
+  ],
+};
+
 const ROSE_NAV: NavSection[] = [
   // Store-Keeper exclusive section — only role that sees it, and the
   // ONLY section visible when the user holds the Store Keeper role
@@ -231,6 +249,7 @@ const ROSE_NAV: NavSection[] = [
           "Administrator",
         ],
       },
+      REENTRY_ITEM,
       {
         kind: "view",
         view: "creator-stock",
@@ -342,6 +361,7 @@ const AVOCADO_NAV: NavSection[] = [
       // The heat map page carries the block prescription panel, so for avocado it is
       // the jobsheet — observe and plan without leaving it.
       { kind: "view", view: "heatmaps", label: "Jobsheet", icon: ClipboardList },
+      REENTRY_ITEM,
     ],
   },
   {
@@ -383,6 +403,10 @@ const COFFEE_NAV: NavSection[] = [
       { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
       { kind: "view", view: "gallery", label: "Visual findings", icon: Images },
     ],
+  },
+  {
+    label: "Crop Protection",
+    items: [REENTRY_ITEM],
   },
   {
     label: "Reports",
@@ -427,6 +451,10 @@ const DEFAULT_CROP_NAV: NavSection[] = [
       { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
       { kind: "view", view: "gallery", label: "Visual findings", icon: Images },
     ],
+  },
+  {
+    label: "Crop Protection",
+    items: [REENTRY_ITEM],
   },
   {
     label: "Reports",

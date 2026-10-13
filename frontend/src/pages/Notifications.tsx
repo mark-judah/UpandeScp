@@ -36,6 +36,7 @@ const CATEGORIES: Array<ScpCategory | ""> = [
   "stock",
   "scouting",
   "plan",
+  "reentry",
 ];
 
 /** Unread count on a tab: muted pill, filled accent on the busiest tab. */

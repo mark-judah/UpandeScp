@@ -7,6 +7,7 @@ vi.mock("@/lib/spray-plan-creator-api", () => ({
   createDraftSprayPlan: vi.fn(),
 }));
 
+import { screen } from "@testing-library/react";
 import { BlockSprayPlan } from "@/pages/avocado/BlockSprayPlan";
 
 const BOOT = {
@@ -29,5 +30,19 @@ describe("BlockSprayPlan", () => {
   it("defaults to Avocado", async () => {
     render(<BlockSprayPlan block="AIRSTRIP BLK 1 - KL" />);
     await waitFor(() => expect(fetchCreatorBootstrap).toHaveBeenCalledWith("Avocado"));
+  });
+
+  it("sums the area of joined blocks and names the primary", async () => {
+    fetchCreatorBootstrap.mockResolvedValue({
+      ...BOOT,
+      blocks: [
+        { ...BOOT.blocks[0], name: "A - KL", area_ha: 2 },
+        { ...BOOT.blocks[0], name: "B - KL", area_ha: 3 },
+      ],
+    });
+    render(<BlockSprayPlan blocks={["A - KL", "B - KL"]} />);
+    expect(await screen.findByText("5.00 ha")).toBeTruthy();
+    expect(screen.getByText("B - KL (primary)")).toBeTruthy();
+    expect(screen.getByText("5000 L")).toBeTruthy();
   });
 });

@@ -18,6 +18,7 @@ import {
 } from "@/lib/spray-plan-creator-api";
 
 import { errorText } from "@/lib/errors";
+import { largestBlock } from "@/lib/block-groups";
 /** Litres of water per hectare — the same constant the rose planner uses to derive
  *  `custom_water_volume` from the area to spray. Kept identical on purpose: a block
  *  and a greenhouse are sprayed by the same crews with the same equipment, and a
@@ -51,11 +52,16 @@ export interface BlockChemRow {
  */
 export function BlockSprayPlan({
   block,
+  blocks: blocksProp,
   targets = [],
   crop = "Avocado",
   onDone,
 }: {
-  block: string;
+  /** A single block (back-compat); `blocks` wins when both are given. */
+  block?: string;
+  /** Joined blocks for one run (touching blocks). Area = the sum of theirs;
+   *  the largest rides in `custom_greenhouse`, all of them in `custom_blocks`. */
+  blocks?: string[];
   /** Pests chosen on the heat map beside this panel. Shown here so the plan
    *  states what it is for — the rose planner asks the same question before
    *  chemicals are picked, and an operator who has ticked three pests should
@@ -79,12 +85,25 @@ export function BlockSprayPlan({
       .catch((e) => setError(errorText(e, "Could not load planning data.")));
   }, [crop]);
 
-  const blockInfo = useMemo(
-    () => (boot?.blocks || []).find((b) => b.name === block) || null,
-    [boot, block],
+  const blocks = useMemo(
+    () => (blocksProp && blocksProp.length ? blocksProp : block ? [block] : []),
+    [blocksProp, block],
   );
+  const infos = useMemo(
+    () => blocks.map((n) => (boot?.blocks || []).find((b) => b.name === n) || null),
+    [boot, blocks],
+  );
+  const missing = blocks.filter((_, i) => !infos[i]);
+  const areas = useMemo(
+    () => Object.fromEntries(blocks.map((n, i) => [n, infos[i]?.area_ha || 0])),
+    [blocks, infos],
+  );
+  const primary = blocks.length ? largestBlock(areas, blocks) : "";
+  const blockInfo = infos[blocks.indexOf(primary)] || null;
+  const joined = blocks.length > 1;
+  const blockLabel = joined ? `${blocks.length} blocks` : primary;
 
-  const areaHa = blockInfo?.area_ha || 0;
+  const areaHa = blocks.reduce((s, n) => s + (areas[n] || 0), 0);
   const waterVolumeL = areaHa > 0 ? areaHa * WATER_VOLUME_RATE : 0;
 
   // Teams and kits are farm-scoped the same way the rose planner scopes them.
@@ -115,7 +134,8 @@ export function BlockSprayPlan({
     setError(null);
     try {
       const r = await createDraftSprayPlan({
-        custom_greenhouse: block,
+        custom_greenhouse: primary,
+        ...(joined ? { custom_blocks: blocks } : {}),
         custom_scope: "Whole Block",
         custom_spray_type: "Full",
         custom_kit: kit,
@@ -147,10 +167,10 @@ export function BlockSprayPlan({
   // While the planning data loads the form stands, disabled, with bars where
   // the block's figures and the team / kit choices will be.
   const pending = !boot;
-  if (!pending && !blockInfo) {
+  if (!pending && missing.length) {
     return (
       <p className="px-1 py-2 text-xs text-muted-foreground">
-        {block} is not a block you can plan on — you are not rostered as a spray plan
+        {missing.join(", ")} {missing.length > 1 ? "are not blocks" : "is not a block"} you can plan on — you are not rostered as a spray plan
         creator on its farm.
       </p>
     );
@@ -158,7 +178,7 @@ export function BlockSprayPlan({
   if (done) {
     return (
       <p className="px-1 py-2 text-xs text-emerald-600">
-        Draft plan {done} created for {block}.
+        Draft plan {done} created for {blockLabel}.
       </p>
     );
   }
@@ -166,8 +186,23 @@ export function BlockSprayPlan({
   return (
     <div className="space-y-3 pt-1" aria-busy={pending || undefined}>
       <div className="rounded-md bg-muted/50 px-2 py-1.5 text-[0.7rem]">
+        {joined && (
+          <div className="mb-1 space-y-0.5 border-b border-border pb-1">
+            {blocks.map((n) => (
+              <div key={n} className="flex justify-between gap-2">
+                <span className="truncate" title={n}>
+                  {n}
+                  {n === primary ? " (primary)" : ""}
+                </span>
+                <span className="tabular-nums text-muted-foreground">
+                  {pending ? "" : `${(areas[n] || 0).toFixed(2)} ha`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="flex justify-between">
-          <span className="text-muted-foreground">Area</span>
+          <span className="text-muted-foreground">{joined ? "Total area" : "Area"}</span>
           <span className="font-medium tabular-nums">
             {pending ? <TextSkeleton width="6ch" /> : `${areaHa.toFixed(2)} ha`}
           </span>
@@ -287,14 +322,14 @@ export function BlockSprayPlan({
         size="sm"
         className="w-full"
         onClick={submit}
-        disabled={pending || busy || areaHa <= 0 || !rows.some((r) => r.item_code && r.rate > 0)}
+        disabled={pending || busy || areaHa <= 0 || (joined && blocks.some((n) => !(areas[n] > 0))) || !rows.some((r) => r.item_code && r.rate > 0)}
       >
         {busy ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
         Create draft plan
       </Button>
       {!pending && areaHa <= 0 && (
         <p className="text-center text-[0.7rem] text-muted-foreground">
-          This block has no area recorded, so no quantities can be derived.
+          {joined ? "These blocks have" : "This block has"} no area recorded, so no quantities can be derived.
         </p>
       )}
     </div>

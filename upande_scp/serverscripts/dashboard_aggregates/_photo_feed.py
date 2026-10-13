@@ -32,7 +32,7 @@ MAX_PAGE = _gallery.MAX_PAGE
 
 _PHOTOS = """
 SELECT ph.image, ph.caption, ph.captured_on, se.scouts_name, {wh}, se.date_of_capture,
-       se.name, ph.subject, se.time_of_capture
+       se.name, ph.subject, se.time_of_capture, se.greenhouse, se.block, se.bed, se.zone, se.tree
 FROM `tabScouting Entry Photo` ph
 JOIN `tabScouting Entry` se ON se.name = ph.parent
 WHERE ph.parenttype = 'Scouting Entry' AND {where}{extra}
@@ -136,11 +136,27 @@ def _photos(where: str, params: dict, extra: list, page: int, kinds: _Kinds) -> 
     has_more = len(rows) > PHOTOS_PER_PAGE
     rows = rows[:PHOTOS_PER_PAGE]
     people = scout_people({r[3] for r in rows if r[3]})
+    detail = _details({r[6] for r in rows})
+    farms = _farms({r[4] for r in rows if r[4]})
     out = []
     for r in rows:
         person = people.get(r[3]) or {}
         subject = r[7] or ""
+        d = detail.get(r[6]) or {}
         out.append({
+            "farm": farms.get(r[4]) or "",
+            "greenhouse": r[9] or "",
+            "block": r[10] or "",
+            "bed": r[11] or "",
+            "zone": r[12] or "",
+            "tree": r[13] or "",
+            "time": hms(r[8])[:5],
+            "trap": (d.get("trap") or {}).get("trap", ""),
+            "trapLocation": (d.get("trap") or {}).get("location", ""),
+            "trapCount": (d.get("trap") or {}).get("count") if subject and (d.get("trap") or {}).get("pest") in ("", subject) else None,
+            "stage": (d.get("stages") or {}).get(subject, ""),
+            "count": (d.get("counts") or {}).get(subject),
+            "notes": d.get("notes", ""),
             "image": r[0] or "",
             "caption": r[1] or "",
             "capturedOn": str(r[2] or _day_time(r[5], r[8])),
@@ -154,6 +170,49 @@ def _photos(where: str, params: dict, extra: list, page: int, kinds: _Kinds) -> 
             "kind": kinds.of(subject),
         })
     return out, has_more
+
+
+def _farms(warehouses: set) -> dict:
+    if not warehouses:
+        return {}
+    return {
+        r.name: r.custom_farm or ""
+        for r in frappe.get_all("Warehouse", filters={"name": ["in", list(warehouses)]},
+                                fields=["name", "custom_farm"], limit_page_length=0)
+    }
+
+
+def _details(entries: set) -> dict:
+    """Per entry: its trap row, the stage / count of each pest or disease
+    and its comments — what the photo panel says about the finding."""
+    if not entries:
+        return {}
+    ids = tuple(entries)
+    out: dict = {e: {"stages": {}, "counts": {}, "notes": ""} for e in ids}
+    for parent, trap, pest, loc, count in frappe.db.sql(
+        "SELECT parent, trap, pest, location, `count` FROM `tabTrap Scouting Entry` "
+        "WHERE parenttype = 'Scouting Entry' AND parent IN %s ORDER BY idx", (ids,)):
+        out[parent].setdefault("trap", {
+            "trap": trap or "", "pest": pest or "", "location": loc or "",
+            "count": float(count) if count is not None else None,
+        })
+    for parent, pest, stage, count in frappe.db.sql(
+        "SELECT parent, pest, stage, `count` FROM `tabPests Scouting Entry` "
+        "WHERE parenttype = 'Scouting Entry' AND parent IN %s ORDER BY idx", (ids,)):
+        if pest:
+            out[parent]["stages"].setdefault(pest, stage or "")
+            out[parent]["counts"][pest] = out[parent]["counts"].get(pest, 0) + float(count or 0)
+    for parent, disease, stage in frappe.db.sql(
+        "SELECT parent, disease, stage FROM `tabDiseases Scouting Entry` "
+        "WHERE parenttype = 'Scouting Entry' AND parent IN %s ORDER BY idx", (ids,)):
+        if disease:
+            out[parent]["stages"].setdefault(disease, stage or "")
+    for parent, comment in frappe.db.sql(
+        "SELECT parent, comment FROM `tabComments Scouting Entry` "
+        "WHERE parenttype = 'Scouting Entry' AND parent IN %s ORDER BY idx", (ids,)):
+        if comment:
+            out[parent]["notes"] = (out[parent]["notes"] + "\n" + comment).strip()
+    return out
 
 
 def _day_time(day, time) -> str:

@@ -83,6 +83,10 @@ export interface SprayPlanSettings {
   allow_scout_comments: number;
   /** Highest count one observation or trap pest may carry on the handset (1–10000). */
   max_count_per_observation: number;
+  /** Per trap pest: must a catch carry a photo (Traps section). A pest with no row is not required. */
+  trap_photo_rules: { pest: string; photo_required: number }[];
+  /** Pests a trap has caught — the rows the Traps section offers. Read-only. */
+  trap_pests?: string[];
   /**
    * How a sprayer confirms each chemical taken from the CSU.
    * "labels" requires scanning the printed QR; "tick" lets them tick to

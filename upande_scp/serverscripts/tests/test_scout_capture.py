@@ -76,7 +76,7 @@ class TestCaptureSettings(CaptureCase):
         self.assertTrue(CS.allows("photos"))
         self.assertTrue(CS.allows("comments"))
         self.assertEqual(CS.max_count(), 15)
-        self.assertEqual(CS.as_payload(), {"photos": True, "comments": True, "max_count": 15})
+        self.assertEqual(CS.as_payload(), {"photos": True, "comments": True, "max_count": 15, "trap_photo_required": []})
         self.assertEqual(CS.as_settings(), {"allow_scout_photos": 1, "allow_scout_comments": 1,
                                             "max_count_per_observation": 15})
 
@@ -113,7 +113,7 @@ class TestCaptureSettings(CaptureCase):
         doc = frappe.get_single(SETTINGS)
         self.assertEqual(doc.allow_scout_photos, 0)              # Frappe's cast, documented
         doc.save(ignore_permissions=True)
-        self.assertEqual(CS.as_payload(), {"photos": True, "comments": True, "max_count": 15})
+        self.assertEqual(CS.as_payload(), {"photos": True, "comments": True, "max_count": 15, "trap_photo_required": []})
         self.assertEqual((_raw("allow_scout_photos"), _raw("max_count_per_observation")), ("1", "15"))
 
     def test_an_explicit_off_in_the_same_save_is_kept(self):
@@ -173,7 +173,7 @@ class TestSettingsPage(CaptureCase):
     def test_a_save_round_trips(self):
         self.S.save_spray_plan_settings(json.dumps(
             {"allow_scout_photos": 0, "allow_scout_comments": 0, "max_count_per_observation": 40}))
-        self.assertEqual(CS.as_payload(), {"photos": False, "comments": False, "max_count": 40})
+        self.assertEqual(CS.as_payload(), {"photos": False, "comments": False, "max_count": 40, "trap_photo_required": []})
         self.S.save_spray_plan_settings(json.dumps({"allow_scout_photos": True, "allow_scout_comments": "1"}))
         self.assertEqual((_raw("allow_scout_photos"), _raw("allow_scout_comments")), ("1", "1"))
 
@@ -181,7 +181,7 @@ class TestSettingsPage(CaptureCase):
         _unset()
         hours = self.bundle()["loaning_timeout_hours"]
         self.S.save_spray_plan_settings(json.dumps({"loaning_timeout_hours": hours}))
-        self.assertEqual(CS.as_payload(), {"photos": True, "comments": True, "max_count": 15})
+        self.assertEqual(CS.as_payload(), {"photos": True, "comments": True, "max_count": 15, "trap_photo_required": []})
 
     def test_max_count_must_be_1_to_10000(self):
         _set(max_count_per_observation=40)
@@ -292,13 +292,13 @@ class TestObservationsPayload(CaptureCase):
     def test_the_payload_carries_capture(self):
         _set(allow_scout_photos=1, allow_scout_comments=0, max_count_per_observation=40)
         got = self.observations()
-        self.assertEqual(got["capture"], {"photos": True, "comments": False, "max_count": 40})
+        self.assertEqual(got["capture"], {"photos": True, "comments": False, "max_count": 40, "trap_photo_required": []})
         self.assertIn("data", got)
         self.assertIn("allowed_plant_sections", got)
 
     def test_nothing_stored_sends_the_defaults(self):
         _unset()
-        self.assertEqual(self.observations()["capture"], {"photos": True, "comments": True, "max_count": 15})
+        self.assertEqual(self.observations()["capture"], {"photos": True, "comments": True, "max_count": 15, "trap_photo_required": []})
 
     def test_the_comments_category_follows_its_switch(self):
         _set(allow_scout_comments=0)

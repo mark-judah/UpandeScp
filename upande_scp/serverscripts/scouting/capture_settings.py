@@ -107,11 +107,62 @@ def clean_max_count(value) -> int:
     return number
 
 
+TRAP_RULES_FIELD = "trap_photo_rules"
+
+
+def trap_photo_rules() -> dict:
+    """{pest: photo_required} for every pest with a rule row. A pest with no row
+    reads as not required — the table's rows ARE the setting, so there is no
+    unset-Check cast to guard against (unlike the switches above)."""
+    if not frappe.db.exists("DocType", "Trap Photo Rule"):
+        return {}
+    rows = frappe.db.sql(
+        "SELECT pest, photo_required FROM `tabTrap Photo Rule` "
+        "WHERE parenttype = %s AND parentfield = %s ORDER BY idx",
+        (SETTINGS, TRAP_RULES_FIELD),
+    )
+    return {pest: bool(req) for pest, req in rows if pest}
+
+
+def trap_pest_choices() -> list:
+    """The pests a trap has caught, plus any with a rule — the rows the settings
+    page offers a switch for."""
+    caught = frappe.db.sql(
+        "SELECT DISTINCT pest FROM `tabTrap Scouting Entry` "
+        "WHERE parenttype = 'Scouting Entry' AND IFNULL(pest, '') != ''",
+        pluck=True,
+    )
+    return sorted(set(caught) | set(trap_photo_rules()))
+
+
+def trap_photo_required(pest: str) -> bool:
+    return bool(trap_photo_rules().get(pest))
+
+
+def clean_trap_rules(rows) -> list:
+    """The settings page's rows as unique ``{pest, photo_required}`` dicts."""
+    out, seen = [], set()
+    for r in rows or []:
+        pest = ((r.get("pest") if isinstance(r, dict) else r) or "").strip()
+        if not pest or pest in seen:
+            continue
+        seen.add(pest)
+        required = r.get("photo_required") if isinstance(r, dict) else 0
+        out.append({"pest": pest, "photo_required": 1 if frappe.utils.cint(required) else 0})
+    return out
+
+
 def as_payload() -> dict:
     """The ``capture`` block of getObservationsDetails. It rides with the
     observations because the handset decides what to draw while it builds the
     round, and a second request is one more thing to fail with no signal."""
-    return {"photos": allows("photos"), "comments": allows("comments"), "max_count": max_count()}
+    return {
+        "photos": allows("photos"),
+        "comments": allows("comments"),
+        "max_count": max_count(),
+        # Trap pests whose catches need a photo; the app enforces it (follow-up).
+        "trap_photo_required": sorted(p for p, req in trap_photo_rules().items() if req),
+    }
 
 
 def as_settings() -> dict:

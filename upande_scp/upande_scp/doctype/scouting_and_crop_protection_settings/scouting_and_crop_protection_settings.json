@@ -98,7 +98,9 @@
   "scout_capture_section",
   "allow_scout_photos",
   "allow_scout_comments",
-  "max_count_per_observation"
+  "max_count_per_observation",
+  "trap_photos_section",
+  "trap_photo_rules"
  ],
  "fields": [
   {
@@ -703,12 +705,24 @@
    "fieldtype": "Int",
    "label": "Max count per observation",
    "non_negative": 1
+  },
+  {
+   "description": "Per trap pest: must a scout photograph a catch of it? Separate from the general photo switch above. The scout app reads this with its observations.",
+   "fieldname": "trap_photos_section",
+   "fieldtype": "Section Break",
+   "label": "Traps"
+  },
+  {
+   "fieldname": "trap_photo_rules",
+   "fieldtype": "Table",
+   "label": "Trap photo rules",
+   "options": "Trap Photo Rule"
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-12 00:00:00.000000",
+ "modified": "2026-10-13 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting and Crop Protection Settings",

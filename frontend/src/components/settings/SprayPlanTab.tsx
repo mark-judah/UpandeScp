@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { TrapPhotoCard } from "@/components/settings/TrapPhotoCard";
 import { ScoutCaptureCard, maxCountError } from "@/components/settings/ScoutCaptureCard";
 import {
   saveSprayPlanSettings,
@@ -432,6 +433,11 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
       </Card>
 
       <ScoutCaptureCard value={draft} onChange={(key, value) => set(key, value)} />
+      <TrapPhotoCard
+        pests={draft.trap_pests ?? []}
+        rules={draft.trap_photo_rules ?? []}
+        onChange={(rules) => set("trap_photo_rules", rules)}
+      />
 
       <Card className="lg:col-span-2">
         <CardHeader>

@@ -57,6 +57,27 @@ class TestFeed(FeedCase):
         self.assertEqual(p["scoutName"], frappe.db.get_value("Employee", self.s2, "employee_name"))
         self.assertFalse(out["hasMore"])
 
+    def test_panel_fields_where_when_what(self):
+        name = insert(scout=self.s1, date=MON, greenhouse=self.gh, zone=self.zone,
+                      pests=[("Thrips", "Adult", 4)], photos=[("Thrips", "t", 0)])
+        frappe.db.sql(
+            """insert into `tabComments Scouting Entry` (name, creation, modified, owner, modified_by,
+               docstatus, idx, parent, parenttype, parentfield, comment)
+               values (%s, now(), now(), 'Administrator', 'Administrator', 0, 1, %s,
+               'Scouting Entry', 'comments_scouting_entry', 'seen on lower leaves')""",
+            (frappe.generate_hash(length=12), name))
+        frappe.db.sql(
+            """insert into `tabTrap Scouting Entry` (name, creation, modified, owner, modified_by,
+               docstatus, idx, parent, parenttype, parentfield, trap, pest, location, `count`)
+               values (%s, now(), now(), 'Administrator', 'Administrator', 0, 1, %s,
+               'Scouting Entry', 'trap_scouting_entry', NULL, 'Thrips', 'Indoor', 7)""",
+            (frappe.generate_hash(length=12), name))
+        p = self.feed()["photos"][0]
+        self.assertEqual((p["greenhouse"], p["zone"], p["time"]), (self.gh, self.zone, "08:00"))
+        self.assertEqual(p["farm"], frappe.db.get_value("Warehouse", self.gh, "custom_farm") or "")
+        self.assertEqual((p["stage"], p["count"], p["notes"]), ("Adult", 4, "seen on lower leaves"))
+        self.assertEqual((p["trapLocation"], p["trapCount"]), ("Indoor", 7))
+
     def test_filters_kind_name_scout(self):
         self.seed()
         cap = lambda o: sorted(p["caption"] for p in o["photos"])  # noqa: E731

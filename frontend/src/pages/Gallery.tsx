@@ -4,21 +4,18 @@
  * Every scouting photo in the crop's scope for a date range, as a masonry of
  * natural-height tiles (CSS columns — no layout dependency), newest first,
  * a page at a time with infinite scroll. Filters: farm, greenhouse, kind,
- * observation, scout, dates. A tile opens a lightbox with prev/next.
+ * observation, scout, dates. A tile opens the floating finding panel (prev/next).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, ExternalLink, ImageOff } from "lucide-react";
+import { ImageOff } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog, DialogContent, DialogDescription, DialogTitle,
-} from "@/components/ui/dialog";
 import { HEADER_PILL } from "@/components/header-controls";
 import { PlacePicker } from "@/components/PlacePicker";
 import { DatePicker } from "@/components/DatePicker";
 import { PageHeader } from "@/components/PageHeader";
-import { PersonAvatar } from "@/components/people/PersonAvatar";
+import { FindingPanel, KindPill } from "@/components/gallery/FindingPanel";
 import { NO_PHOTOS_TEXT } from "@/components/gallery/ObservationGallery";
 import { LoadProgress, firstLoad } from "@/components/Loading";
 import { useCropFarms } from "@/hooks/use-crop-farms";
@@ -31,7 +28,7 @@ import {
 } from "@/lib/gallery-api";
 import { errorText } from "@/lib/errors";
 import { DEFAULT_CROP } from "@/lib/scouting-api";
-import { cn, ymd } from "@/lib/utils";
+import { ymd } from "@/lib/utils";
 import { shortHouse } from "@/lib/places";
 import { formatCapture } from "@/lib/capture-time";
 
@@ -45,8 +42,6 @@ function lastThirtyDays() {
 }
 
 export { formatCapture };
-
-const KIND_LABEL: Record<PhotoKind, string> = { pest: "Pest", disease: "Disease", other: "Other" };
 
 export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   const crop = initialCrop ?? DEFAULT_CROP;
@@ -151,13 +146,13 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
 
   return (
     <div className="flex min-h-svh w-full min-w-0 flex-col">
-      <PageHeader eyebrow="Scouting · Photos from the field" title="Gallery" />
+      <PageHeader eyebrow="Scouting · Photos from the field" title="Visual findings" />
       <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
         <div className="flex flex-wrap items-center justify-end gap-2">
           <PlacePicker
             farms={farms}
             crop={crop}
-            label="Gallery place"
+            label="Visual findings place"
             value={{ farm, greenhouse }}
             onChange={(p) => {
               setFarm(p.farm);
@@ -251,7 +246,7 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
       </div>
 
       {open != null && photos[open] ? (
-        <Lightbox
+        <FindingPanel
           photos={photos}
           index={open}
           hasMore={hasMore}
@@ -271,7 +266,7 @@ function GalleryTile({ photo: p, onOpen }: { photo: FeedPhoto; onOpen: () => voi
       <button
         type="button"
         onClick={onOpen}
-        aria-label={`Open photo: ${p.subject || "photo"} by ${p.scoutName}`}
+        aria-label={`Open photo: ${p.subject || "photo"}`}
         className="group block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {broken ? (
@@ -293,31 +288,12 @@ function GalleryTile({ photo: p, onOpen }: { photo: FeedPhoto; onOpen: () => voi
           <span className="min-w-0 flex-1 truncate font-medium">{p.subject || "Unlabelled"}</span>
           <KindPill kind={p.kind} />
         </div>
-        <div className="flex items-center gap-1.5 text-muted-foreground">
-          <PersonAvatar id={p.scout} name={p.scoutName} image={p.scoutImage} size={20} />
-          <span className="min-w-0 flex-1 truncate">{p.scoutName}</span>
-        </div>
         <div className="flex items-center justify-between gap-2 text-muted-foreground tabular-nums">
           <span className="truncate">{shortHouse(p.house)}</span>
           <span className="shrink-0">{formatCapture(p.date)}</span>
         </div>
       </figcaption>
     </figure>
-  );
-}
-
-function KindPill({ kind }: { kind: PhotoKind }) {
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded-full border px-1.5 py-px text-[0.6rem] font-medium uppercase tracking-wide",
-        kind === "pest" && "text-[var(--sd-data-amber)]",
-        kind === "disease" && "text-[var(--sd-data-purple)]",
-        kind === "other" && "text-muted-foreground",
-      )}
-    >
-      {KIND_LABEL[kind] ?? kind}
-    </span>
   );
 }
 
@@ -329,120 +305,5 @@ function MasonrySkeleton() {
         <div key={i} aria-hidden data-skeleton="tile" className="mb-3 break-inside-avoid animate-pulse rounded-xl border bg-muted/60" style={{ height: h }} />
       ))}
     </div>
-  );
-}
-
-export function Lightbox({
-  photos,
-  index,
-  hasMore,
-  onIndex,
-  onLoadMore,
-  onClose,
-}: {
-  photos: FeedPhoto[];
-  index: number;
-  hasMore: boolean;
-  onIndex: (i: number) => void;
-  onLoadMore: () => Promise<boolean | void> | void;
-  onClose: () => void;
-}) {
-  const p = photos[index];
-  const atEnd = index >= photos.length - 1;
-  // "Next" past the last loaded photo loads the next page, then steps on.
-  const pendingNext = useRef(false);
-  useEffect(() => {
-    if (pendingNext.current && index < photos.length - 1) {
-      pendingNext.current = false;
-      onIndex(index + 1);
-    }
-  }, [photos.length, index, onIndex]);
-
-  const prev = () => index > 0 && onIndex(index - 1);
-  const next = () => {
-    if (!atEnd) onIndex(index + 1);
-    else if (hasMore) {
-      pendingNext.current = true;
-      // A failed page must not leave a later move auto-advancing.
-      // A failed or empty page must not leave a later move auto-advancing.
-      void Promise.resolve(onLoadMore()).then(
-        (ok) => { if (ok === false) pendingNext.current = false; },
-        () => { pendingNext.current = false; },
-      );
-    }
-  };
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent
-        className="max-w-[min(96vw,1100px)] max-h-[92vh] overflow-y-auto p-0"
-        onKeyDown={(e) => {
-          if (e.key === "ArrowLeft") prev();
-          if (e.key === "ArrowRight") next();
-        }}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_280px]">
-          <div className="relative grid min-h-[40vh] place-items-center bg-black">
-            <img
-              src={p.image}
-              alt={p.caption || `${p.subject || "Scouting"} photo`}
-              className="max-h-[80vh] w-auto max-w-full object-contain"
-            />
-            <button
-              type="button"
-              aria-label="Previous photo"
-              onClick={prev}
-              disabled={index === 0}
-              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white hover:bg-black/70 disabled:opacity-30"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              aria-label="Next photo"
-              onClick={next}
-              disabled={atEnd && !hasMore}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white hover:bg-black/70 disabled:opacity-30"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </div>
-          <div className="flex flex-col gap-3 p-4 text-sm">
-            <div>
-              <DialogTitle className="flex items-center gap-2 pr-6 text-base">
-                <span className="min-w-0 truncate">{p.subject || "Unlabelled"}</span>
-                <KindPill kind={p.kind} />
-              </DialogTitle>
-              <DialogDescription className="text-xs tabular-nums">
-                {index + 1} of {photos.length}
-                {hasMore ? "+" : ""}
-              </DialogDescription>
-            </div>
-            {p.caption ? <p className="whitespace-pre-line text-[0.8rem]">{p.caption}</p> : null}
-            <div className="flex items-center gap-2.5">
-              <PersonAvatar id={p.scout} name={p.scoutName} image={p.scoutImage} size={40} />
-              <div className="min-w-0">
-                <div className="truncate font-medium" data-testid="lightbox-scout">{p.scoutName}</div>
-                <div className="text-xs text-muted-foreground">Scout</div>
-              </div>
-            </div>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-              <dt className="text-muted-foreground">House</dt>
-              <dd className="truncate">{p.house || "—"}</dd>
-              <dt className="text-muted-foreground">Captured</dt>
-              <dd className="tabular-nums">{formatCapture(p.capturedOn || p.date)}</dd>
-            </dl>
-            <a
-              href={`/app/scouting-entry/${encodeURIComponent(p.entry)}`}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              Open scouting entry <ExternalLink className="h-3 w-3" />
-            </a>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }

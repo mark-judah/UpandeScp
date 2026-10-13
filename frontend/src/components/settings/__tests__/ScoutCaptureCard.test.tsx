@@ -50,6 +50,7 @@ const initial: SprayPlanSettings = {
   allow_scout_photos: 1,
   allow_scout_comments: 1,
   max_count_per_observation: 15,
+  trap_photo_rules: [],
   csu_scan_verification: "labels",
   allowed_farms: [],
   exclude_keywords: [],

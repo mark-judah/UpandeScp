@@ -72,6 +72,22 @@ export interface FeedPhoto extends GalleryPhoto {
   kind: PhotoKind;
   /** Employee.image of the scout — initials only when empty. */
   scoutImage: string;
+  /** Where / what, for the detail panel (all optional: older payloads omit them). */
+  farm?: string;
+  greenhouse?: string;
+  block?: string;
+  bed?: string;
+  zone?: string;
+  tree?: string;
+  /** HH:MM of the entry. */
+  time?: string;
+  trap?: string;
+  trapLocation?: string;
+  /** The trap's highest count on that entry (trap photos only). */
+  trapCount?: number | null;
+  stage?: string;
+  count?: number | null;
+  notes?: string;
 }
 
 export interface FeedFacets {

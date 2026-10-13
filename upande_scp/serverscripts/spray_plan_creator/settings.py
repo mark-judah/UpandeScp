@@ -133,6 +133,12 @@ def get_settings_bundle() -> dict:
             # off `settings`: a loaded Single casts a missing Check to 0, which
             # would show the GM "off" for a switch that is on.
             **capture_settings.as_settings(),
+            # Pests that can be caught on a trap, for the Traps switches.
+            "trap_pests": capture_settings.trap_pest_choices(),
+            "trap_photo_rules": [
+                {"pest": p, "photo_required": int(req)}
+                for p, req in capture_settings.trap_photo_rules().items()
+            ],
             "allowed_farms": allowed_farms,
             "exclude_keywords": exclude_keywords,
             "station_warehouse_types": station_warehouse_types,
@@ -246,6 +252,11 @@ def save_spray_plan_settings(payload) -> dict:
             kw = (r.get("keyword") if isinstance(r, dict) else r) or ""
             if kw:
                 settings.append("exclude_keywords", {"keyword": kw})
+
+    if capture_settings.TRAP_RULES_FIELD in payload:
+        settings.set(capture_settings.TRAP_RULES_FIELD, [])
+        for r in capture_settings.clean_trap_rules(payload[capture_settings.TRAP_RULES_FIELD]):
+            settings.append(capture_settings.TRAP_RULES_FIELD, r)
 
     if "station_warehouse_types" in payload:
         settings.set("station_warehouse_types", [])

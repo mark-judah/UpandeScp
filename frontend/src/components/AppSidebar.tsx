@@ -200,7 +200,7 @@ const ROSE_NAV: NavSection[] = [
       { kind: "view", view: "observations", label: "Observations", icon: Search },
       { kind: "view", view: "heatmaps", label: "Heatmaps", icon: Flame },
       { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
-      { kind: "view", view: "gallery", label: "Gallery", icon: Images },
+      { kind: "view", view: "gallery", label: "Visual findings", icon: Images },
     ],
   },
   {
@@ -333,7 +333,7 @@ const AVOCADO_NAV: NavSection[] = [
       { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
       { kind: "view", view: "observations", label: "Observations", icon: Search },
       { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
-      { kind: "view", view: "gallery", label: "Gallery", icon: Images },
+      { kind: "view", view: "gallery", label: "Visual findings", icon: Images },
     ],
   },
   {
@@ -381,7 +381,7 @@ const COFFEE_NAV: NavSection[] = [
     label: "Scouting",
     items: [
       { kind: "view", view: "scouting-map", label: "Scouting Map", icon: Sprout },
-      { kind: "view", view: "gallery", label: "Gallery", icon: Images },
+      { kind: "view", view: "gallery", label: "Visual findings", icon: Images },
     ],
   },
   {
@@ -425,7 +425,7 @@ const DEFAULT_CROP_NAV: NavSection[] = [
       { kind: "view", view: "observations", label: "Observations", icon: Search },
       { kind: "view", view: "heatmaps", label: "Heatmaps", icon: Flame },
       { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
-      { kind: "view", view: "gallery", label: "Gallery", icon: Images },
+      { kind: "view", view: "gallery", label: "Visual findings", icon: Images },
     ],
   },
   {

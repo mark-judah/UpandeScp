@@ -76,12 +76,12 @@ describe("Scouting ▸ Gallery", () => {
     const t = within(tiles[0]);
     expect(t.getByAltText("caption 1")).toHaveAttribute("src", "/private/files/p1.jpg");
     expect(t.getByText("Thrips")).toBeInTheDocument();
-    expect(t.getByText("Imelda Mutua")).toBeInTheDocument();
+    // no user names or avatars on the grid tiles
+    expect(t.queryByText("Imelda Mutua")).toBeNull();
+    expect(tiles[0].querySelector('img[src="/private/files/imelda.jpg"]')).toBeNull();
+    expect(within(tiles[1]).queryByText("JK")).toBeNull();
     expect(t.getByText("GH1")).toBeInTheDocument();
     expect(t.getByText("1 Oct 2026")).toBeInTheDocument();
-    // the scout's Employee photo; the second scout has none → initials
-    expect(tiles[0].querySelector('img[src="/private/files/imelda.jpg"]')).not.toBeNull();
-    expect(within(tiles[1]).getByText("JK")).toBeInTheDocument();
     expect(fetchPhotoFeed.mock.calls[0][0]).toMatchObject({ crop: "Rose", farm: "", kind: "", name: "", scout: "" });
   });
 
@@ -90,10 +90,10 @@ describe("Scouting ▸ Gallery", () => {
     render(<Gallery initialCrop="Rose" />);
     await screen.findByTestId("gallery-masonry");
     // The place picker: one pill, a farm row then a house row.
-    fireEvent.click(screen.getByRole("button", { name: "Gallery place" }));
+    fireEvent.click(screen.getByRole("button", { name: "Visual findings place" }));
     fireEvent.click(await screen.findByRole("option", { name: "Chepsito" }));
     await waitFor(() => expect(fetchPhotoFeed).toHaveBeenLastCalledWith(expect.objectContaining({ farm: "Chepsito" }), 0));
-    fireEvent.click(screen.getByRole("button", { name: "Gallery place" }));
+    fireEvent.click(screen.getByRole("button", { name: "Visual findings place" }));
     fireEvent.click(await screen.findByRole("option", { name: "GH2" }));
     fireEvent.change(screen.getByLabelText("Gallery kind"), { target: { value: "pest" } });
     fireEvent.change(screen.getByLabelText("Gallery observation"), { target: { value: "Thrips" } });
@@ -137,20 +137,48 @@ describe("Scouting ▸ Gallery", () => {
       .mockResolvedValueOnce(page([photo(3)], false, 1));
     render(<Gallery initialCrop="Rose" />);
     await screen.findByTestId("gallery-masonry");
-    fireEvent.click(screen.getByRole("button", { name: /Open photo: Thrips by Imelda Mutua/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Open photo: Thrips/ }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByTestId("lightbox-scout")).toHaveTextContent("Imelda Mutua");
     expect(within(dialog).getByText("1 Oct 2026 · 08:05")).toBeInTheDocument();
-    expect(within(dialog).getByText("1 of 2+")).toBeInTheDocument();
+    expect(within(dialog).getByText(/1 of 2+/)).toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: /Open scouting entry/ })).toHaveAttribute("href", "/app/scouting-entry/SE-1");
     fireEvent.click(within(dialog).getByRole("button", { name: "Next photo" }));
     expect(within(dialog).getByTestId("lightbox-scout")).toHaveTextContent("John Kip");
-    fireEvent.keyDown(dialog, { key: "ArrowLeft" });
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
     expect(within(dialog).getByTestId("lightbox-scout")).toHaveTextContent("Imelda Mutua");
     fireEvent.click(within(dialog).getByRole("button", { name: "Next photo" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Next photo" }));
-    await waitFor(() => expect(within(screen.getByRole("dialog")).getByText("3 of 3")).toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByText(/3 of 3/)).toBeInTheDocument());
     expect(fetchPhotoFeed.mock.calls[1][1]).toBe(1);
+  });
+
+  it("opens the floating right-hand panel with who, where, when and what; Esc closes", async () => {
+    fetchPhotoFeed.mockResolvedValueOnce(page([photo(1, {
+      farm: "Chepsito", greenhouse: "GH1 - KR", bed: "4", time: "08:05", stage: "Adult", count: 6,
+      trap: "Chepsito - 101", trapLocation: "Indoor", trapCount: 5, notes: "DEMO trap catch",
+    })], false));
+    render(<Gallery initialCrop="Rose" />);
+    await screen.findByTestId("gallery-masonry");
+    fireEvent.click(screen.getByRole("button", { name: /Open photo: Thrips/ }));
+    const panel = await screen.findByTestId("finding-panel");
+    expect(panel.className).toMatch(/fixed/);
+    expect(panel.className).toMatch(/right-4/);
+    const w = within(panel);
+    expect(w.getByTestId("lightbox-scout")).toHaveTextContent("Imelda Mutua");
+    expect(w.getByTestId("finding-where")).toHaveTextContent("Chepsito · GH1");
+    expect(w.getByText(/Bed 4/)).toBeInTheDocument();
+    expect(w.getByText(/Chepsito - 101/)).toBeInTheDocument();
+    expect(w.getByTestId("finding-when")).toHaveTextContent("1 Oct 2026 · 08:05");
+    expect(w.getByText("Highest count")).toBeInTheDocument();
+    expect(w.getByTestId("finding-notes")).toHaveTextContent("DEMO trap catch");
+    fireEvent.click(w.getByRole("button", { name: "View photo full size" }));
+    expect(screen.getByTestId("finding-zoom")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("finding-zoom")).toBeNull();
+    expect(screen.getByTestId("finding-panel")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("finding-panel")).toBeNull();
   });
 
   it("shows the pop-up's empty state when there are no photos", async () => {

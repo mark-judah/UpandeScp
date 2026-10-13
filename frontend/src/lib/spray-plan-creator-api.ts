@@ -158,6 +158,11 @@ export interface DraftPayload {
   custom_water_hardness: number;
   custom_water_volume: number;
   custom_area: number;
+  /** Joined blocks for an open-field run (2+). The server validates them
+   *  (same farm, each has an area), makes the largest the plan's block when
+   *  custom_greenhouse is blank, sets custom_area to the sum and splits the
+   *  expense by area share. Omit or send one block for a single-block plan. */
+  custom_blocks?: string[];
   custom_targets: string[];
   production_item: string;
   chemicals: DraftPayloadChemical[];
@@ -210,6 +215,14 @@ export interface DraftPlanChemical {
   application_rate?: number;
 }
 
+export interface SprayPlanBlock {
+  block: string;
+  area_ha: number;
+  cost_center: string;
+  /** area / plan total, 0..1 */
+  share: number;
+}
+
 export interface DraftPlanDetail {
   name: string;
   custom_greenhouse: string;
@@ -224,6 +237,8 @@ export interface DraftPlanDetail {
   custom_water_hardness?: number;
   custom_water_volume?: number;
   custom_area?: number;
+  /** Empty for a single-block plan. Primary (largest) block first. */
+  custom_blocks?: SprayPlanBlock[];
   custom_targets: string[];
   production_item?: string;
   custom_cost_center?: string;

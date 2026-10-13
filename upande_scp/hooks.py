@@ -352,6 +352,10 @@ doc_events = {
             # Safety net: force any AFP Manufacture (desk, API, console, mobile)
             # to consume what was transferred into the CSU, not the template BOM.
             "upande_scp.serverscripts.spray_plan_creator.stock_entry_state.before_validate",
+            # Block groups: a plan over 2+ joined blocks has its expense posting
+            # (the Chemical Spray issue) split by area across the blocks' cost
+            # centres. No-op for 0-1 blocks; idempotent.
+            "upande_scp.serverscripts.spray_plan_creator.block_groups.split_stock_entry",
         ],
         "on_submit": [
             "upande_scp.serverscripts.spray_plan_creator.stock_entry_state.on_submit",

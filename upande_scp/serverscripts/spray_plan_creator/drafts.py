@@ -8,6 +8,7 @@ from frappe.utils import flt, getdate
 
 from ..common import crop_catalog, crop_protection
 from ..spray_compliance import api as compliance
+from . import block_groups
 from .scope import _resolve_user_scope
 from .validation import (
     derive_cost_center, validate_preventive_reason, validate_rate_in_limits,
@@ -36,8 +37,12 @@ def _assert_in_scope(payload: dict, scope: dict) -> None:
         frappe.throw("Greenhouse is required.")
     if not scope["warehouses"]:
         frappe.throw(f"Greenhouse {gh} is outside your farm scope.", title="Out of scope")
-    if gh not in {w["name"] for w in scope["warehouses"]}:
+    in_scope = {w["name"] for w in scope["warehouses"]}
+    if gh not in in_scope:
         frappe.throw(f"Greenhouse {gh} is outside your farm scope.", title="Out of scope")
+    for block in payload.get("_blocks") or []:
+        if block not in in_scope:
+            frappe.throw(f"Block {block} is outside your farm scope.", title="Out of scope")
     # Kit (if provided) must be in a warehouse in scope. Kits live in
     # `Spray Equipment Details` (Data field `kit`), but we only check by
     # warehouse - the kit lookup is via custom_kit string.
@@ -462,6 +467,8 @@ def create_draft_spray_plan(payload):
     scope = _resolve_user_scope(user)
     if not scope["farms"] and user != "Administrator":
         frappe.throw("You have no farm access. Please contact an Administrator.", title="No access")
+    # Block group: settles custom_greenhouse (largest block) before any check.
+    payload["_blocks"] = block_groups.normalise_payload_blocks(payload)
     _assert_in_scope(payload, scope)
     _validate_payload(payload, scope)
 
@@ -511,6 +518,9 @@ def create_draft_spray_plan(payload):
         ("Greenhouse", payload["custom_greenhouse"]),
         *[(f"Chemical source {i + 1}", w) for i, w in enumerate(chem_sources)],
     ])
+    block_rows = block_groups.build_block_rows(
+        payload["_blocks"], payload["custom_greenhouse"], cost_center,
+    )
 
     # Derive WIP warehouse from the picked kit (Spray Equipment Details.warehouse)
     # so ERPNext's make_stock_entry has a target for the Material Transfer.
@@ -531,6 +541,7 @@ def create_draft_spray_plan(payload):
     if wip_warehouse:
         wo.wip_warehouse = wip_warehouse
     _apply_payload(wo, payload)
+    block_groups.apply_blocks(wo, block_rows)
     compliance_result = compliance.enforce_on_save(_compliance_payload(wo, payload), wo)
 
     # Mint a per-plan BOM (one per plan, for traceability + to keep bom_no in
@@ -622,6 +633,8 @@ def update_draft_plan(name: str, payload):
     wo = _own_draft(name)
     prev_bom = wo.bom_no  # superseded auto-BOM to retire after re-minting
     scope = _resolve_user_scope(user)
+    sends_blocks = "custom_blocks" in payload
+    payload["_blocks"] = block_groups.normalise_payload_blocks(payload) if sends_blocks else []
     _assert_in_scope(payload, scope)
     _validate_payload(payload, scope)
 
@@ -672,7 +685,25 @@ def update_draft_plan(name: str, payload):
         *[(f"Chemical source {i + 1}", w) for i, w in enumerate(chem_sources)],
     ])
 
+    prev_gh = wo.custom_greenhouse
     _apply_payload(wo, payload)
+    if sends_blocks:
+        block_groups.apply_blocks(wo, block_groups.build_block_rows(
+            payload["_blocks"], wo.custom_greenhouse, wo.custom_cost_center,
+        ))
+    elif wo.get("custom_blocks") and (
+        wo.custom_greenhouse != prev_gh
+        or wo.custom_blocks[0].cost_center != wo.custom_cost_center
+    ):
+        # Blocks not re-sent: keep the group unless its primary block or cost
+        # centre moved underneath it, which would make the rows stale.
+        if wo.custom_greenhouse in {r.block for r in wo.custom_blocks}:
+            block_groups.apply_blocks(wo, block_groups.build_block_rows(
+                [r.block for r in wo.custom_blocks], wo.custom_greenhouse,
+                wo.custom_cost_center,
+            ))
+        else:
+            block_groups.apply_blocks(wo, [])
     compliance_result = compliance.enforce_on_save(
         _compliance_payload(wo, payload), wo, exclude_wo=wo.name,
     )
@@ -748,6 +779,11 @@ def _expand_wo(wo) -> dict:
         "custom_water_hardness": wo.custom_water_hardness,
         "custom_water_volume": wo.custom_water_volume,
         "custom_area": wo.custom_area,
+        "custom_blocks": [
+            {"block": r.block, "area_ha": r.area_ha, "cost_center": r.cost_center,
+             "share": r.share}
+            for r in (wo.get("custom_blocks") or [])
+        ],
         "custom_targets": (wo.custom_targets or "").split("\n") if wo.custom_targets else [],
         "production_item": wo.production_item,
         "custom_cost_center": wo.custom_cost_center,

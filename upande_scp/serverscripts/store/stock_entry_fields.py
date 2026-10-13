@@ -75,6 +75,22 @@ def _field_spec():
 				"read_only": 1,
 				"module": MODULE,
 			},
+			# The spray plan a Chemical Spray issue belongs to. ERPNext nulls
+			# `work_order` on every Material Issue, and the issue is built
+			# without one on purpose (no Work Order side effects), so this is
+			# the durable link. Read by spray_plan_creator.block_groups to split
+			# the expense by block area.
+			{
+				"fieldname": "custom_spray_plan",
+				"label": "Spray Plan",
+				"fieldtype": "Link",
+				"options": "Work Order",
+				"insert_after": "custom_labels_print_count",
+				"read_only": 1,
+				"no_copy": 1,
+				"search_index": 1,
+				"module": MODULE,
+			},
 		],
 		# Stock Entry Detail: nothing. Its `farm` field is the Farm accounting
 		# dimension, owned and maintained by ERPNext.

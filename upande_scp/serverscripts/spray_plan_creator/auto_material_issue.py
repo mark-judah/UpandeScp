@@ -183,6 +183,10 @@ def build_material_issue(
         # Stock Entry, Stock Entry Detail and GL Entry), not a bespoke field.
         # The item rows above set the same dimension per line.
         "farm": farm,
+        # Durable link back to the plan (`work_order` is nulled by ERPNext on a
+        # Material Issue). block_groups.split_stock_entry reads it to split the
+        # expense of a plan over joined blocks by area.
+        "custom_spray_plan": wo.name,
         "items": items,
         # New upande_ta model: assign the receiving employee directly.
         # System-generated (no live scan) -> biometric_status stays Pending.

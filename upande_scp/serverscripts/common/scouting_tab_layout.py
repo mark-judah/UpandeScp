@@ -28,7 +28,7 @@ SCP_FIELDS = {
         "custom_application_floor_plan", "custom_greenhouse", "custom_reentry_period_hrs",
         "custom_cost_center", "custom_rate_overridden", "custom_weather_snapshot",
         "custom_scheduled_application_time", "custom_reentry_time", "custom_scope",
-        "custom_scope_details", "custom_area", "custom_water_volume", "custom_water_ph",
+        "custom_scope_details", "custom_area", "custom_blocks", "custom_water_volume", "custom_water_ph",
         "custom_water_hardness", "custom_variety", "custom_spray_type", "custom_kit",
         "custom_targets", "custom_spray_team", "custom_spray_plan_team_members",
         "custom_chemical_scans", "custom_spray_application_logsheet",
@@ -55,6 +55,7 @@ SCP_FIELDS = {
     "Stock Entry": [
         "custom_labels_printed", "custom_labels_printed_by",
         "custom_labels_printed_on", "custom_labels_print_count",
+        "custom_spray_plan",
     ],
 }
 

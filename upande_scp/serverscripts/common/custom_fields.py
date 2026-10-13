@@ -297,6 +297,22 @@ def _field_spec() -> dict:
 					"(register_csu_scan). System-populated."
 				),
 			},
+			# Block groups: one plan over joined open-field blocks (any crop).
+			# Filled server-side by spray_plan_creator.block_groups from the
+			# draft payload's `custom_blocks`; empty for a single-block plan.
+			# The shares drive the expense split on the Chemical Spray issue.
+			{
+				"fieldname": "custom_blocks",
+				"label": "Blocks",
+				"fieldtype": "Table",
+				"options": "Spray Plan Block",
+				"insert_after": "custom_area",
+				"read_only": 1,
+				"description": (
+					"Joined blocks this plan sprays in one run. The plan's block is the "
+					"largest; the spray expense is split across these by area share."
+				),
+			},
 			{
 				"fieldname": "custom_spray_application_logsheet",
 				"label": "Spray Application Logsheet",

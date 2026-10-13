@@ -6,6 +6,8 @@
  * geometry; `size="mini"` is the old 150px inline thumbnail that links to the
  * Heatmaps page and renders nothing without geometry. Geometry is fetched
  * lazily (the cached `fetchBedsAndZones`) and projected once per greenhouse.
+ * Avocado findings have no bed: they get the block's outline, every tree as a
+ * grey dot and the finding's tree (else its trap, else the block) pulsing.
  */
 import { useEffect, useState } from "react";
 import { MapPinOff } from "lucide-react";
@@ -13,7 +15,9 @@ import { formatFindingPlace } from "@/lib/finding-place";
 import { BedSvg, type BedMarker } from "@/pages/maps/BedSvg";
 import { projectGeometry, type ProjectedGeometry, type ZoneGeoLike } from "@/pages/maps/bed-projection";
 import { flattenZones, houseOf } from "@/pages/maps/zone-utils";
-import { fetchBedsAndZones, fetchTrapLocations, type TrapLocations } from "@/lib/scouting-api";
+import {
+  fetchBedsAndZones, fetchBlocksGeojson, fetchOrchardTreeRows, fetchTrapLocations, type TrapLocations,
+} from "@/lib/scouting-api";
 import { projectFromUnproject } from "@/lib/geo-project";
 import { observationColor } from "@/lib/observation-colors";
 import { cropSlug } from "@/lib/router";
@@ -42,6 +46,7 @@ export function loadHouseGeometry(house: string): Promise<ProjectedGeometry | nu
 }
 export const clearHouseGeometryCache = () => {
   cache.clear();
+  blockCache.clear();
   trapCache = null;
 };
 
@@ -81,7 +86,251 @@ export function trapSpot(
   return { x: Math.min(100, Math.max(0, x)), y: Math.min(100, Math.max(0, y)), outside };
 }
 
-export function FindingLocationMap({
+/** The pulsing marker (and, for a trap, its dot + label) over a drawing. */
+function SpotPulse({
+  spot, color, large, trap,
+}: { spot: { x: number; y: number } | null; color: string; large: boolean; trap?: string }) {
+  if (!spot) return null;
+  return (
+    <>
+      <span
+        aria-hidden
+        data-testid="finding-map-pulse"
+        className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-ping rounded-full border-2 motion-reduce:animate-none ${large ? "h-8 w-8 border-[3px]" : "h-4 w-4"}`}
+        style={{ left: `${spot.x}%`, top: `${spot.y}%`, borderColor: color }}
+      />
+      {trap ? (
+        <>
+          <span
+            aria-hidden
+            className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full ${large ? "h-3 w-3" : "h-2 w-2"}`}
+            style={{ left: `${spot.x}%`, top: `${spot.y}%`, background: color }}
+          />
+          {large ? (
+            <span
+              data-testid="finding-map-trap-label"
+              className="pointer-events-none absolute -translate-x-1/2 whitespace-nowrap rounded-full bg-black/70 px-2 py-0.5 text-[0.7rem] font-medium text-white"
+              style={{ left: `${spot.x}%`, top: `calc(${spot.y}% + 1.1rem)` }}
+            >
+              Trap {trap}
+            </span>
+          ) : null}
+        </>
+      ) : null}
+    </>
+  );
+}
+
+const avocadoCrop = (crop?: string) => (crop || "").trim().toLowerCase() === "avocado";
+
+/** Avocado findings are placed by block + tree; roses by greenhouse + bed. */
+export function FindingLocationMap(props: { photo: FeedPhoto; crop?: string; size?: "mini" | "large" }) {
+  const p = props.photo;
+  return avocadoCrop(props.crop) || (!(p.greenhouse || p.house) && p.block) ? (
+    <BlockLocationMap {...props} />
+  ) : (
+    <HouseLocationMap {...props} />
+  );
+}
+
+// ---- Avocado: block outline + trees -------------------------------------
+
+export interface ProjectedBlock {
+  width: number;
+  height: number;
+  /** Outline rings as SVG path data. */
+  path: string;
+  /** Tree-name key -> position in the drawing (percent). */
+  trees: { key: string; x: number; y: number }[];
+  centroid: { x: number; y: number };
+  /** lng/lat -> position in the drawing (percent, unclamped). */
+  at: (lng: number, lat: number) => { x: number; y: number };
+}
+
+/** "Row 13 - Tree 1" (scouting) and "..._ROW13_T1" (orchard master) are the
+ *  same tree: compare them as row:tree, else by the plain name. */
+export function treeKey(name: string): string {
+  const n = (name || "").trim();
+  const m = /row[\s_]*(\d+)[\s_-]*(?:tree|t)[\s_]*(\d+)$/i.exec(n);
+  return m ? `${Number(m[1])}:${Number(m[2])}` : n.toLowerCase();
+}
+
+type Ring = number[][];
+const ringsOf = (g: { type?: string; coordinates?: unknown } | null | undefined): Ring[] => {
+  if (!g || !Array.isArray(g.coordinates)) return [];
+  if (g.type === "Polygon") return g.coordinates as Ring[];
+  if (g.type === "MultiPolygon") return (g.coordinates as Ring[][]).flat();
+  return [];
+};
+
+const blockCache = new Map<string, Promise<ProjectedBlock | null>>();
+/** Projected outline + trees of one block (equirectangular, fitted to the outline), cached. */
+export function loadBlockGeometry(block: string): Promise<ProjectedBlock | null> {
+  let hit = blockCache.get(block);
+  if (!hit) {
+    hit = Promise.all([fetchBlocksGeojson(), fetchOrchardTreeRows({ block })])
+      .then(([fc, pts]) => {
+        const rings = (fc?.features || [])
+          .filter((f) => (f.properties as { block?: string } | null)?.block === block)
+          .flatMap((f) => ringsOf(f.geometry as never))
+          .filter((r) => r.length >= 3);
+        if (!rings.length) return null;
+        const all = rings.flat();
+        const lat0 = all.reduce((s, c) => s + c[1], 0) / all.length;
+        const k = Math.cos((lat0 * Math.PI) / 180);
+        const xs = all.map((c) => c[0] * k), ys = all.map((c) => -c[1]);
+        const minX = Math.min(...xs), minY = Math.min(...ys);
+        const w = Math.max(...xs) - minX || 1e-9, h = Math.max(...ys) - minY || 1e-9;
+        const W = 1000, H = Math.max(1, Math.round((W * h) / w));
+        const proj = (lng: number, lat: number) => ({
+          x: ((lng * k - minX) / w) * 100,
+          y: ((-lat - minY) / h) * 100,
+        });
+        const px = (c: number[]) => {
+          const q = proj(c[0], c[1]);
+          return `${((q.x / 100) * W).toFixed(1)} ${((q.y / 100) * H).toFixed(1)}`;
+        };
+        const path = rings.map((r) => `M${r.map(px).join("L")}Z`).join("");
+        const trees = pts.names.map((n, i) => ({ key: treeKey(n), ...proj(pts.coords[i * 2], pts.coords[i * 2 + 1]) }));
+        const cx = all.reduce((s, c) => s + c[0], 0) / all.length;
+        return { width: W, height: H, path, trees, centroid: proj(cx, lat0), at: proj };
+      })
+      .catch(() => {
+        blockCache.delete(block);
+        return null;
+      });
+    blockCache.set(block, hit);
+  }
+  return hit;
+}
+
+function BlockLocationMap({
+  photo: p, crop, size = "mini",
+}: { photo: FeedPhoto; crop?: string; size?: "mini" | "large" }) {
+  const large = size === "large";
+  const [geom, setGeom] = useState<ProjectedBlock | null | undefined>(undefined);
+  const [traps, setTraps] = useState<TrapLocations | null | undefined>(p.trap ? undefined : null);
+  useEffect(() => {
+    let live = true;
+    setGeom(undefined);
+    if (!p.block) {
+      setGeom(null);
+      return;
+    }
+    loadBlockGeometry(p.block).then((g) => live && setGeom(g));
+    return () => {
+      live = false;
+    };
+  }, [p.block]);
+  useEffect(() => {
+    let live = true;
+    if (!p.trap) {
+      setTraps(null);
+      return;
+    }
+    setTraps(undefined);
+    loadTrapLocations().then((t) => live && setTraps(t), () => live && setTraps({}));
+    return () => {
+      live = false;
+    };
+  }, [p.trap]);
+
+  if (geom === undefined || traps === undefined) {
+    return (
+      <div
+        data-testid="finding-map-skeleton"
+        className={large ? "h-full w-full animate-pulse bg-white/5" : "h-[140px] animate-pulse rounded-xl bg-muted/60"}
+      />
+    );
+  }
+  if (!geom) {
+    if (!large) return null;
+    return (
+      <div data-testid="finding-map-empty" className="grid h-full w-full place-items-center p-6 text-center">
+        <div className="flex max-w-sm flex-col items-center gap-2">
+          <MapPinOff className="h-8 w-8 text-white/50" aria-hidden />
+          <p className="text-sm font-medium text-white">No block map for this finding yet</p>
+          {formatFindingPlace(p) ? <p className="text-xs text-white/60">Where: {formatFindingPlace(p)}</p> : null}
+        </div>
+      </div>
+    );
+  }
+  const kind = p.kind === "disease" ? "disease" : "pest";
+  const color = observationColor(p.subject, kind);
+  const ratio = geom.width / geom.height;
+  const clamp = (v: number) => Math.min(100, Math.max(0, v));
+
+  // What to pulse: the finding's tree, else its trap's fixed position, else the block.
+  let spot: { x: number; y: number } | null = null;
+  let note = "";
+  const key = p.tree ? treeKey(p.tree) : "";
+  const tree = key ? geom.trees.find((t) => t.key === key) : undefined;
+  const loc = p.trap ? traps?.[p.trap] : undefined;
+  if (tree) spot = tree;
+  else if (loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng)) {
+    const q = geom.at(loc.lng, loc.lat);
+    spot = { x: clamp(q.x), y: clamp(q.y) };
+    if (q.x < 0 || q.x > 100 || q.y < 0 || q.y > 100) note = "Trap sits outside the block";
+  } else {
+    spot = geom.centroid;
+    note = p.trap ? "Trap position not mapped" : "Tree not mapped";
+  }
+  // The trap's dot + label only when it is the trap being shown.
+  const showTrap = !tree && !!p.trap && !!loc;
+  const svg = (
+    <svg viewBox={`0 0 ${geom.width} ${geom.height}`} className="pointer-events-none h-full w-full" aria-hidden>
+      <path d={geom.path} fill="none" stroke="currentColor" strokeWidth={large ? 3 : 4} className="text-muted-foreground/60" />
+      {geom.trees.map((t, i) => (
+        <circle
+          key={i}
+          data-testid="block-tree-dot"
+          cx={(t.x / 100) * geom.width}
+          cy={(t.y / 100) * geom.height}
+          r={large ? 2.2 : 3}
+          className="fill-muted-foreground/40"
+        />
+      ))}
+    </svg>
+  );
+  const pulse = <SpotPulse spot={spot} color={color} large={large} trap={showTrap ? p.trap : undefined} />;
+  const noteEl = note && large ? (
+    <span data-testid="finding-map-note" className="pointer-events-none absolute left-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-[0.7rem] text-white">
+      {note}
+    </span>
+  ) : null;
+  if (large) {
+    return (
+      <div className="grid h-full w-full place-items-center" style={{ containerType: "size" }}>
+        <div
+          data-testid="finding-map"
+          data-size="large"
+          className="relative rounded-xl bg-[var(--sd-bg-soft)]"
+          style={{ aspectRatio: `${geom.width} / ${geom.height}`, width: `min(100cqw, calc(100cqh * ${ratio}))` }}
+        >
+          {svg}
+          {pulse}
+          {noteEl}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <a
+      href={`#/${cropSlug(crop || "Avocado")}/heatmaps`}
+      data-testid="finding-map"
+      aria-label={`Show ${p.block} on the heatmap`}
+      className="relative mx-auto block overflow-hidden rounded-xl border bg-[var(--sd-bg-soft)]"
+      style={{ aspectRatio: `${geom.width} / ${geom.height}`, maxHeight: 150, maxWidth: "100%" }}
+    >
+      {svg}
+      {pulse}
+    </a>
+  );
+}
+
+// ---- Rose: greenhouse beds ----------------------------------------------
+
+function HouseLocationMap({
   photo: p, crop, size = "mini",
 }: { photo: FeedPhoto; crop?: string; size?: "mini" | "large" }) {
   const large = size === "large";
@@ -158,34 +407,7 @@ export function FindingLocationMap({
       y: (pts.reduce((s, c) => s + c.cy, 0) / pts.length / geom.height) * 100,
     };
   } else note = "Bed not recorded for this finding";
-  const pulse = spot ? (
-    <>
-      <span
-        aria-hidden
-        data-testid="finding-map-pulse"
-        className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 animate-ping rounded-full border-2 motion-reduce:animate-none ${large ? "h-8 w-8 border-[3px]" : "h-4 w-4"}`}
-        style={{ left: `${spot.x}%`, top: `${spot.y}%`, borderColor: color }}
-      />
-      {p.trap ? (
-        <>
-          <span
-            aria-hidden
-            className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full ${large ? "h-3 w-3" : "h-2 w-2"}`}
-            style={{ left: `${spot.x}%`, top: `${spot.y}%`, background: color }}
-          />
-          {large ? (
-            <span
-              data-testid="finding-map-trap-label"
-              className="pointer-events-none absolute -translate-x-1/2 whitespace-nowrap rounded-full bg-black/70 px-2 py-0.5 text-[0.7rem] font-medium text-white"
-              style={{ left: `${spot.x}%`, top: `calc(${spot.y}% + 1.1rem)` }}
-            >
-              Trap {p.trap}
-            </span>
-          ) : null}
-        </>
-      ) : null}
-    </>
-  ) : null;
+  const pulse = <SpotPulse spot={spot} color={color} large={large} trap={p.trap} />;
   const noteEl = note && large ? (
     <span data-testid="finding-map-note" className="pointer-events-none absolute left-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-[0.7rem] text-white">
       {note}

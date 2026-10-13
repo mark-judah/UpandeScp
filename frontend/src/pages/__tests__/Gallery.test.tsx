@@ -198,7 +198,7 @@ describe("Scouting ▸ Gallery", () => {
     fireEvent.click(within(panel).getByRole("button", { name: /View on map/ }));
     const viewer = screen.getByTestId("finding-viewer");
     expect(within(viewer).getByRole("tab", { name: "Location" })).toHaveAttribute("aria-selected", "true");
-    expect(await within(viewer).findByText("No bed map for this block yet")).toBeInTheDocument();
+    expect(await within(viewer).findByText("No block map for this finding yet")).toBeInTheDocument();
     expect(within(viewer).getByTestId("viewer-caption")).toHaveTextContent("Lokitela · Block B3 · Tree 12");
     expect(within(viewer).getByRole("link", { name: /Open in Heatmaps/ }).getAttribute("href")).toContain("#/avocado/heatmaps?gh=Lokitela&obs=Thrips&kind=pest");
     fireEvent.click(within(viewer).getByRole("tab", { name: "Photo" }));

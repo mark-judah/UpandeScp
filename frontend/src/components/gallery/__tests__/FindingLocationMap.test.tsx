@@ -3,12 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchBedsAndZones = vi.fn();
 const fetchTrapLocations = vi.fn();
+const fetchBlocksGeojson = vi.fn();
+const fetchOrchardTreeRows = vi.fn();
 vi.mock("@/lib/scouting-api", () => ({
   fetchBedsAndZones: (...a: unknown[]) => fetchBedsAndZones(...a),
   fetchTrapLocations: (...a: unknown[]) => fetchTrapLocations(...a),
+  fetchBlocksGeojson: (...a: unknown[]) => fetchBlocksGeojson(...a),
+  fetchOrchardTreeRows: (...a: unknown[]) => fetchOrchardTreeRows(...a),
 }));
 
-const { FindingLocationMap, findingZones, clearHouseGeometryCache, loadHouseGeometry, heatmapsHref, trapSpot } = await import(
+const { FindingLocationMap, findingZones, clearHouseGeometryCache, loadHouseGeometry, heatmapsHref, trapSpot, treeKey, loadBlockGeometry } = await import(
   "../FindingLocationMap"
 );
 
@@ -122,5 +126,71 @@ describe("FindingLocationMap", () => {
     expect(s.x).toBeLessThanOrEqual(100);
     expect(trapSpot(g, null)).toBeNull();
     expect(trapSpot(g, { lat: 10, lng: 50 })!.outside).toBe(true);
+  });
+});
+
+describe("FindingLocationMap · avocado block", () => {
+  const sq = (lng: number, lat: number, d: number) => [[[lng, lat], [lng + d, lat], [lng + d, lat + d], [lng, lat + d], [lng, lat]]];
+  const blocks = {
+    type: "FeatureCollection",
+    features: [
+      { type: "Feature", properties: { block: "BLOCK BLK 1 - KL" }, geometry: { type: "Polygon", coordinates: sq(36, -1, 0.01) } },
+      { type: "Feature", properties: { block: "BLOCK BLK 2 - KL" }, geometry: { type: "MultiPolygon", coordinates: [sq(36.1, -1, 0.01)] } },
+    ],
+  };
+  const trees = { names: ["23HA_BLK1_ROW1_T1", "23HA_BLK1_ROW1_T2", "23HA_BLK1_ROW2_T1"], coords: [36.002, -0.998, 36.004, -0.998, 36.002, -0.996] };
+  const avo = { zone: "", bed: "", greenhouse: "", house: "", block: "BLOCK BLK 1 - KL", tree: "BLOCK BLK 1 - KL - Row 1 - Tree 2", subject: "FCM", kind: "pest", entry: "E9", trap: "" } as never;
+  const withAvo = (over: object) => ({ ...(avo as object), ...over }) as never;
+
+  beforeEach(() => {
+    fetchBlocksGeojson.mockReset().mockResolvedValue(blocks);
+    fetchOrchardTreeRows.mockReset().mockResolvedValue(trees);
+  });
+
+  it("treeKey reads both name formats as row:tree", () => {
+    expect(treeKey("23HA_BLK1_ROW1_T2")).toBe("1:2");
+    expect(treeKey("BLOCK BLK 1 - KL - Row 1 - Tree 2")).toBe("1:2");
+    expect(treeKey("Odd")).toBe("odd");
+  });
+  it("mini: draws the outline and every tree, pulses the finding's tree, links to the avocado heatmaps", async () => {
+    render(<FindingLocationMap photo={avo} crop="Avocado" />);
+    const map = await screen.findByTestId("finding-map");
+    expect(map.getAttribute("href")).toBe("#/avocado/heatmaps");
+    expect(map.querySelectorAll("[data-testid='block-tree-dot']").length).toBe(3);
+    expect(map.querySelector("path")).not.toBeNull();
+    const pulse = screen.getByTestId("finding-map-pulse");
+    expect(parseFloat(pulse.style.left)).toBeCloseTo(40, 3);
+    expect(parseFloat(pulse.style.top)).toBeCloseTo(80, 3);
+    expect(fetchBedsAndZones).not.toHaveBeenCalled();
+  });
+  it("large: unmapped tree pulses the block centroid with a note", async () => {
+    render(<FindingLocationMap photo={withAvo({ tree: "BLOCK BLK 1 - KL - Row 9 - Tree 9" })} crop="Avocado" size="large" />);
+    await screen.findByTestId("finding-map");
+    expect(screen.getByTestId("finding-map-note")).toHaveTextContent("Tree not mapped");
+    expect(screen.getByTestId("finding-map-pulse")).toBeInTheDocument();
+  });
+  it("large: unmapped tree with a trap pulses the trap's fixed location", async () => {
+    fetchTrapLocations.mockResolvedValue({ T1: { lat: -0.995, lng: 36.005, source: "GPS", fixes: 1, spread_m: 1, flag: "" } });
+    render(<FindingLocationMap photo={withAvo({ tree: "", trap: "T1" })} crop="Avocado" size="large" />);
+    await screen.findByTestId("finding-map");
+    expect(screen.getByTestId("finding-map-trap-label")).toHaveTextContent("Trap T1");
+    expect(screen.queryByTestId("finding-map-note")).toBeNull();
+  });
+  it("decides by block when there is no greenhouse and no crop", async () => {
+    render(<FindingLocationMap photo={avo} />);
+    expect((await screen.findByTestId("finding-map")).getAttribute("href")).toBe("#/avocado/heatmaps");
+  });
+  it("no block geometry: mini renders nothing, large says so", async () => {
+    const { container, unmount } = render(<FindingLocationMap photo={withAvo({ block: "NOPE" })} crop="Avocado" />);
+    await waitFor(() => expect(screen.queryByTestId("finding-map-skeleton")).toBeNull());
+    expect(container).toBeEmptyDOMElement();
+    unmount();
+    render(<FindingLocationMap photo={withAvo({ block: "NOPE" })} crop="Avocado" size="large" />);
+    expect(await screen.findByText("No block map for this finding yet")).toBeInTheDocument();
+  });
+  it("MultiPolygon blocks are drawn too, and geometry is fetched once per block", async () => {
+    await loadBlockGeometry("BLOCK BLK 2 - KL").then((g) => expect(g?.path).toContain("M"));
+    await loadBlockGeometry("BLOCK BLK 2 - KL");
+    expect(fetchOrchardTreeRows).toHaveBeenCalledTimes(1);
   });
 });

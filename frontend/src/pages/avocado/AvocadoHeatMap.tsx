@@ -444,13 +444,19 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
         id: "block-sel-fill",
         type: "fill",
         source: "block-sel",
-        paint: { "fill-color": "#d9a514", "fill-opacity": 0.14 },
+        paint: { "fill-color": "#d9a514", "fill-opacity": 0.22 },
+      });
+      map.addLayer({
+        id: "block-sel-halo",
+        type: "line",
+        source: "block-sel",
+        paint: { "line-color": "#ffffff", "line-width": 6, "line-opacity": 0.9 },
       });
       map.addLayer({
         id: "block-sel",
         type: "line",
         source: "block-sel",
-        paint: { "line-color": "#d9a514", "line-width": 2, "line-opacity": 0.95 },
+        paint: { "line-color": "#d9a514", "line-width": 3, "line-opacity": 1 },
       });
       // Joined runs: the members' outer edges again, thicker, as one outline.
       map.addSource("block-group", {
@@ -512,6 +518,20 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
       );
     }
   };
+  // The list is clipped once there are picks, so a block picked on the map
+  // (or one of the tail ranks) can sit out of view: scroll its checked row in.
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!selected || !picked.includes(selected)) return;
+    const box = listRef.current;
+    const row = box
+      ? Array.from(box.querySelectorAll<HTMLElement>("[data-block]")).find((r) => r.dataset.block === selected)
+      : null;
+    if (!box || !row) return;
+    const top = row.offsetTop - box.offsetTop;
+    if (top < box.scrollTop || top + row.offsetHeight > box.scrollTop + box.clientHeight)
+      box.scrollTop = Math.max(0, top - box.clientHeight / 2 + row.offsetHeight / 2);
+  }, [selected, picked, planOpen]);
   const toggleRef = useRef(toggleBlock);
   toggleRef.current = toggleBlock;
 
@@ -688,10 +708,11 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
               {first ? (
                   <RowsSkeleton rows={6} />
                 ) : ranked.length ? (
-                  <div className={picked.length ? "max-h-52 overflow-y-auto" : undefined}>
+                  <div ref={listRef} className={picked.length ? "max-h-52 overflow-y-auto" : undefined}>
                   {ranked.map((b) => (
                     <label
                       key={b.tag}
+                      data-block={b.tag}
                       className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-muted"
                     >
                       <Checkbox checked={picked.includes(b.tag)} onCheckedChange={() => toggleBlock(b.tag)} />

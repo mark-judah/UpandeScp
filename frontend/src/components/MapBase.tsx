@@ -26,6 +26,24 @@ export interface MapBaseProps {
 export const DEFAULT_CENTER: [number, number] = [-1.387, 36.756];
 export const DEFAULT_ZOOM = 12;
 
+/** OpenStreetMap's licence and tile policy require the credit, so it is kept,
+ *  but folded into a small ⓘ at the bottom-left instead of a permanent label
+ *  in the corner: tap or hover to read it. */
+export class MapCredit extends L.Control {
+  constructor() {
+    super({ position: "bottomleft" });
+  }
+  onAdd(): HTMLElement {
+    const el = L.DomUtil.create("div", "scp-map-credit");
+    el.innerHTML =
+      '<button type="button" aria-label="Map data credits" title="Map data © OpenStreetMap contributors">i</button>' +
+      '<span>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors</span>';
+    L.DomEvent.disableClickPropagation(el);
+    el.querySelector("button")!.addEventListener("click", () => el.classList.toggle("open"));
+    return el;
+  }
+}
+
 const LIGHT_TILES = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 // "Grey" basemap = the same OSM tiles desaturated + slightly dimmed via a CSS
 // filter (see .scp-grey-tiles). A true dark basemap read as near-black; a
@@ -134,7 +152,7 @@ export function MapBase({
       if (openTip === e.tooltip) openTip = null;
     });
 
-    L.control.attribution({ position: "bottomright", prefix: false }).addTo(map);
+    map.addControl(new MapCredit());
     mapRef.current = map;
     setReady(true);
     onReady(map);

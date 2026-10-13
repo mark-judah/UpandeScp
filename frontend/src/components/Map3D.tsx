@@ -47,13 +47,29 @@ export function Map3D({
       pitch: initialPitch,
       bearing: 0,
       hash: false,
-      attributionControl: { compact: true },
+      attributionControl: false,
     });
     map.addControl(
       new maplibregl.NavigationControl({ visualizePitch: true }),
       "top-right",
     );
     map.addControl(new maplibregl.ScaleControl(), "bottom-left");
+    // The basemap credit, folded into a small ⓘ (see MapBase's MapCredit).
+    map.addControl(
+      {
+        onAdd() {
+          const el = document.createElement("div");
+          el.className = "maplibregl-ctrl scp-map-credit";
+          el.innerHTML =
+            '<button type="button" aria-label="Map data credits" title="Map data © OpenStreetMap contributors">i</button>' +
+            '<span>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors</span>';
+          el.querySelector("button")!.addEventListener("click", () => el.classList.toggle("open"));
+          return el;
+        },
+        onRemove() {},
+      },
+      "bottom-left",
+    );
     mapRef.current = map;
     setReady(true);
     onReady(map);

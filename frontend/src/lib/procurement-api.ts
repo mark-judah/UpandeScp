@@ -365,10 +365,12 @@ export async function listAmendments(
 export function previewAllocation(
   cycle: string,
   received?: Record<string, number>,
+  crop?: string,
 ): Promise<{ cycle: string; mode: AllocationMode; lines: AllocationPreviewLine[] }> {
   return call(`${NS}.preview_allocation`, {
     cycle,
     received: received ? JSON.stringify(received) : undefined,
+    ...(crop ? { crop } : {}),
   });
 }
 
@@ -455,10 +457,10 @@ export function decidePoolRequest(
   });
 }
 
-export function consumptionVsAllocation(cycle: string): Promise<
+export function consumptionVsAllocation(cycle: string, crop?: string): Promise<
   { farm: string; item_code: string; allocated: number; consumed: number; over: number }[]
 > {
-  return call(`${NS}.consumption_vs_allocation`, { cycle });
+  return call(`${NS}.consumption_vs_allocation`, crop ? { cycle, crop } : { cycle });
 }
 
 // ── per-farm quantities by item (Review) ─────────────────────────────────

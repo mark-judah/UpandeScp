@@ -1456,6 +1456,7 @@ function AllocationTab({
   busy: boolean;
   setBusy: (b: boolean) => void;
 }) {
+  const crop = useContext(CropCtx);
   const [lines, setLines] = useState<AllocationPreviewLine[]>([]);
   const [mode, setMode] = useState<AllocationMode>("simple");
   const [received, setReceived] = useState<Record<string, string>>({});
@@ -1477,8 +1478,8 @@ function AllocationTab({
   const load = useCallback(async () => {
     try {
       const [p, d] = await Promise.all([
-        previewAllocation(cycle, receivedMap),
-        getCycle(cycle),
+        previewAllocation(cycle, receivedMap, crop),
+        getCycle(cycle, crop),
       ]);
       setLines(p.lines);
       setMode(p.mode || "simple");
@@ -1488,7 +1489,7 @@ function AllocationTab({
       push(errText(e), "err");
       setLoadError(errText(e));
     }
-  }, [cycle, receivedMap, push]);
+  }, [cycle, receivedMap, push, crop]);
 
   useEffect(() => {
     void load();
@@ -2103,6 +2104,7 @@ function NewCycleDialog({
  *  when it is used. That is the point — a farm that borrows has consumed more than
  *  it was allocated, and the reconciliation should say so rather than hide it. */
 function BudgetTable({ cycle }: { cycle: string }) {
+  const crop = useContext(CropCtx);
   const [rows, setRows] = useState<
     { farm: string; item_code: string; allocated: number; consumed: number; over: number }[]
   >([]);
@@ -2113,7 +2115,7 @@ function BudgetTable({ cycle }: { cycle: string }) {
     setLoaded(false);
     void (async () => {
       try {
-        const out = await consumptionVsAllocation(cycle);
+        const out = await consumptionVsAllocation(cycle, crop);
         if (!cancelled) setRows(out);
       } catch {
         if (!cancelled) setRows([]);
@@ -2124,7 +2126,7 @@ function BudgetTable({ cycle }: { cycle: string }) {
     return () => {
       cancelled = true;
     };
-  }, [cycle]);
+  }, [cycle, crop]);
 
   const over = rows.filter((r) => r.over > 0);
 

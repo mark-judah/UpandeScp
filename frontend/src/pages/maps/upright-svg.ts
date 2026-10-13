@@ -1,3 +1,4 @@
+import { levelOf, paperFor, softFill } from "@/lib/heat-style";
 /**
  * Greenhouse upright-view SVG renderer — direct port of the
  * `buildGreenhouseSVG` block in upande_scp/www/observations_map/index.html
@@ -384,18 +385,16 @@ export function buildGreenhouseUprightSvg(
   }
 
   // Layer 2 — colored polylines per zone.
-  const counts = Object.values(zoneObs).map((o) => o.count);
-  const maxCount = counts.length ? Math.max(...counts, 1) : 1;
 
   let body = "";
   for (const z of projected) {
     const obs = zoneObs[z.name];
     const count = obs?.count || 0;
-    let color = "#cbd5e1";
+    let color = "rgba(10,10,10,0.12)";
     if (obs && count > 0 && obs.color) color = obs.color;
     const hasObs = count > 0;
-    const ratio = hasObs ? Math.min(1, count / maxCount) : 0;
-    const opacity = hasObs ? 0.7 + ratio * 0.3 : 0.55;
+    const opacity = 1;
+    if (hasObs) color = softFill(color, levelOf(count), paperFor());
     const safeName = escapeAttr(z.name);
 
     for (const ring of z.rings) {

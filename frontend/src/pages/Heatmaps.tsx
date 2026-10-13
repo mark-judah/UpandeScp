@@ -8,7 +8,7 @@
  *       when the user narrows obs or stations.
  */
 
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import {
   Maximize2,
   ChevronDown,
@@ -70,7 +70,8 @@ import type { Pt } from "@/lib/hull";
 import { drawEscapeHandler, useDrawArea } from "./maps/use-draw-area";
 import { bedOverlays, useHouseOverlays } from "./maps/use-house-overlays";
 import { DrawAreaBar } from "./maps/DrawAreaBar";
-import { StageLegend } from "./maps/StageLegend";
+import { linkObsId, linkStationId, parseHeatmapLink } from "@/lib/heatmap-link";
+import { StageLegend, HeatRampLegend } from "./maps/StageLegend";
 import { hasWebGL } from "@/lib/webgl";
 import type { TerrainWeekData } from "./maps/Terrain3D";
 
@@ -226,6 +227,10 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   /** Reach back WIDEN_WEEKS weeks from the range's end. */
   const widen = () => setRange((r) => widenedRange(r.to, WIDEN_WEEKS));
   const [show3D, setShow3D] = useState(false);
+  // Deep link (#/<crop>/heatmaps?gh=&obs=&kind=): applied once, for this visit
+  // only. Nothing here writes the remembered place.
+  const link = useMemo(() => parseHeatmapLink(window.location.hash), []);
+  const linkDone = useRef({ station: false, obs: false, range: false });
   /** Farm of the opened card, for its weather history in the modal. */
   const pickedFarm = picked ? farmsByGh[picked.greenhouse] || "" : "";
   // Weather follows the weeks THIS greenhouse was scouted, not a trailing
@@ -293,6 +298,14 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     setFarmsError(cropFarmsError ?? null);
   }, [cropFarms, cropFarmsError]);
 
+  useEffect(() => {
+    if (linkDone.current.station || !link.gh) return;
+    const id = linkStationId(link, farmsByGh);
+    if (!id) return;
+    linkDone.current.station = true;
+    setStationChecks(new Set([id]));
+  }, [link, farmsByGh]);
+
   // Server-side filter: only the crop, date range, and explicit greenhouse
   // selections (if any) go to the server. Obs filtering is purely
   // client-side from the returned card list.
@@ -355,6 +368,23 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     () => Array.from(new Set(Array.from(obsChecks).map(parseObs).filter((o): o is NonNullable<typeof o> => !!o).map((o) => o.name))),
     [obsChecks],
   );
+  // Deep link, once the grid answers: select the target if a card has it; if
+  // the range holds no data, reach to the week of the newest scouting.
+  useEffect(() => {
+    if (!link.gh || !gridState.data || gridState.loading) return;
+    if (!linkDone.current.obs && link.obs) {
+      const id = linkObsId(link, cards);
+      if (id) {
+        linkDone.current.obs = true;
+        setObsChecks(new Set([id]));
+      }
+    }
+    if (!linkDone.current.range && !cards.length && latestScouting && latestScouting < from) {
+      linkDone.current.range = true;
+      jumpToLatest(latestScouting);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [link, gridState.data, gridState.loading, cards, latestScouting, from]);
   // Each card shows its newest week in range, so one distinct week across all
   // cards means the range is yielding a single week of scouting.
   const thinData =
@@ -641,6 +671,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               </button>
             </p>
           )}
+          <HeatRampLegend className="px-1 pb-2" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {visibleCards.map((c) => {
               const geom = geometryByGh[c.greenhouse];
@@ -959,6 +990,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                               </div>
                             ) : null}
                             <StageLegend markers={dayMarkers} className="px-1" />
+                            <HeatRampLegend color={picked.color} className="px-1" />
                             <ScoutRow
                               scouts={slice.scouts}
                               coveragePct={slice.coveragePct}

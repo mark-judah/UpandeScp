@@ -17,6 +17,7 @@
  * + filter popovers always paint above the map.
  */
 
+import { desaturate, levelAlpha, levelOf, paperFor } from "@/lib/heat-style";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
@@ -73,7 +74,8 @@ const SCOUT_PALETTE = [
 ];
 
 /** Route line opacity at rest (dimmed/raised while a route card is open). */
-const ROUTE_OPACITY = 0.5;
+const ROUTE_OPACITY = 0.42;
+const ROUTE_WEIGHT = 1.5;
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -505,13 +507,16 @@ export function RoseScouting() {
       if (!scoutKey) return;
       const color = scoutInfo.colorMap.get(scoutKey) || "#5BB45D";
 
+      // Soft look: hairline outline, a desaturated fill whose depth follows
+      // the zone's entries through the level ramp.
+      const level = levelOf(row.totalEntries);
       const layerObj = L.geoJSON(poly as any, {
         style: () => ({
-          color,
-          weight: 1.2,
-          opacity: 0.9,
-          fillColor: color,
-          fillOpacity: 0.25,
+          color: "#8a8780",
+          weight: 0.5,
+          opacity: 0.35,
+          fillColor: desaturate(color, paperFor()),
+          fillOpacity: levelAlpha(level),
         }),
       });
       layerObj.on("click", () => {
@@ -562,10 +567,12 @@ export function RoseScouting() {
         setSelectedZone(null);
         setSelectedTrail(t.key);
       };
+      // Calm routes: desaturated scout colour, thin; the badge keeps the full colour.
+      const routeColor = desaturate(color, paperFor(), 0.72);
       const lines = t.segments.map((seg) =>
         L.polyline(seg.points as L.LatLngExpression[], {
-          color,
-          weight: 2,
+          color: routeColor,
+          weight: ROUTE_WEIGHT,
           opacity: ROUTE_OPACITY,
           dashArray: seg.dashed ? "2 6" : undefined,
           lineJoin: "round",
@@ -629,7 +636,7 @@ export function RoseScouting() {
       const on = sel === key;
       const dim = sel != null && !on;
       t.lines.forEach((l) =>
-        l.setStyle({ weight: on ? 3.5 : 2, opacity: on ? 0.95 : dim ? 0.12 : ROUTE_OPACITY }),
+        l.setStyle({ weight: on ? 3 : ROUTE_WEIGHT, opacity: on ? 0.9 : dim ? 0.1 : ROUTE_OPACITY }),
       );
       t.startDot.setStyle({ opacity: dim ? 0.2 : 1, fillOpacity: dim ? 0.2 : 1 });
       t.badge.setIcon(badgeIcon(t.initials, t.color, on));

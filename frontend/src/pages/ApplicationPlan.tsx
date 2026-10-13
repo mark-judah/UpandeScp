@@ -46,7 +46,7 @@ import {
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { MarkerDefs, iconKeyToShape } from "./maps/MarkerDefs";
 import { BedSvg, type BedMarker, type ZoneStage } from "./maps/BedSvg";
-import { StageLegend } from "./maps/StageLegend";
+import { StageLegend, HeatRampLegend } from "./maps/StageLegend";
 import {
   projectGeometry,
   type ProjectedGeometry,
@@ -1808,7 +1808,10 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
               </Card>
             )}
             {greenhouse && geometry && (
-              <StageLegend markers={bedMarkers} className="mt-2 px-1" />
+              <>
+                <StageLegend markers={bedMarkers} className="mt-2 px-1" />
+                <HeatRampLegend className="mt-1 px-1" />
+              </>
             )}
           </div>
 

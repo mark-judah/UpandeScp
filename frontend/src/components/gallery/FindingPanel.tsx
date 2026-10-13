@@ -11,6 +11,8 @@ import type { FeedPhoto, PhotoKind } from "@/lib/gallery-api";
 import { formatCapture } from "@/lib/capture-time";
 import { shortHouse } from "@/lib/places";
 import { cn } from "@/lib/utils";
+import { FindingLocationMap } from "@/components/gallery/FindingLocationMap";
+import { preloadImage, thumbSrcSet, thumbUrl, isThumbable } from "@/lib/thumbs";
 
 const KIND_LABEL: Record<PhotoKind, string> = { pest: "Pest", disease: "Disease", other: "Other" };
 
@@ -52,7 +54,9 @@ export function FindingPanel({
   onIndex,
   onLoadMore,
   onClose,
+  crop,
 }: {
+  crop?: string;
   photos: FeedPhoto[];
   index: number;
   hasMore: boolean;
@@ -73,6 +77,12 @@ export function FindingPanel({
       onIndex(index + 1);
     }
   }, [photos.length, index, onIndex]);
+  // Warm the neighbours' panel-size images so stepping is instant.
+  const prevImage = photos[index - 1]?.image;
+  const nextImage = photos[index + 1]?.image;
+  useEffect(() => {
+    for (const src of [prevImage, nextImage]) if (isThumbable(src)) preloadImage(thumbUrl(src, 960));
+  }, [prevImage, nextImage]);
   useEffect(() => {
     setBroken(false);
     setZoomed(false);
@@ -156,7 +166,10 @@ export function FindingPanel({
                 className="block w-full cursor-zoom-in"
               >
                 <img
-                  src={p.image}
+                  src={thumbUrl(p.image, 960)}
+                  srcSet={thumbSrcSet(p.image, [960, 1600]) || undefined}
+                  sizes="380px"
+                  decoding="async"
                   alt={p.caption || `${p.subject || "Scouting"} photo`}
                   onError={() => setBroken(true)}
                   className="max-h-[42vh] w-full object-contain"
@@ -225,13 +238,16 @@ export function FindingPanel({
                 <p className="whitespace-pre-line text-[0.8rem]" data-testid="finding-notes">{p.notes}</p>
               </div>
             ) : null}
+            <FindingLocationMap photo={p} crop={crop} />
             <a
               href={`/app/scouting-entry/${encodeURIComponent(p.entry)}`}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              title="Open scouting entry"
+              aria-label="Open scouting entry"
+              className="inline-flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground"
             >
-              Open scouting entry <ExternalLink className="h-3 w-3" />
+              <ExternalLink className="h-3 w-3" /> Entry
             </a>
           </div>
         </div>

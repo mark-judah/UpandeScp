@@ -18,6 +18,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { FindingPanel, KindPill } from "@/components/gallery/FindingPanel";
 import { NO_PHOTOS_TEXT } from "@/components/gallery/ObservationGallery";
 import { LoadProgress, firstLoad } from "@/components/Loading";
+import { ThumbImg } from "@/components/gallery/ThumbImg";
+import { cn } from "@/lib/utils";
 import { useCropFarms } from "@/hooks/use-crop-farms";
 import {
   fetchPhotoFeed,
@@ -43,6 +45,15 @@ function lastThirtyDays() {
 
 export { formatCapture };
 
+/** The panel is 380px wide (capped to the viewport) at 1rem from the edge; at md+ the page
+ * content makes that room, with the same 300ms curve as the panel's slide-in. */
+export const PANEL_SHIFT = "md:pr-[calc(380px+2rem)]";
+export const PANEL_SHIFT_TRANSITION =
+  "transition-[padding] duration-300 ease-[cubic-bezier(0.22,0.61,0.36,1)] motion-reduce:transition-none";
+export function contentPadClass(panelOpen: boolean): string {
+  return cn(PANEL_SHIFT_TRANSITION, panelOpen && PANEL_SHIFT);
+}
+
 export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   const crop = initialCrop ?? DEFAULT_CROP;
   const { farms, loading: farmsLoading } = useCropFarms(crop);
@@ -65,6 +76,18 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<number | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep the selected tile in view once the grid has reflowed for the panel.
+  useEffect(() => {
+    if (open == null) return;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    const t = window.setTimeout(() => {
+      const el = gridRef.current?.querySelector<HTMLElement>(`[data-photo-index="${open}"]`);
+      el?.scrollIntoView?.({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+    }, reduce ? 0 : 320);
+    return () => window.clearTimeout(t);
+  }, [open]);
 
   const filters = useMemo<FeedFilters>(
     () => ({
@@ -147,7 +170,10 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   return (
     <div className="flex min-h-svh w-full min-w-0 flex-col">
       <PageHeader eyebrow="Scouting · Photos from the field" title="Visual findings" />
-      <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
+      <div
+        data-testid="gallery-content"
+        className={cn("flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6", contentPadClass(open != null))}
+      >
         <div className="flex flex-wrap items-center justify-end gap-2">
           <PlacePicker
             farms={farms}
@@ -214,9 +240,9 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
           <MasonrySkeleton />
         ) : photos.length ? (
           <>
-            <div data-testid="gallery-masonry" className="columns-2 gap-3 sm:columns-3 lg:columns-4 2xl:columns-5">
+            <div ref={gridRef} data-testid="gallery-masonry" className="columns-2 gap-3 sm:columns-3 lg:columns-4 2xl:columns-5">
               {photos.map((p, i) => (
-                <GalleryTile key={`${p.entry}:${p.image}:${i}`} photo={p} onOpen={() => setOpen(i)} />
+                <GalleryTile key={`${p.entry}:${p.image}:${i}`} index={i} photo={p} onOpen={() => setOpen(i)} />
               ))}
             </div>
             <div ref={sentinel} aria-hidden className="h-px" />
@@ -247,6 +273,7 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
 
       {open != null && photos[open] ? (
         <FindingPanel
+          crop={crop}
           photos={photos}
           index={open}
           hasMore={hasMore}
@@ -259,10 +286,12 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
   );
 }
 
-function GalleryTile({ photo: p, onOpen }: { photo: FeedPhoto; onOpen: () => void }) {
+export const TILE_SIZES = "(min-width:1536px) 20vw, (min-width:1024px) 25vw, (min-width:640px) 33vw, 50vw";
+
+function GalleryTile({ photo: p, index, onOpen }: { photo: FeedPhoto; index: number; onOpen: () => void }) {
   const [broken, setBroken] = useState(false);
   return (
-    <figure data-testid="gallery-tile" className="mb-3 break-inside-avoid overflow-hidden rounded-xl border bg-card shadow-[var(--sd-shadow-1)]">
+    <figure data-testid="gallery-tile" data-photo-index={index} className="mb-3 break-inside-avoid overflow-hidden rounded-xl border bg-card shadow-[var(--sd-shadow-1)]">
       <button
         type="button"
         onClick={onOpen}
@@ -274,12 +303,13 @@ function GalleryTile({ photo: p, onOpen }: { photo: FeedPhoto; onOpen: () => voi
             <ImageOff className="h-5 w-5" aria-label="Photo unavailable" />
           </div>
         ) : (
-          <img
+          <ThumbImg
             src={p.image}
+            width={480}
+            sizes={TILE_SIZES}
             alt={p.caption || `${p.subject || "Scouting"} photo`}
-            loading="lazy"
             onError={() => setBroken(true)}
-            className="block w-full bg-[var(--sd-bg-soft)] transition-transform duration-300 group-hover:scale-[1.02]"
+            className="transition-transform group-hover:scale-[1.02]"
           />
         )}
       </button>

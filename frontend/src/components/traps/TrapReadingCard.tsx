@@ -11,6 +11,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
 import { formatCapture } from "@/lib/capture-time";
+import { ThumbImg } from "@/components/gallery/ThumbImg";
 import { DotCarousel } from "@/components/ui/DotCarousel";
 import {
   fetchLatestTrapReading,
@@ -153,12 +154,14 @@ export function TrapReadingCard({
 function TrapPhotoSlide({ photo }: { photo: TrapPhoto }) {
   return (
     <figure className="m-0">
-      <img
+      <ThumbImg
         src={photo.image}
+        width={480}
+        sizes="(min-width:640px) 340px, 90vw"
         alt={`${photo.pest || "Trap"} catch photo`}
-        loading="lazy"
         draggable={false}
-        className="aspect-[16/10] w-full rounded-xl bg-muted object-cover"
+        placeholderClass="aspect-[16/10]"
+        className="aspect-[16/10] rounded-xl object-cover"
       />
       <figcaption className="mt-2 flex items-center gap-2">
         <PersonAvatar id={photo.scout} name={photo.scout_name} image={photo.scout_image} size={28} />

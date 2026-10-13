@@ -8,6 +8,7 @@
  * greenhouse. Outside any provider the name stays plain text, so a component
  * rendered somewhere without a scope never offers a pop-up it cannot fill.
  */
+import { ThumbImg } from "@/components/gallery/ThumbImg";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ImageOff } from "lucide-react";
 import {
@@ -234,11 +235,13 @@ export function ObservationGalleryDialog({
                     {photos.map((p, i) => (
                       <figure key={`${p.entry}:${p.image}:${i}`} data-testid="gallery-photo" className="min-w-0">
                         <a href={p.image} target="_blank" rel="noreferrer" className="block">
-                          <img
+                          <ThumbImg
                             src={p.image}
+                            width={240}
+                            sizes="(min-width:768px) 20vw, (min-width:640px) 30vw, 45vw"
                             alt={p.caption || `${name} photo`}
-                            loading="lazy"
-                            className="w-full aspect-square rounded-md border object-cover bg-[var(--sd-bg-soft)]"
+                            placeholderClass="aspect-square"
+                            className="aspect-square rounded-md border object-cover"
                           />
                         </a>
                         <figcaption className="mt-1 text-[0.7rem] leading-snug">

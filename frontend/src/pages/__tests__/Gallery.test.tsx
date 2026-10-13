@@ -74,7 +74,7 @@ describe("Scouting ▸ Gallery", () => {
     const tiles = within(grid).getAllByTestId("gallery-tile");
     expect(tiles).toHaveLength(2);
     const t = within(tiles[0]);
-    expect(t.getByAltText("caption 1")).toHaveAttribute("src", "/private/files/p1.jpg");
+    expect(t.getByAltText("caption 1")).toHaveAttribute("src", expect.stringContaining("thumb?src=%2Fprivate%2Ffiles%2Fp1.jpg&w=480"));
     expect(t.getByText("Thrips")).toBeInTheDocument();
     // no user names or avatars on the grid tiles
     expect(t.queryByText("Imelda Mutua")).toBeNull();
@@ -164,6 +164,11 @@ describe("Scouting ▸ Gallery", () => {
     const panel = await screen.findByTestId("finding-panel");
     expect(panel.className).toMatch(/fixed/);
     expect(panel.className).toMatch(/right-4/);
+    // the grid makes room for the panel at md+, and the panel image is the 960 thumb
+    expect(screen.getByTestId("gallery-content").className).toContain("md:pr-[calc(380px+2rem)]");
+    const big = within(panel).getByRole("button", { name: "View photo full size" }).querySelector("img")!;
+    expect(big.getAttribute("src")).toContain("&w=960");
+    expect(big.getAttribute("srcset")).toMatch(/w=960 960w, .*w=1600 1600w/);
     const w = within(panel);
     expect(w.getByTestId("lightbox-scout")).toHaveTextContent("Imelda Mutua");
     expect(w.getByTestId("finding-where")).toHaveTextContent("Chepsito · GH1");
@@ -174,6 +179,7 @@ describe("Scouting ▸ Gallery", () => {
     expect(w.getByTestId("finding-notes")).toHaveTextContent("DEMO trap catch");
     fireEvent.click(w.getByRole("button", { name: "View photo full size" }));
     expect(screen.getByTestId("finding-zoom")).toBeInTheDocument();
+    expect(screen.getByTestId("finding-zoom").querySelector("img")!.getAttribute("src")).toMatch(/^\/private\/files\//);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByTestId("finding-zoom")).toBeNull();
     expect(screen.getByTestId("finding-panel")).toBeInTheDocument();

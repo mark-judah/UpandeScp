@@ -413,7 +413,7 @@ html { font-size: 85%; }
   }
 }
 .scp-panel-in {
-  animation: scp-panel-in 260ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation: scp-panel-in 300ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 @media (prefers-reduced-motion: reduce) {
   .scp-panel-in {

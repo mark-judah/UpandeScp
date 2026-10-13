@@ -183,7 +183,7 @@ describe("trap map motion", () => {
       fireEvent.click(target);
     });
     const card = await screen.findByTestId("trap-reading-card");
-    await waitFor(() => expect(card.querySelectorAll('img[src^="/private/files/"][alt$="catch photo"]')).toHaveLength(2));
+    await waitFor(() => expect(card.querySelectorAll('img[src*="thumb?src=%2Fprivate%2Ffiles%2F"][alt$="catch photo"]')).toHaveLength(2));
     expect(fetchTrapPhotos.mock.calls[0][0]).toBe("KR - T1");
     expect(card.querySelectorAll('[data-testid="carousel-dots"] button')).toHaveLength(2);
   });

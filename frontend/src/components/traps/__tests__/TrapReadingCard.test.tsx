@@ -66,7 +66,7 @@ describe("TrapReadingCard photos", () => {
     ]);
     render(<TrapReadingCard trap="KR - T1" from="2026-10-05" to="2026-10-11" onClose={() => {}} />);
     const img = await screen.findByAltText("Thrips catch photo");
-    expect(img).toHaveAttribute("src", "/private/files/a.jpg");
+    expect(img).toHaveAttribute("src", expect.stringContaining("thumb?src=%2Fprivate%2Ffiles%2Fa.jpg&w=480"));
     expect(fetchTrapPhotos).toHaveBeenCalledWith("KR - T1", "2026-10-05", "2026-10-11");
     expect(screen.getByText("AMINA K")).toBeInTheDocument();
     expect(screen.queryByTestId("carousel-dots")).toBeNull(); // one photo: no dots

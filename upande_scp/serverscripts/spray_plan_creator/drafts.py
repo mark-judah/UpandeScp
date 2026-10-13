@@ -422,10 +422,35 @@ def _validate_payload(payload: dict, scope: dict) -> None:
         frappe.throw("Add at least one chemical to the plan.")
     if flt(payload.get("custom_water_volume")) <= 0:
         frappe.throw("Water volume (L) is required and must be greater than zero.")
+    _reject_untargeted(chems)
     limits = {}
     for c in chems:
         validate_rate_in_limits(
             c.get("item_code"), c.get("application_rate") or c.get("rate") or 0, limits
+        )
+
+
+def _reject_untargeted(chems: list[dict]) -> None:
+    """A pest-control product with no registered target never goes on a plan.
+
+    The pickers already leave these out (`list_chemical_items`, the tank-mix
+    list), but that is a search filter: a saved payload was never checked, so a
+    trap, a predator or an unregistered chemical could still be posted. Foliars
+    and the non-target types (adjuvant, pH buffer, growth regulator) are not
+    affected — see `spray_compliance.rules.is_non_target`."""
+    from ..spray_compliance.context import untargeted_items
+
+    codes = {c.get("item_code") for c in chems if c.get("item_code")}
+    if not codes:
+        return
+    bad = sorted(codes & set(untargeted_items()))
+    if bad:
+        names = frappe.get_all("Item", filters={"name": ("in", bad)}, pluck="item_name")
+        frappe.throw(
+            "These products have no registered target, so they cannot go on a spray "
+            f"plan: {', '.join(names or bad)}. Add the pests or diseases they are "
+            "registered for on the Spray Product first.",
+            title="Product without a target",
         )
 
 

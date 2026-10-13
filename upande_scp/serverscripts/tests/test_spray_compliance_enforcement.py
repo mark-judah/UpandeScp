@@ -405,3 +405,30 @@ class TestDraftWiring(_Base):
 		r = self._run(go)
 		self.assertEqual(r["compliance"]["status"], "Warnings")
 		self.write.assert_called_once()
+
+
+class TestRejectUntargetedOnSave(unittest.TestCase):
+	"""The picker hides untargeted products; the save path must refuse them too."""
+
+	def test_untargeted_product_is_refused(self):
+		from unittest import mock
+		from upande_scp.serverscripts.spray_plan_creator import drafts
+
+		with mock.patch(
+			"upande_scp.serverscripts.spray_compliance.context.untargeted_items",
+			return_value=["TRAP-1"],
+		), mock.patch.object(drafts.frappe, "get_all", return_value=["Blue Roller Trap"]):
+			with self.assertRaises(frappe.ValidationError) as ctx:
+				drafts._reject_untargeted([{"item_code": "TRAP-1"}, {"item_code": "OK-1"}])
+		self.assertIn("Blue Roller Trap", str(ctx.exception))
+
+	def test_targeted_and_foliar_products_pass(self):
+		from unittest import mock
+		from upande_scp.serverscripts.spray_plan_creator import drafts
+
+		with mock.patch(
+			"upande_scp.serverscripts.spray_compliance.context.untargeted_items",
+			return_value=["TRAP-1"],
+		):
+			drafts._reject_untargeted([{"item_code": "OK-1"}, {"item_code": "FOLIAR-1"}])
+		drafts._reject_untargeted([])

@@ -31,7 +31,7 @@ import {
 } from "@/lib/observation-colors";
 import { currentWeekRange } from "@/lib/utils";
 import type { ScoutingEntry } from "@/lib/scouting-types";
-import { prefersReducedMotion, trapMarkerHtml, trapPulse } from "@/lib/trap-pulse";
+import { prefersReducedMotion, trapMarkerColors, trapFocusZoom, trapMarkerHtml, trapPulse, withAlpha } from "@/lib/trap-pulse";
 import { shortHouse } from "@/lib/places";
 import { TrapReadingCard } from "@/components/traps/TrapReadingCard";
 
@@ -60,13 +60,7 @@ interface TrapAgg {
   latest: { date: string; time: string; scout: string; count: number; pest: string } | null;
 }
 
-/** "#d9a514" + 0.45 → "rgba(217,165,20,0.45)"; anything else → fallback. */
-export function withAlpha(hex: string | undefined, a: number, fallback: string): string {
-  const m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim());
-  if (!m) return fallback;
-  const n = parseInt(m[1], 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-}
+export { withAlpha };
 
 function stampOf(e: ScoutingEntry): string {
   return `${e.date_of_capture || ""} ${e.time_of_capture || ""}`;
@@ -439,6 +433,8 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
   const layerRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const [selected, setSelected] = useState<string | null>(null);
+  const selectedRef = useRef<string | null>(null);
+  selectedRef.current = selected;
   const selectTimer = useRef<number | null>(null);
   const revealRef = useRef<(() => void) | null>(null);
 
@@ -450,7 +446,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     if (selectTimer.current) window.clearTimeout(selectTimer.current);
     if (revealRef.current) m.off("moveend", revealRef.current);
     setSelected(null);
-    const zoom = Math.min(m.getMaxZoom() || 19, Math.max(m.getZoom() + 1, 18));
+    const zoom = trapFocusZoom(m.getZoom(), m.getMaxZoom());
     const reveal = () => {
       if (selectTimer.current) window.clearTimeout(selectTimer.current);
       selectTimer.current = null;
@@ -465,15 +461,20 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
       return;
     }
     // Listen only after flyTo starts: stopping an earlier flight fires moveend.
-    m.flyTo([lat, lng], zoom, { duration: 0.8 });
+    m.flyTo([lat, lng], zoom, { duration: 0.6 });
     m.once("moveend", reveal);
     // A fly of zero distance may not fire moveend; never leave the click dead.
-    selectTimer.current = window.setTimeout(reveal, 1200);
+    selectTimer.current = window.setTimeout(reveal, 1000);
   }, []);
 
   useEffect(() => () => {
     if (selectTimer.current) window.clearTimeout(selectTimer.current);
   }, []);
+
+  // The colour function changes identity as the palette loads; markers are
+  // redrawn through a ref so that never re-runs the framing below.
+  const pestColorRef = useRef(resolvePestColor);
+  pestColorRef.current = resolvePestColor;
 
   useEffect(() => {
     const m = mapRef.current;
@@ -484,7 +485,6 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
     markersRef.current.clear();
     if (!visibleTraps.length) return;
 
-    const bounds = L.latLngBounds([]);
     const reduced = prefersReducedMotion();
     for (const t of visibleTraps) {
       const pos = trapPosition(t);
@@ -496,15 +496,14 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
       // legend and everywhere else in SCP (grey for zero).
       const count = t.totalCount || 0;
       const { size } = trapPulse(count);
-      const isZero = count <= 0;
-      const pestHex = resolvePestColor(t.pest);
+      const colors = trapMarkerColors(pestColorRef.current(t.pest), count);
       const icon = L.divIcon({
         className: "scp-trap-marker",
         html: trapMarkerHtml({
           key: t.trap,
           count,
-          fill: isZero ? "rgba(10,10,10,0.20)" : withAlpha(pestHex, 0.45, "rgba(217,165,20,0.35)"),
-          stroke: isZero ? "rgba(10,10,10,0.28)" : withAlpha(pestHex, 0.9, "rgba(217,165,20,0.80)"),
+          maxCount: t.maxCount,
+          ...colors,
           reducedMotion: reduced,
         }),
         iconSize: [size, size],
@@ -518,7 +517,28 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
       marker.on("click", () => focusTrap(t.trap, lat, lng));
       marker.addTo(layer);
       markersRef.current.set(t.trap, marker);
-      bounds.extend([lat, lng]);
+    }
+    markersRef.current.forEach((mk, trap) => {
+      mk.getElement()?.classList.toggle("scp-trap-selected", trap === selectedRef.current);
+    });
+  }, [visibleTraps, resolvePestColor, focusTrap]);
+
+  // Frame all the traps ONLY when the set of traps (the filters) changes —
+  // never on selection or on the colour function changing identity, which
+  // used to refit the view and snap it out of a selected trap.
+  const framingKey = useMemo(
+    () => visibleTraps.map((t) => t.trap).join("|") + `#${filters.farm}`,
+    [visibleTraps, filters.farm],
+  );
+  const visibleTrapsRef = useRef(visibleTraps);
+  visibleTrapsRef.current = visibleTraps;
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m) return;
+    const bounds = L.latLngBounds([]);
+    for (const t of visibleTrapsRef.current) {
+      const pos = trapPosition(t);
+      if (pos) bounds.extend([pos.lat, pos.lng]);
     }
     if (bounds.isValid()) {
       m.fitBounds(bounds.pad(0.1), { animate: false });
@@ -532,7 +552,8 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
         { animate: false },
       );
     }
-  }, [visibleTraps, mapSettings, filters.farm, focusTrap, resolvePestColor]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [framingKey, mapSettings.lat, mapSettings.lon]);
 
   // Off-screen traps hold their pulse; re-checked whenever the view settles.
   useEffect(() => {

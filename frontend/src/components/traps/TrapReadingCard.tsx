@@ -11,7 +11,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
 import { formatCapture } from "@/lib/capture-time";
-import { fetchLatestTrapReading, type TrapReading } from "@/lib/trap-reading-api";
+import { DotCarousel } from "@/components/ui/DotCarousel";
+import {
+  fetchLatestTrapReading,
+  fetchTrapPhotos,
+  type TrapPhoto,
+  type TrapReading,
+} from "@/lib/trap-reading-api";
 
 /** What the map computed from its entries — shown before the server answers. */
 export interface LocalReading {
@@ -49,6 +55,18 @@ export function TrapReadingCard({
     fetchLatestTrapReading(trap, from, to)
       .then((r) => !cancelled && setReading(r))
       .catch(() => !cancelled && setFailed(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [trap, from, to]);
+
+  const [photos, setPhotos] = useState<TrapPhoto[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    setPhotos([]);
+    fetchTrapPhotos(trap, from, to)
+      .then((p) => !cancelled && setPhotos(p))
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -100,6 +118,24 @@ export function TrapReadingCard({
         </div>
       )}
 
+      {/* Smooth height: the row grows from 0fr to 1fr when photos arrive. */}
+      <div
+        className={`grid transition-[grid-template-rows,margin] duration-300 ease-out motion-reduce:transition-none ${
+          photos.length ? "mt-3 grid-rows-[1fr]" : "mt-0 grid-rows-[0fr]"
+        }`}
+        data-testid="trap-photos"
+      >
+        <div className="min-h-0 overflow-hidden">
+          {photos.length ? (
+            <DotCarousel label={`Photos at ${trap}`}>
+              {photos.map((p) => (
+                <TrapPhotoSlide key={`${p.entry}-${p.image}`} photo={p} />
+              ))}
+            </DotCarousel>
+          ) : null}
+        </div>
+      </div>
+
       {details?.length ? (
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-t pt-3 text-[0.72rem]">
           {details.map((d) => (
@@ -111,5 +147,32 @@ export function TrapReadingCard({
         </dl>
       ) : null}
     </MapFloatingCard>
+  );
+}
+
+function TrapPhotoSlide({ photo }: { photo: TrapPhoto }) {
+  return (
+    <figure className="m-0">
+      <img
+        src={photo.image}
+        alt={`${photo.pest || "Trap"} catch photo`}
+        loading="lazy"
+        draggable={false}
+        className="aspect-[16/10] w-full rounded-xl bg-muted object-cover"
+      />
+      <figcaption className="mt-2 flex items-center gap-2">
+        <PersonAvatar id={photo.scout} name={photo.scout_name} image={photo.scout_image} size={28} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-medium">{photo.scout_name}</div>
+          <div className="text-[0.68rem] tabular-nums text-muted-foreground">
+            {formatCapture(photo.time ? `${photo.date} ${photo.time}` : photo.date)}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-sm font-semibold leading-none tabular-nums">{photo.count}</div>
+          <div className="mt-0.5 max-w-[6rem] truncate text-[0.65rem] text-muted-foreground">{photo.pest}</div>
+        </div>
+      </figcaption>
+    </figure>
   );
 }

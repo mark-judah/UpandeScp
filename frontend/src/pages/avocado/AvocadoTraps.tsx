@@ -3,7 +3,9 @@ import { RowsSkeleton } from "@/components/Loading";
 import { fetchTrapLocations, type TrapLocations } from "@/lib/scouting-api";
 import { AvocadoTreeMap } from "./AvocadoTreeMap";
 import type { AvocadoView } from "./tree-map-types";
-import { deriveTrapMarkers } from "./derive-traps";
+import { deriveTrapMarkers, pestTotals } from "./derive-traps";
+import { MapControlPanel } from "@/components/maps/MapControlPanel";
+import { useObservationColors } from "@/lib/observation-colors";
 import { TrapReadingCard } from "@/components/traps/TrapReadingCard";
 
 export function AvocadoTraps() {
@@ -19,13 +21,14 @@ export function AvocadoTraps() {
       cancelled = true;
     };
   }, []);
+  const { pest: pestColor } = useObservationColors();
   const view = useMemo<AvocadoView>(
     () => ({
       title: "Traps",
-      subtitle: "Orchard trees · trap catches sized and pulsing by count",
+      subtitle: "Orchard trees · colour = pest · size, pulse and sides = catches",
       // Trees stay plain (unscouted colour); trap catches are the signal.
       deriveColors: () => new Map<string, string>(),
-      deriveMarkers: (data) => deriveTrapMarkers(data, fixed),
+      deriveMarkers: (data) => deriveTrapMarkers(data, fixed, pestColor),
       markerCard: (m, range, onClose) =>
         m.label ? (
           <TrapReadingCard
@@ -48,9 +51,38 @@ export function AvocadoTraps() {
             onClose={onClose}
           />
         ) : null,
+      renderLegend: (data, loading) => {
+        const totals = pestTotals(deriveTrapMarkers(data, fixed, pestColor));
+        return (
+          <MapControlPanel
+            title="Pests in view"
+            count={loading ? undefined : totals.length}
+            className="bottom-4 left-auto right-4 top-auto"
+          >
+            {loading ? (
+              <RowsSkeleton rows={4} />
+            ) : totals.length === 0 ? (
+              <div className="text-[0.72rem] text-muted-foreground">No pest data</div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {totals.map((t) => (
+                  <div key={t.pest} className="flex items-center gap-2 text-[0.72rem] text-foreground/80">
+                    <span className="h-3.5 w-3.5 shrink-0 rounded-full border" style={{ background: pestColor(t.pest) }} />
+                    <span className="flex-1 truncate">{t.pest}</span>
+                    <span className="tabular-nums text-muted-foreground">{t.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mt-3 border-t pt-2 text-[0.65rem] text-muted-foreground">
+              Size and pulse show how many were caught; sides, the biggest single catch.
+            </div>
+          </MapControlPanel>
+        );
+      },
       panelTitle: "Traps",
       renderPanel: (data, loading) => {
-        const traps = deriveTrapMarkers(data, fixed);
+        const traps = deriveTrapMarkers(data, fixed, pestColor);
         return (
           <>
             <div className="space-y-0.5">
@@ -59,7 +91,7 @@ export function AvocadoTraps() {
               ) : traps.length ? (
                 traps.map((t) => (
                   <div key={t.label} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs hover:bg-muted">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ background: t.color }} aria-hidden />
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ background: t.count > 0 ? t.color : undefined }} aria-hidden />
                     <span className="flex-1 truncate" title={t.label}>{t.label}</span>
                     <span className="tabular-nums text-muted-foreground">{t.count}</span>
                   </div>
@@ -72,7 +104,7 @@ export function AvocadoTraps() {
         );
       },
     }),
-    [fixed],
+    [fixed, pestColor],
   );
 
   return <AvocadoTreeMap view={view} />;

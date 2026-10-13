@@ -5,8 +5,12 @@ import type { ProcessedData } from "@/lib/scouting-types";
 export interface MarkerPoint {
   lng: number;
   lat: number;
-  count: number; // drives the sqrt-scaled radius
-  color: string;
+  count: number; // total catches: drives size and pulse
+  /** Highest single catch: drives the polygon's number of sides. */
+  maxCount?: number;
+  /** The pest caught most here (its colour is `color`). */
+  pest?: string;
+  color: string; // the pest's colour (grey at zero)
   label?: string;
   /** The newest reading in the window (traps), for the click card. */
   latest?: { date: string; time: string; scout: string; count: number; pest: string };
@@ -33,6 +37,8 @@ export interface AvocadoView {
     range: { from: string; to: string },
     onClose: () => void,
   ) => ReactNode;
+  /** Floating legend at the bottom-right; hidden while a marker card is open. */
+  renderLegend?: (data: ProcessedData | null, loading?: boolean) => ReactNode;
   /** Draw the per-scout movement trails layer (scouting only). */
   showTracks?: boolean;
   /** The observation whose patches the map outlines on a picked block

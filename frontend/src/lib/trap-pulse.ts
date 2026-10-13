@@ -62,19 +62,81 @@ export function prefersReducedMotion(): boolean {
   }
 }
 
-/** HTML for a Leaflet divIcon: the ring (when it pulses and motion is allowed)
- *  under the core disc. Colours are CSS colour strings. */
+export const MIN_SIDES = 3;
+export const MAX_SIDES = 20;
+
+/** Polygon sides for a trap: twice its highest single catch, 3–20. */
+export function polygonSides(maxCount: number): number {
+  const n = Number.isFinite(maxCount) ? Math.round(maxCount * 2) : 0;
+  return Math.max(MIN_SIDES, Math.min(MAX_SIDES, n));
+}
+
+/** SVG `points` for a regular polygon inscribed in a `size` square, first
+ *  vertex at the top (so 4 sides is a diamond, 3 an upright triangle). */
+export function polygonPoints(sides: number, size: number, inset = 1): string {
+  const n = Math.max(MIN_SIDES, Math.min(MAX_SIDES, Math.round(sides)));
+  const c = size / 2;
+  const r = Math.max(0, c - inset);
+  const pts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    pts.push(`${(c + r * Math.cos(a)).toFixed(2)},${(c + r * Math.sin(a)).toFixed(2)}`);
+  }
+  return pts.join(" ");
+}
+
+/** HTML for a trap marker (Leaflet divIcon, or a MapLibre Marker element):
+ *  inline SVG polygon core with a pulse ring of the same shape under it.
+ *  `maxCount` (highest single catch) sets the sides; a zero-catch trap stays a
+ *  small circle. Colours are CSS colour strings. */
 export function trapMarkerHtml(opts: {
   key: string;
   count: number;
+  maxCount?: number;
   fill: string;
   stroke: string;
   reducedMotion: boolean;
 }): string {
   const p = trapPulse(opts.count);
+  const s = p.size;
+  const shape = (extra: string) =>
+    p.pulse
+      ? `<polygon points="${polygonPoints(polygonSides(opts.maxCount ?? 0), s)}" ${extra}/>`
+      : `<circle cx="${s / 2}" cy="${s / 2}" r="${s / 2 - 1}" ${extra}/>`;
+  const paint = `fill="${opts.fill}" stroke="${opts.stroke}" stroke-width="1.5" stroke-linejoin="round"`;
+  const svg = (cls: string, style: string, body: string) =>
+    `<svg class="${cls}" style="${style}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" aria-hidden="true">${body}</svg>`;
   const ring =
     p.pulse && !opts.reducedMotion
-      ? `<span class="scp-trap-ring" style="--trap-pulse-scale:${p.scale};--trap-pulse-dur:${p.duration}s;animation-delay:-${(pulsePhase(opts.key) * p.duration).toFixed(2)}s;border-color:${opts.stroke};background:${opts.fill}"></span>`
+      ? svg(
+          "scp-trap-ring",
+          `--trap-pulse-scale:${p.scale};--trap-pulse-dur:${p.duration}s;animation-delay:-${(pulsePhase(opts.key) * p.duration).toFixed(2)}s`,
+          shape(paint),
+        )
       : "";
-  return `<div class="scp-trap" style="width:${p.size}px;height:${p.size}px">${ring}<span class="scp-trap-core" style="background:${opts.fill};border-color:${opts.stroke}"></span></div>`;
+  return `<div class="scp-trap" style="width:${s}px;height:${s}px">${ring}${svg("scp-trap-core", "", shape(paint))}</div>`;
 }
+
+/** "#d9a514" + 0.45 → "rgba(217,165,20,0.45)"; anything else → fallback. */
+export function withAlpha(hex: string | undefined, a: number, fallback: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim());
+  if (!m) return fallback;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+/** Fill and outline for a trap marker: the pest's colour, grey at zero. */
+export function trapMarkerColors(pestHex: string | undefined, count: number): { fill: string; stroke: string } {
+  if (!(count > 0)) return { fill: "rgba(10,10,10,0.20)", stroke: "rgba(10,10,10,0.28)" };
+  return {
+    fill: withAlpha(pestHex, 0.45, "rgba(217,165,20,0.35)"),
+    stroke: withAlpha(pestHex, 0.9, "rgba(217,165,20,0.80)"),
+  };
+}
+
+/** Selecting a trap zooms IN to it, never out: the current zoom, or ~19. */
+export const TRAP_FOCUS_ZOOM = 19;
+export function trapFocusZoom(current: number, max?: number): number {
+  return Math.min(max || TRAP_FOCUS_ZOOM, Math.max(current, TRAP_FOCUS_ZOOM));
+}
+

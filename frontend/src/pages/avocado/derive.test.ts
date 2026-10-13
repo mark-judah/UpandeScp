@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { ProcessedData } from "@/lib/scouting-types";
 import { deriveScoutColors, deriveScoutRoster, SCOUT_PALETTE } from "./derive-scouts";
 import { deriveObservationColors, deriveObservationRoster } from "./derive-observations";
-import { deriveTrapMarkers, severityColor } from "./derive-traps";
+import { deriveTrapMarkers, pestTotals } from "./derive-traps";
 
 function data(entries: any[]): ProcessedData {
   return { entries } as ProcessedData;
@@ -66,17 +66,22 @@ describe("deriveTrapMarkers", () => {
     const m = deriveTrapMarkers(d);
     expect(m[0]).toMatchObject({ label: "TR1", count: 10, lng: 2, lat: 1 });
     expect(m[1]).toMatchObject({ label: "TR2", count: 1 });
-    expect(m[0].color).toBe(severityColor(10));
   });
   it("drops trap catches with no usable coordinate", () => {
     const d = data([{ latitude: 0, longitude: 0, trap_scouting_entry: [{ trap: "TR1", count: 3 }] }]);
     expect(deriveTrapMarkers(d)).toEqual([]);
   });
-  it("severityColor ramps by catch count", () => {
-    expect(severityColor(0)).toBe("#e5e7eb");
-    expect(severityColor(3)).toBe("#fde68a");
-    expect(severityColor(60)).toBe("#f97316");
-    expect(severityColor(1000)).toBe("#7c2d12");
+  it("colours a marker by its main pest (grey at zero), with no severity ramp", () => {
+    const pc = (p: string) => (p === "Thrips" ? "#111111" : "#222222");
+    const d = data([
+      { latitude: 1, longitude: 2, trap_scouting_entry: [{ trap: "TR1", pest: "Thrips", count: 2 }, { trap: "TR1", pest: "Mites", count: 9 }] },
+      { latitude: 1, longitude: 2, trap_scouting_entry: [{ trap: "TR1", pest: "Thrips", count: 1 }] },
+      { latitude: 5, longitude: 6, trap_scouting_entry: [{ trap: "TR2", pest: "Thrips", count: 0 }] },
+    ]);
+    const m = deriveTrapMarkers(d, {}, pc);
+    expect(m[0]).toMatchObject({ label: "TR1", pest: "Mites", color: "#222222", maxCount: 9, count: 12 });
+    expect(m[1]).toMatchObject({ label: "TR2", count: 0, color: "#9ca3af", maxCount: 0 });
+    expect(pestTotals(m)).toEqual([{ pest: "Mites", count: 12 }, { pest: "Thrips", count: 0 }]);
   });
 
   it("counts only located catches for a trap (coord-less catch dropped)", () => {

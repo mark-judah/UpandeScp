@@ -28,8 +28,11 @@ const entries = [
 ] as unknown as ScoutingEntry[];
 
 const fetchLatestTrapReading = vi.fn();
+const fetchTrapPhotos = vi.fn();
+let theMap: L.Map | null = null;
 vi.mock("@/lib/trap-reading-api", () => ({
   fetchLatestTrapReading: (...a: unknown[]) => fetchLatestTrapReading(...a),
+  fetchTrapPhotos: (...a: unknown[]) => fetchTrapPhotos(...a),
 }));
 // Stable across renders, as the real hook's payload is.
 const scouting = { data: { entries }, loading: false, progress: null, weeksLoaded: 1, weeksTotal: 1 };
@@ -61,6 +64,7 @@ vi.mock("@/components/MapBase", () => ({
     useEffect(() => {
       const m = L.map(ref.current!, { zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false })
         .setView([-1.3, 36.7], 15);
+      theMap = m;
       onReady(m);
       return () => {
         m.remove();
@@ -88,6 +92,8 @@ function setReducedMotion(on: boolean) {
 const original = window.matchMedia;
 beforeEach(() => {
   fetchLatestTrapReading.mockReset();
+  fetchTrapPhotos.mockReset();
+  fetchTrapPhotos.mockResolvedValue([]);
   fetchLatestTrapReading.mockResolvedValue({
     trap: "KR - T1", entry: "SE-2", scout: "100962", scoutName: "IMELDA WANZA MUTUA",
     image: "/private/files/100962.jpg", date: "2026-10-09", time: "14:35:10", count: 7, pest: "Thrips",
@@ -143,5 +149,42 @@ describe("trap map motion", () => {
     expect(selected[0].getAttribute("title")).toMatch(/^KR - T1/);
     fireEvent.click(screen.getByRole("button", { name: "Close trap card" }));
     expect(screen.queryByTestId("trap-reading-card")).toBeNull();
+  });
+
+  it("selecting a trap keeps the zoomed-in view: no refit to all traps", async () => {
+    setReducedMotion(true);
+    const { container } = await renderMap();
+    const framed = theMap!.getZoom();
+    const target = Array.from(container.querySelectorAll<HTMLElement>(".scp-trap-marker"))
+      .find((el) => el.getAttribute("title")?.startsWith("KR - T1"))!;
+    await act(async () => {
+      fireEvent.click(target);
+    });
+    await screen.findByTestId("trap-reading-card");
+    await waitFor(() => expect(screen.getByTestId("trap-card-scout")).toHaveTextContent("IMELDA"));
+    expect(theMap!.getZoom()).toBeGreaterThanOrEqual(19);
+    expect(theMap!.getZoom()).toBeGreaterThan(framed);
+    const c = theMap!.getCenter();
+    expect(c.lat).toBeCloseTo(-1.3, 3);
+    fireEvent.click(screen.getByRole("button", { name: "Close trap card" }));
+    expect(theMap!.getZoom()).toBeGreaterThanOrEqual(19); // closing does not zoom back out
+  });
+
+  it("shows the trap's photos in a carousel on the card", async () => {
+    setReducedMotion(true);
+    fetchTrapPhotos.mockResolvedValue([
+      { image: "/private/files/a.jpg", entry: "SE-1", scout: "100961", scout_name: "AMINA K", scout_image: "", count: 12, pest: "Thrips", date: "2026-10-08", time: "09:10:00" },
+      { image: "/private/files/b.jpg", entry: "SE-2", scout: "100962", scout_name: "IMELDA", scout_image: "", count: 7, pest: "Thrips", date: "2026-10-09", time: "14:35:10" },
+    ]);
+    const { container } = await renderMap();
+    const target = Array.from(container.querySelectorAll<HTMLElement>(".scp-trap-marker"))
+      .find((el) => el.getAttribute("title")?.startsWith("KR - T1"))!;
+    await act(async () => {
+      fireEvent.click(target);
+    });
+    const card = await screen.findByTestId("trap-reading-card");
+    await waitFor(() => expect(card.querySelectorAll('img[src^="/private/files/"][alt$="catch photo"]')).toHaveLength(2));
+    expect(fetchTrapPhotos.mock.calls[0][0]).toBe("KR - T1");
+    expect(card.querySelectorAll('[data-testid="carousel-dots"] button')).toHaveLength(2);
   });
 });

@@ -80,6 +80,40 @@ class TestLatestTrapReading(unittest.TestCase):
         with self.assertRaises(frappe.DoesNotExistError):
             TR.get_latest_trap_reading("_TEST no such trap")
 
+    def photo(self, entry, image, subject=None, idx=1):
+        frappe.db.sql(
+            """INSERT INTO `tabScouting Entry Photo` (name, parent, parenttype, parentfield, idx, image, subject)
+               VALUES (%s, %s, 'Scouting Entry', 'photos_scouting_entry', %s, %s, %s)""",
+            (f"{entry}-ph{idx}", entry, idx, image, subject),
+        )
+
+    def test_trap_photos_carry_scout_pest_and_count(self):
+        e1 = self.reading(self.s1, "2031-12-01", "08:00:00", 4)
+        e2 = self.reading(self.s2, "2031-12-02", "14:35:10", 7.0, pest="Whiteflies")
+        self.photo(e1, "/private/files/a.jpg", "General")
+        self.photo(e2, "/private/files/b.jpg", "Whiteflies")
+        self.photo(e2, "/private/files/c.jpg", "Powdery Mildew", idx=2)  # not a trap photo
+        self.photo(e2, "", None, idx=3)                                  # no picture
+        out = TR.trap_photos(self.trap, "2031-12-01", "2031-12-07")
+        self.assertEqual([p["image"] for p in out], ["/private/files/b.jpg", "/private/files/a.jpg"])
+        p = out[0]
+        self.assertEqual((p["entry"], p["scout"], p["count"], p["pest"], p["date"], p["time"]),
+                         (e2, self.s2, 7, "Whiteflies", "2031-12-02", "14:35:10"))
+        emp = frappe.db.get_value("Employee", self.s2, ["employee_name", "image"], as_dict=True)
+        self.assertEqual((p["scout_name"], p["scout_image"]), (emp.employee_name, emp.image or ""))
+
+    def test_trap_photos_window_and_scope(self):
+        e = self.reading(self.s1, "2031-12-09", "08:00:00", 4)
+        self.photo(e, "/private/files/a.jpg")
+        self.assertEqual(TR.trap_photos(self.trap, "2031-12-01", "2031-12-07"), [])
+        self.assertEqual(len(TR.trap_photos(self.trap)), 1)
+        with mock.patch.object(crop_scope, "scoped_greenhouses", return_value={"Some Other House"}), \
+                mock.patch.object(crop_scope, "scoped_farms", return_value=set()):
+            with self.assertRaises(frappe.PermissionError):
+                TR.trap_photos(self.trap)
+        with self.assertRaises(frappe.ValidationError):
+            TR.trap_photos("")
+
 
 if __name__ == "__main__":
     unittest.main()

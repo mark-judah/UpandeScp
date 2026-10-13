@@ -2,14 +2,18 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchLatestTrapReading = vi.fn();
+const fetchTrapPhotos = vi.fn();
 vi.mock("@/lib/trap-reading-api", () => ({
   fetchLatestTrapReading: (...a: unknown[]) => fetchLatestTrapReading(...a),
+  fetchTrapPhotos: (...a: unknown[]) => fetchTrapPhotos(...a),
 }));
 
 const { TrapReadingCard } = await import("@/components/traps/TrapReadingCard");
 
 beforeEach(() => {
   fetchLatestTrapReading.mockReset();
+  fetchTrapPhotos.mockReset();
+  fetchTrapPhotos.mockResolvedValue([]);
 });
 
 describe("TrapReadingCard", () => {
@@ -51,5 +55,20 @@ describe("TrapReadingCard", () => {
     expect(await screen.findByText(/No reading at this trap/)).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe("TrapReadingCard photos", () => {
+  it("shows a slide per photo with the scout, count, pest and time; none when there are no photos", async () => {
+    fetchLatestTrapReading.mockResolvedValue({ trap: "KR - T1", entry: "SE-1", scout: "1", scoutName: "AMINA", date: "2026-10-09", time: "09:00:00", count: 3, pest: "Thrips" });
+    fetchTrapPhotos.mockResolvedValue([
+      { image: "/private/files/a.jpg", entry: "SE-1", scout: "1", scout_name: "AMINA K", scout_image: "", count: 3, pest: "Thrips", date: "2026-10-09", time: "09:00:00" },
+    ]);
+    render(<TrapReadingCard trap="KR - T1" from="2026-10-05" to="2026-10-11" onClose={() => {}} />);
+    const img = await screen.findByAltText("Thrips catch photo");
+    expect(img).toHaveAttribute("src", "/private/files/a.jpg");
+    expect(fetchTrapPhotos).toHaveBeenCalledWith("KR - T1", "2026-10-05", "2026-10-11");
+    expect(screen.getByText("AMINA K")).toBeInTheDocument();
+    expect(screen.queryByTestId("carousel-dots")).toBeNull(); // one photo: no dots
   });
 });

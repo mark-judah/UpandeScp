@@ -2,7 +2,7 @@
 import type { ScoutingEntry } from "./scouting-types";
 import type { TrapLocations } from "./scouting-api";
 import {
-  buildGrid, idwField, makeFrame, polysFromGeojson, polysNear, quantileCuts, renderRgba,
+  buildGrid, DEFAULT_CUTS, idwField, makeFrame, polysFromGeojson, polysNear, quantileCuts, renderRgba,
   samplesToGrid, summarizeByOwner,
 } from "./idw";
 
@@ -33,7 +33,7 @@ export function computeField(
   const grid = buildGrid(polys, frame, 10, 40_000);
   if (!grid) return { kind: "no-blocks" };
   const field = idwField(grid, samplesToGrid(grid, pts), { k: 8, power: 2, radiusM: FIELD_RADIUS_M });
-  const cuts = quantileCuts(pts.map((p) => p.v));
+  const cuts = DEFAULT_CUTS;
   return {
     kind: "ok", grid, cuts, rgba: renderRgba(grid, field, cuts, colors, FIELD_RADIUS_M),
     blocks: summarizeByOwner(grid, field, cuts), samples: pts.length,

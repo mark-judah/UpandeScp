@@ -635,7 +635,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
         </span>
         {heat && (
           <span className="hidden lg:inline">
-            Bands are thirds of the non-zero values (no per-observation threshold):
+            No action threshold yet — default bands on finds per scouted tree:
             medium from {fmt(heat.cuts.mid)}, high from {fmt(heat.cuts.high)}
           </span>
         )}

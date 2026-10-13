@@ -333,6 +333,12 @@ export function quantileCuts(values: number[]): Cuts {
   return { mid, high };
 }
 
+/** Default bands while a pest has no action threshold: the field value is the
+ *  local mean finds per scouted tree, so amber from 1 in 5 trees and red from 1
+ *  in 2. Fixed, not relative: a widespread pest should read red everywhere, and a
+ *  rare one green — thirds of the values would paint a third red either way. */
+export const DEFAULT_CUTS: Cuts = { mid: 0.2, high: 0.5 };
+
 /** 0 green, 1 amber, 2 red. A value at/over a cut is in that band. */
 export function classOf(v: number, c: Cuts): 0 | 1 | 2 {
   return v >= c.high ? 2 : v >= c.mid ? 1 : 0;

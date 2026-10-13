@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BucketIndex, buildGrid, classOf, idwField, inPoly, makeFrame, polysFromGeojson, polysNear,
-  quantileCuts, renderRgba, samplesToGrid, summarizeByOwner,
+  DEFAULT_CUTS, quantileCuts, renderRgba, samplesToGrid, summarizeByOwner,
 } from "./idw";
 import { buildHeatPoints, computeField, observationOptions } from "./pest-heat";
 
@@ -114,6 +114,11 @@ describe("bands and rendering", () => {
     expect(classOf(3, c)).toBe(1);
     expect(quantileCuts([0, 0]).high).toBe(Infinity);
     expect(classOf(5, quantileCuts([0, 0]))).toBe(0);
+  });
+  it("default cuts: amber from 1 in 5 trees, red from 1 in 2", () => {
+    expect(classOf(0.1, DEFAULT_CUTS)).toBe(0);
+    expect(classOf(0.3, DEFAULT_CUTS)).toBe(1);
+    expect(classOf(0.5, DEFAULT_CUTS)).toBe(2);
   });
   it("fades with distance, hatches unfilled, leaves outside transparent; summarises per block", () => {
     const polys = polysFromGeojson(fc([{ geometry: { type: "Polygon", coordinates: [sq(0, 0, 100, 100)] }, properties: {} }]), () => "A");

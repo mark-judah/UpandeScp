@@ -4,7 +4,7 @@
  * sits on the right: who walked it (Employee photo, initials as fallback),
  * where and when, how much of the house, and the beds covered.
  */
-import { X } from "lucide-react";
+import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
 import { formatCapture } from "@/lib/capture-time";
 import { cn } from "@/lib/utils";
@@ -96,31 +96,15 @@ export function ScoutRouteCard({
   const pct = trail.zonesTotal ? Math.round((trail.zonesCovered / trail.zonesTotal) * 100) : 0;
 
   return (
-    <div
-      role="dialog"
-      aria-label={`Route of ${trail.name}`}
-      data-testid="scout-route-card"
-      className={cn(
-        "max-h-[calc(100%-2rem)] w-[min(320px,calc(100%-2rem))] overflow-auto rounded-2xl border bg-card/95 p-4 shadow-[var(--sd-shadow-2,0_8px_24px_rgba(0,0,0,0.18))] backdrop-blur",
-        "scp-card-in",
-        className,
-      )}
+    <MapFloatingCard
+      eyebrow="Scout route"
+      title={trail.greenhouse || "—"}
+      onClose={onClose}
+      className={className}
+      label={`Route of ${trail.name}`}
+      closeLabel="Close route card"
+      testId="scout-route-card"
     >
-      <div className="mb-3 flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">Scout route</div>
-          <div className="truncate text-sm font-semibold">{trail.greenhouse || "—"}</div>
-        </div>
-        <button
-          type="button"
-          aria-label="Close route card"
-          onClick={onClose}
-          className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
       <div className="flex items-center gap-3">
         <PersonAvatar id={trail.scoutId} name={trail.name} image={trail.image} size={56} />
         <div className="min-w-0 flex-1">
@@ -177,6 +161,6 @@ export function ScoutRouteCard({
           </ul>
         </div>
       ) : null}
-    </div>
+    </MapFloatingCard>
   );
 }

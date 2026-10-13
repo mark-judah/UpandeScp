@@ -20,7 +20,9 @@ export interface AvocadoView {
   deriveColors: (data: ProcessedData | null) => Map<string, string>;
   /** Optional point overlay (traps). Omit for tree-only views. */
   deriveMarkers?: (data: ProcessedData | null) => MarkerPoint[];
-  /** Docked side-panel content. `loading` = first load (no data yet): keep the
+  /** Title of the floating control panel that holds `renderPanel`. */
+  panelTitle: string;
+  /** Floating control-panel content (top-left of the map). `loading` = first load (no data yet): keep the
    *  panel's headings, put skeleton rows where the list goes. */
   renderPanel: (data: ProcessedData | null, loading?: boolean) => ReactNode;
   /** Optional controls for MapHeader's rightSlot (e.g. a pest/disease toggle). */

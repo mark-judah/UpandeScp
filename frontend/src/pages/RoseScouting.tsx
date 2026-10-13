@@ -19,17 +19,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
-import { X } from "lucide-react";
+import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
+import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
 import { Bar, LoadProgress, TextSkeleton, firstLoad } from "@/components/Loading";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   ALL,
   RangeHeader,
@@ -520,14 +514,17 @@ export function RoseScouting() {
           fillOpacity: 0.25,
         }),
       });
-      layerObj.on("click", () => setSelectedZone(zoneName));
+      layerObj.on("click", () => {
+        setSelectedTrail(null);
+        setSelectedZone(zoneName);
+      });
       layerObj.bindTooltip(
         `<div style="font:11px Inter,Arial,sans-serif">
            <b>${zoneName}</b><br/>
            ${row.totalEntries} entr${row.totalEntries === 1 ? "y" : "ies"} ·
            ${nameOf(scoutKey)}
          </div>`,
-        { sticky: true },
+        { direction: "top" },
       );
       layerObj.addTo(layer);
       try {
@@ -561,7 +558,10 @@ export function RoseScouting() {
                  <b>${escapeHtml(name)}</b><br/>
                  ${escapeHtml(t.greenhouse || "—")} · ${t.zones.size} zones · ${t.date}
                </div>`;
-      const open = () => setSelectedTrail(t.key);
+      const open = () => {
+        setSelectedZone(null);
+        setSelectedTrail(t.key);
+      };
       const lines = t.segments.map((seg) =>
         L.polyline(seg.points as L.LatLngExpression[], {
           color,
@@ -584,7 +584,7 @@ export function RoseScouting() {
         fillOpacity: 1,
         bubblingMouseEvents: false,
       })
-        .bindTooltip(`Start · ${t.firstTime || "—"}`, { sticky: true })
+        .bindTooltip(`Start · ${t.firstTime || "—"}`, { direction: "top" })
         .on("click", open)
         .addTo(layer);
       const badge = L.marker(t.end, {
@@ -741,17 +741,6 @@ export function RoseScouting() {
     }
   }, [selectedTrail, trails, nameOf, scoutImages, scoutInfo, zonesPerGreenhouse]);
 
-  // Esc closes the route card first, then the zone card.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (selectedTrail) setSelectedTrail(null);
-      else if (selectedZone) setSelectedZone(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedTrail, selectedZone]);
-
   // First load (nothing processed yet): the figures are skeletons. A refresh
   // keeps the old figures. A failed load ends the skeletons and says so
   // (below), rather than pulsing on.
@@ -784,7 +773,7 @@ export function RoseScouting() {
           />
 
           {/* Coverage figures, a quiet pill over the top edge. */}
-          <div className="pointer-events-none absolute left-1/2 top-3 z-[1000] -translate-x-1/2 rounded-full border bg-card/95 px-3 py-1 text-[0.7rem] tabular-nums shadow-[var(--sd-shadow-1)] backdrop-blur">
+          <MapKpiPill>
             {first || loading ? (
               <Bar className="h-4 w-40 rounded-full" />
             ) : (
@@ -795,44 +784,34 @@ export function RoseScouting() {
                 </span>
               </>
             )}
-          </div>
+          </MapKpiPill>
 
           {openTrail ? (
             <ScoutRouteCard
               key={openTrail.key}
               trail={openTrail}
               onClose={() => setSelectedTrail(null)}
-              className="absolute bottom-4 right-4 z-[1000]"
             />
           ) : null}
 
-          {/* Clicked-zone detail, floating bottom-left like the trap card. */}
+          {/* Clicked-zone detail: the same bottom-right card as the route card. */}
           {detail ? (
-            <Card className="scp-card-in absolute bottom-4 left-4 z-[1000] max-h-[60%] w-[min(320px,calc(100%-2rem))] overflow-auto bg-card/95 p-3 backdrop-blur">
-              <CardHeader className="p-0 pb-2">
-                <div className="flex items-start gap-2">
-                  <div className="min-w-0 flex-1">
-                    <CardTitle className="text-sm">{detail.zone}</CardTitle>
-                    <CardDescription className="text-[0.7rem]">
-                      {detail.totalEntries} entr
-                      {detail.totalEntries === 1 ? "y" : "ies"}
-                      {!isSingleDay
-                        ? ` · covered ${detail.days.size} of ${rangeDayCount} days`
-                        : ""}
-                      {detail.lastTs ? ` · last ${detail.lastTs.slice(11)}` : ""}
-                    </CardDescription>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="Close zone card"
-                    onClick={() => setSelectedZone(null)}
-                    className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0 flex flex-col gap-3">
+            <MapFloatingCard
+              key={detail.zone}
+              eyebrow="Zone"
+              title={detail.zone}
+              onClose={() => setSelectedZone(null)}
+              label={`Zone ${detail.zone}`}
+              closeLabel="Close zone card"
+              testId="zone-card"
+            >
+              <div className="-mt-2 mb-3 text-[0.7rem] text-muted-foreground">
+                {detail.totalEntries} entr
+                {detail.totalEntries === 1 ? "y" : "ies"}
+                {!isSingleDay ? ` · covered ${detail.days.size} of ${rangeDayCount} days` : ""}
+                {detail.lastTs ? ` · last ${detail.lastTs.slice(11)}` : ""}
+              </div>
+              <div className="flex flex-col gap-3">
                 {detailScouts.length > 0 && (
                   <div>
                     <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground mb-1">
@@ -889,8 +868,8 @@ export function RoseScouting() {
                     )}
                   </div>
                 ))}
-              </CardContent>
-            </Card>
+              </div>
+            </MapFloatingCard>
           ) : null}
         </div>
       </div>

@@ -17,8 +17,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
+import { MapControlPanel } from "@/components/maps/MapControlPanel";
+import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
-import { CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -301,7 +302,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
          </div>`,
         { closeButton: false },
       );
-      layerObj.bindTooltip(zoneName, { sticky: true });
+      layerObj.bindTooltip(zoneName, { direction: "top" });
       layerObj.addTo(layer);
       try {
         bounds.extend(layerObj.getBounds());
@@ -417,55 +418,31 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
           (z-index up to 700 internally) inside this stacking context so
           the date-picker popover (z-50, portaled to body) always paints
           above the map. */}
-      <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[3fr_1fr]">
-        <div className="relative min-h-[55vh] lg:min-h-0">
-          <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
-            <MapBase
-              onReady={(m) => {
-                mapRef.current = m;
-              }}
-            />
-          </div>
-        </div>
+      <div className="relative flex-1 min-h-[55vh] lg:min-h-0" aria-busy={first || undefined}>
+        <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+          <MapBase
+            onReady={(m) => {
+              mapRef.current = m;
+            }}
+          />
 
-        {/* Docked right sidebar (mirrors the scouting map) — no longer a
-            hovering overlay. */}
-        <div
-          className="m-4 md:m-6 lg:ml-0 flex max-h-[45vh] flex-col gap-3 overflow-auto rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] lg:max-h-none"
-          aria-busy={first || undefined}
-        >
-          <CardHeader className="p-0 pb-2">
-            <CardTitle className="text-sm">{KIND_LABEL[kind]} summary</CardTitle>
-            <CardDescription className="text-[0.7rem] tabular-nums">
-              {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
-            </CardDescription>
-          </CardHeader>
+          <MapKpiPill>
+            {first ? (
+              <TextSkeleton width="28ch" />
+            ) : (
+              <>
+                {KIND_LABEL[kind]} · {stats.zones} zones · {stats.beds} beds · {stats.scouts} scouts · {stats.entries} entries
+                <span className="ml-2 text-muted-foreground">
+                  {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
+                </span>
+              </>
+            )}
+          </MapKpiPill>
 
-          <div className="grid grid-cols-4 gap-2 mb-3">
-            {[
-              ["Zones", stats.zones],
-              ["Beds", stats.beds],
-              ["Scouts", stats.scouts],
-              ["Entries", stats.entries],
-            ].map(([label, v]) => (
-              <div
-                key={label as string}
-                className="rounded border bg-[var(--sd-bg-soft)] px-1.5 py-1 text-center"
-              >
-                <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
-                  {label}
-                </div>
-                <div className="text-sm font-semibold tabular-nums">
-                  {first ? <TextSkeleton width="3ch" /> : v}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground">
-              Legend
-            </span>
+          {/* The legend doubles as the show/hide control, so it floats under
+              the zoom buttons instead of docking beside the map. */}
+          <MapControlPanel title="Legend" count={first ? undefined : legendRows.length}>
+          <div className="flex items-center justify-end mb-1.5">
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -521,6 +498,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
               })}
             </div>
           )}
+          </MapControlPanel>
         </div>
       </div>
 

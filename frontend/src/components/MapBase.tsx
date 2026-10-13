@@ -124,6 +124,16 @@ export function MapBase({
     });
     map.addControl(new BasemapToggle());
 
+    // At most one tooltip at a time: opening one closes the previous.
+    let openTip: L.Tooltip | null = null;
+    map.on("tooltipopen", (e: L.TooltipEvent) => {
+      if (openTip && openTip !== e.tooltip) openTip.close();
+      openTip = e.tooltip;
+    });
+    map.on("tooltipclose", (e: L.TooltipEvent) => {
+      if (openTip === e.tooltip) openTip = null;
+    });
+
     L.control.attribution({ position: "bottomright", prefix: false }).addTo(map);
     mapRef.current = map;
     setReady(true);

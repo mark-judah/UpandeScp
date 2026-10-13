@@ -14,8 +14,10 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
-import { ChevronDown, ClipboardList, Layers, X } from "lucide-react";
+import { ChevronDown, ClipboardList, Layers } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
+import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
+import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { Map3D } from "@/components/Map3D";
 import { LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 import { Button } from "@/components/ui/button";
@@ -501,49 +503,35 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
         <span className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full" style={{ background: "#dc2626" }} /> High
         </span>
-        <span className="ml-auto tabular-nums">
-          {first ? (
-            <TextSkeleton width="24ch" />
-          ) : (
-            <>
-              {affected.length} affected blocks · {totalObs} observations
-            </>
-          )}
-        </span>
       </div>
 
-      <div
-        className={`flex-1 min-h-0 grid grid-cols-1 gap-4 px-4 pb-4 md:px-6 md:pb-6 ${
-          // The plan is the working half of this page — a team, a kit, a rate
-          // per chemical and the targets — while the map only has to be big
-          // enough to pick a block off. At 300px the plan was a column of
-          // truncated labels beside a map with room to spare.
-          planOpen ? "lg:grid-cols-[minmax(0,1fr)_440px]" : ""
-        }`}
-      >
-        <div className="h-full w-full min-h-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+      <div className="flex-1 min-h-0 px-4 pb-4 md:px-6 md:pb-6">
+        <div className="relative h-full w-full min-h-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
           <Map3D onReady={onMapReady} initialPitch={0} />
-        </div>
 
-        {planOpen && (
-          <aside className="hidden lg:flex flex-col min-h-0 overflow-hidden rounded-[20px] border border-border bg-card shadow-[var(--sd-shadow-1)]">
-            <div className="flex items-center justify-between border-b px-3 py-2.5">
-              <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
-                {selectedAgg ? "Block" : "Affected blocks"}
-              </div>
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={() =>
-                  selectedAgg ? setSelected(null) : setPlanOpen(false)
-                }
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
+          <MapKpiPill>
+            {first ? (
+              <TextSkeleton width="24ch" />
+            ) : (
+              <>
+                {affected.length} affected blocks · {totalObs} observations
+              </>
+            )}
+          </MapKpiPill>
 
-            <div className="flex-1 min-h-0 overflow-y-auto p-2" aria-busy={first || undefined}>
+          {planOpen && (
+            // The plan is the working half of this page (a team, a kit, a
+            // rate per chemical, the targets), so this one card is a little
+            // wider than the standard 320px.
+            <MapFloatingCard
+              eyebrow="Plan"
+              title={selectedAgg ? "Block" : "Affected blocks"}
+              onClose={() => (selectedAgg ? setSelected(null) : setPlanOpen(false))}
+              className="w-[min(400px,calc(100%-2rem))]"
+              closeLabel="Close"
+              testId="plan-card"
+            >
+            <div aria-busy={first || undefined}>
               {!selectedAgg ? (
                 first ? (
                   <RowsSkeleton rows={6} />
@@ -685,8 +673,9 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
                 </div>
               )}
             </div>
-          </aside>
-        )}
+            </MapFloatingCard>
+          )}
+        </div>
       </div>
 
     </div>

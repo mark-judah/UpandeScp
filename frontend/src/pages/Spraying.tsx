@@ -15,15 +15,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapBase } from "@/components/MapBase";
-import { KpiValueSkeleton, LoadProgress, RowsSkeleton, TextSkeleton } from "@/components/Loading";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { MapControlPanel } from "@/components/maps/MapControlPanel";
+import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
+import { MapKpiPill } from "@/components/maps/MapKpiPill";
+import { KpiValueSkeleton, LoadProgress, RowsSkeleton } from "@/components/Loading";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ALL,
@@ -297,7 +292,7 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
       layerObj.on("click", () => setSelectedZone(zoneName));
       layerObj.bindTooltip(
         `<div style="font:11px Inter,Arial,sans-serif"><b>${zoneName}</b><br/>${row.totalPoints} ping${row.totalPoints === 1 ? "" : "s"}</div>`,
-        { sticky: true },
+        { direction: "top" },
       );
       layerObj.addTo(layer);
       const c = geometryCentroid(z.geometry);
@@ -318,7 +313,7 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
         })
           .bindTooltip(
             `<div style="font:11px Inter,Arial,sans-serif"><b>${sprayerLabel(sprayer)}</b><br/>${path.length} pings</div>`,
-            { sticky: true },
+            { direction: "top" },
           )
           .addTo(layer);
       }
@@ -332,7 +327,7 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
           fillColor: color,
           fillOpacity: 1,
         })
-          .bindTooltip(`Start · ${sprayerLabel(sprayer)}`, { sticky: true })
+          .bindTooltip(`Start · ${sprayerLabel(sprayer)}`, { direction: "top" })
           .addTo(layer);
       }
       if (last && path.length > 1) {
@@ -343,7 +338,7 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
           fillColor: "#ffffff",
           fillOpacity: 1,
         })
-          .bindTooltip(`End · ${sprayerLabel(sprayer)}`, { sticky: true })
+          .bindTooltip(`End · ${sprayerLabel(sprayer)}`, { direction: "top" })
           .addTo(layer);
       }
     });
@@ -407,15 +402,13 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
         onChange={setFilters}
       />
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[3fr_1fr]">
-        <div className="relative">
-          <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
-            <MapBase
-              onReady={(m) => {
-                mapRef.current = m;
-              }}
-            />
-          </div>
+      <div className="relative flex-1 min-h-[55vh] lg:min-h-0" aria-busy={loading || undefined}>
+        <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+          <MapBase
+            onReady={(m) => {
+              mapRef.current = m;
+            }}
+          />
 
           {/* No fraction to report for this fetch — null sweeps, 0 would sit
               empty and read as stuck. Floats on the map's top edge so the
@@ -423,45 +416,25 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
           <LoadProgress
             active={loading}
             progress={null}
-            className="absolute left-8 top-8 z-10 rounded-md bg-card/95 px-2 py-1.5 shadow-md backdrop-blur md:left-10 md:top-10"
+            className="absolute left-16 top-3 z-[1000] rounded-md bg-card/95 px-2 py-1.5 shadow-md backdrop-blur"
           />
 
-          <Card
-            className="absolute bottom-4 right-4 z-10 w-72 max-h-[70vh] overflow-y-auto bg-card/95 backdrop-blur shadow-md p-3"
-            aria-busy={loading || undefined}
-          >
-            <CardHeader className="p-0 pb-2">
-              <CardTitle className="text-sm">Spraying summary</CardTitle>
-              <CardDescription className="text-[0.7rem] tabular-nums">
-                {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
-              </CardDescription>
-            </CardHeader>
+          <MapKpiPill>
+            {skeleton ? (
+              <KpiValueSkeleton className="mx-auto h-4 w-40" />
+            ) : (
+              <>
+                {stats.sprayers} sprayers · {stats.zones} zones · {stats.points} pings · {(stats.distance / 1000).toFixed(2)}km
+                <span className="ml-2 text-muted-foreground">
+                  {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
+                </span>
+              </>
+            )}
+          </MapKpiPill>
 
-            <div className="grid grid-cols-4 gap-2 mb-3">
-              {[
-                ["Sprayers", String(stats.sprayers)],
-                ["Zones", String(stats.zones)],
-                ["Pings", String(stats.points)],
-                ["Dist", `${(stats.distance / 1000).toFixed(2)}km`],
-              ].map(([label, v]) => (
-                <div
-                  key={label}
-                  className="rounded border bg-[var(--sd-bg-soft)] px-1.5 py-1 text-center"
-                >
-                  <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
-                    {label}
-                  </div>
-                  <div className="text-sm font-semibold tabular-nums">
-                    {skeleton ? <KpiValueSkeleton className="mx-auto h-5 w-8" /> : v}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground">
-                Sprayers in view
-              </span>
+          {/* The per-sprayer show/hide list floats under the zoom buttons. */}
+          <MapControlPanel title="Sprayers in view" count={skeleton ? undefined : sprayerInfo.list.length}>
+            <div className="flex items-center justify-end mb-1.5">
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -518,23 +491,26 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
                 })}
               </div>
             )}
-          </Card>
-        </div>
+          </MapControlPanel>
 
-        <div className="m-4 md:m-6 lg:ml-0 rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] overflow-auto">
           {detail ? (
-            <Card className="p-3 shadow-none border-0">
-              <CardHeader className="p-0 pb-2">
-                <CardTitle className="text-sm">{detail.zone}</CardTitle>
-                <CardDescription className="text-[0.7rem]">
-                  {detail.totalPoints} ping{detail.totalPoints === 1 ? "" : "s"}
-                  {!isSingleDay
-                    ? ` · sprayed ${detail.days.size} of ${rangeDayCount} days`
-                    : ""}
-                  {detail.lastTs ? ` · last ${detail.lastTs.slice(11)}` : ""}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-0 flex flex-col gap-3">
+            <MapFloatingCard
+              key={detail.zone}
+              eyebrow="Zone"
+              title={detail.zone}
+              onClose={() => setSelectedZone(null)}
+              label={`Zone ${detail.zone}`}
+              closeLabel="Close zone card"
+              testId="zone-card"
+            >
+              <div className="-mt-2 mb-3 text-[0.7rem] text-muted-foreground">
+                {detail.totalPoints} ping{detail.totalPoints === 1 ? "" : "s"}
+                {!isSingleDay
+                  ? ` · sprayed ${detail.days.size} of ${rangeDayCount} days`
+                  : ""}
+                {detail.lastTs ? ` · last ${detail.lastTs.slice(11)}` : ""}
+              </div>
+              <div className="flex flex-col gap-3">
                 <div>
                   <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground mb-1">
                     Sprayers here
@@ -559,24 +535,9 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
                     ))}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="p-4">
-              <CardHeader className="p-0">
-                <CardTitle className="text-sm">Pick a zone</CardTitle>
-                <CardDescription className="text-[0.7rem]">
-                  Click any shaded zone to see which sprayers covered it.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-0 mt-3">
-                <Badge variant="outline" className="text-[0.65rem]">
-                  {skeleton ? <TextSkeleton width="2ch" /> : aggByZone.size} zone
-                  {!skeleton && aggByZone.size === 1 ? "" : "s"} covered
-                </Badge>
-              </CardContent>
-            </Card>
-          )}
+              </div>
+            </MapFloatingCard>
+          ) : null}
         </div>
       </div>
 

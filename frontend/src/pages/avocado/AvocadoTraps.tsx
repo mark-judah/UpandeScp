@@ -48,16 +48,12 @@ export function AvocadoTraps() {
             onClose={onClose}
           />
         ) : null,
+      panelTitle: "Traps",
       renderPanel: (data, loading) => {
         const traps = deriveTrapMarkers(data, fixed);
         return (
           <>
-            <div className="border-b px-3 py-2.5">
-              <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
-                Traps
-              </div>
-            </div>
-            <div className="flex-1 min-h-0 space-y-0.5 overflow-y-auto p-2">
+            <div className="space-y-0.5">
               {loading ? (
                 <RowsSkeleton rows={6} />
               ) : traps.length ? (

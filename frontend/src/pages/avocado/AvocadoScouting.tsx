@@ -18,16 +18,12 @@ export function AvocadoScouting() {
       subtitle: "Orchard trees · per-scout coloring · click a block to fly in",
       showTracks: true,
       deriveColors: deriveScoutColors,
+      panelTitle: "Scouts",
       renderPanel: (data, loading) => {
         const roster = deriveScoutRoster(data);
         return (
           <>
-            <div className="border-b px-3 py-2.5">
-              <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
-                Scouts
-              </div>
-            </div>
-            <div className="flex-1 min-h-0 space-y-0.5 overflow-y-auto p-2">
+            <div className="space-y-0.5">
               <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ background: "#7c8b6a" }} aria-hidden />
                 <span className="flex-1 truncate text-muted-foreground">Unscouted</span>

@@ -35,16 +35,12 @@ export function AvocadoObservations() {
           ))}
         </div>
       ),
+      panelTitle: kind === "pest" ? "Pests" : "Diseases",
       renderPanel: (data, loading) => {
         const roster = deriveObservationRoster(data, kind);
         return (
           <>
-            <div className="border-b px-3 py-2.5">
-              <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
-                {kind === "pest" ? "Pests" : "Diseases"}
-              </div>
-            </div>
-            <div className="flex-1 min-h-0 space-y-0.5 overflow-y-auto p-2">
+            <div className="space-y-0.5">
               {loading ? (
                 <RowsSkeleton rows={6} />
               ) : roster.length ? (

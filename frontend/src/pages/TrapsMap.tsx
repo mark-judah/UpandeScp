@@ -3,6 +3,8 @@ import L from "leaflet";
 import { ChevronDown } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
+import { MapControlPanel } from "@/components/maps/MapControlPanel";
+import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -676,15 +678,6 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
           <span role="alert" className="text-destructive">{error}</span>
         )}
         <LoadProgress active={loading} progress={progress} />
-        <span className="ml-auto">
-          {first ? (
-            <TextSkeleton width="18ch" />
-          ) : (
-            <>
-              {plottable}/{visibleTraps.length} mapped · {totalCatches} catches
-            </>
-          )}
-        </span>
       </div>
 
       {noCoordHint && (
@@ -695,49 +688,26 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
         </div>
       )}
 
-      <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[3fr_1fr]">
-        <div className="relative min-h-[55vh] lg:min-h-0">
-          <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
-            <MapBase
-              onReady={(m) => {
-                mapRef.current = m;
-              }}
-            />
-            {selectedTrap ? (
-              <TrapReadingCard
-                key={selectedTrap.trap}
-                trap={selectedTrap.trap}
-                from={filters.from}
-                to={filters.to}
-                local={selectedTrap.latest ?? undefined}
-                details={[
-                  { label: "Cumulative", value: selectedTrap.totalCount },
-                  {
-                    label: "Highest",
-                    value: selectedTrap.maxCount > 0
-                      ? `${selectedTrap.maxCount}${selectedTrap.maxDate ? ` · ${selectedTrap.maxDate}` : ""}`
-                      : "0",
-                  },
-                  { label: "Entries", value: `${selectedTrap.entryCount} · ${selectedTrap.days.size} days` },
-                  { label: "House", value: [selectedTrap.greenhouseShort, selectedTrap.zone].filter(Boolean).join(" · ") || "—" },
-                  { label: "Location", value: selectedTrap.location || "—" },
-                  { label: "Placement", value: placementNote(selectedTrap) },
-                ]}
-                onClose={() => setSelected(null)}
-                className="absolute bottom-4 left-4 z-[1000]"
-              />
-            ) : null}
-          </div>
-        </div>
+      <div className="relative flex-1 min-h-[55vh] lg:min-h-0" aria-busy={first || undefined}>
+        <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+          <MapBase
+            onReady={(m) => {
+              mapRef.current = m;
+            }}
+          />
 
-        {/* Docked right sidebar (mirrors the scouting map). */}
-        <div
-          className="m-4 md:m-6 lg:ml-0 flex max-h-[45vh] flex-col gap-3 overflow-auto rounded-[20px] border bg-card p-4 shadow-[var(--sd-shadow-1)] lg:max-h-none"
-          aria-busy={first || undefined}
-        >
-          <div className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground mb-2">
-            Pests in view
-          </div>
+          <MapKpiPill>
+            {first ? (
+              <TextSkeleton width="18ch" />
+            ) : (
+              <>
+                {plottable}/{visibleTraps.length} mapped · {totalCatches} catches
+              </>
+            )}
+          </MapKpiPill>
+
+          {/* Pest legend + severity key float under the zoom buttons. */}
+          <MapControlPanel title="Pests in view" count={first ? undefined : pestOptions.length}>
           {first ? (
             <RowsSkeleton rows={5} />
           ) : pestOptions.length === 0 ? (
@@ -783,6 +753,31 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
               ))}
             </div>
           </div>
+          </MapControlPanel>
+
+            {selectedTrap ? (
+              <TrapReadingCard
+                key={selectedTrap.trap}
+                trap={selectedTrap.trap}
+                from={filters.from}
+                to={filters.to}
+                local={selectedTrap.latest ?? undefined}
+                details={[
+                  { label: "Cumulative", value: selectedTrap.totalCount },
+                  {
+                    label: "Highest",
+                    value: selectedTrap.maxCount > 0
+                      ? `${selectedTrap.maxCount}${selectedTrap.maxDate ? ` · ${selectedTrap.maxDate}` : ""}`
+                      : "0",
+                  },
+                  { label: "Entries", value: `${selectedTrap.entryCount} · ${selectedTrap.days.size} days` },
+                  { label: "House", value: [selectedTrap.greenhouseShort, selectedTrap.zone].filter(Boolean).join(" · ") || "—" },
+                  { label: "Location", value: selectedTrap.location || "—" },
+                  { label: "Placement", value: placementNote(selectedTrap) },
+                ]}
+                onClose={() => setSelected(null)}
+              />
+            ) : null}
         </div>
       </div>
 

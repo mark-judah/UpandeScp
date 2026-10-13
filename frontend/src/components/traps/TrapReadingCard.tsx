@@ -8,11 +8,10 @@
  * name and photo.
  */
 import { useEffect, useState, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
 import { PersonAvatar } from "@/components/people/PersonAvatar";
 import { formatCapture } from "@/lib/capture-time";
 import { fetchLatestTrapReading, type TrapReading } from "@/lib/trap-reading-api";
-import { cn } from "@/lib/utils";
 
 /** What the map computed from its entries — shown before the server answers. */
 export interface LocalReading {
@@ -55,12 +54,6 @@ export function TrapReadingCard({
     };
   }, [trap, from, to]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const server = reading?.entry ? reading : null;
   const scoutId = server?.scout || local?.scout || "";
   const scoutName = server?.scoutName || local?.scout || "";
@@ -71,31 +64,15 @@ export function TrapReadingCard({
   const none = reading && !reading.entry && !local?.date;
 
   return (
-    <div
-      role="dialog"
-      aria-label={`Trap ${trap}`}
-      data-testid="trap-reading-card"
-      className={cn(
-        "w-[min(320px,calc(100%-2rem))] rounded-2xl border bg-card/95 p-4 shadow-[var(--sd-shadow-2,0_8px_24px_rgba(0,0,0,0.18))] backdrop-blur",
-        "scp-card-in",
-        className,
-      )}
+    <MapFloatingCard
+      eyebrow="Trap"
+      title={trap}
+      onClose={onClose}
+      className={className}
+      label={`Trap ${trap}`}
+      closeLabel="Close trap card"
+      testId="trap-reading-card"
     >
-      <div className="mb-3 flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">Trap</div>
-          <div className="truncate text-sm font-semibold">{trap}</div>
-        </div>
-        <button
-          type="button"
-          aria-label="Close trap card"
-          onClick={onClose}
-          className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
       {none ? (
         <p className="text-xs text-muted-foreground">No reading at this trap in the selected range.</p>
       ) : (
@@ -133,6 +110,6 @@ export function TrapReadingCard({
           ))}
         </dl>
       ) : null}
-    </div>
+    </MapFloatingCard>
   );
 }

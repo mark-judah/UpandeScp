@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapBase } from "@/components/MapBase";
+import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { PageHeader } from "@/components/PageHeader";
 import { Bar, TextSkeleton } from "@/components/Loading";
@@ -72,7 +73,7 @@ export function Varieties() {
         `<div style="font:11px Inter,Arial,sans-serif">
            <b>${z.variety || "Unknown"}</b><br/>${z.zoneName}
          </div>`,
-        { sticky: true },
+        { direction: "top" },
       );
       layerObj.addTo(layer);
       plotted++;
@@ -88,17 +89,7 @@ export function Varieties() {
 
   return (
     <div className="flex flex-col h-svh overflow-hidden">
-      <PageHeader title="Varieties" eyebrow="Zones colored by variety">
-        <div className="ml-auto text-xs text-muted-foreground tabular-nums">
-          {loading ? (
-            <TextSkeleton width="16ch" />
-          ) : (
-            <>
-              {varietyList.length} varieties · {zones.length} zones
-            </>
-          )}
-        </div>
-      </PageHeader>
+      <PageHeader title="Varieties" eyebrow="Zones colored by variety" />
 
       <div
         className="flex flex-wrap items-center gap-2 px-4 md:px-6 py-2 text-xs border-b"
@@ -124,12 +115,22 @@ export function Varieties() {
       </div>
 
       <div className="flex-1 min-h-0 px-4 pb-4 md:px-6 md:pb-6">
-        <MapBase
-          className="overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]"
-          onReady={(m) => {
-            mapRef.current = m;
-          }}
-        />
+        <div className="relative h-full overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+          <MapBase
+            onReady={(m) => {
+              mapRef.current = m;
+            }}
+          />
+          <MapKpiPill>
+            {loading ? (
+              <TextSkeleton width="16ch" />
+            ) : (
+              <>
+                {varietyList.length} varieties · {zones.length} zones
+              </>
+            )}
+          </MapKpiPill>
+        </div>
       </div>
 
       <LoadingStrip active={loading} />

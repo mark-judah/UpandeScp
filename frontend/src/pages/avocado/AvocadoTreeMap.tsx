@@ -3,6 +3,8 @@ import { FilterSelect } from "@/components/FilterSelect";
 import maplibregl from "maplibre-gl";
 import { ChevronDown, Layers } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
+import { MapControlPanel } from "@/components/maps/MapControlPanel";
+import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { Map3D } from "@/components/Map3D";
 import { LoadProgress, TextSkeleton, firstLoad } from "@/components/Loading";
 import { Button } from "@/components/ui/button";
@@ -782,46 +784,38 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
             ) : null}
           </div>
         ) : null}
-        <span className="ml-auto tabular-nums">
-          {first || !blocks ? (
-            <TextSkeleton width="26ch" />
-          ) : (
-            <>
-              {blockCount} blocks · {treeCount} trees · {scoutedTreeCount} visited
-              {treesPlacing && treeCount > 0 ? " · drawing trees…" : ""}
-            </>
-          )}
-        </span>
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4 px-4 pb-4 md:px-6 md:pb-6">
-        <div className="relative h-full w-full min-h-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
-          <Map3D onReady={onMapReady} />
-          {selectedMarker && view.markerCard ? (
-            <div className="absolute bottom-4 left-4 z-10">
-              {view.markerCard(selectedMarker, { from: filters.from, to: filters.to }, () =>
-                setSelectedMarker(null),
-              )}
-            </div>
-          ) : null}
-        </div>
-
-        {/* Docked side panel — content supplied by the view. */}
-        <aside
-          className="hidden lg:flex flex-col min-h-0 overflow-hidden rounded-[20px] border border-border bg-card shadow-[var(--sd-shadow-1)]"
+      <div className="flex-1 min-h-0 px-4 pb-4 md:px-6 md:pb-6">
+        <div
+          className="relative h-full w-full min-h-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]"
           aria-busy={first || undefined}
         >
-          {view.renderPanel(data, first)}
-          <div className="border-t px-3 py-2 text-[0.7rem] tabular-nums text-muted-foreground">
-            {first || !treePoints ? (
-              <TextSkeleton width="16ch" />
+          <Map3D onReady={onMapReady} />
+
+          <MapKpiPill>
+            {first || !blocks ? (
+              <TextSkeleton width="26ch" />
             ) : (
               <>
-                {scoutedTreeCount} of {treeCount} trees visited
+                {blockCount} blocks · {treeCount} trees · {scoutedTreeCount} visited
+                {treesPlacing && treeCount > 0 ? " · drawing trees…" : ""}
               </>
             )}
-          </div>
-        </aside>
+          </MapKpiPill>
+
+          {/* The view's roster / legend (and any pick-to-outline control)
+              floats top-left; MapLibre's zoom buttons sit top-right. */}
+          <MapControlPanel title={view.panelTitle} className="top-3">
+            {view.renderPanel(data, first)}
+          </MapControlPanel>
+
+          {selectedMarker && view.markerCard
+            ? view.markerCard(selectedMarker, { from: filters.from, to: filters.to }, () =>
+                setSelectedMarker(null),
+              )
+            : null}
+        </div>
       </div>
 
     </div>

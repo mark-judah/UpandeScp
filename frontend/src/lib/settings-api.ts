@@ -1,5 +1,5 @@
 /**
- * Whitelisted endpoints for the unified Spray Plan Settings page.
+ * Whitelisted endpoints for the unified Scouting and Crop Protection Settings page.
  *
  * Backend: upande_scp.serverscripts.spray_plan_creator.settings.*
  * Permission: General Manager / System Manager only (gated server-side).
@@ -9,7 +9,7 @@ import { call } from "./frappe";
 
 const PREFIX = "upande_scp.serverscripts.spray_plan_creator.settings";
 
-// ───────── Spray Plan Settings ─────────
+// ───────── Scouting and Crop Protection Settings ─────────
 
 export interface SprayPlanSettings {
   intro_note: string;

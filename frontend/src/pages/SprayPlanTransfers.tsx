@@ -75,7 +75,7 @@ export function SprayPlanTransfers() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<BiometricSubmitResp | null>(null);
 
-  // Biometric gating: `bypassBio` comes from Spray Plan Settings (set by the
+  // Biometric gating: `bypassBio` comes from Scouting and Crop Protection Settings (set by the
   // GM in Settings → Processes). When false we poll the device so the operator
   // sees readiness BEFORE submitting instead of only hitting the error after.
   const [bypassBio, setBypassBio] = useState(false);

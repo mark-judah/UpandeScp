@@ -7,7 +7,7 @@ regardless of intervening edits — a submitted-but-unapproved plan older than
 the window is considered abandoned and gets ERPNext-Stopped (the same terminal
 state an approver's manual "Stop" produces; reversible via un-stop).
 
-The GM controls the job from the Spray Plan Settings page:
+The GM controls the job from the Scouting and Crop Protection Settings page:
   * ``auto_cancel_enabled`` — master on/off. When OFF the job is a no-op.
   * ``auto_cancel_apply_to_backlog`` — when OFF, only plans created after
     auto-cancel was first enabled (``auto_cancel_activated_on``) are eligible,
@@ -36,10 +36,10 @@ DEFAULT_DORMANT_DAYS = 3
 def auto_cancel_dormant_plans(dry_run: bool = False) -> dict:
     """Stop AFP plans submitted-but-unapproved beyond the dormant window.
 
-    Honours the GM's Spray Plan Settings toggles. ``dry_run=True`` reports what
+    Honours the GM's Scouting and Crop Protection Settings toggles. ``dry_run=True`` reports what
     *would* be stopped without changing anything — useful for inspecting the
     backlog before enabling the job for real."""
-    settings = frappe.get_single("Spray Plan Settings")
+    settings = frappe.get_single("Scouting and Crop Protection Settings")
     if not settings.auto_cancel_enabled:
         return {"enabled": False, "examined": 0, "cancelled": [], "failed": []}
 

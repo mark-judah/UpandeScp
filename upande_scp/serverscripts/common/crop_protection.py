@@ -31,7 +31,7 @@ import frappe
 from frappe.utils import flt, get_datetime
 
 # The settings Single. Kept as a constant so a future rename touches one place.
-SETTINGS = "Spray Plan Settings"
+SETTINGS = "Scouting and Crop Protection Settings"
 
 #: The one product doctype.
 PRODUCT = "Spray Product"

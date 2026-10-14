@@ -5,7 +5,9 @@
   "doctype": "Stage",
   "icon_key": "circle",
   "name": "Adult",
-  "stage_name": "Adult"
+  "stage_name": "Adult",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -13,7 +15,9 @@
   "doctype": "Stage",
   "icon_key": "circle",
   "name": "Adult Cloud",
-  "stage_name": "Adult Cloud"
+  "stage_name": "Adult Cloud",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -21,7 +25,9 @@
   "doctype": "Stage",
   "icon_key": "circle",
   "name": "Adult Moth",
-  "stage_name": "Adult Moth"
+  "stage_name": "Adult Moth",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -29,7 +35,9 @@
   "doctype": "Stage",
   "icon_key": "circle",
   "name": "Adult Singles",
-  "stage_name": "Adult Singles"
+  "stage_name": "Adult Singles",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -37,7 +45,9 @@
   "doctype": "Stage",
   "icon_key": "square",
   "name": "Colonies",
-  "stage_name": "Colonies"
+  "stage_name": "Colonies",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -45,7 +55,9 @@
   "doctype": "Stage",
   "icon_key": "cross",
   "name": "Damage",
-  "stage_name": "Damage"
+  "stage_name": "Damage",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -53,7 +65,9 @@
   "doctype": "Stage",
   "icon_key": "cross",
   "name": "Damages",
-  "stage_name": "Damages"
+  "stage_name": "Damages",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Range",
@@ -61,7 +75,9 @@
   "doctype": "Stage",
   "icon_key": "hexagon",
   "name": "Downy Active",
-  "stage_name": "Downy Active"
+  "stage_name": "Downy Active",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -69,7 +85,9 @@
   "doctype": "Stage",
   "icon_key": "star",
   "name": "Downy Dry",
-  "stage_name": "Downy Dry"
+  "stage_name": "Downy Dry",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -77,7 +95,9 @@
   "doctype": "Stage",
   "icon_key": "hexagon",
   "name": "Downy Head",
-  "stage_name": "Downy Head"
+  "stage_name": "Downy Head",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -85,7 +105,9 @@
   "doctype": "Stage",
   "icon_key": "star",
   "name": "Downy Latent",
-  "stage_name": "Downy Latent"
+  "stage_name": "Downy Latent",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -93,7 +115,9 @@
   "doctype": "Stage",
   "icon_key": "star",
   "name": "Downy Stem",
-  "stage_name": "Downy Stem"
+  "stage_name": "Downy Stem",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -101,7 +125,9 @@
   "doctype": "Stage",
   "icon_key": "star",
   "name": "Dry",
-  "stage_name": "Dry"
+  "stage_name": "Dry",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -109,7 +135,9 @@
   "doctype": "Stage",
   "icon_key": "diamond",
   "name": "Egg Sacs",
-  "stage_name": "Egg Sacs"
+  "stage_name": "Egg Sacs",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -117,7 +145,9 @@
   "doctype": "Stage",
   "icon_key": "diamond",
   "name": "Eggs",
-  "stage_name": "Eggs"
+  "stage_name": "Eggs",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -125,7 +155,9 @@
   "doctype": "Stage",
   "icon_key": "triangle",
   "name": "FCM Caterpillars",
-  "stage_name": "FCM Caterpillars"
+  "stage_name": "FCM Caterpillars",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -133,7 +165,9 @@
   "doctype": "Stage",
   "icon_key": "cross",
   "name": "FCM Damage",
-  "stage_name": "FCM Damage"
+  "stage_name": "FCM Damage",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -141,7 +175,9 @@
   "doctype": "Stage",
   "icon_key": "diamond",
   "name": "FCM Eggs",
-  "stage_name": "FCM Eggs"
+  "stage_name": "FCM Eggs",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -149,7 +185,9 @@
   "doctype": "Stage",
   "icon_key": "circle",
   "name": "FCM Moth",
-  "stage_name": "FCM Moth"
+  "stage_name": "FCM Moth",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -157,7 +195,9 @@
   "doctype": "Stage",
   "icon_key": "plus",
   "name": "FCM Pupae",
-  "stage_name": "FCM Pupae"
+  "stage_name": "FCM Pupae",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -165,7 +205,9 @@
   "doctype": "Stage",
   "icon_key": "chevron",
   "name": "Fresh",
-  "stage_name": "Fresh"
+  "stage_name": "Fresh",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -173,7 +215,9 @@
   "doctype": "Stage",
   "icon_key": "hexagon",
   "name": "Head Botrytis",
-  "stage_name": "Head Botrytis"
+  "stage_name": "Head Botrytis",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -181,7 +225,9 @@
   "doctype": "Stage",
   "icon_key": "triangle",
   "name": "Larvae",
-  "stage_name": "Larvae"
+  "stage_name": "Larvae",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -189,7 +235,9 @@
   "doctype": "Stage",
   "icon_key": "square",
   "name": "Motiles",
-  "stage_name": "Motiles"
+  "stage_name": "Motiles",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -197,7 +245,9 @@
   "doctype": "Stage",
   "icon_key": "pentagon",
   "name": "Nymph",
-  "stage_name": "Nymph"
+  "stage_name": "Nymph",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Range",
@@ -205,7 +255,9 @@
   "doctype": "Stage",
   "icon_key": "hexagon",
   "name": "Powdery Active",
-  "stage_name": "Powdery Active"
+  "stage_name": "Powdery Active",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -213,7 +265,9 @@
   "doctype": "Stage",
   "icon_key": "star",
   "name": "Powdery Dry",
-  "stage_name": "Powdery Dry"
+  "stage_name": "Powdery Dry",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -221,7 +275,9 @@
   "doctype": "Stage",
   "icon_key": "hexagon",
   "name": "Powdery Head",
-  "stage_name": "Powdery Head"
+  "stage_name": "Powdery Head",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -229,7 +285,9 @@
   "doctype": "Stage",
   "icon_key": "star",
   "name": "Powdery Latent",
-  "stage_name": "Powdery Latent"
+  "stage_name": "Powdery Latent",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -237,7 +295,9 @@
   "doctype": "Stage",
   "icon_key": "plus",
   "name": "Pupae",
-  "stage_name": "Pupae"
+  "stage_name": "Pupae",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -245,7 +305,9 @@
   "doctype": "Stage",
   "icon_key": "cross",
   "name": "Ragged Margins",
-  "stage_name": "Ragged Margins"
+  "stage_name": "Ragged Margins",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Range",
@@ -253,7 +315,9 @@
   "doctype": "Stage",
   "icon_key": "hexagon",
   "name": "Rust Active",
-  "stage_name": "Rust Active"
+  "stage_name": "Rust Active",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -261,7 +325,9 @@
   "doctype": "Stage",
   "icon_key": "hexagon",
   "name": "Rust Head",
-  "stage_name": "Rust Head"
+  "stage_name": "Rust Head",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -269,7 +335,9 @@
   "doctype": "Stage",
   "icon_key": "star",
   "name": "Rust Latent",
-  "stage_name": "Rust Latent"
+  "stage_name": "Rust Latent",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -277,7 +345,9 @@
   "doctype": "Stage",
   "icon_key": "square",
   "name": "Scale Insects",
-  "stage_name": "Scale Insects"
+  "stage_name": "Scale Insects",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -285,7 +355,9 @@
   "doctype": "Stage",
   "icon_key": "square",
   "name": "Scales",
-  "stage_name": "Scales"
+  "stage_name": "Scales",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -293,7 +365,9 @@
   "doctype": "Stage",
   "icon_key": "square",
   "name": "Singles",
-  "stage_name": "Singles"
+  "stage_name": "Singles",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -301,7 +375,9 @@
   "doctype": "Stage",
   "icon_key": "star",
   "name": "Stem Botrytis",
-  "stage_name": "Stem Botrytis"
+  "stage_name": "Stem Botrytis",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Checkbox",
@@ -309,7 +385,9 @@
   "doctype": "Stage",
   "icon_key": "cross",
   "name": "Web",
-  "stage_name": "Web"
+  "stage_name": "Web",
+  "stage_role": "Life stage",
+  "weight": 1.0
  },
  {
   "default_reading_type": "Count",
@@ -317,6 +395,8 @@
   "doctype": "Stage",
   "icon_key": "circle",
   "name": "Weevils",
-  "stage_name": "Weevils"
+  "stage_name": "Weevils",
+  "stage_role": "Life stage",
+  "weight": 1.0
  }
 ]

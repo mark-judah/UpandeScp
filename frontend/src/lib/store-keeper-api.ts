@@ -62,7 +62,7 @@ export interface TransferRow {
 export interface DraftTransfersResp {
   rows: TransferRow[];
   farms: string[];
-  /** When true, Spray Plan Settings allows assigning + submitting transfers
+  /** When true, Scouting and Crop Protection Settings allows assigning + submitting transfers
    *  without a live biometric scan (issues recorded as Bypassed). */
   bypass_biometric?: boolean;
 }

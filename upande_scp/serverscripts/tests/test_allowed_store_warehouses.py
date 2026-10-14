@@ -1,7 +1,7 @@
 import unittest
 from unittest import mock
 
-from upande_scp.upande_scp.doctype.spray_plan_settings import spray_plan_settings as sps
+from upande_scp.upande_scp.doctype.scouting_and_crop_protection_settings import scouting_and_crop_protection_settings as sps
 
 
 # Warehouse candidate set: (name, custom_farm). Mirrors mona's reality where
@@ -61,7 +61,7 @@ class TestAllowedStoreWarehouses(unittest.TestCase):
             self.assertEqual(sps.get_allowed_chemical_store_warehouses(), [])
 
     def test_configured_stores_take_precedence(self):
-        # When the GM lists stores explicitly in Spray Plan Settings, that list
+        # When the GM lists stores explicitly in Scouting and Crop Protection Settings, that list
         # wins as-is and the name heuristic is not consulted.
         with mock.patch.object(
             sps, "_configured_stores", return_value=["CFU : Fertigation Main Store - MFK"]

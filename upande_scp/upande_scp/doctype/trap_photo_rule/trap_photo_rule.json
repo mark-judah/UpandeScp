@@ -1,0 +1,44 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-13 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "pest",
+  "photo_required"
+ ],
+ "fields": [
+  {
+   "fieldname": "pest",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Trap pest",
+   "options": "Pest",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "A scout must attach a photo to a catch of this pest on a trap.",
+   "fieldname": "photo_required",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Photo required"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Trap Photo Rule",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

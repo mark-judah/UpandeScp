@@ -17,7 +17,7 @@ WANTED = {"chemical_item_groups": "Chemicals", "foliar_item_groups": "Fertilizer
 
 
 def execute():
-    settings = frappe.get_single("Spray Plan Settings")
+    settings = frappe.get_single("Scouting and Crop Protection Settings")
     changed = False
     for field, wanted in WANTED.items():
         resolved = frappe.db.get_value("Item Group", {"name": wanted}, "name")

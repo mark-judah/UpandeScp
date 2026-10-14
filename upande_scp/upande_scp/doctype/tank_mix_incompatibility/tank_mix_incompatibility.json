@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "creation": "2026-10-08 09:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "product_a",
+  "ingredient_a",
+  "product_b",
+  "ingredient_b",
+  "reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "product_a",
+   "fieldtype": "Link",
+   "label": "Product A",
+   "options": "Spray Product",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "ingredient_a",
+   "fieldtype": "Link",
+   "label": "or Ingredient A",
+   "options": "Active Ingredient MoA",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "product_b",
+   "fieldtype": "Link",
+   "label": "Product B",
+   "options": "Spray Product",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "ingredient_b",
+   "fieldtype": "Link",
+   "label": "or Ingredient B",
+   "options": "Active Ingredient MoA",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "reqd": 1,
+   "in_list_view": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-08 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Tank Mix Incompatibility",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

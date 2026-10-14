@@ -1,4 +1,4 @@
-"""Seed Spray Plan Settings with the farms and exclude keywords that the
+"""Seed Scouting and Crop Protection Settings with the farms and exclude keywords that the
 www/new_application_floor_plan dropdown previously hardcoded.
 
 Idempotent: only adds farms / keywords that are missing. Skips farms whose
@@ -13,10 +13,10 @@ SEED_KEYWORDS = ("phase", "tunnel", "ipm", "wetland", "csu")
 
 
 def execute():
-    if not frappe.db.table_exists("Spray Plan Settings"):
+    if not frappe.db.table_exists("Scouting and Crop Protection Settings"):
         return
 
-    settings = frappe.get_single("Spray Plan Settings")
+    settings = frappe.get_single("Scouting and Crop Protection Settings")
 
     existing_farms = {row.farm for row in (settings.allowed_farms or [])}
     for farm_name in SEED_FARMS:

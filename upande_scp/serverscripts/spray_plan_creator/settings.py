@@ -1,9 +1,9 @@
-"""Whitelisted endpoints for the unified Spray Plan Settings page.
+"""Whitelisted endpoints for the unified Scouting and Crop Protection Settings page.
 
 The page consolidates four areas that were previously edited in Frappe
 Desk only:
 
-  1. Spray Plan Settings (the Single doctype) — IRAC/FRAC windows, weather
+  1. Scouting and Crop Protection Settings (the Single doctype) — IRAC/FRAC windows, weather
      thresholds, default expense account, allowed farms, exclude keywords.
   2. Map Settings — global default lat/lon/zoom + per-farm coordinates
      (Map Settings.farm_coordinates).
@@ -88,7 +88,7 @@ def _drop_dangling_links(doc) -> list[str]:
 def get_settings_bundle() -> dict:
     _require_admin()
 
-    settings = frappe.get_single("Spray Plan Settings")
+    settings = frappe.get_single("Scouting and Crop Protection Settings")
     allowed_farms = [
         {"farm": r.farm} for r in (settings.allowed_farms or [])
     ]
@@ -174,13 +174,13 @@ def get_settings_bundle() -> dict:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Spray Plan Settings (Single).
+# Scouting and Crop Protection Settings (Single).
 # ──────────────────────────────────────────────────────────────────────
 
 
 @frappe.whitelist()
 def save_spray_plan_settings(payload) -> dict:
-    """Save Spray Plan Settings + allowed_farms + exclude_keywords in one go.
+    """Save Scouting and Crop Protection Settings + allowed_farms + exclude_keywords in one go.
 
     ``payload`` is the same shape ``get_settings_bundle`` returns under
     ``spray_plan``.
@@ -189,7 +189,7 @@ def save_spray_plan_settings(payload) -> dict:
     if isinstance(payload, str):
         payload = frappe.parse_json(payload)
 
-    settings = frappe.get_single("Spray Plan Settings")
+    settings = frappe.get_single("Scouting and Crop Protection Settings")
     scalar_fields = [
         "intro_note",
         "irac_rotation_window_days", "frac_rotation_window_days",

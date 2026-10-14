@@ -1,6 +1,6 @@
 """Add a "Bypassed" option to ``Stock Entry.biometric_status``.
 
-When ``Spray Plan Settings.bypass_biometric_on_issue`` is ON, chemical issues
+When ``Scouting and Crop Protection Settings.bypass_biometric_on_issue`` is ON, chemical issues
 submitted without a live biometric scan are recorded with
 ``biometric_status = "Bypassed"`` (as opposed to Verified / Failed) so the
 override is auditable. ``biometric_status`` is a mona-native Select Custom

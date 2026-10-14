@@ -9,16 +9,36 @@ from upande_scp.serverscripts.common.warehouse_classify import (
     is_fertilizer_store,
 )
 
+from upande_scp.serverscripts.scouting import capture_settings
 
-class SprayPlanSettings(Document):
-    pass
+
+class ScoutingandCropProtectionSettings(Document):
+    def validate(self):
+        chem = {r.item_group for r in (self.chemical_item_groups or []) if r.item_group}
+        fol = {r.item_group for r in (self.foliar_item_groups or []) if r.item_group}
+        overlap = chem & fol
+        if overlap:
+            frappe.throw(
+                "An Item Group cannot be both a Chemical and a Foliar group: "
+                + ", ".join(sorted(overlap))
+            )
+
+        # Scout capture (pieces 5–6). A loaded Single reads a missing Check as 0
+        # and saves a None Int as 0; never let that switch capture off or zero
+        # the cap. An Int cannot tell 0 from unset, so 0 means the default.
+        capture_settings.fill_unset(self)
+        if not self.max_count_per_observation:
+            self.max_count_per_observation = capture_settings.DEFAULT_MAX_COUNT
+        self.max_count_per_observation = capture_settings.clean_max_count(
+            self.max_count_per_observation
+        )
 
 
 def get_allowed_farms():
-    """Return the list of farm names enabled in Spray Plan Settings."""
+    """Return the list of farm names enabled in Scouting and Crop Protection Settings."""
     farms = frappe.get_all(
         "Spray Plan Allowed Farm",
-        filters={"parenttype": "Spray Plan Settings"},
+        filters={"parenttype": "Scouting and Crop Protection Settings"},
         pluck="farm",
     )
     return [f for f in farms if f]
@@ -60,14 +80,14 @@ def _allowed_warehouses_matching(predicate):
 
 
 def _configured_stores(fieldname):
-    """Non-disabled warehouses explicitly listed in the given Spray Plan Settings
+    """Non-disabled warehouses explicitly listed in the given Scouting and Crop Protection Settings
     child table (``chemical_stores`` / ``fertigation_stores``). The admin's
     explicit choice wins as-is — no farm scoping — so a deliberately picked
     global store (e.g. an untagged main store) is always honoured. Returns [] when
     nothing is configured, so callers can fall back to the name heuristic."""
     rows = frappe.get_all(
         "Spray Plan Store Warehouse",
-        filters={"parenttype": "Spray Plan Settings", "parentfield": fieldname},
+        filters={"parenttype": "Scouting and Crop Protection Settings", "parentfield": fieldname},
         pluck="warehouse",
     )
     names = [w for w in rows if w]
@@ -85,7 +105,7 @@ def _configured_stores(fieldname):
 
 
 def get_allowed_chemical_store_warehouses():
-    """Chemical-store warehouses. Prefers the explicit Spray Plan Settings list;
+    """Chemical-store warehouses. Prefers the explicit Scouting and Crop Protection Settings list;
     falls back to the ``chemical … store`` name heuristic when unset."""
     return _configured_stores("chemical_stores") or _allowed_warehouses_matching(
         is_chemical_store
@@ -93,7 +113,7 @@ def get_allowed_chemical_store_warehouses():
 
 
 def get_allowed_fertilizer_unit_warehouses():
-    """Fertigation / foliar warehouses. Prefers the explicit Spray Plan Settings
+    """Fertigation / foliar warehouses. Prefers the explicit Scouting and Crop Protection Settings
     list; falls back to the ``fertilizer … store`` name heuristic when unset."""
     return _configured_stores("fertigation_stores") or _allowed_warehouses_matching(
         is_fertilizer_store

@@ -40,7 +40,7 @@ QTY_TOL = 0.001
 
 
 def _settings():
-    return frappe.get_single("Spray Plan Settings")
+    return frappe.get_single("Scouting and Crop Protection Settings")
 
 
 def _ensure_enabled():

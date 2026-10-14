@@ -57,7 +57,7 @@
             <option value="{{ warehouse.name }}" data-farm="{{ warehouse.custom_farm or '' }}" data-cost-center="{{ warehouse.custom_cost_center or '' }}">{{ warehouse.name }}</option>
             {% endfor %}
             {% else %}
-            <option value="" disabled selected>No farms configured — open Spray Plan Settings</option>
+            <option value="" disabled selected>No farms configured — open Scouting and Crop Protection Settings</option>
             {% endif %}
           </select>
           <div id="greenhouse-cost-center" class="nafp-cost-center tw-hidden">
@@ -86,7 +86,7 @@
           {% if not warehouses_list %}
           <small class="tw-text-amber-600 tw-text-xs">
             No farms are configured for the spray plan dropdown.
-            <a href="{{ spray_settings_url }}" target="_blank">Open Spray Plan Settings</a> to add allowed farms.
+            <a href="{{ spray_settings_url }}" target="_blank">Open Scouting and Crop Protection Settings</a> to add allowed farms.
           </small>
           {% endif %}
         </div>

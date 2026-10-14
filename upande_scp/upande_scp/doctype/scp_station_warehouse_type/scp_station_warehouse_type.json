@@ -1,0 +1,36 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-09-10 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "warehouse_type"
+ ],
+ "fields": [
+  {
+   "description": "A Warehouse Type that counts as a scouting station — a place with beds, rows or bands under it. Greenhouse for roses, Block for avocado and coffee. Warehouses of any other type (stores, CSUs, transit) are never offered to a scout.",
+   "fieldname": "warehouse_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Warehouse Type",
+   "options": "Warehouse Type",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-10 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "SCP Station Warehouse Type",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

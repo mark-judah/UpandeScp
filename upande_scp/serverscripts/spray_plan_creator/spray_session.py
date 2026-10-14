@@ -106,14 +106,14 @@ def _scanned_codes(wo) -> set[str]:
 
 
 def _scan_verification_method() -> str:
-    """GM-configured CSU scan confirmation method, from Spray Plan Settings.
+    """GM-configured CSU scan confirmation method, from Scouting and Crop Protection Settings.
 
     Returns ``"tick"`` when the GM has approved tick-confirmation as a substitute
     for scanning the QR/label, else ``"labels"`` (the default — an actual scan is
     required). Unset / any other value is treated as ``"labels"``.
     """
     val = (
-        frappe.db.get_single_value("Spray Plan Settings", "scan_verification_method")
+        frappe.db.get_single_value("Scouting and Crop Protection Settings", "scan_verification_method")
         or ""
     ).strip()
     return "tick" if val == "Tick Confirmation" else "labels"

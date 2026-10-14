@@ -36,7 +36,13 @@ K_ZONES_GEOJSON = "scp_zone_geojson"
 K_ZONE_COUNT_BY_BED = "scp:zone_count_by_bed_v1"
 K_BED_COUNT_BY_GH = "scp:bed_count_by_gh_v1"
 K_BEDS_AND_ZONES = "scp:beds_and_zones_payload_v1"
+# v1 is abandoned, not reused: a rolling deploy could otherwise serve a
+# stale v1 (raw_geojson) payload to a v2 (compact-encoded) frontend, or vice
+# versa, for up to TTL_LONG (24h). Both keys are still listed in the Zone/Bed
+# invalidation tuples below so a leftover v1 entry keeps getting cleared too.
+K_BEDS_AND_ZONES_V2 = "scp:beds_and_zones_payload_v2"
 K_GREENHOUSES_GEOJSON = "scp:greenhouses_geojson_v1"
+K_BLOCKS_GEOJSON = "scp:blocks_geojson_v1"
 K_FARMS_AND_GREENHOUSES = "scp:farms_and_greenhouses_v1"
 K_AFP_WAREHOUSES = "scp:afp_warehouses_v3"
 K_AFP_SPRAY_EQUIPMENT = "scp:afp_spray_equipment_v1"
@@ -54,7 +60,25 @@ K_SM_TRAPS_BY_GH = "scp:sm_traps_by_gh_v1"
 # beds + traps + sections for a farm so the mobile app can populate its
 # offline cache in a single request instead of per-block round-trips.
 K_SM_FARM_BUNDLE_PREFIX = "scp:sm_farm_bundle_v1"
+# Manifest of every pest / disease / predator / disorder photo, with a sha256 of
+# each file's bytes. The mobile app downloads a photo once and then only when its
+# hash changes, so this must be invalidated whenever one of those masters is
+# edited (see `invalidate_reference_images`).
+K_SM_REFERENCE_IMAGES = "scp:sm_reference_images_v1"
+# Per-block Orchard Tree FeatureCollection used by the avocado view of the
+# scouts map. Key suffix is the block (Warehouse) name.
+K_ORCHARD_TREES_PREFIX = "scp:orchard_trees_v1"
+# Per-farm Tank & Valve FeatureCollection for the avocado 3D map. Suffix is
+# the farm name (or '__all__' for the unfiltered bundle).
+K_TANKS_VALVES_PREFIX = "scp:tanks_valves_v1"
 K_CROPS_SCOUTED = "scp:crops_scouted_v1"
+# What belongs to each crop — pests, diseases, farms, greenhouses, farm→crop.
+# One site-wide entry (see common/crop_catalog.py); built with raw SQL so no
+# user's permission scope is ever stored in it.
+K_CROP_CATALOG = "scp:crop_catalog_v1"
+#: Stage roles (Life stage / Form / Sign), master weights and per-crop weight
+#: overrides — common/stage_roles.py (stage & variety spec S1–S6).
+K_STAGE_ROLES = "scp:stage_roles_v1"
 # Pest / Plant Disease legend colours (the per-name hex stored on the
 # doctype). Cached separately from the heavy scouting payload so a colour
 # tweak invalidates instantly without rebuilding the per-month entries.
@@ -68,12 +92,25 @@ K_MAP_SETTINGS = "scp:map_settings_v1"
 K_FARM_HIERARCHY = "scp:farm_hierarchy_v1"
 # Versioned scouting payload cache. Keys use the prefix + version stamp +
 # args, so invalidation is O(1): bump the stamp and old keys orphan via TTL.
-K_SCOUTING_PAYLOAD_PREFIX  = "scp:scouting_payload_v2"
-K_SCOUTING_PAYLOAD_VERSION = "scp:scouting_payload_ver_v2"
+# v3: _build_month_entries dropped owner/modified_by/modified (R7 payload
+# trim) — bumped so a client expecting the narrower shape is never served a
+# v2 entry cached with the old fat fields.
+K_SCOUTING_PAYLOAD_PREFIX  = "scp:scouting_payload_v3"
+K_SCOUTING_PAYLOAD_VERSION = "scp:scouting_payload_ver_v3"
 # One-centroid-per-Zone payload for the rose 3D map. Invalidated by Zone
 # create/update/delete (the geometry source of truth) and Bed/Warehouse
 # changes (which can rename or reparent zones).
 K_ZONE_CENTROIDS = "scp:zone_centroids_v1"
+# Per-house 3 × 3 station grid for station prevalence (dashboard_aggregates/
+# _prevalence_rows.py). Suffix is the greenhouse/block name. Dropped by
+# invalidate_station_grid_for_doc whenever a Zone, Bed or Orchard Tree of that
+# house is saved or deleted.
+K_STATION_GRID_PREFIX = "scp:station_grid_v1"
+# Per-house fine ranks for spread patches (_prevalence_rows.station_ranks):
+# (bed rank, zone rank within the bed) or (row rank, tree rank within the row).
+# Suffix is the greenhouse/block name; dropped with the grid by
+# invalidate_station_grid_for_doc.
+K_STATION_RANKS_PREFIX = "scp:station_ranks_v1"
 
 
 def scouting_payload_version():
@@ -126,11 +163,53 @@ def _resolve_scouting_date(doc):
         return None
 
 
-def invalidate_scouting_week(iso_year, iso_week):
-    """Delete the cached payload for a single ISO week at the current version."""
-    v = scouting_payload_version()
-    key = f"{K_SCOUTING_PAYLOAD_PREFIX}:{v}:{iso_year:04d}-W{iso_week:02d}"
-    invalidate(key)
+# Rule version of a cached week slice. Bump when the rows a slice holds change
+# shape or membership (crop2: crop-less rows carry their resolved crop, D5), so
+# slices built under the old rule are not served for up to their 24h TTL.
+K_SCOUTING_SLICE_SCHEMA = "crop2"
+
+
+def scouting_week_key(version, iso_year, iso_week, crop=None):
+    """The one place a per-ISO-week payload key is spelled (build + invalidate)."""
+    prefix = f"{crop}:" if crop else ""
+    return (f"{K_SCOUTING_PAYLOAD_PREFIX}:{version}:{K_SCOUTING_SLICE_SCHEMA}:"
+            f"{prefix}{iso_year:04d}-W{iso_week:02d}")
+
+
+def invalidate_scouting_week(iso_year, iso_week, crop=None):
+    """Delete the cached payload for a single ISO week at the current version.
+
+    ``crop`` targets a crop-scoped slice (see get_complete_scouting_entries
+    ._week_cache_key); omitted targets the all-crop slice.
+    """
+    invalidate(scouting_week_key(scouting_payload_version(), iso_year, iso_week, crop))
+
+
+def _resolve_scouting_crop(doc):
+    """Best-effort crop for a scouting-related doc (child rows walk to their
+    parent). A row with no ``crop_scouted`` belongs to its greenhouse's (or
+    block's) crop (spec D5), because that is the slice it is served in.
+    ``None`` when unresolvable."""
+    dt = getattr(doc, "doctype", None)
+    crop = place = None
+    if dt == "Scouting Entry":
+        crop = getattr(doc, "crop_scouted", None)
+        place = getattr(doc, "greenhouse", None) or getattr(doc, "block", None)
+    elif dt in ("Pests Scouting Entry", "Diseases Scouting Entry", "Trap Scouting Entry"):
+        parent = getattr(doc, "parent", None)
+        if parent:
+            row = frappe.db.get_value(
+                "Scouting Entry", parent, ["crop_scouted", "greenhouse", "block"], as_dict=True
+            ) or {}
+            crop = row.get("crop_scouted")
+            place = row.get("greenhouse") or row.get("block")
+    if crop:
+        return crop
+    if place:
+        from upande_scp.serverscripts.common import crop_catalog
+
+        return crop_catalog.crop_for_greenhouse(place)
+    return None
 
 
 def invalidate_scouting_week_for_doc(doc):
@@ -154,7 +233,75 @@ def invalidate_scouting_week_for_doc(doc):
         invalidate_scouting_payload()
         return
     iso = d.isocalendar()
-    invalidate_scouting_week(iso[0], iso[1])
+    invalidate_scouting_week(iso[0], iso[1])  # all-crop slice
+    # Also bust the crop-scoped slice (avocado etc.) so single-crop fetches,
+    # which cache all history, don't serve stale data for the touched week.
+    # Rose is a scoped slice too now (the route always sends the crop).
+    crop = _resolve_scouting_crop(doc)
+    if crop:
+        invalidate_scouting_week(iso[0], iso[1], crop)
+
+
+# ── Data-quality day partials (dashboard_aggregates/_quality.day_partials) ──
+# One generation stamp per capture date; a partial's key carries the stamp it
+# was built under, so replacing the stamp drops every scope's partial for that
+# date at once (no key scan). A stamp is a fresh unique value, never a counter,
+# so one evicted or flushed and re-created can never re-match an old partial.
+K_QUALITY_DAY_GEN = "scp:dash_agg:qgen"
+
+
+def quality_day_gen_key(day) -> str:
+    return f"{K_QUALITY_DAY_GEN}:{str(day)[:10]}"
+
+
+def new_quality_gen() -> str:
+    import time
+    import uuid
+
+    return f"{time.time_ns():x}{uuid.uuid4().hex[:6]}"
+
+
+def invalidate_quality_days(*days) -> None:
+    """Drop the quality partials of these capture dates — now, and again after
+    the commit, so a partial read between the write and its commit (which
+    cannot see the row yet) is not kept."""
+    days = sorted({str(d)[:10] for d in days if d})
+    if not days:
+        return
+
+    def bump():
+        cache = frappe.cache()
+        for d in days:
+            cache.set(cache.make_key(quality_day_gen_key(d)), new_quality_gen())
+
+    bump()
+    try:
+        frappe.db.after_commit.add(bump)
+    except Exception:
+        pass
+
+
+def invalidate_quality_for_doc(doc, method=None):
+    """Doc event: a Scouting Entry (or its pest / disease row, or its Metadata
+    row) changed — drop its capture date's quality partials, and the date it
+    had before the save when an edit moved it."""
+    try:
+        dt = getattr(doc, "doctype", None)
+        days = []
+        if dt == "Scouting Entry Metadata":
+            entry = getattr(doc, "scouting_entry", None)
+            if entry:
+                days.append(frappe.db.get_value("Scouting Entry", entry, "date_of_capture"))
+        else:
+            days.append(_resolve_scouting_date(doc))
+            if dt == "Scouting Entry":
+                before = doc.get_doc_before_save() if hasattr(doc, "get_doc_before_save") else None
+                if before is not None:
+                    days.append(getattr(before, "date_of_capture", None))
+        invalidate_quality_days(*days)
+    except Exception:
+        frappe.log_error(f"invalidate_quality_for_doc failed for {getattr(doc, 'doctype', '?')}",
+                         "SCP Cache")
 
 
 def _resolve_scouting_month(doc):
@@ -162,7 +309,7 @@ def _resolve_scouting_month(doc):
 
     Parent rows carry ``date_of_capture`` directly. Child rows (Pests/Diseases/
     Trap Scouting Entry) walk to their parent. Other doctypes that bust the
-    payload cache (Zone, Bed, Warehouse, Farm) don't have a
+    payload cache (Zone, Bed, Warehouse, Farm, Orchard Tree) don't have a
     natural month — return ``None`` so the client treats them as a global
     invalidation."""
     dt = getattr(doc, "doctype", None)
@@ -187,6 +334,11 @@ def publish_scouting_dirty(doc, method=None):
     Channel ``scp:scouting:dirty`` is broadcast site-wide; permission scoping
     happens client-side because the message contains no row data — only a hint
     that *something* changed.
+
+    Also attempts a debounced bump of the dashboard-aggregate cache version
+    stamp (see dashboard_aggregates._common's DASH_AGG_TTL comment) so the
+    www dashboards pick up scouting writes within ~60s without recomputing
+    on every single write.
     """
     try:
         month = _resolve_scouting_month(doc)
@@ -202,12 +354,90 @@ def publish_scouting_dirty(doc, method=None):
             "SCP Realtime",
         )
 
+    try:
+        from upande_scp.serverscripts.dashboard_aggregates._common import (
+            bump_dash_agg_version,
+        )
+        bump_dash_agg_version()
+    except Exception:
+        # Best-effort cache freshness nudge; never break the underlying write.
+        frappe.log_error(
+            f"bump_dash_agg_version failed for {getattr(doc, 'doctype', '?')}",
+            "SCP Realtime",
+        )
+
+
+def invalidate_reference_images():
+    """Clear the mobile reference-image manifest.
+
+    Cheap to rebuild (per-file hashes are memoised on size+mtime), so we just
+    drop the whole manifest rather than trying to patch one entry.
+    """
+    invalidate(K_SM_REFERENCE_IMAGES)
+
 
 def invalidate_farm_bundle(farm):
     """Clear the cached farm bundle for one farm."""
     if not farm:
         return
     invalidate(f"{K_SM_FARM_BUNDLE_PREFIX}:{farm}")
+
+
+def invalidate_orchard_trees_for_block(block):
+    if not block:
+        return
+    invalidate(f"{K_ORCHARD_TREES_PREFIX}:{block}")
+    invalidate(f"{K_ORCHARD_TREES_PREFIX}:pts:{block}")
+    invalidate(f"{K_ORCHARD_TREES_PREFIX}:rows:{block}")
+
+
+def invalidate_tanks_valves_for_doc(doc):
+    """Drop both the doc's farm key and the unfiltered bundle."""
+    farm = getattr(doc, "farm", None)
+    invalidate(f"{K_TANKS_VALVES_PREFIX}:__all__")
+    if farm:
+        invalidate(f"{K_TANKS_VALVES_PREFIX}:{farm}")
+
+
+def invalidate_orchard_trees_for_doc(doc):
+    """Invalidate the cached tree FeatureCollection for the doc's block.
+
+    Resolves the block from `doc.block` first, then via the row's greenhouse
+    when block is missing (e.g. on insert before before_save fires). Also
+    drops the per-farm key so the farm-wide tree map rebuilds.
+    """
+    block = getattr(doc, "block", None)
+    if not block:
+        row = getattr(doc, "row", None)
+        if row:
+            block = frappe.db.get_value("Bed", row, "greenhouse")
+    invalidate_orchard_trees_for_block(block)
+    if block:
+        farm = frappe.db.get_value("Warehouse", block, "custom_farm")
+        if farm:
+            invalidate(f"{K_ORCHARD_TREES_PREFIX}:farm:{farm}")
+            invalidate(f"{K_ORCHARD_TREES_PREFIX}:pts:farm:{farm}")
+            invalidate(f"{K_ORCHARD_TREES_PREFIX}:rows:farm:{farm}")
+
+
+def invalidate_station_grid_for_doc(doc):
+    """Drop the cached station grid and ranks of the house a Zone / Bed / Orchard Tree is in.
+
+    An avocado row is a Bed whose ``greenhouse`` is the block, so Bed covers both
+    crops. A tree saved before ``block`` is set resolves it through its row.
+    """
+    dt = getattr(doc, "doctype", None)
+    if dt in ("Zone", "Bed"):
+        wh = getattr(doc, "greenhouse", None)
+    elif dt == "Orchard Tree":
+        wh = getattr(doc, "block", None)
+        row = getattr(doc, "row", None)
+        if not wh and row:
+            wh = frappe.db.get_value("Bed", row, "greenhouse")
+    else:
+        return
+    if wh:
+        invalidate(f"{K_STATION_GRID_PREFIX}:{wh}", f"{K_STATION_RANKS_PREFIX}:{wh}")
 
 
 def invalidate_farm_bundle_for_doc(doc):
@@ -437,11 +667,19 @@ def build_zone_count_by_bed():
 
 
 def build_bed_count_by_gh():
+    # Which column marks a bed retired is site-local (`custom_active` here,
+    # `status` on a v16 site, neither on a bare upande_core), so it is probed
+    # rather than named — see scouting_metrics._bed_active_flag.
+    conditions = ["greenhouse IS NOT NULL", "greenhouse != ''"]
+    # Mona's Bed carries `custom_active`; probe rather than assume so a bare
+    # site (no flag) still counts every bed.
+    if frappe.db.has_column("Bed", "custom_active"):
+        conditions.append("custom_active = 1")
     rows = frappe.db.sql(
-        """
+        f"""
         SELECT greenhouse, COUNT(*) AS bed_count
         FROM `tabBed`
-        WHERE custom_active = 1 AND greenhouse IS NOT NULL AND greenhouse != ''
+        WHERE {" AND ".join(conditions)}
         GROUP BY greenhouse
         """,
         as_dict=True,
@@ -454,26 +692,32 @@ def build_bed_count_by_gh():
 
 _DOC_INVALIDATIONS = {
     "Employee": ("scp:sm_scout_lookup_v1",),
-    "Pest": (K_OBSERVATION_TYPES, K_PEST_COLORS),
-    "Plant Disease": (K_OBSERVATION_TYPES, K_DISEASE_COLORS),
-    "Predator": (K_OBSERVATION_TYPES,),
+    "Pest": (K_OBSERVATION_TYPES, K_PEST_COLORS, K_SM_REFERENCE_IMAGES),
+    "Plant Disease": (K_OBSERVATION_TYPES, K_DISEASE_COLORS, K_SM_REFERENCE_IMAGES),
+    "Predator": (K_OBSERVATION_TYPES, K_SM_REFERENCE_IMAGES),
     "Weed": (K_OBSERVATION_TYPES,),
     "Incident": (K_OBSERVATION_TYPES,),
-    "Physiological Disorder": (K_OBSERVATION_TYPES,),
-    "Pests Stages": (K_OBSERVATION_TYPES,),
+    "Physiological Disorder": (K_OBSERVATION_TYPES, K_SM_REFERENCE_IMAGES),
+    "Pests Stages": (K_OBSERVATION_TYPES, K_STAGE_ROLES),
     "Disease Stages": (K_OBSERVATION_TYPES,),
     "Predator Stages": (K_OBSERVATION_TYPES,),
-    "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH, K_SM_UNITS_BY_WH, K_ZONE_CENTROIDS),
-    "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_SM_BEDS_BY_GH, K_ZONE_CENTROIDS),
-    "Warehouse": (K_GREENHOUSES_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_SM_UNITS_BY_WH, K_FARM_HIERARCHY, K_ZONE_CENTROIDS),
-    "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_FARM_HIERARCHY),
+    "Stage": (K_STAGE_ROLES,),
+    "Zone": (K_ZONES_GEOJSON, K_ZONE_COUNT_BY_BED, K_BEDS_AND_ZONES, K_BEDS_AND_ZONES_V2, K_SM_ZONES_BY_GH, K_SM_ZONE_COUNTS_BY_GH, K_SM_UNITS_BY_WH, K_ZONE_CENTROIDS),
+    "Bed": (K_ZONE_COUNT_BY_BED, K_BED_COUNT_BY_GH, K_BEDS_AND_ZONES, K_BEDS_AND_ZONES_V2, K_SM_BEDS_BY_GH, K_ZONE_CENTROIDS),
+    "Warehouse": (K_GREENHOUSES_GEOJSON, K_BLOCKS_GEOJSON, K_FARMS_AND_GREENHOUSES, K_AFP_WAREHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_SM_UNITS_BY_WH, K_FARM_HIERARCHY, K_ZONE_CENTROIDS, K_CROP_CATALOG),
+    "Farm": (K_FARMS_AND_GREENHOUSES, K_SM_FARMS_AND_GHS, K_SM_FARMS_AND_WHS, K_FARM_HIERARCHY, K_CROP_CATALOG),
+    "Orchard Tree": (K_SM_UNITS_BY_WH,),
     "Trap": (K_SM_TRAPS_BY_GH,),
     "Spray Equipment Details": (K_AFP_SPRAY_EQUIPMENT,),
     "Item": (K_CHEMICALS_LIST,),
-    "Crop Scouted": (K_CROPS_SCOUTED, K_SM_SEVERITY_THRESHOLDS),
-    "Pest Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS),
-    "Disease Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS),
-    "Spray Plan Settings": (K_AFP_WAREHOUSES,),
+    "Crop Scouted": (K_CROPS_SCOUTED, K_SM_SEVERITY_THRESHOLDS, K_CROP_CATALOG, K_STAGE_ROLES),
+    "Pest Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS, K_CROP_CATALOG, K_STAGE_ROLES),
+    "Disease Filter": (K_OBSERVATION_TYPES, K_SM_SEVERITY_THRESHOLDS, K_CROP_CATALOG),
+    "Tank And Valve": (),
+    # The chemical/foliar Item Groups configured here decide which Items count
+    # as chemicals, so editing the Chemicals tab has to bust the chemicals list
+    # too — otherwise a newly configured group stays invisible for the TTL.
+    "Scouting and Crop Protection Settings": (K_AFP_WAREHOUSES, K_CHEMICALS_LIST),
     "Spray Plan Allowed Farm": (K_AFP_WAREHOUSES,),
     "Spray Plan Exclude Keyword": (K_AFP_WAREHOUSES,),
     # The new_application_floor_plan greenhouse picker fuzzy-resolves the
@@ -494,7 +738,7 @@ _SCOUTING_ENTRY_FAMILY = {
     "Trap Scouting Entry",
 }
 
-# Master data that changes the denominator (zone counts) or the
+# Master data that changes the denominator (zone/tree counts) or the
 # farm/station mapping. These are rare and can shift many weeks at once, so
 # they keep the cheap global version bump.
 _SCOUTING_PAYLOAD_INVALIDATORS = {
@@ -503,7 +747,17 @@ _SCOUTING_PAYLOAD_INVALIDATORS = {
     "Bed",
     "Warehouse",
     "Farm",
+    "Orchard Tree",
+    # Crop-scoped payloads/aggregates depend on which pests/diseases belong to
+    # which crop, so a change to those links shifts many weeks at once.
+    "Crop Scouted",
+    "Pest Filter",
+    "Disease Filter",
 }
+
+# The crop-catalog sources whose change also shifts the dashboard aggregates —
+# and Stage, whose role decides what counts as the live pest (stage & variety S3).
+_CROP_CATALOG_SOURCES = ("Crop Scouted", "Pest Filter", "Disease Filter", "Stage")
 
 
 def invalidate_on_change(doc, method=None):
@@ -514,10 +768,31 @@ def invalidate_on_change(doc, method=None):
     # the mobile bundle endpoint rebuilds on next request.
     if doc.doctype in ("Bed", "Trap", "Warehouse", "Farm"):
         invalidate_farm_bundle_for_doc(doc)
+    # Drop the per-block Orchard Tree FeatureCollection when trees move.
+    if doc.doctype == "Orchard Tree":
+        invalidate_orchard_trees_for_doc(doc)
+
+    # Drop the house's 3 × 3 station grid when its stations or beds change.
+    if doc.doctype in ("Zone", "Bed", "Orchard Tree"):
+        invalidate_station_grid_for_doc(doc)
+    # Drop the per-farm Tank & Valve bundle when assets move or get edited.
+    if doc.doctype == "Tank And Valve":
+        invalidate_tanks_valves_for_doc(doc)
     # Scouting writes: bust only the affected ISO week so other weeks stay
     # warm during active scouting. Master-data changes that shift derived
     # denominators across many weeks fall through to the global version bump.
     if doc.doctype in _SCOUTING_ENTRY_FAMILY:
         invalidate_scouting_week_for_doc(doc)
+        invalidate_quality_for_doc(doc)
     elif doc.doctype in _SCOUTING_PAYLOAD_INVALIDATORS:
         invalidate_scouting_payload()
+    if doc.doctype in _CROP_CATALOG_SOURCES:
+        try:
+            from upande_scp.serverscripts.dashboard_aggregates._common import (
+                bump_dash_agg_version,
+            )
+            bump_dash_agg_version()
+        except Exception:
+            frappe.log_error(
+                f"bump_dash_agg_version failed for {doc.doctype}", "SCP Cache"
+            )

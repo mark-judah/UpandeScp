@@ -3,6 +3,12 @@
 # Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
 upande_scp.patches.v1_0.export_sal_fixtures
 upande_scp.patches.v1_0.promote_filters_to_standalone
+# SCP-prefixed roles (non-destructive Has Role copy). Before the doctype sync so
+# the roles the synced doctypes grant to already exist.
+upande_scp.patches.v1_0.namespace_scp_roles
+# Spray Plan Settings -> Scouting and Crop Protection Settings. pre_model_sync so
+# the Single's values move with it instead of being orphaned by the sync.
+upande_scp.patches.v1_0.rename_spray_plan_settings_doctype
 # Chemical -> Spray Product. Must be pre_model_sync: the rename has to land in
 # the database before migrate syncs doctypes from disk, or migrate sees
 # `Spray Product` as new and `Chemical` as an orphan and deletes the orphan,
@@ -28,6 +34,10 @@ upande_scp.patches.v1_0.delete_application_floor_plan_workflow
 upande_scp.patches.v1_0.delete_legacy_submit_for_approval_client_script
 upande_scp.patches.v1_0.setup_spray_supervisor_role
 upande_scp.patches.v1_0.seed_stage_catalog
+# Stage roles (Life stage / Form / Sign) for live-pest prevalence. Fills blanks only.
+upande_scp.patches.v1_0.seed_stage_roles
+# Work Order fields for the spray compliance check (Spray Check, rule overrides).
+upande_scp.patches.v1_0.ensure_spray_compliance_work_order_fields
 upande_scp.patches.v1_0.consolidate_disease_stages
 upande_scp.patches.v1_0.rebrand_workspace_upande_scp
 upande_scp.patches.v1_0.configure_crop_protection_item_groups

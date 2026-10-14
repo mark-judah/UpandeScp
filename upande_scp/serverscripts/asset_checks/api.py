@@ -11,7 +11,7 @@ and the settings endpoints report ``installed: false``; nothing raises.
 * ``submit_asset_check_sheet(payload)`` — turn one filled sheet into a submitted
   Asset Check Sheet. Idempotent on the phone's ``client_id``.
 * ``get_asset_check_settings`` / ``save_asset_check_settings`` — the GM's switch
-  and farm x asset-category rows (Spray Plan Settings on this branch).
+  and farm x asset-category rows (Scouting and Crop Protection Settings on this branch).
 
 Who may call: Scout, General Manager, System Manager (with or without the
 ``SCP `` prefix, since sites spell roles differently). A scout sees the farms of
@@ -40,7 +40,7 @@ try:  # not every branch of this app carries crop_scope
 except ImportError:
 	crop_scope = None
 
-SETTINGS = "Spray Plan Settings"
+SETTINGS = "Scouting and Crop Protection Settings"
 SHEET = "Asset Check Sheet"
 TEMPLATE = "Asset Check Sheet Template"
 SCHEDULE = "Asset Check Sheet Schedule"

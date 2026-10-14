@@ -21,7 +21,7 @@ import frappe
 from upande_scp.serverscripts.spray_plan_creator import settings as settings_api
 
 GHOST = "_TEST GHOST ITEM GROUP THAT DOES NOT EXIST"
-SETTINGS = "Spray Plan Settings"
+SETTINGS = "Scouting and Crop Protection Settings"
 
 
 class TestADeadLinkDoesNotBlockTheSettingsPage(unittest.TestCase):

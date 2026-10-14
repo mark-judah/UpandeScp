@@ -78,7 +78,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Type",
-   "options": "\nInsecticide\nFungicide\nAdjuvant\npH Buffer"
+   "options": "\nInsecticide\nFungicide\nAdjuvant\npH Buffer\nPlant Growth Regulator"
   },
   {
    "fieldname": "classification_section",
@@ -223,7 +223,7 @@
    "link_fieldname": "chemical"
   }
  ],
- "modified": "2026-07-22 00:00:00.000000",
+ "modified": "2026-10-08 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Spray Product",

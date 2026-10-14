@@ -1,9 +1,9 @@
 /**
- * Unified Spray Plan Settings page.
+ * Unified Scouting and Crop Protection Settings page.
  *
  * Four tabs gated to GM / System Manager:
  *   • Access            — assign Spray Plan Creators to farms (legacy).
- *   • Spray Plan        — Spray Plan Settings (Single doctype) form.
+ *   • Spray Plan        — Scouting and Crop Protection Settings (Single doctype) form.
  *   • Farms & Map       — Map Settings + per-farm coordinates.
  *   • Chemicals         — Item rows in the chemical groups with full
  *                         per-item edit drawer (rate, codes, targets).
@@ -100,7 +100,7 @@ export function Settings() {
     <div className="flex flex-col min-h-svh">
       <PageHeader
         eyebrow={<>Access · Plan rules · Maps · Chemicals</>}
-        title={<>Spray Plan Settings</>}
+        title={<>Scouting and Crop Protection Settings</>}
       />
 
       <section className="px-4 md:px-6 py-4">

@@ -17,7 +17,7 @@ def get_approval_review(wo_name: str) -> dict:
     if wo.custom_type != "Application Floor Plan":
         frappe.throw("This endpoint only supports Application Floor Plan work orders.")
 
-    settings = frappe.get_single("Spray Plan Settings")
+    settings = frappe.get_single("Scouting and Crop Protection Settings")
     irac_window = settings.irac_rotation_window_days or 14
     frac_window = settings.frac_rotation_window_days or 21
 

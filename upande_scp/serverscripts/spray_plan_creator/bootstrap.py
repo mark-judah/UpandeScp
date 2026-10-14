@@ -22,7 +22,7 @@ def fetch_creator_bootstrap() -> dict:
 
     farms = scope["farms"]
 
-    # Apply the Spray Plan Settings exclude-keyword filter on top of the
+    # Apply the Scouting and Crop Protection Settings exclude-keyword filter on top of the
     # farm-scoped greenhouses so CSU / IPM / phase / tunnel rooms don't
     # appear in the picker. The "allowed farms" check is folded in below
     # by overriding with the user's actual farm scope.
@@ -108,8 +108,8 @@ def fetch_creator_bootstrap() -> dict:
         order_by="name asc",
     )
 
-    settings = frappe.get_single("Spray Plan Settings")
-    from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
+    settings = frappe.get_single("Scouting and Crop Protection Settings")
+    from upande_scp.upande_scp.doctype.scouting_and_crop_protection_settings.scouting_and_crop_protection_settings import (
         _configured_stores,
     )
     return {

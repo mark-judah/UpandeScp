@@ -25,7 +25,7 @@ def search_employees(query: str = "", limit: int = 20) -> list[dict]:
     payroll number) or the auto-built ``employee_name``. Results are scoped
     to companies the user has farm access to, when farms are configured —
     Administrators and users without any farm scope see everyone (so the
-    Spray Plan Settings flow still works for setup users).
+    Scouting and Crop Protection Settings flow still works for setup users).
 
     Returns dicts shaped ``{employee, employee_name, designation, department,
     company}`` — enough for the picker to render a rich row + dedupe by

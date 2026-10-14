@@ -1,5 +1,5 @@
 /**
- * Spray Plan Settings (Single) editor — rotation windows, weather
+ * Scouting and Crop Protection Settings (Single) editor — rotation windows, weather
  * thresholds, gating flags, allowed farms, exclude keywords.
  */
 

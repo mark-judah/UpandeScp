@@ -226,7 +226,7 @@ export function ApplicationPlan() {
   const [bootstrap, setBootstrap] = useState<CreatorBootstrap | null>(null);
   const [bootstrapError, setBootstrapError] = useState<{ status: number; message: string } | null>(null);
   // Add chemical / Add foliar are gated on the GM having configured the
-  // matching store in Spray Plan Settings (see Settings → Spray Plan).
+  // matching store in Scouting and Crop Protection Settings (see Settings → Spray Plan).
   const chemStoreSet = !!bootstrap?.chemical_store_set;
   const foliarStoreSet = !!bootstrap?.fertigation_store_set;
   const [varietyTree, setVarietyTree] = useState<VarietyNode[]>([]);
@@ -239,7 +239,7 @@ export function ApplicationPlan() {
   // Farm filter: scopes the greenhouse picker (and everything downstream)
   // to the chosen farm. ``""`` means "all my allowed farms"; the list comes
   // from ``bootstrap.scope.farms`` which is already trimmed server-side to
-  // Spray Plan Settings.allowed_farms for the current user.
+  // Scouting and Crop Protection Settings.allowed_farms for the current user.
   const [farmFilter, setFarmFilter] = useState<string>("");
   const [greenhouse, setGreenhouse] = useState<string>("");
   const [lastScoutDate, setLastScoutDate] = useState<string | null>(null);
@@ -2468,7 +2468,7 @@ function DiagChip({
 }
 
 /** Add chemical / Add foliar button. When the matching store isn't configured
- *  in Spray Plan Settings it renders disabled with a tooltip pointing the user
+ *  in Scouting and Crop Protection Settings it renders disabled with a tooltip pointing the user
  *  to Settings (a disabled button can't fire hover, so the trigger wraps a
  *  span around it). */
 function AddStoreButton({

@@ -433,7 +433,7 @@ def cancel_application_work_order(name):
 def list_chemical_items(q=None, limit=50, kind=None):
     """Search Items the planner can add to a BOM — restricted to chemical /
     fertilizer item groups AND to items actually carried in the configured
-    chemical / fertigation stores (Spray Plan Settings).
+    chemical / fertigation stores (Scouting and Crop Protection Settings).
 
     The Chemical master is dormant: chemicals are picked straight from Item
     with no ``allowed`` gate. Presence is decided by a Bin in one of the
@@ -450,7 +450,7 @@ def list_chemical_items(q=None, limit=50, kind=None):
         _CHEMICAL_GROUPS,
         _kind_of,
     )
-    from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
+    from upande_scp.upande_scp.doctype.scouting_and_crop_protection_settings.scouting_and_crop_protection_settings import (
         get_allowed_chemical_store_warehouses,
         get_allowed_fertilizer_unit_warehouses,
     )
@@ -672,7 +672,7 @@ def get_application_plan_bootstrap():
 
     def _build_warehouses():
         # Use the exact same filter as new_application_floor_plan/index.py:
-        # Spray Plan Settings allowed_farms + the GH-name regex + exclude
+        # Scouting and Crop Protection Settings allowed_farms + the GH-name regex + exclude
         # keywords. Keeps the React greenhouse list aligned with the JS one.
         from upande_scp.www.new_application_floor_plan.index import (
             _build_warehouses as _build_afp_warehouses,
@@ -698,10 +698,10 @@ def get_application_plan_bootstrap():
         )
     ]
 
-    # Whether the GM has explicitly listed stores in Spray Plan Settings (the
+    # Whether the GM has explicitly listed stores in Scouting and Crop Protection Settings (the
     # regex fallback is deliberately ignored here). The Application Plan disables
     # its Add chemical / Add foliar buttons until the matching store is set.
-    from upande_scp.upande_scp.doctype.spray_plan_settings.spray_plan_settings import (
+    from upande_scp.upande_scp.doctype.scouting_and_crop_protection_settings.scouting_and_crop_protection_settings import (
         _configured_stores,
     )
 

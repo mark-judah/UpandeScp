@@ -450,7 +450,7 @@ def list_draft_transfers(
 
     farms = sorted({r["farm"] for r in rows if r.get("farm")})
     bypass = bool(
-        frappe.db.get_single_value("Spray Plan Settings", "bypass_biometric_on_issue")
+        frappe.db.get_single_value("Scouting and Crop Protection Settings", "bypass_biometric_on_issue")
     )
     return {"rows": rows, "farms": farms, "bypass_biometric": bypass}
 
@@ -691,7 +691,7 @@ def submit_with_biometric(names: str | list) -> dict:
       * The scanned employee must match ``bio_employee``.
       * Record the match in mona's native fields (``biometric_status`` =
         ``Verified``, ``biometric_verified_at``, ``matched_biometric_log``).
-      * When ``Spray Plan Settings.bypass_biometric_on_issue`` is ON, a missing
+      * When ``Scouting and Crop Protection Settings.bypass_biometric_on_issue`` is ON, a missing
         or non-matching scan no longer hard-fails: the issue is recorded as
         ``biometric_status='Bypassed'`` (authoriser = the logged-in store
         keeper, no ``matched_biometric_log``). A fresh matching scan is still
@@ -715,7 +715,7 @@ def submit_with_biometric(names: str | list) -> dict:
         frappe.throw("No Stock Entries selected.", frappe.ValidationError)
 
     bypass = bool(
-        frappe.db.get_single_value("Spray Plan Settings", "bypass_biometric_on_issue")
+        frappe.db.get_single_value("Scouting and Crop Protection Settings", "bypass_biometric_on_issue")
     )
     scan = _latest_biometric_log()
     if not scan and not bypass:

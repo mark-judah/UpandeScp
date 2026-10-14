@@ -97,7 +97,13 @@ doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # pages never ship. Set UPANDE_SCP_SKIP_FRONTEND_BUILD=1 to skip locally.
 before_migrate = ["upande_scp.serverscripts.common.frontend_build.before_migrate"]
 
-after_migrate = ["upande_scp.serverscripts.scouting.observation_colors.after_migrate"]
+after_migrate = [
+	"upande_scp.serverscripts.scouting.observation_colors.after_migrate",
+	# Scout capture defaults (photos / comments on, max count 15) as real rows on
+	# the Single: a missing Check row is cast to 0 on load, so a farm that never
+	# opened the settings page would otherwise be switched off by its first save.
+	"upande_scp.serverscripts.scouting.capture_settings.ensure_defaults",
+]
 
 # Uninstallation
 # ------------
@@ -184,6 +190,8 @@ doc_events = {
     "Incident": _SCP_CACHE_EVENTS,
     "Physiological Disorder": _SCP_CACHE_EVENTS,
     "Pests Stages": _SCP_CACHE_EVENTS,
+    # Stage roles / weights (stage & variety) drive live-pest prevalence.
+    "Stage": _SCP_CACHE_EVENTS,
     "Pest Filter": _SCP_CACHE_EVENTS,
     "Disease Stages": _SCP_CACHE_EVENTS,
     "Predator Stages": _SCP_CACHE_EVENTS,
@@ -207,7 +215,7 @@ doc_events = {
         "after_insert": "upande_scp.serverscripts.common.crop_protection.on_item_after_insert",
     },
     "Crop Scouted": _SCP_CACHE_EVENTS,
-    "Spray Plan Settings": _SCP_CACHE_EVENTS,
+    "Scouting and Crop Protection Settings": _SCP_CACHE_EVENTS,
     "Spray Plan Allowed Farm": _SCP_CACHE_EVENTS,
     "Spray Plan Exclude Keyword": _SCP_CACHE_EVENTS,
     # Scouting payload cache invalidation + realtime "dirty" nudge.

@@ -8,7 +8,7 @@ patch still reads those fields. Those tests belong with the slices that port
 those features.
 
 What is tested here is what this slice installs: classification driven by the
-`Spray Plan Settings` item-group config, and the sidecar auto-create hook.
+`Scouting and Crop Protection Settings` item-group config, and the sidecar auto-create hook.
 
 Run: bench --site mona.local run-tests --app upande_scp \
         --module upande_scp.serverscripts.tests.test_crop_protection
@@ -20,7 +20,7 @@ import frappe
 
 from upande_scp.serverscripts.common import crop_protection as cp
 
-SETTINGS = "Spray Plan Settings"
+SETTINGS = "Scouting and Crop Protection Settings"
 CHEM_GROUP = "_TEST CP Chemicals"
 FOL_GROUP = "_TEST CP Foliars"
 _ITEM_PREFIX = "_TEST-CP-"

@@ -17,7 +17,7 @@ import frappe
 from upande_scp.serverscripts.mobile import get_observations_details
 from upande_scp.serverscripts.scouting import capture_settings
 
-SETTINGS = "Spray Plan Settings"
+SETTINGS = "Scouting and Crop Protection Settings"
 
 
 def _set(photos, comments):

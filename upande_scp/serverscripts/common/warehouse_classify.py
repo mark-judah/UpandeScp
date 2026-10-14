@@ -1,7 +1,7 @@
 """Shared warehouse-name classification for the spray-plan flow.
 
 One source of truth for "is this a chemical store / fertilizer store / CSU?"
-so the store-keeper dashboard (stock.py) and the Spray Plan Settings
+so the store-keeper dashboard (stock.py) and the Scouting and Crop Protection Settings
 warehouse resolver agree. Names vary by site: the chemical store is
 "Chemical Store - <farm>" on some sites and "Chemical Main Store - <farm>"
 on mona, so match "chemical" ... "store" anywhere rather than a literal

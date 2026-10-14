@@ -1,3 +1,6 @@
+import { recordCall } from "./perf";
+import { requestFinished, requestStarted } from "./splash";
+
 export interface ScpBootstrap {
   user: string;
   full_name: string;
@@ -45,6 +48,27 @@ export class FrappeError extends Error {
   }
 }
 
+/**
+ * Verbose tracing flag, read by pages that log extra detail. Toggle from the
+ * browser console:  localStorage.scp_debug = "1"  (or window.SCP_DEBUG = true).
+ * Kept from mona's frappe.ts; kaitet's version dropped it.
+ */
+export function scpDebug(): boolean {
+  try {
+    return (
+      localStorage.getItem("scp_debug") === "1" ||
+      (window as unknown as { SCP_DEBUG?: boolean }).SCP_DEBUG === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** True when a thrown value is a Frappe error caused by a stale page/session. */
+export function isStaleSession(e: unknown): boolean {
+  return e instanceof FrappeError && e.isStaleSession;
+}
+
 function csrf(): string {
   return (
     window.SCP?.csrf_token ||
@@ -65,62 +89,53 @@ export function bootstrap(): ScpBootstrap {
 }
 
 /**
- * Verbose API tracing. Toggle at runtime from the browser console:
- *   localStorage.scp_debug = "1"   // enable
- *   delete localStorage.scp_debug  // disable
- * (or set window.SCP_DEBUG = true). Errors are ALWAYS logged regardless,
- * so failures the caller swallows (e.g. `catch { return [] }`) still surface.
+ * Every endpoint in the app goes through here, which is what lets the opening
+ * cover know whether anything is still outstanding without a single page having
+ * to report it. See lib/splash.
  */
-export function scpDebug(): boolean {
-  try {
-    return (
-      localStorage.getItem("scp_debug") === "1" ||
-      (window as unknown as { SCP_DEBUG?: boolean }).SCP_DEBUG === true
-    );
-  } catch {
-    return false;
-  }
-}
-
-function now(): number {
-  return typeof performance !== "undefined" ? performance.now() : Date.now();
-}
-
 export async function call<T = unknown>(
   method: string,
   args: Record<string, unknown> = {},
 ): Promise<T> {
-  const dbg = scpDebug();
-  const t0 = now();
-  const short = method.split(".").pop() || method;
-  if (dbg) console.log(`%c[SCP] → fetching ${short}`, "color:#3b82f6", { method, args });
-
-  let res: Response;
+  requestStarted();
   try {
-    res = await fetch(`/api/method/${method}`, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Frappe-CSRF-Token": csrf(),
-        "X-Requested-With": "XMLHttpRequest",
-      },
-      body: JSON.stringify(args),
-    });
-  } catch (e) {
-    // Network/transport failure — always surface it.
-    console.error(`[SCP] ✗ ${short} — network error after ${Math.round(now() - t0)}ms`, { method, error: e });
-    throw e;
+    return await request<T>(method, args);
+  } finally {
+    // `finally`, not a call after the await: a throwing request must still
+    // decrement, or one failed endpoint holds the cover until the cap.
+    requestFinished();
   }
+}
+
+async function request<T>(
+  method: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  const fetchStart = performance.now();
+  const res = await fetch(`/api/method/${method}`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Frappe-CSRF-Token": csrf(),
+      "X-Requested-With": "XMLHttpRequest",
+    },
+    body: JSON.stringify(args),
+  });
 
   let body: unknown = null;
   const text = await res.text();
+  const fetchMs = performance.now() - fetchStart;
+
+  const parseStart = performance.now();
   try {
     body = text ? JSON.parse(text) : null;
   } catch {
     body = text;
   }
-  const ms = Math.round(now() - t0);
+  const parseMs = performance.now() - parseStart;
+
+  recordCall(method, res.url, text, fetchStart, fetchMs, parseMs);
 
   if (!res.ok) {
     const msg =
@@ -132,26 +147,11 @@ export async function call<T = unknown>(
         : null) ||
       res.statusText ||
       "Request failed";
-    // Always log server errors — callers often swallow the throw.
-    console.error(`[SCP] ✗ ${short} — HTTP ${res.status} (${ms}ms): ${msg}`, { method, body });
     throw new FrappeError(msg, res.status, body);
   }
 
-  const out =
-    body && typeof body === "object" && "message" in body
-      ? (body as { message: T }).message
-      : (body as T);
-  if (dbg) {
-    let size: number | string = "?";
-    try {
-      size = JSON.stringify(out)?.length ?? 0;
-    } catch {
-      /* unserialisable — ignore */
-    }
-    console.log(
-      `%c[SCP] ✓ fetched ${short} (${ms}ms, ${size} bytes)`,
-      "color:#10b981",
-    );
+  if (body && typeof body === "object" && "message" in body) {
+    return (body as { message: T }).message;
   }
-  return out;
+  return body as T;
 }

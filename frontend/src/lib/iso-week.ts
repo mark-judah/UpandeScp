@@ -32,3 +32,39 @@ export function weekTickFormatter(value: string): string {
   const [y, m, d] = value.split("-").map(Number);
   return `Week ${isoWeek(new Date(y, m - 1, d))}`;
 }
+
+/** Tick formatter for an x-axis whose keys are already ISO-week LABELS
+ *  ("2026-W29" → "Week 29"), as the Trends payload emits.
+ *
+ *  Kept separate from `weekTickFormatter`, which takes YYYY-MM-DD and is still
+ *  used by seven daily-resolution dashboard charts. Feeding a week label to that
+ *  one silently returns "" for every tick (Number("W29") is NaN), i.e. a blank
+ *  axis rather than a visible error.
+ *
+ *  The year is dropped unless it differs from `refYear`, so a range spanning a
+ *  year boundary stays unambiguous without repeating the year on every tick. */
+export function weekLabelTickFormatter(value: string, refYear?: number): string {
+  if (!value || typeof value !== "string") return "";
+  const m = /^(\d{4})-W(\d{1,2})$/.exec(value);
+  if (!m) return "";
+  const year = Number(m[1]);
+  const week = Number(m[2]);
+  return refYear !== undefined && year !== refYear
+    ? `W${week} '${String(year).slice(2)}`
+    : `Week ${week}`;
+}
+
+/** Default "recent" range for week-bucketed pages: Monday of the PREVIOUS ISO
+ *  week through ``today``, so the newest two ISO weeks are always whole.
+ *
+ *  ``today - 7`` (the old Heatmaps default) lands on a Sunday when today is a
+ *  Sunday, so the previous week contributed one unscouted day and the page's
+ *  "last scouted weeks" history showed it empty. Local dates throughout —
+ *  scouting dates are farm-local calendar days. */
+export function recentWeeksRange(today: Date = new Date()): { from: string; to: string } {
+  const day = today.getDay() || 7; // Sunday → 7, Monday → 1
+  const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (day - 1) - 7);
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return { from: fmt(from), to: fmt(today) };
+}

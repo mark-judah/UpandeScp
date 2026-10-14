@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { call } from "@/lib/frappe";
+import { errorText } from "@/lib/errors";
 import { useRealtime } from "@/hooks/use-realtime";
+import { useJobProgress } from "@/hooks/use-job-progress";
 
 export type Endpoint =
   | "overview"
@@ -10,8 +12,12 @@ export type Endpoint =
   | "fcm"
   | "greenhouse_detail"
   | "heatmaps_grid"
+  | "heatmap_card_detail"
+  | "heatmap_terrain"
   | "application_plan_diagnose"
-  | "trends";
+  | "trends"
+  | "quality"
+  | "scouts";
 
 export interface AggregateFilters {
   from_date: string;
@@ -31,16 +37,18 @@ export interface AggregateProgress {
 
 export interface AggregateState<T> {
   data: T | null;
+  /** The filters `data` was fetched with (null before the first success). */
+  dataFilters: AggregateFilters | null;
   loading: boolean;
   error: string | null;
-  /** Non-null only while a cold-path fetch is publishing progress events.
-   *  Warm-cache hits skip the publishes entirely so this stays null and the
-   *  overlay never renders. */
+  /** Non-null only once a cold-path fetch has reported a stage. Warm-cache hits
+   *  never publish, so this stays null and the bar stays indeterminate rather than
+   *  showing a number nobody measured. */
   progress: AggregateProgress | null;
   reload: (opts?: { force?: boolean }) => void;
 }
 
-const METHOD: Record<Endpoint, string> = {
+export const METHOD: Record<Endpoint, string> = {
   overview:           "upande_scp.serverscripts.dashboard_aggregates.overview",
   pests:              "upande_scp.serverscripts.dashboard_aggregates.pests",
   diseases:           "upande_scp.serverscripts.dashboard_aggregates.diseases",
@@ -48,9 +56,16 @@ const METHOD: Record<Endpoint, string> = {
   fcm:                "upande_scp.serverscripts.dashboard_aggregates.fcm",
   greenhouse_detail:  "upande_scp.serverscripts.dashboard_aggregates.greenhouse_detail",
   heatmaps_grid:      "upande_scp.serverscripts.dashboard_aggregates.heatmaps_grid",
+  heatmap_card_detail:
+    "upande_scp.serverscripts.dashboard_aggregates.heatmap_card_detail",
+  heatmap_terrain:
+    "upande_scp.serverscripts.dashboard_aggregates.heatmap_terrain",
   application_plan_diagnose:
     "upande_scp.serverscripts.dashboard_aggregates.application_plan_diagnose",
   trends:             "upande_scp.serverscripts.dashboard_aggregates.trends",
+  quality:            "upande_scp.serverscripts.dashboard_aggregates.quality",
+  // Personnel ▸ Scouts: the quality aggregate's scout rows, ranked and scoped.
+  scouts:             "upande_scp.serverscripts.scouts.api.get_scouts",
 };
 
 function newJobId(): string {
@@ -68,9 +83,16 @@ export function useDashboardAggregate<T>(
   enabled: boolean,
 ): AggregateState<T> {
   const [data, setData] = useState<T | null>(null);
+  // The filters `data` was fetched with: a page can tell a refresh of the same
+  // scope (keep the old figures up) from a switch to another one (don't show
+  // one greenhouse's counts under the next one's title).
+  const [dataFilters, setDataFilters] = useState<AggregateFilters | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<AggregateProgress | null>(null);
+  // Mirrored into state as well as the ref: the ref filters stale realtime events,
+  // while the polling hook needs a value that re-renders when it changes.
+  const [jobId, setJobId] = useState<string>("");
   const tokenRef = useRef(0);
   // Job id of the *currently-in-flight* fetch. Realtime progress events from
   // older fetches (e.g. rapid filter changes) are filtered out by comparing
@@ -85,6 +107,7 @@ export function useDashboardAggregate<T>(
       const token = ++tokenRef.current;
       const job_id = newJobId();
       jobIdRef.current = job_id;
+      setJobId(job_id);
       setLoading(true);
       setError(null);
       setProgress(null);
@@ -96,14 +119,16 @@ export function useDashboardAggregate<T>(
         if (tokenRef.current !== token) return;
         const payload = (resp as any)?.message ?? (resp as T);
         setData(payload);
+        setDataFilters(filters);
       } catch (e: any) {
         if (tokenRef.current !== token) return;
-        setError(e?.message || "Failed to load dashboard data");
+        setError(errorText(e, "Failed to load dashboard data"));
       } finally {
         if (tokenRef.current === token) {
           setLoading(false);
           setProgress(null);
           jobIdRef.current = "";
+          setJobId("");
         }
       }
     },
@@ -130,11 +155,19 @@ export function useDashboardAggregate<T>(
   );
   useRealtime("scp:dash_agg:progress", onProgress);
 
+  // Two sources for the same figure: the realtime event (Desk-hosted, arrives
+  // first) and the polled cache key (the /scp_app shell, which has no socket).
+  // Whichever is further along wins; neither is simulated.
+  const polled = useJobProgress(jobId, loading);
+  const merged =
+    polled && (!progress || polled.percent > progress.percent) ? polled : progress;
+
   return {
     data,
+    dataFilters,
     loading,
     error,
-    progress,
+    progress: merged,
     reload: (opts) => void fetchOnce(Boolean(opts?.force)),
   };
 }

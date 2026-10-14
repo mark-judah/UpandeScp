@@ -216,6 +216,12 @@ def save_spray_plan_settings(payload) -> dict:
         if f in payload:
             settings.set(f, payload[f])
 
+    # Capture fields this save set on purpose: the Single's validate fills the
+    # default on any capture field with no stored row, except these.
+    from upande_scp.serverscripts.scouting import capture_settings
+
+    settings.flags.capture_explicit = {f for f in capture_settings.FIELDS if f in payload}
+
     # Stamp the going-forward cutoff the first time auto-cancel is enabled.
     # Once stamped it never moves, so toggling the feature off and on again
     # keeps the original cutoff (plans created before first-enable stay in the

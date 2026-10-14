@@ -1,4 +1,4 @@
-import { call } from "./frappe";
+import { call, isStaleSession } from "./frappe";
 import { getPayload, setPayload } from "./idb";
 import type {
   RawEntry,
@@ -387,17 +387,37 @@ export async function fetchChunk(
   return (r || {}) as ChunkResponse;
 }
 
-export async function fetchFarmsAndWarehouses(): Promise<
-  Record<string, string[]>
-> {
+/** Thrown-away errors here used to render as "No farms configured", which is a
+ *  claim about the data when the truth was "the request failed". Callers that
+ *  need to tell the difference should use `fetchFarmsAndWarehousesResult`. */
+export async function fetchFarmsAndWarehouses(
+  crop?: string,
+): Promise<Record<string, string[]>> {
+  return (await fetchFarmsAndWarehousesResult(crop)).farms;
+}
+
+export interface FarmsResult {
+  farms: Record<string, string[]>;
+  /** set when the request itself failed — distinct from "there are no farms" */
+  error?: "stale-session" | "failed";
+}
+
+/** `crop` narrows the list to the farms that crop is grown on (the server may
+ *  ignore it on a single-crop site such as mona, where it changes nothing). */
+export async function fetchFarmsAndWarehousesResult(
+  crop?: string,
+): Promise<FarmsResult> {
   try {
     const r = await call<Record<string, string[]>>(
       "upande_scp.serverscripts.scouting.scouting_metrics_api.get_farms_and_warehouses",
-      {},
+      crop ? { crop } : {},
     );
-    return r || {};
-  } catch {
-    return {};
+    return { farms: r || {} };
+  } catch (e) {
+    return {
+      farms: {},
+      error: isStaleSession(e) ? "stale-session" : "failed",
+    };
   }
 }
 

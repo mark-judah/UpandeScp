@@ -53,7 +53,10 @@ doctype_list_js = {"Stock Entry": "public/js/spray_plan_transfers.js"}
 # Svg Icons
 # ------------------
 # include app icons in desk
-# app_include_icons = "upande_scp/public/icons.svg"
+# The shared SCP icon set (stage shapes, weather, notice, brand), generated from
+# upande_scp/shared/icons by scripts/build_icons.mjs. Desk JS uses
+# frappe.utils.icon("scp-<category>-<key>"), e.g. "scp-stage-star".
+app_include_icons = ["/assets/upande_scp/icons/scp-icons.svg"]
 
 # Home Pages
 # ----------

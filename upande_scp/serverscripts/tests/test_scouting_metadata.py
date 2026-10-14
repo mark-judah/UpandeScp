@@ -20,6 +20,11 @@ from upande_scp.serverscripts.scouting import capture_settings
 SETTINGS = "Scouting and Crop Protection Settings"
 
 
+def _switches(capture):
+	"""The two switches; the payload also carries max_count / trap_photo_required."""
+	return {k: capture[k] for k in ("photos", "comments")}
+
+
 def _set(photos, comments):
 	frappe.db.set_single_value(
 		SETTINGS,
@@ -88,7 +93,7 @@ class TestTheSettingsTheGmOwns(unittest.TestCase):
 		self.assertTrue(capture_settings.allows("photos"))
 		self.assertTrue(capture_settings.allows("comments"))
 		self.assertEqual(
-			get_observations_details.getObservationsDetails()["capture"],
+			_switches(get_observations_details.getObservationsDetails()["capture"]),
 			{"photos": True, "comments": True},
 		)
 
@@ -115,11 +120,11 @@ class TestWhatTheHandsetIsTold(unittest.TestCase):
 		observations rather than in a call the app might skip."""
 		_set(True, True)
 		capture = get_observations_details.getObservationsDetails()["capture"]
-		self.assertEqual(capture, {"photos": True, "comments": True})
+		self.assertEqual(_switches(capture), {"photos": True, "comments": True})
 
 		_set(False, False)
 		capture = get_observations_details.getObservationsDetails()["capture"]
-		self.assertEqual(capture, {"photos": False, "comments": False})
+		self.assertEqual(_switches(capture), {"photos": False, "comments": False})
 
 	def test_the_comments_tab_disappears_when_the_gm_turns_it_off(self):
 		"""The app shows the tab only when the category is present, so the

@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from "react";
  *
  * The crop is the first path segment, the page is the second:
  *   #/rose/dashboard          rose · dashboard
- *   #/rose/traps              rose · traps
+ *   #/rose/gallery            rose · gallery
  *
  * The crop scopes everything downstream (sidebar + page data), so adding a
  * new scouted crop needs no new view ids — it reuses the same pages under a
@@ -19,8 +19,10 @@ export type View =
   | "observations"
   | "traps"
   | "heatmaps"
+  | "gallery"
   | "scouting-map"
   | "spraying"
+  | "varieties"
   | "reports"
   | "tank-mixes"
   | "historical"
@@ -34,16 +36,31 @@ export type View =
   | "creator-stock"
   | "chemical-progress"
   | "chemical-loaning"
-  | "finances";
+  | "procurement"
+  | "postponements"
+  | "schedule"
+  | "notifications"
+  | "finances"
+  | "coverage"
+  | "scouts"
+  | "sprayers"
+  | "teams"
+  | "reentry";
 
 const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
+  "notifications",
+  "procurement",
+  "postponements",
+  "schedule",
   "dashboard",
   "trends",
   "observations",
   "traps",
   "heatmaps",
+  "gallery",
   "scouting-map",
   "spraying",
+  "varieties",
   "reports",
   "tank-mixes",
   "historical",
@@ -58,6 +75,11 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "chemical-progress",
   "chemical-loaning",
   "finances",
+  "coverage",
+  "scouts",
+  "sprayers",
+  "teams",
+  "reentry",
 ]);
 
 export const DEFAULT_CROP_SLUG = "rose";
@@ -103,6 +125,12 @@ function parseHash(): Route {
     return { crop: cropSlug(only), view: DEFAULT_VIEW };
   }
   return { crop: DEFAULT_CROP_SLUG, view: DEFAULT_VIEW };
+}
+
+/** The current route's crop display name ("Rose"), read from the live hash —
+ *  for components that live on crop-less pages but keep per-crop state. */
+export function routeCrop(): string {
+  return cropDisplayName(parseHash().crop);
 }
 
 export function routeHash(route: Route): string {

@@ -70,7 +70,7 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
 
   const { data, loading, error, progress, reload } =
     useDashboardAggregate<TrendsPayload>(
-      "trends",
+      "trends_legacy",
       {
         from_date: from,
         to_date: to,

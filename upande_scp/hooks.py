@@ -231,6 +231,13 @@ doc_events = {
     "Pests Scouting Entry": _SCP_SCOUTING_EVENTS,
     "Diseases Scouting Entry": _SCP_SCOUTING_EVENTS,
     "Trap Scouting Entry": _SCP_SCOUTING_EVENTS,
+    # The Data quality figures read the entry's fix-to-zone distance from its
+    # Metadata row, which the mobile sync inserts after the entry - drop that
+    # capture date's quality partials when it lands or changes.
+    "Scouting Entry Metadata": {
+        "on_update": "upande_scp.serverscripts.common.cache_utils.invalidate_quality_for_doc",
+        "on_trash": "upande_scp.serverscripts.common.cache_utils.invalidate_quality_for_doc",
+    },
     # Stamp Application Floor Plan Work Orders with their lifecycle state when
     # related Stock Entries are submitted (e.g. Material Transfer for
     # Manufacture -> "Chemical Issued"). Material Issue is fired later from
@@ -266,6 +273,12 @@ scheduler_events = {
         # Weekly Trap Scouting Report — Mondays 08:00 EAT (05:00 UTC)
         "0 5 * * 1": [
             "upande_scp.serverscripts.reports.send_weekly_trap_report.send_weekly_trap_report"
+        ],
+        # Keep the dashboard aggregates warm. The invalidation stamp bumps at most once
+        # per DASH_AGG_BUMP_DEBOUNCE (20 min); running every 10 min means a bump is
+        # re-warmed before the next operator opens a dashboard.
+        "*/10 * * * *": [
+            "upande_scp.serverscripts.dashboard_aggregates.prewarm.prewarm_dashboard_aggregates",
         ],
         # KEPHIS FCM Weekly Excel — Tuesdays 08:00
         "0 8 * * 2": [

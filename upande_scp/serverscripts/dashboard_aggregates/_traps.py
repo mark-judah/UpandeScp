@@ -76,7 +76,8 @@ def _ranking(rows: list) -> list:
         avg = round(b["total"] / b["_count"]) if b["_count"] else 0
         out.append({"key": b["key"], "trap": b["trap"], "pest": b["pest"],
                     "total": b["total"], "avg": avg})
-    out.sort(key=lambda x: x["total"], reverse=True)
+    # by_key is keyed by "{trap}-{pest}", so it's a total-order tie-break.
+    out.sort(key=lambda x: (-x["total"], x["key"]))
     return out
 
 
@@ -84,9 +85,10 @@ def _pest_breakdown(rows: list) -> list:
     by_pest = {}
     for r in rows:
         by_pest[r.pest] = by_pest.get(r.pest, 0) + int(r.count or 0)
+    # by_pest is keyed by pest name, so it's a total-order tie-break.
     return sorted(
         [{"name": k, "value": v} for k, v in by_pest.items()],
-        key=lambda x: x["value"], reverse=True,
+        key=lambda x: (-x["value"], x["name"]),
     )
 
 
@@ -98,7 +100,8 @@ def _trend_series(rows: list, top_n: int = 5) -> dict:
         d = str(r.date_of_capture)[:10]
         p["daily"][d] = p["daily"].get(d, 0) + v
         p["total"] += v
-    top = sorted(by_pest.values(), key=lambda x: x["total"], reverse=True)[:top_n]
+    # by_pest is keyed by pest name, so it's a total-order tie-break.
+    top = sorted(by_pest.values(), key=lambda x: (-x["total"], x["name"]))[:top_n]
     if not top:
         return {"rows": [], "keys": []}
     dates = sorted({d for p in top for d in p["daily"]})

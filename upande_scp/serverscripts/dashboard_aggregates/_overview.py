@@ -2,13 +2,23 @@
 
 import frappe
 
+from upande_scp.serverscripts.common import stage_roles
+from upande_scp.serverscripts.common import prevalence as P
 from upande_scp.serverscripts.scouting import scouting_metrics
+from upande_scp.serverscripts.dashboard_aggregates import _prevalence_rows
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
+    obs_filter,
     parent_filter_conditions,
     publish_progress,
     resolve_greenhouse_scope,
 )
+
+
+def _neg_date(d) -> str:
+    """Descending-date sort key for use inside an ascending tuple sort.
+    ISO dates sort lexicographically, so invert each character's ordinal."""
+    return "".join(chr(255 - ord(c)) for c in str(d or ""))
 
 
 def overview(args: dict, force: bool = False) -> dict:
@@ -47,11 +57,13 @@ def _build(from_date, to_date, crop, scope, job_id: str = "") -> dict:
 
     publish_progress(job_id, 35, "loading observations")
     obs     = _observation_rows(where, params)
-    zones_by_gh = scouting_metrics.get_zone_counts_by_greenhouse() or {}
+
+    publish_progress(job_id, 60, "loading scouted stations")
+    weeks = _prevalence_rows.StationWeeks.load(from_date, to_date, crop, scope)
 
     publish_progress(job_id, 85, "computing summaries")
     daily, range_totals = _daily_and_totals(obs)
-    gh_health, cells, alerts_total = _classify_cells(obs, crop, zones_by_gh)
+    gh_health, cells, alerts_total = _classify_cells(obs, crop, weeks)
     active = _active_alerts_from_cells(cells)
     top_scouts, scouts_per_day, scout_perf = _scout_aggs(obs)
 
@@ -77,8 +89,13 @@ def _build(from_date, to_date, crop, scope, job_id: str = "") -> dict:
 def _kpis(where: str, params: dict) -> dict:
     # Resolve each entry's production unit via Warehouse.warehouse_type, not by
     # which column it sits in: greenhouse-typed warehouses → "Greenhouses" KPI,
-    # block-typed → "Blocks" KPI. Some entries store a block in the greenhouse
-    # column (or vice-versa), so we LEFT JOIN both columns and classify by type.
+    # block-typed → "Blocks" KPI. In practice each entry populates exactly one
+    # of (greenhouse, block), matching its warehouse_type — see
+    # _common.partition_scope, verified on kaitet: 293769 greenhouse-column
+    # rows are all warehouse_type Greenhouse, 3362 block-column rows are all
+    # Block, zero rows carry both or neither. We still LEFT JOIN both columns
+    # and classify by type rather than assume which column is populated, so
+    # this keeps working if that invariant is ever violated.
     row = frappe.db.sql(
         f"""
         SELECT
@@ -113,6 +130,8 @@ def _observation_rows(where: str, params: dict) -> list:
     """One row per (entry, observation kind, observation row). Sub-queries
     UNION pests/diseases/traps so a single Python pass can derive most of
     the Overview metrics."""
+    pest_obs = obs_filter("pest", "p.pest", params)
+    disease_obs = obs_filter("disease", "d.disease", params)
     return frappe.db.sql(
         f"""
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
@@ -122,7 +141,7 @@ def _observation_rows(where: str, params: dict) -> list:
                p.stage   AS stage,    p.plant_section AS plant_section
         FROM `tabScouting Entry` se
         JOIN `tabPests Scouting Entry` p ON p.parent = se.name
-        WHERE {where}
+        WHERE {where}{pest_obs}
         UNION ALL
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
                se.scouts_name, se.zone, se.bed, se.tree,
@@ -131,7 +150,7 @@ def _observation_rows(where: str, params: dict) -> list:
                d.stage   AS stage, d.plant_section AS plant_section
         FROM `tabScouting Entry` se
         JOIN `tabDiseases Scouting Entry` d ON d.parent = se.name
-        WHERE {where}
+        WHERE {where}{disease_obs}
         UNION ALL
         SELECT se.name, se.date_of_capture, se.greenhouse, se.block,
                se.scouts_name, se.zone, se.bed, se.tree,
@@ -167,30 +186,37 @@ def _daily_and_totals(obs: list) -> tuple:
     return sorted(by_date.values(), key=lambda x: x["date"]), totals
 
 
-def _classify_cells(obs: list, crop: str, zones_by_gh: dict) -> tuple:
+def _classify_cells(obs: list, crop: str, weeks) -> tuple:
     """Single pass over ``obs`` produces:
 
       * ``by_gh``        — per-greenhouse counts + scouts + alerts
-      * ``cells``        — one row per (gh, kind, obs_name, stage) with the
-                           pct-of-zones value and severity classification,
-                           the latest scouting date in that cell, and the
-                           summed pest/trap count
+      * ``cells``        — one row per (gh, kind, obs_name, stage) carrying the
+                           house's station prevalence for its LATEST scouted ISO
+                           week in the range, the previous scouted week beside it,
+                           margin / sections / reliability (common/prevalence.py),
+                           the severity classification, the latest scouting date
+                           in that cell and the summed pest/trap count
       * ``total_alerts`` — Σ alerts across greenhouses
 
-    Severity uses the per-stage thresholds (with aggregate fallback) from
-    the Crop Scouted doc — see ``_common.severity_for``. Traps keep the
-    legacy ``count > 10`` rule because trap thresholds aren't part of the
+    ``weeks`` is a ``_prevalence_rows.StationWeeks`` for the same crop, scope and
+    range. The denominator is stations SCOUTED that week (spec D1), never every
+    zone in the house. A house with no stations set up keeps its cells with null
+    figures (reason "no stations set up") and no severity.
+
+    Severity uses the per-stage thresholds (with aggregate fallback) from the Crop
+    Scouted doc — see ``_common.severity_for`` — fed the adjusted prevalence. Traps
+    keep the legacy ``count > 10`` rule because trap thresholds aren't part of the
     Crop Scouted threshold model yet."""
-    from upande_scp.serverscripts.dashboard_aggregates._common import severity_for
+    from upande_scp.serverscripts.dashboard_aggregates._common import house_value, severity_for
 
     by_gh: dict = {}
     scouts_by_gh: dict = {}
-    # (gh, kind, obs_name, stage) → {zones: set, count_sum, latest_date}
+    # (gh, kind, obs_name, stage) → {count_sum, latest_date}
     cells: dict = {}
     total_alerts = 0
 
     for r in obs:
-        gh = r.greenhouse or r.block or "—"
+        gh = r.block or r.greenhouse or "—"   # block-first, as _prevalence_rows keys houses
         bucket = by_gh.setdefault(gh, {
             "name": gh, "pests": 0, "diseases": 0, "traps": 0,
             "scoutCount": 0, "alerts": 0,
@@ -210,27 +236,24 @@ def _classify_cells(obs: list, crop: str, zones_by_gh: dict) -> tuple:
         elif r.kind == "disease":
             bucket["diseases"] += 1
 
-        zone = (r.zone or "").strip()
-        if not zone:
+        station = (r.zone or r.tree or "").strip()
+        if not station:
             continue
         key = (gh, r.kind, r.obs_name or "", (r.stage or "").strip())
-        cell = cells.setdefault(key, {
-            "zones": set(),
-            "count_sum": 0,
-            "latest_date": "",
-        })
-        cell["zones"].add(zone)
+        cell = cells.setdefault(key, {"count_sum": 0, "latest_date": ""})
         cell["count_sum"] += int(r.count or 0)
         if date > (cell["latest_date"] or ""):
             cell["latest_date"] = date
 
     out_cells: list = []
+    roles = stage_roles.role_map()
     for (gh, kind, obs_name, stage), cell in cells.items():
-        total = zones_by_gh.get(gh) or 0
-        if total <= 0:
+        fig = weeks.latest(gh, kind, obs_name, stage)
+        if not fig:
             continue
-        pct = round(len(cell["zones"]) / total * 100, 1)
-        sev = severity_for(crop, kind, obs_name, stage, pct)
+        pct = fig["prevalence"]
+        value = house_value(crop, kind, obs_name, stage, weeks, gh, fig)
+        sev = severity_for(crop, kind, obs_name, stage, value) if value is not None else None
         if sev == "high":
             by_gh[gh]["alerts"] += 1
             total_alerts += 1
@@ -239,12 +262,18 @@ def _classify_cells(obs: list, crop: str, zones_by_gh: dict) -> tuple:
             "kind":       kind,
             "obs_name":   obs_name,
             "stage":      stage,
-            "zones":      len(cell["zones"]),
-            "total":      total,
+            "zones":      fig["infested"],
+            "total":      fig["scouted"],
             "pct":        pct,
             "severity":   sev,
             "count":      cell["count_sum"],
             "date":       cell["latest_date"],
+            **P.public(fig),
+            # S4: the pest's signs beside its live figure (pest-level, every stage cell).
+            "signs":      (
+                _prevalence_rows.signs_latest(weeks, crop, gh, obs_name)
+                if kind == "pest" and stage_roles.role_of(stage, roles) != stage_roles.SIGN else None
+            ),
         })
 
     for gh, bucket in by_gh.items():
@@ -252,10 +281,12 @@ def _classify_cells(obs: list, crop: str, zones_by_gh: dict) -> tuple:
         a = bucket["alerts"]
         bucket["status"] = "critical" if a > 2 else "warning" if a > 0 else "good"
 
+    # Total order: total observations desc, then greenhouse name — by_gh is
+    # keyed by greenhouse so the name makes ties total. Without it, two
+    # greenhouses with equal counts swap places depending on scan order.
     gh_out = sorted(
         by_gh.values(),
-        key=lambda x: x["pests"] + x["diseases"] + x["traps"],
-        reverse=True,
+        key=lambda x: (-(x["pests"] + x["diseases"] + x["traps"]), x["name"]),
     )
     return gh_out, out_cells, total_alerts
 
@@ -272,14 +303,27 @@ def _active_alerts_from_cells(cells: list, n: int = 8) -> list:
             "severity":   c["severity"],
             "count":      c["count"],
             "greenhouse": c["greenhouse"],
-            "zone":       f"{c['zones']}/{c['total']} zones ({c['pct']}%)",
+            "zone":       f"{c['zones']}/{c['total']} scouted · {c['week']}",
             "date":       c["date"],
             "stage":      c["stage"],
+            "signs":      c.get("signs"),
+            **{k: c.get(k) for k in P.PUBLIC_KEYS},
         }
         for c in flagged
     ]
-    out.sort(key=lambda a: a["date"], reverse=True)
-    out.sort(key=lambda a: a["severity"] != "high")
+    # Total order: severity, then date, then (greenhouse, kind, name, stage) —
+    # the cell key is (gh, kind, obs_name, stage), so the trailing four keys
+    # make the ordering total. Without them the [:n] truncation below picks
+    # arbitrarily among tied alerts, so which alerts a supervisor sees
+    # depends on the query plan.
+    out.sort(key=lambda a: (
+        a.get("severity") != "high",
+        _neg_date(a.get("date")),
+        a.get("greenhouse") or "",
+        a.get("kind") or "",
+        a.get("name") or "",
+        a.get("stage") or "",
+    ))
     return out[:n]
 
 
@@ -304,13 +348,14 @@ def _scout_aggs(obs: list) -> tuple:
         elif r.kind == "disease":
             ob["diseases"] += 1
     top = [{"scoutId": s, "entries": n} for s, n in entries_by_scout.items()]
-    top.sort(key=lambda x: x["entries"], reverse=True)
+    # entries_by_scout is keyed by scoutId, so it's a total-order tie-break.
+    top.sort(key=lambda x: (-x["entries"], x["scoutId"]))
     perf = [
         {"scoutId": s, "zones": entries_by_scout.get(s, 0),
          "pests": ob["pests"], "diseases": ob["diseases"]}
         for s, ob in obs_by_scout.items()
     ]
-    perf.sort(key=lambda x: x["zones"], reverse=True)
+    perf.sort(key=lambda x: (-x["zones"], x["scoutId"]))
     spd = [{"date": d, "scouts": len(s)} for d, s in scouts_by_date.items()]
     spd.sort(key=lambda x: x["date"])
     return top[:6], spd, perf[:8]
@@ -318,16 +363,18 @@ def _scout_aggs(obs: list) -> tuple:
 
 def _recent_activity(where: str, params: dict, n: int = 8) -> list:
     """Top N most recent entries with their primary observation kind."""
+    pest_obs = obs_filter("pest", "p.pest", params)
+    disease_obs = obs_filter("disease", "d.disease", params)
     rows = frappe.db.sql(
         f"""
         SELECT se.name, se.date_of_capture, se.time_of_capture,
                se.greenhouse, se.block, se.zone, se.tree, se.scouts_name,
-               EXISTS(SELECT 1 FROM `tabPests Scouting Entry` p WHERE p.parent = se.name)    AS has_pest,
-               EXISTS(SELECT 1 FROM `tabDiseases Scouting Entry` d WHERE d.parent = se.name) AS has_disease,
+               EXISTS(SELECT 1 FROM `tabPests Scouting Entry` p WHERE p.parent = se.name{pest_obs})    AS has_pest,
+               EXISTS(SELECT 1 FROM `tabDiseases Scouting Entry` d WHERE d.parent = se.name{disease_obs}) AS has_disease,
                EXISTS(SELECT 1 FROM `tabTrap Scouting Entry` t WHERE t.parent = se.name)     AS has_trap
         FROM `tabScouting Entry` se
         WHERE {where}
-        ORDER BY se.date_of_capture DESC, se.time_of_capture DESC
+        ORDER BY se.date_of_capture DESC, se.time_of_capture DESC, se.name DESC
         LIMIT %(limit)s
         """,
         {**params, "limit": n},

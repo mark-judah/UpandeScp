@@ -150,7 +150,12 @@ def resolve_crop(crop, user: str | None = None) -> str:
     canon = canonical(name)
     if not canon:
         frappe.throw(f"Unknown crop: {name}.", frappe.PermissionError)
-    crop_scope.assert_crop(canon, user)
+    # The access gate (user -> Employee -> Company -> Farm -> crop) exists to keep one
+    # company's crops from another's. On a single-crop site there is nothing to keep
+    # apart, and the gate would lock out every user whose Employee/Farm company data is
+    # not set up - so it is only enforced when the site is not pinned to ENABLED_CROPS.
+    if ENABLED_CROPS is None:
+        crop_scope.assert_crop(canon, user)
     return canon
 
 

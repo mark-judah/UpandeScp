@@ -10,6 +10,7 @@ fetching" the operator wants gone.
 
 import frappe
 
+from upande_scp.serverscripts.common import crop_catalog, crop_scope
 from upande_scp.serverscripts.dashboard_aggregates._common import (
     cached_aggregate,
     publish_progress,
@@ -26,22 +27,50 @@ def application_plan_diagnose(args: dict, force: bool = False) -> dict:
     if not greenhouse:
         return _empty()
 
-    filters = {
+    # Rows depend only on scope + window. The chips are applied afterwards,
+    # so they must NOT be part of this cache key — otherwise every chip
+    # click recomputes identical SQL under a fresh key.
+    # The greenhouse decides the crop (spec D6); the request's crop is only a
+    # fallback for a greenhouse whose farm is on no crop (today's behaviour).
+    derived = crop_catalog.crop_for_greenhouse(greenhouse)
+    if derived:
+        # The crop came from the greenhouse, not the request: refuse it when
+        # this user may not see that crop (a Rose-only user asking for a block).
+        crop_scope.assert_crop(derived)
+    crop = derived or (args.get("crop") or "").strip()
+    row_filters = {
         "greenhouse": greenhouse,
         "from_date":  args.get("from_date", ""),
         "to_date":    args.get("to_date", ""),
-        "crop":       (args.get("crop") or "").strip(),
-        "pest":       (args.get("pest") or "").strip(),     # actually "obs_name" — kept named "pest" for parity with the old client state
-        "section":    (args.get("section") or "").strip(),
-        "stage":      (args.get("stage") or "").strip(),
+        "crop":       crop,
     }
     job_id = (args.get("job_id") or "").strip()
-    return cached_aggregate(
-        "application_plan_diagnose",
-        filters,
-        lambda: _build(filters, job_id),
+    # _v2: rows cached under the old rules (crop_scouted only, every pest)
+    # must not be served after deploy.
+    rows = cached_aggregate(
+        "application_plan_rows_v2",
+        row_filters,
+        lambda: _load_rows(row_filters, job_id),
         force=force,
     )
+
+    chips = {
+        "pest":    (args.get("pest") or "").strip(),
+        "section": (args.get("section") or "").strip(),
+        "stage":   (args.get("stage") or "").strip(),
+    }
+    result = _shape(rows, chips)
+    publish_progress(job_id, 100, "")
+    return result
+
+
+def _load_rows(filters: dict, job_id: str = "") -> list:
+    publish_progress(job_id, 10, "loading pest rows")
+    pest_rows = _query_kind(filters, "pest")
+    publish_progress(job_id, 40, "loading disease rows")
+    disease_rows = _query_kind(filters, "disease")
+    publish_progress(job_id, 70, "")
+    return pest_rows + disease_rows
 
 
 def _empty() -> dict:
@@ -57,15 +86,7 @@ def _empty() -> dict:
     }
 
 
-def _build(filters: dict, job_id: str = "") -> dict:
-    publish_progress(job_id, 10, "loading pest rows")
-    pest_rows = _query_kind(filters, "pest")
-    publish_progress(job_id, 40, "loading disease rows")
-    disease_rows = _query_kind(filters, "disease")
-
-    publish_progress(job_id, 70, "deriving filter options")
-    all_rows = pest_rows + disease_rows
-
+def _shape(all_rows: list, chips: dict) -> dict:
     pests_avail = sorted({r["obs_name"] for r in all_rows if r.get("obs_name")})
     sections = sorted(
         {r["section"] for r in all_rows if r.get("section")}
@@ -98,10 +119,9 @@ def _build(filters: dict, job_id: str = "") -> dict:
         for r in _cached_disease_colors() if r.get("name")
     }
 
-    publish_progress(job_id, 85, "filtering + aggregating")
-    pest = filters["pest"]
-    section = filters["section"]
-    stage = filters["stage"]
+    pest = chips["pest"]
+    section = chips["section"]
+    stage = chips["stage"]
 
     def matches(r) -> bool:
         if pest and r.get("obs_name") != pest:
@@ -120,11 +140,7 @@ def _build(filters: dict, job_id: str = "") -> dict:
     for r in all_rows:
         if not matches(r):
             continue
-        # Some sites (mona) imported zone names wrapped in literal double-quotes
-        # in tabScouting Entry.zone. The client matches these keys against zone
-        # geometry whose names are quote-stripped at the get_beds_and_zones
-        # boundary, so strip here too or no marker ever lands on the plot.
-        z = (r.get("zone") or "").strip('"')
+        z = r.get("zone")
         if not z:
             continue
         n = int(r.get("n") or 0)
@@ -136,14 +152,31 @@ def _build(filters: dict, job_id: str = "") -> dict:
             targets_in_scope.add(obs_name)
         bucket = zone_obs.get(z)
         if bucket is None:
-            color = (
-                pest_color_map.get(obs_name)
-                or disease_color_map.get(obs_name)
-                or "#888888"
-            )
-            bucket = {"count": 0, "color": color, "kind": r.get("kind") or "pest", "_stages": {}}
+            bucket = {
+                "count": 0,
+                "color": "#888888",
+                "kind": r.get("kind") or "pest",
+                "_stages": {},
+                "_rank": None,
+            }
             zone_obs[z] = bucket
         bucket["count"] += n
+        # color/kind must be deterministic, not first-row-wins over an
+        # unordered GROUP BY — but must also reproduce today's actual
+        # display rule, which is NOT "alphabetically smallest obs_name
+        # globally": _load_rows scans every pest row before any disease
+        # row, so a pest always outranks a disease sharing a zone, and
+        # alphabetical order only breaks ties within a kind. Rank each row
+        # by (0=pest/1=disease, obs_name) and keep the smallest, decided
+        # incrementally as rows are scanned (a later row can still
+        # displace the current winner) so the result stays plan-independent.
+        row_kind = r.get("kind") or "pest"
+        rank = (0 if row_kind == "pest" else 1, obs_name)
+        if obs_name and (bucket["_rank"] is None or rank < bucket["_rank"]):
+            bucket["_rank"] = rank
+            bucket["kind"] = row_kind
+            color_map = pest_color_map if row_kind == "pest" else disease_color_map
+            bucket["color"] = color_map.get(obs_name) or "#888888"
         stg = (r.get("stage") or "").strip()
         s_entry = bucket["_stages"].get(stg)
         if s_entry is None:
@@ -154,11 +187,17 @@ def _build(filters: dict, job_id: str = "") -> dict:
         if d and (latest is None or d > latest):
             latest = d
 
-    # Materialise the per-zone stage list (shape markers) and drop the scratch dict.
+    # Materialise the per-zone stage list (shape markers) and drop the scratch
+    # dict. _stages is keyed by stage name (unique per zone bucket) but was
+    # populated in row-scan order, which _query_kind's GROUP BY leaves
+    # undefined (no ORDER BY) — sort by stage, like every sibling list in
+    # this payload, so the order doesn't depend on the query plan.
     for bucket in zone_obs.values():
-        bucket["stages"] = list(bucket.pop("_stages").values())
+        bucket.pop("_rank", None)
+        bucket["stages"] = sorted(
+            bucket.pop("_stages").values(), key=lambda s: s["stage"],
+        )
 
-    publish_progress(job_id, 100, "")
     return {
         "zoneObs":     zone_obs,
         "latestDate":  latest,
@@ -198,15 +237,12 @@ def _query_kind(filters: dict, kind: str) -> list:
     }
     crop_clause = ""
     if filters["crop"]:
-        # Roses-only sites (e.g. mona) leave crop_scouted unset on every
-        # Scouting Entry, so a strict equality filter drops every row and the
-        # diagnose plot / curative targets come back empty. Treat unset crop as
-        # a match: the filter only EXCLUDES rows tagged to a *different* crop.
+        # D5 (crop-less rows in this greenhouse count) + D4 (off-crop targets drop).
         crop_clause = (
-            "AND (se.crop_scouted = %(crop)s "
-            "OR se.crop_scouted IS NULL OR se.crop_scouted = '')"
+            f"AND {crop_catalog.entry_crop_condition('se')} "
+            f"AND {crop_catalog.obs_crop_condition(kind, 'c.' + col)}"
         )
-        params["crop"] = filters["crop"]
+        params.update(crop_catalog.crop_sql_params(filters["crop"]))
 
     rows = frappe.db.sql(
         f"""

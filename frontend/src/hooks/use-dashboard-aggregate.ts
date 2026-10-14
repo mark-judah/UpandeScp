@@ -16,6 +16,7 @@ export type Endpoint =
   | "heatmap_terrain"
   | "application_plan_diagnose"
   | "trends"
+  | "trends_legacy"
   | "quality"
   | "scouts";
 
@@ -63,6 +64,8 @@ export const METHOD: Record<Endpoint, string> = {
   application_plan_diagnose:
     "upande_scp.serverscripts.dashboard_aggregates.application_plan_diagnose",
   trends:             "upande_scp.serverscripts.dashboard_aggregates.trends",
+  // mona's date-bucketed Trends until the week/prevalence Trends page is ported.
+  trends_legacy:      "upande_scp.serverscripts.dashboard_aggregates.trends_legacy",
   quality:            "upande_scp.serverscripts.dashboard_aggregates.quality",
   // Personnel ▸ Scouts: the quality aggregate's scout rows, ranked and scoped.
   scouts:             "upande_scp.serverscripts.scouts.api.get_scouts",

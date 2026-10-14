@@ -1,0 +1,176 @@
+"""Keep the dashboard aggregate cache warm, so no operator pays the cold path.
+
+The aggregates have been Redis-cached and shared across users since the cache
+key carries no user id — one build serves everybody. Nothing ever *warmed* them
+though: ``scouting_prewarm`` warms the scouting week payloads, which are a
+different cache. So the first person after every invalidation rebuilt them by
+hand, in the foreground, while looking at empty KPI cards.
+
+Measured on kaitetv16 in a real browser, ``/scp_app#/rose/dashboard``:
+
+    overview lands, warm cache      2,555 ms   (9 api calls)
+    overview lands, cold cache     16,178 ms   (37 api calls — 28 are progress polls)
+
+Invalidation is a global version stamp bumped at most once per
+``DASH_AGG_BUMP_DEBOUNCE``. This job runs more often than that window, so the
+first run after a bump rebuilds and every later run is a plain Redis read —
+``cached_aggregate`` returns the cached payload untouched when the key is
+present. Idempotent by construction; no force flag is ever passed.
+
+Scope is deliberately the *default view only* — the filters the app sends when
+a dashboard or trends page is opened with nothing selected, captured from the
+live frontend:
+
+    {"from_date": <today-30d>, "to_date": <today>, "crop": <c>,
+     "farm": "", "greenhouse": ""}
+
+Those are the keys that are hit on cold open. Warming every farm and greenhouse
+combination would be a large amount of background work for keys nobody asks
+for, and the per-greenhouse path is already fast once the indexes exist.
+"""
+
+import datetime
+import time
+
+import frappe
+
+from upande_scp.serverscripts.dashboard_aggregates._overview import overview as _overview
+from upande_scp.serverscripts.dashboard_aggregates._trends import trends as _trends
+
+
+# The window the frontend opens with: the last 30 days, ending today.
+DEFAULT_WINDOW_DAYS = 30
+
+# (label, impl) pairs. Both are landing pages — Dashboards calls ``overview``
+# and Trends calls ``trends`` on mount. The other endpoints (pests, diseases,
+# traps, heatmaps_grid) load on a tab click rather than on open; heatmaps_grid
+# in particular costs ~11.6s and 6.2 MB to build, which is not worth spending
+# every cycle for a tab that may never be opened.
+ENDPOINTS = (
+    ("overview", _overview),
+    ("trends", _trends),
+)
+
+
+def _today():
+    """Indirection so tests can pin a deterministic date."""
+    return datetime.date.today()
+
+
+def _default_window():
+    today = _today()
+    start = today - datetime.timedelta(days=DEFAULT_WINDOW_DAYS)
+    return start.isoformat(), today.isoformat()
+
+
+def _crops():
+    """Every crop the app can scope to, plus the unscoped view.
+
+    "" is the all-crops view that Trends opens with; each named crop is what a
+    crop-namespaced dashboard sends. Falls back to the unscoped view alone if
+    the doctype cannot be read, so a broken master never fails the job.
+    """
+    crops = [""]
+    try:
+        # The catalog, not Crop Scouted directly: it is pinned to the crops this
+        # site works with (roses only on mona).
+        from upande_scp.serverscripts.common import crop_catalog
+
+        crops.extend(sorted(crop_catalog.catalog().get("crops", [])))
+    except Exception:
+        frappe.log_error("prewarm: could not read Crop Scouted", "SCP dash prewarm")
+    return crops
+
+
+def prewarm_dashboard_aggregates():
+    """Frappe scheduler entry point.
+
+    Runs every 10 minutes (see hooks.py) — more often than the invalidation
+    debounce, so a bumped stamp is re-warmed well before the next operator
+    arrives. Each endpoint is guarded separately: one failing crop must not
+    stop the rest from warming.
+    """
+    from_date, to_date = _default_window()
+    warmed, failed = 0, 0
+
+    for crop in _crops():
+        args = {
+            "from_date": from_date,
+            "to_date": to_date,
+            "crop": crop,
+            "farm": "",
+            "greenhouse": "",
+        }
+        for label, impl in ENDPOINTS:
+            try:
+                impl(dict(args), force=False)
+                warmed += 1
+            except Exception:
+                failed += 1
+                frappe.log_error(
+                    f"prewarm {label} failed for crop={crop or '(all)'} "
+                    f"{from_date}..{to_date}",
+                    "SCP dash prewarm",
+                )
+
+    try:
+        prewarm_quality()
+        warmed += 1
+    except Exception:
+        failed += 1
+        frappe.log_error("prewarm quality failed", "SCP dash prewarm")
+
+    return {"warmed": warmed, "failed": failed, "from": from_date, "to": to_date}
+
+
+#: Wall-clock budget for one run's quality partial fill. A cold fill (after a
+#: flush) is ~1 min for Rose; what is left over is picked up ten minutes later.
+QUALITY_BUDGET_S = 180
+
+
+def prewarm_quality(budget_s: float = QUALITY_BUDGET_S) -> dict:
+    """Keep the Data quality / Personnel ▸ Scouts day partials warm: every date
+    of the longest range the aggregate reads (``MAX_RANGE_DAYS``, ending today),
+    for each crop at "all farms" and at each of its farms — the scopes the Scouts
+    page and the Coverage report open on. Only missing dates are read, so a warm
+    run is two Redis round trips per scope. Then the Scouts page's default range
+    is assembled for each crop, so its payload is warm too."""
+    from upande_scp.serverscripts.common import crop_catalog, crop_scope
+    from upande_scp.serverscripts.common import quality_rules as Q
+    from upande_scp.serverscripts.dashboard_aggregates import _common as C
+    from upande_scp.serverscripts.dashboard_aggregates._quality import _days_desc, day_partials
+    from upande_scp.serverscripts.dashboard_aggregates._quality import quality as _quality
+    from upande_scp.serverscripts.scouting import scouting_metrics
+    from upande_scp.serverscripts.scouts import api as scouts_api
+
+    started = time.monotonic()
+    today = _today()
+    from_date = (today - datetime.timedelta(days=Q.MAX_RANGE_DAYS)).isoformat()
+    days = _days_desc(from_date, today.isoformat())
+    farms_map = scouting_metrics.get_farms_and_warehouses() or {}
+    units = scouting_metrics.get_units_by_warehouse() or {}
+    done = skipped = 0
+    for crop in _crops()[1:]:  # named crops: the Scouts page always sends one
+        crop = crop_catalog.resolve_crop(crop) or crop
+        crop_farms = crop_scope.farms_for_crop(crop) or set()
+        for farm in [""] + sorted(f for f in farms_map if f in crop_farms):
+            if time.monotonic() - started > budget_s:
+                skipped += 1
+                continue
+            scope = C.resolve_greenhouse_scope("", farm, farms_map)
+            where, params = C.parent_filter_conditions(from_date, today.isoformat(), crop, scope,
+                                                       units=units)
+            if where == "1=0":
+                continue
+            # A week at a time, so the budget is checked between reads.
+            for i in range(0, len(days), 7):
+                if time.monotonic() - started > budget_s:
+                    skipped += 1
+                    break
+                day_partials(where, params, days[i:i + 7], fill_only=True)
+            done += 1
+        if time.monotonic() - started <= budget_s:
+            lo, hi = scouts_api.default_range(today)
+            _quality({"crop": crop, "farm": "", "greenhouse": "", "from_date": lo, "to_date": hi},
+                     farms_map=farms_map)
+    return {"scopes": done, "skipped": skipped, "seconds": round(time.monotonic() - started, 1)}

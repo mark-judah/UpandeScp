@@ -162,6 +162,8 @@ def load_issues(items: set) -> list[dict]:
 
 def backfill() -> dict:
 	"""Idempotent: only touches submitted issues that have no plan link yet."""
+	# The columns may have been added a moment ago in this same process.
+	frappe.clear_cache(doctype="Stock Entry")
 	if not frappe.db.has_column("Stock Entry", LINK) or not frappe.db.has_column("Stock Entry", BASIS):
 		return {}
 	# Links set at issue time (before the basis field existed) are Direct by construction.

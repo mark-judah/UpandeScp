@@ -67,3 +67,5 @@ upande_scp.patches.v1_0.seed_stage_roles
 upande_scp.patches.v1_0.animated_scp_logo
 # Re-entry & PHI: production supervisor role, admitted to the SCP workspace.
 upande_scp.patches.v1_0.setup_production_supervisor_role
+# Asset check settings rows: template -> asset category (scout picks the template).
+upande_scp.patches.v1_0.asset_check_rows_by_category

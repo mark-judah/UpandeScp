@@ -16,7 +16,7 @@
   "icon_key": "circle",
   "name": "Adult Cloud",
   "stage_name": "Adult Cloud",
-  "stage_role": "Life stage",
+  "stage_role": "Form",
   "weight": 1.0
  },
  {
@@ -36,7 +36,7 @@
   "icon_key": "circle",
   "name": "Adult Singles",
   "stage_name": "Adult Singles",
-  "stage_role": "Life stage",
+  "stage_role": "Form",
   "weight": 1.0
  },
  {
@@ -46,7 +46,7 @@
   "icon_key": "square",
   "name": "Colonies",
   "stage_name": "Colonies",
-  "stage_role": "Life stage",
+  "stage_role": "Form",
   "weight": 1.0
  },
  {
@@ -56,7 +56,7 @@
   "icon_key": "cross",
   "name": "Damage",
   "stage_name": "Damage",
-  "stage_role": "Life stage",
+  "stage_role": "Sign",
   "weight": 1.0
  },
  {
@@ -66,7 +66,7 @@
   "icon_key": "cross",
   "name": "Damages",
   "stage_name": "Damages",
-  "stage_role": "Life stage",
+  "stage_role": "Sign",
   "weight": 1.0
  },
  {
@@ -166,7 +166,7 @@
   "icon_key": "cross",
   "name": "FCM Damage",
   "stage_name": "FCM Damage",
-  "stage_role": "Life stage",
+  "stage_role": "Sign",
   "weight": 1.0
  },
  {
@@ -236,7 +236,7 @@
   "icon_key": "square",
   "name": "Motiles",
   "stage_name": "Motiles",
-  "stage_role": "Life stage",
+  "stage_role": "Form",
   "weight": 1.0
  },
  {
@@ -306,7 +306,7 @@
   "icon_key": "cross",
   "name": "Ragged Margins",
   "stage_name": "Ragged Margins",
-  "stage_role": "Life stage",
+  "stage_role": "Sign",
   "weight": 1.0
  },
  {
@@ -346,7 +346,7 @@
   "icon_key": "square",
   "name": "Scale Insects",
   "stage_name": "Scale Insects",
-  "stage_role": "Life stage",
+  "stage_role": "Form",
   "weight": 1.0
  },
  {
@@ -356,7 +356,7 @@
   "icon_key": "square",
   "name": "Scales",
   "stage_name": "Scales",
-  "stage_role": "Life stage",
+  "stage_role": "Form",
   "weight": 1.0
  },
  {
@@ -366,7 +366,7 @@
   "icon_key": "square",
   "name": "Singles",
   "stage_name": "Singles",
-  "stage_role": "Life stage",
+  "stage_role": "Form",
   "weight": 1.0
  },
  {
@@ -386,7 +386,7 @@
   "icon_key": "cross",
   "name": "Web",
   "stage_name": "Web",
-  "stage_role": "Life stage",
+  "stage_role": "Sign",
   "weight": 1.0
  },
  {

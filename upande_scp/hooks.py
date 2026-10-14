@@ -193,6 +193,7 @@ doc_events = {
     # Stage roles / weights (stage & variety) drive live-pest prevalence.
     "Stage": _SCP_CACHE_EVENTS,
     "Pest Filter": _SCP_CACHE_EVENTS,
+    "Disease Filter": _SCP_CACHE_EVENTS,
     "Disease Stages": _SCP_CACHE_EVENTS,
     "Predator Stages": _SCP_CACHE_EVENTS,
     "Zone": _SCP_CACHE_EVENTS,

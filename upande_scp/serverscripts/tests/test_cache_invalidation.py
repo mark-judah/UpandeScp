@@ -51,7 +51,12 @@ class TestInvalidateScoutingWeek(unittest.TestCase):
              patch.object(cu, "invalidate") as inv, \
              patch.object(cu, "invalidate_scouting_payload") as bump:
             cu.invalidate_scouting_week_for_doc(doc)
-            inv.assert_called_once_with("scp:scouting_payload_v2:7:2025-W18")
+            # Derive the prefix from the constant rather than spelling out the
+            # key version — bumping K_SCOUTING_PAYLOAD_PREFIX (v2 -> v3 -> …) is
+            # a routine cache-busting move and shouldn't fail this test.
+            inv.assert_called_once_with(
+                f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:2025-W18"
+            )
             bump.assert_not_called()
 
     def test_falls_back_to_global_bump_when_week_unknown(self):
@@ -87,6 +92,95 @@ class TestInvalidateDispatch(unittest.TestCase):
             cu.invalidate_on_change(doc)
             bump.assert_called_once_with()
             week.assert_not_called()
+
+
+class TestCropCatalogInvalidation(unittest.TestCase):
+    def test_every_source_of_the_index_busts_it(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        for dt in ("Crop Scouted", "Pest Filter", "Disease Filter", "Warehouse", "Farm"):
+            self.assertIn(cu.K_CROP_CATALOG, cu._DOC_INVALIDATIONS[dt], dt)
+
+
+class TestCropCatalogSourceBumps(unittest.TestCase):
+    def test_a_pest_filter_save_bumps_dashboard_aggregates_and_the_scouting_payload(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        from upande_scp.serverscripts.dashboard_aggregates import _common
+        for dt in ("Pest Filter", "Disease Filter", "Crop Scouted"):
+            doc = SimpleNamespace(doctype=dt, name="X")
+            with patch.object(cu, "invalidate") as inv, \
+                 patch.object(cu, "invalidate_scouting_payload") as payload, \
+                 patch.object(_common, "bump_dash_agg_version") as agg:
+                cu.invalidate_on_change(doc)
+                agg.assert_called_once_with()
+                payload.assert_called_once_with()
+                self.assertIn(cu.K_CROP_CATALOG, [a for c in inv.call_args_list for a in c.args])
+
+
+class TestCropSliceInvalidation(unittest.TestCase):
+    def test_a_rose_write_busts_the_rose_slice_too(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        doc = SimpleNamespace(doctype="Scouting Entry", date_of_capture="2025-05-01",
+                              crop_scouted="Rose", greenhouse="GH")
+        with patch.object(cu, "scouting_payload_version", return_value=7), \
+             patch.object(cu, "invalidate") as inv:
+            cu.invalidate_scouting_week_for_doc(doc)
+        self.assertEqual(
+            [c.args[0] for c in inv.call_args_list],
+            [f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:2025-W18",
+             f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:Rose:2025-W18"],
+        )
+
+    def test_a_crop_less_write_busts_its_greenhouse_crop(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        from upande_scp.serverscripts.common import crop_catalog
+        doc = SimpleNamespace(doctype="Scouting Entry", date_of_capture="2025-05-01",
+                              crop_scouted=None, greenhouse="Chepsito GH 01 - KR")
+        with patch.object(cu, "scouting_payload_version", return_value=7), \
+             patch.object(crop_catalog, "crop_for_greenhouse", return_value="Rose"), \
+             patch.object(cu, "invalidate") as inv:
+            cu.invalidate_scouting_week_for_doc(doc)
+        self.assertIn(f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:Rose:2025-W18",
+                      [c.args[0] for c in inv.call_args_list])
+
+    def test_a_crop_less_block_write_busts_its_blocks_crop(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        from upande_scp.serverscripts.common import crop_catalog
+        doc = SimpleNamespace(doctype="Scouting Entry", date_of_capture="2025-05-01",
+                              crop_scouted=None, greenhouse=None, block="Block 1 - L")
+        with patch.object(cu, "scouting_payload_version", return_value=7), \
+             patch.object(crop_catalog, "crop_for_greenhouse", return_value="Avocado"), \
+             patch.object(cu, "invalidate") as inv:
+            cu.invalidate_scouting_week_for_doc(doc)
+        self.assertIn(f"{cu.K_SCOUTING_PAYLOAD_PREFIX}:7:crop2:Avocado:2025-W18",
+                      [c.args[0] for c in inv.call_args_list])
+
+
+class TestStationGridInvalidation(unittest.TestCase):
+    """A Zone, Bed or Orchard Tree save drops its house's cached 3 × 3 grid."""
+
+    def _keys(self, doc):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        with patch.object(cu, "invalidate") as inv, \
+             patch.object(cu, "invalidate_scouting_payload"), \
+             patch.object(cu, "invalidate_farm_bundle_for_doc"), \
+             patch.object(cu, "invalidate_orchard_trees_for_doc"):
+            cu.invalidate_on_change(doc)
+        return [a for c in inv.call_args_list for a in c.args]
+
+    def test_zone_bed_and_tree_saves_drop_their_houses_grid(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        cases = [
+            (SimpleNamespace(doctype="Zone", name="Z", greenhouse="GH 1", bed="GH 1 - Bed 1"), "GH 1"),
+            (SimpleNamespace(doctype="Bed", name="GH 2 - Bed 1", greenhouse="GH 2"), "GH 2"),
+            (SimpleNamespace(doctype="Orchard Tree", name="T", block="BLK 1", row="BLK 1 - Row 1"), "BLK 1"),
+        ]
+        for doc, wh in cases:
+            self.assertIn(f"{cu.K_STATION_GRID_PREFIX}:{wh}", self._keys(doc), doc.doctype)
+
+    def test_a_zone_without_a_greenhouse_drops_no_grid(self):
+        from upande_scp.serverscripts.common import cache_utils as cu
+        keys = self._keys(SimpleNamespace(doctype="Zone", name="Z-1"))
+        self.assertFalse([k for k in keys if str(k).startswith(cu.K_STATION_GRID_PREFIX)])
 
 
 if __name__ == "__main__":

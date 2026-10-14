@@ -36,6 +36,8 @@ upande_scp.patches.v1_0.setup_spray_supervisor_role
 upande_scp.patches.v1_0.seed_stage_catalog
 # Stage roles (Life stage / Form / Sign) for live-pest prevalence. Fills blanks only.
 upande_scp.patches.v1_0.seed_stage_roles
+# seed_stage_roles found no blanks on mona (the new column arrived pre-filled).
+upande_scp.patches.v1_0.reseed_stage_roles_after_column_default
 # Work Order fields for the spray compliance check (Spray Check, rule overrides).
 upande_scp.patches.v1_0.ensure_spray_compliance_work_order_fields
 upande_scp.patches.v1_0.consolidate_disease_stages

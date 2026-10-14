@@ -108,6 +108,9 @@ after_migrate = [
 	"upande_scp.serverscripts.scouting.capture_settings.ensure_defaults",
 	# Stock Entry: spray-plan link + 'Scouting and Crop Protection' tab.
 	"upande_scp.serverscripts.store.stock_entry_fields.ensure_scp_stock_entry_fields",
+	# upande_asset is optional and may be installed after SCP: make sure its
+	# Asset Check Sheet carries the phone's client-id field whenever it is there.
+	"upande_scp.serverscripts.asset_checks.setup.after_migrate",
 ]
 
 # Uninstallation

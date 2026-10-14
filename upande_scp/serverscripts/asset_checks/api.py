@@ -31,6 +31,10 @@ no Maintenance role, hence ``ignore_permissions``; the owner stays the session u
 
 from __future__ import annotations
 
+import hashlib
+import json
+from contextlib import contextmanager
+
 import frappe
 from frappe import _
 from frappe.utils import add_days, cint, flt, getdate, nowdate
@@ -47,11 +51,31 @@ SCHEDULE = "Asset Check Sheet Schedule"
 CLIENT_ID_FIELD = "custom_scp_client_id"
 
 SECTION_KEYS = ("a", "b", "c", "d", "e", "f")
-FREQ_DAYS = {"Daily": 1, "Weekly": 7, "Monthly": 30, "Quarterly": 91, "Yearly": 365}
+# upande_asset's own table where it exposes one, so a sheet is never "due" on a
+# different day here than in its scheduler; 90 for Quarterly if it does not.
+FREQ_DAYS = {"Daily": 1, "Weekly": 7, "Monthly": 30, "Quarterly": 90, "Yearly": 365}
+try:
+	from upande_asset.upande_asset.doctype.asset_check_sheet_schedule.asset_check_sheet_schedule import (
+		FREQ_DAYS as _ASSET_FREQ_DAYS,
+	)
+
+	FREQ_DAYS = {**FREQ_DAYS, **{k: int(v) for k, v in _ASSET_FREQ_DAYS.items()}}
+except Exception:  # upande_asset absent or restructured
+	pass
+BACKDATE_DAYS = 3  # a sheet may be dated at most this many days before today
+LOCK_TIMEOUT = 10  # seconds a retry waits for its twin to finish
 FAULT_STATUSES = ("Fault / Defect", "Affected")
 STATUSES = ("OK", "Fault / Defect", "Affected", "Needs Monitoring", "Not Applicable")
 SEVERITIES = ("Low", "Medium", "High", "Critical")
 INACTIVE_ASSET_STATUSES = ("Scrapped", "Sold")
+
+
+
+class TemplateChanged(frappe.ValidationError):
+	"""The template was edited after the phone downloaded it; the answers no longer line up."""
+
+
+TEMPLATE_CHANGED = "TEMPLATE_CHANGED"
 
 SCOUT_ROLES = {"Scout", "Scouting & Crop Protection User", "General Manager", "System Manager"}
 MANAGER_ROLES = {"General Manager", "System Manager"}
@@ -271,6 +295,29 @@ def _sections(tmpl) -> list[dict]:
 	return out
 
 
+def _fingerprint(tmpl, secs=None) -> str:
+	"""A hash of everything an answer's meaning depends on: the ordered
+	(section, idx, check_factor, threshold) rows and the two require flags. The
+	phone sends back the one it filled against; any edit to the template changes it."""
+	secs = secs if secs is not None else _sections(tmpl)
+	rows = [[s["key"], i["idx"], i["check_factor"], i["threshold_percent"]] for s in secs for i in s["items"]]
+	raw = json.dumps(
+		[rows, cint(tmpl.require_incident_percent), cint(tmpl.require_proposed_action)],
+		separators=(",", ":"),
+		default=str,
+	)
+	return hashlib.sha1(raw.encode()).hexdigest()[:16]
+
+
+def _home_farms(user=None) -> set:
+	"""Farms of the user's own Employee company: the label a scout expects to see."""
+	user = user or frappe.session.user
+	company = frappe.db.get_value("Employee", {"user_id": user, "status": "Active"}, "company")
+	if not company or not _farm_has_company():
+		return set()
+	return set(_farms(company=company))
+
+
 def _enabled_categories(scope) -> dict:
 	"""{farm: [asset_category, ...]} from enabled rows, narrowed to ``scope``."""
 	out: dict = {}
@@ -302,8 +349,9 @@ def _templates_of(category) -> list:
 	return out
 
 
-def _last_checks(assets, template) -> tuple[dict, set]:
-	"""(asset -> last submitted check_date, assets with a non-cancelled sheet dated today)."""
+def _last_checks(assets, template, on_date=None) -> tuple[dict, set]:
+	"""(asset -> last submitted check_date, assets with a non-cancelled sheet dated
+	``on_date`` — today unless given)."""
 	if not assets:
 		return {}, set()
 	last: dict = {}
@@ -321,7 +369,7 @@ def _last_checks(assets, template) -> tuple[dict, set]:
 			filters={
 				"asset": ["in", assets],
 				"check_sheet_template": template,
-				"check_date": nowdate(),
+				"check_date": str(on_date or nowdate()),
 				"docstatus": ["!=", 2],
 			},
 			pluck="asset",
@@ -363,9 +411,18 @@ def _due(asset, schedules, last, today_done, interval, today) -> tuple[bool, str
 	last_date = last.get(asset)
 	sch = schedules.get(asset)
 	if sch:
-		nxt = getdate(sch.next_due_date) if sch.next_due_date else None
+		# the schedule's date can lag a sheet filed from the phone: never earlier
+		# than the newest submitted sheet plus the interval
+		cands = []
+		if sch.next_due_date:
+			cands.append(getdate(sch.next_due_date))
+		if last_date is not None and interval:
+			cands.append(add_days(getdate(last_date), interval))
+		nxt = max(cands) if cands else None
 		due = nxt is None or nxt <= today
 		last_out = sch.last_check_date or last_date
+		if last_date is not None and (last_out is None or getdate(last_date) > getdate(last_out)):
+			last_out = last_date
 	else:
 		last_out = last_date
 		if last_date is None:
@@ -396,7 +453,9 @@ def get_asset_check_config() -> dict:
 	cats = _enabled_categories(_scope_farms())
 	templates_by_cat: dict = {}
 	seen_assets: dict = {}
-	for farm in sorted(cats):
+	home = _home_farms()
+	# the scout's own farm first, so an asset on two farms carries the label they know
+	for farm in sorted(cats, key=lambda f: (f not in home, f)):
 		scope_filters = _asset_filters_for_farm(farm)
 		if scope_filters is None:
 			continue
@@ -443,6 +502,7 @@ def get_asset_check_config() -> dict:
 							"last_check_date": last_date,
 							"require_incident_percent": bool(cint(tmpl.require_incident_percent)),
 							"require_proposed_action": bool(cint(tmpl.require_proposed_action)),
+							"fingerprint": _fingerprint(tmpl, secs),
 							"sections": secs,
 						}
 					)
@@ -464,12 +524,66 @@ def get_asset_check_config() -> dict:
 def _existing_by_client_id(client_id):
 	if not client_id or not _has_client_id_column():
 		return None
+	# a locking read: it sees what a twin request committed after this one began
 	return frappe.db.get_value(
 		SHEET,
 		{CLIENT_ID_FIELD: client_id, "docstatus": ["!=", 2]},
 		["name", "docstatus", "overall_status"],
 		as_dict=True,
+		for_update=True,
 	)
+
+
+def _existing_sheet(asset, template, check_date):
+	"""The submitted sheet this user already filed for asset + template + date.
+
+	What makes a retry idempotent where the client-id column is absent (upande_asset
+	installed after SCP, or the field not yet created), and what resolves upande_asset's
+	one-sheet-a-day refusal when two attempts race."""
+	return frappe.db.get_value(
+		SHEET,
+		{
+			"asset": asset,
+			"check_sheet_template": template,
+			"check_date": str(check_date),
+			"owner": frappe.session.user,
+			"docstatus": 1,
+		},
+		["name", "docstatus", "overall_status"],
+		as_dict=True,
+		for_update=True,
+	)
+
+
+# ── single-flight lock ───────────────────────────────────────────────────
+
+
+def _lock_key(payload) -> str:
+	base = (payload.get("client_id") or "").strip() or "|".join(
+		str(payload.get(k) or "") for k in ("asset", "template", "check_date")
+	)
+	return "scp_ac:" + hashlib.md5(f"{frappe.local.site}|{base}".encode()).hexdigest()
+
+
+def _get_lock(key, timeout) -> bool:
+	"""MariaDB advisory lock: held by this connection, survives a rollback, and is
+	released if the worker dies."""
+	return bool(cint(frappe.db.sql("select get_lock(%s, %s)", (key, timeout))[0][0]))
+
+
+def _release_lock(key):
+	frappe.db.sql("select release_lock(%s)", (key,))
+
+
+@contextmanager
+def _client_lock(key, timeout=None):
+	"""Yield True when this request holds the lock, False when it timed out waiting."""
+	got = _get_lock(key, LOCK_TIMEOUT if timeout is None else timeout)
+	try:
+		yield got
+	finally:
+		if got:
+			_release_lock(key)
 
 
 def _result(row, duplicate: bool) -> dict:
@@ -537,14 +651,53 @@ def _check_row(tmpl, key, row, ans, label):
 	return item
 
 
+def _assert_template_unchanged(tmpl, secs, payload, answers):
+	"""Refuse answers that were given against a different version of the template.
+
+	Rows are matched by (section, idx), which alone would silently slide answers onto
+	the wrong checks once an item is inserted or removed — so each row must also carry
+	the check_factor it was answered for, and the phone's template fingerprint must
+	still match."""
+	changed = _(
+		"{0}: this checklist was updated after you opened it. Refresh and review your answers."
+	).format(TEMPLATE_CHANGED)
+	fp = (payload.get("template_fingerprint") or "").strip()
+	if fp and fp != _fingerprint(tmpl, secs):
+		frappe.throw(changed, TemplateChanged)
+	live = {(s["key"], i["idx"]): i["check_factor"] for s in secs for i in s["items"]}
+	if set(answers) - set(live):
+		frappe.throw(changed, TemplateChanged)
+	for k, factor in live.items():
+		a = answers.get(k)
+		if a is not None and (a.get("check_factor") or "") != (factor or ""):
+			frappe.throw(changed, TemplateChanged)
+
+
 @frappe.whitelist()
 def submit_asset_check_sheet(payload) -> dict:
-	"""Create and submit one Asset Check Sheet from the phone's answers."""
+	"""Create and submit one Asset Check Sheet from the phone's answers.
+
+	Idempotent on ``client_id`` (or, without the column, on asset + template + date +
+	owner) and single-flight: concurrent retries serialise on a lock and the loser
+	gets the winner's sheet back with ``duplicate: true``. A template edited since the
+	phone downloaded it is refused with ``TEMPLATE_CHANGED`` (a ``TemplateChanged``,
+	HTTP 417) so the app can refresh and re-map instead of filing misaligned answers."""
 	_require(SCOUT_ROLES)
 	if isinstance(payload, str):
 		payload = frappe.parse_json(payload)
 	payload = payload or {}
 
+	with _client_lock(_lock_key(payload)) as got:
+		if not got:
+			# the twin is still working: hand back its sheet if it is already there
+			twin = _existing_by_client_id((payload.get("client_id") or "").strip())
+			if twin:
+				return _result(twin, True)
+			frappe.throw(_("This sheet is already being submitted. Try again shortly."), frappe.ServiceUnavailableError)
+		return _submit_locked(payload)
+
+
+def _submit_locked(payload) -> dict:
 	client_id = (payload.get("client_id") or "").strip()
 	dup = _existing_by_client_id(client_id)
 	if dup:
@@ -567,7 +720,7 @@ def submit_asset_check_sheet(payload) -> dict:
 		["asset_category", "company", "docstatus", "status"] + (["farm"] if _asset_has_farm() else []),
 		as_dict=True,
 	)
-	tmpl = frappe.get_cached_doc(TEMPLATE, tname)
+	tmpl = frappe.get_doc(TEMPLATE, tname)  # fresh: never a cached copy of an edited template
 	if a.docstatus != 1 or a.status in INACTIVE_ASSET_STATUSES:
 		frappe.throw(_("Asset {0} is not in service.").format(asset))
 	if tmpl.asset_category != a.asset_category:
@@ -585,23 +738,34 @@ def submit_asset_check_sheet(payload) -> dict:
 			_("Asset checks for {0} are not switched on for farm {1}.").format(a.asset_category, ", ".join(in_scope))
 		)
 
+	today = getdate(nowdate())
 	check_date = getdate(payload.get("check_date") or nowdate())
-	if check_date > getdate(nowdate()):
+	if check_date > today:
 		frappe.throw(_("Check date cannot be in the future."))
+	if check_date < add_days(today, -BACKDATE_DAYS):
+		frappe.throw(_("Check date cannot be more than {0} days ago.").format(BACKDATE_DAYS))
 
-	# Due, server-side, by the same rule the config used (today's date, not the backdate).
-	last, done = _last_checks([asset], tname)
-	due, nxt, _last = _due(
-		asset, _schedules([asset], tname), last, done, _interval_days(tmpl), getdate(nowdate())
-	)
+	if not _has_client_id_column():
+		# no column to find a retry by: the same scout's sheet for this day is the retry
+		again = _existing_sheet(asset, tname, check_date)
+		if again:
+			return _result(again, True)
+
+	secs = _sections(tmpl)
+	answers = _answers(payload)
+	_assert_template_unchanged(tmpl, secs, payload, answers)
+
+	# Due, server-side, by the same rule the config used — but for the sheet's own
+	# date, so a backdated sheet is judged on that day, not on today.
+	last, done = _last_checks([asset], tname, check_date)
+	due, nxt, _last = _due(asset, _schedules([asset], tname), last, done, _interval_days(tmpl), check_date)
 	if asset in _under_repair([asset]):
 		frappe.throw(_("Asset {0} has an open repair; it cannot be checked until that is done.").format(asset))
 	if not due:
 		if asset in done:
-			frappe.throw(_("{0} was already checked today with this template.").format(asset))
+			frappe.throw(_("{0} was already checked on {1} with this template.").format(asset, check_date))
 		frappe.throw(_("This check is not due yet (next due {0}).").format(nxt or _("later")))
 
-	answers = _answers(payload)
 	cs = frappe.new_doc(SHEET)
 	cs.asset = asset
 	cs.asset_category = a.asset_category
@@ -624,10 +788,12 @@ def submit_asset_check_sheet(payload) -> dict:
 	try:
 		cs.insert(ignore_permissions=True)
 		cs.submit()
-	except Exception:
+	except Exception as e:
 		# a retry racing its own first attempt: the app's one-sheet-a-day rule fires
 		frappe.db.rollback()
 		again = _existing_by_client_id(client_id)
+		if not again and "already exists" in str(e):
+			again = _existing_sheet(asset, tname, check_date)
 		if again:
 			return _result(again, True)
 		raise

@@ -141,9 +141,19 @@ class TestAssetChecks(unittest.TestCase):
 
 		return {"a": [row(1), row(2)], "b": [row(1)]}
 
+	FACTORS = {("a", 1): "Oil level", ("a", 2): "Belts", ("b", 1): "Paint"}
+
 	def payload(self, asset, **kw):
-		return dict({"client_id": uuid.uuid4().hex, "asset": asset, "template": self.template_name,
-		             "sections": self.answers()}, **kw)
+		"""A phone payload: every answer row carries the check_factor it answered, and
+		the template fingerprint, exactly as the app sends them."""
+		p = dict({"client_id": uuid.uuid4().hex, "asset": asset, "template": self.template_name,
+		          "template_fingerprint": api._fingerprint(frappe.get_doc(api.TEMPLATE, self.template_name)),
+		          "sections": self.answers()}, **kw)
+		p["sections"] = {
+			k: [dict({"check_factor": self.FACTORS.get((k, r.get("idx")))}, **r) for r in rows]
+			for k, rows in p["sections"].items()
+		}
+		return p
 
 	def as_scout(self, farms=(FARM,)):
 		frappe.set_user(SCOUT)
@@ -268,7 +278,8 @@ class TestAssetChecks(unittest.TestCase):
 		self.assertEqual(s["last_check_date"], add_days(nowdate(), -3))
 		# an old sheet makes it due again
 		b = self.asset()
-		api.submit_asset_check_sheet(self.payload(b, check_date=add_days(nowdate(), -8)))
+		with patch.object(api, "BACKDATE_DAYS", 30):  # the clamp is tested on its own
+			api.submit_asset_check_sheet(self.payload(b, check_date=add_days(nowdate(), -8)))
 		self.assertTrue(self.config_row(b)["due"])
 
 	def test_due_from_schedule(self):
@@ -400,3 +411,197 @@ class TestAssetChecks(unittest.TestCase):
 		self.assertEqual(out["rows"], [{"farm": FARM, "asset_category": self.cat, "enabled": 1}])
 		with self.as_scout():
 			self.assertRaises(frappe.PermissionError, api.get_asset_check_settings)
+
+	# ── review fixes ─────────────────────────────────────────────────────
+
+	def _scratch_template(self, name):
+		return frappe.get_doc(
+			{"doctype": "Asset Check Sheet Template", "template_name": name, "asset_category": self.cat,
+			 "asset_maintenance_team": self.template.asset_maintenance_team, "number_of_sections": 1,
+			 "frequency": "Daily", "section_a_name": "Only",
+			 "section_a_items": [{"check_factor": "One", "threshold_percent": 5},
+			                     {"check_factor": "Two", "threshold_percent": 5}]}
+		).insert()
+
+	def test_config_carries_fingerprint_that_follows_template_edits(self):
+		a = self.asset()
+		cfg_fp = self.config_row(a)["fingerprint"]
+		self.assertEqual(cfg_fp, api._fingerprint(frappe.get_doc(api.TEMPLATE, self.template_name)))
+		t = self._scratch_template("ZZ AC Edit " + uuid.uuid4().hex[:4])
+		before = api._fingerprint(t)
+		t.section_a_items[0].threshold_percent = 9
+		self.assertNotEqual(api._fingerprint(t), before)  # threshold
+		t.reload()
+		t.section_a_items = list(reversed(t.section_a_items))
+		for i, r in enumerate(t.section_a_items, 1):
+			r.idx = i
+		self.assertNotEqual(api._fingerprint(t), before)  # order
+		t.reload()
+		t.require_proposed_action = 1
+		self.assertNotEqual(api._fingerprint(t), before)  # flags
+		t.reload()
+		self.assertEqual(api._fingerprint(t), before)
+
+	def test_template_changed_refused_on_fingerprint_mismatch(self):
+		a = self.asset()
+		with self.as_scout():
+			with self.assertRaises(api.TemplateChanged) as cm:
+				api.submit_asset_check_sheet(self.payload(a, template_fingerprint="0" * 16))
+		self.assertIn("TEMPLATE_CHANGED", str(cm.exception))
+		self.assertTrue(issubclass(api.TemplateChanged, frappe.ValidationError))
+		self.assertEqual(frappe.db.count("Asset Check Sheet", {"asset": a}), 0)
+
+	def test_template_changed_refused_when_a_row_answers_another_check(self):
+		"""An item inserted above shifts every idx: the same (section, idx) now means a
+		different check, which only the carried check_factor reveals."""
+		a = self.asset()
+		sections = self.answers()
+		sections["a"] = [{"idx": 1, "status": "OK", "check_factor": "Something removed"},
+		                 {"idx": 2, "status": "OK", "check_factor": "Oil level"}]
+		with self.as_scout():
+			with self.assertRaises(api.TemplateChanged):
+				api.submit_asset_check_sheet(self.payload(a, sections=sections, template_fingerprint=""))
+			# no fingerprint and no check_factor at all is no better than a mismatch
+			bare = {"a": [{"idx": 1, "status": "OK", "check_factor": ""}, {"idx": 2, "status": "OK", "check_factor": ""}],
+			        "b": [{"idx": 1, "status": "OK", "check_factor": ""}]}
+			with self.assertRaises(api.TemplateChanged):
+				api.submit_asset_check_sheet(self.payload(a, sections=bare, template_fingerprint=""))
+			# an answer for a row the template no longer has
+			extra = self.answers()
+			extra["b"].append({"idx": 2, "status": "OK", "check_factor": "Gone"})
+			with self.assertRaises(api.TemplateChanged):
+				api.submit_asset_check_sheet(self.payload(a, sections=extra))
+		self.assertEqual(frappe.db.count("Asset Check Sheet", {"asset": a}), 0)
+
+	def test_matching_fingerprint_and_factors_accepted(self):
+		a = self.asset()
+		with self.as_scout():
+			r = api.submit_asset_check_sheet(self.payload(a))
+		self.assertEqual(r["docstatus"], 1)
+
+	def test_duplicate_without_client_id_column(self):
+		"""upande_asset installed after SCP: no column, so a retry is found by
+		asset + template + date + owner."""
+		a = self.asset()
+		with patch.object(api, "_has_client_id_column", return_value=False), self.as_scout():
+			first = api.submit_asset_check_sheet(self.payload(a))
+			again = api.submit_asset_check_sheet(self.payload(a))  # a fresh client_id: the retry has no column to match
+		self.assertFalse(first["duplicate"])
+		self.assertTrue(again["duplicate"])
+		self.assertEqual(again["name"], first["name"])
+		self.assertEqual(frappe.db.count("Asset Check Sheet", {"asset": a}), 1)
+
+	def test_already_exists_from_upande_asset_resolves_to_the_winner(self):
+		a = self.asset()
+		with self.as_scout():
+			first = api.submit_asset_check_sheet(self.payload(a))
+			# a racing twin got past the due check; upande_asset's one-a-day rule then fires
+			with patch.object(api, "_due", return_value=(True, None, None)), \
+			     patch.object(api, "_existing_by_client_id", return_value=None), \
+			     patch.object(frappe.db, "rollback"):  # keep the test fixtures
+				again = api.submit_asset_check_sheet(self.payload(a))
+		self.assertTrue(again["duplicate"])
+		self.assertEqual(again["name"], first["name"])
+		self.assertEqual(frappe.db.count("Asset Check Sheet", {"asset": a}), 1)
+
+	def test_lock_is_taken_per_client_id_and_released(self):
+		a = self.asset()
+		p = self.payload(a)
+		key = api._lock_key(p)
+		with self.as_scout():
+			api.submit_asset_check_sheet(p)
+		self.assertEqual(int(frappe.db.sql("select is_free_lock(%s)", key)[0][0]), 1)
+		self.assertNotEqual(api._lock_key(p), api._lock_key(self.payload(a)))  # per client_id
+		# released even when the submission is refused
+		bad = self.payload(a, template_fingerprint="0" * 16)
+		with self.as_scout(), self.assertRaises(api.TemplateChanged):
+			api.submit_asset_check_sheet(bad)
+		self.assertEqual(int(frappe.db.sql("select is_free_lock(%s)", api._lock_key(bad))[0][0]), 1)
+
+	def test_lock_loser_gets_the_winners_sheet(self):
+		a = self.asset()
+		p = self.payload(a)
+		with self.as_scout():
+			winner = api.submit_asset_check_sheet(p)
+			with patch.object(api, "_get_lock", return_value=False):  # timed out waiting on the twin
+				loser = api.submit_asset_check_sheet(p)
+				self.assertTrue(loser["duplicate"])
+				self.assertEqual(loser["name"], winner["name"])
+				# the twin has not committed anything yet: a retryable 503, not a refusal
+				with self.assertRaises(frappe.ServiceUnavailableError):
+					api.submit_asset_check_sheet(self.payload(a))
+
+	def test_lock_really_excludes_a_second_connection(self):
+		from frappe.database import get_db
+
+		other = get_db(host=frappe.conf.db_host or "127.0.0.1", user=frappe.conf.db_name,
+		               password=frappe.conf.db_password, port=frappe.conf.db_port)
+		key = "scp_ac:test-" + uuid.uuid4().hex
+		try:
+			with api._client_lock(key, 1) as got:
+				self.assertTrue(got)
+				self.assertEqual(int(other.sql("select get_lock(%s, 0)", key)[0][0]), 0)
+			self.assertEqual(int(other.sql("select get_lock(%s, 0)", key)[0][0]), 1)
+			other.sql("select release_lock(%s)", key)
+		finally:
+			other.close()
+
+	def test_check_date_clamped_to_three_days_back(self):
+		for days, ok in ((-4, False), (-3, True), (1, False)):
+			with self.subTest(days=days):
+				frappe.set_user("Administrator")
+				a = self.asset()
+				with self.as_scout():
+					p = self.payload(a, check_date=add_days(nowdate(), days))
+					if ok:
+						self.assertEqual(api.submit_asset_check_sheet(p)["docstatus"], 1)
+					else:
+						with self.assertRaises(frappe.ValidationError):
+							api.submit_asset_check_sheet(p)
+
+	def test_due_is_judged_on_the_check_date(self):
+		a = self.asset()
+		with self.as_scout():
+			api.submit_asset_check_sheet(self.payload(a, check_date=add_days(nowdate(), -2)))
+			# weekly: a sheet dated yesterday is still inside the week of the one two days ago
+			with self.assertRaises(frappe.ValidationError):
+				api.submit_asset_check_sheet(self.payload(a, check_date=add_days(nowdate(), -1)))
+
+	def test_next_due_is_the_later_of_schedule_and_last_sheet(self):
+		a = self.asset()
+		sch = frappe.get_doc({"doctype": "Asset Check Sheet Schedule", "asset": a,
+		                      "check_sheet_template": self.template_name, "enabled": 1}).insert()
+		frappe.db.set_value(sch.doctype, sch.name, "next_due_date", add_days(nowdate(), -5))
+		with self.as_scout():
+			api.submit_asset_check_sheet(self.payload(a, check_date=add_days(nowdate(), -3)))
+		frappe.set_user("Administrator")
+		frappe.db.set_value(sch.doctype, sch.name, "next_due_date", add_days(nowdate(), -1))  # a stale schedule
+		s = self.config_row(a)
+		self.assertFalse(s["due"])  # last sheet + 7 days wins over the lagging schedule
+		self.assertEqual(s["next_due_date"], add_days(nowdate(), 4))
+		frappe.db.set_value(sch.doctype, sch.name, "next_due_date", add_days(nowdate(), 6))  # schedule later
+		self.assertEqual(self.config_row(a)["next_due_date"], add_days(nowdate(), 6))
+
+	def test_quarterly_matches_upande_asset(self):
+		self.assertEqual(api.FREQ_DAYS["Quarterly"], 90)
+		self.assertEqual(api.FREQ_DAYS["Yearly"], 365)
+
+	def test_asset_on_two_farms_shows_the_scouts_own_farm(self):
+		if not frappe.db.has_column("Farm", "company"):
+			self.skipTest("Farm has no company column here")
+		a = self.asset(OTHER_FARM)
+		frappe.db.sql("update `tabFarm` set company=%s where name in %s", (self.company, (FARM, OTHER_FARM)))
+		api.save_asset_check_settings({"enabled": 1, "rows": [
+			{"farm": FARM, "asset_category": self.cat, "enabled": 1},
+			{"farm": OTHER_FARM, "asset_category": self.cat, "enabled": 1}]})
+		with patch.object(api, "_asset_has_farm", return_value=False):
+			for home in (FARM, OTHER_FARM):
+				with self.subTest(home=home), patch.object(api, "_home_farms", return_value={home}):
+					self.assertEqual(self.config_row(a)["farm"], home)
+
+	def test_setup_guard_creates_the_field_only_when_the_table_exists(self):
+		from upande_scp.serverscripts.asset_checks import setup
+
+		self.assertTrue(setup.ensure_client_id_field())  # present (or created now)
+		with patch.object(frappe.db, "table_exists", return_value=False):
+			self.assertFalse(setup.ensure_client_id_field())

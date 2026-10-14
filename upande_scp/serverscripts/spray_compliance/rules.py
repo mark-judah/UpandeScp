@@ -23,11 +23,18 @@ def is_non_target(product: dict | None) -> bool:
 	return product.get("category") == "Foliar" or (product.get("type") or "") in NON_TARGET_TYPES
 
 
+def valid_targets(product: dict | None) -> list:
+	"""Targets a product is VALID for: its registered default_targets plus the targets known for its
+	active ingredients (Mona's own registrations by shared ingredient, and the shipped seed)."""
+	p = product or {}
+	return list(dict.fromkeys([*(p.get("targets") or []), *(p.get("ai_targets") or [])]))
+
+
 def is_untargeted(product: dict | None) -> bool:
-	"""A pest-control product nobody has registered a target for. The pickers
-	never offer it: guessing its targets is worse than leaving it out. An item
+	"""A pest-control product with no registered or known target. The pickers
+	never offer it in Strict: guessing its targets is worse than leaving it out. An item
 	that is not a Spray Product at all (water, feed) is not untargeted."""
-	return bool(product) and not is_non_target(product) and not product.get("targets")
+	return bool(product) and not is_non_target(product) and not valid_targets(product)
 
 
 def _name(ctx, code):
@@ -64,7 +71,7 @@ def target_match(ctx) -> list[dict]:
 	wanted = set(ctx["targets"])
 	out = []
 	for item in _pest_control(ctx):
-		registered = (ctx["products"].get(item) or {}).get("targets") or []
+		registered = valid_targets(ctx["products"].get(item))
 		if not wanted.intersection(registered):
 			reg = ", ".join(registered) if registered else "no registered target"
 			out.append(violation(
@@ -77,7 +84,7 @@ def target_match(ctx) -> list[dict]:
 def coverage(ctx) -> list[dict]:
 	mix = _pest_control(ctx)
 	return [
-		{"target": t, "products": [i for i in mix if t in ((ctx["products"].get(i) or {}).get("targets") or [])]}
+		{"target": t, "products": [i for i in mix if t in valid_targets(ctx["products"].get(i))]}
 		for t in ctx["targets"]
 	]
 
@@ -88,6 +95,32 @@ def target_coverage(ctx) -> list[dict]:
 		          targets=[row["target"]])
 		for row in coverage(ctx) if not row["products"]
 	]
+
+
+def untargeted(ctx) -> list[dict]:
+	"""A pest-control product on the plan that has no registered or known target at all."""
+	return [
+		violation("untargeted",
+		          f"{_name(ctx, i)} has no registered or known target, so it cannot be tied to a pest or disease.",
+		          products=[i])
+		for i in _pest_control(ctx) if is_untargeted(ctx["products"].get(i))
+	]
+
+
+def row_target(ctx) -> list[dict]:
+	"""Each chemical row names the targets it is for; the product must be valid for every one."""
+	out = []
+	for row in ctx.get("rows") or []:
+		item = row.get("item")
+		p = ctx["products"].get(item)
+		if not p or is_non_target(p):
+			continue
+		ok = set(valid_targets(p))
+		for t in row.get("targets") or []:
+			if t not in ok:
+				out.append(violation("row_target", f"{_name(ctx, item)} is not registered for {t}.",
+				                     products=[item], targets=[t]))
+	return out
 
 
 def _codes(product: dict | None) -> list[str]:

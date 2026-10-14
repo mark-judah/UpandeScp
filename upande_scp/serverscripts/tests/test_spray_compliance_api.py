@@ -6,6 +6,27 @@ import frappe
 
 from upande_scp.serverscripts.spray_compliance import api
 
+# These tests pin the per-rule modes, so they run in Strict (a site in Warn softens targeting rules).
+_strict = None
+
+
+def setUpModule():
+	global _strict
+	from unittest import mock
+
+	_strict = mock.patch("upande_scp.serverscripts.spray_compliance.targeting.mode", return_value="Strict")
+	_strict.start()
+	# These tests are about registered targets alone, not ingredient knowledge.
+	global _no_ai
+	_no_ai = mock.patch("upande_scp.serverscripts.spray_compliance.context._ingredient_targets", return_value={})
+	_no_ai.start()
+
+
+def tearDownModule():
+	_strict.stop()
+	_no_ai.stop()
+
+
 
 def _product_for(target):
 	return frappe.db.sql("""select parent from `tabChemical Targets` where parenttype='Spray Product'

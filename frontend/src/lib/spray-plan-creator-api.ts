@@ -392,13 +392,16 @@ export async function fetchCreatorStockOverview(): Promise<CreatorStockOverview>
 
 
 /** Per chemical: does it need targets, and the unambiguous prefill (see drafts.suggest_chemical_targets). */
-export type ChemicalTargetSuggestions = Record<string, { required: boolean; targets: string[] }>;
+export type ChemicalTargetSuggestions = Record<
+  string,
+  { required: boolean; targets: string[]; /** plan targets the product is valid for */ valid: string[] }
+>;
 
 export async function suggestChemicalTargets(
   targets: string[],
   items: string[],
-): Promise<ChemicalTargetSuggestions> {
-  return call<ChemicalTargetSuggestions>(
+): Promise<{ mode: "Strict" | "Warn"; items: ChemicalTargetSuggestions }> {
+  return call<{ mode: "Strict" | "Warn"; items: ChemicalTargetSuggestions }>(
     "upande_scp.serverscripts.spray_plan_creator.drafts.suggest_chemical_targets",
     { targets: JSON.stringify(targets), items: JSON.stringify(items) },
   );

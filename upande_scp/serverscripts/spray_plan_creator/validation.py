@@ -373,3 +373,10 @@ def enforce_row_targets_on_submit(doc, method=None) -> None:
         for r in (doc.get("required_items") or [])
     ]
     validate_chemical_targets(chems, doc.get("custom_targets"))
+    # Chemical targeting enforcement: in Strict a product not valid for its target blocks the submit;
+    # in Warn the targeting rules only warn (nothing here blocks them).
+    from upande_scp.serverscripts.spray_compliance.api import enforce_on_approval
+
+    blocked = enforce_on_approval(doc)
+    if blocked:
+        frappe.throw(blocked["reason"], title="Spray check failed")

@@ -25,7 +25,14 @@ export interface ProductEligibility {
   /** Rule keys the product breaks; "target_match" = not registered for the targets. */
   rules: string[];
   codes: string[]; targets: string[]; non_target: boolean;
+  /** registered targets plus those known from its active ingredients */
+  valid_targets?: string[];
+  /** no registered or known target at all */
+  untargeted?: boolean;
+  /** "Strict" or "Warn": whether an unregistered pick blocks or only warns */
+  targeting?: TargetingMode;
 }
+export type TargetingMode = "Strict" | "Warn";
 export interface BomEligibility {
   bom: string; eligible: boolean; status: CheckResult["status"]; worst_mode: RuleMode;
   coverage: CoverageRow[]; reasons: string[];
@@ -40,9 +47,10 @@ export interface RecordedOverride {
 /** `get_approval_review().compliance`: the check plus the overrides on file. */
 export interface ReviewCompliance extends CheckResult { overrides: RecordedOverride[] }
 
-const RULE_ORDER = ["target_match", "target_coverage", "same_moa_in_mix", "moa_rotation",
+const RULE_ORDER = ["untargeted", "row_target", "target_match", "target_coverage", "same_moa_in_mix", "moa_rotation",
   "max_sprays", "known_resistance", "tank_mix_incompatible"];
 const LABELS: Record<string, string> = {
+  untargeted: "No known target", row_target: "Chemical for its pest",
   target_match: "Product targets", target_coverage: "Target coverage",
   same_moa_in_mix: "Same group in one tank", moa_rotation: "Group rotation",
   max_sprays: "Spray limits", known_resistance: "Known resistance",
@@ -57,9 +65,12 @@ export const ruleLabel = (rule: string) => LABELS[rule] ?? rule;
 export function checkSprayPlan(args: {
   greenhouse: string; targets: string[]; items: string[]; overrides?: OverrideInput[]; excludeWo?: string;
   when?: string;
+  /** each chemical with the pests / diseases it is assigned to (checked against the product) */
+  rows?: { item: string; targets: string[] }[];
 }): Promise<CheckResult> {
   return call<CheckResult>(`${M}.check_spray_plan`, {
     greenhouse: args.greenhouse, targets: JSON.stringify(args.targets), items: JSON.stringify(args.items),
+    rows: JSON.stringify(args.rows ?? []),
     overrides: JSON.stringify(args.overrides ?? []), exclude_wo: args.excludeWo ?? "", when: args.when ?? "",
   });
 }
@@ -140,4 +151,13 @@ export function getRuleModes(crop = ""): Promise<RuleModes> {
 }
 export function setRuleModes(modes: Record<string, RuleMode>, crop = ""): Promise<RuleModes> {
   return call<RuleModes>(`${M}.set_rule_modes`, { modes: JSON.stringify(modes), crop });
+}
+
+/* ---- Chemical targeting enforcement: Strict / Warn (GM only to change) ---- */
+export interface TargetingModeInfo { mode: TargetingMode; modes: TargetingMode[]; can_edit: boolean }
+export function getTargetingMode(): Promise<TargetingModeInfo> {
+  return call<TargetingModeInfo>(`${M}.get_targeting_mode`, {});
+}
+export function setTargetingMode(mode: TargetingMode): Promise<TargetingModeInfo> {
+  return call<TargetingModeInfo>(`${M}.set_targeting_mode`, { mode });
 }

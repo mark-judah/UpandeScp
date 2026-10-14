@@ -75,3 +75,6 @@ upande_scp.patches.v1_0.link_tank_mix_issues_to_plan
 # Spray Product.custom_cost_group: Pest control / Foliar / Adjuvant / pH buffer /
 # Hygiene & sanitation / Post-harvest, filled from structured fields only (never by name).
 upande_scp.patches.v1_0.add_spray_product_cost_group
+# Chemical targeting enforcement (Strict / Warn): existing sites start in Warn so the
+# Application Floor Plan never stops operations while product data is filled in.
+upande_scp.patches.v1_0.set_chemical_targeting_warn

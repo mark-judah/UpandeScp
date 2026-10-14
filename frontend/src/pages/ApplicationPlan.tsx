@@ -76,6 +76,7 @@ import {
   type CreatorBootstrap,
   suggestChemicalTargets,
 } from "@/lib/spray-plan-creator-api";
+import { eligibleProducts, type ProductEligibility } from "@/lib/spray-compliance-api";
 import { DraftBatchPanel } from "@/components/spray-plan/DraftBatchPanel";
 import { SprayPlanCompliance } from "@/components/spray-plan/SprayPlanCompliance";
 import { useSprayCompliance } from "@/lib/use-spray-compliance";
@@ -307,6 +308,8 @@ export function ApplicationPlan() {
   const [addKind, setAddKind] = useState<"chemical" | "foliar">("chemical");
   const [addQuery, setAddQuery] = useState("");
   const [addResults, setAddResults] = useState<ChemicalItem[]>([]);
+  // How each search result stands against the plan's targets (Strict blocks, Warn shows a chip).
+  const [addElig, setAddElig] = useState<Record<string, ProductEligibility>>({});
   const [addNotice, setAddNotice] = useState<string>("");
   const addTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -448,7 +451,20 @@ export function ApplicationPlan() {
     if (!addOpen) return;
     if (addTimerRef.current) clearTimeout(addTimerRef.current);
     addTimerRef.current = setTimeout(() => {
-      searchChemicalItems(addQuery, addKind).then(setAddResults);
+      searchChemicalItems(addQuery, addKind).then((r) => {
+        setAddResults(r);
+        if (greenhouse && r.length && !r.every((x) => x.is_fertilizer)) {
+          eligibleProducts({
+            greenhouse,
+            targets: Array.from(selectedTargets),
+            items: [],
+            candidates: r.filter((x) => !x.is_fertilizer).map((x) => x.item_code),
+            when: sprayDate || undefined,
+          })
+            .then((rows) => setAddElig(Object.fromEntries(rows.map((p) => [p.item, p]))))
+            .catch(() => setAddElig({}));
+        } else setAddElig({});
+      });
     }, 200);
     return () => {
       if (addTimerRef.current) clearTimeout(addTimerRef.current);
@@ -950,16 +966,24 @@ export function ApplicationPlan() {
   // Spray compliance: pest/disease targets vs the chosen products, live.
   const targetsArr = useMemo(() => Array.from(selectedTargets).sort(), [selectedTargets]);
   const mixItems = useMemo(() => chemRows.map((c) => c.item_code).filter(Boolean), [chemRows]);
+  const checkRows = useMemo(
+    () => chemRows.filter((c) => c.item_code && c.targets?.length).map((c) => ({ item: c.item_code as string, targets: c.targets ?? [] })),
+    [chemRows],
+  );
   const compliance = useSprayCompliance({
     greenhouse,
     targets: targetsArr,
     items: mixItems,
     when: sprayDate || undefined,
+    rows: checkRows,
   });
 
   // Which chemical rows need targets, and the unambiguous prefill (product registrations vs the plan's
   // targets). The server decides: foliars, fertiliser and adjuvants need none.
   const [rowTargetsRequired, setRowTargetsRequired] = useState<Record<string, boolean>>({});
+  // Per chemical: the plan targets it is valid for (registered or known from its ingredients), and the mode.
+  const [rowValid, setRowValid] = useState<Record<string, string[]>>({});
+  const [targetingMode, setTargetingModeState] = useState<"Strict" | "Warn">("Strict");
   const mixKey = mixItems.join("|");
   const targetsKey = targetsArr.join("|");
   useEffect(() => {
@@ -969,8 +993,11 @@ export function ApplicationPlan() {
     }
     let cancelled = false;
     suggestChemicalTargets(targetsArr, mixItems)
-      .then((sug) => {
+      .then((res) => {
         if (cancelled) return;
+        const sug = res.items;
+        setTargetingModeState(res.mode);
+        setRowValid(Object.fromEntries(Object.entries(sug).map(([k, v]) => [k, v.valid])));
         setRowTargetsRequired(Object.fromEntries(Object.entries(sug).map(([k, v]) => [k, v.required])));
         setChemRows((prev) =>
           prev.map((r) => {
@@ -1980,15 +2007,36 @@ export function ApplicationPlan() {
                                 </TableCell>
                                 <TableCell className="text-xs">
                                   {rowTargetsRequired[c.item_code || ""] ? (
+                                    <>
                                     <MultiFilterSelect
                                       compact
                                       label={`Targets for ${c.item_name || c.item_code}`}
                                       values={c.targets ?? []}
                                       onChange={(next) => updateChem(c.rowId, { targets: next })}
-                                      options={targetsArr}
+                                      options={
+                                        // Strict offers only the targets this product is valid for; Warn offers every
+                                        // plan target and flags the ones it is not registered for.
+                                        targetingMode === "Strict"
+                                          ? targetsArr.filter((t) => (rowValid[c.item_code || ""] ?? []).includes(t))
+                                          : targetsArr
+                                      }
                                       allLabel="Pick targets"
                                       invalid={!c.targets?.length}
                                     />
+                                    {(() => {
+                                      const bad = (c.targets ?? []).filter(
+                                        (t) => !(rowValid[c.item_code || ""] ?? []).includes(t),
+                                      );
+                                      return bad.length ? (
+                                        <div
+                                          className="mt-0.5 text-[0.6rem] text-amber-700 dark:text-amber-500"
+                                          data-testid="not-registered-chip"
+                                        >
+                                          not registered for {bad.join(", ")}
+                                        </div>
+                                      ) : null;
+                                    })()}
+                                    </>
                                   ) : (
                                     <span className="text-[0.65rem] text-muted-foreground">Not target-specific</span>
                                   )}
@@ -2341,12 +2389,19 @@ export function ApplicationPlan() {
             </div>
           )}
           <div className="max-h-72 overflow-auto flex flex-col gap-1">
-            {addResults.map((it) => (
+            {addResults.map((it) => {
+              const el = addElig[it.item_code];
+              const wanted = Array.from(selectedTargets);
+              const uncovered = el && wanted.length ? wanted.filter((t) => !(el.valid_targets ?? []).includes(t)) : [];
+              const strictBlocked = !!el && el.targeting === "Strict" && (el.untargeted || (wanted.length > 0 && uncovered.length === wanted.length));
+              return (
               <button
                 key={it.item_code}
                 type="button"
+                disabled={strictBlocked}
+                title={strictBlocked ? `Strict: not registered for ${uncovered.join(", ") || "any target"}` : undefined}
                 onClick={() => addChemical(it)}
-                className="text-left px-3 py-2 rounded-md border bg-card hover:bg-muted transition-colors"
+                className="text-left px-3 py-2 rounded-md border bg-card hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="text-xs font-medium">
                   {it.item_name || it.item_code}
@@ -2363,8 +2418,14 @@ export function ApplicationPlan() {
                     </span>
                   )}
                 </div>
+                {uncovered.length ? (
+                  <div className="mt-0.5 text-[0.65rem] text-amber-700 dark:text-amber-500" data-testid="add-not-registered">
+                    {strictBlocked ? "Blocked (Strict): " : ""}not registered for {uncovered.join(", ")}
+                  </div>
+                ) : null}
               </button>
-            ))}
+              );
+            })}
             {!addResults.length && (
               <div className="text-xs text-muted-foreground py-3 text-center">
                 Type to search.

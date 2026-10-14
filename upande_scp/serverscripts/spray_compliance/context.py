@@ -7,6 +7,7 @@ from frappe.utils import add_days, get_datetime, now_datetime
 from ..common import crop_catalog
 from ..spray_plan_creator import crop_settings
 from . import rules as R
+from . import targeting
 from .engine import RULES
 
 # Every Application Floor Plan state that means approved-or-later, taken from the
@@ -64,10 +65,31 @@ def load_products(items) -> dict:
 	                          and parent in %(p)s order by idx""", {"p": tuple(names or [""])}, as_dict=True):
 		if r.t:
 			targets.setdefault(r.parent, []).append(r.t)
+	ai = _ingredient_targets(rows, ingr, targets)
 	return {r.name: {"name": r.product_name or r.name, "category": r.category, "type": r.type,
-	                 "targets": targets.get(r.name, []), "irac": irac.get(r.name, []),
+	                 "targets": targets.get(r.name, []), "ai_targets": ai.get(r.name, []),
+	                 "irac": irac.get(r.name, []),
 	                 "frac": frac.get(r.name, []), "ingredients": ingr.get(r.name, [])}
 	        for r in rows}
+
+
+def _ingredient_targets(rows, ingr, registered) -> dict:
+	"""{product: targets known for its active ingredients, beyond its own registrations}: Mona's own
+	registrations by shared ingredient plus the shipped seed (Band 1 of the finance attribution)."""
+	from ..reports import finance_attribution as FAT
+
+	kb = FAT.load_seed()
+	mona = FAT.mona_ingredient_targets(kb)
+	out = {}
+	for r in rows:
+		res = FAT.resolve_product(
+			{"code": r.name, "name": r.product_name, "ingredients": ingr.get(r.name, []),
+			 "registered": registered.get(r.name, []), "category": r.category, "type": r.type},
+			kb, mona)
+		extra = [t for t in sorted(res["targets"]) if t not in registered.get(r.name, [])]
+		if extra:
+			out[r.name] = extra
+	return out
 
 
 def untargeted_items() -> list[str]:
@@ -158,7 +180,7 @@ def load_modes(crop) -> dict:
 	return {r: crop_settings.value_for(f"rule_{r}", crop) or "Warn" for r in RULES}
 
 
-def build_context(*, greenhouse, targets, mix, exclude_wo=None, crop=None, when=None) -> dict:
+def build_context(*, greenhouse, targets, mix, exclude_wo=None, crop=None, when=None, rows=None) -> dict:
 	"""`when` = the plan's scheduled spray time; history and the rules'
 	"now" are anchored there (falls back to the current time)."""
 	crop = crop if crop is not None else crop_for_greenhouse(greenhouse)
@@ -168,7 +190,9 @@ def build_context(*, greenhouse, targets, mix, exclude_wo=None, crop=None, when=
 	return {
 		"crop": crop, "targets": [t.strip() for t in targets or [] if t and t.strip()], "mix": [m for m in mix or [] if m],
 		"products": load_products(items), "history": history, "guidelines": load_guidelines(),
-		"incompatibilities": load_incompatibilities(), "modes": load_modes(crop),
+		"incompatibilities": load_incompatibilities(),
+		"targeting": targeting.mode(), "rows": [r for r in rows or [] if r.get("item")],
+		"modes": targeting.apply_mode(load_modes(crop), targeting.mode()),
 		"now": now.strftime("%Y-%m-%d %H:%M:%S"),
 	}
 
@@ -177,7 +201,13 @@ def context_for_wo(wo) -> dict:
 	return build_context(greenhouse=wo.custom_greenhouse,
 	                     targets=(wo.custom_targets or "").split("\n"),
 	                     mix=[r.item_code for r in wo.required_items], exclude_wo=wo.name,
-	                     when=wo.custom_scheduled_application_time)
+	                     when=wo.custom_scheduled_application_time,
+	                     rows=[{"item": r.item_code, "targets": _split(r.get("custom_targets"))}
+	                           for r in wo.required_items])
+
+
+def _split(v) -> list:
+	return list(dict.fromkeys(t.strip() for t in (v or "").split("\n") if t and t.strip()))
 
 
 def pest_control_items() -> list[str]:

@@ -10,6 +10,8 @@ from . import rules as R
 RULES = ("target_match", "target_coverage", "same_moa_in_mix", "moa_rotation",
 	"max_sprays", "known_resistance", "tank_mix_incompatible")
 OFF, WARN, GM, BLOCK = "Off", "Warn", "Block (GM override)", "Block"
+#: rules whose mode is decided by the targeting mode alone (Strict blocks, Warn warns)
+TARGETING_ONLY = ("untargeted", "row_target")
 MODES = (OFF, WARN, GM, BLOCK)
 _SEVERITY = {OFF: 0, WARN: 1, GM: 2, BLOCK: 3}
 
@@ -29,6 +31,15 @@ def _raw(ctx, skip=()):
 			continue
 		for v in getattr(R, rule)(ctx):
 			out.append({**v, "mode": mode})
+	# Chemical targeting enforcement (Strict / Warn): not per-rule configurable, set by the mode.
+	targeting = ctx.get("targeting")
+	if targeting:
+		m = BLOCK if targeting == "Strict" else WARN
+		for rule in TARGETING_ONLY:
+			if rule in skip:
+				continue
+			for v in getattr(R, rule)(ctx):
+				out.append({**v, "mode": m})
 	return out
 
 
@@ -73,5 +84,6 @@ def evaluate_candidates(ctx, candidates) -> list[dict]:
 			"targets": list(product.get("targets") or []),
 			"non_target": R.is_non_target(product),
 			"untargeted": R.is_untargeted(product),
+			"valid_targets": R.valid_targets(product),
 		})
 	return out

@@ -7,6 +7,7 @@ from frappe.utils import now_datetime
 from . import context as C
 from . import engine as E
 from . import rules as R
+from . import targeting as T
 
 OVERRIDE_ROLES = {"SCP General Manager", "General Manager", "System Manager"}
 _SEVERITY = {E.OFF: 0, E.WARN: 1, E.GM: 2, E.BLOCK: 3}
@@ -29,9 +30,9 @@ def _honoured(overrides):
 
 
 @frappe.whitelist()
-def check_spray_plan(greenhouse, targets, items, overrides=None, exclude_wo=None, when=None):
+def check_spray_plan(greenhouse, targets, items, overrides=None, exclude_wo=None, when=None, rows=None):
 	ctx = C.build_context(greenhouse=greenhouse, targets=_list(targets), mix=_list(items), exclude_wo=exclude_wo,
-	                      when=when)
+	                      when=when, rows=_list(rows))
 	result = E.check_mix(ctx, _honoured(overrides))
 	result["can_override"] = can_override()
 	return result
@@ -42,8 +43,10 @@ def eligible_products(greenhouse, targets, items=None, candidates=None, when=Non
 	ctx = C.build_context(greenhouse=greenhouse, targets=_list(targets), mix=_list(items), when=when)
 	cands = _list(candidates) or C.pest_control_items()
 	ctx["products"].update(C.load_products([c for c in cands if c not in ctx["products"]]))
-	# Products with no registered target are never offered (see C.untargeted_items).
-	rows = [r for r in E.evaluate_candidates(ctx, cands) if not r["untargeted"]]
+	# Strict: products with no registered or known target are never offered. Warn offers everything.
+	rows = [r for r in E.evaluate_candidates(ctx, cands) if ctx["targeting"] != "Strict" or not r["untargeted"]]
+	for r in rows:
+		r["targeting"] = ctx["targeting"]
 	for r in rows:
 		r["name"] = (ctx["products"].get(r["item"]) or {}).get("name") or r["item"]
 	# Suitable first; then products registered for the targets that break another
@@ -58,8 +61,8 @@ def eligible_boms(greenhouse, targets, boms, when=None):
 	boms = _list(boms)
 	if not boms:
 		return []
-	# A mix carrying a product with no registered target is never offered.
-	skip = C.boms_with_untargeted(boms)
+	# Strict: a mix carrying a product with no registered target is never offered. Warn offers it.
+	skip = C.boms_with_untargeted(boms) if T.mode() == T.STRICT else set()
 	boms = [b for b in boms if b not in skip]
 	if not boms:
 		return []
@@ -83,7 +86,9 @@ def result_for_payload(payload, exclude_wo=None) -> dict:
 	ctx = C.build_context(greenhouse=payload.get("custom_greenhouse"),
 	                      targets=payload.get("custom_targets") or [],
 	                      mix=[c.get("item_code") for c in payload.get("chemicals") or []],
-	                      exclude_wo=exclude_wo, when=payload.get("custom_scheduled_application_time"))
+	                      exclude_wo=exclude_wo, when=payload.get("custom_scheduled_application_time"),
+	                      rows=[{"item": c.get("item_code"), "targets": c.get("targets") or []}
+	                            for c in payload.get("chemicals") or []])
 	return E.check_mix(ctx, payload.get("spray_rule_overrides") or [] if can_override() else [])
 
 
@@ -272,3 +277,26 @@ def pest_product_map(wo) -> list[dict]:
 	Foliars / adjuvants / pH buffers are non-target and never listed."""
 	doc = frappe.get_doc("Work Order", wo) if isinstance(wo, str) else wo
 	return R.coverage(C.context_for_wo(doc))
+
+
+# --- Chemical targeting enforcement (Strict / Warn) -----------------------------
+
+@frappe.whitelist()
+def get_targeting_mode() -> dict:
+	return {"mode": T.mode(), "modes": list(T.MODES), "can_edit": can_override()}
+
+
+@frappe.whitelist()
+def set_targeting_mode(mode) -> dict:
+	"""SCP General Manager / System Manager only. The Settings doc keeps version history, so every
+	change is logged with who made it and when."""
+	if not can_override():
+		frappe.throw("Only an SCP General Manager can change chemical targeting enforcement.", frappe.PermissionError)
+	if mode not in T.MODES:
+		frappe.throw(f"Targeting mode must be one of {', '.join(T.MODES)}.")
+	doc = frappe.get_single(T.SETTINGS)
+	if doc.get(T.FIELD) != mode:
+		doc.set(T.FIELD, mode)
+		doc.flags.ignore_permissions = True
+		doc.save()
+	return get_targeting_mode()

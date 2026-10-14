@@ -19,6 +19,7 @@
   "irac_rotation_window_days",
   "frac_rotation_window_days",
   "spray_rules_section",
+  "chemical_targeting_mode",
   "rule_target_match",
   "rule_target_coverage",
   "rule_same_moa_in_mix",
@@ -188,6 +189,14 @@
    "fieldtype": "Section Break",
    "label": "Spray Rules",
    "description": "How each check treats a spray plan. Warn saves and shows it; Block (GM override) needs an SCP General Manager's reason; Block cannot be saved. A crop may override these below."
+  },
+  {
+   "fieldname": "chemical_targeting_mode",
+   "fieldtype": "Select",
+   "label": "Chemical targeting enforcement",
+   "options": "Strict\nWarn",
+   "default": "Strict",
+   "description": "Strict: every chemical must be assigned a pest or disease it is registered or known to work on, and the spray-check rules apply as configured below. Warn: any chemical may be picked (each still needs a pest or disease); targeting and rotation rules only warn, so the Application Floor Plan never stops operations."
   },
   {
    "fieldname": "rule_target_match",

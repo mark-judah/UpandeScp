@@ -20,8 +20,11 @@ export function useSprayCompliance(args: {
   items: string[];
   when?: string;
   excludeWo?: string;
+  /** chemicals with their assigned pests / diseases; re-checks when a pick changes */
+  rows?: { item: string; targets: string[] }[];
 }) {
-  const { greenhouse, targets, items, when, excludeWo } = args;
+  const { greenhouse, targets, items, when, excludeWo, rows } = args;
+  const rowsKey = JSON.stringify(rows ?? []);
   const [check, setCheck] = useState<CheckResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [productInfo, setProductInfo] = useState<Record<string, ProductEligibility>>({});
@@ -42,7 +45,7 @@ export function useSprayCompliance(args: {
       // Settled separately: per-product details failing must not drop the check,
       // which gates the save.
       Promise.allSettled([
-        checkSprayPlan({ greenhouse, targets, items, when, excludeWo }),
+        checkSprayPlan({ greenhouse, targets, items, when, excludeWo, rows }),
         eligibleProducts({ greenhouse, targets, items: [], candidates: items, when }),
       ]).then(([r, info]) => {
         if (cancelled) return;
@@ -58,7 +61,7 @@ export function useSprayCompliance(args: {
       clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [greenhouse, targetsKey, itemsKey, when, excludeWo]);
+  }, [greenhouse, targetsKey, itemsKey, when, excludeWo, rowsKey]);
 
   // An override answers one particular check; a new check needs a new one.
   useEffect(() => {

@@ -10,6 +10,22 @@ from upande_scp.serverscripts.spray_compliance import api
 from upande_scp.serverscripts.spray_compliance import context as C
 from upande_scp.serverscripts.spray_compliance import engine as E
 
+# These tests pin the per-rule modes, so they run in Strict (a site in Warn softens targeting rules).
+_strict = None
+
+
+def setUpModule():
+	global _strict
+	from unittest import mock
+
+	_strict = mock.patch("upande_scp.serverscripts.spray_compliance.targeting.mode", return_value="Strict")
+	_strict.start()
+
+
+def tearDownModule():
+	_strict.stop()
+
+
 S = "Scouting and Crop Protection Settings"
 
 

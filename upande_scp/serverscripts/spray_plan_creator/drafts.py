@@ -532,11 +532,21 @@ def create_draft_spray_plan(payload):
 
 @frappe.whitelist()
 def suggest_chemical_targets(targets, items) -> dict:
-    """Per chemical: does it need targets, and the unambiguous prefill from the
-    product's registered targets and the plan's targets."""
+    """{"mode", "items": {code: {required, targets (prefill), valid}}}: per chemical, does it need
+    targets, the unambiguous prefill, and which plan targets it is valid for (registered, or known
+    from its active ingredients). The mode says whether an invalid pick blocks (Strict) or warns."""
     _require_creator()
-    return suggest_row_targets(frappe.parse_json(targets) if isinstance(targets, str) else targets,
-                               frappe.parse_json(items) if isinstance(items, str) else items)
+    from ..spray_compliance import context as C
+    from ..spray_compliance import rules as R
+    from ..spray_compliance import targeting
+
+    plan = frappe.parse_json(targets) if isinstance(targets, str) else targets
+    codes = frappe.parse_json(items) if isinstance(items, str) else items
+    out = suggest_row_targets(plan, codes)
+    products = C.load_products(codes)
+    for code, row in out.items():
+        row["valid"] = [t for t in (plan or []) if t in R.valid_targets(products.get(code))]
+    return {"mode": targeting.mode(), "items": out}
 
 
 @frappe.whitelist()

@@ -99,13 +99,20 @@ class TestDraftsEnforcement(unittest.TestCase):
 
 
 class TestSubmitHook(unittest.TestCase):
+	def setUp(self):
+		# The compliance check at submit is covered in test_chemical_targeting.
+		p = mock.patch("upande_scp.serverscripts.spray_compliance.api.enforce_on_approval", return_value=None)
+		p.start()
+		self.addCleanup(p.stop)
+		self._setUp()
+
 	def doc(self, created, rows, plan="Mites"):
 		d = frappe._dict(custom_type="Application Floor Plan", creation=created, custom_targets=plan)
 		d.required_items = [frappe._dict(item_code=c, item_name=c, custom_targets=t) for c, t in rows]
 		d.get = lambda k, default=None, _d=d: _d.__dict__.get(k, default) if k != "required_items" else _d["required_items"]
 		return d
 
-	def setUp(self):
+	def _setUp(self):
 		p = mock.patch.object(V, "needs_row_targets", side_effect=needs)
 		p.start()
 		self.addCleanup(p.stop)

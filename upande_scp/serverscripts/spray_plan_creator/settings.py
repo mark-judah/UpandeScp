@@ -134,6 +134,7 @@ def get_settings_bundle() -> dict:
             # off `settings`: a loaded Single casts a missing Check to 0, which
             # would show the GM "off" for a switch that is on.
             **capture_settings.as_settings(),
+            capture_settings.GREETINGS_FIELD: int(capture_settings.greetings_enabled()),
             # Pests that can be caught on a trap, for the Traps switches.
             "trap_pests": capture_settings.trap_pest_choices(),
             "trap_photo_rules": [
@@ -209,6 +210,7 @@ def save_spray_plan_settings(payload) -> dict:
         "allow_scout_photos",
         "allow_scout_comments",
         "max_count_per_observation",
+        capture_settings.GREETINGS_FIELD,
     ]
     # A bad max count saves nothing (it throws before any field is set); the
     # switches are stored as 0 / 1. `capture_explicit` tells the Single's
@@ -218,10 +220,10 @@ def save_spray_plan_settings(payload) -> dict:
         payload[capture_settings.MAX_COUNT_FIELD] = capture_settings.clean_max_count(
             payload[capture_settings.MAX_COUNT_FIELD]
         )
-    for f in (capture_settings.PHOTOS_FIELD, capture_settings.COMMENTS_FIELD):
+    for f in (capture_settings.PHOTOS_FIELD, capture_settings.COMMENTS_FIELD, capture_settings.GREETINGS_FIELD):
         if f in payload:
             payload[f] = 1 if frappe.utils.cint(payload[f]) else 0
-    settings.flags.capture_explicit = {f for f in capture_settings.FIELDS if f in payload}
+    settings.flags.capture_explicit = {f for f in capture_settings.DEFAULTS if f in payload}
     if "crew_leave_check" in payload:
         payload["crew_leave_check"] = crew_availability.normalise_mode(payload["crew_leave_check"])
     if "crew_require_checkin" in payload:

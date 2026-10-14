@@ -39,9 +39,14 @@ MAX_COUNT_MIN = 1
 MAX_COUNT_MAX = 10000
 MAX_COUNT_MESSAGE = "Max count per observation must be a whole number from 1 to 10000."
 
-#: Every capture field and the value it reads as when nothing is stored.
-DEFAULTS = {PHOTOS_FIELD: 1, COMMENTS_FIELD: 1, MAX_COUNT_FIELD: DEFAULT_MAX_COUNT}
-FIELDS = tuple(DEFAULTS)
+GREETINGS_FIELD = "scout_greetings_enabled"
+
+#: The capture fields and the value each reads as when nothing is stored.
+CAPTURE_DEFAULTS = {PHOTOS_FIELD: 1, COMMENTS_FIELD: 1, MAX_COUNT_FIELD: DEFAULT_MAX_COUNT}
+FIELDS = tuple(CAPTURE_DEFAULTS)
+#: Every Single field guarded by fill_unset / ensure_defaults: the capture fields
+#: plus the greeting switch (same unset-Check-casts-to-0 trap, so the same guard).
+DEFAULTS = {**CAPTURE_DEFAULTS, GREETINGS_FIELD: 1}
 
 
 def _raw(fieldname):
@@ -88,6 +93,17 @@ def _as_max_count(value):
         return None
     number = int(number)
     return number if MAX_COUNT_MIN <= number <= MAX_COUNT_MAX else None
+
+
+def greetings_enabled() -> bool:
+    """Scout app birthday / milestone / encouragement card. Unset reads on."""
+    value = _raw(GREETINGS_FIELD)
+    if value is None:
+        return True
+    try:
+        return bool(int(float(value)))
+    except (TypeError, ValueError):
+        return True
 
 
 def max_count() -> int:

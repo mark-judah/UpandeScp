@@ -390,6 +390,10 @@ doc_events = {
 
 scheduler_events = {
     "cron": {
+        # Scout greeting: lifetime-entry baseline for entry milestones (one scan)
+        "0 22 * * 0": [
+            "upande_scp.serverscripts.scouts.greeting.build_lifetime_baseline"
+        ],
         # Daily Scouting & Crop Protection Summary — 17:00 EAT (14:00 UTC)
         "0 14 * * *": [
             "upande_scp.serverscripts.reports.send_daily_scouting_report.send_daily_scouting_report"

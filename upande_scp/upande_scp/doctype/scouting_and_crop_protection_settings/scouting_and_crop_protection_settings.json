@@ -100,6 +100,7 @@
   "allow_scout_photos",
   "allow_scout_comments",
   "max_count_per_observation",
+  "scout_greetings_enabled",
   "trap_photos_section",
   "trap_photo_rules",
   "asset_checks_section",
@@ -717,6 +718,13 @@
    "fieldtype": "Int",
    "label": "Max count per observation",
    "non_negative": 1
+  },
+  {
+   "default": "1",
+   "description": "The scout app shows a short card at the top of the home screen: a birthday wish, a milestone (round-number entry totals, working-day streaks) or progress on the week's scout plan. Off: no card.",
+   "fieldname": "scout_greetings_enabled",
+   "fieldtype": "Check",
+   "label": "Birthday and encouragement messages for scouts"
   },
   {
    "description": "Per trap pest: must a scout photograph a catch of it? Separate from the general photo switch above. The scout app reads this with its observations.",

@@ -83,6 +83,8 @@ export interface SprayPlanSettings {
    */
   allow_scout_photos: number;
   allow_scout_comments: number;
+  /** Scout app greeting card (birthday / milestone / encouragement). Unset reads as 1. */
+  scout_greetings_enabled?: number;
   /** Highest count one observation or trap pest may carry on the handset (1–10000). */
   max_count_per_observation: number;
   /** Per trap pest: must a catch carry a photo (Traps section). A pest with no row is not required. */

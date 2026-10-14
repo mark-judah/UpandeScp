@@ -25,6 +25,8 @@ export interface ScoutCaptureValues {
   allow_scout_photos: number;
   allow_scout_comments: number;
   max_count_per_observation: number;
+  /** Home-screen card in the scout app; the server reads an unset switch as 1. */
+  scout_greetings_enabled?: number;
 }
 
 /** The server's rule, checked here first so a bad value never leaves the page. */
@@ -120,6 +122,24 @@ export function ScoutCaptureCard({
           >
             {error ?? "The highest count the app accepts for one observation or one trap pest. 15 until changed."}
           </p>
+        </div>
+        <div className="flex items-start gap-3 rounded-lg border bg-card p-3 md:col-span-3">
+          <Checkbox
+            id="scout_greetings_enabled"
+            checked={value.scout_greetings_enabled !== 0}
+            onCheckedChange={(v) => onChange("scout_greetings_enabled", v ? 1 : 0)}
+          />
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="scout_greetings_enabled" className="text-xs font-semibold cursor-pointer">
+              Birthday and encouragement messages
+            </Label>
+            <p className="text-[0.65rem] text-muted-foreground leading-snug">
+              A short card at the top of the scout app's home screen: a birthday
+              wish, a milestone (round-number entry totals, working-day streaks)
+              or progress on the week's scout plan. Scouts can dismiss it for
+              the day. Off: the card is not shown.
+            </p>
+          </div>
         </div>
       </CardContent>
     </Card>

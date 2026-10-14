@@ -75,6 +75,9 @@ import {
   type CreatorBootstrap,
 } from "@/lib/spray-plan-creator-api";
 import { DraftBatchPanel } from "@/components/spray-plan/DraftBatchPanel";
+import { SprayPlanCompliance } from "@/components/spray-plan/SprayPlanCompliance";
+import { useSprayCompliance } from "@/lib/use-spray-compliance";
+import type { OverrideInput } from "@/lib/spray-compliance-api";
 import { WeatherCard } from "@/components/WeatherCard";
 import {
   SprayTeamEditor,
@@ -939,7 +942,19 @@ export function ApplicationPlan() {
     });
   };
 
-  const submit = async () => {
+  // Spray compliance: pest/disease targets vs the chosen products, live.
+  const targetsArr = useMemo(() => Array.from(selectedTargets).sort(), [selectedTargets]);
+  const mixItems = useMemo(() => chemRows.map((c) => c.item_code).filter(Boolean), [chemRows]);
+  const compliance = useSprayCompliance({
+    greenhouse,
+    targets: targetsArr,
+    items: mixItems,
+    when: sprayDate || undefined,
+  });
+
+  /** `overridesArg` is passed by the override dialog, whose state update
+   *  would not have landed yet. */
+  const submit = async (overridesArg?: OverrideInput[]) => {
     // Name what is actually missing. Listing all seven every time tells an
     // operator who has filled six of them nothing at all — they read it as the
     // form not seeing what they just picked.
@@ -1022,6 +1037,20 @@ export function ApplicationPlan() {
       pushToast("err", "Pick at least one target.");
       return;
     }
+    const overrides = overridesArg ?? compliance.pendingOverrides;
+    if (compliance.gate.state === "blocked") {
+      pushToast("err", compliance.gate.reason || "This mix is blocked by the spray check.");
+      return;
+    }
+    if (compliance.gate.state === "override" && !overrides) {
+      pushToast(
+        "err",
+        compliance.check?.can_override
+          ? "This mix needs a General Manager override: use Override in the spray check."
+          : "This mix needs a General Manager override before it can be saved.",
+      );
+      return;
+    }
 
     const customScopeDetails =
       scope === "Specific Variety"
@@ -1066,6 +1095,7 @@ export function ApplicationPlan() {
           application_rate: c.stock_qty,
         })),
         custom_scheduled_application_time: sprayDate || null,
+        spray_rule_overrides: overrides ?? [],
       };
       const r = await createDraftSprayPlan(draftPayload as Parameters<typeof createDraftSprayPlan>[0]);
       const woName = r?.work_order;
@@ -2111,6 +2141,14 @@ export function ApplicationPlan() {
                       })}
                     </div>
                   ) : null}
+
+                  {chemRows.length ? (
+                    <SprayPlanCompliance
+                      compliance={compliance}
+                      names={Object.fromEntries(chemRows.map((c) => [c.item_code, c.item_name || c.item_code]))}
+                      onOverrideConfirm={(o) => void submit(o)}
+                    />
+                  ) : null}
                 </>
               )}
               {/* Add-to-batch lives at the foot of the BOM card so it sits
@@ -2135,8 +2173,8 @@ export function ApplicationPlan() {
                     </span>
                   ) : null}
                   <Button
-                    onClick={submit}
-                    disabled={busy || !greenhouse || stockShortRows.length > 0}
+                    onClick={() => void submit()}
+                    disabled={busy || !greenhouse || stockShortRows.length > 0 || compliance.gate.state === "blocked"}
                     size="sm"
                     title={
                       stockShortRows.length

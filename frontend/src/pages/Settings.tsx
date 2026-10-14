@@ -195,7 +195,7 @@ export function Settings() {
               />
             </TabsContent>
             <TabsContent value="thresholds">
-              <ThresholdsTab />
+              <ThresholdsTab crop="Rose" />
             </TabsContent>
             <TabsContent value="ordering">
               <OrderingTab />

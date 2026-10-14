@@ -14,6 +14,7 @@
  */
 
 import { call } from "./frappe";
+import type { ReviewCompliance } from "@/lib/spray-compliance-api";
 
 // ---------- Bootstrap ----------
 
@@ -302,6 +303,7 @@ export interface ApprovalReview {
   };
   chemicals: ChemicalReview[];
   plan_warnings: string[];
+  compliance: ReviewCompliance;
 }
 
 export async function getApprovalReview(woName: string): Promise<ApprovalReview> {

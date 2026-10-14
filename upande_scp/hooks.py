@@ -242,6 +242,17 @@ doc_events = {
     # related Stock Entries are submitted (e.g. Material Transfer for
     # Manufacture -> "Chemical Issued"). Material Issue is fired later from
     # end_spray_session, not from this hook.
+    "Work Order": {
+        "validate": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
+        "before_update_after_submit": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
+    },
+    "Spray Application Logsheet": {
+        "on_submit": "upande_scp.serverscripts.sprayers.exposure.on_submit",
+        "on_cancel": "upande_scp.serverscripts.sprayers.exposure.on_cancel",
+    },
+    "Spray Team": {
+        "on_update": "upande_scp.serverscripts.sprayers.register.on_spray_team_update",
+    },
     "Stock Entry": {
         "before_validate": [
             # Safety net: force any AFP Manufacture (desk, API, console, mobile)
@@ -289,6 +300,8 @@ scheduler_events = {
         "upande_scp.serverscripts.scouting.scouting_prewarm.daily_prewarm",
         # Cancel AFP spray plans left unapproved for more than 3 days.
         "upande_scp.serverscripts.spray_plan_creator.maintenance.auto_cancel_dormant_plans",
+        # Refresh the sprayer register and roll each sprayer's exposure window.
+        "upande_scp.serverscripts.sprayers.register.daily",
     ],
     "hourly": [
         # Keep the current + previous ISO week of scouting payload warm in Redis
@@ -299,6 +312,11 @@ scheduler_events = {
         # Daily Chemical Planning Progress Update — sends at the GM-configured
         # EAT hour (self-gated; once per day).
         "upande_scp.serverscripts.reports.send_chemical_progress_email.send_chemical_progress_email",
+        # Thresholds -> Scouting Alerts -> in-app notifications (also runs the
+        # pin checks). Self-gated: one run per 50 min across workers.
+        "upande_scp.serverscripts.scouting.thresholds_check.run_threshold_check",
+        # The day's scouting alerts, one email per person at 17:00 EAT.
+        "upande_scp.serverscripts.scouting.alert_digest.send_alert_digest",
     ],
 }
 

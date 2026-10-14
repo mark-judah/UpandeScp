@@ -83,6 +83,18 @@ const ChemicalLoaning = lazy(() =>
 const Finance = lazy(() =>
   import("@/pages/Finance").then((m) => ({ default: m.Finance })),
 );
+const Teams = lazy(() =>
+  import("@/pages/Teams").then((m) => ({ default: m.Teams })),
+);
+const Sprayers = lazy(() =>
+  import("@/pages/Sprayers").then((m) => ({ default: m.Sprayers })),
+);
+const Scouts = lazy(() =>
+  import("@/pages/Scouts").then((m) => ({ default: m.Scouts })),
+);
+const Coverage = lazy(() =>
+  import("@/pages/Coverage").then((m) => ({ default: m.Coverage })),
+);
 // Throwaway POC route — gated on a hash that the normal router doesn't
 // recognise so it never appears in the sidebar. Open with
 // ``#/poc-heatmap?gh=<Greenhouse>&obs=<Name>&kind=pest|disease``.
@@ -242,7 +254,15 @@ export function App() {
           ) : view === "chemical-loaning" ? (
             <ChemicalLoaning />
           ) : view === "finances" ? (
-            <Finance />
+            <Finance initialCrop={cropName} />
+          ) : view === "teams" ? (
+            <Teams initialCrop={cropName} />
+          ) : view === "sprayers" ? (
+            <Sprayers initialCrop={cropName} />
+          ) : view === "scouts" ? (
+            <Scouts initialCrop={cropName} />
+          ) : view === "coverage" ? (
+            <Coverage initialCrop={cropName} />
           ) : (
             <Dashboard initialCrop={cropName} />
           )}

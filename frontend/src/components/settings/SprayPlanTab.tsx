@@ -18,6 +18,7 @@ import {
   Warehouse,
 } from "lucide-react";
 import { AssetChecksCard } from "@/components/settings/AssetChecksCard";
+import { SprayRulesCard } from "@/components/settings/SprayRulesCard";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -373,6 +374,7 @@ export function SprayPlanTab({ initial, farms, warehouses, onSaved }: Props) {
       </Card>
 
       <AssetChecksCard />
+      <SprayRulesCard />
 
       <Card className="lg:col-span-2">
         <CardHeader>

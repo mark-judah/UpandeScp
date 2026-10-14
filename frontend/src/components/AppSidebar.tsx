@@ -11,6 +11,7 @@ import {
   Droplets,
   FileText,
   Flame,
+  Gauge,
   History,
   Home,
   Layers,
@@ -24,7 +25,10 @@ import {
   Search,
   Settings,
   Sprout,
+  SprayCan,
   Truck,
+  UserRoundSearch,
+  Users,
   Warehouse,
 } from "lucide-react";
 import {
@@ -93,6 +97,56 @@ interface NavSection {
 }
 
 const STORE_KEEPER_ROLE = "SCP Chemical Store Keeper";
+// Personnel (spec P3): the same roles serverscripts/sprayers/api.py and
+// serverscripts/scouts/api.py admit. A creator or supervisor is held to their
+// rostered farms by the server; the nav only decides whether the page shows.
+const SPRAY_PERSONNEL_ROLES = [
+  "SCP General Manager",
+  "SCP Spray Plan Creator",
+  "SCP Spray Supervisor",
+  "System Manager",
+  "Administrator",
+];
+const SCOUT_PERSONNEL_ROLES = [
+  "SCP General Manager",
+  "SCP Scouting User",
+  "System Manager",
+  "Administrator",
+];
+const PERSONNEL_SECTION: NavSection = {
+  label: "Personnel",
+  hideForRoles: [STORE_KEEPER_ROLE],
+  items: [
+    {
+      kind: "view",
+      view: "scouts",
+      label: "Scouts",
+      icon: UserRoundSearch,
+      requireRoles: SCOUT_PERSONNEL_ROLES,
+    },
+    {
+      kind: "view",
+      view: "sprayers",
+      label: "Sprayers",
+      icon: SprayCan,
+      requireRoles: SPRAY_PERSONNEL_ROLES,
+    },
+    {
+      kind: "view",
+      view: "teams",
+      label: "Teams",
+      icon: Users,
+      requireRoles: SPRAY_PERSONNEL_ROLES,
+    },
+  ],
+};
+// Coverage (spec P2): the scouting data-quality report, open to whoever sees Reports.
+const COVERAGE_ITEM: NavItem = {
+  kind: "view",
+  view: "coverage",
+  label: "Coverage",
+  icon: Gauge,
+};
 
 const ROSE_NAV: NavSection[] = [
   // Store-Keeper exclusive section — only role that sees it, and the
@@ -208,11 +262,13 @@ const ROSE_NAV: NavSection[] = [
     hideForRoles: [STORE_KEEPER_ROLE],
     items: [
       { kind: "view", view: "reports", label: "Reports", icon: FileText },
+      COVERAGE_ITEM,
       // Varieties is hidden until the page is finished. The route and the page are
       // still here, so restoring it is one line — reachable meanwhile by URL for
       // whoever is working on it.
     ],
   },
+  PERSONNEL_SECTION,
 ];
 
 // Avocado is its own app: a parallel sidebar reached via the crop switcher.

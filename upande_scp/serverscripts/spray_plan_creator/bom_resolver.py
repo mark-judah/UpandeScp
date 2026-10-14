@@ -115,7 +115,9 @@ def create_bom_for_plan(wo) -> str | None:
             or "Roses"
         )
     farm = _plan_farm(wo)
-    if farm:
+    # The link needs the Farm DocType (upande_harvest). A site with only the
+    # tabFarm table — a restored copy without that app — would refuse the BOM.
+    if farm and frappe.db.exists("DocType", "Farm"):
         bom.custom_farm = farm
     # 1:1 backlink to the originating plan. On the draft-edit path the WO already
     # has a name, so we can set it here; on the create path the WO is unsaved

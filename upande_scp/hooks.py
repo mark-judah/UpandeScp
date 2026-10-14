@@ -106,6 +106,8 @@ after_migrate = [
 	# the Single: a missing Check row is cast to 0 on load, so a farm that never
 	# opened the settings page would otherwise be switched off by its first save.
 	"upande_scp.serverscripts.scouting.capture_settings.ensure_defaults",
+	# Stock Entry: spray-plan link + 'Scouting and Crop Protection' tab.
+	"upande_scp.serverscripts.store.stock_entry_fields.ensure_scp_stock_entry_fields",
 ]
 
 # Uninstallation

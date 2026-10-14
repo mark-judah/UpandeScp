@@ -176,6 +176,10 @@ def build_material_issue(manufacture_se, wo, supervisor_employee: str) -> dict:
         "letter_head": manufacture_se.letter_head or "",
         "custom_farm": farm,
         "custom_location": manufacture_se.custom_location or "",
+        # Durable link back to the plan for finance. `work_order` is not used:
+        # ERPNext treats it as production consumption and nulls it on an issue.
+        "custom_spray_plan": wo.name,
+        "custom_spray_link_basis": "Direct",
         # Record the supervisor in mona's native biometric fields for
         # traceability. This issue is system-built and auto-submitted, so
         # it is NOT gated on a scan: requires_biometric=0, status Pending —

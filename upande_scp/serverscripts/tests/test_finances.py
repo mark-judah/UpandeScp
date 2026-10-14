@@ -1,8 +1,11 @@
 """Crop-protection finance report.
 
-The reconciliation invariant is the important one: every cell must sum back to
-the source line amounts. Without it an attribution change can quietly lose or
-duplicate money while every other assertion still passes.
+The reconciliation invariant is the important one: targets + unattributed must
+equal total spend. Without it an allocation change can quietly lose or duplicate
+money while every other assertion still passes.
+
+The allocation tests are pure (they feed `_build` stock lines and a plan
+coverage map); one test reads the real site to prove the invariant on live data.
 """
 
 import unittest
@@ -11,144 +14,96 @@ import frappe
 
 from upande_scp.serverscripts.reports import finances
 
-FROM_DATE, TO_DATE = "2020-01-01", "2030-12-31"
+
+def line(code, value, *, wo="WO-1", gh="GH1", kind_group="Chemicals", purpose="Material Transfer for Manufacture",
+         date="2026-09-03", ledger=True, s_warehouse="Main Store - X", farm="Farm A", targets="Mites"):
+    return {
+        "stock_entry": "STE-1", "posting_date": date, "stock_entry_type": purpose, "purpose": purpose,
+        "work_order": wo, "s_warehouse": s_warehouse, "item_code": code, "qty": 1, "stock_uom": "Nos",
+        "line_amount": value if not ledger else 0, "ledger_value": value if ledger else None,
+        "cost_center": "CC", "item_group": kind_group, "item_name": code.title(),
+        "greenhouse": gh, "targets": targets, "gh_farm": farm, "src_farm": None,
+    }
 
 
-class TestFinances(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
+KINDS = {"Mites": "pest", "Thrips": "pest", "Mildew": "disease", "Botrytis": "disease"}
+
+
+def build(lines, facts=None, **kw):
+    return finances._build(
+        lines,
+        classify=lambda g: "foliar" if g == "Fertilizers" else "chemical",
+        is_wip=lambda w: "CSU" in (w or ""),
+        facts=facts or {},
+        kinds=KINDS,
+        granularity="week",
+        **kw,
+    )
+
+
+def reg(*targets, **extra):
+    return {"registered": list(targets), **extra}
+
+
+class TestAllocation(unittest.TestCase):
+    def test_registered_targets_split_evenly(self):
+        r = build([line("a", 100, targets="Mites\nThrips\nMildew")], {"a": reg("Mites", "Thrips")})
+        got = {t["target"]: t["value"] for t in r["cost_per_target"]}
+        self.assertEqual(got, {"Mites": 50.0, "Thrips": 50.0})
+        self.assertEqual(r["unattributed_total"], 0)
+
+    def test_no_targets_is_unattributed(self):
+        r = build([line("a", 70, wo=None, gh=None, purpose="Material Issue", targets=None)])
+        self.assertEqual(r["unattributed"][0]["reason"], "no_plan")
+        self.assertEqual(r["cost_per_target"], [])
+        self.assertEqual(r["by_basis"][-1]["value"], 70.0)
+
+    def test_foliar_goes_to_the_nutrition_line(self):
+        r = build([line("f", 40, kind_group="Fertilizers", targets="Mites")])
+        self.assertEqual(r["cost_per_target"][0]["target"], finances.FA.NUTRITION)
+        self.assertEqual(r["cost_per_target"][0]["kind"], "nutrition")
+
+    def test_everything_reconciles(self):
+        lines = [line("a", 100, targets="Mites\nMildew"), line("b", 40, targets="Mites"),
+                 line("c", 33.33, wo=None, gh=None, purpose="Material Issue"),
+                 line("f", 61.7, wo="WO-2", gh="GH2", kind_group="Fertilizers", targets="Thrips"),
+                 line("a", 12.34, wo="WO-3", targets="Thrips\nMildew\nBotrytis")]
+        facts = {"a": reg("Mites"), "b": {"irac": True}}
+        r = build(lines, facts)
+        self.assertAlmostEqual(r["grand_total"], 247.37, places=2)
+        self.assertAlmostEqual(r["reconciliation"]["difference"], 0, places=2)
+        self.assertAlmostEqual(sum(t["value"] for t in r["cost_per_target"]) + r["unattributed_total"], r["grand_total"], delta=0.03)
+        self.assertAlmostEqual(sum(b["value"] for b in r["by_basis"]), r["grand_total"], places=2)
+        for key in ("by_product", "by_place", "by_period"):
+            self.assertAlmostEqual(sum(p["value"] for p in r[key]), r["grand_total"], places=2)
+
+    def test_out_of_a_csu_is_not_counted_again(self):
+        r = build([line("a", 100, purpose="Material Issue", s_warehouse="CSU 1 - X")])
+        self.assertEqual(r["grand_total"], 0)
+
+    def test_excluded_types_stay_excluded(self):
+        r = build([line("a", 100, purpose="Manufacture"), line("a", 9, purpose="Material Receipt")])
+        self.assertEqual(r["grand_total"], 0)
+
+    def test_zero_valuation_is_listed_not_silent(self):
+        r = build([line("a", 0)])
+        self.assertEqual(len(r["no_valuation"]), 1)
+
+    def test_ledger_value_beats_line_amount(self):
+        row = line("a", 100)
+        row["line_amount"] = 999
+        self.assertEqual(build([row])["grand_total"], 100.0)
+
+    def test_periods_bucket_by_week(self):
+        r = build([line("a", 10, date="2026-09-01"), line("a", 5, date="2026-09-09")])
+        self.assertEqual([p["period"] for p in r["by_period"]], ["2026-08-31", "2026-09-07"])
+
+
+class TestLive(unittest.TestCase):
+    def test_site_totals_reconcile(self):
         frappe.set_user("Administrator")
-        cls.report = finances.chemical_cost_by_target(FROM_DATE, TO_DATE)
-
-    # -- reconciliation ---------------------------------------------------
-    def test_cells_reconcile_to_their_row_total(self):
-        for farm in self.report["farms"]:
-            for row in farm["rows"]:
-                cells = sum(c["value"] for c in row["costs"].values())
-                self.assertAlmostEqual(
-                    cells, row["total"], places=1,
-                    msg=f"{farm['farm']} / {row['greenhouse']} cells != total",
-                )
-
-    def test_every_cell_splits_into_attributed_plus_split(self):
-        for farm in self.report["farms"]:
-            for row in farm["rows"]:
-                for target, cell in row["costs"].items():
-                    self.assertAlmostEqual(
-                        cell["attributed"] + cell["split"], cell["value"], places=1,
-                        msg=f"{row['greenhouse']} / {target} provenance != value",
-                    )
-
-    def test_grand_total_matches_the_source_ledger(self):
-        total = frappe.db.sql("""
-            SELECT ROUND(SUM(sed.amount), 2)
-            FROM `tabStock Entry` se
-            JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
-            JOIN `tabItem` i ON i.name = sed.item_code
-            WHERE se.docstatus = 1
-              AND se.purpose IN ('Material Transfer for Manufacture', 'Material Issue')
-              AND i.item_group IN ('Chemicals', 'Fertilizers')
-        """)[0][0]
-        self.assertAlmostEqual(self.report["grand_total"], float(total), delta=2.0)
-
-    def test_kind_totals_sum_to_the_grand_total(self):
-        by_kind = sum(self.report["totals_by_kind"].values())
-        self.assertAlmostEqual(by_kind, self.report["grand_total"], delta=2.0)
-
-    # -- what the widened purposes bought ---------------------------------
-    def test_material_issue_spend_is_now_counted(self):
-        """~9.1M of store-issued foliar was invisible while the report read
-        only Material Transfer for Manufacture."""
-        self.assertTrue(self.report["unattributed"], "no unattributed spend reported")
-        self.assertGreater(sum(u["value"] for u in self.report["unattributed"]), 0)
-
-    def test_foliar_spend_is_visible(self):
-        self.assertGreater(
-            self.report["totals_by_kind"].get("foliar", 0), 0,
-            "foliar spend is still missing from the report",
+        r = finances.chemical_cost_by_target("2026-09-01", "2026-09-30")
+        self.assertAlmostEqual(r["reconciliation"]["difference"], 0, delta=0.05)
+        self.assertAlmostEqual(
+            sum(t["value"] for t in r["cost_per_target"]) + r["unattributed_total"], r["grand_total"], delta=0.05
         )
-
-    # -- correctness of attribution ---------------------------------------
-    def test_foliar_never_lands_in_a_pest_column(self):
-        pests = set(frappe.get_all("Pest", pluck="name"))
-        diseases = set(frappe.get_all("Plant Disease", pluck="name"))
-        for farm in self.report["farms"]:
-            for row in farm["rows"]:
-                if row["kind"] != "foliar":
-                    continue
-                for target, cell in row["costs"].items():
-                    if cell["value"]:
-                        self.assertNotIn(
-                            target, pests | diseases,
-                            f"foliar cost landed on the pest/disease {target}",
-                        )
-
-    def test_split_cells_name_the_untargeted_products(self):
-        found = False
-        for farm in self.report["farms"]:
-            for row in farm["rows"]:
-                for target, cell in row["costs"].items():
-                    if cell["split"] > 0:
-                        found = True
-                        self.assertTrue(
-                            cell["split_items"],
-                            f"split cell {row['greenhouse']}/{target} names no items",
-                        )
-        self.assertTrue(found, "expected at least one split cell on this dataset")
-
-    def test_store_issued_foliar_is_unattributed_not_nutrition(self):
-        """A foliar issued from the store has no work order, so no greenhouse
-        and no target. It must be reported as Unattributed, not given a
-        Nutrition bucket under a greenhouse that never received it."""
-        foliar_unattributed = sum(
-            u["value"] for u in self.report["unattributed"] if u["kind"] == "foliar"
-        )
-        self.assertGreater(
-            foliar_unattributed, 5_000_000,
-            "store-issued foliar spend is not being reported as unattributed",
-        )
-
-    def test_no_row_is_attributed_to_a_missing_greenhouse(self):
-        """Every greenhouse row must come from a real work order."""
-        for farm in self.report["farms"]:
-            for row in farm["rows"]:
-                self.assertNotEqual(
-                    row["greenhouse"], "—",
-                    f"{farm['farm']} has a row with no greenhouse — "
-                    "unattributed spend leaked into the greenhouse table",
-                )
-
-    def test_untargeted_items_are_listed(self):
-        self.assertTrue(self.report["untargeted_items"])
-        for entry in self.report["untargeted_items"]:
-            self.assertIn(entry["kind"], ("chemical", "foliar"))
-            self.assertGreater(entry["value"], 0)
-
-    def test_excluded_purposes_stay_excluded(self):
-        """Manufacture would double-count the transfer that filled WIP;
-        Material Transfer moves stock between stores without consuming it."""
-        excluded = frappe.db.sql("""
-            SELECT ROUND(SUM(sed.amount), 2)
-            FROM `tabStock Entry` se
-            JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
-            JOIN `tabItem` i ON i.name = sed.item_code
-            WHERE se.docstatus = 1
-              AND se.purpose IN ('Manufacture', 'Material Transfer')
-              AND i.item_group IN ('Chemicals', 'Fertilizers')
-        """)[0][0]
-        self.assertGreater(float(excluded or 0), 0, "fixture check: expected excluded spend")
-        self.assertLess(self.report["grand_total"], 22_000_000)
-
-    def test_split_items_can_be_resolved_to_readable_names(self):
-        """The report names untargeted products by item code; the page must be
-        able to show "Magnum Gold", not "CHE00058"."""
-        self.assertTrue(self.report["item_names"])
-        for farm in self.report["farms"]:
-            for row in farm["rows"]:
-                for cell in row["costs"].values():
-                    for code in cell["split_items"]:
-                        self.assertIn(
-                            code, self.report["item_names"],
-                            f"{code} has no name in item_names",
-                        )
-                        self.assertTrue(self.report["item_names"][code])

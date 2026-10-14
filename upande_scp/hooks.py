@@ -135,6 +135,9 @@ after_migrate = [
 	# `Work Order.workflow_state` and `Farm.spray_plan_approvers` came to be
 	# missing on a fresh install. Declared in code so every site converges.
 	"upande_scp.serverscripts.common.custom_fields.ensure_scp_custom_fields",
+	# upande_asset is optional and may be installed after SCP: make sure its
+	# Asset Check Sheet carries the phone's client-id field whenever it is there.
+	"upande_scp.serverscripts.asset_checks.setup.after_migrate",
 	# The four spray-flow Stock Entry Types. A patch creates these too, but a
 	# fresh install marks every patch as done without running it, so the seed
 	# never happened on a new site — and approve_and_forward cannot create its

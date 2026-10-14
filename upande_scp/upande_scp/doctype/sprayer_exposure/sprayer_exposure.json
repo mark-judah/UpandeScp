@@ -1,0 +1,242 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-11 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "sprayer",
+  "employee",
+  "employee_name",
+  "role",
+  "ppe_condition",
+  "column_break_src",
+  "spray_application_logsheet",
+  "work_order",
+  "farm",
+  "greenhouse",
+  "source",
+  "row_key",
+  "product_section",
+  "spray_product",
+  "product_name",
+  "column_break_haz",
+  "toxicity",
+  "hazard_weight",
+  "time_section",
+  "date",
+  "started_at",
+  "ended_at",
+  "column_break_hrs",
+  "hours",
+  "weighted_hours",
+  "duration_source",
+  "flags"
+ ],
+ "fields": [
+  {
+   "fieldname": "sprayer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Sprayer",
+   "options": "Sprayer",
+   "search_index": 1
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "employee.employee_name",
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "label": "Employee Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "role",
+   "fieldtype": "Select",
+   "label": "Role",
+   "options": "Sprayer\nPump Operator\nMixer\nSupervisor"
+  },
+  {
+   "fieldname": "ppe_condition",
+   "fieldtype": "Data",
+   "label": "PPE Condition"
+  },
+  {
+   "fieldname": "column_break_src",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "spray_application_logsheet",
+   "fieldtype": "Link",
+   "label": "Spray Application Logsheet",
+   "options": "Spray Application Logsheet",
+   "search_index": 1
+  },
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "label": "Work Order",
+   "options": "Work Order"
+  },
+  {
+   "fieldname": "farm",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Farm"
+  },
+  {
+   "fieldname": "greenhouse",
+   "fieldtype": "Link",
+   "label": "Greenhouse",
+   "options": "Warehouse"
+  },
+  {
+   "default": "SAL",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "SAL\nSession"
+  },
+  {
+   "description": "logsheet|employee|product \u2014 keeps a rebuild idempotent.",
+   "fieldname": "row_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Row Key",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "product_section",
+   "fieldtype": "Section Break",
+   "label": "Product"
+  },
+  {
+   "fieldname": "spray_product",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Spray Product",
+   "options": "Spray Product"
+  },
+  {
+   "fieldname": "product_name",
+   "fieldtype": "Data",
+   "label": "Product Name"
+  },
+  {
+   "fieldname": "column_break_haz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "toxicity",
+   "fieldtype": "Data",
+   "label": "Toxicity Class"
+  },
+  {
+   "fieldname": "hazard_weight",
+   "fieldtype": "Float",
+   "label": "Hazard Weight",
+   "precision": "2"
+  },
+  {
+   "fieldname": "time_section",
+   "fieldtype": "Section Break",
+   "label": "Time"
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "search_index": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At"
+  },
+  {
+   "fieldname": "ended_at",
+   "fieldtype": "Datetime",
+   "label": "Ended At"
+  },
+  {
+   "fieldname": "column_break_hrs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "hours",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Hours",
+   "precision": "4"
+  },
+  {
+   "fieldname": "weighted_hours",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Weighted Hours",
+   "precision": "4"
+  },
+  {
+   "fieldname": "duration_source",
+   "fieldtype": "Data",
+   "label": "Duration Source"
+  },
+  {
+   "fieldname": "flags",
+   "fieldtype": "Small Text",
+   "label": "Flags"
+  }
+ ],
+ "grid_page_length": 50,
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Sprayer Exposure",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Supervisor"
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP General Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

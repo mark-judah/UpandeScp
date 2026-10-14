@@ -188,6 +188,35 @@ function BatchCombobox({
   );
 }
 
+/**
+ * The batches a row will actually leave from, given the one chosen for it.
+ *
+ * Mirrors the server (`allocate` with `prefer`): the chosen batch goes first, as
+ * far as it holds, and the rule's order covers the rest. A row can carry only one
+ * batch, so when this comes back with more than one, Apply splits the row — the
+ * storesman should see that before he agrees, not discover it in the draft.
+ */
+function planFor(
+  r: TransferBatchRow,
+  pick: string | undefined,
+): { picks: { batch_no: string; qty: number }[]; short: number } {
+  if (!pick) return { picks: [], short: r.qty };
+  if (pick === r.suggestion) return { picks: r.picks, short: r.short };
+  const order = [
+    ...r.options.filter((o) => o.batch_no === pick),
+    ...r.options.filter((o) => o.batch_no !== pick),
+  ];
+  const picks: { batch_no: string; qty: number }[] = [];
+  let remaining = r.qty;
+  for (const o of order) {
+    if (remaining <= 1e-6) break;
+    const take = Math.min(o.qty, remaining);
+    if (take > 0) picks.push({ batch_no: o.batch_no, qty: take });
+    remaining -= take;
+  }
+  return { picks, short: remaining > 1e-6 ? remaining : 0 };
+}
+
 export function TransferBatchPanel({
   name,
   onApplied,
@@ -250,7 +279,13 @@ export function TransferBatchPanel({
     setError(null);
     try {
       const r = await applyTransferBatches(name, picks);
-      setDone(`${r.updated} row${r.updated === 1 ? "" : "s"} updated.`);
+      const splits = r.split?.length ?? 0;
+      setDone(
+        `${r.updated} row${r.updated === 1 ? "" : "s"} updated` +
+          (splits
+            ? ` — ${splits} split across batches, one row per batch.`
+            : "."),
+      );
       await propose(); // re-read, so applied rows come back as settled
       onApplied?.();
     } catch (e: any) {
@@ -351,7 +386,8 @@ export function TransferBatchPanel({
           {rows.map((r) => {
             const pick = chosen[r.idx];
             const chosenOption = r.options.find((o) => o.batch_no === pick);
-            const spans = r.picks.length > 1;
+            const plan = planFor(r, pick);
+            const spans = plan.picks.length > 1;
             // The row this transfer will die on: the chemical is batch
             // tracked, it has no batch yet, and this store holds no batch of
             // it with stock left. There is nothing to choose, so the whole row
@@ -455,17 +491,18 @@ export function TransferBatchPanel({
                           )}
                           {spans && (
                             <div className="mt-1 text-muted-foreground">
-                              {fmt(r.qty)} {r.uom} spans {r.picks.length} batches:{" "}
-                              {r.picks
+                              {fmt(r.qty)} {r.uom} comes from {plan.picks.length} batches:{" "}
+                              {plan.picks
                                 .map((p) => `${p.batch_no} (${fmt(p.qty)})`)
                                 .join(", ")}
-                              . The row takes the first; split it to use the rest.
+                              . Apply splits this row into one row per batch.
                             </div>
                           )}
-                          {r.short > 0 && (
+                          {plan.short > 0 && (
                             <div className="mt-1 inline-flex items-center gap-1 text-destructive">
                               <AlertTriangle className="h-3 w-3" />
-                              {fmt(r.short)} {r.uom} short of what this row needs.
+                              {fmt(plan.short)} {r.uom} short of what this row needs —
+                              the store cannot cover it from its batches.
                             </div>
                           )}
                         </div>

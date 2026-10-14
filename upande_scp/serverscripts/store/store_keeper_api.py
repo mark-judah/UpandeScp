@@ -30,7 +30,7 @@ from upande_scp.serverscripts.spray_plan_creator import crop_settings
 from frappe.utils import now_datetime, add_to_date
 
 from upande_scp.serverscripts.common.crop_protection import product_groups
-from upande_scp.serverscripts.store import batch_suggestion
+from upande_scp.serverscripts.store import batch_suggestion, transfer_stock_gate
 from upande_scp.serverscripts.store.batch_stock import available_in_store
 
 
@@ -460,6 +460,130 @@ def _transfer_submit_error(row: dict) -> str | None:
 
 
 _AFP_TYPE = "Application Floor Plan"
+
+# ----------------------------------------------------------------------
+# Stock gate - will the approved transfers waiting in a store fit?
+# ----------------------------------------------------------------------
+def _pending_transfer_rows(only=None) -> list:
+    """Every outgoing row of every draft transfer for an Application Floor Plan."""
+    rows = frappe.db.sql(
+        """
+        SELECT se.name AS transfer, se.work_order AS work_order,
+               wo.planned_start_date AS planned_date,
+               se.creation AS created, sed.item_code,
+               COALESCE(NULLIF(sed.s_warehouse, ''), se.from_warehouse) AS warehouse,
+               COALESCE(NULLIF(sed.transfer_qty, 0), sed.qty * COALESCE(sed.conversion_factor, 1)) AS qty,
+               COALESCE(sed.batch_no, '') AS batch_no
+        FROM   `tabStock Entry` se
+        JOIN   `tabWork Order` wo ON wo.name = se.work_order
+        JOIN   `tabStock Entry Detail` sed ON sed.parent = se.name
+        WHERE  se.docstatus = 0 AND se.purpose = %(purpose)s
+          AND  wo.custom_type = %(afp)s
+          AND  (%(all)s = 1 OR se.name IN %(only)s)
+        """,
+        {"purpose": _SE_PURPOSE, "afp": _AFP_TYPE,
+         "all": 0 if only is not None else 1, "only": list(only or ["-"])},
+        as_dict=True,
+    )
+    # The plan's chosen batch per (work order, item, store): a soft preference.
+    if rows and frappe.db.has_column("Work Order Item", "custom_batch_no"):
+        planned = {}
+        for w in frappe.db.sql(
+            """SELECT parent, item_code, source_warehouse, custom_batch_no
+               FROM `tabWork Order Item`
+               WHERE parent IN %(w)s AND IFNULL(custom_batch_no, '') != ''""",
+            {"w": list({r["work_order"] for r in rows})}, as_dict=True,
+        ):
+            planned[(w.parent, w.item_code, w.source_warehouse)] = w.custom_batch_no
+        for r in rows:
+            r["planned_batch"] = planned.get((r["work_order"], r["item_code"], r["warehouse"]), "")
+    return rows
+
+
+def _gate_stock(rows) -> tuple:
+    """(item_stock, batch_stock, batch_tracked) from the real ledger."""
+    pairs = sorted({(r["item_code"], r["warehouse"]) for r in rows if r.get("warehouse")})
+    if not pairs:
+        return {}, {}, set()
+    items = sorted({p[0] for p in pairs})
+    houses = sorted({p[1] for p in pairs})
+    item_stock = {}
+    for b in frappe.db.sql(
+        """SELECT item_code, warehouse, SUM(actual_qty) AS qty FROM `tabBin`
+           WHERE item_code IN %(i)s AND warehouse IN %(w)s GROUP BY item_code, warehouse""",
+        {"i": items, "w": houses}, as_dict=True,
+    ):
+        item_stock[(b.item_code, b.warehouse)] = float(b.qty or 0)
+    batch_stock = {}
+    for (item, wh), batches in available_in_store(pairs).items():
+        for b in batches:
+            batch_stock[(item, wh, b["batch_no"])] = float(b["qty"] or 0)
+    tracked = set(frappe.db.sql_list(
+        "SELECT name FROM `tabItem` WHERE has_batch_no = 1 AND name IN %(i)s", {"i": items}))
+    return item_stock, batch_stock, tracked
+
+
+def compute_transfer_stock_gate(selected=None, only=None) -> dict:
+    """``{transfer: {ok, shorts, warehouses, queue}}`` for every pending transfer.
+
+    Only ``selected`` (ordered) transfers hold stock; the rest are judged as if
+    added next. ``queue`` is the rank in plan-date/creation/name order."""
+    rows = _pending_transfer_rows(only)
+    if not rows:
+        return {}
+    item_stock, batch_stock, tracked = _gate_stock(rows)
+    res = transfer_stock_gate.evaluate(rows, item_stock, batch_stock, tracked, selected=selected)
+    for i, n in enumerate(transfer_stock_gate.queue_order(rows)):
+        res[n]["queue"] = i
+    houses: dict = {}
+    for r in rows:
+        if r.get("warehouse"):
+            houses.setdefault(r["transfer"], set()).add(r["warehouse"])
+    for name, g in res.items():
+        g["warehouses"] = sorted(houses.get(name, ()))
+    return res
+
+
+@frappe.whitelist()
+def get_transfer_stock_gate(names=None, selected=None) -> dict:
+    """Which approved transfers cannot be submitted because the stock will not
+    stretch, per batch and per item, in queue order (plan date, creation, name).
+
+    Only the transfers in ``selected`` (ordered list, the keeper's click order)
+    hold stock; every other transfer is judged as if added next, after them.
+
+    Pending = every draft Material Transfer for Manufacture on an Application
+    Floor Plan, so the queue is the whole store's, not just what the caller
+    sees; the result is limited to transfers drawing from stores the caller
+    keeps. ``{transfer: {ok, shorts: [{item_code, batch_no, warehouse, needed,
+    available_when_its_turn, short_by, blocking_transfers}]}}``.
+    """
+    _check_perm()
+    wanted = set(_parse_names(names)) if names else None
+    sel = _parse_names(selected) if selected else []
+    allowed = allowed_stores_for()
+    out = {}
+    for name, g in compute_transfer_stock_gate(selected=sel).items():
+        if wanted is not None and name not in wanted:
+            continue
+        if allowed is not None and not (set(g["warehouses"]) & set(allowed)):
+            continue
+        out[name] = {"ok": g["ok"], "shorts": g["shorts"], "queue": g["queue"]}
+    return out
+
+
+def _stock_gate_error(name: str) -> str | None:
+    """Why this transfer cannot go out for want of stock right now, else None.
+
+    The queue is only this submit run: transfers are checked one at a time just
+    before submitting, so everything earlier in the run is either already in
+    the real stock (submitted) or failed and holds nothing. Other drafts outside
+    the run are ignored, so this is the one transfer alone against real stock."""
+    g = compute_transfer_stock_gate(selected=[name], only=[name]).get(name)
+    if g and not g["ok"]:
+        return f"{name}: " + transfer_stock_gate.short_message(g["shorts"])
+    return None
+
 
 
 @frappe.whitelist()
@@ -1097,8 +1221,81 @@ def verify_employee() -> dict:
     return {"error": "Please place finger on the Biometric Device"}
 
 
+# A bulk submit is sent a few transfers at a time so each request is short and the
+# page can show progress (one request for thirty transfers ran past the server's
+# timeout). The scan, though, is only fresh for the Biometric Setting window —
+# three minutes on live — so later chunks could not each demand a new one. The
+# first call checks the scan and opens a RUN for exactly the transfers selected;
+# the chunks quote the run. It authorises nothing beyond that selection, for
+# that user, and lapses after `_RUN_TTL_SECONDS`.
+_RUN_TTL_SECONDS = 30 * 60
+
+
+def _run_key(run: str) -> str:
+    return f"scp:biometric-submit-run:{run}"
+
+
+def _real_docstatus(name: str):
+    """The Stock Entry's docstatus as the database holds it right now."""
+    try:
+        return frappe.db.get_value("Stock Entry", name, "docstatus")
+    except Exception:
+        return None
+
+
+def _parse_names(names) -> list:
+    if isinstance(names, str):
+        try:
+            names = json.loads(names)
+        except (ValueError, TypeError):
+            names = [n.strip() for n in names.split(",") if n.strip()]
+    if not isinstance(names, list) or not names:
+        frappe.throw("No Stock Entries selected.", frappe.ValidationError)
+    return names
+
+
+def _fresh_scan_or_throw() -> dict:
+    scan = _latest_biometric_log()
+    if not scan:
+        window_min = _verify_window_seconds() // 60
+        frappe.throw(
+            f"No biometric scan in the last {window_min} "
+            f"minute{'s' if window_min != 1 else ''} — please place "
+            "your finger on the device and try again.",
+            frappe.ValidationError,
+        )
+    return scan
+
+
 @frappe.whitelist()
-def submit_with_biometric(names: str | list) -> dict:
+def begin_biometric_submit(names: str | list) -> dict:
+    """Check the scan once and authorise this selection for a chunked submit.
+
+    Returns ``{run, scanned, count}``. Pass ``run`` to each
+    ``submit_with_biometric`` chunk; the scan is not re-read for them.
+    """
+    _check_perm()
+    names = _parse_names(names)
+    scan = _fresh_scan_or_throw()
+    run = frappe.generate_hash(length=16)
+    frappe.cache.set_value(
+        _run_key(run),
+        {"user": frappe.session.user, "names": list(names), "scan": dict(scan)},
+        expires_in_sec=_RUN_TTL_SECONDS,
+    )
+    return {
+        "run": run,
+        "count": len(names),
+        "scanned": {
+            "employee": scan["employee"],
+            "employee_name": scan["employee_name"],
+            "biometric_id": scan["biometric_id"],
+        },
+    }
+
+
+@frappe.whitelist()
+def submit_with_biometric(names: str | list, run: str | None = None) -> dict:
     """Authorise + submit each Stock Entry in ``names`` against the
     most recent biometric scan.
 
@@ -1111,26 +1308,35 @@ def submit_with_biometric(names: str | list) -> dict:
 
     Returns ``{ok: int, failed: int, results: [{name, ok, error}]}``.
     A single failure in the loop doesn't abort the others — the
-    operator sees a per-row outcome and retries only the failures."""
+    operator sees a per-row outcome and retries only the failures.
+
+    With ``run`` (from ``begin_biometric_submit``) this is one chunk of a
+    bulk submit, authorised by the scan taken when the run began."""
     _check_perm()
+    names = _parse_names(names)
 
-    if isinstance(names, str):
-        try:
-            names = json.loads(names)
-        except (ValueError, TypeError):
-            names = [n.strip() for n in names.split(",") if n.strip()]
-    if not isinstance(names, list) or not names:
-        frappe.throw("No Stock Entries selected.", frappe.ValidationError)
-
-    scan = _latest_biometric_log()
-    if not scan:
-        window_min = _verify_window_seconds() // 60
-        frappe.throw(
-            f"No biometric scan in the last {window_min} "
-            f"minute{'s' if window_min != 1 else ''} — please place "
-            "your finger on the device and try again.",
-            frappe.ValidationError,
-        )
+    if run:
+        # A chunk of a run opened by `begin_biometric_submit`: the scan was
+        # checked then, for exactly these transfers and this user.
+        held = frappe.cache.get_value(_run_key(run))
+        if not held:
+            frappe.throw(
+                "This submission has expired — place your finger on the "
+                "device and submit the remaining entries again.",
+                frappe.ValidationError,
+            )
+        if held.get("user") != frappe.session.user:
+            frappe.throw("This submission belongs to another user.", frappe.PermissionError)
+        stray = [n for n in names if n not in set(held.get("names") or [])]
+        if stray:
+            frappe.throw(
+                f"{', '.join(stray)} {'was' if len(stray) == 1 else 'were'} not part "
+                "of the scanned selection.",
+                frappe.PermissionError,
+            )
+        scan = held["scan"]
+    else:
+        scan = _fresh_scan_or_throw()
 
     scanned_emp = scan["employee"]
     scanned_name = scan["employee_name"]
@@ -1150,6 +1356,9 @@ def submit_with_biometric(names: str | list) -> dict:
             })
             if err:
                 raise frappe.ValidationError(err)
+            stock_err = _stock_gate_error(name)
+            if stock_err:
+                raise frappe.ValidationError(stock_err)
 
             expected = doc.bio_employee
             expected_name = doc.bio_employee_name or expected
@@ -1177,15 +1386,32 @@ def submit_with_biometric(names: str | list) -> dict:
             doc.flags.ignore_links = True
             doc.save(ignore_permissions=False)
             doc.submit()
+            # Commit each transfer the moment it is through. The rollback below
+            # is a full ROLLBACK, not a savepoint: with one commit at the end, a
+            # failure on the 15th transfer quietly undid the 14 before it while
+            # the response still listed them as submitted — and a request that
+            # ran past the server's timeout lost every one of them.
+            frappe.db.commit()
+            # Report what the database says, not what the code expects: ok only
+            # when the row is really docstatus 1 after the commit.
+            status = _real_docstatus(name)
+            if status != 1:
+                raise frappe.ValidationError(
+                    f"{name}: submit finished but the entry is not submitted "
+                    f"(docstatus {status})."
+                )
             ok_count += 1
             results.append(
-                {"name": name, "ok": True, "error": None, "batches_filled": len(filled)}
+                {"name": name, "ok": True, "error": None, "docstatus": status,
+                 "batches_filled": len(filled)}
             )
         except Exception as e:
             failed_count += 1
-            results.append({"name": name, "ok": False, "error": str(e)})
+            results.append({"name": name, "ok": False, "error": str(e),
+                            "docstatus": _real_docstatus(name)})
             # Rollback the failed save attempt; the loop continues on
             # the remaining SEs without leaving a half-saved doc behind.
+            # Only this transfer is undone — the ones before it are committed.
             frappe.db.rollback()
 
     frappe.db.commit()
@@ -1250,13 +1476,7 @@ def submit_without_biometric(names: str | list) -> dict:
             frappe.ValidationError,
         )
 
-    if isinstance(names, str):
-        try:
-            names = json.loads(names)
-        except (ValueError, TypeError):
-            names = [n.strip() for n in names.split(",") if n.strip()]
-    if not isinstance(names, list) or not names:
-        frappe.throw("No Stock Entries selected.", frappe.ValidationError)
+    names = _parse_names(names)
 
     results: list = []
     ok_count = 0
@@ -1273,6 +1493,9 @@ def submit_without_biometric(names: str | list) -> dict:
             })
             if err:
                 raise frappe.ValidationError(err)
+            stock_err = _stock_gate_error(name)
+            if stock_err:
+                raise frappe.ValidationError(stock_err)
 
             # Same as the biometric path: the rule picks the batches nobody
             # chose, and only an expired one or an empty store stops this row.
@@ -1284,13 +1507,26 @@ def submit_without_biometric(names: str | list) -> dict:
             doc.flags.ignore_links = True
             doc.save(ignore_permissions=False)
             doc.submit()
+            # Per transfer, for the same reason as the biometric path: a later
+            # failure's rollback must not take the earlier submits with it.
+            frappe.db.commit()
+            # Report what the database says, not what the code expects: ok only
+            # when the row is really docstatus 1 after the commit.
+            status = _real_docstatus(name)
+            if status != 1:
+                raise frappe.ValidationError(
+                    f"{name}: submit finished but the entry is not submitted "
+                    f"(docstatus {status})."
+                )
             ok_count += 1
             results.append(
-                {"name": name, "ok": True, "error": None, "batches_filled": len(filled)}
+                {"name": name, "ok": True, "error": None, "docstatus": status,
+                 "batches_filled": len(filled)}
             )
         except Exception as e:
             failed_count += 1
-            results.append({"name": name, "ok": False, "error": str(e)})
+            results.append({"name": name, "ok": False, "error": str(e),
+                            "docstatus": _real_docstatus(name)})
             frappe.db.rollback()
 
     frappe.db.commit()
@@ -1333,6 +1569,123 @@ def _batch_rows_needing_attention(name: str) -> list:
     )
 
 
+def _row_stock_qty(row) -> float:
+    """What the row moves in stock units — the unit a batch is counted in."""
+    cf = float(row.conversion_factor or 1) or 1.0
+    return float(row.transfer_qty or 0) or float(row.qty or 0) * cf
+
+
+def _planned_batches(stock_entry: str) -> dict:
+    """The batch the plan's creator chose on the floor plan, per (item, store).
+
+    Read from the source Work Order's ``custom_batch_no``. The store keeper's
+    suggestion and the submit-time fill start from it, as long as the store
+    still holds some of it; otherwise the store's own rule decides.
+    """
+    wo = frappe.db.get_value("Stock Entry", stock_entry, "work_order")
+    if not wo or not frappe.db.has_column("Work Order Item", "custom_batch_no"):
+        return {}
+    out = {}
+    for r in frappe.get_all(
+        "Work Order Item",
+        filters={"parent": wo, "custom_batch_no": ["is", "set"]},
+        fields=["item_code", "source_warehouse", "custom_batch_no"],
+    ):
+        out[(r.item_code, r.source_warehouse)] = r.custom_batch_no
+    return out
+
+
+def _held(batch_no, pool) -> bool:
+    return bool(batch_no) and any(
+        b.get("batch_no") == batch_no and float(b.get("qty") or 0) > 0 for b in pool
+    )
+
+
+def _plan_row(row, pool, today, prefer=None):
+    """The batches that will cover this row, or a refusal saying why not.
+
+    Returns ``(pieces, error)``: `pieces` in the row's own unit, ready for
+    `_write_batch_pieces`; `error` a sentence for the storesman when the store
+    cannot cover the row from batches it actually holds.
+    """
+    need = _row_stock_qty(row)
+    plan = batch_suggestion.allocate(need, pool, today, prefer=prefer)
+    if prefer and not any(p["batch_no"] == prefer for p in plan["picks"]):
+        return None, (
+            f"Row {row.idx}: batch {prefer} has no {row.item_code} left in "
+            f"{row.s_warehouse}. Choose one the store still holds."
+        )
+    if not plan["picks"]:
+        return None, (
+            f"Row {row.idx}: {row.item_code} has no batch with stock left in "
+            f"{row.s_warehouse}. Receive the delivery against a batch, or "
+            "issue this row from a store that has one."
+        )
+    if plan["short"] > 0:
+        held = need - plan["short"]
+        return None, (
+            f"Row {row.idx}: {row.item_code} needs {frappe.utils.flt(need, 3)} but "
+            f"{row.s_warehouse} holds only {frappe.utils.flt(held, 3)} across its "
+            "batches. Top the store up, or issue the rest from another store."
+        )
+    pieces = batch_suggestion.split_quantities(
+        plan["picks"],
+        row_qty=row.qty,
+        conversion_factor=row.conversion_factor,
+        precision=row.precision("qty") or 3,
+    )
+    return pieces, None
+
+
+def _write_batch_pieces(doc, row, pieces) -> None:
+    """Put the batches on the draft: the row takes the first, copies take the rest.
+
+    A Stock Entry row carries ONE batch, so a row the rule spreads over several
+    batches becomes several rows, each a copy of the original with its own batch
+    and its share of the quantity. The copies sit directly under the original,
+    so the transfer still reads in the work order's order, and the work order's
+    transferred quantity — a sum per item — comes out the same.
+
+    This is the step that was missing. FEFO reaches for the small, nearly empty
+    batch first; writing only that batch over the whole row asked it for stock
+    it did not hold, ERPNext refused, and the transfer rolled back. On live that
+    was 81 of the 254 stuck spray transfers.
+    """
+    first = pieces[0]
+    row.batch_no = first["batch_no"]
+    row.qty = first["qty"]
+    row.transfer_qty = first["transfer_qty"]
+    # Same reason as `apply_transfer_batches`: without this ERPNext builds its
+    # own bundle by FIFO and refuses the submit.
+    if hasattr(row, "use_serial_batch_fields"):
+        row.use_serial_batch_fields = 1
+
+    if len(pieces) == 1:
+        return
+
+    template = row.as_dict()
+    for key in ("name", "idx", "serial_and_batch_bundle", "creation", "modified"):
+        template.pop(key, None)
+
+    copies = []
+    for piece in pieces[1:]:
+        data = dict(template)
+        data.update(
+            batch_no=piece["batch_no"],
+            qty=piece["qty"],
+            transfer_qty=piece["transfer_qty"],
+            use_serial_batch_fields=1,
+        )
+        copies.append(doc.append("items", data))
+
+    # `append` puts the copies at the bottom; move them up under their original.
+    others = [r for r in doc.items if r not in copies]
+    at = others.index(row) + 1
+    doc.items = others[:at] + copies + others[at:]
+    for i, r in enumerate(doc.items, start=1):
+        r.idx = i
+
+
 def autofill_batches(doc) -> list:
     """Fill every blank batch row on a draft by the store's own rule.
 
@@ -1349,14 +1702,19 @@ def autofill_batches(doc) -> list:
 
       * a row already naming an EXPIRED batch — the drum should not leave, and
         the transfer says so by name rather than failing later inside ERPNext
-      * a row with nothing to pick — the store holds no batch of that item with
-        stock left, which is a delivery problem, not a picking one
+      * a row the store cannot cover — no batch of that item with stock left, or
+        not enough across all of them, which is a delivery problem, not a
+        picking one
 
     Half-filling is never an option: a transfer that looks answered and is not
     is worse than one that plainly refused.
 
-    Returns the rows it filled, as ``[{idx, item_code, batch_no}]``. Mutates the
-    doc in memory; the caller saves.
+    A row the rule spreads over several batches is split into one row per batch
+    (`_write_batch_pieces`) — a single row can only carry one.
+
+    Returns what it wrote, as ``[{item_code, batch_no, qty}]`` (one entry per
+    batch, so a split row appears more than once). Mutates the doc in memory;
+    the caller saves.
     """
     rows = [r for r in doc.items if frappe.db.get_value("Item", r.item_code, "has_batch_no")]
     if not rows:
@@ -1388,24 +1746,24 @@ def autofill_batches(doc) -> list:
         [(r.item_code, r.s_warehouse) for r in blanks if r.s_warehouse]
     )
 
-    filled = []
+    # Plan every row before writing any: a transfer that cannot be covered is
+    # refused whole, never left half-batched.
+    planned = _planned_batches(doc.name)
+    plans = []
     for row in blanks:
         pool = available.get((row.item_code, row.s_warehouse), [])
-        plan = batch_suggestion.allocate(float(row.qty or 0), pool, today)
-        pick = plan["picks"][0]["batch_no"] if plan["picks"] else None
-        if not pick:
-            frappe.throw(
-                f"Row {row.idx}: {row.item_code} has no batch with stock left in "
-                f"{row.s_warehouse}. Receive the delivery against a batch, or "
-                "issue this row from a store that has one.",
-                frappe.ValidationError,
-            )
-        row.batch_no = pick
-        # Same reason as `apply_transfer_batches`: without this ERPNext builds
-        # its own bundle by FIFO and refuses the submit.
-        if hasattr(row, "use_serial_batch_fields"):
-            row.use_serial_batch_fields = 1
-        filled.append({"idx": row.idx, "item_code": row.item_code, "batch_no": pick})
+        prefer = planned.get((row.item_code, row.s_warehouse))
+        pieces, error = _plan_row(row, pool, today, prefer=prefer if _held(prefer, pool) else None)
+        if error:
+            frappe.throw(error, frappe.ValidationError)
+        plans.append((row, pieces))
+
+    filled = []
+    for row, pieces in plans:
+        item_code = row.item_code
+        _write_batch_pieces(doc, row, pieces)
+        for piece in pieces:
+            filled.append({"item_code": item_code, "batch_no": piece["batch_no"], "qty": piece["qty"]})
 
     return filled
 
@@ -1504,6 +1862,7 @@ def suggest_transfer_batches(name: str) -> dict:
         exp = expiry_of.get(batch_no)
         return bool(exp and frappe.utils.getdate(exp) < frappe.utils.getdate(today))
 
+    planned = _planned_batches(name)
     out = []
     unfilled = 0
     for r in rows:
@@ -1532,7 +1891,10 @@ def suggest_transfer_batches(name: str) -> dict:
         # has expired — those are the two cases a person still has to answer.
         if needs and (not r["batch_no"] or entry["expired"]):
             pool = available.get((r["item_code"], r["s_warehouse"]), [])
-            plan = batch_suggestion.allocate(entry["qty"], pool, today)
+            prefer = planned.get((r["item_code"], r["s_warehouse"]))
+            plan = batch_suggestion.allocate(
+                entry["qty"], pool, today, prefer=prefer if _held(prefer, pool) else None
+            )
             entry["picks"] = plan["picks"]
             entry["short"] = plan["short"]
             entry["suggestion"] = plan["picks"][0]["batch_no"] if plan["picks"] else None
@@ -1563,8 +1925,13 @@ def apply_transfer_batches(name: str, picks) -> dict:
     matters: the same chemical can appear twice on one transfer, out of two
     warehouses, and a by-item write would put the same batch on both.
 
+    A chosen batch holding less than the row needs is used first and the rule
+    covers the rest, splitting the row one per batch — `split` in the response
+    names those rows.
+
     Refuses rather than half-writes. A batch that is not a real batch of that
-    item, or a row that already has one, stops the whole call — a transfer with
+    item, one with no stock in that store, a store that cannot cover the row at
+    all, or a row that already has a batch, stops the whole call — a transfer with
     some rows silently skipped is worse than one that did not save, because the
     storesman would submit it believing it done.
     """
@@ -1611,29 +1978,48 @@ def apply_transfer_batches(name: str, picks) -> dict:
                 f"Batch {batch_no} belongs to {owner}, not {row.item_code} on row {idx}."
             )
 
+    # The chosen batch goes first; when it holds less than the row needs, the
+    # rule covers the rest and the row is split, one row per batch. Every row is
+    # planned before any is written, so a refusal leaves the draft untouched.
+    #
+    # `use_serial_batch_fields` is set on every row written (in
+    # `_write_batch_pieces`). NAMING THE BATCH IS NOT ENOUGH ON ITS OWN: with
+    # Stock Settings' `auto_create_serial_and_batch_bundle_for_outward` on —
+    # which it is here — ERPNext builds its own Serial and Batch Bundle for every
+    # outgoing row by its own FIFO rule, and then refuses the submit:
+    #
+    #   At row 1: Serial and Batch Bundle ... has already created.
+    #   Please remove the values from the serial no or batch no fields.
+    #
+    # Nothing else sets it for a transfer built here: a row from
+    # `make_stock_entry(work_order)` arrives at 0.
+    today = frappe.utils.today()
+    rows = [by_idx[idx] for idx in picks]
+    available = available_in_store(
+        [(r.item_code, r.s_warehouse) for r in rows if r.s_warehouse]
+    )
+    plans = []
     for idx, batch_no in picks.items():
         row = by_idx[idx]
-        row.batch_no = batch_no
-        # NAMING THE BATCH IS NOT ENOUGH ON ITS OWN. With Stock Settings'
-        # `auto_create_serial_and_batch_bundle_for_outward` on — which it is
-        # here — ERPNext builds its own Serial and Batch Bundle for every
-        # outgoing row by its own FIFO rule, and then refuses the submit:
-        #
-        #   At row 1: Serial and Batch Bundle ... has already created.
-        #   Please remove the values from the serial no or batch no fields.
-        #
-        # So the batch the storesman picked is either replaced by ERPNext's own
-        # or the transfer never leaves at all.
-        #
-        # Nothing else sets this for us on a transfer built here.
-        # `StockController.set_use_serial_batch_fields` would copy it off Stock
-        # Settings, but no Stock Entry path calls that method, and a row from
-        # `make_stock_entry(work_order)` arrives at 0. Live has no batch row
-        # with the flag off, so the desk path sets it there — a transfer
-        # batched only through this panel was never covered.
-        if hasattr(row, "use_serial_batch_fields"):
-            row.use_serial_batch_fields = 1
+        pool = available.get((row.item_code, row.s_warehouse), [])
+        pieces, error = _plan_row(row, pool, today, prefer=batch_no)
+        if error:
+            frappe.throw(error)
+        plans.append((row, pieces))
+
+    split = []
+    for row, pieces in plans:
+        if len(pieces) > 1:
+            split.append({
+                "item_code": row.item_code,
+                "batches": [p["batch_no"] for p in pieces],
+            })
+        _write_batch_pieces(doc, row, pieces)
 
     doc.save()
     frappe.db.commit()
-    return {"updated": len(picks), "rows": sorted(picks.keys(), key=int)}
+    return {
+        "updated": len(picks),
+        "rows": sorted(picks.keys(), key=int),
+        "split": split,
+    }

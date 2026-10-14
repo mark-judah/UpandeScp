@@ -122,24 +122,49 @@ def rank_batches(batches, today: str) -> list:
 	)
 
 
-def allocate(required, batches, today: str) -> dict:
+def allocate(required, batches, today: str, prefer=None) -> dict:
 	"""Fill one row: which batches, how much from each, and what is missing.
 
 	Returns ``{"picks": [{batch_no, qty, expiry_date}], "allocated", "short"}``.
 
-	A single row on a Stock Entry carries one `batch_no`, so the caller normally
-	uses the first pick and splits the row when there is more than one. The whole
+	A single row on a Stock Entry carries one `batch_no`, so a row with more than
+	one pick is split into one row per batch (`split_quantities`). The whole
 	allocation is returned regardless, because the storesman needs to see that
 	his 40 litres is coming out of three batches before he agrees to it.
+
+	`prefer` is a batch the storesman chose by hand. It is used first, as far as
+	the store holds it, and the rule covers the rest — so choosing the drum in
+	his hand never strands the row short. It is honoured even when expired: the
+	rule never proposes one, but a person may be clearing it on purpose.
 	"""
 	try:
 		need = float(required or 0)
 	except (TypeError, ValueError):
 		need = 0.0
 
+	ranked = rank_batches(batches, today)
+	if prefer:
+		chosen = None
+		for b in batches or []:
+			if b and b.get("batch_no") == prefer:
+				try:
+					qty = float(b.get("qty") or 0)
+				except (TypeError, ValueError):
+					qty = 0.0
+				if qty > 0:
+					chosen = {
+						"batch_no": prefer,
+						"qty": qty,
+						"expiry_date": _as_date(b.get("expiry_date")) or None,
+					}
+				break
+		ranked = [b for b in ranked if b["batch_no"] != prefer]
+		if chosen:
+			ranked = [chosen] + ranked
+
 	picks = []
 	remaining = need
-	for b in rank_batches(batches, today):
+	for b in ranked:
 		if remaining <= 0:
 			break
 		take = b["qty"] if b["qty"] < remaining else remaining
@@ -151,6 +176,41 @@ def allocate(required, batches, today: str) -> dict:
 	# Float subtraction leaves crumbs; anything under a millilitre is covered.
 	short = remaining if remaining > 1e-6 else 0.0
 	return {"picks": picks, "allocated": need - short, "short": short}
+
+
+def split_quantities(picks, row_qty, conversion_factor, precision) -> list:
+	"""One row's quantity, cut into one piece per batch, in the row's own unit.
+
+	`picks` come from `allocate` in the stock unit (that is what a batch holds);
+	a Stock Entry row carries `qty` in its own unit and `transfer_qty` in stock
+	units, so each piece is converted back by `conversion_factor`.
+
+	Every piece but the last is rounded DOWN to the row's precision: rounding up
+	would ask a batch for a crumb it does not hold, and ERPNext refuses that. The
+	last piece takes whatever is left of the row, so the pieces always add back
+	to exactly the quantity the work order asked for.
+	"""
+	try:
+		cf = float(conversion_factor or 1) or 1.0
+	except (TypeError, ValueError):
+		cf = 1.0
+	total = round(float(row_qty or 0), precision)
+	step = 10 ** precision
+
+	pieces = []
+	used = 0.0
+	for i, p in enumerate(picks or []):
+		last = i == len(picks) - 1
+		if last:
+			qty = round(total - used, precision)
+		else:
+			# floor at precision, with a nudge so 0.35 stored as 0.34999… stays 0.35
+			qty = int(float(p["qty"]) / cf * step + 1e-6) / step
+			used = round(used + qty, precision)
+		if qty <= 0:
+			continue
+		pieces.append({"batch_no": p["batch_no"], "qty": qty, "transfer_qty": qty * cf})
+	return pieces
 
 
 def days_until(expiry, today: str):

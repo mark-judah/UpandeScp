@@ -107,6 +107,8 @@ export interface BiometricSubmitResult {
   name: string;
   ok: boolean;
   error: string | null;
+  /** The entry's docstatus as the database held it after the call. */
+  docstatus?: number | null;
 }
 
 export interface BiometricSubmitResp {
@@ -169,12 +171,27 @@ export async function fetchDraftTransfers(opts: {
   return unwrap<DraftTransfersResp>(r);
 }
 
+/** Check the scan once and open a run for this selection, so the submit can
+ *  go a few transfers at a time without a fresh thumb for every chunk. */
+export async function beginBiometricSubmit(names: string[]): Promise<{
+  run: string;
+  count: number;
+  scanned: { employee: string; employee_name: string; biometric_id: string };
+}> {
+  const r = await call(
+    "upande_scp.serverscripts.store.store_keeper_api.begin_biometric_submit",
+    { names: JSON.stringify(names) },
+  );
+  return unwrap(r);
+}
+
 export async function submitWithBiometric(
   names: string[],
+  run?: string,
 ): Promise<BiometricSubmitResp> {
   const r = await call(
     "upande_scp.serverscripts.store.store_keeper_api.submit_with_biometric",
-    { names: JSON.stringify(names) },
+    run ? { names: JSON.stringify(names), run } : { names: JSON.stringify(names) },
   );
   return unwrap<BiometricSubmitResp>(r);
 }
@@ -371,14 +388,70 @@ export async function suggestTransferBatches(
   return (r ?? { rows: [], needs_batch: 0, unfilled: 0 }) as TransferBatchSuggestion;
 }
 
-/** `picks` is row index -> batch. Partial is fine; the server writes all or none. */
+/** `picks` is row index -> batch. Partial is fine; the server writes all or none.
+ *  A batch holding less than its row is used first and the rule covers the rest,
+ *  splitting the row one per batch. */
 export async function applyTransferBatches(
   name: string,
   picks: Record<number, string>,
-): Promise<{ updated: number; rows: string[] }> {
+): Promise<ApplyBatchesResp> {
   const r = await call(
     "upande_scp.serverscripts.store.store_keeper_api.apply_transfer_batches",
     { name, picks: JSON.stringify(picks) },
   );
-  return (r ?? { updated: 0, rows: [] }) as { updated: number; rows: string[] };
+  return (r ?? { updated: 0, rows: [], split: [] }) as ApplyBatchesResp;
+}
+
+export interface ApplyBatchesResp {
+  updated: number;
+  rows: string[];
+  /** Rows the store covered from more than one batch, now one row per batch. */
+  split?: { item_code: string; batches: string[] }[];
+}
+
+export interface StockShort {
+  item_code: string;
+  batch_no: string | null;
+  warehouse: string;
+  needed: number;
+  available_when_its_turn: number;
+  short_by: number;
+  /** Selected transfers that use the stock first. */
+  blocking_transfers: string[];
+}
+
+export interface TransferStockGate {
+  ok: boolean;
+  shorts: StockShort[];
+  /** Rank in plan date / creation / name order - the order select-all adds in. */
+  queue?: number;
+}
+
+/** Which waiting transfers the store cannot cover. Only the ``selected``
+ *  transfers (in click order) hold stock; every other one is judged as if it
+ *  were added next. Recomputed on every call; never remember it across edits. */
+export async function fetchTransferStockGate(
+  names?: string[],
+  selected?: string[],
+): Promise<Record<string, TransferStockGate>> {
+  const args: Record<string, string> = {};
+  if (names) args.names = JSON.stringify(names);
+  if (selected && selected.length) args.selected = JSON.stringify(selected);
+  const r = await call(
+    "upande_scp.serverscripts.store.store_keeper_api.get_transfer_stock_gate",
+    args,
+  );
+  return unwrap<Record<string, TransferStockGate>>(r);
+}
+
+/** The one-line reason a short transfer cannot be submitted. */
+export function stockShortReason(g: TransferStockGate | undefined): string {
+  if (!g || g.ok) return "";
+  return g.shorts
+    .map(
+      (s) =>
+        `${s.item_code}${s.batch_no ? ` batch ${s.batch_no}` : ""}: needs ${s.needed}, ${s.available_when_its_turn} available, short by ${s.short_by}` +
+        (s.blocking_transfers.length ? ` (held by selected ${s.blocking_transfers.join(", ")})` : ""),
+    )
+    .join("; ");
 }

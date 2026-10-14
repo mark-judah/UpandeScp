@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertTriangle } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/DatePicker";
@@ -49,9 +50,13 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  beginBiometricSubmit,
   bulkAssignEmployee,
   fetchDraftTransfers,
   fetchSubmissionGating,
+  fetchTransferStockGate,
+  stockShortReason,
+  type TransferStockGate,
   fetchTransferItems,
   searchEmployees,
   submitWithBiometric,
@@ -72,6 +77,11 @@ function fmt(n: number): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+/** Transfers per request. Each one takes ~1.5 s to post on live and up to ~25 s
+ *  when the ledger is busy; thirty in one request ran past the server's timeout
+ *  and lost all of them. Five keeps every request well inside it. */
+const SUBMIT_CHUNK = 5;
+
 export function SprayPlanTransfers() {
   const [rows, setRows] = useState<TransferRow[]>([]);
   const [farms, setFarms] = useState<string[]>([]);
@@ -82,6 +92,10 @@ export function SprayPlanTransfers() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
+  /** How far a bulk submit has got, so a long run reads as moving, not hung. */
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  /** Every entry in the current/last bulk submit, in order, so pending ones show too. */
+  const [runNames, setRunNames] = useState<string[]>([]);
   const [result, setResult] = useState<BiometricSubmitResp | null>(null);
   const [allowManual, setAllowManual] = useState(false);
   const [confirmManual, setConfirmManual] = useState(false);
@@ -102,7 +116,47 @@ export function SprayPlanTransfers() {
   const [assignResult, setAssignResult] = useState<BulkAssignResp | null>(null);
   const empSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /** Short transfers, from the real ledger. Only the SELECTED transfers (in
+   *  click order) hold stock; the rest are judged as if added next. Re-read
+   *  whenever the selection changes, on load, after each chunk and after batch
+   *  changes - never remembered. */
+  const [gate, setGate] = useState<Record<string, TransferStockGate>>({});
+  const selectedRef = useRef<Set<string>>(selected);
+  selectedRef.current = selected;
+  const gateReq = useRef(0);
+  const refreshGate = () => {
+    const req = ++gateReq.current;
+    const sent = Array.from(selectedRef.current);
+    return fetchTransferStockGate(undefined, sent)
+      .then((g) => {
+        if (req !== gateReq.current) return; // a newer answer is on its way
+        setGate(g);
+        // A selected transfer that has gone short (stock moved) is dropped.
+        setSelected((prev) => {
+          let changed = false;
+          const next = new Set<string>();
+          prev.forEach((n) => {
+            if (g[n]?.ok === false) changed = true;
+            else next.add(n);
+          });
+          return changed ? next : prev;
+        });
+      })
+      .catch(() => {
+        /* the server still refuses a short transfer; the page just can't pre-warn */
+      });
+  };
+  const isShort = (name: string) => gate[name]?.ok === false;
+  const [skippedShort, setSkippedShort] = useState(0);
+
+  // Selection changed: re-judge everything, after the clicking settles.
+  useEffect(() => {
+    const t = setTimeout(() => void refreshGate(), 250);
+    return () => clearTimeout(t);
+  }, [selected]);
+
   const load = () => {
+    refreshGate();
     setLoading(true);
     setError(null);
     fetchDraftTransfers({
@@ -221,18 +275,41 @@ export function SprayPlanTransfers() {
   const allSelectedHere = useMemo(
     () =>
       visibleRows.length > 0 &&
-      visibleRows.every((r) => selected.has(r.name)),
-    [visibleRows, selected],
+      visibleRows
+        .filter((r) => !r.blocked && gate[r.name]?.ok !== false)
+        .every((r) => selected.has(r.name)) &&
+      visibleRows.some((r) => !r.blocked && gate[r.name]?.ok !== false),
+    [visibleRows, selected, gate],
   );
 
-  const toggleAll = () => {
+  const toggleAll = async () => {
+    if (allSelectedHere) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        visibleRows.forEach((r) => next.delete(r.name));
+        return next;
+      });
+      setSkippedShort(0);
+      return;
+    }
+    // Queue order (plan date, creation, name), added one by one after what is
+    // already selected; the gate drops any that would not fit.
+    const rank = (n: string) => gate[n]?.queue ?? Number.MAX_SAFE_INTEGER;
+    const candidates = visibleRows
+      .filter((r) => !r.blocked && !selected.has(r.name))
+      .map((r) => r.name)
+      .sort((x, y) => rank(x) - rank(y));
+    let fits: Record<string, TransferStockGate> = gate;
+    try {
+      fits = await fetchTransferStockGate(undefined, [...selected, ...candidates]);
+    } catch {
+      /* fall back to the current gate; the server re-checks on submit */
+    }
+    const add = candidates.filter((n) => fits[n]?.ok !== false);
+    setSkippedShort(candidates.length - add.length);
     setSelected((prev) => {
       const next = new Set(prev);
-      if (allSelectedHere) {
-        visibleRows.forEach((r) => next.delete(r.name));
-      } else {
-        visibleRows.forEach((r) => next.add(r.name));
-      }
+      add.forEach((n) => next.add(n));
       return next;
     });
   };
@@ -241,7 +318,7 @@ export function SprayPlanTransfers() {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name);
-      else if (!rows.find((r) => r.name === name)?.blocked) next.add(name);
+      else if (!rows.find((r) => r.name === name)?.blocked && !isShort(name)) next.add(name);
       return next;
     });
   };
@@ -284,29 +361,86 @@ export function SprayPlanTransfers() {
   const canSubmit =
     selected.size > 0 && !submitting && !employeeCheck.issues.length;
 
+  /**
+   * Submit the selection a few transfers at a time, committing as it goes.
+   *
+   * Each chunk is its own request, so none runs into the server's timeout, the
+   * button can say how far it has got, and a transfer that fails stops only
+   * itself. Results are merged into one summary as they arrive; a chunk that
+   * fails outright (network, expired run) marks its transfers failed and the
+   * rest carry on.
+   */
+  const runSubmit = async (
+    names: string[],
+    send: (chunk: string[]) => Promise<BiometricSubmitResp>,
+    method: BiometricSubmitResp["method"],
+    scanned?: BiometricSubmitResp["scanned"],
+  ) => {
+    const merged: BiometricSubmitResp = { ok: 0, failed: 0, results: [], method, scanned };
+    setProgress({ done: 0, total: names.length });
+    setRunNames(names);
+    for (let i = 0; i < names.length; i += SUBMIT_CHUNK) {
+      const chunk = names.slice(i, i + SUBMIT_CHUNK);
+      try {
+        const r = await send(chunk);
+        // Trust the database, not the flag: a row counts as submitted only when
+        // the server read back docstatus 1 for it.
+        const checked = r.results.map((x) =>
+          x.ok && x.docstatus !== 1
+            ? { ...x, ok: false, error: x.error ?? "Not confirmed as submitted by the server." }
+            : x,
+        );
+        // A chunk that returned nothing for a name still owes us an answer.
+        for (const name of chunk) {
+          if (!checked.some((x) => x.name === name)) {
+            checked.push({ name, ok: false, error: "No result returned for this entry.", docstatus: null });
+          }
+        }
+        merged.ok += checked.filter((x) => x.ok).length;
+        merged.failed += checked.filter((x) => !x.ok).length;
+        merged.results.push(...checked);
+        merged.scanned = merged.scanned ?? r.scanned;
+      } catch (e: any) {
+        const why = errorText(e, "Submit failed");
+        merged.failed += chunk.length;
+        merged.results.push(...chunk.map((name) => ({ name, ok: false, error: why })));
+      }
+      setProgress({ done: Math.min(i + chunk.length, names.length), total: names.length });
+      setResult({ ...merged, results: [...merged.results] });
+      // What this chunk took changes what is left for the rest.
+      await refreshGate();
+    }
+    // Drop submitted rows so a second click doesn't re-submit.
+    if (merged.ok > 0) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const item of merged.results) if (item.ok) next.delete(item.name);
+        return next;
+      });
+      load();
+    }
+  };
+
   const onSubmit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     setResult(null);
     setError(null);
     try {
-      const r = await submitWithBiometric(Array.from(selected));
-      setResult(r);
-      // Drop submitted rows so a second click doesn't re-submit.
-      if (r.ok > 0) {
-        setSelected((prev) => {
-          const next = new Set(prev);
-          for (const item of r.results) {
-            if (item.ok) next.delete(item.name);
-          }
-          return next;
-        });
-        load();
-      }
+      const names = Array.from(selected);
+      // The scan is checked once, here; the chunks quote the run it opens.
+      const begun = await beginBiometricSubmit(names);
+      await runSubmit(
+        names,
+        (chunk) => submitWithBiometric(chunk, begun.run),
+        "biometric",
+        begun.scanned,
+      );
     } catch (e: any) {
       setError(errorText(e, "Submit failed"));
     } finally {
       setSubmitting(false);
+      setProgress(null);
     }
   };
 
@@ -317,20 +451,12 @@ export function SprayPlanTransfers() {
     setResult(null);
     setError(null);
     try {
-      const r = await submitWithoutBiometric(Array.from(selected));
-      setResult(r);
-      if (r.ok > 0) {
-        setSelected((prev) => {
-          const next = new Set(prev);
-          for (const item of r.results) if (item.ok) next.delete(item.name);
-          return next;
-        });
-        load();
-      }
+      await runSubmit(Array.from(selected), submitWithoutBiometric, "manual");
     } catch (e: any) {
       setError(errorText(e, "Submit failed"));
     } finally {
       setSubmitting(false);
+      setProgress(null);
     }
   };
 
@@ -468,7 +594,9 @@ export function SprayPlanTransfers() {
             ) : (
               <Fingerprint className="h-3.5 w-3.5" />
             )}
-            Submit {selected.size > 0 ? `(${selected.size})` : "selected"} with biometric
+            {progress
+              ? `Submitting ${progress.done} of ${progress.total}…`
+              : `Submit ${selected.size > 0 ? `(${selected.size})` : "selected"} with biometric`}
           </Button>
           {allowManual && (
             <Button
@@ -486,6 +614,16 @@ export function SprayPlanTransfers() {
 
       {error && (
         <div className="text-xs text-destructive px-4 md:px-6">{error}</div>
+      )}
+
+      {Object.values(gate).some((g) => !g.ok) && (
+        <div className="text-xs text-destructive px-4 md:px-6" data-testid="stock-gate-summary">
+          {Object.values(gate).filter((g) => !g.ok).length} transfer
+          {Object.values(gate).filter((g) => !g.ok).length === 1 ? "" : "s"} cannot be selected —
+          not enough stock.
+          {skippedShort > 0 &&
+            ` Select all skipped ${skippedShort} that would not fit.`}
+        </div>
       )}
 
       <div className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4">
@@ -556,21 +694,28 @@ export function SprayPlanTransfers() {
           </Card>
         )}
 
-        {/* Submit result */}
-        {result && (
+        {/* Submit progress + result */}
+        {(result || progress) && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
-                {result.failed > 0 ? (
+                {progress ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : result && result.failed > 0 ? (
                   <XCircle className="h-4 w-4 text-destructive" />
                 ) : (
                   <CheckCircle2 className="h-4 w-4 text-[var(--sd-data-green,#16a34a)]" />
                 )}
-                {result.ok} submitted · {result.failed} failed
+                {result?.ok ?? 0} of {runNames.length} submitted · {result?.failed ?? 0} failed
+                {progress ? ` · ${runNames.length - progress.done} pending` : ""}
               </CardTitle>
               <CardDescription>
-                {result.method === "manual" || !result.scanned ? (
-                  <>Submitted without biometric — recorded against your user.</>
+                {!result || result.method === "manual" || !result.scanned ? (
+                  <>
+                    {result || !progress
+                      ? "Submitted without biometric — recorded against your user."
+                      : "Submitting…"}
+                  </>
                 ) : (
                   <>
                     Scanned: <strong>{result.scanned.employee_name}</strong>{" "}
@@ -578,21 +723,42 @@ export function SprayPlanTransfers() {
                   </>
                 )}
               </CardDescription>
+              {progress && (
+                <Progress
+                  className="mt-2"
+                  value={
+                    progress.total
+                      ? Math.round((progress.done / progress.total) * 100)
+                      : 0
+                  }
+                />
+              )}
             </CardHeader>
-            {result.failed > 0 && (
-              <CardContent className="pt-0">
-                <ul className="text-xs space-y-1">
-                  {result.results
-                    .filter((r) => !r.ok)
-                    .map((r) => (
-                      <li key={r.name}>
-                        <span className="font-mono">{r.name}</span> —{" "}
-                        <span className="text-destructive">{r.error}</span>
-                      </li>
-                    ))}
-                </ul>
-              </CardContent>
-            )}
+            <CardContent className="pt-0">
+              <ul className="text-xs space-y-1 max-h-64 overflow-y-auto">
+                {runNames.map((n) => {
+                  const r = result?.results.find((x) => x.name === n);
+                  return (
+                    <li key={n} className="flex items-start gap-2">
+                      {!r ? (
+                        <Loader2 className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+                      ) : r.ok ? (
+                        <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-[var(--sd-data-green,#16a34a)]" />
+                      ) : (
+                        <XCircle className="mt-0.5 h-3 w-3 shrink-0 text-destructive" />
+                      )}
+                      <span className="font-mono">{n}</span>
+                      <span className="text-muted-foreground">
+                        {!r ? "pending" : r.ok ? "submitted" : "failed"}
+                      </span>
+                      {r && !r.ok && r.error && (
+                        <span className="text-destructive">— {r.error}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </CardContent>
           </Card>
         )}
 
@@ -649,20 +815,22 @@ export function SprayPlanTransfers() {
                           className={cn(
                             "border-b last:border-0 hover:bg-muted/40 cursor-pointer",
                             isSel && "bg-primary/5",
-                            blocked && "bg-destructive/5",
+                            (blocked || isShort(r.name)) && "bg-destructive/5",
                           )}
                           onClick={() => toggleOne(r.name)}
                         >
                           <td className="px-3 py-2">
                             <Checkbox
                               checked={isSel}
-                              disabled={blocked}
+                              disabled={blocked || isShort(r.name)}
                               onCheckedChange={() => toggleOne(r.name)}
                               onClick={(e) => e.stopPropagation()}
                               title={
-                                blocked
-                                  ? "An expired batch on this transfer — open it and choose another"
-                                  : undefined
+                                isShort(r.name)
+                                  ? `Not enough stock — ${stockShortReason(gate[r.name])}`
+                                  : blocked
+                                    ? "An expired batch on this transfer — open it and choose another"
+                                    : undefined
                               }
                             />
                           </td>
@@ -691,6 +859,16 @@ export function SprayPlanTransfers() {
                               </span>
                             )}
                             {r.name}
+                            {isShort(r.name) && (
+                              <div
+                                className="mt-1 inline-flex items-center gap-1 rounded-full border border-destructive/40 px-2 py-0.5 text-[0.65rem] font-sans font-medium text-destructive"
+                                title={stockShortReason(gate[r.name])}
+                                data-testid="not-enough-stock"
+                              >
+                                <AlertTriangle className="h-3 w-3" />
+                                Not enough stock
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-2 tabular-nums">
                             {r.posting_date}
@@ -743,6 +921,24 @@ export function SprayPlanTransfers() {
                                   here and finding it again by name below. The
                                   batch sits beside the store it goes to, which
                                   is the pair the storesman is checking. */}
+                              {isShort(r.name) && (
+                                <ul className="mb-3 space-y-1 text-xs text-destructive" data-testid="short-lines">
+                                  {gate[r.name].shorts.map((s, i) => (
+                                    <li key={i}>
+                                      <span className="font-medium">{s.item_code}</span>
+                                      {s.batch_no ? ` batch ${s.batch_no}` : ""} in {s.warehouse}: needs{" "}
+                                      {fmt(s.needed)}, {fmt(s.available_when_its_turn)} available, short by{" "}
+                                      {fmt(s.short_by)}
+                                      {s.blocking_transfers.length
+                                        ? ` — taken first by ${s.blocking_transfers.join(", ")}`
+                                        : ""}
+                                    </li>
+                                  ))}
+                                  <li className="text-muted-foreground">
+                                    Not enough stock after the selected transfers. Untick one, receive stock, or change the batch.
+                                  </li>
+                                </ul>
+                              )}
                               <TransferBatchPanel name={r.name} onApplied={load} />
                             </td>
                           </tr>

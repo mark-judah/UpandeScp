@@ -209,3 +209,81 @@ class TestTheMigrationPlaceholders(unittest.TestCase):
 
 	def test_the_match_ignores_case(self):
 		self.assertTrue(BS.is_placeholder("abc-premigration"))
+
+
+class TestTheStoresmansOwnChoice(unittest.TestCase):
+	"""A batch picked by hand goes first, and the rule covers whatever it cannot.
+
+	The picker offers every batch the store holds, so the storesman can choose the
+	drum in his hand even when it holds less than the row needs. Before, that
+	choice was written over the whole row and ERPNext refused the submit for
+	want of stock in the batch; now the rest is taken by the rule.
+	"""
+
+	def test_the_chosen_batch_is_used_first_even_against_the_rule(self):
+		out = BS.allocate(
+			10, [b("B-SOON", 50, "2026-10-01"), b("B-LATE", 50, "2027-01-01")], TODAY,
+			prefer="B-LATE",
+		)
+		self.assertEqual([(p["batch_no"], p["qty"]) for p in out["picks"]], [("B-LATE", 10)])
+
+	def test_the_rule_covers_what_the_chosen_batch_cannot(self):
+		out = BS.allocate(
+			10, [b("B-SOON", 50, "2026-10-01"), b("B-SMALL", 4, "2027-01-01")], TODAY,
+			prefer="B-SMALL",
+		)
+		self.assertEqual([(p["batch_no"], p["qty"]) for p in out["picks"]],
+		                 [("B-SMALL", 4), ("B-SOON", 6)])
+		self.assertEqual(out["short"], 0)
+
+	def test_an_expired_batch_chosen_by_hand_is_honoured(self):
+		"""Expired is never proposed, but a person may be clearing it on purpose."""
+		out = BS.allocate(3, [b("B-OLD", 5, "2026-01-01"), b("B-NEW", 5, "2027-01-01")], TODAY,
+		                  prefer="B-OLD")
+		self.assertEqual([(p["batch_no"], p["qty"]) for p in out["picks"]], [("B-OLD", 3)])
+
+	def test_a_chosen_batch_with_nothing_in_this_store_falls_back_to_the_rule(self):
+		out = BS.allocate(3, [b("B-NEW", 5, "2027-01-01")], TODAY, prefer="B-ELSEWHERE")
+		self.assertEqual([(p["batch_no"], p["qty"]) for p in out["picks"]], [("B-NEW", 3)])
+
+
+class TestSplittingARow(unittest.TestCase):
+	"""One Stock Entry row carries one batch, so a row spanning batches becomes several.
+
+	On live, 81 of the 254 stuck spray transfers had at least one row the rule
+	spread over two or three batches — FEFO reaches for the small, nearly empty
+	batch first, which is exactly right and exactly what a single-batch row cannot
+	hold. Only the first batch was written, ERPNext refused the submit, and the
+	whole transfer rolled back.
+	"""
+
+	def test_quantities_come_back_in_the_rows_own_unit(self):
+		pieces = BS.split_quantities(
+			[{"batch_no": "A", "qty": 500}, {"batch_no": "B", "qty": 1500}],
+			row_qty=2, conversion_factor=1000, precision=3,
+		)
+		self.assertEqual([(p["batch_no"], p["qty"], p["transfer_qty"]) for p in pieces],
+		                 [("A", 0.5, 500), ("B", 1.5, 1500)])
+
+	def test_the_pieces_add_back_to_the_row_exactly(self):
+		"""Float crumbs on the pieces would leave the WO a millilitre short or over."""
+		pieces = BS.split_quantities(
+			[{"batch_no": "A", "qty": 0.35}, {"batch_no": "B", "qty": 0.7000000000000001}],
+			row_qty=1.05, conversion_factor=1, precision=3,
+		)
+		self.assertEqual([p["qty"] for p in pieces], [0.35, 0.7])
+		self.assertEqual(round(sum(p["qty"] for p in pieces), 9), 1.05)
+
+	def test_an_earlier_piece_never_rounds_up_past_its_batch(self):
+		"""Rounding a piece up would ask the batch for stock it does not hold."""
+		pieces = BS.split_quantities(
+			[{"batch_no": "A", "qty": 0.3337}, {"batch_no": "B", "qty": 0.6663}],
+			row_qty=1, conversion_factor=1, precision=3,
+		)
+		self.assertEqual(pieces[0]["qty"], 0.333)
+		self.assertEqual(pieces[1]["qty"], 0.667)
+
+	def test_a_single_pick_is_the_row_unchanged(self):
+		pieces = BS.split_quantities([{"batch_no": "A", "qty": 7}], row_qty=7,
+		                             conversion_factor=1, precision=3)
+		self.assertEqual([(p["batch_no"], p["qty"]) for p in pieces], [("A", 7)])

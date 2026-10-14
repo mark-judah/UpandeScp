@@ -18,6 +18,7 @@ fixed the batch is worse than one that was never disabled.
 """
 
 import unittest
+from unittest import mock
 
 import frappe
 from frappe.utils import add_days, today
@@ -57,6 +58,8 @@ class BatchGatingCase(unittest.TestCase):
 			).insert(ignore_permissions=True)
 
 		# One healthy batch, one near the end of its life, one already gone.
+		# The dates are reset every run, not only on creation: these batches
+		# outlive the run that made them, and SOON made nine days ago is DEAD now.
 		for batch_id, offset in ((GOOD, 400), (SOON, 9), (DEAD, -3)):
 			if not frappe.db.exists("Batch", batch_id):
 				frappe.get_doc(
@@ -67,6 +70,10 @@ class BatchGatingCase(unittest.TestCase):
 						"expiry_date": add_days(today(), offset),
 					}
 				).insert(ignore_permissions=True)
+			else:
+				frappe.db.set_value(
+					"Batch", batch_id, "expiry_date", add_days(today(), offset)
+				)
 		frappe.db.commit()
 
 	def draft(self, batch_no=None):
@@ -209,7 +216,12 @@ class TestReplacingAnExpiredBatch(BatchGatingCase):
 		"""Refusing to overwrite protects a decision someone made. An expired
 		batch is not a decision worth protecting."""
 		doc = self.draft(DEAD)
-		store_keeper_api.apply_transfer_batches(doc.name, frappe.as_json({"1": GOOD}))
+		# Apply checks the store holds the replacement; this class stocks nothing.
+		pool = {(ITEM, self.warehouse): [
+			{"batch_no": GOOD, "qty": 5, "expiry_date": None, "created": None}
+		]}
+		with mock.patch.object(store_keeper_api, "available_in_store", return_value=pool):
+			store_keeper_api.apply_transfer_batches(doc.name, frappe.as_json({"1": GOOD}))
 		doc.reload()
 		self.assertEqual(doc.items[0].batch_no, GOOD)
 
@@ -300,3 +312,35 @@ class TestTheSystemPicksSoNobodyHasTo(BatchGatingCase):
 		with self.assertRaises(frappe.ValidationError) as caught:
 			store_keeper_api.autofill_batches(doc)
 		self.assertIn(self.warehouse, str(caught.exception))
+
+	def test_a_row_bigger_than_the_first_batch_submits_from_two(self):
+		"""The live failure, end to end against the real ledger.
+
+		SOON (5) expires first, so FEFO takes all of it and the rest from GOOD.
+		Writing SOON over the whole 7 asked it for stock it did not hold and
+		ERPNext refused the submit. Split, it goes, and the ledger draws each
+		batch for exactly its share.
+		"""
+		doc = self.draft()
+		doc.items[0].qty = 7
+		doc.save(ignore_permissions=True)
+		store_keeper_api.autofill_batches(doc)
+		self.assertEqual([(r.batch_no, r.qty) for r in doc.items], [(SOON, 5), (GOOD, 2)])
+		doc.flags.ignore_links = True
+		doc.save(ignore_permissions=True)
+		doc.submit()
+		self.addCleanup(self._cancel, doc)
+		drawn = frappe.db.sql(
+			"""SELECT sbe.batch_no, SUM(sbe.qty) FROM `tabStock Ledger Entry` sle
+			JOIN `tabSerial and Batch Entry` sbe ON sbe.parent = sle.serial_and_batch_bundle
+			WHERE sle.voucher_no = %s AND sle.actual_qty < 0 AND sle.is_cancelled = 0
+			GROUP BY sbe.batch_no""",
+			doc.name,
+		)
+		self.assertEqual({b: round(-q, 3) for b, q in drawn}, {SOON: 5, GOOD: 2})
+
+	def _cancel(self, doc):
+		doc.reload()
+		if doc.docstatus == 1:
+			doc.cancel()
+		frappe.db.commit()

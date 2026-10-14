@@ -25,6 +25,7 @@ page was never covered.
 """
 
 import unittest
+from unittest import mock
 
 import frappe
 
@@ -94,9 +95,17 @@ class TestApplyMarksTheRow(unittest.TestCase):
 				0,
 				"a fresh row starts at 0 — if that changes, this fix is redundant",
 			)
-			store_keeper_api.apply_transfer_batches(
-				draft.name, frappe.as_json({"1": BATCH})
-			)
+			# kaitet.local holds no batched stock; Apply now checks the store
+			# actually holds the batch, so the holding is patched in.
+			pool = {(ITEM, self.warehouse): [
+				{"batch_no": BATCH, "qty": 5, "expiry_date": None, "created": None}
+			]}
+			with mock.patch.object(
+				store_keeper_api, "available_in_store", return_value=pool
+			):
+				store_keeper_api.apply_transfer_batches(
+					draft.name, frappe.as_json({"1": BATCH})
+				)
 			draft.reload()
 			row = draft.items[0]
 			self.assertEqual(row.batch_no, BATCH)

@@ -51,7 +51,7 @@ class TestCompletedPlans(unittest.TestCase):
 
 def line(path="spray", code="P1", value=100.0, **kw):
 	base = {"path": path, "date": "2026-09-10", "document": "D1", "issue": "I1", "work_order": "WO1" if path == "spray" else None,
-	        "mr": None, "greenhouse": "GH1" if path == "spray" else None, "farm": "F", "cost_center": "CC1",
+	        "mr": None, "link_basis": "Greenhouse+date (matched)" if path == "spray" else None, "greenhouse": "GH1" if path == "spray" else None, "farm": "F", "cost_center": "CC1",
 	        "item_code": code, "item_name": code, "qty": 1, "uom": "L", "value": value, "ledger": True,
 	        "detail": "d", "plan_targets": ["Mites", "Mildew"] if path == "spray" else None, "recorded": []}
 	base.update(kw)
@@ -174,7 +174,7 @@ class TestExport(unittest.TestCase):
 	def test_foliar_in_own_columns_and_credibility_columns(self):
 		wb, _ = self.build()
 		head = [c.value for c in wb["Lines"][1]]
-		for h in ("Recorded value", "Derived value", "Foliar (equal split)", "Basis", "Credibility", "Est. accuracy"):
+		for h in ("Link basis", "Recorded value", "Derived value", "Foliar (equal split)", "Basis", "Credibility", "Est. accuracy"):
 			self.assertIn(h, head)
 		rows = list(wb["Lines"].iter_rows(min_row=2, values_only=True))
 		bi, ci, ai = head.index("Basis"), head.index("Credibility"), head.index("Est. accuracy")

@@ -178,12 +178,12 @@ def _tables(rows, filters, report, per_product):
 		sheets["By product"] = pl
 
 	# --- Lines (audit)
-	ln = [["Date", "Document", "Path", "Work order", "Material request", "Greenhouse", "Farm", "Cost centre",
+	ln = [["Date", "Document", "Path", "Work order", "Material request", "Link basis", "Greenhouse", "Farm", "Cost centre",
 	       "Item code", "Product", "Qty", "UoM", "Line value", "Pest / disease", "Share", "Basis", "Credibility",
 	       "Est. accuracy", "Recorded value", "Derived value", FOLIAR_COL, "Unattributed value", "Attributed value"]]
 	for r in rows:
 		rec, der, fol = _split_value(r)
-		ln.append([r["date"], r["document"], PATH_LABEL[r["path"]], r["work_order"] or "", r["mr"] or "",
+		ln.append([r["date"], r["document"], PATH_LABEL[r["path"]], r["work_order"] or "", r["mr"] or "", r["link_basis"] or "",
 		           r["greenhouse"] or (FP.FARM_LEVEL if r["path"] == "direct" else ""), r["farm"] or "",
 		           r["cost_center"] or "", r["item_code"], r["item_name"], round(flt(r["qty"]), 4), r["uom"],
 		           round(flt(r["value"]), 2), r["target"], round(r["share"], 6), r["basis"], r["credibility_label"],

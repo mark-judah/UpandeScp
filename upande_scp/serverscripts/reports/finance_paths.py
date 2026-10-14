@@ -141,12 +141,34 @@ def collect_spray(from_date, to_date, groups, kinds) -> dict:
 		return {"lines": [], "plans": 0, "in_progress": _in_progress(from_date, to_date, groups, set(), {})}
 	items = tuple({m["item"] for m in manufactures})
 	issue_end = min(str(add_days(to_date, MATCH_DAYS)), str(getdate(today())))
-	issues = frappe.db.sql(_ISSUES, {"items": items, "a": a, "b": issue_end}, as_dict=True)
+	# The explicit link (owned by another change): Stock Entry.custom_spray_work_order, with its
+	# custom_spray_link_basis. Used when present; otherwise the greenhouse/item/qty/date match below.
+	has_link = frappe.db.has_column("Stock Entry", "custom_spray_work_order")
+	has_basis = frappe.db.has_column("Stock Entry", "custom_spray_link_basis")
+	extra = ""
+	if has_link:
+		extra += ", se.custom_spray_work_order AS link_wo"
+	if has_basis:
+		extra += ", se.custom_spray_link_basis AS link_basis"
+	issues = frappe.db.sql(_ISSUES.replace("sed.cost_center", "sed.cost_center" + extra, 1),
+	                       {"items": items, "a": a, "b": issue_end}, as_dict=True)
 	for m in manufactures:
 		m["dt"] = _dt(m["posting_date"], m["posting_time"])
 	for i in issues:
 		i["dt"] = _dt(i["posting_date"], i["posting_time"])
-	done = match_completed(manufactures, issues)
+	linked = {}
+	if has_link:
+		by_wo_early = {m["wo"] for m in manufactures}
+		for i in issues:
+			if i.get("link_wo") in by_wo_early and i["link_wo"] not in linked:
+				i["basis"] = i.get("link_basis") or "Direct"
+				linked[i["link_wo"]] = i
+	rest_m = [m for m in manufactures if m["wo"] not in linked]
+	rest_i = [i for i in issues if i["name"] not in {x["name"] for x in linked.values()} and not i.get("link_wo")]
+	done = match_completed(rest_m, rest_i)
+	for i in done.values():
+		i["basis"] = "Greenhouse+date (matched)"
+	done.update(linked)
 	by_wo = {m["wo"]: m for m in manufactures}
 
 	wo_rows = {
@@ -185,7 +207,7 @@ def collect_spray(from_date, to_date, groups, kinds) -> dict:
 			ledger = r["ledger_value"] is not None
 			lines.append({
 				"path": "spray", "date": str(issue["posting_date"])[:10], "document": m["name"],
-				"issue": issue["name"], "work_order": wo, "mr": None, "greenhouse": issue["warehouse"],
+				"issue": issue["name"], "work_order": wo, "mr": None, "link_basis": issue.get("basis"), "greenhouse": issue["warehouse"],
 				"farm": fm, "cost_center": issue["cost_center"] or (w.custom_cost_center if w else None),
 				"item_code": r["item_code"], "item_name": r["item_name"], "qty": flt(r["qty"]), "uom": r["stock_uom"],
 				"value": flt(r["ledger_value"]) if ledger else flt(r["line_amount"]),
@@ -283,7 +305,7 @@ def collect_direct(from_date, to_date, groups, wip_match) -> list:
 		ledger = r["ledger_value"] is not None
 		out.append({
 			"path": "direct", "date": str(r["posting_date"])[:10], "document": r["document"], "issue": r["document"],
-			"work_order": None, "mr": r["material_request"] or None, "greenhouse": None,
+			"work_order": None, "mr": r["material_request"] or None, "link_basis": None, "greenhouse": None,
 			"farm": _farm_of(r["s_warehouse"], farms) or r["company"], "cost_center": r["cost_center"],
 			"item_code": r["item_code"], "item_name": r["item_name"], "qty": flt(r["qty"]), "uom": r["stock_uom"],
 			"value": flt(r["ledger_value"]) if ledger else flt(r["line_amount"]), "ledger": ledger,
@@ -329,7 +351,7 @@ def attribute(lines, refs, kb, kinds, products) -> list:
 			v = left if n == len(items) - 1 else round(value * share, 2)
 			left = round(left - v, 2)
 			rows.append({**{k: ln[k] for k in (
-				"path", "date", "document", "issue", "work_order", "mr", "greenhouse", "farm", "cost_center",
+				"path", "date", "document", "issue", "work_order", "mr", "link_basis", "greenhouse", "farm", "cost_center",
 				"item_code", "item_name", "qty", "uom", "ledger", "detail")}, "value": value,
 				"target": t, "kind": kinds.get(t), "share": share, "basis": basis, "attributed": v,
 				"credibility": cred["kind"], "credibility_label": cred["label"], "accuracy": cred["accuracy"],

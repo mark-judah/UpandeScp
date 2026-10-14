@@ -10,10 +10,21 @@
 export interface ZoneGeoLike {
   /** Zone name as it appears in the Zone doctype and Scouting Entry.zone. */
   name: string;
-  /** A FeatureCollection where each feature is one bed-line LineString
-   *  with a ``line_id`` property. Matches what ``fetchBedsAndZones``
-   *  ships today. */
-  raw_geojson?: string | null;
+  /** The zone's 2-point bed-line segment, decoded from the compact
+   *  ``getBedsAndZones`` payload — what ``fetchBedsAndZones`` ships today. */
+  coords?: [[number, number], [number, number]];
+  /** Shared bed identifier for ``coords`` (``properties.line_id`` in the
+   *  old GeoJSON). */
+  lineId?: unknown;
+  /** Legacy escape hatch: an already-parsed FeatureCollection object (never
+   *  a JSON string — no consumer should be calling JSON.parse on this
+   *  payload anymore). Typed loosely (some call sites carry it through an
+   *  ``as unknown as string`` cast from older code) since it's read
+   *  defensively at runtime regardless. Used by pages that build
+   *  ``ZoneGeoLike`` from ``zone-utils.ts``'s synthesised
+   *  ``ZoneFeature.geometry`` instead of a raw ``coords``/``lineId`` pair
+   *  (e.g. the Heatmaps page). */
+  raw_geojson?: any;
 }
 
 export interface BedPath {
@@ -37,16 +48,13 @@ export interface ProjectedGeometry {
   /** Centroid for every zone that had at least one valid feature. Coords
    *  are in the same SVG space as ``beds`` (post-projection, padded). */
   zoneCentroids: Record<string, { cx: number; cy: number }>;
-}
-
-function parseGeo(raw: ZoneGeoLike["raw_geojson"]): any | null {
-  if (!raw) return null;
-  if (typeof raw !== "string") return raw;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  /** Where each zone runs along its bed (leftmost and rightmost projected
+   *  point), for drawing observations as streaks along the bed. Optional:
+   *  hand-built geometries omit it and fall back to the centroid. */
+  zoneSegments?: Record<string, { x0: number; y0: number; x1: number; y1: number }>;
+  /** SVG point → [lng, lat]: the exact inverse of the projection, so an area
+   *  drawn on the SVG is saved as real coordinates (spread spec C10). */
+  unproject?: (x: number, y: number) => [number, number];
 }
 
 interface RawRing {
@@ -58,9 +66,23 @@ interface RawRing {
 function collectRings(zones: ZoneGeoLike[]): RawRing[] {
   const out: RawRing[] = [];
   for (const z of zones) {
-    const geo = parseGeo(z.raw_geojson);
+    // Fast path: coords/lineId decoded directly from the compact payload —
+    // no GeoJSON, no parsing.
+    if (Array.isArray(z.coords) && z.coords.length === 2) {
+      const lid = z.lineId;
+      if (lid == null || lid === "") continue;
+      out.push({
+        zoneName: z.name,
+        bedId: String(lid),
+        points: z.coords.map((p) => [p[0], p[1]]),
+      });
+      continue;
+    }
+    // Legacy path: an already-parsed FeatureCollection object (see
+    // ZoneGeoLike.raw_geojson) — still no JSON.parse here.
+    const geo = z.raw_geojson;
     if (!geo?.features) continue;
-    for (const f of geo.features as any[]) {
+    for (const f of geo.features) {
       const c = f?.geometry?.coordinates;
       const lid = f?.properties?.line_id;
       if (!Array.isArray(c) || !c.length) continue;
@@ -226,11 +248,32 @@ export function projectGeometry(
     }
   }
 
+  const zoneSegments: Record<string, { x0: number; y0: number; x1: number; y1: number }> = {};
+  for (const r of projRings) {
+    for (const [x, y] of r.pts) {
+      const [sx, sy] = toSvg(x, y);
+      const z = zoneSegments[r.zoneName];
+      if (!z) zoneSegments[r.zoneName] = { x0: sx, y0: sy, x1: sx, y1: sy };
+      else {
+        if (sx < z.x0) { z.x0 = sx; z.y0 = sy; }
+        if (sx > z.x1) { z.x1 = sx; z.y1 = sy; }
+      }
+    }
+  }
+
   return {
     viewBox: `0 0 ${svgW.toFixed(2)} ${svgH.toFixed(2)}`,
     width: svgW,
     height: svgH,
     beds,
     zoneCentroids,
+    zoneSegments,
+    unproject: (sx: number, sy: number): [number, number] => {
+      const x = minX + (sx - LABEL_MARGIN) / scale;
+      const y = maxY - (sy - PAD) / scale;
+      const x0 = x * cosR + y * sinR;
+      const y0 = -x * sinR + y * cosR;
+      return [(x0 + cxRaw) / latScale, y0 + cyRaw];
+    },
   };
 }

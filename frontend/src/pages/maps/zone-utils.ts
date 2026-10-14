@@ -161,3 +161,20 @@ export function greenhouseCentroids(
   });
   return out;
 }
+
+/** Greenhouse of a bed or zone name: everything before " - Bed ". */
+export function houseOf(zoneOrBed: string): string {
+  const i = zoneOrBed.indexOf(" - Bed ");
+  return i >= 0 ? zoneOrBed.slice(0, i) : zoneOrBed.split(" - ")[0];
+}
+
+/** Zones in each greenhouse, from the beds/zones geometry — the denominator of
+ *  "covered N of M zones". */
+export function zonesPerHouse(zones: Pick<ZoneFeature, "bedName">[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const z of zones) {
+    const gh = houseOf(z.bedName);
+    m.set(gh, (m.get(gh) || 0) + 1);
+  }
+  return m;
+}

@@ -168,7 +168,9 @@ def _query_kind(where: str, params: dict, mode: str) -> list:
             COALESCE(NULLIF(se.greenhouse, ''), se.block)   AS greenhouse,
             c.{col}                                         AS obs_name,
             DATE_FORMAT(se.date_of_capture, '%%Y-%%m-%%d')  AS d,
-            se.zone                                         AS zone,
+            -- mona imported zone names wrapped in literal double-quotes; strip them
+            -- so marker keys match the (also stripped) getBedsAndZones geometry.
+            TRIM(BOTH '"' FROM se.zone)                     AS zone,
             c.stage                                         AS stage,
             {count_expr}                                    AS n
         FROM `tabScouting Entry` se

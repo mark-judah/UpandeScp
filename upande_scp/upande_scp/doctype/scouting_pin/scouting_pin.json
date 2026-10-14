@@ -1,0 +1,183 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-10 18:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "crop",
+  "farm",
+  "warehouse",
+  "column_break_what",
+  "kind",
+  "observation",
+  "obs_kind",
+  "stage",
+  "source_week",
+  "where_section",
+  "section_row",
+  "section_col",
+  "stations",
+  "polygon",
+  "watch_section",
+  "shared",
+  "notify",
+  "last_notified_week"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "length": 140,
+   "reqd": 1
+  },
+  {
+   "fieldname": "crop",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Crop",
+   "options": "Crop Scouted",
+   "reqd": 1
+  },
+  {
+   "fieldname": "farm",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Farm",
+   "options": "Farm"
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Greenhouse / Block",
+   "options": "Warehouse",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_what",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Section = one cell of the 3 × 3 grid; Patch = a frozen copy of a patch's stations; Area = a polygon drawn on the map.",
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Kind",
+   "options": "Section\nPatch\nArea",
+   "reqd": 1
+  },
+  {
+   "description": "Blank watches every pest and disease.",
+   "fieldname": "observation",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Observation"
+  },
+  {
+   "fieldname": "obs_kind",
+   "fieldtype": "Select",
+   "label": "Pest / Disease",
+   "options": "\nPest\nDisease"
+  },
+  {
+   "fieldname": "stage",
+   "fieldtype": "Data",
+   "label": "Stage"
+  },
+  {
+   "description": "The ISO week the patch or area was pinned from.",
+   "fieldname": "source_week",
+   "fieldtype": "Data",
+   "label": "Source Week"
+  },
+  {
+   "fieldname": "where_section",
+   "fieldtype": "Section Break",
+   "label": "Where"
+  },
+  {
+   "default": "-1",
+   "description": "Grid row (0 first, 1 middle, 2 last third); -1 unless Kind is Section.",
+   "fieldname": "section_row",
+   "fieldtype": "Int",
+   "label": "Section Row"
+  },
+  {
+   "default": "-1",
+   "description": "Grid column (0 front, 1 middle, 2 back); -1 unless Kind is Section.",
+   "fieldname": "section_col",
+   "fieldtype": "Int",
+   "label": "Section Column"
+  },
+  {
+   "description": "JSON list of Zone / Orchard Tree names (Patch and Area pins).",
+   "fieldname": "stations",
+   "fieldtype": "Long Text",
+   "label": "Stations"
+  },
+  {
+   "description": "GeoJSON polygon as drawn (Area pins).",
+   "fieldname": "polygon",
+   "fieldtype": "Long Text",
+   "label": "Polygon"
+  },
+  {
+   "fieldname": "watch_section",
+   "fieldtype": "Section Break",
+   "label": "Watching"
+  },
+  {
+   "default": "1",
+   "description": "Shared pins are seen by everyone who can see the house; private ones only by their owner.",
+   "fieldname": "shared",
+   "fieldtype": "Check",
+   "label": "Shared"
+  },
+  {
+   "default": "1",
+   "description": "Tell the owner when the figure rises 10 points or more in a week.",
+   "fieldname": "notify",
+   "fieldtype": "Check",
+   "label": "Notify Me"
+  },
+  {
+   "fieldname": "last_notified_week",
+   "fieldtype": "Data",
+   "label": "Last Notified Week",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-10 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Scouting Pin",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 0
+}

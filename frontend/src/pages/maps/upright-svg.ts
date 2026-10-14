@@ -1,3 +1,4 @@
+import { levelOf, paperFor, softFill } from "@/lib/heat-style";
 /**
  * Greenhouse upright-view SVG renderer — direct port of the
  * `buildGreenhouseSVG` block in upande_scp/www/observations_map/index.html
@@ -23,8 +24,11 @@ export interface ZoneObs {
 export interface ZoneGeo {
   /** Zone name as it appears in the Zone doctype (and on Scouting Entry.zone). */
   name: string;
-  /** A FeatureCollection where each feature is one bed-line LineString. */
-  raw_geojson: string | null | undefined;
+  /** The zone's 2-point bed-line segment, decoded from the compact
+   *  ``getBedsAndZones`` payload. */
+  coords: [[number, number], [number, number]];
+  /** Shared bed identifier (``properties.line_id`` in the old GeoJSON). */
+  lineId: string | number | null | undefined;
 }
 
 interface InternalZone {
@@ -84,16 +88,6 @@ export interface UprightSvgResult {
   svg: string;
   width: number;
   height: number;
-}
-
-function parseRawGeo(raw: ZoneGeo["raw_geojson"]): any | null {
-  if (!raw) return null;
-  if (typeof raw !== "string") return raw;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
 }
 
 /** Robust direction of bed lines (averaged over circular doubling so 0° and
@@ -162,20 +156,10 @@ function prepareGeometry(zones: ZoneGeo[]): CachedGeometry | null {
   const internal: InternalZone[] = [];
   const allPoints: number[][] = [];
   for (const z of zones) {
-    const geo = parseRawGeo(z.raw_geojson);
-    if (!geo?.features) continue;
-    const rings: number[][][] = [];
-    const lineIds: (string | number | null)[] = [];
-    for (const f of geo.features as any[]) {
-      const c = f?.geometry?.coordinates;
-      if (Array.isArray(c) && c.length) {
-        const ring = (c as number[][]).map((p) => [p[0], p[1]]);
-        rings.push(ring);
-        lineIds.push(f?.properties?.line_id ?? null);
-        for (const p of ring) allPoints.push(p);
-      }
-    }
-    if (rings.length) internal.push({ name: z.name, rings, lineIds });
+    if (!Array.isArray(z.coords) || z.coords.length !== 2) continue;
+    const ring = z.coords.map((p) => [p[0], p[1]]);
+    for (const p of ring) allPoints.push(p);
+    internal.push({ name: z.name, rings: [ring], lineIds: [z.lineId ?? null] });
   }
   if (!allPoints.length) return null;
 
@@ -401,18 +385,16 @@ export function buildGreenhouseUprightSvg(
   }
 
   // Layer 2 — colored polylines per zone.
-  const counts = Object.values(zoneObs).map((o) => o.count);
-  const maxCount = counts.length ? Math.max(...counts, 1) : 1;
 
   let body = "";
   for (const z of projected) {
     const obs = zoneObs[z.name];
     const count = obs?.count || 0;
-    let color = "#cbd5e1";
+    let color = "rgba(10,10,10,0.12)";
     if (obs && count > 0 && obs.color) color = obs.color;
     const hasObs = count > 0;
-    const ratio = hasObs ? Math.min(1, count / maxCount) : 0;
-    const opacity = hasObs ? 0.7 + ratio * 0.3 : 0.55;
+    const opacity = 1;
+    if (hasObs) color = softFill(color, levelOf(count), paperFor());
     const safeName = escapeAttr(z.name);
 
     for (const ring of z.rings) {

@@ -49,7 +49,9 @@ def _weights_key(weights):
     return tuple(sorted(dict(weights).items())) if weights else None
 
 _WH = "COALESCE(NULLIF(se.block, ''), se.greenhouse)"
-_STATION = "CASE WHEN COALESCE(se.block, '') <> '' THEN se.tree ELSE se.zone END"
+# mona imported zone names wrapped in literal double-quotes; strip them so the
+# station keys match the (also stripped) getBedsAndZones geometry on the client.
+_STATION = "TRIM(BOTH '\"' FROM CASE WHEN COALESCE(se.block, '') <> '' THEN se.tree ELSE se.zone END)"
 _WEEK = "YEARWEEK(se.date_of_capture, 3)"
 
 
@@ -96,7 +98,7 @@ def _station_rows(warehouses) -> dict:
     return {
         wh: [
             {
-                "name": r.name,
+                "name": (r.name or "").strip('"'),
                 "group": r.grp or "",
                 "group_no": P.station_number(r.grp_no, r.grp),
                 "no": P.station_number(r.no, r.name),

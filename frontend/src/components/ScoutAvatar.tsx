@@ -85,12 +85,14 @@ export function ScoutRow({
   coveragePct,
   bedsScouted,
   bedsTotal,
+  bedsRetiredScouted,
   className,
 }: {
   scouts?: Scout[];
   coveragePct?: number | null;
   bedsScouted?: number;
   bedsTotal?: number;
+  bedsRetiredScouted?: number;
   className?: string;
 }) {
   if (!scouts?.length && coveragePct == null) return null;
@@ -121,7 +123,10 @@ export function ScoutRow({
           )}
           title={
             `${bedsScouted ?? "?"} of ${bedsTotal ?? "?"} beds had at least one record.` +
-            (full ? " Whole house covered." : " Part of the house was not walked.")
+            (full ? " Whole house covered." : " Part of the house was not walked.") +
+            (bedsRetiredScouted
+              ? ` ${bedsRetiredScouted} retired bed${bedsRetiredScouted === 1 ? " was" : "s were"} also scouted — check the bed list.`
+              : "")
           }
         >
           {coveragePct}% beds

@@ -8,9 +8,7 @@
  *       when the user narrows obs or stations.
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
-import { PageHeader } from "@/components/PageHeader";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import {
   Maximize2,
   ChevronDown,
@@ -45,19 +43,21 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { PageHeader } from "@/components/PageHeader";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { DatePicker } from "@/components/DatePicker";
-import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
+import { METHOD, useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
+import { call } from "@/lib/frappe";
 import {
   fetchBedsAndZones,
-  fetchCrops,
-  fetchFarmsAndWarehouses,
-  fetchLatestScoutingDate,
   DEFAULT_CROP,
 } from "@/lib/scouting-api";
+import { useCropFarms } from "@/hooks/use-crop-farms";
 import { flattenZones, type ZoneFeature } from "./maps/zone-utils";
 import { ymd } from "@/lib/utils";
-import { scpDebug } from "@/lib/frappe";
-import { ProgressOverlay } from "./dashboard/ProgressOverlay";
+import { recentWeeksRange } from "@/lib/iso-week";
+import { WIDEN_WEEKS, isWideEnough, targetLabel, widenedRange } from "@/lib/widen-range";
+import { Bar, LoadProgress, TextSkeleton, firstLoad } from "@/components/Loading";
 import { MarkerDefs, type MarkerKind } from "./maps/MarkerDefs";
 import {
   BedSvg,
@@ -65,7 +65,20 @@ import {
   type BedMarker,
   type ZoneStage,
 } from "./maps/BedSvg";
-import { StageLegend } from "./maps/StageLegend";
+import { savePin } from "@/lib/spread-api";
+import type { Pt } from "@/lib/hull";
+import { drawEscapeHandler, useDrawArea } from "./maps/use-draw-area";
+import { bedOverlays, useHouseOverlays } from "./maps/use-house-overlays";
+import { DrawAreaBar } from "./maps/DrawAreaBar";
+import { linkObsId, linkStationId, parseHeatmapLink } from "@/lib/heatmap-link";
+import { StageLegend, HeatRampLegend } from "./maps/StageLegend";
+import { hasWebGL } from "@/lib/webgl";
+import type { TerrainWeekData } from "./maps/Terrain3D";
+
+// Lazy: three.js is a ~508 kB chunk and the 2D heatmap must not pay for it.
+const Terrain3D = lazy(() =>
+  import("./maps/Terrain3D").then((m) => ({ default: m.Terrain3D })),
+);
 import {
   projectGeometry,
   type ProjectedGeometry,
@@ -78,7 +91,29 @@ import {
   parseObs,
 } from "./trends/aggregate";
 import { WeatherCard } from "@/components/WeatherCard";
+import { ScoutRow, type Scout } from "@/components/ScoutAvatar";
+import { WeatherHistory, useWeatherHistory } from "@/components/WeatherHistory";
 import { cn } from "@/lib/utils";
+import { GalleryScopeProvider, ObservationName } from "@/components/gallery/ObservationGallery";
+
+/** "2026-W29" -> "Week 29". The payload's `date` is an ISO-week label now. */
+function weekLabel(v: string): string {
+  const m = /^(\d{4})-W(\d{1,2})$/.exec(v || "");
+  return m ? `Week ${Number(m[2])}` : v || "";
+}
+
+/** Why a week is only half a picture, for the incomplete badge's tooltip. */
+function coverageNote(r: CardRecent): string {
+  const odd = r.oddZones ?? 0;
+  const even = r.evenZones ?? 0;
+  const missing = odd > even ? "even" : "odd";
+  return (
+    `Only ${missing === "even" ? "odd" : "even"}-numbered beds were scouted ` +
+    `this week (${r.sessions ?? 0} session${(r.sessions ?? 0) === 1 ? "" : "s"}` +
+    `${r.sessionDates?.length ? `: ${r.sessionDates.join(", ")}` : ""}). ` +
+    `The ${missing} beds were not visited — blank zones there mean "not looked at", not "clean".`
+  );
+}
 
 function ghOf(zoneName: string): string {
   const i = zoneName.indexOf(" - Bed ");
@@ -86,14 +121,35 @@ function ghOf(zoneName: string): string {
 }
 
 function defaultRange(): { from: string; to: string } {
-  // Previous one week. Even though the page won't fetch until the
-  // operator picks a farm or greenhouse, having a sensible range
-  // pre-filled means the first pick lands a meaningful result.
-  const today = new Date();
-  const from = new Date(today);
-  from.setDate(today.getDate() - 7);
-  return { from: ymd(from), to: ymd(today) };
+  // The previous and current ISO weeks, whole. Even though the page won't
+  // fetch until the operator picks a farm or greenhouse, having a sensible
+  // range pre-filled means the first pick lands a meaningful result.
+  return recentWeeksRange();
 }
+
+type CardRecent = {
+  /** ISO-week label ("2026-W29"). Named `date` for contract continuity, but a
+   *  week now — a single session covers only the odd or only the even beds, so
+   *  a per-session heatmap drew half a greenhouse and showed the unvisited half
+   *  as clean. Merging a week's sessions reassembles the house. */
+  date: string;
+  zoneObs: Record<string, number>;
+  zoneStages?: Record<string, ZoneStage[]>;
+  /** Scouting sessions that made up this week. */
+  sessions?: number;
+  sessionDates?: string[];
+  oddZones?: number;
+  evenZones?: number;
+  scouts?: Scout[];
+  coveragePct?: number | null;
+  bedsScouted?: number;
+  bedsTotal?: number;
+  bedsRetiredScouted?: number;
+  /** Both bed parities present in real proportion — i.e. the whole greenhouse
+   *  was actually seen. False for 101 of 229 greenhouse-weeks on this site, so
+   *  it must be shown, not assumed. */
+  complete?: boolean;
+};
 
 interface HeatmapCard {
   greenhouse: string;
@@ -103,15 +159,13 @@ interface HeatmapCard {
   totalObs: number;
   zonesAffected: number;
   lastDate: string;
-  recent: Array<{
-    date: string;
-    zoneObs: Record<string, number>;
-    zoneStages?: Record<string, ZoneStage[]>;
-  }>;
+  recent: CardRecent[];
 }
 
 interface HeatmapsGridPayload {
   cards: HeatmapCard[];
+  /** Newest date_of_capture on file, so an empty range can explain itself. */
+  latestScoutingDate?: string;
 }
 
 function indexZonesByGh(zones: ZoneFeature[]): Record<string, ZoneGeoLike[]> {
@@ -137,26 +191,11 @@ function useProjectedGeometries(
     {},
   );
   useEffect(() => {
-    if (scpDebug()) {
-      const haveKeys = Object.keys(zonesByGh);
-      const unmatched = needed.filter((gh) => !zonesByGh[gh]);
-      console.log(
-        `[SCP] heatmap geometry: needed=${needed.length}, zonesByGh keys=${haveKeys.length}, unmatched needed GHs:`,
-        unmatched,
-        "| sample keys:",
-        haveKeys.slice(0, 6),
-      );
-    }
     const missing = needed.filter((gh) => !(gh in cache) && zonesByGh[gh]);
     if (!missing.length) return;
     const next: Record<string, ProjectedGeometry | null> = { ...cache };
     for (const gh of missing) {
-      const g = projectGeometry(zonesByGh[gh]);
-      if (scpDebug())
-        console.log(
-          `[SCP] heatmap project "${gh}": ${zonesByGh[gh]?.length ?? 0} zones -> ${g ? "shape OK" : "NULL (no shape rendered)"}`,
-        );
-      next[gh] = g;
+      next[gh] = projectGeometry(zonesByGh[gh]);
     }
     setCache(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,49 +204,107 @@ function useProjectedGeometries(
 }
 
 export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
-  const [crop, setCrop] = useState<string>(initialCrop ?? DEFAULT_CROP);
+  const crop = initialCrop ?? DEFAULT_CROP;
   const [{ from, to }, setRange] = useState(defaultRange);
-  const [crops, setCrops] = useState<
-    Array<{ name: string; crop_name: string; farms?: string[] }>
-  >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
   const [farmsByGh, setFarmsByGh] = useState<Record<string, string>>({});
+  // Distinguishes "this farm list is empty" from "we could not fetch it". The
+  // picker used to say "No farms configured" for both, which sent people
+  // looking for a configuration problem that didn't exist.
+  const [farmsError, setFarmsError] = useState<"stale-session" | "failed" | null>(
+    null,
+  );
   const [stationChecks, setStationChecks] = useState<Set<string>>(new Set());
   const [obsChecks, setObsChecks] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<HeatmapCard | null>(null);
+  const [pickedDetail, setPickedDetail] = useState<CardRecent[] | null>(null);
+  /** Move the range to the week containing the newest scouting entry. */
+  const jumpToLatest = (iso: string) => {
+    const end = new Date(iso + "T00:00:00");
+    const start = new Date(end);
+    start.setDate(end.getDate() - 6);
+    setRange({ from: ymd(start), to: ymd(end) });
+  };
+  /** Reach back WIDEN_WEEKS weeks from the range's end. */
+  const widen = () => setRange((r) => widenedRange(r.to, WIDEN_WEEKS));
+  const [show3D, setShow3D] = useState(false);
+  // Deep link (#/<crop>/heatmaps?gh=&obs=&kind=): applied once, for this visit
+  // only. Nothing here writes the remembered place.
+  const link = useMemo(() => parseHeatmapLink(window.location.hash), []);
+  const linkDone = useRef({ station: false, obs: false, range: false });
+  /** Farm of the opened card, for its weather history in the modal. */
+  const pickedFarm = picked ? farmsByGh[picked.greenhouse] || "" : "";
+  // Weather follows the weeks THIS greenhouse was scouted, not a trailing
+  // window from today — on this data the newest scouting is ~29 days old, so a
+  // "last 5 weeks" window barely overlaps what it's meant to explain.
+  const pickedWeather = useWeatherHistory(pickedFarm, from, to);
+  const [terrain, setTerrain] = useState<TerrainWeekData[] | null>(null);
 
-  // Bootstrap data: crop list + farm→greenhouse map for the tree.
+  // 3D is opt-in per card and needs its own (longer) week history, so it is
+  // fetched only when the toggle is switched on.
   useEffect(() => {
-    fetchCrops().then((r) => {
-      if (!r.length) return;
-      const hasDefault = r.some((c) => c.crop_name === DEFAULT_CROP);
-      setCrops(
-        hasDefault
-          ? r
-          : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
-      );
-    });
-    fetchFarmsAndWarehouses().then((farms) => {
-      const ghToFarm: Record<string, string> = {};
-      Object.entries(farms).forEach(([farm, ghs]) => {
-        (ghs || []).forEach((g) => (ghToFarm[g] = farm));
-      });
-      setFarmsByGh(ghToFarm);
-    });
-  }, []);
+    if (!picked || !show3D) return;
+    let cancelled = false;
+    setTerrain(null);
+    call<{ weeks: TerrainWeekData[] }>(METHOD.heatmap_terrain, {
+      from_date: from, to_date: to, crop,
+      greenhouse: picked.greenhouse,
+      obs_name: picked.obsName,
+      obs_kind: picked.obsKind,
+    })
+      .then((r) => { if (!cancelled) setTerrain(r?.weeks ?? []); })
+      .catch(() => { if (!cancelled) setTerrain([]); });
+    return () => { cancelled = true; };
+  }, [picked, show3D, from, to, crop]);
 
-  // Anchor the default range on the most recent scouting date so the page
-  // opens on real data instead of an empty "last 7 days" window (the data
-  // can be weeks old on a fresh/imported site).
+  // Reset the view whenever a different card is opened.
+  useEffect(() => { setShow3D(false); setTerrain(null); }, [picked]);
+
+  // The grid ships only recent[0] (~1/3 of the old payload); fetch the
+  // full 3-date history on demand when a card is opened. recent[0] falls
+  // back to what the grid already has so the thumbnail renders instantly
+  // with no flash while the other two dates load.
   useEffect(() => {
-    fetchLatestScoutingDate().then((latest) => {
-      if (!latest) return;
-      const to = new Date(latest);
-      if (Number.isNaN(to.getTime())) return;
-      const from = new Date(to);
-      from.setDate(to.getDate() - 6);
-      setRange({ from: ymd(from), to: ymd(to) });
+    if (!picked) { setPickedDetail(null); return; }
+    let cancelled = false;
+    setPickedDetail(null);
+    call<{ recent: CardRecent[] }>(
+      METHOD.heatmap_card_detail,
+      {
+        from_date: from, to_date: to, crop,
+        greenhouse: picked.greenhouse,
+        obs_name: picked.obsName,
+        obs_kind: picked.obsKind,
+      },
+    )
+      .then((r) => {
+        if (cancelled) return;
+        // A legitimate empty response must not blank the modal down to
+        // "no data" — fall back to the one date the grid already has.
+        const recent = r?.recent ?? [];
+        setPickedDetail(recent.length ? recent : picked.recent);
+      })
+      .catch(() => !cancelled && setPickedDetail(picked.recent));
+    return () => { cancelled = true; };
+  }, [picked, from, to, crop]);
+
+  // Farm → greenhouse map for the tree, for the route crop only (server-side).
+  const { farms: cropFarms, error: cropFarmsError, loading: farmsLoading } = useCropFarms(crop);
+  useEffect(() => {
+    const ghToFarm: Record<string, string> = {};
+    Object.entries(cropFarms).forEach(([farm, ghs]) => {
+      (ghs || []).forEach((g) => (ghToFarm[g] = farm));
     });
-  }, []);
+    setFarmsByGh(ghToFarm);
+    setFarmsError(cropFarmsError ?? null);
+  }, [cropFarms, cropFarmsError]);
+
+  useEffect(() => {
+    if (linkDone.current.station || !link.gh) return;
+    const id = linkStationId(link, farmsByGh);
+    if (!id) return;
+    linkDone.current.station = true;
+    setStationChecks(new Set([id]));
+  }, [link, farmsByGh]);
 
   // Server-side filter: only the crop, date range, and explicit greenhouse
   // selections (if any) go to the server. Obs filtering is purely
@@ -242,7 +339,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     () => ({
       from_date: from,
       to_date: to,
-      crop: crop === DEFAULT_CROP ? "" : crop,
+      crop,
       greenhouses: greenhouseFilter,
     }),
     [from, to, crop, greenhouseFilter],
@@ -259,6 +356,41 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     hasScope,
   );
   const cards = gridState.data?.cards ?? [];
+  // First load for this scope: skeleton cards in the grid. A refresh (dates,
+  // stations, reload) keeps the old cards on screen under the progress bar.
+  const firstGrid = hasScope && firstLoad(gridState.loading, !!gridState.data);
+  // Most recent scouting date on file. The page defaults to the last seven
+  // days, so once data is older than that every card vanishes and the page
+  // reads as broken rather than as out of range — say so instead.
+  const latestScouting = gridState.data?.latestScoutingDate || "";
+  const latestOutsideRange = !!latestScouting && latestScouting < from;
+  const selectedTargets = useMemo(
+    () => Array.from(new Set(Array.from(obsChecks).map(parseObs).filter((o): o is NonNullable<typeof o> => !!o).map((o) => o.name))),
+    [obsChecks],
+  );
+  // Deep link, once the grid answers: select the target if a card has it; if
+  // the range holds no data, reach to the week of the newest scouting.
+  useEffect(() => {
+    if (!link.gh || !gridState.data || gridState.loading) return;
+    if (!linkDone.current.obs && link.obs) {
+      const id = linkObsId(link, cards);
+      if (id) {
+        linkDone.current.obs = true;
+        setObsChecks(new Set([id]));
+      }
+    }
+    if (!linkDone.current.range && !cards.length && latestScouting && latestScouting < from) {
+      linkDone.current.range = true;
+      jumpToLatest(latestScouting);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [link, gridState.data, gridState.loading, cards, latestScouting, from]);
+  // Each card shows its newest week in range, so one distinct week across all
+  // cards means the range is yielding a single week of scouting.
+  const thinData =
+    cards.length > 0 &&
+    new Set(cards.map((c) => c.lastDate)).size <= 1 &&
+    !isWideEnough(from, to);
 
   // Client-side obs filter from the tristate selections. Empty = all.
   const obsFilter = useMemo(() => {
@@ -278,14 +410,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   // Bed/zone geometry: fetched once, projected per greenhouse on demand.
   const [zones, setZones] = useState<ZoneFeature[]>([]);
   useEffect(() => {
-    fetchBedsAndZones().then((vs) => {
-      const flat = flattenZones(vs);
-      if (scpDebug())
-        console.log(
-          `[SCP] heatmap: fetchBedsAndZones -> ${vs.length} varieties, ${flat.length} zones`,
-        );
-      setZones(flat);
-    });
+    fetchBedsAndZones().then((vs) => setZones(flattenZones(vs)));
   }, []);
   const zonesByGh = useMemo(() => indexZonesByGh(zones), [zones]);
   const neededGhs = useMemo(
@@ -358,88 +483,134 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     return "";
   }, [selections, farmsByGh]);
 
+  // The grid ships only recent[0]; the modal reads the on-demand-fetched
+  // 3-date detail once it lands, falling back to what the grid already
+  // has so the first date renders instantly with no flash.
+  const modalRecent: CardRecent[] = picked ? (pickedDetail ?? picked.recent) : [];
+  // True only during the in-flight fetch window — slots 2/3 render a
+  // loading state instead of asserting "No earlier scouting recorded",
+  // which would otherwise be a false statement of fact while the detail
+  // fetch (measured ~542ms cold) is still in flight.
+  const isLoadingDetail = picked !== null && pickedDetail === null;
+
+  // Spread (piece 3c): the latest week's patches and this house's patch / area
+  // pins, outlined on the "Latest week" panel, and a draw mode for area pins.
+  const latestWeek = modalRecent.length ? modalRecent[modalRecent.length - 1].date : null;
+  const spread = useHouseOverlays({
+    crop,
+    warehouse: picked?.greenhouse ?? null,
+    observation: picked?.obsName ?? null,
+    kind: picked?.obsKind ?? "pest",
+    week: latestWeek,
+  });
+  const overlays = useMemo(() => bedOverlays(spread.clusters, spread.pins), [spread.clusters, spread.pins]);
+  const [pendingArea, setPendingArea] = useState<Pt[] | null>(null);
+  const [areaBusy, setAreaBusy] = useState(false);
+  const [areaError, setAreaError] = useState<string | null>(null);
+  const draw = useDrawArea(setPendingArea);
+  const cancelDraw = draw.cancel;
+  useEffect(() => {
+    cancelDraw();
+    setPendingArea(null);
+    setAreaError(null);
+  }, [picked, cancelDraw]);
+  const saveArea = async (title: string, shared: boolean) => {
+    const geom = picked ? geometryByGh[picked.greenhouse] : null;
+    if (!picked || !pendingArea || !geom?.unproject) return;
+    const ring = pendingArea.map(([x, y]) => geom.unproject!(x, y));
+    setAreaBusy(true);
+    setAreaError(null);
+    try {
+      await savePin({
+        crop,
+        warehouse: picked.greenhouse,
+        kind: "Area",
+        title,
+        observation: picked.obsName,
+        obs_kind: picked.obsKind,
+        shared,
+        polygon: { type: "Polygon", coordinates: [[...ring, ring[0]]] },
+        source_week: latestWeek,
+      });
+      setPendingArea(null);
+      spread.reloadPins();
+    } catch (e) {
+      setAreaError(e instanceof Error ? e.message : "Could not save the area");
+    } finally {
+      setAreaBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-svh">
       <MarkerDefs />
       <PageHeader
+        title="Heatmaps"
         eyebrow={<>Per-greenhouse zone intensity · pest &amp; disease markers</>}
-        title={<>Heatmaps</>}
       >
+        <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
+        <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
 
-          <div className="flex flex-wrap items-end gap-2">
-            {!initialCrop && (
-              <div className="flex items-center">
-                <Select value={crop} onValueChange={setCrop}>
-                  <SelectTrigger id="hm-crop" className={HEADER_PILL}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {crops.map((c) => (
-                      <SelectItem key={c.crop_name} value={c.crop_name}>
-                        {c.crop_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+        {/* Multi-select: check any farms and/or greenhouses to plot. */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className={HEADER_PILL} disabled={farmsLoading}>
+              <MapPin className="h-3.5 w-3.5" />
+              Farms
+              <span className="text-muted-foreground tabular-nums">
+                {selections.length || "—"}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80">
+            <TristateTree
+              nodes={stationTree}
+              checked={stationChecks}
+              onChange={setStationChecks}
+              emptyHint={
+                farmsError === "stale-session"
+                  ? "This page is out of date — reload to sign the session back in."
+                  : farmsError === "failed"
+                  ? "Couldn't load the farm list. Check your connection and reload."
+                  : "No farms configured"
+              }
+              searchPlaceholder="Search farms or greenhouses…"
+            />
+          </PopoverContent>
+        </Popover>
 
-            <div className="flex items-center">
-              <DatePicker
-                value={from}
-                onChange={(v) => setRange({ from: v, to })}
-              />
-            </div>
-
-            <div className="flex items-center">
-              <DatePicker
-                value={to}
-                onChange={(v) => setRange({ from, to: v })}
-              />
-            </div>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className={HEADER_PILL}>
-                  <MapPin className="h-3.5 w-3.5" />
-                  Farms
-                  <span className="text-muted-foreground tabular-nums">
-                    {selections.length || "—"}
-                  </span>
-                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80">
-                <TristateTree
-                  nodes={stationTree}
-                  checked={stationChecks}
-                  onChange={setStationChecks}
-                  emptyHint="No farms configured"
-                  searchPlaceholder="Search farms or greenhouses…"
-                />
-              </PopoverContent>
-            </Popover>
-
-            <HeaderIconButton
-              onClick={() => gridState.reload({ force: true })}
-              aria-label="Reload"
-              tooltip="Rebuild the heatmaps from the server, ignoring the cached copy"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </HeaderIconButton>
-          </div>
-
-        {gridState.error && (
-          <div className="text-xs text-[var(--sd-data-red)]">
-            Failed to load: {gridState.error}
-          </div>
-        )}
+        <HeaderIconButton
+          onClick={() => gridState.reload({ force: true })}
+          title="Reload (force cache refresh)"
+        >
+          <RefreshCw className="h-4 w-4" />
+        </HeaderIconButton>
       </PageHeader>
 
+      {gridState.error && (
+        <div className="text-xs text-[var(--sd-data-red)] px-4 md:px-6">
+          Failed to load: {gridState.error}
+        </div>
+      )}
+
+      {/* The grid's progress sits on the left of the stats line (was a
+          full-screen overlay), so the frame and any old cards stay visible. */}
       <div className="flex flex-wrap items-center gap-3 px-4 md:px-6 py-2 text-xs text-muted-foreground">
+        <LoadProgress
+          active={hasScope && gridState.loading}
+          progress={gridState.progress?.percent ?? null}
+          label={gridState.progress?.label}
+        />
         <span className="ml-auto tabular-nums">
-          {distinctGh} greenhouses · {totalZones} zones · {totalObs}{" "}
-          observation{totalObs === 1 ? "" : "s"}
+          {firstGrid ? (
+            <TextSkeleton width="26ch" />
+          ) : (
+            <>
+              {distinctGh} greenhouses · {totalZones} zones · {totalObs}{" "}
+              observation{totalObs === 1 ? "" : "s"}
+            </>
+          )}
         </span>
       </div>
 
@@ -460,17 +631,47 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               until you narrow the scope.
             </CardDescription>
           </Card>
-        ) : gridState.loading ? (
-          <ProgressOverlay progress={gridState.progress} />
-        ) : !visibleCards.length ? (
-          <Card className="p-12 text-center">
-            <CardTitle className="text-base">No matching observations</CardTitle>
+        ) : firstGrid ? (
+          <HeatmapCardsSkeleton />
+        ) : !visibleCards.length && !gridState.loading ? (
+          <Card className="p-12 text-center" data-testid="heatmap-empty">
+            <CardTitle className="text-base">
+              {latestOutsideRange ? "No scouting in this date range" : "No matching observations"}
+            </CardTitle>
             <CardDescription className="mt-1">
-              Widen the date range, pick more stations, or clear the
-              observation filter.
+              No scouting in {from} to {to} for{" "}
+              <strong>{targetLabel(greenhouseFilter, selectedTargets) || "this selection"}</strong>.
+              {!isWideEnough(from, to) && " Widen the date range to see earlier entries."}
+              {latestOutsideRange && (
+                <>
+                  {" "}The most recent scouting entry on file is <strong>{latestScouting}</strong>.
+                </>
+              )}
             </CardDescription>
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              {!isWideEnough(from, to) && (
+                <Button type="button" variant="outline" size="sm" onClick={widen}>
+                  Widen to the last {WIDEN_WEEKS} weeks
+                </Button>
+              )}
+              {latestOutsideRange && (
+                <Button type="button" variant="outline" size="sm" onClick={() => jumpToLatest(latestScouting)}>
+                  Show the week of {latestScouting}
+                </Button>
+              )}
+            </div>
           </Card>
         ) : (
+          <>
+          {thinData && (
+            <p data-testid="heatmap-thin-note" className="mb-2 text-xs text-muted-foreground">
+              Only one week of scouting in this range.{" "}
+              <button type="button" onClick={widen} className="underline underline-offset-2 hover:text-foreground">
+                Widen to the last {WIDEN_WEEKS} weeks
+              </button>
+            </p>
+          )}
+          <HeatRampLegend className="px-1 pb-2" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {visibleCards.map((c) => {
               const geom = geometryByGh[c.greenhouse];
@@ -506,7 +707,15 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                         <CardDescription className="text-[0.7rem] truncate">
                           <span className="capitalize">{c.obsKind}</span> ·{" "}
                           {c.obsName}
-                          {c.lastDate ? ` · ${c.lastDate}` : ""}
+                          {c.lastDate ? ` · ${weekLabel(c.lastDate)}` : ""}
+                          {c.recent[0] && c.recent[0].complete === false ? (
+                            <span
+                              title={coverageNote(c.recent[0])}
+                              className="ml-1 text-[var(--sd-data-amber)]"
+                            >
+                              · half scouted
+                            </span>
+                          ) : null}
                         </CardDescription>
                       </div>
                       <Badge variant="outline" className="tabular-nums shrink-0">
@@ -543,6 +752,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               );
             })}
           </div>
+          </>
         )}
         </div>
 
@@ -555,7 +765,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                 Observation filter
               </CardTitle>
               <CardDescription className="text-[0.7rem]">
-                {obsChipOptions.length
+                {obsChipOptions.length || firstGrid
                   ? "Pick one, or 'All' to see every observation."
                   : hasScope
                     ? "No observations in date range."
@@ -569,6 +779,16 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                   active={!selectedObs}
                   onClick={() => setObsChecks(new Set())}
                 />
+                {firstGrid &&
+                  ["10ch", "8ch", "12ch", "9ch"].map((w) => (
+                    <span
+                      key={w}
+                      aria-hidden
+                      data-skeleton="chip"
+                      className="inline-flex h-6 animate-pulse rounded-full bg-[var(--sd-bg-soft)]"
+                      style={{ width: `calc(${w} + 1.5rem)` }}
+                    />
+                  ))}
                 {obsChipOptions.map((opt) => (
                   <ObsChip
                     key={opt.id}
@@ -590,7 +810,10 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
       </div>
 
       <Dialog open={!!picked} onOpenChange={(o) => !o && setPicked(null)}>
-        <DialogContent className="max-w-[min(92vw,1080px)] max-h-[80vh] overflow-y-auto">
+        <DialogContent
+          className="max-w-[min(92vw,1080px)] max-h-[80vh] overflow-y-auto"
+          onEscapeKeyDown={drawEscapeHandler(draw)}
+        >
           {picked && (
             <>
               <DialogHeader>
@@ -600,30 +823,84 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                     style={{ background: picked.color }}
                     aria-hidden
                   />
-                  {picked.greenhouse} · {picked.obsName}
+                  {picked.greenhouse} ·{" "}
+                  <GalleryScopeProvider
+                    scope={{ crop, from_date: from, to_date: to, farm: "", greenhouse: picked.greenhouse }}
+                  >
+                    <ObservationName kind={picked.obsKind} name={picked.obsName} />
+                  </GalleryScopeProvider>
+                  {hasWebGL() && (
+                    <button
+                      type="button"
+                      onClick={() => setShow3D((v) => !v)}
+                      className="ml-auto rounded-md border px-2 py-0.5 text-[0.7rem] font-normal hover:bg-muted"
+                    >
+                      {show3D ? "2D" : "3D"}
+                    </button>
+                  )}
                 </DialogTitle>
                 <DialogDescription>
                   {picked.totalObs} observation
                   {picked.totalObs === 1 ? "" : "s"} across{" "}
                   {picked.zonesAffected} zone
-                  {picked.zonesAffected === 1 ? "" : "s"} · last 3 scouting
-                  dates shown left-to-right (most recent first)
+                  {picked.zonesAffected === 1 ? "" : "s"} · last 3 scouted
+                  weeks, oldest to latest (left to right)
                 </DialogDescription>
               </DialogHeader>
 
-              {picked.recent.length === 0 ? (
+              {pickedFarm && (
+                <WeatherHistory
+                  farm={pickedFarm}
+                  className="rounded-md border p-2"
+                  highlightWeek={picked.lastDate}
+                  fromDate={from}
+                  toDate={to}
+                  onlyWeeks={modalRecent.map((r) => r.date)}
+                />
+              )}
+
+              {show3D ? (
+                terrain === null ? (
+                  <div aria-busy="true" aria-label="Building terrain">
+                    <Bar className="min-h-[420px] w-full rounded-md" />
+                  </div>
+                ) : (
+                  <Suspense
+                    fallback={
+                      <div aria-busy="true" aria-label="Loading 3D">
+                        <Bar className="min-h-[420px] w-full rounded-md" />
+                      </div>
+                    }
+                  >
+                  <Terrain3D
+                    weeks={terrain}
+                    weather={pickedWeather ?? undefined}
+                    positions={Object.fromEntries(
+                      Object.entries(
+                        geometryByGh[picked.greenhouse]?.zoneCentroids ?? {},
+                      ).map(([zone, c]) => [zone, { x: c.cx, y: c.cy }]),
+                    )}
+                    className="min-h-[420px]"
+                  />
+                  </Suspense>
+                )
+              ) : modalRecent.length === 0 ? (
                 <div className="text-sm text-muted-foreground p-6 text-center border rounded-md bg-[var(--sd-bg-soft)]">
                   No dated scouting entries to plot.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {[0, 1, 2].map((i) => {
-                    const slice = picked.recent[i];
-                    const labels = [
-                      "Latest scouting",
-                      "2nd latest scouting",
-                      "3rd latest scouting",
-                    ];
+                    const slice = modalRecent[i];
+                    // recent[] is oldest-first, so the LAST slice is the
+                    // latest week — label by distance from the end.
+                    const fromEnd = modalRecent.length - 1 - i;
+                    const label =
+                      fromEnd === 0
+                        ? "Latest week"
+                        : fromEnd === 1
+                        ? "1 week earlier"
+                        : `${fromEnd} weeks earlier`;
                     const geom = geometryByGh[picked.greenhouse];
                     const kind: MarkerKind =
                       picked.obsKind === "disease" ? "disease" : "pest";
@@ -650,7 +927,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                       >
                         <div className="flex items-baseline justify-between gap-2">
                           <span className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground">
-                            {labels[i]}
+                            {label}
                           </span>
                           {slice ? (
                             <Badge
@@ -667,15 +944,60 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                         </div>
                         {slice && geom ? (
                           <>
-                            <div className="text-xs font-medium tabular-nums">
-                              {slice.date}
+                            <div className="flex items-center gap-2 text-xs font-medium tabular-nums">
+                              <span>{weekLabel(slice.date)}</span>
+                              {slice.complete === false && (
+                                <span
+                                  title={coverageNote(slice)}
+                                  className="rounded-full border border-[var(--sd-data-amber)] px-1.5 py-px text-[0.6rem] font-normal text-[var(--sd-data-amber)]"
+                                >
+                                  half scouted
+                                </span>
+                              )}
                             </div>
                             <BedSvg
                               geometry={geom}
                               markers={dayMarkers}
+                              overlays={fromEnd === 0 ? overlays : undefined}
+                              draft={fromEnd === 0 && draw.active ? draw.vertices : null}
+                              onCanvasClick={fromEnd === 0 && draw.active ? draw.add : undefined}
+                              onCanvasDoubleClick={fromEnd === 0 && draw.active ? draw.finish : undefined}
                               className="min-h-[420px] [&_svg]:max-h-[520px] [&_svg]:w-full"
                             />
+                            {fromEnd === 0 ? (
+                              <div className="flex flex-col gap-1 text-[0.7rem] text-muted-foreground">
+                                <span>
+                                  {spread.clusters?.clusters.length ?? 0} patch
+                                  {(spread.clusters?.clusters.length ?? 0) === 1 ? "" : "es"} outlined
+                                  {spread.clusters?.clusters.length
+                                    ? ` · ${spread.clusters.clusters.map((p) => `${p.size} ${p.change.toLowerCase()}`).join(", ")}`
+                                    : ""}
+                                </span>
+                                <DrawAreaBar
+                                  draw={draw}
+                                  pending={pendingArea}
+                                  busy={areaBusy}
+                                  disabled={!geom.unproject}
+                                  defaultTitle={`${picked.obsName} · area`}
+                                  onSave={saveArea}
+                                  onDiscard={() => setPendingArea(null)}
+                                />
+                                {areaError ? (
+                                  <span role="alert" className="text-[var(--sd-data-red)]">
+                                    {areaError}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
                             <StageLegend markers={dayMarkers} className="px-1" />
+                            <HeatRampLegend color={picked.color} className="px-1" />
+                            <ScoutRow
+                              scouts={slice.scouts}
+                              coveragePct={slice.coveragePct}
+                              bedsScouted={slice.bedsScouted}
+                              bedsTotal={slice.bedsTotal}
+                              bedsRetiredScouted={slice.bedsRetiredScouted}
+                            />
                             <div className="text-[0.7rem] text-muted-foreground">
                               {Object.keys(slice.zoneObs).length} affected zone
                               {Object.keys(slice.zoneObs).length === 1
@@ -686,6 +1008,11 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                         ) : slice ? (
                           <div className="flex-1 flex items-center justify-center min-h-[260px] text-[0.72rem] text-muted-foreground border-dashed border rounded-md bg-[var(--sd-bg-soft)]">
                             Projecting bed geometry…
+                          </div>
+                        ) : isLoadingDetail ? (
+                          <div className="flex flex-1 flex-col gap-2" aria-busy="true">
+                            <TextSkeleton width="9ch" />
+                            <Bar className="min-h-[420px] w-full flex-1 rounded-md" />
                           </div>
                         ) : (
                           <div className="flex-1 flex items-center justify-center min-h-[260px] text-[0.72rem] text-muted-foreground border-dashed border rounded-md bg-[var(--sd-bg-soft)]">
@@ -698,10 +1025,10 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                 </div>
               )}
 
-              {picked.recent.length > 1 && (
+              {modalRecent.length > 1 && (
                 <div className="flex flex-wrap items-center gap-3 text-[0.72rem] text-muted-foreground border-t pt-2">
                   <span className="font-medium text-foreground">Trend</span>
-                  {picked.recent
+                  {modalRecent
                     .slice()
                     .reverse()
                     .map((s, i, arr) => {
@@ -723,8 +1050,12 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                           key={s.date}
                           className="inline-flex items-center gap-1.5 tabular-nums"
                         >
-                          <span className="text-muted-foreground">
-                            {s.date}
+                          <span
+                            className="text-muted-foreground"
+                            title={s.complete === false ? coverageNote(s) : undefined}
+                          >
+                            {weekLabel(s.date)}
+                            {s.complete === false ? "*" : ""}
                           </span>
                           <span className="font-semibold text-foreground">
                             {total}
@@ -775,6 +1106,35 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
 /** Single-select chip used in the right-column observation filter.
  *  When ``color`` is set it tints the indicator dot and (for active
  *  chips) the chip's border so the legend matches the map markers. */
+/** The grid's cards before the first payload: the real card box (header line,
+ *  count badge, bed plan at its min height, footer line), contents pulsing. */
+function HeatmapCardsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3" aria-busy="true" data-skeleton="cards">
+      {[0, 1, 2, 3].map((i) => (
+        <Card key={i} className="p-3" aria-hidden>
+          <CardHeader className="p-0 pb-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <Bar className="h-3.5 w-32" />
+                <Bar className="h-2.5 w-44" />
+              </div>
+              <Bar className="h-5 w-8 rounded-full" />
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Bar className="min-h-[340px] w-full rounded-md" />
+            <div className="mt-2 flex items-center justify-between">
+              <Bar className="h-2.5 w-24" />
+              <Bar className="h-2.5 w-12" />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 function ObsChip({
   label,
   color,

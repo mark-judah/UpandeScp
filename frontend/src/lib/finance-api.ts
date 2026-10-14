@@ -179,3 +179,165 @@ export function registerProductTargets(
 ): Promise<{ product: string; added: string[] }> {
   return call(`${ALLOC}.register_product_targets`, { product, targets: JSON.stringify(targets) });
 }
+
+
+// ---------------------------------------------------------------------------
+// Pest attribution: two tunnels (spray plans, direct material issues).
+// Backend: upande_scp.serverscripts.reports.finance_api
+// ---------------------------------------------------------------------------
+
+export type PathKey = "spray" | "direct";
+export type PathFilter = "spray" | "direct" | "both";
+
+/** How a line was assigned. Recorded = declared on the plan; band* = derived (estimated). */
+export type PestBasis =
+  | "recorded"
+  | "band1_ai_target"
+  | "band1_ai_class"
+  | "band2_alone"
+  | "band3_radar"
+  | "equal"
+  | "foliar_equal"
+  | "foliar_farm"
+  | "unattributed";
+
+export type Credibility = "recorded" | "derived" | "foliar" | "unattributed";
+
+export interface PestBasisRow {
+  basis: PestBasis;
+  value: number;
+  share: number;
+  kind: Credibility;
+  label: string;
+  accuracy: number | null;
+}
+
+export interface PestRow {
+  target: string;
+  kind: "pest" | "disease" | null;
+  recorded: number;
+  derived: number;
+  value: number;
+  share: number;
+  /** spend-weighted estimated accuracy of the derived part, 0..1 */
+  est_accuracy: number | null;
+  basis: Partial<Record<PestBasis, number>>;
+  products: { item_code: string; item_name: string; value: number }[];
+}
+
+export interface PathProduct {
+  item_code: string;
+  item_name: string;
+  foliar: boolean;
+  value: number;
+  from_mr: number;
+  targets: { target: string; value: number }[];
+}
+
+export interface PathPlace {
+  farm: string;
+  greenhouse: string;
+  cost_center: string | null;
+  chemical: number;
+  foliar: number;
+  value: number;
+  targets: Record<string, number>;
+}
+
+export interface PathBlock {
+  path: PathKey;
+  total: number;
+  chemical: {
+    total: number;
+    recorded: number;
+    derived: number;
+    unattributed: number;
+    derived_accuracy: number | null;
+    by_pest: PestRow[];
+  };
+  /** Foliar & adjuvants: always separate from the chemical pest cost. */
+  foliar: {
+    total: number;
+    by_target: { target: string; value: number }[];
+    farm_level: number;
+  };
+  by_basis: PestBasisRow[];
+  by_product: PathProduct[];
+  by_greenhouse: PathPlace[];
+  plans_completed?: number;
+  in_progress?: { plans: number; value: number };
+  by_source?: { from_material_request: number; no_material_request: number };
+  explain?: string;
+}
+
+export interface PestAttributionReport {
+  filters: { from: string; to: string; paths: PathKey[]; pests: string[]; greenhouse: string };
+  currency: string;
+  notes: string[];
+  accuracy: Record<PathKey, Record<string, number>>;
+  pest_options: string[];
+  greenhouse_options: string[];
+  spray?: PathBlock;
+  direct?: PathBlock;
+  combined: {
+    total: number;
+    spray: number;
+    direct: number;
+    line_total: number | null;
+    ledger_total: number | null;
+    ledger_difference: number | null;
+    fallback_lines: number;
+    reconciles: boolean | null;
+  };
+}
+
+export interface PestAttributionFilters {
+  from: string;
+  to: string;
+  path: PathFilter;
+  pests: string[];
+  greenhouse: string;
+}
+
+const FIN = "upande_scp.serverscripts.reports.finance_api";
+
+export function fetchPestAttribution(f: PestAttributionFilters): Promise<PestAttributionReport> {
+  return call<PestAttributionReport>(`${FIN}.pest_attribution_report`, {
+    from_date: f.from,
+    to_date: f.to,
+    path: f.path,
+    pests: JSON.stringify(f.pests),
+    greenhouse: f.greenhouse,
+  });
+}
+
+/** A GET URL that downloads the Excel file with the same filters as the page. */
+export function pestAttributionExportUrl(f: PestAttributionFilters, perProduct: boolean): string {
+  const q = new URLSearchParams({
+    from_date: f.from,
+    to_date: f.to,
+    path: f.path,
+    pests: JSON.stringify(f.pests),
+    greenhouse: f.greenhouse,
+    per_product: perProduct ? "1" : "0",
+  });
+  return `/api/method/${FIN}.export_pest_attribution?${q.toString()}`;
+}
+
+/** Credibility label for a basis, e.g. "Derived — est. 89%". Mirrors the server. */
+export function credibilityLabel(
+  basis: PestBasis,
+  path: PathKey,
+  accuracy: Record<PathKey, Record<string, number>>,
+): { kind: Credibility; label: string; accuracy: number | null } {
+  if (basis === "recorded") return { kind: "recorded", label: "Recorded", accuracy: 1 };
+  if (basis === "foliar_equal") return { kind: "foliar", label: "Foliar (equal split)", accuracy: null };
+  if (basis === "foliar_farm") return { kind: "foliar", label: "Foliar \u2014 not target-specific", accuracy: null };
+  if (basis === "unattributed") return { kind: "unattributed", label: "Unattributed", accuracy: null };
+  const acc = accuracy?.[path]?.[basis] ?? null;
+  return {
+    kind: "derived",
+    label: acc != null ? `Derived \u2014 est. ${Math.round(acc * 100)}%` : "Derived",
+    accuracy: acc,
+  };
+}

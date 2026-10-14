@@ -10,6 +10,9 @@ from ..spray_compliance import api as compliance
 from .scope import _resolve_user_scope
 from .validation import (
     derive_cost_center, validate_preventive_reason, validate_rate_in_limits,
+    split_targets,
+    suggest_row_targets,
+    validate_chemical_targets,
     validate_targets_in_scope,
 )
 
@@ -364,6 +367,7 @@ def _apply_payload(wo, payload: dict) -> None:
             # row when building Material Transfer for Manufacture, returning
             # an SE with empty items that then fails MandatoryError on insert.
             "include_item_in_manufacturing": 1,
+            "custom_targets": "\n".join(split_targets(c.get("targets"))),
         })
         if c.get("_rate_differs_from_bom"):
             rate_overridden = True
@@ -403,6 +407,8 @@ def _validate_payload(payload: dict, scope: dict) -> None:
         frappe.throw("Add at least one chemical to the plan.")
     if flt(payload.get("custom_water_volume")) <= 0:
         frappe.throw("Water volume (L) is required and must be greater than zero.")
+    if not payload.get("_skip_chemical_targets"):
+        validate_chemical_targets(chems, payload.get("custom_targets") or [])
     limits = {}
     for c in chems:
         validate_rate_in_limits(
@@ -514,6 +520,15 @@ def create_draft_spray_plan(payload):
 
     return {"work_order": wo.name, "summary": _summarize(wo), "warnings": warnings,
             "compliance": compliance_result}
+
+
+@frappe.whitelist()
+def suggest_chemical_targets(targets, items) -> dict:
+    """Per chemical: does it need targets, and the unambiguous prefill from the
+    product's registered targets and the plan's targets."""
+    _require_creator()
+    return suggest_row_targets(frappe.parse_json(targets) if isinstance(targets, str) else targets,
+                               frappe.parse_json(items) if isinstance(items, str) else items)
 
 
 @frappe.whitelist()
@@ -700,6 +715,7 @@ def _expand_wo(wo) -> dict:
                 "item_code": r.item_code, "item_name": r.item_name,
                 "stock_uom": r.stock_uom, "source_warehouse": r.source_warehouse,
                 "application_rate": r.required_qty,
+                "targets": split_targets(r.get("custom_targets")),
             }
             for r in (wo.required_items or [])
         ],

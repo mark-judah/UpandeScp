@@ -272,3 +272,102 @@ def _observed_targets(greenhouse: str | None, cutoff, kind: str) -> Iterable[str
         as_dict=True,
     )
     return [r["target"] for r in rows if r.get("target")]
+
+
+# --- Per-chemical targets -------------------------------------------------------
+#
+# Each CHEMICAL row of an Application Floor Plan records which of the plan's
+# pests / diseases it is for (Work Order Item.custom_targets, newline separated),
+# so finance attributes its cost to what it was declared for. Foliars, fertiliser
+# (FER*) and Adjuvant / pH Buffer products are not target-specific and need none.
+
+#: Plans created before this date predate the rule and stay valid without row targets.
+ROW_TARGETS_REQUIRED_FROM = "2026-10-14"
+NON_TARGET_TYPES = ("Adjuvant", "pH Buffer")
+
+
+def split_targets(value) -> list[str]:
+    if isinstance(value, (list, tuple)):
+        raw = value
+    else:
+        raw = str(value or "").split("\n")
+    return list(dict.fromkeys(t.strip() for t in raw if t and t.strip()))
+
+
+def needs_row_targets(item_code: str | None) -> bool:
+    """True for a Chemical-category Spray Product that is not an adjuvant / pH buffer."""
+    if not item_code or str(item_code).upper().startswith("FER"):
+        return False
+    from upande_scp.serverscripts.common import crop_protection
+
+    sp = crop_protection.get_spray_product(item_code)
+    if not sp:
+        # Unknown to the product master: treat a non-foliar item as a chemical only
+        # when it is in a configured chemical group.
+        group = frappe.db.get_value("Item", item_code, "item_group")
+        return crop_protection.classify_item_group(group) == "chemical"
+    return sp.category == crop_protection.CHEMICAL and (sp.type or "") not in NON_TARGET_TYPES
+
+
+def validate_chemical_targets(chemicals, plan_targets) -> None:
+    """Every chemical row needs at least one target, each from the plan's targets."""
+    plan = set(split_targets(plan_targets))
+    missing, stray = [], []
+    for c in chemicals or []:
+        code = c.get("item_code")
+        if not needs_row_targets(frappe.db.get_value("Item", code, "name") or code):
+            continue
+        row = split_targets(c.get("targets"))
+        label = c.get("item_name") or code
+        if not row:
+            missing.append(label)
+        elif plan and any(t not in plan for t in row):
+            stray.append(label)
+    if missing:
+        frappe.throw(
+            "Pick at least one pest or disease for each chemical: " + ", ".join(missing) + ".",
+            title="Chemical targets required",
+        )
+    if stray:
+        frappe.throw(
+            "A chemical's targets must be among the plan's targets: " + ", ".join(stray) + ".",
+            title="Chemical targets not on the plan",
+        )
+
+
+def suggest_row_targets(plan_targets, item_codes) -> dict:
+    """{item_code: {"required": bool, "targets": [prefill]}}.
+
+    Prefill only when unambiguous: a single plan target, else the plan targets the
+    product is registered for (its default_targets), else nothing."""
+    from upande_scp.serverscripts.common import crop_protection
+
+    plan = split_targets(plan_targets)
+    out = {}
+    for code in item_codes or []:
+        required = needs_row_targets(code)
+        pre: list[str] = []
+        if required and plan:
+            if len(plan) == 1:
+                pre = list(plan)
+            else:
+                registered = {
+                    r.get("pest") or r.get("disease") for r in crop_protection.get_product_targets(code)
+                }
+                pre = [t for t in plan if t in registered]
+        out[code] = {"required": required, "targets": pre}
+    return out
+
+
+def enforce_row_targets_on_submit(doc, method=None) -> None:
+    """Work Order before_submit: an Application Floor Plan created after the rule
+    must carry per-chemical targets. Older plans stay valid."""
+    if doc.get("custom_type") != "Application Floor Plan":
+        return
+    if str(doc.get("creation") or "")[:10] < ROW_TARGETS_REQUIRED_FROM:
+        return
+    chems = [
+        {"item_code": r.item_code, "item_name": r.item_name, "targets": r.get("custom_targets")}
+        for r in (doc.get("required_items") or [])
+    ]
+    validate_chemical_targets(chems, doc.get("custom_targets"))

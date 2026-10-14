@@ -66,3 +66,6 @@ upande_scp.patches.v1_0.drop_scp_dashboard_block
 # Drops the SCP Scout Map custom block. This one was never on the workspace —
 # it rode in on a restored production database and nothing references it.
 upande_scp.patches.v1_0.drop_scp_scout_map_block
+# Work Order Item.custom_targets: which pests / diseases each chemical row of an
+# Application Floor Plan is for, so finance can record instead of guess.
+upande_scp.patches.v1_0.add_work_order_item_targets

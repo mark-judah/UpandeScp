@@ -112,6 +112,8 @@ export interface DraftPayloadChemical {
   uom?: string;
   source_warehouse?: string;
   application_rate?: number;
+  /** pests / diseases this chemical is for (required for chemicals, from the plan's targets) */
+  targets?: string[];
 }
 
 export interface DraftPayloadTeamMember {
@@ -183,6 +185,7 @@ export interface DraftPlanChemical {
   stock_uom?: string;
   source_warehouse?: string;
   application_rate?: number;
+  targets?: string[];
 }
 
 export interface DraftPlanDetail {
@@ -384,5 +387,19 @@ export interface CreatorStockOverview {
 export async function fetchCreatorStockOverview(): Promise<CreatorStockOverview> {
   return call<CreatorStockOverview>(
     "upande_scp.serverscripts.spray_plan_creator.stock.creator_stock_overview",
+  );
+}
+
+
+/** Per chemical: does it need targets, and the unambiguous prefill (see drafts.suggest_chemical_targets). */
+export type ChemicalTargetSuggestions = Record<string, { required: boolean; targets: string[] }>;
+
+export async function suggestChemicalTargets(
+  targets: string[],
+  items: string[],
+): Promise<ChemicalTargetSuggestions> {
+  return call<ChemicalTargetSuggestions>(
+    "upande_scp.serverscripts.spray_plan_creator.drafts.suggest_chemical_targets",
+    { targets: JSON.stringify(targets), items: JSON.stringify(items) },
   );
 }

@@ -1,0 +1,721 @@
+{
+ "ai_t": {
+  "acetamiprid": {
+   "Aphids": 2,
+   "Thrips": 2,
+   "Whiteflies": 2
+  },
+  "ametoctradin": {
+   "Downy Mildew": 1
+  },
+  "azadirachtin": {
+   "Aphids": 1,
+   "Thrips": 1,
+   "Whiteflies": 1
+  },
+  "azoxystrobin": {
+   "Botrytis": 1,
+   "Powdery Mildew": 1
+  },
+  "bacillusthuringiensiskurstaki": {
+   "FCM": 1
+  },
+  "beauveriabassiana": {
+   "Thrips": 1
+  },
+  "boscalid": {
+   "Powdery Mildew": 1
+  },
+  "bupirimate": {
+   "Powdery Mildew": 1
+  },
+  "buprofezin": {
+   "Aphids": 1,
+   "Thrips": 1,
+   "Whiteflies": 1
+  },
+  "chlorfenapyr": {
+   "FCM": 1,
+   "Spidermites": 1,
+   "Thrips": 1
+  },
+  "chrysophanol": {
+   "Agrobacterium": 1,
+   "Powdery Mildew": 1
+  },
+  "copper": {
+   "Downy Mildew": 1
+  },
+  "cymoxanil": {
+   "Downy Mildew": 1
+  },
+  "cyprodinil": {
+   "Botrytis": 1
+  },
+  "difenoconazole": {
+   "Powdery Mildew": 1
+  },
+  "dimethomorph": {
+   "Downy Mildew": 1
+  },
+  "dodemorphacetate": {
+   "Powdery Mildew": 2
+  },
+  "emamectinbenzoate": {
+   "Caterpillars": 1,
+   "FCM": 1,
+   "Helicoverpa": 2,
+   "Spidermites": 1,
+   "Spodoptera": 1,
+   "Thrips": 2
+  },
+  "fenhexamid": {
+   "Botrytis": 1
+  },
+  "flometoquin": {
+   "Thrips": 1
+  },
+  "flonicamid": {
+   "Aphids": 1,
+   "Mealybugs": 1,
+   "Thrips": 1,
+   "Whiteflies": 1
+  },
+  "flubendiamide": {
+   "Caterpillars": 1,
+   "Duponchella": 1,
+   "Helicoverpa": 1,
+   "Spodoptera": 1
+  },
+  "fludioxonil": {
+   "Botrytis": 1
+  },
+  "fluopicolide": {
+   "Downy Mildew": 1
+  },
+  "fluoxastrobin": {
+   "Powdery Mildew": 1
+  },
+  "flupyradifurone": {
+   "Mealybugs": 1,
+   "Thrips": 1
+  },
+  "fluxametamide": {
+   "FCM": 1
+  },
+  "fluxapyroxad": {
+   "Powdery Mildew": 1
+  },
+  "fosetylaluminium": {
+   "Downy Mildew": 1
+  },
+  "garlicextract": {
+   "Caterpillars": 1,
+   "Thrips": 1
+  },
+  "helicoverpaarmigeranucleopolyhedrovirus": {
+   "Helicoverpa": 1
+  },
+  "iprovalicarb": {
+   "Downy Mildew": 1
+  },
+  "kresoximmethyl": {
+   "Powdery Mildew": 1
+  },
+  "lecanicilliummuscarium": {
+   "Whiteflies": 2
+  },
+  "lufenuron": {
+   "FCM": 1,
+   "Helicoverpa": 1,
+   "Spodoptera": 2,
+   "Thrips": 1
+  },
+  "mancozeb": {
+   "Downy Mildew": 1
+  },
+  "mandipropamid": {
+   "Downy Mildew": 1
+  },
+  "metalaxyl": {
+   "Downy Mildew": 1
+  },
+  "metalaxylm": {
+   "Downy Mildew": 1
+  },
+  "methoxyfenozide": {
+   "Caterpillars": 1,
+   "FCM": 1,
+   "Helicoverpa": 1,
+   "Spodoptera": 1
+  },
+  "organosilicone": {
+   "Spidermites": 1
+  },
+  "oxymatrine": {
+   "Aphids": 1,
+   "Spidermites": 1,
+   "Thrips": 1
+  },
+  "polyoxinb": {
+   "Botrytis": 1,
+   "Powdery Mildew": 1
+  },
+  "propamocarbhydrochloride": {
+   "Downy Mildew": 4
+  },
+  "pyrethrins": {
+   "Thrips": 1,
+   "Whiteflies": 1
+  },
+  "pyrimethanil": {
+   "Botrytis": 1
+  },
+  "spinetoram": {
+   "Caterpillars": 1,
+   "FCM": 1,
+   "Helicoverpa": 1,
+   "Spodoptera": 1,
+   "Thrips": 1
+  },
+  "spirotetramat": {
+   "Mealybugs": 1,
+   "Spidermites": 1,
+   "Thrips": 1
+  },
+  "spiroxamine": {
+   "Powdery Mildew": 1
+  },
+  "sulphur": {
+   "Powdery Mildew": 2
+  },
+  "thiocyclam": {
+   "Aphids": 1,
+   "Thrips": 1
+  },
+  "thiosultapmonosodium": {
+   "Aphids": 1,
+   "Thrips": 1,
+   "Whiteflies": 1
+  }
+ },
+ "alias": {
+  "abamectin": "abamectin",
+  "acetamiprid": "acetamiprid",
+  "ametoctradin": "ametoctradin",
+  "azadirachtin": "azadirachtin",
+  "azoxystrobin": "azoxystrobin",
+  "bacillusthuringensis": "bacillusthuringiensiskurstaki",
+  "bacillusthuringiensis": "bacillusthuringiensiskurstaki",
+  "bacillusthuringiensiskurstaki": "bacillusthuringiensiskurstaki",
+  "bas650f": "ametoctradin",
+  "beauveriabassiana": "beauveriabassiana",
+  "boscalid": "boscalid",
+  "btkurstaki": "bacillusthuringiensiskurstaki",
+  "bupirimate": "bupirimate",
+  "buprofezin": "buprofezin",
+  "chlorfemepyr": "chlorfenapyr",
+  "chlorfenapyr": "chlorfenapyr",
+  "chrysophanol": "chrysophanol",
+  "copper": "copper",
+  "copperhydroxide": "copper",
+  "copperoxychloride": "copper",
+  "crlegv": "cryptophlebialeucotretagranulovirus",
+  "crlegvsa": "cryptophlebialeucotretagranulovirus",
+  "cryptophlebialeucotretagranulovirus": "cryptophlebialeucotretagranulovirus",
+  "cymoxanil": "cymoxanil",
+  "cyprodinil": "cyprodinil",
+  "daminozide": "daminozide",
+  "difenoconazole": "difenoconazole",
+  "dimethomorph": "dimethomorph",
+  "dodemorph": "dodemorphacetate",
+  "dodemorphacetate": "dodemorphacetate",
+  "emamectin": "emamectinbenzoate",
+  "emamectinbenzoate": "emamectinbenzoate",
+  "emmamectinbenzoate": "emamectinbenzoate",
+  "enervin": "ametoctradin",
+  "fenhexamid": "fenhexamid",
+  "flometoquin": "flometoquin",
+  "flonicamid": "flonicamid",
+  "flubendiamide": "flubendiamide",
+  "fludioxinil": "fludioxonil",
+  "fludioxonil": "fludioxonil",
+  "fluopicolide": "fluopicolide",
+  "fluoxastrobin": "fluoxastrobin",
+  "flupyradifurone": "flupyradifurone",
+  "fluxametamide": "fluxametamide",
+  "fluxapyroxad": "fluxapyroxad",
+  "fosetyl": "fosetylaluminium",
+  "fosetylal": "fosetylaluminium",
+  "fosetylaluminium": "fosetylaluminium",
+  "hearnpv": "helicoverpaarmigeranucleopolyhedrovirus",
+  "helicoverpaarmigeranucleopolyhedrovirus": "helicoverpaarmigeranucleopolyhedrovirus",
+  "iki220": "flonicamid",
+  "initium": "ametoctradin",
+  "iprovalicarb": "iprovalicarb",
+  "kresoximmethyl": "kresoximmethyl",
+  "lecanicillium": "lecanicilliummuscarium",
+  "lecanicilliummuscarium": "lecanicilliummuscarium",
+  "lufenuron": "lufenuron",
+  "mancozeb": "mancozeb",
+  "mandipropamid": "mandipropamid",
+  "margosaextract": "azadirachtin",
+  "matrine": "oxymatrine",
+  "mefenoxam": "metalaxylm",
+  "metalaxyl": "metalaxyl",
+  "metalaxylm": "metalaxylm",
+  "methoxyfenozide": "methoxyfenozide",
+  "monosultap": "thiosultapmonosodium",
+  "monsaultap": "thiosultapmonosodium",
+  "neem": "azadirachtin",
+  "nicobifen": "boscalid",
+  "organosilicone": "organosilicone",
+  "oxymatrine": "oxymatrine",
+  "polyoxin": "polyoxinb",
+  "polyoxinb": "polyoxinb",
+  "propamocarb": "propamocarbhydrochloride",
+  "propamocarbhcl": "propamocarbhydrochloride",
+  "propamocarbhydrochloride": "propamocarbhydrochloride",
+  "prosuleroxymatrine": "oxymatrine",
+  "pyremethanil": "pyrimethanil",
+  "pyrethrin": "pyrethrins",
+  "pyrethrins": "pyrethrins",
+  "pyrethrum": "pyrethrins",
+  "pyrimethanil": "pyrimethanil",
+  "spinetoram": "spinetoram",
+  "spinosad": "spinosad",
+  "spirotetramat": "spirotetramat",
+  "spiroxamine": "spiroxamine",
+  "sprirotetramat": "spirotetramat",
+  "sulfur": "sulphur",
+  "sulphur": "sulphur",
+  "thiocyclam": "thiocyclam",
+  "thiocyclamhydrogenoxalate": "thiocyclam",
+  "thiosultapmonosodium": "thiosultapmonosodium",
+  "tolclofosmethyl": "tolclofosmethyl",
+  "verticilliumlecanii": "lecanicilliummuscarium"
+ },
+ "kind": {
+  "abamectin": "Insecticide",
+  "acetamiprid": "Insecticide",
+  "ametoctradin": "Fungicide",
+  "azadirachtin": "Insecticide",
+  "azoxystrobin": "Fungicide",
+  "bacillusthuringiensiskurstaki": "Biological",
+  "beauveriabassiana": "Biological",
+  "boscalid": "Fungicide",
+  "bupirimate": "Fungicide",
+  "buprofezin": "Insecticide",
+  "chlorfenapyr": "Insecticide",
+  "chrysophanol": "Fungicide",
+  "copper": "Fungicide",
+  "cryptophlebialeucotretagranulovirus": "Biological",
+  "cymoxanil": "Fungicide",
+  "cyprodinil": "Fungicide",
+  "daminozide": "Plant Growth Regulator",
+  "difenoconazole": "Fungicide",
+  "dimethomorph": "Fungicide",
+  "dodemorphacetate": "Fungicide",
+  "emamectinbenzoate": "Insecticide",
+  "fenhexamid": "Fungicide",
+  "flometoquin": "Insecticide",
+  "flonicamid": "Insecticide",
+  "flubendiamide": "Insecticide",
+  "fludioxonil": "Fungicide",
+  "fluopicolide": "Fungicide",
+  "fluoxastrobin": "Fungicide",
+  "flupyradifurone": "Insecticide",
+  "fluxametamide": "Insecticide",
+  "fluxapyroxad": "Fungicide",
+  "fosetylaluminium": "Fungicide",
+  "helicoverpaarmigeranucleopolyhedrovirus": "Biological",
+  "iprovalicarb": "Fungicide",
+  "kresoximmethyl": "Fungicide",
+  "lecanicilliummuscarium": "Biological",
+  "lufenuron": "Insecticide",
+  "mancozeb": "Fungicide",
+  "mandipropamid": "Fungicide",
+  "metalaxyl": "Fungicide",
+  "metalaxylm": "Fungicide",
+  "methoxyfenozide": "Insecticide",
+  "organosilicone": "Adjuvant",
+  "oxymatrine": "Insecticide",
+  "polyoxinb": "Fungicide",
+  "propamocarbhydrochloride": "Fungicide",
+  "pyrethrins": "Insecticide",
+  "pyrimethanil": "Fungicide",
+  "spinetoram": "Insecticide",
+  "spinosad": "Insecticide",
+  "spirotetramat": "Insecticide",
+  "spiroxamine": "Fungicide",
+  "sulphur": "Fungicide",
+  "thiocyclam": "Insecticide",
+  "thiosultapmonosodium": "Insecticide",
+  "tolclofosmethyl": "Fungicide"
+ },
+ "prod_ai": {
+  "amisil": [
+   "organosilicone"
+  ],
+  "amitiv250sc": [
+   "azoxystrobin"
+  ],
+  "beauvitechbeauveriabassiana250grams": [
+   "beauveriabassiana"
+  ],
+  "belt480sc": [
+   "flubendiamide"
+  ],
+  "bninewsg": [
+   "daminozide"
+  ],
+  "collis30sc": [
+   "boscalid",
+   "kresoximmethyl"
+  ],
+  "dagonis125sc": [
+   "difenoconazole",
+   "fluxapyroxad"
+  ],
+  "delegate250wg": [
+   "spinetoram"
+  ],
+  "disarm": [
+   "fluoxastrobin"
+  ],
+  "emmaron300sc": [
+   "emamectinbenzoate",
+   "lufenuron"
+  ],
+  "evisect": [
+   "thiocyclam"
+  ],
+  "gladius10cs": [
+   "flometoquin"
+  ],
+  "golan20sp": [
+   "acetamiprid"
+  ],
+  "gracia10ec": [
+   "fluxametamide"
+  ],
+  "helitec": [
+   "helicoverpaarmigeranucleopolyhedrovirus"
+  ],
+  "impulseec500": [
+   "spiroxamine"
+  ],
+  "infinitosc6875": [
+   "fluopicolide",
+   "propamocarbhydrochloride"
+  ],
+  "kobe": [
+   "chrysophanol"
+  ],
+  "lecatech250gms": [
+   "lecanicilliummuscarium"
+  ],
+  "lecatech250grams": [
+   "lecanicilliummuscarium"
+  ],
+  "levo24sl": [
+   "oxymatrine"
+  ],
+  "match": [
+   "lufenuron"
+  ],
+  "melodycompact": [
+   "copper",
+   "iprovalicarb"
+  ],
+  "meltatox": [
+   "dodemorphacetate"
+  ],
+  "meltatoxec": [
+   "dodemorphacetate"
+  ],
+  "metaprop": [
+   "metalaxyl",
+   "propamocarbhydrochloride"
+  ],
+  "mospilan": [
+   "acetamiprid"
+  ],
+  "movento": [
+   "spirotetramat"
+  ],
+  "neemrajsuper3000": [
+   "azadirachtin"
+  ],
+  "nemguard": [
+   "garlicextract"
+  ],
+  "nimrod25ec": [
+   "bupirimate"
+  ],
+  "orvego": [
+   "ametoctradin",
+   "dimethomorph"
+  ],
+  "polar50": [
+   "polyoxinb"
+  ],
+  "previcurenergysl840": [
+   "fosetylaluminium",
+   "propamocarbhydrochloride"
+  ],
+  "protap500wp": [
+   "buprofezin",
+   "thiosultapmonosodium"
+  ],
+  "prove": [
+   "emamectinbenzoate"
+  ],
+  "proxanil450sc": [
+   "cymoxanil",
+   "propamocarbhydrochloride"
+  ],
+  "pyretone40ec": [
+   "pyrethrins"
+  ],
+  "revus250sc": [
+   "mandipropamid"
+  ],
+  "ridomilgoldmz68wg": [
+   "mancozeb",
+   "metalaxylm"
+  ],
+  "rizolex50wp": [
+   "tolclofosmethyl"
+  ],
+  "runner240sc": [
+   "methoxyfenozide"
+  ],
+  "scala40sc": [
+   "pyrimethanil"
+  ],
+  "secure36sc": [
+   "chlorfenapyr"
+  ],
+  "sivantoprime": [
+   "flupyradifurone"
+  ],
+  "sulpow500sc": [
+   "sulphur"
+  ],
+  "switch625wg": [
+   "cyprodinil",
+   "fludioxonil"
+  ],
+  "tecaminmax": [
+   "aminoacids"
+  ],
+  "teldor": [
+   "fenhexamid"
+  ],
+  "tepeki": [
+   "flonicamid"
+  ],
+  "thiovitjet": [
+   "sulphur"
+  ],
+  "thuricide": [
+   "bacillusthuringiensiskurstaki"
+  ]
+ },
+ "prods": {
+  "amisil": [
+   "Spidermites"
+  ],
+  "amitiv250sc": [
+   "Botrytis",
+   "Powdery Mildew"
+  ],
+  "beauvitechbeauveriabassiana250grams": [
+   "Thrips"
+  ],
+  "belt480sc": [
+   "Caterpillars",
+   "Duponchella",
+   "Helicoverpa",
+   "Spodoptera"
+  ],
+  "collis30sc": [
+   "Powdery Mildew"
+  ],
+  "crytogranfcm": [
+   "FCM"
+  ],
+  "cyflamid": [
+   "Powdery Mildew"
+  ],
+  "dagonis125sc": [
+   "Powdery Mildew"
+  ],
+  "delegate250wg": [
+   "Caterpillars",
+   "FCM",
+   "Helicoverpa",
+   "Spodoptera",
+   "Thrips"
+  ],
+  "disarm": [
+   "Powdery Mildew"
+  ],
+  "emmaron300sc": [
+   "FCM",
+   "Helicoverpa",
+   "Spodoptera",
+   "Thrips"
+  ],
+  "evisect": [
+   "Aphids",
+   "Thrips"
+  ],
+  "gladius10cs": [
+   "Thrips"
+  ],
+  "golan20sp": [
+   "Aphids",
+   "Thrips",
+   "Whiteflies"
+  ],
+  "gracia10ec": [
+   "FCM"
+  ],
+  "helitec": [
+   "Helicoverpa"
+  ],
+  "impulseec500": [
+   "Powdery Mildew"
+  ],
+  "infinitosc6875": [
+   "Downy Mildew"
+  ],
+  "kobe": [
+   "Agrobacterium",
+   "Powdery Mildew"
+  ],
+  "lecatech250gms": [
+   "Whiteflies"
+  ],
+  "lecatech250grams": [
+   "Whiteflies"
+  ],
+  "levo24sl": [
+   "Aphids",
+   "Spidermites",
+   "Thrips"
+  ],
+  "match": [
+   "Spodoptera"
+  ],
+  "melodycompact": [
+   "Downy Mildew"
+  ],
+  "meltatox": [
+   "Powdery Mildew"
+  ],
+  "meltatoxec": [
+   "Powdery Mildew"
+  ],
+  "metaprop": [
+   "Downy Mildew"
+  ],
+  "mospilan": [
+   "Aphids",
+   "Thrips",
+   "Whiteflies"
+  ],
+  "movento": [
+   "Mealybugs",
+   "Spidermites",
+   "Thrips"
+  ],
+  "neemrajsuper3000": [
+   "Aphids",
+   "Thrips",
+   "Whiteflies"
+  ],
+  "nemguard": [
+   "Caterpillars",
+   "Thrips"
+  ],
+  "nimrod25ec": [
+   "Powdery Mildew"
+  ],
+  "orvego": [
+   "Downy Mildew"
+  ],
+  "polar50": [
+   "Botrytis",
+   "Powdery Mildew"
+  ],
+  "previcurenergysl840": [
+   "Downy Mildew"
+  ],
+  "protap500wp": [
+   "Aphids",
+   "Thrips",
+   "Whiteflies"
+  ],
+  "prove": [
+   "Caterpillars",
+   "Helicoverpa",
+   "Spidermites",
+   "Thrips"
+  ],
+  "proxanil450sc": [
+   "Downy Mildew"
+  ],
+  "pyretone40ec": [
+   "Thrips",
+   "Whiteflies"
+  ],
+  "revus250sc": [
+   "Downy Mildew"
+  ],
+  "ridomilgoldmz68wg": [
+   "Downy Mildew"
+  ],
+  "runner240sc": [
+   "Caterpillars",
+   "FCM",
+   "Helicoverpa",
+   "Spodoptera"
+  ],
+  "scala40sc": [
+   "Botrytis"
+  ],
+  "secure36sc": [
+   "FCM",
+   "Spidermites",
+   "Thrips"
+  ],
+  "sivantoprime": [
+   "Mealybugs",
+   "Thrips"
+  ],
+  "sulpow500sc": [
+   "Powdery Mildew"
+  ],
+  "switch625wg": [
+   "Botrytis"
+  ],
+  "teldor": [
+   "Botrytis"
+  ],
+  "tepeki": [
+   "Aphids",
+   "Mealybugs",
+   "Thrips",
+   "Whiteflies"
+  ],
+  "thiovitjet": [
+   "Powdery Mildew"
+  ],
+  "thuricide": [
+   "FCM"
+  ]
+ }
+}

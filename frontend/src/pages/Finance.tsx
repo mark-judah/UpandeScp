@@ -1,29 +1,38 @@
 /**
- * Finances - crop-protection spend (the actual stock-ledger value of product
- * consumed) by pest / disease, product, greenhouse and period.
+ * Finances - crop-protection spend by pest and disease, through two tunnels.
  *
- * Each product's cost on a plan is attributed to the plan's targets that the
- * product is registered for, split evenly. Cost no target claims is shown as
- * Unattributed - explicitly, as its own line - so the target figures plus the
- * unattributed line always equal the total spend. See serverscripts/reports/finances.py.
+ *  - Through spray plans: only plans that went through to the end (Manufacture + the
+ *    tank mix issued to a greenhouse). Spend is the stock-ledger value of the chemicals
+ *    consumed; the greenhouse is the one the mix was issued to.
+ *  - Direct material issues: issued with no plan, so no greenhouse (shown at farm level).
+ *
+ * Every figure carries its credibility: RECORDED (declared on the plan, solid) or
+ * DERIVED (an estimate, hatched, with its backtested accuracy). Foliar & adjuvants are
+ * reported apart from chemical pest cost, never added into it. See
+ * serverscripts/reports/finance_paths.py.
  */
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { CircleCheck, Info, Leaf, TriangleAlert } from "lucide-react";
+import { CircleCheck, Download, Info, Leaf, TriangleAlert } from "lucide-react";
 import { DatePicker } from "@/components/DatePicker";
 import { FilterSelect } from "@/components/FilterSelect";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MultiFilterSelect } from "@/components/MultiFilterSelect";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { LoadProgress, TableRowsSkeleton } from "@/components/Loading";
 import { Table, TableBody } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  fetchChemicalCostByTarget,
+  credibilityLabel,
+  fetchPestAttribution,
   fetchSuggestedRegistrations,
+  pestAttributionExportUrl,
   registerProductTargets,
-  type AllocationBasis,
-  type ChemicalCostReport,
+  type PathBlock,
+  type PathFilter,
+  type PathKey,
+  type PestAttributionReport,
   type SuggestedRegistration,
-  type UnattributedReason,
 } from "@/lib/finance-api";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,73 +51,435 @@ function monthStart(): string {
   return ymd(new Date(d.getFullYear(), d.getMonth(), 1));
 }
 
-const KIND_LABEL: Record<string, string> = { chemical: "Chemicals", foliar: "Foliars" };
-const REASON_LABEL: Record<UnattributedReason, string> = {
-  no_plan: "Issued with no plan or no targets",
+const PATH_OPTIONS: Record<string, PathFilter> = {
+  "Spray plan": "spray",
+  "Direct issue": "direct",
+  Both: "both",
 };
-const BASIS_LABEL: Record<AllocationBasis, string> = {
-  registered: "Registered for the target",
-  ai_class: "Active-ingredient class (IRAC / FRAC)",
-  history: "Usage history (180 days)",
-  nutrition: "Crop nutrition & adjuvants",
-  equal: "Equal split",
-  unattributed: "Unattributed",
-};
-const BASIS_HINT: Record<AllocationBasis, string> = {
-  registered: "the product is registered for a target on the plan",
-  ai_class: "its mode-of-action class fits only some of the plan's targets",
-  history: "split by where the product has been used, from the last 180 days of plans",
-  nutrition: "foliars, adjuvants and pH buffers are not crop protection",
-  equal: "nothing else is known, so shared equally across the plan's targets",
-  unattributed: "issued with no plan or no targets",
+const PATH_TITLE: Record<PathKey, string> = {
+  spray: "Through spray plans",
+  direct: "Direct material issues",
 };
 /** Roles that may write registrations (matches the server's GM / System Manager gate). */
 const CAN_REGISTER = ["General Manager", "SCP General Manager", "System Manager", "Administrator"];
 /** Bounded scroll box for long tables: the page itself never grows with the data. */
 const BOX = "max-h-[28rem] overflow-auto";
+const TH = "sticky top-0 z-10 bg-card text-[0.7rem] uppercase tracking-wide text-muted-foreground border-b";
+/** Hatched fill: how a DERIVED (estimated) amount is drawn, against the solid RECORDED one. */
+const HATCH = {
+  backgroundImage:
+    "repeating-linear-gradient(135deg, hsl(var(--primary) / 0.55) 0 3px, hsl(var(--primary) / 0.12) 3px 6px)",
+};
 
-/** Horizontal share bar; the unattributed portion is drawn muted beside it. */
-function ShareBar({ part, total, muted }: { part: number; total: number; muted?: boolean }) {
-  const pct = total > 0 ? Math.max(0, Math.min(100, (part / total) * 100)) : 0;
+/** A stacked share bar: recorded solid, derived hatched, unattributed muted. */
+function CredBar({
+  recorded,
+  derived,
+  other = 0,
+  total,
+}: {
+  recorded: number;
+  derived: number;
+  other?: number;
+  total: number;
+}) {
+  const w = (x: number) => `${total > 0 ? Math.max(0, Math.min(100, (x / total) * 100)) : 0}%`;
   return (
-    <div className="h-2 w-full min-w-24 rounded-full bg-muted" aria-hidden>
-      <div
-        className={`h-2 rounded-full ${muted ? "bg-muted-foreground/40" : "bg-primary"}`}
-        style={{ width: `${pct}%` }}
-      />
+    <div className="flex h-2 w-full min-w-24 overflow-hidden rounded-full bg-muted" aria-hidden>
+      <div className="h-2 bg-primary" style={{ width: w(recorded) }} data-seg="recorded" />
+      <div className="h-2" style={{ ...HATCH, width: w(derived) }} data-seg="derived" />
+      <div className="h-2 bg-muted-foreground/40" style={{ width: w(other) }} data-seg="other" />
     </div>
   );
 }
 
-const TH = "sticky top-0 z-10 bg-card text-[0.7rem] uppercase tracking-wide text-muted-foreground border-b";
+/** "est. 89%" tag for a derived figure, with the explanation on hover. */
+function EstTag({ accuracy, hint }: { accuracy: number | null; hint?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="ml-1.5 cursor-help rounded-full border border-dashed px-1.5 py-px text-[0.6rem] font-normal uppercase tracking-wide text-muted-foreground">
+          est.{accuracy != null ? ` ${Math.round(accuracy * 100)}%` : ""}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs text-xs">
+        {hint ||
+          (accuracy != null
+            ? `Derived, not declared on the plan. Backtested accuracy about ${Math.round(accuracy * 100)}%.`
+            : "Derived, not declared on the plan. This basis has not been backtested.")}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
-export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
+function PathSection({
+  block,
+  report,
+  money,
+  perProduct,
+}: {
+  block: PathBlock;
+  report: PestAttributionReport;
+  money: (n: number) => string;
+  perProduct: boolean;
+}) {
+  const pct = (x: number) => `${(x * 100).toFixed(x > 0 && x < 0.1 ? 1 : 0)}%`;
+  const c = block.chemical;
+  const total = block.total;
+  const isDirect = block.path === "direct";
+  const chemTotal = c.total || 0;
+  return (
+    <section className="flex flex-col gap-4" aria-label={PATH_TITLE[block.path]}>
+      <div>
+        <h2 className="text-lg font-semibold">{PATH_TITLE[block.path]}</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {isDirect
+            ? block.explain
+            : `${block.plans_completed ?? 0} completed plans. Only plans that were manufactured and issued to a greenhouse count.`}
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-1">
+            <CardDescription>Total</CardDescription>
+            <CardTitle className="text-xl tabular-nums">{money(total)}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            {isDirect && block.by_source
+              ? `From a Material Request ${money(block.by_source.from_material_request)} · no request ${money(block.by_source.no_material_request)}`
+              : block.in_progress && block.in_progress.plans > 0
+                ? `Not counted: ${block.in_progress.plans} plans in progress / not issued, ${money(block.in_progress.value)}`
+                : "Chemicals plus foliar & adjuvants"}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-1">
+            <CardDescription>Recorded on the plan</CardDescription>
+            <CardTitle className="text-xl tabular-nums">{money(c.recorded)}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            Declared per chemical, 100% credible
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-1">
+            <CardDescription>
+              Derived
+              <EstTag accuracy={c.derived_accuracy} />
+            </CardDescription>
+            <CardTitle className="text-xl tabular-nums">{money(c.derived)}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            {c.derived_accuracy != null
+              ? `Spend-weighted estimated accuracy ${Math.round(c.derived_accuracy * 100)}%`
+              : "Estimated from ingredients and history"}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-1">
+            <CardDescription className="flex items-center gap-1.5">
+              <TriangleAlert className="h-3.5 w-3.5 text-amber-600 dark:text-amber-500" />
+              Unattributed
+            </CardDescription>
+            <CardTitle className="text-xl tabular-nums">{money(c.unattributed)}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            {chemTotal ? pct(c.unattributed / chemTotal) : "0%"} of chemical spend
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">How the spend was assigned</CardTitle>
+          <CardDescription>
+            Spend by basis. Hover a basis for how far to trust it; derived figures are estimates.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-x-6 gap-y-2 sm:grid-cols-2" data-testid={`basis-${block.path}`}>
+          {block.by_basis.length === 0 ? (
+            <span className="text-sm text-muted-foreground">Nothing in this period.</span>
+          ) : null}
+          {block.by_basis.map((b) => {
+            const cred = credibilityLabel(b.basis, block.path, report.accuracy);
+            return (
+              <div key={b.basis} className="min-w-0">
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <span className="flex min-w-0 items-center truncate">
+                    <span className="truncate">{cred.label}</span>
+                    {cred.kind === "derived" ? <EstTag accuracy={cred.accuracy} /> : null}
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {money(b.value)} · {pct(b.share)}
+                  </span>
+                </div>
+                <CredBar
+                  recorded={cred.kind === "recorded" ? b.value : 0}
+                  derived={cred.kind === "derived" ? b.value : 0}
+                  other={cred.kind === "recorded" || cred.kind === "derived" ? 0 : b.value}
+                  total={total}
+                />
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Chemical spend by pest and disease</CardTitle>
+          <CardDescription className="flex items-start gap-1.5">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            Solid is recorded on the plan; hatched is derived (estimated). Foliar &amp; adjuvants are listed
+            separately below and never added to these rows.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className={`${BOX} p-0`}>
+          <table className="w-full border-collapse text-sm">
+            <thead className={TH}>
+              <tr>
+                <th className="px-3 py-2 text-left">Pest / disease</th>
+                <th className="w-1/4 px-3 py-2 text-left">Recorded vs derived</th>
+                <th className="px-3 py-2 text-right">Recorded</th>
+                <th className="px-3 py-2 text-right">Derived</th>
+                <th className="px-3 py-2 text-right">Total</th>
+                <th className="px-3 py-2 text-right">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {c.by_pest.map((t) => (
+                <tr key={t.target} className="border-b hover:bg-muted/40">
+                  <td className="px-3 py-2 align-top">
+                    <div className="flex items-center gap-1.5 font-medium">
+                      {t.target}
+                      {t.kind ? (
+                        <span className="text-[0.65rem] font-normal uppercase tracking-wide text-muted-foreground">
+                          {t.kind}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {t.products
+                        .slice(0, 3)
+                        .map((p) => `${p.item_name} ${money(p.value)}`)
+                        .join(" · ")}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <CredBar recorded={t.recorded} derived={t.derived} total={chemTotal} />
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{t.recorded ? money(t.recorded) : "-"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {t.derived ? (
+                      <>
+                        {money(t.derived)}
+                        <EstTag accuracy={t.est_accuracy} />
+                      </>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium tabular-nums">{money(t.value)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{pct(t.share)}</td>
+                </tr>
+              ))}
+              <tr className="border-b bg-muted/30">
+                <td className="px-3 py-2 align-top">
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <TriangleAlert className="h-3.5 w-3.5 text-amber-600 dark:text-amber-500" />
+                    Unattributed
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {isDirect
+                      ? "Issued with no plan, and nothing known about the product to tie it to a pest"
+                      : "The plan has no targets"}
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <CredBar recorded={0} derived={0} other={c.unattributed} total={chemTotal} />
+                </td>
+                <td className="px-3 py-2" />
+                <td className="px-3 py-2" />
+                <td className="px-3 py-2 text-right font-medium tabular-nums">{money(c.unattributed)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {chemTotal ? pct(c.unattributed / chemTotal) : "0%"}
+                </td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr className="font-semibold">
+                <td className="px-3 py-2">Chemical spend</td>
+                <td />
+                <td className="px-3 py-2 text-right tabular-nums">{money(c.recorded)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{money(c.derived)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{money(chemTotal)}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Leaf className="h-4 w-4 text-emerald-600 dark:text-emerald-500" />
+            Foliar &amp; adjuvants
+          </CardTitle>
+          <CardDescription>
+            {isDirect
+              ? "Foliar — not target-specific. Issued with no plan, so it is not split."
+              : "Foliar (equal split) across each plan's targets. Reported apart from chemical pest cost."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className={`${BOX} p-0`}>
+          <table className="w-full border-collapse text-sm">
+            <tbody>
+              {block.foliar.by_target.map((t) => (
+                <tr key={t.target} className="border-b hover:bg-muted/40">
+                  <td className="px-3 py-2">{t.target}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{money(t.value)}</td>
+                </tr>
+              ))}
+              {block.foliar.farm_level ? (
+                <tr className="border-b">
+                  <td className="px-3 py-2">Foliar &mdash; not target-specific</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{money(block.foliar.farm_level)}</td>
+                </tr>
+              ) : null}
+              {!block.foliar.by_target.length && !block.foliar.farm_level ? (
+                <tr>
+                  <td className="px-3 py-3 text-muted-foreground">No foliar or adjuvant spend.</td>
+                </tr>
+              ) : null}
+            </tbody>
+            <tfoot>
+              <tr className="font-semibold">
+                <td className="px-3 py-2">Foliar &amp; adjuvants</td>
+                <td className="px-3 py-2 text-right tabular-nums">{money(block.foliar.total)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </CardContent>
+      </Card>
+
+      {perProduct && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">By product</CardTitle>
+          </CardHeader>
+          <CardContent className={`${BOX} p-0`}>
+            <table className="w-full border-collapse text-sm">
+              <thead className={TH}>
+                <tr>
+                  <th className="px-3 py-2 text-left">Product</th>
+                  <th className="px-3 py-2 text-left">Attributed to</th>
+                  {isDirect ? <th className="px-3 py-2 text-right">From a request</th> : null}
+                  <th className="px-3 py-2 text-right">Spend</th>
+                </tr>
+              </thead>
+              <tbody>
+                {block.by_product.map((p) => (
+                  <tr key={p.item_code} className="border-b last:border-0 hover:bg-muted/40">
+                    <td className="px-3 py-2">
+                      <span className="font-medium">{p.item_name}</span>{" "}
+                      <span className="font-mono text-xs text-muted-foreground">{p.item_code}</span>
+                      {p.foliar ? <span className="ml-1.5 text-[0.65rem] uppercase text-muted-foreground">foliar</span> : null}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                      {p.targets.map((t) => `${t.target} ${money(t.value)}`).join(" · ") || "-"}
+                    </td>
+                    {isDirect ? <td className="px-3 py-2 text-right tabular-nums">{money(p.from_mr)}</td> : null}
+                    <td className="px-3 py-2 text-right font-medium tabular-nums">{money(p.value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">By greenhouse</CardTitle>
+          <CardDescription>
+            {isDirect
+              ? "These issues name no greenhouse, so the spend is shown at farm level with its cost centre."
+              : "The greenhouse the tank mix was issued to."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className={`${BOX} p-0`}>
+          <table className="w-full border-collapse text-sm">
+            <thead className={TH}>
+              <tr>
+                <th className="px-3 py-2 text-left">Farm</th>
+                <th className="px-3 py-2 text-left">{isDirect ? "Where" : "Greenhouse"}</th>
+                <th className="px-3 py-2 text-left">Cost centre</th>
+                <th className="px-3 py-2 text-right">Chemical</th>
+                <th className="px-3 py-2 text-right">Foliar</th>
+                <th className="px-3 py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {block.by_greenhouse.map((p, i) => (
+                <tr key={`${p.farm}-${p.greenhouse}-${p.cost_center}-${i}`} className="border-b last:border-0 hover:bg-muted/40">
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{p.farm || "-"}</td>
+                  <td className="px-3 py-2 font-medium">{p.greenhouse}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{p.cost_center || "-"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{money(p.chemical)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{money(p.foliar)}</td>
+                  <td className="px-3 py-2 text-right font-medium tabular-nums">{money(p.value)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+export function Finance({ initialCrop: _initialCrop }: { initialCrop?: string } = {}) {
   const [from, setFrom] = useState<string>(monthStart);
   const [to, setTo] = useState<string>(() => ymd(new Date()));
-  const [farm, setFarm] = useState("");
-  const [data, setData] = useState<ChemicalCostReport | null>(null);
+  const [pathLabel, setPathLabel] = useState("Both");
+  const [pests, setPests] = useState<string[]>([]);
+  const [greenhouse, setGreenhouse] = useState("");
+  const [perProduct, setPerProduct] = useState(false);
+  const [data, setData] = useState<PestAttributionReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const path = PATH_OPTIONS[pathLabel] ?? "both";
+  const filters = useMemo(() => ({ from, to, path, pests, greenhouse }), [from, to, path, pests, greenhouse]);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setError(null);
-    fetchChemicalCostByTarget(from, to, { farm, crop: initialCrop })
+    fetchPestAttribution(filters)
       .then((d) => alive && setData(d))
       .catch((e) => alive && setError(e?.message || "Failed to load finances"))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [from, to, farm, initialCrop]);
+  }, [filters]);
+
+  // Pest and greenhouse options come from the unfiltered view, so a filter never hides its own choices.
+  const [pestOptions, setPestOptions] = useState<string[]>([]);
+  const [ghOptions, setGhOptions] = useState<string[]>([]);
+  useEffect(() => {
+    if (!data) return;
+    setPestOptions((prev) => [...new Set([...prev, ...data.pest_options, "Foliar"])].sort());
+    setGhOptions((prev) => [...new Set([...prev, ...data.greenhouse_options])].sort());
+  }, [data]);
 
   const money = useMemo(() => {
     const cur = data?.currency || "KES";
     const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
     return (n: number) => (n ? `${cur} ${fmt.format(Math.round(n))}` : "-");
   }, [data?.currency]);
-  const pct = (x: number) => `${(x * 100).toFixed(x > 0 && x < 0.1 ? 1 : 0)}%`;
 
   const canRegister = (bootstrap().roles || []).some((r: string) => CAN_REGISTER.includes(r));
   const [suggested, setSuggested] = useState<SuggestedRegistration[]>([]);
@@ -137,384 +508,131 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
       setRegistering(false);
     }
   }
+  const pct = (x: number) => `${(x * 100).toFixed(x > 0 && x < 0.1 ? 1 : 0)}%`;
 
-  // Farm options come from the unfiltered view the first time it loads.
-  const [farmOptions, setFarmOptions] = useState<string[]>([]);
-  useEffect(() => {
-    if (data && !farm) setFarmOptions([...new Set(data.by_place.map((p) => p.farm))].sort());
-  }, [data, farm]);
-
-  const unattributedByReason = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const u of data?.unattributed || []) out[u.reason] = (out[u.reason] || 0) + u.value;
-    return out;
-  }, [data]);
-
-  const total = data?.grand_total || 0;
-  const hasData = !!data && total > 0;
-  const periodMax = Math.max(0, ...(data?.by_period || []).map((p) => p.value));
-  const empty = !loading && !error && !hasData;
+  const blocks = data ? ([data.spray, data.direct].filter(Boolean) as PathBlock[]) : [];
+  const hasData = !!data && data.combined.total > 0;
+  const empty = !loading && !error && data && !hasData;
+  const c = data?.combined;
 
   return (
-    <div className="flex min-h-svh w-full min-w-0 flex-col">
-      <PageHeader
-        eyebrow={<>Crop-protection spend, stock-ledger actuals, by pest and disease</>}
-        title={<>Finances</>}
-      />
-      {/* Filters stay pinned while the report scrolls beneath. */}
-      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur md:px-6">
-        <DatePicker value={from} onChange={setFrom} />
-        <DatePicker value={to} onChange={setTo} />
-        <FilterSelect
-          label="Farm"
-          value={farm}
-          onChange={setFarm}
-          options={farmOptions}
-          allLabel="All farms"
+    <TooltipProvider delayDuration={150}>
+      <div className="flex min-h-svh w-full min-w-0 flex-col">
+        <PageHeader
+          eyebrow={<>Crop-protection spend, stock-ledger actuals, by pest and disease</>}
+          title={<>Finances</>}
         />
-      </div>
+        {/* Filters stay pinned while the report scrolls beneath. */}
+        <div className="sticky top-0 z-30 flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur md:px-6">
+          <DatePicker value={from} onChange={setFrom} />
+          <DatePicker value={to} onChange={setTo} />
+          <FilterSelect label="Path" value={pathLabel} onChange={(v) => setPathLabel(v || "Both")} options={Object.keys(PATH_OPTIONS)} />
+          <MultiFilterSelect label="Pests" values={pests} onChange={setPests} options={pestOptions} allLabel="All pests" />
+          <FilterSelect
+            label="Greenhouse"
+            value={greenhouse}
+            onChange={setGreenhouse}
+            options={ghOptions}
+            allLabel="All greenhouses"
+          />
+          <label className="flex cursor-pointer items-center gap-2 text-xs">
+            <Checkbox checked={perProduct} onCheckedChange={(v) => setPerProduct(v === true)} aria-label="Breakdown per product" />
+            Breakdown per product
+          </label>
+          <Button asChild size="sm" variant="outline" className="ml-auto rounded-full">
+            <a href={pestAttributionExportUrl(filters, perProduct)} download>
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Export Excel
+            </a>
+          </Button>
+        </div>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
-        <LoadProgress active={loading} label="Reading the stock ledger" />
+        <div className="flex min-w-0 flex-1 flex-col gap-8 px-4 py-4 md:px-6 md:py-6">
+          <LoadProgress active={loading} label="Reading the stock ledger" />
 
-        {error ? (
-          <Card>
-            <CardContent className="py-8 text-center text-sm text-destructive">{error}</CardContent>
-          </Card>
-        ) : null}
-
-        {data && (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {error ? (
             <Card>
-              <CardHeader className="pb-1">
-                <CardDescription>Total spend</CardDescription>
-                <CardTitle className="text-xl tabular-nums">{money(data.grand_total)}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                {(["chemical", "foliar"] as const)
-                  .filter((k) => data.totals_by_kind?.[k])
-                  .map((k) => `${KIND_LABEL[k]} ${money(data.totals_by_kind[k])}`)
-                  .join(" · ") || "-"}
+              <CardContent className="py-8 text-center text-sm text-destructive">{error}</CardContent>
+            </Card>
+          ) : null}
+
+          {data?.notes.map((n) => (
+            <div key={n} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {n}
+            </div>
+          ))}
+
+          {loading && !data ? (
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableBody>
+                    <TableRowsSkeleton rows={6} cols={4} />
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
+          ) : null}
+
+          {empty ? (
             <Card>
-              <CardHeader className="pb-1">
-                <CardDescription>Attributed to a pest or disease</CardDescription>
-                <CardTitle className="text-xl tabular-nums">{money(data.attributed_total)}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                {pct(total ? data.attributed_total / total : 0)} of spend
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                No product consumed in this period.
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader className="pb-1">
-                <CardDescription className="flex items-center gap-1.5">
-                  <TriangleAlert className="h-3.5 w-3.5 text-amber-600 dark:text-amber-500" />
-                  Unattributed
-                </CardDescription>
-                <CardTitle className="text-xl tabular-nums">{money(data.unattributed_total)}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                {pct(data.unattributed_share)} of spend
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-1">
-                <CardDescription className="flex items-center gap-1.5">
-                  <CircleCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-500" />
-                  Reconciles
-                </CardDescription>
-                <CardTitle className="text-xl tabular-nums">
-                  {Math.abs(data.reconciliation.difference) < 0.05 ? "To the cent" : money(data.reconciliation.difference)}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                targets + unattributed = total
-                {data.ledger_fallback_lines ? ` · ${data.ledger_fallback_lines} lines priced from the entry, not the ledger` : ""}
-              </CardContent>
-            </Card>
-          </div>
-        )}
+          ) : null}
 
-        {loading && !data ? (
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableBody>
-                  <TableRowsSkeleton rows={6} cols={4} />
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {empty && data ? (
-          <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              No product consumed in this period.
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {hasData && data && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">How the spend was assigned</CardTitle>
-              <CardDescription>
-                Each product line goes to the first rule that applies. Shares always add up to the total.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-              {data.by_basis.map((b) => (
-                <div key={b.basis} className="min-w-0" title={BASIS_HINT[b.basis]}>
-                  <div className="flex items-baseline justify-between gap-2 text-sm">
-                    <span className="truncate">{BASIS_LABEL[b.basis]}</span>
-                    <span className="tabular-nums text-muted-foreground">
-                      {money(b.value)} · {pct(b.share)}
-                    </span>
-                  </div>
-                  <ShareBar part={b.value} total={total} muted={b.basis === "unattributed"} />
-                </div>
+          {hasData && data && c && (
+            <>
+              {blocks.map((b) => (
+                <PathSection key={b.path} block={b} report={data} money={money} perProduct={perProduct} />
               ))}
-            </CardContent>
-          </Card>
-        )}
 
-        {hasData && data && (
-          <Tabs defaultValue="target" className="flex flex-col gap-4">
-            <TabsList className="self-start">
-              <TabsTrigger value="target">By pest / disease</TabsTrigger>
-              <TabsTrigger value="product">By product</TabsTrigger>
-              <TabsTrigger value="place">By greenhouse</TabsTrigger>
-              <TabsTrigger value="period">By {data.granularity}</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="target" className="mt-0 flex flex-col gap-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Spend by pest and disease</CardTitle>
-                  <CardDescription className="flex items-start gap-1.5">
-                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    A product&apos;s cost on a plan is shared evenly across the plan&apos;s targets
-                    that the product is registered for. Cost no target claims is the Unattributed line.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className={`${BOX} p-0`}>
-                  <table className="w-full border-collapse text-sm">
-                    <thead className={TH}>
-                      <tr>
-                        <th className="px-3 py-2 text-left">Pest / disease</th>
-                        <th className="w-1/3 px-3 py-2 text-left">Share of spend</th>
-                        <th className="px-3 py-2 text-right">Houses</th>
-                        <th className="px-3 py-2 text-right">Spend</th>
-                        <th className="px-3 py-2 text-right">%</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.cost_per_target.map((t) => (
-                        <tr key={t.target} className="border-b hover:bg-muted/40">
-                          <td className="px-3 py-2 align-top">
-                            <div className="flex items-center gap-1.5 font-medium">
-                              {t.kind === "nutrition" ? <Leaf className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-500" /> : null}
-                              {t.target}
-                              {t.kind === "pest" || t.kind === "disease" ? (
-                                <span className="text-[0.65rem] font-normal uppercase tracking-wide text-muted-foreground">{t.kind}</span>
-                              ) : null}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {(Object.entries(t.basis) as [AllocationBasis, number][])
-                                .sort((x, y) => y[1] - x[1])
-                                .map(([bk, v]) => `${BASIS_LABEL[bk].split(" (")[0].toLowerCase()} ${money(v)}`)
-                                .join(" · ")}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {t.products
-                                .slice(0, 3)
-                                .map((p) => `${p.item_name} ${money(p.value)}`)
-                                .join(" · ")}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2">
-                            <ShareBar part={t.value} total={total} />
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">{t.houses}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{money(t.value)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{pct(t.share)}</td>
-                        </tr>
-                      ))}
-                      <tr className="border-b bg-muted/30">
-                        <td className="px-3 py-2 align-top">
-                          <div className="flex items-center gap-1.5 font-medium">
-                            <TriangleAlert className="h-3.5 w-3.5 text-amber-600 dark:text-amber-500" />
-                            Unattributed
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {(Object.keys(unattributedByReason) as UnattributedReason[])
-                              .map((r) => `${REASON_LABEL[r]}: ${money(unattributedByReason[r])}`)
-                              .join(" · ")}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <ShareBar part={data.unattributed_total} total={total} muted />
-                        </td>
-                        <td className="px-3 py-2" />
-                        <td className="px-3 py-2 text-right tabular-nums">{money(data.unattributed_total)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{pct(data.unattributed_share)}</td>
-                      </tr>
-                    </tbody>
-                    <tfoot>
-                      <tr className="font-semibold">
-                        <td className="px-3 py-2">Total spend</td>
-                        <td />
-                        <td />
-                        <td className="px-3 py-2 text-right tabular-nums">{money(total)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">100%</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </CardContent>
-              </Card>
-
-              {data.farms.map((f) => (
-                <Card key={f.farm}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">{f.farm}: greenhouse by target</CardTitle>
-                    <CardDescription className="tabular-nums">
-                      {money(f.total)} attributed. Each greenhouse&apos;s remainder is on the greenhouse tab.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className={`${BOX} p-0`}>
-                    <table className="w-full border-collapse text-sm">
-                      <thead className={TH}>
-                        <tr>
-                          <th className="px-3 py-2 text-left">Greenhouse</th>
-                          <th className="px-3 py-2 text-left">Kind</th>
-                          {f.targets.map((t) => (
-                            <th key={t} className="whitespace-nowrap px-3 py-2 text-right">{t}</th>
-                          ))}
-                          <th className="px-3 py-2 text-right font-semibold">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {f.rows.map((r) => (
-                          <tr key={`${r.greenhouse}-${r.kind}`} className="border-b last:border-0 hover:bg-muted/40">
-                            <td className="whitespace-nowrap px-3 py-2 font-medium">{r.greenhouse}</td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground">{KIND_LABEL[r.kind] || r.kind}</td>
-                            {f.targets.map((t) => (
-                              <td key={t} className="px-3 py-2 text-right tabular-nums">
-                                {r.costs[t] ? money(r.costs[t]) : <span className="text-muted-foreground/40">-</span>}
-                              </td>
-                            ))}
-                            <td className="px-3 py-2 text-right font-semibold tabular-nums">{money(r.total)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-              ))}
-            </TabsContent>
-
-            <TabsContent value="product" className="mt-0">
-              <Card>
-                <CardContent className={`${BOX} p-0`}>
-                  <table className="w-full border-collapse text-sm">
-                    <thead className={TH}>
-                      <tr>
-                        <th className="px-3 py-2 text-left">Product</th>
-                        <th className="px-3 py-2 text-left">Kind</th>
-                        <th className="px-3 py-2 text-left">Attributed to</th>
-                        <th className="px-3 py-2 text-right">Unattributed</th>
-                        <th className="px-3 py-2 text-right">Spend</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.by_product.map((p) => (
-                        <tr key={p.item_code} className="border-b last:border-0 hover:bg-muted/40">
-                          <td className="px-3 py-2">
-                            <span className="font-medium">{p.item_name}</span>{" "}
-                            <span className="font-mono text-xs text-muted-foreground">{p.item_code}</span>
-                          </td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground">{KIND_LABEL[p.kind] || p.kind}</td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground">
-                            {p.targets.map((t) => `${t.target} ${money(t.value)}`).join(" · ") || "-"}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">{money(p.unattributed)}</td>
-                          <td className="px-3 py-2 text-right font-medium tabular-nums">{money(p.value)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="place" className="mt-0">
-              <Card>
-                <CardContent className={`${BOX} p-0`}>
-                  <table className="w-full border-collapse text-sm">
-                    <thead className={TH}>
-                      <tr>
-                        <th className="px-3 py-2 text-left">Farm</th>
-                        <th className="px-3 py-2 text-left">Greenhouse</th>
-                        <th className="w-1/4 px-3 py-2 text-left">Share of spend</th>
-                        <th className="px-3 py-2 text-right">Attributed</th>
-                        <th className="px-3 py-2 text-right">Unattributed</th>
-                        <th className="px-3 py-2 text-right">Spend</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.by_place.map((p) => (
-                        <tr key={`${p.farm}-${p.greenhouse}`} className="border-b last:border-0 hover:bg-muted/40">
-                          <td className="px-3 py-2 text-xs text-muted-foreground">{p.farm}</td>
-                          <td className="whitespace-nowrap px-3 py-2 font-medium">{p.greenhouse}</td>
-                          <td className="px-3 py-2"><ShareBar part={p.value} total={total} /></td>
-                          <td className="px-3 py-2 text-right tabular-nums">{money(p.attributed)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{money(p.unattributed)}</td>
-                          <td className="px-3 py-2 text-right font-medium tabular-nums">{money(p.value)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="period" className="mt-0">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">
-                    Spend per {data.granularity === "week" ? "week (starting Monday)" : "month"}
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <CircleCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-500" />
+                    Combined total
                   </CardTitle>
+                  <CardDescription>Both paths added together, checked against the Stock Ledger.</CardDescription>
                 </CardHeader>
-                <CardContent className={`${BOX} p-0`}>
+                <CardContent className="p-0">
                   <table className="w-full border-collapse text-sm">
-                    <thead className={TH}>
-                      <tr>
-                        <th className="px-3 py-2 text-left">{data.granularity === "week" ? "Week of" : "Month"}</th>
-                        <th className="w-1/3 px-3 py-2 text-left">Spend</th>
-                        <th className="px-3 py-2 text-right">Attributed</th>
-                        <th className="px-3 py-2 text-right">Unattributed</th>
-                        <th className="px-3 py-2 text-right">Total</th>
-                      </tr>
-                    </thead>
                     <tbody>
-                      {data.by_period.map((p) => (
-                        <tr key={p.period} className="border-b last:border-0 hover:bg-muted/40">
-                          <td className="whitespace-nowrap px-3 py-2 font-medium">{p.period}</td>
-                          <td className="px-3 py-2"><ShareBar part={p.value} total={periodMax} /></td>
-                          <td className="px-3 py-2 text-right tabular-nums">{money(p.attributed)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{money(p.unattributed)}</td>
-                          <td className="px-3 py-2 text-right font-medium tabular-nums">{money(p.value)}</td>
+                      {blocks.map((b) => (
+                        <tr key={b.path} className="border-b">
+                          <td className="px-3 py-2">{PATH_TITLE[b.path]}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{money(b.total)}</td>
                         </tr>
                       ))}
+                      <tr className="border-b font-semibold">
+                        <td className="px-3 py-2">Total</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{money(c.total)}</td>
+                      </tr>
+                      {c.ledger_total != null ? (
+                        <tr className="border-b">
+                          <td className="px-3 py-2">Stock Ledger</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{money(c.ledger_total)}</td>
+                        </tr>
+                      ) : null}
+                      {c.ledger_difference != null ? (
+                        <tr>
+                          <td className="px-3 py-2 text-muted-foreground">
+                            Difference (cent rounding per line)
+                            {c.fallback_lines ? ` · ${c.fallback_lines} lines priced from the entry, not the ledger` : ""}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {Math.abs(c.ledger_difference) < 0.5 ? "Reconciles" : money(c.ledger_difference)}
+                          </td>
+                        </tr>
+                      ) : null}
                     </tbody>
                   </table>
                 </CardContent>
               </Card>
-            </TabsContent>
-          </Tabs>
-        )}
+            </>
+          )}
 
         {canRegister && suggested.length > 0 && (
           <Card>
@@ -577,34 +695,8 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
           </DialogContent>
         </Dialog>
 
-        {data && data.no_valuation.length > 0 && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <TriangleAlert className="h-4 w-4 text-amber-600 dark:text-amber-500" />
-                Consumed with no value ({data.no_valuation.length} lines)
-              </CardTitle>
-              <CardDescription>
-                These lines have no valuation in the stock ledger, so they count as zero above.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className={`${BOX} p-0`}>
-              <table className="w-full border-collapse text-sm">
-                <tbody>
-                  {data.no_valuation.slice(0, 100).map((l, i) => (
-                    <tr key={`${l.stock_entry}-${l.item_code}-${i}`} className="border-b last:border-0">
-                      <td className="px-3 py-2">{l.item_name}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{l.stock_entry}</td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">{l.posting_date}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{l.qty} {l.uom}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-        )}
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }

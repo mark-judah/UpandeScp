@@ -25,6 +25,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
+import { MultiFilterSelect } from "@/components/MultiFilterSelect";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/DatePicker";
@@ -73,6 +74,7 @@ import {
   createDraftSprayPlan,
   fetchCreatorBootstrap,
   type CreatorBootstrap,
+  suggestChemicalTargets,
 } from "@/lib/spray-plan-creator-api";
 import { DraftBatchPanel } from "@/components/spray-plan/DraftBatchPanel";
 import { SprayPlanCompliance } from "@/components/spray-plan/SprayPlanCompliance";
@@ -201,6 +203,9 @@ interface ChemRow extends BomChemical {
    *  from this rate as ``rate × waterVolumeL / 1000`` and is never
    *  edited directly. */
   rate: number;
+  /** Pests / diseases this chemical is for. Recorded on the plan (Work Order Item.custom_targets);
+   *  required for chemicals, not for foliars. `undefined` until the operator or the prefill sets it. */
+  targets?: string[];
 }
 
 /** Return a human message when ``rate`` (per 1000 L) falls outside the limits
@@ -952,6 +957,44 @@ export function ApplicationPlan() {
     when: sprayDate || undefined,
   });
 
+  // Which chemical rows need targets, and the unambiguous prefill (product registrations vs the plan's
+  // targets). The server decides: foliars, fertiliser and adjuvants need none.
+  const [rowTargetsRequired, setRowTargetsRequired] = useState<Record<string, boolean>>({});
+  const mixKey = mixItems.join("|");
+  const targetsKey = targetsArr.join("|");
+  useEffect(() => {
+    if (!mixItems.length) {
+      setRowTargetsRequired({});
+      return;
+    }
+    let cancelled = false;
+    suggestChemicalTargets(targetsArr, mixItems)
+      .then((sug) => {
+        if (cancelled) return;
+        setRowTargetsRequired(Object.fromEntries(Object.entries(sug).map(([k, v]) => [k, v.required])));
+        setChemRows((prev) =>
+          prev.map((r) => {
+            const s = sug[r.item_code || ""];
+            const kept = (r.targets ?? []).filter((t) => targetsArr.includes(t));
+            if (!s?.required) return r.targets === undefined && !kept.length ? r : { ...r, targets: [] };
+            // Prefill only a row the operator has not touched; keep their pick otherwise.
+            const next = r.targets === undefined ? s.targets : kept;
+            return next.length === (r.targets ?? []).length && next.every((t, i) => t === (r.targets ?? [])[i])
+              ? r
+              : { ...r, targets: next };
+          }),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mixKey, targetsKey]);
+  const missingRowTargets = chemRows.filter(
+    (r) => rowTargetsRequired[r.item_code || ""] && !(r.targets?.length),
+  );
+
   /** `overridesArg` is passed by the override dialog, whose state update
    *  would not have landed yet. */
   const submit = async (overridesArg?: OverrideInput[]) => {
@@ -1037,6 +1080,15 @@ export function ApplicationPlan() {
       pushToast("err", "Pick at least one target.");
       return;
     }
+    if (missingRowTargets.length) {
+      pushToast(
+        "err",
+        `Pick the pest or disease each chemical is for: ${missingRowTargets
+          .map((r) => r.item_name || r.item_code)
+          .join(", ")}.`,
+      );
+      return;
+    }
     const overrides = overridesArg ?? compliance.pendingOverrides;
     if (compliance.gate.state === "blocked") {
       pushToast("err", compliance.gate.reason || "This mix is blocked by the spray check.");
@@ -1093,6 +1145,7 @@ export function ApplicationPlan() {
           uom: c.stock_uom,
           source_warehouse: c.source,
           application_rate: c.stock_qty,
+          targets: rowTargetsRequired[c.item_code || ""] ? (c.targets ?? []) : [],
         })),
         custom_scheduled_application_time: sprayDate || null,
         spray_rule_overrides: overrides ?? [],
@@ -1887,6 +1940,7 @@ export function ApplicationPlan() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Chemical</TableHead>
+                            <TableHead>For</TableHead>
                             <TableHead className="text-right">Rate / 1000 L</TableHead>
                             <TableHead>UoM</TableHead>
                             <TableHead className="w-8" />
@@ -1923,6 +1977,21 @@ export function ApplicationPlan() {
                                   <div className="text-[0.65rem] text-muted-foreground font-mono">
                                     {c.item_code}
                                   </div>
+                                </TableCell>
+                                <TableCell className="text-xs">
+                                  {rowTargetsRequired[c.item_code || ""] ? (
+                                    <MultiFilterSelect
+                                      compact
+                                      label={`Targets for ${c.item_name || c.item_code}`}
+                                      values={c.targets ?? []}
+                                      onChange={(next) => updateChem(c.rowId, { targets: next })}
+                                      options={targetsArr}
+                                      allLabel="Pick targets"
+                                      invalid={!c.targets?.length}
+                                    />
+                                  ) : (
+                                    <span className="text-[0.65rem] text-muted-foreground">Not target-specific</span>
+                                  )}
                                 </TableCell>
                                 <TableCell className="text-right">
                                   <Input
@@ -2174,10 +2243,14 @@ export function ApplicationPlan() {
                   ) : null}
                   <Button
                     onClick={() => void submit()}
-                    disabled={busy || !greenhouse || stockShortRows.length > 0 || compliance.gate.state === "blocked"}
+                    disabled={busy || !greenhouse || stockShortRows.length > 0 || missingRowTargets.length > 0 || compliance.gate.state === "blocked"}
                     size="sm"
                     title={
-                      stockShortRows.length
+                      missingRowTargets.length
+                        ? `Pick the pest or disease each chemical is for: ${missingRowTargets
+                            .map((r) => r.item_name || r.item_code)
+                            .join(", ")}`
+                        : stockShortRows.length
                         ? stockShortRows
                             .map((s) =>
                               s.source

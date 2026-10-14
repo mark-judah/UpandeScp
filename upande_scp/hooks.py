@@ -244,6 +244,7 @@ doc_events = {
     # end_spray_session, not from this hook.
     "Work Order": {
         "validate": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
+        "before_submit": "upande_scp.serverscripts.spray_plan_creator.validation.enforce_row_targets_on_submit",
         "before_update_after_submit": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
     },
     "Spray Application Logsheet": {

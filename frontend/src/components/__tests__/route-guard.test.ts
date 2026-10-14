@@ -91,4 +91,11 @@ describe("canOpenView — Re-entry", () => {
       expect(canOpenView("reentry", crop, [])).toBe(false);
     }
   });
+
+  it("opens chemical progress to keeper, GM and creator, not to a bare user", () => {
+    for (const r of [STORE_KEEPER, GM, CREATOR]) {
+      expect(canOpenView("chemical-progress", "rose", [r])).toBe(true);
+    }
+    expect(canOpenView("chemical-progress", "rose", [])).toBe(false);
+  });
 });

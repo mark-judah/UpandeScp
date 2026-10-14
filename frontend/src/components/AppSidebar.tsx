@@ -197,7 +197,14 @@ const ROSE_NAV: NavSection[] = [
         view: "chemical-progress",
         label: "Chemical Progress",
         icon: Activity,
-        requireRoles: [STORE_KEEPER_ROLE],
+        // Read-only for GM and creators; the server holds them to their farms.
+        requireRoles: [
+          STORE_KEEPER_ROLE,
+          "SCP General Manager",
+          "SCP Spray Plan Creator",
+          "System Manager",
+          "Administrator",
+        ],
       },
     ],
   },

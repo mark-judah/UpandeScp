@@ -82,6 +82,42 @@ def _ensure_access() -> None:
     )
 
 
+def _scoped_greenhouses() -> set[str] | None:
+    """Greenhouses (Warehouses) the caller may read; ``None`` = unrestricted.
+
+    Store keepers, approvers and System Manager / Administrator keep their
+    existing, unscoped read. A General Manager and/or a Spray Plan Creator
+    (with none of those roles) is held to farms: a GM by company scope, a
+    creator by company scope ∩ the farms whose creator roster names them;
+    holding both unions the two.
+    """
+    from upande_scp.serverscripts.common import crop_scope
+
+    user = frappe.session.user
+    roles = set(frappe.get_roles(user))
+    if user == "Administrator" or roles & {
+        "System Manager", "SCP Chemical Store Keeper", "SCP Spray Plan Approver",
+    }:
+        return None
+    farms: set[str] = set()
+    if "SCP General Manager" in roles:
+        gm = crop_scope.visible_farms(None, None, user)
+        if gm is None:
+            return None
+        farms |= gm
+    if "SCP Spray Plan Creator" in roles:
+        mine = crop_scope.visible_farms("spray_plan_creators", None, user)
+        if mine is None:
+            return None
+        farms |= mine
+    if not farms:
+        return set()
+    return {
+        r["name"]
+        for r in frappe.get_all("Warehouse", filters={"custom_farm": ["in", list(farms)]}, fields=["name"])
+    }
+
+
 # ───────────────────────────────── helpers ───────────────────────────────────
 
 
@@ -227,6 +263,11 @@ def get_lifecycle(work_order: str) -> dict:
     wo = frappe.get_doc("Work Order", work_order)
     if wo.custom_type != AFP_TYPE:
         frappe.throw(f"{work_order} is not an Application Floor Plan work order.")
+    houses = _scoped_greenhouses()
+    if houses is not None and wo.custom_greenhouse not in houses:
+        frappe.throw(
+            "You do not have permission to view this spray plan.", frappe.PermissionError
+        )
 
     state = wo.workflow_state or "Pending Submission"
     cur = _rank(state)
@@ -418,6 +459,10 @@ def get_lifecycle_summary(
         order_by="creation desc",
         limit_page_length=500,
     )
+
+    houses = _scoped_greenhouses()
+    if houses is not None:
+        rows = [r for r in rows if r.custom_greenhouse in houses]
 
     now = now_datetime()
     out = []

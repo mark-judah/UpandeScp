@@ -16,7 +16,8 @@ T = ["Mites", "Thrips", "Mildew", "Botrytis"]
 
 
 def refs(plans=None, mona=None):
-	return {"plans": plans or {}, "mona_ai_t": mona or {}}
+	plans = plans or {}
+	return {"plans": plans, "mona_ai_t": mona or {}, "uses": {c: len(v) for c, v in plans.items()}}
 
 
 def alone_plans(code, target, n, start="2026-08-01"):
@@ -58,6 +59,63 @@ class TestRecorded(Base):
 		self.assertEqual((c["kind"], c["label"], c["accuracy"]), ("recorded", "Recorded", 1.0))
 
 
+class TestCostGroups(Base):
+	def test_default_groups(self):
+		d = FAT.default_cost_group
+		self.assertEqual(d({"category": "Foliar"}), "Foliar")
+		self.assertEqual(d({"code": "FER0004"}), "Foliar")
+		self.assertEqual(d({"category": "Chemical", "type": "Adjuvant"}), "Adjuvant")
+		self.assertEqual(d({"category": "Chemical", "type": "pH Buffer"}), "pH buffer")
+		self.assertEqual(d({"category": "Chemical", "type": "Insecticide"}), "Pest control")
+
+	def test_explicit_group_wins_over_default(self):
+		self.assertEqual(FAT.cost_group({"category": "Chemical", "type": "Insecticide", "cost_group": "Post-harvest"}),
+		                 "Post-harvest")
+		self.assertEqual(FAT.cost_group({"category": "Foliar", "cost_group": "Pest control"}), "Pest control")
+		self.assertEqual(FAT.cost_group({"type": "Adjuvant", "cost_group": "bogus"}), "Adjuvant")
+
+
+class TestEvidence(Base):
+	"""An empty cost group on the DIRECT path is decided from evidence, never from the name."""
+
+	def direct(self, p, r=None):
+		return FAT.allocate(p, None, r or refs(), KB, KINDS, on_date="2026-09-10")
+
+	def test_used_on_spray_plans_is_pest_control_with_history_shares(self):
+		r = refs(alone_plans("P1", "Mites", 3))
+		r["uses"] = {"P1": 3}
+		a = self.direct(prod(name="Anything"), r)
+		self.assertEqual(a["basis"], "band2_alone")
+		self.assertEqual(set(a["shares"]), {"Mites"})
+
+	def test_used_on_plans_but_no_history_window_hit_is_unattributed_not_unclassified(self):
+		r = refs()
+		r["uses"] = {"P1": 2}
+		self.assertEqual(self.direct(prod(), r)["basis"], "unattributed")
+
+	def test_ingredient_evidence_is_pest_control(self):
+		self.assertEqual(self.direct(prod(ingredients=["abamectin"]))["basis"], "band1_ai_target")
+
+	def test_no_use_and_no_evidence_is_unclassified_with_no_shares(self):
+		a = self.direct(prod())
+		self.assertEqual((a["basis"], a["shares"], a["group"]), ("unclassified", {}, "Unclassified"))
+
+	def test_explicit_group_beats_evidence(self):
+		r = refs(alone_plans("P1", "Mites", 3))
+		r["uses"] = {"P1": 3}
+		a = self.direct(prod(cost_group="Hygiene & sanitation"), r)
+		self.assertEqual((a["basis"], a["group"]), ("non_pest", "Hygiene & sanitation"))
+		a = self.direct(prod(cost_group="Pest control"))
+		self.assertEqual(a["basis"], "unattributed")  # explicit Pest control, nothing known to place it
+
+	def test_a_spray_plan_line_is_never_unclassified(self):
+		self.assertEqual(alloc(prod())["basis"], "equal")
+
+	def test_names_do_not_classify(self):
+		for n in ("Agrowipe", "Chrysal Inicial", "hydrogen peroxide", "Flower Dust"):
+			self.assertEqual(self.direct(prod(name=n))["basis"], "unclassified")
+
+
 class TestFoliar(Base):
 	def test_foliar_category_equal_over_plan_targets(self):
 		self.assertShares(alloc(prod(category="Foliar")), dict.fromkeys(T, .25), "foliar_equal")
@@ -65,10 +123,11 @@ class TestFoliar(Base):
 	def test_fer_item_is_foliar(self):
 		self.assertEqual(alloc(prod(code="FER0004"))["basis"], "foliar_equal")
 
-	def test_adjuvant_and_ph_buffer_in_chemical_category_are_foliar(self):
-		for t in ("Adjuvant", "pH Buffer"):
+	def test_adjuvant_and_ph_buffer_split_equally_and_carry_their_group(self):
+		for t, g in (("Adjuvant", "Adjuvant"), ("pH Buffer", "pH buffer")):
 			a = alloc(prod(category="Chemical", type=t))
-			self.assertEqual(a["basis"], "foliar_equal")
+			self.assertShares(a, dict.fromkeys(T, .25), "foliar_equal")
+			self.assertEqual(a["group"], g)
 
 	def test_foliar_ignores_recorded_and_registration(self):
 		a = alloc(prod(category="Foliar", registered=["Mites"]), recorded=["Mites"])
@@ -78,13 +137,26 @@ class TestFoliar(Base):
 		a = alloc(prod(category="Foliar"), cands=[])
 		self.assertEqual((a["basis"], a["shares"]), ("foliar_farm", {}))
 
-	def test_foliar_direct_not_split(self):
-		a = FAT.allocate(prod(category="Foliar"), None, refs(), KB, KINDS)
-		self.assertEqual((a["basis"], a["shares"]), ("foliar_farm", {}))
+	def test_split_groups_direct_not_split(self):
+		for p in (prod(category="Foliar"), prod(type="Adjuvant"), prod(type="pH Buffer")):
+			a = FAT.allocate(p, None, refs(), KB, KINDS)
+			self.assertEqual((a["basis"], a["shares"]), ("foliar_farm", {}))
 
-	def test_credibility_foliar_labels(self):
-		self.assertEqual(FAT.credibility("foliar_equal")["label"], "Foliar (equal split)")
-		self.assertEqual(FAT.credibility("foliar_farm")["kind"], "foliar")
+	def test_hygiene_and_post_harvest_never_split_on_either_path(self):
+		for g in ("Hygiene & sanitation", "Post-harvest"):
+			p = prod(cost_group=g, registered=["Mites"], ingredients=["abamectin"])
+			spray = alloc(p, recorded=["Mites"])
+			direct = FAT.allocate(p, None, refs(), KB, KINDS, recorded=["Mites"])
+			for a in (spray, direct):
+				self.assertEqual((a["basis"], a["shares"], a["group"]), ("non_pest", {}, g))
+
+	def test_pest_control_override_of_a_foliar_category_uses_the_bands(self):
+		a = alloc(prod(category="Foliar", cost_group="Pest control", ingredients=["abamectin"]))
+		self.assertEqual(a["basis"], "band1_ai_target")
+
+	def test_credibility_non_pest_labels(self):
+		self.assertEqual(FAT.credibility("foliar_equal")["kind"], "nonpest")
+		self.assertEqual(FAT.credibility("non_pest")["label"], "Not target-specific")
 
 
 class TestSprayBands(Base):
@@ -219,9 +291,12 @@ class TestDirectPath(Base):
 		self.assertEqual(a["basis"], "band3_radar")
 		self.assertAlmostEqual(sum(a["shares"].values()), 1.0)
 
-	def test_unattributed_when_nothing_known_and_never_equal(self):
+	def test_nothing_known_is_never_split_equally(self):
 		a = self.direct(prod())
-		self.assertEqual((a["basis"], a["shares"]), ("unattributed", {}))
+		self.assertEqual((a["basis"], a["shares"]), ("unclassified", {}))
+		r = refs()
+		r["uses"] = {"P1": 1}  # used on a plan, but nothing to attribute by
+		self.assertEqual(self.direct(prod(), r)["basis"], "unattributed")
 
 	def test_direct_accuracy_labels(self):
 		self.assertIn("est. 84%", FAT.credibility("band2_alone", "direct")["label"])

@@ -72,3 +72,6 @@ upande_scp.patches.v1_0.add_work_order_item_targets
 # Tank-mix Material Issues now carry their spray plan (Work Order) and how it was
 # matched; links the historical ones by remarks, batch, then greenhouse + date.
 upande_scp.patches.v1_0.link_tank_mix_issues_to_plan
+# Spray Product.custom_cost_group: Pest control / Foliar / Adjuvant / pH buffer /
+# Hygiene & sanitation / Post-harvest, filled from structured fields only (never by name).
+upande_scp.patches.v1_0.add_spray_product_cost_group

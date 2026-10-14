@@ -7,7 +7,7 @@
  *  - Direct material issues: issued with no plan, so no greenhouse (shown at farm level).
  *
  * Every figure carries its credibility: RECORDED (declared on the plan, solid) or
- * DERIVED (an estimate, hatched, with its backtested accuracy). Foliar & adjuvants are
+ * DERIVED (an estimate, hatched, with its backtested accuracy). Non-pest inputs are
  * reported apart from chemical pest cost, never added into it. See
  * serverscripts/reports/finance_paths.py.
  */
@@ -28,6 +28,8 @@ import {
   fetchSuggestedRegistrations,
   pestAttributionExportUrl,
   registerProductTargets,
+  setCostGroup,
+  COST_GROUPS,
   type PathBlock,
   type PathFilter,
   type PathKey,
@@ -45,6 +47,10 @@ import {
 } from "@/components/ui/dialog";
 import { bootstrap } from "@/lib/frappe";
 import { ymd } from "@/lib/utils";
+import { formatAmount } from "@/lib/number-format";
+
+/** The page's one amount formatter: thousands separators, 2 decimals, no currency. */
+const money = formatAmount;
 
 function monthStart(): string {
   const d = new Date();
@@ -115,12 +121,10 @@ function EstTag({ accuracy, hint }: { accuracy: number | null; hint?: string }) 
 function PathSection({
   block,
   report,
-  money,
   perProduct,
 }: {
   block: PathBlock;
   report: PestAttributionReport;
-  money: (n: number) => string;
   perProduct: boolean;
 }) {
   const pct = (x: number) => `${(x * 100).toFixed(x > 0 && x < 0.1 ? 1 : 0)}%`;
@@ -150,7 +154,7 @@ function PathSection({
               ? `From a Material Request ${money(block.by_source.from_material_request)} · no request ${money(block.by_source.no_material_request)}`
               : block.in_progress && block.in_progress.plans > 0
                 ? `Not counted: ${block.in_progress.plans} plans in progress / not issued, ${money(block.in_progress.value)}`
-                : "Chemicals plus foliar & adjuvants"}
+                : "Pest control plus non-pest inputs"}
           </CardContent>
         </Card>
         <Card>
@@ -231,8 +235,8 @@ function PathSection({
           <CardTitle className="text-base">Chemical spend by pest and disease</CardTitle>
           <CardDescription className="flex items-start gap-1.5">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Solid is recorded on the plan; hatched is derived (estimated). Foliar &amp; adjuvants are listed
-            separately below and never added to these rows.
+            Solid is recorded on the plan; hatched is derived (estimated). Non-pest inputs (foliar, adjuvant, pH buffer,
+            hygiene, post-harvest) are listed separately below and never added to these rows.
           </CardDescription>
         </CardHeader>
         <CardContent className={`${BOX} p-0`}>
@@ -262,7 +266,7 @@ function PathSection({
                     <div className="text-xs text-muted-foreground">
                       {t.products
                         .slice(0, 3)
-                        .map((p) => `${p.item_name} ${money(p.value)}`)
+                        .map((p) => `${p.item_name} ${money(p.value)}${isDirect && p.plan_uses ? ` (in ${p.plan_uses} plans)` : ""}`)
                         .join(" · ")}
                     </div>
                   </td>
@@ -325,39 +329,40 @@ function PathSection({
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <Leaf className="h-4 w-4 text-emerald-600 dark:text-emerald-500" />
-            Foliar &amp; adjuvants
+            Non-pest inputs
           </CardTitle>
           <CardDescription>
-            {isDirect
-              ? "Foliar — not target-specific. Issued with no plan, so it is not split."
-              : "Foliar (equal split) across each plan's targets. Reported apart from chemical pest cost."}
+            Reported apart from pest cost and never added into it. Each group says how it is treated.
           </CardDescription>
         </CardHeader>
         <CardContent className={`${BOX} p-0`}>
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full border-collapse text-sm" data-testid={`nonpest-${block.path}`}>
             <tbody>
-              {block.foliar.by_target.map((t) => (
-                <tr key={t.target} className="border-b hover:bg-muted/40">
-                  <td className="px-3 py-2">{t.target}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(t.value)}</td>
+              {block.nonpest.groups.map((g) => (
+                <tr key={g.group} className="border-b hover:bg-muted/40">
+                  <td className="px-3 py-2 align-top">
+                    <div className="font-medium">{g.group}</div>
+                    <div className="text-xs text-muted-foreground">{g.treatment}</div>
+                    {g.group === "Unclassified" && g.value > 0 ? (
+                      <div className="mt-0.5 flex items-start gap-1 text-xs text-amber-700 dark:text-amber-500">
+                        <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
+                        Set the cost group of these products in Suggested pest registrations below.
+                      </div>
+                    ) : null}
+                    {g.by_target.length ? (
+                      <div className="text-xs text-muted-foreground">
+                        {g.by_target.map((t) => `${t.target} ${money(t.value)}`).join(" · ")}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2 text-right align-top tabular-nums">{money(g.value)}</td>
                 </tr>
               ))}
-              {block.foliar.farm_level ? (
-                <tr className="border-b">
-                  <td className="px-3 py-2">Foliar &mdash; not target-specific</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(block.foliar.farm_level)}</td>
-                </tr>
-              ) : null}
-              {!block.foliar.by_target.length && !block.foliar.farm_level ? (
-                <tr>
-                  <td className="px-3 py-3 text-muted-foreground">No foliar or adjuvant spend.</td>
-                </tr>
-              ) : null}
             </tbody>
             <tfoot>
               <tr className="font-semibold">
-                <td className="px-3 py-2">Foliar &amp; adjuvants</td>
-                <td className="px-3 py-2 text-right tabular-nums">{money(block.foliar.total)}</td>
+                <td className="px-3 py-2">Non-pest inputs</td>
+                <td className="px-3 py-2 text-right tabular-nums">{money(block.nonpest.total)}</td>
               </tr>
             </tfoot>
           </table>
@@ -385,7 +390,19 @@ function PathSection({
                     <td className="px-3 py-2">
                       <span className="font-medium">{p.item_name}</span>{" "}
                       <span className="font-mono text-xs text-muted-foreground">{p.item_code}</span>
-                      {p.foliar ? <span className="ml-1.5 text-[0.65rem] uppercase text-muted-foreground">foliar</span> : null}
+                      {p.nonpest ? <span className="ml-1.5 text-[0.65rem] uppercase text-muted-foreground">{p.group}</span> : null}
+                      {isDirect && p.plan_uses > 0 ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="ml-1.5 cursor-help rounded-full bg-primary/10 px-1.5 py-px text-[0.6rem] font-medium text-primary">
+                              Used in spray plans ({p.plan_uses})
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs text-xs">
+                            Also used on {p.plan_uses} spray plans in the last year. Its pest shares come from that spray-plan history.
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : null}
                     </td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">
                       {p.targets.map((t) => `${t.target} ${money(t.value)}`).join(" · ") || "-"}
@@ -417,7 +434,7 @@ function PathSection({
                 <th className="px-3 py-2 text-left">{isDirect ? "Where" : "Greenhouse"}</th>
                 <th className="px-3 py-2 text-left">Cost centre</th>
                 <th className="px-3 py-2 text-right">Chemical</th>
-                <th className="px-3 py-2 text-right">Foliar</th>
+                <th className="px-3 py-2 text-right">Non-pest</th>
                 <th className="px-3 py-2 text-right">Total</th>
               </tr>
             </thead>
@@ -428,7 +445,7 @@ function PathSection({
                   <td className="px-3 py-2 font-medium">{p.greenhouse}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{p.cost_center || "-"}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{money(p.chemical)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(p.foliar)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{money(p.nonpest)}</td>
                   <td className="px-3 py-2 text-right font-medium tabular-nums">{money(p.value)}</td>
                 </tr>
               ))}
@@ -471,15 +488,10 @@ export function Finance({ initialCrop: _initialCrop }: { initialCrop?: string } 
   const [ghOptions, setGhOptions] = useState<string[]>([]);
   useEffect(() => {
     if (!data) return;
-    setPestOptions((prev) => [...new Set([...prev, ...data.pest_options, "Foliar"])].sort());
+    setPestOptions((prev) => [...new Set([...prev, ...data.pest_options, "Non-pest inputs"])].sort());
     setGhOptions((prev) => [...new Set([...prev, ...data.greenhouse_options])].sort());
   }, [data]);
 
-  const money = useMemo(() => {
-    const cur = data?.currency || "KES";
-    const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
-    return (n: number) => (n ? `${cur} ${fmt.format(Math.round(n))}` : "-");
-  }, [data?.currency]);
 
   const canRegister = (bootstrap().roles || []).some((r: string) => CAN_REGISTER.includes(r));
   const [suggested, setSuggested] = useState<SuggestedRegistration[]>([]);
@@ -493,6 +505,17 @@ export function Finance({ initialCrop: _initialCrop }: { initialCrop?: string } 
   useEffect(() => {
     if (canRegister) void loadSuggested();
   }, [canRegister]);
+
+  async function changeGroup(product: string, group: string) {
+    if (!group) return;
+    try {
+      await setCostGroup(product, group);
+      void loadSuggested();
+      void fetchPestAttribution(filters).then(setData);
+    } catch (e) {
+      setRegError(e instanceof Error ? e.message : "Could not set the cost group");
+    }
+  }
 
   async function confirmRegister() {
     if (!pending) return;
@@ -586,7 +609,7 @@ export function Finance({ initialCrop: _initialCrop }: { initialCrop?: string } 
           {hasData && data && c && (
             <>
               {blocks.map((b) => (
-                <PathSection key={b.path} block={b} report={data} money={money} perProduct={perProduct} />
+                <PathSection key={b.path} block={b} report={data} perProduct={perProduct} />
               ))}
 
               <Card>
@@ -640,7 +663,8 @@ export function Finance({ initialCrop: _initialCrop }: { initialCrop?: string } 
               <CardTitle className="text-base">Suggested pest registrations</CardTitle>
               <CardDescription>
                 Products with no registered targets, and where the last 180 days of plans used them (at least 3
-                plans, 30% or more of use). Registering makes their cost attribute by registration.
+                plans, 30% or more of use). Registering makes their cost attribute by registration. Products
+                no one has placed (never on a plan, no ingredient known) are listed to have their cost group set.
               </CardDescription>
             </CardHeader>
             <CardContent className={`${BOX} p-0`}>
@@ -648,6 +672,7 @@ export function Finance({ initialCrop: _initialCrop }: { initialCrop?: string } 
                 <thead className={TH}>
                   <tr>
                     <th className="px-3 py-2 text-left">Product</th>
+                    <th className="px-3 py-2 text-left">Cost group</th>
                     <th className="px-3 py-2 text-right">Plans</th>
                     <th className="px-3 py-2 text-left">Suggested targets</th>
                     <th className="px-3 py-2" />
@@ -657,14 +682,26 @@ export function Finance({ initialCrop: _initialCrop }: { initialCrop?: string } 
                   {suggested.map((x) => (
                     <tr key={x.product} className="border-b last:border-0">
                       <td className="px-3 py-2 font-medium">{x.product_name}</td>
+                      <td className="px-3 py-2">
+                        <FilterSelect
+                          label={`Cost group for ${x.product_name}`}
+                          value={x.cost_group || ""}
+                          onChange={(g) => void changeGroup(x.product, g)}
+                          options={COST_GROUPS}
+                          allLabel={x.unclassified ? "Set cost group" : undefined}
+                          className="h-7 min-w-[8rem] px-3 text-[0.7rem]"
+                        />
+                      </td>
                       <td className="px-3 py-2 text-right tabular-nums">{x.plans}</td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">
                         {x.suggestions.map((g) => `${g.target} ${pct(g.share)}`).join(" · ")}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <Button size="sm" variant="outline" onClick={() => { setRegError(null); setPending(x); }}>
-                          Register
-                        </Button>
+                        {x.suggestions.length ? (
+                          <Button size="sm" variant="outline" onClick={() => { setRegError(null); setPending(x); }}>
+                            Register
+                          </Button>
+                        ) : null}
                       </td>
                     </tr>
                   ))}

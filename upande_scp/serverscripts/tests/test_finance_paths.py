@@ -62,8 +62,12 @@ PRODUCTS = {
 	"P1": {"code": "P1", "name": "Chem", "category": "Chemical", "type": "Insecticide", "ingredients": ["abamectin"]},
 	"P2": {"code": "P2", "name": "Plain chem", "category": "Chemical", "type": "Fungicide"},
 	"F1": {"code": "F1", "name": "Foliar feed", "category": "Foliar"},
+	"A1": {"code": "A1", "name": "Wetter", "category": "Chemical", "type": "Adjuvant"},
+	"H1": {"code": "H1", "name": "Sanitiser", "category": "Chemical", "type": "Insecticide", "cost_group": "Hygiene & sanitation"},
+	"PH": {"code": "PH", "name": "Vase life", "category": "Chemical", "type": "Insecticide", "cost_group": "Post-harvest"},
+	"U1": {"code": "U1", "name": "Mystery", "category": "Chemical", "type": "Insecticide"},
 }
-REFS = {"plans": {}, "mona_ai_t": {}}
+REFS = {"plans": {}, "mona_ai_t": {}, "uses": {"P2": 4}}
 
 
 def attr(lines):
@@ -86,9 +90,20 @@ class TestAttribution(unittest.TestCase):
 		rows = attr([line(code="F1", value=100), line("direct", "F1", 40)])
 		spray = [r for r in rows if r["path"] == "spray"]
 		self.assertEqual({(r["target"], r["attributed"]) for r in spray}, {("Mites", 50.0), ("Mildew", 50.0)})
-		self.assertTrue(all(r["is_foliar"] for r in rows))
+		self.assertTrue(all(r["is_nonpest"] for r in rows))
 		d = [r for r in rows if r["path"] == "direct"]
-		self.assertEqual([(r["target"], r["basis"]) for r in d], [(FP.FOLIAR_FARM, "foliar_farm")])
+		self.assertEqual([(r["target"], r["basis"]) for r in d], [("Foliar", "foliar_farm")])
+
+	def test_hygiene_and_post_harvest_are_their_own_lines_on_both_paths(self):
+		rows = attr([line(code="H1", value=30), line("direct", "PH", 20)])
+		self.assertEqual([(r["target"], r["basis"], r["group"]) for r in rows],
+		                 [("Hygiene & sanitation", "non_pest", "Hygiene & sanitation"), ("Post-harvest", "non_pest", "Post-harvest")])
+
+	def test_unclassified_is_its_own_line_and_plan_uses_travel_with_the_row(self):
+		rows = attr([line("direct", "U1", 12), line("direct", "P2", 8)])
+		u = rows[0]
+		self.assertEqual((u["target"], u["basis"], u["is_nonpest"], u["plan_uses"]), ("Unclassified", "unclassified", True, 0))
+		self.assertEqual(rows[1]["plan_uses"], 4)
 
 	def test_unattributed_direct_chemical(self):
 		rows = attr([line("direct", "P2", 70)])
@@ -105,10 +120,18 @@ class TestBlocks(unittest.TestCase):
 			line("direct", "F1", 15),
 		])
 
-	def test_foliar_never_in_chemical_totals(self):
-		b = FP._block([r for r in self.rows() if r["path"] == "spray"])
+	def test_non_pest_groups_never_in_chemical_totals(self):
+		rows = self.rows() + attr([line(code="A1", value=10), line(code="H1", value=5)])
+		b = FP._block([r for r in rows if r["path"] == "spray"])
 		self.assertEqual(b["chemical"]["total"], 160.0)
-		self.assertEqual(b["foliar"]["total"], 40.0)
+		groups = {g["group"]: g for g in b["nonpest"]["groups"]}
+		self.assertEqual(set(groups), set(FAT.NON_PEST_GROUPS))
+		self.assertEqual((groups["Foliar"]["value"], groups["Adjuvant"]["value"], groups["Hygiene & sanitation"]["value"]), (40.0, 10.0, 5.0))
+		self.assertIn("split equally", groups["Adjuvant"]["treatment"])
+		self.assertIn("never split", groups["Hygiene & sanitation"]["treatment"])
+		self.assertEqual(b["nonpest"]["total"], 55.0)
+		self.assertEqual(b["total"], 215.0)
+		b = FP._block([r for r in self.rows() if r["path"] == "spray"])
 		self.assertEqual(b["total"], 200.0)
 		self.assertEqual(sum(p["value"] for p in b["chemical"]["by_pest"]), 160.0)
 
@@ -123,7 +146,7 @@ class TestBlocks(unittest.TestCase):
 	def test_unattributed_separate(self):
 		b = FP._block([r for r in self.rows() if r["path"] == "direct"])
 		self.assertEqual(b["chemical"]["unattributed"], 25.0)
-		self.assertEqual(b["foliar"]["farm_level"], 15.0)
+		self.assertEqual(next(g for g in b["nonpest"]["groups"] if g["group"] == "Foliar")["farm_level"], 15.0)
 
 	def test_filters(self):
 		rows = self.rows()
@@ -133,8 +156,8 @@ class TestBlocks(unittest.TestCase):
 		self.assertTrue(all(r["path"] == "spray" for r in got) and notes)
 		got, _ = FP.apply_filters(rows, pests=["Mites"])
 		self.assertEqual({r["target"] for r in got}, {"Mites"})
-		got, _ = FP.apply_filters(rows, pests=["Mites", FP.FOLIAR])
-		self.assertTrue(any(r["is_foliar"] for r in got))
+		got, _ = FP.apply_filters(rows, pests=["Mites", FP.NONPEST])
+		self.assertTrue(any(r["is_nonpest"] for r in got))
 
 
 class TestExport(unittest.TestCase):
@@ -167,21 +190,21 @@ class TestExport(unittest.TestCase):
 		start = next(i for i, r in enumerate(table) if r[0] == "Totals by path")
 		summ = {r[0]: r for r in table[start:start + 6] if r and r[0]}
 		self.assertEqual(total_lines, round(sum(ln["value"] for ln in self.lines), 2))
-		self.assertEqual(round(summ["Total"][7], 2), total_lines)
-		self.assertEqual(summ["Spray plan"][7], 200.0)
-		self.assertEqual(summ["Direct issue"][7], 40.0)
+		self.assertEqual(round(summ["Total"][-1], 2), total_lines)
+		self.assertEqual(summ["Spray plan"][-1], 200.0)
+		self.assertEqual(summ["Direct issue"][-1], 40.0)
 
 	def test_foliar_in_own_columns_and_credibility_columns(self):
 		wb, _ = self.build()
 		head = [c.value for c in wb["Lines"][1]]
-		for h in ("Link basis", "Recorded value", "Derived value", "Foliar (equal split)", "Basis", "Credibility", "Est. accuracy"):
+		for h in ("Link basis", "Cost group", "Recorded value", "Derived value", "Non-pest inputs", "Basis", "Credibility", "Est. accuracy"):
 			self.assertIn(h, head)
 		rows = list(wb["Lines"].iter_rows(min_row=2, values_only=True))
 		bi, ci, ai = head.index("Basis"), head.index("Credibility"), head.index("Est. accuracy")
 		labels = {r[ci] for r in rows}
 		self.assertIn("Recorded", labels)
 		self.assertTrue(any(x.startswith("Derived") and "est. 89%" in x for x in labels))
-		self.assertIn("Foliar (equal split)", labels)
+		self.assertIn("Split equally across plan targets", labels)
 		rec = next(r for r in rows if r[bi] == "recorded")
 		self.assertEqual(rec[ai], 1.0)
 
@@ -203,4 +226,40 @@ class TestExport(unittest.TestCase):
 		ws = wb["Lines"]
 		self.assertTrue(ws["A1"].font.bold)
 		self.assertFalse(ws["A2"].font.bold)
-		self.assertEqual(ws["M2"].number_format, "General")
+		self.assertEqual(ws["A2"].number_format, "General")
+
+	def test_money_columns_carry_the_number_format_and_shares_percent(self):
+		wb, _ = self.build(per_product=True)
+		ws = wb["Lines"]
+		head = [c.value for c in ws[1]]
+		for h in ("Line value", "Recorded value", "Derived value", "Non-pest inputs", "Unattributed value", "Attributed value"):
+			self.assertEqual(ws.cell(2, head.index(h) + 1).number_format, "#,##0.00", h)
+		self.assertEqual(ws.cell(2, head.index("Share") + 1).number_format, "0.0%")
+		self.assertEqual(ws.cell(2, head.index("Qty") + 1).number_format, "General")
+		g = wb["By greenhouse"]
+		gh = [c.value for c in g[1]]
+		self.assertEqual(g.cell(2, gh.index("Total") + 1).number_format, "#,##0.00")
+		pr = wb["By product"]
+		ph = [c.value for c in pr[1]]
+		self.assertEqual(pr.cell(2, ph.index("Total") + 1).number_format, "#,##0.00")
+		summ = list(wb["Summary"].iter_rows())
+		start = next(i for i, r in enumerate(summ) if r[0].value == "Totals by path")
+		self.assertEqual(summ[start + 2][1].number_format, "#,##0.00")
+		self.assertEqual(summ[start + 2][3].number_format, "0.0%")
+
+	def test_summary_has_a_line_per_non_pest_group(self):
+		wb, _ = self.build()
+		flat = [c for r in wb["Summary"].iter_rows(values_only=True) for c in r if c]
+		for g in FAT.NON_PEST_GROUPS:
+			self.assertIn(g, flat)
+		self.assertTrue(any("never split to pests" in str(c) for c in flat))
+
+	def test_direct_lines_say_whether_the_product_is_also_used_in_spray_plans(self):
+		wb, _ = self.build()
+		ws = wb["Lines"]
+		head = [c.value for c in ws[1]]
+		col = head.index("Also used in spray plans")
+		vals = {(r[head.index("Path")], r[head.index("Item code")]): r[col] for r in ws.iter_rows(min_row=2, values_only=True)}
+		self.assertEqual(vals[("Direct issue", "P2")], "Yes (4 plans)")
+		self.assertEqual(vals[("Direct issue", "F1")], "No")
+		self.assertFalse(vals[("Spray plan", "P2")])

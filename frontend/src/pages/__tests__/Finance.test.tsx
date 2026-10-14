@@ -30,16 +30,26 @@ const SPRAY: PathBlock = {
       },
     ],
   },
-  foliar: { total: 200, by_target: [{ target: "Spidermites", value: 120 }, { target: "Downy Mildew", value: 80 }], farm_level: 0 },
+  nonpest: {
+    total: 200,
+    groups: [
+      { group: "Foliar", treatment: "split equally across the plan's targets; not target-specific on direct issues", value: 200, farm_level: 0, by_target: [{ target: "Spidermites", value: 120 }, { target: "Downy Mildew", value: 80 }] },
+      { group: "Adjuvant", treatment: "split equally across the plan's targets; not target-specific on direct issues", value: 0, farm_level: 0, by_target: [] },
+      { group: "pH buffer", treatment: "split equally across the plan's targets; not target-specific on direct issues", value: 0, farm_level: 0, by_target: [] },
+      { group: "Hygiene & sanitation", treatment: "not target-specific, never split to pests", value: 0, farm_level: 0, by_target: [] },
+      { group: "Post-harvest", treatment: "not target-specific, never split to pests", value: 0, farm_level: 0, by_target: [] },
+      { group: "Unclassified", treatment: "not placed: never used on a spray plan and no ingredient known. Set its cost group", value: 0, farm_level: 0, by_target: [] },
+    ],
+  },
   by_basis: [
     { basis: "recorded", value: 300, share: 0.3, kind: "recorded", label: "Recorded", accuracy: 1 },
     { basis: "band1_ai_target", value: 100, share: 0.1, kind: "derived", label: "Derived", accuracy: 0.89 },
     { basis: "band3_radar", value: 300, share: 0.3, kind: "derived", label: "Derived", accuracy: 0.67 },
-    { basis: "foliar_equal", value: 200, share: 0.2, kind: "foliar", label: "Foliar", accuracy: null },
+    { basis: "foliar_equal", value: 200, share: 0.2, kind: "nonpest", label: "Foliar", accuracy: null },
     { basis: "unattributed", value: 100, share: 0.1, kind: "unattributed", label: "Unattributed", accuracy: null },
   ],
   by_product: [],
-  by_greenhouse: [{ farm: "Main", greenhouse: "Main GH 04 - MFK", cost_center: "GH004 - MFK", chemical: 800, foliar: 200, value: 1000, targets: {} }],
+  by_greenhouse: [{ farm: "Main", greenhouse: "Main GH 04 - MFK", cost_center: "GH004 - MFK", chemical: 800, nonpest: 200, value: 1000, targets: {} }],
 };
 const DIRECT: PathBlock = {
   path: "direct",
@@ -47,14 +57,21 @@ const DIRECT: PathBlock = {
   explain: "Direct issues name no greenhouse.",
   by_source: { from_material_request: 450, no_material_request: 50 },
   chemical: { total: 100, recorded: 0, derived: 0, unattributed: 100, derived_accuracy: null, by_pest: [] },
-  foliar: { total: 400, by_target: [], farm_level: 400 },
+  nonpest: {
+    total: 400,
+    groups: [
+      { group: "Foliar", treatment: "split equally across the plan's targets; not target-specific on direct issues", value: 300, farm_level: 300, by_target: [] },
+      { group: "Unclassified", treatment: "not placed: never used on a spray plan and no ingredient known. Set its cost group", value: 100, farm_level: 100, by_target: [] },
+    ],
+  },
   by_basis: [],
-  by_product: [],
-  by_greenhouse: [{ farm: "Main", greenhouse: "Farm level — issue has no greenhouse", cost_center: "Production - MFK", chemical: 100, foliar: 400, value: 500, targets: {} }],
+  by_product: [
+    { item_code: "CHE10", item_name: "VELUM PRIME", nonpest: false, group: "Pest control", plan_uses: 5, value: 90, from_mr: 90, targets: [{ target: "Nematodes", value: 90 }] },
+  ],
+  by_greenhouse: [{ farm: "Main", greenhouse: "Farm level — issue has no greenhouse", cost_center: "Production - MFK", chemical: 100, nonpest: 400, value: 500, targets: {} }],
 };
 const REPORT: PestAttributionReport = {
   filters: { from: "2026-09-01", to: "2026-09-30", paths: ["spray", "direct"], pests: [], greenhouse: "" },
-  currency: "KES",
   notes: [],
   accuracy: ACC,
   pest_options: ["Spidermites", "Downy Mildew"],
@@ -97,11 +114,28 @@ describe("Finance page", () => {
     expect(screen.getAllByText("Recorded").length).toBeGreaterThan(0);
   });
 
-  it("lists foliar separately and never inside the chemical rows", async () => {
+  it("lists non-pest inputs as separate lines per cost group, never inside the pest rows", async () => {
     render(<Finance />);
-    await waitFor(() => expect(screen.getAllByText(/Foliar & adjuvants/).length).toBeGreaterThan(0));
-    expect(screen.getByText("Foliar (equal split) across each plan's targets. Reported apart from chemical pest cost.")).toBeInTheDocument();
-    expect(screen.getByText("Foliar — not target-specific. Issued with no plan, so it is not split.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText("Non-pest inputs").length).toBeGreaterThan(0));
+    const spray = screen.getByTestId("nonpest-spray");
+    for (const g of ["Foliar", "Adjuvant", "pH buffer", "Hygiene & sanitation", "Post-harvest"]) {
+      expect(spray).toHaveTextContent(g);
+    }
+    expect(spray).toHaveTextContent("never split to pests");
+    expect(spray).toHaveTextContent("split equally across the plan's targets");
+    expect(screen.getByTestId("nonpest-direct")).toHaveTextContent("Set the cost group of these products");
+  });
+
+  it("shows plain numbers with 2 decimals and no currency anywhere", async () => {
+    const { container } = render(<Finance />);
+    await waitFor(() => expect(screen.getAllByText("1,000.00").length).toBeGreaterThan(0));
+    expect(container.textContent).not.toMatch(/KES|Ksh|USD|\$|€|£/);
+  });
+
+  it("badges direct-issue products that are also used in spray plans", async () => {
+    render(<Finance />);
+    screen.getByLabelText("Breakdown per product").click();
+    await waitFor(() => expect(screen.getByText("Used in spray plans (5)")).toBeInTheDocument());
   });
 
   it("shows the direct path at farm level with its cost centre and the combined total", async () => {

@@ -18,7 +18,7 @@
   whether they came from a Material Request. The greenhouse is unknown, so they are
   reported at farm level with their cost centre.
 
-Attribution is `finance_attribution.allocate`; foliar is reported separately.
+Attribution is `finance_attribution.allocate`; non-pest cost groups (foliar, adjuvant, pH buffer, hygiene, post-harvest) are reported separately.
 """
 
 from __future__ import annotations
@@ -35,9 +35,8 @@ from upande_scp.serverscripts.reports import finance_attribution as FAT
 
 AFP_TYPE = "Application Floor Plan"
 FARM_LEVEL = "Farm level — issue has no greenhouse"
-FOLIAR_FARM = "Foliar — not target-specific"
 UNATTRIBUTED = "Unattributed"
-FOLIAR = "Foliar"
+NONPEST = "Non-pest inputs"
 MATCH_DAYS = 30
 EXCLUDED_TYPES = ("Chemical Loaning", "Chemical Mixing")
 PATHS = ("spray", "direct")
@@ -141,13 +140,13 @@ def collect_spray(from_date, to_date, groups, kinds) -> dict:
 		return {"lines": [], "plans": 0, "in_progress": _in_progress(from_date, to_date, groups, set(), {})}
 	items = tuple({m["item"] for m in manufactures})
 	issue_end = min(str(add_days(to_date, MATCH_DAYS)), str(getdate(today())))
-	# The explicit link (owned by another change): Stock Entry.custom_spray_work_order, with its
+	# The explicit link (owned by another change): Stock Entry.custom_spray_plan, with its
 	# custom_spray_link_basis. Used when present; otherwise the greenhouse/item/qty/date match below.
-	has_link = frappe.db.has_column("Stock Entry", "custom_spray_work_order")
+	has_link = frappe.db.has_column("Stock Entry", "custom_spray_plan")
 	has_basis = frappe.db.has_column("Stock Entry", "custom_spray_link_basis")
 	extra = ""
 	if has_link:
-		extra += ", se.custom_spray_work_order AS link_wo"
+		extra += ", se.custom_spray_plan AS link_wo"
 	if has_basis:
 		extra += ", se.custom_spray_link_basis AS link_basis"
 	issues = frappe.db.sql(_ISSUES.replace("sed.cost_center", "sed.cost_center" + extra, 1),
@@ -220,7 +219,11 @@ def collect_spray(from_date, to_date, groups, kinds) -> dict:
 		for m in manufactures
 		if m["wo"] not in done and str(from_date) <= str(m["posting_date"])[:10] <= str(to_date)
 	]
+	by_link: dict = defaultdict(int)
+	for wo, i in in_window.items():
+		by_link["from_link" if wo in linked else "fallback_match"] += 1
 	return {
+		"by_link": dict(by_link),
 		"manufactured": sum(1 for m in manufactures if str(from_date) <= str(m["posting_date"])[:10] <= str(to_date)),
 		"not_issued": not_issued,
 		"lines": lines,
@@ -332,6 +335,7 @@ def attribute(lines, refs, kb, kinds, products) -> list:
 		if not ln["value"]:
 			continue
 		prod = products.get(ln["item_code"]) or {"code": ln["item_code"], "name": ln["item_name"]}
+		uses = (refs.get("uses") or {}).get(ln["item_code"], 0)
 		alloc = FAT.allocate(
 			prod,
 			ln["plan_targets"] if ln["path"] == "spray" else None,
@@ -342,8 +346,7 @@ def attribute(lines, refs, kb, kinds, products) -> list:
 		cred = FAT.credibility(basis, ln["path"])
 		shares = alloc["shares"]
 		if not shares:
-			label = FOLIAR_FARM if basis == "foliar_farm" else UNATTRIBUTED
-			shares = {label: 1.0}
+			shares = {alloc.get("group") or UNATTRIBUTED if basis in FAT.FOLIAR_BASES else UNATTRIBUTED: 1.0}
 		items = list(shares.items())
 		value = round(ln["value"], 2)
 		left = value
@@ -354,8 +357,8 @@ def attribute(lines, refs, kb, kinds, products) -> list:
 				"path", "date", "document", "issue", "work_order", "mr", "link_basis", "greenhouse", "farm", "cost_center",
 				"item_code", "item_name", "qty", "uom", "ledger", "detail")}, "value": value,
 				"target": t, "kind": kinds.get(t), "share": share, "basis": basis, "attributed": v,
-				"credibility": cred["kind"], "credibility_label": cred["label"], "accuracy": cred["accuracy"],
-				"is_foliar": basis in FAT.FOLIAR_BASES})
+				"group": alloc.get("group") or FAT.PEST_CONTROL, "plan_uses": uses, "credibility": cred["kind"], "credibility_label": cred["label"], "accuracy": cred["accuracy"],
+				"is_nonpest": basis in FAT.FOLIAR_BASES})
 	return rows
 
 
@@ -368,8 +371,8 @@ def _r2(x):
 
 def _block(rows) -> dict:
 	"""Totals, by-pest, by-basis and by-product for one path's rows."""
-	chem = [r for r in rows if not r["is_foliar"]]
-	fol = [r for r in rows if r["is_foliar"]]
+	chem = [r for r in rows if not r["is_nonpest"]]
+	fol = [r for r in rows if r["is_nonpest"]]
 	pests: dict = {}
 	basis_tot: dict = defaultdict(float)
 	rec = der = unat = 0.0
@@ -393,7 +396,7 @@ def _block(rows) -> dict:
 				acc_w += v * r["accuracy"]
 				acc_v += v
 		p["basis"][r["basis"]] += v
-		p["products"][(r["item_code"], r["item_name"])] += v
+		p["products"][(r["item_code"], r["item_name"], r["plan_uses"])] += v
 	chem_total = rec + der + unat
 	by_pest = sorted(
 		(
@@ -404,21 +407,23 @@ def _block(rows) -> dict:
 				"est_accuracy": round(p["acc_w"] / p["derived"], 4) if p["derived"] and p["acc_w"] else None,
 				"basis": {b: _r2(v) for b, v in p["basis"].items()},
 				"products": sorted(
-					({"item_code": c, "item_name": n, "value": _r2(v)} for (c, n), v in p["products"].items()),
+					({"item_code": c, "item_name": n, "plan_uses": u, "value": _r2(v)} for (c, n, u), v in p["products"].items()),
 					key=lambda x: -x["value"]),
 			}
 			for p in pests.values()
 		),
 		key=lambda x: (-x["value"], x["target"]),
 	)
-	foliar_t: dict = defaultdict(float)
-	foliar_farm = 0.0
+	groups: dict = {g: {"group": g, "treatment": FAT.GROUP_TREATMENT[g], "value": 0.0,
+	                    "by_target": defaultdict(float), "farm_level": 0.0} for g in FAT.NON_PEST_GROUPS}
 	for r in fol:
-		if r["target"] == FOLIAR_FARM:
-			foliar_farm += r["attributed"]
+		g = groups[r["group"]]
+		g["value"] += r["attributed"]
+		if r["basis"] == "foliar_equal":
+			g["by_target"][r["target"]] += r["attributed"]
 		else:
-			foliar_t[r["target"]] += r["attributed"]
-	foliar_total = foliar_farm + sum(foliar_t.values())
+			g["farm_level"] += r["attributed"]
+	foliar_total = sum(g["value"] for g in groups.values())
 	by_basis = [
 		{"basis": b, "value": _r2(v), "share": round(v / (chem_total + foliar_total), 4) if (chem_total + foliar_total) else 0.0,
 		 **{k: FAT.credibility(b, rows[0]["path"] if rows else "spray")[k] for k in ("kind", "label", "accuracy")}}
@@ -429,13 +434,13 @@ def _block(rows) -> dict:
 	prods: dict = {}
 	for r in rows:
 		p = prods.setdefault(r["item_code"], {"item_code": r["item_code"], "item_name": r["item_name"], "value": 0.0,
-		                                      "foliar": r["is_foliar"], "targets": defaultdict(float), "mr": 0.0})
+		                                      "nonpest": r["is_nonpest"], "group": r["group"], "plan_uses": r["plan_uses"], "targets": defaultdict(float), "mr": 0.0})
 		p["targets"][r["target"]] += r["attributed"]
 		p["value"] += r["attributed"]
 		if r.get("mr"):
 			p["mr"] += r["attributed"]
 	by_product = sorted(
-		({"item_code": p["item_code"], "item_name": p["item_name"], "foliar": p["foliar"], "value": _r2(p["value"]),
+		({"item_code": p["item_code"], "item_name": p["item_name"], "nonpest": p["nonpest"], "group": p["group"], "plan_uses": p["plan_uses"], "value": _r2(p["value"]),
 		  "from_mr": _r2(p["mr"]),
 		  "targets": sorted(({"target": t, "value": _r2(v)} for t, v in p["targets"].items()), key=lambda x: -x["value"])}
 		 for p in prods.values()),
@@ -448,10 +453,13 @@ def _block(rows) -> dict:
 			"derived_accuracy": round(acc_w / acc_v, 4) if acc_v else None,
 			"by_pest": by_pest,
 		},
-		"foliar": {
+		"nonpest": {
 			"total": _r2(foliar_total),
-			"by_target": sorted(({"target": t, "value": _r2(v)} for t, v in foliar_t.items()), key=lambda x: -x["value"]),
-			"farm_level": _r2(foliar_farm),
+			"groups": [
+				{"group": g["group"], "treatment": g["treatment"], "value": _r2(g["value"]), "farm_level": _r2(g["farm_level"]),
+				 "by_target": sorted(({"target": t, "value": _r2(v)} for t, v in g["by_target"].items()), key=lambda x: -x["value"])}
+				for g in groups.values()
+			],
 		},
 		"by_basis": by_basis,
 		"by_product": by_product,
@@ -464,14 +472,14 @@ def _places(rows, direct: bool) -> list:
 		key = (r["farm"] or "", r["cost_center"] or "") if direct else (r["farm"] or "", r["greenhouse"] or "", r["cost_center"] or "")
 		p = places.setdefault(key, {
 			"farm": r["farm"] or "", "greenhouse": FARM_LEVEL if direct else r["greenhouse"],
-			"cost_center": r["cost_center"], "chemical": 0.0, "foliar": 0.0, "targets": defaultdict(float)})
-		if r["is_foliar"]:
-			p["foliar"] += r["attributed"]
+			"cost_center": r["cost_center"], "chemical": 0.0, "nonpest": 0.0, "targets": defaultdict(float)})
+		if r["is_nonpest"]:
+			p["nonpest"] += r["attributed"]
 		else:
 			p["chemical"] += r["attributed"]
 			p["targets"][r["target"]] += r["attributed"]
 	return sorted(
-		({**p, "chemical": _r2(p["chemical"]), "foliar": _r2(p["foliar"]), "value": _r2(p["chemical"] + p["foliar"]),
+		({**p, "chemical": _r2(p["chemical"]), "nonpest": _r2(p["nonpest"]), "value": _r2(p["chemical"] + p["nonpest"]),
 		  "targets": {t: _r2(v) for t, v in p["targets"].items()}} for p in places.values()),
 		key=lambda x: -x["value"],
 	)
@@ -515,7 +523,7 @@ def apply_filters(rows, *, paths=PATHS, pests=None, greenhouse=None):
 		want = set(pests)
 		out = [r for r in out if (
 			r["target"] in want
-			or (r["is_foliar"] and FOLIAR in want)
+			or (r["is_nonpest"] and NONPEST in want)
 		)]
 	return out, notes
 
@@ -530,7 +538,7 @@ def build_report(from_date, to_date, paths=PATHS, pests=None, greenhouse=None, d
 		            "greenhouse": greenhouse or ""},
 		"currency": cur, "notes": notes,
 		"accuracy": FAT.ACCURACY,
-		"pest_options": sorted({r["target"] for r in all_rows if r["target"] not in (UNATTRIBUTED, FOLIAR_FARM) and not r["is_foliar"]}),
+		"pest_options": sorted({r["target"] for r in all_rows if r["target"] != UNATTRIBUTED and not r["is_nonpest"]}),
 		"greenhouse_options": sorted({r["greenhouse"] for r in all_rows if r["greenhouse"]}),
 	}
 	srows = [r for r in rows if r["path"] == "spray"]
@@ -538,7 +546,7 @@ def build_report(from_date, to_date, paths=PATHS, pests=None, greenhouse=None, d
 	if "spray" in paths:
 		b = _block(srows)
 		b.update({"path": "spray", "plans_completed": len({r["work_order"] for r in srows}),
-		          "in_progress": data["spray"]["in_progress"], "manufactured": data["spray"].get("manufactured", 0),
+		          "in_progress": data["spray"]["in_progress"], "manufactured": data["spray"].get("manufactured", 0), "by_link": data["spray"].get("by_link", {}),
 		          "not_issued": data["spray"].get("not_issued", []),
 		          "match_method": "The tank-mix Material Issue carries no work order or other link to its plan, so it is matched "
 		                          "by greenhouse warehouse, tank-mix item, quantity and date (earliest first): issued, matched by greenhouse/date.", "by_greenhouse": _places(srows, False)})

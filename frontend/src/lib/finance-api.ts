@@ -161,6 +161,9 @@ export interface RegistrationSuggestion {
 export interface SuggestedRegistration {
   product: string;
   product_name: string;
+  cost_group?: string;
+  /** never used on a plan and nothing known about it: the GM is asked to set its group */
+  unclassified?: boolean;
   plans: number;
   suggestions: RegistrationSuggestion[];
 }
@@ -170,6 +173,20 @@ const ALLOC = "upande_scp.serverscripts.reports.finance_allocation";
 /** Spray Products with no registered targets, with what the usage history suggests. */
 export function fetchSuggestedRegistrations(): Promise<SuggestedRegistration[]> {
   return call<SuggestedRegistration[]>(`${ALLOC}.suggested_registrations`, {});
+}
+
+export const COST_GROUPS = [
+  "Pest control",
+  "Foliar",
+  "Adjuvant",
+  "pH buffer",
+  "Hygiene & sanitation",
+  "Post-harvest",
+];
+
+/** Change what a product's cost is for (GM only). */
+export function setCostGroup(product: string, costGroup: string): Promise<{ product: string; cost_group: string }> {
+  return call(`${ALLOC}.set_cost_group`, { product, cost_group: costGroup });
 }
 
 /** Append targets to a Spray Product's default_targets (GM only). */
@@ -199,9 +216,11 @@ export type PestBasis =
   | "equal"
   | "foliar_equal"
   | "foliar_farm"
+  | "non_pest"
+  | "unclassified"
   | "unattributed";
 
-export type Credibility = "recorded" | "derived" | "foliar" | "unattributed";
+export type Credibility = "recorded" | "derived" | "nonpest" | "unattributed";
 
 export interface PestBasisRow {
   basis: PestBasis;
@@ -222,13 +241,17 @@ export interface PestRow {
   /** spend-weighted estimated accuracy of the derived part, 0..1 */
   est_accuracy: number | null;
   basis: Partial<Record<PestBasis, number>>;
-  products: { item_code: string; item_name: string; value: number }[];
+  products: { item_code: string; item_name: string; plan_uses?: number; value: number }[];
 }
 
 export interface PathProduct {
   item_code: string;
   item_name: string;
-  foliar: boolean;
+  nonpest: boolean;
+  /** cost group: Pest control, Foliar, Adjuvant, pH buffer, Hygiene & sanitation, Post-harvest */
+  group: string;
+  /** spray plans (last year) that also used this product */
+  plan_uses: number;
   value: number;
   from_mr: number;
   targets: { target: string; value: number }[];
@@ -239,7 +262,7 @@ export interface PathPlace {
   greenhouse: string;
   cost_center: string | null;
   chemical: number;
-  foliar: number;
+  nonpest: number;
   value: number;
   targets: Record<string, number>;
 }
@@ -255,11 +278,17 @@ export interface PathBlock {
     derived_accuracy: number | null;
     by_pest: PestRow[];
   };
-  /** Foliar & adjuvants: always separate from the chemical pest cost. */
-  foliar: {
+  /** Non-pest inputs, one line per cost group: always separate from the pest cost. */
+  nonpest: {
     total: number;
-    by_target: { target: string; value: number }[];
-    farm_level: number;
+    groups: {
+      group: string;
+      /** how the group is treated, e.g. "split equally across the plan's targets" */
+      treatment: string;
+      value: number;
+      by_target: { target: string; value: number }[];
+      farm_level: number;
+    }[];
   };
   by_basis: PestBasisRow[];
   by_product: PathProduct[];
@@ -272,7 +301,6 @@ export interface PathBlock {
 
 export interface PestAttributionReport {
   filters: { from: string; to: string; paths: PathKey[]; pests: string[]; greenhouse: string };
-  currency: string;
   notes: string[];
   accuracy: Record<PathKey, Record<string, number>>;
   pest_options: string[];
@@ -331,8 +359,9 @@ export function credibilityLabel(
   accuracy: Record<PathKey, Record<string, number>>,
 ): { kind: Credibility; label: string; accuracy: number | null } {
   if (basis === "recorded") return { kind: "recorded", label: "Recorded", accuracy: 1 };
-  if (basis === "foliar_equal") return { kind: "foliar", label: "Foliar (equal split)", accuracy: null };
-  if (basis === "foliar_farm") return { kind: "foliar", label: "Foliar \u2014 not target-specific", accuracy: null };
+  if (basis === "foliar_equal") return { kind: "nonpest", label: "Split equally across plan targets", accuracy: null };
+  if (basis === "unclassified") return { kind: "nonpest", label: "Unclassified \u2014 set its cost group", accuracy: null };
+  if (basis === "foliar_farm" || basis === "non_pest") return { kind: "nonpest", label: "Not target-specific", accuracy: null };
   if (basis === "unattributed") return { kind: "unattributed", label: "Unattributed", accuracy: null };
   const acc = accuracy?.[path]?.[basis] ?? null;
   return {

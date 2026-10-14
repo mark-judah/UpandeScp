@@ -6,11 +6,20 @@ targets and says on what basis. It serves two paths:
   * SPRAY PLAN lines have a candidate set T (the plan's targets).
   * DIRECT material-issue lines have no plan, so no T (`candidates=None`).
 
-FOLIAR is the only thing split equally by default. A foliar line (Spray Product
-category Foliar, FER* items, and Adjuvant / pH Buffer products) is reported
-SEPARATELY from chemical pest cost, never added into it:
-  spray path  -> split equally over the plan's targets ("foliar_equal"); no T -> "foliar_farm".
-  direct path -> not target-specific, not split ("foliar_farm").
+Every product has a COST GROUP (Spray Product.custom_cost_group; blank = derived from
+category / type): Pest control, Foliar, Adjuvant, pH buffer, Hygiene & sanitation, Post-harvest.
+Only Pest control is attributed to pests. The rest is reported SEPARATELY, never added
+into pest totals:
+  Foliar, Adjuvant, pH buffer
+      spray path  -> split equally over the plan's targets ("foliar_equal"); no T -> "foliar_farm".
+      direct path -> not target-specific, not split ("foliar_farm").
+  Hygiene & sanitation, Post-harvest
+      never split to pests on either path ("non_pest"), their own lines.
+An EXPLICIT group always wins. With none set: category Foliar / FER* / type Adjuvant / pH Buffer
+give their group; a spray-plan line is Pest control; on the DIRECT path the evidence decides:
+used on a spray plan in the last 365 days, or any ingredient / registration known -> Pest
+control (its shares come from its spray-plan history); otherwise "Unclassified" (own line,
+the GM is asked to set its group). No product is ever classified by name.
 
 A CHEMICAL line, first that applies wins:
 
@@ -57,6 +66,42 @@ NON_PROTECTIVE_TYPES = ("Adjuvant", "pH Buffer")
 PEST_CLASSES = ("Insecticide", "Biological")
 DISEASE_CLASSES = ("Fungicide",)
 
+PEST_CONTROL = "Pest control"
+COST_GROUPS = ("Pest control", "Foliar", "Adjuvant", "pH buffer", "Hygiene & sanitation", "Post-harvest")
+UNCLASSIFIED = "Unclassified"
+NON_PEST_GROUPS = COST_GROUPS[1:] + (UNCLASSIFIED,)
+#: groups split equally over a plan's targets (farm-level without a plan)
+SPLIT_GROUPS = ("Foliar", "Adjuvant", "pH buffer")
+#: how each non-pest group is treated, for the UI and the export
+GROUP_TREATMENT = {
+	"Foliar": "split equally across the plan's targets; not target-specific on direct issues",
+	"Adjuvant": "split equally across the plan's targets; not target-specific on direct issues",
+	"pH buffer": "split equally across the plan's targets; not target-specific on direct issues",
+	"Hygiene & sanitation": "not target-specific, never split to pests",
+	"Post-harvest": "not target-specific, never split to pests",
+	UNCLASSIFIED: "not placed: never used on a spray plan and no ingredient known. Set its cost group",
+}
+
+
+def default_cost_group(product: dict, direct: bool = False, uses: int = 0, evidence: bool = False) -> str:
+	"""The group when none is set: category Foliar / FER* -> Foliar, type Adjuvant -> Adjuvant,
+	pH Buffer -> pH buffer, otherwise Pest control."""
+	if product.get("category") == "Foliar" or (product.get("code") or "").upper().startswith("FER"):
+		return "Foliar"
+	if product.get("type") == "Adjuvant":
+		return "Adjuvant"
+	if product.get("type") == "pH Buffer":
+		return "pH buffer"
+	if direct and not uses and not evidence:
+		return UNCLASSIFIED
+	return PEST_CONTROL
+
+
+def cost_group(product: dict, direct: bool = False, uses: int = 0, evidence: bool = False) -> str:
+	g = product.get("cost_group")
+	return g if g in COST_GROUPS else default_cost_group(product, direct, uses, evidence)
+
+
 BASES = (
 	"recorded",
 	"band1_ai_target",
@@ -66,9 +111,12 @@ BASES = (
 	"equal",
 	"foliar_equal",
 	"foliar_farm",
+	"non_pest",
+	"unclassified",
 	"unattributed",
 )
-FOLIAR_BASES = ("foliar_equal", "foliar_farm")
+#: bases that are not pest-control attribution
+FOLIAR_BASES = ("foliar_equal", "foliar_farm", "non_pest", "unclassified")
 #: Backtested accuracy per basis, by path (shown as a tooltip in the UI).
 ACCURACY = {
 	"spray": {
@@ -89,8 +137,9 @@ def credibility(basis: str, path: str = "spray") -> dict:
 	if basis == "recorded":
 		return {"kind": "recorded", "label": "Recorded", "accuracy": 1.0}
 	if basis in FOLIAR_BASES:
-		label = "Foliar (equal split)" if basis == "foliar_equal" else "Foliar (not target-specific)"
-		return {"kind": "foliar", "label": label, "accuracy": None}
+		label = {"foliar_equal": "Split equally across plan targets",
+		         "unclassified": "Unclassified \u2014 set its cost group"}.get(basis, "Not target-specific")
+		return {"kind": "nonpest", "label": label, "accuracy": None}
 	if basis == "unattributed":
 		return {"kind": "unattributed", "label": "Unattributed", "accuracy": None}
 	acc = (ACCURACY.get(path) or {}).get(basis)
@@ -101,6 +150,8 @@ def credibility(basis: str, path: str = "spray") -> dict:
 		"band3_radar": "usage radar",
 		"equal": "equal split",
 	}.get(basis, basis)
+	if path == "direct" and basis in ("band2_alone", "band3_radar"):
+		name += " in its spray-plan history"
 	label = f"Derived \u2014 {name}" + (f", est. {round(acc * 100)}%" if acc is not None else ", accuracy not backtested")
 	return {"kind": "derived", "label": label, "accuracy": acc}
 
@@ -150,7 +201,7 @@ def resolve_product(product: dict, kb: dict, mona_ai_t: dict | None = None) -> d
 	"""Derive what the bands need from a raw product (cached on the dict).
 
 	product: {code, name, item_name, category, type, ingredients: [str], registered: [target],
-	          irac: bool, frac: bool, foliar: bool}"""
+	          irac: bool, frac: bool, cost_group: str}"""
 	if "_r" in product:
 		return product["_r"]
 	mona_ai_t = mona_ai_t or {}
@@ -170,20 +221,13 @@ def resolve_product(product: dict, kb: dict, mona_ai_t: dict | None = None) -> d
 		kinds.add("Insecticide")
 	if product.get("frac"):
 		kinds.add("Fungicide")
-	code = (product.get("code") or "").upper()
-	foliar = bool(
-		product.get("foliar")
-		or product.get("category") == "Foliar"
-		or product.get("type") in NON_PROTECTIVE_TYPES
-		or code.startswith("FER")
-	)
 	r = {
 		"code": product.get("code"),
 		"ingredients": sorted(ings),
 		"targets": s,
 		"pest_class": bool(kinds & set(PEST_CLASSES)),
 		"disease_class": bool(kinds & set(DISEASE_CLASSES)),
-		"foliar": foliar,
+		"evidence": bool(ings or s),
 	}
 	product["_r"] = r
 	return r
@@ -253,11 +297,17 @@ def allocate(
 	r = resolve_product(product, kb, refs.get("mona_ai_t"))
 	kinds = kinds or {}
 
-	if r["foliar"]:
+	uses = (refs.get("uses") or {}).get(product.get("code"), 0)
+	group = cost_group(product, candidates is None, uses, r["evidence"])
+	if group == UNCLASSIFIED and not any(recorded or []):
+		return {"shares": {}, "basis": "unclassified", "group": group}
+	if group in ("Hygiene & sanitation", "Post-harvest"):
+		return {"shares": {}, "basis": "non_pest", "group": group}
+	if group in SPLIT_GROUPS:
 		T = list(dict.fromkeys(t for t in (candidates or []) if t))
 		if T:
-			return {"shares": {t: 1.0 / len(T) for t in T}, "basis": "foliar_equal"}
-		return {"shares": {}, "basis": "foliar_farm"}
+			return {"shares": {t: 1.0 / len(T) for t in T}, "basis": "foliar_equal", "group": group}
+		return {"shares": {}, "basis": "foliar_farm", "group": group}
 
 	rec = list(dict.fromkeys(t for t in (recorded or []) if t))
 	if rec:
@@ -374,6 +424,19 @@ def mona_ingredient_targets(kb) -> dict:
 	return out
 
 
+def plan_uses(end, days: int = 365) -> dict:
+	"""{item_code: number of submitted spray plans that used it} over the `days` before `end`."""
+	rows = frappe.db.sql(
+		"""SELECT ri.item_code, COUNT(DISTINCT wo.name) AS n
+		   FROM `tabWork Order` wo JOIN `tabWork Order Item` ri ON ri.parent = wo.name
+		   WHERE wo.docstatus = 1 AND wo.custom_type = 'Application Floor Plan'
+		     AND DATE(COALESCE(wo.custom_scheduled_application_time, wo.creation)) BETWEEN %(a)s AND %(b)s
+		   GROUP BY ri.item_code""",
+		{"a": add_days(end, -days), "b": str(end)},
+	)
+	return {c: int(n) for c, n in rows}
+
+
 def reference_data_for(start, end, kinds=None, kb=None) -> dict:
 	"""History covering lines dated `start`..`end`: the 180 days before `start` through `end`.
 	One query; the cache key is the window end."""
@@ -400,7 +463,8 @@ def reference_data_for(start, end, kinds=None, kb=None) -> dict:
 			{"a": add_days(start, -WINDOW_DAYS - 1), "b": end},
 			as_dict=True,
 		)
-		data = {"plans": build_plans(rows, kinds_.keys()), "mona_ai_t": mona_ingredient_targets(kb)}
+		data = {"plans": build_plans(rows, kinds_.keys()), "mona_ai_t": mona_ingredient_targets(kb),
+		        "uses": plan_uses(end)}
 		cache.set_value(key, json.dumps(data), expires_in_sec=3600)
 	data["plans"] = {c: [(d, w, ts) for d, w, ts in v] for c, v in data["plans"].items()}
 	return data
@@ -416,10 +480,11 @@ def raw_products(codes, kb=None) -> dict:
 	codes = sorted({c for c in codes if c})
 	if not codes:
 		return {}
+	grp = ", IFNULL(custom_cost_group,'') AS cost_group" if frappe.db.has_column("Spray Product", "custom_cost_group") else ""
 	sp = {
 		r.name: r
 		for r in frappe.db.sql(
-			"SELECT name, product_name, category, IFNULL(type,'') AS type FROM `tabSpray Product` WHERE name IN %(c)s",
+			f"SELECT name, product_name, category, IFNULL(type,'') AS type{grp} FROM `tabSpray Product` WHERE name IN %(c)s",
 			{"c": tuple(codes)},
 			as_dict=True,
 		)
@@ -467,6 +532,7 @@ def raw_products(codes, kb=None) -> dict:
 			"item_name": item_names.get(code) or code,
 			"category": p.category if p else None,
 			"type": p.type if p else None,
+			"cost_group": (p.get("cost_group") if p else None) or None,
 			"ingredients": ings.get(code, []),
 			"registered": registered.get(code, []),
 			"irac": cls.get("irac", False),

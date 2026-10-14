@@ -273,23 +273,43 @@ def suggested_registrations() -> list:
 	_ensure_gm()
 	kinds = valid_targets_and_kinds()
 	rd = radar(kinds=kinds)
+	has_group = frappe.db.has_column("Spray Product", "custom_cost_group")
+	grp = ", IFNULL(sp.custom_cost_group,'') AS cost_group" if has_group else ", '' AS cost_group"
+	only_pest = "AND IFNULL(sp.custom_cost_group,'') IN ('', 'Pest control')" if has_group else ""
 	rows = frappe.db.sql(
-		"""SELECT sp.name, sp.product_name, sp.category, IFNULL(sp.type,'') AS type
+		f"""SELECT sp.name, sp.product_name, sp.category, IFNULL(sp.type,'') AS type{grp}
 		   FROM `tabSpray Product` sp
 		   WHERE sp.disabled = 0 AND IFNULL(sp.category,'') != 'Foliar'
-		     AND IFNULL(sp.type,'') NOT IN ('Adjuvant', 'pH Buffer')
+		     AND IFNULL(sp.type,'') NOT IN ('Adjuvant', 'pH Buffer') {only_pest}
 		     AND NOT EXISTS (SELECT 1 FROM `tabChemical Targets` ct
 		                     WHERE ct.parent = sp.name AND ct.parenttype = 'Spray Product'
 		                       AND ct.parentfield = 'default_targets')""",
 		as_dict=True,
 	)
 	out = []
+	rest = []
 	for r in rows:
 		sug = suggestions_from_radar(rd.get(r.name), kinds)
 		if sug:
 			out.append({"product": r.name, "product_name": r.product_name or r.name,
+			            "cost_group": r.cost_group or "Pest control",
 			            "plans": rd[r.name]["plans"], "suggestions": sug})
-	return sorted(out, key=lambda x: -x["plans"])
+		elif not r.cost_group:
+			rest.append(r)
+	# Products nobody has placed: no cost group, never on a spray plan, no ingredient or
+	# registration known. Finance reports them as "Unclassified"; the GM is asked to set the group.
+	if rest:
+		from upande_scp.serverscripts.reports import finance_attribution as FAT
+
+		kb = FAT.load_seed()
+		uses = FAT.plan_uses(today())
+		raw = FAT.raw_products([r.name for r in rest], kb)
+		for r in rest:
+			res = FAT.resolve_product(raw[r.name], kb)
+			if not uses.get(r.name) and not res["evidence"]:
+				out.append({"product": r.name, "product_name": r.product_name or r.name, "cost_group": "",
+				            "plans": 0, "suggestions": [], "unclassified": True})
+	return sorted(out, key=lambda x: (-x["plans"], x["product_name"]))
 
 
 @frappe.whitelist()
@@ -311,3 +331,17 @@ def register_product_targets(product: str, targets) -> dict:
 	if added:
 		doc.save()
 	return {"product": product, "added": added}
+
+
+COST_GROUPS = ("Pest control", "Foliar", "Adjuvant", "pH buffer", "Hygiene & sanitation", "Post-harvest")
+
+
+@frappe.whitelist()
+def set_cost_group(product: str, cost_group: str) -> dict:
+	"""Set a Spray Product's cost group (GM / System Manager). Finance reads it to decide
+	whether the product's spend is attributed to pests at all."""
+	_ensure_gm()
+	if cost_group not in COST_GROUPS:
+		frappe.throw(f"Unknown cost group {cost_group!r}.")
+	frappe.db.set_value("Spray Product", product, "custom_cost_group", cost_group)
+	return {"product": product, "cost_group": cost_group}

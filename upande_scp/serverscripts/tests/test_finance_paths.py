@@ -53,7 +53,8 @@ def line(path="spray", code="P1", value=100.0, **kw):
 	base = {"path": path, "date": "2026-09-10", "document": "D1", "issue": "I1", "work_order": "WO1" if path == "spray" else None,
 	        "mr": None, "link_basis": "Greenhouse+date (matched)" if path == "spray" else None, "greenhouse": "GH1" if path == "spray" else None, "farm": "F", "cost_center": "CC1",
 	        "item_code": code, "item_name": code, "qty": 1, "uom": "L", "value": value, "ledger": True,
-	        "detail": "d", "plan_targets": ["Mites", "Mildew"] if path == "spray" else None, "recorded": []}
+	        "detail": "d", "share": 1.0, "is_return": False, "netted_against": None,
+	        "plan_targets": ["Mites", "Mildew"] if path == "spray" else None, "recorded": []}
 	base.update(kw)
 	return base
 
@@ -67,7 +68,7 @@ PRODUCTS = {
 	"PH": {"code": "PH", "name": "Vase life", "category": "Chemical", "type": "Insecticide", "cost_group": "Post-harvest"},
 	"U1": {"code": "U1", "name": "Mystery", "category": "Chemical", "type": "Insecticide"},
 }
-REFS = {"plans": {}, "mona_ai_t": {}, "uses": {"P2": 4}}
+REFS = {"plans": {}, "mona_ai_t": {}, "use_dates": {"P2": [(f"2026-08-0{i}", f"W{i}") for i in range(1, 5)]}}
 
 
 def attr(lines):
@@ -165,7 +166,7 @@ class TestExport(unittest.TestCase):
 		lines = [line(code="P2", value=100, recorded=["Mites"], detail="a"), line(code="P1", value=60, detail="b"),
 		         line(code="F1", value=40, detail="c"), line("direct", "P2", 25, detail="d", mr="MR-1"),
 		         line("direct", "F1", 15, detail="e")]
-		self.data = {"rows": attr(lines), "lines": lines, "spray": {"in_progress": {"plans": 2, "value": 10.0}}, "kinds": KINDS}
+		self.data = {"rows": attr(lines), "lines": lines, "spray": {"in_progress": [{"work_order": "W", "value": 10.0, "greenhouse": "GH1", "targets": []}], "straddle": [], "not_issued": [], "manufactured": 0, "by_link": {}}, "kinds": KINDS}
 		self.lines = lines
 
 	def build(self, **kw):
@@ -263,3 +264,108 @@ class TestExport(unittest.TestCase):
 		self.assertEqual(vals[("Direct issue", "P2")], "Yes (4 plans)")
 		self.assertEqual(vals[("Direct issue", "F1")], "No")
 		self.assertFalse(vals[("Spray plan", "P2")])
+
+
+class TestSplitIssuesAndValuation(unittest.TestCase):
+	def test_issue_shares_follow_issued_quantity_and_sum_to_one(self):
+		got = FP.split_issue_shares([{"qty": 1.2, "name": "A"}, {"qty": 0.8, "name": "B"}])
+		self.assertEqual([(i["name"], round(s, 6)) for i, s in got], [("A", 0.6), ("B", 0.4)])
+		self.assertAlmostEqual(sum(s for _i, s in got), 1.0)
+
+	def test_a_single_issue_takes_everything_and_zero_quantity_splits_evenly(self):
+		self.assertEqual(FP.split_issue_shares([{"qty": 2}])[0][1], 1.0)
+		self.assertEqual([s for _i, s in FP.split_issue_shares([{"qty": 0}, {"qty": 0}])], [0.5, 0.5])
+
+	def test_zero_ledger_value_falls_back_to_the_line_amount_and_is_counted(self):
+		self.assertEqual(FP.valuation({"ledger_value": 0, "qty": 3, "line_amount": 120}), (120.0, False))
+		self.assertEqual(FP.valuation({"ledger_value": None, "qty": 3, "line_amount": 50}), (50.0, False))
+		self.assertEqual(FP.valuation({"ledger_value": 80, "qty": 3, "line_amount": 120}), (80.0, True))
+		self.assertEqual(FP.valuation({"ledger_value": 0, "qty": 0, "line_amount": 0}), (0.0, True))
+
+	def test_split_lines_attribute_to_the_value_of_each_part(self):
+		a = line(value=60.0, greenhouse="GH1", detail="d")
+		b = line(value=40.0, greenhouse="GH2", detail="d")
+		rows = attr([a, b])
+		by_gh = {}
+		for r in rows:
+			by_gh[r["greenhouse"]] = by_gh.get(r["greenhouse"], 0) + r["attributed"]
+		self.assertEqual(by_gh, {"GH1": 60.0, "GH2": 40.0})
+
+
+class TestReportReconciliationAndNotes(unittest.TestCase):
+	def data(self, extra_lines=(), spray=None):
+		lines = [line(code="P2", value=100.004, recorded=["Mites"], detail="a"),
+		         line(code="P1", value=60.004, detail="b"),
+		         line("direct", "P2", 25.004, detail="d", mr="MR-1"), *extra_lines]
+		sp = {"in_progress": [], "straddle": [], "not_issued": [], "manufactured": 0, "by_link": {}}
+		sp.update(spray or {})
+		return {"rows": attr(lines), "lines": lines, "spray": sp, "kinds": KINDS}
+
+	def report(self, data, **kw):
+		with mock.patch.object(FP, "ledger_total", side_effect=lambda ls: sum(x["value"] * x.get("share", 1) for x in ls if x["ledger"])):
+			return FP.build_report("2026-09-01", "2026-09-30", data=data, **kw)
+
+	def test_reconciles_like_with_like_and_reports_rounding_apart(self):
+		r = self.report(self.data())["combined"]
+		self.assertTrue(r["reconciles"])
+		self.assertEqual(r["total"], r["line_total"])
+		self.assertEqual(r["ledger_difference"], 0.0)
+		self.assertAlmostEqual(r["rounding_residual"], 0.012, places=2)
+
+	def test_the_flag_is_false_when_the_ledger_disagrees(self):
+		d = self.data()
+		with mock.patch.object(FP, "ledger_total", return_value=1.0):
+			r = FP.build_report("2026-09-01", "2026-09-30", data=d)["combined"]
+		self.assertFalse(r["reconciles"])
+
+	def test_straddle_and_not_issued_and_in_progress_follow_the_filters(self):
+		sp = {"straddle": [{"work_order": "W1", "value": 70.0, "greenhouse": "GH1", "targets": ["Mites"], "issued": "2026-10-02", "issue": "I"},
+		                   {"work_order": "W2", "value": 30.0, "greenhouse": "GH2", "targets": ["Mildew"], "issued": "2026-10-03", "issue": "J"}],
+		      "in_progress": [{"work_order": "W3", "value": 5.0, "greenhouse": "GH1", "targets": ["Mites"]}],
+		      "not_issued": [{"work_order": "W4", "greenhouse": "GH2", "targets": ["Mildew"]}]}
+		r = self.report(self.data(spray=sp))["spray"]
+		self.assertEqual((r["straddle"]["plans"], r["straddle"]["value"]), (2, 100.0))
+		self.assertIn("booked in the period of the issue", r["straddle"]["note"])
+		r = self.report(self.data(spray=sp), greenhouse="GH1")["spray"]
+		self.assertEqual((r["straddle"]["value"], r["in_progress"]["plans"], len(r["not_issued"])), (70.0, 1, 0))
+		r = self.report(self.data(spray=sp), pests=["Mildew"])["spray"]
+		self.assertEqual((r["straddle"]["value"], r["in_progress"]["plans"], len(r["not_issued"])), (30.0, 0, 1))
+
+	def test_effective_paths_echoed_when_a_greenhouse_drops_direct(self):
+		r = self.report(self.data(), greenhouse="GH1")
+		self.assertEqual(r["filters"]["paths"], ["spray"])
+		self.assertEqual(sorted(r["filters"]["requested_paths"]), ["direct", "spray"])
+		self.assertNotIn("direct", r)
+
+	def test_returns_net_against_the_product_and_say_how(self):
+		ret = line("direct", "P2", -10.0, detail="r", mr="MR-1", is_return=True, netted_against="D1", document="R1")
+		d = self.data(extra_lines=[ret])
+		r = self.report(d)["direct"]
+		self.assertEqual(r["returns"]["total"], -10.0)
+		self.assertEqual((r["returns"]["traced"], r["returns"]["untraced"]), (-10.0, 0.0))
+		self.assertEqual(r["total"], 15.0)  # 25 issued, 10 returned
+		self.assertIn("negative line", r["returns"]["note"])
+		untraced = line("direct", "P2", -4.0, detail="r2", is_return=True, netted_against=None, document="R2")
+		r = self.report(self.data(extra_lines=[untraced]))["direct"]
+		self.assertEqual((r["returns"]["traced"], r["returns"]["untraced"]), (0.0, -4.0))
+
+	def test_zero_ledger_lines_count_as_fallback(self):
+		fb = line(code="P2", value=12.0, detail="z", ledger=False)
+		self.assertEqual(self.report(self.data(extra_lines=[fb]))["combined"]["fallback_lines"], 1)
+
+
+class TestPerPathLabels(unittest.TestCase):
+	def test_basis_label_is_keyed_by_path_and_basis(self):
+		lines = [line(code="P2", value=10, detail="a"), line("direct", "P2", 10, detail="b")]
+		refs_ = {"plans": {"P2": [("2026-08-01", "A", ["Mildew"]), ("2026-08-02", "B", ["Mildew"])]}, "mona_ai_t": {},
+		         "use_dates": {"P2": [("2026-08-01", "A"), ("2026-08-02", "B")]}}
+		rows = FP.attribute(lines, refs_, KB, KINDS, PRODUCTS)
+		labels = {(r["path"], r["basis"]): r["credibility_label"] for r in rows}
+		self.assertIn("est. 93%", labels[("spray", "band2_alone")])
+		self.assertIn("est. 84%", labels[("direct", "band2_alone")])
+		from upande_scp.serverscripts.reports import finance_api as API_
+		tables = API_._tables(rows, {"from": "a", "to": "b", "paths": ("spray", "direct"), "pests": [], "greenhouse": ""},
+		                      {"combined": {"total": 0}, "spray": {"in_progress": {"plans": 0, "value": 0}}}, False)
+		mix = [r for r in tables["Summary"] if len(r) == 5 and r[1] == "band2_alone"]
+		self.assertEqual({r[0]: r[2] for r in mix}.keys(), {"Spray plan", "Direct issue"})
+		self.assertNotEqual(mix[0][2], mix[1][2])

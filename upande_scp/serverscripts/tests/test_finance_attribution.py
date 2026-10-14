@@ -17,7 +17,12 @@ T = ["Mites", "Thrips", "Mildew", "Botrytis"]
 
 def refs(plans=None, mona=None):
 	plans = plans or {}
-	return {"plans": plans, "mona_ai_t": mona or {}, "uses": {c: len(v) for c, v in plans.items()}}
+	return {"plans": plans, "mona_ai_t": mona or {},
+	        "use_dates": {c: [(d, w) for d, w, _ts in v] for c, v in plans.items()}}
+
+
+def used(code, n, start="2026-08-01"):
+	return {code: [(f"2026-08-{i + 1:02d}", f"U{i}") for i in range(n)]}
 
 
 def alone_plans(code, target, n, start="2026-08-01"):
@@ -83,14 +88,14 @@ class TestEvidence(Base):
 
 	def test_used_on_spray_plans_is_pest_control_with_history_shares(self):
 		r = refs(alone_plans("P1", "Mites", 3))
-		r["uses"] = {"P1": 3}
+		r["use_dates"] = used("P1", 3)
 		a = self.direct(prod(name="Anything"), r)
 		self.assertEqual(a["basis"], "band2_alone")
 		self.assertEqual(set(a["shares"]), {"Mites"})
 
 	def test_used_on_plans_but_no_history_window_hit_is_unattributed_not_unclassified(self):
 		r = refs()
-		r["uses"] = {"P1": 2}
+		r["use_dates"] = used("P1", 2)
 		self.assertEqual(self.direct(prod(), r)["basis"], "unattributed")
 
 	def test_ingredient_evidence_is_pest_control(self):
@@ -102,7 +107,7 @@ class TestEvidence(Base):
 
 	def test_explicit_group_beats_evidence(self):
 		r = refs(alone_plans("P1", "Mites", 3))
-		r["uses"] = {"P1": 3}
+		r["use_dates"] = used("P1", 3)
 		a = self.direct(prod(cost_group="Hygiene & sanitation"), r)
 		self.assertEqual((a["basis"], a["group"]), ("non_pest", "Hygiene & sanitation"))
 		a = self.direct(prod(cost_group="Pest control"))
@@ -295,7 +300,7 @@ class TestDirectPath(Base):
 		a = self.direct(prod())
 		self.assertEqual((a["basis"], a["shares"]), ("unclassified", {}))
 		r = refs()
-		r["uses"] = {"P1": 1}  # used on a plan, but nothing to attribute by
+		r["use_dates"] = used("P1", 1)  # used on a plan, but nothing to attribute by
 		self.assertEqual(self.direct(prod(), r)["basis"], "unattributed")
 
 	def test_direct_accuracy_labels(self):
@@ -316,3 +321,40 @@ class TestReferenceBuild(unittest.TestCase):
 		kb = FAT.load_seed()
 		for k in ("alias", "kind", "ai_t", "prod_ai", "prods"):
 			self.assertTrue(kb[k])
+
+
+class TestNoLookAheadAndRecordedHistory(unittest.TestCase):
+	def test_plan_uses_are_counted_before_the_line_not_the_report_end(self):
+		r = refs()
+		r["use_dates"] = {"P1": [("2026-09-20", "A"), ("2026-09-25", "B")]}
+		self.assertEqual(FAT.uses_before(r, "P1", "2026-09-10"), 0)  # both are AFTER the line
+		self.assertEqual(FAT.uses_before(r, "P1", "2026-09-22"), 1)
+		self.assertEqual(FAT.uses_before(r, "P1", "2026-09-30"), 2)
+		self.assertEqual(FAT.uses_before(r, "P1", "2026-09-30", exclude_wo="A"), 1)
+		self.assertEqual(FAT.uses_before(r, "P1", "2027-09-30"), 0)  # older than a year
+
+	def test_a_direct_line_before_any_use_is_unclassified_not_pest_control(self):
+		r = refs()
+		r["use_dates"] = {"P1": [("2026-09-20", "A")]}
+		a = FAT.allocate(prod(), None, r, KB, KINDS, on_date="2026-09-10")
+		self.assertEqual(a["basis"], "unclassified")
+		a = FAT.allocate(prod(), None, r, KB, KINDS, on_date="2026-09-30")
+		self.assertEqual(a["basis"], "unattributed")
+
+	def test_recorded_row_targets_feed_history_and_rows_of_one_item_merge(self):
+		rows = [
+			{"wo": "A", "targets": "Mites\nMildew", "item_code": "P1", "date": "2026-08-02", "row_targets": "Mites"},
+			{"wo": "A", "targets": "Mites\nMildew", "item_code": "P1", "date": "2026-08-02", "row_targets": "Mildew"},
+			{"wo": "B", "targets": "Mites\nMildew", "item_code": "P1", "date": "2026-08-03", "row_targets": "Thrips"},
+			{"wo": "C", "targets": "Mites\nMildew", "item_code": "P1", "date": "2026-08-04", "row_targets": None},
+		]
+		got = FAT.build_plans(rows, KINDS)["P1"]
+		self.assertEqual(got[0], ("2026-08-02", "A", ["Mites", "Mildew"]))  # both rows merged
+		self.assertEqual(got[1], ("2026-08-03", "B", ["Thrips"]))  # a recorded single-target row = used alone
+		self.assertEqual(got[2], ("2026-08-04", "C", ["Mites", "Mildew"]))  # no row targets: the plan's
+
+	def test_version_token_changes_the_cache_key(self):
+		import frappe
+		before = FAT._version()
+		FAT.bump_reference_version()
+		self.assertNotEqual(FAT._version(), before)

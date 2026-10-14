@@ -309,7 +309,38 @@ def suggested_registrations() -> list:
 			if not uses.get(r.name) and not res["evidence"]:
 				out.append({"product": r.name, "product_name": r.product_name or r.name, "cost_group": "",
 				            "plans": 0, "suggestions": [], "unclassified": True})
+	out += _items_without_spray_product(today())
 	return sorted(out, key=lambda x: (-x["plans"], x["product_name"]))
+
+
+def _items_without_spray_product(end) -> list:
+	"""Items in a configured chemical / foliar group that have no Spray Product at all and no evidence:
+	listed so the GM can place them (setting the group creates the Spray Product)."""
+	from upande_scp.serverscripts.common import crop_protection as CP
+	from upande_scp.serverscripts.reports import finance_attribution as FAT
+
+	groups = CP.product_groups()
+	if not groups:
+		return []
+	rows = frappe.db.sql(
+		"""SELECT i.name, i.item_name FROM `tabItem` i
+		   WHERE i.disabled = 0 AND i.item_group IN %(g)s
+		     AND NOT EXISTS (SELECT 1 FROM `tabSpray Product` sp WHERE sp.item = i.name)""",
+		{"g": tuple(groups)},
+		as_dict=True,
+	)
+	if not rows:
+		return []
+	kb = FAT.load_seed()
+	uses = FAT.plan_uses(end)
+	raw = FAT.raw_products([r.name for r in rows], kb)
+	out = []
+	for r in rows:
+		res = FAT.resolve_product(raw[r.name], kb)
+		if FAT.cost_group(raw[r.name], True, uses.get(r.name, 0), res["evidence"]) == FAT.UNCLASSIFIED:
+			out.append({"product": r.name, "product_name": r.item_name or r.name, "cost_group": "",
+			            "plans": 0, "suggestions": [], "unclassified": True, "has_spray_product": False})
+	return out
 
 
 @frappe.whitelist()
@@ -343,5 +374,25 @@ def set_cost_group(product: str, cost_group: str) -> dict:
 	_ensure_gm()
 	if cost_group not in COST_GROUPS:
 		frappe.throw(f"Unknown cost group {cost_group!r}.")
-	frappe.db.set_value("Spray Product", product, "custom_cost_group", cost_group)
-	return {"product": product, "cost_group": cost_group}
+	created = False
+	name = frappe.db.get_value("Spray Product", product, "name") or frappe.db.get_value(
+		"Spray Product", {"item": product}, "name")
+	if not name:
+		# Items nobody has made a Spray Product for (their group is configured, the record is missing):
+		# create it from the Item, category from its Item Group, rather than silently doing nothing.
+		from upande_scp.serverscripts.common import crop_protection as CP
+
+		if not frappe.db.exists("Item", product):
+			frappe.throw(f"{product!r} is neither a Spray Product nor an Item.")
+		made = CP.ensure_product_record(product)
+		if not made:
+			frappe.throw(
+				f"{product} is not in a configured chemical or foliar Item Group, so it cannot be a Spray Product."
+			)
+		name, created = made[1], True
+	frappe.db.set_value("Spray Product", name, "custom_cost_group", cost_group)
+	from upande_scp.serverscripts.reports import finance_attribution as FAT
+
+	FAT.bump_reference_version()
+	return {"product": product, "spray_product": name, "cost_group": cost_group, "created": created,
+	        "message": "Created a Spray Product from the Item." if created else None}

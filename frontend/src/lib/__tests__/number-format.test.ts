@@ -11,6 +11,12 @@ describe("formatAmount", () => {
   it("never carries a currency", () => {
     expect(formatAmount(1000)).not.toMatch(/[A-Za-z$€£]/);
   });
+  it("never shows a negative zero", () => {
+    expect(formatAmount(-0)).toBe("0.00");
+    expect(formatAmount(-0.001)).toBe("0.00");
+    expect(formatAmount(-0.004)).toBe("0.00");
+    expect(formatAmount(-0.01)).toBe("-0.01");
+  });
   it("treats missing values as zero", () => {
     expect(formatAmount(undefined)).toBe("0.00");
     expect(formatAmount(null)).toBe("0.00");

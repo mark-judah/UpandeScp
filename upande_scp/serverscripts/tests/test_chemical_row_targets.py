@@ -48,13 +48,35 @@ class TestValidate(unittest.TestCase):
 
 class TestDraftsEnforcement(unittest.TestCase):
 	def payload(self, chems):
-		return {"custom_targets": ["Mites"], "chemicals": chems, "custom_water_volume": 1000,
-		        "_skip_target_validation": True, "_skip_bom_validation": True}
+		return {"custom_targets": ["Mites"], "chemicals": chems, "custom_water_volume": 1000}
 
 	def setUp(self):
+		frappe.flags.scp_skip_target_validation = True
+		frappe.flags.scp_skip_bom_validation = True
+		for f in ("scp_skip_target_validation", "scp_skip_bom_validation"):
+			self.addCleanup(lambda f=f: frappe.flags.pop(f, None))
 		p = mock.patch.object(V, "needs_row_targets", side_effect=needs)
 		p.start()
 		self.addCleanup(p.stop)
+
+	def test_client_flags_are_stripped_at_the_api_boundary(self):
+		got = drafts._client_payload('{"custom_targets": ["Mites"], "_skip_chemical_targets": true, "_skip_bom_validation": 1}')
+		self.assertEqual(got, {"custom_targets": ["Mites"]})
+		self.assertEqual(drafts._client_payload({"_x": 1, "a": 2}), {"a": 2})
+
+	def test_a_client_flag_cannot_bypass_the_row_target_check(self):
+		payload = drafts._client_payload({**self.payload([{"item_code": "CHEM1", "application_rate": 1}]),
+		                                  "_skip_chemical_targets": True})
+		with mock.patch.object(drafts, "validate_rate_in_limits"):
+			with self.assertRaises(frappe.ValidationError):
+				drafts._validate_payload(payload, {})
+
+	def test_trusted_callers_use_frappe_flags(self):
+		frappe.flags.scp_skip_chemical_targets = True
+		self.addCleanup(lambda: frappe.flags.pop("scp_skip_chemical_targets", None))
+		with mock.patch.object(drafts, "validate_rate_in_limits"):
+			drafts._validate_payload({"custom_targets": ["Mites"], "chemicals": [{"item_code": "CHEM1", "application_rate": 1}],
+			                          "custom_water_volume": 1000, "production_item": "B"}, {})
 
 	def test_draft_without_row_targets_is_rejected_server_side(self):
 		with mock.patch.object(drafts, "validate_rate_in_limits"):
@@ -114,6 +136,15 @@ class TestSuggest(unittest.TestCase):
 			out = V.suggest_row_targets(["Mites", "Thrips"], ["A", "B"])
 		self.assertEqual(out["A"]["targets"], ["Mites"])
 		self.assertEqual(out["B"]["targets"], [])
+
+	def test_explicit_non_pest_group_needs_no_row_targets(self):
+		from upande_scp.serverscripts.common import crop_protection as CP
+		sp = frappe._dict(category="Chemical", type="Insecticide", custom_cost_group="Hygiene & sanitation")
+		with mock.patch.object(CP, "get_spray_product", return_value=sp):
+			self.assertFalse(V.needs_row_targets("CHE1"))
+		sp.custom_cost_group = "Pest control"
+		with mock.patch.object(CP, "get_spray_product", return_value=sp):
+			self.assertTrue(V.needs_row_targets("CHE1"))
 
 	def test_not_required_for_foliar(self):
 		with mock.patch.object(V, "needs_row_targets", return_value=False):

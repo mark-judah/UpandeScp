@@ -12,6 +12,7 @@ const SPRAY: PathBlock = {
   total: 1000,
   plans_completed: 12,
   in_progress: { plans: 3, value: 250 },
+  straddle: { plans: 2, value: 500, note: "Manufactured in this period but issued after it: booked in the period of the issue." },
   chemical: {
     total: 800,
     recorded: 300,
@@ -55,7 +56,8 @@ const DIRECT: PathBlock = {
   path: "direct",
   total: 500,
   explain: "Direct issues name no greenhouse.",
-  by_source: { from_material_request: 450, no_material_request: 50 },
+  by_source: { from_material_request: 450, no_material_request: 50, returns: -20 },
+  returns: { total: -20, traced: -15, untraced: -5, lines: 2, note: "Returns: stock sent back to a store is taken off as a negative line." },
   chemical: { total: 100, recorded: 0, derived: 0, unattributed: 100, derived_accuracy: null, by_pest: [] },
   nonpest: {
     total: 400,
@@ -78,7 +80,7 @@ const REPORT: PestAttributionReport = {
   greenhouse_options: ["Main GH 04 - MFK"],
   spray: SPRAY,
   direct: DIRECT,
-  combined: { total: 1500, spray: 1000, direct: 500, line_total: 1500, ledger_total: 1500, ledger_difference: 0, fallback_lines: 0, reconciles: true },
+  combined: { total: 1500, spray: 1000, direct: 500, line_total: 1500, ledger_total: 1500, ledger_difference: 0, rounding_residual: 0, fallback_lines: 0, reconciles: true },
 };
 
 vi.mock("@/lib/finance-api", async (importOriginal) => ({
@@ -144,6 +146,13 @@ describe("Finance page", () => {
     expect(screen.getByText("Production - MFK")).toBeInTheDocument();
     expect(screen.getByText("Combined total")).toBeInTheDocument();
     expect(screen.getByText("Reconciles")).toBeInTheDocument();
+  });
+
+  it("notes plans manufactured in the period and issued later, and the returns netted", async () => {
+    render(<Finance />);
+    await waitFor(() => expect(screen.getByTestId("straddle-note")).toHaveTextContent("2 plans manufactured in this period were issued later, 500.00"));
+    expect(screen.getByTestId("returns-note")).toHaveTextContent("Returns netted: -20.00");
+    expect(screen.getByTestId("returns-note")).toHaveTextContent("negative line");
   });
 
   it("shows the by-product table only when the breakdown is on", async () => {

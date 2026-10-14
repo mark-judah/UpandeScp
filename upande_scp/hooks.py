@@ -251,6 +251,15 @@ doc_events = {
         "validate": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
         "before_submit": "upande_scp.serverscripts.spray_plan_creator.validation.enforce_row_targets_on_submit",
         "before_update_after_submit": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
+        # Finance caches plan history and product evidence; any change to either refreshes it.
+        "on_update": "upande_scp.serverscripts.reports.finance_attribution.bump_reference_version",
+        "on_submit": "upande_scp.serverscripts.reports.finance_attribution.bump_reference_version",
+        "on_cancel": "upande_scp.serverscripts.reports.finance_attribution.bump_reference_version",
+    },
+    "Spray Product": {
+        "on_update": "upande_scp.serverscripts.reports.finance_attribution.bump_reference_version",
+        "after_insert": "upande_scp.serverscripts.reports.finance_attribution.bump_reference_version",
+        "on_trash": "upande_scp.serverscripts.reports.finance_attribution.bump_reference_version",
     },
     "Spray Application Logsheet": {
         "on_submit": "upande_scp.serverscripts.sprayers.exposure.on_submit",

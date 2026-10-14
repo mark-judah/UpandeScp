@@ -295,12 +295,24 @@ export interface PathBlock {
   by_greenhouse: PathPlace[];
   plans_completed?: number;
   in_progress?: { plans: number; value: number };
-  by_source?: { from_material_request: number; no_material_request: number };
+  by_source?: { from_material_request: number; no_material_request: number; returns?: number };
+  /** manufactured in the period but issued after it; booked at the issue date */
+  straddle?: { plans: number; value: number; note: string };
+  not_issued?: { work_order: string; manufacture: string; date: string; greenhouse: string }[];
+  returns?: { total: number; traced: number; untraced: number; lines: number; note: string };
   explain?: string;
 }
 
 export interface PestAttributionReport {
-  filters: { from: string; to: string; paths: PathKey[]; pests: string[]; greenhouse: string };
+  /** `paths` is the effective set (direct is dropped while a greenhouse is chosen) */
+  filters: {
+    from: string;
+    to: string;
+    paths: PathKey[];
+    requested_paths?: PathKey[];
+    pests: string[];
+    greenhouse: string;
+  };
   notes: string[];
   accuracy: Record<PathKey, Record<string, number>>;
   pest_options: string[];
@@ -314,6 +326,8 @@ export interface PestAttributionReport {
     line_total: number | null;
     ledger_total: number | null;
     ledger_difference: number | null;
+    /** what cent-rounding per line removed; reported apart from the ledger difference */
+    rounding_residual: number | null;
     fallback_lines: number;
     reconciles: boolean | null;
   };

@@ -11,7 +11,7 @@
  * reported apart from chemical pest cost, never added into it. See
  * serverscripts/reports/finance_paths.py.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { CircleCheck, Download, Info, Leaf, TriangleAlert } from "lucide-react";
 import { DatePicker } from "@/components/DatePicker";
@@ -143,6 +143,25 @@ function PathSection({
         </p>
       </div>
 
+      {!isDirect && block.straddle && block.straddle.plans > 0 ? (
+        <div className="flex items-start gap-1.5 text-xs text-muted-foreground" data-testid="straddle-note">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {block.straddle.plans} plans manufactured in this period were issued later, {money(block.straddle.value)}.
+          They are booked in the period of the issue.
+        </div>
+      ) : null}
+      {!isDirect && block.not_issued && block.not_issued.length > 0 ? (
+        <div className="text-xs text-muted-foreground">
+          {block.not_issued.length} plans manufactured, not issued.
+        </div>
+      ) : null}
+      {isDirect && block.returns && block.returns.lines > 0 ? (
+        <div className="flex items-start gap-1.5 text-xs text-muted-foreground" data-testid="returns-note">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          Returns netted: {money(block.returns.total)} ({block.returns.lines} lines). {block.returns.note}
+        </div>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-1">
@@ -153,7 +172,7 @@ function PathSection({
             {isDirect && block.by_source
               ? `From a Material Request ${money(block.by_source.from_material_request)} · no request ${money(block.by_source.no_material_request)}`
               : block.in_progress && block.in_progress.plans > 0
-                ? `Not counted: ${block.in_progress.plans} plans in progress / not issued, ${money(block.in_progress.value)}`
+                ? `Not counted: ${block.in_progress.plans} plans in progress, ${money(block.in_progress.value)}`
                 : "Pest control plus non-pest inputs"}
           </CardContent>
         </Card>
@@ -474,8 +493,9 @@ export function Finance({ initialCrop: _initialCrop }: { initialCrop?: string } 
     let alive = true;
     setLoading(true);
     setError(null);
+    const id = ++latest.current;
     fetchPestAttribution(filters)
-      .then((d) => alive && setData(d))
+      .then((d) => alive && id === latest.current && setData(d))
       .catch((e) => alive && setError(e?.message || "Failed to load finances"))
       .finally(() => alive && setLoading(false));
     return () => {
@@ -483,15 +503,10 @@ export function Finance({ initialCrop: _initialCrop }: { initialCrop?: string } 
     };
   }, [filters]);
 
-  // Pest and greenhouse options come from the unfiltered view, so a filter never hides its own choices.
-  const [pestOptions, setPestOptions] = useState<string[]>([]);
-  const [ghOptions, setGhOptions] = useState<string[]>([]);
-  useEffect(() => {
-    if (!data) return;
-    setPestOptions((prev) => [...new Set([...prev, ...data.pest_options, "Non-pest inputs"])].sort());
-    setGhOptions((prev) => [...new Set([...prev, ...data.greenhouse_options])].sort());
-  }, [data]);
-
+  // Options come from the CURRENT period's unfiltered rows, so they never carry stale entries from
+  // another period and a filter never hides its own choices.
+  const pestOptions = useMemo(() => [...(data?.pest_options ?? []), "Non-pest inputs"].sort(), [data]);
+  const ghOptions = data?.greenhouse_options ?? [];
 
   const canRegister = (bootstrap().roles || []).some((r: string) => CAN_REGISTER.includes(r));
   const [suggested, setSuggested] = useState<SuggestedRegistration[]>([]);
@@ -506,12 +521,17 @@ export function Finance({ initialCrop: _initialCrop }: { initialCrop?: string } 
     if (canRegister) void loadSuggested();
   }, [canRegister]);
 
+  const latest = useRef(0);
   async function changeGroup(product: string, group: string) {
     if (!group) return;
     try {
       await setCostGroup(product, group);
       void loadSuggested();
-      void fetchPestAttribution(filters).then(setData);
+      // Only the newest refetch may write the report: a slow older one must not overwrite a newer view.
+      const id = ++latest.current;
+      void fetchPestAttribution(filters).then((d) => {
+        if (id === latest.current) setData(d);
+      });
     } catch (e) {
       setRegError(e instanceof Error ? e.message : "Could not set the cost group");
     }

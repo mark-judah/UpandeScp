@@ -35,16 +35,22 @@ class TestADeadLinkDoesNotBlockTheSettingsPage(unittest.TestCase):
 			"this test needs a name no Item Group actually has",
 		)
 		doc = frappe.get_single(SETTINGS)
-		self.before = [r.item_group for r in (doc.get("foliar_item_groups") or [])]
+		# Never carry a ghost row forward from an earlier, interrupted run.
+		self.before = [r.item_group for r in (doc.get("foliar_item_groups") or []) if r.item_group != GHOST]
 
 	def tearDown(self):
-		# Leave the farm's own rows exactly as they were.
-		doc = frappe.get_single(SETTINGS)
-		doc.set("foliar_item_groups", [])
-		for group in self.before:
-			doc.append("foliar_item_groups", {"item_group": group})
-		doc.save(ignore_permissions=True)
-		frappe.db.commit()
+		try:
+			# Leave the farm's own rows exactly as they were.
+			doc = frappe.get_single(SETTINGS)
+			doc.set("foliar_item_groups", [])
+			for group in self.before:
+				doc.append("foliar_item_groups", {"item_group": group})
+			doc.save(ignore_permissions=True)
+		finally:
+			# A ghost can survive a save that failed or ignored links: remove it at the source, always.
+			frappe.db.delete("Crop Protection Item Group", {"item_group": GHOST})
+			frappe.db.commit()
+			frappe.clear_cache(doctype=SETTINGS)
 
 	def _add_ghost_row(self):
 		"""Write the bad row the way the real one arrived: straight into the

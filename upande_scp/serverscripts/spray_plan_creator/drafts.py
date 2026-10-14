@@ -17,6 +17,15 @@ from .validation import (
 )
 
 
+def _client_payload(payload) -> dict:
+    """The payload as a client may send it: parsed, with every underscore-prefixed key dropped.
+    Validation switches are internal (set through ``frappe.flags`` by trusted callers), never
+    something a request can switch off."""
+    if isinstance(payload, str):
+        payload = frappe.parse_json(payload)
+    return {k: v for k, v in (payload or {}).items() if not str(k).startswith("_")}
+
+
 def _require_creator() -> str:
     user = frappe.session.user
     if user == "Administrator":
@@ -390,24 +399,24 @@ def _compliance_payload(wo, payload: dict) -> dict:
 def _validate_payload(payload: dict, scope: dict) -> None:
     classification = payload.get("custom_classification") or ""
     validate_preventive_reason(classification, payload.get("custom_preventive_reason"))
-    if not payload.get("_skip_target_validation"):
+    if not frappe.flags.get("scp_skip_target_validation"):
         validate_targets_in_scope(
             classification,
             payload.get("custom_targets") or [],
             greenhouse=payload.get("custom_greenhouse"),
         )
-    if not payload.get("_skip_bom_validation"):
+    if not frappe.flags.get("scp_skip_bom_validation"):
         bom = payload.get("production_item")
         if not bom:
             frappe.throw("Tank mix (BOM) is required.")
         if not frappe.db.exists("BOM", {"name": bom, "docstatus": 1, "is_active": 1}):
             frappe.throw(f"BOM {bom} is not active.")
     chems = payload.get("chemicals") or []
-    if not chems and not payload.get("_allow_zero_chems"):
+    if not chems and not frappe.flags.get("scp_allow_zero_chems"):
         frappe.throw("Add at least one chemical to the plan.")
     if flt(payload.get("custom_water_volume")) <= 0:
         frappe.throw("Water volume (L) is required and must be greater than zero.")
-    if not payload.get("_skip_chemical_targets"):
+    if not frappe.flags.get("scp_skip_chemical_targets"):
         validate_chemical_targets(chems, payload.get("custom_targets") or [])
     limits = {}
     for c in chems:
@@ -419,8 +428,7 @@ def _validate_payload(payload: dict, scope: dict) -> None:
 @frappe.whitelist()
 def create_draft_spray_plan(payload):
     user = _require_creator()
-    if isinstance(payload, str):
-        payload = frappe.parse_json(payload)
+    payload = _client_payload(payload)
     scope = _resolve_user_scope(user)
     if not scope["farms"] and user != "Administrator":
         frappe.throw("You have no farm access. Please contact an Administrator.", title="No access")
@@ -576,8 +584,7 @@ def get_draft_plan(name: str) -> dict:
 @frappe.whitelist()
 def update_draft_plan(name: str, payload):
     user = _require_creator()
-    if isinstance(payload, str):
-        payload = frappe.parse_json(payload)
+    payload = _client_payload(payload)
     wo = _own_draft(name)
     prev_bom = wo.bom_no  # superseded auto-BOM to retire after re-minting
     scope = _resolve_user_scope(user)

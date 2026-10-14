@@ -85,7 +85,9 @@ def _tables(rows, filters, report, per_product):
 	summ = [["Crop-protection spend by pest and disease"], []]
 	summ += [["Filters"],
 	         ["From", filters["from"]], ["To", filters["to"]],
-	         ["Path", " + ".join(PATH_LABEL[p] for p in filters["paths"])],
+	         ["Path", " + ".join(PATH_LABEL[p] for p in filters["paths"])
+	          + ("  (direct issues left out: a greenhouse is chosen)"
+	             if set(filters.get("requested_paths") or filters["paths"]) != set(filters["paths"]) else "")],
 	         ["Pests", ", ".join(filters["pests"]) or "All"],
 	         ["Greenhouse", filters["greenhouse"] or "All"],
 	         ["Breakdown per product", "Yes" if per_product else "No"], []]
@@ -146,9 +148,9 @@ def _tables(rows, filters, report, per_product):
 	for r in rows:
 		bm[(r["path"], r["basis"])] += r["attributed"]
 		pt[r["path"]] += r["attributed"]
-		lab[r["basis"]] = r["credibility_label"]
+		lab[(r["path"], r["basis"])] = r["credibility_label"]  # per path: band 2 is 93% on plans, 84% direct
 	for (p, b), v in sorted(bm.items()):
-		summ.append([PATH_LABEL[p], b, lab[b], round(v, 2), round(v / pt[p], 4) if pt[p] else None])
+		summ.append([PATH_LABEL[p], b, lab[(p, b)], round(v, 2), round(v / pt[p], 4) if pt[p] else None])
 	summ.append([])
 	c = report["combined"]
 	ip = (report.get("spray") or {}).get("in_progress")
@@ -158,8 +160,15 @@ def _tables(rows, filters, report, per_product):
 		summ.append(["Source lines total", c["line_total"]])
 		summ.append(["Stock Ledger total", c["ledger_total"]])
 		summ.append(["Difference to ledger", c["ledger_difference"]])
+		summ.append(["Rounding (cents per line)", c.get("rounding_residual")])
 	if ip:
-		summ.append(["Not counted: plans in progress / not issued", f'{ip["plans"]} plans, value {ip["value"]}'])
+		summ.append(["Not counted: plans in progress", f'{ip["plans"]} plans, value {ip["value"]}'])
+		st = report["spray"].get("straddle") or {}
+		summ.append(["Manufactured in period, issued later", f'{st.get("plans", 0)} plans, value {st.get("value", 0)}'])
+		summ.append(["Manufactured, not issued", f'{len(report["spray"].get("not_issued") or [])} plans'])
+	rt = (report.get("direct") or {}).get("returns")
+	if rt:
+		summ.append(["Returns netted (direct issues)", rt["total"]])
 	sheets["Summary"] = summ
 
 	# --- By greenhouse
@@ -199,13 +208,14 @@ def _tables(rows, filters, report, per_product):
 
 	# --- Lines (audit)
 	ln = [["Date", "Document", "Path", "Work order", "Material request", "Link basis", "Greenhouse", "Farm", "Cost centre",
-	       "Item code", "Product", "Cost group", "Also used in spray plans", "Qty", "UoM", "Line value", "Pest / disease", "Share", "Basis", "Credibility",
+	       "Item code", "Product", "Cost group", "Also used in spray plans", "Line type", "Netted against", "Qty", "UoM", "Line value", "Pest / disease", "Share", "Basis", "Credibility",
 	       "Est. accuracy", "Recorded value", "Derived value", NONPEST_COL, "Unattributed value", "Attributed value"]]
 	for r in rows:
 		rec, der, fol = _split_value(r)
 		ln.append([r["date"], r["document"], PATH_LABEL[r["path"]], r["work_order"] or "", r["mr"] or "", r["link_basis"] or "",
 		           r["greenhouse"] or (FP.FARM_LEVEL if r["path"] == "direct" else ""), r["farm"] or "",
-		           r["cost_center"] or "", r["item_code"], r["item_name"], r["group"], _also_used(r), round(flt(r["qty"]), 4), r["uom"],
+		           r["cost_center"] or "", r["item_code"], r["item_name"], r["group"], _also_used(r),
+		           "Return" if r.get("is_return") else "Issue", r.get("netted_against") or "", round(flt(r["qty"]), 4), r["uom"],
 		           round(flt(r["value"]), 2), r["target"], round(r["share"], 6), r["basis"], r["credibility_label"],
 		           r["accuracy"], rec, der, fol,
 		           round(flt(r["attributed"]), 2) if r["target"] == FP.UNATTRIBUTED and not r["is_nonpest"] else 0.0,

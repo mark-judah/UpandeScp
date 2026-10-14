@@ -56,6 +56,8 @@ from functools import lru_cache
 import frappe
 from frappe.utils import add_days, flt, getdate, today
 
+from upande_scp.serverscripts.common import crop_protection
+
 UNATTRIBUTED = "Unattributed"
 WINDOW_DAYS = 180
 MIN_ALONE_PLANS = 2
@@ -250,6 +252,16 @@ def _window(refs, code, on_date, exclude_wo):
 	return [e for e in entries[i:j] if e[1] != exclude_wo]
 
 
+def uses_before(refs, code, on_date=None, exclude_wo=None, days: int = 365) -> int:
+	"""Spray plans that used `code` in the `days` BEFORE `on_date` (not the report end: no look-ahead)."""
+	entries = (refs.get("use_dates") or {}).get(code) or []
+	if not on_date:
+		return len({e[1] for e in entries if e[1] != exclude_wo})
+	d = str(getdate(on_date))
+	lo = str(add_days(d, -days))
+	return len({e[1] for e in entries if lo <= e[0] < d and e[1] != exclude_wo})
+
+
 def history_counts(refs, code, on_date=None, exclude_wo=None) -> dict:
 	"""{"alone": {plans, targets}, "radar": {plans, targets}} for one product."""
 	alone = {"plans": 0, "targets": {}}
@@ -297,7 +309,7 @@ def allocate(
 	r = resolve_product(product, kb, refs.get("mona_ai_t"))
 	kinds = kinds or {}
 
-	uses = (refs.get("uses") or {}).get(product.get("code"), 0)
+	uses = uses_before(refs, product.get("code"), on_date, exclude_wo)
 	group = cost_group(product, candidates is None, uses, r["evidence"])
 	if group == UNCLASSIFIED and not any(recorded or []):
 		return {"shares": {}, "basis": "unclassified", "group": group}
@@ -372,27 +384,43 @@ def valid_targets_and_kinds() -> dict:
 	return kinds
 
 
+def _split_valid(text, valid) -> list:
+	out = []
+	for t in (text or "").split("\n"):
+		t = t.strip()
+		if t and t in valid and t not in out:
+			out.append(t)
+	return out
+
+
 def build_plans(rows, valid_targets) -> dict:
-	"""{item_code: [(date, wo, [targets])] sorted by date} from (wo, targets, item_code, date) rows.
-	Each (plan, item) counts once; a plan with no valid target counts for nothing."""
+	"""{item_code: [(date, wo, [targets])] sorted by date} from (wo, targets, item_code, date[, row_targets]) rows.
+
+	A chemical row that RECORDS its own targets (`row_targets`) counts for those, so a recorded
+	single-target row is a "used alone" reference. Several rows of one item merge their targets.
+	Otherwise the plan's targets stand. A plan with no valid target counts for nothing."""
 	valid = set(valid_targets)
 	plan_ts: dict = {}
-	seen = set()
-	out: dict = {}
+	item_row: dict = {}
+	item_plan: dict = {}
+	meta: dict = {}
 	for r in rows:
-		wo = r["wo"]
+		wo, code = r["wo"], r["item_code"]
 		if wo not in plan_ts:
-			ts = []
-			for t in (r.get("targets") or "").split("\n"):
-				t = t.strip()
-				if t and t in valid and t not in ts:
-					ts.append(t)
-			plan_ts[wo] = ts
-		ts = plan_ts[wo]
-		if not ts or (wo, r["item_code"]) in seen:
-			continue
-		seen.add((wo, r["item_code"]))
-		out.setdefault(r["item_code"], []).append((str(r["date"])[:10], wo, ts))
+			plan_ts[wo] = _split_valid(r.get("targets"), valid)
+		key = (code, wo)
+		meta[key] = str(r["date"])[:10]
+		rts = _split_valid(r.get("row_targets"), valid)
+		if rts:
+			merged = item_row.setdefault(key, [])
+			merged.extend(t for t in rts if t not in merged)
+		else:
+			item_plan[key] = plan_ts[wo]
+	out: dict = {}
+	for key, date in meta.items():
+		ts = item_row.get(key) or item_plan.get(key) or []
+		if ts:
+			out.setdefault(key[0], []).append((date, key[1], ts))
 	for v in out.values():
 		v.sort(key=lambda e: e[0])
 	return out
@@ -424,17 +452,40 @@ def mona_ingredient_targets(kb) -> dict:
 	return out
 
 
-def plan_uses(end, days: int = 365) -> dict:
-	"""{item_code: number of submitted spray plans that used it} over the `days` before `end`."""
+def plan_use_dates(end, days: int = 365) -> dict:
+	"""{item_code: [(date, wo)] sorted} for submitted spray plans in the `days` up to `end`."""
 	rows = frappe.db.sql(
-		"""SELECT ri.item_code, COUNT(DISTINCT wo.name) AS n
+		"""SELECT DISTINCT ri.item_code, wo.name,
+		          DATE(COALESCE(wo.custom_scheduled_application_time, wo.creation)) AS d
 		   FROM `tabWork Order` wo JOIN `tabWork Order Item` ri ON ri.parent = wo.name
 		   WHERE wo.docstatus = 1 AND wo.custom_type = 'Application Floor Plan'
-		     AND DATE(COALESCE(wo.custom_scheduled_application_time, wo.creation)) BETWEEN %(a)s AND %(b)s
-		   GROUP BY ri.item_code""",
+		     AND DATE(COALESCE(wo.custom_scheduled_application_time, wo.creation)) BETWEEN %(a)s AND %(b)s""",
 		{"a": add_days(end, -days), "b": str(end)},
 	)
-	return {c: int(n) for c, n in rows}
+	out: dict = {}
+	for code, wo, d in rows:
+		out.setdefault(code, []).append((str(d)[:10], wo))
+	for v in out.values():
+		v.sort()
+	return out
+
+
+def plan_uses(end, days: int = 365) -> dict:
+	"""{item_code: number of submitted spray plans that used it} over the `days` before `end`."""
+	return {c: len({w for _d, w in v}) for c, v in plan_use_dates(end, days).items()}
+
+
+# The reference data is cached; a change to the things it reads bumps this token so a GM edit
+# is never answered with stale evidence.
+VERSION_KEY = "scp:attribution_version"
+
+
+def bump_reference_version(doc=None, method=None) -> None:
+	frappe.cache().set_value(VERSION_KEY, frappe.generate_hash(length=8))
+
+
+def _version() -> str:
+	return str(frappe.cache().get_value(VERSION_KEY) or "0")
 
 
 def reference_data_for(start, end, kinds=None, kb=None) -> dict:
@@ -443,30 +494,32 @@ def reference_data_for(start, end, kinds=None, kb=None) -> dict:
 	kb = kb or load_seed()
 	end = min(str(getdate(end)), str(getdate(today())))
 	start = str(getdate(start))
-	key = f"scp:attribution_refs:{start}:{end}"
+	key = f"scp:attribution_refs:{_version()}:{start}:{end}"
 	cache = frappe.cache()
 	hit = cache.get_value(key)
 	if hit:
 		data = json.loads(hit) if isinstance(hit, (str, bytes)) else hit
 	else:
 		kinds_ = kinds if kinds is not None else valid_targets_and_kinds()
+		row_targets = "ri.custom_targets" if frappe.db.has_column("Work Order Item", "custom_targets") else "NULL"
 		rows = frappe.db.sql(
 			"""
-			SELECT wo.name AS wo, wo.custom_targets AS targets, ri.item_code,
+			SELECT wo.name AS wo, wo.custom_targets AS targets, ri.item_code, {row_targets} AS row_targets,
 			       DATE(COALESCE(wo.custom_scheduled_application_time, wo.creation)) AS date
 			FROM `tabWork Order` wo
 			JOIN `tabWork Order Item` ri ON ri.parent = wo.name
 			WHERE wo.docstatus = 1 AND wo.custom_type = 'Application Floor Plan'
 			  AND IFNULL(wo.custom_targets, '') != ''
 			  AND DATE(COALESCE(wo.custom_scheduled_application_time, wo.creation)) BETWEEN %(a)s AND %(b)s
-			""",
+			""".replace("{row_targets}", row_targets),
 			{"a": add_days(start, -WINDOW_DAYS - 1), "b": end},
 			as_dict=True,
 		)
 		data = {"plans": build_plans(rows, kinds_.keys()), "mona_ai_t": mona_ingredient_targets(kb),
-		        "uses": plan_uses(end)}
+		        "use_dates": plan_use_dates(end, 365 + (getdate(end) - getdate(start)).days)}
 		cache.set_value(key, json.dumps(data), expires_in_sec=3600)
 	data["plans"] = {c: [(d, w, ts) for d, w, ts in v] for c, v in data["plans"].items()}
+	data["use_dates"] = {c: [(d, w) for d, w in v] for c, v in (data.get("use_dates") or {}).items()}
 	return data
 
 
@@ -489,9 +542,10 @@ def raw_products(codes, kb=None) -> dict:
 			as_dict=True,
 		)
 	}
-	item_names = dict(
-		frappe.db.sql("SELECT name, item_name FROM `tabItem` WHERE name IN %(c)s", {"c": tuple(codes)})
-	)
+	item_rows = frappe.db.sql("SELECT name, item_name, item_group FROM `tabItem` WHERE name IN %(c)s",
+	                          {"c": tuple(codes)})
+	item_names = {n: nm for n, nm, _g in item_rows}
+	item_groups = {n: g for n, _nm, g in item_rows}
 	registered: dict = {}
 	for r in frappe.db.sql(
 		"""SELECT parent, COALESCE(NULLIF(pest,''), NULLIF(disease,'')) AS t FROM `tabChemical Targets`
@@ -530,7 +584,9 @@ def raw_products(codes, kb=None) -> dict:
 			"code": code,
 			"name": (p.product_name if p else None) or item_names.get(code) or code,
 			"item_name": item_names.get(code) or code,
-			"category": p.category if p else None,
+			# An Item with no Spray Product yet: its Item Group still says foliar or chemical.
+			"category": p.category if p else (
+				"Foliar" if crop_protection.classify_item_group(item_groups.get(code)) == "foliar" else None),
 			"type": p.type if p else None,
 			"cost_group": (p.get("cost_group") if p else None) or None,
 			"ingredients": ings.get(code, []),

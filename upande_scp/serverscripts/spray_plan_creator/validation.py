@@ -301,6 +301,8 @@ def needs_row_targets(item_code: str | None) -> bool:
     from upande_scp.serverscripts.common import crop_protection
 
     sp = crop_protection.get_spray_product(item_code)
+    if sp and (sp.get("custom_cost_group") or "") not in ("", "Pest control"):
+        return False  # explicitly set to a non-pest group: it is not for a pest, so it needs no target
     if not sp:
         # Unknown to the product master: treat a non-foliar item as a chemical only
         # when it is in a configured chemical group.

@@ -52,7 +52,10 @@
   "progress_email_section",
   "progress_email_enabled",
   "progress_email_hour",
-  "progress_email_last_sent"
+  "progress_email_last_sent",
+  "asset_checks_section",
+  "asset_checks_enabled",
+  "asset_check_farms"
  ],
  "fields": [
   {
@@ -365,6 +368,25 @@
    "fieldtype": "Date",
    "label": "Progress email last sent",
    "read_only": 1
+  },
+  {
+   "fieldname": "asset_checks_section",
+   "fieldtype": "Section Break",
+   "label": "Asset Checks"
+  },
+  {
+   "default": "0",
+   "description": "When ON, scouts fill Asset Check Sheets (from the Upande Asset app) in the Scout app for the farms and templates listed below. Needs Upande Asset installed.",
+   "fieldname": "asset_checks_enabled",
+   "fieldtype": "Check",
+   "label": "Scouts fill asset check sheets"
+  },
+  {
+   "depends_on": "asset_checks_enabled",
+   "fieldname": "asset_check_farms",
+   "fieldtype": "Table",
+   "label": "Asset check farms and templates",
+   "options": "SCP Asset Check Farm"
   }
  ],
  "index_web_pages_for_search": 0,

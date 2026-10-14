@@ -59,7 +59,9 @@ import {
   fetchBomDetails,
   fetchChemicalBalances,
   fetchZonesByGreenhouse,
-  getStoreReservations,
+  getItemAvailability,
+  type ItemAvailability,
+  type BatchAvailability,
   searchChemicalItems,
   type BedAreaRow,
   type BomChemical,
@@ -209,6 +211,8 @@ interface ChemRow extends BomChemical {
    *  from this rate as ``rate × waterVolumeL / 1000`` and is never
    *  edited directly. */
   rate: number;
+  /** Batch reserved for this row (custom_batch_no on the Work Order Item). */
+  batch_no?: string;
 }
 
 /** Return a human message when ``rate`` (per 1000 L) falls outside the limits
@@ -1061,6 +1065,10 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   // already consumed by DraftBatchPanel) also bumps a tick here so the
   // *next* plan in the session sees the shrinking number.
   const [reserved, setReserved] = useState<Record<string, number>>({});
+  // Full per-item availability (ledger, reservations, per-batch), keyed
+  // "<source>::<item_code>".
+  const [availability, setAvailability] = useState<Record<string, ItemAvailability>>({});
+  const [batchTouched, setBatchTouched] = useState<Set<string>>(new Set());
   const [reservedRefreshTick, setReservedRefreshTick] = useState(0);
 
   useEffect(() => {
@@ -1092,11 +1100,12 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     }
     if (!bySource.size) {
       setReserved({});
+      setAvailability({});
       return;
     }
     Promise.all(
       Array.from(bySource.entries()).map(([source, codes]) =>
-        getStoreReservations(source, Array.from(codes)).then((res) => ({
+        getItemAvailability(source, Array.from(codes)).then((res) => ({
           source,
           res,
         })),
@@ -1104,12 +1113,15 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     ).then((results) => {
       if (cancelled) return;
       const merged: Record<string, number> = {};
+      const full: Record<string, ItemAvailability> = {};
       for (const { source, res } of results) {
-        for (const [item, qty] of Object.entries(res)) {
-          merged[`${source}::${item}`] = qty;
+        for (const [item, a] of Object.entries(res)) {
+          merged[`${source}::${item}`] = a.reserved;
+          full[`${source}::${item}`] = a;
         }
       }
       setReserved(merged);
+      setAvailability(full);
     });
     return () => {
       cancelled = true;
@@ -1161,6 +1173,65 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       });
     },
     [reserved, draftUsageByRowId],
+  );
+
+  /** Both remaining figures for a row's item at its source: after this
+   *  plan (other SUBMITTED plans only), and if every pending draft is also
+   *  approved. Unfloored: a negative number is the shortfall. */
+  const remainingFor = useCallback(
+    (c: ChemRow) => {
+      const a = c.source && c.item_code ? availability[`${c.source}::${c.item_code}`] : undefined;
+      if (!a) return null;
+      const mine = chemRows
+        .filter((o) => o.item_code === c.item_code && o.source === c.source)
+        .reduce((n, o) => n + Number(o.stock_qty || 0), 0);
+      return {
+        after: a.ledger - a.reserved_submitted - mine,
+        ifAll: a.ledger - a.reserved - mine,
+        a,
+      };
+    },
+    [availability, chemRows],
+  );
+
+  /** green = this batch alone covers the row, amber = partial, grey = none. */
+  const batchTone = (b: BatchAvailability, need: number) =>
+    b.expired || b.available <= 0
+      ? "text-muted-foreground"
+      : b.available >= need
+        ? "text-[var(--sd-data-green)]"
+        : "text-amber-700 dark:text-amber-300";
+
+  // Pre-select the best green batch once availability lands; drop a batch that
+  // no longer belongs to the row's item/store. A hand-picked batch is kept.
+  useEffect(() => {
+    setChemRows((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        const a = c.source && c.item_code ? availability[`${c.source}::${c.item_code}`] : undefined;
+        if (!a || !a.has_batch_no) return c;
+        if (c.batch_no && !a.batches.some((b) => b.batch_no === c.batch_no)) {
+          changed = true;
+          return { ...c, batch_no: undefined };
+        }
+        if (c.batch_no || batchTouched.has(c.rowId) || !c.stock_qty) return c;
+        const best = a.batches.find((b) => !b.expired && b.available >= c.stock_qty!);
+        if (!best) return c;
+        changed = true;
+        return { ...c, batch_no: best.batch_no };
+      });
+      return changed ? next : prev;
+    });
+  }, [availability, batchTouched, chemRows.map((c) => `${c.rowId}:${c.stock_qty}:${c.source}`).join("|")]);
+
+  /** Batch-tracked rows with no batch confirmed block submission. */
+  const batchMissingRows = useMemo(
+    () =>
+      chemRows.filter((c) => {
+        const a = c.source && c.item_code ? availability[`${c.source}::${c.item_code}`] : undefined;
+        return !!a?.has_batch_no && !c.batch_no;
+      }),
+    [chemRows, availability],
   );
 
   /** Rows whose picked source warehouse has less *adjusted* availability
@@ -1356,6 +1427,13 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
         return;
       }
     }
+    if (batchMissingRows.length) {
+      pushToast(
+        "err",
+        `Pick a batch for ${batchMissingRows.map((c) => c.item_name || c.item_code).join(", ")}.`,
+      );
+      return;
+    }
     if (!waterPh || !waterHardness) {
       pushToast("err", "Water pH and hardness are required.");
       return;
@@ -1429,6 +1507,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
           item_name: c.item_name,
           uom: c.stock_uom,
           source_warehouse: c.source,
+          batch_no: c.batch_no || null,
           application_rate: c.stock_qty,
         })),
         custom_scheduled_application_time: sprayDate || null,
@@ -2466,6 +2545,58 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                                   ) : (
                                     <span className="text-muted-foreground">—</span>
                                   )}
+                                  {(() => {
+                                    const rem = remainingFor(c);
+                                    if (!rem) return null;
+                                    const need = Number(c.stock_qty || 0);
+                                    const fig = (n: number) => (
+                                      <span className={n < 0 ? "font-medium text-[var(--sd-data-red)]" : ""}>
+                                        {fmtQty(n)}
+                                      </span>
+                                    );
+                                    return (
+                                      <div className="mt-1 space-y-0.5 text-[0.6rem] text-muted-foreground text-right">
+                                        <div title="On hand, less submitted plans in the reservation window, less this plan">
+                                          After this plan: {fig(rem.after)}
+                                        </div>
+                                        <div title="Also counting every draft and pending plan">
+                                          If all pending approved: {fig(rem.ifAll)}
+                                        </div>
+                                        {rem.a.has_batch_no ? (
+                                          <div className="pt-0.5">
+                                            <Select
+                                              value={c.batch_no || ""}
+                                              onValueChange={(v) => {
+                                                setBatchTouched((t) => new Set(t).add(c.rowId));
+                                                setChemRows((rows) =>
+                                                  rows.map((r) =>
+                                                    r.rowId === c.rowId ? { ...r, batch_no: v } : r,
+                                                  ),
+                                                );
+                                              }}
+                                            >
+                                              <SelectTrigger
+                                                aria-label={`Batch for ${c.item_name || c.item_code}`}
+                                                className={`h-7 w-44 ml-auto text-xs ${c.batch_no ? "" : "border-amber-500"}`}
+                                              >
+                                                <SelectValue placeholder="Pick a batch" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {rem.a.batches.map((b) => (
+                                                  <SelectItem key={b.batch_no} value={b.batch_no}>
+                                                    <span className={batchTone(b, need)}>
+                                                      {b.batch_no} · {fmtQty(b.available)} free
+                                                      {b.expired ? " · expired" : b.placeholder ? " · opening stock" : b.expiry_date ? ` · exp ${b.expiry_date}` : ""}
+                                                    </span>
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })()}
                                 </TableCell>
                                 <TableCell>
                                   <Button
@@ -2724,7 +2855,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                   <Button
                     onClick={() => submit()}
                     disabled={
-                      busy || !greenhouse || stockShortRows.length > 0 || gate.state === "blocked"
+                      busy || !greenhouse || stockShortRows.length > 0 || batchMissingRows.length > 0 || gate.state === "blocked"
                     }
                     size="sm"
                     title={

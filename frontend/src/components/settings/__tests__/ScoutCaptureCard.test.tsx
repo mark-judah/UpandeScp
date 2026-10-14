@@ -35,6 +35,7 @@ const initial: SprayPlanSettings = {
   auto_cancel_enabled: 0,
   auto_cancel_apply_to_backlog: 0,
   auto_cancel_dormant_days: 3,
+  reservation_window_days: 7,
   auto_cancel_activated_on: "",
   spray_cutoff_time: "10:00:00",
   postponement_max_days: 7,

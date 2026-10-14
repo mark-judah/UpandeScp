@@ -381,6 +381,17 @@ def _field_spec() -> dict:
 				"insert_after": "amount",
 				"hidden": 1,
 			},
+			{
+				"fieldname": "custom_batch_no",
+				"label": "Planned Batch",
+				"fieldtype": "Link",
+				"options": "Batch",
+				"insert_after": "source_warehouse",
+				"description": (
+					"The batch the planner reserved for this chemical. Optional: an "
+					"unbatched row reserves against the item total, not a specific batch."
+				),
+			},
 		],
 		"BOM": [
 			{
@@ -644,6 +655,22 @@ def _field_spec() -> dict:
 					"SCP taxonomy for the notifications page. Notification Log.type is a "
 					"fixed Frappe enum, so our categories live here."
 				),
+			},
+		],
+		# Owned by upande_asset, which SCP treats as optional:
+		# ensure_scp_custom_fields skips any doctype whose table is absent. The
+		# phone's uuid for a submitted sheet, so an offline retry finds the sheet
+		# it already made instead of making a second.
+		"Asset Check Sheet": [
+			{
+				"fieldname": "custom_scp_client_id",
+				"label": "SCP Client ID",
+				"fieldtype": "Data",
+				"insert_after": "amended_from",
+				"read_only": 1,
+				"hidden": 1,
+				"no_copy": 1,
+				"search_index": 1,
 			},
 		],
 	}

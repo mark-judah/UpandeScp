@@ -265,7 +265,11 @@ doc_events = {
     # Spray-check override rows are signed by whoever saves them (Desk/REST
     # cannot forge another user's override). Limited to spray plans inside.
     "Work Order": {
-        "validate": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
+        "validate": [
+            "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
+            # The real stock gate: ledger minus other plans' reservations.
+            "upande_scp.serverscripts.spray_plan_creator.reservations.enforce_stock_gate",
+        ],
         "before_update_after_submit": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
     },
     "Employee": _SCP_CACHE_EVENTS,

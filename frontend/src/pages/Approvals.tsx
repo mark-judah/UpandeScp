@@ -52,6 +52,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/PageHeader";
 import { PlacePicker } from "@/components/PlacePicker";
+import { StalePlansCard } from "@/components/StalePlansCard";
 import { HEADER_PILL } from "@/components/header-controls";
 import {
   Dialog,
@@ -609,6 +610,8 @@ export function Approvals() {
             </CardContent>
           </Card>
         )}
+
+        <StalePlansCard farm={farm === ALL ? undefined : farm} />
 
         {!isStageTab && !errorMsg && !visibleWos.length && !loading && (
           <Card>

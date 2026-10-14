@@ -351,6 +351,8 @@ def _apply_payload(wo, payload: dict) -> None:
             # row when building Material Transfer for Manufacture, returning
             # an SE with empty items that then fails MandatoryError on insert.
             "include_item_in_manufacturing": 1,
+            # The batch the planner reserved (optional; see reservations.py).
+            "custom_batch_no": c.get("batch_no") or None,
         })
         if c.get("_rate_differs_from_bom"):
             rate_overridden = True
@@ -800,6 +802,7 @@ def _expand_wo(wo) -> dict:
             {
                 "item_code": r.item_code, "item_name": r.item_name,
                 "stock_uom": r.stock_uom, "source_warehouse": r.source_warehouse,
+                "batch_no": r.get("custom_batch_no"),
                 "application_rate": r.required_qty,
             }
             for r in (wo.required_items or [])

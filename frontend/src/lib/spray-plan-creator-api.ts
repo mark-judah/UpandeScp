@@ -131,6 +131,8 @@ export interface DraftPayloadChemical {
   item_name?: string;
   uom?: string;
   source_warehouse?: string;
+  /** Batch reserved at planning time (optional). */
+  batch_no?: string | null;
   application_rate?: number;
 }
 
@@ -212,6 +214,7 @@ export interface DraftPlanChemical {
   item_name?: string;
   stock_uom?: string;
   source_warehouse?: string;
+  batch_no?: string | null;
   application_rate?: number;
 }
 

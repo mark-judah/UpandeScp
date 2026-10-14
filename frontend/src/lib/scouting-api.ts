@@ -890,6 +890,74 @@ export async function getStoreReservations(
   }
 }
 
+export interface BatchAvailability {
+  batch_no: string;
+  qty: number;
+  expiry_date: string | null;
+  reserved: number;
+  available: number;
+  placeholder: boolean;
+  expired: boolean;
+}
+export interface ItemAvailability {
+  ledger: number;
+  reserved: number;
+  reserved_submitted: number;
+  reserved_by: Array<{ name: string; qty: number }>;
+  has_batch_no: number;
+  /** ranked: real stock first, then soonest-expiring */
+  batches: BatchAvailability[];
+}
+
+/** Ledger qty, other plans' reservations and per-batch availability for items
+ *  at one source store. `exclude` leaves out the plan being edited. */
+export async function getItemAvailability(
+  warehouse: string,
+  itemCodes: string[],
+  exclude?: string,
+): Promise<Record<string, ItemAvailability>> {
+  if (!warehouse || !itemCodes.length) return {};
+  try {
+    return (
+      (await call<Record<string, ItemAvailability>>(
+        "upande_scp.serverscripts.spray_plan_creator.reservations.get_item_availability",
+        { warehouse, item_codes: itemCodes, exclude },
+      )) || {}
+    );
+  } catch {
+    return {};
+  }
+}
+
+export interface StalePlan {
+  name: string;
+  docstatus: number;
+  status: string | null;
+  workflow_state: string | null;
+  planned_start_date: string;
+  creation: string;
+  owner: string;
+  custom_greenhouse: string | null;
+}
+
+export async function getStalePlans(farm?: string): Promise<StalePlan[]> {
+  return (
+    (await call<StalePlan[]>(
+      "upande_scp.serverscripts.spray_plan_creator.reservations.get_stale_plans",
+      { farm: farm || undefined },
+    )) || []
+  );
+}
+
+export async function stopStalePlans(names: string[]): Promise<{
+  stopped: string[]; deleted: string[]; skipped: string[]; failed: string[];
+}> {
+  return call(
+    "upande_scp.serverscripts.spray_plan_creator.reservations.stop_stale_plans",
+    { names },
+  );
+}
+
 export async function fetchApplicationPlanBootstrap(): Promise<PlanBootstrap> {
   return cached("plan_bootstrap", async () => {
     try {

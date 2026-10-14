@@ -18,6 +18,7 @@ import {
   Ban,
 } from "lucide-react";
 import { TimezoneCard } from "@/components/settings/TimezoneCard";
+import { AssetChecksCard } from "@/components/settings/AssetChecksCard";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -433,6 +434,7 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
       </Card>
 
       <ScoutCaptureCard value={draft} onChange={(key, value) => set(key, value)} />
+      <AssetChecksCard />
       <TrapPhotoCard
         pests={draft.trap_pests ?? []}
         rules={draft.trap_photo_rules ?? []}
@@ -507,6 +509,24 @@ export function SprayPlanTab({ initial, farms, onSaved }: Props) {
             />
             <p className="mt-1 text-[0.65rem] text-muted-foreground leading-snug">
               Days since creation after which an unapproved plan is stopped.
+            </p>
+          </div>
+
+          <div>
+            <Label className="text-[0.7rem]">Reservation window (days)</Label>
+            <Input
+              type="number"
+              min={1}
+              value={draft.reservation_window_days}
+              onChange={(e) =>
+                set("reservation_window_days", Number(e.target.value) || 0)
+              }
+              className="h-9 w-32"
+            />
+            <p className="mt-1 text-[0.65rem] text-muted-foreground leading-snug">
+              A plan reserves chemical stock only while its planned start is
+              within this many days of today. Older, never-issued plans stop
+              reserving and are listed as stale.
             </p>
           </div>
         </CardContent>

@@ -661,6 +661,21 @@ export async function fetchScoutLookup(): Promise<Record<string, string>> {
   });
 }
 
+/** Map of scout employee ID → Employee photo URL (only those with a photo). */
+export async function fetchScoutImages(): Promise<Record<string, string>> {
+  return cached("scout_images", async () => {
+    try {
+      const r = await call<Record<string, string>>(
+        "upande_scp.serverscripts.scouting.scouting_metrics_api.get_scout_images",
+        {},
+      );
+      return r || {};
+    } catch {
+      return {};
+    }
+  });
+}
+
 /**
  * One sprayer GPS fix as stored by the mobile app. The server already maps each
  * point to the nearest Zone (no bed filter), so `zone` is populated for us.

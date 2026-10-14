@@ -62,6 +62,24 @@ function ensureControlStyles() {
   document.head.appendChild(el);
 }
 
+/** OpenStreetMap's licence and tile policy require the credit, so it is kept,
+ *  but folded into a small ⓘ at the bottom-left instead of a permanent label
+ *  in the corner: tap or hover to read it. */
+export class MapCredit extends L.Control {
+  constructor() {
+    super({ position: "bottomleft" });
+  }
+  onAdd(): HTMLElement {
+    const el = L.DomUtil.create("div", "scp-map-credit");
+    el.innerHTML =
+      '<button type="button" aria-label="Map data credits" title="Map data © OpenStreetMap contributors">i</button>' +
+      '<span>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors</span>';
+    L.DomEvent.disableClickPropagation(el);
+    el.querySelector("button")!.addEventListener("click", () => el.classList.toggle("open"));
+    return el;
+  }
+}
+
 export function MapBase({
   className,
   initialCenter = DEFAULT_CENTER,
@@ -124,7 +142,17 @@ export function MapBase({
     });
     map.addControl(new BasemapToggle());
 
-    L.control.attribution({ position: "bottomright", prefix: false }).addTo(map);
+    // At most one tooltip at a time: opening one closes the previous.
+    let openTip: L.Tooltip | null = null;
+    map.on("tooltipopen", (e: L.TooltipEvent) => {
+      if (openTip && openTip !== e.tooltip) openTip.close();
+      openTip = e.tooltip;
+    });
+    map.on("tooltipclose", (e: L.TooltipEvent) => {
+      if (openTip === e.tooltip) openTip = null;
+    });
+
+    map.addControl(new MapCredit());
     mapRef.current = map;
     setReady(true);
     onReady(map);

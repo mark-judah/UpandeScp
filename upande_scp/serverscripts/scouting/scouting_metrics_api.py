@@ -189,6 +189,17 @@ def get_zone_counts_by_greenhouse():
 
 
 _K_SCOUTS_LOOKUP = "scp:sm_scout_lookup_v1"
+_K_SCOUT_IMAGES = "scp:sm_scout_images_v1"
+
+
+def _build_scout_images():
+    rows = frappe.get_all(
+        "Employee",
+        fields=["name", "image"],
+        filters={"status": "Active", "image": ["is", "set"]},
+        limit_page_length=0,
+    )
+    return {r["name"]: r["image"] for r in rows}
 
 
 def _build_scout_lookup():
@@ -731,6 +742,14 @@ def get_scout_lookup():
     ``employee_name``. Cached because the Employee list rarely changes during
     a session and Top Scouts panels render on every dashboard load."""
     return get_or_set(_K_SCOUTS_LOOKUP, _build_scout_lookup, ttl=TTL_LONG)
+
+
+@frappe.whitelist()
+def get_scout_images():
+    """{employee_id: image URL} for Employees with a photo on file — the
+    Rose Scouting map card shows the Employee photo (initials when absent).
+    Read-only; same cache lifetime as the scout-name lookup."""
+    return get_or_set(_K_SCOUT_IMAGES, _build_scout_images, ttl=TTL_LONG)
 
 
 @frappe.whitelist()

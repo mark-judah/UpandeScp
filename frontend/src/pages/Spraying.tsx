@@ -15,15 +15,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapBase } from "@/components/MapBase";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { MapControlPanel } from "@/components/maps/MapControlPanel";
+import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
+import { MapKpiPill } from "@/components/maps/MapKpiPill";
+import { KpiValueSkeleton, LoadProgress, RowsSkeleton } from "@/components/Loading";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ALL,
@@ -32,18 +27,35 @@ import {
 } from "./maps/RangeHeader";
 import {
   fetchBedsAndZones,
-  fetchEmployeeNames,
+  fetchScoutImages,
+  fetchScoutLookup,
   fetchSprayerGpsLogs,
   type SprayerGpsLog,
 } from "@/lib/scouting-api";
+import { initialsOf } from "@/lib/scouts-api";
+import { ScoutRouteCard, type ScoutTrail } from "@/components/scouting/ScoutRouteCard";
 import { flyToFarm, useMapSettings } from "@/hooks/use-map-settings";
 import { currentWeekRange } from "@/lib/utils";
 import {
   flattenZones,
   geometryCentroid,
+  houseOf,
+  zonesPerHouse,
   zonePolygonFromGeometry,
   type ZoneFeature,
 } from "./maps/zone-utils";
+import { routeEnd, zoneNumber } from "./maps/neat-route";
+import {
+  applyTrailSelection,
+  drawTrail,
+  escapeHtml,
+  housesCovered,
+  latestTrails,
+  useBedRouter,
+  zoneHeatStyle,
+  type DrawnTrail,
+  type TrailLayer,
+} from "./maps/route-kit";
 
 const SPRAYER_PALETTE = [
   "#0ea5e9",
@@ -83,74 +95,10 @@ function distMeters(a: [number, number], b: [number, number]): number {
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-const toRad = (v: number) => (v * Math.PI) / 180;
-
-/** A fix that moved ≥ this many metres from the previous one is "moving";
- *  below it the sprayer was effectively stationary (dwelling). */
-const MOVE_M = 1;
-/** A fix sitting within this many metres of its assigned zone is snapped onto
- *  the zone so GPS jitter doesn't scatter the track just outside the shape. */
-const CLAMP_M = 1;
-
-/**
- * Snap a GPS fix onto its assigned zone when it sits just outside but within
- * ``CLAMP_M`` of the zone polygon. Returns the snapped [lat, lng], or null to
- * leave the point untouched (no geometry, already inside, or > CLAMP_M away).
- * Distances are computed in a local metres projection — accurate at this scale.
- */
-function clampToZone(pt: [number, number], geom: any): [number, number] | null {
-  const poly = zonePolygonFromGeometry(geom);
-  const ring: number[][] | undefined = poly?.coordinates?.[0]; // [[lng,lat],…]
-  if (!ring || ring.length < 3) return null;
-  const [lat, lng] = pt;
-  const mPerLat = 111320;
-  const mPerLng = 111320 * Math.cos(toRad(lat));
-
-  // point-in-polygon (ray cast in lat/lng) — leave fixes already in their zone
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0], yi = ring[i][1];
-    const xj = ring[j][0], yj = ring[j][1];
-    if (
-      yi > lat !== yj > lat &&
-      lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi
-    ) {
-      inside = !inside;
-    }
-  }
-  if (inside) return null;
-
-  // nearest point on the boundary, in metres
-  const px = lng * mPerLng, py = lat * mPerLat;
-  let best: [number, number] | null = null;
-  let bestD = Infinity;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const ax = ring[j][0] * mPerLng, ay = ring[j][1] * mPerLat;
-    const bx = ring[i][0] * mPerLng, by = ring[i][1] * mPerLat;
-    const dx = bx - ax, dy = by - ay;
-    const len2 = dx * dx + dy * dy || 1e-9;
-    let t = ((px - ax) * dx + (py - ay) * dy) / len2;
-    t = Math.max(0, Math.min(1, t));
-    const cx = ax + t * dx, cy = ay + t * dy;
-    const d = Math.hypot(px - cx, py - cy);
-    if (d < bestD) {
-      bestD = d;
-      best = [cy / mPerLat, cx / mPerLng];
-    }
-  }
-  return best && bestD <= CLAMP_M ? best : null;
-}
-
-interface TrackPt {
-  lat: number;
-  lng: number;
-  /** moved ≥ MOVE_M from the previous fix */
-  moving: boolean;
-}
-
 interface Pt {
   sprayer: string;
   zone: string | null;
+  greenhouse: string;
   ts: string;
   lat: number;
   lng: number;
@@ -162,11 +110,16 @@ interface ZoneRoll {
   days: Set<string>;
   totalPoints: number;
   lastTs: string;
+  /** Distinct passes through the zone (consecutive pings in it count once). */
+  passes: number;
 }
 
-export function Spraying() {
+/** One sprayer's walk through one greenhouse on one day, drawn as a neat route. */
+type Trail = DrawnTrail;
+
+export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
   const [filters, setFilters] = useState<RangeFilterValue>(() => ({
-    crop: "Rose",
+    crop: initialCrop || "Rose",
     farm: ALL,
     greenhouse: ALL,
     ...currentWeekRange(),
@@ -180,24 +133,27 @@ export function Spraying() {
   const [zones, setZones] = useState<ZoneFeature[]>([]);
   const [logs, setLogs] = useState<SprayerGpsLog[]>([]);
   const [loading, setLoading] = useState(false);
+  // An empty day is a valid answer, so "has data" is "a response has landed".
+  const [loaded, setLoaded] = useState(false);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
+  const [selectedTrail, setSelectedTrail] = useState<string | null>(null);
   const [hiddenSprayers, setHiddenSprayers] = useState<Set<string>>(new Set());
-  // Employee ID (payroll, e.g. "MFK-00526") -> real employee_name.
-  const [empNames, setEmpNames] = useState<Record<string, string>>({});
 
   const mapSettings = useMapSettings();
-
-  // Display label for a sprayer: the actual employee name when we have it,
-  // else the formatted email / raw ID fallback.
-  const labelFor = useCallback(
-    (key: string) => empNames[key] || sprayerLabel(key),
-    [empNames],
-  );
 
   // Bed/zone geometry — IDB-cached on app boot.
   useEffect(() => {
     fetchBedsAndZones().then((vs) => setZones(flattenZones(vs)));
   }, []);
+
+  // Employee id -> name and photo, as on the Scouting map (initials otherwise).
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [images, setImages] = useState<Record<string, string>>({});
+  useEffect(() => {
+    fetchScoutLookup().then(setNames);
+    fetchScoutImages().then(setImages);
+  }, []);
+  const nameOf = useCallback((key: string) => names[key] || sprayerLabel(key), [names]);
 
   // Sprayer GPS logs for the chosen day / greenhouse.
   useEffect(() => {
@@ -206,7 +162,10 @@ export function Spraying() {
     const gh = filters.greenhouse === ALL ? undefined : filters.greenhouse;
     fetchSprayerGpsLogs(filters.from, filters.to, gh)
       .then((rows) => {
-        if (alive) setLogs(rows);
+        if (alive) {
+          setLogs(rows);
+          setLoaded(true);
+        }
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -215,19 +174,6 @@ export function Spraying() {
       alive = false;
     };
   }, [filters.from, filters.to, filters.greenhouse]);
-
-  // Resolve the payroll IDs in the logs to real employee names.
-  useEffect(() => {
-    const ids = Array.from(new Set(logs.map((r) => r.employee).filter(Boolean)));
-    if (!ids.length) return;
-    let alive = true;
-    fetchEmployeeNames(ids).then((m) => {
-      if (alive) setEmpNames(m);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [logs]);
 
   const farmNeedle = filters.farm === ALL ? "" : filters.farm.toLowerCase();
 
@@ -244,6 +190,7 @@ export function Spraying() {
       out.push({
         sprayer: r.employee || "Unknown",
         zone: r.zone || null,
+        greenhouse: r.greenhouse || "",
         ts: r.captured_at || "",
         lat,
         lng,
@@ -255,6 +202,7 @@ export function Spraying() {
   // Per-zone roll-up (only zones actually covered today).
   const aggByZone = useMemo(() => {
     const out = new Map<string, ZoneRoll>();
+    const lastZone = new Map<string, string>();
     for (const p of points) {
       if (!p.zone) continue;
       if (hiddenSprayers.has(p.sprayer)) continue;
@@ -266,9 +214,12 @@ export function Spraying() {
           days: new Set(),
           totalPoints: 0,
           lastTs: "",
+          passes: 0,
         };
         out.set(p.zone, row);
       }
+      if (lastZone.get(p.sprayer) !== p.zone) row.passes += 1;
+      lastZone.set(p.sprayer, p.zone);
       row.totalPoints += 1;
       if (p.ts) row.days.add(p.ts.slice(0, 10));
       if (p.ts > row.lastTs) row.lastTs = p.ts;
@@ -294,7 +245,7 @@ export function Spraying() {
     const list = Object.entries(totals)
       .map(([key, v]) => ({
         key,
-        label: empNames[key] || sprayerLabel(key),
+        label: nameOf(key),
         points: v.points,
         zones: v.zones.size,
       }))
@@ -304,65 +255,94 @@ export function Spraying() {
       colorMap.set(s.key, SPRAYER_PALETTE[i % SPRAYER_PALETTE.length]),
     );
     return { list, colorMap };
-  }, [points, empNames]);
+  }, [points, nameOf]);
 
-  // Per-sprayer track: the actual GPS path, time-ordered, with each fix snapped
-  // onto its zone (when within CLAMP_M) and flagged moving vs stationary.
+  // Per-sprayer track: the actual GPS path, time-ordered.
   const tracksBySprayer = useMemo(() => {
-    const out = new Map<string, TrackPt[]>();
+    const out = new Map<string, [number, number][]>();
     const ordered = [...points].sort((a, b) =>
       a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0,
     );
-    const bySpr = new Map<string, Pt[]>();
     for (const p of ordered) {
       if (hiddenSprayers.has(p.sprayer)) continue;
-      let arr = bySpr.get(p.sprayer);
-      if (!arr) {
-        arr = [];
-        bySpr.set(p.sprayer, arr);
+      let path = out.get(p.sprayer);
+      if (!path) {
+        path = [];
+        out.set(p.sprayer, path);
       }
-      arr.push(p);
+      path.push([p.lat, p.lng]);
     }
-    bySpr.forEach((pts, sprayer) => {
-      const track: TrackPt[] = [];
-      let prev: [number, number] | null = null;
-      for (const p of pts) {
-        let lat = p.lat;
-        let lng = p.lng;
-        if (p.zone) {
-          const z = zoneByName.get(p.zone);
-          const snapped = z?.geometry
-            ? clampToZone([p.lat, p.lng], z.geometry)
-            : null;
-          if (snapped) {
-            lat = snapped[0];
-            lng = snapped[1];
-          }
-        }
-        const moving = prev ? distMeters(prev, [lat, lng]) >= MOVE_M : false;
-        track.push({ lat, lng, moving });
-        prev = [lat, lng];
-      }
-      out.set(sprayer, track);
-    });
     return out;
-  }, [points, hiddenSprayers, zoneByName]);
+  }, [points, hiddenSprayers]);
 
   const stats = useMemo(() => {
     const sprayers = new Set<string>();
     let pts = 0;
     let distance = 0;
-    tracksBySprayer.forEach((track, sprayer) => {
+    tracksBySprayer.forEach((path, sprayer) => {
       sprayers.add(sprayer);
-      pts += track.length;
-      for (let i = 1; i < track.length; i++)
-        distance += distMeters(
-          [track[i - 1].lat, track[i - 1].lng],
-          [track[i].lat, track[i].lng],
-        );
+      pts += path.length;
+      for (let i = 1; i < path.length; i++) distance += distMeters(path[i - 1], path[i]);
     });
     return { sprayers: sprayers.size, zones: aggByZone.size, points: pts, distance };
   }, [tracksBySprayer, aggByZone]);
+
+  // Neat routes: each sprayer's zone-by-zone pings, time-ordered, cut into one
+  // trail per day and greenhouse (a line never hops across either), then closed
+  // up on screen by neatRoute. Pings outside every zone have no bed to route on.
+  const router = useBedRouter(zones);
+  const zonesPerGreenhouse = useMemo(() => zonesPerHouse(zones), [zones]);
+  const trails = useMemo(() => {
+    const out: Trail[] = [];
+    const bySprayer = new Map<string, Pt[]>();
+    for (const p of points) {
+      if (!p.zone || hiddenSprayers.has(p.sprayer)) continue;
+      const arr = bySprayer.get(p.sprayer) || [];
+      arr.push(p);
+      bySprayer.set(p.sprayer, arr);
+    }
+    bySprayer.forEach((pts, sprayer) => {
+      pts.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+      interface Visit { zone: string; bed: string; zoneNo: number; gh: string; ts: string; c: [number, number] }
+      let cur: Visit[] = [];
+      let prevKey = "";
+      const flush = () => {
+        if (!cur.length) return;
+        const segments = router.neat(cur.map((v) => ({ bed: v.bed, zoneNo: v.zoneNo })));
+        const beds: string[] = [];
+        for (const v of cur) if (v.bed && !beds.includes(v.bed)) beds.push(v.bed);
+        const date = cur[0].ts.slice(0, 10);
+        out.push({
+          key: `${sprayer}|${date}|${cur[0].gh}`,
+          person: sprayer,
+          greenhouse: cur[0].gh,
+          date,
+          segments,
+          start: cur[0].c,
+          end: routeEnd(segments, cur[cur.length - 1].c)!,
+          zones: new Set(cur.map((v) => v.zone)),
+          beds,
+          firstTime: cur[0].ts.slice(11, 19),
+          lastTime: cur[cur.length - 1].ts.slice(11, 19),
+        });
+        cur = [];
+      };
+      for (const p of pts) {
+        const zf = zoneByName.get(p.zone!);
+        const c = zf?.geometry && geometryCentroid(zf.geometry);
+        if (!zf || !c) continue;
+        const gh = p.greenhouse || houseOf(zf.bedName);
+        const key = `${p.ts.slice(0, 10)}|${gh}`;
+        if (key !== prevKey) flush();
+        prevKey = key;
+        // Consecutive pings in one zone are one stop, not a repeated vertex.
+        if (cur.length && cur[cur.length - 1].zone === p.zone) continue;
+        cur.push({ zone: p.zone!, bed: zf.bedName, zoneNo: zoneNumber(p.zone!), gh, ts: p.ts, c });
+      }
+      flush();
+    });
+    return out;
+  }, [points, hiddenSprayers, zoneByName, router]);
 
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -388,7 +368,7 @@ export function Spraying() {
 
     const bounds = L.latLngBounds([]);
 
-    // 1. Covered zones — shaded in the dominant sprayer's colour.
+    // 1. Sprayed zones: the scouting look, in the dominant sprayer's colour.
     aggByZone.forEach((row, zoneName) => {
       const z = zoneByName.get(zoneName);
       if (!z?.geometry) return;
@@ -397,131 +377,46 @@ export function Spraying() {
       const key = dominantSprayer(row);
       const color = (key && sprayerInfo.colorMap.get(key)) || "#0ea5e9";
       const layerObj = L.geoJSON(poly as any, {
-        style: () => ({
-          color,
-          weight: 1.2,
-          opacity: 0.85,
-          fillColor: color,
-          fillOpacity: 0.22,
-        }),
+        style: () => zoneHeatStyle(color, row.passes),
       });
-      layerObj.on("click", () => setSelectedZone(zoneName));
+      layerObj.on("click", () => {
+        setSelectedTrail(null);
+        setSelectedZone(zoneName);
+      });
       layerObj.bindTooltip(
-        `<div style="font:11px Inter,Arial,sans-serif"><b>${zoneName}</b><br/>${row.totalPoints} ping${row.totalPoints === 1 ? "" : "s"}</div>`,
-        { sticky: true },
+        `<div style="font:11px var(--sd-font),Arial,sans-serif"><b>${escapeHtml(zoneName)}</b><br/>${row.totalPoints} ping${row.totalPoints === 1 ? "" : "s"}${key ? ` · ${escapeHtml(nameOf(key))}` : ""}</div>`,
+        { direction: "top" },
       );
       layerObj.addTo(layer);
-      const c = geometryCentroid(z.geometry);
-      if (c) bounds.extend(c as L.LatLngExpression);
-    });
-
-    // 2. Per-sprayer GPS track. A subtle continuous base line shows the whole
-    //    path; the stretches where they were MOVING are over-drawn in a
-    //    stronger shade, and STATIONARY dwell points are highlighted as dots —
-    //    so the track reads at a glance without overwhelming the map.
-    tracksBySprayer.forEach((track, sprayer) => {
-      const color = sprayerInfo.colorMap.get(sprayer) || "#0ea5e9";
-      const name = labelFor(sprayer);
-      track.forEach((p) => bounds.extend([p.lat, p.lng] as L.LatLngExpression));
-
-      const latlngs = track.map((p) => [p.lat, p.lng]) as L.LatLngExpression[];
-      if (latlngs.length >= 2) {
-        // subtle continuous base — the full walked path
-        L.polyline(latlngs, {
-          color,
-          weight: 1.5,
-          opacity: 0.3,
-          lineJoin: "round",
-          lineCap: "round",
-        })
-          .bindTooltip(
-            `<div style="font:11px Inter,Arial,sans-serif"><b>${name}</b><br/>${track.length} pings</div>`,
-            { sticky: true },
-          )
-          .addTo(layer);
-
-        // stronger overlay on contiguous moving runs
-        let run: L.LatLngExpression[] = [];
-        const flush = () => {
-          if (run.length >= 2)
-            L.polyline(run, {
-              color,
-              weight: 3,
-              opacity: 0.85,
-              lineJoin: "round",
-              lineCap: "round",
-            }).addTo(layer);
-          run = [];
-        };
-        for (let i = 0; i < track.length; i++) {
-          if (i > 0 && track[i].moving) {
-            if (!run.length) run.push([track[i - 1].lat, track[i - 1].lng]);
-            run.push([track[i].lat, track[i].lng]);
-          } else {
-            flush();
-          }
-        }
-        flush();
-      }
-
-      // highlighted dwell markers — collapse consecutive stationary fixes into
-      // one dot, sized a little by how long they stood there.
-      let i = 0;
-      while (i < track.length) {
-        if (track[i].moving) {
-          i++;
-          continue;
-        }
-        let j = i;
-        let sumLat = 0;
-        let sumLng = 0;
-        while (j < track.length && !track[j].moving) {
-          sumLat += track[j].lat;
-          sumLng += track[j].lng;
-          j++;
-        }
-        const n = j - i;
-        L.circleMarker([sumLat / n, sumLng / n] as L.LatLngExpression, {
-          radius: Math.min(7, 3 + Math.log2(n + 1)),
-          color: "#ffffff",
-          weight: 1,
-          fillColor: color,
-          fillOpacity: 0.9,
-        })
-          .bindTooltip(
-            `${name} · stationary (${n} ping${n === 1 ? "" : "s"})`,
-            { sticky: true },
-          )
-          .addTo(layer);
-        i = j;
-      }
-
-      // start / end caps
-      const first = track[0];
-      const last = track[track.length - 1];
-      if (first) {
-        L.circleMarker([first.lat, first.lng] as L.LatLngExpression, {
-          radius: 6,
-          color: "#ffffff",
-          weight: 2,
-          fillColor: color,
-          fillOpacity: 1,
-        })
-          .bindTooltip(`Start · ${name}`, { sticky: true })
-          .addTo(layer);
-      }
-      if (last && track.length > 1) {
-        L.circleMarker([last.lat, last.lng] as L.LatLngExpression, {
-          radius: 6,
-          color,
-          weight: 2,
-          fillColor: "#ffffff",
-          fillOpacity: 1,
-        })
-          .bindTooltip(`End · ${name}`, { sticky: true })
-          .addTo(layer);
+      try {
+        bounds.extend(layerObj.getBounds());
+      } catch {
+        /* skip */
       }
     });
+
+    // 2. Neat sprayer routes, drawn exactly as the scout routes: initials badge
+    //    at the end, start dot, a click opens the route card.
+    trailLayers.current.clear();
+    const showBadge = latestTrails(trails, filters.greenhouse !== ALL);
+    trails.forEach((t) => {
+      const name = nameOf(t.person);
+      trailLayers.current.set(
+        t.key,
+        drawTrail(layer, t, {
+          color: sprayerInfo.colorMap.get(t.person) || "#0ea5e9",
+          initials: initialsOf(name),
+          showBadge: showBadge(t),
+          tipHtml: `<div style="font:11px var(--sd-font),Arial,sans-serif"><b>${escapeHtml(name)}</b><br/>${escapeHtml(t.greenhouse || "—")} · ${t.zones.size} zones · ${t.date}</div>`,
+          onOpen: () => {
+            setSelectedZone(null);
+            setSelectedTrail(t.key);
+          },
+        }),
+      );
+      for (const seg of t.segments) for (const pt of seg.points) bounds.extend(pt);
+    });
+    applyTrailSelection(trailLayers.current, layer, selectedRef.current);
 
     if (bounds.isValid()) {
       m.fitBounds(bounds.pad(0.05), { animate: false });
@@ -530,7 +425,15 @@ export function Spraying() {
         animate: false,
       });
     }
-  }, [aggByZone, zoneByName, tracksBySprayer, sprayerInfo, mapSettings, filters.farm, labelFor]);
+  }, [aggByZone, zoneByName, trails, sprayerInfo, mapSettings, filters.farm, filters.greenhouse, nameOf]);
+
+  // Highlight the open route and dim the rest.
+  const trailLayers = useRef(new Map<string, TrailLayer>());
+  const selectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedRef.current = selectedTrail;
+    applyTrailSelection(trailLayers.current, layerRef.current, selectedTrail);
+  }, [selectedTrail]);
 
   // Fly to the farm whenever the Farm dropdown changes.
   const farmFlyMounted = useRef(false);
@@ -555,11 +458,37 @@ export function Spraying() {
         .sort(([, a], [, b]) => b - a)
         .map(([k, n]) => ({
           key: k,
-          label: labelFor(k),
+          label: nameOf(k),
           count: n,
           color: sprayerInfo.colorMap.get(k) || "#9ca3af",
         }))
     : [];
+
+  // The open route's card, same as the scout's: who, house, date, coverage,
+  // times, beds, and every house covered in the range.
+  const openTrail = useMemo<ScoutTrail | null>(() => {
+    const t = selectedTrail ? trails.find((x) => x.key === selectedTrail) : null;
+    if (!t) return null;
+    return {
+      key: t.key,
+      scoutId: t.person,
+      name: nameOf(t.person),
+      image: images[t.person],
+      color: sprayerInfo.colorMap.get(t.person) || "#0ea5e9",
+      greenhouse: t.greenhouse,
+      date: t.date,
+      zonesCovered: t.zones.size,
+      zonesTotal: zonesPerGreenhouse.get(houseOf(t.beds[0] || t.greenhouse)) || 0,
+      start: t.firstTime,
+      end: t.lastTime,
+      beds: t.beds,
+      houses: housesCovered(trails, t.person, zonesPerGreenhouse),
+    };
+  }, [selectedTrail, trails, nameOf, images, sprayerInfo, zonesPerGreenhouse]);
+
+  // First load: `loading` is still false on the very first paint, before the
+  // effect fires. A filter change keeps the old tracks on screen.
+  const skeleton = !loaded;
 
   const toggleSprayer = (key: string) =>
     setHiddenSprayers((prev) => {
@@ -570,56 +499,47 @@ export function Spraying() {
     });
 
   return (
-    <div className="flex flex-col min-h-svh">
+    <div className="flex flex-col h-svh overflow-hidden">
       <RangeHeader
         title="Spraying"
         subtitle="Up to one week · each sprayer's GPS track and the zones they covered"
         value={filters}
         onChange={setFilters}
-        showCrop={false}
       />
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[3fr_1fr]">
-        <div className="relative">
-          <div className="absolute inset-0 isolate z-0">
-            <MapBase
-              onReady={(m) => {
-                mapRef.current = m;
-              }}
-            />
-          </div>
+      <div className="relative flex-1 min-h-[55vh] lg:min-h-0" aria-busy={loading || undefined}>
+        <div className="absolute inset-4 md:inset-6 isolate z-0 overflow-hidden rounded-[20px] border border-border shadow-[var(--sd-shadow-1)]">
+          <MapBase
+            onReady={(m) => {
+              mapRef.current = m;
+            }}
+          />
 
-          <Card className="absolute bottom-4 right-4 z-10 w-72 max-h-[70vh] overflow-y-auto bg-card/95 backdrop-blur shadow-md p-3">
-            <CardHeader className="p-0 pb-2">
-              <CardTitle className="text-sm">Spraying summary</CardTitle>
-              <CardDescription className="text-[0.7rem] tabular-nums">
-                {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
-              </CardDescription>
-            </CardHeader>
+          {/* No fraction to report for this fetch — null sweeps, 0 would sit
+              empty and read as stuck. Floats on the map's top edge so the
+              basemap and the tracks already drawn stay in view. */}
+          <LoadProgress
+            active={loading}
+            progress={null}
+            className="absolute left-16 top-3 z-[1000] rounded-md bg-card/95 px-2 py-1.5 shadow-md backdrop-blur"
+          />
 
-            <div className="grid grid-cols-4 gap-2 mb-3">
-              {[
-                ["Sprayers", String(stats.sprayers)],
-                ["Zones", String(stats.zones)],
-                ["Pings", String(stats.points)],
-                ["Dist", `${(stats.distance / 1000).toFixed(2)}km`],
-              ].map(([label, v]) => (
-                <div
-                  key={label}
-                  className="rounded border bg-[var(--sd-bg-soft)] px-1.5 py-1 text-center"
-                >
-                  <div className="text-[0.6rem] uppercase tracking-wide text-muted-foreground">
-                    {label}
-                  </div>
-                  <div className="text-sm font-semibold tabular-nums">{v}</div>
-                </div>
-              ))}
-            </div>
+          <MapKpiPill>
+            {skeleton ? (
+              <KpiValueSkeleton className="mx-auto h-4 w-40" />
+            ) : (
+              <>
+                {stats.sprayers} sprayers · {stats.zones} zones · {stats.points} pings · {(stats.distance / 1000).toFixed(2)}km
+                <span className="ml-2 text-muted-foreground">
+                  {isSingleDay ? filters.from : `${filters.from} → ${filters.to}`}
+                </span>
+              </>
+            )}
+          </MapKpiPill>
 
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[0.7rem] uppercase tracking-wide font-semibold text-muted-foreground">
-                Sprayers in view
-              </span>
+          {/* The per-sprayer show/hide list floats under the zoom buttons. */}
+          <MapControlPanel title="Sprayers in view" count={skeleton ? undefined : sprayerInfo.list.length}>
+            <div className="flex items-center justify-end mb-1.5">
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -640,7 +560,9 @@ export function Spraying() {
               </div>
             </div>
 
-            {sprayerInfo.list.length === 0 ? (
+            {skeleton ? (
+              <RowsSkeleton rows={4} className="gap-0.5" />
+            ) : sprayerInfo.list.length === 0 ? (
               <div className="text-[0.72rem] text-muted-foreground py-3 text-center">
                 No spraying on this date.
               </div>
@@ -674,23 +596,35 @@ export function Spraying() {
                 })}
               </div>
             )}
-          </Card>
-        </div>
+          </MapControlPanel>
 
-        <div className="border-l bg-card p-3 overflow-auto">
+          {openTrail ? (
+            <ScoutRouteCard
+              key={openTrail.key}
+              trail={openTrail}
+              role="Sprayer"
+              onClose={() => setSelectedTrail(null)}
+            />
+          ) : null}
+
           {detail ? (
-            <Card className="p-3 shadow-none border-0">
-              <CardHeader className="p-0 pb-2">
-                <CardTitle className="text-sm">{detail.zone}</CardTitle>
-                <CardDescription className="text-[0.7rem]">
-                  {detail.totalPoints} ping{detail.totalPoints === 1 ? "" : "s"}
-                  {!isSingleDay
-                    ? ` · sprayed ${detail.days.size} of ${rangeDayCount} days`
-                    : ""}
-                  {detail.lastTs ? ` · last ${detail.lastTs.slice(11)}` : ""}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-0 flex flex-col gap-3">
+            <MapFloatingCard
+              key={detail.zone}
+              eyebrow="Zone"
+              title={detail.zone}
+              onClose={() => setSelectedZone(null)}
+              label={`Zone ${detail.zone}`}
+              closeLabel="Close zone card"
+              testId="zone-card"
+            >
+              <div className="-mt-2 mb-3 text-[0.7rem] text-muted-foreground">
+                {detail.totalPoints} ping{detail.totalPoints === 1 ? "" : "s"}
+                {!isSingleDay
+                  ? ` · sprayed ${detail.days.size} of ${rangeDayCount} days`
+                  : ""}
+                {detail.lastTs ? ` · last ${detail.lastTs.slice(11)}` : ""}
+              </div>
+              <div className="flex flex-col gap-3">
                 <div>
                   <div className="text-[0.7rem] uppercase tracking-wide text-muted-foreground mb-1">
                     Sprayers here
@@ -715,27 +649,12 @@ export function Spraying() {
                     ))}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="p-4">
-              <CardHeader className="p-0">
-                <CardTitle className="text-sm">Pick a zone</CardTitle>
-                <CardDescription className="text-[0.7rem]">
-                  Click any shaded zone to see which sprayers covered it.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-0 mt-3">
-                <Badge variant="outline" className="text-[0.65rem]">
-                  {aggByZone.size} zone{aggByZone.size === 1 ? "" : "s"} covered
-                </Badge>
-              </CardContent>
-            </Card>
-          )}
+              </div>
+            </MapFloatingCard>
+          ) : null}
         </div>
       </div>
 
-      <LoadingOverlay open={loading} progress={0} />
     </div>
   );
 }

@@ -24,6 +24,9 @@ const Observations = lazy(() =>
 const TrapsMap = lazy(() =>
   import("@/pages/TrapsMap").then((m) => ({ default: m.TrapsMap })),
 );
+const Gallery = lazy(() =>
+  import("@/pages/Gallery").then((m) => ({ default: m.Gallery })),
+);
 const Heatmaps = lazy(() =>
   import("@/pages/Heatmaps").then((m) => ({ default: m.Heatmaps })),
 );
@@ -221,6 +224,8 @@ export function App() {
             <Observations initialCrop={cropName} />
           ) : view === "traps" ? (
             <TrapsMap initialCrop={cropName} />
+          ) : view === "gallery" ? (
+            <Gallery initialCrop={cropName} />
           ) : view === "heatmaps" ? (
             <Heatmaps initialCrop={cropName} />
           ) : view === "scouting-map" ? (

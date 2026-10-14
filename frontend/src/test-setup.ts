@@ -1,3 +1,4 @@
+import { afterEach } from "vitest";
 import "@testing-library/jest-dom";
 
 // jsdom does not implement ResizeObserver either — AppSidebar's scroll-shadow
@@ -29,4 +30,17 @@ Object.defineProperty(window, "matchMedia", {
     removeEventListener: () => {},
     dispatchEvent: () => false,
   }),
+});
+
+// The place picker remembers the last farm / greenhouse per crop in
+// localStorage; clear it between tests so one test's pick never becomes the
+// next test's starting place.
+afterEach(() => {
+  try {
+    for (const k of Object.keys(window.localStorage)) {
+      if (k.startsWith("scp.place.")) window.localStorage.removeItem(k);
+    }
+  } catch {
+    /* no storage */
+  }
 });

@@ -310,3 +310,37 @@ html { font-size: 85%; }
 .scp-map-credit span { display: none; padding: 2px 8px; border-radius: 9999px; background: rgba(255,255,255,.92); }
 .scp-map-credit:hover span, .scp-map-credit.open span { display: inline; }
 .scp-map-credit a { color: inherit; text-decoration: underline; }
+
+/* The finding panel slides in from the right edge. */
+@keyframes scp-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.scp-panel-in {
+  animation: scp-panel-in 300ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scp-panel-in {
+    animation: none;
+  }
+}
+
+/* Viewer tab content fades in. */
+@keyframes scp-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.scp-fade-in {
+  animation: scp-fade-in 180ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scp-fade-in {
+    animation: none;
+  }
+}

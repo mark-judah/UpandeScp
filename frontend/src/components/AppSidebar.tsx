@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Coins,
   Crosshair,
+  Images,
   Droplets,
   FileText,
   Flame,
@@ -204,6 +205,7 @@ const ROSE_NAV: NavSection[] = [
       { kind: "view", view: "observations", label: "Observations", icon: Search },
       { kind: "view", view: "heatmaps", label: "Heatmaps", icon: Flame },
       { kind: "view", view: "traps", label: "Traps", icon: Crosshair },
+      { kind: "view", view: "gallery", label: "Visual findings", icon: Images },
     ],
   },
   {

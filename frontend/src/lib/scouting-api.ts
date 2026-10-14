@@ -1172,3 +1172,29 @@ export function metaFromChunk(r: ChunkResponse): Partial<ScoutingMeta> {
     cropsScouted: r.crops_scouted || [],
   };
 }
+
+/** A trap's fixed location (Trap.geojson) — a GPS estimate from the scouts'
+ *  own high-accuracy fixes, or a manually placed point. */
+export interface TrapLocation {
+  lat: number;
+  lng: number;
+  source: "GPS estimate" | "Manual" | "";
+  fixes: number;
+  spread_m: number;
+  flag: string;
+}
+export type TrapLocations = Record<string, TrapLocation>;
+
+/** Every trap with a fixed location. Failure → {} (the finding map then says
+ *  "Trap position not mapped"). */
+export async function fetchTrapLocations(farm?: string): Promise<TrapLocations> {
+  try {
+    const r = await call<TrapLocations>(
+      "upande_scp.serverscripts.traps.trap_location.get_trap_locations",
+      farm ? { farm } : {},
+    );
+    return r && typeof r === "object" ? r : {};
+  } catch {
+    return {};
+  }
+}

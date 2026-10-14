@@ -87,6 +87,7 @@ def _drop_dangling_links(doc) -> list[str]:
 @frappe.whitelist()
 def get_settings_bundle() -> dict:
     _require_admin()
+    from upande_scp.serverscripts.scouting import capture_settings
 
     settings = frappe.get_single("Scouting and Crop Protection Settings")
     allowed_farms = [
@@ -157,6 +158,12 @@ def get_settings_bundle() -> dict:
             # — a farm that has never opened this page still gets the feature.
             "allow_scout_photos": 0 if settings.allow_scout_photos == 0 else 1,
             "allow_scout_comments": 0 if settings.allow_scout_comments == 0 else 1,
+            # Pests that can be caught on a trap, for the Traps switches.
+            "trap_pests": capture_settings.trap_pest_choices(),
+            "trap_photo_rules": [
+                {"pest": p, "photo_required": int(req)}
+                for p, req in capture_settings.trap_photo_rules().items()
+            ],
             "allowed_farms": allowed_farms,
             "exclude_keywords": exclude_keywords,
             "chemical_stores": chemical_stores,
@@ -239,6 +246,11 @@ def save_spray_plan_settings(payload) -> dict:
             farm = (r.get("farm") if isinstance(r, dict) else r) or ""
             if farm:
                 settings.append("allowed_farms", {"farm": farm})
+
+    if capture_settings.TRAP_RULES_FIELD in payload:
+        settings.set(capture_settings.TRAP_RULES_FIELD, [])
+        for r in capture_settings.clean_trap_rules(payload[capture_settings.TRAP_RULES_FIELD]):
+            settings.append(capture_settings.TRAP_RULES_FIELD, r)
 
     if "exclude_keywords" in payload:
         settings.set("exclude_keywords", [])

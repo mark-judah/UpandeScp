@@ -44,6 +44,10 @@ export interface SprayPlanSettings {
    *  draws the camera / the Comments tab; 0 = it does not offer them at all. */
   allow_scout_photos: number;
   allow_scout_comments: number;
+  /** Per trap pest: must a catch carry a photo (Traps section). A pest with no row is not required. */
+  trap_photo_rules?: { pest: string; photo_required: number }[];
+  /** Pests a trap has caught — the rows the Traps section offers. Read-only. */
+  trap_pests?: string[];
   allowed_farms: { farm: string }[];
   exclude_keywords: { keyword: string }[];
   /** Warehouses that hold chemicals — the Application Plan chemical picker

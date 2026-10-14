@@ -740,8 +740,11 @@ def _submit_locked(payload) -> dict:
 
 	today = getdate(nowdate())
 	check_date = getdate(payload.get("check_date") or nowdate())
-	if check_date > today:
+	if check_date > add_days(today, 1):
 		frappe.throw(_("Check date cannot be in the future."))
+	if check_date > today:
+		# one day of leeway for a phone ahead of the server's time zone: stored as today
+		check_date = today
 	if check_date < add_days(today, -BACKDATE_DAYS):
 		frappe.throw(_("Check date cannot be more than {0} days ago.").format(BACKDATE_DAYS))
 

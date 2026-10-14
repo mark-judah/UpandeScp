@@ -547,14 +547,18 @@ class TestAssetChecks(unittest.TestCase):
 			other.close()
 
 	def test_check_date_clamped_to_three_days_back(self):
-		for days, ok in ((-4, False), (-3, True), (1, False)):
+		for days, ok in ((-4, False), (-3, True), (1, True), (2, False)):
 			with self.subTest(days=days):
 				frappe.set_user("Administrator")
 				a = self.asset()
 				with self.as_scout():
 					p = self.payload(a, check_date=add_days(nowdate(), days))
 					if ok:
-						self.assertEqual(api.submit_asset_check_sheet(p)["docstatus"], 1)
+						r = api.submit_asset_check_sheet(p)
+						self.assertEqual(r["docstatus"], 1)
+						# today + 1 is stored as today, never as a future date
+						self.assertEqual(str(frappe.db.get_value("Asset Check Sheet", r["name"], "check_date")),
+						                 min(p["check_date"], nowdate()))
 					else:
 						with self.assertRaises(frappe.ValidationError):
 							api.submit_asset_check_sheet(p)

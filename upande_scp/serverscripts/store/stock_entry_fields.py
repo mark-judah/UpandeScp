@@ -89,6 +89,24 @@ def _field_spec():
 				"read_only": 1,
 				"no_copy": 1,
 				"search_index": 1,
+				"in_standard_filter": 1,
+				# The backfill (patches.v1_0.link_tank_mix_issues_to_plan) sets it on
+				# already-submitted issues.
+				"allow_on_submit": 1,
+				"module": MODULE,
+			},
+			# How the plan link was established: Direct (set when the issue was
+			# built, or named in its remarks), Batch, or Greenhouse + date. See
+			# spray_plan_creator.issue_link.
+			{
+				"fieldname": "custom_spray_link_basis",
+				"label": "Spray Link Basis",
+				"fieldtype": "Select",
+				"options": "\nDirect\nBatch\nGreenhouse + date",
+				"insert_after": "custom_spray_plan",
+				"read_only": 1,
+				"no_copy": 1,
+				"allow_on_submit": 1,
 				"module": MODULE,
 			},
 		],

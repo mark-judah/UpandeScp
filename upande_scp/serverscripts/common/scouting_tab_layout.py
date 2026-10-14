@@ -55,7 +55,7 @@ SCP_FIELDS = {
     "Stock Entry": [
         "custom_labels_printed", "custom_labels_printed_by",
         "custom_labels_printed_on", "custom_labels_print_count",
-        "custom_spray_plan",
+        "custom_spray_plan", "custom_spray_link_basis",
     ],
 }
 
@@ -91,7 +91,7 @@ TAB_BEFORE = {"Stock Entry": "tab_connections"}
 TAB_DEPENDS_ON = {
     "Stock Entry": (
         f'eval:doc.stock_entry_type=="{SE_TYPE_TRANSFER}"'
-        ' || doc.custom_labels_printed'
+        ' || doc.custom_labels_printed || doc.custom_spray_plan'
     ),
     # Work Order and BOM are shared with manufacturing: only spray plans and
     # the tank-mix BOMs they generate carry SCP data, so the tab stays hidden

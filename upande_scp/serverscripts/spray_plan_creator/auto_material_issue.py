@@ -187,6 +187,7 @@ def build_material_issue(
         # Material Issue). block_groups.split_stock_entry reads it to split the
         # expense of a plan over joined blocks by area.
         "custom_spray_plan": wo.name,
+        "custom_spray_link_basis": "Direct",
         "items": items,
         # New upande_ta model: assign the receiving employee directly.
         # System-generated (no live scan) -> biometric_status stays Pending.

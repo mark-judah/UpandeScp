@@ -17,7 +17,7 @@
  * whatever the most recent fetch loaded into the module-level cache.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { call } from "./frappe";
 
 export type ObsKind = "pest" | "disease";
@@ -229,11 +229,16 @@ export function useObservationColors(): {
     void loadObservationColors();
     return subscribeObservationColors(setMap);
   }, []);
-  return {
-    map,
-    pest: (name: string) => pestColor(name, map.pests),
-    disease: (name: string) => diseaseColor(name, map.diseases),
-  };
+  // Memoised: consumers list these functions in effect deps, and a fresh
+  // identity every render re-ran those effects (e.g. refitting a map).
+  return useMemo(
+    () => ({
+      map,
+      pest: (name: string) => pestColor(name, map.pests),
+      disease: (name: string) => diseaseColor(name, map.diseases),
+    }),
+    [map],
+  );
 }
 
 /** Static legend entries — used by the colour-key panels. */

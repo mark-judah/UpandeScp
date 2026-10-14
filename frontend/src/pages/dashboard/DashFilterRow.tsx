@@ -1,11 +1,5 @@
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
+import { FilterSelect } from "@/components/FilterSelect";
+
 export interface DashFilters {
   observation: string;
   section: string;
@@ -14,8 +8,6 @@ export interface DashFilters {
 
 export const ALL_FILTER = "";
 
-const ALL_TOKEN = "__all__";
-
 export interface DashFilterRowProps {
   obsLabel: string;
   obsOptions: string[];
@@ -23,13 +15,14 @@ export interface DashFilterRowProps {
   stageOptions: string[];
   value: DashFilters;
   onChange: (next: DashFilters) => void;
+  /** While the first payload (which carries the options) is loading. */
+  disabled?: boolean;
 }
 
 /**
  * Three-up filter row used at the top of Pest / Disease trend charts.
- * Mirrors the JS dashboard's pest/section/stage controls. The empty
- * sentinel ("All …") is mapped to/from ``""`` because shadcn Select
- * doesn't allow an empty string ``value``.
+ * Mirrors the JS dashboard's pest/section/stage controls, in the same pill
+ * dropdowns as every page header (FilterSelect); "All …" stands for "".
  */
 export function DashFilterRow({
   obsLabel,
@@ -38,65 +31,36 @@ export function DashFilterRow({
   stageOptions,
   value,
   onChange,
+  disabled = false,
 }: DashFilterRowProps) {
-  const set = (k: keyof DashFilters) => (v: string) =>
-    onChange({ ...value, [k]: v === ALL_TOKEN ? ALL_FILTER : v });
+  const set = (k: keyof DashFilters) => (v: string) => onChange({ ...value, [k]: v || ALL_FILTER });
 
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      <div className="flex flex-col gap-1 min-w-40">
-        <Label>{obsLabel}</Label>
-        <Select
-          value={value.observation || ALL_TOKEN}
-          onValueChange={set("observation")}
-        >
-          <SelectTrigger className="h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_TOKEN}>All {obsLabel.toLowerCase()}s</SelectItem>
-            {obsOptions.map((o) => (
-              <SelectItem key={o} value={o}>
-                {o}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex flex-col gap-1 min-w-32">
-        <Label>Section</Label>
-        <Select value={value.section || ALL_TOKEN} onValueChange={set("section")}>
-          <SelectTrigger className="h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_TOKEN}>All sections</SelectItem>
-            {sectionOptions.map((o) => (
-              <SelectItem key={o} value={o}>
-                {o}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex flex-col gap-1 min-w-32">
-        <Label>Stage</Label>
-        <Select value={value.stage || ALL_TOKEN} onValueChange={set("stage")}>
-          <SelectTrigger className="h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_TOKEN}>All stages (cumulative)</SelectItem>
-            {stageOptions.map((o) => (
-              <SelectItem key={o} value={o}>
-                {o}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <FilterSelect
+        label={obsLabel}
+        allLabel={`All ${obsLabel.toLowerCase()}s`}
+        value={value.observation}
+        onChange={set("observation")}
+        options={obsOptions}
+        disabled={disabled}
+      />
+      <FilterSelect
+        label="Section"
+        allLabel="All sections"
+        value={value.section}
+        onChange={set("section")}
+        options={sectionOptions}
+        disabled={disabled}
+      />
+      <FilterSelect
+        label="Stage"
+        allLabel="All stages (cumulative)"
+        value={value.stage}
+        onChange={set("stage")}
+        options={stageOptions}
+        disabled={disabled}
+      />
     </div>
   );
 }

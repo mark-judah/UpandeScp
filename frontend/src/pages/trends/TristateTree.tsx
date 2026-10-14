@@ -3,6 +3,7 @@ import { ChevronDown, Check, Minus, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { matchesQuery } from "@/lib/places";
 import type { CheckState, TreeNode } from "./trends-types";
 
 export type TristateTreeProps = {
@@ -43,10 +44,10 @@ export function TristateTree({
 
   const filteredIds = useMemo(() => {
     if (!query.trim()) return null;
-    const q = query.trim().toLowerCase();
     const visible = new Set<string>();
     const walk = (n: TreeNode): boolean => {
-      const self = n.label.toLowerCase().includes(q);
+      // Case and spaces ignored, as in the place picker ("gh16", "chep 16").
+      const self = matchesQuery(n.search ?? n.label, query);
       const childMatch = (n.children || []).map(walk).some(Boolean);
       if (self || childMatch) {
         visible.add(n.id);
@@ -158,7 +159,7 @@ export function TristateTree({
             {state === "checked" && <Check className="h-3 w-3" />}
             {state === "indeterminate" && <Minus className="h-3 w-3" />}
           </span>
-          <span className="text-sm truncate flex-1">{n.label}</span>
+          <span className="text-sm truncate flex-1" title={n.search}>{n.label}</span>
           {typeof n.count === "number" && (
             <span className="text-[0.7rem] text-muted-foreground tabular-nums">
               {n.count}

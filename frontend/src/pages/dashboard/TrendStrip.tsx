@@ -14,7 +14,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ChartSkeleton } from "@/components/Loading";
 import { EmptyHint } from "./EmptyHint";
+import { RevealLTR } from "@/components/RevealLTR";
 import { weekTickFormatter } from "@/lib/iso-week";
 
 const PALETTE = [
@@ -39,14 +41,17 @@ export function TrendStrip({
   rows,
   keys,
   unit = "",
+  loading = false,
 }: {
   title: string;
   description: string;
   rows: Array<Record<string, string | number>>;
   keys: string[];
   unit?: string;
+  /** First load: the card and its title stand, the chart is a skeleton. */
+  loading?: boolean;
 }) {
-  if (!rows.length || !keys.length) {
+  if (loading || !rows.length || !keys.length) {
     return (
       <Card className="p-4">
         <CardHeader className="p-0 pb-2">
@@ -54,7 +59,11 @@ export function TrendStrip({
           <CardDescription>{description}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <EmptyHint title="No trend data" hint="Nothing recorded in this range." />
+          {loading ? (
+            <ChartSkeleton height={224} />
+          ) : (
+            <EmptyHint title="No trend data" hint="Nothing recorded in this range." />
+          )}
         </CardContent>
       </Card>
     );
@@ -70,41 +79,43 @@ export function TrendStrip({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="p-0">
-        <ChartContainer config={config} className="h-56">
-          <LineChart data={rows} margin={{ left: 4, right: 8, top: 8 }}>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
-            <XAxis
-              dataKey="date"
-              tickLine={false}
-              axisLine={false}
-              interval={0}
-              minTickGap={0}
-              tickFormatter={weekTickFormatter}
-            />
-            <YAxis tickLine={false} axisLine={false} width={32} />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  indicator="line"
-                  formatter={(v) => `${v}${unit}`}
-                />
-              }
-            />
-            <ChartLegend content={<ChartLegendContent />} />
-            {keys.map((k, i) => (
-              <Line
-                key={k}
-                type="monotone"
-                dataKey={k}
-                stroke={PALETTE[i % PALETTE.length]}
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 3 }}
-                isAnimationActive={false}
+        <RevealLTR>
+          <ChartContainer config={config} className="h-56">
+            <LineChart data={rows} margin={{ left: 4, right: 8, top: 8 }}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis
+                dataKey="date"
+                tickLine={false}
+                axisLine={false}
+                interval={0}
+                minTickGap={0}
+                tickFormatter={weekTickFormatter}
               />
-            ))}
-          </LineChart>
-        </ChartContainer>
+              <YAxis tickLine={false} axisLine={false} width={32} />
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    indicator="line"
+                    formatter={(v) => `${v}${unit}`}
+                  />
+                }
+              />
+              <ChartLegend content={<ChartLegendContent />} />
+              {keys.map((k, i) => (
+                <Line
+                  key={k}
+                  type="monotone"
+                  dataKey={k}
+                  stroke={PALETTE[i % PALETTE.length]}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 3 }}
+                  isAnimationActive={false}
+                />
+              ))}
+            </LineChart>
+          </ChartContainer>
+        </RevealLTR>
       </CardContent>
     </Card>
   );

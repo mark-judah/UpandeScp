@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
-import { PageHeader } from "@/components/PageHeader";
 import { ChevronDown, MapPin, Sparkles, RefreshCw, Gauge } from "lucide-react";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
-import { fetchCrops, DEFAULT_CROP } from "@/lib/scouting-api";
+import { DEFAULT_CROP } from "@/lib/scouting-api";
 import { getThresholds, type ThresholdsBundle } from "@/lib/thresholds-api";
+import { thresholdMapFromBundle } from "@/lib/threshold-measure";
 import {
   Select,
   SelectContent,
@@ -14,13 +13,15 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/DatePicker";
-import { LoadingOverlay } from "@/components/LoadingOverlay";
+import { LoadProgress, firstLoad } from "@/components/Loading";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/PageHeader";
+import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { ymd } from "@/lib/utils";
 import { TristateTree } from "./trends/TristateTree";
 import { ChartPanel } from "./trends/ChartPanel";
@@ -45,36 +46,22 @@ function defaultRange() {
 }
 
 export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
-  const [crop, setCrop] = useState<string>(initialCrop ?? DEFAULT_CROP);
+  // The crop is the route's (spec D1); the page carries no crop picker.
+  const crop = initialCrop ?? DEFAULT_CROP;
   const [{ from, to }, setRange] = useState(defaultRange);
-  const [crops, setCrops] = useState<
-    Array<{ name: string; crop_name: string; farms?: string[] }>
-  >([{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }]);
   const [stationChecks, setStationChecks] = useState<Set<string>>(new Set());
   const [obsChecks, setObsChecks] = useState<Set<string>>(new Set());
   const [showThresholds, setShowThresholds] = useState(true);
   const [thresholdBundle, setThresholdBundle] =
     useState<ThresholdsBundle | null>(null);
 
-  useEffect(() => {
-    fetchCrops().then((r) => {
-      if (!r.length) return;
-      const hasDefault = r.some((c) => c.crop_name === DEFAULT_CROP);
-      setCrops(
-        hasDefault
-          ? r
-          : [{ name: DEFAULT_CROP, crop_name: DEFAULT_CROP, farms: [] }, ...r],
-      );
-    });
-  }, []);
-
   const { data, loading, error, progress, reload } =
     useDashboardAggregate<TrendsPayload>(
-      "trends_legacy",
+      "trends",
       {
         from_date: from,
         to_date: to,
-        crop: crop === DEFAULT_CROP ? "" : crop,
+        crop,
       },
       true,
     );
@@ -127,43 +114,10 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
     };
   }, [crop]);
 
-  // Flat lookup keyed by ``${kind}::${name}::${stage}`` (stage="" = aggregate).
-  // Per-stage row wins over aggregate; both rejected if all three are zero.
-  const thresholdMap = useMemo(() => {
-    const m = new Map<string, ThresholdBand>();
-    if (!thresholdBundle) return m;
-    const nonZero = (b: { low: number; moderate: number; high: number }) =>
-      (b.low || 0) > 0 || (b.moderate || 0) > 0 || (b.high || 0) > 0;
-    for (const p of thresholdBundle.pests) {
-      if (nonZero(p)) {
-        m.set(`pest::${p.pest}::`, {
-          low: p.low, moderate: p.moderate, high: p.high,
-        });
-      }
-      for (const s of p.stages) {
-        if (nonZero(s)) {
-          m.set(`pest::${p.pest}::${s.stage}`, {
-            low: s.low, moderate: s.moderate, high: s.high,
-          });
-        }
-      }
-    }
-    for (const d of thresholdBundle.diseases) {
-      if (nonZero(d)) {
-        m.set(`disease::${d.disease}::`, {
-          low: d.low, moderate: d.moderate, high: d.high,
-        });
-      }
-      for (const s of d.stages) {
-        if (nonZero(s)) {
-          m.set(`disease::${d.disease}::${s.stage}`, {
-            low: s.low, moderate: s.moderate, high: s.high,
-          });
-        }
-      }
-    }
-    return m;
-  }, [thresholdBundle]);
+  // Flat lookup keyed by `${kind}::${name}::${stage}` (stage "" = the row), each
+  // band carrying its measure and unit. Unset and misordered bands are left out,
+  // as the server leaves them out (thresholds spec §5).
+  const thresholdMap = useMemo(() => thresholdMapFromBundle(thresholdBundle), [thresholdBundle]);
 
   const thresholdLookup: ThresholdLookup = useCallback(
     (kind, name, stage) => {
@@ -181,120 +135,99 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
   );
 
   const stagesByObsId: Record<string, string[]> = data?.options.stagesByObs || {};
+  // The pickers' options come with the payload: on the first load they stand,
+  // disabled, rather than opening onto "No farms in date range".
+  const first = firstLoad(loading || (!data && !error), !!data);
 
   return (
     <div className="flex flex-col min-h-svh">
       <PageHeader
+        title="Scouting Trends"
         eyebrow={<>Across farms, stations, pests &amp; stages</>}
-        title={<>Scouting Trends</>}
       >
+        <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
+        <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
 
-          <div className="flex flex-wrap items-end gap-2">
-            {!initialCrop && (
-              <div className="flex items-center">
-                <Select value={crop} onValueChange={setCrop}>
-                  <SelectTrigger id="t-crop" className={HEADER_PILL}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {crops.map((c) => (
-                      <SelectItem key={c.crop_name} value={c.crop_name}>
-                        {c.crop_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className={HEADER_PILL} disabled={first}>
+              <MapPin className="h-3.5 w-3.5" />
+              Farms
+              <span className="text-muted-foreground tabular-nums">
+                {selections.length || "—"}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80">
+            <TristateTree
+              nodes={stationTree}
+              checked={stationChecks}
+              onChange={setStationChecks}
+              emptyHint="No farms in date range"
+              searchPlaceholder="Search farms or greenhouses…"
+            />
+          </PopoverContent>
+        </Popover>
 
-            <div className="flex items-center">
-              <DatePicker
-                value={from}
-                onChange={(v) => setRange({ from: v, to })}
-              />
-            </div>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className={HEADER_PILL} disabled={first}>
+              <Sparkles className="h-3.5 w-3.5" />
+              Observations
+              <span className="text-muted-foreground tabular-nums">
+                {observations.length || "—"}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80">
+            <TristateTree
+              nodes={obsTree}
+              checked={obsChecks}
+              onChange={setObsChecks}
+              emptyHint="No observations in date range"
+              searchPlaceholder="Search observations…"
+            />
+          </PopoverContent>
+        </Popover>
 
-            <div className="flex items-center">
-              <DatePicker
-                value={to}
-                onChange={(v) => setRange({ from, to: v })}
-              />
-            </div>
+        <HeaderIconButton
+          active={showThresholds}
+          onClick={() => setShowThresholds((v) => !v)}
+          title={
+            showThresholds
+              ? "Hide threshold reference lines"
+              : "Show threshold reference lines from Settings"
+          }
+        >
+          <Gauge className="h-4 w-4" />
+        </HeaderIconButton>
 
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className={HEADER_PILL}>
-                  <MapPin className="h-3.5 w-3.5" />
-                  Farms
-                  <span className="text-muted-foreground tabular-nums">
-                    {selections.length || "—"}
-                  </span>
-                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80">
-                <TristateTree
-                  nodes={stationTree}
-                  checked={stationChecks}
-                  onChange={setStationChecks}
-                  emptyHint="No farms in date range"
-                  searchPlaceholder="Search farms or greenhouses…"
-                />
-              </PopoverContent>
-            </Popover>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className={HEADER_PILL}>
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Observations
-                  <span className="text-muted-foreground tabular-nums">
-                    {observations.length || "—"}
-                  </span>
-                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80">
-                <TristateTree
-                  nodes={obsTree}
-                  checked={obsChecks}
-                  onChange={setObsChecks}
-                  emptyHint="No observations in date range"
-                  searchPlaceholder="Search observations…"
-                />
-              </PopoverContent>
-            </Popover>
-
-            <HeaderIconButton
-              active={showThresholds}
-              onClick={() => setShowThresholds((v) => !v)}
-              aria-label="Thresholds"
-              tooltip={
-                showThresholds
-                  ? "Hide the threshold reference lines"
-                  : "Show the threshold reference lines set in Settings"
-              }
-            >
-              <Gauge className="h-4 w-4" />
-            </HeaderIconButton>
-
-            <HeaderIconButton
-              onClick={() => reload({ force: true })}
-              aria-label="Reload"
-              tooltip="Rebuild these trends from the server, ignoring the cached copy"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </HeaderIconButton>
-          </div>
-
-        {error && (
-          <div className="text-xs text-[var(--sd-data-red)]">
-            Failed to load: {error}
-          </div>
-        )}
+        <HeaderIconButton onClick={() => reload({ force: true })} title="Reload">
+          <RefreshCw className="h-4 w-4" />
+        </HeaderIconButton>
       </PageHeader>
 
-      <div className="flex-1 px-4 py-4 md:px-6 md:py-6 flex flex-col gap-4">
+      {/* Inline under the header, not a full-screen overlay (skeleton spec K4). */}
+      <div className="px-4 md:px-6">
+        <LoadProgress
+          active={loading}
+          progress={progress?.percent ?? null}
+          label={progress?.label}
+        />
+      </div>
+
+      {error && (
+        <div className="text-xs text-[var(--sd-data-red)]">
+          Failed to load: {error}
+        </div>
+      )}
+
+      <div
+        className="flex-1 px-4 py-4 md:px-6 md:py-6 flex flex-col gap-4"
+        aria-busy={first || undefined}
+      >
         {!selections.length ? (
           <Card className="p-12 flex flex-col items-center justify-center text-center gap-2">
             <div className="h-10 w-10 rounded-full bg-[var(--sd-pistachio)] flex items-center justify-center">
@@ -339,10 +272,6 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
           </>
         ) : null}
       </div>
-      <LoadingOverlay
-        open={loading}
-        progress={progress?.percent ?? 0}
-      />
     </div>
   );
 }

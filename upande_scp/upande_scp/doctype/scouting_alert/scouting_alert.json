@@ -1,0 +1,309 @@
+{
+ "actions": [],
+ "creation": "2026-10-10 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "crop",
+  "farm",
+  "warehouse",
+  "kind",
+  "observation",
+  "stage",
+  "iso_week",
+  "alert_type",
+  "section_row",
+  "section_col",
+  "section_label",
+  "figure_section",
+  "measure",
+  "value",
+  "house_value",
+  "margin",
+  "reliability",
+  "sections_scouted",
+  "sections_total",
+  "action_section",
+  "band",
+  "action",
+  "status",
+  "raised_on",
+  "raised_at",
+  "acknowledged_by",
+  "acknowledged_on",
+  "work_order",
+  "notified_action",
+  "notified_band",
+  "notified"
+ ],
+ "fields": [
+  {
+   "fieldname": "crop",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Crop",
+   "options": "Crop Scouted",
+   "reqd": 1
+  },
+  {
+   "fieldname": "farm",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Farm",
+   "options": "Farm",
+   "search_index": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Greenhouse / Block",
+   "options": "Warehouse",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "label": "Kind",
+   "options": "Pest\nDisease",
+   "reqd": 1
+  },
+  {
+   "fieldname": "observation",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Pest / Disease",
+   "reqd": 1
+  },
+  {
+   "description": "Blank = the row's all-stage band.",
+   "fieldname": "stage",
+   "fieldtype": "Data",
+   "label": "Stage"
+  },
+  {
+   "fieldname": "iso_week",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "ISO Week",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "House",
+   "description": "House = the whole greenhouse/block; Hot spot = one section of its 3 × 3 grid clearly worse than the house.",
+   "fieldname": "alert_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Alert Type",
+   "options": "House\nHot spot"
+  },
+  {
+   "default": "-1",
+   "description": "Grid row (0 first, 1 middle, 2 last third of the beds / rows); -1 for a House alert.",
+   "fieldname": "section_row",
+   "fieldtype": "Int",
+   "label": "Section Row"
+  },
+  {
+   "default": "-1",
+   "description": "Grid column (0 front, 1 middle, 2 back); -1 for a House alert.",
+   "fieldname": "section_col",
+   "fieldtype": "Int",
+   "label": "Section Column"
+  },
+  {
+   "fieldname": "section_label",
+   "fieldtype": "Data",
+   "label": "Section"
+  },
+  {
+   "fieldname": "figure_section",
+   "fieldtype": "Section Break",
+   "label": "Figure"
+  },
+  {
+   "fieldname": "measure",
+   "fieldtype": "Select",
+   "label": "Measure",
+   "options": "Percentage\nCount"
+  },
+  {
+   "fieldname": "value",
+   "fieldtype": "Float",
+   "label": "Value",
+   "precision": "1"
+  },
+  {
+   "depends_on": "eval:doc.alert_type=='Hot spot'",
+   "description": "A hot spot's house figure, in the same measure as Value.",
+   "fieldname": "house_value",
+   "fieldtype": "Float",
+   "label": "House value",
+   "precision": "1"
+  },
+  {
+   "fieldname": "margin",
+   "fieldtype": "Float",
+   "label": "Margin (±)",
+   "precision": "1"
+  },
+  {
+   "fieldname": "reliability",
+   "fieldtype": "Select",
+   "label": "Reliability",
+   "options": "Good\nFair\nLow"
+  },
+  {
+   "fieldname": "sections_scouted",
+   "fieldtype": "Int",
+   "label": "Sections Scouted"
+  },
+  {
+   "fieldname": "sections_total",
+   "fieldtype": "Int",
+   "label": "Sections Total"
+  },
+  {
+   "fieldname": "action_section",
+   "fieldtype": "Section Break",
+   "label": "Action"
+  },
+  {
+   "fieldname": "band",
+   "fieldtype": "Select",
+   "label": "Band",
+   "options": "Moderate\nHigh"
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Action",
+   "options": "Alarming\nSpray advised\nScout first\nHot spot"
+  },
+  {
+   "default": "Open",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Open\nAcknowledged\nResolved\nConverted to plan",
+   "search_index": 1
+  },
+  {
+   "description": "Africa/Nairobi date the alert was raised or last escalated — the daily digest's day.",
+   "fieldname": "raised_on",
+   "fieldtype": "Date",
+   "label": "Raised On (EAT)"
+  },
+  {
+   "description": "Africa/Nairobi time the alert was raised or last escalated — the digest lists each person's Open alerts raised after their last digest.",
+   "fieldname": "raised_at",
+   "fieldtype": "Datetime",
+   "label": "Raised At (EAT)",
+   "search_index": 1
+  },
+  {
+   "fieldname": "acknowledged_by",
+   "fieldtype": "Link",
+   "label": "Acknowledged By",
+   "options": "User"
+  },
+  {
+   "fieldname": "acknowledged_on",
+   "fieldtype": "Datetime",
+   "label": "Acknowledged On"
+  },
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "label": "Curative Plan",
+   "options": "Work Order"
+  },
+  {
+   "description": "Escalation is measured against this (spec D5).",
+   "fieldname": "notified_action",
+   "fieldtype": "Select",
+   "label": "Highest Action Raised",
+   "options": "\nAlarming\nScout first\nSpray advised"
+  },
+  {
+   "description": "A hot spot's highest band announced (Moderate → High re-notifies; hot-spots spec H5).",
+   "fieldname": "notified_band",
+   "fieldtype": "Select",
+   "label": "Highest Band Announced",
+   "options": "\nModerate\nHigh"
+  },
+  {
+   "fieldname": "notified",
+   "fieldtype": "Small Text",
+   "label": "Notified Users"
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-10-10 21:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Upande Scp",
+ "name": "Scouting Alert",
+ "naming_rule": "By script",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SCP General Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Creator"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Plan Approver"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Spray Supervisor"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Chemical Store Keeper"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "SCP Scout"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "observation",
+ "track_changes": 1
+}

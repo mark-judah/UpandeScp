@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -23,11 +23,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { RevealLTR } from "@/components/RevealLTR";
+import { pressureText } from "@/lib/prevalence";
+import { ChartSkeleton } from "@/components/Loading";
 import { Kpi, KpiGrid } from "./Kpi";
+import { CardRowsSkeleton } from "./slot-skeletons";
 import { EmptyHint } from "./EmptyHint";
 import { DashFilterRow } from "./DashFilterRow";
-import type { PestsPayload } from "./pests-diseases-types";
+import { VarietyTable } from "./VarietyTable";
+import { PrevalenceFigure } from "./PrevalenceFigure";
+import { stagesFor, type PestsPayload } from "./pests-diseases-types";
 import { weekTickFormatter } from "@/lib/iso-week";
+import { ObservationName } from "@/components/gallery/ObservationGallery";
 
 export interface PestsTabProps {
   data: PestsPayload | null;
@@ -35,6 +42,8 @@ export interface PestsTabProps {
   section: string;
   stage: string;
   onFiltersChange: (next: { observation: string; section: string; stage: string }) => void;
+  /** First load (no payload yet): the cards stand, their contents are skeletons. */
+  loading?: boolean;
 }
 
 export function PestsTab({
@@ -43,6 +52,7 @@ export function PestsTab({
   section,
   stage,
   onFiltersChange,
+  loading = false,
 }: PestsTabProps) {
   const { pest: pestColor } = useObservationColors();
 
@@ -64,23 +74,38 @@ export function PestsTab({
     [trend.pestName],
   );
   const distConfig: ChartConfig = {
-    pct: { label: "% zones", color: "var(--sd-data-cyan)" },
+    pct: { label: "% scouted (adjusted)", color: "var(--sd-data-cyan)" },
   };
 
-  const filters = { observation: pestName, section, stage };
+  // Offer only the stages the selected pest actually has. Picking a pest used
+  // to leave every stage in the dataset on the menu, including ones belonging
+  // to diseases.
+  const stageOptions = stagesFor(opts, pestName);
+  // A stage carried over from a previous pest may not exist for this one, which
+  // would silently filter the chart to nothing. Drop it back to "all".
+  const effectiveStage = stage && stageOptions.includes(stage) ? stage : "";
+  useEffect(() => {
+    if (stage && stage !== effectiveStage) {
+      onFiltersChange({ observation: pestName, section, stage: "" });
+    }
+  }, [stage, effectiveStage, pestName, section, onFiltersChange]);
+
+  const filters = { observation: pestName, section, stage: effectiveStage };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" aria-busy={loading || undefined}>
       <KpiGrid cols={4}>
-        <Kpi label="Pest Zones" value={ranking.length} hint="distinct pests recorded" />
-        <Kpi label="Active Pests" value={total} hint="observations" />
+        <Kpi loading={loading} label="Pest Zones" value={ranking.length} hint="distinct pests recorded" />
+        <Kpi loading={loading} label="Active Pests" value={total} hint="observations" />
         <Kpi
+          loading={loading}
           label="High Severity"
           value={high}
           tone={high > 0 ? "critical" : "default"}
           hint="critical observations"
         />
         <Kpi
+          loading={loading}
           label="Top Pest"
           value={top?.name || "—"}
           hint={top ? `${top.total} observations` : "no pests recorded"}
@@ -93,58 +118,63 @@ export function PestsTab({
             <div>
               <CardTitle>Pest Trends</CardTitle>
               <CardDescription>
-                {trend.pestName} · zones infected (%) · daily data points
+                {trend.pestName} · adjusted prevalence (% of scouted stations) · weekly
               </CardDescription>
             </div>
             <DashFilterRow
               obsLabel="Pest"
               obsOptions={opts.pests}
               sectionOptions={opts.sections}
-              stageOptions={opts.stages}
+              stageOptions={stageOptions}
               value={filters}
               onChange={onFiltersChange}
+              disabled={loading}
             />
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {trend.rows.length ? (
-            <ChartContainer config={lineConfig} className="h-64">
-              <LineChart data={trend.rows} margin={{ left: 4, right: 8, top: 8 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  interval={0}
-                  minTickGap={0}
-                  tickFormatter={weekTickFormatter}
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  width={36}
-                  tickFormatter={(v: number) => `${v}%`}
-                />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent
-                      indicator="line"
-                      formatter={(v) => `${v}%`}
-                    />
-                  }
-                />
-                <Line
-                  type="linear"
-                  dataKey="value"
-                  stroke="var(--sd-data-cyan)"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ChartContainer>
+          {loading ? (
+            <ChartSkeleton height={256} />
+          ) : trend.rows.length ? (
+            <RevealLTR>
+              <ChartContainer config={lineConfig} className="h-64">
+                <LineChart data={trend.rows} margin={{ left: 4, right: 8, top: 8 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                    minTickGap={0}
+                    tickFormatter={weekTickFormatter}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    width={36}
+                    tickFormatter={(v: number) => `${v}%`}
+                  />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        indicator="line"
+                        formatter={(v) => (v == null ? "—" : `${v}%`)}
+                      />
+                    }
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="var(--sd-data-cyan)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ChartContainer>
+            </RevealLTR>
           ) : (
             <EmptyHint title="Not observed in this range" hint="Try a wider date range or different filter." />
           )}
@@ -155,45 +185,49 @@ export function PestsTab({
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Pest Distribution</CardTitle>
-            <CardDescription>% of zones in scope with each pest</CardDescription>
+            <CardDescription>Adjusted prevalence across the scope · latest scouted week</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {distribution.length ? (
-              <ChartContainer config={distConfig} className="h-72">
-                <BarChart
-                  data={distribution.slice(0, 12)}
-                  layout="vertical"
-                  margin={{ left: 12, right: 12 }}
-                >
-                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                  <XAxis
-                    type="number"
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v: number) => `${v}%`}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    tickLine={false}
-                    axisLine={false}
-                    width={120}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        indicator="line"
-                        formatter={(v) => `${v}%`}
-                      />
-                    }
-                  />
-                  <Bar dataKey="pct" radius={[3, 3, 3, 3]}>
-                    {distribution.slice(0, 12).map((row) => (
-                      <Cell key={row.name} fill={pestColor(row.name)} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
+            {loading ? (
+              <ChartSkeleton height={288} />
+            ) : distribution.length ? (
+              <RevealLTR>
+                <ChartContainer config={distConfig} className="h-72">
+                  <BarChart
+                    data={distribution.slice(0, 12)}
+                    layout="vertical"
+                    margin={{ left: 12, right: 12 }}
+                  >
+                    <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v: number) => `${v}%`}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      tickLine={false}
+                      axisLine={false}
+                      width={120}
+                    />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          indicator="line"
+                          formatter={(v) => (v == null ? "—" : `${v}%`)}
+                        />
+                      }
+                    />
+                    <Bar isAnimationActive={false} dataKey="pct" radius={[3, 3, 3, 3]}>
+                      {distribution.slice(0, 12).map((row) => (
+                        <Cell key={row.name} fill={pestColor(row.name)} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -206,31 +240,35 @@ export function PestsTab({
             <CardDescription>Where pests are concentrated (% of pest zones)</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {sectionSplit.length ? (
-              <ChartContainer config={distConfig} className="h-72">
-                <BarChart
-                  data={sectionSplit}
-                  margin={{ left: 12, right: 12, top: 8 }}
-                >
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    width={36}
-                    tickFormatter={(v: number) => `${v}%`}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        indicator="line"
-                        formatter={(v) => `${v}%`}
-                      />
-                    }
-                  />
-                  <Bar dataKey="pct" fill="var(--sd-data-purple)" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
+            {loading ? (
+              <ChartSkeleton height={288} />
+            ) : sectionSplit.length ? (
+              <RevealLTR>
+                <ChartContainer config={distConfig} className="h-72">
+                  <BarChart
+                    data={sectionSplit}
+                    margin={{ left: 12, right: 12, top: 8 }}
+                  >
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      width={36}
+                      tickFormatter={(v: number) => `${v}%`}
+                    />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          indicator="line"
+                          formatter={(v) => (v == null ? "—" : `${v}%`)}
+                        />
+                      }
+                    />
+                    <Bar isAnimationActive={false} dataKey="pct" fill="var(--sd-data-purple)" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -245,7 +283,9 @@ export function PestsTab({
             <CardDescription>Per pest · low / moderate / high</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {ranking.length ? (
+            {loading ? (
+              <CardRowsSkeleton rows={6} twoLine />
+            ) : ranking.length ? (
               <div className="flex flex-col gap-1.5">
                 {ranking.slice(0, 8).map((r) => {
                   const tot = Math.max(1, r.high + r.moderate + r.low);
@@ -261,7 +301,7 @@ export function PestsTab({
                             style={{ background: pestColor(r.name) }}
                             aria-hidden
                           />
-                          <span className="truncate">{r.name}</span>
+                          <ObservationName kind="pest" name={r.name} className="truncate" />
                         </div>
                         <div className="mt-1.5 h-2 rounded-full overflow-hidden bg-[var(--sd-line)] flex">
                           <div
@@ -277,6 +317,7 @@ export function PestsTab({
                             style={{ width: `${(r.low / tot) * 100}%` }}
                           />
                         </div>
+                        <PrevalenceFigure fig={r} className="mt-1" />
                       </div>
                       <div className="text-xs text-muted-foreground tabular-nums flex gap-3">
                         <span className="text-[var(--sd-data-red)]">{r.high}</span>
@@ -296,47 +337,65 @@ export function PestsTab({
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Pest Pressure by Greenhouse</CardTitle>
-            <CardDescription>% zones infected per greenhouse</CardDescription>
+            <CardDescription>Adjusted prevalence · each greenhouse's latest scouted week</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {ghPressure.length ? (
-              <ChartContainer config={distConfig} className="h-72">
-                <BarChart
-                  data={ghPressure.slice(0, 12)}
-                  layout="vertical"
-                  margin={{ left: 12, right: 12 }}
-                >
-                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                  <XAxis
-                    type="number"
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v: number) => `${v}%`}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    tickLine={false}
-                    axisLine={false}
-                    width={140}
-                    tick={{ fontSize: 10 }}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        indicator="line"
-                        formatter={(v) => `${v}%`}
-                      />
-                    }
-                  />
-                  <Bar dataKey="pct" fill="var(--sd-data-amber)" radius={[3, 3, 3, 3]} />
-                </BarChart>
-              </ChartContainer>
+            {loading ? (
+              <ChartSkeleton height={288} />
+            ) : ghPressure.length ? (
+              <RevealLTR>
+                <ChartContainer config={distConfig} className="h-72">
+                  <BarChart
+                    data={ghPressure.slice(0, 12)}
+                    layout="vertical"
+                    margin={{ left: 12, right: 12 }}
+                  >
+                    <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v: number) => `${v}%`}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      tickLine={false}
+                      axisLine={false}
+                      width={140}
+                      tick={{ fontSize: 10 }}
+                    />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          indicator="line"
+                          formatter={(v, _name, item) => pressureText(v, item)}
+                        />
+                      }
+                    />
+                    <Bar isAnimationActive={false} dataKey="pct" fill="var(--sd-data-amber)" radius={[3, 3, 3, 3]} />
+                  </BarChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}
           </CardContent>
         </Card>
+
+        {pestName && (data?.varieties?.length ?? 0) > 0 && (
+          <Card className="p-4">
+            <CardHeader className="p-0 pb-2">
+              <CardTitle>By Variety</CardTitle>
+              <CardDescription>
+                All-stage live prevalence and signs of {pestName} by rose variety (not the selected stage or section) · each greenhouse's latest scouted week
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <VarietyTable rows={data?.varieties} titled />
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import {
   ChartContainer,
@@ -13,16 +14,33 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ChartSkeleton, TextSkeleton } from "@/components/Loading";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { RevealLTR } from "@/components/RevealLTR";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { weekTickFormatter } from "@/lib/iso-week";
+import type { PrevalenceFigures, SectionCell, VarietyRow } from "@/lib/prevalence";
+import { PrevalenceFigure } from "./PrevalenceFigure";
+import { HouseSpread } from "./HouseSpread";
+import { VarietyTable } from "./VarietyTable";
+import { GalleryScopeProvider, ObservationName } from "@/components/gallery/ObservationGallery";
 
 const SERIES = {
   pests: { label: "Pests", color: "var(--sd-data-cyan)" },
   diseases: { label: "Diseases", color: "var(--sd-data-pink)" },
   traps: { label: "Traps", color: "var(--sd-data-purple)" },
 };
+
+/** One top observation's station prevalence in the house's latest scouted week,
+ *  with its 3 × 3 sections. */
+export interface GhPrevalence extends PrevalenceFigures {
+  kind: "pest" | "disease";
+  name: string;
+  sections: SectionCell[];
+  /** pests only (S7); null for a disease */
+  varieties?: VarietyRow[] | null;
+}
 
 export interface GhDetailPayload {
   topPests:    Array<{ name: string; count: number }>;
@@ -31,6 +49,7 @@ export interface GhDetailPayload {
   daily:       Array<{ date: string; pests: number; diseases: number; traps: number }>;
   scouts:      number;
   alerts:      number;
+  prevalence?: GhPrevalence[];
 }
 
 export interface GreenhouseModalProps {
@@ -41,16 +60,37 @@ export interface GreenhouseModalProps {
   onClose: () => void;
 }
 
+/** The modal's small count rows (`px-2 py-1 text-xs`) before they arrive. */
+function MiniRowsSkeleton() {
+  return (
+    <div className="flex flex-col gap-1" aria-hidden data-skeleton="rows">
+      {["70%", "55%", "62%", "48%"].map((w) => (
+        <div key={w} className="flex items-center justify-between rounded bg-[var(--sd-bg-soft)] px-2 py-1">
+          <span className="block h-3 animate-pulse rounded bg-[var(--sd-line)]" style={{ width: w }} />
+          <span className="block h-3 w-5 animate-pulse rounded bg-[var(--sd-line)]" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }: GreenhouseModalProps) {
   const open = greenhouse !== null && greenhouse !== "";
-  const { data } = useDashboardAggregate<GhDetailPayload>(
+  const { data, loading: fetching, error } = useDashboardAggregate<GhDetailPayload>(
     "greenhouse_detail",
     { from_date: fromDate, to_date: toDate, crop, greenhouse: greenhouse ?? "" },
     open,
   );
+  // Each open is a different greenhouse, so any fetch is a "first load" here:
+  // the previous house's figures must not sit under this house's title.
+  const loading = open && (fetching || (!data && !error));
 
   const detail = data ?? { topPests: [], topDiseases: [], traps: [], daily: [],
-                           scouts: 0, alerts: 0 };
+                           scouts: 0, alerts: 0, prevalence: [] };
+  const mapped = detail.prevalence ?? [];
+  const [picked, setPicked] = useState<string | null>(null);
+  useEffect(() => setPicked(null), [greenhouse]);
+  const current = mapped.find((m) => `${m.kind}:${m.name}` === picked) ?? mapped[0] ?? null;
   const total =
     detail.topPests.reduce((s, x) => s + x.count, 0) +
     detail.topDiseases.reduce((s, x) => s + x.count, 0) +
@@ -59,13 +99,23 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent>
+        <GalleryScopeProvider
+          scope={{ crop, from_date: fromDate, to_date: toDate, farm: "", greenhouse: greenhouse ?? "" }}
+        >
         <DialogHeader>
           <DialogTitle>{greenhouse || "Greenhouse"}</DialogTitle>
           <DialogDescription>
-            {fromDate} → {toDate} · {detail.scouts} scout
-            {detail.scouts !== 1 ? "s" : ""} · {total} observation
-            {total !== 1 ? "s" : ""}
-            {detail.alerts > 0 && (
+            {fromDate} → {toDate} ·{" "}
+            {loading ? (
+              <TextSkeleton width="16ch" />
+            ) : (
+              <>
+                {detail.scouts} scout
+                {detail.scouts !== 1 ? "s" : ""} · {total} observation
+                {total !== 1 ? "s" : ""}
+              </>
+            )}
+            {!loading && detail.alerts > 0 && (
               <Badge variant="destructive" className="ml-2 text-[0.65rem]">
                 {detail.alerts} alert{detail.alerts !== 1 ? "s" : ""}
               </Badge>
@@ -73,7 +123,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3" aria-busy={loading || undefined}>
           <Card className="p-3">
             <CardHeader className="p-0 pb-1.5">
               <CardTitle className="text-[0.78rem] uppercase tracking-wide text-muted-foreground">
@@ -81,13 +131,15 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 flex flex-col gap-1">
-              {detail.topPests.length ? (
+              {loading ? (
+                <MiniRowsSkeleton />
+              ) : detail.topPests.length ? (
                 detail.topPests.map((p) => (
                   <div
                     key={p.name}
                     className="flex justify-between text-xs px-2 py-1 rounded bg-[var(--sd-bg-soft)]"
                   >
-                    <span className="truncate">{p.name}</span>
+                    <ObservationName kind="pest" name={p.name} className="truncate" />
                     <span className="tabular-nums text-muted-foreground">
                       {p.count}
                     </span>
@@ -106,13 +158,15 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 flex flex-col gap-1">
-              {detail.topDiseases.length ? (
+              {loading ? (
+                <MiniRowsSkeleton />
+              ) : detail.topDiseases.length ? (
                 detail.topDiseases.map((d) => (
                   <div
                     key={d.name}
                     className="flex justify-between text-xs px-2 py-1 rounded bg-[var(--sd-bg-soft)]"
                   >
-                    <span className="truncate">{d.name}</span>
+                    <ObservationName kind="disease" name={d.name} className="truncate" />
                     <span className="tabular-nums text-muted-foreground">
                       {d.count}
                     </span>
@@ -131,7 +185,9 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 flex flex-col gap-1">
-              {detail.traps.length ? (
+              {loading ? (
+                <MiniRowsSkeleton />
+              ) : detail.traps.length ? (
                 detail.traps.map((t) => (
                   <div
                     key={t.pest}
@@ -150,58 +206,101 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
           </Card>
         </div>
 
+        {!loading && current && (
+          <Card className="p-4">
+            <CardHeader className="p-0 pb-2">
+              <CardTitle>Where it is · {current.week ?? "latest scouted week"}</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 flex flex-col gap-2">
+              <div className="flex flex-wrap gap-1.5">
+                {mapped.map((m) => {
+                  const on = m === current;
+                  return (
+                    <button
+                      key={`${m.kind}:${m.name}`}
+                      type="button"
+                      onClick={() => setPicked(`${m.kind}:${m.name}`)}
+                      className={
+                        on
+                          ? "rounded-full border px-2.5 py-0.5 text-xs bg-primary text-primary-foreground border-primary"
+                          : "rounded-full border px-2.5 py-0.5 text-xs bg-card text-muted-foreground hover:bg-muted"
+                      }
+                    >
+                      {m.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <PrevalenceFigure fig={current} />
+              <HouseSpread
+                crop={crop}
+                greenhouse={greenhouse ?? ""}
+                kind={current.kind}
+                observation={current.name}
+                week={current.week}
+                sections={current.sections}
+              />
+              {current.kind === "pest" && <VarietyTable rows={current.varieties} pest={current.name} />}
+            </CardContent>
+          </Card>
+        )}
+
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Daily Trend</CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            {detail.daily.length ? (
-              <ChartContainer config={SERIES} className="h-48">
-                <LineChart
-                  data={detail.daily}
-                  margin={{ left: 4, right: 8, top: 8 }}
-                >
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                    minTickGap={0}
-                    tickFormatter={weekTickFormatter}
-                  />
-                  <YAxis tickLine={false} axisLine={false} width={28} />
-                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Line
-                    type="monotone"
-                    dataKey="pests"
-                    stroke="var(--sd-data-cyan)"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 3 }}
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="diseases"
-                    stroke="var(--sd-data-pink)"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 3 }}
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="traps"
-                    stroke="var(--sd-data-purple)"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 3 }}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ChartContainer>
+          <CardContent className="p-0" aria-busy={loading || undefined}>
+            {loading ? (
+              <ChartSkeleton height={192} />
+            ) : detail.daily.length ? (
+              <RevealLTR>
+                <ChartContainer config={SERIES} className="h-48">
+                  <LineChart
+                    data={detail.daily}
+                    margin={{ left: 4, right: 8, top: 8 }}
+                  >
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                      minTickGap={0}
+                      tickFormatter={weekTickFormatter}
+                    />
+                    <YAxis tickLine={false} axisLine={false} width={28} />
+                    <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Line
+                      type="monotone"
+                      dataKey="pests"
+                      stroke="var(--sd-data-cyan)"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 3 }}
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="diseases"
+                      stroke="var(--sd-data-pink)"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 3 }}
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="traps"
+                      stroke="var(--sd-data-purple)"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 3 }}
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <span className="text-xs text-muted-foreground">
                 No daily data in range
@@ -209,6 +308,7 @@ export function GreenhouseModal({ greenhouse, fromDate, toDate, crop, onClose }:
             )}
           </CardContent>
         </Card>
+        </GalleryScopeProvider>
       </DialogContent>
     </Dialog>
   );

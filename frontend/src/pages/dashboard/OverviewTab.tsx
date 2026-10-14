@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AreaChart,
   Area,
@@ -30,9 +30,21 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RevealLTR } from "@/components/RevealLTR";
+import { AvatarSkeleton, ChartSkeleton, TextSkeleton } from "@/components/Loading";
 import { Kpi, KpiGrid } from "./Kpi";
+import { CardRowsSkeleton } from "./slot-skeletons";
 import { EmptyHint } from "./EmptyHint";
 import { GreenhouseModal } from "./GreenhouseModal";
+import { ReliabilityPill } from "./PrevalenceFigure";
+import { Button } from "@/components/ui/button";
+import { AlertActionPill } from "@/components/AlertActionPill";
+import { cn } from "@/lib/utils";
+import {
+  acknowledgeAlert,
+  alertFigureLine,
+  listOpenAlerts,
+  type ScoutingAlert,
+} from "@/lib/scouting-alerts-api";
 import type { OverviewPayload } from "./overview-types";
 import { weekTickFormatter } from "@/lib/iso-week";
 
@@ -41,6 +53,9 @@ const series: ChartConfig = {
   diseases: { label: "Diseases", color: "var(--sd-data-pink)" },
   traps: { label: "Traps", color: "var(--sd-data-purple)" },
 };
+
+/** The Active Alerts card shows this many (the server sends them worst first); the rest behind "Show all". */
+const ALERTS_SHOWN = 50;
 
 const STATUS_DOT: Record<string, string> = {
   good: "bg-[var(--sd-data-green)]",
@@ -54,12 +69,19 @@ export function OverviewTab({
   fromDate,
   toDate,
   crop = "",
+  farm = "",
+  greenhouse = "",
+  loading = false,
 }: {
   data: OverviewPayload | null;
   scoutLookup: Record<string, string>;
   fromDate: string;
   toDate: string;
   crop?: string;
+  farm?: string;
+  greenhouse?: string;
+  /** First load (no payload yet): the cards stand, their contents are skeletons. */
+  loading?: boolean;
 }) {
   const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, blockCount: 0, highAlerts: 0 };
   // Avocado scouting uses Blocks (open-field), everything else uses Greenhouses.
@@ -93,7 +115,54 @@ export function OverviewTab({
     ...r,
     scout: scoutLookup[r.scoutId] || r.scoutId,
   }));
-  const alerts = data?.activeAlerts ?? [];
+  // Active alerts are the stored Scouting Alerts (thresholds spec §5), read
+  // uncached so an Acknowledge shows at once. The cached payload's
+  // `activeAlerts` is no longer drawn.
+  const [alerts, setAlerts] = useState<ScoutingAlert[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [acking, setAcking] = useState<string | null>(null);
+  const [ackNote, setAckNote] = useState<Record<string, string>>({});
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
+  useEffect(() => {
+    if (!crop) {
+      setAlerts([]);
+      return;
+    }
+    let cancelled = false;
+    setAlertsLoading(true);
+    listOpenAlerts({ crop, farm, greenhouse })
+      .then((rows) => {
+        if (!cancelled) setAlerts(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setAlerts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAlertsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [crop, farm, greenhouse]);
+  const acknowledge = async (name: string) => {
+    setAcking(name);
+    setAckNote((n) => ({ ...n, [name]: "" }));
+    try {
+      const r = await acknowledgeAlert(name);
+      setAlerts((rows) => rows.map((a) => (a.name === name ? { ...a, status: r.status } : a)));
+    } catch (e) {
+      const denied =
+        (e as { status?: number })?.status === 403 || /PermissionError/i.test(String((e as Error)?.message));
+      setAckNote((n) => ({
+        ...n,
+        [name]: denied
+          ? "You don't have permission to acknowledge this alert"
+          : "Couldn't acknowledge — try again",
+      }));
+    } finally {
+      setAcking(null);
+    }
+  };
   const scoutsDaily = data?.scoutsPerDay ?? [];
   const perf = (data?.scoutPerformance ?? []).map((p) => ({
     ...p,
@@ -102,9 +171,10 @@ export function OverviewTab({
   const [openGh, setOpenGh] = useState<string | null>(null);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" aria-busy={loading || undefined}>
       <KpiGrid cols={4}>
         <Kpi
+          loading={loading}
           label="Total Scouts"
           value={k.totalScouts}
           hint={
@@ -115,13 +185,15 @@ export function OverviewTab({
               : "no scouts in range"
           }
         />
-        <Kpi label="Zones Scouted" value={k.zonesScouted} hint="zone visits" />
+        <Kpi loading={loading} label="Zones Scouted" value={k.zonesScouted} hint="zone visits" />
         <Kpi
+          loading={loading}
           label={unitLabel}
           value={unitValue}
           hint="monitored"
         />
         <Kpi
+          loading={loading}
           label="High Alerts"
           value={k.highAlerts}
           tone={k.highAlerts > 0 ? "critical" : "default"}
@@ -136,47 +208,54 @@ export function OverviewTab({
             <CardDescription>Daily observations</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {daily.length ? (
-              <RevealLTR><ChartContainer config={series} className="h-64">
-                <AreaChart data={daily} margin={{ left: 4, right: 8, top: 8 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                    minTickGap={0}
-                    tickFormatter={weekTickFormatter}
-                  />
-                  <YAxis tickLine={false} axisLine={false} width={32} />
-                  <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Area
-                    type="monotone"
-                    dataKey="pests"
-                    stackId="1"
-                    stroke="var(--color-pests)"
-                    fill="var(--color-pests)"
-                    fillOpacity={0.18}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="diseases"
-                    stackId="1"
-                    stroke="var(--color-diseases)"
-                    fill="var(--color-diseases)"
-                    fillOpacity={0.18}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="traps"
-                    stackId="1"
-                    stroke="var(--color-traps)"
-                    fill="var(--color-traps)"
-                    fillOpacity={0.18}
-                  />
-                </AreaChart>
-              </ChartContainer></RevealLTR>
+            {loading ? (
+              <ChartSkeleton height={256} />
+            ) : daily.length ? (
+              <RevealLTR>
+                <ChartContainer config={series} className="h-64">
+                  <AreaChart data={daily} margin={{ left: 4, right: 8, top: 8 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                      minTickGap={0}
+                      tickFormatter={weekTickFormatter}
+                    />
+                    <YAxis tickLine={false} axisLine={false} width={32} />
+                    <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Area
+                      type="monotone"
+                      dataKey="pests"
+                      stackId="1"
+                      stroke="var(--color-pests)"
+                      fill="var(--color-pests)"
+                      fillOpacity={0.18}
+                      isAnimationActive={false}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="diseases"
+                      stackId="1"
+                      stroke="var(--color-diseases)"
+                      fill="var(--color-diseases)"
+                      fillOpacity={0.18}
+                      isAnimationActive={false}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="traps"
+                      stackId="1"
+                      stroke="var(--color-traps)"
+                      fill="var(--color-traps)"
+                      fillOpacity={0.18}
+                      isAnimationActive={false}
+                    />
+                  </AreaChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint title="No timeline data" hint="No observations recorded in this range." />
             )}
@@ -189,26 +268,31 @@ export function OverviewTab({
             <CardDescription>Category split</CardDescription>
           </CardHeader>
           <CardContent className="p-0 relative">
-            {totalsMax > 1 ? (
+            {loading ? (
+              <ChartSkeleton height={224} />
+            ) : totalsMax > 1 ? (
               <>
-                <RevealLTR><ChartContainer config={series} className="h-56">
-                  <PieChart>
-                    <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                    <Pie
-                      data={totals}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius="58%"
-                      outerRadius="90%"
-                      stroke="var(--sd-card)"
-                      strokeWidth={2}
-                    >
-                      {totals.map((t) => (
-                        <Cell key={t.name} fill={`var(--color-${t.name})`} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ChartContainer></RevealLTR>
+                <RevealLTR>
+                  <ChartContainer config={series} className="h-56">
+                    <PieChart>
+                      <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+                      <Pie
+                        data={totals}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius="58%"
+                        outerRadius="90%"
+                        stroke="var(--sd-card)"
+                        strokeWidth={2}
+                        isAnimationActive={false}
+                      >
+                        {totals.map((t) => (
+                          <Cell key={t.name} fill={`var(--color-${t.name})`} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ChartContainer>
+                </RevealLTR>
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="flex flex-col items-center">
                     <span className="text-[0.7rem] uppercase tracking-wide text-muted-foreground">
@@ -234,34 +318,38 @@ export function OverviewTab({
             <CardDescription>Unique scouts contributing each day</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {scoutsDaily.length ? (
-              <RevealLTR><ChartContainer
-                config={{ scouts: { label: "Scouts", color: "var(--sd-data-indigo)" } }}
-                className="h-48"
-              >
-                <LineChart data={scoutsDaily} margin={{ left: 4, right: 8, top: 8 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    interval={0}
-                    minTickGap={0}
-                    tickFormatter={weekTickFormatter}
-                  />
-                  <YAxis tickLine={false} axisLine={false} width={28} />
-                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-                  <Line
-                    type="monotone"
-                    dataKey="scouts"
-                    stroke="var(--sd-data-indigo)"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ChartContainer></RevealLTR>
+            {loading ? (
+              <ChartSkeleton height={192} />
+            ) : scoutsDaily.length ? (
+              <RevealLTR>
+                <ChartContainer
+                  config={{ scouts: { label: "Scouts", color: "var(--sd-data-indigo)" } }}
+                  className="h-48"
+                >
+                  <LineChart data={scoutsDaily} margin={{ left: 4, right: 8, top: 8 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                      minTickGap={0}
+                      tickFormatter={weekTickFormatter}
+                    />
+                    <YAxis tickLine={false} axisLine={false} width={28} />
+                    <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                    <Line
+                      type="monotone"
+                      dataKey="scouts"
+                      stroke="var(--sd-data-indigo)"
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -271,33 +359,83 @@ export function OverviewTab({
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Active Alerts</CardTitle>
-            <CardDescription>{alerts.length} flagged</CardDescription>
+            <CardDescription>
+              {alertsLoading && !alerts.length ? (
+                <TextSkeleton width="2ch" />
+              ) : (
+                alerts.filter((a) => a.status === "Open").length
+              )}{" "}
+              open · thresholds crossed in the latest scouted week
+            </CardDescription>
           </CardHeader>
-          <CardContent className="p-0 flex flex-col gap-1.5">
-            {alerts.length ? (
-              alerts.map((a, i) => (
+          <CardContent className="p-0 flex flex-col gap-1.5" aria-busy={(alertsLoading && !alerts.length) || undefined}>
+            {alertsLoading && !alerts.length ? (
+              <CardRowsSkeleton rows={3} twoLine />
+            ) : alerts.length ? (
+              (showAllAlerts ? alerts : alerts.slice(0, ALERTS_SHOWN)).map((a) => (
                 <div
-                  key={`${a.name}-${a.greenhouse}-${a.date}-${i}`}
-                  className="flex flex-col gap-1 px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]"
+                  key={a.name}
+                  data-testid="active-alert"
+                  className={cn(
+                    "flex flex-col gap-1 px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]",
+                    a.status !== "Open" && "opacity-70",
+                  )}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate">{a.name}</span>
-                    <Badge
-                      variant={a.severity === "high" ? "destructive" : "secondary"}
-                      className="text-[0.6rem]"
-                    >
-                      {a.severity}
-                    </Badge>
+                    <span className="text-sm font-medium truncate">
+                      {a.observation}
+                      {a.stage ? ` · ${a.stage}` : ""}
+                    </span>
+                    <AlertActionPill action={a.action} />
+                    <ReliabilityPill value={a.reliability} />
                   </div>
                   <div className="text-[0.7rem] text-muted-foreground truncate">
-                    {a.greenhouse}
-                    {a.zone ? ` · ${a.zone}` : ""}
+                    {a.warehouse}
+                    {a.alert_type === "Hot spot" && a.section_label ? (
+                      <span data-testid="alert-section" className="text-foreground">
+                        {` · ${a.section_label}`}
+                      </span>
+                    ) : null}
+                    {` · ${a.iso_week}`}
                   </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[0.7rem] tabular-nums">{alertFigureLine(a)}</span>
+                    {a.status === "Open" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-[0.65rem]"
+                        disabled={acking === a.name}
+                        onClick={() => void acknowledge(a.name)}
+                      >
+                        Acknowledge
+                      </Button>
+                    ) : (
+                      <span className="text-[0.65rem] text-muted-foreground">Acknowledged</span>
+                    )}
+                  </div>
+                  {ackNote[a.name] ? (
+                    <div data-testid="alert-ack-note" className="text-[0.65rem] text-muted-foreground">
+                      {ackNote[a.name]}
+                    </div>
+                  ) : null}
                 </div>
               ))
             ) : (
-              <EmptyHint title="No active alerts" hint="No high-severity observations." />
+              <EmptyHint title="No active alerts" hint="No threshold crossed in the latest scouted week." />
             )}
+            {alerts.length > ALERTS_SHOWN ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 self-start px-2 text-[0.7rem]"
+                onClick={() => setShowAllAlerts((v) => !v)}
+              >
+                {showAllAlerts ? "Show fewer" : `Show all (${alerts.length})`}
+              </Button>
+            ) : null}
           </CardContent>
         </Card>
       </div>
@@ -308,33 +446,37 @@ export function OverviewTab({
           <CardDescription>Zones · pests · diseases per scout</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          {perf.length ? (
-            <RevealLTR><ChartContainer
-              config={{
-                zones: { label: "Zones", color: "var(--sd-data-cyan)" },
-                pests: { label: "Pests", color: "var(--sd-data-amber)" },
-                diseases: { label: "Diseases", color: "var(--sd-data-pink)" },
-              }}
-              className="h-64"
-            >
-              <BarChart data={perf} margin={{ left: 12, right: 12, top: 8 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  tickLine={false}
-                  axisLine={false}
-                  interval={0}
-                  height={48}
-                  tick={{ fontSize: 10 }}
-                />
-                <YAxis tickLine={false} axisLine={false} width={32} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <ChartLegend content={<ChartLegendContent />} />
-                <Bar isAnimationActive={false} dataKey="zones" fill="var(--sd-data-cyan)" radius={[3, 3, 0, 0]} />
-                <Bar isAnimationActive={false} dataKey="pests" fill="var(--sd-data-amber)" radius={[3, 3, 0, 0]} />
-                <Bar isAnimationActive={false} dataKey="diseases" fill="var(--sd-data-pink)" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ChartContainer></RevealLTR>
+          {loading ? (
+            <ChartSkeleton height={256} />
+          ) : perf.length ? (
+            <RevealLTR>
+              <ChartContainer
+                config={{
+                  zones: { label: "Zones", color: "var(--sd-data-cyan)" },
+                  pests: { label: "Pests", color: "var(--sd-data-amber)" },
+                  diseases: { label: "Diseases", color: "var(--sd-data-pink)" },
+                }}
+                className="h-64"
+              >
+                <BarChart data={perf} margin={{ left: 12, right: 12, top: 8 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="name"
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                    height={48}
+                    tick={{ fontSize: 10 }}
+                  />
+                  <YAxis tickLine={false} axisLine={false} width={32} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar isAnimationActive={false} dataKey="zones" fill="var(--sd-data-cyan)" radius={[3, 3, 0, 0]} />
+                  <Bar isAnimationActive={false} dataKey="pests" fill="var(--sd-data-amber)" radius={[3, 3, 0, 0]} />
+                  <Bar isAnimationActive={false} dataKey="diseases" fill="var(--sd-data-pink)" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            </RevealLTR>
           ) : (
             <EmptyHint />
           )}
@@ -345,10 +487,14 @@ export function OverviewTab({
         <Card className="p-4">
           <CardHeader className="p-0 pb-2">
             <CardTitle>Greenhouse Health</CardTitle>
-            <CardDescription>{ghs.length} monitored · click for details</CardDescription>
+            <CardDescription>
+              {loading ? <TextSkeleton width="2ch" /> : ghs.length} monitored · click for details
+            </CardDescription>
           </CardHeader>
           <CardContent className="p-0 flex flex-col gap-1.5">
-            {ghs.length ? (
+            {loading ? (
+              <CardRowsSkeleton rows={6} />
+            ) : ghs.length ? (
               ghs.slice(0, 12).map((g) => (
                 <button
                   type="button"
@@ -387,7 +533,9 @@ export function OverviewTab({
             <CardDescription>Most recent zone visits</CardDescription>
           </CardHeader>
           <CardContent className="p-0 flex flex-col gap-1.5">
-            {recent.length ? (
+            {loading ? (
+              <CardRowsSkeleton rows={6} twoLine />
+            ) : recent.length ? (
               recent.map((r) => (
                 <div
                   key={r.name}
@@ -423,7 +571,19 @@ export function OverviewTab({
           <CardDescription>By zone visits</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          {scouts.length ? (
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2" aria-hidden data-skeleton="rows">
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-md border bg-[var(--sd-bg-soft)]">
+                  <AvatarSkeleton size={28} />
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <TextSkeleton width="14ch" />
+                    <TextSkeleton width="7ch" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : scouts.length ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
               {scouts.map((s, i) => (
                 <div

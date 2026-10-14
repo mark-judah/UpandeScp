@@ -31,8 +31,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ChartSkeleton, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import { Kpi, KpiGrid } from "./Kpi";
 import { EmptyHint } from "./EmptyHint";
+import { RevealLTR } from "@/components/RevealLTR";
 import { TrendStrip } from "./TrendStrip";
 import type { TrapsPayload } from "./traps-types";
 
@@ -45,7 +47,14 @@ const PALETTE = [
   "var(--sd-data-indigo)",
 ];
 
-export function TrapsTab({ data }: { data: TrapsPayload | null }) {
+export function TrapsTab({
+  data,
+  loading = false,
+}: {
+  data: TrapsPayload | null;
+  /** First load (no payload yet): the cards stand, their contents are skeletons. */
+  loading?: boolean;
+}) {
   const ranking = data?.ranking ?? [];
   const breakdown = data?.pestBreakdown ?? [];
   const trend = data?.trendSeries ?? { rows: [], keys: [] };
@@ -63,12 +72,12 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" aria-busy={loading || undefined}>
       <KpiGrid cols={4}>
-        <Kpi label="Trap Zones" value={k.trapZones} hint="greenhouses with traps" />
-        <Kpi label="Active Traps" value={k.activeTraps} hint="distinct traps" />
-        <Kpi label="FCM Count" value={k.fcmCount} hint="false codling moth catches" />
-        <Kpi label="Total Catches" value={k.totalCatches} hint="across range" />
+        <Kpi loading={loading} label="Trap Zones" value={k.trapZones} hint="greenhouses with traps" />
+        <Kpi loading={loading} label="Active Traps" value={k.activeTraps} hint="distinct traps" />
+        <Kpi loading={loading} label="FCM Count" value={k.fcmCount} hint="false codling moth catches" />
+        <Kpi loading={loading} label="Total Catches" value={k.totalCatches} hint="across range" />
       </KpiGrid>
 
       <TrendStrip
@@ -76,6 +85,7 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
         description="Top pests by daily catches"
         rows={trend.rows}
         keys={trend.keys}
+        loading={loading}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -85,26 +95,30 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
             <CardDescription>Top traps by catches</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {ranking.length ? (
-              <ChartContainer config={barConfig} className="h-72">
-                <BarChart
-                  data={ranking.slice(0, 10)}
-                  layout="vertical"
-                  margin={{ left: 12, right: 12 }}
-                >
-                  <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                  <XAxis type="number" tickLine={false} axisLine={false} />
-                  <YAxis
-                    type="category"
-                    dataKey="trap"
-                    tickLine={false}
-                    axisLine={false}
-                    width={120}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-                  <Bar dataKey="total" fill="var(--color-total)" radius={[4, 4, 4, 4]} />
-                </BarChart>
-              </ChartContainer>
+            {loading ? (
+              <ChartSkeleton height={288} />
+            ) : ranking.length ? (
+              <RevealLTR>
+                <ChartContainer config={barConfig} className="h-72">
+                  <BarChart
+                    data={ranking.slice(0, 10)}
+                    layout="vertical"
+                    margin={{ left: 12, right: 12 }}
+                  >
+                    <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                    <XAxis type="number" tickLine={false} axisLine={false} />
+                    <YAxis
+                      type="category"
+                      dataKey="trap"
+                      tickLine={false}
+                      axisLine={false}
+                      width={120}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                    <Bar isAnimationActive={false} dataKey="total" fill="var(--color-total)" radius={[4, 4, 4, 4]} />
+                  </BarChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -117,26 +131,31 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
             <CardDescription>Catches by pest</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            {breakdown.length ? (
-              <ChartContainer config={pieConfig} className="h-72">
-                <PieChart>
-                  <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                  <Pie
-                    data={breakdown}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius="55%"
-                    outerRadius="90%"
-                    stroke="var(--sd-card)"
-                    strokeWidth={2}
-                  >
-                    {breakdown.map((b, i) => (
-                      <Cell key={b.name} fill={PALETTE[i % PALETTE.length]} />
-                    ))}
-                  </Pie>
-                  <ChartLegend content={<ChartLegendContent />} />
-                </PieChart>
-              </ChartContainer>
+            {loading ? (
+              <ChartSkeleton height={288} />
+            ) : breakdown.length ? (
+              <RevealLTR>
+                <ChartContainer config={pieConfig} className="h-72">
+                  <PieChart>
+                    <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+                    <Pie
+                      data={breakdown}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius="55%"
+                      outerRadius="90%"
+                      stroke="var(--sd-card)"
+                      strokeWidth={2}
+                      isAnimationActive={false}
+                    >
+                      {breakdown.map((b, i) => (
+                        <Cell key={b.name} fill={PALETTE[i % PALETTE.length]} />
+                      ))}
+                    </Pie>
+                    <ChartLegend content={<ChartLegendContent />} />
+                  </PieChart>
+                </ChartContainer>
+              </RevealLTR>
             ) : (
               <EmptyHint />
             )}
@@ -147,10 +166,12 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
       <Card className="p-4">
         <CardHeader className="p-0 pb-2">
           <CardTitle>Trap Details</CardTitle>
-          <CardDescription>{ranking.length} trap × pest pairs</CardDescription>
+          <CardDescription>
+            {loading ? <TextSkeleton width="3ch" /> : ranking.length} trap × pest pairs
+          </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          {ranking.length ? (
+          {loading || ranking.length ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -161,7 +182,7 @@ export function TrapsTab({ data }: { data: TrapsPayload | null }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {ranking.slice(0, 30).map((r) => (
+                {loading ? <TableRowsSkeleton cols={4} rows={8} /> : ranking.slice(0, 30).map((r) => (
                   <TableRow key={r.key}>
                     <TableCell className="font-medium">{r.trap}</TableCell>
                     <TableCell className="text-muted-foreground">{r.pest}</TableCell>

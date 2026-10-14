@@ -121,16 +121,6 @@ def trends(**kwargs):
 
 
 @frappe.whitelist()
-def trends_legacy(**kwargs):
-    """Date-bucketed trends for the not-yet-ported Trends page. See _trends_legacy."""
-    from upande_scp.serverscripts.dashboard_aggregates._trends_legacy import (
-        trends as _trends_legacy,
-    )
-
-    return _call(_trends_legacy, **kwargs)
-
-
-@frappe.whitelist()
 def quality(**kwargs):
     """Coverage report: names scouts and their flags, so it is gated like the
     Scouts page — role first, then the user's own farms (and a named

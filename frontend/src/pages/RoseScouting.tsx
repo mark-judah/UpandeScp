@@ -17,7 +17,6 @@
  * + filter popovers always paint above the map.
  */
 
-import { desaturate, levelAlpha, levelOf, paperFor } from "@/lib/heat-style";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
@@ -48,14 +47,17 @@ import {
   zonePolygonFromGeometry,
   type ZoneFeature,
 } from "./maps/zone-utils";
+import { type Pt, type RouteSegment, routeEnd, zoneNumber } from "./maps/neat-route";
 import {
-  neatRoute,
-  routeEnd,
-  zoneNumber,
-  type BedGeometry,
-  type Pt,
-  type RouteSegment,
-} from "./maps/neat-route";
+  applyTrailSelection,
+  drawTrail,
+  escapeHtml,
+  housesCovered,
+  latestTrails,
+  useBedRouter,
+  zoneHeatStyle,
+  type TrailLayer,
+} from "./maps/route-kit";
 import type { ScoutingEntry } from "@/lib/scouting-types";
 
 /** Per-scout palette — verbatim port of the legacy `palette` array, so a
@@ -73,30 +75,11 @@ const SCOUT_PALETTE = [
   "#fb923c",
 ];
 
-/** Route line opacity at rest (dimmed/raised while a route card is open). */
-const ROUTE_OPACITY = 0.42;
-const ROUTE_WEIGHT = 1.5;
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-}
-
 /** "9:05:00" → "09:05:00". Times arrive unpadded, and "9:59" sorts after
  *  "10:00" as text, which put route steps (and first/last times) out of order. */
 export function padTime(t?: string | null): string {
   if (!t) return "";
   return t.replace(/^(\d):/, "0$1:");
-}
-
-/** The scout's initials in a small circle of their colour, at the route's end. */
-function badgeIcon(initials: string, color: string, selected: boolean): L.DivIcon {
-  const size = selected ? 30 : 24;
-  return L.divIcon({
-    className: "",
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-    html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:${color};color:#fff;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font:600 ${selected ? 11 : 9}px var(--sd-font),Poppins,Arial,sans-serif;letter-spacing:.02em">${escapeHtml(initials)}</div>`,
-  });
 }
 
 const ghOf = houseOf;
@@ -127,7 +110,7 @@ interface ScoutVisit {
 /** One scout's walk through one greenhouse on one day — drawn as a neat route. */
 interface Trail {
   key: string;
-  scout: string;
+  person: string;
   greenhouse: string;
   date: string;
   segments: RouteSegment[];
@@ -374,78 +357,25 @@ export function RoseScouting() {
   // ── Neat routes. Each scout's visits are cut into trails (one per day and
   //    greenhouse — a line never hops across either), and every trail is run
   //    through neatRoute so the bed starts/ends are closed up on screen. ──
-  const bedZones = useMemo(() => {
-    const m = new Map<string, Map<number, ZoneFeature>>();
-    for (const z of zones) {
-      const n = zoneNumber(z.zoneName);
-      if (!Number.isFinite(n)) continue;
-      let b = m.get(z.bedName);
-      if (!b) m.set(z.bedName, (b = new Map()));
-      b.set(n, z);
-    }
-    return m;
-  }, [zones]);
-
   // Zones per greenhouse — the denominator for "covered N of M".
   const zonesPerGreenhouse = useMemo(() => zonesPerHouse(zones), [zones]);
 
-  // Bed spacing (median gap between neighbouring beds' first zones), so the
-  // route can tell a neighbouring bed from a far jump by distance as well as
-  // by bed number. Longitude is scaled to metres-ish by cos(latitude).
-  const bedWidth = useMemo(() => {
-    const first = new Map<string, Pt>();
-    bedZones.forEach((zs, bed) => {
-      const c = zs.get(1) && geometryCentroid(zs.get(1)!.geometry);
-      if (c) first.set(bed, c);
-    });
-    const gaps: number[] = [];
-    first.forEach((pt, bed) => {
-      if (gaps.length >= 300) return;
-      const m = /^(.*Bed\s+)(\d+)$/i.exec(bed);
-      const nb = m && first.get(`${m[1]}${Number(m[2]) + 1}`);
-      if (nb) gaps.push(Math.hypot(pt[0] - nb[0], (pt[1] - nb[1]) * Math.cos((pt[0] * Math.PI) / 180)));
-    });
-    gaps.sort((a, b) => a - b);
-    return gaps.length ? gaps[gaps.length >> 1] : 0;
-  }, [bedZones]);
+  const router = useBedRouter(zones);
 
   const trails = useMemo(() => {
-    const near = (a: Pt, b: Pt) =>
-      bedWidth > 0 &&
-      Math.hypot(a[0] - b[0], (a[1] - b[1]) * Math.cos((a[0] * Math.PI) / 180)) <= 1.5 * bedWidth;
-    const geoCache = new Map<string, BedGeometry | undefined>();
-    const bedOf = (bed: string): BedGeometry | undefined => {
-      if (geoCache.has(bed)) return geoCache.get(bed);
-      const zs = bedZones.get(bed);
-      let geo: BedGeometry | undefined;
-      if (zs) {
-        const pts = new Map<number, Pt>();
-        zs.forEach((z, n) => {
-          const c = geometryCentroid(z.geometry);
-          if (c) pts.set(n, c);
-        });
-        geo = { zoneCount: Math.max(...zs.keys()), point: (n) => pts.get(n) };
-      }
-      geoCache.set(bed, geo);
-      return geo;
-    };
     const out: Trail[] = [];
     visitsByScout.forEach((visits, scout) => {
       let cur: ScoutVisit[] = [];
       let prevKey = "";
       const flush = () => {
         if (!cur.length) return;
-        const segments = neatRoute(
-          cur.map((v) => ({ bed: v.bed, zone: v.zoneNo })),
-          bedOf,
-          { near },
-        );
+        const segments = router.neat(cur);
         const beds: string[] = [];
         for (const v of cur) if (v.bed && !beds.includes(v.bed)) beds.push(v.bed);
         const date = (cur[0].ts || "").slice(0, 10);
         out.push({
           key: `${scout}|${date}|${cur[0].greenhouse}`,
-          scout,
+          person: scout,
           greenhouse: cur[0].greenhouse,
           date,
           segments,
@@ -467,7 +397,7 @@ export function RoseScouting() {
       flush();
     });
     return out;
-  }, [visitsByScout, bedZones, bedWidth]);
+  }, [visitsByScout, router]);
 
   // ── Map plumbing. ──
   const mapRef = useRef<L.Map | null>(null);
@@ -507,17 +437,8 @@ export function RoseScouting() {
       if (!scoutKey) return;
       const color = scoutInfo.colorMap.get(scoutKey) || "#5BB45D";
 
-      // Soft look: hairline outline, a desaturated fill whose depth follows
-      // the zone's entries through the level ramp.
-      const level = levelOf(row.totalEntries);
       const layerObj = L.geoJSON(poly as any, {
-        style: () => ({
-          color: "#8a8780",
-          weight: 0.5,
-          opacity: 0.35,
-          fillColor: desaturate(color, paperFor()),
-          fillOpacity: levelAlpha(level),
-        }),
+        style: () => zoneHeatStyle(color, row.totalEntries),
       });
       layerObj.on("click", () => {
         setSelectedTrail(null);
@@ -544,68 +465,26 @@ export function RoseScouting() {
     //    neatRoute across a 2+ zone gap are dotted. The end node carries the
     //    scout's initials; clicking it or the line opens the route card.
     trailLayers.current.clear();
-    // One badge per scout — on their latest trail (per greenhouse once a
-    // greenhouse is picked). A week at farm level is ~5 days × many houses per
-    // scout, and a badge on every trail buries the map. Other trails stay
-    // clickable by their line and show their badge while open.
-    const oneHouse = filters.greenhouse !== ALL;
-    const badgeKey = (t: Trail) => (oneHouse ? `${t.scout}|${t.greenhouse}` : t.scout);
-    const latest = new Map<string, Trail>();
-    for (const t of trails) {
-      const k = badgeKey(t);
-      const prev = latest.get(k);
-      if (!prev || `${t.date} ${t.lastTime}` > `${prev.date} ${prev.lastTime}`) latest.set(k, t);
-    }
+    const showBadge = latestTrails(trails, filters.greenhouse !== ALL);
     trails.forEach((t) => {
-      const color = scoutInfo.colorMap.get(t.scout) || "#5BB45D";
-      const name = nameOf(t.scout);
-      const tip = `<div style="font:11px var(--sd-font),Arial,sans-serif">
+      const color = scoutInfo.colorMap.get(t.person) || "#5BB45D";
+      const name = nameOf(t.person);
+      trailLayers.current.set(
+        t.key,
+        drawTrail(layer, t, {
+          color,
+          initials: initialsOf(name),
+          showBadge: showBadge(t),
+          tipHtml: `<div style="font:11px var(--sd-font),Arial,sans-serif">
                  <b>${escapeHtml(name)}</b><br/>
                  ${escapeHtml(t.greenhouse || "—")} · ${t.zones.size} zones · ${t.date}
-               </div>`;
-      const open = () => {
-        setSelectedZone(null);
-        setSelectedTrail(t.key);
-      };
-      // Calm routes: desaturated scout colour, thin; the badge keeps the full colour.
-      const routeColor = desaturate(color, paperFor(), 0.72);
-      const lines = t.segments.map((seg) =>
-        L.polyline(seg.points as L.LatLngExpression[], {
-          color: routeColor,
-          weight: ROUTE_WEIGHT,
-          opacity: ROUTE_OPACITY,
-          dashArray: seg.dashed ? "2 6" : undefined,
-          lineJoin: "round",
-          lineCap: "round",
-          bubblingMouseEvents: false,
-        })
-          .on("click", open)
-          .addTo(layer),
+               </div>`,
+          onOpen: () => {
+            setSelectedZone(null);
+            setSelectedTrail(t.key);
+          },
+        }),
       );
-      // Start dot, so the direction of the walk is clear.
-      const startDot = L.circleMarker(t.start, {
-        radius: 4,
-        color: "#ffffff",
-        weight: 2,
-        fillColor: color,
-        fillOpacity: 1,
-        bubblingMouseEvents: false,
-      })
-        .bindTooltip(`Start · ${t.firstTime || "—"}`, { direction: "top" })
-        .on("click", open)
-        .addTo(layer);
-      const badge = L.marker(t.end, {
-        icon: badgeIcon(initialsOf(name), color, false),
-        bubblingMouseEvents: false,
-        keyboard: false,
-      })
-        .bindTooltip(tip, { direction: "top", offset: [0, -12] })
-        .on("click", open);
-      if (latest.get(badgeKey(t)) === t) badge.addTo(layer);
-      trailLayers.current.set(t.key, {
-        lines, startDot, badge, color, initials: initialsOf(name),
-        showBadge: latest.get(badgeKey(t)) === t,
-      });
       for (const seg of t.segments) for (const pt of seg.points) bounds.extend(pt);
     });
     applySelection(selectedRef.current);
@@ -623,34 +502,10 @@ export function RoseScouting() {
     }
   }, [aggByZone, zoneByName, trails, scoutInfo, mapSettings, filters.farm, filters.greenhouse, nameOf]);
 
-  // Highlight the open route and dim the rest (all back to normal when none).
-  const trailLayers = useRef(
-    new Map<
-      string,
-      { lines: L.Polyline[]; startDot: L.CircleMarker; badge: L.Marker; color: string; initials: string; showBadge: boolean }
-    >(),
-  );
+  const trailLayers = useRef(new Map<string, TrailLayer>());
   const selectedRef = useRef<string | null>(null);
-  function applySelection(sel: string | null) {
-    trailLayers.current.forEach((t, key) => {
-      const on = sel === key;
-      const dim = sel != null && !on;
-      t.lines.forEach((l) =>
-        l.setStyle({ weight: on ? 3 : ROUTE_WEIGHT, opacity: on ? 0.9 : dim ? 0.1 : ROUTE_OPACITY }),
-      );
-      t.startDot.setStyle({ opacity: dim ? 0.2 : 1, fillOpacity: dim ? 0.2 : 1 });
-      t.badge.setIcon(badgeIcon(t.initials, t.color, on));
-      t.badge.setOpacity(dim ? 0.35 : 1);
-      t.badge.setZIndexOffset(on ? 1000 : 0);
-      // An earlier day's trail has no badge of its own; show it while open.
-      const layer = layerRef.current;
-      if (layer && !t.showBadge) {
-        if (on) t.badge.addTo(layer);
-        else t.badge.remove();
-      }
-      if (on) t.lines.forEach((l) => l.bringToFront());
-    });
-  }
+  const applySelection = (sel: string | null) =>
+    applyTrailSelection(trailLayers.current, layerRef.current, sel);
   useEffect(() => {
     selectedRef.current = selectedTrail;
     applySelection(selectedTrail);
@@ -710,10 +565,10 @@ export function RoseScouting() {
     if (!t) return null;
     return {
       key: t.key,
-      scoutId: t.scout,
-      name: nameOf(t.scout),
-      image: scoutImages[t.scout],
-      color: scoutInfo.colorMap.get(t.scout) || "#5BB45D",
+      scoutId: t.person,
+      name: nameOf(t.person),
+      image: scoutImages[t.person],
+      color: scoutInfo.colorMap.get(t.person) || "#5BB45D",
       greenhouse: t.greenhouse,
       date: t.date,
       zonesCovered: t.zones.size,
@@ -721,31 +576,8 @@ export function RoseScouting() {
       start: t.firstTime,
       end: t.lastTime,
       beds: t.beds,
-      houses: housesCovered(t.scout),
+      houses: housesCovered(trails, t.person, zonesPerGreenhouse),
     };
-    // Every greenhouse this scout covered in the range: distinct zones over
-    // the house's zones, all days together.
-    function housesCovered(scout: string) {
-      const byHouse = new Map<string, Set<string>>();
-      for (const x of trails) {
-        if (x.scout !== scout) continue;
-        const gh = ghOf(x.beds[0] || x.greenhouse);
-        let z = byHouse.get(gh);
-        if (!z) byHouse.set(gh, (z = new Set()));
-        x.zones.forEach((zone) => z!.add(zone));
-      }
-      return [...byHouse.entries()]
-        .map(([greenhouse, zones]) => {
-          const total = zonesPerGreenhouse.get(greenhouse) || 0;
-          return {
-            greenhouse,
-            covered: zones.size,
-            total,
-            pct: total ? Math.min(100, Math.round((zones.size / total) * 100)) : 0,
-          };
-        })
-        .sort((a, b) => b.pct - a.pct || a.greenhouse.localeCompare(b.greenhouse));
-    }
   }, [selectedTrail, trails, nameOf, scoutImages, scoutInfo, zonesPerGreenhouse]);
 
   // First load (nothing processed yet): the figures are skeletons. A refresh

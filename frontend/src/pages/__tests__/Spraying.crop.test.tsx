@@ -9,6 +9,8 @@ vi.mock("@/pages/maps/RangeHeader", async (orig) => ({
 vi.mock("@/lib/scouting-api", () => ({
   fetchBedsAndZones: vi.fn().mockResolvedValue([]),
   fetchSprayerGpsLogs: vi.fn().mockResolvedValue([]),
+  fetchScoutLookup: vi.fn().mockResolvedValue({}),
+  fetchScoutImages: vi.fn().mockResolvedValue({}),
 }));
 vi.mock("@/hooks/use-map-settings", () => ({
   flyToFarm: vi.fn(),

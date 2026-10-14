@@ -83,10 +83,13 @@ export function ScoutRouteCard({
   trail,
   onClose,
   className,
+  role = "Scout",
 }: {
   trail: ScoutTrail;
   onClose: () => void;
   className?: string;
+  /** Who walked it: "Scout" (default) or "Sprayer" — only the wording changes. */
+  role?: "Scout" | "Sprayer";
 }) {
   const hhmm = (t: string) => t.slice(0, 5);
   const duration = durationText(trail.start, trail.end);
@@ -97,7 +100,7 @@ export function ScoutRouteCard({
 
   return (
     <MapFloatingCard
-      eyebrow="Scout route"
+      eyebrow={`${role} route`}
       title={trail.greenhouse || "—"}
       onClose={onClose}
       className={className}

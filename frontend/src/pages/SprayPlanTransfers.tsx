@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { TransferBatchPanel } from "@/components/store/TransferBatchPanel";
 import {
@@ -809,9 +809,8 @@ export function SprayPlanTransfers() {
                     const emp = r.employees[0];
                     const itemsState = itemsByName[r.name];
                     return (
-                      <>
+                      <Fragment key={r.name}>
                         <tr
-                          key={r.name}
                           className={cn(
                             "border-b last:border-0 hover:bg-muted/40 cursor-pointer",
                             isSel && "bg-primary/5",
@@ -943,7 +942,7 @@ export function SprayPlanTransfers() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                   {!visibleRows.length && (

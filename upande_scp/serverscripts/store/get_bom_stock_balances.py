@@ -16,7 +16,9 @@ def _fill_balances(codes, warehouses):
     balances = _zero_balances(codes, warehouses)
     if not codes or not warehouses:
         return balances
-    bins = frappe.get_list(
+    # get_all: callers are spray-plan creators / GMs who hold no Bin read
+    # permission; the warehouse lists are already scoped by the caller.
+    bins = frappe.get_all(
         "Bin",
         filters={
             "item_code": ("in", codes),

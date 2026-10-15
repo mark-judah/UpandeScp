@@ -455,6 +455,7 @@ def get_lifecycle_summary(
             "custom_spray_type",
             "custom_scheduled_application_time",
             "creation",
+            "modified",
         ],
         order_by="creation desc",
         limit_page_length=500,
@@ -490,5 +491,8 @@ def get_lifecycle_summary(
             "greenhouse": r.custom_greenhouse,
             "spray_type": r.custom_spray_type,
             "scheduled": _iso(r.custom_scheduled_application_time),
+            # The plan's last write is the closest cheap proxy for "when the
+            # last step happened" (each step is a workflow transition).
+            "last_step_at": _iso(r.modified),
         })
     return out

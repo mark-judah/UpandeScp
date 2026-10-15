@@ -22,13 +22,7 @@ import {
   useCallback,
   useRef,
 } from "react";
-import {
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  ChevronDown,
-  Printer,
-} from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -52,14 +46,10 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/PageHeader";
 import { PlacePicker } from "@/components/PlacePicker";
-import { StalePlansCard } from "@/components/StalePlansCard";
+import { StalePlansTab } from "@/components/spray-plan/StalePlansTab";
+import { ApprovalActionBar } from "@/components/spray-plan/ApprovalActionBar";
+import { ApprovedList, isApprovedRow } from "@/components/spray-plan/ApprovedList";
 import { HEADER_PILL } from "@/components/header-controls";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import {
   DATE_BASIS_LABEL,
@@ -80,7 +70,6 @@ import {
   type ApproveResult,
   type FarmsAndGreenhouses,
   type PendingWorkOrder,
-  type QrLabel,
 } from "@/lib/spray-plan-api";
 import { approveDraftsBulk } from "@/lib/spray-plan-creator-api";
 import { ApprovalChemicalsTable } from "@/components/spray-plan/ApprovalChemicalsTable";
@@ -102,54 +91,13 @@ import {
 } from "@/lib/approval-live";
 import { DEFAULT_CROP } from "@/lib/scouting-api";
 const ALL = "__all__";
-// Pending/forwarded come from the approval feed; the four post-approval
-// stages come from the lifecycle summary so the GM sees the whole journey.
-type StatusFilter =
-  | "pending"
-  | "forwarded"
-  | "Chemical Issued"
-  | "Tank Mix Manufactured"
-  | "Spraying In Progress"
-  | "Completed";
-
-const STAGE_TABS: { key: StatusFilter; label: string }[] = [
-  { key: "Chemical Issued", label: "Chemical Issued" },
-  { key: "Tank Mix Manufactured", label: "Tank Mix" },
-  { key: "Spraying In Progress", label: "Spraying" },
-  { key: "Completed", label: "Completed" },
-];
+type Tab = "pending" | "approved" | "stale";
 
 function defaultRange(): { from: string; to: string } {
   // Legacy default = today / today.
   const t = ymd(new Date());
   return { from: t, to: t };
 }
-
-interface LogLine {
-  text: string;
-  variant: "ok" | "warn" | "skip" | "err";
-}
-
-interface ProgressState {
-  open: boolean;
-  title: string;
-  fillPct: number;
-  isStop: boolean;
-  doneColor?: string;
-  closable: boolean;
-  log: LogLine[];
-  qrLabels: QrLabel[];
-}
-
-const INITIAL_PROGRESS: ProgressState = {
-  open: false,
-  title: "",
-  fillPct: 0,
-  isStop: false,
-  closable: false,
-  log: [],
-  qrLabels: [],
-};
 
 export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
   const crop = initialCrop ?? DEFAULT_CROP;
@@ -173,7 +121,8 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
   const reqRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
+  const [tab, setTab] = useState<Tab>("pending");
+  const [staleCount, setStaleCount] = useState<number | null>(null);
   // Which date the range filters on, and whether to break the list up by farm.
   // Both are the operator's call: an approver clearing a desk works by arrival,
   // a farm manager works a farm at a time, and neither is right for everyone.
@@ -184,13 +133,11 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
   const [busy, setBusy] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [stopConfirm, setStopConfirm] = useState(false);
-  const [progress, setProgress] = useState<ProgressState>(INITIAL_PROGRESS);
   const [summary, setSummary] = useState<LifecycleSummaryRow[]>([]);
   // The lists start empty, so "has data" is "a response has landed" — one flag
   // per feed, since the stage summary arrives after the approval list.
   const [loaded, setLoaded] = useState(false);
   const [summaryLoaded, setSummaryLoaded] = useState(false);
-  const [stageExpanded, setStageExpanded] = useState<string | null>(null);
   const reloadTimerRef = useRef<number | null>(null);
 
   // ── Data loading ──────────────────────────────────────────────────
@@ -299,31 +246,13 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
     () => allWos.filter((w) => !w.is_forwarded).length,
     [allWos],
   );
-  const forwardedCount = useMemo(
-    () => allWos.filter((w) => w.is_forwarded).length,
-    [allWos],
+  const approvedCount = useMemo(() => summary.filter(isApprovedRow).length, [summary]);
+
+  // The pending table is the approval feed's not-yet-forwarded plans.
+  const visibleWos = useMemo(
+    () => (tab === "pending" ? allWos.filter((w) => !w.is_forwarded) : []),
+    [allWos, tab],
   );
-
-  const stageCounts = useMemo(() => {
-    const c: Record<string, number> = {};
-    summary.forEach((r) => {
-      c[r.current_state] = (c[r.current_state] || 0) + 1;
-    });
-    return c;
-  }, [summary]);
-
-  const isStageTab = STAGE_TABS.some((t) => t.key === statusFilter);
-  const stageRows = useMemo(
-    () => summary.filter((r) => r.current_state === statusFilter),
-    [summary, statusFilter],
-  );
-
-  const visibleWos = useMemo(() => {
-    if (statusFilter === "pending") return allWos.filter((w) => !w.is_forwarded);
-    if (statusFilter === "forwarded") return allWos.filter((w) => w.is_forwarded);
-    // Stage tabs render from the lifecycle summary, not the approval feed.
-    return [];
-  }, [allWos, statusFilter]);
 
   const farmGroups = useMemo(
     () => (groupFarms ? groupByFarm(visibleWos) : []),
@@ -395,125 +324,75 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
   };
 
   // ── Bulk approve / stop ───────────────────────────────────────────
+  // Progress is a quiet "loading" toast; the outcome is one toast in the tone
+  // it deserves (green when everything went through). Anything the approver
+  // must read twice — blocked or failed plans — rides in the hint.
+  const reportOutcome = (
+    lead: string,
+    ok: number,
+    notes: { blocked: string[]; failed: string[]; skipped: string[] },
+  ) => {
+    const problems = notes.blocked.length + notes.failed.length + notes.skipped.length;
+    const hint = problems
+      ? [...notes.blocked, ...notes.failed, ...notes.skipped].slice(0, 3).join(" · ") +
+        (problems > 3 ? ` · and ${problems - 3} more` : "")
+      : undefined;
+    const kind = notes.failed.length && !ok ? "err" : problems ? "warn" : "ok";
+    toast.show(lead, kind, hint ? { hint } : undefined);
+  };
+
   const runApproval = async (woNames: string[]) => {
     setBusy(true);
-    setProgress({
-      open: true,
-      title: `Approving ${woNames.length} spray plan${woNames.length !== 1 ? "s" : ""}...`,
-      fillPct: 0,
-      isStop: false,
-      closable: false,
-      log: [],
-      qrLabels: [],
-    });
+    const loadingId = toast.show(
+      `Approving ${woNames.length} spray plan${woNames.length !== 1 ? "s" : ""}…`,
+      "loading",
+    );
     let ok = 0;
-    let err = 0;
-    let blocked = 0;
-    const qr: QrLabel[] = [];
-
-    for (let i = 0; i < woNames.length; i++) {
-      const name = woNames[i];
+    const notes = { blocked: [] as string[], failed: [] as string[], skipped: [] as string[] };
+    for (const name of woNames) {
       try {
         const res: ApproveResult = await approveWorkOrder(name);
-        if (res.status === "approved") {
+        if (res.status === "approved" || res.status === "already_forwarded") {
           ok++;
-          if (res.qr_labels) {
-            res.qr_labels.forEach((l) => qr.push({ ...l, wo: name }));
-          }
-          // Labels are no longer generated here. The traceable code is issued when
-          // the store SUBMITS the transfer, because only then is the quantity what
-          // actually moved — so saying "3 QR labels" at approval time would report
-          // work that has not happened.
-          appendLog(
-            `✓ ${name} — SE ${res.se} raised to ${res.warehouse || "WIP"}` +
-              " · labels are issued when the store releases the chemicals",
-            "ok",
-          );
-        } else if (res.status === "already_forwarded") {
-          ok++;
-          appendLog(`ℹ ${name} — ${res.message || "Already forwarded."}`, "warn");
         } else if (res.status === "skipped") {
-          appendLog(`— ${name} — ${res.message || "Skipped."}`, "skip");
+          notes.skipped.push(`${name} skipped`);
         } else if (res.status === "blocked") {
-          // Not a failure: the plan is held until its spray check passes or a
-          // GM overrides it.
-          blocked++;
-          appendLog(`⊘ ${name} — blocked by spray check — ${res.message || "see the plan's spray check."}`, "warn");
+          // Not a failure: held until its spray check passes or a GM overrides it.
+          notes.blocked.push(`${name} blocked by spray check`);
         } else {
-          err++;
-          appendLog(`✗ ${name} — ${res.message || "Unknown error."}`, "err");
+          notes.failed.push(`${name}: ${res.message || "unknown error"}`);
         }
       } catch (e: any) {
-        err++;
-        appendLog(`✗ ${name} — ${errorText(e, "Could not connect to server.")}`, "err");
+        notes.failed.push(`${name}: ${errorText(e, "could not connect to server")}`);
       }
-      const pct = Math.round(((i + 1) / woNames.length) * 100);
-      setProgress((p) => ({ ...p, fillPct: pct }));
     }
-
-    const color =
-      err === 0 && blocked === 0 ? "#10b981" : err === woNames.length ? "#ef4444" : "#f59e0b";
-    setProgress((p) => ({
-      ...p,
-      title: `Done — ${ok} approved${blocked ? `, ${blocked} blocked by spray check` : ""}, ${err} failed.`,
-      fillPct: 100,
-      doneColor: color,
-      closable: true,
-      qrLabels: qr,
-    }));
+    toast.dismiss(loadingId);
+    reportOutcome(`${ok} spray plan${ok !== 1 ? "s" : ""} approved.`, ok, notes);
     setBusy(false);
-    // Reload to show new forwarded status. Small delay so the user can
-    // glance at the summary first.
-    window.setTimeout(() => void reload(), 800);
+    window.setTimeout(() => void reload(), 500);
   };
 
   const runStop = async (woNames: string[]) => {
     setBusy(true);
-    setProgress({
-      open: true,
-      title: `Stopping ${woNames.length} work order${woNames.length !== 1 ? "s" : ""}...`,
-      fillPct: 0,
-      isStop: true,
-      closable: false,
-      log: [],
-      qrLabels: [],
-    });
+    const loadingId = toast.show(
+      `Stopping ${woNames.length} work order${woNames.length !== 1 ? "s" : ""}…`,
+      "loading",
+    );
     let ok = 0;
-    let err = 0;
-
-    for (let i = 0; i < woNames.length; i++) {
-      const name = woNames[i];
+    const notes = { blocked: [] as string[], failed: [] as string[], skipped: [] as string[] };
+    for (const name of woNames) {
       try {
         const res = await stopWorkOrder(name);
-        if (res.status === "stopped") {
-          ok++;
-          appendLog(`■ ${name} — stopped successfully.`, "warn");
-        } else {
-          err++;
-          appendLog(`✗ ${name} — ${res.message || "Failed."}`, "err");
-        }
+        if (res.status === "stopped") ok++;
+        else notes.failed.push(`${name}: ${res.message || "failed"}`);
       } catch (e: any) {
-        err++;
-        appendLog(`✗ ${name} — ${errorText(e, "Could not connect to server.")}`, "err");
+        notes.failed.push(`${name}: ${errorText(e, "could not connect to server")}`);
       }
-      const pct = Math.round(((i + 1) / woNames.length) * 100);
-      setProgress((p) => ({ ...p, fillPct: pct }));
     }
-
-    const color = err === 0 ? "#ef4444" : err === woNames.length ? "#ef4444" : "#f59e0b";
-    setProgress((p) => ({
-      ...p,
-      title: `Done — ${ok} stopped, ${err} failed.`,
-      fillPct: 100,
-      doneColor: color,
-      closable: true,
-    }));
+    toast.dismiss(loadingId);
+    reportOutcome(`${ok} work order${ok !== 1 ? "s" : ""} stopped.`, ok, notes);
     setBusy(false);
-    window.setTimeout(() => void reload(), 800);
-  };
-
-  const appendLog = (text: string, variant: LogLine["variant"]) => {
-    setProgress((p) => ({ ...p, log: [...p.log, { text, variant }] }));
+    window.setTimeout(() => void reload(), 500);
   };
 
   const onApproveSelected = () => {
@@ -529,52 +408,18 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
     try {
       const result = await approveDraftsBulk(Array.from(checked));
       const SPRAY_BLOCK = "blocked by spray check: ";
-      const blockedRows = result.skipped.filter((sk) => sk.reason.startsWith(SPRAY_BLOCK));
-      const otherSkipped = result.skipped.length - blockedRows.length;
-      // A fresh log per run: the progress dialog is shared with single approval.
-      const log: LogLine[] = [
-        {
-          text:
-            `✓ Bulk approved ${result.approved.length}` +
-            (blockedRows.length ? ` · ${blockedRows.length} blocked by spray check` : "") +
-            (otherSkipped ? ` · ${otherSkipped} skipped` : "") +
-            ".",
-          variant: "ok",
-        },
-        ...result.skipped.map((sk): LogLine =>
-          sk.reason.startsWith(SPRAY_BLOCK)
-            ? { text: `⊘ ${sk.name} — blocked by spray check — ${sk.reason.slice(SPRAY_BLOCK.length)}`, variant: "warn" }
-            : { text: `— ${sk.name} — ${sk.reason}`, variant: "skip" },
-        ),
-      ];
-      setProgress((p) => ({
-        ...p,
-        log,
-        isStop: false,
-        qrLabels: [],
-        open: true,
-        title:
-          `Approved ${result.approved.length}` +
-          (blockedRows.length ? ` · ${blockedRows.length} blocked by spray check` : "") +
-          (otherSkipped ? ` · ${otherSkipped} skipped` : "") +
-          ".",
-        fillPct: 100,
-        doneColor: result.skipped.length ? "#f59e0b" : "#10b981",
-        closable: true,
-      }));
+      const blocked = result.skipped
+        .filter((sk) => sk.reason.startsWith(SPRAY_BLOCK))
+        .map((sk) => `${sk.name} blocked by spray check`);
+      const skipped = result.skipped
+        .filter((sk) => !sk.reason.startsWith(SPRAY_BLOCK))
+        .map((sk) => `${sk.name}: ${sk.reason}`);
+      const n = result.approved.length;
+      reportOutcome(`${n} spray plan${n !== 1 ? "s" : ""} approved.`, n, { blocked, failed: [], skipped });
       setChecked(new Set());
-      window.setTimeout(() => void reload(), 800);
+      window.setTimeout(() => void reload(), 500);
     } catch (e: any) {
-      setProgress({
-        open: true,
-        title: "Bulk approve failed",
-        fillPct: 100,
-        isStop: false,
-        doneColor: "#ef4444",
-        closable: true,
-        log: [{ text: errorText(e), variant: "err" }],
-        qrLabels: [],
-      });
+      toast.show("Bulk approve failed.", "err", { hint: errorText(e) });
     } finally {
       setBulkBusy(false);
     }
@@ -591,9 +436,6 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
     if (!names.length) return;
     void runStop(names);
   };
-
-  const closeProgress = () =>
-    setProgress((p) => (p.closable ? INITIAL_PROGRESS : p));
 
   // ── Render ────────────────────────────────────────────────────────
   return (
@@ -649,25 +491,17 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
         className="px-4 md:px-6 py-4 flex-1 flex flex-col gap-3"
         aria-busy={loading || undefined}
       >
-        <Tabs
-          value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v as StatusFilter)}
-        >
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="pending">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 mr-1.5" />
               Pending · {skeleton ? <TextSkeleton width="1.5ch" /> : pendingCount}
             </TabsTrigger>
-            <TabsTrigger value="forwarded">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 mr-1.5" />
-              Forwarded · {skeleton ? <TextSkeleton width="1.5ch" /> : forwardedCount}
+            <TabsTrigger value="approved">
+              Approved · {stageSkeleton ? <TextSkeleton width="1.5ch" /> : approvedCount}
             </TabsTrigger>
-            {STAGE_TABS.map((t) => (
-              <TabsTrigger key={t.key} value={t.key}>
-                {t.label} ·{" "}
-                {stageSkeleton ? <TextSkeleton width="1.5ch" /> : stageCounts[t.key] || 0}
-              </TabsTrigger>
-            ))}
+            <TabsTrigger value="stale">
+              Stale · {staleCount === null ? <TextSkeleton width="1.5ch" /> : staleCount}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -679,16 +513,19 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
           </Card>
         )}
 
-        <StalePlansCard farm={farm === ALL ? undefined : farm} />
+        {/* Always mounted so the tab can show its count; hidden off its tab. */}
+        <div hidden={tab !== "stale"}>
+          <StalePlansTab
+            farm={farm === ALL ? undefined : farm}
+            crop={crop}
+            onCount={setStaleCount}
+          />
+        </div>
 
-        {!isStageTab && !errorMsg && !visibleWos.length && !loading && (
+        {tab === "pending" && !errorMsg && !visibleWos.length && !loading && (
           <Card>
             <CardContent className="p-10 flex flex-col items-center gap-3 text-sm text-muted-foreground">
-              <p>
-                {statusFilter === "pending"
-                  ? "No pending spray plans — all have been forwarded."
-                  : "No forwarded plans in this selection."}
-              </p>
+              <p>No pending spray plans — all have been forwarded.</p>
               <Button variant="outline" size="sm" onClick={clearFilters}>
                 Show All Dates
               </Button>
@@ -696,18 +533,11 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
           </Card>
         )}
 
-        {isStageTab && !errorMsg && (
-          <StageTable
-            rows={stageRows}
-            loading={stageSkeleton}
-            expanded={stageExpanded}
-            onToggle={(name) =>
-              setStageExpanded((prev) => (prev === name ? null : name))
-            }
-          />
+        {tab === "approved" && !errorMsg && (
+          <ApprovedList rows={summary} loading={stageSkeleton} />
         )}
 
-        {!isStageTab && !errorMsg && (visibleWos.length > 0 || skeleton) && (
+        {tab === "pending" && !errorMsg && (visibleWos.length > 0 || skeleton) && (
           <Card className="p-0">
             <CardContent className="p-0">
               <div className="flex items-center gap-2 px-3 py-2 border-b text-xs">
@@ -896,86 +726,17 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
         )}
       </div>
 
-      {/* Sticky action bar */}
-      {checked.size > 0 && (
-        <div className="sticky bottom-0 z-30 border-t bg-card/95 backdrop-blur px-4 md:px-6 py-3 flex items-center justify-between gap-3">
-          <div className="text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">{checked.size}</span>{" "}
-            selected
-          </div>
-          <div className="flex items-center gap-2">
-            {stopConfirm && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-muted-foreground">
-                  Stop {checked.size} WO{checked.size !== 1 ? "s" : ""}? This
-                  cannot be undone.
-                </span>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="h-7"
-                  onClick={confirmStop}
-                >
-                  Confirm
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7"
-                  onClick={() => setStopConfirm(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
-            {!stopConfirm && (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-destructive hover:text-destructive"
-                  disabled={busy || bulkBusy}
-                  onClick={onStopSelected}
-                >
-                  <XCircle className="h-3.5 w-3.5" />
-                  Stop Selected
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8"
-                  disabled={busy || bulkBusy}
-                  onClick={() => void bulkApprove()}
-                  title="Fast approve — raises draft Stock Entries without streaming progress"
-                >
-                  {bulkBusy ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                  )}
-                  Quick Approve
-                </Button>
-                <Button
-                  size="sm"
-                  className="h-8"
-                  disabled={busy || bulkBusy}
-                  onClick={onApproveSelected}
-                >
-                  {busy ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                  )}
-                  Approve Selected
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Progress dialog */}
-      <ProgressDialog progress={progress} onClose={closeProgress} />
+      <ApprovalActionBar
+        count={checked.size}
+        busy={busy}
+        bulkBusy={bulkBusy}
+        stopConfirm={stopConfirm}
+        onApprove={onApproveSelected}
+        onQuick={() => void bulkApprove()}
+        onStop={onStopSelected}
+        onConfirmStop={confirmStop}
+        onCancelStop={() => setStopConfirm(false)}
+      />
 
       <LoadingStrip active={loading} />
     </div>
@@ -1074,264 +835,4 @@ function DetailPanel({ wo, crop }: { wo: PendingWorkOrder; crop: string }) {
       )}
     </div>
   );
-}
-
-// ── Stage table (post-approval lifecycle tabs) ─────────────────────
-function StageTable({
-  rows,
-  loading,
-  expanded,
-  onToggle,
-}: {
-  rows: LifecycleSummaryRow[];
-  loading: boolean;
-  expanded: string | null;
-  onToggle: (name: string) => void;
-}) {
-  if (!rows.length && !loading) {
-    return (
-      <Card>
-        <CardContent className="p-10 text-center text-sm text-muted-foreground">
-          No plans at this stage in the current selection.
-        </CardContent>
-      </Card>
-    );
-  }
-  return (
-    <Card className="p-0">
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Work Order</TableHead>
-              <TableHead>Greenhouse</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Scheduled</TableHead>
-              <TableHead className="w-10" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading && !rows.length && <TableRowsSkeleton cols={5} rows={6} />}
-            {rows.map((r) => {
-              const open = expanded === r.name;
-              return (
-                <Fragment key={r.name}>
-                  <TableRow className="cursor-pointer" onClick={() => onToggle(r.name)}>
-                    <TableCell className="text-xs font-medium">
-                      <a
-                        href={`/app/work-order/${encodeURIComponent(r.name)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {r.name}
-                      </a>
-                    </TableCell>
-                    <TableCell className="text-xs">{r.greenhouse || "—"}</TableCell>
-                    <TableCell className="text-xs">
-                      {r.spray_type ? (
-                        <Badge variant="outline" className="text-[0.65rem]">
-                          {r.spray_type}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs tabular-nums">
-                      <div className="flex items-center gap-2">
-                        {r.scheduled ? r.scheduled.slice(0, 16) : "—"}
-                        {r.missed && (
-                          <span className="inline-flex items-center gap-1 text-[0.6rem] font-medium text-[var(--sd-data-red)]">
-                            <XCircle className="h-3 w-3" />
-                            Missed
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <ChevronDown
-                        className={cn(
-                          "h-4 w-4 transition-transform text-muted-foreground",
-                          open && "rotate-180",
-                        )}
-                      />
-                    </TableCell>
-                  </TableRow>
-                  {open && (
-                    <TableRow className="bg-muted/30 hover:bg-muted/30">
-                      <TableCell colSpan={5} className="p-4">
-                        <LifecycleTimelineFor workOrder={r.name} />
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ── Progress dialog ────────────────────────────────────────────────
-function ProgressDialog({
-  progress,
-  onClose,
-}: {
-  progress: ProgressState;
-  onClose: () => void;
-}) {
-  return (
-    <Dialog
-      open={progress.open}
-      onOpenChange={(o) => {
-        if (!o) onClose();
-      }}
-    >
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle
-            style={progress.doneColor ? { color: progress.doneColor } : undefined}
-          >
-            {progress.title}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-3">
-          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-            <div
-              className={cn(
-                "h-full transition-all",
-                progress.isStop ? "bg-red-500" : "bg-emerald-500",
-              )}
-              style={{ width: `${progress.fillPct}%` }}
-            />
-          </div>
-          <div className="max-h-64 overflow-auto rounded-md border bg-muted/30 p-2 text-xs font-mono space-y-0.5">
-            {progress.log.map((l, i) => (
-              <div
-                key={i}
-                className={cn(
-                  l.variant === "ok" && "text-emerald-600",
-                  l.variant === "warn" && "text-amber-600",
-                  l.variant === "skip" && "text-muted-foreground",
-                  l.variant === "err" && "text-red-600",
-                )}
-              >
-                {l.text}
-              </div>
-            ))}
-            {!progress.log.length && (
-              <div className="text-muted-foreground">Working...</div>
-            )}
-          </div>
-          {progress.qrLabels.length > 0 && (
-            <QrSection labels={progress.qrLabels} />
-          )}
-          {progress.closable && (
-            <div className="flex justify-end">
-              <Button size="sm" onClick={onClose}>
-                Close
-              </Button>
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ── QR section + print window ──────────────────────────────────────
-function QrSection({ labels }: { labels: QrLabel[] }) {
-  const toast = useToast();
-  const print = () => {
-    if (!openQrPrintWindow(labels)) {
-      toast.show("Pop-ups are blocked.", "err", { hint: "Allow pop-ups for this site to print labels." });
-    }
-  };
-  const preview = labels.slice(0, 8);
-  return (
-    <div className="rounded-md border p-3 space-y-2 bg-card">
-      <div className="flex items-center justify-between">
-        <div className="text-xs font-medium">
-          {labels.length} QR label{labels.length !== 1 ? "s" : ""} generated
-        </div>
-        <Button size="sm" className="h-7" onClick={print}>
-          <Printer className="h-3.5 w-3.5" />
-          Print Labels
-        </Button>
-      </div>
-      <div className="flex gap-2 overflow-auto pb-1">
-        {preview.map((l, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-2 rounded border bg-muted/40 p-1.5 min-w-fit"
-          >
-            <img
-              src={`data:image/png;base64,${l.png_base64}`}
-              alt={l.chemical}
-              className="h-12 w-12"
-              style={{ imageRendering: "pixelated" }}
-            />
-            <div className="text-[0.7rem]">
-              <div className="font-semibold truncate max-w-[12ch]">
-                {l.chemical}
-              </div>
-              <div className="text-muted-foreground">
-                {l.qty} {l.uom}
-              </div>
-            </div>
-          </div>
-        ))}
-        {labels.length > 8 && (
-          <div className="self-center text-xs text-muted-foreground px-2">
-            +{labels.length - 8} more
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** 25×15 mm minimal QR-only label sheet. One QR per page, no text —
- *  all order context (chemical, qty, WO, farm, etc.) is encoded in the
- *  QR and recovered on scan. */
-/** False when the browser blocked the pop-up. */
-function openQrPrintWindow(labels: QrLabel[]): boolean {
-  const win = window.open("", "_blank", "width=480,height=640");
-  if (!win) return false;
-
-  const rows = labels
-    .map(
-      (l) =>
-        `<div class="label"><img class="qrimg" src="data:image/png;base64,${l.png_base64}"></div>`,
-    )
-    .join("");
-
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Chemical QR Labels</title>
-<style>
-@page{size:25mm 15mm;margin:0}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,Helvetica,sans-serif;background:#e5e7eb;padding:16px}
-.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:14px;padding:10px 14px;background:#1f2937;border-radius:6px;color:#fff}
-.toolbar h2{flex:1;font-size:.85rem;font-weight:700}
-.toolbar button{padding:6px 14px;border:none;border-radius:5px;font-weight:600;font-size:.72rem;cursor:pointer}
-.btn-print{background:#059669;color:#fff}.btn-close{background:#374151;color:#fff}
-.sheet{display:flex;flex-direction:column;align-items:center;gap:6px}
-.label{width:25mm;height:15mm;background:#fff;border:1px solid #000;display:flex;align-items:center;justify-content:center;overflow:hidden;page-break-after:always}
-.label:last-child{page-break-after:auto}
-.qrimg{width:13mm;height:13mm;image-rendering:pixelated;display:block}
-@media print{body{background:#fff;padding:0}.no-print{display:none!important}.sheet{gap:0}.label{border:none}}
-</style></head><body>
-<div class="toolbar no-print">
-  <h2>Chemical QR Labels — 25×15 mm (${labels.length} label${labels.length !== 1 ? "s" : ""})</h2>
-  <button class="btn-print" onclick="window.print()">Print</button>
-  <button class="btn-close" onclick="window.close()">Close</button>
-</div>
-<div class="sheet">${rows}</div>
-</body></html>`);
-  win.document.close();
-  return true;
 }

@@ -944,6 +944,10 @@ export interface StalePlan {
   creation: string;
   owner: string;
   custom_greenhouse: string | null;
+  /** Newline-separated targets, as on the Work Order. */
+  custom_targets?: string | null;
+  /** Chemical item codes the plan carried. */
+  items?: string[];
 }
 
 export async function getStalePlans(farm?: string): Promise<StalePlan[]> {

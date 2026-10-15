@@ -54,6 +54,8 @@ export interface LifecycleSummaryRow {
   greenhouse: string | null;
   spray_type: string | null;
   scheduled: string | null;
+  /** When the plan last moved (its last workflow step). */
+  last_step_at?: string | null;
 }
 
 const NS = "upande_scp.serverscripts.spray_plan_creator.lifecycle";

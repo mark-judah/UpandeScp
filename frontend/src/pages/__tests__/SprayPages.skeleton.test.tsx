@@ -53,7 +53,7 @@ describe("spray pages draw their frame while the data loads", () => {
     render(<Approvals />);
     expect(screen.getByText("Spray Plan Approval")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Pending/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Forwarded/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Approved/ })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Work Order" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Greenhouse" })).toBeInTheDocument();
     expect(skeletonRows().length).toBeGreaterThan(0);

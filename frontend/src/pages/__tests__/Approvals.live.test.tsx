@@ -11,10 +11,12 @@ const wo = (name: string) => ({
   planned_start_date: "2026-10-15", required_items: [], is_forwarded: false, farm: "Karen",
 });
 const fetchPending = vi.fn();
+const approve = vi.fn();
 vi.mock("@/lib/spray-plan-api", async (orig) => ({
   ...(await orig<typeof import("@/lib/spray-plan-api")>()),
   fetchFarmsAndGreenhouses: () => Promise.resolve({ farms: ["Karen"], greenhouses_by_farm: {} }),
   fetchPendingWorkOrders: (...a: unknown[]) => fetchPending(...a),
+  approveWorkOrder: (...a: unknown[]) => approve(...a),
 }));
 vi.mock("@/lib/lifecycle-api", async (orig) => ({
   ...(await orig<typeof import("@/lib/lifecycle-api")>()),
@@ -70,5 +72,28 @@ describe("Approvals live updates", () => {
     // Looking at the plan clears its pill.
     await userEvent.click(screen.getByLabelText("Select WO-B"));
     await waitFor(() => expect(screen.queryByTestId("new-pill")).toBeNull());
+  });
+});
+
+describe("Approvals tabs, floating bar and success toast", () => {
+  it("has Pending / Approved / Stale tabs, a floating bar on selection, and toasts on approval", async () => {
+    fetchPending.mockResolvedValue({ work_orders: [wo("WO-A"), wo("WO-B")] });
+    approve.mockResolvedValue({ wo: "WO-A", status: "approved" });
+    render(<Approvals initialCrop="Rose" />);
+    await screen.findByText("WO-A");
+    expect(screen.getByRole("tab", { name: /Pending/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Approved/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Stale/ })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Forwarded/ })).toBeNull();
+    expect(screen.queryByTestId("approval-action-bar")).toBeNull();
+
+    await userEvent.click(screen.getByLabelText("Select WO-A"));
+    await userEvent.click(screen.getByLabelText("Select WO-B"));
+    expect(await screen.findByText("Send 2 plans to the store")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Approve selected/ }));
+    await waitFor(() => expect(show).toHaveBeenCalledWith("2 spray plans approved.", "ok", undefined));
+    // No modal, no coloured dialog title.
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

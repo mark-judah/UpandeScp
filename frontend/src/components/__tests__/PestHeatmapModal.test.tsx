@@ -11,14 +11,14 @@ vi.mock("@/lib/scouting-api", async (orig) => ({
   ...(await orig<typeof import("@/lib/scouting-api")>()),
   fetchBedsAndZones: () => Promise.resolve([]),
 }));
-vi.mock("@/pages/maps/use-house-overlays", () => ({
-  useHouseOverlays: vi.fn(() => ({ clusters: null, pins: [], reloadPins: () => {} })),
-  bedOverlays: () => [],
+vi.mock("@/pages/maps/Terrain3D", () => ({
+  Terrain3D: ({ weeks }: { weeks: { date: string }[] }) => (
+    <div data-testid="terrain3d">{weeks.map((w) => w.date).join(",")}</div>
+  ),
 }));
 
 const { PestHeatmapModal, SUMMARY_METHOD } = await import("@/components/PestHeatmapModal");
 const { METHOD } = await import("@/hooks/use-dashboard-aggregate");
-const { useHouseOverlays } = await import("@/pages/maps/use-house-overlays");
 
 const SUMMARY = {
   greenhouse: "GH 1", obsName: "Spider Mites", obsKind: "pest", measure: "Percentage",
@@ -33,7 +33,7 @@ const SUMMARY = {
   ],
 };
 const DETAIL = {
-  recent: [
+  weeks: [
     { date: "2026-W40", zoneObs: { "GH 1 - Bed 1": 2 } },
     { date: "2026-W41", zoneObs: { "GH 1 - Bed 1": 5, "GH 1 - Bed 2": 1 } },
   ],
@@ -58,15 +58,15 @@ describe("PestHeatmapModal", () => {
       <PestHeatmapModal greenhouse="GH 1" observation="Spider Mites" crop="Rose"
         toDate="2026-10-15" onClose={() => {}} />,
     );
-    await waitFor(() => expect(call).toHaveBeenCalledWith(METHOD.heatmap_card_detail, expect.anything()));
+    await waitFor(() => expect(call).toHaveBeenCalledWith(METHOD.heatmap_terrain, expect.anything()));
     const summaryArgs = call.mock.calls.find((c) => c[0] === SUMMARY_METHOD)![1];
     expect(summaryArgs).toMatchObject({
       greenhouse: "GH 1", obs_name: "Spider Mites", crop: "Rose", weeks: 2, to_date: "2026-10-15",
     });
-    const detailArgs = call.mock.calls.find((c) => c[0] === METHOD.heatmap_card_detail)![1];
+    const detailArgs = call.mock.calls.find((c) => c[0] === METHOD.heatmap_terrain)![1];
     expect(detailArgs).toMatchObject({
       greenhouse: "GH 1", obs_name: "Spider Mites", obs_kind: "pest", crop: "Rose",
-      weeks_limit: 2, from_date: "2026-10-02", to_date: "2026-10-15",
+      from_date: "2026-10-02", to_date: "2026-10-15",
     });
   });
 
@@ -75,22 +75,35 @@ describe("PestHeatmapModal", () => {
       <PestHeatmapModal greenhouse="GH 1" observation="Botrytis" kind="disease" crop="Rose"
         toDate="2026-10-15" defaultWeeks={4} onClose={() => {}} />,
     );
-    await waitFor(() => expect(call).toHaveBeenCalledWith(METHOD.heatmap_card_detail, expect.anything()));
-    const detailArgs = call.mock.calls.find((c) => c[0] === METHOD.heatmap_card_detail)![1];
-    expect(detailArgs).toMatchObject({ obs_kind: "disease", weeks_limit: 4, from_date: "2026-09-18" });
+    await waitFor(() => expect(call).toHaveBeenCalledWith(METHOD.heatmap_terrain, expect.anything()));
+    const detailArgs = call.mock.calls.find((c) => c[0] === METHOD.heatmap_terrain)![1];
+    expect(detailArgs).toMatchObject({ obs_kind: "disease", from_date: "2026-09-18" });
     expect(call.mock.calls.find((c) => c[0] === SUMMARY_METHOD)![1]).toMatchObject({ obs_kind: "disease", weeks: 4 });
   });
 
-  it("shows the figure, its band, the threshold and the weekly trend", async () => {
+  it("is landscape: 3D terrain left, week pills and summary in the side panel", async () => {
     render(<PestHeatmapModal greenhouse="GH 1" observation="Spider Mites" crop="Rose" toDate="2026-10-15" onClose={() => {}} />);
+    expect(screen.getByTestId("pest-heatmap-modal").className).toMatch(/w-\[90vw\]/);
+    expect(screen.getByTestId("pest-heatmap-modal").className).toMatch(/h-\[70vh\]/);
+    const terrain = await screen.findByTestId("terrain3d");
+    expect(terrain).toHaveTextContent("2026-W40,2026-W41");
+    const side = screen.getByTestId("heatmap-side");
+    expect(side).toContainElement(await screen.findByTestId("band-pill"));
     expect(await screen.findByTestId("band-pill")).toHaveTextContent("high band");
     expect(screen.getByText(/Bands: low 5 · moderate 10 · high 20%/)).toBeInTheDocument();
     expect(screen.getByTestId("heatmap-trend")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId("heatmap-weeks").children).toHaveLength(2));
-    // The patches overlay follows the observation shown.
-    expect(vi.mocked(useHouseOverlays)).toHaveBeenCalledWith(
-      expect.objectContaining({ warehouse: "GH 1", observation: "Spider Mites", crop: "Rose" }),
+    expect(screen.getByTestId("heatmap-3d")).not.toContainElement(side);
+  });
+
+  it("week pills pick 1/2/4 weeks or one specific week", async () => {
+    render(<PestHeatmapModal greenhouse="GH 1" observation="Spider Mites" crop="Rose" toDate="2026-10-15" onClose={() => {}} />);
+    await screen.findByTestId("terrain3d");
+    await userEvent.click(screen.getByRole("button", { name: "4 weeks" }));
+    await waitFor(() =>
+      expect(call.mock.calls.filter((c) => c[0] === METHOD.heatmap_terrain).pop()![1]).toMatchObject({ from_date: "2026-09-18" }),
     );
+    await userEvent.click(await screen.findByRole("button", { name: "W41" }));
+    expect(screen.getByTestId("terrain3d")).toHaveTextContent(/^2026-W41$/);
   });
 
   it("says so when the pest was not scouted in the window", async () => {

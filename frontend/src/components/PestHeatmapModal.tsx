@@ -1,18 +1,18 @@
 /**
- * The heatmap of ONE pest or disease in ONE greenhouse, for a decision.
+ * The 3D heatmap of ONE pest or disease in ONE greenhouse, for a decision.
  *
  * Opened from a spray plan's target pill so a general manager can see whether
- * the pest is really there before approving the spend. It reuses the
- * heatmap page's own pieces — `heatmap_card_detail` for the weeks, BedSvg +
- * bed-projection for the map, use-house-overlays for the patches, StageLegend —
- * and adds the station-prevalence figure, its weekly trend and the threshold
- * band from `get_pest_heatmap_summary`, so the modal judges the pest with the
- * same bands as the dashboard alerts.
+ * the pest is really there before approving the spend. Landscape: the 3D
+ * terrain (the Heatmaps page's own Terrain3D, fed by the same `heatmap_terrain`
+ * endpoint) on the left, and a side panel on the right with the week pills, the
+ * station-prevalence figure, its weekly trend and the threshold band from
+ * `get_pest_heatmap_summary` — so the modal judges the pest with the same bands
+ * as the dashboard alerts and nothing needs scrolling.
  *
  * Reusable: give it a greenhouse, an observation, a crop and (optionally) the
  * date the window ends on. Escape and the close button dismiss it.
  */
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -20,19 +20,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FilterSelect } from "@/components/FilterSelect";
 import { ReliabilityPill } from "@/pages/dashboard/PrevalenceFigure";
-import { BedSvg, markersFromZoneStages, type BedMarker, type ZoneStage } from "@/pages/maps/BedSvg";
 import { projectGeometry, type ProjectedGeometry, type ZoneGeoLike } from "@/pages/maps/bed-projection";
-import { bedOverlays, useHouseOverlays } from "@/pages/maps/use-house-overlays";
-import { StageLegend } from "@/pages/maps/StageLegend";
 import { flattenZones } from "@/pages/maps/zone-utils";
+import type { TerrainWeekData } from "@/pages/maps/Terrain3D";
 import { METHOD } from "@/hooks/use-dashboard-aggregate";
 import { call } from "@/lib/frappe";
 import { fetchBedsAndZones } from "@/lib/scouting-api";
 import { figureLine, type PrevalenceFigures } from "@/lib/prevalence";
 import { errorText } from "@/lib/errors";
-import { ymd } from "@/lib/utils";
+import { cn, ymd } from "@/lib/utils";
+
+// three.js is heavy: load it only when a heatmap is actually opened.
+const Terrain3D = lazy(() =>
+  import("@/pages/maps/Terrain3D").then((m) => ({ default: m.Terrain3D })),
+);
 
 export const SUMMARY_METHOD =
   "upande_scp.serverscripts.spray_plan_ops.pest_heatmap_summary.get_pest_heatmap_summary";
@@ -54,13 +56,6 @@ export interface PestHeatmapModalProps {
   onClose: () => void;
 }
 
-interface WeekSlice {
-  date: string;
-  zoneObs: Record<string, number>;
-  zoneStages?: Record<string, ZoneStage[]>;
-  complete?: boolean;
-}
-
 interface SeriesPoint {
   week: string;
   value: number | null;
@@ -77,7 +72,6 @@ interface Summary {
 
 export const WEEK_OPTIONS = ["1", "2", "4"];
 const weekLabel = (n: string) => `${n} week${n === "1" ? "" : "s"}`;
-const KIND_COLOR: Record<ObsKind, string> = { pest: "#e11d48", disease: "#7c3aed" };
 const BAND_TONE: Record<string, string> = {
   high: "var(--sd-data-red)",
   moderate: "var(--sd-data-amber)",
@@ -130,12 +124,17 @@ export function PestHeatmapModal({
 }: PestHeatmapModalProps) {
   const open = !!greenhouse && !!observation;
   const [weeks, setWeeks] = useState(String(defaultWeeks));
-  useEffect(() => setWeeks(String(defaultWeeks)), [greenhouse, observation, defaultWeeks]);
+  // A specific scouted week, picked from the pills; null = every week in range.
+  const [onlyWeek, setOnlyWeek] = useState<string | null>(null);
+  useEffect(() => {
+    setWeeks(String(defaultWeeks));
+    setOnlyWeek(null);
+  }, [greenhouse, observation, defaultWeeks]);
   const n = Number(weeks) || 2;
   const range = useMemo(() => windowFor(toDate, n), [toDate, n]);
 
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [slices, setSlices] = useState<WeekSlice[] | null>(null);
+  const [terrain, setTerrain] = useState<TerrainWeekData[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const geometry = useHouseGeometry(open ? greenhouse : null);
 
@@ -143,24 +142,24 @@ export function PestHeatmapModal({
     if (!open) return;
     let live = true;
     setSummary(null);
-    setSlices(null);
+    setTerrain(null);
     setError(null);
-    const base = { greenhouse, obs_name: observation, crop, from_date: range.from, to_date: range.to };
     call<Summary>(SUMMARY_METHOD, {
       greenhouse, obs_name: observation, obs_kind: kind ?? "", crop, weeks: n, to_date: range.to,
     })
       .then((s) => {
         if (!live) return;
         setSummary(s);
-        // The map needs the kind; take the server's answer when the caller had none.
-        return call<{ recent: WeekSlice[] }>(METHOD.heatmap_card_detail, {
-          ...base, obs_kind: kind ?? s?.obsKind ?? "pest", weeks_limit: n,
-        }).then((r) => live && setSlices(r?.recent ?? []));
+        // Same endpoint and arguments as the Heatmaps page's 3D view.
+        return call<{ weeks: TerrainWeekData[] }>(METHOD.heatmap_terrain, {
+          from_date: range.from, to_date: range.to, crop, greenhouse,
+          obs_name: observation, obs_kind: kind ?? s?.obsKind ?? "pest",
+        }).then((r) => live && setTerrain(r?.weeks ?? []));
       })
       .catch((e) => {
         if (!live) return;
         setError(errorText(e, "Could not load the heatmap."));
-        setSlices((prev) => prev ?? []);
+        setTerrain((prev) => prev ?? []);
       });
     return () => {
       live = false;
@@ -168,26 +167,26 @@ export function PestHeatmapModal({
   }, [open, greenhouse, observation, kind, crop, n, range.from, range.to]);
 
   const resolvedKind: ObsKind = kind ?? summary?.obsKind ?? "pest";
-  const latestWeek = slices && slices.length ? slices[slices.length - 1].date : null;
-  const spread = useHouseOverlays({
-    crop,
-    warehouse: open ? greenhouse : null,
-    observation: open ? observation : null,
-    kind: resolvedKind,
-    week: latestWeek,
-  });
-  const overlays = useMemo(() => bedOverlays(spread.clusters, spread.pins), [spread.clusters, spread.pins]);
-
-  const color = KIND_COLOR[resolvedKind];
-  const markersOf = (s: WeekSlice): BedMarker[] =>
-    s.zoneStages
-      ? markersFromZoneStages(s.zoneStages, color)
-      : Object.entries(s.zoneObs).map(([zone, count]) => ({ zone, count, kind: resolvedKind, color }));
-  const loading = open && slices === null && !error;
+  const loading = open && terrain === null && !error;
+  const weekLabels = (terrain ?? []).map((w) => w.date);
+  const shown = useMemo(
+    () => (terrain ?? []).filter((w) => !onlyWeek || w.date === onlyWeek),
+    [terrain, onlyWeek],
+  );
+  const positions = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(geometry?.zoneCentroids ?? {}).map(([zone, c]) => [zone, { x: c.cx, y: c.cy }]),
+      ),
+    [geometry],
+  );
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="w-[calc(100vw-1rem)] max-w-4xl p-4 sm:p-5" data-testid="pest-heatmap-modal">
+      <DialogContent
+        className="flex h-[70vh] max-h-[90vh] w-[90vw] max-w-none flex-col gap-3 p-4 sm:max-w-none sm:p-5"
+        data-testid="pest-heatmap-modal"
+      >
         <DialogHeader>
           <DialogTitle className="pr-8">{observation} · {greenhouse}</DialogTitle>
           <DialogDescription>
@@ -195,60 +194,69 @@ export function PestHeatmapModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <FilterSelect
-            label="Weeks to show"
-            value={weeks}
-            onChange={(v) => v && setWeeks(v)}
-            options={WEEK_OPTIONS}
-            format={weekLabel}
-          />
-          {error ? <span role="alert" className="text-xs text-[var(--sd-data-red)]">{error}</span> : null}
-        </div>
-
-        <SummaryBlock summary={summary} loading={loading && !summary} />
-
-        {loading ? (
-          <div className="min-h-[220px] animate-pulse rounded-md bg-[var(--sd-bg-soft)]" aria-hidden data-skeleton="map" />
-        ) : slices && slices.length === 0 ? (
-          <div className="rounded-md border bg-[var(--sd-bg-soft)] p-6 text-center text-sm text-muted-foreground">
-            No scouting of {observation} in {greenhouse} between {range.from} and {range.to}.
+        <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row">
+          <div className="relative min-h-[240px] min-w-0 flex-1" data-testid="heatmap-3d">
+            {loading ? (
+              <div className="h-full min-h-[240px] animate-pulse rounded-md bg-[var(--sd-bg-soft)]" aria-hidden data-skeleton="map" />
+            ) : terrain && terrain.length === 0 ? (
+              <div className="flex h-full items-center justify-center rounded-md border bg-[var(--sd-bg-soft)] p-6 text-center text-sm text-muted-foreground">
+                No scouting of {observation} in {greenhouse} between {range.from} and {range.to}.
+              </div>
+            ) : (
+              <Suspense fallback={<div className="h-full min-h-[240px] animate-pulse rounded-md bg-[var(--sd-bg-soft)]" aria-hidden />}>
+                <Terrain3D weeks={shown} positions={positions} className="h-full min-h-[240px]" />
+              </Suspense>
+            )}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="heatmap-weeks">
-            {(slices ?? []).map((s, i, all) => {
-              const markers = markersOf(s);
-              const isLatest = i === all.length - 1;
-              const total = Object.values(s.zoneObs).reduce((a, b) => a + b, 0);
-              return (
-                <div key={s.date} className="flex flex-col gap-1.5 rounded-md border bg-card p-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium tabular-nums">{s.date}</span>
-                    <span className="text-muted-foreground">
-                      {Object.keys(s.zoneObs).length} zones · {total} obs
-                      {s.complete === false ? " · half scouted" : ""}
-                    </span>
-                  </div>
-                  {geometry ? (
-                    <BedSvg
-                      geometry={geometry}
-                      markers={markers}
-                      overlays={isLatest ? overlays : undefined}
-                      className="min-h-[200px] [&_svg]:max-h-[320px] [&_svg]:w-full"
-                    />
-                  ) : (
-                    <div className="flex min-h-[160px] items-center justify-center rounded-md border border-dashed text-[0.72rem] text-muted-foreground">
-                      Projecting bed geometry…
-                    </div>
-                  )}
-                  <StageLegend markers={markers} className="px-1" />
+
+          <aside className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto md:w-80" data-testid="heatmap-side">
+            <div className="flex flex-col gap-1.5">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                Weeks of scouting
+              </div>
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label="Weeks to show">
+                {WEEK_OPTIONS.map((w) => (
+                  <WeekPill
+                    key={w}
+                    active={!onlyWeek && weeks === w}
+                    onClick={() => { setWeeks(w); setOnlyWeek(null); }}
+                  >
+                    {weekLabel(w)}
+                  </WeekPill>
+                ))}
+              </div>
+              {weekLabels.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Specific week">
+                  {weekLabels.map((w) => (
+                    <WeekPill key={w} active={onlyWeek === w} onClick={() => setOnlyWeek(onlyWeek === w ? null : w)}>
+                      {w.replace(/^\d{4}-/, "")}
+                    </WeekPill>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-        )}
+              ) : null}
+              {error ? <span role="alert" className="text-xs text-[var(--sd-data-red)]">{error}</span> : null}
+            </div>
+            <SummaryBlock summary={summary} loading={loading && !summary} />
+          </aside>
+        </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function WeekPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-2.5 py-1 text-[0.7rem] font-medium tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+        active ? "border-foreground bg-foreground text-background" : "bg-background hover:bg-muted",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -260,7 +268,7 @@ function SummaryBlock({ summary, loading }: { summary: Summary | null; loading: 
   const { latest, threshold, series } = summary;
   const unit = summary.measure === "Count" ? " per station" : "%";
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid="heatmap-summary">
+    <div className="flex flex-col gap-3" data-testid="heatmap-summary">
       <div className="flex flex-col gap-1.5 rounded-md border bg-card p-3 text-xs">
         <div className="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
           Latest scouted week

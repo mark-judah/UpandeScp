@@ -383,7 +383,7 @@ def get_stale_plans(farm=None):
         f"""
         SELECT wo.name, wo.docstatus, wo.status, wo.workflow_state,
                wo.planned_start_date, wo.creation, wo.owner, wo.custom_greenhouse,
-               wo.production_item
+               wo.production_item, wo.custom_targets
         FROM `tabWork Order` wo
         {_stale_filters_sql(farm)}
         WHERE wo.custom_type = %(afp)s
@@ -399,8 +399,20 @@ def get_stale_plans(farm=None):
         {"afp": AFP, "cutoff": _cutoff(), "issued": tuple(RESERVED_EXCLUDED_STATES), "farm": farm},
         as_dict=True,
     )
-    return [dict(r, planned_start_date=str(r.planned_start_date), creation=str(r.creation))
-            for r in rows if is_stale(r, _cutoff())]
+    rows = [r for r in rows if is_stale(r, _cutoff())]
+    # Re-plan needs the chemicals too: one query for every stale plan's items.
+    items: dict[str, list[str]] = {}
+    if rows:
+        for it in frappe.get_all(
+            "Work Order Item",
+            filters={"parent": ("in", [r.name for r in rows]), "parenttype": "Work Order"},
+            fields=["parent", "item_code"],
+            order_by="idx",
+        ):
+            items.setdefault(it.parent, []).append(it.item_code)
+    return [dict(r, planned_start_date=str(r.planned_start_date), creation=str(r.creation),
+                 items=items.get(r.name, []))
+            for r in rows]
 
 
 @frappe.whitelist()

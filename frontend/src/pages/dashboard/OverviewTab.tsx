@@ -1,3 +1,4 @@
+import type { KpiSeries } from "./Sparkline";
 import { useEffect, useState } from "react";
 import {
   AreaChart,
@@ -71,6 +72,7 @@ export function OverviewTab({
   crop = "",
   farm = "",
   greenhouse = "",
+  series: kpiSeries,
   loading = false,
 }: {
   data: OverviewPayload | null;
@@ -81,6 +83,8 @@ export function OverviewTab({
   farm?: string;
   greenhouse?: string;
   /** First load (no payload yet): the cards stand, their contents are skeletons. */
+  /** Weekly series for the KPI sparklines (kpi_series aggregate). */
+  series?: KpiSeries;
   loading?: boolean;
 }) {
   const k = data?.kpis ?? { totalScouts: 0, zonesScouted: 0, greenhouseCount: 0, blockCount: 0, highAlerts: 0 };
@@ -175,6 +179,7 @@ export function OverviewTab({
       <KpiGrid cols={4}>
         <Kpi
           loading={loading}
+          series={kpiSeries?.scouts}
           label="Total Scouts"
           value={k.totalScouts}
           hint={
@@ -185,9 +190,10 @@ export function OverviewTab({
               : "no scouts in range"
           }
         />
-        <Kpi loading={loading} label="Zones Scouted" value={k.zonesScouted} hint="zone visits" />
+        <Kpi loading={loading} series={kpiSeries?.zones} label="Zones Scouted" value={k.zonesScouted} hint="zone visits" />
         <Kpi
           loading={loading}
+          series={kpiSeries?.units}
           label={unitLabel}
           value={unitValue}
           hint="monitored"

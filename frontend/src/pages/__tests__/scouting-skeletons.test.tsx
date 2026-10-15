@@ -69,7 +69,7 @@ describe("Dashboard ▸ Overview while loading", () => {
 
     // The frame: title, tabs, KPI labels and card titles, no overlay.
     expect(screen.getByRole("heading", { name: "Scouting Dashboard" })).toBeInTheDocument();
-    for (const tab of ["Overview", "Pests", "Diseases", "Traps", "FCM & Moths"]) {
+    for (const tab of ["Overview", "Pests", "Diseases", "Traps"]) {
       expect(screen.getByRole("tab", { name: tab })).toBeInTheDocument();
     }
     for (const label of ["Total Scouts", "Zones Scouted", "Greenhouses", "High Alerts"]) {

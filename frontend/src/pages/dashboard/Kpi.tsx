@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { KpiValueSkeleton, TextSkeleton } from "@/components/Loading";
 import { cn } from "@/lib/utils";
+import { Sparkline, type SeriesPoint } from "./Sparkline";
 
 export interface KpiProps {
   label: string;
@@ -10,6 +11,8 @@ export interface KpiProps {
   className?: string;
   /** First load: the label stays, the figure and hint are placeholders. */
   loading?: boolean;
+  /** Weekly values for the top-right sparkline; omit for no trend. */
+  series?: SeriesPoint[];
 }
 
 const TONE: Record<NonNullable<KpiProps["tone"]>, string> = {
@@ -19,7 +22,7 @@ const TONE: Record<NonNullable<KpiProps["tone"]>, string> = {
   good: "text-[var(--sd-data-green)]",
 };
 
-export function Kpi({ label, value, hint, tone = "default", className, loading = false }: KpiProps) {
+export function Kpi({ label, value, hint, tone = "default", className, loading = false, series }: KpiProps) {
   // Thousands separators for large counts (e.g. 648361 → 648,361).
   const display =
     typeof value === "number" ? value.toLocaleString("en-US") : value;
@@ -34,8 +37,9 @@ export function Kpi({ label, value, hint, tone = "default", className, loading =
         className,
       )}
     >
+      {!loading && <Sparkline points={series} />}
       {/* .kpi__label — 11px, uppercase, wide tracking */}
-      <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--sd-quiet)] pr-8">
+      <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--sd-quiet)] pr-24">
         {label}
       </div>
       {/* .kpi__value — hero 44px number, tight tracking, tabular */}

@@ -12,7 +12,9 @@ from upande_scp.serverscripts.dashboard_aggregates._overview        import overv
 from upande_scp.serverscripts.dashboard_aggregates._pests_diseases  import pests    as _pests
 from upande_scp.serverscripts.dashboard_aggregates._pests_diseases  import diseases as _diseases
 from upande_scp.serverscripts.dashboard_aggregates._traps           import traps    as _traps
-from upande_scp.serverscripts.dashboard_aggregates._fcm             import fcm      as _fcm
+from upande_scp.serverscripts.dashboard_aggregates._kpi_series import (
+    kpi_series as _kpi_series,
+)
 from upande_scp.serverscripts.dashboard_aggregates._gh_detail       import (
     greenhouse_detail as _gh_detail,
 )
@@ -84,8 +86,8 @@ def traps(**kwargs):
 
 
 @frappe.whitelist()
-def fcm(**kwargs):
-    return _call(_fcm, **kwargs)
+def kpi_series(**kwargs):
+    return _call(_kpi_series, **kwargs)
 
 
 @frappe.whitelist()

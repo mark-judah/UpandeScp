@@ -1,3 +1,4 @@
+import type { KpiSeries } from "./Sparkline";
 import { useEffect, useMemo } from "react";
 import {
   Bar,
@@ -43,6 +44,8 @@ export interface PestsTabProps {
   stage: string;
   onFiltersChange: (next: { observation: string; section: string; stage: string }) => void;
   /** First load (no payload yet): the cards stand, their contents are skeletons. */
+  /** Weekly series for the KPI sparklines (kpi_series aggregate). */
+  series?: KpiSeries;
   loading?: boolean;
 }
 
@@ -52,6 +55,7 @@ export function PestsTab({
   section,
   stage,
   onFiltersChange,
+  series,
   loading = false,
 }: PestsTabProps) {
   const { pest: pestColor } = useObservationColors();
@@ -95,8 +99,8 @@ export function PestsTab({
   return (
     <div className="flex flex-col gap-4" aria-busy={loading || undefined}>
       <KpiGrid cols={4}>
-        <Kpi loading={loading} label="Pest Zones" value={ranking.length} hint="distinct pests recorded" />
-        <Kpi loading={loading} label="Active Pests" value={total} hint="observations" />
+        <Kpi loading={loading} series={series?.pestKinds} label="Pest Zones" value={ranking.length} hint="distinct pests recorded" />
+        <Kpi loading={loading} series={series?.pests} label="Active Pests" value={total} hint="observations" />
         <Kpi
           loading={loading}
           label="High Severity"

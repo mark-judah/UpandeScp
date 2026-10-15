@@ -14,14 +14,13 @@ import { OverviewTab }  from "./dashboard/OverviewTab";
 import { PestsTab }     from "./dashboard/PestsTab";
 import { DiseasesTab }  from "./dashboard/DiseasesTab";
 import { TrapsTab }     from "./dashboard/TrapsTab";
-import { FcmTab }       from "./dashboard/FcmTab";
 import { LoadProgress, firstLoad } from "@/components/Loading";
 import { GalleryScopeProvider } from "@/components/gallery/ObservationGallery";
 import { ymd } from "@/lib/utils";
 import type { OverviewPayload } from "./dashboard/overview-types";
 import type { PestsPayload, DiseasesPayload } from "./dashboard/pests-diseases-types";
 import type { TrapsPayload } from "./dashboard/traps-types";
-import type { FcmPayload } from "./dashboard/fcm-types";
+import type { KpiSeriesPayload } from "./dashboard/Sparkline";
 import { cropSlug, routeHash } from "@/lib/router";
 
 
@@ -32,9 +31,24 @@ function defaultRange() {
   return { from: ymd(from), to: ymd(today) };
 }
 
-type TabId = "overview" | "pests" | "diseases" | "traps" | "fcm";
+type TabId = "overview" | "pests" | "diseases" | "traps";
 
-export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
+const TABS: readonly TabId[] = ["overview", "pests", "diseases", "traps"];
+
+/** Map a requested tab (e.g. from `#/rose/dashboard?tab=fcm`) onto a live one.
+ *  The retired FCM & Moths tab now lives under Traps. */
+export function resolveTab(raw?: string | null): TabId {
+  const t = (raw ?? "").trim().toLowerCase();
+  if (t === "fcm" || t === "moths" || t === "fcm-moths") return "traps";
+  return (TABS as readonly string[]).includes(t) ? (t as TabId) : "overview";
+}
+
+function tabFromHash(): string | null {
+  const q = (window.location.hash || "").split("?")[1];
+  return q ? new URLSearchParams(q).get("tab") : null;
+}
+
+export function Dashboard({ initialCrop, initialTab }: { initialCrop?: string; initialTab?: string } = {}) {
   // The crop is the route's (spec D1); the page carries no crop picker.
   const crop = initialCrop ?? DEFAULT_CROP;
   // "" is "all" at each level (the place picker's value).
@@ -49,7 +63,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
     void fetchZonesByGreenhouse();
   }, []);
 
-  const [tab, setTab] = useState<TabId>("overview");
+  const [tab, setTab] = useState<TabId>(() => resolveTab(initialTab ?? tabFromHash()));
   const [pestFilters, setPestFilters] = useState({
     observation: "", section: "", stage: "",
   });
@@ -69,10 +83,12 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
   const pests     = useDashboardAggregate<PestsPayload>(   "pests",     { ...base, ...pestFilters },    tab === "pests");
   const diseases  = useDashboardAggregate<DiseasesPayload>("diseases",  { ...base, ...diseaseFilters }, tab === "diseases");
   const traps     = useDashboardAggregate<TrapsPayload>(   "traps",     base, tab === "traps");
-  const fcm       = useDashboardAggregate<FcmPayload>(     "fcm",       base, tab === "fcm");
+  // Weekly trend behind the KPI sparklines; one cached call serves every tab.
+  const kpiSeries = useDashboardAggregate<KpiSeriesPayload>("kpi_series", base, true);
+  const series    = kpiSeries.data?.series;
 
   const reloadActive = () => {
-    const h = ({overview, pests, diseases, traps, fcm} as const)[tab];
+    const h = ({overview, pests, diseases, traps} as const)[tab];
     h.reload({ force: true });
   };
 
@@ -116,7 +132,6 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                 <TabsTrigger value="pests">Pests</TabsTrigger>
                 <TabsTrigger value="diseases">Diseases</TabsTrigger>
                 <TabsTrigger value="traps">Traps</TabsTrigger>
-                <TabsTrigger value="fcm">FCM &amp; Moths</TabsTrigger>
               </TabsList>
               {/* Data quality lives under Reports ▸ Coverage now (personnel spec P2). */}
               <a
@@ -161,7 +176,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
           </PageToolbar>
 
           {(() => {
-            const active = ({ overview, pests, diseases, traps, fcm } as const)[
+            const active = ({ overview, pests, diseases, traps } as const)[
               tab
             ];
             return (
@@ -191,6 +206,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               crop={base.crop}
               farm={base.farm}
               greenhouse={base.greenhouse}
+              series={series}
               loading={firstOf(overview)}
             />
           </TabsContent>
@@ -201,6 +217,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               section={pestFilters.section}
               stage={pestFilters.stage}
               onFiltersChange={setPestFilters}
+              series={series}
               loading={firstOf(pests)}
             />
           </TabsContent>
@@ -211,14 +228,12 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
               section={diseaseFilters.section}
               stage={diseaseFilters.stage}
               onFiltersChange={setDiseaseFilters}
+              series={series}
               loading={firstOf(diseases)}
             />
           </TabsContent>
           <TabsContent value="traps" className="mt-0">
-            <TrapsTab data={traps.data} loading={firstOf(traps)} />
-          </TabsContent>
-          <TabsContent value="fcm" className="mt-0">
-            <FcmTab data={fcm.data} loading={firstOf(fcm)} />
+            <TrapsTab data={traps.data} series={series} loading={firstOf(traps)} />
           </TabsContent>
         </Tabs>
         </GalleryScopeProvider>

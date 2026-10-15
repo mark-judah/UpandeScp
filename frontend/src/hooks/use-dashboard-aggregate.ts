@@ -9,7 +9,7 @@ export type Endpoint =
   | "pests"
   | "diseases"
   | "traps"
-  | "fcm"
+  | "kpi_series"
   | "greenhouse_detail"
   | "heatmaps_grid"
   | "heatmap_card_detail"
@@ -54,7 +54,7 @@ export const METHOD: Record<Endpoint, string> = {
   pests:              "upande_scp.serverscripts.dashboard_aggregates.pests",
   diseases:           "upande_scp.serverscripts.dashboard_aggregates.diseases",
   traps:              "upande_scp.serverscripts.dashboard_aggregates.traps",
-  fcm:                "upande_scp.serverscripts.dashboard_aggregates.fcm",
+  kpi_series:         "upande_scp.serverscripts.dashboard_aggregates.kpi_series",
   greenhouse_detail:  "upande_scp.serverscripts.dashboard_aggregates.greenhouse_detail",
   heatmaps_grid:      "upande_scp.serverscripts.dashboard_aggregates.heatmaps_grid",
   heatmap_card_detail:

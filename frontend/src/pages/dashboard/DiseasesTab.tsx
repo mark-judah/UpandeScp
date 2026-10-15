@@ -1,3 +1,4 @@
+import type { KpiSeries } from "./Sparkline";
 import { useEffect, useMemo } from "react";
 import {
   Bar,
@@ -41,6 +42,8 @@ export interface DiseasesTabProps {
   stage: string;
   onFiltersChange: (next: { observation: string; section: string; stage: string }) => void;
   /** First load (no payload yet): the cards stand, their contents are skeletons. */
+  /** Weekly series for the KPI sparklines (kpi_series aggregate). */
+  series?: KpiSeries;
   loading?: boolean;
 }
 
@@ -50,6 +53,7 @@ export function DiseasesTab({
   section,
   stage,
   onFiltersChange,
+  series,
   loading = false,
 }: DiseasesTabProps) {
   const { disease: diseaseColor } = useObservationColors();
@@ -89,8 +93,8 @@ export function DiseasesTab({
   return (
     <div className="flex flex-col gap-4" aria-busy={loading || undefined}>
       <KpiGrid cols={4}>
-        <Kpi loading={loading} label="Disease Zones" value={ranking.length} hint="distinct diseases" />
-        <Kpi loading={loading} label="Active Diseases" value={total} hint="incidents" />
+        <Kpi loading={loading} series={series?.diseaseKinds} label="Disease Zones" value={ranking.length} hint="distinct diseases" />
+        <Kpi loading={loading} series={series?.diseases} label="Active Diseases" value={total} hint="incidents" />
         <Kpi
           loading={loading}
           label="Severe Cases"

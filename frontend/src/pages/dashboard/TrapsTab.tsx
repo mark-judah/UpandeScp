@@ -1,3 +1,4 @@
+import type { KpiSeries } from "./Sparkline";
 import {
   Bar,
   BarChart,
@@ -49,10 +50,13 @@ const PALETTE = [
 
 export function TrapsTab({
   data,
+  series,
   loading = false,
 }: {
   data: TrapsPayload | null;
   /** First load (no payload yet): the cards stand, their contents are skeletons. */
+  /** Weekly series for the KPI sparklines (kpi_series aggregate). */
+  series?: KpiSeries;
   loading?: boolean;
 }) {
   const ranking = data?.ranking ?? [];
@@ -74,10 +78,10 @@ export function TrapsTab({
   return (
     <div className="flex flex-col gap-4" aria-busy={loading || undefined}>
       <KpiGrid cols={4}>
-        <Kpi loading={loading} label="Trap Zones" value={k.trapZones} hint="greenhouses with traps" />
-        <Kpi loading={loading} label="Active Traps" value={k.activeTraps} hint="distinct traps" />
-        <Kpi loading={loading} label="FCM Count" value={k.fcmCount} hint="false codling moth catches" />
-        <Kpi loading={loading} label="Total Catches" value={k.totalCatches} hint="across range" />
+        <Kpi loading={loading} series={series?.trapZones} label="Trap Zones" value={k.trapZones} hint="greenhouses with traps" />
+        <Kpi loading={loading} series={series?.activeTraps} label="Active Traps" value={k.activeTraps} hint="distinct traps" />
+        <Kpi loading={loading} series={series?.fcm} label="FCM Count" value={k.fcmCount} hint="false codling moth catches" />
+        <Kpi loading={loading} series={series?.catches} label="Total Catches" value={k.totalCatches} hint="across range" />
       </KpiGrid>
 
       <TrendStrip

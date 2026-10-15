@@ -20,7 +20,6 @@ vi.mock("@/pages/dashboard/OverviewTab", () => ({ OverviewTab: () => null }));
 vi.mock("@/pages/dashboard/PestsTab", () => ({ PestsTab: () => null }));
 vi.mock("@/pages/dashboard/DiseasesTab", () => ({ DiseasesTab: () => null }));
 vi.mock("@/pages/dashboard/TrapsTab", () => ({ TrapsTab: () => null }));
-vi.mock("@/pages/dashboard/FcmTab", () => ({ FcmTab: () => null }));
 vi.mock("@/pages/dashboard/DataQualityTab", () => ({ DataQualityTab: () => null }));
 vi.mock("@/components/LoadingOverlay", () => ({ LoadingOverlay: () => null }));
 
@@ -55,5 +54,28 @@ describe("Dashboard follows the route crop", () => {
     render(<Dashboard initialCrop="Rose" />);
     const overview = useDashboardAggregate.mock.calls.find((c) => c[0] === "overview");
     expect(overview?.[1]).toMatchObject({ crop: "Rose" });
+  });
+});
+
+describe("FCM & Moths tab is retired", () => {
+  it("is not rendered and does not fetch the fcm aggregate", () => {
+    render(<Dashboard initialCrop="Rose" />);
+    expect(screen.queryByRole("tab", { name: /FCM/ })).toBeNull();
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Overview", "Pests", "Diseases", "Traps"]);
+    expect(useDashboardAggregate.mock.calls.some((c) => c[0] === "fcm")).toBe(false);
+  });
+
+  it("an old ?tab=fcm deep link falls back to Traps", () => {
+    render(<Dashboard initialCrop="Rose" initialTab="fcm" />);
+    expect(screen.getByRole("tab", { name: "Traps" })).toHaveAttribute("data-state", "active");
+    const traps = useDashboardAggregate.mock.calls.find((c) => c[0] === "traps");
+    expect(traps?.[2]).toBe(true);
+  });
+
+  it("reads the tab from the hash query too", () => {
+    window.location.hash = "#/rose/dashboard?tab=fcm";
+    render(<Dashboard initialCrop="Rose" />);
+    expect(screen.getByRole("tab", { name: "Traps" })).toHaveAttribute("data-state", "active");
+    window.location.hash = "";
   });
 });

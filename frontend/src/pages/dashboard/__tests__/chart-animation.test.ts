@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
  *  recharts series keeps its own animation (a vertical Bar's default animation
  *  grows from the middle, and two animations fight). Scans the source so a new
  *  chart that forgets either rule fails here. */
-const DASHBOARD = ["OverviewTab", "PestsTab", "DiseasesTab", "TrapsTab", "FcmTab", "GreenhouseModal", "TrendStrip"];
+const DASHBOARD = ["OverviewTab", "PestsTab", "DiseasesTab", "TrapsTab", "GreenhouseModal", "TrendStrip"];
 const SERIES = /<(Area|Bar|Line|Pie|Scatter|Radar|RadialBar|Funnel)[\s>]/g;
 const OFF = /isAnimationActive=\{false\}/g;
 const CONTAINER = /<ChartContainer[\s>]/g;

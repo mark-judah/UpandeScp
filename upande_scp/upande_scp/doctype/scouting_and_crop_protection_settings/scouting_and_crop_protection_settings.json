@@ -38,6 +38,7 @@
   "submission_gating_section",
   "bypass_owner_check",
   "allow_submit_without_biometric",
+  "min_spray_minutes",
   "auto_cancel_section",
   "auto_cancel_enabled",
   "auto_cancel_apply_to_backlog",
@@ -320,6 +321,14 @@
    "fieldname": "allow_submit_without_biometric",
    "fieldtype": "Check",
    "label": "Allow submit without biometric (device-down fallback)"
+  },
+  {
+   "default": "5",
+   "description": "An offline spray session whose start-to-end time is shorter than this is held for review instead of being completed automatically. A real spray of a greenhouse takes longer; a session of seconds is a handset glitch. 0 turns the check off.",
+   "fieldname": "min_spray_minutes",
+   "fieldtype": "Int",
+   "label": "Minimum spray duration for a synced session (minutes)",
+   "non_negative": 1
   },
   {
    "fieldname": "auto_cancel_section",
@@ -761,7 +770,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-13 00:00:00.000000",
+ "modified": "2026-10-15 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Scouting and Crop Protection Settings",

@@ -52,7 +52,7 @@ from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
 from upande_scp.serverscripts.common.timezone import to_site_naive
 from upande_scp.serverscripts.spray_plan_creator import spray_session as SS
-from upande_scp.serverscripts.spray_plan_creator.refusals import log_refusals
+from upande_scp.serverscripts.spray_plan_creator.refusals import log_refusals, record_refusal
 from upande_scp.serverscripts.spray_plan_creator import transfer_batches as TB
 
 TOKEN = "Spray Session Token"
@@ -68,6 +68,18 @@ MAX_AGE_DAYS = 7
 #: collide. Same-second posting is accepted by ERPNext — measured, not assumed — so this
 #: is belt-and-braces for legibility rather than a correctness requirement.
 ORDER_GAP_SECONDS = 1
+
+SETTINGS = "Scouting and Crop Protection Settings"
+
+#: Used when the setting has never been saved on a site.
+DEFAULT_MIN_SPRAY_MINUTES = 5
+
+#: A phone clock further out than this is flagged on the token (never blocked).
+SKEW_WARN_SECONDS = 2 * 60 * 60
+
+STATUS_TOO_SHORT = "Held \u2014 too short"
+STATUS_INCOMPLETE = "Held \u2014 incomplete"
+STATUS_PARTIAL = "Partial"
 
 
 # ────────────────────────────── the clock ────────────────────────────────────
@@ -164,6 +176,80 @@ def resolve_moments(payload: dict, anchor) -> dict:
 	return {"mix_at": mix, "started_at": started, "ended_at": ended}
 
 
+def min_spray_minutes() -> int:
+	"""The shortest believable spray, from the settings. 0 switches the check off."""
+	# Read the row itself: `get_single_value` answers 0 for a field never saved, which
+	# would read as "check switched off" on a site that has not opened the settings yet.
+	try:
+		rows = frappe.db.sql(
+			"SELECT value FROM `tabSingles` WHERE doctype=%s AND field='min_spray_minutes'",
+			(SETTINGS,),
+		)
+		value = rows[0][0] if rows else None
+	except Exception:
+		value = None
+	if value is None or value == "":
+		return DEFAULT_MIN_SPRAY_MINUTES
+	return int(flt(value))
+
+
+def assess_session(payload: dict) -> dict:
+	"""What the token actually says, judged on the moments the user really tapped.
+
+	Works on the RAW payload, never on `resolve_moments`, which fills in absent moments
+	(start = mix, end = start + 1s) so the postings can be ordered. Those synthetic
+	moments once made a scan-only token look like a completed spray.
+
+	Returns `{"steps": [...], "hold": None | (status, reason), "skew_warning": str | None}`
+	where `steps` is the longest honest prefix of mix, start, end.
+	"""
+	mix = _moment(payload.get("mix_at"))
+	started = _moment(payload.get("started_at"))
+	ended = _moment(payload.get("ended_at"))
+
+	out = {"steps": [], "hold": None, "skew_warning": None}
+	skew = int(flt(payload.get("device_skew_seconds")))
+	if abs(skew) > SKEW_WARN_SECONDS:
+		out["skew_warning"] = (
+			f"The phone's clock was {abs(skew) / 3600:.1f} hours "
+			f"{'ahead of' if skew > 0 else 'behind'} the server when this was recorded; "
+			"times were corrected by that amount."
+		)
+
+	if not (mix or started or ended):
+		return out  # nothing was performed: nothing to replay
+
+	if not mix:
+		out["hold"] = (STATUS_INCOMPLETE,
+			"The session has a start or end but no tank-mix time, so it cannot be put in order.")
+		return out
+	out["steps"].append("mix")
+	if ended and not started:
+		out["hold"] = (STATUS_INCOMPLETE,
+			"The session has an end time but no start time; the spray was never started.")
+		return out
+	if started:
+		if started < mix:
+			out["hold"] = (STATUS_INCOMPLETE,
+				"The spray is recorded as starting before the tank mix was made.")
+			return out
+		out["steps"].append("start")
+	if ended:
+		if ended < started:
+			out["hold"] = (STATUS_INCOMPLETE,
+				"The spray is recorded as finishing before it started.")
+			return out
+		minimum = min_spray_minutes()
+		minutes = (ended - started).total_seconds() / 60
+		if minimum and minutes < minimum:
+			out["hold"] = (STATUS_TOO_SHORT,
+				f"The recorded spray lasted {minutes:.1f} minutes, below the minimum of "
+				f"{minimum}. It was not completed automatically; a person needs to review it.")
+			return out
+		out["steps"].append("end")
+	return out
+
+
 @frappe.whitelist()
 def preflight(payload) -> dict:
 	"""Everything that would stop this token, decided before anything is written.
@@ -221,7 +307,11 @@ def preflight(payload) -> dict:
 	# A batch-tracked chemical is checked the way the manufacture will consume it: by
 	# batch, at the mix moment the replay posts at, against the lowest balance from then
 	# on (`transfer_batches`). A plain item total would pass here and then fail at sync.
-	if anchor and wo.wip_warehouse:
+	#
+	# Only while the manufacture is still to come. Once it has happened (a session replayed
+	# in parts: mix first, start/end later) the raws are consumed by design and re-checking
+	# them would refuse the later steps.
+	if anchor and wo.wip_warehouse and (wo.workflow_state or "") == "Chemical Issued":
 		transferred = SS._transferred_into_csu(work_order, wo.wip_warehouse)
 		lots = TB.transferred_lots(work_order, wo.wip_warehouse)
 		for row in (wo.required_items or []):
@@ -339,10 +429,30 @@ def sync_spray_session(payload) -> dict:
 	if existing == "Synced":
 		return _result(token, already=True)
 
+	verdict = assess_session(payload)
+	if not verdict["steps"] and not verdict["hold"]:
+		# A scan alone. Scans are registered by their own endpoint; this token performed
+		# no step, so nothing is replayed and nothing is completed.
+		return {"token": token, "work_order": work_order, "status": "Pending",
+			"already_synced": False, "refusal": None,
+			"note": "No step was performed on this session, so nothing was applied."}
+
 	_assert_replay_allowed(token, work_order)
 
 	check = preflight(payload)
 	doc = _upsert_token(token, payload, check)
+	if verdict["hold"]:
+		status, reason = verdict["hold"]
+		frappe.db.set_value(TOKEN, token, {
+			"status": status,
+			"refusal": reason,
+			"crew_warnings": verdict["skew_warning"],
+		}, update_modified=True)
+		frappe.db.commit()
+		record_refusal("sync_spray_session", work_order, f"{status}: {reason} (token {token})")
+		out = _result(token)
+		out["held"] = True
+		return out
 	if not check["ok"]:
 		frappe.db.set_value(TOKEN, token, {
 			"status": "Refused",
@@ -363,7 +473,7 @@ def sync_spray_session(payload) -> dict:
 	try:
 		# 1. the scans, each at the moment it was taken. They do not build anything —
 		#    manufacture is a separate explicit step, which is where the mix moment lands.
-		if wo_state == "Chemical Issued":
+		if wo_state == "Chemical Issued" and "mix" in verdict["steps"]:
 			_replay_scans(payload, work_order)
 			made = SS._manufacture_tank_mix(
 				work_order, posting_moment=moments["mix_at"]
@@ -373,7 +483,7 @@ def sync_spray_session(payload) -> dict:
 
 		# 2. start, at the recorded moment
 		state = frappe.db.get_value("Work Order", work_order, "workflow_state")
-		if state == SS.STATE_TANK_MIX_MANUFACTURED:
+		if state == SS.STATE_TANK_MIX_MANUFACTURED and "start" in verdict["steps"]:
 			# `enforce_cutoff=False`: the spray already happened. The cutoff governs whether
 			# work may START late, not whether a completed spray may be written down —
 			# enforcing it here would silently discard the only record of real work. The
@@ -397,7 +507,7 @@ def sync_spray_session(payload) -> dict:
 		# 3. end — submits the logsheet and fires the Material Issue at the spray's own
 		#    moment, which is the entry that decides the costing month.
 		state = frappe.db.get_value("Work Order", work_order, "workflow_state")
-		if state == SS.STATE_SPRAYING_IN_PROGRESS:
+		if state == SS.STATE_SPRAYING_IN_PROGRESS and "end" in verdict["steps"]:
 			closed = SS.end_spray_session(work_order, ended_at=moments["ended_at"])
 			# Taken from the return value, not searched for afterwards: the Material Issue
 			# deliberately leaves its `work_order` link unset (so it causes no Work Order
@@ -415,7 +525,9 @@ def sync_spray_session(payload) -> dict:
 		raise
 
 	frappe.flags.scp_replay_work_order = None
-	_stamp_result(token, work_order, produced)
+	if verdict["skew_warning"]:
+		produced["skew_warning"] = verdict["skew_warning"]
+	_stamp_result(token, work_order, produced, complete="end" in verdict["steps"])
 	frappe.db.commit()
 	return _result(token)
 
@@ -533,9 +645,11 @@ def _upsert_token(token: str, payload: dict, check: dict):
 	doc.work_order = work_order
 	doc.greenhouse = greenhouse
 	doc.farm = farm
-	doc.mix_at = resolved.get("mix_at")
-	doc.started_at = resolved.get("started_at")
-	doc.ended_at = resolved.get("ended_at")
+	# Only what the user actually did. `resolved` fills absent moments to order the
+	# postings; writing those here would make a mix-only token read as a finished spray.
+	doc.mix_at = resolved.get("mix_at") if _moment(payload.get("mix_at")) else None
+	doc.started_at = resolved.get("started_at") if _moment(payload.get("started_at")) else None
+	doc.ended_at = resolved.get("ended_at") if _moment(payload.get("ended_at")) else None
 	doc.device_skew_seconds = int(flt(payload.get("device_skew_seconds")))
 	doc.past_cutoff = 1 if _started_past_cutoff(work_order, resolved.get("started_at")) else 0
 	doc.status = "Pending"
@@ -573,7 +687,7 @@ def _started_past_cutoff(work_order: str, started_at) -> bool:
 		return False
 
 
-def _stamp_result(token: str, work_order: str, produced: dict) -> None:
+def _stamp_result(token: str, work_order: str, produced: dict, complete: bool = True) -> None:
 	"""Record what the replay created.
 
 	Each document comes from the endpoint that made it. Only the Manufacture is looked up,
@@ -587,14 +701,17 @@ def _stamp_result(token: str, work_order: str, produced: dict) -> None:
 	)
 	issue = produced.get("issue")
 	frappe.db.set_value(TOKEN, token, {
-		"status": "Synced",
+		"status": "Synced" if complete else STATUS_PARTIAL,
 		"manufacture_stock_entry": manu,
 		"logsheet": sal,
 		"issue_stock_entry": issue,
-		"synced_at": now_datetime(),
+		"synced_at": now_datetime() if complete else None,
 		"synced_by": frappe.session.user,
 		"refusal": None,
-		"crew_warnings": "\n".join(produced.get("crew_warnings") or []) or None,
+		"crew_warnings": "\n".join(
+			list(produced.get("crew_warnings") or [])
+			+ ([produced["skew_warning"]] if produced.get("skew_warning") else [])
+		) or None,
 	}, update_modified=True)
 
 

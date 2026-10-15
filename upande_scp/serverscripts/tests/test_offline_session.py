@@ -125,6 +125,51 @@ class TestMomentClamping(unittest.TestCase):
         self.assertGreater(out["ended_at"], out["mix_at"])
 
 
+class TestAssessSession(unittest.TestCase):
+	"""Judged on the raw payload: what the user actually tapped, nothing synthesised."""
+
+	def _a(self, **kw):
+		return OS.assess_session(kw)
+
+	def test_a_scan_alone_has_no_steps_and_no_hold(self):
+		out = self._a()
+		self.assertEqual(out["steps"], [])
+		self.assertIsNone(out["hold"])
+
+	def test_mix_only_is_just_the_mix(self):
+		out = self._a(mix_at="2026-08-17 09:00:00")
+		self.assertEqual(out["steps"], ["mix"])
+		self.assertIsNone(out["hold"])
+
+	def test_a_one_second_spray_is_held_too_short(self):
+		out = self._a(mix_at="2026-08-17 09:00:00", started_at="2026-08-17 09:00:00",
+		              ended_at="2026-08-17 09:00:01")
+		self.assertEqual(out["hold"][0], OS.STATUS_TOO_SHORT)
+
+	def test_a_real_spray_passes(self):
+		out = self._a(mix_at="2026-08-17 09:00:00", started_at="2026-08-17 09:10:00",
+		              ended_at="2026-08-17 10:30:00")
+		self.assertEqual(out["steps"], ["mix", "start", "end"])
+		self.assertIsNone(out["hold"])
+
+	def test_out_of_order_or_missing_is_held_incomplete(self):
+		for kw in (
+			{"started_at": "2026-08-17 09:00:00"},
+			{"mix_at": "2026-08-17 09:00:00", "ended_at": "2026-08-17 10:00:00"},
+			{"mix_at": "2026-08-17 09:00:00", "started_at": "2026-08-17 08:00:00"},
+			{"mix_at": "2026-08-17 09:00:00", "started_at": "2026-08-17 10:00:00",
+			 "ended_at": "2026-08-17 09:30:00"},
+		):
+			self.assertEqual(self._a(**kw)["hold"][0], OS.STATUS_INCOMPLETE, kw)
+
+	def test_skew_over_two_hours_is_flagged_but_never_a_hold(self):
+		out = self._a(mix_at="2026-08-17 09:00:00", device_skew_seconds=-19800)
+		self.assertIn("behind", out["skew_warning"])
+		self.assertIsNone(out["hold"])
+		self.assertIsNone(self._a(mix_at="2026-08-17 09:00:00",
+		                          device_skew_seconds=3600)["skew_warning"])
+
+
 class TestPreflight(unittest.TestCase):
     """The guard, against real plans on this site."""
 
@@ -215,7 +260,9 @@ class TestPreflight(unittest.TestCase):
         ancient = str(add_to_date(now_datetime(), days=-(OS.MAX_AGE_DAYS + 30)))
         out = OS.preflight({
             "token": "t5", "work_order": wo, "scans": scans,
-            "mix_at": ancient, "ended_at": ancient,
+            "mix_at": ancient,
+                "started_at": str(add_to_date(ancient, minutes=10)),
+                "ended_at": str(add_to_date(ancient, minutes=70)),
         })
         self.assertFalse(out["ok"])
         self.assertIn("days old", " ".join(out["problems"]))
@@ -308,7 +355,9 @@ class TestTokenIdempotency(unittest.TestCase):
         with self.assertRaises(frappe.ValidationError):
             OS.sync_spray_session({
                 "token": self.TOKEN_ID, "work_order": wo,
-                "mix_at": ancient, "ended_at": ancient,
+                "mix_at": ancient,
+                "started_at": str(add_to_date(ancient, minutes=10)),
+                "ended_at": str(add_to_date(ancient, minutes=70)),
             })
         row = frappe.db.get_value(
             OS.TOKEN, self.TOKEN_ID, ["status", "refusal"], as_dict=True
@@ -324,7 +373,9 @@ class TestTokenIdempotency(unittest.TestCase):
         try:
             OS.sync_spray_session({
                 "token": self.TOKEN_ID, "work_order": wo,
-                "mix_at": ancient, "ended_at": ancient,
+                "mix_at": ancient,
+                "started_at": str(add_to_date(ancient, minutes=10)),
+                "ended_at": str(add_to_date(ancient, minutes=70)),
                 "device_skew_seconds": -420,
             })
         except frappe.ValidationError:

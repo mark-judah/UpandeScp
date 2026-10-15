@@ -332,3 +332,93 @@ class TestSessionClaimingAMomentBeforeItsTransfer(_E2EBase, unittest.TestCase):
                  ended_at=str(add_to_date(later, hours=1)))
         got = OS.resolve_moments(p, anchor)
         self.assertEqual(got["mix_at"], later)
+
+
+class _GuardBase(_E2EBase):
+    """Shared payload for the replay guard: moments sit after the (4 day old) transfer."""
+
+    TRANSFER_DAYS_AGO = 4
+
+    def _payload(self, mix=True, start=True, end_after_minutes=None, skew=0):
+        base = add_to_date(now_datetime(), days=-1).replace(
+            hour=6, minute=30, second=0, microsecond=0)
+        started = base.replace(minute=45)
+        p = {
+            "token": self.token_id,
+            "work_order": self.wo_name,
+            "mix_at": str(base) if mix else None,
+            "started_at": str(started) if start else None,
+            "ended_at": (str(add_to_date(started, minutes=end_after_minutes))
+                         if end_after_minutes is not None else None),
+            "device_skew_seconds": skew,
+            "scans": [
+                {"item_code": r.item_code, "code": None,
+                 "scanned_at": str(add_to_date(base, minutes=-10)),
+                 "qty": flt(r.required_qty)}
+                for r in self.wo.required_items
+            ],
+        }
+        return p
+
+    def _state(self):
+        return frappe.db.get_value("Work Order", self.wo_name, "workflow_state")
+
+
+class TestOneSecondSessionIsHeld(_GuardBase, unittest.TestCase):
+    """The incident: mix, start and end all within a second of the scan."""
+
+    TAG = "E2E HS"
+
+    def test_a_one_second_session_is_held_not_completed(self):
+        before = frappe.db.count("Error Log", {"method": "Spray session refused"})
+        out = OS.sync_spray_session(self._payload(end_after_minutes=0))
+        self.assertTrue(out.get("held"), out)
+        self.assertEqual(out["status"], OS.STATUS_TOO_SHORT)
+        self.assertIn("minimum", out["refusal"])
+        self.assertEqual(self._state(), "Chemical Issued", "the plan must not move")
+        self.assertFalse(frappe.db.get_value(
+            "Stock Entry", {"work_order": self.wo_name, "purpose": "Manufacture",
+                            "docstatus": 1}))
+        # logged to the Error Log (title is stored in `method`)
+        after = frappe.db.count("Error Log", {"method": "Spray session refused"})
+        self.assertGreaterEqual(after, before)
+
+    def test_b_a_scan_only_token_does_nothing(self):
+        p = self._payload(mix=False, start=False)
+        out = OS.sync_spray_session(p)
+        self.assertEqual(out["status"], "Pending")
+        self.assertEqual(self._state(), "Chemical Issued")
+
+    def test_c_end_without_start_is_held_incomplete(self):
+        p = self._payload(start=False)
+        p["ended_at"] = p["mix_at"]
+        out = OS.sync_spray_session(p)
+        self.assertEqual(out["status"], OS.STATUS_INCOMPLETE)
+        self.assertEqual(self._state(), "Chemical Issued")
+
+
+class TestMixOnlyStopsAtTheMix(_GuardBase, unittest.TestCase):
+    TAG = "E2E MO"
+
+    def test_1_mix_only_replays_only_the_manufacture(self):
+        out = OS.sync_spray_session(self._payload(start=False))
+        self.assertEqual(out["status"], OS.STATUS_PARTIAL, out)
+        self.assertEqual(self._state(), SS.STATE_TANK_MIX_MANUFACTURED)
+        self.assertTrue(out["manufacture_stock_entry"])
+        self.assertFalse(out["issue_stock_entry"])
+        self.assertFalse(out["started_at"], "no start may be invented")
+        self.assertFalse(out["ended_at"], "no end may be invented")
+
+    def test_2_the_same_token_later_completes_with_the_real_times(self):
+        out = OS.sync_spray_session(self._payload(end_after_minutes=90))
+        self.assertEqual(out["status"], "Synced", out)
+        self.assertEqual(self._state(), SS.STATE_COMPLETED)
+
+
+class TestSkewIsFlaggedNotBlocked(_GuardBase, unittest.TestCase):
+    TAG = "E2E SK"
+
+    def test_a_three_hour_skew_is_a_warning_on_the_token(self):
+        out = OS.sync_spray_session(self._payload(end_after_minutes=90, skew=-3 * 3600))
+        self.assertEqual(out["status"], "Synced", out)
+        self.assertIn("hours behind", out["crew_warnings"] or "")

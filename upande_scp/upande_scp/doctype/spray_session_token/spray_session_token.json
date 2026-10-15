@@ -73,7 +73,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nSynced\nRefused",
+   "options": "Pending\nSynced\nPartial\nRefused\nHeld \u2014 too short\nHeld \u2014 incomplete",
    "read_only": 1,
    "search_index": 1
   },
@@ -116,10 +116,10 @@
    "read_only": 1
   },
   {
-   "description": "Crew members who were on leave (or not clocked in) on the spray date. Recorded, never refused: the spray already happened.",
+   "description": "Crew members who were on leave (or not clocked in), and a phone clock more than 2 hours out. Recorded, never refused: the spray already happened.",
    "fieldname": "crew_warnings",
    "fieldtype": "Small Text",
-   "label": "Crew warnings",
+   "label": "Crew / clock warnings",
    "read_only": 1
   },
   {
@@ -186,7 +186,7 @@
  "index_web_pages_for_search": 0,
  "istable": 0,
  "links": [],
- "modified": "2026-10-11 09:00:00.000000",
+ "modified": "2026-10-15 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Upande Scp",
  "name": "Spray Session Token",

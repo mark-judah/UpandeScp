@@ -1,0 +1,112 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import { freshnessBand } from "@/lib/stock-freshness";
+import { squarify } from "@/lib/treemap";
+
+const data = {
+  farms: ["Karen"],
+  low_stock_count: 1,
+  aged_csu_count: 1,
+  csu_max_age_days: 5,
+  as_of: "2026-10-15T10:00:00",
+  batches: {
+    A: [{ batch: "A-1", qty: 5, expiry_date: "2026-10-25", days_to_expiry: 10 }],
+    B: [{ batch: "B-1", qty: 5, expiry_date: "2026-12-30", days_to_expiry: 76 }],
+  },
+  chemical_stores: [
+    {
+      warehouse: "Chemical Store 1", farm: "Karen", total_qty: 40,
+      items: [
+        { item_code: "A", item_name: "Alpha", group: "g", uom: "Litre", qty: 5, value: 500, threshold: 10, low: true, oldest_age_days: 20, cohorts: [] },
+        { item_code: "B", item_name: "Bravo", group: "g", uom: "Kg", qty: 20, value: 300, threshold: 0, low: false, oldest_age_days: 10, cohorts: [] },
+        { item_code: "C", item_name: "Charlie", group: "g", uom: "Kg", qty: 15, value: 200, threshold: 0, low: false, oldest_age_days: 5, cohorts: [] },
+        { item_code: "D", item_name: "Delta", group: "g", uom: "Kg", qty: 3, value: 0, threshold: 0, low: false, oldest_age_days: 5, cohorts: [] },
+      ],
+    },
+  ],
+  csus: [
+    {
+      warehouse: "Karen CSU 1", farm: "Karen", total_qty: 4, aged_count: 1,
+      items: [{ item_code: "A", item_name: "Alpha", group: "g", uom: "Litre", qty: 4, value: 0, threshold: 0, aged: true, expired_qty: 4, fresh_qty: 0, oldest_age_days: 8, cohorts: [] }],
+    },
+  ],
+};
+vi.mock("@/lib/spray-plan-creator-api", () => ({ fetchCreatorStockOverview: () => Promise.resolve(data) }));
+vi.mock("@/components/PlacePicker", () => ({ PlacePicker: () => <div>place pill</div> }));
+
+const { CreatorStock } = await import("@/pages/CreatorStock");
+
+describe("freshness band mapping", () => {
+  it("maps expiry and shelf age to bands", () => {
+    expect(freshnessBand({ daysToExpiry: -1, oldestAgeDays: 0 })).toBe("expired");
+    expect(freshnessBand({ daysToExpiry: 10, oldestAgeDays: 0 })).toBe("near");
+    expect(freshnessBand({ daysToExpiry: 76, oldestAgeDays: 0 })).toBe("ageing");
+    expect(freshnessBand({ daysToExpiry: null, oldestAgeDays: 200 })).toBe("ageing");
+    expect(freshnessBand({ daysToExpiry: 400, oldestAgeDays: 20 })).toBe("fresh");
+    expect(freshnessBand({ daysToExpiry: null, oldestAgeDays: 20 })).toBe("fresh");
+  });
+});
+
+describe("squarify", () => {
+  it("tiles the box exactly, area proportional to value", () => {
+    const r = squarify([{ id: "a", value: 6 }, { id: "b", value: 3 }, { id: "c", value: 1 }], { x: 0, y: 0, w: 100, h: 50 });
+    expect(r).toHaveLength(3);
+    expect(r.reduce((s, t) => s + t.w * t.h, 0)).toBeCloseTo(5000);
+    const a = r.find((t) => t.id === "a")!;
+    expect(a.w * a.h).toBeCloseTo(3000);
+  });
+});
+
+describe("Chemical Stock page", () => {
+  it("has two tabs, a treemap of coloured tiles and a legend, and no search input", async () => {
+    render(<CreatorStock />);
+    await waitFor(() => expect(screen.getAllByTestId("stock-tile").length).toBe(3));
+    expect(screen.getByRole("tab", { name: "Available stock" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "CSU" })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/find a chemical/i)).toBeNull();
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    const bands = Object.fromEntries(screen.getAllByTestId("stock-tile").map((t) => [t.getAttribute("data-code"), t.getAttribute("data-band")]));
+    expect(bands).toEqual({ A: "near", B: "ageing", C: "fresh" });
+    const legend = screen.getByTestId("freshness-legend");
+    for (const l of ["Fresh", "Ageing", "Near expiry", "Expired"]) expect(within(legend).getByText(l)).toBeInTheDocument();
+    // the chemical short notifications are not on this tab
+    expect(screen.queryByText("Alerts")).toBeNull();
+  });
+
+  it("shows the page summary, then the chemical on selection (keyboard)", async () => {
+    const user = userEvent.setup();
+    render(<CreatorStock />);
+    await waitFor(() => screen.getAllByTestId("stock-tile"));
+    expect(screen.getByTestId("count-near")).toHaveTextContent("1");
+    expect(screen.getByText(/1 chemical in stock with no valuation/)).toBeInTheDocument();
+    const tile = screen.getAllByTestId("stock-tile").find((t) => t.getAttribute("data-code") === "A")!;
+    tile.focus();
+    await user.keyboard("{Enter}");
+    const panel = screen.getByTestId("stock-summary");
+    expect(within(panel).getByText("Alpha")).toBeInTheDocument();
+    expect(within(panel).getByText("Chemical Store 1")).toBeInTheDocument();
+    expect(within(panel).getByText("Karen CSU 1")).toBeInTheDocument();
+    expect(within(panel).getByText("A-1")).toBeInTheDocument();
+    expect(within(panel).getByText("Near expiry")).toBeInTheDocument();
+    expect(within(panel).getByTestId("summary-total")).toHaveTextContent("5");
+    expect(tile).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows a tooltip on hover", async () => {
+    render(<CreatorStock />);
+    await waitFor(() => screen.getAllByTestId("stock-tile"));
+    fireEvent.mouseEnter(screen.getAllByTestId("stock-tile")[0], { clientX: 5, clientY: 5 });
+    expect(screen.getByTestId("stock-tooltip")).toBeInTheDocument();
+  });
+
+  it("moves the short notifications under the CSU tab", async () => {
+    const user = userEvent.setup();
+    render(<CreatorStock />);
+    await waitFor(() => screen.getAllByTestId("stock-tile"));
+    await user.click(screen.getByRole("tab", { name: "CSU" }));
+    expect(await screen.findByText("Alerts")).toBeInTheDocument();
+    expect(screen.getByText("Chemical store health")).toBeInTheDocument();
+    expect(screen.getByText(/CSUs . mixing units/)).toBeInTheDocument();
+  });
+});

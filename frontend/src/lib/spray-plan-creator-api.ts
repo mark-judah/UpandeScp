@@ -359,14 +359,34 @@ export async function getApprovalReview(woName: string): Promise<ApprovalReview>
 // ---------- Stock dashboard ----------
 
 /** Chemical Store items carry a low-stock signal (qty vs. threshold). */
+/** One FIFO age cohort of store stock still on the shelf. */
+export interface StoreCohort {
+  added_on: string;
+  qty: number;
+  age_days: number;
+}
+
+/** A live Batch holding stock (item-wide balance) with its expiry. */
+export interface StockBatch {
+  batch: string;
+  qty: number;
+  expiry_date: string | null;
+  days_to_expiry: number | null;
+}
+
 export interface ChemicalStoreItem {
   item_code: string;
   item_name: string;
   group: string;
   uom: string;
   qty: number;
+  /** Bin stock value; 0 when the bin has no valuation. */
+  value?: number;
   threshold: number;
   low: boolean;
+  /** Age of the oldest stock still on the shelf, in days. */
+  oldest_age_days?: number;
+  cohorts?: StoreCohort[];
 }
 
 /** CSU items carry an aged-stock signal (sitting > csu_max_age_days),
@@ -391,6 +411,7 @@ export interface CsuItem {
   group: string;
   uom: string;
   qty: number;
+  value?: number;
   threshold: number;
   aged: boolean;
   expired_qty: number;
@@ -421,6 +442,8 @@ export interface CreatorStockOverview {
   low_stock_count: number;
   aged_csu_count: number;
   csu_max_age_days: number;
+  /** item_code -> Batches that still hold stock, nearest expiry first. */
+  batches?: Record<string, StockBatch[]>;
   as_of: string;
 }
 

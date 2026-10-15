@@ -16,7 +16,6 @@
  *   5. Chemical Store section — per-warehouse expanders with LOW badges.
  */
 
-import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -24,13 +23,14 @@ import {
   ChevronDown,
   Clock,
   RefreshCw,
-  Search,
   Warehouse as WarehouseIcon,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { PageToolbar } from "@/components/PageToolbar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AvailableStock } from "@/components/stock/AvailableStock";
 import { HeaderIconButton } from "@/components/header-controls";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { PlacePicker } from "@/components/PlacePicker";
 import {
   Card,
@@ -152,7 +152,7 @@ export function CreatorStock() {
   const [data, setData] = useState<CreatorStockOverview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"available" | "csu">("available");
   const [onlyAlerts, setOnlyAlerts] = useState(false);
   const ALL_FARMS = "__all_farms";
   const [selectedFarm, setSelectedFarm] = useState<string>(ALL_FARMS);
@@ -175,15 +175,6 @@ export function CreatorStock() {
   // First load: the cards, titles and KPI labels are drawn and only the
   // figures and rows pend. A reload keeps the old stock on screen.
   const pending = !data && !error;
-
-  const matchesQuery = (item_name: string, item_code: string): boolean => {
-    const q = query.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      item_name.toLowerCase().includes(q) ||
-      item_code.toLowerCase().includes(q)
-    );
-  };
 
   // Reset the farm pill back to "All" whenever the user's set of farms
   // changes — guards against the previously-selected farm vanishing
@@ -227,11 +218,11 @@ export function CreatorStock() {
         ...wh,
         items: wh.items.filter((i) => {
           if (onlyAlerts && !i.aged) return false;
-          return matchesQuery(i.item_name, i.item_code);
+          return true;
         }),
       }))
       .filter((wh) => wh.items.length > 0);
-  }, [scopedData, query, onlyAlerts]);
+  }, [scopedData, onlyAlerts]);
 
   const filteredStores = useMemo<CreatorStockWarehouseStore[]>(() => {
     if (!scopedData) return [];
@@ -240,21 +231,21 @@ export function CreatorStock() {
         ...wh,
         items: wh.items.filter((i) => {
           if (onlyAlerts && !i.low) return false;
-          return matchesQuery(i.item_name, i.item_code);
+          return true;
         }),
       }))
       .filter((wh) => wh.items.length > 0);
-  }, [scopedData, query, onlyAlerts]);
+  }, [scopedData, onlyAlerts]);
 
   const bullets = useMemo(() => {
     if (!scopedData) return [] as BulletRow[];
     const rows = aggregateStoreBullets(scopedData).filter((r) => r.total_qty > 0);
     const filtered = rows.filter((r) => {
       if (onlyAlerts && !r.low) return false;
-      return matchesQuery(r.item_name, r.item_code);
+      return true;
     });
     return filtered.sort((a, b) => bulletSortKey(a) - bulletSortKey(b));
-  }, [scopedData, query, onlyAlerts]);
+  }, [scopedData, onlyAlerts]);
 
   const alerts = useMemo(
     () => (scopedData ? collectAlerts(scopedData) : []),
@@ -282,33 +273,9 @@ export function CreatorStock() {
         title="Chemical Stock"
         eyebrow="Chemical store inventory · CSU consumption window"
       >
-        <div className="flex flex-wrap items-center gap-2">
-            <SearchInput size="md" className="min-w-56"
-                placeholder="Find a chemical…"
-                value={query}
-                disabled={pending}
-                onChange={setQuery} />
-            <HeaderIconButton
-              active={onlyAlerts}
-              onClick={() => setOnlyAlerts((v) => !v)}
-              title={
-                onlyAlerts
-                  ? `Showing alerts only${alertTotal ? ` (${alertTotal})` : ""} — click to show all`
-                  : `Show only alerts${alertTotal ? ` (${alertTotal})` : ""}`
-              }
-            >
-              <AlertTriangle className="h-4 w-4" />
-            </HeaderIconButton>
-            <HeaderIconButton
-              onClick={load}
-              disabled={loading}
-              title="Reload"
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", loading && "animate-spin")}
-              />
-            </HeaderIconButton>
-        </div>
+        <HeaderIconButton onClick={load} disabled={loading} title="Reload">
+          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+        </HeaderIconButton>
       </PageHeader>
 
       <div
@@ -323,78 +290,104 @@ export function CreatorStock() {
           </Card>
         )}
 
-        {/* One place pill (place picker G2), shown for every user so the
-            layout is the same; a single farm reads as itself. */}
-        <div className="flex justify-start">
-          <PlacePicker
-            level="farm"
-            farms={data?.farms || []}
-            value={{ farm: selectedFarm === ALL_FARMS ? "" : selectedFarm, greenhouse: "" }}
-            onChange={(p) => setSelectedFarm(p.farm || ALL_FARMS)}
-            disabled={!data}
-          />
-        </div>
-
-        <AlertsCard
-          alerts={alerts}
-          loading={pending}
-          csuMaxAgeDays={data?.csu_max_age_days ?? 3}
-        />
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Kpi
-            label="Low-stock items"
-            pending={pending}
-            value={String(scopedData?.low_stock_count ?? 0)}
-            sublabel="chemical stores below threshold"
-            accent={scopedData?.low_stock_count ? "warn" : undefined}
-          />
-          <Kpi
-            label="Aged CSU batches"
-            pending={pending}
-            value={String(scopedData?.aged_csu_count ?? 0)}
-            sublabel={`sitting > ${data?.csu_max_age_days ?? 3} days`}
-            accent={scopedData?.aged_csu_count ? "warn" : undefined}
-          />
-          <Kpi
-            label="Chemical store stock"
-            pending={pending}
-            value={fmt(totals.store)}
-            sublabel={`${scopedData?.chemical_stores.length ?? 0} store${
-              (scopedData?.chemical_stores.length ?? 0) === 1 ? "" : "s"
-            }`}
-          />
-          <Kpi
-            label="CSU stock"
-            pending={pending}
-            value={fmt(totals.csu)}
-            sublabel={
-              totals.expired > 0
-                ? `${fmt(totals.expired)} expired · ${fmt(
-                    totals.csu - totals.expired,
-                  )} fresh`
-                : `${scopedData?.csus.length ?? 0} CSU${
-                    (scopedData?.csus.length ?? 0) === 1 ? "" : "s"
-                  } · consumption only`
+        <Tabs value={tab} onValueChange={(v) => setTab(v as "available" | "csu")} className="flex flex-col gap-4">
+          <PageToolbar
+            left={
+              <TabsList className="self-start">
+                <TabsTrigger value="available">Available stock</TabsTrigger>
+                <TabsTrigger value="csu">CSU</TabsTrigger>
+              </TabsList>
             }
-            accent={totals.expired > 0 ? "warn" : undefined}
-          />
-        </div>
+          >
+            {/* One place pill (place picker G2), shown for every user so the
+                layout is the same; a single farm reads as itself. */}
+            <PlacePicker
+              level="farm"
+              farms={data?.farms || []}
+              value={{ farm: selectedFarm === ALL_FARMS ? "" : selectedFarm, greenhouse: "" }}
+              onChange={(p) => setSelectedFarm(p.farm || ALL_FARMS)}
+              disabled={!data}
+            />
+            {tab === "csu" && (
+              <HeaderIconButton
+                active={onlyAlerts}
+                onClick={() => setOnlyAlerts((v) => !v)}
+                title={
+                  onlyAlerts
+                    ? `Showing alerts only${alertTotal ? ` (${alertTotal})` : ""} — click to show all`
+                    : `Show only alerts${alertTotal ? ` (${alertTotal})` : ""}`
+                }
+              >
+                <AlertTriangle className="h-4 w-4" />
+              </HeaderIconButton>
+            )}
+          </PageToolbar>
 
-        <StockHealthCard rows={bullets} loading={pending} />
+          <TabsContent value="available" className="mt-0">
+            <AvailableStock data={scopedData} loading={pending} />
+          </TabsContent>
 
-        <CsuSection
-          rows={filteredCsus}
-          loading={pending}
-          filtered={Boolean(query || onlyAlerts)}
-          csuMaxAgeDays={data?.csu_max_age_days ?? 3}
-        />
+          <TabsContent value="csu" className="mt-0 flex flex-col gap-4">
+            <AlertsCard
+              alerts={alerts}
+              loading={pending}
+              csuMaxAgeDays={data?.csu_max_age_days ?? 3}
+            />
 
-        <StoreSection
-          rows={filteredStores}
-          loading={pending}
-          filtered={Boolean(query || onlyAlerts)}
-        />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Kpi
+                label="Low-stock items"
+                pending={pending}
+                value={String(scopedData?.low_stock_count ?? 0)}
+                sublabel="chemical stores below threshold"
+                accent={scopedData?.low_stock_count ? "warn" : undefined}
+              />
+              <Kpi
+                label="Aged CSU batches"
+                pending={pending}
+                value={String(scopedData?.aged_csu_count ?? 0)}
+                sublabel={`sitting > ${data?.csu_max_age_days ?? 3} days`}
+                accent={scopedData?.aged_csu_count ? "warn" : undefined}
+              />
+              <Kpi
+                label="Chemical store stock"
+                pending={pending}
+                value={fmt(totals.store)}
+                sublabel={`${scopedData?.chemical_stores.length ?? 0} store${
+                  (scopedData?.chemical_stores.length ?? 0) === 1 ? "" : "s"
+                }`}
+              />
+              <Kpi
+                label="CSU stock"
+                pending={pending}
+                value={fmt(totals.csu)}
+                sublabel={
+                  totals.expired > 0
+                    ? `${fmt(totals.expired)} expired · ${fmt(totals.csu - totals.expired)} fresh`
+                    : `${scopedData?.csus.length ?? 0} CSU${
+                        (scopedData?.csus.length ?? 0) === 1 ? "" : "s"
+                      } · consumption only`
+                }
+                accent={totals.expired > 0 ? "warn" : undefined}
+              />
+            </div>
+
+            <StockHealthCard rows={bullets} loading={pending} />
+
+            <CsuSection
+              rows={filteredCsus}
+              loading={pending}
+              filtered={onlyAlerts}
+              csuMaxAgeDays={data?.csu_max_age_days ?? 3}
+            />
+
+            <StoreSection
+              rows={filteredStores}
+              loading={pending}
+              filtered={onlyAlerts}
+            />
+          </TabsContent>
+        </Tabs>
 
         {data?.as_of && (
           <div className="text-[0.65rem] text-muted-foreground text-right">
@@ -435,11 +428,11 @@ function AlertsCard({
 
   if (alerts.length === 0) {
     return (
-      <Card className="border-emerald-500/30 bg-emerald-500/5">
+      <Card>
         <CardContent className="py-3 px-4 flex items-center gap-3">
-          <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0" />
+          <div className="h-2.5 w-2.5 rounded-full bg-[var(--sd-ink)]/40 shrink-0" />
           <div>
-            <div className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+            <div className="text-sm font-medium">
               All clear
             </div>
             <div className="text-[0.7rem] text-muted-foreground">
@@ -452,9 +445,9 @@ function AlertsCard({
   }
 
   return (
-    <Card className="border-amber-500/40 bg-amber-500/5">
+    <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base text-amber-700 dark:text-amber-300">
+        <CardTitle className="flex items-center gap-2 text-base">
           <AlertTriangle className="h-4 w-4" />
           Alerts
           <span className="ml-auto inline-flex items-center gap-2 text-[0.7rem] font-normal">
@@ -479,7 +472,7 @@ function AlertsCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="divide-y divide-amber-500/15">
+        <div className="divide-y">
           {alerts.slice(0, 12).map((a, idx) => (
             <AlertRow key={`${a.kind}-${a.item_code}-${a.warehouse}-${idx}`} alert={a} />
           ))}
@@ -601,9 +594,9 @@ function BulletBar({ row }: { row: BulletRow }) {
           className={cn(
             "absolute inset-y-0 left-0 rounded-full transition-all",
             row.low
-              ? "bg-amber-500"
+              ? "bg-[#d2bd84]"
               : hasThreshold
-                ? "bg-emerald-500/80"
+                ? "bg-[var(--sd-ink)]/55"
                 : "bg-muted-foreground/30",
           )}
           style={{ width: `${fillPct}%` }}

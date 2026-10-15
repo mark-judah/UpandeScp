@@ -65,6 +65,7 @@ def _csu_age_cohorts(
     item_codes: list[str],
     csu_warehouses: list[str],
     current_qty_by_pair: dict[tuple[str, str], float],
+    horizon_days: int = _CSU_AGE_HORIZON_DAYS,
 ) -> dict[tuple[str, str], list[dict]]:
     """Per-(item, warehouse) FIFO cohorts still present in each CSU.
 
@@ -87,7 +88,7 @@ def _csu_age_cohorts(
     if not item_codes or not csu_warehouses or not current_qty_by_pair:
         return {}
 
-    horizon = add_to_date(now_datetime(), days=-_CSU_AGE_HORIZON_DAYS)
+    horizon = add_to_date(now_datetime(), days=-horizon_days)
 
     # Opening balance carried INTO the window (stock that pre-dates the horizon),
     # seeded as the OLDEST cohort so in-window outwards consume it FIRST (true
@@ -190,6 +191,61 @@ def _csu_age_cohorts(
     return out
 
 
+# Chemical-store stock is durable, so its age is read over a longer window
+# than a CSU's: a year of ledger history, anything older is one ">= 1 year"
+# cohort. Feeds the freshness colour of the stock treemap.
+_STORE_AGE_HORIZON_DAYS = 365
+
+
+def _store_freshness(
+    store_pairs: dict[tuple[str, str], float],
+    item_codes: list[str],
+    now: datetime,
+) -> tuple[dict[tuple[str, str], list[dict]], dict[str, list[dict]]]:
+    """FIFO age cohorts per (item, store) and live Batch expiry per item.
+
+    Cohorts: how long the stock that is still on the shelf has been there
+    (oldest first). Batches: enabled Batches that still hold stock, with
+    their expiry date, nearest expiry first; ``Batch.batch_qty`` is the
+    item-wide balance, so expiry is an item-level signal.
+    """
+    cohorts = _csu_age_cohorts(
+        item_codes=item_codes,
+        csu_warehouses=list({p[1] for p in store_pairs}),
+        current_qty_by_pair=store_pairs,
+        horizon_days=_STORE_AGE_HORIZON_DAYS,
+    )
+    out_cohorts: dict[tuple[str, str], list[dict]] = {}
+    for key, cs in cohorts.items():
+        _e, _f, _o, decorated = _summarise_cohorts(cs, now)
+        out_cohorts[key] = [
+            {"added_on": c["added_on"], "qty": c["qty"], "age_days": c["age_days"]}
+            for c in decorated
+        ]
+
+    batches: dict[str, list[dict]] = defaultdict(list)
+    if item_codes:
+        for b in frappe.db.sql(
+            """SELECT name, item, expiry_date, batch_qty
+               FROM `tabBatch`
+               WHERE item IN %(items)s AND disabled = 0 AND batch_qty > 0
+               ORDER BY expiry_date IS NULL, expiry_date, creation""",
+            {"items": tuple(item_codes)},
+            as_dict=True,
+        ):
+            batches[b["item"]].append(
+                {
+                    "batch": b["name"],
+                    "qty": float(b["batch_qty"] or 0),
+                    "expiry_date": str(b["expiry_date"]) if b["expiry_date"] else None,
+                    "days_to_expiry": (b["expiry_date"] - now.date()).days
+                    if b["expiry_date"]
+                    else None,
+                }
+            )
+    return out_cohorts, dict(batches)
+
+
 def _summarise_cohorts(
     cohorts: list[dict],
     now: datetime,
@@ -262,6 +318,7 @@ def creator_stock_overview() -> dict:
         "low_stock_count": 0,
         "aged_csu_count": 0,
         "csu_max_age_days": CSU_MAX_AGE_DAYS,
+        "batches": {},
         "as_of": now_datetime().isoformat(timespec="seconds"),
     }
     groups = product_groups()
@@ -277,7 +334,8 @@ def creator_stock_overview() -> dict:
                i.item_group,
                COALESCE(i.stock_uom, '')            AS uom,
                COALESCE(sp.low_stock_threshold, 0)  AS threshold,
-               b.actual_qty                         AS qty
+               b.actual_qty                         AS qty,
+               COALESCE(b.stock_value, 0)           AS stock_value
         FROM   `tabBin`       b
         JOIN   `tabWarehouse` w ON w.name = b.warehouse
         JOIN   `tabItem`      i ON i.name = b.item_code
@@ -299,6 +357,8 @@ def creator_stock_overview() -> dict:
     # pairs so we can resolve aged-stock in a single batched SLE query.
     csu_pairs: dict[tuple[str, str], float] = {}
     pending_csu_items: list[tuple[dict, dict]] = []  # (warehouse_bucket, item_payload)
+    store_pairs: dict[tuple[str, str], float] = {}
+    pending_store_items: list[tuple[dict, dict]] = []
 
     for r in rows:
         bucket_name = _classify(r["warehouse"])
@@ -329,6 +389,7 @@ def creator_stock_overview() -> dict:
             "group": r["item_group"] or "",
             "uom": r["uom"],
             "qty": qty,
+            "value": float(r["stock_value"] or 0),
             "threshold": threshold,
         }
         if is_store:
@@ -337,6 +398,8 @@ def creator_stock_overview() -> dict:
             if low:
                 low_count += 1
             wh["items"].append(payload)
+            store_pairs[(r["item_code"], r["warehouse"])] = qty
+            pending_store_items.append((wh, payload))
         else:
             # CSU rows pick up cohort breakdown after the batched SLE
             # query below resolves age. Seed the fields so the shape is
@@ -373,6 +436,14 @@ def creator_stock_overview() -> dict:
             wh_bucket["aged_count"] += 1
             aged_count += 1
 
+    store_cohorts, batches = _store_freshness(
+        store_pairs, list({p[0] for p in store_pairs}), now,
+    )
+    for wh_bucket, payload in pending_store_items:
+        cs = store_cohorts.get((payload["item_code"], wh_bucket["warehouse"]), [])
+        payload["cohorts"] = cs
+        payload["oldest_age_days"] = max((c["age_days"] for c in cs), default=0.0)
+
     def _sorted(d: dict) -> list[dict]:
         return sorted(d.values(), key=lambda x: x["warehouse"].lower())
 
@@ -383,5 +454,7 @@ def creator_stock_overview() -> dict:
         "low_stock_count": low_count,
         "aged_csu_count": aged_count,
         "csu_max_age_days": CSU_MAX_AGE_DAYS,
+        # item_code -> live Batches with stock (expiry, qty), nearest expiry first
+        "batches": batches,
         "as_of": now_datetime().isoformat(timespec="seconds"),
     }

@@ -364,10 +364,37 @@ class _GuardBase(_E2EBase):
         return frappe.db.get_value("Work Order", self.wo_name, "workflow_state")
 
 
+class TestTenSecondSessionCompletes(_GuardBase, unittest.TestCase):
+    """Real September offline sessions took about ten seconds (mix 20:47:16, start :23,
+    end :34) and must complete with the default settings."""
+
+    TAG = "E2E TS"
+
+    def test_a_ten_second_session_completes(self):
+        p = self._payload(end_after_minutes=0)
+        base = get_datetime(p["mix_at"]).replace(minute=47, second=16)
+        p["mix_at"] = str(base)
+        p["started_at"] = str(add_to_date(base, seconds=7))
+        p["ended_at"] = str(add_to_date(base, seconds=18))
+        self.assertEqual(OS.min_spray_minutes(), 0)
+        out = OS.sync_spray_session(p)
+        self.assertEqual(out["status"], "Synced", out)
+        self.assertEqual(self._state(), SS.STATE_COMPLETED)
+        self.assertTrue(out["manufacture_stock_entry"])
+        self.assertTrue(out["issue_stock_entry"])
+
+
 class TestOneSecondSessionIsHeld(_GuardBase, unittest.TestCase):
-    """The incident: mix, start and end all within a second of the scan."""
+    """With a minimum configured, a session of a second is held (the old incident)."""
 
     TAG = "E2E HS"
+
+    def setUp(self):
+        super().setUp()
+        from unittest import mock
+        patcher = mock.patch.object(OS, "min_spray_minutes", return_value=5)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_a_one_second_session_is_held_not_completed(self):
         before = frappe.db.count("Error Log", {"method": "Spray session refused"})

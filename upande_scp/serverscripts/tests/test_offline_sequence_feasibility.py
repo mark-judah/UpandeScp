@@ -100,7 +100,7 @@ class TestStateMachineGuards(unittest.TestCase):
         import inspect
 
         start_src = inspect.getsource(SS._start_spray_session)
-        end_src = inspect.getsource(SS.end_spray_session)
+        end_src = inspect.getsource(SS._end_spray_session)
         self.assertIn("STATE_TANK_MIX_MANUFACTURED", start_src)
         self.assertIn("STATE_SPRAYING_IN_PROGRESS", end_src)
         self.assertIn("_find_submitted_manufacture_se", end_src)

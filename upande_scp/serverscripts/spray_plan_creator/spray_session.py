@@ -18,7 +18,9 @@ Endpoints:
 """
 from __future__ import annotations
 
+import hashlib
 import json
+from contextlib import contextmanager
 from typing import Any
 
 import frappe
@@ -61,6 +63,40 @@ def _lock_wo(wo_name: str) -> str:
     if not row:
         frappe.throw(f"Work Order {wo_name} not found.")
     return row[0]["workflow_state"] or ""
+
+
+@contextmanager
+def wo_mutex(work_order: str, wait: int = 30):
+    """Serialise whole requests for one Work Order, snapshot included.
+
+    ``_lock_wo`` (SELECT ... FOR UPDATE) serialises the state *read*, but a request that
+    waited on it still works from rows it read BEFORE the lock (the permission check loads
+    the Work Order first). A slow first tap followed by a second tap therefore ran on
+    stale ``produced_qty`` and ERPNext refused the second with "already manufactured".
+
+    This takes a named advisory lock before anything else, commits to drop the request's
+    read snapshot, runs the step, COMMITS, and only then releases — so the waiting request
+    starts from what the first one wrote and converges on it. GET_LOCK is re-entrant per
+    connection, so nesting is harmless.
+    """
+    key = "scp_wo_" + hashlib.md5(str(work_order).encode()).hexdigest()
+    got = frappe.db.sql("SELECT GET_LOCK(%s, %s)", (key, wait))[0][0]
+    if got != 1:
+        frappe.throw(
+            "This plan is still being processed from another request. "
+            "Wait a moment and try again."
+        )
+    try:
+        frappe.db.commit()  # fresh read snapshot now that we hold the lock
+        yield
+        frappe.db.commit()  # visible to the next holder BEFORE we release
+    finally:
+        # No explicit rollback on failure: frappe rolls the request back itself, and the
+        # step's FOR UPDATE row lock holds any waiting request until it has.
+        try:
+            frappe.db.sql("SELECT RELEASE_LOCK(%s)", (key,))
+        except Exception:
+            pass
 
 
 def _ensure_afp(wo) -> None:
@@ -972,6 +1008,34 @@ def assert_can_operate(work_order: str, action: str) -> None:
 
 
 @frappe.whitelist()
+def get_spray_state(work_order: str) -> dict[str, Any]:
+    """Where a plan stands on the server — what the mixing screen colours its steps from.
+
+    Read-only. ``scanned`` / ``required`` are chemical item codes; ``manufactured`` is true
+    once the tank mix exists; ``started`` / ``ended`` follow the workflow state.
+    """
+    if not work_order or not frappe.db.exists("Work Order", work_order):
+        frappe.throw(f"Work Order {work_order} not found.")
+    assert_can_operate(work_order, "scan")
+    wo = frappe.get_doc("Work Order", work_order)
+    _ensure_afp(wo)
+    state = wo.get("workflow_state") or ""
+    past_mix = state in (
+        STATE_TANK_MIX_MANUFACTURED, STATE_SPRAYING_IN_PROGRESS, STATE_COMPLETED
+    )
+    return {
+        "workflow_state": state,
+        "required": sorted(_required_chemical_codes(wo)),
+        "scanned": sorted(_scanned_codes(wo)),
+        "manufactured": past_mix,
+        "manufacture_se": _find_submitted_manufacture_se(wo.name) if past_mix else None,
+        "sal": wo.get("custom_spray_application_logsheet"),
+        "started": state in (STATE_SPRAYING_IN_PROGRESS, STATE_COMPLETED),
+        "ended": state == STATE_COMPLETED,
+    }
+
+
+@frappe.whitelist()
 @log_refusals("manufacture_tank_mix")
 def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
     """Confirm the tank mix — for the plan's supervisor (see ``can_manufacture``).
@@ -989,8 +1053,9 @@ def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
         frappe.throw("work_order is required.")
     if not frappe.db.exists("Work Order", work_order):
         frappe.throw(f"Work Order {work_order} not found.")
-    assert_can_manufacture(frappe.get_doc("Work Order", work_order))
-    return _manufacture_tank_mix(work_order)
+    with wo_mutex(work_order):
+        assert_can_manufacture(frappe.get_doc("Work Order", work_order))
+        return _manufacture_tank_mix(work_order)
 
 
 def _manufacture_tank_mix(work_order: str, posting_moment=None) -> dict[str, Any]:
@@ -1220,9 +1285,12 @@ def start_spray_session(
     whitelisted ``enforce_cutoff`` argument let any caller skip both rules by sending
     ``enforce_cutoff=0``.
     """
-    return _start_spray_session(
-        work_order, started_at=started_at, enforce_cutoff=True, employee=employee
-    )
+    if not work_order:
+        frappe.throw("work_order is required.")
+    with wo_mutex(work_order):
+        return _start_spray_session(
+            work_order, started_at=started_at, enforce_cutoff=True, employee=employee
+        )
 
 
 def _start_spray_session(
@@ -1258,6 +1326,19 @@ def _start_spray_session(
     current_state = _lock_wo(work_order)
     wo = frappe.get_doc("Work Order", work_order)
     _ensure_afp(wo)
+
+    # Idempotent: already spraying (or done) is success, with the existing session, so a
+    # retry after a slow first response converges instead of being refused.
+    if current_state in (STATE_SPRAYING_IN_PROGRESS, STATE_COMPLETED):
+        started = wo.get("actual_start_date")
+        return {
+            "workflow_state": current_state,
+            "sprayer_movement_session": _any_sms_for(wo.name),
+            "sal": wo.get("custom_spray_application_logsheet"),
+            "started_at": get_datetime(started).isoformat() if started else None,
+            "crew_warnings": [],
+            "already": True,
+        }
 
     if current_state != STATE_TANK_MIX_MANUFACTURED:
         frappe.throw(
@@ -1379,6 +1460,17 @@ def _open_sms_for(wo_name: str) -> str | None:
     rows = frappe.get_all(
         "Sprayer Movement Session",
         filters={"work_order": wo_name, "status": "Active"},
+        fields=["name"],
+        order_by="started_at DESC",
+        limit=1,
+    )
+    return rows[0].name if rows else None
+
+
+def _any_sms_for(wo_name: str) -> str | None:
+    rows = frappe.get_all(
+        "Sprayer Movement Session",
+        filters={"work_order": wo_name},
         fields=["name"],
         order_by="started_at DESC",
         limit=1,
@@ -1581,6 +1673,16 @@ def _update_work_order_team(
 
 @frappe.whitelist()
 def end_spray_session(work_order: str, ended_at=None) -> dict[str, Any]:
+    """Close out a spray (HTTP entry): serialised per Work Order, idempotent — see
+    ``_end_spray_session``. The offline replay calls ``_end_spray_session`` directly,
+    inside its own transaction."""
+    if not work_order:
+        frappe.throw("work_order is required.")
+    with wo_mutex(work_order):
+        return _end_spray_session(work_order, ended_at=ended_at)
+
+
+def _end_spray_session(work_order: str, ended_at=None) -> dict[str, Any]:
     """Close out a spray: fire Material Issue, submit SAL, close SMS, mark WO Completed.
 
     ``ended_at`` is when the spray actually finished, for an offline session. It dates the

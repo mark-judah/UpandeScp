@@ -141,7 +141,19 @@ class TestAssessSession(unittest.TestCase):
 		self.assertEqual(out["steps"], ["mix"])
 		self.assertIsNone(out["hold"])
 
-	def test_a_one_second_spray_is_held_too_short(self):
+	def test_a_ten_second_session_completes_by_default(self):
+		"""Real September offline sessions: mix 20:47:16, start :23, end :34."""
+		out = self._a(mix_at="2026-09-10 20:47:16", started_at="2026-09-10 20:47:23",
+		              ended_at="2026-09-10 20:47:34")
+		self.assertEqual(out["steps"], ["mix", "start", "end"])
+		self.assertIsNone(out["hold"])
+
+	def test_a_one_second_spray_is_held_when_a_minimum_is_configured(self):
+		from unittest import mock
+		with mock.patch.object(OS, "min_spray_minutes", return_value=5):
+			self._held_one_second()
+
+	def _held_one_second(self):
 		out = self._a(mix_at="2026-08-17 09:00:00", started_at="2026-08-17 09:00:00",
 		              ended_at="2026-08-17 09:00:01")
 		self.assertEqual(out["hold"][0], OS.STATUS_TOO_SHORT)

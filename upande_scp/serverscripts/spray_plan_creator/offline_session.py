@@ -72,7 +72,7 @@ ORDER_GAP_SECONDS = 1
 SETTINGS = "Scouting and Crop Protection Settings"
 
 #: Used when the setting has never been saved on a site.
-DEFAULT_MIN_SPRAY_MINUTES = 5
+DEFAULT_MIN_SPRAY_MINUTES = 0  # off: real offline sprays have lasted seconds
 
 #: A phone clock further out than this is flagged on the token (never blocked).
 SKEW_WARN_SECONDS = 2 * 60 * 60
@@ -508,7 +508,7 @@ def sync_spray_session(payload) -> dict:
 		#    moment, which is the entry that decides the costing month.
 		state = frappe.db.get_value("Work Order", work_order, "workflow_state")
 		if state == SS.STATE_SPRAYING_IN_PROGRESS and "end" in verdict["steps"]:
-			closed = SS.end_spray_session(work_order, ended_at=moments["ended_at"])
+			closed = SS._end_spray_session(work_order, ended_at=moments["ended_at"])
 			# Taken from the return value, not searched for afterwards: the Material Issue
 			# deliberately leaves its `work_order` link unset (so it causes no Work Order
 			# side effects), which means there is nothing to find it by.

@@ -323,8 +323,8 @@
    "label": "Allow submit without biometric (device-down fallback)"
   },
   {
-   "default": "5",
-   "description": "An offline spray session whose start-to-end time is shorter than this is held for review instead of being completed automatically. A real spray of a greenhouse takes longer; a session of seconds is a handset glitch. 0 turns the check off.",
+   "default": "0",
+   "description": "Optional. If set above 0, an offline spray session whose start-to-end time is shorter than this many minutes is held for review instead of being completed automatically. 0 = off (the default): short real sessions complete.",
    "fieldname": "min_spray_minutes",
    "fieldtype": "Int",
    "label": "Minimum spray duration for a synced session (minutes)",

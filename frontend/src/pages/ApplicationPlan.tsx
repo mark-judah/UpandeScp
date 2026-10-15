@@ -1654,7 +1654,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       });
       dismissToast(loaderId);
       if (r.status === "success" && r.bom_name) {
-        pushToast("ok", `Created BOM ${r.bom_name}.`);
+        pushToast("ok", `Created tank mix ${r.bom_name}.`);
         // Refresh bootstrap so the new BOM appears in the dropdown,
         // then auto-select it.
         const fresh = await fetchCreatorBootstrap(initialCrop);
@@ -2016,7 +2016,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
           <div>
             <div className="text-sm font-semibold">Prescribe</div>
             <div className="text-xs text-muted-foreground">
-              Set the application details and pick the BOM, then submit.
+              Set the application details and pick the tank mix, then submit.
             </div>
           </div>
         </div>
@@ -2277,40 +2277,12 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
             </CardContent>
           </Card>
 
-          <SuggestedProductsCard
-            targets={targetsArr}
-            greenhouses={greenhouse ? [greenhouse] : []}
-            sourceWarehouse={
-              mappedStores?.chemical_store ||
-              chemRows.find((c) => !c.is_fertilizer && c.source)?.source ||
-              ""
-            }
-            currentItems={mixItems}
-            when={sprayDate}
-            canAdd={!!bomDetails}
-            onAdd={(p) =>
-              void addChemical(
-                {
-                  item_code: p.item_code,
-                  item_name: p.item_name,
-                  stock_uom: p.stock_uom,
-                  uoms: p.uoms,
-                  item_group: p.item_group,
-                  is_fertilizer: false,
-                },
-                p.default_rate,
-                mappedStores?.chemical_store ||
-                  chemRows.find((c) => !c.is_fertilizer && c.source)?.source ||
-                  undefined,
-              )
-            }
-          />
 
           <Card className="p-4">
             <CardHeader className="p-0 pb-2">
-              <CardTitle className="text-sm">Bill of Materials</CardTitle>
+              <CardTitle className="text-sm">Tank Mix</CardTitle>
               <CardDescription>
-                {bomList.length} active Chemical Mix BOMs
+                {bomList.length} active tank mixes (bills of materials)
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0 flex flex-col gap-3">
@@ -2339,6 +2311,36 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                   New
                 </Button>
               </div>
+
+              <SuggestedProductsCard
+                embedded
+                targets={targetsArr}
+                greenhouses={greenhouse ? [greenhouse] : []}
+                sourceWarehouse={
+                  mappedStores?.chemical_store ||
+                  chemRows.find((c) => !c.is_fertilizer && c.source)?.source ||
+                  ""
+                }
+                currentItems={mixItems}
+                when={sprayDate}
+                canAdd={!!bomDetails}
+                onAdd={(p) =>
+                  void addChemical(
+                    {
+                      item_code: p.item_code,
+                      item_name: p.item_name,
+                      stock_uom: p.stock_uom,
+                      uoms: p.uoms,
+                      item_group: p.item_group,
+                      is_fertilizer: false,
+                    },
+                    p.default_rate,
+                    mappedStores?.chemical_store ||
+                      chemRows.find((c) => !c.is_fertilizer && c.source)?.source ||
+                      undefined,
+                  )
+                }
+              />
 
               {bomLoading && (
                 // The tank mix's own frame — water fields, the chemicals table
@@ -2659,7 +2661,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                       </Table>
                     ) : (
                       <div className="text-xs text-muted-foreground py-2">
-                        BOM has no exploded items. Add one with the button above.
+                        This tank mix has no chemicals yet. Add one with the button above.
                       </div>
                     )}
                   </div>
@@ -3077,7 +3079,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
             <DialogTitle>Create a new tank mix</DialogTitle>
             <DialogDescription>
               The mix is created here and selected straight away. It is stored as
-              an ERPNext BOM, which is the name you will see in Desk.
+              an ERPNext bill of materials, which is what you will see in Desk.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
@@ -3241,7 +3243,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                 {creatingBom ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : null}
-                Create BOM
+                Create tank mix
               </Button>
             </div>
           </div>

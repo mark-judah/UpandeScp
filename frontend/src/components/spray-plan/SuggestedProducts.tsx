@@ -54,6 +54,7 @@ export function SuggestedProductsCard({
   currentItems,
   when,
   canAdd = true,
+  embedded = false,
   onAdd,
 }: {
   targets: string[];
@@ -63,6 +64,8 @@ export function SuggestedProductsCard({
   when?: string;
   /** False until the plan has a tank mix to add into. */
   canAdd?: boolean;
+  /** Render as a section inside a host card (the tank mix card) instead of a card of its own. */
+  embedded?: boolean;
   onAdd: (p: SuggestedProduct) => void;
 }) {
   const [data, setData] = useState<SuggestedProducts | null>(null);
@@ -113,7 +116,7 @@ export function SuggestedProductsCard({
   const rows = data?.suggestions ?? [];
 
   return (
-    <Card className="p-4" data-testid="suggested-products">
+    <Frame embedded={embedded}>
       <CardHeader className="p-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           Suggested products
@@ -186,6 +189,19 @@ export function SuggestedProductsCard({
           </>
         )}
       </CardContent>
+    </Frame>
+  );
+}
+
+/** A card of its own, or a bordered section inside the tank mix card. */
+function Frame({ embedded, children }: { embedded: boolean; children: React.ReactNode }) {
+  return embedded ? (
+    <section className="rounded-md border p-3" data-testid="suggested-products">
+      {children}
+    </section>
+  ) : (
+    <Card className="p-4" data-testid="suggested-products">
+      {children}
     </Card>
   );
 }

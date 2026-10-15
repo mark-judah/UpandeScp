@@ -4,6 +4,7 @@ import maplibregl from "maplibre-gl";
 import { ChevronDown, Layers } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapControlPanel } from "@/components/maps/MapControlPanel";
+import { MapPanelDock } from "@/components/maps/MapPanelDock";
 import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { Map3D } from "@/components/Map3D";
 import { LoadProgress, TextSkeleton, firstLoad } from "@/components/Loading";
@@ -763,8 +764,9 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
           </MapKpiPill>
 
           {/* The view's roster / legend (and any pick-to-outline control)
-              floats top-left; MapLibre's zoom buttons sit top-right. */}
-          <MapControlPanel title={view.panelTitle} className="top-3">
+              docks bottom-right; MapLibre's zoom buttons sit top-right. */}
+          <MapPanelDock>
+          <MapControlPanel title={view.panelTitle}>
             {view.renderPanel(data, first)}
           </MapControlPanel>
 
@@ -775,6 +777,7 @@ export function AvocadoTreeMap({ view }: { view: AvocadoView }) {
                 setSelectedMarker(null),
               )
             : null}
+          </MapPanelDock>
         </div>
       </div>
 

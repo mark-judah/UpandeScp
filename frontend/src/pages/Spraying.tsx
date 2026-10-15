@@ -17,6 +17,7 @@ import L from "leaflet";
 import { MapBase } from "@/components/MapBase";
 import { MapControlPanel } from "@/components/maps/MapControlPanel";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
+import { MapPanelDock } from "@/components/maps/MapPanelDock";
 import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { KpiValueSkeleton, LoadProgress, RowsSkeleton } from "@/components/Loading";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -538,6 +539,7 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
           </MapKpiPill>
 
           {/* The per-sprayer show/hide list floats under the zoom buttons. */}
+          <MapPanelDock>
           <MapControlPanel title="Sprayers in view" count={skeleton ? undefined : sprayerInfo.list.length}>
             <div className="flex items-center justify-end mb-1.5">
               <div className="flex items-center gap-1">
@@ -652,6 +654,7 @@ export function Spraying({ initialCrop }: { initialCrop?: string } = {}) {
               </div>
             </MapFloatingCard>
           ) : null}
+          </MapPanelDock>
         </div>
       </div>
 

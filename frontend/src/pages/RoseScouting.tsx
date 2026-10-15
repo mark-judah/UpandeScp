@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
+import { MapPanelDock } from "@/components/maps/MapPanelDock";
 import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
@@ -625,6 +626,7 @@ export function RoseScouting() {
             )}
           </MapKpiPill>
 
+          <MapPanelDock>
           {openTrail ? (
             <ScoutRouteCard
               key={openTrail.key}
@@ -710,6 +712,7 @@ export function RoseScouting() {
               </div>
             </MapFloatingCard>
           ) : null}
+          </MapPanelDock>
         </div>
       </div>
     </div>

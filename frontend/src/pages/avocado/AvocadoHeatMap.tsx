@@ -19,6 +19,7 @@ import maplibregl from "maplibre-gl";
 import { ChevronDown, ClipboardList, Layers } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapFloatingCard } from "@/components/maps/MapFloatingCard";
+import { MapPanelDock } from "@/components/maps/MapPanelDock";
 import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { Map3D } from "@/components/Map3D";
 import { LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
@@ -686,6 +687,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
             )}
           </MapKpiPill>
 
+          <MapPanelDock>
           {planOpen && (
             // The plan is the working half of this page (a team, a kit, a
             // rate per chemical, the targets), so this one card is a little
@@ -867,6 +869,7 @@ export function AvocadoHeatMap({ initialCrop = "Avocado" }: { initialCrop?: stri
             </div>
             </MapFloatingCard>
           )}
+          </MapPanelDock>
         </div>
       </div>
 

@@ -18,6 +18,7 @@ import L from "leaflet";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
 import { MapControlPanel } from "@/components/maps/MapControlPanel";
+import { MapPanelDock } from "@/components/maps/MapPanelDock";
 import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -441,6 +442,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
 
           {/* The legend doubles as the show/hide control, so it floats under
               the zoom buttons instead of docking beside the map. */}
+          <MapPanelDock>
           <MapControlPanel title="Legend" count={first ? undefined : legendRows.length}>
           <div className="flex items-center justify-end mb-1.5">
             <div className="flex items-center gap-1">
@@ -499,6 +501,7 @@ export function Observations({ initialCrop }: { initialCrop?: string } = {}) {
             </div>
           )}
           </MapControlPanel>
+          </MapPanelDock>
         </div>
       </div>
 

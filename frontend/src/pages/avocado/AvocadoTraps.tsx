@@ -57,7 +57,6 @@ export function AvocadoTraps() {
           <MapControlPanel
             title="Pests in view"
             count={loading ? undefined : totals.length}
-            className="bottom-4 left-auto right-4 top-auto"
           >
             {loading ? (
               <RowsSkeleton rows={4} />

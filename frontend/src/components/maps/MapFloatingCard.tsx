@@ -6,6 +6,7 @@
 import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useInMapPanelDock } from "./MapPanelDock";
 
 /** Calls `onClose` when Escape is pressed while `active`. */
 export function useEscapeClose(onClose: () => void, active = true) {
@@ -43,14 +44,17 @@ export function MapFloatingCard({
   testId = "map-floating-card",
 }: MapFloatingCardProps) {
   useEscapeClose(onClose);
+  const docked = useInMapPanelDock();
   return (
     <div
       role="dialog"
       aria-label={label ?? (typeof title === "string" ? title : undefined)}
       data-testid={testId}
       className={cn(
-        "absolute bottom-4 right-4 z-[1000]",
-        "max-h-[calc(100%-2rem)] w-[min(320px,calc(100%-2rem))] overflow-auto rounded-2xl border bg-card/95 p-4 shadow-[var(--sd-shadow-2,0_8px_24px_rgba(0,0,0,0.18))] backdrop-blur",
+        docked
+          ? "relative max-h-[min(60vh,32rem)] min-h-0 w-[min(320px,calc(100vw-1rem))]"
+          : "absolute bottom-4 right-4 z-[1000] max-h-[calc(100%-2rem)] w-[min(320px,calc(100%-2rem))]",
+        "overflow-auto rounded-2xl border bg-card/95 p-4 shadow-[var(--sd-shadow-2,0_8px_24px_rgba(0,0,0,0.18))] backdrop-blur",
         "scp-card-in",
         className,
       )}

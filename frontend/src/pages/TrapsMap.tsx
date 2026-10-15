@@ -4,6 +4,7 @@ import { ChevronDown } from "lucide-react";
 import { useScouting } from "@/hooks/use-scouting";
 import { MapBase } from "@/components/MapBase";
 import { MapControlPanel } from "@/components/maps/MapControlPanel";
+import { MapPanelDock } from "@/components/maps/MapPanelDock";
 import { MapKpiPill } from "@/components/maps/MapKpiPill";
 import { LoadProgress, RowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -720,11 +721,11 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
           </MapKpiPill>
 
           {/* Pest legend, bottom-right; the trap card takes that corner while open. */}
+          <MapPanelDock>
           {!selectedTrap ? (
           <MapControlPanel
             title="Pests in view"
             count={first ? undefined : pestOptions.length}
-            className="bottom-4 left-auto right-4 top-auto"
           >
           {first ? (
             <RowsSkeleton rows={5} />
@@ -780,6 +781,7 @@ export function TrapsMap({ initialCrop }: { initialCrop?: string } = {}) {
                 onClose={() => setSelected(null)}
               />
             ) : null}
+          </MapPanelDock>
         </div>
       </div>
 

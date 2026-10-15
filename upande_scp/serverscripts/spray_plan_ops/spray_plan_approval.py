@@ -202,7 +202,7 @@ def get_pending_work_orders(
         """
         SELECT
             name, custom_greenhouse, creation,
-            custom_scheduled_application_time,
+            custom_scheduled_application_time, planned_start_date,
             custom_spray_type, custom_scope, custom_scope_details,
             custom_area, custom_water_volume, custom_water_ph,
             custom_water_hardness, custom_kit, wip_warehouse,

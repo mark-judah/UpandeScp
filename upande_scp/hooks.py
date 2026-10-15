@@ -274,6 +274,10 @@ doc_events = {
             "upande_scp.serverscripts.spray_plan_creator.reservations.enforce_stock_gate",
         ],
         "before_update_after_submit": "upande_scp.serverscripts.spray_compliance.api.stamp_overrides",
+        # Live Spray Plan Approvals: tell approvers a plan arrived / moved.
+        "after_insert": "upande_scp.serverscripts.spray_plan_ops.approval_realtime.after_insert",
+        "on_submit": "upande_scp.serverscripts.spray_plan_ops.approval_realtime.on_submit",
+        "on_update": "upande_scp.serverscripts.spray_plan_ops.approval_realtime.on_update",
     },
     "Employee": _SCP_CACHE_EVENTS,
     "Pest": _SCP_CACHE_EVENTS,

@@ -369,6 +369,15 @@ def heatmap_card_detail(args: dict, force: bool = False) -> dict:
         "obs_name":   obs_name,
         "obs_kind":   obs_kind,
     }
+    # Default 3 (the heatmap page's three panels). A caller that shows more or
+    # fewer weeks (PestHeatmapModal) names it; it joins the cache key only then,
+    # so the page's existing cached payloads stay valid.
+    try:
+        weeks_limit = max(1, min(int(args.get("weeks_limit") or 3), 8))
+    except (TypeError, ValueError):
+        weeks_limit = 3
+    if weeks_limit != 3:
+        filters["weeks_limit"] = weeks_limit
 
     def build():
         where, params = parent_filter_conditions(
@@ -378,7 +387,7 @@ def heatmap_card_detail(args: dict, force: bool = False) -> dict:
         rows = _query_kind(where, params, obs_kind)
         rows = [r for r in rows if (r.get("obs_name") or "") == obs_name]
         color_map = {obs_name: ""}
-        cards = _build_cards(rows, obs_kind, color_map, weeks_limit=3)
+        cards = _build_cards(rows, obs_kind, color_map, weeks_limit=weeks_limit)
         recent = cards[0]["recent"] if cards else []
         # Who walked the house that week, and how much of it they reached.
         extra = scouts_and_coverage(

@@ -47,11 +47,17 @@ def _delete_docs(doctype, names):
 def wipe(prefix):
 	"""Remove every row keyed to ``prefix``: items, warehouses, and whatever references
 	them."""
+	# A Spray Product is auto-created per Item and outlives it; left behind, it makes
+	# every later save of the product list fail on the missing Item link.
+	if frappe.db.exists("DocType", "Spray Product"):
+		_delete_docs("Spray Product", frappe.db.sql_list(
+			"SELECT name FROM `tabSpray Product` WHERE name LIKE %s", _like(prefix)))
 	items = frappe.db.sql_list("SELECT name FROM `tabItem` WHERE name LIKE %s", _like(prefix))
 	whs = frappe.db.sql_list(
 		"SELECT name FROM `tabWarehouse` WHERE name LIKE %s", _like(prefix)
 	)
 	if not items and not whs:
+		frappe.db.commit()
 		return
 	wos = set()
 	if items:
@@ -128,9 +134,13 @@ class ThrowawayPlan:
 		self.fg = f"{self.prefix}MIX"
 		self.wo_names = []
 
-	def build(self, transfer_days_ago=4, receipt_days_ago=6, qty=2.0):
+	def build(self, transfer_days_ago=4, receipt_days_ago=6, qty=2.0, transfer=True):
 		"""Create everything. Returns self; ``self.wo`` is the plan, in 'Chemical Issued'
-		with its chemical transferred into the CSU."""
+		with its chemical transferred into the CSU. With ``transfer=False`` the plan is
+		left untouched (no receipt, no transfer, no state change), for tests that post
+		their own stock against it; ``add_plan`` then makes more plans on the same CSU."""
+		self.qty = qty
+		self.transfer_days_ago = transfer_days_ago
 		wipe(self.prefix)
 		frappe.set_user("Administrator")
 		self.abbr = frappe.db.get_value("Company", COMPANY, "abbr")
@@ -164,11 +174,17 @@ class ThrowawayPlan:
 		bom.submit()
 		self.bom = bom.name
 
-		self._se("Material Receipt", [{
-			"item_code": self.chem, "qty": qty * 3, "t_warehouse": self.store,
-			"batch_no": self.batch,
-		}], receipt_days_ago)
+		if transfer:
+			self._se("Material Receipt", [{
+				"item_code": self.chem, "qty": qty * 3, "t_warehouse": self.store,
+				"batch_no": self.batch,
+			}], receipt_days_ago)
+		self.wo = self.add_plan(transfer=transfer)
+		return self
 
+	def add_plan(self, transfer=False):
+		"""Another plan on this fixture's CSU. Returns the Work Order document."""
+		qty, transfer_days_ago = self.qty, self.transfer_days_ago
 		# The plan's own supervisor snapshot, so scans and the issue are credited without
 		# reading the session user. The Employee is only linked to, never changed.
 		emp = frappe.db.get_value("Employee", {"status": "Active", "company": COMPANY})
@@ -186,21 +202,27 @@ class ThrowawayPlan:
 				"source_warehouse": self.store,
 			}],
 		})
-		wo.flags.skip_stock_gate = True
-		wo.insert(ignore_permissions=True)
-		wo.submit()
+		# The gate reads the global flag, not the document's; an untouched plan has no
+		# stock behind it yet.
+		gate = frappe.flags.get("skip_stock_gate")
+		frappe.flags.skip_stock_gate = True
+		try:
+			wo.insert(ignore_permissions=True)
+			wo.submit()
+		finally:
+			frappe.flags.skip_stock_gate = gate
 		self.wo_names.append(wo.name)
-		self._se(MTM, [{
-			"item_code": self.chem, "qty": qty, "s_warehouse": self.store,
-			"t_warehouse": self.csu, "batch_no": self.batch,
-		}], transfer_days_ago, work_order=wo.name)
-		frappe.db.set_value("Work Order", wo.name, {
-			"workflow_state": "Chemical Issued",
-			"custom_scheduled_application_time": add_days(now_datetime(), 1),
-		}, update_modified=False)
+		if transfer:
+			self._se(MTM, [{
+				"item_code": self.chem, "qty": qty, "s_warehouse": self.store,
+				"t_warehouse": self.csu, "batch_no": self.batch,
+			}], transfer_days_ago, work_order=wo.name)
+			frappe.db.set_value("Work Order", wo.name, {
+				"workflow_state": "Chemical Issued",
+				"custom_scheduled_application_time": add_days(now_datetime(), 1),
+			}, update_modified=False)
 		frappe.db.commit()
-		self.wo = frappe.get_doc("Work Order", wo.name)
-		return self
+		return frappe.get_doc("Work Order", wo.name)
 
 	def owns(self, work_order):
 		"""True only for a Work Order this fixture made."""

@@ -20,10 +20,18 @@ class TestContext(unittest.TestCase):
 			self.assertIn(k, p[item])
 
 	def test_codes_come_live_from_linked_ingredients(self):
+		self.addCleanup(frappe.db.rollback)
 		if not frappe.db.exists("Active Ingredient MoA", "Azoxystrobin"):
 			frappe.get_doc({"doctype": "Active Ingredient MoA", "ingredient": "Azoxystrobin",
 			                "kind": "Fungicide", "frac_code": "11"}).insert(ignore_permissions=True)
-		item = frappe.get_all("Spray Product", filters={"disabled": 0, "category": "Chemical"}, pluck="name", limit=1)[0]
+		# Its own item (and so its own Spray Product, made by the Item hook), inside a
+		# transaction that is rolled back: no dependence on what other fixtures left.
+		item = "_TEST CTX INGREDIENT CHEM"
+		group = frappe.get_all("Item Group", filters={"is_group": 0}, pluck="name")[0]
+		frappe.get_doc({"doctype": "Item", "item_code": item, "item_name": item,
+		                "item_group": group, "stock_uom": "Nos", "is_stock_item": 0}).insert(ignore_permissions=True)
+		if not frappe.db.exists("Spray Product", item):
+			self.skipTest("no Spray Product is auto-created for a new Item on this site")
 		doc = frappe.get_doc("Spray Product", item)
 		doc.set("frac", [])
 		doc.set("active_ingredients", [{"active_ingredient": "Azoxystrobin", "concentration": 250,

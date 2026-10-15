@@ -3,7 +3,7 @@
 Before, the Manufacture rows named no batch and ERPNext picked first-in-first-out over
 the whole shared CSU: another plan's batch, or nothing at all when the transferred batch
 had expired or the transfer was a legacy one with no batch. These tests post real Stock
-Entries on two borrowed Application Floor Plan Work Orders and a throwaway chemical, run
+Entries on two throwaway Application Floor Plan Work Orders (``afp_fixture``) and a throwaway chemical, run
 the manufacture, and read back which batches its bundles name.
 
 Every test runs inside one transaction that is rolled back: ``frappe.db.commit`` is a
@@ -24,6 +24,7 @@ from frappe.utils import add_days, add_to_date, flt, now_datetime, today
 from upande_scp.serverscripts.spray_plan_creator import offline_session as OS
 from upande_scp.serverscripts.spray_plan_creator import spray_session as SS
 from upande_scp.serverscripts.spray_plan_creator import transfer_batches as TB
+from upande_scp.serverscripts.tests import afp_fixture
 
 MTM = "Material Transfer for Manufacture"
 
@@ -127,46 +128,24 @@ class TestPlanItem(unittest.TestCase):
 # ─────────────────────────────── on the ledger ───────────────────────────────
 
 
-def _two_plans_sharing_a_csu():
-    rows = frappe.db.sql(
-        """SELECT wo.name, wo.wip_warehouse, wo.company
-           FROM `tabWork Order` wo
-           WHERE wo.custom_type = %s AND wo.docstatus = 1 AND wo.status = 'Not Started'
-             AND wo.produced_qty = 0 AND wo.wip_warehouse IS NOT NULL
-             AND wo.bom_no IS NOT NULL
-             AND NOT EXISTS (SELECT 1 FROM `tabStock Entry` se
-                             WHERE se.work_order = wo.name AND se.docstatus < 2)
-           ORDER BY wo.creation DESC LIMIT 200""",
-        (SS.AFP_TYPE,),
-        as_dict=True,
-    )
-    by_csu: dict = {}
-    for r in rows:
-        by_csu.setdefault(r.wip_warehouse, []).append(r)
-        if len(by_csu[r.wip_warehouse]) == 2:
-            return by_csu[r.wip_warehouse]
-    return None
-
-
 class LedgerCase(unittest.TestCase):
     """Real entries, one transaction, rolled back after every test."""
 
     @classmethod
     def setUpClass(cls):
         frappe.set_user("Administrator")
-        pair = _two_plans_sharing_a_csu()
-        if not pair:
-            raise unittest.SkipTest("no two untouched floor plans share a CSU on this site")
-        cls.wo1, cls.wo2 = pair[0].name, pair[1].name
-        cls.csu = pair[0].wip_warehouse
-        cls.company = pair[0].company
-        cls.store = frappe.db.get_value(
-            "Warehouse",
-            {"company": cls.company, "is_group": 0, "disabled": 0, "name": ["!=", cls.csu]},
-            "name",
-        )
+        # Two plans of a throwaway fixture that share one CSU, untouched: no receipt, no
+        # transfer. Nothing here depends on, or can touch, the site's real plans or stock.
+        cls.fixture = afp_fixture.ThrowawayPlan("LEDGER")
+        cls.fixture.build(transfer=False)
+        cls.addClassCleanup(afp_fixture.wipe, cls.fixture.prefix)
+        cls.wo1 = cls.fixture.wo.name
+        cls.wo2 = cls.fixture.add_plan().name
+        cls.csu = cls.fixture.csu
+        cls.company = afp_fixture.COMPANY
+        cls.store = cls.fixture.store
         cls.item_group = frappe.get_all("Item Group", filters={"is_group": 0}, pluck="name")[0]
-        cls.uom = "Litre" if frappe.db.exists("UOM", "Litre") else "Nos"
+        cls.uom = cls.fixture.uom
 
     def setUp(self):
         frappe.set_user("Administrator")
@@ -665,7 +644,8 @@ class TestWhoMayManufacture(GateCase):
             frappe.get_doc({"doctype": OS.TOKEN, "token": token, "work_order": self.wo1,
                             "status": "Refused"}).insert(ignore_permissions=True)
         frappe.set_user(syncer)
-        payload = {"token": token, "work_order": self.wo1, "scans": []}
+        payload = {"token": token, "work_order": self.wo1, "scans": [],
+                   "mix_at": str(now_datetime())}
         with mock.patch.object(OS, "preflight", return_value={
             "ok": True, "problems": [], "notes": [], "anchor": None, "resolved": {}}), \
              mock.patch.object(OS, "_replay_scans"), \
@@ -696,7 +676,8 @@ class TestWhoMayManufacture(GateCase):
                         "status": "Refused"}).insert(ignore_permissions=True)
         frappe.set_user(clerk)
         with self.assertRaises(frappe.PermissionError):
-            OS.sync_spray_session({"token": token, "work_order": self.wo1, "scans": []})
+            OS.sync_spray_session({"token": token, "work_order": self.wo1, "scans": [],
+                                   "mix_at": str(now_datetime())})
         self.made.assert_not_called()
         frappe.set_user("Administrator")
         self.assertEqual(frappe.db.get_value(OS.TOKEN, token, "work_order"), self.wo2)
@@ -722,7 +703,12 @@ class TestFieldStepGates(GateCase):
 
     def _team_member(self):
         email = self.user(["SCP Scout"])
-        emp_name = frappe.db.get_value("Employee", {"status": "Active"}, "name")
+        # Not anyone already on the plan: the fixture's own Supervisor row would make
+        # this user a supervisor too, and end is for supervisors only.
+        on_plan = frappe.get_all("Custom Spray Plan Team Member", filters={"parent": self.wo1}, pluck="employee") \
+            if frappe.db.table_exists("Custom Spray Plan Team Member") else []
+        emp_name = frappe.db.get_value(
+            "Employee", {"status": "Active", "name": ["not in", on_plan or [""]]}, "name")
         frappe.db.set_value("Employee", emp_name, "user_id", email, update_modified=False)
         wo = frappe.get_doc("Work Order", self.wo1)
         if not wo.meta.has_field("custom_spray_plan_team_members"):

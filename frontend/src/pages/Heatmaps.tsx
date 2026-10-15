@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/popover";
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { METHOD, useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { call } from "@/lib/frappe";
 import {
@@ -548,8 +548,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
         title="Heatmaps"
         eyebrow={<>Per-greenhouse zone intensity · pest &amp; disease markers</>}
       >
-        <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
-        <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
+        <DateRangePicker label="Heatmap date range" value={{ from, to }} onChange={setRange} />
 
         {/* Multi-select: check any farms and/or greenhouses to plot. */}
         <Popover>

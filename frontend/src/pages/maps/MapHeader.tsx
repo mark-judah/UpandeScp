@@ -3,7 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { HeaderIconButton } from "@/components/header-controls";
 import { PlacePicker } from "@/components/PlacePicker";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { useCropFarms } from "@/hooks/use-crop-farms";
 
 export const ALL = "__all__";
@@ -79,13 +79,10 @@ export function MapHeader({
         disabled={loading}
       />
 
-      <DatePicker
-        value={value.from}
-        onChange={(v) => onChange({ ...value, from: v })}
-      />
-      <DatePicker
-        value={value.to}
-        onChange={(v) => onChange({ ...value, to: v })}
+      <DateRangePicker
+        label="Date range"
+        value={{ from: value.from, to: value.to }}
+        onChange={(r) => onChange({ ...value, from: r.from, to: r.to })}
       />
 
       {onReload && (

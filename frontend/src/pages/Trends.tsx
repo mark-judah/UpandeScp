@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { LoadProgress, firstLoad } from "@/components/Loading";
 import {
   Popover,
@@ -145,8 +145,7 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
         title="Scouting Trends"
         eyebrow={<>Across farms, stations, pests &amp; stages</>}
       >
-        <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
-        <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
+        <DateRangePicker label="Trends date range" value={{ from, to }} onChange={setRange} />
 
         <Popover>
           <PopoverTrigger asChild>

@@ -18,7 +18,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PlacePicker } from "@/components/PlacePicker";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { LoadProgress, TextSkeleton } from "@/components/Loading";
 import { Figure, FigureRow } from "@/components/people/Figure";
 import { PersonList, type PersonListGroup } from "@/components/people/PersonList";
@@ -195,8 +195,7 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
             onChange={(p) => setFarm(p.farm || ALL)}
             disabled={!data}
           />
-          <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
-          <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
+          <DateRangePicker label="Scouts date range" value={{ from, to }} onChange={setRange} />
         </div>
         <LoadProgress
           active={q.loading && !!data}

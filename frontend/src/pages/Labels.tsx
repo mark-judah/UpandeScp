@@ -36,7 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { PlacePicker } from "@/components/PlacePicker";
 import {
   Select,
@@ -657,8 +657,14 @@ export function Labels() {
           onChange={(p) => setFarm(p.farm || ALL_FARMS)}
           disabled={skeleton}
         />
-        <DatePicker value={fromDate} onChange={setFromDate} />
-        <DatePicker value={toDate} onChange={setToDate} />
+        <DateRangePicker
+          label="Label date range"
+          value={{ from: fromDate, to: toDate }}
+          onChange={(r) => {
+            setFromDate(r.from);
+            setToDate(r.to);
+          }}
+        />
         <HeaderIconButton onClick={load} disabled={loading} title="Refresh">
           <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
         </HeaderIconButton>

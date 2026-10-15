@@ -30,7 +30,7 @@ import { AlertTriangle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import {
   Select,
   SelectContent,
@@ -482,8 +482,14 @@ export function SprayPlanTransfers() {
                 ))}
               </SelectContent>
             </Select>
-            <DatePicker value={fromDate} onChange={setFromDate} />
-            <DatePicker value={toDate} onChange={setToDate} />
+            <DateRangePicker
+              label="Transfers date range"
+              value={{ from: fromDate, to: toDate }}
+              onChange={(r) => {
+                setFromDate(r.from);
+                setToDate(r.to);
+              }}
+            />
             <HeaderIconButton
               onClick={load}
               disabled={loading || submitting}

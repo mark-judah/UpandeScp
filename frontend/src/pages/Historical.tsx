@@ -26,7 +26,7 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL } from "@/components/header-controls";
 import { PlacePicker } from "@/components/PlacePicker";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { Button } from "@/components/ui/button";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { TableRowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
@@ -158,8 +158,14 @@ export function Historical() {
           </>
         }
       >
-          <DatePicker value={from} onChange={setFrom} />
-          <DatePicker value={to} onChange={setTo} />
+          <DateRangePicker
+            label="Historical date range"
+            value={{ from: from, to: to }}
+            onChange={(r) => {
+              setFrom(r.from);
+              setTo(r.to);
+            }}
+          />
           {/* One place pill (place picker spec G1). The server returns the
               farms this user may see; a single-farm user sees that farm. */}
           <PlacePicker

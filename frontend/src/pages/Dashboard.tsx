@@ -8,7 +8,7 @@ import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlacePicker } from "@/components/PlacePicker";
 import { HeaderIconButton } from "@/components/header-controls";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { OverviewTab }  from "./dashboard/OverviewTab";
 import { PestsTab }     from "./dashboard/PestsTab";
 import { DiseasesTab }  from "./dashboard/DiseasesTab";
@@ -138,13 +138,10 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                 disabled={farmsLoading}
               />
 
-              <DatePicker
-                value={from}
-                onChange={(v) => setRange({ from: v, to })}
-              />
-              <DatePicker
-                value={to}
-                onChange={(v) => setRange({ from, to: v })}
+              <DateRangePicker
+                label="Dashboard date range"
+                value={{ from, to }}
+                onChange={setRange}
               />
 
               <HeaderIconButton

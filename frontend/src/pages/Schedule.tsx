@@ -13,7 +13,7 @@ import { addMonths, addWeeks } from "date-fns";
 import { CalendarDays, ChevronLeft, ChevronRight, GanttChart, RefreshCw, UsersRound } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { FilterSelect } from "@/components/FilterSelect";
 import { PlacePicker } from "@/components/PlacePicker";
 import { HeaderIconButton } from "@/components/header-controls";
@@ -274,16 +274,10 @@ export function Schedule({ initialCrop }: { initialCrop?: string }) {
             <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Previous" onClick={() => step(-1)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <DatePicker
-              label="From"
-              value={range.from}
-              onChange={(v) => v && setRange((r) => ({ ...r, from: v }))}
-            />
-            <span className="text-xs text-muted-foreground">to</span>
-            <DatePicker
-              label="To"
-              value={range.to}
-              onChange={(v) => v && setRange((r) => ({ ...r, to: v }))}
+            <DateRangePicker
+              label="Schedule range"
+              value={range}
+              onChange={(r) => setRange(r)}
             />
             <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Next" onClick={() => step(1)}>
               <ChevronRight className="h-4 w-4" />

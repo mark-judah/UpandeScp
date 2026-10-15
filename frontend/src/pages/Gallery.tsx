@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { HEADER_PILL } from "@/components/header-controls";
 import { PlacePicker } from "@/components/PlacePicker";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { PageHeader } from "@/components/PageHeader";
 import { FindingPanel, KindPill } from "@/components/gallery/FindingPanel";
 import { NO_PHOTOS_TEXT } from "@/components/gallery/ObservationGallery";
@@ -238,8 +238,7 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
               ))}
             </SelectContent>
           </Select>
-          <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
-          <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
+          <DateRangePicker label="Gallery date range" value={{ from, to }} onChange={setRange} />
         </div>
 
         <LoadProgress active={loading && loaded} />

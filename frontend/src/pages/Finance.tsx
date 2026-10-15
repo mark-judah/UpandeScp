@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { CircleSlash, Info, Split, Target, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import {
   Tooltip,
   TooltipContent,
@@ -151,10 +151,14 @@ export function Finance({ initialCrop }: { initialCrop?: string } = {}) {
         >
           <div className="flex flex-wrap items-end gap-2">
             <div className="flex items-center">
-              <DatePicker value={from} onChange={setFrom} />
-            </div>
-            <div className="flex items-center">
-              <DatePicker value={to} onChange={setTo} />
+              <DateRangePicker
+                label="Finance date range"
+                value={{ from, to }}
+                onChange={(r) => {
+                  setFrom(r.from);
+                  setTo(r.to);
+                }}
+              />
             </div>
           </div>
         </PageHeader>

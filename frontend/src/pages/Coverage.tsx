@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useCropFarms } from "@/hooks/use-crop-farms";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
 import { PlacePicker } from "@/components/PlacePicker";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { LoadProgress } from "@/components/Loading";
 import { PageHeader } from "@/components/PageHeader";
 import { DataQualityTab } from "@/pages/dashboard/DataQualityTab";
@@ -49,8 +49,7 @@ export function Coverage({ initialCrop }: { initialCrop?: string } = {}) {
             onChange={(p) => setFarm(p.farm)}
             disabled={farmsLoading}
           />
-          <DatePicker value={from} onChange={(v) => setRange({ from: v, to })} />
-          <DatePicker value={to} onChange={(v) => setRange({ from, to: v })} />
+          <DateRangePicker label="Date range" value={{ from, to }} onChange={setRange} />
         </div>
         {/* Inline under the filters, not a full-screen overlay: the tiles and
             tables stand (skeletons on the first load, old figures on a refresh). */}

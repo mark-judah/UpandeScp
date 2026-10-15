@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import { TableRowsSkeleton, firstLoad } from "@/components/Loading";
 import { LifecycleTimeline } from "@/components/spray-plan/LifecycleTimeline";
@@ -135,8 +135,14 @@ export function ChemicalProgress() {
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-2 px-4 md:px-6">
-        <DatePicker value={from} onChange={setFrom} />
-        <DatePicker value={to} onChange={setTo} />
+        <DateRangePicker
+          label="Progress date range"
+          value={{ from: from, to: to }}
+          onChange={(r) => {
+            setFrom(r.from);
+            setTo(r.to);
+          }}
+        />
         <PlacePicker
           level="farm"
           farms={farms}

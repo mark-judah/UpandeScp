@@ -98,7 +98,10 @@ describe("Scouting ▸ Gallery", () => {
     fireEvent.change(screen.getByLabelText("Gallery kind"), { target: { value: "pest" } });
     fireEvent.change(screen.getByLabelText("Gallery observation"), { target: { value: "Thrips" } });
     fireEvent.change(screen.getByLabelText("Gallery scout"), { target: { value: "EMP-1" } });
-    fireEvent.change(screen.getAllByLabelText("date")[0], { target: { value: "2026-09-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "Gallery date range" }));
+    const fromBox = screen.getByLabelText("From date");
+    fireEvent.change(fromBox, { target: { value: "2026-09-01" } });
+    fireEvent.keyDown(fromBox, { key: "Enter" });
     await waitFor(() =>
       expect(fetchPhotoFeed).toHaveBeenLastCalledWith(
         expect.objectContaining({

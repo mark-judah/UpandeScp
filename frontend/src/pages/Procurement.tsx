@@ -18,7 +18,7 @@
  *   0.4 from last cycle" is the difference between the split looking arbitrary
  *   and looking correct.
  */
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Bar, RowsSkeleton, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import {
@@ -2064,8 +2064,15 @@ function NewCycleDialog({
             </p>
           )}
           <div className="flex gap-2">
-            <DatePicker variant="field" label="Cycle start" value={start} onChange={setStart} />
-            <DatePicker variant="field" label="Cycle end" value={end} onChange={setEnd} />
+            <DateRangePicker
+              variant="field"
+              label="Cycle dates"
+              value={{ from: start, to: end }}
+              onChange={(r) => {
+                setStart(r.from);
+                setEnd(r.to);
+              }}
+            />
           </div>
           <Button
             disabled={busy || !name.trim() || !company || !start || !end}

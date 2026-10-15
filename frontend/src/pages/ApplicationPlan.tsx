@@ -28,6 +28,7 @@ import { BomPicker } from "@/components/BomPicker";
 import { DatePicker } from "@/components/DatePicker";
 import { TimePicker } from "@/components/TimePicker";
 import { useToast, type ToastItem } from "@/components/Toast";
+import { parseReplanParams, pendingNote, resolveReplan } from "./replanPrefill";
 import {
   Dialog,
   DialogContent,
@@ -284,6 +285,13 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   // prefill ref survives the greenhouse/classification reset effect below.
   const [curativeAlert, setCurativeAlert] = useState<string>("");
   const prefillRef = useRef<{ greenhouse: string; target: string } | null>(null);
+  // Re-plan link from the Approvals Stale tab: parsed once, applied when the bootstrap lands.
+  const replanRef = useRef(
+    typeof window !== "undefined" ? parseReplanParams(window.location.hash) : null,
+  );
+  const replanTargetsRef = useRef<{ greenhouse: string; targets: string[] } | null>(null);
+  const [replanWo, setReplanWo] = useState<string>("");
+  const [replanPending, setReplanPending] = useState<ChemicalItem[]>([]);
   const [diag, setDiag] = useState<DiagnoseFilters>({
     pest: ALL,
     stage: ALL,
@@ -591,9 +599,64 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       setSelectedTargets(new Set([p.target]));
       return;
     }
+    const r = replanTargetsRef.current;
+    if (r && r.greenhouse === greenhouse && classification === "Curative") {
+      replanTargetsRef.current = null;
+      setSelectedTargets(new Set(r.targets));
+      return;
+    }
     setSelectedTargets(new Set());
     setCurativeAlert("");
   }, [greenhouse, classification]);
+
+  // Apply a Re-plan link once the bootstrap (greenhouses, catalogs) is known.
+  useEffect(() => {
+    const p = replanRef.current;
+    if (!p || !bootstrap) return;
+    replanRef.current = null;
+    const res = resolveReplan(p, {
+      greenhouses: (bootstrap.greenhouses || []).map((g) => g.name),
+      targets: [
+        ...(bootstrap.pest_catalog || []).map((x) => x.name),
+        ...(bootstrap.disease_catalog || []).map((x) => x.name),
+      ],
+    });
+    // The query is spent whether or not it applied: a refresh must not re-apply it.
+    try {
+      window.history.replaceState(null, "", window.location.hash.split("?")[0] || "#/");
+    } catch {
+      /* ignore */
+    }
+    setReplanWo(p.replan);
+    if (res.greenhouse) setGreenhouse(res.greenhouse);
+    if (res.date) setSprayDate((cur) => mergeDateTime(res.date, splitDateTime(cur).time));
+    if (res.targets.length) {
+      replanTargetsRef.current = { greenhouse: res.greenhouse || greenhouse, targets: res.targets };
+      setClassification("Curative");
+    }
+    let cancelled = false;
+    void (async () => {
+      const found = await Promise.all(
+        p.items.map(async (code) => {
+          const rows = await searchChemicalItems(code);
+          return rows.find((r) => r.item_code === code) || null;
+        }),
+      );
+      if (cancelled) return;
+      const skipped = [...res.skipped];
+      p.items.forEach((code, i) => {
+        if (!found[i]) skipped.push(`item ${code}`);
+      });
+      setReplanPending(found.filter((x): x is ChemicalItem => !!x));
+      if (skipped.length) {
+        pushToast("err", `Skipped from the stale plan: ${skipped.join(", ")}`, 10000);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bootstrap]);
 
   // Deselecting the alert's pest unlinks the plan from it (saves as an
   // ordinary curative plan); the server refuses the mismatch too.
@@ -1417,6 +1480,31 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     };
   };
 
+  // Items queued by a Re-plan link join the tank mix once one is loaded (picking
+  // a tank mix replaces the rows, so they cannot go in earlier).
+  useEffect(() => {
+    if (!replanPending.length || !bom || bomLoading || bomDetails?.name !== bom) return;
+    const queue = replanPending;
+    setReplanPending([]);
+    void (async () => {
+      const have = new Set(chemRows.map((r) => r.item_code));
+      const rows: ChemRow[] = [];
+      for (const it of queue) {
+        if (have.has(it.item_code)) continue;
+        rows.push(
+          await makeChemRow(
+            it,
+            rateLimits[it.item_code]?.lower ?? null,
+            mappedStores?.chemical_store || undefined,
+            chemRows.length + rows.length,
+          ),
+        );
+      }
+      setChemRows((prev) => [...prev, ...rows.filter((r) => !prev.some((p) => p.item_code === r.item_code))]);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replanPending, bom, bomLoading, bomDetails]);
+
   /** One tap on a suggested tank mix: the tank mix's chemicals become exactly these products,
    *  each at its default rate (the page asked first when rows existed). */
   const addMix = async (products: SuggestedProduct[]) => {
@@ -1783,6 +1871,20 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
           <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {diagnoseState.error}
           </p>
+        )}
+
+        {replanWo && (
+          <div role="status" className="flex items-start justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+            <div>
+              <p className="font-medium">Re-planning {replanWo} — check the details before submitting</p>
+              {replanPending.length > 0 && (
+                <p className="text-muted-foreground">{pendingNote(replanPending.length)}</p>
+              )}
+            </div>
+            <button type="button" aria-label="Dismiss" className="text-muted-foreground hover:text-foreground" onClick={() => setReplanWo("")}>
+              Dismiss
+            </button>
+          </div>
         )}
 
         <div className="flex flex-wrap items-end gap-2">

@@ -31,7 +31,11 @@ from frappe.utils import now_datetime, add_to_date
 
 from upande_scp.serverscripts.common.crop_protection import product_groups
 from upande_scp.serverscripts.store import batch_suggestion, transfer_stock_gate
-from upande_scp.serverscripts.store.batch_stock import available_in_store
+from upande_scp.serverscripts.store.batch_stock import (
+    available_in_store,
+    zero_valued_batches,
+    zero_valued_stock,
+)
 
 
 # ----------------------------------------------------------------------
@@ -532,7 +536,17 @@ def compute_transfer_stock_gate(selected=None, only=None) -> dict:
     if not rows:
         return {}
     item_stock, batch_stock, tracked = _gate_stock(rows)
-    res = transfer_stock_gate.evaluate(rows, item_stock, batch_stock, tracked, selected=selected)
+    # (item, batch, warehouse) from the ledger -> the gate's (item, warehouse, batch)
+    unvalued = {
+        (i, w, b)
+        for i, b, w in zero_valued_batches(
+            {(r["item_code"], r["batch_no"], r["warehouse"]) for r in rows
+             if r.get("batch_no") and r.get("warehouse")}
+        )
+    }
+    res = transfer_stock_gate.evaluate(
+        rows, item_stock, batch_stock, tracked, selected=selected, unvalued=unvalued
+    )
     for i, n in enumerate(transfer_stock_gate.queue_order(rows)):
         res[n]["queue"] = i
     houses: dict = {}
@@ -1597,7 +1611,10 @@ def _planned_batches(stock_entry: str) -> dict:
 
 def _held(batch_no, pool) -> bool:
     return bool(batch_no) and any(
-        b.get("batch_no") == batch_no and float(b.get("qty") or 0) > 0 for b in pool
+        b.get("batch_no") == batch_no
+        and float(b.get("qty") or 0) > 0
+        and not b.get("zero_valued")
+        for b in pool
     )
 
 
@@ -1609,11 +1626,19 @@ def _plan_row(row, pool, today, prefer=None):
     cannot cover the row from batches it actually holds.
     """
     need = _row_stock_qty(row)
+    if prefer and any(b.get("batch_no") == prefer and b.get("zero_valued") for b in pool):
+        return None, transfer_stock_gate.unvalued_message(row.item_code, prefer, row.s_warehouse)
     plan = batch_suggestion.allocate(need, pool, today, prefer=prefer)
     if prefer and not any(p["batch_no"] == prefer for p in plan["picks"]):
         return None, (
             f"Row {row.idx}: batch {prefer} has no {row.item_code} left in "
             f"{row.s_warehouse}. Choose one the store still holds."
+        )
+    if not plan["picks"] and any(b.get("zero_valued") for b in pool):
+        bad = next(b["batch_no"] for b in pool if b.get("zero_valued"))
+        return None, (
+            f"Row {row.idx}: " + transfer_stock_gate.unvalued_message(
+                row.item_code, bad, row.s_warehouse)
         )
     if not plan["picks"]:
         return None, (
@@ -1862,6 +1887,10 @@ def suggest_transfer_batches(name: str) -> dict:
         exp = expiry_of.get(batch_no)
         return bool(exp and frappe.utils.getdate(exp) < frappe.utils.getdate(today))
 
+    zero = zero_valued_batches(
+        {(r["item_code"], r["batch_no"], r["s_warehouse"]) for r in rows
+         if (r.get("batch_no") or "").strip() and r.get("s_warehouse")}
+    )
     planned = _planned_batches(name)
     out = []
     unfilled = 0
@@ -1881,6 +1910,10 @@ def suggest_transfer_batches(name: str) -> dict:
             "batch_no": r["batch_no"],
             "needs_batch": needs,
             "settled": bool(needs and r["batch_no"]),
+            "unvalued": bool(
+                needs and r["batch_no"]
+                and (r["item_code"], r["batch_no"], r["s_warehouse"]) in zero
+            ),
             "expired": bool(needs and r["batch_no"] and _expired(r["batch_no"])),
             "suggestion": None,
             "picks": [],
@@ -1901,6 +1934,11 @@ def suggest_transfer_batches(name: str) -> dict:
             entry["options"] = [
                 batch_suggestion.describe(b, today)
                 for b in batch_suggestion.rank_batches(pool, today)
+            ] + [
+                # Shown, so nobody wonders where it went, but not choosable.
+                batch_suggestion.describe(b, today)
+                for b in pool
+                if b.get("zero_valued") and float(b.get("qty") or 0) > 0
             ]
             if not entry["suggestion"]:
                 unfilled += 1
@@ -1914,6 +1952,119 @@ def suggest_transfer_batches(name: str) -> dict:
         "unfilled": unfilled,
         "expired": expired_rows,
     }
+
+
+def _clear_rows(doc, idxs=None) -> list:
+    """Take the batch off rows of a DRAFT transfer, merging split rows back.
+
+    ``idxs`` are row numbers (None = every batched row). A row the store rule spread
+    over several batches (`_write_batch_pieces`) is a run of ADJACENT rows — the
+    copies sit directly under the original — alike in item, source store, target
+    store and unit, each carrying a batch. Nothing else marks the split, so that is
+    how it is recognised: unassigning any one piece folds the whole run back into its
+    first row, with the quantities summed, so the stock the plan asked for is
+    preserved. A lone row just loses its batch and any bundle ERPNext (or the panel)
+    had built for it.
+
+    Returns ``[{item_code, qty, merged}]`` per row left unbatched. Mutates the
+    draft in memory; the caller saves.
+    """
+    if doc.docstatus != 0:
+        frappe.throw(f"{doc.name} is already submitted or cancelled.")
+    rows = list(doc.items)
+
+    def _batched(r):
+        return bool((r.batch_no or "").strip() or r.get("serial_and_batch_bundle"))
+
+    def _key(r):
+        return (r.item_code, r.s_warehouse or "", r.t_warehouse or "", r.uom or "")
+
+    chosen = [r for r in rows if _batched(r) and (idxs is None or int(r.idx) in idxs)]
+    seen, runs = set(), []
+    for r in chosen:
+        if id(r) in seen:
+            continue
+        at = rows.index(r)
+        lo = hi = at
+        while lo > 0 and _batched(rows[lo - 1]) and _key(rows[lo - 1]) == _key(r):
+            lo -= 1
+        while hi + 1 < len(rows) and _batched(rows[hi + 1]) and _key(rows[hi + 1]) == _key(r):
+            hi += 1
+        run = rows[lo : hi + 1]
+        seen.update(id(x) for x in run)
+        runs.append(run)
+
+    drop, bundles, out = set(), [], []
+    for run in runs:
+        head = run[0]
+        head.qty = sum(float(x.qty or 0) for x in run)
+        head.transfer_qty = sum(float(x.transfer_qty or 0) for x in run)
+        for x in run:
+            if x.get("serial_and_batch_bundle"):
+                bundles.append(x.serial_and_batch_bundle)
+        for x in run[1:]:
+            drop.add(id(x))
+        head.batch_no = None
+        head.serial_and_batch_bundle = None
+        if hasattr(head, "use_serial_batch_fields"):
+            head.use_serial_batch_fields = 0
+        out.append({"item_code": head.item_code, "qty": head.qty, "merged": len(run) - 1})
+
+    if drop:
+        doc.items = [r for r in rows if id(r) not in drop]
+        for i, r in enumerate(doc.items, start=1):
+            r.idx = i
+    for b in bundles:
+        # The row no longer points at it; a draft bundle is nobody's now.
+        if frappe.db.get_value("Serial and Batch Bundle", b, "docstatus") == 0:
+            doc.flags.ignore_links = True
+            frappe.delete_doc("Serial and Batch Bundle", b, force=True, ignore_permissions=True)
+    return out
+
+
+@frappe.whitelist()
+def get_zero_valued_batches() -> dict:
+    """Batches that hold stock but came in at no value, for the store's "fix these"
+    list. Read-only — nothing is corrected here; the storekeeper fixes the valuation
+    (a Stock Reconciliation or the purchase receipt rate) in the desk."""
+    _check_perm()
+    allowed = allowed_stores_for()
+    rows = zero_valued_stock()
+    if allowed is not None:
+        rows = [r for r in rows if r["warehouse"] in set(allowed)]
+    return {"rows": rows}
+
+
+@frappe.whitelist()
+def clear_transfer_batches(name: str, idxs=None) -> dict:
+    """Unassign batches on a draft transfer: the given rows, or all when ``idxs`` is empty.
+
+    Rows the rule had split are merged back into one (see `_clear_rows`). The rows then
+    read as unbatched again, so the panel proposes the suggestion afresh and the submit
+    would fill them by the store's own rule.
+    """
+    _check_perm()
+    name = (name or "").strip()
+    if not name:
+        frappe.throw("No stock entry given.")
+    if isinstance(idxs, str):
+        idxs = frappe.parse_json(idxs) if idxs.strip() else None
+    wanted = {int(i) for i in idxs} if idxs else None
+    doc = frappe.get_doc("Stock Entry", name)
+    if doc.docstatus != 0:
+        frappe.throw(f"{name} is already submitted or cancelled.")
+    if (doc.purpose or "") != _SE_PURPOSE:
+        frappe.throw(f"{name} is not a {_SE_PURPOSE}.")
+    if wanted:
+        known = {int(r.idx) for r in doc.items}
+        missing = sorted(wanted - known)
+        if missing:
+            frappe.throw(f"{name} has no row {missing[0]}.")
+    cleared = _clear_rows(doc, wanted)
+    if cleared:
+        doc.save()
+        frappe.db.commit()
+    return {"updated": len(cleared), "cleared": cleared}
 
 
 @frappe.whitelist()
@@ -1941,8 +2092,11 @@ def apply_transfer_batches(name: str, picks) -> dict:
         frappe.throw("No stock entry given.")
     if isinstance(picks, str):
         picks = frappe.parse_json(picks)
-    picks = {str(k): (v or "").strip() for k, v in (picks or {}).items() if (v or "").strip()}
-    if not picks:
+    all_picks = {str(k): (v or "").strip() for k, v in (picks or {}).items()}
+    # An empty batch is an instruction to UNASSIGN that row (`_clear_rows`).
+    to_clear = [k for k, v in all_picks.items() if not v]
+    picks = {k: v for k, v in all_picks.items() if v}
+    if not picks and not to_clear:
         return {"updated": 0, "rows": []}
 
     doc = frappe.get_doc("Stock Entry", name)
@@ -1950,6 +2104,22 @@ def apply_transfer_batches(name: str, picks) -> dict:
         frappe.throw(f"{name} is already submitted or cancelled.")
     if (doc.purpose or "") != _SE_PURPOSE:
         frappe.throw(f"{name} is not a {_SE_PURPOSE}.")
+
+    cleared = []
+    if to_clear:
+        # Clearing runs first and may merge or drop rows, which renumbers the
+        # draft; a pick for another row is therefore refused alongside it rather
+        # than applied to whichever row now holds that index.
+        if picks:
+            frappe.throw("Unassign batches and choose batches in separate calls.")
+        known = {str(r.idx) for r in doc.items}
+        for idx in to_clear:
+            if idx not in known:
+                frappe.throw(f"{name} has no row {idx}.")
+        cleared = _clear_rows(doc, {int(i) for i in to_clear})
+        doc.save()
+        frappe.db.commit()
+        return {"updated": len(to_clear), "rows": sorted(to_clear, key=int), "cleared": cleared, "split": []}
 
     by_idx = {str(row.idx): row for row in doc.items}
     for idx, batch_no in picks.items():

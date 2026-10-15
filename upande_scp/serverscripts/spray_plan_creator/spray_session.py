@@ -34,6 +34,7 @@ from upande_scp.serverscripts.spray_plan_creator.auto_material_issue import (
     resolve_supervisor_employee,
 )
 from upande_scp.serverscripts.spray_plan_creator import transfer_batches as TB
+from upande_scp.serverscripts.spray_plan_creator.refusals import log_refusals
 from upande_scp.serverscripts.spray_plan_creator.quantities import absolute_to_rate
 from upande_scp.serverscripts.spray_plan_creator.validation import match_cost_center
 from upande_scp.serverscripts.store.spray_stock_types import SE_TYPE_MIX
@@ -177,6 +178,7 @@ def _verify_qr(qr_payload, work_order: str, item_code: str) -> dict[str, Any]:
 
 
 @frappe.whitelist()
+@log_refusals("register_csu_scan")
 def register_csu_scan(
     work_order: str,
     item_code: str,
@@ -344,7 +346,6 @@ def _append_raw_row(se_doc, item_code: str, qty: float, wip: str, proto):
     row.stock_uom = suom
     row.conversion_factor = 1.0
     row.is_finished_item = 0
-    row.allow_zero_valuation_rate = 1
     if val > 0:
         row.basic_rate = val
     if proto is not None and proto.get("expense_account"):
@@ -404,6 +405,23 @@ def _rebuild_manufacture_from_transfer(
         notes.extend(TB.notes_for(ic, plan))
         for piece in plan["pieces"]:
             desired.append((ic, piece["batch_no"], flt(piece["qty"])))
+
+    # A batch that came in with no value cannot be costed, and the ledger would refuse
+    # the Manufacture with an HTML essay. Say it in one plain sentence instead, before
+    # anything is written. Valuation is never waived (no allow_zero_valuation_rate).
+    from upande_scp.serverscripts.store.batch_stock import zero_valued_batches
+
+    unvalued = zero_valued_batches({(ic, b, wip) for ic, b, _q in desired if b})
+    if unvalued:
+        frappe.throw(
+            " ".join(
+                f"Tank mix can't be posted: batch {b} of {ic} was issued with no "
+                "valuation rate. Ask the store to correct the batch valuation, then "
+                "confirm the mix again."
+                for ic, b, _w in sorted(unvalued)
+            ),
+            frappe.ValidationError,
+        )
 
     if _current_consumption(se_doc, wip) == _consumption_key(desired):
         return notes
@@ -954,6 +972,7 @@ def assert_can_operate(work_order: str, action: str) -> None:
 
 
 @frappe.whitelist()
+@log_refusals("manufacture_tank_mix")
 def manufacture_tank_mix(work_order: str) -> dict[str, Any]:
     """Confirm the tank mix — for the plan's supervisor (see ``can_manufacture``).
 

@@ -52,6 +52,7 @@ from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
 from upande_scp.serverscripts.common.timezone import to_site_naive
 from upande_scp.serverscripts.spray_plan_creator import spray_session as SS
+from upande_scp.serverscripts.spray_plan_creator.refusals import log_refusals
 from upande_scp.serverscripts.spray_plan_creator import transfer_batches as TB
 
 TOKEN = "Spray Session Token"
@@ -318,6 +319,7 @@ def _has_valuation(item_code: str, warehouse: str | None) -> bool:
 
 
 @frappe.whitelist()
+@log_refusals("sync_spray_session", work_order_arg="payload")
 def sync_spray_session(payload) -> dict:
 	"""Apply one offline session: scans, manufacture, start, end — atomically.
 

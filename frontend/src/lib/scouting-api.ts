@@ -898,6 +898,8 @@ export interface BatchAvailability {
   available: number;
   placeholder: boolean;
   expired: boolean;
+  /** Came in with no valuation rate: cannot be issued, never pre-selected. */
+  zero_valued?: boolean;
 }
 export interface ItemAvailability {
   ledger: number;

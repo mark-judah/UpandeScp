@@ -262,7 +262,8 @@ def get_item_availability(warehouse, item_codes, exclude=None, requested=None):
                 "reserved": res,
                 "available": b["qty"] - res,
                 "placeholder": ph,
-                "expired": b["batch_no"] not in ranked,
+                "zero_valued": bool(b.get("zero_valued")),
+                "expired": b["batch_no"] not in ranked and not b.get("zero_valued"),
                 "rank": ranked.get(b["batch_no"], 10_000),
             })
         blist.sort(key=lambda x: (x["rank"], x["batch_no"]))

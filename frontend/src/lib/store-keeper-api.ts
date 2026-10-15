@@ -336,7 +336,9 @@ export interface BatchOption {
   expiry_date: string | null;
   days_to_expiry: number | null;
   placeholder: boolean;
-  status: "ok" | "expiring" | "expired" | "undated" | "placeholder";
+  /** Came in with no valuation rate: shown, never choosable. */
+  zero_valued?: boolean;
+  status: "ok" | "expiring" | "expired" | "undated" | "placeholder" | "unvalued";
 }
 
 /** What the store rule would take from one batch to cover a row. */
@@ -359,6 +361,8 @@ export interface TransferBatchRow {
   to_warehouse: string;
   batch_no: string;
   needs_batch: boolean;
+  /** The batch it carries has no valuation rate, so the transfer cannot go. */
+  unvalued?: boolean;
   /** Already carries a batch — shown, never reproposed. */
   settled: boolean;
   /** The batch it carries has expired: the one case where a settled row is
@@ -402,6 +406,19 @@ export async function applyTransferBatches(
   return (r ?? { updated: 0, rows: [], split: [] }) as ApplyBatchesResp;
 }
 
+/** Unassign batches on a draft transfer: the given rows, or every batched row when
+ *  `idxs` is omitted. A row that was split across batches is merged back into one. */
+export async function clearTransferBatches(
+  name: string,
+  idxs?: number[],
+): Promise<{ updated: number }> {
+  const r = await call(
+    "upande_scp.serverscripts.store.store_keeper_api.clear_transfer_batches",
+    { name, idxs: idxs?.length ? JSON.stringify(idxs) : "" },
+  );
+  return (r ?? { updated: 0 }) as { updated: number };
+}
+
 export interface ApplyBatchesResp {
   updated: number;
   rows: string[];
@@ -418,6 +435,31 @@ export interface StockShort {
   short_by: number;
   /** Selected transfers that use the stock first. */
   blocking_transfers: string[];
+  /** "unvalued": the named batch has no valuation rate (not a stock shortage). */
+  reason?: "unvalued";
+}
+
+export interface ZeroValuedBatch {
+  item_code: string;
+  item_name: string;
+  batch_no: string;
+  warehouse: string;
+  qty: number;
+  /** Which rule priced it: the batch's own value, or the item's moving average. */
+  method: "batchwise" | "moving_average";
+  rate: number;
+}
+
+export async function fetchZeroValuedBatches(): Promise<ZeroValuedBatch[]> {
+  const r = await call(
+    "upande_scp.serverscripts.store.store_keeper_api.get_zero_valued_batches",
+    {},
+  );
+  return ((r as { rows?: ZeroValuedBatch[] } | null)?.rows ?? []) as ZeroValuedBatch[];
+}
+
+export function unvaluedMessage(item: string, batch: string, store: string): string {
+  return `${item} batch ${batch} in ${store} has no valuation rate (0). Correct its valuation (e.g. a Stock Reconciliation or the purchase receipt rate) before issuing it.`;
 }
 
 export interface TransferStockGate {
@@ -448,9 +490,10 @@ export async function fetchTransferStockGate(
 export function stockShortReason(g: TransferStockGate | undefined): string {
   if (!g || g.ok) return "";
   return g.shorts
-    .map(
-      (s) =>
-        `${s.item_code}${s.batch_no ? ` batch ${s.batch_no}` : ""}: needs ${s.needed}, ${s.available_when_its_turn} available, short by ${s.short_by}` +
+    .map((s) =>
+      s.reason === "unvalued"
+        ? unvaluedMessage(s.item_code, s.batch_no ?? "", s.warehouse)
+        : `${s.item_code}${s.batch_no ? ` batch ${s.batch_no}` : ""}: needs ${s.needed}, ${s.available_when_its_turn} available, short by ${s.short_by}` +
         (s.blocking_transfers.length ? ` (held by selected ${s.blocking_transfers.join(", ")})` : ""),
     )
     .join("; ");

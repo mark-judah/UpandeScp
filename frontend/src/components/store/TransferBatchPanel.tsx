@@ -25,7 +25,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, ChevronsUpDown, Loader2, Search, Sparkles } from "lucide-react";
+import { AlertTriangle, Check, ChevronsUpDown, Loader2, Search, Sparkles, Undo2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/popover";
 import {
   applyTransferBatches,
+  clearTransferBatches,
   suggestTransferBatches,
   type BatchOption,
   type TransferBatchRow,
@@ -55,6 +56,7 @@ const STATUS_STYLE: Record<BatchOption["status"], { label: string; cls: string }
   expired: { label: "expired", cls: "text-destructive" },
   undated: { label: "no expiry", cls: "text-muted-foreground" },
   placeholder: { label: "migration filler", cls: "text-destructive" },
+  unvalued: { label: "No valuation rate — can't be issued", cls: "text-muted-foreground" },
 };
 
 /**
@@ -73,7 +75,9 @@ function BatchLine({ o }: { o: BatchOption }) {
         {fmt(o.qty)} available
       </span>
       <span className={cn("text-[0.65rem]", s.cls)}>
-        {o.status === "placeholder"
+        {o.status === "unvalued"
+          ? s.label
+          : o.status === "placeholder"
           ? "migration filler — not real stock"
           : o.days_to_expiry !== null
             ? `${s.label} · ${o.days_to_expiry}d`
@@ -162,6 +166,8 @@ function BatchCombobox({
               <button
                 key={o.batch_no}
                 type="button"
+                disabled={!!o.zero_valued}
+                aria-disabled={!!o.zero_valued}
                 onClick={() => {
                   onChange(o.batch_no);
                   setOpen(false);
@@ -170,6 +176,7 @@ function BatchCombobox({
                 className={cn(
                   "flex w-full items-start gap-2 px-3 py-1.5 text-left hover:bg-muted/60",
                   o.batch_no === value && "bg-muted",
+                  o.zero_valued && "cursor-not-allowed opacity-50 hover:bg-transparent",
                 )}
               >
                 <Check
@@ -202,9 +209,10 @@ function planFor(
 ): { picks: { batch_no: string; qty: number }[]; short: number } {
   if (!pick) return { picks: [], short: r.qty };
   if (pick === r.suggestion) return { picks: r.picks, short: r.short };
+  const usable = r.options.filter((o) => !o.zero_valued);
   const order = [
-    ...r.options.filter((o) => o.batch_no === pick),
-    ...r.options.filter((o) => o.batch_no !== pick),
+    ...usable.filter((o) => o.batch_no === pick),
+    ...usable.filter((o) => o.batch_no !== pick),
   ];
   const picks: { batch_no: string; qty: number }[] = [];
   let remaining = r.qty;
@@ -295,6 +303,27 @@ export function TransferBatchPanel({
     }
   };
 
+  /** Take the batch off one row (a split row merges back into one), or off every
+   *  row. Nothing is submitted; the rows read as unbatched and the proposal returns. */
+  const clear = async (idx?: number) => {
+    setApplying(true);
+    setError(null);
+    try {
+      const r = await clearTransferBatches(name, idx === undefined ? undefined : [idx]);
+      await propose(); // re-read: the gate and the suggestion refresh with it
+      setDone(
+        idx === undefined
+          ? `Cleared ${r.updated} row${r.updated === 1 ? "" : "s"}.`
+          : "Batch unassigned.",
+      );
+      onApplied?.();
+    } catch (e: any) {
+      setError(e?.message ?? "Could not clear the batches.");
+    } finally {
+      setApplying(false);
+    }
+  };
+
   // An expired row counts as pending: it has a batch, but not one that can go
   // out, so it is exactly what Apply is for.
   const pending =
@@ -302,8 +331,9 @@ export function TransferBatchPanel({
   const acceptedCount = pending.filter(
     (r) => accepted.has(r.idx) && chosen[r.idx],
   ).length;
-  const blockedCount = pending.filter((r) => !r.options.length).length;
+  const blockedCount = pending.filter((r) => !r.options.some((o) => !o.zero_valued)).length;
   const expiredCount = (rows ?? []).filter((r) => r.expired).length;
+  const assignedCount = (rows ?? []).filter((r) => r.needs_batch && r.batch_no).length;
 
   if (!rows) {
     return (
@@ -356,6 +386,17 @@ export function TransferBatchPanel({
             Apply to {acceptedCount} row{acceptedCount === 1 ? "" : "s"}
           </Button>
         )}
+        {assignedCount > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void clear()}
+            disabled={applying || loading}
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            Clear all batches
+          </Button>
+        )}
         <Button size="sm" variant="ghost" onClick={propose} disabled={loading}>
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
           Re-check stock
@@ -395,7 +436,7 @@ export function TransferBatchPanel({
             // this is the one thing the storesman has to take somewhere else
             // before the transfer can go at all.
             const blocked =
-              r.needs_batch && (!r.settled || r.expired) && !r.options.length;
+              r.needs_batch && (!r.settled || r.expired) && !r.options.some((o) => !o.zero_valued);
             return (
               <tr
                 key={r.idx}
@@ -441,14 +482,37 @@ export function TransferBatchPanel({
                       not batch tracked
                     </span>
                   ) : r.settled && !r.expired ? (
-                    <Badge variant="outline" className="font-mono text-[0.65rem]">
-                      {r.batch_no}
-                    </Badge>
-                  ) : !r.options.length ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Badge variant="outline" className="font-mono text-[0.65rem]">
+                        {r.batch_no}
+                      </Badge>
+                      {r.unvalued && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-destructive/40 px-2 py-0.5 text-[0.6rem] font-medium text-destructive"
+                          data-testid="row-unvalued"
+                        >
+                          <AlertTriangle className="h-3 w-3" />
+                          No valuation rate
+                        </span>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-[0.65rem]"
+                        disabled={applying || loading}
+                        onClick={() => void clear(r.idx)}
+                        title="Take this batch off the row so it can be chosen again"
+                      >
+                        <Undo2 className="h-3 w-3" />
+                        Unassign
+                      </Button>
+                    </span>
+                  ) : !r.options.some((o) => !o.zero_valued) ? (
                     <span className="inline-flex items-center gap-1 text-[0.7rem] font-medium text-destructive">
                       <AlertTriangle className="h-3 w-3" />
-                      No batch with stock in this store — this row blocks the
-                      transfer.
+                      {r.options.length
+                        ? "Only batches with no valuation rate in this store — correct their valuation. This row blocks the transfer."
+                        : "No batch with stock in this store — this row blocks the transfer."}
                     </span>
                   ) : (
                     <div className="space-y-1">

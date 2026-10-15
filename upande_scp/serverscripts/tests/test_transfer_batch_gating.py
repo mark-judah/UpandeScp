@@ -255,7 +255,6 @@ class TestTheSystemPicksSoNobodyHasTo(BatchGatingCase):
 						"batch_no": b,
 						"use_serial_batch_fields": 1,
 						"basic_rate": 10,
-						"allow_zero_valuation_rate": 1,
 					}
 					for b in (GOOD, SOON)
 				],

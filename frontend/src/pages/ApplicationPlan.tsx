@@ -1196,7 +1196,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
 
   /** green = this batch alone covers the row, amber = partial, grey = none. */
   const batchTone = (b: BatchAvailability, need: number) =>
-    b.expired || b.available <= 0
+    b.expired || b.zero_valued || b.available <= 0
       ? "text-muted-foreground"
       : b.available >= need
         ? "text-[var(--sd-data-green)]"
@@ -1215,7 +1215,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
           return { ...c, batch_no: undefined };
         }
         if (c.batch_no || batchTouched.has(c.rowId) || !c.stock_qty) return c;
-        const best = a.batches.find((b) => !b.expired && b.available >= c.stock_qty!);
+        const best = a.batches.find((b) => !b.expired && !b.zero_valued && b.available >= c.stock_qty!);
         if (!best) return c;
         changed = true;
         return { ...c, batch_no: best.batch_no };
@@ -2583,10 +2583,10 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                                               </SelectTrigger>
                                               <SelectContent>
                                                 {rem.a.batches.map((b) => (
-                                                  <SelectItem key={b.batch_no} value={b.batch_no}>
+                                                  <SelectItem key={b.batch_no} value={b.batch_no} disabled={!!b.zero_valued}>
                                                     <span className={batchTone(b, need)}>
                                                       {b.batch_no} · {fmtQty(b.available)} free
-                                                      {b.expired ? " · expired" : b.placeholder ? " · opening stock" : b.expiry_date ? ` · exp ${b.expiry_date}` : ""}
+                                                      {b.zero_valued ? " · No valuation rate — can't be issued" : b.expired ? " · expired" : b.placeholder ? " · opening stock" : b.expiry_date ? ` · exp ${b.expiry_date}` : ""}
                                                     </span>
                                                   </SelectItem>
                                                 ))}

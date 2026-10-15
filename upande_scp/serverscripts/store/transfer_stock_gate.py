@@ -55,7 +55,8 @@ def queue_order(rows) -> list:
 
 
 class _State:
-    def __init__(self, item_stock, batch_stock, batch_tracked):
+    def __init__(self, item_stock, batch_stock, batch_tracked, unvalued=None):
+        self.unvalued = set(unvalued or ())
         self.item = {k: _f(v) for k, v in (item_stock or {}).items()}
         self.batch = {k: _f(v) for k, v in (batch_stock or {}).items()}
         self.tracked = set(batch_tracked or ()) | {k[0] for k in self.batch}
@@ -68,6 +69,7 @@ class _State:
         c = _State.__new__(_State)
         c.item, c.batch, c.pool = dict(self.item), dict(self.batch), dict(self.pool)
         c.tracked = self.tracked
+        c.unvalued = self.unvalued
         c.consumers = {k: list(v) for k, v in self.consumers.items()}
         return c
 
@@ -92,6 +94,10 @@ def _judge(name, trows, st: "_State"):
 
         if hard:
             bk = (item, wh, hard)
+            if bk in t.unvalued:
+                # Never issued: the Manufacture that follows cannot be costed.
+                shorts.append(_unvalued(item, hard, wh, need))
+                continue
             have = min(t.batch.get(bk, 0.0), avail_pool())
             if need > have + EPS:
                 binding_batch = t.batch.get(bk, 0.0) <= avail_pool()
@@ -123,7 +129,8 @@ def _judge(name, trows, st: "_State"):
     return shorts, t
 
 
-def evaluate(rows, item_stock, batch_stock, batch_tracked=None, selected=None) -> dict:
+def evaluate(rows, item_stock, batch_stock, batch_tracked=None, selected=None,
+             unvalued=None) -> dict:
     """``{transfer: {"ok": bool, "shorts": [...]}}`` for every transfer in ``rows``.
 
     Only the SELECTED transfers hold stock, in the order given (the store
@@ -142,7 +149,7 @@ def evaluate(rows, item_stock, batch_stock, batch_tracked=None, selected=None) -
     by: dict = {}
     for r in rows:
         by.setdefault(r["transfer"], []).append(r)
-    st = _State(item_stock, batch_stock, batch_tracked)
+    st = _State(item_stock, batch_stock, batch_tracked, unvalued)
     out: dict = {}
     seen = set()
     for name in selected or []:
@@ -176,6 +183,27 @@ def _short(item, batch, wh, need, have, blockers) -> dict:
     }
 
 
+def _unvalued(item, batch, wh, need) -> dict:
+    return {
+        "item_code": item,
+        "batch_no": batch,
+        "warehouse": wh,
+        "needed": round(need, 6),
+        "available_when_its_turn": 0.0,
+        "short_by": round(need, 6),
+        "blocking_transfers": [],
+        "reason": "unvalued",
+    }
+
+
+def unvalued_message(item, batch, wh) -> str:
+    return (
+        f"{item} batch {batch} in {wh} has no valuation rate (0). Correct its "
+        "valuation (e.g. a Stock Reconciliation or the purchase receipt rate) "
+        "before issuing it."
+    )
+
+
 def _num(v) -> str:
     v = round(float(v), 3)
     return str(int(v)) if v == int(v) else f"{v:g}"
@@ -184,6 +212,9 @@ def _num(v) -> str:
 def short_message(shorts) -> str:
     """The sentence the store keeper reads when a transfer is refused."""
     parts = []
+    valuation = [unvalued_message(s["item_code"], s["batch_no"], s["warehouse"])
+                 for s in shorts if s.get("reason") == "unvalued"]
+    shorts = [s for s in shorts if s.get("reason") != "unvalued"]
     for s in shorts:
         label = s["item_code"] + (f" batch {s['batch_no']}" if s.get("batch_no") else "")
         part = (f"{label} in {s['warehouse']}: needs {_num(s['needed'])}, "
@@ -191,4 +222,8 @@ def short_message(shorts) -> str:
         if s.get("blocking_transfers"):
             part += " after " + ", ".join(s["blocking_transfers"])
         parts.append(part)
-    return "Cannot be submitted — not enough stock: " + "; ".join(parts)
+    out = []
+    if parts:
+        out.append("Cannot be submitted — not enough stock: " + "; ".join(parts))
+    out.extend(valuation)
+    return " ".join(out)

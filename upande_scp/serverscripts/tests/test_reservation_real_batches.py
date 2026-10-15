@@ -72,7 +72,7 @@ class RealBatchCase(unittest.TestCase):
 			"doctype": "Stock Entry", "stock_entry_type": "Material Receipt", "company": COMPANY,
 			"items": [
 				{"item_code": ITEM, "qty": q, "t_warehouse": cls.store, "batch_no": b,
-				 "use_serial_batch_fields": 1, "basic_rate": 10, "allow_zero_valuation_rate": 1}
+				 "use_serial_batch_fields": 1, "basic_rate": 10}
 				for b, q in ((B1, 10), (B2, 20))
 			],
 		})

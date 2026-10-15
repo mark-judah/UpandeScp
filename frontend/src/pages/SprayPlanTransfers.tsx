@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { TransferBatchPanel } from "@/components/store/TransferBatchPanel";
+import { ZeroValuedList } from "@/components/store/ZeroValuedList";
 import {
   Truck,
   RefreshCw,
@@ -56,6 +57,7 @@ import {
   fetchSubmissionGating,
   fetchTransferStockGate,
   stockShortReason,
+  unvaluedMessage,
   type TransferStockGate,
   fetchTransferItems,
   searchEmployees,
@@ -620,11 +622,13 @@ export function SprayPlanTransfers() {
         <div className="text-xs text-destructive px-4 md:px-6" data-testid="stock-gate-summary">
           {Object.values(gate).filter((g) => !g.ok).length} transfer
           {Object.values(gate).filter((g) => !g.ok).length === 1 ? "" : "s"} cannot be selected —
-          not enough stock.
+          not enough stock, or a batch with no valuation rate.
           {skippedShort > 0 &&
             ` Select all skipped ${skippedShort} that would not fit.`}
         </div>
       )}
+
+      <ZeroValuedList />
 
       <div className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4">
         {/* Pre-flight panel */}
@@ -858,7 +862,17 @@ export function SprayPlanTransfers() {
                               </span>
                             )}
                             {r.name}
-                            {isShort(r.name) && (
+                            {isShort(r.name) && gate[r.name].shorts.some((x) => x.reason === "unvalued") && (
+                              <div
+                                className="mt-1 mr-1 inline-flex items-center gap-1 rounded-full border border-destructive/40 px-2 py-0.5 text-[0.65rem] font-sans font-medium text-destructive"
+                                title={stockShortReason(gate[r.name])}
+                                data-testid="unvalued-batch"
+                              >
+                                <AlertTriangle className="h-3 w-3" />
+                                No valuation rate
+                              </div>
+                            )}
+                            {isShort(r.name) && gate[r.name].shorts.some((x) => x.reason !== "unvalued") && (
                               <div
                                 className="mt-1 inline-flex items-center gap-1 rounded-full border border-destructive/40 px-2 py-0.5 text-[0.65rem] font-sans font-medium text-destructive"
                                 title={stockShortReason(gate[r.name])}
@@ -923,6 +937,9 @@ export function SprayPlanTransfers() {
                               {isShort(r.name) && (
                                 <ul className="mb-3 space-y-1 text-xs text-destructive" data-testid="short-lines">
                                   {gate[r.name].shorts.map((s, i) => (
+                                    s.reason === "unvalued" ? (
+                                    <li key={i}>{unvaluedMessage(s.item_code, s.batch_no ?? "", s.warehouse)}</li>
+                                    ) : (
                                     <li key={i}>
                                       <span className="font-medium">{s.item_code}</span>
                                       {s.batch_no ? ` batch ${s.batch_no}` : ""} in {s.warehouse}: needs{" "}
@@ -932,10 +949,13 @@ export function SprayPlanTransfers() {
                                         ? ` — taken first by ${s.blocking_transfers.join(", ")}`
                                         : ""}
                                     </li>
+                                    )
                                   ))}
+                                  {gate[r.name].shorts.some((x) => x.reason !== "unvalued") && (
                                   <li className="text-muted-foreground">
                                     Not enough stock after the selected transfers. Untick one, receive stock, or change the batch.
                                   </li>
+                                  )}
                                 </ul>
                               )}
                               <TransferBatchPanel name={r.name} onApplied={load} />

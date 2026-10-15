@@ -98,6 +98,8 @@ def rank_batches(batches, today: str) -> list:
 			continue
 		if qty <= 0:
 			continue
+		if b.get("zero_valued"):
+			continue  # no valuation rate: cannot be issued, so never proposed
 		expiry = _as_date(b.get("expiry_date"))
 		if expiry and today and expiry < today:
 			continue  # already expired: choosable by hand, never proposed
@@ -151,7 +153,7 @@ def allocate(required, batches, today: str, prefer=None) -> dict:
 					qty = float(b.get("qty") or 0)
 				except (TypeError, ValueError):
 					qty = 0.0
-				if qty > 0:
+				if qty > 0 and not b.get("zero_valued"):
 					chosen = {
 						"batch_no": prefer,
 						"qty": qty,
@@ -243,7 +245,10 @@ def describe(batch, today: str) -> dict:
 	expiry = _as_date(batch.get("expiry_date")) if batch else ""
 	days = days_until(expiry, today)
 	placeholder = is_placeholder((batch or {}).get("batch_no"))
-	if placeholder:
+	zero_valued = bool((batch or {}).get("zero_valued"))
+	if zero_valued:
+		status = "unvalued"
+	elif placeholder:
 		# Said before anything else, because its expiry and quantity are both
 		# fiction and reading them as facts is how it got issued 5,213 times.
 		status = "placeholder"
@@ -261,5 +266,6 @@ def describe(batch, today: str) -> dict:
 		"expiry_date": expiry or None,
 		"days_to_expiry": days,
 		"placeholder": placeholder,
+		"zero_valued": zero_valued,
 		"status": status,
 	}

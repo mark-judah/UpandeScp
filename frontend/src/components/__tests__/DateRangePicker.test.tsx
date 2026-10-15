@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DateRangePicker,
   formatRange,
-  parseTypedDate,
   type DateRange,
   type DateRangePickerProps,
 } from "@/components/DateRangePicker";
@@ -72,48 +73,6 @@ describe("DateRangePicker", () => {
     expect(spy).toHaveBeenCalledWith({ from: "2026-10-06", to: "2026-10-07" });
   });
 
-  it("parses both typed formats and rejects impossible dates", () => {
-    expect(parseTypedDate("05/10/2026")).toBe("2026-10-05");
-    expect(parseTypedDate("5/10/2026")).toBe("2026-10-05");
-    expect(parseTypedDate("2026-10-05")).toBe("2026-10-05");
-    expect(parseTypedDate("31/02/2026")).toBeNull();
-    expect(parseTypedDate("2026-13-01")).toBeNull();
-    expect(parseTypedDate("tomorrow")).toBeNull();
-  });
-
-  it("commits typed dates, and flags invalid ones without committing", async () => {
-    const spy = vi.fn();
-    const user = userEvent.setup();
-    render(<Harness spy={spy} />);
-    await user.click(screen.getByRole("button", { name: "Range" }));
-    const from = screen.getByLabelText("From date");
-    const to = screen.getByLabelText("To date");
-
-    await user.clear(from);
-    await user.type(from, "40/01/2026{Enter}");
-    expect(screen.getByRole("alert")).toHaveTextContent(/dd\/mm\/yyyy/);
-    expect(from).toHaveAttribute("aria-invalid", "true");
-    expect(spy).not.toHaveBeenCalled();
-
-    await user.clear(from);
-    await user.type(from, "03/10/2026{Enter}");
-    await user.clear(to);
-    await user.type(to, "2026-10-09{Enter}");
-    expect(spy).toHaveBeenLastCalledWith({ from: "2026-10-03", to: "2026-10-09" });
-    expect(screen.getByRole("alert")).toHaveTextContent("");
-  });
-
-  it("swaps typed dates given in reverse order", async () => {
-    const spy = vi.fn();
-    const user = userEvent.setup();
-    render(<Harness spy={spy} />);
-    await user.click(screen.getByRole("button", { name: "Range" }));
-    const from = screen.getByLabelText("From date");
-    await user.clear(from);
-    await user.type(from, "25/10/2026{Enter}");
-    expect(spy).toHaveBeenLastCalledWith({ from: "2026-10-15", to: "2026-10-25" });
-  });
-
   it("applies presets against today and via custom presets", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: new Date(2026, 9, 15, 12) }); // Thu 15 Oct 2026
     const spy = vi.fn();
@@ -142,7 +101,7 @@ describe("DateRangePicker", () => {
     }
   });
 
-  it("respects min and max for clicks, typing and presets", async () => {
+  it("respects min and max for clicks and presets", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: new Date(2026, 9, 15, 12) });
     const spy = vi.fn();
     const user = userEvent.setup();
@@ -152,14 +111,87 @@ describe("DateRangePicker", () => {
     expect(day(/October 4th, 2026/)).toBeDisabled();
     expect(day(/October 21st, 2026/)).toBeDisabled();
 
-    const from = screen.getByLabelText("From date");
-    await user.clear(from);
-    await user.type(from, "01/10/2026{Enter}");
-    expect(screen.getByRole("alert")).toHaveTextContent(/between/);
-    expect(spy).not.toHaveBeenCalled();
-
     await user.click(screen.getByRole("button", { name: "Last month" }));
     expect(spy).toHaveBeenLastCalledWith({ from: "2026-10-05", to: "2026-10-05" });
+  });
+
+  it("has no typed From/To fields; the choice reads back as labels", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Range" }));
+    expect(screen.queryByLabelText("From date")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("To date")).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("textbox")).toHaveLength(0);
+    const readout = screen.getByTestId("range-readout");
+    expect(readout).toHaveTextContent("From 1 Oct 2026 · To 15 Oct 2026");
+    await user.click(day(/October 6th, 2026/));
+    expect(readout).toHaveTextContent("From 6 Oct 2026 · To pick the end day");
+  });
+
+  it("zooms out to months and years, so June to August takes a few clicks", async () => {
+    const spy = vi.fn();
+    const user = userEvent.setup();
+    render(<Harness spy={spy} initial={{ from: "2026-10-01", to: "2026-10-15" }} />);
+    await user.click(screen.getByRole("button", { name: "Range" }));
+    await user.click(screen.getAllByRole("button", { name: "Choose month or year" })[0]);
+    expect(screen.getByTestId("month-view")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "June 2026" }));
+    await user.click(day(/June 3rd, 2026/));
+    // zoom out again and jump to August
+    await user.click(screen.getAllByRole("button", { name: "Choose month or year" })[0]);
+    await user.click(screen.getByRole("button", { name: "August 2026" }));
+    await user.click(day(/August 28th, 2026/));
+    expect(spy).toHaveBeenCalledWith({ from: "2026-06-03", to: "2026-08-28" });
+  });
+
+  it("the year list jumps across years", async () => {
+    const spy = vi.fn();
+    const user = userEvent.setup();
+    render(<Harness spy={spy} />);
+    await user.click(screen.getByRole("button", { name: "Range" }));
+    await user.click(screen.getAllByRole("button", { name: "Choose month or year" })[0]);
+    await user.click(screen.getByRole("button", { name: "Choose year" }));
+    expect(screen.getByTestId("year-view")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Year 2024" }));
+    await user.click(screen.getByRole("button", { name: "March 2024" }));
+    await user.click(day(/March 5th, 2024/));
+    await user.click(day(/March 9th, 2024/));
+    expect(spy).toHaveBeenCalledWith({ from: "2024-03-05", to: "2024-03-09" });
+  });
+
+  it("disables months and years outside min/max in the zoomed views", async () => {
+    const user = userEvent.setup();
+    render(<Harness min="2026-08-10" max="2027-02-20" initial={{ from: "2026-10-01", to: "2026-10-15" }} />);
+    await user.click(screen.getByRole("button", { name: "Range" }));
+    await user.click(screen.getAllByRole("button", { name: "Choose month or year" })[0]);
+    expect(screen.getByRole("button", { name: "July 2026" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "August 2026" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Choose year" }));
+    expect(screen.getByRole("button", { name: "Year 2025" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Year 2027" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Year 2016" })).toBeDisabled();
+  });
+
+  it("selected days are high-contrast and range days soft-tinted (classes)", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Range" }));
+    const startCell = day(/October 1st, 2026/).closest("td")!;
+    const midCell = day(/October 7th, 2026/).closest("td")!;
+    expect(startCell.className).toMatch(/bg-foreground\b/);
+    expect(startCell.className).toMatch(/\[&>button\]:text-background/);
+    expect(startCell.className).not.toMatch(/text-primary-foreground/);
+    expect(midCell.className).toMatch(/bg-foreground\/10/);
+    expect(midCell.className).toMatch(/\[&>button\]:text-foreground/);
+  });
+
+  it("respects prefers-reduced-motion in the stylesheet", () => {
+    const css = readFileSync(join(__dirname, "..", "..", "index.css"), "utf8");
+    const block = css.slice(css.lastIndexOf("@media (prefers-reduced-motion: reduce)"));
+    for (const c of [".scp-cal-fill", ".scp-cal-pop", ".scp-cal-slide", ".scp-cal-zoom"]) {
+      expect(block).toContain(c);
+    }
+    expect(block).toMatch(/animation: none/);
   });
 
   it("Escape closes the popover without changing the value", async () => {

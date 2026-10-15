@@ -99,13 +99,15 @@ describe("Scouting ▸ Gallery", () => {
     fireEvent.change(screen.getByLabelText("Gallery observation"), { target: { value: "Thrips" } });
     fireEvent.change(screen.getByLabelText("Gallery scout"), { target: { value: "EMP-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Gallery date range" }));
-    const fromBox = screen.getByLabelText("From date");
-    fireEvent.change(fromBox, { target: { value: "2026-09-01" } });
-    fireEvent.keyDown(fromBox, { key: "Enter" });
+    // Picking is the only way in (no typed boxes): use the "Last 14 days" preset.
+    fireEvent.click(screen.getByRole("button", { name: "Last 14 days" }));
+    const t = new Date();
+    t.setDate(t.getDate() - 13);
+    const wantFrom = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
     await waitFor(() =>
       expect(fetchPhotoFeed).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          farm: "Chepsito", greenhouse: "GH2 - KR", kind: "pest", name: "Thrips", scout: "EMP-1", from_date: "2026-09-01",
+          farm: "Chepsito", greenhouse: "GH2 - KR", kind: "pest", name: "Thrips", scout: "EMP-1", from_date: wantFrom,
         }),
         0,
       ),

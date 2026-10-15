@@ -456,3 +456,43 @@ html { font-size: 85%; }
 .scp-map-credit span { display: none; padding: 2px 8px; border-radius: 9999px; background: rgba(255,255,255,.92); }
 .scp-map-credit:hover span, .scp-map-credit.open span { display: inline; }
 .scp-map-credit a { color: inherit; text-decoration: underline; }
+
+/* Date range picker motion (components/DateRangePicker.tsx + ui/calendar.tsx).
+   Quick (<=220ms) and transform/opacity only. The range fill grows out from
+   the start day, a picked end day pops, the month grid slides in the
+   direction of travel. Two identical keyframes per direction let a changed
+   data-tick restart the slide without remounting (which would drop keyboard
+   focus). */
+@keyframes scp-cal-fill {
+  from { transform: scaleX(0); opacity: 0.4; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+@keyframes scp-cal-pop {
+  0% { transform: scale(0.82); }
+  60% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+@keyframes scp-cal-next-a { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@keyframes scp-cal-next-b { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@keyframes scp-cal-prev-a { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+@keyframes scp-cal-prev-b { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+@keyframes scp-cal-zoom { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+
+.scp-cal-fill { transform-origin: left center; animation: scp-cal-fill 200ms ease-out both; }
+.scp-cal-pop { animation: scp-cal-pop 200ms ease-out both; }
+.scp-cal-slide[data-dir="next"][data-tick="0"] { animation: scp-cal-next-a 200ms ease-out both; }
+.scp-cal-slide[data-dir="next"][data-tick="1"] { animation: scp-cal-next-b 200ms ease-out both; }
+.scp-cal-slide[data-dir="prev"][data-tick="0"] { animation: scp-cal-prev-a 200ms ease-out both; }
+.scp-cal-slide[data-dir="prev"][data-tick="1"] { animation: scp-cal-prev-b 200ms ease-out both; }
+.scp-cal-zoom { animation: scp-cal-zoom 160ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .scp-cal-fill,
+  .scp-cal-pop,
+  .scp-cal-slide,
+  .scp-cal-zoom {
+    animation: none !important;
+  }
+  .scp-cal-day { transition: none !important; }
+  .scp-cal-day:active { transform: none !important; }
+}

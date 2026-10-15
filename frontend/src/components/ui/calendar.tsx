@@ -6,7 +6,10 @@ import "react-day-picker/dist/style.css";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
-export type CalendarProps = React.ComponentProps<typeof DayPicker>;
+export type CalendarProps = React.ComponentProps<typeof DayPicker> & {
+  /** when set, the month caption becomes a button that zooms out (to months) */
+  onCaptionClick?: () => void;
+};
 
 /**
  * Canonical shadcn calendar adapted for react-day-picker v9.
@@ -21,6 +24,8 @@ export function Calendar({
   className,
   classNames,
   showOutsideDays = true,
+  onCaptionClick,
+  components,
   ...props
 }: CalendarProps) {
   const defaults = getDefaultClassNames();
@@ -60,27 +65,53 @@ export function Calendar({
         // Circular day cells (no squares) using the sidebar's neutral shade
         // for hover; a selected date is the sidebar's ink pill with a bright
         // (light) number, mirroring the active sidebar item.
+        // The day button is a ghost button with its own text colour, so the
+        // selected cells force theirs through `[&>button]` (the cell carries
+        // the background, the button must carry the contrasting text).
         day_button: cn(
           buttonVariants({ variant: "ghost" }),
-          "size-8 rounded-full p-0 font-normal hover:bg-[var(--sidebar-accent)] aria-selected:bg-primary aria-selected:font-medium aria-selected:text-primary-foreground aria-selected:opacity-100 aria-selected:hover:bg-primary aria-selected:hover:text-primary-foreground",
+          "scp-cal-day size-8 rounded-full p-0 font-normal transition-[transform,background-color,color] duration-150 hover:bg-[var(--sidebar-accent)] active:scale-90",
         ),
-        range_start: "rounded-l-full bg-primary text-primary-foreground",
-        range_end: "rounded-r-full bg-primary text-primary-foreground",
-        range_middle: "bg-[var(--sidebar-accent)] text-foreground",
-        selected: "rounded-full",
-        today: "rounded-full bg-[var(--sidebar-accent)] text-foreground",
+        // Start/end: near-black pill with light text (inverse in dark mode,
+        // since foreground/background swap). Middle: soft tint, normal text.
+        range_start:
+          "scp-cal-pop rounded-l-full bg-foreground [&>button]:font-semibold [&>button]:text-background [&>button:hover]:bg-transparent [&>button:hover]:text-background",
+        range_end:
+          "scp-cal-pop rounded-r-full bg-foreground [&>button]:font-semibold [&>button]:text-background [&>button:hover]:bg-transparent [&>button:hover]:text-background",
+        range_middle:
+          "scp-cal-fill bg-foreground/10 [&>button]:text-foreground [&>button:hover]:bg-foreground/10",
+        selected: "",
+        // today: marked subtly, no fill
+        today: "[&>button]:font-semibold [&>button]:ring-1 [&>button]:ring-inset [&>button]:ring-foreground/30",
         outside: "text-muted-foreground/40",
         disabled: "text-muted-foreground/40 cursor-not-allowed",
         hidden: "invisible",
         ...classNames,
       }}
       components={{
+        ...(onCaptionClick
+          ? {
+              MonthCaption: ({ calendarMonth, displayIndex: _i, className: cls, children: _c, ...rest }) => (
+                <div {...(rest as React.HTMLAttributes<HTMLDivElement>)} className={cls}>
+                  <button
+                    type="button"
+                    onClick={onCaptionClick}
+                    aria-label="Choose month or year"
+                    className="rounded-full px-3 py-0.5 text-sm font-medium transition-colors hover:bg-[var(--sidebar-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  >
+                    {calendarMonth.date.toLocaleString("en-GB", { month: "long", year: "numeric" })}
+                  </button>
+                </div>
+              ),
+            }
+          : {}),
         Chevron: ({ orientation }) =>
           orientation === "left" ? (
             <ChevronLeft className="h-4 w-4" />
           ) : (
             <ChevronRight className="h-4 w-4" />
           ),
+        ...components,
       }}
       {...props}
     />

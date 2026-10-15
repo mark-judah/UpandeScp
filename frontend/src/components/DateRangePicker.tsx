@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Calendar as CalendarIcon } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import type { DateRange as DayRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -137,16 +137,28 @@ const PILL_TRIGGER =
   "h-9 gap-2 rounded-full border-transparent bg-card px-4 text-xs font-medium tabular-nums text-foreground shadow-[var(--sd-shadow-1)] hover:bg-card hover:text-foreground hover:shadow-[var(--sd-shadow-2)] [&>svg]:text-[var(--sd-quiet)]";
 
 const FIELD_TRIGGER =
-  "h-9 gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium tabular-nums text-foreground shadow-sm hover:bg-background hover:text-foreground [&>svg]:text-[var(--sd-quiet)]";
-
-const FIELD_INPUT =
-  "h-8 w-full rounded-md border border-input bg-background px-2 text-xs tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 aria-[invalid=true]:border-[var(--sd-data-red)]";
+  "h-9 gap-2 rounded-xl border border-input bg-background px-3 text-sm font-medium tabular-nums text-foreground shadow-sm hover:bg-background hover:text-foreground [&>svg]:text-[var(--sd-quiet)]";
 
 /**
  * One picker for a from/to range. Click a start day then an end day (the
- * second click earlier than the first swaps them), or type the dates, or pick
- * a preset. Two months side by side on wide screens, one on a phone.
+ * second click earlier than the first swaps them) or pick a preset. There are
+ * no typed fields: picking is the only way in, and the chosen From / To read
+ * back as labels. Click the month caption to zoom out to a month grid, and
+ * again to a list of years, to jump far quickly. Two months side by side on
+ * wide screens, one on a phone.
  */
+type View = "days" | "months" | "years";
+
+const MONTH_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+const nice = (iso: string): string => {
+  const d = parseYmd(iso);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+};
+
+const GRID_BTN =
+  "rounded-full px-2 py-2 text-sm font-medium tabular-nums transition-[transform,background-color,color] duration-150 hover:bg-[var(--sidebar-accent)] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:text-muted-foreground/40 disabled:hover:bg-transparent disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100";
+
 export function DateRangePicker({
   value,
   onChange,
@@ -165,9 +177,8 @@ export function DateRangePicker({
   const [anchor, setAnchor] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [month, setMonth] = useState<Date>(() => parseYmd(validIso(value.from) ? value.from : ymd(new Date())));
-  const [fromText, setFromText] = useState(value.from);
-  const [toText, setToText] = useState(value.to);
-  const [error, setError] = useState("");
+  const [view, setView] = useState<View>("days");
+  const [slide, setSlide] = useState<{ dir: "none" | "next" | "prev"; tick: 0 | 1 }>({ dir: "none", tick: 0 });
   const wide = useWide();
 
   const allPresets = useMemo(() => [...builtInPresets(weekStartsOn), ...(presets ?? [])], [weekStartsOn, presets]);
@@ -175,23 +186,13 @@ export function DateRangePicker({
   const inBounds = (iso: string) => (!min || iso >= min) && (!max || iso <= max);
   const clamp = (iso: string) => (min && iso < min ? min : max && iso > max ? max : iso);
 
-  // Keep the typed boxes and visible month in step with the committed value
-  // whenever it changes from outside (or after a commit).
-  useEffect(() => {
-    setFromText(value.from);
-    setToText(value.to);
-  }, [value.from, value.to]);
-
   const openChange = (next: boolean) => {
     setOpen(next);
     setAnchor(null);
     setHover(null);
-    setError("");
-    if (next) {
-      setMonth(parseYmd(validIso(value.from) ? value.from : ymd(new Date())));
-      setFromText(value.from);
-      setToText(value.to);
-    }
+    setView("days");
+    setSlide({ dir: "none", tick: 0 });
+    if (next) setMonth(parseYmd(validIso(value.from) ? value.from : ymd(new Date())));
   };
 
   const commit = (a: string, b: string) => {
@@ -204,9 +205,6 @@ export function DateRangePicker({
     if (!inBounds(iso)) return;
     if (anchor == null) {
       setAnchor(iso);
-      setFromText(iso);
-      setToText("");
-      setError("");
       return;
     }
     if (iso === anchor && !allowSingleDay) return;
@@ -226,28 +224,21 @@ export function DateRangePicker({
     setOpen(false);
   };
 
-  /** Validate and apply the two typed boxes; both must be good to commit. */
-  const applyTyped = (nextFrom: string, nextTo: string) => {
-    const f = parseTypedDate(nextFrom);
-    const t = parseTypedDate(nextTo);
-    if (!f || !t) {
-      const bad = (!f && nextFrom.trim()) || (!t && nextTo.trim());
-      setError(bad ? "Enter dates as dd/mm/yyyy or yyyy-mm-dd." : "");
-      return;
-    }
-    if (!inBounds(f) || !inBounds(t)) {
-      setError(`Dates must fall between ${min ?? "the earliest day"} and ${max ?? "the latest day"}.`);
-      return;
-    }
-    if (!allowSingleDay && f === t) {
-      setError("Pick two different days.");
-      return;
-    }
-    setError("");
-    setAnchor(null);
-    setMonth(parseYmd(f <= t ? f : t));
-    commit(f, t);
+  const changeMonth = (next: Date) => {
+    const dir = next.getTime() === month.getTime() ? "none" : next > month ? "next" : "prev";
+    setSlide((t) => ({ dir, tick: t.tick ? 0 : 1 }));
+    setMonth(next);
   };
+
+  const monthOk = (y: number, m: number) => {
+    const first = ymd(new Date(y, m, 1));
+    const last = ymd(new Date(y, m + 1, 0));
+    return (!min || last >= min) && (!max || first <= max);
+  };
+  const yearOk = (y: number) => (!min || `${y}-12-31` >= min) && (!max || `${y}-01-01` <= max);
+
+  const year = month.getFullYear();
+  const yearStart = Math.floor(year / 12) * 12;
 
   // What the calendar paints: a pending anchor with the hover as its preview,
   // otherwise the committed value.
@@ -308,73 +299,114 @@ export function DateRangePicker({
             ))}
           </div>
           <div>
-            <Calendar
-              mode="range"
-              numberOfMonths={wide ? 2 : 1}
-              month={month}
-              onMonthChange={setMonth}
-              selected={shown}
-              onSelect={() => {}}
-              onDayClick={onDay}
-              onDayMouseEnter={(d) => anchor && setHover(ymd(d))}
-              onDayFocus={(d) => anchor && setHover(ymd(d))}
-              onDayMouseLeave={() => setHover(null)}
-              disabled={disabledDays}
-              weekStartsOn={weekStartsOn}
-              ISOWeek={weekStartsOn === 1}
-              showWeekNumber={false}
-              classNames={{ months: "relative flex flex-col gap-4 sm:flex-row sm:gap-6" }}
-            />
-            <div className="flex items-end gap-2 border-t p-3">
-              <label className="flex flex-1 flex-col gap-1 text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">
-                From
-                <input
-                  aria-label="From date"
-                  inputMode="numeric"
-                  placeholder="dd/mm/yyyy"
-                  value={fromText}
-                  aria-invalid={!!error && !parseTypedDate(fromText)}
-                  className={FIELD_INPUT}
-                  onChange={(e) => setFromText(e.target.value)}
-                  onBlur={() => applyTyped(fromText, toText)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      applyTyped(fromText, toText);
-                    }
-                  }}
-                />
-              </label>
-              <label className="flex flex-1 flex-col gap-1 text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">
-                To
-                <input
-                  aria-label="To date"
-                  inputMode="numeric"
-                  placeholder="dd/mm/yyyy"
-                  value={toText}
-                  aria-invalid={!!error && !parseTypedDate(toText)}
-                  className={FIELD_INPUT}
-                  onChange={(e) => setToText(e.target.value)}
-                  onBlur={() => applyTyped(fromText, toText)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      applyTyped(fromText, toText);
-                    }
-                  }}
-                />
-              </label>
-            </div>
-            <p
-              role="alert"
-              className={cn("px-3 pb-2 text-[0.7rem] text-[var(--sd-data-red)]", !error && "sr-only")}
+            <div
+              className="flex items-center gap-x-2 gap-y-0.5 border-b px-3 py-2 text-xs tabular-nums"
+              aria-live="polite"
+              data-testid="range-readout"
             >
-              {error}
-            </p>
-            {anchor && (
-              <p className="px-3 pb-2 text-[0.7rem] text-muted-foreground" aria-live="polite">
-                Pick the end day.
-              </p>
+              <span className="text-muted-foreground">From</span>{" "}
+              <span className="font-medium text-foreground">{anchor ? nice(anchor) : valid ? nice(value.from) : "—"}</span>{" "}
+              <span className="text-muted-foreground">·</span>{" "}
+              <span className="text-muted-foreground">To</span>{" "}
+              <span className="font-medium text-foreground">
+                {anchor ? "pick the end day" : valid ? nice(value.to) : "—"}
+              </span>
+            </div>
+            {view === "days" && (
+              <div
+                className="scp-cal-slide"
+                data-dir={slide.dir}
+                data-tick={slide.tick}
+                data-testid="day-view"
+              >
+                <Calendar
+                  mode="range"
+                  numberOfMonths={wide ? 2 : 1}
+                  month={month}
+                  onMonthChange={changeMonth}
+                  onCaptionClick={() => setView("months")}
+                  selected={shown}
+                  onSelect={() => {}}
+                  onDayClick={onDay}
+                  onDayMouseEnter={(d) => anchor && setHover(ymd(d))}
+                  onDayFocus={(d) => anchor && setHover(ymd(d))}
+                  onDayMouseLeave={() => setHover(null)}
+                  disabled={disabledDays}
+                  weekStartsOn={weekStartsOn}
+                  ISOWeek={weekStartsOn === 1}
+                  showWeekNumber={false}
+                  classNames={{ months: "relative flex flex-col gap-4 sm:flex-row sm:gap-6" }}
+                />
+              </div>
+            )}
+            {view === "months" && (
+              <div className="scp-cal-zoom w-[17.5rem] p-3 sm:w-[20rem]" data-testid="month-view">
+                <div className="mb-2 flex items-center justify-between">
+                  <button type="button" aria-label="Previous year" className={cn(GRID_BTN, "p-1.5")} onClick={() => changeMonth(new Date(year - 1, month.getMonth(), 1))}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button type="button" aria-label="Choose year" className={GRID_BTN} onClick={() => setView("years")}>
+                    {year}
+                  </button>
+                  <button type="button" aria-label="Next year" className={cn(GRID_BTN, "p-1.5")} onClick={() => changeMonth(new Date(year + 1, month.getMonth(), 1))}>
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  {MONTH_LONG.map((name, i) => {
+                    const chosen = [anchor ?? value.from, anchor ? null : value.to].some(
+                      (iso) => iso && validIso(iso) && parseYmd(iso).getFullYear() === year && parseYmd(iso).getMonth() === i,
+                    );
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        aria-label={`${name} ${year}`}
+                        disabled={!monthOk(year, i)}
+                        className={cn(GRID_BTN, chosen && "bg-foreground/10 font-semibold")}
+                        onClick={() => {
+                          changeMonth(new Date(year, i, 1));
+                          setView("days");
+                        }}
+                      >
+                        {MONTHS[i]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {view === "years" && (
+              <div className="scp-cal-zoom w-[17.5rem] p-3 sm:w-[20rem]" data-testid="year-view">
+                <div className="mb-2 flex items-center justify-between">
+                  <button type="button" aria-label="Previous years" className={cn(GRID_BTN, "p-1.5")} onClick={() => changeMonth(new Date(year - 12, month.getMonth(), 1))}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="text-sm font-medium tabular-nums">
+                    {yearStart} – {yearStart + 11}
+                  </span>
+                  <button type="button" aria-label="Next years" className={cn(GRID_BTN, "p-1.5")} onClick={() => changeMonth(new Date(year + 12, month.getMonth(), 1))}>
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  {Array.from({ length: 12 }, (_, i) => yearStart + i).map((y) => (
+                    <button
+                      key={y}
+                      type="button"
+                      aria-label={`Year ${y}`}
+                      disabled={!yearOk(y)}
+                      className={cn(GRID_BTN, y === year && "bg-foreground/10 font-semibold")}
+                      onClick={() => {
+                        changeMonth(new Date(y, month.getMonth(), 1));
+                        setView("months");
+                      }}
+                    >
+                      {y}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </div>

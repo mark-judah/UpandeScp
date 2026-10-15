@@ -27,7 +27,7 @@
  * than as a quiet week.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import gsap from "gsap";
@@ -44,6 +44,14 @@ import {
   weightPaintLegend,
   type Lattice,
 } from "./terrain-field";
+
+import {
+  accuracyLine,
+  cardContent,
+  placeNodes,
+  type InterventionPayload,
+} from "./interventions";
+import { ReliabilityPill } from "../dashboard/PrevalenceFigure";
 
 export interface TerrainWeekData {
   /** ISO-week label, e.g. "2026-W29" */
@@ -84,6 +92,10 @@ export interface Terrain3DProps {
   className?: string;
   /** grid resolution along the longer axis */
   resolution?: number;
+  /** Preloaded spray interventions between scouting weeks (optional). */
+  interventions?: InterventionPayload | null;
+  /** Observation name, for the intervention card's wording. */
+  obsName?: string;
 }
 
 const GRID_RESOLUTION = 128;
@@ -147,6 +159,8 @@ export function Terrain3D({
   positions,
   className,
   resolution = GRID_RESOLUTION,
+  interventions,
+  obsName = "",
 }: Terrain3DProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [frame, setFrame] = useState(0);
@@ -658,6 +672,30 @@ export function Terrain3D({
   }, [playing, fields.length]);
 
   const current = playable[frame]?.week;
+
+  // Interventions: nodes sit between week bars; the card shows when playback
+  // arrives after a node, or when a node is clicked (pinned to that frame).
+  const nodes = useMemo(
+    () => placeNodes(playable.map((m) => m.week.date), interventions?.intervals),
+    [playable, interventions],
+  );
+  const [pinned, setPinned] = useState<{ idx: number; frame: number } | null>(null);
+  const totals = useMemo(() => {
+    const t: Record<string, number> = {};
+    for (const m of playable)
+      t[m.week.date] = Object.values(m.week.zoneObs).reduce((a, b) => a + b, 0);
+    return t;
+  }, [playable]);
+  const cardIdx = pinned && pinned.frame === frame ? pinned.idx : frame - 1;
+  const cards = (nodes[cardIdx] ?? []).map((iv) => cardContent(iv, obsName, totals));
+  const openNode = (idx: number) => {
+    const target = Math.min(idx + 1, playable.length - 1);
+    setPlaying(false);
+    setFrame(target);
+    setPinned({ idx, frame: target });
+  };
+  const accuracy = interventions?.weeks?.[current?.date ?? ""];
+  const accText = accuracyLine(accuracy, current);
   const canPlay = fields.length >= 2 && !prefersReducedMotion();
 
   if (!fields.length) {
@@ -681,6 +719,33 @@ export function Terrain3D({
           ref={mountRef}
           className="relative min-h-[62vh] w-full flex-1 overflow-hidden rounded-md border bg-white"
         />
+        {cards.length > 0 && (
+          <div
+            data-testid="intervention-card"
+            className="absolute right-2 top-2 z-10 flex max-h-[55%] w-72 flex-col gap-2 overflow-auto rounded-md border bg-background/95 p-2 text-[0.7rem] shadow-md"
+          >
+            {cards.map((c, i) => (
+              <div key={i} className="flex flex-col gap-1">
+                <div className="font-medium">{c.title}</div>
+                {c.applied.map((a, j) => (
+                  <div key={j} className="text-muted-foreground">{a}</div>
+                ))}
+                <div className="font-medium tabular-nums">{c.result}</div>
+                {c.counts && (
+                  <div className="tabular-nums text-muted-foreground">{c.counts}</div>
+                )}
+                {(c.reliabilityBefore || c.reliabilityAfter) && (
+                  <div className="flex items-center gap-1 text-muted-foreground">
+                    Reliability
+                    {c.reliabilityBefore && <ReliabilityPill value={c.reliabilityBefore} />}
+                    →
+                    {c.reliabilityAfter && <ReliabilityPill value={c.reliabilityAfter} />}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {hover && (
           <div
             className="pointer-events-none absolute z-10 rounded-md border bg-background/95 px-2 py-1 text-[0.7rem] shadow-md"
@@ -807,6 +872,17 @@ export function Terrain3D({
           </span>
         ) : null}
 
+        {accuracy?.reliability || accText ? (
+          <span
+            data-testid="week-accuracy"
+            className="inline-flex items-center gap-1 text-[0.6rem] tabular-nums text-muted-foreground"
+            title="Data accuracy for this week: coverage of the house, scouts and entries, and the reliability the prevalence figure reports."
+          >
+            {accuracy?.reliability && <ReliabilityPill value={accuracy.reliability} />}
+            {accText}
+          </span>
+        ) : null}
+
         {!!current?.sprayEvents?.length && (
           <span
             className="rounded-full px-1.5 py-px text-[0.6rem] text-[var(--sd-data-violet,#7c3aed)] ring-1 ring-[var(--sd-data-violet,#7c3aed)]"
@@ -836,8 +912,8 @@ export function Terrain3D({
           data rather than as a quiet week. */}
       <div className="flex flex-wrap items-center gap-1">
         {marks.map((m) => (
+          <Fragment key={m.week.date}>
           <button
-            key={m.week.date}
             type="button"
             onClick={() => m.frame !== null && setFrame(m.frame)}
             title={
@@ -854,6 +930,20 @@ export function Terrain3D({
                 : "bg-muted-foreground/60 hover:bg-foreground/70",
             )}
           />
+          {m.frame !== null && nodes[m.frame]?.length ? (
+            <button
+              type="button"
+              data-testid={`intervention-node-${m.frame}`}
+              onClick={() => openNode(m.frame as number)}
+              aria-label={`Spray intervention after ${m.week.date}`}
+              title={`Spray applied between ${m.week.date} and the next scouting`}
+              className={cn(
+                "h-2.5 w-2.5 rounded-full border-2 border-foreground bg-background transition-transform hover:scale-125",
+                cardIdx === m.frame && cards.length > 0 && "bg-foreground",
+              )}
+            />
+          ) : null}
+          </Fragment>
         ))}
       </div>
 

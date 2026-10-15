@@ -74,6 +74,7 @@ import { linkObsId, linkStationId, parseHeatmapLink } from "@/lib/heatmap-link";
 import { StageLegend, HeatRampLegend } from "./maps/StageLegend";
 import { hasWebGL } from "@/lib/webgl";
 import type { TerrainWeekData } from "./maps/Terrain3D";
+import type { InterventionPayload } from "./maps/interventions";
 
 // Lazy: three.js is a ~508 kB chunk and the 2D heatmap must not pay for it.
 const Terrain3D = lazy(() =>
@@ -238,6 +239,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
   // "last 5 weeks" window barely overlaps what it's meant to explain.
   const pickedWeather = useWeatherHistory(pickedFarm, from, to);
   const [terrain, setTerrain] = useState<TerrainWeekData[] | null>(null);
+  const [interventions, setInterventions] = useState<InterventionPayload | null>(null);
 
   // 3D is opt-in per card and needs its own (longer) week history, so it is
   // fetched only when the toggle is switched on.
@@ -253,6 +255,16 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
     })
       .then((r) => { if (!cancelled) setTerrain(r?.weeks ?? []); })
       .catch(() => { if (!cancelled) setTerrain([]); });
+    // Preloaded for the whole range in one call, so playback never fetches.
+    setInterventions(null);
+    call<InterventionPayload>(METHOD.heatmap_interventions, {
+      from_date: from, to_date: to, crop,
+      greenhouse: picked.greenhouse,
+      obs_name: picked.obsName,
+      obs_kind: picked.obsKind,
+    })
+      .then((r) => { if (!cancelled) setInterventions(r ?? null); })
+      .catch(() => { if (!cancelled) setInterventions(null); });
     return () => { cancelled = true; };
   }, [picked, show3D, from, to, crop]);
 
@@ -874,6 +886,8 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
                   <Terrain3D
                     weeks={terrain}
                     weather={pickedWeather ?? undefined}
+                    interventions={interventions}
+                    obsName={picked.obsName}
                     positions={Object.fromEntries(
                       Object.entries(
                         geometryByGh[picked.greenhouse]?.zoneCentroids ?? {},

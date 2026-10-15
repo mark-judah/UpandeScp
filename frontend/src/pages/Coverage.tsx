@@ -37,9 +37,7 @@ export function Coverage({ initialCrop }: { initialCrop?: string } = {}) {
 
   return (
     <div className="flex min-h-svh w-full min-w-0 flex-col">
-      <PageHeader eyebrow="Reports · Scouting data quality" title="Coverage" />
-      <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
-        <div className="flex flex-wrap items-center justify-end gap-2">
+      <PageHeader eyebrow="Reports · Scouting data quality" title="Coverage">
           <PlacePicker
             level="farm"
             farms={Object.keys(farms).sort()}
@@ -50,7 +48,8 @@ export function Coverage({ initialCrop }: { initialCrop?: string } = {}) {
             disabled={farmsLoading}
           />
           <DateRangePicker label="Date range" value={{ from, to }} onChange={setRange} />
-        </div>
+      </PageHeader>
+      <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
         {/* Inline under the filters, not a full-screen overlay: the tiles and
             tables stand (skeletons on the first load, old figures on a refresh). */}
         <LoadProgress

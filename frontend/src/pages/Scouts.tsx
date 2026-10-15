@@ -182,9 +182,7 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
 
   return (
     <div className="flex min-h-svh w-full min-w-0 flex-col">
-      <PageHeader eyebrow="Personnel · Scouting" title="Scouts" />
-      <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
-        <div className="flex flex-wrap items-center justify-end gap-2">
+      <PageHeader eyebrow="Personnel · Scouting" title="Scouts">
           <PlacePicker
             level="farm"
             farms={data?.farms || []}
@@ -196,7 +194,8 @@ export function Scouts({ initialCrop }: { initialCrop?: string } = {}) {
             disabled={!data}
           />
           <DateRangePicker label="Scouts date range" value={{ from, to }} onChange={setRange} />
-        </div>
+      </PageHeader>
+      <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
         <LoadProgress
           active={q.loading && !!data}
           progress={q.progress?.percent ?? null}

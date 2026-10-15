@@ -44,6 +44,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
+import { ToolbarButton } from "@/components/ToolbarButton";
 import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { PlacePicker } from "@/components/PlacePicker";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -242,18 +243,9 @@ export function Procurement({ initialCrop }: { initialCrop?: string } = {}) {
             </TabsList>
           </Tabs>
         }
-      >
-        <HeaderIconButton
-          aria-label="Refresh"
-          title="Refresh"
-          onClick={() => void loadShell()}
-        >
-          <RefreshCw className="size-4" />
-        </HeaderIconButton>
-      </PageHeader>
-
-      <div className="flex flex-col gap-4 px-4 md:px-6">
-      <div className="flex flex-wrap items-center gap-2">
+        tab={tab}
+        filters={[
+          { key: "cycle", node: (
         <Select value={cycleId} onValueChange={setCycleId} disabled={!shellLoaded}>
           <SelectTrigger aria-label="Cycle" className={HEADER_PILL}>
             <SelectValue placeholder="Cycle" />
@@ -266,11 +258,14 @@ export function Procurement({ initialCrop }: { initialCrop?: string } = {}) {
             ))}
           </SelectContent>
         </Select>
-        {isGm && (
-          <Button variant="outline" onClick={() => setNewOpen(true)}>
+          ) },
+          { key: "new-cycle", node: isGm ? (
+          <ToolbarButton onClick={() => setNewOpen(true)}>
             <Plus className="mr-1 size-4" /> New cycle
-          </Button>
-        )}
+          </ToolbarButton>
+          ) : null },
+          { key: "farm", tabs: ["requirement", "pool"], node: (
+            <>
         {/* The planner's farm (place picker G2): always shown once there is a
             farm, a single farm reading as itself; there is no "all" here. */}
         {(!shellLoaded || !farmsReady || farms.length > 0) && (
@@ -283,7 +278,20 @@ export function Procurement({ initialCrop }: { initialCrop?: string } = {}) {
             disabled={!shellLoaded || !farmsReady}
           />
         )}
-      </div>
+            </>
+          ) },
+        ]}
+      >
+        <HeaderIconButton
+          aria-label="Refresh"
+          title="Refresh"
+          onClick={() => void loadShell()}
+        >
+          <RefreshCw className="size-4" />
+        </HeaderIconButton>
+      </PageHeader>
+
+      <div className="flex flex-col gap-4 px-4 md:px-6">
 
       {!shellLoaded || (!farmsReady && tab === "requirement") ? (
         <TableCardSkeleton heads={TAB_HEADS[tab]} />

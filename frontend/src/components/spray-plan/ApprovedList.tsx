@@ -70,14 +70,39 @@ export function StepLine({ index }: { index: number }) {
   );
 }
 
-export function ApprovedList({ rows, loading }: { rows: LifecycleSummaryRow[]; loading: boolean }) {
-  const [step, setStep] = useState("");
+/** The approved plans narrowed to one lifecycle step ("" = every step). */
+export function filterApproved(rows: LifecycleSummaryRow[], step: string): LifecycleSummaryRow[] {
+  const approved = rows.filter(isApprovedRow);
+  return step ? approved.filter((r) => r.current_state === step) : approved;
+}
+
+/** The step dropdown and plan count for the Approved tab. They live in the
+ *  page toolbar (one row with the tabs), so the page owns the step state. */
+export function ApprovedStepFilter({ step, onChange }: { step: string; onChange: (s: string) => void }) {
+  return (
+    <FilterSelect
+      label="Step"
+      value={step}
+      onChange={onChange}
+      allLabel="All steps"
+      options={APPROVED_STEPS.map((s) => s.state)}
+      format={(o) => APPROVED_STEPS.find((s) => s.state === o)?.label ?? o}
+    />
+  );
+}
+
+export function PlanCount({ n }: { n: number }) {
+  return (
+    <span className="whitespace-nowrap text-xs text-muted-foreground" data-testid="plan-count">
+      {n} plan{n === 1 ? "" : "s"}
+    </span>
+  );
+}
+
+export function ApprovedList({ rows, loading, step = "" }: { rows: LifecycleSummaryRow[]; loading: boolean; step?: string }) {
   const [open, setOpen] = useState<string | null>(null);
   const approved = useMemo(() => rows.filter(isApprovedRow), [rows]);
-  const shown = useMemo(
-    () => (step ? approved.filter((r) => r.current_state === step) : approved),
-    [approved, step],
-  );
+  const shown = useMemo(() => filterApproved(rows, step), [rows, step]);
   if (!approved.length) {
     return (
       <div className="rounded-xl border bg-card p-10 text-center text-sm text-muted-foreground">
@@ -87,17 +112,6 @@ export function ApprovedList({ rows, loading }: { rows: LifecycleSummaryRow[]; l
   }
   return (
     <div className="flex flex-col gap-2" data-testid="approved-list">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <FilterSelect
-          label="Step"
-          value={step}
-          onChange={setStep}
-          allLabel="All steps"
-          options={APPROVED_STEPS.map((s) => s.state)}
-          format={(o) => APPROVED_STEPS.find((s) => s.state === o)?.label ?? o}
-        />
-        <span>{shown.length} plan{shown.length === 1 ? "" : "s"}</span>
-      </div>
       <ul className="divide-y rounded-xl border bg-card">
         {shown.map((r) => {
           const i = stepIndex(r.current_state);

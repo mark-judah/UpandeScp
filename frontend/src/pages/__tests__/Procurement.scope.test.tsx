@@ -184,7 +184,11 @@ describe("Procurement — header alignment", () => {
     expect(root.className).not.toMatch(/(^|\s)(md:)?px-\d/);
     const header = screen.getByRole("heading", { name: "Chemical Procurement" }).closest("header")!;
     expect(header.className).toMatch(/px-4/);
-    const filters = screen.getByRole("button", { name: "Farm" }).closest("div.px-4");
-    expect(filters).not.toBeNull();
+    // Filters share the tabs' row inside the header toolbar, not a second row.
+    const toolbar = screen.getByTestId("page-toolbar");
+    expect(toolbar).toContainElement(screen.getByRole("tab", { name: "Review" }));
+    expect(toolbar).toContainElement(screen.getByRole("button", { name: "Farm" }));
+    expect(toolbar).toContainElement(screen.getByRole("button", { name: "Refresh" }));
+    expect(header).toContainElement(toolbar);
   });
 });

@@ -178,12 +178,7 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
 
   return (
     <div className="flex min-h-svh w-full min-w-0 flex-col">
-      <PageHeader eyebrow="Scouting · Photos from the field" title="Visual findings" />
-      <div
-        data-testid="gallery-content"
-        className={cn("flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6", contentPadClass(open != null))}
-      >
-        <div className="flex flex-wrap items-center justify-end gap-2">
+      <PageHeader eyebrow="Scouting · Photos from the field" title="Visual findings">
           <PlacePicker
             farms={farms}
             crop={crop}
@@ -239,7 +234,11 @@ export function Gallery({ initialCrop }: { initialCrop?: string } = {}) {
             </SelectContent>
           </Select>
           <DateRangePicker label="Gallery date range" value={{ from, to }} onChange={setRange} />
-        </div>
+      </PageHeader>
+      <div
+        data-testid="gallery-content"
+        className={cn("flex min-w-0 flex-1 flex-col gap-4 px-4 py-4 md:px-6 md:py-6", contentPadClass(open != null))}
+      >
 
         <LoadProgress active={loading && loaded} />
         {error ? <div className="text-xs text-[var(--sd-data-red)]">{error}</div> : null}

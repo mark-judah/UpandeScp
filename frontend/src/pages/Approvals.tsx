@@ -50,7 +50,7 @@ import { TogglePill } from "@/components/TogglePill";
 import { ClearFiltersPill } from "@/components/ClearFiltersPill";
 import { StalePlansTab } from "@/components/spray-plan/StalePlansTab";
 import { ApprovalActionBar } from "@/components/spray-plan/ApprovalActionBar";
-import { ApprovedList, isApprovedRow } from "@/components/spray-plan/ApprovedList";
+import { ApprovedList, ApprovedStepFilter, PlanCount, filterApproved, isApprovedRow } from "@/components/spray-plan/ApprovedList";
 import { HEADER_PILL } from "@/components/header-controls";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import {
@@ -248,6 +248,8 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
     () => allWos.filter((w) => !w.is_forwarded).length,
     [allWos],
   );
+  const [approvedStep, setApprovedStep] = useState("");
+  const approvedShown = useMemo(() => filterApproved(summary, approvedStep).length, [summary, approvedStep]);
   const approvedCount = useMemo(() => summary.filter(isApprovedRow).length, [summary]);
 
   // The pending table is the approval feed's not-yet-forwarded plans.
@@ -458,7 +460,9 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
                 </TabsTrigger>
               </TabsList>
         }
-      >
+        tab={tab}
+        filters={[
+          { key: "date-basis", tabs: ["pending"], node: (
         <Select
           value={dateBasis}
           onValueChange={(v) => setDateBasis(v as DateBasis)}
@@ -471,6 +475,8 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
             <SelectItem value="created">{DATE_BASIS_LABEL.created}</SelectItem>
           </SelectContent>
         </Select>
+          ) },
+          { key: "date-range", tabs: ["pending"], node: (
         <DateRangePicker
           value={{ from, to }}
           onChange={({ from: f, to: t }) => {
@@ -479,6 +485,8 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
           }}
           label="Date range"
         />
+          ) },
+          { key: "group-farms", tabs: ["pending"], node: (
         <TogglePill
           pressed={groupFarms}
           onPressedChange={setGroupFarms}
@@ -486,6 +494,8 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
         >
           Group by farm
         </TogglePill>
+          ) },
+          { key: "place", node: (
         <PlacePicker
           farms={placeFarms}
           value={{ farm: farm === ALL ? "" : farm, greenhouse: greenhouse === ALL ? "" : greenhouse }}
@@ -495,6 +505,13 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
           }}
           disabled={!farmsData.farms.length}
         />
+          ) },
+          { key: "approved-step", tabs: ["approved"], node: (
+            <ApprovedStepFilter step={approvedStep} onChange={setApprovedStep} />
+          ) },
+          { key: "approved-count", tabs: ["approved"], node: <PlanCount n={approvedShown} /> },
+        ]}
+      >
         <ClearFiltersPill
           active={Boolean(from || to || farm !== ALL || greenhouse !== ALL)}
           onClear={clearFilters}
@@ -535,7 +552,7 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
         )}
 
         {tab === "approved" && !errorMsg && (
-          <ApprovedList rows={summary} loading={stageSkeleton} />
+          <ApprovedList rows={summary} loading={stageSkeleton} step={approvedStep} />
         )}
 
         {tab === "pending" && !errorMsg && (visibleWos.length > 0 || skeleton) && (

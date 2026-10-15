@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { SearchInput } from "@/components/SearchInput";
-import { ExternalLink, Search } from "lucide-react";
+import { ExternalLink, Layers } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -19,6 +18,8 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL } from "@/components/header-controls";
+import { TreePicker } from "@/components/TreePicker";
+import type { TreeNode } from "@/pages/trends/trends-types";
 import { PlacePicker } from "@/components/PlacePicker";
 import { LoadingStrip } from "@/components/LoadingStrip";
 import {
@@ -67,8 +68,38 @@ interface TankMix {
   total_amount: number;
 }
 
+const NO_FARM = "No farm";
+const farmId = (f: string) => `farm:${f}`;
+const itemId = (f: string, item: string) => `item:${f}|${item}`;
+
+/** Farm -> item tree built from the loaded tank mixes. */
+export function buildItemTree(mixes: TankMix[]): TreeNode[] {
+  const byFarm = new Map<string, Map<string, string>>();
+  for (const tm of mixes) {
+    const f = tm.custom_farm || NO_FARM;
+    if (!byFarm.has(f)) byFarm.set(f, new Map());
+    byFarm.get(f)!.set(tm.item, tm.item_name || tm.item);
+  }
+  return [...byFarm.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([f, items]) => ({
+      id: farmId(f),
+      label: f,
+      children: [...items.entries()]
+        .sort(([, a], [, b]) => a.localeCompare(b))
+        .map(([code, name]) => ({ id: itemId(f, code), label: name, search: `${name} ${code}` })),
+    }));
+}
+
+/** A mix shows when its farm or its (farm, item) leaf is picked. */
+export function matchesPicked(tm: TankMix, picked: Set<string>): boolean {
+  const f = tm.custom_farm || NO_FARM;
+  return picked.has(farmId(f)) || picked.has(itemId(f, tm.item));
+}
+
 export function TankMixes() {
-  const [q, setQ] = useState("");
+  // Multi-level item filter (farm -> item). Empty = everything.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [farm, setFarm] = useState<string>(ALL_FARMS);
   const [activeOnly, setActiveOnly] = useState(true);
   const [data, setData] = useState<{ tank_mixes: TankMix[]; farms: string[] }>({
@@ -88,7 +119,6 @@ export function TankMixes() {
       "upande_scp.serverscripts.scouting.scouting_metrics_api.list_tank_mixes",
       {
         farm: farm === ALL_FARMS ? undefined : farm,
-        q: q || undefined,
         active_only: activeOnly ? 1 : 0,
       },
     )
@@ -102,9 +132,15 @@ export function TankMixes() {
     return () => {
       cancelled = true;
     };
-  }, [q, farm, activeOnly]);
+  }, [farm, activeOnly]);
 
   const farms = useMemo(() => data.farms || [], [data]);
+
+  const tree = useMemo(() => buildItemTree(data.tank_mixes), [data.tank_mixes]);
+  const visibleMixes = useMemo(
+    () => (picked.size ? data.tank_mixes.filter((tm) => matchesPicked(tm, picked)) : data.tank_mixes),
+    [data.tank_mixes, picked],
+  );
 
   return (
     <div className="flex flex-col min-h-svh">
@@ -117,10 +153,16 @@ export function TankMixes() {
           </>
         }
       >
-          <SearchInput size="md" className="min-w-56"
-              value={q}
-              onChange={setQ}
-              placeholder="Search by item…" />
+          <TreePicker
+            label="Items"
+            icon={<Layers className="h-3.5 w-3.5" />}
+            nodes={tree}
+            checked={picked}
+            onChange={setPicked}
+            disabled={skeleton}
+            searchPlaceholder="Search farms and items…"
+            emptyHint="No tank mixes to pick from."
+          />
           {/* One place pill (place picker G2). `farms` is already scoped
               server-side to what this user may see; one farm reads as itself. */}
           <PlacePicker
@@ -150,7 +192,7 @@ export function TankMixes() {
       >
         {skeleton && [0, 1, 2, 3].map((i) => <TankMixCardSkeleton key={i} />)}
 
-        {data.tank_mixes.length === 0 && !loading && (
+        {visibleMixes.length === 0 && !loading && (
           <Card className="p-8 text-center col-span-full">
             <CardTitle className="text-sm">No tank mixes match</CardTitle>
             <CardDescription className="mt-1">
@@ -159,7 +201,7 @@ export function TankMixes() {
           </Card>
         )}
 
-        {data.tank_mixes.map((tm) => (
+        {visibleMixes.map((tm) => (
           <Card key={tm.name} className="p-4 flex flex-col gap-3">
             <CardHeader className="p-0">
               <div className="flex items-center justify-between gap-3">

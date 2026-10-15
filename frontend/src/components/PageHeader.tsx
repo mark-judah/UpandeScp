@@ -1,5 +1,5 @@
 import * as React from "react";
-import { PageToolbar } from "@/components/PageToolbar";
+import { PageToolbar, type ToolbarFilter } from "@/components/PageToolbar";
 
 /** The standard header metrics, measured from the Scouting Dashboard. */
 export const PAGE_HEADER_CLASS =
@@ -20,6 +20,8 @@ export function PageHeader({
   title,
   eyebrow,
   switcher,
+  filters,
+  tab,
   children,
 }: {
   title: React.ReactNode;
@@ -27,6 +29,9 @@ export function PageHeader({
   /** A pill switcher (e.g. TabsList) rendered on the LEFT of the controls
    *  row, on the same line as the right-aligned dropdowns. */
   switcher?: React.ReactNode;
+  /** tab-scoped filters (see PageToolbar) and the active tab id */
+  filters?: ToolbarFilter[];
+  tab?: string;
   children?: React.ReactNode;
 }) {
   return (
@@ -44,7 +49,7 @@ export function PageHeader({
         </h1>
       </div>
       {/* Controls row — BELOW the heading: tabs left, filters right. */}
-      <PageToolbar left={switcher}>{children}</PageToolbar>
+      <PageToolbar left={switcher} filters={filters} tab={tab}>{children}</PageToolbar>
     </header>
   );
 }

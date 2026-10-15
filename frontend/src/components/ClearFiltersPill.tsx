@@ -1,11 +1,12 @@
+import { HEADER_PILL } from "@/components/header-controls";
 import { cn } from "@/lib/utils";
 
 /**
- * "Clear" for a filter row: plain red text (no button chrome, no icon),
- * underlined on hover and on keyboard focus. Renders nothing unless a filter
- * is active.
+ * "Clear" for a filter row: the same pill shape as every other toolbar
+ * control, with text, border and a faint background in red. Always red, not
+ * just on hover. Renders nothing unless a filter is active.
  */
-export function ClearFiltersLink({
+export function ClearFiltersPill({
   active,
   onClear,
   label = "Clear",
@@ -22,7 +23,8 @@ export function ClearFiltersLink({
       type="button"
       onClick={onClear}
       className={cn(
-        "cursor-pointer whitespace-nowrap rounded-sm px-1 text-xs font-medium text-destructive underline-offset-4 transition-colors hover:text-destructive/80 hover:underline focus-visible:text-destructive/80 focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
+        HEADER_PILL,
+        "inline-flex min-w-0 cursor-pointer items-center justify-center whitespace-nowrap border border-destructive/40 bg-destructive/10 text-destructive shadow-none transition-colors hover:bg-destructive/15 hover:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
         className,
       )}
     >
@@ -32,4 +34,4 @@ export function ClearFiltersLink({
 }
 
 /** Backwards-compatible alias. */
-export const ClearFiltersPill = ClearFiltersLink;
+export const ClearFiltersLink = ClearFiltersPill;

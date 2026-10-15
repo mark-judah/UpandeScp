@@ -60,7 +60,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DatePicker } from "@/components/DatePicker";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import {
   DATE_BASIS_LABEL,
   dateBasisHint,
@@ -91,6 +91,16 @@ import {
 } from "@/lib/lifecycle-api";
 
 import { errorText } from "@/lib/errors";
+import { TargetPills } from "@/components/spray-plan/TargetPills";
+import { useLiveApprovals } from "@/hooks/use-live-approvals";
+import {
+  EMPTY_FEED,
+  keepSelection,
+  mergeFeed,
+  newPlansMessage,
+  type FeedState,
+} from "@/lib/approval-live";
+import { DEFAULT_CROP } from "@/lib/scouting-api";
 const ALL = "__all__";
 // Pending/forwarded come from the approval feed; the four post-approval
 // stages come from the lifecycle summary so the GM sees the whole journey.
@@ -141,7 +151,9 @@ const INITIAL_PROGRESS: ProgressState = {
   qrLabels: [],
 };
 
-export function Approvals() {
+export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
+  const crop = initialCrop ?? DEFAULT_CROP;
+  const toast = useToast();
   const [from, setFrom] = useState(defaultRange().from);
   const [to, setTo] = useState(defaultRange().to);
   const [farm, setFarm] = useState<string>(ALL);
@@ -150,7 +162,15 @@ export function Approvals() {
     farms: [],
     greenhouses_by_farm: {},
   });
-  const [allWos, setAllWos] = useState<PendingWorkOrder[]>([]);
+  const [feed, setFeed] = useState<FeedState>(EMPTY_FEED);
+  const allWos = feed.wos;
+  // Plans that arrived while the page was open: they carry a "New" pill until
+  // the approver selects or opens them (or changes the filters).
+  const freshNames = feed.fresh;
+  const feedRef = useRef(feed);
+  feedRef.current = feed;
+  // Only the newest request may write: a slow poll must not overwrite a filter change.
+  const reqRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
@@ -180,9 +200,14 @@ export function Approvals() {
       .catch(() => {});
   }, []);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    setErrorMsg(null);
+  const reload = useCallback(async (quiet = false) => {
+    // A quiet (live) refresh keeps the list, selection, expansion and scroll
+    // exactly as they are; only a filter change or an action starts over.
+    const req = ++reqRef.current;
+    if (!quiet) {
+      setLoading(true);
+      setErrorMsg(null);
+    }
     try {
       const r = await fetchPendingWorkOrders({
         from_date: from || null,
@@ -191,10 +216,29 @@ export function Approvals() {
         greenhouse: greenhouse === ALL ? null : greenhouse,
         date_basis: dateBasis,
       });
-      setAllWos(r.work_orders || []);
+      if (req !== reqRef.current) return;
+      const { state, added } = mergeFeed(
+        quiet ? feedRef.current : EMPTY_FEED,
+        r.work_orders || [],
+        quiet,
+      );
+      setFeed(state);
       setLoaded(true);
-      setChecked(new Set());
-      setExpanded(new Set());
+      if (quiet) {
+        setChecked((prev) => keepSelection(prev, state.wos));
+        if (added.length) {
+          toast.show(
+            newPlansMessage(
+              added.length,
+              added.map((w) => dateBasis === "created" ? String(w.creation || "").slice(0, 10) : String(w.custom_scheduled_application_time || w.planned_start_date || "").slice(0, 10)),
+            ),
+            "info",
+          );
+        }
+      } else {
+        setChecked(new Set());
+        setExpanded(new Set());
+      }
       // Post-approval stages come from the lifecycle summary. Best-effort —
       // a failure just leaves the stage tabs empty, it doesn't break approvals.
       fetchLifecycleSummary({
@@ -207,16 +251,32 @@ export function Approvals() {
         .catch(() => setSummary([]))
         .finally(() => setSummaryLoaded(true));
     } catch (e: any) {
-      setAllWos([]);
+      if (quiet || req !== reqRef.current) return; // a failed live refresh keeps what is shown
+      setFeed(EMPTY_FEED);
       setErrorMsg(
         e?.message?.includes("permission")
           ? "You do not have permission to view spray plan approvals. Ask an admin for the Spray Plan Approver role."
           : "Failed to load work orders. Check your connection or permissions.",
       );
     } finally {
-      setLoading(false);
+      if (!quiet && req === reqRef.current) setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to, farm, greenhouse, dateBasis]);
+
+  // Live: a spray plan event for these dates / this place, a 30 s poll while the
+  // socket is down, and a refresh on window focus.
+  useLiveApprovals(
+    { from, to, dateBasis, farm: farm === ALL ? "" : farm, greenhouse: greenhouse === ALL ? "" : greenhouse },
+    () => void reload(true),
+  );
+  const dismissFresh = (name: string) =>
+    setFeed((f) => {
+      if (!f.fresh.has(name)) return f;
+      const fresh = new Set(f.fresh);
+      fresh.delete(name);
+      return { ...f, fresh };
+    });
 
   // Debounce filter changes so cascading farm→greenhouse doesn't refetch
   // multiple times in quick succession.
@@ -295,6 +355,7 @@ export function Approvals() {
 
   // ── Selection actions ─────────────────────────────────────────────
   const toggleRow = (name: string) => {
+    dismissFresh(name);
     setChecked((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name);
@@ -317,6 +378,7 @@ export function Approvals() {
   };
 
   const toggleExpand = (name: string) => {
+    dismissFresh(name);
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(name)) next.delete(name);
@@ -552,8 +614,14 @@ export function Approvals() {
             <SelectItem value="created">{DATE_BASIS_LABEL.created}</SelectItem>
           </SelectContent>
         </Select>
-        <DatePicker value={from} onChange={setFrom} />
-        <DatePicker value={to} onChange={setTo} />
+        <DateRangePicker
+          value={{ from, to }}
+          onChange={({ from: f, to: t }) => {
+            setFrom(f);
+            setTo(t);
+          }}
+          label="Date range"
+        />
         <Button
           variant={groupFarms ? "default" : "outline"}
           size="sm"
@@ -747,6 +815,14 @@ export function Approvals() {
                             >
                               {w.name}
                             </a>
+                            {freshNames.has(w.name) && (
+                              <span
+                                data-testid="new-pill"
+                                className="ml-2 rounded-full bg-primary/10 px-1.5 py-px text-[0.6rem] font-medium leading-none text-primary"
+                              >
+                                New
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell className="text-xs">
                             {w.custom_greenhouse || "—"}
@@ -803,7 +879,7 @@ export function Approvals() {
                             <TableCell colSpan={8} className="p-0">
                               <ApprovalChemicalsTable woName={w.name} />
                               <div className="p-4 flex flex-col gap-4">
-                                <DetailPanel wo={w} />
+                                <DetailPanel wo={w} crop={crop} />
                                 <Separator />
                                 <LifecycleTimelineFor workOrder={w.name} />
                               </div>
@@ -907,7 +983,7 @@ export function Approvals() {
 }
 
 // ── Detail panel (expanded row) ─────────────────────────────────────
-function DetailPanel({ wo }: { wo: PendingWorkOrder }) {
+function DetailPanel({ wo, crop }: { wo: PendingWorkOrder; crop: string }) {
   const scope = [wo.custom_scope, wo.custom_scope_details]
     .filter(Boolean)
     .join(" — ");
@@ -988,13 +1064,12 @@ function DetailPanel({ wo }: { wo: PendingWorkOrder }) {
           <div className="text-[0.65rem] uppercase tracking-wide text-muted-foreground font-medium mb-2">
             Targets
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {targets.map((t) => (
-              <Badge key={t} variant="outline" className="text-[0.65rem]">
-                {t}
-              </Badge>
-            ))}
-          </div>
+          <TargetPills
+            targets={targets}
+            greenhouse={wo.custom_greenhouse}
+            crop={crop}
+            toDate={String(wo.custom_scheduled_application_time || wo.planned_start_date || "").slice(0, 10) || undefined}
+          />
         </div>
       )}
     </div>

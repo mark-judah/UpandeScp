@@ -292,7 +292,7 @@ function renderView(crop: string, view: View): ReactNode {
     case "historical":
       return <Historical />;
     case "approvals":
-      return <Approvals />;
+      return <Approvals initialCrop={cropName} />;
     case "settings":
       // Crop-scoped: the page shows what this crop overrides and scopes the
       // per-farm tabs to its farms. Site-wide tabs are shown and marked.

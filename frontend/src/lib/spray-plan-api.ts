@@ -33,6 +33,7 @@ export interface PendingWorkOrder {
   custom_greenhouse?: string;
   creation?: string;
   custom_scheduled_application_time?: string;
+  planned_start_date?: string;
   custom_spray_type?: string;
   custom_scope?: string;
   custom_scope_details?: string;

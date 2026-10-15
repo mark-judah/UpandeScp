@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
 import type { DateRange as DayRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -50,9 +50,13 @@ export function parseTypedDate(text: string): string | null {
   let y: number, m: number, d: number;
   let hit = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
   if (hit) {
-    y = +hit[1]; m = +hit[2]; d = +hit[3];
+    y = +hit[1];
+    m = +hit[2];
+    d = +hit[3];
   } else if ((hit = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(s))) {
-    d = +hit[1]; m = +hit[2]; y = +hit[3];
+    d = +hit[1];
+    m = +hit[2];
+    y = +hit[3];
   } else {
     return null;
   }
@@ -79,8 +83,7 @@ export function formatRange(r: DateRange): string {
   return `${a.getDate()} – ${b.getDate()} ${mon(b)} ${b.getFullYear()}`;
 }
 
-const startOfWeek = (d: Date, weekStartsOn: number): Date =>
-  addDays(d, -((d.getDay() - weekStartsOn + 7) % 7));
+const startOfWeek = (d: Date, weekStartsOn: number): Date => addDays(d, -((d.getDay() - weekStartsOn + 7) % 7));
 
 export function builtInPresets(weekStartsOn: number, now: () => Date = () => new Date()): DateRangePreset[] {
   const today = () => {
@@ -90,7 +93,10 @@ export function builtInPresets(weekStartsOn: number, now: () => Date = () => new
   const span = (a: Date, b: Date): DateRange => ({ from: ymd(a), to: ymd(b) });
   return [
     { label: "Today", range: () => span(today(), today()) },
-    { label: "Yesterday", range: () => span(addDays(today(), -1), addDays(today(), -1)) },
+    {
+      label: "Yesterday",
+      range: () => span(addDays(today(), -1), addDays(today(), -1)),
+    },
     {
       label: "This week",
       range: () => {
@@ -99,7 +105,10 @@ export function builtInPresets(weekStartsOn: number, now: () => Date = () => new
       },
     },
     { label: "Last 7 days", range: () => span(addDays(today(), -6), today()) },
-    { label: "Last 14 days", range: () => span(addDays(today(), -13), today()) },
+    {
+      label: "Last 14 days",
+      range: () => span(addDays(today(), -13), today()),
+    },
     {
       label: "This month",
       range: () => {
@@ -139,17 +148,222 @@ const PILL_TRIGGER =
 const FIELD_TRIGGER =
   "h-9 gap-2 rounded-xl border border-input bg-background px-3 text-sm font-medium tabular-nums text-foreground shadow-sm hover:bg-background hover:text-foreground [&>svg]:text-[var(--sd-quiet)]";
 
+export type StepUnit = "year" | "month" | "day";
+export interface StepOptions {
+  min?: string;
+  max?: string;
+  allowSingleDay?: boolean;
+}
+
+const daysInMonth = (y: number, m: number): number => new Date(y, m + 1, 0).getDate();
+
+/** Move one date by a year / month / day, clamping the day to the target month's length. */
+export function stepDate(iso: string, unit: StepUnit, delta: number): string {
+  const d = parseYmd(iso);
+  if (unit === "day") return ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() + delta));
+  const total =
+    unit === "year" ? d.getFullYear() * 12 + d.getMonth() + delta * 12 : d.getFullYear() * 12 + d.getMonth() + delta;
+  const y = Math.floor(total / 12);
+  const m = total - y * 12;
+  return ymd(new Date(y, m, Math.min(d.getDate(), daysInMonth(y, m))));
+}
+
+/**
+ * Step one end of a range. Day clamps to the month's length, min / max are
+ * respected, and when the stepped end crosses the other the other end is
+ * carried along so From <= To always holds. Returns the input unchanged when
+ * the step is not possible.
+ */
+export function stepRange(
+  r: DateRange,
+  end: "from" | "to",
+  unit: StepUnit,
+  delta: number,
+  opts: StepOptions = {},
+): DateRange {
+  const { min, max, allowSingleDay = true } = opts;
+  if (!validIso(r.from) || !validIso(r.to)) return r;
+  let moved = stepDate(r[end], unit, delta);
+  if (min && moved < min) moved = min;
+  if (max && moved > max) moved = max;
+  let { from, to } = r;
+  if (end === "from") {
+    from = moved;
+    if (from > to) to = from;
+  } else {
+    to = moved;
+    if (to < from) from = to;
+  }
+  if (!allowSingleDay && from === to) {
+    const other = end === "from" ? stepDate(from, "day", 1) : stepDate(to, "day", -1);
+    if ((end === "from" && (max ? other > max : false)) || (end === "to" && (min ? other < min : false))) return r;
+    if (end === "from") to = other;
+    else from = other;
+  }
+  if ((min && from < min) || (max && to > max)) return r;
+  return { from, to };
+}
+
+/** Inclusive day count of a range. */
+export function daysInRange(r: DateRange): number {
+  const a = parseYmd(r.from);
+  const b = parseYmd(r.to);
+  return (
+    Math.round(
+      (Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) /
+        86400000,
+    ) + 1
+  );
+}
+
+type Mode = "calendar" | "counter";
+const MODE_KEY = "scp.dateRangePicker.mode";
+const readMode = (): Mode => {
+  try {
+    return window.localStorage.getItem(MODE_KEY) === "counter" ? "counter" : "calendar";
+  } catch {
+    return "calendar";
+  }
+};
+const writeMode = (m: Mode) => {
+  try {
+    window.localStorage.setItem(MODE_KEY, m);
+  } catch {
+    /* storage unavailable */
+  }
+};
+
+const STEP_BTN =
+  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-foreground transition-[transform,background-color,color] duration-150 hover:bg-[var(--sidebar-accent)] active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:text-muted-foreground/40 disabled:hover:bg-transparent disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100 touch-none select-none";
+
+/** One − value + row. Press-and-hold repeats; wheel / arrow keys step while the value is focused. */
+function Stepper({
+  label,
+  text,
+  onStep,
+  canDec,
+  canInc,
+  width = "w-12",
+}: {
+  label: string;
+  text: string;
+  onStep: (delta: number) => void;
+  canDec: boolean;
+  canInc: boolean;
+  width?: string;
+}) {
+  const stepRef = useRef(onStep);
+  stepRef.current = onStep;
+  const timers = useRef<{
+    t?: ReturnType<typeof setTimeout>;
+    i?: ReturnType<typeof setInterval>;
+  }>({});
+  const valueRef = useRef<HTMLDivElement>(null);
+
+  const stop = () => {
+    clearTimeout(timers.current.t);
+    clearInterval(timers.current.i);
+    timers.current = {};
+  };
+  const start = (delta: number) => {
+    stop();
+    stepRef.current(delta);
+    timers.current.t = setTimeout(() => {
+      timers.current.i = setInterval(() => stepRef.current(delta), 70);
+    }, 420);
+  };
+  useEffect(() => stop, []);
+  useEffect(() => {
+    if (!canDec && !canInc) stop();
+  }, [canDec, canInc]);
+
+  useEffect(() => {
+    const el = valueRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (document.activeElement !== el || !e.deltaY) return;
+      e.preventDefault();
+      stepRef.current(e.deltaY < 0 ? 1 : -1);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const holdProps = (delta: number) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      start(delta);
+    },
+    onPointerUp: stop,
+    onPointerLeave: stop,
+    onPointerCancel: stop,
+    onBlur: stop,
+    // keyboard activation only: pointer presses already stepped on pointerdown
+    onClick: (e: React.MouseEvent) => {
+      if (e.detail === 0) stepRef.current(delta);
+    },
+  });
+
+  return (
+    <div role="group" aria-label={label} className="flex items-center justify-between gap-1">
+      <button type="button" aria-label={`Decrease ${label}`} disabled={!canDec} className={STEP_BTN} {...holdProps(-1)}>
+        <Minus className="h-3.5 w-3.5" />
+      </button>
+      <div
+        ref={valueRef}
+        role="spinbutton"
+        tabIndex={0}
+        aria-label={label}
+        aria-valuetext={text}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp" || e.key === "ArrowRight") {
+            e.preventDefault();
+            if (canInc) stepRef.current(1);
+          } else if (e.key === "ArrowDown" || e.key === "ArrowLeft") {
+            e.preventDefault();
+            if (canDec) stepRef.current(-1);
+          }
+        }}
+        className={cn(
+          width,
+          "rounded-full px-1 py-1 text-center text-sm font-semibold tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+        )}
+      >
+        {text}
+      </div>
+      <button type="button" aria-label={`Increase ${label}`} disabled={!canInc} className={STEP_BTN} {...holdProps(1)}>
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 /**
  * One picker for a from/to range. Click a start day then an end day (the
  * second click earlier than the first swaps them) or pick a preset. There are
  * no typed fields: picking is the only way in, and the chosen From / To read
  * back as labels. Click the month caption to zoom out to a month grid, and
  * again to a list of years, to jump far quickly. Two months side by side on
- * wide screens, one on a phone.
+ * wide screens, one on a phone. A segmented switch flips to a Counter view:
+ * year / month / day steppers for From and To (no typing), for long jumps
+ * such as January to December. Both modes edit the same draft.
  */
 type View = "days" | "months" | "years";
 
-const MONTH_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const MONTH_LONG = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 
 const nice = (iso: string): string => {
   const d = parseYmd(iso);
@@ -178,8 +392,42 @@ export function DateRangePicker({
   const [hover, setHover] = useState<string | null>(null);
   const [month, setMonth] = useState<Date>(() => parseYmd(validIso(value.from) ? value.from : ymd(new Date())));
   const [view, setView] = useState<View>("days");
-  const [slide, setSlide] = useState<{ dir: "none" | "next" | "prev"; tick: 0 | 1 }>({ dir: "none", tick: 0 });
+  const [slide, setSlide] = useState<{
+    dir: "none" | "next" | "prev";
+    tick: 0 | 1;
+  }>({ dir: "none", tick: 0 });
+  const [mode, setModeState] = useState<Mode>(readMode);
+  const [monthAnchor, setMonthAnchor] = useState<{
+    y: number;
+    m: number;
+  } | null>(null);
+  const [wholeMonths, setWholeMonths] = useState(false);
   const wide = useWide();
+
+  const clampIso = (iso: string) => (min && iso < min ? min : max && iso > max ? max : iso);
+  const initialDraft = (): DateRange =>
+    validIso(value.from) && validIso(value.to)
+      ? { from: value.from, to: value.to }
+      : { from: clampIso(ymd(new Date())), to: clampIso(ymd(new Date())) };
+  // what both modes edit; calendar picks and presets commit it straight away,
+  // the counter commits it with Apply
+  const [draft, setDraft] = useState<DateRange>(initialDraft);
+  const setMode = (m: Mode) => {
+    setModeState(m);
+    writeMode(m);
+    setAnchor(null);
+    setHover(null);
+    setMonthAnchor(null);
+    setView("days");
+    if (m === "calendar" && validIso(draft.from)) setMonth(parseYmd(draft.from));
+  };
+  const stepOpts = { min, max, allowSingleDay };
+  const doStep = (end: "from" | "to", unit: StepUnit, delta: number) =>
+    setDraft((d) => stepRange(d, end, unit, delta, stepOpts));
+  const canStep = (end: "from" | "to", unit: StepUnit, delta: number) => {
+    const n = stepRange(draft, end, unit, delta, stepOpts);
+    return n.from !== draft.from || n.to !== draft.to;
+  };
 
   const allPresets = useMemo(() => [...builtInPresets(weekStartsOn), ...(presets ?? [])], [weekStartsOn, presets]);
 
@@ -192,7 +440,37 @@ export function DateRangePicker({
     setHover(null);
     setView("days");
     setSlide({ dir: "none", tick: 0 });
-    if (next) setMonth(parseYmd(validIso(value.from) ? value.from : ymd(new Date())));
+    setMonthAnchor(null);
+    setWholeMonths(false);
+    if (next) {
+      setMonth(parseYmd(validIso(value.from) ? value.from : ymd(new Date())));
+      setDraft(initialDraft());
+      setModeState(readMode());
+    }
+  };
+
+  const onMonthPick = (y: number, m: number) => {
+    if (!wholeMonths) {
+      changeMonth(new Date(y, m, 1));
+      setView("days");
+      return;
+    }
+    if (!monthAnchor) {
+      setMonthAnchor({ y, m });
+      return;
+    }
+    const a = monthAnchor.y * 12 + monthAnchor.m;
+    const b = y * 12 + m;
+    const [lo, hi] = a <= b ? [a, b] : [b, a];
+    const first = ymd(new Date(Math.floor(lo / 12), lo % 12, 1));
+    const last = ymd(new Date(Math.floor(hi / 12), (hi % 12) + 1, 0));
+    let from = clamp(first);
+    let to = clamp(last);
+    if (from > to) to = from;
+    if (!allowSingleDay && from === to) return;
+    onChange({ from, to });
+    setMonthAnchor(null);
+    setOpen(false);
   };
 
   const commit = (a: string, b: string) => {
@@ -224,6 +502,12 @@ export function DateRangePicker({
     setOpen(false);
   };
 
+  const applyDraft = () => {
+    if (!validIso(draft.from) || !validIso(draft.to)) return;
+    onChange({ from: draft.from, to: draft.to });
+    setOpen(false);
+  };
+
   const changeMonth = (next: Date) => {
     const dir = next.getTime() === month.getTime() ? "none" : next > month ? "next" : "prev";
     setSlide((t) => ({ dir, tick: t.tick ? 0 : 1 }));
@@ -248,14 +532,11 @@ export function DateRangePicker({
       const [a, b] = anchor <= other ? [anchor, other] : [other, anchor];
       return { from: parseYmd(a), to: parseYmd(b) };
     }
-    if (validIso(value.from) && validIso(value.to)) return { from: parseYmd(value.from), to: parseYmd(value.to) };
+    if (validIso(draft.from) && validIso(draft.to)) return { from: parseYmd(draft.from), to: parseYmd(draft.to) };
     return undefined;
-  }, [anchor, hover, value.from, value.to]);
+  }, [anchor, hover, draft.from, draft.to]);
 
-  const disabledDays = [
-    ...(min ? [{ before: parseYmd(min) }] : []),
-    ...(max ? [{ after: parseYmd(max) }] : []),
-  ];
+  const disabledDays = [...(min ? [{ before: parseYmd(min) }] : []), ...(max ? [{ after: parseYmd(max) }] : [])];
 
   const display = formatRange(value);
   const valid = validIso(value.from) && validIso(value.to);
@@ -267,7 +548,11 @@ export function DateRangePicker({
           variant="outline"
           size="sm"
           disabled={disabled}
-          className={cn(variant === "field" ? FIELD_TRIGGER : PILL_TRIGGER, !valid && "text-muted-foreground", className)}
+          className={cn(
+            variant === "field" ? FIELD_TRIGGER : PILL_TRIGGER,
+            !valid && "text-muted-foreground",
+            className,
+          )}
           aria-label={label}
           aria-haspopup="dialog"
         >
@@ -281,6 +566,27 @@ export function DateRangePicker({
         className="w-auto max-w-[calc(100vw-1rem)] p-0"
         align="start"
       >
+        <div
+          role="tablist"
+          aria-label="Picker mode"
+          className="m-2 mb-0 flex w-fit gap-0.5 rounded-full bg-[var(--sidebar-accent)] p-0.5"
+        >
+          {(["calendar", "counter"] as Mode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="tab"
+              aria-selected={mode === m}
+              onClick={() => setMode(m)}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 motion-reduce:transition-none",
+                mode === m ? "bg-foreground text-background shadow-sm" : "text-foreground hover:bg-foreground/10",
+              )}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
         <div className="flex flex-col sm:flex-row">
           <div
             role="group"
@@ -298,117 +604,222 @@ export function DateRangePicker({
               </button>
             ))}
           </div>
-          <div>
-            <div
-              className="flex items-center gap-x-2 gap-y-0.5 border-b px-3 py-2 text-xs tabular-nums"
-              aria-live="polite"
-              data-testid="range-readout"
-            >
-              <span className="text-muted-foreground">From</span>{" "}
-              <span className="font-medium text-foreground">{anchor ? nice(anchor) : valid ? nice(value.from) : "—"}</span>{" "}
-              <span className="text-muted-foreground">·</span>{" "}
-              <span className="text-muted-foreground">To</span>{" "}
-              <span className="font-medium text-foreground">
-                {anchor ? "pick the end day" : valid ? nice(value.to) : "—"}
-              </span>
-            </div>
-            {view === "days" && (
-              <div
-                className="scp-cal-slide"
-                data-dir={slide.dir}
-                data-tick={slide.tick}
-                data-testid="day-view"
-              >
-                <Calendar
-                  mode="range"
-                  numberOfMonths={wide ? 2 : 1}
-                  month={month}
-                  onMonthChange={changeMonth}
-                  onCaptionClick={() => setView("months")}
-                  selected={shown}
-                  onSelect={() => {}}
-                  onDayClick={onDay}
-                  onDayMouseEnter={(d) => anchor && setHover(ymd(d))}
-                  onDayFocus={(d) => anchor && setHover(ymd(d))}
-                  onDayMouseLeave={() => setHover(null)}
-                  disabled={disabledDays}
-                  weekStartsOn={weekStartsOn}
-                  ISOWeek={weekStartsOn === 1}
-                  showWeekNumber={false}
-                  classNames={{ months: "relative flex flex-col gap-4 sm:flex-row sm:gap-6" }}
-                />
+          {mode === "counter" && (
+            <div className="scp-cal-zoom w-[17.5rem] p-3 sm:w-[23rem]" data-testid="counter-view">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(["from", "to"] as const).map((end) => {
+                  const ok = validIso(draft[end]);
+                  const d = ok ? parseYmd(draft[end]) : null;
+                  return (
+                    <div
+                      key={end}
+                      role="group"
+                      aria-label={end === "from" ? "From" : "To"}
+                      className="flex flex-col gap-1"
+                    >
+                      <span className="px-1 text-xs font-medium text-muted-foreground">
+                        {end === "from" ? "From" : "To"}
+                      </span>
+                      <Stepper
+                        label={`${end === "from" ? "From" : "To"} year`}
+                        text={d ? String(d.getFullYear()) : "—"}
+                        onStep={(n) => doStep(end, "year", n)}
+                        canDec={canStep(end, "year", -1)}
+                        canInc={canStep(end, "year", 1)}
+                      />
+                      <Stepper
+                        label={`${end === "from" ? "From" : "To"} month`}
+                        text={d ? MONTHS[d.getMonth()] : "—"}
+                        onStep={(n) => doStep(end, "month", n)}
+                        canDec={canStep(end, "month", -1)}
+                        canInc={canStep(end, "month", 1)}
+                      />
+                      <Stepper
+                        label={`${end === "from" ? "From" : "To"} day`}
+                        text={d ? String(d.getDate()) : "—"}
+                        onStep={(n) => doStep(end, "day", n)}
+                        canDec={canStep(end, "day", -1)}
+                        canInc={canStep(end, "day", 1)}
+                      />
+                    </div>
+                  );
+                })}
               </div>
-            )}
-            {view === "months" && (
-              <div className="scp-cal-zoom w-[17.5rem] p-3 sm:w-[20rem]" data-testid="month-view">
-                <div className="mb-2 flex items-center justify-between">
-                  <button type="button" aria-label="Previous year" className={cn(GRID_BTN, "p-1.5")} onClick={() => changeMonth(new Date(year - 1, month.getMonth(), 1))}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <button type="button" aria-label="Choose year" className={GRID_BTN} onClick={() => setView("years")}>
-                    {year}
-                  </button>
-                  <button type="button" aria-label="Next year" className={cn(GRID_BTN, "p-1.5")} onClick={() => changeMonth(new Date(year + 1, month.getMonth(), 1))}>
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+              <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3">
+                <span
+                  className="text-xs font-medium tabular-nums text-foreground"
+                  aria-live="polite"
+                  data-testid="counter-summary"
+                >
+                  {validIso(draft.from) && validIso(draft.to)
+                    ? `${nice(draft.from)} → ${nice(draft.to)} (${daysInRange(draft)} ${daysInRange(draft) === 1 ? "day" : "days"})`
+                    : "Pick a range"}
+                </span>
+                <button
+                  type="button"
+                  onClick={applyDraft}
+                  className="rounded-full bg-foreground px-4 py-1.5 text-xs font-medium text-background transition-[transform,opacity] duration-150 hover:opacity-90 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 motion-reduce:transition-none motion-reduce:active:scale-100"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          )}
+          {mode === "calendar" && (
+            <div>
+              <div
+                className="flex items-center gap-x-2 gap-y-0.5 border-b px-3 py-2 text-xs tabular-nums"
+                aria-live="polite"
+                data-testid="range-readout"
+              >
+                <span className="text-muted-foreground">From</span>{" "}
+                <span className="font-medium text-foreground">
+                  {anchor ? nice(anchor) : validIso(draft.from) ? nice(draft.from) : "—"}
+                </span>{" "}
+                <span className="text-muted-foreground">·</span> <span className="text-muted-foreground">To</span>{" "}
+                <span className="font-medium text-foreground">
+                  {anchor ? "pick the end day" : validIso(draft.to) ? nice(draft.to) : "—"}
+                </span>
+              </div>
+              {view === "days" && (
+                <div className="scp-cal-slide" data-dir={slide.dir} data-tick={slide.tick} data-testid="day-view">
+                  <Calendar
+                    mode="range"
+                    numberOfMonths={wide ? 2 : 1}
+                    month={month}
+                    onMonthChange={changeMonth}
+                    onCaptionClick={() => setView("months")}
+                    selected={shown}
+                    onSelect={() => {}}
+                    onDayClick={onDay}
+                    onDayMouseEnter={(d) => anchor && setHover(ymd(d))}
+                    onDayFocus={(d) => anchor && setHover(ymd(d))}
+                    onDayMouseLeave={() => setHover(null)}
+                    disabled={disabledDays}
+                    weekStartsOn={weekStartsOn}
+                    ISOWeek={weekStartsOn === 1}
+                    showWeekNumber={false}
+                    classNames={{
+                      months: "relative flex flex-col gap-4 sm:flex-row sm:gap-6",
+                    }}
+                  />
                 </div>
-                <div className="grid grid-cols-3 gap-1">
-                  {MONTH_LONG.map((name, i) => {
-                    const chosen = [anchor ?? value.from, anchor ? null : value.to].some(
-                      (iso) => iso && validIso(iso) && parseYmd(iso).getFullYear() === year && parseYmd(iso).getMonth() === i,
-                    );
-                    return (
+              )}
+              {view === "months" && (
+                <div className="scp-cal-zoom w-[17.5rem] p-3 sm:w-[20rem]" data-testid="month-view">
+                  <div className="mb-2 flex items-center justify-between">
+                    <button
+                      type="button"
+                      aria-label="Previous year"
+                      className={cn(GRID_BTN, "p-1.5")}
+                      onClick={() => changeMonth(new Date(year - 1, month.getMonth(), 1))}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Choose year"
+                      className={GRID_BTN}
+                      onClick={() => setView("years")}
+                    >
+                      {year}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Next year"
+                      className={cn(GRID_BTN, "p-1.5")}
+                      onClick={() => changeMonth(new Date(year + 1, month.getMonth(), 1))}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    aria-pressed={wholeMonths}
+                    onClick={() => {
+                      setWholeMonths((w) => !w);
+                      setMonthAnchor(null);
+                    }}
+                    className={cn(
+                      "mb-2 w-full rounded-full px-3 py-1 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 motion-reduce:transition-none",
+                      wholeMonths
+                        ? "bg-foreground text-background"
+                        : "bg-[var(--sidebar-accent)] text-foreground hover:bg-foreground/10",
+                    )}
+                  >
+                    {wholeMonths ? (monthAnchor ? "Pick the last month" : "Pick the first month") : "Pick whole months"}
+                  </button>
+                  <div className="grid grid-cols-3 gap-1">
+                    {MONTH_LONG.map((name, i) => {
+                      const chosen =
+                        [anchor ?? draft.from, anchor ? null : draft.to].some(
+                          (iso) =>
+                            iso &&
+                            validIso(iso) &&
+                            parseYmd(iso).getFullYear() === year &&
+                            parseYmd(iso).getMonth() === i,
+                        ) ||
+                        (monthAnchor?.y === year && monthAnchor.m === i);
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          aria-label={`${name} ${year}`}
+                          disabled={!monthOk(year, i)}
+                          className={cn(GRID_BTN, chosen && "bg-foreground/10 font-semibold")}
+                          onClick={() => onMonthPick(year, i)}
+                        >
+                          {MONTHS[i]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {view === "years" && (
+                <div className="scp-cal-zoom w-[17.5rem] p-3 sm:w-[20rem]" data-testid="year-view">
+                  <div className="mb-2 flex items-center justify-between">
+                    <button
+                      type="button"
+                      aria-label="Previous years"
+                      className={cn(GRID_BTN, "p-1.5")}
+                      onClick={() => changeMonth(new Date(year - 12, month.getMonth(), 1))}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <span className="text-sm font-medium tabular-nums">
+                      {yearStart} – {yearStart + 11}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Next years"
+                      className={cn(GRID_BTN, "p-1.5")}
+                      onClick={() => changeMonth(new Date(year + 12, month.getMonth(), 1))}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {Array.from({ length: 12 }, (_, i) => yearStart + i).map((y) => (
                       <button
-                        key={name}
+                        key={y}
                         type="button"
-                        aria-label={`${name} ${year}`}
-                        disabled={!monthOk(year, i)}
-                        className={cn(GRID_BTN, chosen && "bg-foreground/10 font-semibold")}
+                        aria-label={`Year ${y}`}
+                        disabled={!yearOk(y)}
+                        className={cn(GRID_BTN, y === year && "bg-foreground/10 font-semibold")}
                         onClick={() => {
-                          changeMonth(new Date(year, i, 1));
-                          setView("days");
+                          changeMonth(new Date(y, month.getMonth(), 1));
+                          setView("months");
                         }}
                       >
-                        {MONTHS[i]}
+                        {y}
                       </button>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-            {view === "years" && (
-              <div className="scp-cal-zoom w-[17.5rem] p-3 sm:w-[20rem]" data-testid="year-view">
-                <div className="mb-2 flex items-center justify-between">
-                  <button type="button" aria-label="Previous years" className={cn(GRID_BTN, "p-1.5")} onClick={() => changeMonth(new Date(year - 12, month.getMonth(), 1))}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span className="text-sm font-medium tabular-nums">
-                    {yearStart} – {yearStart + 11}
-                  </span>
-                  <button type="button" aria-label="Next years" className={cn(GRID_BTN, "p-1.5")} onClick={() => changeMonth(new Date(year + 12, month.getMonth(), 1))}>
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="grid grid-cols-3 gap-1">
-                  {Array.from({ length: 12 }, (_, i) => yearStart + i).map((y) => (
-                    <button
-                      key={y}
-                      type="button"
-                      aria-label={`Year ${y}`}
-                      disabled={!yearOk(y)}
-                      className={cn(GRID_BTN, y === year && "bg-foreground/10 font-semibold")}
-                      onClick={() => {
-                        changeMonth(new Date(y, month.getMonth(), 1));
-                        setView("months");
-                      }}
-                    >
-                      {y}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </PopoverContent>
     </Popover>

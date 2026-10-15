@@ -1,16 +1,12 @@
 import { useState } from "react";
-import {
-  ChevronDown,
-  ChevronUp,
-  Clock as ClockIcon,
-} from "lucide-react";
+import { Clock as ClockIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { WheelColumn } from "@/components/WheelPicker";
+import { WheelStepper } from "@/components/WheelPicker";
 import { cn, format12h, from12h, stepTime, to12h } from "@/lib/utils";
 
 export interface TimePickerProps {
@@ -25,43 +21,6 @@ export interface TimePickerProps {
  *  DatePicker `field` variant) so date + time read as one control family. */
 const FIELD_TRIGGER =
   "h-9 gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium tabular-nums text-foreground shadow-sm hover:bg-background hover:text-foreground [&>svg]:text-[var(--sd-quiet)]";
-
-const CHEV =
-  "flex size-7 items-center justify-center rounded-md text-[var(--sd-quiet)] transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-
-function Stepper({
-  name,
-  values,
-  value,
-  onStep,
-}: {
-  name: string;
-  values: string[];
-  value: string;
-  onStep: (dir: 1 | -1) => void;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <button
-        type="button"
-        className={CHEV}
-        aria-label={`Increase ${name}`}
-        onClick={() => onStep(1)}
-      >
-        <ChevronUp className="h-4 w-4" />
-      </button>
-      <WheelColumn options={values} value={value} />
-      <button
-        type="button"
-        className={CHEV}
-        aria-label={`Decrease ${name}`}
-        onClick={() => onStep(-1)}
-      >
-        <ChevronDown className="h-4 w-4" />
-      </button>
-    </div>
-  );
-}
 
 // 12-hour clock order: 12, 01, 02 … 11 (noon/midnight read as "12").
 const HOURS = [
@@ -114,24 +73,24 @@ export function TimePicker({
       </PopoverTrigger>
       <PopoverContent className="w-auto p-3" align="start">
         <div className="flex items-center gap-2">
-          <Stepper
+          <WheelStepper
             name="hour"
-            values={HOURS}
+            options={HOURS}
             value={hour12}
             onStep={(dir) => step("hour", dir)}
           />
           <span className="pb-1 text-lg font-semibold text-muted-foreground">
             :
           </span>
-          <Stepper
+          <WheelStepper
             name="minute"
-            values={MINUTES}
+            options={MINUTES}
             value={minute}
             onStep={(dir) => step("minute", dir)}
           />
-          <Stepper
+          <WheelStepper
             name="AM/PM"
-            values={MERIDIEMS}
+            options={MERIDIEMS}
             value={meridiem}
             onStep={() => setMeridiem(meridiem === "AM" ? "PM" : "AM")}
           />

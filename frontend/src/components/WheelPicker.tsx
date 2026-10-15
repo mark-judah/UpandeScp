@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Height (px) of a single wheel row. Fixed px — not rem — so the roll
@@ -232,6 +233,58 @@ export function WheelColumn({ options, value, onChange, label, rows = 3, classNa
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+const CHEV =
+  "flex size-7 items-center justify-center rounded-md text-[var(--sd-quiet)] transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--sd-quiet)]";
+
+export interface WheelStepperProps {
+  /** names the Increase / Decrease buttons (and the listbox when interactive) */
+  name: string;
+  options: (string | WheelOption)[];
+  value: string;
+  /** TimePicker style: the parent computes the step (carry etc.) */
+  onStep?: (dir: 1 | -1) => void;
+  /** wheel style: the column is interactive and the chevrons move to the next enabled option */
+  onChange?: (value: string) => void;
+  rows?: number;
+  className?: string;
+}
+
+/** A WheelColumn between up / down chevron buttons; the TimePicker and the DateRangePicker counter share it. */
+export function WheelStepper({ name, options, value, onStep, onChange, rows, className }: WheelStepperProps) {
+  const opts = options.map(norm);
+  const at = Math.max(0, opts.findIndex((o) => o.value === value));
+  const neighbour = (dir: 1 | -1): WheelOption | undefined => {
+    for (let i = at + dir; i >= 0 && i < opts.length; i += dir) if (!opts[i].disabled) return opts[i];
+    return undefined;
+  };
+  const inc = onChange ? neighbour(1) : undefined;
+  const dec = onChange ? neighbour(-1) : undefined;
+  const press = (dir: 1 | -1) => (onChange ? onChange((dir === 1 ? inc : dec)!.value) : onStep?.(dir));
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <button
+        type="button"
+        className={CHEV}
+        aria-label={`Increase ${name}`}
+        disabled={!!onChange && !inc}
+        onClick={() => press(1)}
+      >
+        <ChevronUp className="h-4 w-4" />
+      </button>
+      <WheelColumn options={options} value={value} onChange={onChange} label={name} rows={rows} className={className} />
+      <button
+        type="button"
+        className={CHEV}
+        aria-label={`Decrease ${name}`}
+        disabled={!!onChange && !dec}
+        onClick={() => press(-1)}
+      >
+        <ChevronDown className="h-4 w-4" />
+      </button>
     </div>
   );
 }

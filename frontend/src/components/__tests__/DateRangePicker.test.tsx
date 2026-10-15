@@ -260,15 +260,12 @@ describe("DateRangePicker", () => {
       expect(within(wheel("From month")).getAllByRole("option").map((o) => o.textContent)).toEqual([
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
       ]);
-      await user.click(opt("From year", "2027"));
-      expect(sel("From year")).toBe("2027");
-      expect(sel("To year")).toBe("2027"); // From carries To along
-      await user.click(opt("To year", "2026"));
-      expect(sel("To year")).toBe("2026");
-      expect(sel("From year")).toBe("2026");
+      await user.click(opt("To year", "2027"));
+      expect(sel("To year")).toBe("2027");
+      expect(sel("From year")).toBe("2026"); // nothing is carried
       await user.click(opt("From month", "Feb"));
       await user.click(opt("From day", "02"));
-      expect(screen.getByTestId("counter-summary")).toHaveTextContent("2 Feb 2026 → 2 Feb 2026 (1 day)");
+      expect(screen.getByTestId("counter-summary")).toHaveTextContent("2 Feb 2026 → 31 Dec 2027");
     });
 
     it("day options follow the month length, including leap Februaries", async () => {
@@ -292,14 +289,17 @@ describe("DateRangePicker", () => {
       expect(sel("From month")).toBe("Feb");
     });
 
-    it("setRangePart clamps and carries", () => {
-      expect(setRangePart({ from: "2024-02-29", to: "2024-03-05" }, "from", "year", 2025)).toEqual({
+    it("setRangePart clamps the day and refuses to reverse", () => {
+      expect(setRangePart({ from: "2024-02-29", to: "2030-03-05" }, "from", "year", 2025)).toEqual({
         from: "2025-02-28",
-        to: "2025-02-28",
+        to: "2030-03-05",
       });
-      expect(setRangePart({ from: "2026-03-10", to: "2026-03-20" }, "to", "month", 1)).toEqual({
-        from: "2026-02-20",
-        to: "2026-02-20",
+      const r = { from: "2026-03-15", to: "2026-03-20" };
+      expect(setRangePart(r, "to", "month", 1)).toBe(r); // Feb < From: refused, not carried
+      expect(setRangePart(r, "from", "day", 21)).toBe(r);
+      expect(setRangePart({ from: "2017-01-01", to: "2017-06-01" }, "from", "year", 2030)).toEqual({
+        from: "2017-01-01",
+        to: "2017-06-01",
       });
     });
 
@@ -310,12 +310,50 @@ describe("DateRangePicker", () => {
       expect(stepDate("2026-01-31", "day", 1)).toBe("2026-02-01");
     });
 
-    it("keeps From <= To by carrying the other end along", async () => {
-      const user = await openCounter({ initial: { from: "2026-03-10", to: "2026-03-12" } });
-      await user.click(opt("From day", "20"));
-      expect(screen.getByTestId("counter-summary")).toHaveTextContent("20 Mar 2026 → 20 Mar 2026 (1 day)");
-      await user.click(opt("To day", "05"));
-      expect(screen.getByTestId("counter-summary")).toHaveTextContent("5 Mar 2026 → 5 Mar 2026 (1 day)");
+    it("disables reversing options in both directions, with full-date awareness", async () => {
+      const user = await openCounter({
+        initial: { from: "2026-03-15", to: "2030-03-20" },
+      });
+      // From can never pass To
+      expect(opt("From year", "2030")).not.toHaveAttribute("aria-disabled");
+      expect(opt("From year", "2031")).toHaveAttribute("aria-disabled", "true");
+      // To can never precede From
+      expect(opt("To year", "2025")).toHaveAttribute("aria-disabled", "true");
+      expect(opt("To year", "2026")).not.toHaveAttribute("aria-disabled");
+      // cross-year: To = 2030, From 2030 months after Mar-20 are blocked once From is 2030
+      await user.click(opt("From year", "2030"));
+      expect(opt("From month", "Apr")).toHaveAttribute("aria-disabled", "true");
+      expect(opt("From month", "Mar")).not.toHaveAttribute("aria-disabled");
+      expect(opt("From day", "21")).toHaveAttribute("aria-disabled", "true");
+      expect(opt("From day", "20")).not.toHaveAttribute("aria-disabled");
+      // tapping a blocked value does nothing and nothing is carried
+      await user.click(opt("From day", "25"));
+      expect(screen.getByTestId("counter-summary")).toHaveTextContent("15 Mar 2030 → 20 Mar 2030");
+    });
+
+    it("cross-month: with From 15 Mar 2026 and To in 2026, To's Feb and earlier days are disabled", async () => {
+      await openCounter({ initial: { from: "2026-03-15", to: "2026-03-20" } });
+      expect(opt("To month", "Feb")).toHaveAttribute("aria-disabled", "true");
+      expect(opt("To month", "Mar")).not.toHaveAttribute("aria-disabled");
+      expect(opt("To day", "14")).toHaveAttribute("aria-disabled", "true");
+      expect(opt("To day", "15")).not.toHaveAttribute("aria-disabled");
+      expect(opt("To year", "2025")).toHaveAttribute("aria-disabled", "true");
+    });
+
+    it("chevron buttons step the wheel and disable at the limits", async () => {
+      const user = await openCounter({ initial: { from: "2026-03-15", to: "2026-03-17" } });
+      expect(screen.getByRole("button", { name: "Decrease To day" })).not.toBeDisabled();
+      await user.click(screen.getByRole("button", { name: "Decrease To day" }));
+      expect(sel("To day")).toBe("16");
+      await user.click(screen.getByRole("button", { name: "Decrease To day" }));
+      expect(sel("To day")).toBe("15");
+      expect(screen.getByRole("button", { name: "Decrease To day" })).toBeDisabled(); // would precede From
+      expect(screen.getByRole("button", { name: "Increase From day" })).toBeDisabled(); // From = To = 15
+      await user.click(screen.getByRole("button", { name: "Increase To day" }));
+      expect(sel("To day")).toBe("16");
+      await user.click(screen.getByRole("button", { name: "Increase From day" }));
+      expect(sel("From day")).toBe("16");
+      expect(screen.getByRole("button", { name: "Increase From day" })).toBeDisabled();
     });
 
     it("greys out values outside min / max and ignores taps on them", async () => {
@@ -354,7 +392,7 @@ describe("DateRangePicker", () => {
       });
       wheel("From day").focus();
       await user.keyboard("{End}");
-      expect(sel("From day")).toBe("20"); // 20 > To, so To carried: 20
+      expect(sel("From day")).toBe("18"); // last enabled: To is 18
       await user.keyboard("{Home}");
       expect(sel("From day")).toBe("10");
       await user.keyboard("{ArrowUp}");
@@ -375,6 +413,20 @@ describe("DateRangePicker", () => {
       await user.click(screen.getByRole("tab", { name: "calendar" }));
       expect(document.querySelectorAll("input, select, textarea")).toHaveLength(0);
     });
+  });
+
+  it("a reversed preset is swapped so the stored range is always From <= To", async () => {
+    const spy = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <Harness
+        spy={spy}
+        presets={[{ label: "Backwards", range: () => ({ from: "2026-05-20", to: "2026-05-01" }) }]}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Range" }));
+    await user.click(screen.getByRole("button", { name: "Backwards" }));
+    expect(spy).toHaveBeenCalledWith({ from: "2026-05-01", to: "2026-05-20" });
   });
 
   describe("mode switch", () => {

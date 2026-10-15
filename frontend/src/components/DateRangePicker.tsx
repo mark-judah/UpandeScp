@@ -4,7 +4,7 @@ import type { DateRange as DayRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { WheelColumn, type WheelOption } from "@/components/WheelPicker";
+import { WheelStepper, type WheelOption } from "@/components/WheelPicker";
 import { cn, parseYmd, ymd } from "@/lib/utils";
 
 export interface DateRange {
@@ -170,10 +170,9 @@ export function stepDate(iso: string, unit: StepUnit, delta: number): string {
 }
 
 /**
- * Step one end of a range. Day clamps to the month's length, min / max are
- * respected, and when the stepped end crosses the other the other end is
- * carried along so From <= To always holds. Returns the input unchanged when
- * the step is not possible.
+ * Step one end of a range. Day clamps to the month's length and min / max are
+ * respected; a step that would put From after To is refused (nothing is carried
+ * along). Returns the input unchanged when the step is not possible.
  */
 export function stepRange(
   r: DateRange,
@@ -189,25 +188,19 @@ export function stepRange(
   return commitEnd(r, end, moved, opts);
 }
 
-/** Put `moved` on one end, carrying the other so From <= To; unchanged when it cannot fit min / max. */
-function commitEnd(r: DateRange, end: "from" | "to", moved: string, opts: StepOptions): DateRange {
+/** Whether `iso` fits on one end: inside min / max and never putting From after To. */
+function fits(r: DateRange, end: "from" | "to", iso: string, opts: StepOptions): boolean {
   const { min, max, allowSingleDay = true } = opts;
-  let { from, to } = r;
-  if (end === "from") {
-    from = moved;
-    if (from > to) to = from;
-  } else {
-    to = moved;
-    if (to < from) from = to;
-  }
-  if (!allowSingleDay && from === to) {
-    const other = end === "from" ? stepDate(from, "day", 1) : stepDate(to, "day", -1);
-    if ((end === "from" && (max ? other > max : false)) || (end === "to" && (min ? other < min : false))) return r;
-    if (end === "from") to = other;
-    else from = other;
-  }
-  if ((min && from < min) || (max && to > max)) return r;
-  return { from, to };
+  if ((min && iso < min) || (max && iso > max)) return false;
+  const other = end === "from" ? r.to : r.from;
+  const [from, to] = end === "from" ? [iso, other] : [other, iso];
+  return allowSingleDay ? from <= to : from < to;
+}
+
+/** Put `moved` on one end; unchanged when it would reverse the range or leave min / max (no carrying). */
+function commitEnd(r: DateRange, end: "from" | "to", moved: string, opts: StepOptions): DateRange {
+  if (!fits(r, end, moved, opts)) return r;
+  return end === "from" ? { from: moved, to: r.to } : { from: r.from, to: moved };
 }
 
 /** Inclusive day count of a range. */
@@ -248,11 +241,16 @@ export function setRangePart(
   opts: StepOptions = {},
 ): DateRange {
   if (!validIso(r.from) || !validIso(r.to)) return r;
-  const d = parseYmd(r[end]);
+  return commitEnd(r, end, partCandidate(r[end], unit, n), opts);
+}
+
+/** `iso` with one part replaced; the day clamps to the resulting month's length. */
+export function partCandidate(iso: string, unit: StepUnit, n: number): string {
+  const d = parseYmd(iso);
   const y = unit === "year" ? n : d.getFullYear();
   const m = unit === "month" ? n : d.getMonth();
   const day = Math.min(unit === "day" ? n : d.getDate(), daysInMonth(y, m));
-  return commitEnd(r, end, ymd(new Date(y, m, day)), opts);
+  return ymd(new Date(y, m, day));
 }
 
 const currentPart = (d: Date, unit: StepUnit): number =>
@@ -329,7 +327,9 @@ export function DateRangePicker({
   const clampIso = (iso: string) => (min && iso < min ? min : max && iso > max ? max : iso);
   const initialDraft = (): DateRange =>
     validIso(value.from) && validIso(value.to)
-      ? { from: value.from, to: value.to }
+      ? value.from <= value.to
+        ? { from: value.from, to: value.to }
+        : { from: value.to, to: value.from }
       : { from: clampIso(ymd(new Date())), to: clampIso(ymd(new Date())) };
   // what both modes edit; calendar picks and presets commit it straight away,
   // the counter commits it with Apply
@@ -348,10 +348,7 @@ export function DateRangePicker({
     setDraft((d) => setRangePart(d, end, unit, n, stepOpts));
   const wheelOptions = (end: "from" | "to", unit: StepUnit): WheelOption[] => {
     const d = parseYmd(draft[end]);
-    const ok = (n: number) => {
-      const c = setRangePart(draft, end, unit, n, stepOpts);
-      return c[end] !== draft[end] || c.from !== draft.from || c.to !== draft.to || n === currentPart(d, unit);
-    };
+    const ok = (n: number) => validIso(draft[end]) && fits(draft, end, partCandidate(draft[end], unit, n), stepOpts);
     if (unit === "day")
       return Array.from({ length: daysInMonth(d.getFullYear(), d.getMonth()) }, (_, i) => ({
         value: String(i + 1),
@@ -403,9 +400,8 @@ export function DateRangePicker({
     const [lo, hi] = a <= b ? [a, b] : [b, a];
     const first = ymd(new Date(Math.floor(lo / 12), lo % 12, 1));
     const last = ymd(new Date(Math.floor(hi / 12), (hi % 12) + 1, 0));
-    let from = clamp(first);
-    let to = clamp(last);
-    if (from > to) to = from;
+    const from = clamp(first);
+    const to = clamp(last);
     if (!allowSingleDay && from === to) return;
     onChange({ from, to });
     setMonthAnchor(null);
@@ -433,9 +429,10 @@ export function DateRangePicker({
 
   const applyPreset = (p: DateRangePreset) => {
     const r = p.range();
-    let from = clamp(r.from);
-    let to = clamp(r.to);
-    if (from > to) to = from;
+    // a preset that comes back reversed is swapped, never stored reversed
+    const [lo, hi] = r.from <= r.to ? [r.from, r.to] : [r.to, r.from];
+    const from = clamp(lo);
+    const to = clamp(hi);
     if (!allowSingleDay && from === to) return;
     onChange({ from, to });
     setOpen(false);
@@ -443,7 +440,8 @@ export function DateRangePicker({
 
   const applyDraft = () => {
     if (!validIso(draft.from) || !validIso(draft.to)) return;
-    onChange({ from: draft.from, to: draft.to });
+    const [from, to] = draft.from <= draft.to ? [draft.from, draft.to] : [draft.to, draft.from];
+    onChange({ from, to });
     setOpen(false);
   };
 
@@ -561,11 +559,11 @@ export function DateRangePicker({
                       </span>
                       <div className="flex items-center justify-center gap-1">
                         {(["day", "month", "year"] as const).map((unit) => (
-                          <WheelColumn
+                          <WheelStepper
                             key={unit}
-                            rows={5}
+                            rows={3}
                             className={unit === "year" ? "w-14" : "w-12"}
-                            label={`${end === "from" ? "From" : "To"} ${unit}`}
+                            name={`${end === "from" ? "From" : "To"} ${unit}`}
                             options={wheelOptions(end, unit)}
                             value={d ? String(currentPart(d, unit)) : ""}
                             onChange={(v) => setPart(end, unit, Number(v))}

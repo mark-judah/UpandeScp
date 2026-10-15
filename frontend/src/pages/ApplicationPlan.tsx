@@ -71,7 +71,8 @@ import {
   type VarietyNode,
 } from "@/lib/scouting-api";
 import { availableStock, itemNeedsBatch } from "@/lib/stock-availability";
-import { SuggestedProductsCard } from "@/components/spray-plan/SuggestedProducts";
+import { SuggestedPill, SuggestedProductsCard } from "@/components/spray-plan/SuggestedProducts";
+import { ActiveIngredients } from "@/components/spray-plan/ActiveIngredients";
 import { fmtQty, fromStockQty } from "@/lib/uom";
 import {
   createDraftSprayPlan,
@@ -85,13 +86,16 @@ import {
   checkSprayPlan,
   eligibleBoms,
   eligibleProducts,
+  mixIngredients,
   pickerFilters,
   pickerState,
   saveGate,
   type BomEligibility,
   type CheckResult,
+  type MixIngredients,
   type OverrideInput,
   type ProductEligibility,
+  type SuggestedProduct,
 } from "@/lib/spray-compliance-api";
 import { WeatherCard } from "@/components/WeatherCard";
 import { Bar, LoadProgress, RowsSkeleton, TableRowsSkeleton, TextSkeleton, firstLoad } from "@/components/Loading";
@@ -303,6 +307,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   const [waterHardness, setWaterHardness] = useState<string>("");
   const [waterVolume, setWaterVolume] = useState<string>("");
   const [chemRows, setChemRows] = useState<ChemRow[]>([]);
+  const [suggestedCodes, setSuggestedCodes] = useState<string[]>([]);
   const [bomLoading, setBomLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [bomDetails, setBomDetails] = useState<BomDetails | null>(null);
@@ -936,6 +941,34 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   const mixKey = useMemo(() => chemRows.map((c) => c.item_code).join("\u0001"), [chemRows]);
   const mixItems = useMemo(() => (mixKey ? mixKey.split("\u0001") : []), [mixKey]);
 
+  // Active ingredients of the mix rows and what this plan uses of each: the quantity is the
+  // row's required qty as computed above (rate x water volume), so it follows every edit.
+  const [mixIngr, setMixIngr] = useState<MixIngredients>({});
+  const ingrKey = JSON.stringify([
+    chemRows.map((c) => [c.item_code, c.stock_qty, c.stock_uom]),
+    area,
+  ]);
+  useEffect(() => {
+    if (!chemRows.length) {
+      setMixIngr({});
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      mixIngredients(
+        chemRows.map((c) => ({ item_code: c.item_code, qty: Number(c.stock_qty) || 0, uom: c.stock_uom })),
+        parseFloat(area) || 0,
+      )
+        .then((r) => !cancelled && setMixIngr(r))
+        .catch(() => !cancelled && setMixIngr({}));
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ingrKey]);
+
   useEffect(() => {
     if (!greenhouse || !targetsArr.length || !bomList.length) {
       setBomElig({});
@@ -1337,11 +1370,24 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       return;
     }
     setAddNotice("");
+    setAddOpen(false);
+    setAddQuery("");
+    const row = await makeChemRow(item, defaultRate, fromStore, chemRows.length);
+    setChemRows((prev) => (prev.some((r) => r.item_code === item.item_code) ? prev : [...prev, row]));
+  };
+
+  /** A new tank-mix row for `item`: real per-warehouse balances, the farm's store lock,
+   *  and, for a suggested product, its default (lower-limit) rate with the total taken
+   *  from the plan's water volume exactly as updateChemRate does. */
+  const makeChemRow = async (
+    item: ChemicalItem,
+    defaultRate: number | null | undefined,
+    fromStore: string | undefined,
+    position: number,
+  ): Promise<ChemRow> => {
     const fallbackList = item.is_fertilizer
       ? bomDetails?.fertilizer_warehouses
       : bomDetails?.chemical_warehouses;
-    setAddOpen(false);
-    setAddQuery("");
     // Pull real per-warehouse balances so the Chemical Stock matrix doesn't
     // render zeros for an item that's actually in stock. The BOM-load path
     // gets this from ``get_bom_details``; ad-hoc adds need an explicit fetch.
@@ -1353,30 +1399,47 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     const forcedSource = item.is_fertilizer
       ? mappedStores?.fertilizer_store
       : mappedStores?.chemical_store;
-    // A suggested product arrives with its default (lower-limit) rate; the total
-    // follows from the plan's water volume exactly as updateChemRate does it.
     const startRate = defaultRate && defaultRate > 0 ? defaultRate : 0;
     const wvNow = parseFloat(waterVolume) || 0;
     const startQty = startRate && wvNow > 0 ? Math.round(startRate * (wvNow / WATER_VOLUME_RATE) * 10000) / 10000 : 0;
-    setChemRows((prev) => {
-      if (prev.some((r) => r.item_code === item.item_code)) return prev;
-      return [
-        ...prev,
-        {
-          item_code: item.item_code,
-          item_name: item.item_name,
-          stock_uom: item.stock_uom,
-          uoms: item.uoms,
-          item_group: item.item_group,
-          is_fertilizer: item.is_fertilizer,
-          rowId: `${item.item_code}-${Date.now()}-${prev.length}`,
-          source: forcedSource || fromStore || firstWithStock?.[0] || fallbackList?.[0] || "",
-          balances,
-          rate: startRate,
-          stock_qty: startQty,
-        },
-      ];
-    });
+    return {
+      item_code: item.item_code,
+      item_name: item.item_name,
+      stock_uom: item.stock_uom,
+      uoms: item.uoms,
+      item_group: item.item_group,
+      is_fertilizer: item.is_fertilizer,
+      rowId: `${item.item_code}-${Date.now()}-${position}`,
+      source: forcedSource || fromStore || firstWithStock?.[0] || fallbackList?.[0] || "",
+      balances,
+      rate: startRate,
+      stock_qty: startQty,
+    };
+  };
+
+  /** One tap on a suggested tank mix: the tank mix's chemicals become exactly these products,
+   *  each at its default rate (the page asked first when rows existed). */
+  const addMix = async (products: SuggestedProduct[]) => {
+    const store =
+      mappedStores?.chemical_store || chemRows.find((c) => !c.is_fertilizer && c.source)?.source || undefined;
+    const rows = await Promise.all(
+      products.map((p, i) =>
+        makeChemRow(
+          {
+            item_code: p.item_code,
+            item_name: p.item_name,
+            stock_uom: p.stock_uom,
+            uoms: p.uoms,
+            item_group: p.item_group,
+            is_fertilizer: false,
+          },
+          p.default_rate,
+          store,
+          i,
+        ),
+      ),
+    );
+    setChemRows(rows);
   };
 
   /** `overridesArg` is passed by the override dialog, whose state update
@@ -2324,6 +2387,8 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                 currentItems={mixItems}
                 when={sprayDate}
                 canAdd={!!bomDetails}
+                onSuggested={setSuggestedCodes}
+                onAddMix={(products) => void addMix(products)}
                 onAdd={(p) =>
                   void addChemical(
                     {
@@ -2485,6 +2550,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                                       </div>
                                     );
                                   })()}
+                                  <ActiveIngredients items={mixIngr[c.item_code]?.ingredients} />
                                   <div className="text-[0.65rem] text-muted-foreground font-mono">
                                     {c.item_code}
                                   </div>
@@ -3023,11 +3089,13 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                     ? "opacity-60 cursor-not-allowed"
                     : state === "greyed"
                       ? "opacity-60 hover:opacity-100 hover:bg-muted"
-                      : "hover:bg-muted")
+                      : "hover:bg-muted") +
+                  (suggestedCodes.includes(it.item_code) ? " border-primary/40 bg-primary/5" : "")
                 }
               >
-                <div className="text-xs font-medium">
+                <div className="flex items-center gap-1.5 text-xs font-medium">
                   {it.item_name || it.item_code}
+                  {suggestedCodes.includes(it.item_code) && <SuggestedPill />}
                 </div>
                 <div className="text-[0.65rem] text-muted-foreground font-mono">
                   {it.item_code} · {it.stock_uom || ""}

@@ -66,6 +66,26 @@ def suggest_products(targets, greenhouses, source_warehouse, current_items=None,
 
 
 @frappe.whitelist()
+def suggest_mix(targets, greenhouses, source_warehouse, crop=None, when=None, current_items=None):
+	"""One to three whole tank mixes covering every selected target, passing every spray
+	rule in every greenhouse, built from products with usable stock. Fewest products
+	first. `current_items` are the rows the mix would replace."""
+	from .suggest import build_mix
+	return build_mix(_list(targets), _list(greenhouses), source_warehouse, crop=crop or None,
+	                 when=when or None, current_items=_list(current_items))
+
+
+@frappe.whitelist()
+def mix_ingredients(rows, area=None):
+	"""Active ingredients (MoA group, concentration) of each row's product and how much of
+	each this plan uses. rows = [{item_code, qty, uom}] with qty as the floor plan has it."""
+	import json
+	from .active_ingredients import mix_ingredients as _mi
+	rows = json.loads(rows) if isinstance(rows, str) else (rows or [])
+	return _mi(rows, area)
+
+
+@frappe.whitelist()
 def eligible_boms(greenhouse, targets, boms, when=None):
 	boms = _list(boms)
 	if not boms:

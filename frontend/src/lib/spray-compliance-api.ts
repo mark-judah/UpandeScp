@@ -147,7 +147,11 @@ export interface SuggestedProduct {
   eligible: boolean;
   worst_mode: RuleMode;
   warnings: string[];
+  codes?: string[];
+  /** Selected targets this product is registered for (of those still uncovered). */
   covered_targets: string[];
+  /** Still-uncovered targets it is NOT registered for. */
+  uncovered_targets?: string[];
   last_used_days: number | null;
   usable_batches: number;
   batch_tracked: boolean;
@@ -162,6 +166,60 @@ export interface SuggestedProducts {
   blocked: number;
   /** What is still missing before suggestions can be made. */
   needs: "targets" | "greenhouse" | "store" | null;
+  /** Targets the mix already covers, with the products covering them. */
+  covered?: Array<{ target: string; items: string[]; products: string[] }>;
+  remaining_targets?: string[];
+  all_covered?: boolean;
+}
+
+export interface SuggestedMix {
+  products: Array<SuggestedProduct & { covers: string[] }>;
+  /** target -> names of the products in this mix registered for it */
+  covers: Record<string, string[]>;
+  codes: string[];
+  score: number;
+  size: number;
+}
+export interface SuggestedMixes {
+  mixes: SuggestedMix[];
+  needs: "targets" | "greenhouse" | "store" | null;
+  targets: string[];
+  replaces: string[];
+}
+
+export function suggestMix(args: {
+  targets: string[]; greenhouses: string[]; sourceWarehouse: string; currentItems: string[];
+  crop?: string; when?: string;
+}): Promise<SuggestedMixes> {
+  return call<SuggestedMixes>(`${M}.suggest_mix`, {
+    targets: JSON.stringify(args.targets), greenhouses: JSON.stringify(args.greenhouses),
+    source_warehouse: args.sourceWarehouse, current_items: JSON.stringify(args.currentItems),
+    crop: args.crop ?? "", when: args.when ?? "",
+  });
+}
+
+/** One active ingredient of a mix row's product, with what this plan uses of it. */
+export interface MixIngredient {
+  name: string;
+  codes: string[];
+  concentration: number | null;
+  concentration_unit: string | null;
+  /** "18 g/L", or null when not recorded. */
+  concentration_label: string | null;
+  status: "ok" | "no_concentration" | "no_quantity" | "unit_mismatch";
+  amount: number | null;
+  amount_unit: "g" | "CFU" | "OB" | null;
+  per_ha: number | null;
+}
+export type MixIngredients = Record<string, { ingredients: MixIngredient[] }>;
+
+export function mixIngredients(
+  rows: Array<{ item_code: string; qty: number; uom?: string }>,
+  area?: number,
+): Promise<MixIngredients> {
+  return call<MixIngredients>(`${M}.mix_ingredients`, {
+    rows: JSON.stringify(rows), area: area && area > 0 ? String(area) : "",
+  });
 }
 
 export function suggestProducts(args: {

@@ -177,11 +177,26 @@ class TestAvailabilityAndSuggestions(LedgerCase):
 		self.receive(elsewhere, self.batch(elsewhere, "E1"), 3, days_ago=5)
 		return good, plain, free, empty, elsewhere
 
-	def suggest(self, current=None, modes=None):
+	def suggest(self, current=None, modes=None, hide_covered=False, targets=None):
 		patch = mock.patch.object(C, "load_modes", return_value=modes or {}) if modes is not None \
 			else mock.patch.object(C, "load_modes", wraps=C.load_modes)
 		with patch:
-			return S.build_suggestions([self.TARGET], ["_TTMB NO GH"], self.store, current or [], limit=10_000)
+			return S.build_suggestions(targets or [self.TARGET], ["_TTMB NO GH"], self.store, current or [],
+			                           limit=10_000, hide_covered=hide_covered)
+
+	def stocked(self, name, targets, frac=None, ingredient=None):
+		"""A batch-tracked, in-stock product registered for `targets`."""
+		item = self.mk(name)
+		self.product(item, targets[0])
+		d = frappe.get_doc("Spray Product", item)
+		d.set("default_targets", [{"disease": t} for t in targets])
+		if frac:
+			d.append("frac", {"code": frac})
+		if ingredient:
+			d.append("active_ingredients", ingredient)
+		d.save(ignore_permissions=True)
+		self.receive(item, self.batch(item, name[:6]), 6, days_ago=5)
+		return item
 
 	def test_only_registered_in_stock_issuable_products_are_suggested_and_ranked(self):
 		good, plain, free, empty, elsewhere = self._stock()
@@ -221,6 +236,104 @@ class TestAvailabilityAndSuggestions(LedgerCase):
 		out = self.suggest(current=[plain], modes={"same_moa_in_mix": "Block"})
 		self.assertNotIn(good, [s["item_code"] for s in out["suggestions"]])
 		self.assertGreaterEqual(out["blocked"], 1)
+
+
+	# ---- covered targets hide ----
+
+	def test_targets_already_covered_by_the_mix_are_hidden_and_reported(self):
+		a1 = self.stocked("A1", [self.TARGET])
+		a2 = self.stocked("A2", [self.TARGET])
+		b1 = self.stocked("B1", [self.OTHER])
+		both = self.stocked("AB", [self.TARGET, self.OTHER])
+		targets = [self.TARGET, self.OTHER]
+		shown = lambda out: {s["item_code"] for s in out["suggestions"]}
+		# nothing in the mix: everything registered for either target
+		out = self.suggest(targets=targets, hide_covered=True, modes={})
+		self.assertTrue({a1, a2, b1, both} <= shown(out))
+		self.assertEqual(out["remaining_targets"], targets)
+		# a1 covers TARGET: products that only serve TARGET disappear, the rest stay
+		out = self.suggest(current=[a1], targets=targets, hide_covered=True, modes={})
+		self.assertNotIn(a2, shown(out))
+		self.assertTrue({b1, both} <= shown(out))
+		self.assertEqual(out["remaining_targets"], [self.OTHER])
+		self.assertEqual([(c["target"], c["items"]) for c in out["covered"]], [(self.TARGET, [a1])])
+		by = {s["item_code"]: s for s in out["suggestions"]}
+		self.assertEqual(by[both]["covered_targets"], [self.OTHER])
+		# adding the B product covers everything: nothing left to suggest
+		out = self.suggest(current=[a1, b1], targets=targets, hide_covered=True, modes={})
+		self.assertEqual((out["suggestions"], out["all_covered"], out["remaining_targets"]), ([], True, []))
+		# removing a1 brings TARGET suggestions back
+		out = self.suggest(current=[b1], targets=targets, hide_covered=True, modes={})
+		self.assertIn(a1, shown(out))
+		self.assertNotIn(b1, shown(out))
+
+	# ---- suggested tank mix ----
+
+	def mix(self, targets=None, modes=None, incompat=None, current=None):
+		with mock.patch.object(C, "load_modes", return_value=modes if modes is not None else {}), \
+		     mock.patch.object(C, "load_incompatibilities", return_value=incompat or []):
+			return S.build_mix(targets or [self.TARGET, self.OTHER], ["_TTMB NO GH"], self.store,
+			                   current_items=current)
+
+	def test_mix_covers_all_targets_fewest_products_first(self):
+		a = self.stocked("MA", [self.TARGET], frac="7")
+		b = self.stocked("MB", [self.OTHER], frac="9")
+		ab = self.stocked("MAB", [self.TARGET, self.OTHER], frac="3")
+		out = self.mix(current=["X"])
+		self.assertEqual(out["replaces"], ["X"])
+		sets = [sorted(p["item_code"] for p in m["products"]) for m in out["mixes"]]
+		self.assertEqual(sets[0], [ab])
+		self.assertIn(sorted([a, b]), sets)
+		for m in out["mixes"]:
+			self.assertTrue(all(m["covers"][t] for t in (self.TARGET, self.OTHER)))
+			self.assertTrue(m["codes"])
+
+	def test_mix_never_pairs_the_same_moa_group_but_does_when_the_rule_is_off(self):
+		self.stocked("SA", [self.TARGET], frac="7")
+		self.stocked("SB", [self.OTHER], frac="7")
+		self.assertEqual(self.mix()["mixes"], [])
+		out = self.mix(modes={"same_moa_in_mix": "Off", "moa_rotation": "Off"})
+		self.assertEqual(len(out["mixes"]), 1)
+
+	def test_mix_respects_tank_mix_incompatibility(self):
+		a = self.stocked("IA", [self.TARGET], frac="7")
+		b = self.stocked("IB", [self.OTHER], frac="9")
+		c = self.stocked("IC", [self.OTHER], frac="12")
+		inc = [{"product_a": a, "product_b": b, "ingredient_a": None, "ingredient_b": None, "reason": "no"}]
+		sets = [sorted(p["item_code"] for p in m["products"]) for m in self.mix(incompat=inc)["mixes"]]
+		self.assertEqual(sets, [sorted([a, c])])
+
+	def test_mix_skips_products_without_usable_stock(self):
+		a = self.stocked("UA", [self.TARGET], frac="7")
+		out_of_stock = self.mk("UB")
+		self.product(out_of_stock, self.OTHER)
+		self.assertEqual(self.mix()["mixes"], [])
+
+	def test_mix_asks_for_what_is_missing(self):
+		self.assertEqual(S.build_mix([], ["g"], self.store)["needs"], "targets")
+		self.assertEqual(S.build_mix(["t"], [], self.store)["needs"], "greenhouse")
+
+	# ---- active ingredients of the mix rows ----
+
+	def test_mix_ingredients_reads_the_product_live_and_computes_the_amount(self):
+		from upande_scp.serverscripts.spray_compliance import active_ingredients as AI
+		moa = frappe.get_doc({"doctype": "Active Ingredient MoA", "ingredient": f"_TTMB AI {self.tag}"})
+		moa.insert(ignore_permissions=True)
+		withai = self.stocked("AIA", [self.TARGET], ingredient={
+			"ingredient": moa.name, "active_ingredient": moa.name, "concentration": 18,
+			"concentration_unit": "g/L"})
+		noconc = self.stocked("AIB", [self.TARGET], ingredient={
+			"ingredient": moa.name, "active_ingredient": moa.name})
+		out = AI.mix_ingredients([{"item_code": withai, "qty": 3, "uom": "Litre"},
+		                          {"item_code": noconc, "qty": 3, "uom": "Litre"}], area=0.5)
+		i = out[withai]["ingredients"][0]
+		self.assertEqual((i["status"], i["amount"], i["amount_unit"], i["per_ha"], i["concentration_label"]),
+		                 ("ok", 54.0, "g", 108.0, "18 g/L"))
+		n = out[noconc]["ingredients"][0]
+		self.assertEqual((n["status"], n["amount"], n["per_ha"]), ("no_concentration", None, None))
+		# no area: per-ha stays empty
+		self.assertIsNone(AI.mix_ingredients([{"item_code": withai, "qty": 3, "uom": "Litre"}])
+		                  [withai]["ingredients"][0]["per_ha"])
 
 
 def run():

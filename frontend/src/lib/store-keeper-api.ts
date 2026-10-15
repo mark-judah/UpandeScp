@@ -361,6 +361,8 @@ export interface TransferBatchRow {
   to_warehouse: string;
   batch_no: string;
   needs_batch: boolean;
+  /** Batch-tracked, but the source store holds no batch of it: nothing to pick. */
+  no_batches?: boolean;
   /** The batch it carries has no valuation rate, so the transfer cannot go. */
   unvalued?: boolean;
   /** Already carries a batch — shown, never reproposed. */

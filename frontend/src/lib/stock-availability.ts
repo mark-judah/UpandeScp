@@ -23,3 +23,19 @@ export function availableStock(opts: {
   const draft = Number(opts.draftFormUsage || 0);
   return Math.max(0, onHand - reserved - draft);
 }
+
+/**
+ * Whether a plan row must name a batch (and so shows a picker): only a
+ * batch-tracked item that has batches in the store. A non-batch item shows no
+ * picker and requires nothing; a tracked item with NO batches there shows
+ * "No batches in <store>" instead of an empty dropdown (`no_batches`).
+ * `batch_required` comes from the server (`batch_requirement`); the fallback
+ * covers an older server that does not send it.
+ */
+export function itemNeedsBatch(a: {
+  has_batch_no?: number;
+  batch_required?: boolean;
+  batches?: unknown[];
+}): boolean {
+  return a.batch_required ?? (!!a.has_batch_no && (a.batches?.length ?? 0) > 0);
+}

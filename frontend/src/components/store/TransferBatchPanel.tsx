@@ -478,9 +478,18 @@ export function TransferBatchPanel({
                 </td>
                 <td className="px-2 py-2">
                   {!r.needs_batch ? (
-                    <span className="text-[0.65rem] text-muted-foreground italic">
-                      not batch tracked
-                    </span>
+                    r.no_batches ? (
+                      <span
+                        className="text-[0.65rem] text-amber-700 dark:text-amber-300"
+                        data-testid="row-no-batches"
+                      >
+                        No batches in {r.warehouse}
+                      </span>
+                    ) : (
+                      <span className="text-[0.65rem] text-muted-foreground italic">
+                        not batch tracked
+                      </span>
+                    )
                   ) : r.settled && !r.expired ? (
                     <span className="inline-flex items-center gap-2">
                       <Badge variant="outline" className="font-mono text-[0.65rem]">

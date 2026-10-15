@@ -907,6 +907,10 @@ export interface ItemAvailability {
   reserved_submitted: number;
   reserved_by: Array<{ name: string; qty: number }>;
   has_batch_no: number;
+  /** A batch must be named: batch-tracked AND the store holds batches of it. */
+  batch_required?: boolean;
+  /** Batch-tracked but the store holds none: say so, show no picker. */
+  no_batches?: boolean;
   /** ranked: real stock first, then soonest-expiring */
   batches: BatchAvailability[];
 }

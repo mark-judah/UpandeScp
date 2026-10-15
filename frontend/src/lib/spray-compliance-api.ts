@@ -130,3 +130,47 @@ export function sortBoms<T extends { name: string }>(boms: T[], elig: Record<str
 export function overrideSprayPlan(wo: string, overrides: OverrideInput[]): Promise<CheckResult> {
   return call<CheckResult>(`${M}.override_spray_plan`, { wo, overrides: JSON.stringify(overrides) });
 }
+
+/** One row of the "Suggested products" list (server: `spray_compliance.suggest`). */
+export interface SuggestedProduct {
+  item_code: string;
+  item_name: string;
+  stock_uom?: string;
+  item_group?: string;
+  uoms?: Array<{ uom: string; conversion_factor: number }>;
+  is_fertilizer: boolean;
+  /** Lower rate limit per 1000 L for the crop, or null when none is configured. */
+  default_rate: number | null;
+  score: number;
+  /** 1-5 */
+  dots: number;
+  eligible: boolean;
+  worst_mode: RuleMode;
+  warnings: string[];
+  covered_targets: string[];
+  last_used_days: number | null;
+  usable_batches: number;
+  batch_tracked: boolean;
+  free_qty: number;
+  cost_per_ha: number | null;
+  reason: string;
+}
+export interface SuggestedProducts {
+  suggestions: SuggestedProduct[];
+  considered: number;
+  unavailable: number;
+  blocked: number;
+  /** What is still missing before suggestions can be made. */
+  needs: "targets" | "greenhouse" | "store" | null;
+}
+
+export function suggestProducts(args: {
+  targets: string[]; greenhouses: string[]; sourceWarehouse: string; currentItems: string[];
+  crop?: string; when?: string;
+}): Promise<SuggestedProducts> {
+  return call<SuggestedProducts>(`${M}.suggest_products`, {
+    targets: JSON.stringify(args.targets), greenhouses: JSON.stringify(args.greenhouses),
+    source_warehouse: args.sourceWarehouse, current_items: JSON.stringify(args.currentItems),
+    crop: args.crop ?? "", when: args.when ?? "",
+  });
+}

@@ -216,7 +216,7 @@ def get_item_availability(warehouse, item_codes, exclude=None, requested=None):
     ``remaining_if_all_pending_approved`` (also counting every other draft).
     ``exclude`` is the plan being edited."""
     from upande_scp.serverscripts.store import batch_suggestion
-    from upande_scp.serverscripts.store.batch_stock import available_in_store
+    from upande_scp.serverscripts.store.batch_stock import available_in_store, batch_requirement
 
     if isinstance(item_codes, str):
         item_codes = json.loads(item_codes)
@@ -276,6 +276,13 @@ def get_item_availability(warehouse, item_codes, exclude=None, requested=None):
             "has_batch_no": tracked.get(item, 0),
             "batches": blist,
         }
+        # What the row must do about batches, from what THIS store holds: a picker only
+        # for a tracked item that has batches here; "No batches in <store>" when it has
+        # none; nothing at all for an item that is not batch-tracked.
+        entry.update({
+            "batch_required": batch_requirement(tracked.get(item), len(blist))["required"],
+            "no_batches": batch_requirement(tracked.get(item), len(blist))["no_batches"],
+        })
         if item in requested:
             q = float(requested[item] or 0)
             entry["remaining_after_this_plan"] = compute_available(lq, firm, q)

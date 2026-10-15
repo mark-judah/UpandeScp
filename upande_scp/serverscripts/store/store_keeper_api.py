@@ -33,6 +33,7 @@ from upande_scp.serverscripts.common.crop_protection import product_groups
 from upande_scp.serverscripts.store import batch_suggestion, transfer_stock_gate
 from upande_scp.serverscripts.store.batch_stock import (
     available_in_store,
+    batch_requirement,
     zero_valued_batches,
     zero_valued_stock,
 )
@@ -1895,8 +1896,13 @@ def suggest_transfer_batches(name: str) -> dict:
     out = []
     unfilled = 0
     for r in rows:
-        needs = bool(r.get("has_batch_no"))
+        # Same rule as the floor plan (`batch_requirement`): a batch is required only for a
+        # tracked item that has batches in the source store (or already names one).
+        held = available.get((r["item_code"], r["s_warehouse"]), [])
+        req = batch_requirement(r.get("has_batch_no"), len(held) + (1 if (r["batch_no"] or "").strip() else 0))
+        needs = req["required"]
         entry = {
+            "no_batches": req["no_batches"],
             "idx": r["idx"],
             "item_code": r["item_code"],
             "item_name": r["item_name"] or r["item_code"],

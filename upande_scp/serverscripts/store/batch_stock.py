@@ -44,15 +44,35 @@ def effective_valuation(batchwise, qty_net, value_net, qty_in, value_in, avg_rat
     return {"method": "moving_average", "rate": rate, "invalid": rate <= ZERO_EPS}
 
 
+def _moving_average_items(items) -> set:
+    """Items ERPNext prices every batch at the moving average, whatever the batch says.
+
+    ERPNext (`serial_batch_bundle.py`) takes ``Stock Settings > do not use batch-wise
+    valuation`` as binding for an item on the Moving Average method: all its batches are
+    then non-batch-wise and issue at the item's average in the store. FIFO items are not
+    affected by the setting.
+    """
+    if not items or not frappe.get_single_value("Stock Settings", "do_not_use_batchwise_valuation"):
+        return set()
+    default = frappe.get_single_value("Stock Settings", "valuation_method") or "FIFO"
+    return {
+        r.name for r in frappe.get_all(
+            "Item", filters={"name": ["in", sorted(items)]}, fields=["name", "valuation_method"])
+        if (r.valuation_method or default) == "Moving Average"
+    }
+
+
 def _valuation_context(items, houses, batches) -> tuple:
-    """({batch: batchwise?}, {(item, warehouse): moving-average rate})."""
-    batchwise = {
-        r.name: bool(r.use_batchwise_valuation)
-        for r in frappe.get_all(
-            "Batch", filters={"name": ["in", sorted(batches)]},
-            fields=["name", "use_batchwise_valuation"],
-        )
-    } if batches else {}
+    """({batch: batchwise?}, {(item, warehouse): moving-average rate}).
+
+    A batch is batch-wise valued when its own flag says so AND ERPNext's global
+    "do not use batch-wise valuation" setting does not override it for its item."""
+    rows = frappe.get_all(
+        "Batch", filters={"name": ["in", sorted(batches)]},
+        fields=["name", "item", "use_batchwise_valuation"],
+    ) if batches else []
+    forced_avg = _moving_average_items({r.item for r in rows})
+    batchwise = {r.name: bool(r.use_batchwise_valuation) and r.item not in forced_avg for r in rows}
     avg = {
         (r.item_code, r.warehouse): float(r.valuation_rate or 0)
         for r in frappe.get_all(
@@ -62,6 +82,20 @@ def _valuation_context(items, houses, batches) -> tuple:
         )
     } if items and houses else {}
     return batchwise, avg
+
+
+def batch_requirement(has_batch_no, batch_count) -> dict:
+    """Whether a row has to name a batch, from what the store actually holds.
+
+    * not batch-tracked: no picker, nothing to name;
+    * batch-tracked with batches in the store: a batch is required (and pickable);
+    * batch-tracked with NO batches in the store: there is nothing to pick, so the page
+      says so plainly (``no_batches``) instead of showing an empty dropdown, and the
+      row does not wait on a pick that cannot be made.
+    """
+    tracked = bool(has_batch_no)
+    has = tracked and int(batch_count or 0) > 0
+    return {"tracked": tracked, "pickable": has, "required": has, "no_batches": tracked and not has}
 
 
 def _ledger_values(items, batches, houses) -> dict:

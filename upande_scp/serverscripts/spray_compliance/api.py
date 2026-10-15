@@ -54,6 +54,18 @@ def eligible_products(greenhouse, targets, items=None, candidates=None, when=Non
 
 
 @frappe.whitelist()
+def suggest_products(targets, greenhouses, source_warehouse, current_items=None, crop=None, when=None):
+	"""Ranked products for these targets and greenhouse(s) that pass the compliance
+	checks and can actually be issued from `source_warehouse` (free stock after
+	reservations, and for a batch-tracked item at least one usable batch). Warn / GM
+	products follow the clean ones with their warnings; hard-blocked ones are left
+	out. The rules and the ranking live in `suggest.py`."""
+	from .suggest import build_suggestions
+	return build_suggestions(_list(targets), _list(greenhouses), source_warehouse, _list(current_items),
+	                         crop=crop or None, when=when or None)
+
+
+@frappe.whitelist()
 def eligible_boms(greenhouse, targets, boms, when=None):
 	boms = _list(boms)
 	if not boms:

@@ -70,7 +70,8 @@ import {
   type RateLimit,
   type VarietyNode,
 } from "@/lib/scouting-api";
-import { availableStock } from "@/lib/stock-availability";
+import { availableStock, itemNeedsBatch } from "@/lib/stock-availability";
+import { SuggestedProductsCard } from "@/components/spray-plan/SuggestedProducts";
 import { fmtQty, fromStockQty } from "@/lib/uom";
 import {
   createDraftSprayPlan,
@@ -132,6 +133,7 @@ interface DiagnosePayload {
  *  from the area-to-spray. Exported as a named constant so the UI
  *  caption stays in sync if it ever needs tweaking. */
 const WATER_VOLUME_RATE = 1000;
+
 
 const SPRAY_TYPES = [
   "Full",
@@ -1209,7 +1211,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
       let changed = false;
       const next = prev.map((c) => {
         const a = c.source && c.item_code ? availability[`${c.source}::${c.item_code}`] : undefined;
-        if (!a || !a.has_batch_no) return c;
+        if (!a || !itemNeedsBatch(a)) return c;
         if (c.batch_no && !a.batches.some((b) => b.batch_no === c.batch_no)) {
           changed = true;
           return { ...c, batch_no: undefined };
@@ -1229,7 +1231,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     () =>
       chemRows.filter((c) => {
         const a = c.source && c.item_code ? availability[`${c.source}::${c.item_code}`] : undefined;
-        return !!a?.has_batch_no && !c.batch_no;
+        return !!a && itemNeedsBatch(a) && !c.batch_no;
       }),
     [chemRows, availability],
   );
@@ -1324,7 +1326,7 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
   const removeChem = (rowId: string) =>
     setChemRows((prev) => prev.filter((r) => r.rowId !== rowId));
 
-  const addChemical = async (item: ChemicalItem) => {
+  const addChemical = async (item: ChemicalItem, defaultRate?: number | null, fromStore?: string) => {
     if (chemRows.some((r) => r.item_code === item.item_code)) {
       // Inline notice inside the dialog instead of a floating toast — the
       // operator's eye is already on the modal, so the feedback has to land
@@ -1351,6 +1353,11 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
     const forcedSource = item.is_fertilizer
       ? mappedStores?.fertilizer_store
       : mappedStores?.chemical_store;
+    // A suggested product arrives with its default (lower-limit) rate; the total
+    // follows from the plan's water volume exactly as updateChemRate does it.
+    const startRate = defaultRate && defaultRate > 0 ? defaultRate : 0;
+    const wvNow = parseFloat(waterVolume) || 0;
+    const startQty = startRate && wvNow > 0 ? Math.round(startRate * (wvNow / WATER_VOLUME_RATE) * 10000) / 10000 : 0;
     setChemRows((prev) => {
       if (prev.some((r) => r.item_code === item.item_code)) return prev;
       return [
@@ -1363,10 +1370,10 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
           item_group: item.item_group,
           is_fertilizer: item.is_fertilizer,
           rowId: `${item.item_code}-${Date.now()}-${prev.length}`,
-          source: forcedSource || firstWithStock?.[0] || fallbackList?.[0] || "",
+          source: forcedSource || fromStore || firstWithStock?.[0] || fallbackList?.[0] || "",
           balances,
-          rate: 0,
-          stock_qty: 0,
+          rate: startRate,
+          stock_qty: startQty,
         },
       ];
     });
@@ -2270,6 +2277,35 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
             </CardContent>
           </Card>
 
+          <SuggestedProductsCard
+            targets={targetsArr}
+            greenhouses={greenhouse ? [greenhouse] : []}
+            sourceWarehouse={
+              mappedStores?.chemical_store ||
+              chemRows.find((c) => !c.is_fertilizer && c.source)?.source ||
+              ""
+            }
+            currentItems={mixItems}
+            when={sprayDate}
+            canAdd={!!bomDetails}
+            onAdd={(p) =>
+              void addChemical(
+                {
+                  item_code: p.item_code,
+                  item_name: p.item_name,
+                  stock_uom: p.stock_uom,
+                  uoms: p.uoms,
+                  item_group: p.item_group,
+                  is_fertilizer: false,
+                },
+                p.default_rate,
+                mappedStores?.chemical_store ||
+                  chemRows.find((c) => !c.is_fertilizer && c.source)?.source ||
+                  undefined,
+              )
+            }
+          />
+
           <Card className="p-4">
             <CardHeader className="p-0 pb-2">
               <CardTitle className="text-sm">Bill of Materials</CardTitle>
@@ -2562,7 +2598,14 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
                                         <div title="Also counting every draft and pending plan">
                                           If all pending approved: {fig(rem.ifAll)}
                                         </div>
-                                        {rem.a.has_batch_no ? (
+                                        {rem.a.no_batches ? (
+                                          <div
+                                            className="pt-0.5 text-amber-700 dark:text-amber-300"
+                                            data-testid="no-batches-note"
+                                          >
+                                            No batches in {c.source}
+                                          </div>
+                                        ) : itemNeedsBatch(rem.a) ? (
                                           <div className="pt-0.5">
                                             <Select
                                               value={c.batch_no || ""}

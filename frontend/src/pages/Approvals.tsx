@@ -476,7 +476,7 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
           </SelectContent>
         </Select>
           ) },
-          { key: "date-range", tabs: ["pending"], node: (
+          { key: "date-range", tabs: ["pending", "approved"], node: (
         <DateRangePicker
           value={{ from, to }}
           onChange={({ from: f, to: t }) => {

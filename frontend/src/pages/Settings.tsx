@@ -20,7 +20,6 @@ import {
   ListOrdered,
   MapPin,
   Scale,
-  Settings as SettingsIcon,
   ShieldAlert,
   ShieldCheck,
   Sliders,
@@ -152,12 +151,7 @@ export function Settings({ initialCrop }: { initialCrop?: string } = {}) {
   return (
     <div className="flex flex-col min-h-svh">
       <PageHeader
-        title={
-          <span className="inline-flex items-center gap-2">
-            <SettingsIcon className="h-4 w-4" />
-            Spray Plan Settings
-          </span>
-        }
+        title="Spray Plan Settings"
         eyebrow="Access · Plan rules · Accounts · Maps · Chemicals"
       />
 

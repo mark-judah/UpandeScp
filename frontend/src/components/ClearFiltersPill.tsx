@@ -1,12 +1,11 @@
-import { X } from "lucide-react";
-import { HEADER_PILL } from "@/components/header-controls";
 import { cn } from "@/lib/utils";
 
 /**
- * "Clear" for a filter row: FilterSelect's pill in the destructive (red)
- * accent. Renders nothing unless a filter is active.
+ * "Clear" for a filter row: plain red text (no button chrome, no icon),
+ * underlined on hover and on keyboard focus. Renders nothing unless a filter
+ * is active.
  */
-export function ClearFiltersPill({
+export function ClearFiltersLink({
   active,
   onClear,
   label = "Clear",
@@ -23,13 +22,14 @@ export function ClearFiltersPill({
       type="button"
       onClick={onClear}
       className={cn(
-        HEADER_PILL,
-        "inline-flex min-w-0 cursor-pointer items-center justify-center whitespace-nowrap border border-destructive/30 text-destructive transition-all hover:bg-destructive/10",
+        "cursor-pointer whitespace-nowrap rounded-sm px-1 text-xs font-medium text-destructive underline-offset-4 transition-colors hover:text-destructive/80 hover:underline focus-visible:text-destructive/80 focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
         className,
       )}
     >
-      <X className="h-3.5 w-3.5" aria-hidden />
       {label}
     </button>
   );
 }
+
+/** Backwards-compatible alias. */
+export const ClearFiltersPill = ClearFiltersLink;

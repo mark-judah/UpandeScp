@@ -1,6 +1,14 @@
 import * as React from "react";
 import { PageToolbar } from "@/components/PageToolbar";
 
+/** The standard header metrics, measured from the Scouting Dashboard. */
+export const PAGE_HEADER_CLASS =
+  "flex flex-col gap-6 bg-transparent px-4 pt-5 pb-2 md:gap-9 md:px-6 md:pt-6 md:pb-3";
+export const PAGE_EYEBROW_CLASS =
+  "mb-2.5 flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--sd-quiet)]";
+export const PAGE_TITLE_CLASS =
+  "text-[32px] font-semibold leading-[1.05] tracking-[-0.03em] text-foreground md:text-[44px]";
+
 /**
  * Shared page header, styled to the reference `.pagehead`: an uppercase
  * eyebrow with a leading rule over a large editorial title, sitting as plain
@@ -22,16 +30,16 @@ export function PageHeader({
   children?: React.ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-4 bg-transparent px-4 pt-5 pb-2 md:px-6 md:pt-6 md:pb-3">
+    <header className={PAGE_HEADER_CLASS}>
       {/* Title (the sidebar collapse toggle now lives in the sidebar). */}
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="mb-2.5 flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--sd-quiet)]">
+          <div className={PAGE_EYEBROW_CLASS}>
             <span className="h-px w-[18px] shrink-0 bg-[var(--sd-text)]" />
             <span className="truncate">{eyebrow}</span>
           </div>
         ) : null}
-        <h1 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-foreground md:text-[40px]">
+        <h1 className={PAGE_TITLE_CLASS}>
           {title}
         </h1>
       </div>

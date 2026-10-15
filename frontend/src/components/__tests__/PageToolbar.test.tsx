@@ -57,13 +57,16 @@ describe("ClearFiltersPill", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("is a red-accent pill that clears", () => {
+  it("is plain red text, no icon, always red, keyboard-focusable", () => {
     const onClear = vi.fn();
-    render(<ClearFiltersPill active onClear={onClear} />);
+    const { container } = render(<ClearFiltersPill active onClear={onClear} />);
     const b = screen.getByRole("button", { name: "Clear" });
     expect(b.className).toContain("text-destructive");
-    // Clear is narrower than a dropdown, so it overrides min-width and border colour only.
-    pillClasses.filter((c) => !c.startsWith("min-w") && !c.startsWith("border")).forEach((c) => expect(b.className).toContain(c));
+    expect(b.className).toContain("hover:underline");
+    expect(b.className).toContain("focus-visible:underline");
+    expect(b.className).not.toContain("bg-card");
+    expect(container.querySelector("svg")).toBeNull();
+    expect(b).toHaveAttribute("type", "button");
     fireEvent.click(b);
     expect(onClear).toHaveBeenCalled();
   });

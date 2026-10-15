@@ -80,8 +80,8 @@ export function TrapsTab({
       <KpiGrid cols={4}>
         <Kpi loading={loading} series={series?.trapZones} label="Trap Zones" value={k.trapZones} hint="greenhouses with traps" />
         <Kpi loading={loading} series={series?.activeTraps} label="Active Traps" value={k.activeTraps} hint="distinct traps" />
-        <Kpi loading={loading} series={series?.fcm} label="FCM Count" value={k.fcmCount} hint="false codling moth catches" />
-        <Kpi loading={loading} series={series?.catches} label="Total Catches" value={k.totalCatches} hint="across range" />
+        <Kpi loading={loading} goodDirection="down" series={series?.fcm} label="FCM Count" value={k.fcmCount} hint="false codling moth catches" />
+        <Kpi loading={loading} goodDirection="down" series={series?.catches} label="Total Catches" value={k.totalCatches} hint="across range" />
       </KpiGrid>
 
       <TrendStrip

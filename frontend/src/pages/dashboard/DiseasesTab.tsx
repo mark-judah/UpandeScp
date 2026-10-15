@@ -93,8 +93,8 @@ export function DiseasesTab({
   return (
     <div className="flex flex-col gap-4" aria-busy={loading || undefined}>
       <KpiGrid cols={4}>
-        <Kpi loading={loading} series={series?.diseaseKinds} label="Disease Zones" value={ranking.length} hint="distinct diseases" />
-        <Kpi loading={loading} series={series?.diseases} label="Active Diseases" value={total} hint="incidents" />
+        <Kpi loading={loading} goodDirection="down" series={series?.diseaseKinds} label="Disease Zones" value={ranking.length} hint="distinct diseases" />
+        <Kpi loading={loading} goodDirection="down" series={series?.diseases} label="Active Diseases" value={total} hint="incidents" />
         <Kpi
           loading={loading}
           label="Severe Cases"

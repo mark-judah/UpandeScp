@@ -99,8 +99,8 @@ export function PestsTab({
   return (
     <div className="flex flex-col gap-4" aria-busy={loading || undefined}>
       <KpiGrid cols={4}>
-        <Kpi loading={loading} series={series?.pestKinds} label="Pest Zones" value={ranking.length} hint="distinct pests recorded" />
-        <Kpi loading={loading} series={series?.pests} label="Active Pests" value={total} hint="observations" />
+        <Kpi loading={loading} goodDirection="down" series={series?.pestKinds} label="Pest Zones" value={ranking.length} hint="distinct pests recorded" />
+        <Kpi loading={loading} goodDirection="down" series={series?.pests} label="Active Pests" value={total} hint="observations" />
         <Kpi
           loading={loading}
           label="High Severity"

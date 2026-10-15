@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { KpiValueSkeleton, TextSkeleton } from "@/components/Loading";
 import { cn } from "@/lib/utils";
-import { Sparkline, type SeriesPoint } from "./Sparkline";
+import { Sparkline, seriesDelta, type SeriesPoint } from "./Sparkline";
 
 export interface KpiProps {
   label: string;
@@ -13,6 +13,8 @@ export interface KpiProps {
   loading?: boolean;
   /** Weekly values for the top-right sparkline; omit for no trend. */
   series?: SeriesPoint[];
+  /** Which direction is good news; tints the delta pill. Neutral when omitted. */
+  goodDirection?: "up" | "down";
 }
 
 const TONE: Record<NonNullable<KpiProps["tone"]>, string> = {
@@ -22,7 +24,8 @@ const TONE: Record<NonNullable<KpiProps["tone"]>, string> = {
   good: "text-[var(--sd-data-green)]",
 };
 
-export function Kpi({ label, value, hint, tone = "default", className, loading = false, series }: KpiProps) {
+export function Kpi({ label, value, hint, tone = "default", className, loading = false, series, goodDirection }: KpiProps) {
+  const delta = loading ? null : seriesDelta(series);
   // Thousands separators for large counts (e.g. 648361 → 648,361).
   const display =
     typeof value === "number" ? value.toLocaleString("en-US") : value;
@@ -64,7 +67,31 @@ export function Kpi({ label, value, hint, tone = "default", className, loading =
           {hint}
         </div>
       )}
+      {delta && <DeltaPill delta={delta} goodDirection={goodDirection} />}
     </Card>
+  );
+}
+
+function DeltaPill({ delta, goodDirection }: { delta: NonNullable<ReturnType<typeof seriesDelta>>; goodDirection?: "up" | "down" }) {
+  const good = delta.dir === "flat" || !goodDirection ? null : delta.dir === goodDirection;
+  const arrow = delta.dir === "up" ? "\u2191" : delta.dir === "down" ? "\u2193" : "\u2192";
+  const amount = delta.pct === null
+    ? Math.abs(delta.abs).toLocaleString("en-US")
+    : `${Math.abs(delta.pct).toFixed(delta.pct !== 0 && Math.abs(delta.pct) < 10 ? 1 : 0)}%`;
+  return (
+    <div
+      data-testid="kpi-delta"
+      data-dir={delta.dir}
+      className={cn(
+        "mt-4 inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium tabular-nums",
+        good === null && "bg-[var(--sd-ink)]/[0.05] text-[var(--sd-quiet)]",
+        good === true && "bg-[var(--sd-data-green)]/12 text-[var(--sd-data-green)]",
+        good === false && "bg-[var(--sd-data-red)]/10 text-[var(--sd-data-red)]",
+      )}
+    >
+      {arrow} {delta.dir === "flat" ? "0%" : amount}
+      <small className="font-medium opacity-65">vs prev week</small>
+    </div>
   );
 }
 

@@ -89,13 +89,22 @@ class TestPostponementFlow(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         frappe.set_user("Administrator")
-        cls.wo = frappe.db.get_value(
-            "Work Order",
-            {"custom_type": P.AFP_TYPE, "workflow_state": ("in", P.POSTPONABLE_STATES)},
-            "name",
-        )
-        if not cls.wo:
-            raise unittest.SkipTest("no postponable AFP work order on this site")
+        # Its own plan, never a borrowed one: this class rewrites the plan's dates and state
+        # and commits. (It used to take the first postponable plan on the site.)
+        from upande_scp.serverscripts.tests import afp_fixture as AF
+
+        cls.fx = AF.ThrowawayPlan("PPN")
+        try:
+            cls.fx.build()
+            frappe.db.set_value(
+                "Work Order", cls.fx.wo.name, "workflow_state", P.POSTPONABLE_STATES[0],
+                update_modified=False)
+            frappe.db.commit()
+        except Exception:
+            frappe.db.rollback()
+            AF.wipe(cls.fx.prefix)
+            raise
+        cls.wo = cls.fx.wo.name
         cls.original = frappe.db.get_value(
             "Work Order", cls.wo,
             ["custom_scheduled_application_time", "planned_start_date"],
@@ -104,6 +113,7 @@ class TestPostponementFlow(unittest.TestCase):
 
     def setUp(self):
         frappe.set_user("Administrator")
+        self.fx.assert_owns(self.wo)
         self._clear()
         # Put the plan on today so the cutoff logic has something live to bite on.
         frappe.db.set_value(
@@ -128,6 +138,9 @@ class TestPostponementFlow(unittest.TestCase):
             update_modified=False,
         )
         frappe.db.commit()
+        from upande_scp.serverscripts.tests import afp_fixture as AF
+
+        AF.wipe(cls.fx.prefix)
 
     @classmethod
     def _clear(cls):

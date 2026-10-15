@@ -1,8 +1,8 @@
-"""End to end: a real plan through the whole offline chain, on real stock.
+"""End to end: a throwaway plan through the whole offline chain, on its own stock.
 
 The seam no unit test can cover. Everything else about this feature is tested in pieces —
-the ledger mechanics, the guard, the clamping, the handset's arithmetic — but nothing had
-put one plan through **scan → mix → spray → sync** and checked what actually landed in the
+the ledger mechanics, the guard, the clamping, the handset's arithmetic — but nothing puts
+one plan through **scan -> mix -> spray -> sync** and checks what actually landed in the
 ledger.
 
 What it proves, or fails trying:
@@ -12,20 +12,24 @@ What it proves, or fails trying:
 2. the **Manufacture posts on the mix date**, not today;
 3. the **Material Issue posts on the spray's end date**, not today — this is the entry that
    debits the greenhouse, so it decides which month carries the cost;
-4. the Issue lands **after** the Manufacture in the ledger, so nothing is consumed before it
-   exists;
+4. the Issue lands **after** the Manufacture in the ledger;
 5. the plan reaches `Completed` and the token records the documents it created;
-6. a **re-sync returns the same documents** rather than making more.
+6. a **re-sync returns the same documents** rather than making more;
+7. a session that claims a moment *before* its chemicals reached the CSU is **clamped to
+   the transfer**, and everything posts there (never earlier, never "today" for a
+   transfer that was days ago).
 
-## This test writes real stock movements
+## What it writes, and what it will not touch
 
-It consumes a real chemical out of a real CSU and produces a real tank mix into a real
-greenhouse, because that is the only way to test the thing. Teardown reverses the chain in
-the order ERPNext allows — Issue, then Manufacture — and restores the plan's state, the same
-unwind `3r_reverse_issue_manufactured_console.py` performs by hand.
+It commits (the sync commits), so it cannot lean on a rollback. It therefore builds its
+OWN plan from scratch (`afp_fixture.ThrowawayPlan`): a batch chemical, a tank-mix item and
+BOM, three warehouses, a Material Receipt, an Application Floor Plan Work Order and its
+transfer — all under a unique `_TEST` prefix, removed by SQL at the start and the end.
 
-It **skips rather than improvising** when the site has no plan with chemicals genuinely in
-its CSU. A test that fabricates its own transfer would be testing the fabrication.
+It never selects a pre-existing Work Order, scan row or stock entry, and it never deletes
+or cancels anything it did not create. Every Work Order it mutates is asserted to be one
+the fixture made (`assert_owns`). An earlier version borrowed a real "Chemical Issued"
+plan and its teardown deleted that plan's scan row.
 
 Run: bench --site <site> run-tests \
         --module upande_scp.serverscripts.tests.test_offline_session_e2e
@@ -38,78 +42,35 @@ from frappe.utils import add_to_date, flt, get_datetime, getdate, now_datetime
 
 from upande_scp.serverscripts.spray_plan_creator import offline_session as OS
 from upande_scp.serverscripts.spray_plan_creator import spray_session as SS
+from upande_scp.serverscripts.tests import afp_fixture as AF
 
 #: How far back the pretend session sits. Two days: comfortably backdated, comfortably
 #: inside `MAX_AGE_DAYS`, and on a different calendar day from the sync so "posted on the
 #: spray date, not today" is a visible difference rather than a subtle one.
 SESSION_DAYS_AGO = 2
 
-TOKEN_ID = "_test-e2e-offline-session"
 
+class _E2EBase:
+    """Shared fixture; the concrete classes below mix it with TestCase."""
 
-def _candidate():
-    """A plan in Chemical Issued whose chemicals are provably in its CSU.
+    TAG = "E2E"
+    TRANSFER_DAYS_AGO = 4
 
-    Read from the ledger rather than from the workflow state: on this site the state was
-    backfilled onto plans that never had a transfer, so "Chemical Issued" alone does not
-    mean the stock is there.
-    """
-    rows = frappe.db.sql(
-        """SELECT wo.name, wo.wip_warehouse, wo.custom_greenhouse, wo.production_item
-           FROM `tabWork Order` wo
-           JOIN `tabStock Entry` se
-             ON se.work_order = wo.name
-            AND se.purpose = 'Material Transfer for Manufacture'
-            AND se.docstatus = 1
-           WHERE wo.custom_type = %s AND wo.workflow_state = 'Chemical Issued'
-             AND wo.wip_warehouse IS NOT NULL
-           GROUP BY wo.name
-           ORDER BY wo.creation DESC""",
-        (OS.AFP_TYPE,),
-        as_dict=True,
-    )
-    for row in rows:
-        wo = frappe.get_doc("Work Order", row.name)
-        if not wo.required_items:
-            continue
-        short = False
-        for item in wo.required_items:
-            have = flt(
-                frappe.db.get_value(
-                    "Bin",
-                    {"item_code": item.item_code, "warehouse": wo.wip_warehouse},
-                    "actual_qty",
-                )
-            )
-            if have + 0.0001 < flt(item.required_qty):
-                short = True
-                break
-        if not short:
-            return wo
-    return None
-
-
-class TestOfflineSessionEndToEnd(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         frappe.set_user("Administrator")
-        cls.wo = _candidate()
-        if not cls.wo:
-            raise unittest.SkipTest(
-                "no plan on this site has its chemicals in the CSU; nothing to run "
-                "end-to-end against"
-            )
+        cls.fx = AF.ThrowawayPlan(cls.TAG)
+        try:
+            cls.fx.build(transfer_days_ago=cls.TRANSFER_DAYS_AGO)
+        except Exception:
+            # tearDownClass does not run when setUpClass raises
+            frappe.db.rollback()
+            AF.wipe(cls.fx.prefix)
+            raise
+        cls.wo = cls.fx.wo
         cls.wo_name = cls.wo.name
-        cls.original_state = cls.wo.workflow_state
+        cls.token_id = f"_test-e2e-{cls.TAG.lower()}"
         cls.created: dict = {}
-        # Everything this run creates is stamped after this moment. Teardown works off
-        # that rather than off `created`, because an assertion that fails before the
-        # documents are captured would otherwise leave them behind — which is exactly
-        # what happened the first time: an uncaptured Material Issue blocked the
-        # Manufacture's cancellation and left a real tank mix in a real greenhouse.
-        cls.run_started = now_datetime()
-
-        # The pretend session: mix, spray, finish — all two days ago.
         base = add_to_date(now_datetime(), days=-SESSION_DAYS_AGO)
         cls.mix_at = base.replace(hour=6, minute=30, second=0, microsecond=0)
         cls.started_at = base.replace(hour=6, minute=45, second=0, microsecond=0)
@@ -117,89 +78,32 @@ class TestOfflineSessionEndToEnd(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        """Unwind the chain, then put the plan back.
-
-        Issue before Manufacture: ERPNext refuses to cancel a production a later
-        consumption still depends on.
-        """
-        if not getattr(cls, "wo_name", None):
+        """Remove the fixture and everything keyed to it. Nothing is cancelled or
+        selected by state: the prefix is the only handle."""
+        fx = getattr(cls, "fx", None)
+        if fx is None:
             return
-        # Consumption before production, and found from the ledger rather than from
-        # `cls.created`: ERPNext refuses to cancel a production that a later consumption
-        # still depends on, so a missed Issue strands its Manufacture.
-        rows = frappe.db.sql(
-            """SELECT DISTINCT sed.parent, sed.s_warehouse, se.purpose
-               FROM `tabStock Entry Detail` sed
-               JOIN `tabStock Entry` se ON se.name = sed.parent
-               WHERE se.docstatus = 1 AND se.creation >= %s
-                 AND se.purpose IN ('Manufacture', 'Material Issue')""",
-            (cls.run_started,),
-            as_dict=True,
-        )
-        consuming = [r.parent for r in rows if r.purpose == "Material Issue"]
-        producing = [r.parent for r in rows if r.purpose == "Manufacture"]
-        for name in consuming + producing:
-            if not frappe.db.exists("Stock Entry", name):
-                continue
-            try:
-                doc = frappe.get_doc("Stock Entry", name)
-                if doc.docstatus == 1:
-                    doc.flags.ignore_permissions = True
-                    doc.cancel()
-                    frappe.db.commit()
-            except Exception:
-                frappe.db.rollback()
-                print(f"\n  NOTE: could not cancel {name}; left for manual cleanup")
-
-        sal = cls.created.get("sal") or frappe.db.get_value(
-            "Work Order", cls.wo_name, "custom_spray_application_logsheet"
-        )
-        if sal and frappe.db.exists("Spray Application Logsheet", sal):
-            try:
-                doc = frappe.get_doc("Spray Application Logsheet", sal)
-                if doc.docstatus == 1:
-                    doc.flags.ignore_permissions = True
-                    doc.cancel()
-                frappe.delete_doc(
-                    "Spray Application Logsheet", sal, force=True,
-                    ignore_permissions=True,
-                )
-            except Exception:
-                frappe.db.rollback()
-
-        for sms in frappe.get_all(
-            "Sprayer Movement Session",
-            filters={"work_order": cls.wo_name},
-            pluck="name",
+        frappe.db.rollback()
+        for tok in frappe.db.sql_list(
+            "SELECT name FROM `tabSpray Session Token` WHERE work_order IN %s",
+            (fx.wo_names or [""],),
         ):
-            try:
-                frappe.delete_doc(
-                    "Sprayer Movement Session", sms, force=True,
-                    ignore_permissions=True,
-                )
-            except Exception:
-                frappe.db.rollback()
+            AF._delete_docs(OS.TOKEN, [tok])
+        if frappe.db.exists(OS.TOKEN, cls.token_id):
+            AF._delete_docs(OS.TOKEN, [cls.token_id])
+        AF.wipe(fx.prefix)
 
-        if frappe.db.exists(OS.TOKEN, TOKEN_ID):
-            frappe.delete_doc(OS.TOKEN, TOKEN_ID, force=True, ignore_permissions=True)
+    def setUp(self):
+        # The guard: whatever this class does next, it does to its own plan.
+        self.fx.assert_owns(self.wo_name)
 
-        frappe.db.set_value(
-            "Work Order", cls.wo_name,
-            {
-                "workflow_state": cls.original_state,
-                "custom_spray_application_logsheet": None,
-                "actual_start_date": None,
-                "actual_end_date": None,
-            },
-            update_modified=False,
-        )
-        for scan in frappe.get_all(
-            "Work Order Chemical Scan",
-            filters={"parent": cls.wo_name, "parenttype": "Work Order"},
-            pluck="name",
-        ):
-            frappe.db.delete("Work Order Chemical Scan", {"name": scan})
-        frappe.db.commit()
+    
+class TestBackDatedSession(_E2EBase, unittest.TestCase):
+    """Transfer four days ago, session two days ago: nothing to clamp, so the postings
+    sit on the session's own days."""
+
+    TAG = "E2E BD"
+    TRANSFER_DAYS_AGO = 4
 
     def _payload(self):
         """Exactly what `spraySession.toPayload()` builds on the handset.
@@ -208,7 +112,7 @@ class TestOfflineSessionEndToEnd(unittest.TestCase):
         as a failure instead of quietly agreeing with itself.
         """
         return {
-            "token": TOKEN_ID,
+            "token": self.token_id,
             "work_order": self.wo_name,
             "mix_at": str(self.mix_at),
             "started_at": str(self.started_at),
@@ -321,7 +225,7 @@ class TestOfflineSessionEndToEnd(unittest.TestCase):
 
     def test_8_the_token_records_what_it_created(self):
         row = frappe.db.get_value(
-            OS.TOKEN, TOKEN_ID,
+            OS.TOKEN, self.token_id,
             ["status", "manufacture_stock_entry", "issue_stock_entry", "logsheet",
              "device_skew_seconds", "mix_at", "ended_at"],
             as_dict=True,
@@ -364,3 +268,67 @@ class TestOfflineSessionEndToEnd(unittest.TestCase):
         if stop_at is None:
             self.skipTest("this site's logsheet has no datetime field yet")
         self.assertEqual(getdate(stop_at), getdate(self.ended_at))
+
+
+class TestSessionClaimingAMomentBeforeItsTransfer(_E2EBase, unittest.TestCase):
+    """The transfer happens now; the handset says the mix was two days ago.
+
+    That is impossible (the chemicals were not in the CSU yet), so `resolve_moments`
+    clamps the mix to the transfer and the rest follow it. This is the "the replay posted
+    on today's date instead of the mix moment" observation, and it is correct: the
+    posting date is the *clamped* mix moment, which here is the transfer's own moment.
+    It was seen on a real plan whose transfer had been posted minutes earlier; posting two
+    days earlier would have failed on stock, not been more honest.
+    """
+
+    TAG = "E2E CL"
+    TRANSFER_DAYS_AGO = 0
+
+    def _payload(self):
+        return {
+            "token": self.token_id,
+            "work_order": self.wo_name,
+            "mix_at": str(self.mix_at),
+            "started_at": str(self.started_at),
+            "ended_at": str(self.ended_at),
+            "scans": [
+                {"item_code": r.item_code, "code": None,
+                 "scanned_at": str(add_to_date(self.mix_at, minutes=-10)),
+                 "qty": flt(r.required_qty)}
+                for r in self.wo.required_items
+            ],
+        }
+
+    def test_the_whole_chain_is_clamped_to_the_transfer_not_to_the_claimed_day(self):
+        out = OS.preflight(self._payload())
+        self.assertTrue(out["ok"], out["problems"])
+        self.assertTrue(any("adjusted forward" in n for n in out["notes"]))
+        _, anchor = OS.transfer_anchor(self.wo_name)
+
+        self.fx.assert_owns(self.wo_name)
+        result = OS.sync_spray_session(self._payload())
+        self.assertEqual(result["status"], "Synced", result)
+
+        def posted(name):
+            row = frappe.db.get_value(
+                "Stock Entry", name, ["posting_date", "posting_time"], as_dict=True)
+            return get_datetime(f"{row.posting_date} {row.posting_time}")
+
+        manu = posted(result["manufacture_stock_entry"])
+        issue = posted(result["issue_stock_entry"])
+        self.assertEqual(manu, anchor, "the mix must post at the transfer, not the claimed day")
+        self.assertGreater(issue, manu, "the issue must land after the manufacture")
+        self.assertEqual(getdate(manu), getdate(anchor))
+
+    def test_resolve_moments_clamps_forward_only(self):
+        anchor = now_datetime().replace(microsecond=0)
+        got = OS.resolve_moments(self._payload(), anchor)
+        self.assertEqual(got["mix_at"], anchor)
+        self.assertEqual(got["started_at"], anchor)
+        self.assertGreater(got["ended_at"], got["mix_at"])
+        # a claimed moment AFTER the anchor is kept as claimed
+        later = add_to_date(anchor, hours=3)
+        p = dict(self._payload(), mix_at=str(later), started_at=str(later),
+                 ended_at=str(add_to_date(later, hours=1)))
+        got = OS.resolve_moments(p, anchor)
+        self.assertEqual(got["mix_at"], later)

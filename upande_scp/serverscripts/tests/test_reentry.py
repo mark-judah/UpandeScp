@@ -93,19 +93,33 @@ class TestOnAWorkOrder(unittest.TestCase):
 		frappe.set_user("Administrator")
 		_ensure_user(U1)
 		_ensure_user(U2)
-		row = frappe.db.sql(
-			"""SELECT wo.name FROM `tabWork Order` wo
-			   JOIN `tabWork Order Item` i ON i.parent = wo.name
-			   WHERE wo.workflow_state = 'Completed' AND IFNULL(wo.custom_greenhouse, '') != ''
-			   LIMIT 1"""
-		)
-		if not row:
-			raise unittest.SkipTest("no Completed Work Order with items on this site")
-		cls.wo = row[0][0]
+		# Its own plan, never a borrowed one: this class writes the plan's dates and flags
+		# and commits. (It used to take the first Completed Work Order on the site.)
+		from upande_scp.serverscripts.tests import afp_fixture as AF
+
+		cls.fx = AF.ThrowawayPlan("REE")
+		try:
+			cls.fx.build()
+			frappe.db.set_value(
+				"Work Order", cls.fx.wo.name, "workflow_state", "Completed", update_modified=False)
+			frappe.db.commit()
+		except Exception:
+			frappe.db.rollback()
+			AF.wipe(cls.fx.prefix)
+			raise
+		cls.wo = cls.fx.wo.name
 		cls.snapshot = frappe.db.get_value("Work Order", cls.wo, TOUCHED, as_dict=True)
 		frappe.db.commit()
 
+	@classmethod
+	def tearDownClass(cls):
+		from upande_scp.serverscripts.tests import afp_fixture as AF
+
+		frappe.db.rollback()
+		AF.wipe(cls.fx.prefix)
+
 	def setUp(self):
+		self.fx.assert_owns(self.wo)
 		_wipe(U1, U2)
 		frappe.db.set_value("Work Order", self.wo, {
 			"actual_end_date": None, "custom_reentry_notified": 0,

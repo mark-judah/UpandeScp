@@ -256,8 +256,39 @@ class TestTokenIdempotency(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         frappe.set_user("Administrator")
+        # The sync endpoint commits and can post real stock, so it is only ever pointed at
+        # a plan this class built itself, parked in a state that refuses any session.
+        # (It used to take the site's first Application Floor Plan.)
+        from upande_scp.serverscripts.tests import afp_fixture as AF
+
+        cls.fx = AF.ThrowawayPlan("OSI")
+        try:
+            cls.fx.build()
+            frappe.db.set_value(
+                "Work Order", cls.fx.wo.name, "workflow_state", "Awaiting Approval",
+                update_modified=False,
+            )
+            frappe.db.commit()
+        except Exception:
+            frappe.db.rollback()
+            AF.wipe(cls.fx.prefix)
+            raise
+        cls.wo = cls.fx.wo.name
+
+    @classmethod
+    def tearDownClass(cls):
+        from upande_scp.serverscripts.tests import afp_fixture as AF
+
+        frappe.db.rollback()
+        for tok in frappe.db.sql_list(
+            "SELECT name FROM `tabSpray Session Token` WHERE work_order IN %s",
+            (cls.fx.wo_names or [""],),
+        ):
+            AF._delete_docs(OS.TOKEN, [tok])
+        AF.wipe(cls.fx.prefix)
 
     def setUp(self):
+        self.fx.assert_owns(self.wo)
         if frappe.db.exists(OS.TOKEN, self.TOKEN_ID):
             frappe.delete_doc(OS.TOKEN, self.TOKEN_ID, force=True,
                               ignore_permissions=True)
@@ -272,9 +303,7 @@ class TestTokenIdempotency(unittest.TestCase):
     def test_a_refused_session_is_still_recorded_with_its_reason(self):
         """It happened in the field. The reason it could not be applied is worth more
         than a clean table."""
-        wo = frappe.db.get_value("Work Order", {"custom_type": OS.AFP_TYPE}, "name")
-        if not wo:
-            self.skipTest("no AFP plan on this site")
+        wo = self.wo
         ancient = str(add_to_date(now_datetime(), days=-(OS.MAX_AGE_DAYS + 30)))
         with self.assertRaises(frappe.ValidationError):
             OS.sync_spray_session({
@@ -290,9 +319,7 @@ class TestTokenIdempotency(unittest.TestCase):
 
     def test_the_token_records_the_device_skew_it_was_given(self):
         """So a suspect timestamp is auditable rather than invisible."""
-        wo = frappe.db.get_value("Work Order", {"custom_type": OS.AFP_TYPE}, "name")
-        if not wo:
-            self.skipTest("no AFP plan on this site")
+        wo = self.wo
         ancient = str(add_to_date(now_datetime(), days=-(OS.MAX_AGE_DAYS + 30)))
         try:
             OS.sync_spray_session({
@@ -308,9 +335,7 @@ class TestTokenIdempotency(unittest.TestCase):
 
     def test_an_already_synced_token_returns_instead_of_re_posting(self):
         """The idempotency guarantee, exercised on the status the sync checks first."""
-        wo = frappe.db.get_value("Work Order", {"custom_type": OS.AFP_TYPE}, "name")
-        if not wo:
-            self.skipTest("no AFP plan on this site")
+        wo = self.wo
         doc = frappe.get_doc({
             "doctype": OS.TOKEN, "token": self.TOKEN_ID, "work_order": wo,
             "status": "Synced",
@@ -325,9 +350,7 @@ class TestTokenIdempotency(unittest.TestCase):
         self.assertEqual(out["status"], "Synced")
 
     def test_preflight_short_circuits_on_an_already_synced_token(self):
-        wo = frappe.db.get_value("Work Order", {"custom_type": OS.AFP_TYPE}, "name")
-        if not wo:
-            self.skipTest("no AFP plan on this site")
+        wo = self.wo
         doc = frappe.get_doc({
             "doctype": OS.TOKEN, "token": self.TOKEN_ID, "work_order": wo,
             "status": "Synced",

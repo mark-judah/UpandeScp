@@ -12,7 +12,8 @@
  * place this page doesn't offer is ignored and left in storage.
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
+import { SearchInput } from "@/components/SearchInput";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { HEADER_PILL } from "@/components/header-controls";
 import {
@@ -268,9 +269,8 @@ export function PlacePicker({
           inputRef.current?.focus();
         }}
       >
-        <div className="relative mb-1.5">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
+        <SearchInput
+
             ref={inputRef}
             role="combobox"
             aria-expanded={open}
@@ -279,15 +279,14 @@ export function PlacePicker({
             aria-activedescendant={active ? optionId(active) : undefined}
             aria-label={`Search ${level === "farm" ? "farms" : "farms and greenhouses"}`}
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
+            onChange={(v) => {
+              setQuery(v);
               setActive(null);
             }}
             onKeyDown={onKeyDown}
             placeholder={level === "farm" ? "Search farms" : "Search farm or greenhouse"}
-            className="h-8 w-full rounded-full border border-input bg-background pl-8 pr-3 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+            className="mb-1.5"
           />
-        </div>
         <div ref={listRef} id={listId} role="listbox" aria-label={label} className="max-h-72 overflow-y-auto">
           {rows.length === 0 && (
             <div className="px-2 py-3 text-center text-xs text-muted-foreground">No match</div>

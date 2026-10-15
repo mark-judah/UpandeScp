@@ -18,6 +18,7 @@
  *   0.4 from last cycle" is the difference between the split looking arbitrary
  *   and looking correct.
  */
+import { SearchInput } from "@/components/SearchInput";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Bar, RowsSkeleton, TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
@@ -640,10 +641,10 @@ function RequirementTab({
       {editable && (
         <Card>
           <CardContent className="flex flex-col gap-2 py-4">
-            <Input
+            <SearchInput
               placeholder="Search a chemical or foliar by name or code…"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={setQuery}
             />
             {results.length > 0 && (
               <div className="max-h-56 overflow-auto rounded-md border">
@@ -1918,10 +1919,10 @@ function PoolTab({
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <Input
+            <SearchInput
               placeholder="Search a chemical…"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={setQuery}
             />
             {results.length > 0 && (
               <div className="max-h-40 overflow-auto rounded-md border">

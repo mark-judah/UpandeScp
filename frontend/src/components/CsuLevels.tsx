@@ -10,6 +10,7 @@
  * "csu" in the warehouse name), so Chemical Stores / Pasteurization Unit /
  * Work In Progress are excluded.
  */
+import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, XAxis, YAxis } from "recharts";
 import { Warehouse, Search, X } from "lucide-react";
@@ -311,15 +312,10 @@ export function CsuLevels({
                 </span>
               )}
             </div>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
+            <SearchInput
                 placeholder="Find a chemical…"
-                className="h-8 pl-8 text-xs"
                 value={pickQuery}
-                onChange={(e) => setPickQuery(e.target.value)}
-              />
-            </div>
+                onChange={setPickQuery} />
             <div className="rounded-md border max-h-64 overflow-auto divide-y">
               {skeleton && <RowsSkeleton rows={6} className="gap-0" />}
               {pickList.map((it) => {

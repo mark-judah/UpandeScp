@@ -8,6 +8,7 @@
  * the next two weeks from the plan date (else today), so whoever edits the team
  * sees who is away. Informational only: leave never stops a member being added.
  */
+import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useMemo, useState } from "react";
 import { CalendarOff, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
@@ -136,14 +137,12 @@ function MemberSearch({
   return (
     <div className="flex flex-col gap-1.5">
       <div className="relative">
-        <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input
+        <SearchInput size="md"
           aria-label="Add member"
           placeholder={farm ? "Add a member — search name or ID" : "Set the team's farm first"}
-          className="pl-8"
           value={txt}
           disabled={!farm}
-          onChange={(e) => setTxt(e.target.value)}
+          onChange={setTxt}
         />
         {busy && (
           <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />

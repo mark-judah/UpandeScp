@@ -10,6 +10,7 @@
  *   2. A level table — every chemical on rows, every farm's store on
  *      columns, the quantity in each cell.
  */
+import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, XAxis, YAxis } from "recharts";
 import { BarChart3, Search, X } from "lucide-react";
@@ -201,15 +202,10 @@ function StoreLevelComparison({
                 </span>
               )}
             </div>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
+            <SearchInput
                 placeholder="Find a chemical…"
-                className="h-8 pl-8 text-xs"
                 value={pickQuery}
-                onChange={(e) => setPickQuery(e.target.value)}
-              />
-            </div>
+                onChange={setPickQuery} />
             <div className="rounded-md border max-h-64 overflow-auto divide-y">
               {pickList.map((it) => {
                 const on = selected.includes(it.item_code);
@@ -294,15 +290,10 @@ function StoreLevelComparison({
           <CardDescription>
             Every chemical on rows, each farm's mapped store a column.
           </CardDescription>
-          <div className="relative max-w-xs pt-1">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
+          <SearchInput className="max-w-xs pt-1"
               placeholder="Filter chemicals…"
-              className="h-8 pl-8 text-xs"
               value={tableQuery}
-              onChange={(e) => setTableQuery(e.target.value)}
-            />
-          </div>
+              onChange={setTableQuery} />
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -428,10 +419,7 @@ function StoreLevelComparisonSkeleton({ title }: { title: string }) {
         <CardContent className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1 flex flex-col gap-2">
             <div className="min-h-7" />
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input placeholder="Find a chemical…" className="h-8 pl-8 text-xs" disabled />
-            </div>
+            <SearchInput value="" onChange={() => {}} placeholder="Find a chemical…" disabled />
             <div className="rounded-md border max-h-64 overflow-hidden">
               <RowsSkeleton rows={6} className="gap-0" />
             </div>

@@ -5,6 +5,7 @@
  * lives in the edit drawer to keep the table density usable.
  */
 
+import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import {
@@ -182,24 +183,10 @@ export function ChemicalsTab() {
         </CardHeader>
         <CardContent className="pt-0 flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[220px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-              <Input
+            <SearchInput className="min-w-[220px] flex-1"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by name, code, or description…"
-                className="pl-8"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
+                onChange={setQuery}
+                placeholder="Search by name, code, or description…" />
             <div className="inline-flex rounded-full border bg-card p-1 text-[0.7rem] gap-0.5">
               <KindFilterButton
                 active={kindFilter === ""}

@@ -16,6 +16,7 @@
  *   5. Chemical Store section — per-warehouse expanders with LOW badges.
  */
 
+import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -282,16 +283,11 @@ export function CreatorStock() {
         eyebrow="Chemical store inventory · CSU consumption window"
       >
         <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
+            <SearchInput size="md" className="min-w-56"
                 placeholder="Find a chemical…"
-                className="h-9 pl-8 min-w-56"
                 value={query}
                 disabled={pending}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
+                onChange={setQuery} />
             <HeaderIconButton
               active={onlyAlerts}
               onClick={() => setOnlyAlerts((v) => !v)}

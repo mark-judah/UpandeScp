@@ -5,6 +5,7 @@
  * target list (pests + diseases).
  */
 
+import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Save, Search, Trash2, X } from "lucide-react";
 import {
@@ -481,14 +482,11 @@ export function ChemicalEditDrawer({
               Treats (pests + diseases)
             </Label>
             <div className="rounded-lg border overflow-hidden">
-              <div className="relative border-b bg-muted/40">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <Input
+              <div className="border-b bg-muted/40 p-2">
+                <SearchInput
                   value={targetQuery}
-                  onChange={(e) => setTargetQuery(e.target.value)}
-                  placeholder="Search pests + diseases…"
-                  className="pl-8 border-0 bg-transparent rounded-none h-9 text-xs"
-                />
+                  onChange={setTargetQuery}
+                  placeholder="Search pests + diseases…" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 divide-x divide-border max-h-56 overflow-y-auto">
                 <TargetColumn

@@ -3,6 +3,7 @@
  * Ported in shape from Livestock's AnimalSearch. Rows may carry a leading rank
  * and a trailing figure (a score, weighted hours); groups are titled sections.
  */
+import { SearchInput } from "@/components/SearchInput";
 import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -67,27 +68,11 @@ export function PersonList({
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--sd-quiet)]" />
-        <Input
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
+      <SearchInput size="md" value={term} onChange={setTerm}
           placeholder={placeholder}
           aria-label={label}
           disabled={loading}
-          className="h-11 rounded-[var(--sd-radius-pill)] border-[var(--sd-line)] bg-[var(--sd-bg-soft)] pl-9 pr-9 text-[13px]"
-        />
-        {term && (
-          <button
-            type="button"
-            onClick={() => setTerm("")}
-            aria-label="Clear the search"
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--sd-quiet)] hover:text-[var(--sd-ink)]"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
-      </div>
+          />
       <p className="px-1 text-[11.5px] text-[var(--sd-quiet)]">
         {loading ? (
           <TextSkeleton width="9ch" />

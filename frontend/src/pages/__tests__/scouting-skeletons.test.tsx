@@ -38,7 +38,9 @@ vi.mock("@/lib/observation-colors", () => ({
 vi.mock("@/lib/thresholds-api", () => ({
   getThresholds: vi.fn().mockResolvedValue({ crop: "Rose", pests: [], diseases: [] }),
 }));
-vi.mock("@/pages/trends/TristateTree", () => ({ TristateTree: () => null }));
+vi.mock("@/components/TreePicker", () => ({
+  TreePicker: ({ label, disabled }: { label: string; disabled?: boolean }) => <button disabled={disabled}>{label}</button>,
+}));
 vi.mock("@/pages/trends/ChartPanel", () => ({ ChartPanel: () => null }));
 
 import { Dashboard } from "@/pages/Dashboard";

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SearchInput } from "@/components/SearchInput";
 import { AlertTriangle, Loader2, Plus, Trash2, Maximize2, FilePlus2, ShieldAlert } from "lucide-react";
 import {
   Card,
@@ -3150,10 +3151,10 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
               item groups so the source-warehouse picker stays valid.
             </DialogDescription>
           </DialogHeader>
-          <Input
+          <SearchInput
             value={addQuery}
-            onChange={(e) => {
-              setAddQuery(e.target.value);
+            onChange={(v) => {
+              setAddQuery(v);
               if (addNotice) setAddNotice("");
             }}
             placeholder="Search…"
@@ -3275,9 +3276,9 @@ export function ApplicationPlan({ initialCrop }: { initialCrop?: string } = {}) 
             </div>
             <div className="flex flex-col gap-1">
               <Label>Add chemical</Label>
-              <Input
+              <SearchInput
                 value={newBomSearch}
-                onChange={(e) => setNewBomSearch(e.target.value)}
+                onChange={setNewBomSearch}
                 placeholder="Search…"
               />
               {/* Listed as soon as the dialog opens, not only once something is

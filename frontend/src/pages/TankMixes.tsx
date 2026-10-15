@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { SearchInput } from "@/components/SearchInput";
 import { ExternalLink, Search } from "lucide-react";
 import {
   Card,
@@ -116,15 +117,10 @@ export function TankMixes() {
           </>
         }
       >
-          <div className="relative min-w-56">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
+          <SearchInput size="md" className="min-w-56"
               value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search by item…"
-              className="h-9 pl-7"
-            />
-          </div>
+              onChange={setQ}
+              placeholder="Search by item…" />
           {/* One place pill (place picker G2). `farms` is already scoped
               server-side to what this user may see; one farm reads as itself. */}
           <PlacePicker

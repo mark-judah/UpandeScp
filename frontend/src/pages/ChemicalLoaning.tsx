@@ -16,6 +16,7 @@
  * Replaces the earlier flow where one chemical was split across up to five
  * lenders, which meant every farm could see the request.
  */
+import { SearchInput } from "@/components/SearchInput";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TableRowsSkeleton, TextSkeleton } from "@/components/Loading";
 import {
@@ -372,9 +373,9 @@ export function ChemicalLoaning() {
               you'll see {lender || "the lender"}'s stock once it's added.
             </DialogDescription>
           </DialogHeader>
-          <Input
+          <SearchInput
             value={addQuery}
-            onChange={(e) => setAddQuery(e.target.value)}
+            onChange={setAddQuery}
             placeholder="Search…"
             autoFocus
           />

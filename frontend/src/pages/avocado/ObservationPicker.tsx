@@ -1,4 +1,5 @@
 /** Searchable pill for the pest or disease the heat field shows — one at a time. */
+import { SearchInput } from "@/components/SearchInput";
 import { useMemo, useState } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,10 +35,7 @@ export function ObservationPicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-2">
-        <div className="relative mb-1.5">
-          <Search className="pointer-events-none absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-          <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search pests and diseases" className="h-8 pl-7 text-xs" />
-        </div>
+        <SearchInput autoFocus className="mb-1.5" value={q} onChange={setQ} placeholder="Search pests and diseases" />
         <div className="max-h-64 overflow-y-auto" role="listbox" aria-label="Pests and diseases">
           {shown.length ? (
             shown.map((o) => (

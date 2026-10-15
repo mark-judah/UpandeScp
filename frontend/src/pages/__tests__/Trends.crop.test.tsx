@@ -14,7 +14,7 @@ vi.mock("@/lib/scouting-api", () => ({
 vi.mock("@/lib/thresholds-api", () => ({
   getThresholds: vi.fn().mockResolvedValue({ crop: "Rose", pests: [], diseases: [] }),
 }));
-vi.mock("@/pages/trends/TristateTree", () => ({ TristateTree: () => null }));
+vi.mock("@/components/TreePicker", () => ({ TreePicker: () => null }));
 vi.mock("@/pages/trends/ChartPanel", () => ({ ChartPanel: () => null }));
 vi.mock("@/components/LoadingOverlay", () => ({ LoadingOverlay: () => null }));
 

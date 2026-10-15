@@ -24,6 +24,7 @@
  * placeholder got issued five thousand times.
  */
 
+import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, ChevronsUpDown, Loader2, Search, Sparkles, Undo2 } from "lucide-react";
 
@@ -146,15 +147,13 @@ function BatchCombobox({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[26rem] p-0" align="start">
-        <div className="flex items-center gap-2 border-b px-2">
-          <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <Input
+        <div className="border-b p-2">
+          <SearchInput
             autoFocus
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={setQ}
             placeholder="Type any part of the batch code…"
-            className="h-9 border-0 px-0 text-xs shadow-none focus-visible:ring-0"
-          />
+            />
         </div>
         <div className="max-h-64 overflow-y-auto py-1">
           {!hits.length ? (

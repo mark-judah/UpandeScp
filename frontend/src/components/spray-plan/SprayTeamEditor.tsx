@@ -17,6 +17,7 @@
  * the real `employee_name` — fixing the legacy chips that showed only IDs.
  */
 
+import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useRef, useState } from "react";
 import { Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -491,26 +492,11 @@ export function SprayTeamEditor({
               Search by name or payroll number. Active employees only.
             </DialogDescription>
           </DialogHeader>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-            <Input
+          <SearchInput
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={setQuery}
               placeholder="Type a name or payroll number…"
-              autoFocus
-              className="pl-8"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                aria-label="Clear search"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+              autoFocus />
           <div className="max-h-80 overflow-auto rounded-lg border" aria-busy={searching || undefined}>
             {searching && !results.length ? (
               // Result rows at their own height — avatar, name, employee number.

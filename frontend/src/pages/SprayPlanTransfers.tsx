@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
+import { SearchInput } from "@/components/SearchInput";
 import { TransferBatchPanel } from "@/components/store/TransferBatchPanel";
 import { ZeroValuedList } from "@/components/store/ZeroValuedList";
 import {
@@ -533,16 +534,11 @@ export function SprayPlanTransfers() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-80 p-2">
-                <div className="relative mb-2">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
+                <SearchInput size="md"
                     autoFocus
                     placeholder="Type id, name or designation…"
-                    className="h-9 pl-8"
                     value={empQuery}
-                    onChange={(e) => setEmpQuery(e.target.value)}
-                  />
-                </div>
+                    onChange={setEmpQuery} />
                 <ul className="flex flex-col gap-0.5 max-h-72 overflow-y-auto">
                   {empHits.map((e) => (
                     <li key={e.employee}>

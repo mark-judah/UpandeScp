@@ -11,6 +11,7 @@
  * role (the backend SQL is in admin.list_spray_plan_creator_candidates).
  */
 
+import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useRef, useState } from "react";
 import { Plus, X, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -116,16 +117,13 @@ export function CreatorChipPicker({
         <div className="relative">
           {open ? (
             <div className="flex items-center gap-1">
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+              <SearchInput className="w-44" value={query} onChange={setQuery}
                 placeholder="search users…"
                 autoFocus
                 onBlur={() => {
                   setTimeout(() => setOpen(false), 150);
                 }}
-                className="h-7 text-xs w-40"
-              />
+                />
               {searching && <Loader2 className="h-3 w-3 animate-spin" />}
             </div>
           ) : (

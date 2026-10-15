@@ -23,7 +23,7 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
 import { HEADER_PILL, HeaderIconButton } from "@/components/header-controls";
 import { ymd } from "@/lib/utils";
-import { TristateTree } from "./trends/TristateTree";
+import { TreePicker } from "@/components/TreePicker";
 import { ChartPanel } from "./trends/ChartPanel";
 import {
   buildMatrixIndex,
@@ -147,49 +147,21 @@ export function Trends({ initialCrop }: { initialCrop?: string } = {}) {
       >
         <DateRangePicker label="Trends date range" value={{ from, to }} onChange={setRange} />
 
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className={HEADER_PILL} disabled={first}>
-              <MapPin className="h-3.5 w-3.5" />
-              Farms
-              <span className="text-muted-foreground tabular-nums">
-                {selections.length || "—"}
-              </span>
-              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80">
-            <TristateTree
+        <TreePicker label="Farms" icon={<MapPin className="h-3.5 w-3.5" />} count={selections.length} disabled={first}
               nodes={stationTree}
               checked={stationChecks}
               onChange={setStationChecks}
               emptyHint="No farms in date range"
               searchPlaceholder="Search farms or greenhouses…"
             />
-          </PopoverContent>
-        </Popover>
 
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className={HEADER_PILL} disabled={first}>
-              <Sparkles className="h-3.5 w-3.5" />
-              Observations
-              <span className="text-muted-foreground tabular-nums">
-                {observations.length || "—"}
-              </span>
-              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80">
-            <TristateTree
+        <TreePicker label="Observations" icon={<Sparkles className="h-3.5 w-3.5" />} count={observations.length} disabled={first}
               nodes={obsTree}
               checked={obsChecks}
               onChange={setObsChecks}
               emptyHint="No observations in date range"
               searchPlaceholder="Search observations…"
             />
-          </PopoverContent>
-        </Popover>
 
         <HeaderIconButton
           active={showThresholds}

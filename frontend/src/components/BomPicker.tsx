@@ -12,6 +12,7 @@
  * this page.
  */
 
+import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, CheckCircle2, ChevronsUpDown, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -184,15 +185,11 @@ export function BomPicker({
         className="w-[min(28rem,var(--radix-popover-trigger-width))] p-0"
         onKeyDown={onKeyDown}
       >
-        <div className="flex items-center gap-2 border-b px-3 py-2">
-          <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+        <div className="border-b p-2">
+          <SearchInput value={query} onChange={setQuery}
             placeholder="Search by mix name, code or farm…"
             autoFocus
-            className="h-7 border-0 p-0 text-xs shadow-none focus-visible:ring-0"
-          />
+            />
         </div>
 
         <div ref={listRef} className="max-h-72 overflow-auto p-1">

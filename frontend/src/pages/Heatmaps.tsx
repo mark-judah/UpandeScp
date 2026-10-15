@@ -85,7 +85,7 @@ import {
   type ProjectedGeometry,
   type ZoneGeoLike,
 } from "./maps/bed-projection";
-import { TristateTree } from "./trends/TristateTree";
+import { TreePicker } from "@/components/TreePicker";
 import {
   buildStationTree,
   parseSelection,
@@ -563,19 +563,7 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
         <DateRangePicker label="Heatmap date range" value={{ from, to }} onChange={setRange} />
 
         {/* Multi-select: check any farms and/or greenhouses to plot. */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className={HEADER_PILL} disabled={farmsLoading}>
-              <MapPin className="h-3.5 w-3.5" />
-              Farms
-              <span className="text-muted-foreground tabular-nums">
-                {selections.length || "—"}
-              </span>
-              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80">
-            <TristateTree
+        <TreePicker label="Farms" icon={<MapPin className="h-3.5 w-3.5" />} count={selections.length} disabled={farmsLoading}
               nodes={stationTree}
               checked={stationChecks}
               onChange={setStationChecks}
@@ -588,8 +576,6 @@ export function Heatmaps({ initialCrop }: { initialCrop?: string } = {}) {
               }
               searchPlaceholder="Search farms or greenhouses…"
             />
-          </PopoverContent>
-        </Popover>
 
         <HeaderIconButton
           onClick={() => gridState.reload({ force: true })}

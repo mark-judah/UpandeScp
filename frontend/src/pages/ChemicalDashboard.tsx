@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { SearchInput } from "@/components/SearchInput";
 import { RefreshCw, Search } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import {
@@ -71,16 +72,11 @@ export function ChemicalDashboard() {
         title="Chemical Dashboard"
         eyebrow="In-stock chemicals across all warehouses"
       >
-        <div className="relative min-w-56">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
+        <SearchInput size="md" className="min-w-56"
             aria-label="Search"
             placeholder="Find a chemical…"
-            className="h-9 pl-8"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
+            onChange={setQuery} />
         <HeaderIconButton onClick={load} title="Reload" disabled={loading}>
           <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
         </HeaderIconButton>

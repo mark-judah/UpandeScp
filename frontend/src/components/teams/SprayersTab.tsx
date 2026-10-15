@@ -6,6 +6,7 @@
  * Weighted hours = hours × the product's hazard weight (WHO class I = 4 … IV = 1;
  * an unclassified product counts 2 and is flagged, never read as harmless).
  */
+import { SearchInput } from "@/components/SearchInput";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Info, Search, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -229,17 +230,12 @@ export function SprayersTab({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative w-full sm:w-72">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
+        <SearchInput className="w-full sm:w-72"
             aria-label="Search sprayers"
             placeholder="Search ID, name, farm, team"
-            className="pl-8"
             value={q}
             disabled={!data}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
+            onChange={setQ} />
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span>
             {data ? (

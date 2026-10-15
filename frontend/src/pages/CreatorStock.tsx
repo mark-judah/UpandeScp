@@ -28,7 +28,7 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { PageToolbar } from "@/components/PageToolbar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AvailableStock } from "@/components/stock/AvailableStock";
+import { CsuStockMap } from "@/components/stock/CsuStockMap";
 import { HeaderIconButton } from "@/components/header-controls";
 import { Badge } from "@/components/ui/badge";
 import { PlacePicker } from "@/components/PlacePicker";
@@ -152,7 +152,7 @@ export function CreatorStock() {
   const [data, setData] = useState<CreatorStockOverview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"available" | "csu">("available");
+  const [tab, setTab] = useState<"available" | "csu">("csu");
   const [onlyAlerts, setOnlyAlerts] = useState(false);
   const ALL_FARMS = "__all_farms";
   const [selectedFarm, setSelectedFarm] = useState<string>(ALL_FARMS);
@@ -272,11 +272,7 @@ export function CreatorStock() {
       <PageHeader
         title="Chemical Stock"
         eyebrow="Chemical store inventory · CSU consumption window"
-      >
-        <HeaderIconButton onClick={load} disabled={loading} title="Reload">
-          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-        </HeaderIconButton>
-      </PageHeader>
+      />
 
       <div
         className="flex-1 px-4 md:px-6 py-4 md:py-6 flex flex-col gap-4"
@@ -294,8 +290,8 @@ export function CreatorStock() {
           <PageToolbar
             left={
               <TabsList className="self-start">
-                <TabsTrigger value="available">Available stock</TabsTrigger>
                 <TabsTrigger value="csu">CSU</TabsTrigger>
+                <TabsTrigger value="available">Available stock</TabsTrigger>
               </TabsList>
             }
           >
@@ -308,7 +304,7 @@ export function CreatorStock() {
               onChange={(p) => setSelectedFarm(p.farm || ALL_FARMS)}
               disabled={!data}
             />
-            {tab === "csu" && (
+            {tab === "available" && (
               <HeaderIconButton
                 active={onlyAlerts}
                 onClick={() => setOnlyAlerts((v) => !v)}
@@ -321,13 +317,16 @@ export function CreatorStock() {
                 <AlertTriangle className="h-4 w-4" />
               </HeaderIconButton>
             )}
+            <HeaderIconButton onClick={load} disabled={loading} title="Reload" aria-label="Refresh">
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            </HeaderIconButton>
           </PageToolbar>
 
-          <TabsContent value="available" className="mt-0">
-            <AvailableStock data={scopedData} loading={pending} />
+          <TabsContent value="csu" className="mt-0">
+            <CsuStockMap data={scopedData} loading={pending} />
           </TabsContent>
 
-          <TabsContent value="csu" className="mt-0 flex flex-col gap-4">
+          <TabsContent value="available" className="mt-0 flex flex-col gap-4">
             <AlertsCard
               alerts={alerts}
               loading={pending}

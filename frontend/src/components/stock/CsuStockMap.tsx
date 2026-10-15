@@ -1,14 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CreatorStockOverview } from "@/lib/spray-plan-creator-api";
 import { buildStockItems } from "@/lib/stock-map";
-import { StockTreemap } from "@/components/stock/StockTreemap";
+import { StockTreemap, STOCK_MAP_HEIGHT } from "@/components/stock/StockTreemap";
 import { StockSummaryPanel } from "@/components/stock/StockSummaryPanel";
 import { ChartSkeleton } from "@/components/Loading";
 
-/** "Available stock" tab: treemap on the left, summary of the highlighted
+/** "CSU" tab: treemap on the left, summary of the highlighted
  *  chemical (or the whole page) on the right. */
-export function AvailableStock({
+export function CsuStockMap({
   data,
   loading,
 }: {
@@ -16,7 +16,6 @@ export function AvailableStock({
   loading: boolean;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
-  const [hovered, setHovered] = useState<string | null>(null);
 
   const items = useMemo(() => buildStockItems(data), [data]);
   const farmOf = useMemo(() => {
@@ -31,8 +30,17 @@ export function AvailableStock({
   }, [data]);
   const unvalued = items.filter((i) => i.value <= 0).length;
 
-  const activeCode = hovered ?? selected;
-  const active = items.find((i) => i.item_code === activeCode) ?? null;
+  // Click pins a chemical; hover only shows a tooltip and never swaps the panel.
+  const active = items.find((i) => i.item_code === selected) ?? null;
+
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected]);
 
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -45,13 +53,12 @@ export function AvailableStock({
         </CardHeader>
         <CardContent>
           {loading ? (
-            <ChartSkeleton height={340} />
+            <ChartSkeleton height={STOCK_MAP_HEIGHT} />
           ) : items.some((i) => i.value > 0) ? (
             <StockTreemap
               items={items}
               farmOf={farmOf}
-              activeCode={activeCode}
-              onHover={setHovered}
+              activeCode={selected}
               onSelect={(c) => setSelected((s) => (s === c ? null : c))}
             />
           ) : (
@@ -59,7 +66,7 @@ export function AvailableStock({
           )}
         </CardContent>
       </Card>
-      <div className="min-w-0 lg:sticky lg:top-6 lg:self-start">
+      <div className="min-w-0">
         <StockSummaryPanel items={items} item={active} unvalued={unvalued} />
       </div>
     </div>

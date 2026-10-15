@@ -2,7 +2,7 @@
  * Treemap of chemicals in the chemical stores. Area = stock value (the only
  * measure comparable across litres, kilograms and pieces); colour = freshness
  * band. Grouped by farm when more than one farm is in view. Tiles are buttons:
- * Tab to move, Enter/Space to select.
+ * Tab to move, Enter/Space or click to pin a tile, click again or Esc to unpin. Hover only shows a tooltip.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { squarify } from "@/lib/treemap";
@@ -12,6 +12,8 @@ import type { StockItem } from "@/lib/stock-map";
 const FALLBACK_W = 720;
 const GROUP_HEAD = 18;
 const GAP = 2;
+/** Fixed so the summary panel can match it and nothing reflows. */
+export const STOCK_MAP_HEIGHT = 480;
 
 function fmt(n: number): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: Math.abs(n) >= 1000 ? 0 : 2 });
@@ -40,14 +42,12 @@ export function StockTreemap({
   items,
   farmOf,
   activeCode,
-  onHover,
   onSelect,
 }: {
   items: StockItem[];
   /** item_code -> farm -> {qty,value} so tiles can be grouped per farm */
   farmOf: Record<string, Record<string, { qty: number; value: number }>>;
   activeCode: string | null;
-  onHover: (code: string | null) => void;
   onSelect: (code: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -69,7 +69,7 @@ export function StockTreemap({
   }, []);
   useEffect(() => () => setTip(null), []);
 
-  const height = Math.round(Math.min(560, Math.max(340, width * 0.6)));
+  const height = STOCK_MAP_HEIGHT;
 
   const { tiles, groups } = useMemo(() => {
     const drawn = items.filter((i) => i.value > 0);
@@ -121,7 +121,6 @@ export function StockTreemap({
         style={{ height }}
         onMouseLeave={() => {
           setTip(null);
-          onHover(null);
         }}
       >
         {groups.map((g) => (
@@ -149,7 +148,6 @@ export function StockTreemap({
               aria-pressed={active}
               onClick={() => onSelect(t.item.item_code)}
               onMouseEnter={(e) => {
-                onHover(t.item.item_code);
                 const box = ref.current?.getBoundingClientRect();
                 if (box) setTip({ x: e.clientX - box.left, y: e.clientY - box.top, tile: t });
               }}
@@ -157,8 +155,6 @@ export function StockTreemap({
                 const box = ref.current?.getBoundingClientRect();
                 if (box) setTip({ x: e.clientX - box.left, y: e.clientY - box.top, tile: t });
               }}
-              onFocus={() => onHover(t.item.item_code)}
-              onBlur={() => onHover(null)}
               className="absolute overflow-hidden rounded-[4px] border p-1.5 text-left text-[var(--sd-ink)] outline-none transition-[filter,box-shadow] focus-visible:ring-2 focus-visible:ring-[var(--sd-ink)]"
               style={{
                 left: t.x, top: t.y, width: t.w, height: t.h,

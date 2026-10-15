@@ -59,52 +59,82 @@ describe("squarify", () => {
 });
 
 describe("Chemical Stock page", () => {
-  it("has two tabs, a treemap of coloured tiles and a legend, and no search input", async () => {
+  it("opens on CSU with the treemap, legend and no search; tabs are CSU then Available stock", async () => {
     render(<CreatorStock />);
     await waitFor(() => expect(screen.getAllByTestId("stock-tile").length).toBe(3));
-    expect(screen.getByRole("tab", { name: "Available stock" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "CSU" })).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText(/find a chemical/i)).toBeNull();
+    const tabs = screen.getAllByRole("tab").map((t) => t.textContent);
+    expect(tabs).toEqual(["CSU", "Available stock"]);
+    expect(screen.getByRole("tab", { name: "CSU" })).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("searchbox")).toBeNull();
     const bands = Object.fromEntries(screen.getAllByTestId("stock-tile").map((t) => [t.getAttribute("data-code"), t.getAttribute("data-band")]));
     expect(bands).toEqual({ A: "near", B: "ageing", C: "fresh" });
     const legend = screen.getByTestId("freshness-legend");
     for (const l of ["Fresh", "Ageing", "Near expiry", "Expired"]) expect(within(legend).getByText(l)).toBeInTheDocument();
-    // the chemical short notifications are not on this tab
     expect(screen.queryByText("Alerts")).toBeNull();
   });
 
-  it("shows the page summary, then the chemical on selection (keyboard)", async () => {
+  it("puts refresh in the toolbar row, and the alerts filter only on Available stock", async () => {
+    const user = userEvent.setup();
+    render(<CreatorStock />);
+    await waitFor(() => screen.getAllByTestId("stock-tile"));
+    const bar = screen.getByTestId("page-toolbar");
+    expect(within(bar).getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+    expect(within(bar).queryByTitle(/only alerts/i)).toBeNull();
+    await user.click(screen.getByRole("tab", { name: "Available stock" }));
+    expect(within(screen.getByTestId("page-toolbar")).getByTitle(/only alerts/i)).toBeInTheDocument();
+  });
+
+  it("click pins the summary, click again or Esc unpins", async () => {
     const user = userEvent.setup();
     render(<CreatorStock />);
     await waitFor(() => screen.getAllByTestId("stock-tile"));
     expect(screen.getByTestId("count-near")).toHaveTextContent("1");
     expect(screen.getByText(/1 chemical in stock with no valuation/)).toBeInTheDocument();
-    const tile = screen.getAllByTestId("stock-tile").find((t) => t.getAttribute("data-code") === "A")!;
-    tile.focus();
-    await user.keyboard("{Enter}");
+    const tile = () => screen.getAllByTestId("stock-tile").find((t) => t.getAttribute("data-code") === "A")!;
+    await user.click(tile());
     const panel = screen.getByTestId("stock-summary");
     expect(within(panel).getByText("Alpha")).toBeInTheDocument();
     expect(within(panel).getByText("Chemical Store 1")).toBeInTheDocument();
     expect(within(panel).getByText("Karen CSU 1")).toBeInTheDocument();
     expect(within(panel).getByText("A-1")).toBeInTheDocument();
-    expect(within(panel).getByText("Near expiry")).toBeInTheDocument();
     expect(within(panel).getByTestId("summary-total")).toHaveTextContent("5");
-    expect(tile).toHaveAttribute("aria-pressed", "true");
+    expect(tile()).toHaveAttribute("aria-pressed", "true");
+    await user.click(tile());
+    expect(screen.getByTestId("count-near")).toBeInTheDocument();
+    await user.click(tile());
+    expect(screen.getByTestId("summary-total")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByTestId("summary-total")).toBeNull();
+    expect(screen.getByTestId("count-near")).toBeInTheDocument();
   });
 
-  it("shows a tooltip on hover", async () => {
-    render(<CreatorStock />);
-    await waitFor(() => screen.getAllByTestId("stock-tile"));
-    fireEvent.mouseEnter(screen.getAllByTestId("stock-tile")[0], { clientX: 5, clientY: 5 });
-    expect(screen.getByTestId("stock-tooltip")).toBeInTheDocument();
-  });
-
-  it("moves the short notifications under the CSU tab", async () => {
+  it("keyboard Enter pins a tile", async () => {
     const user = userEvent.setup();
     render(<CreatorStock />);
     await waitFor(() => screen.getAllByTestId("stock-tile"));
-    await user.click(screen.getByRole("tab", { name: "CSU" }));
+    screen.getAllByTestId("stock-tile")[0].focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByTestId("summary-total")).toBeInTheDocument();
+  });
+
+  it("hover shows a tooltip but does not change the summary panel; panel has a fixed height", async () => {
+    render(<CreatorStock />);
+    await waitFor(() => screen.getAllByTestId("stock-tile"));
+    const panel = screen.getByTestId("stock-summary");
+    expect(panel.className).toContain("h-[480px]");
+    expect(panel.className).toContain("overflow-y-auto");
+    fireEvent.mouseEnter(screen.getAllByTestId("stock-tile")[0], { clientX: 5, clientY: 5 });
+    expect(screen.getByTestId("stock-tooltip")).toBeInTheDocument();
+    expect(screen.getByTestId("count-near")).toBeInTheDocument();
+    expect(screen.queryByTestId("summary-total")).toBeNull();
+    expect(screen.getByTestId("stock-treemap")).toHaveStyle({ height: "480px" });
+  });
+
+  it("keeps the short notifications under Available stock", async () => {
+    const user = userEvent.setup();
+    render(<CreatorStock />);
+    await waitFor(() => screen.getAllByTestId("stock-tile"));
+    await user.click(screen.getByRole("tab", { name: "Available stock" }));
     expect(await screen.findByText("Alerts")).toBeInTheDocument();
     expect(screen.getByText("Chemical store health")).toBeInTheDocument();
     expect(screen.getByText(/CSUs . mixing units/)).toBeInTheDocument();

@@ -1,4 +1,4 @@
-/** Right-hand panel of the Available stock tab: the highlighted chemical, or a
+/** Right-hand panel of the CSU tab: the pinned chemical, or a
  *  page summary when nothing is highlighted. */
 import { BAND_STYLE, BAND_ORDER, type FreshnessBand } from "@/lib/stock-freshness";
 import type { StockItem } from "@/lib/stock-map";
@@ -38,7 +38,7 @@ export function StockSummaryPanel({
     const counts = BAND_ORDER.map((b) => [b, items.filter((i) => i.band === b).length] as const);
     const total = items.reduce((s, i) => s + i.value, 0);
     return (
-      <aside data-testid="stock-summary" aria-label="Stock summary" className="rounded-[var(--sd-radius-lg)] border bg-[var(--sd-card)] p-4">
+      <aside data-testid="stock-summary" aria-label="Stock summary" className="h-[480px] overflow-y-auto rounded-[var(--sd-radius-lg)] border bg-[var(--sd-card)] p-4">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--sd-muted)]">All chemical stores</div>
         <div className="mt-1 text-2xl font-semibold tabular-nums text-[var(--sd-ink)]">{fmt(total)}</div>
         <div className="text-[11px] text-[var(--sd-muted)]">stock value</div>
@@ -57,14 +57,14 @@ export function StockSummaryPanel({
             {unvalued} chemical{unvalued === 1 ? "" : "s"} in stock with no valuation are not drawn.
           </p>
         )}
-        <p className="mt-3 text-[11px] text-[var(--sd-muted)]">Hover or select a tile to see where that chemical is and how old it is.</p>
+        <p className="mt-3 text-[11px] text-[var(--sd-muted)]">Click a tile (or press Enter on it) to pin where that chemical is and how old it is. Click again or press Esc to unpin.</p>
       </aside>
     );
   }
   const stores = item.locations.filter((l) => l.kind === "store");
   const csus = item.locations.filter((l) => l.kind === "csu");
   return (
-    <aside data-testid="stock-summary" aria-label={`${item.item_name} summary`} className="rounded-[var(--sd-radius-lg)] border bg-[var(--sd-card)] p-4">
+    <aside data-testid="stock-summary" aria-label={`${item.item_name} summary`} className="h-[480px] overflow-y-auto rounded-[var(--sd-radius-lg)] border bg-[var(--sd-card)] p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-[var(--sd-ink)]">{item.item_name}</div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -10,6 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { WheelColumn } from "@/components/WheelPicker";
 import { cn, format12h, from12h, stepTime, to12h } from "@/lib/utils";
 
 export interface TimePickerProps {
@@ -20,71 +21,10 @@ export interface TimePickerProps {
   disabled?: boolean;
 }
 
-/** Height (px) of a single odometer cell. Fixed px — not rem — so the roll
- *  translate stays exact regardless of the app's 85% root font-size. */
-const CELL = 34;
-
 /** Bordered box matching the Select dropdown triggers on form pages (and the
  *  DatePicker `field` variant) so date + time read as one control family. */
 const FIELD_TRIGGER =
   "h-9 gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium tabular-nums text-foreground shadow-sm hover:bg-background hover:text-foreground [&>svg]:text-[var(--sd-quiet)]";
-
-/**
- * A single odometer column. Renders every value in `values` stacked vertically
- * and slides the strip so the selected value sits centered in a 3-row window,
- * with faded neighbors above/below. Single-step changes animate; a wrap jump
- * (e.g. 11 -> 12) snaps instantly instead of sliding the long way. Respects
- * `prefers-reduced-motion`.
- */
-function DigitColumn({ values, value }: { values: string[]; value: string }) {
-  const index = Math.max(0, values.indexOf(value));
-  const prevIndex = useRef(index);
-  const isWrap = Math.abs(index - prevIndex.current) > 1;
-  useEffect(() => {
-    prevIndex.current = index;
-  }, [index]);
-
-  return (
-    <div
-      className="relative w-11 overflow-hidden"
-      style={{
-        height: CELL * 3,
-        // Fade the top/bottom edges regardless of surface colour.
-        maskImage:
-          "linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent)",
-        WebkitMaskImage:
-          "linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent)",
-      }}
-    >
-      <div
-        className={cn(
-          "flex flex-col will-change-transform",
-          !isWrap &&
-            "transition-transform duration-200 motion-reduce:transition-none",
-        )}
-        style={{
-          transform: `translateY(${(1 - index) * CELL}px)`,
-          transitionTimingFunction: "cubic-bezier(.22,.61,.36,1)",
-        }}
-      >
-        {values.map((v, i) => (
-          <div
-            key={v}
-            className={cn(
-              "flex items-center justify-center text-base tabular-nums",
-              i === index
-                ? "font-semibold text-foreground"
-                : "text-muted-foreground opacity-40",
-            )}
-            style={{ height: CELL }}
-          >
-            {v}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 const CHEV =
   "flex size-7 items-center justify-center rounded-md text-[var(--sd-quiet)] transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -110,7 +50,7 @@ function Stepper({
       >
         <ChevronUp className="h-4 w-4" />
       </button>
-      <DigitColumn values={values} value={value} />
+      <WheelColumn options={values} value={value} />
       <button
         type="button"
         className={CHEV}

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import type { DateRange as DayRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { WheelColumn, type WheelOption } from "@/components/WheelPicker";
 import { cn, parseYmd, ymd } from "@/lib/utils";
 
 export interface DateRange {
@@ -181,11 +182,16 @@ export function stepRange(
   delta: number,
   opts: StepOptions = {},
 ): DateRange {
-  const { min, max, allowSingleDay = true } = opts;
   if (!validIso(r.from) || !validIso(r.to)) return r;
   let moved = stepDate(r[end], unit, delta);
-  if (min && moved < min) moved = min;
-  if (max && moved > max) moved = max;
+  if (opts.min && moved < opts.min) moved = opts.min;
+  if (opts.max && moved > opts.max) moved = opts.max;
+  return commitEnd(r, end, moved, opts);
+}
+
+/** Put `moved` on one end, carrying the other so From <= To; unchanged when it cannot fit min / max. */
+function commitEnd(r: DateRange, end: "from" | "to", moved: string, opts: StepOptions): DateRange {
+  const { min, max, allowSingleDay = true } = opts;
   let { from, to } = r;
   if (end === "from") {
     from = moved;
@@ -233,110 +239,26 @@ const writeMode = (m: Mode) => {
   }
 };
 
-const STEP_BTN =
-  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-foreground transition-[transform,background-color,color] duration-150 hover:bg-[var(--sidebar-accent)] active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:text-muted-foreground/40 disabled:hover:bg-transparent disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100 touch-none select-none";
-
-/** One − value + row. Press-and-hold repeats; wheel / arrow keys step while the value is focused. */
-function Stepper({
-  label,
-  text,
-  onStep,
-  canDec,
-  canInc,
-  width = "w-12",
-}: {
-  label: string;
-  text: string;
-  onStep: (delta: number) => void;
-  canDec: boolean;
-  canInc: boolean;
-  width?: string;
-}) {
-  const stepRef = useRef(onStep);
-  stepRef.current = onStep;
-  const timers = useRef<{
-    t?: ReturnType<typeof setTimeout>;
-    i?: ReturnType<typeof setInterval>;
-  }>({});
-  const valueRef = useRef<HTMLDivElement>(null);
-
-  const stop = () => {
-    clearTimeout(timers.current.t);
-    clearInterval(timers.current.i);
-    timers.current = {};
-  };
-  const start = (delta: number) => {
-    stop();
-    stepRef.current(delta);
-    timers.current.t = setTimeout(() => {
-      timers.current.i = setInterval(() => stepRef.current(delta), 70);
-    }, 420);
-  };
-  useEffect(() => stop, []);
-  useEffect(() => {
-    if (!canDec && !canInc) stop();
-  }, [canDec, canInc]);
-
-  useEffect(() => {
-    const el = valueRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (document.activeElement !== el || !e.deltaY) return;
-      e.preventDefault();
-      stepRef.current(e.deltaY < 0 ? 1 : -1);
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
-
-  const holdProps = (delta: number) => ({
-    onPointerDown: (e: React.PointerEvent) => {
-      if (e.button !== 0) return;
-      start(delta);
-    },
-    onPointerUp: stop,
-    onPointerLeave: stop,
-    onPointerCancel: stop,
-    onBlur: stop,
-    // keyboard activation only: pointer presses already stepped on pointerdown
-    onClick: (e: React.MouseEvent) => {
-      if (e.detail === 0) stepRef.current(delta);
-    },
-  });
-
-  return (
-    <div role="group" aria-label={label} className="flex items-center justify-between gap-1">
-      <button type="button" aria-label={`Decrease ${label}`} disabled={!canDec} className={STEP_BTN} {...holdProps(-1)}>
-        <Minus className="h-3.5 w-3.5" />
-      </button>
-      <div
-        ref={valueRef}
-        role="spinbutton"
-        tabIndex={0}
-        aria-label={label}
-        aria-valuetext={text}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowUp" || e.key === "ArrowRight") {
-            e.preventDefault();
-            if (canInc) stepRef.current(1);
-          } else if (e.key === "ArrowDown" || e.key === "ArrowLeft") {
-            e.preventDefault();
-            if (canDec) stepRef.current(-1);
-          }
-        }}
-        className={cn(
-          width,
-          "rounded-full px-1 py-1 text-center text-sm font-semibold tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
-        )}
-      >
-        {text}
-      </div>
-      <button type="button" aria-label={`Increase ${label}`} disabled={!canInc} className={STEP_BTN} {...holdProps(1)}>
-        <Plus className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
+/** Set one part (day / month / year) of one end to an exact value; day clamps to the month's length. */
+export function setRangePart(
+  r: DateRange,
+  end: "from" | "to",
+  unit: StepUnit,
+  n: number,
+  opts: StepOptions = {},
+): DateRange {
+  if (!validIso(r.from) || !validIso(r.to)) return r;
+  const d = parseYmd(r[end]);
+  const y = unit === "year" ? n : d.getFullYear();
+  const m = unit === "month" ? n : d.getMonth();
+  const day = Math.min(unit === "day" ? n : d.getDate(), daysInMonth(y, m));
+  return commitEnd(r, end, ymd(new Date(y, m, day)), opts);
 }
+
+const currentPart = (d: Date, unit: StepUnit): number =>
+  unit === "year" ? d.getFullYear() : unit === "month" ? d.getMonth() : d.getDate();
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
 
 /**
  * One picker for a from/to range. Click a start day then an end day (the
@@ -345,7 +267,7 @@ function Stepper({
  * back as labels. Click the month caption to zoom out to a month grid, and
  * again to a list of years, to jump far quickly. Two months side by side on
  * wide screens, one on a phone. A segmented switch flips to a Counter view:
- * year / month / day steppers for From and To (no typing), for long jumps
+ * day / month / year wheels (the TimePicker odometer) for From and To (no typing), for long jumps
  * such as January to December. Both modes edit the same draft.
  */
 type View = "days" | "months" | "years";
@@ -422,11 +344,28 @@ export function DateRangePicker({
     if (m === "calendar" && validIso(draft.from)) setMonth(parseYmd(draft.from));
   };
   const stepOpts = { min, max, allowSingleDay };
-  const doStep = (end: "from" | "to", unit: StepUnit, delta: number) =>
-    setDraft((d) => stepRange(d, end, unit, delta, stepOpts));
-  const canStep = (end: "from" | "to", unit: StepUnit, delta: number) => {
-    const n = stepRange(draft, end, unit, delta, stepOpts);
-    return n.from !== draft.from || n.to !== draft.to;
+  const setPart = (end: "from" | "to", unit: StepUnit, n: number) =>
+    setDraft((d) => setRangePart(d, end, unit, n, stepOpts));
+  const wheelOptions = (end: "from" | "to", unit: StepUnit): WheelOption[] => {
+    const d = parseYmd(draft[end]);
+    const ok = (n: number) => {
+      const c = setRangePart(draft, end, unit, n, stepOpts);
+      return c[end] !== draft[end] || c.from !== draft.from || c.to !== draft.to || n === currentPart(d, unit);
+    };
+    if (unit === "day")
+      return Array.from({ length: daysInMonth(d.getFullYear(), d.getMonth()) }, (_, i) => ({
+        value: String(i + 1),
+        label: pad2(i + 1),
+        disabled: !ok(i + 1),
+      }));
+    if (unit === "month") return MONTHS.map((l, i) => ({ value: String(i), label: l, disabled: !ok(i) }));
+    const thisYear = new Date().getFullYear();
+    const lo = min ? +min.slice(0, 4) : Math.min(thisYear - 10, +draft.from.slice(0, 4));
+    const hi = max ? +max.slice(0, 4) : Math.max(thisYear + 5, +draft.to.slice(0, 4));
+    return Array.from({ length: Math.max(1, hi - lo + 1) }, (_, i) => ({
+      value: String(lo + i),
+      disabled: !ok(lo + i),
+    }));
   };
 
   const allPresets = useMemo(() => [...builtInPresets(weekStartsOn), ...(presets ?? [])], [weekStartsOn, presets]);
@@ -620,27 +559,19 @@ export function DateRangePicker({
                       <span className="px-1 text-xs font-medium text-muted-foreground">
                         {end === "from" ? "From" : "To"}
                       </span>
-                      <Stepper
-                        label={`${end === "from" ? "From" : "To"} year`}
-                        text={d ? String(d.getFullYear()) : "—"}
-                        onStep={(n) => doStep(end, "year", n)}
-                        canDec={canStep(end, "year", -1)}
-                        canInc={canStep(end, "year", 1)}
-                      />
-                      <Stepper
-                        label={`${end === "from" ? "From" : "To"} month`}
-                        text={d ? MONTHS[d.getMonth()] : "—"}
-                        onStep={(n) => doStep(end, "month", n)}
-                        canDec={canStep(end, "month", -1)}
-                        canInc={canStep(end, "month", 1)}
-                      />
-                      <Stepper
-                        label={`${end === "from" ? "From" : "To"} day`}
-                        text={d ? String(d.getDate()) : "—"}
-                        onStep={(n) => doStep(end, "day", n)}
-                        canDec={canStep(end, "day", -1)}
-                        canInc={canStep(end, "day", 1)}
-                      />
+                      <div className="flex items-center justify-center gap-1">
+                        {(["day", "month", "year"] as const).map((unit) => (
+                          <WheelColumn
+                            key={unit}
+                            rows={5}
+                            className={unit === "year" ? "w-14" : "w-12"}
+                            label={`${end === "from" ? "From" : "To"} ${unit}`}
+                            options={wheelOptions(end, unit)}
+                            value={d ? String(currentPart(d, unit)) : ""}
+                            onChange={(v) => setPart(end, unit, Number(v))}
+                          />
+                        ))}
+                      </div>
                     </div>
                   );
                 })}

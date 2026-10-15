@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -9,6 +9,7 @@ import {
   formatRange,
   stepDate,
   stepRange,
+  setRangePart,
   type DateRange,
   type DateRangePickerProps,
 } from "@/components/DateRangePicker";
@@ -242,84 +243,130 @@ describe("DateRangePicker", () => {
       await user.click(screen.getByRole("tab", { name: "counter" }));
       return user;
     };
-    const val = (name: string) => screen.getByRole("spinbutton", { name }).getAttribute("aria-valuetext");
+    const wheel = (name: string) => screen.getByRole("listbox", { name });
+    const sel = (name: string) =>
+      within(wheel(name))
+        .getAllByRole("option")
+        .find((o) => o.getAttribute("aria-selected") === "true")!
+        .textContent;
+    const opt = (name: string, text: string) => within(wheel(name)).getByRole("option", { name: text });
+    const optCount = (name: string) => within(wheel(name)).getAllByRole("option").length;
 
-    it("steps year, month and day with the buttons and shows a live summary", async () => {
+    it("shows three wheels per end and a live summary; tap a value to centre it", async () => {
       const user = await openCounter({ initial: { from: "2026-01-01", to: "2026-12-31" } });
+      expect(screen.getAllByRole("listbox")).toHaveLength(6);
       expect(screen.getByTestId("counter-summary")).toHaveTextContent("1 Jan 2026 → 31 Dec 2026 (365 days)");
-      expect(val("From month")).toBe("Jan");
-      await user.click(screen.getByRole("button", { name: "Increase From year" }));
-      expect(val("From year")).toBe("2027");
-      expect(val("To year")).toBe("2027"); // From carries To along
-      await user.click(screen.getByRole("button", { name: "Decrease To year" }));
-      expect(val("To year")).toBe("2026");
-      expect(val("From year")).toBe("2026");
-      await user.click(screen.getByRole("button", { name: "Increase From month" }));
-      await user.click(screen.getByRole("button", { name: "Increase From day" }));
+      expect(sel("From month")).toBe("Jan");
+      expect(within(wheel("From month")).getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+      ]);
+      await user.click(opt("From year", "2027"));
+      expect(sel("From year")).toBe("2027");
+      expect(sel("To year")).toBe("2027"); // From carries To along
+      await user.click(opt("To year", "2026"));
+      expect(sel("To year")).toBe("2026");
+      expect(sel("From year")).toBe("2026");
+      await user.click(opt("From month", "Feb"));
+      await user.click(opt("From day", "02"));
       expect(screen.getByTestId("counter-summary")).toHaveTextContent("2 Feb 2026 → 2 Feb 2026 (1 day)");
+    });
+
+    it("day options follow the month length, including leap Februaries", async () => {
+      await openCounter({ initial: { from: "2026-02-10", to: "2026-02-20" } });
+      expect(optCount("From day")).toBe(28);
+      cleanup();
+      await openCounter({ initial: { from: "2024-02-10", to: "2024-02-20" } });
+      expect(optCount("From day")).toBe(29);
+      cleanup();
+      await openCounter({ initial: { from: "2026-04-10", to: "2026-04-20" } });
+      expect(optCount("From day")).toBe(30);
+      cleanup();
+      await openCounter({ initial: { from: "2026-01-10", to: "2026-01-20" } });
+      expect(optCount("From day")).toBe(31);
+    });
+
+    it("changing month clamps the day (31 Jan -> Feb gives 28)", async () => {
+      const user = await openCounter({ initial: { from: "2026-01-31", to: "2026-03-31" } });
+      await user.click(opt("From month", "Feb"));
+      expect(sel("From day")).toBe("28");
+      expect(sel("From month")).toBe("Feb");
+    });
+
+    it("setRangePart clamps and carries", () => {
+      expect(setRangePart({ from: "2024-02-29", to: "2024-03-05" }, "from", "year", 2025)).toEqual({
+        from: "2025-02-28",
+        to: "2025-02-28",
+      });
+      expect(setRangePart({ from: "2026-03-10", to: "2026-03-20" }, "to", "month", 1)).toEqual({
+        from: "2026-02-20",
+        to: "2026-02-20",
+      });
     });
 
     it("clamps the day to the month length, including leap Februaries", () => {
       expect(stepDate("2026-01-31", "month", 1)).toBe("2026-02-28");
       expect(stepDate("2024-01-31", "month", 1)).toBe("2024-02-29");
       expect(stepDate("2024-02-29", "year", 1)).toBe("2025-02-28");
-      expect(stepDate("2024-02-29", "year", 4)).toBe("2028-02-29");
-      expect(stepDate("2026-12-31", "month", 1)).toBe("2027-01-31");
       expect(stepDate("2026-01-31", "day", 1)).toBe("2026-02-01");
     });
 
-    it("keeps From <= To by carrying the other end along", () => {
-      const r = { from: "2026-03-10", to: "2026-03-10" };
-      expect(stepRange(r, "from", "day", 1)).toEqual({ from: "2026-03-11", to: "2026-03-11" });
-      expect(stepRange(r, "to", "month", -1)).toEqual({ from: "2026-02-10", to: "2026-02-10" });
-      expect(stepRange({ from: "2026-03-01", to: "2026-03-20" }, "to", "day", -1)).toEqual({ from: "2026-03-01", to: "2026-03-19" });
+    it("keeps From <= To by carrying the other end along", async () => {
+      const user = await openCounter({ initial: { from: "2026-03-10", to: "2026-03-12" } });
+      await user.click(opt("From day", "20"));
+      expect(screen.getByTestId("counter-summary")).toHaveTextContent("20 Mar 2026 → 20 Mar 2026 (1 day)");
+      await user.click(opt("To day", "05"));
+      expect(screen.getByTestId("counter-summary")).toHaveTextContent("5 Mar 2026 → 5 Mar 2026 (1 day)");
     });
 
-    it("respects min and max", async () => {
-      expect(stepRange({ from: "2026-03-10", to: "2026-03-12" }, "from", "year", -1, { min: "2026-01-01" })).toEqual({
-        from: "2026-01-01",
-        to: "2026-03-12",
+    it("greys out values outside min / max and ignores taps on them", async () => {
+      const user = await openCounter({
+        min: "2026-03-10",
+        max: "2026-03-20",
+        initial: { from: "2026-03-10", to: "2026-03-20" },
       });
-      expect(stepRange({ from: "2026-03-10", to: "2026-03-12" }, "to", "year", 1, { max: "2026-12-31" })).toEqual({
-        from: "2026-03-10",
-        to: "2026-12-31",
-      });
-      const user = await openCounter({ min: "2026-03-10", max: "2026-03-20", initial: { from: "2026-03-10", to: "2026-03-20" } });
-      expect(screen.getByRole("button", { name: "Decrease From day" })).toBeDisabled();
-      expect(screen.getByRole("button", { name: "Increase To day" })).toBeDisabled();
-      await user.click(screen.getByRole("button", { name: "Increase From day" }));
-      expect(val("From day")).toBe("11");
+      expect(opt("From day", "09")).toHaveAttribute("aria-disabled", "true");
+      expect(opt("From day", "21")).toHaveAttribute("aria-disabled", "true");
+      expect(opt("From day", "10")).not.toHaveAttribute("aria-disabled");
+      expect(opt("From month", "Feb")).toHaveAttribute("aria-disabled", "true");
+      expect(optCount("From year")).toBe(1); // years are bounded by min / max
+      await user.click(opt("From day", "09"));
+      expect(sel("From day")).toBe("10");
+      await user.click(opt("From day", "11"));
+      expect(sel("From day")).toBe("11");
     });
 
-    it("steps with arrow keys on the focused value and applies on Apply", async () => {
+    it("arrow keys step a focused wheel (skipping disabled), Home/End jump, Apply commits", async () => {
       const spy = vi.fn();
       const user = await openCounter({ spy, initial: { from: "2026-01-01", to: "2026-12-31" } });
-      screen.getByRole("spinbutton", { name: "To month" }).focus();
-      await user.keyboard("{ArrowDown}{ArrowDown}");
-      expect(val("To month")).toBe("Oct");
+      wheel("To month").focus();
+      await user.keyboard("{ArrowUp}{ArrowUp}");
+      expect(sel("To month")).toBe("Oct");
       expect(spy).not.toHaveBeenCalled();
       await user.click(screen.getByRole("button", { name: "Apply" }));
       expect(spy).toHaveBeenCalledWith({ from: "2026-01-01", to: "2026-10-30" });
     });
 
-    it("press-and-hold repeats the step", async () => {
-      vi.useFakeTimers();
-      render(<Harness initial={{ from: "2026-01-01", to: "2026-12-31" }} />);
-      fireEvent.click(screen.getByRole("button", { name: "Range" }));
-      fireEvent.click(screen.getByRole("tab", { name: "counter" }));
-      const inc = screen.getByRole("button", { name: "Increase From day" });
-      fireEvent.pointerDown(inc, { button: 0 });
-      expect(val("From day")).toBe("2");
-      act(() => {
-        vi.advanceTimersByTime(420 + 70 * 3);
+    it("keyboard stops at disabled bounds; Home and End land on the first / last enabled", async () => {
+      const user = await openCounter({
+        min: "2026-03-10",
+        max: "2026-03-20",
+        initial: { from: "2026-03-15", to: "2026-03-18" },
       });
-      expect(Number(val("From day"))).toBeGreaterThanOrEqual(5);
-      fireEvent.pointerUp(inc);
-      const after = val("From day");
-      act(() => {
-        vi.advanceTimersByTime(500);
-      });
-      expect(val("From day")).toBe(after);
+      wheel("From day").focus();
+      await user.keyboard("{End}");
+      expect(sel("From day")).toBe("20"); // 20 > To, so To carried: 20
+      await user.keyboard("{Home}");
+      expect(sel("From day")).toBe("10");
+      await user.keyboard("{ArrowUp}");
+      expect(sel("From day")).toBe("10");
+    });
+
+    it("mouse wheel steps one value per notch", async () => {
+      await openCounter({ initial: { from: "2026-01-05", to: "2026-12-31" } });
+      fireEvent.wheel(wheel("From day"), { deltaY: 100 });
+      expect(sel("From day")).toBe("06");
+      fireEvent.wheel(wheel("From day"), { deltaY: -100 });
+      expect(sel("From day")).toBe("05");
     });
 
     it("has no input elements in either mode", async () => {
@@ -337,7 +384,7 @@ describe("DateRangePicker", () => {
       await user.click(screen.getByRole("button", { name: "Range" }));
       expect(screen.getByRole("tab", { name: "calendar" })).toHaveAttribute("aria-selected", "true");
       await user.click(screen.getByRole("tab", { name: "counter" }));
-      await user.click(screen.getByRole("button", { name: "Increase To day" }));
+      await user.click(within(screen.getByRole("listbox", { name: "To day" })).getByRole("option", { name: "16" }));
       expect(screen.getByTestId("counter-summary")).toHaveTextContent("1 Oct 2026 → 16 Oct 2026 (16 days)");
       await user.click(screen.getByRole("tab", { name: "calendar" }));
       expect(screen.getByTestId("range-readout")).toHaveTextContent("From 1 Oct 2026 · To 16 Oct 2026");

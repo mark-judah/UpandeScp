@@ -360,6 +360,10 @@ doc_events = {
     # end_spray_session, not from this hook.
     "Stock Entry": {
         "before_validate": [
+            # The plan's farm (its greenhouse's Warehouse.custom_farm) on the Farm
+            # accounting dimension, parent and rows, not the creator's default
+            # User Permission. Runs first so later hooks copy the right farm.
+            "upande_scp.serverscripts.store.farm_dimension.stamp",
             # Safety net: force any AFP Manufacture (desk, API, console, mobile)
             # to consume what was transferred into the CSU, not the template BOM.
             "upande_scp.serverscripts.spray_plan_creator.stock_entry_state.before_validate",

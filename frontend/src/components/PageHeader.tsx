@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "@/lib/utils";
+import { PageToolbar } from "@/components/PageToolbar";
 
 /**
  * Shared page header, styled to the reference `.pagehead`: an uppercase
@@ -35,24 +35,8 @@ export function PageHeader({
           {title}
         </h1>
       </div>
-      {/* Controls row — BELOW the heading. The switcher (if any) sits on the
-          left and the dropdowns on the right, on the same line (matching the
-          dashboard). Without a switcher the controls are right-aligned. */}
-      {switcher || children ? (
-        <div
-          className={cn(
-            "flex flex-wrap items-center gap-3",
-            switcher ? "justify-between" : "justify-end",
-          )}
-        >
-          {switcher ? (
-            <div className="flex items-center gap-2">{switcher}</div>
-          ) : null}
-          {children ? (
-            <div className="flex flex-wrap items-center gap-2">{children}</div>
-          ) : null}
-        </div>
-      ) : null}
+      {/* Controls row — BELOW the heading: tabs left, filters right. */}
+      <PageToolbar left={switcher}>{children}</PageToolbar>
     </header>
   );
 }

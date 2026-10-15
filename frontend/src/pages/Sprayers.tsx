@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageToolbar } from "@/components/PageToolbar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -264,11 +265,14 @@ export function Sprayers({ initialCrop }: { initialCrop?: string } = {}) {
           </Card>
         ) : (
           <Tabs value={view} onValueChange={(v) => setView(v as "records" | "table")} className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <TabsList className="self-start">
-                <TabsTrigger value="records">Records</TabsTrigger>
-                <TabsTrigger value="table">All sprayers</TabsTrigger>
-              </TabsList>
+            <PageToolbar
+              left={
+                <TabsList className="self-start">
+                  <TabsTrigger value="records">Records</TabsTrigger>
+                  <TabsTrigger value="table">All sprayers</TabsTrigger>
+                </TabsList>
+              }
+            >
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                 {data && data.flags.no_duration > 0 && (
                   <span className="flex items-center gap-1" title="Logsheets with no start/stop time: counted as 0 h">
@@ -283,7 +287,7 @@ export function Sprayers({ initialCrop }: { initialCrop?: string } = {}) {
                   </span>
                 )}
               </div>
-            </div>
+            </PageToolbar>
             <TabsContent value="records" className="mt-0">
               <div aria-busy={pending || undefined} className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
                 <aside className={cn("min-w-0 xl:sticky xl:top-6 xl:self-start", selected && "hidden xl:block")}>{list}</aside>

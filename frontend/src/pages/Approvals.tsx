@@ -46,6 +46,8 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/PageHeader";
 import { PlacePicker } from "@/components/PlacePicker";
+import { TogglePill } from "@/components/TogglePill";
+import { ClearFiltersPill } from "@/components/ClearFiltersPill";
 import { StalePlansTab } from "@/components/spray-plan/StalePlansTab";
 import { ApprovalActionBar } from "@/components/spray-plan/ApprovalActionBar";
 import { ApprovedList, isApprovedRow } from "@/components/spray-plan/ApprovedList";
@@ -439,10 +441,23 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
 
   // ── Render ────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col min-h-svh">
+    <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="flex flex-col min-h-svh">
       <PageHeader
         title="Spray Plan Approval"
         eyebrow="Pending application work orders · review and approve in bulk"
+        switcher={
+          <TabsList className="flex-wrap h-auto">
+                <TabsTrigger value="pending">
+                  Pending · {skeleton ? <TextSkeleton width="1.5ch" /> : pendingCount}
+                </TabsTrigger>
+                <TabsTrigger value="approved">
+                  Approved · {stageSkeleton ? <TextSkeleton width="1.5ch" /> : approvedCount}
+                </TabsTrigger>
+                <TabsTrigger value="stale">
+                  Stale · {staleCount === null ? <TextSkeleton width="1.5ch" /> : staleCount}
+                </TabsTrigger>
+              </TabsList>
+        }
       >
         <Select
           value={dateBasis}
@@ -464,15 +479,13 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
           }}
           label="Date range"
         />
-        <Button
-          variant={groupFarms ? "default" : "outline"}
-          size="sm"
-          className="h-9"
-          onClick={() => setGroupFarms((v) => !v)}
+        <TogglePill
+          pressed={groupFarms}
+          onPressedChange={setGroupFarms}
           title="Break the list into one section per farm"
         >
-          {groupFarms ? "Grouped by farm" : "Group by farm"}
-        </Button>
+          Group by farm
+        </TogglePill>
         <PlacePicker
           farms={placeFarms}
           value={{ farm: farm === ALL ? "" : farm, greenhouse: greenhouse === ALL ? "" : greenhouse }}
@@ -482,28 +495,16 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
           }}
           disabled={!farmsData.farms.length}
         />
-        <Button variant="ghost" size="sm" className="h-9" onClick={clearFilters}>
-          Clear
-        </Button>
+        <ClearFiltersPill
+          active={Boolean(from || to || farm !== ALL || greenhouse !== ALL)}
+          onClear={clearFilters}
+        />
       </PageHeader>
 
       <div
         className="px-4 md:px-6 py-4 flex-1 flex flex-col gap-3"
         aria-busy={loading || undefined}
       >
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-          <TabsList className="flex-wrap h-auto">
-            <TabsTrigger value="pending">
-              Pending · {skeleton ? <TextSkeleton width="1.5ch" /> : pendingCount}
-            </TabsTrigger>
-            <TabsTrigger value="approved">
-              Approved · {stageSkeleton ? <TextSkeleton width="1.5ch" /> : approvedCount}
-            </TabsTrigger>
-            <TabsTrigger value="stale">
-              Stale · {staleCount === null ? <TextSkeleton width="1.5ch" /> : staleCount}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
 
         {errorMsg && (
           <Card className="border-destructive/40 bg-destructive/5">
@@ -739,7 +740,7 @@ export function Approvals({ initialCrop }: { initialCrop?: string } = {}) {
       />
 
       <LoadingStrip active={loading} />
-    </div>
+    </Tabs>
   );
 }
 

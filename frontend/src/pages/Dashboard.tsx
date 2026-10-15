@@ -5,6 +5,7 @@ import {
 } from "@/lib/scouting-api";
 import { useCropFarms } from "@/hooks/use-crop-farms";
 import { useDashboardAggregate } from "@/hooks/use-dashboard-aggregate";
+import { PageToolbar } from "@/components/PageToolbar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlacePicker } from "@/components/PlacePicker";
 import { HeaderIconButton } from "@/components/header-controls";
@@ -107,8 +108,9 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="flex flex-col gap-4">
           {/* Switcher + filters on one row. Switcher = reference `.pillgroup`
               (native TabsList); filters = pill dropdowns + icon tools. */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
+          <PageToolbar
+            left={
+              <>
               <TabsList>
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="pests">Pests</TabsTrigger>
@@ -124,9 +126,9 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                 <Gauge className="h-3.5 w-3.5" />
                 Coverage
               </a>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
+              </>
+            }
+          >
               <PlacePicker
                 farms={farms}
                 crop={crop}
@@ -156,8 +158,7 @@ export function Dashboard({ initialCrop }: { initialCrop?: string } = {}) {
                   <FileText className="h-4 w-4" />
                 </a>
               </HeaderIconButton>
-            </div>
-          </div>
+          </PageToolbar>
 
           {(() => {
             const active = ({ overview, pests, diseases, traps, fcm } as const)[

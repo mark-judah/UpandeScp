@@ -250,7 +250,8 @@ def _origin_rules(tracks) -> list[str]:
 
 def loader_css() -> str:
     """One cycle: enter (0–18%), the round (18–82%), back out (82–100%)."""
-    cycle_ms = 4600
+    # One full pass (arrow in, the scene, arrow back out) in the 3 s the splash is held for.
+    cycle_ms = 3000
     a, b = 18.0, 82.0
     lines = ["  <style>"]
     lines += _origin_rules(ENTER + LOOP)

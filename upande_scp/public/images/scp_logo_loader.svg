@@ -6,16 +6,16 @@
     .leaf { transform-box: fill-box; transform-origin: 50% 100%; }
     .ring-spot { transform-box: view-box; transform-origin: 309.6px 266.5px; }
     .ring-pest { transform-box: view-box; transform-origin: 306.6px 466.5px; }
-    .arrow { animation: scp-in-0 4600ms cubic-bezier(.3,.7,.2,1) infinite both; }
-    .scene { animation: scp-in-1 4600ms cubic-bezier(.3,.7,.2,1) infinite both; }
-    .leaf { animation: scp-in-2 4600ms cubic-bezier(.3,.7,.2,1) infinite both; }
-    .spots { animation: scp-in-3 4600ms cubic-bezier(.3,.7,.2,1) infinite both; }
-    .scout { animation: scp-in-4 4600ms cubic-bezier(.3,.7,.2,1) infinite both; }
-    .lens { animation: scp-round-0 4600ms cubic-bezier(.3,.7,.2,1) infinite both; }
-    .ring-spot { animation: scp-round-1 4600ms cubic-bezier(.3,.7,.2,1) infinite both; }
-    .ring-pest { animation: scp-round-2 4600ms cubic-bezier(.3,.7,.2,1) infinite both; }
-    .spray { animation: scp-round-3 4600ms cubic-bezier(.3,.7,.2,1) infinite both; }
-    .pest { animation: scp-round-4 4600ms cubic-bezier(.3,.7,.2,1) infinite both; }
+    .arrow { animation: scp-in-0 3000ms cubic-bezier(.3,.7,.2,1) infinite both; }
+    .scene { animation: scp-in-1 3000ms cubic-bezier(.3,.7,.2,1) infinite both; }
+    .leaf { animation: scp-in-2 3000ms cubic-bezier(.3,.7,.2,1) infinite both; }
+    .spots { animation: scp-in-3 3000ms cubic-bezier(.3,.7,.2,1) infinite both; }
+    .scout { animation: scp-in-4 3000ms cubic-bezier(.3,.7,.2,1) infinite both; }
+    .lens { animation: scp-round-0 3000ms cubic-bezier(.3,.7,.2,1) infinite both; }
+    .ring-spot { animation: scp-round-1 3000ms cubic-bezier(.3,.7,.2,1) infinite both; }
+    .ring-pest { animation: scp-round-2 3000ms cubic-bezier(.3,.7,.2,1) infinite both; }
+    .spray { animation: scp-round-3 3000ms cubic-bezier(.3,.7,.2,1) infinite both; }
+    .pest { animation: scp-round-4 3000ms cubic-bezier(.3,.7,.2,1) infinite both; }
     @keyframes scp-in-0 {
       0% { transform: translate(0px, 0px) scale(1); opacity: 1; }
       8.1% { transform: translate(0px, 0px) scale(0); opacity: 0; }

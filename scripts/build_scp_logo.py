@@ -10,8 +10,8 @@
 * ``public/images/scp_logo_loader.svg`` — the splash loader: the same scene as a
   pure-CSS loop (the splash shows it through ``<img>``, where scripts never run).
 
-THE SCENE (SCP's own, not the Webstore's): the arrow steps aside to the top
-right and a leaf unfurls across the disc — one leaf, not a flower, because SCP
+THE SCENE (SCP's own, not the Webstore's): the arrow shrinks into the centre
+of the disc and a leaf unfurls across the disc — one leaf, not a flower, because SCP
 covers roses, avocado and coffee and the leaf is where scouts read both. It
 carries disease lesions (brown with a yellow halo) and a pest. The scouting
 round: a magnifier checks the lesions (an amber ring marks disease), then the
@@ -135,13 +135,15 @@ def body(rest_hidden: bool) -> str:
 # ENTER runs 0 → 1 on hover (and back on leave). LOOP is the scouting round.
 
 ARROW_HOME = "translate(0px, 0px) scale(1)"
-ARROW_ASIDE = "translate(186px, -190px) scale(.3)"
+ARROW_GONE = "translate(0px, 0px) scale(0)"
 
 ENTER = [
+    # The arrow shrinks into the centre of the disc and fades, so the scene has the whole
+    # disc; on leave it grows back out of the centre.
     (".arrow", "348.5px 347px", [
-        (0, {"transform": ARROW_HOME}),
-        (0.55, {"transform": ARROW_ASIDE}),
-        (1, {"transform": ARROW_ASIDE}),
+        (0, {"transform": ARROW_HOME, "opacity": 1}),
+        (0.45, {"transform": ARROW_GONE, "opacity": 0}),
+        (1, {"transform": ARROW_GONE, "opacity": 0}),
     ]),
     (".scene", None, [
         (0, {"opacity": 0}),

@@ -16,7 +16,7 @@
  *
  *  1. React has painted. Uncovering a root React has been handed but not yet
  *     drawn shows the blank frame the cover exists to hide.
- *  2. Three seconds have passed (one full pass of the loader). A cover that flashes off after thirty milliseconds
+ *  2. Four seconds have passed (one full pass of the loader). A cover that flashes off after thirty milliseconds
  *     is a flicker, not a transition — it reads as a glitch rather than as the
  *     app opening.
  *  3. The first data has landed, but only briefly — see the cap below.
@@ -41,9 +41,9 @@
 
 const ID = "scp-splash";
 const FADE_MS = 280;
-/** The floor: one full pass of the loader animation (3 s, like Frappe's own splash, which is
+/** The floor: one full pass of the loader animation (4 s, like Frappe's own splash, which is
  *  never cut short mid-animation). Below this the mark is cut off mid-scene. */
-const MIN_MS = 3000;
+const MIN_MS = 4000;
 /** The ceiling on waiting for data. Past this the skeletons are the better
  *  thing to be looking at, so the cover goes whether or not data has landed. */
 const CAP_MS = 2500;

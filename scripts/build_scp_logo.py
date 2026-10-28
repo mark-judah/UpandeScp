@@ -67,50 +67,69 @@ SPOT_LOCAL = (62.0, -120.0)
 PEST = _on_leaf(*PEST_LOCAL)
 SPOT = _on_leaf(*SPOT_LOCAL)
 
+INK = "#2b2a27"
+LEAF_GREEN = "#5f7a52"
+LESION = "#4a3526"
+ACCENT = "#b4533c"  # the one accent: it marks what the scout has found
+MIST = "#4f7a96"
+
+px, py = PEST_LOCAL
+sx, sy = SPOT_LOCAL
+
+# A solid leaf silhouette (slightly asymmetric, drawn tip) with the veins cut
+# out as negative space; lesions as small solid marks; the pest a solid insect
+# (head, thorax, abdomen, six legs, antennae) with no face.
 LEAF = f"""<g transform="translate({LEAF_AT[0]:g} {LEAF_AT[1]:g}) rotate({LEAF_TILT:g})">
     <g class="leaf">
-      <path d="M0 250 L0 330" stroke="#3f7330" stroke-width="26" stroke-linecap="round"/>
-      <path d="M0 250 C-170 170 -205 -70 0 -300 C205 -70 170 170 0 250 Z"
-            fill="#5c9a44" stroke="#3f7330" stroke-width="10" stroke-linejoin="round"/>
-      <path d="M0 236 L0 -276" stroke="#3f7330" stroke-width="12" stroke-linecap="round"/>
-      <path d="M0 150 L-104 76 M0 150 L104 76 M0 50 L-128 -34 M0 50 L128 -34
-               M0 -60 L-112 -140 M0 -60 L112 -140 M0 -160 L-66 -222 M0 -160 L66 -222"
-            stroke="#3f7330" stroke-width="8" stroke-linecap="round" fill="none"/>
-    <!-- disease: lesions with a chlorotic halo, the way scouts see them -->
-    <g class="spots">
-      <circle cx="{SPOT_LOCAL[0]:g}" cy="{SPOT_LOCAL[1]:g}" r="36" fill="#d8b43a"/>
-      <circle cx="{SPOT_LOCAL[0]:g}" cy="{SPOT_LOCAL[1]:g}" r="22" fill="#6b3f1c"/>
-      <circle cx="{SPOT_LOCAL[0] + 52:g}" cy="{SPOT_LOCAL[1] + 70:g}" r="22" fill="#d8b43a"/>
-      <circle cx="{SPOT_LOCAL[0] + 52:g}" cy="{SPOT_LOCAL[1] + 70:g}" r="13" fill="#6b3f1c"/>
-      <circle cx="{SPOT_LOCAL[0] - 24:g}" cy="{SPOT_LOCAL[1] + 64:g}" r="15" fill="#d8b43a"/>
-      <circle cx="{SPOT_LOCAL[0] - 24:g}" cy="{SPOT_LOCAL[1] + 64:g}" r="8" fill="#6b3f1c"/>
+      <path fill="{LEAF_GREEN}" d="M-7 236 C-6 270 -4 300 -9 334 L9 334 C5 300 6 270 7 236 Z"/>
+      <path fill="{LEAF_GREEN}" d="M0 258 C-172 190 -205 -70 -8 -304 C196 -96 178 182 0 258 Z"/>
+      <g fill="none" stroke="#ffffff" stroke-linecap="round">
+        <path stroke-width="10" d="M0 244 C3 100 -3 -100 -6 -262"/>
+        <g stroke-width="6">
+          <path d="M1 170 Q-52 140 -108 92 M1 170 Q54 140 112 96"/>
+          <path d="M0 80 Q-56 52 -126 -16 M0 80 Q58 50 128 -14"/>
+          <path d="M-2 -20 Q-52 -50 -110 -122 M-2 -20 Q52 -52 106 -118"/>
+          <path d="M-4 -120 Q-34 -150 -66 -204 M-4 -120 Q32 -148 62 -200"/>
+        </g>
+      </g>
+    <g class="spots" fill="{LESION}">
+      <ellipse cx="{sx:g}" cy="{sy:g}" rx="34" ry="29" transform="rotate(-20 {sx:g} {sy:g})"/>
+      <ellipse cx="{sx + 54:g}" cy="{sy + 68:g}" rx="25" ry="21" transform="rotate(30 {sx + 54:g} {sy + 68:g})"/>
+      <circle cx="{sx - 26:g}" cy="{sy + 62:g}" r="17"/>
+      <circle cx="{sx + 34:g}" cy="{sy - 34:g}" r="12"/>
+      <circle cx="{sx + 92:g}" cy="{sy + 18:g}" r="10"/>
     </g>
-    <!-- the pest: an aphid-like body, big enough to read at tile size -->
-    <g class="pest">
-      <ellipse cx="{PEST_LOCAL[0]:g}" cy="{PEST_LOCAL[1]:g}" rx="40" ry="28" fill="#1f2a14"/>
-      <circle cx="{PEST_LOCAL[0] - 42:g}" cy="{PEST_LOCAL[1] - 6:g}" r="17" fill="#1f2a14"/>
-      <path d="M{PEST_LOCAL[0] - 22:g} {PEST_LOCAL[1] + 24:g} l-14 22 M{PEST_LOCAL[0]:g} {PEST_LOCAL[1] + 28:g} l0 26
-               M{PEST_LOCAL[0] + 22:g} {PEST_LOCAL[1] + 24:g} l14 22 M{PEST_LOCAL[0] - 22:g} {PEST_LOCAL[1] - 24:g} l-14 -20
-               M{PEST_LOCAL[0] + 22:g} {PEST_LOCAL[1] - 24:g} l14 -20"
-            stroke="#1f2a14" stroke-width="9" stroke-linecap="round"/>
+    <g class="pest" fill="{INK}">
+      <ellipse cx="{px + 12:g}" cy="{py + 2:g}" rx="38" ry="28"/>
+      <ellipse cx="{px - 22:g}" cy="{py:g}" rx="16" ry="15"/>
+      <circle cx="{px - 40:g}" cy="{py - 2:g}" r="11"/>
+      <path d="M{px + 44:g} {py - 12:g} l22 -8 l-2 10 Z M{px + 44:g} {py + 16:g} l22 8 l-2 -10 Z"/>
+      <path fill="none" stroke="{INK}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"
+            d="M{px - 24:g} {py + 10:g} l-12 24 l-8 8 M{px - 6:g} {py + 22:g} l-4 28 l-2 8 M{px + 14:g} {py + 26:g} l10 24 l4 6
+               M{px - 24:g} {py - 10:g} l-12 -24 l-8 -8 M{px - 6:g} {py - 20:g} l-4 -28 l-2 -8 M{px + 14:g} {py - 24:g} l10 -24 l4 -6
+               M{px - 46:g} {py - 10:g} l-18 -22 M{px - 46:g} {py + 4:g} l-20 -8"/>
     </g>
     </g>
   </g>"""
 
 # The round's marks and tools, in disc coordinates.
 SCOUT = f"""<g class="scout">
-    <circle class="ring-spot" cx="{SPOT[0]:g}" cy="{SPOT[1]:g}" r="84" fill="none" stroke="#d8962e" stroke-width="26"/>
-    <circle class="ring-pest" cx="{PEST[0]:g}" cy="{PEST[1]:g}" r="84" fill="none" stroke="#c43b52" stroke-width="26"/>
-    <g class="spray">
-      <circle cx="{PEST[0] - 70:g}" cy="{PEST[1] - 150:g}" r="24" fill="#2f86c4"/>
-      <circle cx="{PEST[0]:g}" cy="{PEST[1] - 186:g}" r="22" fill="#2f86c4"/>
-      <circle cx="{PEST[0] + 66:g}" cy="{PEST[1] - 140:g}" r="22" fill="#2f86c4"/>
-      <circle cx="{PEST[0] - 30:g}" cy="{PEST[1] - 92:g}" r="18" fill="#2f86c4"/>
-      <circle cx="{PEST[0] + 32:g}" cy="{PEST[1] - 84:g}" r="18" fill="#2f86c4"/>
+    <circle class="ring-spot" cx="{SPOT[0]:g}" cy="{SPOT[1]:g}" r="122" fill="none" stroke="{ACCENT}" stroke-width="18"/>
+    <circle class="ring-pest" cx="{PEST[0]:g}" cy="{PEST[1]:g}" r="122" fill="none" stroke="{ACCENT}" stroke-width="18"/>
+    <g class="spray" fill="{MIST}">
+      <circle cx="{PEST[0] - 78:g}" cy="{PEST[1] - 150:g}" r="14"/>
+      <circle cx="{PEST[0] - 30:g}" cy="{PEST[1] - 168:g}" r="16"/>
+      <circle cx="{PEST[0] + 28:g}" cy="{PEST[1] - 160:g}" r="14"/>
+      <circle cx="{PEST[0] + 76:g}" cy="{PEST[1] - 140:g}" r="15"/>
+      <circle cx="{PEST[0] - 52:g}" cy="{PEST[1] - 100:g}" r="13"/>
+      <circle cx="{PEST[0] + 0:g}" cy="{PEST[1] - 112:g}" r="14"/>
+      <circle cx="{PEST[0] + 52:g}" cy="{PEST[1] - 96:g}" r="13"/>
+      <circle cx="{PEST[0] - 22:g}" cy="{PEST[1] - 64:g}" r="12"/>
+      <circle cx="{PEST[0] + 26:g}" cy="{PEST[1] - 58:g}" r="12"/>
     </g>
-    <g class="lens">
-      <circle cx="0" cy="0" r="84" fill="#ffffff" fill-opacity=".25" stroke="#45433f" stroke-width="26"/>
-      <path d="M62 62 L140 140" stroke="#45433f" stroke-width="36" stroke-linecap="round"/>
+    <g class="lens" fill="{INK}">
+      <path fill-rule="evenodd" d="M-88 0 a88 88 0 1 0 176 0 a88 88 0 1 0 -176 0 Z M-70 0 a70 70 0 1 1 140 0 a70 70 0 1 1 -140 0 Z"/>
+      <path d="M52 66 L72 46 L148 122 Q158 132 148 142 Q138 152 128 142 Z"/>
     </g>
   </g>"""
 
@@ -155,7 +174,6 @@ ENTER = [
     (".leaf", "fill-box|50% 100%", [
         (0, {"transform": "scale(0)"}),
         (0.15, {"transform": "scale(0)"}),
-        (0.7, {"transform": "scale(1.04)"}),
         (0.8, {"transform": "scale(1)"}),
         (1, {"transform": "scale(1)"}),
     ]),
@@ -172,18 +190,18 @@ ENTER = [
     ]),
 ]
 
-LENS_AWAY = "translate(150px, 610px)"
+LENS_AWAY = "translate(30px, 680px)"
 LENS_ON_SPOT = f"translate({SPOT[0]:g}px, {SPOT[1]:g}px)"
 LENS_ON_PEST = f"translate({PEST[0]:g}px, {PEST[1]:g}px)"
 
 
 def _ring(at, lo, hi):
     return [
-        (0, {"transform": "scale(.5)", "opacity": 0}),
-        (lo, {"transform": "scale(.5)", "opacity": 0}),
-        (lo + 0.03, {"transform": "scale(.75)", "opacity": 1}),
-        (hi, {"transform": "scale(1.25)", "opacity": 0}),
-        (1, {"transform": "scale(1.25)", "opacity": 0}),
+        (0, {"transform": "scale(.8)", "opacity": 0}),
+        (lo, {"transform": "scale(.8)", "opacity": 0}),
+        (lo + 0.03, {"transform": "scale(.9)", "opacity": 1}),
+        (hi, {"transform": "scale(1.1)", "opacity": 0}),
+        (1, {"transform": "scale(1.1)", "opacity": 0}),
     ]
 
 
@@ -217,9 +235,9 @@ LOOP = [
     ]),
 ]
 
-ENTER_MS = 1100
-LOOP_MS = 2800
-EASE = "cubic-bezier(.3,.7,.2,1)"
+ENTER_MS = 1650
+LOOP_MS = 3900  # slowed ~1.4x: calm, not busy
+EASE = "cubic-bezier(.4,0,.2,1)"
 
 
 # ── emit ───────────────────────────────────────────────────────────────────
@@ -250,8 +268,8 @@ def _origin_rules(tracks) -> list[str]:
 
 def loader_css() -> str:
     """One cycle: enter (0–18%), the round (18–82%), back out (82–100%)."""
-    # One full pass (arrow in, the scene, arrow back out) in the 3 s the splash is held for.
-    cycle_ms = 3000
+    # One full pass (arrow in, the scene, arrow back out) in the 4 s the splash is held for.
+    cycle_ms = 4000
     a, b = 18.0, 82.0
     lines = ["  <style>"]
     lines += _origin_rules(ENTER + LOOP)

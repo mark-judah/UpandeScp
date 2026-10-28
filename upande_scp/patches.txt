@@ -75,3 +75,5 @@ upande_scp.patches.v1_0.link_tank_mix_issues_to_plan
 # The shipped default of 5 minutes held real (seconds-long) offline sprays; reset to 0 = off
 # where it is still 5.
 upande_scp.patches.v1_0.min_spray_minutes_default_off
+# The desk grid opened SCP in a new tab (External icon); route it through the SCP sidebar.
+upande_scp.patches.v1_0.desk_icon_same_tab

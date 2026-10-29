@@ -369,6 +369,8 @@ const AVOCADO_NAV: NavSection[] = [
       // The heat map page carries the block prescription panel, so for avocado it is
       // the jobsheet — observe and plan without leaving it.
       { kind: "view", view: "heatmaps", label: "Jobsheet", icon: ClipboardList },
+      // Several blocks at once, each planned separately, sent to approval together.
+      { kind: "view", view: "open-field-plan", label: "Spray Plan", icon: Droplets },
       REENTRY_ITEM,
     ],
   },

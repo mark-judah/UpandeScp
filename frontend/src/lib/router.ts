@@ -30,6 +30,7 @@ export type View =
   | "settings"
   | "spray-plan-access"
   | "application-plan"
+  | "open-field-plan"
   | "chemical-dashboard"
   | "spray-plan-transfers"
   | "labels"
@@ -68,6 +69,7 @@ const KNOWN_VIEWS: ReadonlySet<View> = new Set<View>([
   "settings",
   "spray-plan-access",
   "application-plan",
+  "open-field-plan",
   "chemical-dashboard",
   "spray-plan-transfers",
   "labels",

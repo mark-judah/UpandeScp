@@ -592,7 +592,33 @@ def _block(rows) -> dict:
 		},
 		"by_basis": by_basis,
 		"by_product": by_product,
+		"matrix": _matrix(rows),
 	}
+
+
+def _matrix(rows) -> dict:
+	"""Greenhouse x pest/disease chemical spend, each cell split into recorded and derived."""
+	cells: dict = {}
+	for r in rows:
+		if r["is_nonpest"] or r["target"] == UNATTRIBUTED or not r["attributed"]:
+			continue
+		key = (r.get("farm") or "", r.get("greenhouse") or "-")
+		c = cells.setdefault(key, {}).setdefault(r["target"], {"recorded": 0.0, "derived": 0.0})
+		c["recorded" if r["credibility"] == "recorded" else "derived"] += r["attributed"]
+	targets = sorted({t for row in cells.values() for t in row},
+		key=lambda t: -sum(row.get(t, {}).get("recorded", 0) + row.get(t, {}).get("derived", 0) for row in cells.values()))
+	out_rows, tot = [], {t: {"recorded": 0.0, "derived": 0.0} for t in targets}
+	for (farm, gh), row in sorted(cells.items()):
+		rec = sum(v["recorded"] for v in row.values()); der = sum(v["derived"] for v in row.values())
+		for t, v in row.items():
+			tot[t]["recorded"] += v["recorded"]; tot[t]["derived"] += v["derived"]
+		out_rows.append({"farm": farm, "greenhouse": gh,
+			"cells": {t: {"recorded": _r2(v["recorded"]), "derived": _r2(v["derived"])} for t, v in row.items()},
+			"recorded": _r2(rec), "derived": _r2(der), "total": _r2(rec + der)})
+	return {"targets": targets, "rows": out_rows,
+		"totals": {t: {"recorded": _r2(v["recorded"]), "derived": _r2(v["derived"])} for t, v in tot.items()},
+		"recorded": _r2(sum(r["recorded"] for r in out_rows)), "derived": _r2(sum(r["derived"] for r in out_rows)),
+		"total": _r2(sum(r["total"] for r in out_rows))}
 
 
 def _places(rows, direct: bool) -> list:

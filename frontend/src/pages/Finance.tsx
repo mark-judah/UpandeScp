@@ -35,6 +35,8 @@ import {
   type PathKey,
   type PestAttributionReport,
   type SuggestedRegistration,
+  type FinanceMatrix,
+  type MatrixCell,
 } from "@/lib/finance-api";
 import { Button } from "@/components/ui/button";
 import {
@@ -115,6 +117,79 @@ function EstTag({ accuracy, hint }: { accuracy: number | null; hint?: string }) 
             : "Derived, not declared on the plan. This basis has not been backtested.")}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+const REC = "text-emerald-700";
+const DER = "text-amber-600";
+
+/** Greenhouse x pest/disease chemical spend. Recorded (actual) and derived amounts each
+ *  keep their own colour; the Total column and Total row add both. The table grows with
+ *  the page (no inner scroll); only wide pest lists scroll sideways, with the place pinned. */
+export function SpendMatrix({ matrix, placeLabel }: { matrix: FinanceMatrix; placeLabel: string }) {
+  const amount = (c: MatrixCell | undefined, strong = false) => {
+    if (!c || (!c.recorded && !c.derived)) return <span className="text-muted-foreground/40">-</span>;
+    const w = strong ? "font-semibold" : "";
+    if (c.recorded && c.derived)
+      return (
+        <div className="flex flex-col items-end leading-tight">
+          <span className={`${REC} ${w}`}>{money(c.recorded)}</span>
+          <span className={`${DER} ${w}`}>{money(c.derived)}</span>
+        </div>
+      );
+    return <span className={`${c.recorded ? REC : DER} ${w}`}>{money(c.recorded || c.derived)}</span>;
+  };
+  const pin = "sticky left-0 z-10 bg-card after:absolute after:inset-y-0 after:right-0 after:w-px after:bg-border";
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Chemical spend by {placeLabel.toLowerCase()} and pest</CardTitle>
+        <CardDescription className="flex flex-wrap items-center gap-4">
+          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-600" />Actual (recorded on the plan)</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500" />Derived (estimated)</span>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm" data-testid="spend-matrix">
+            <thead className="border-b text-[0.7rem] uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className={`${pin} px-3 py-2 text-left`}>{placeLabel}</th>
+                {matrix.targets.map((t) => (
+                  <th key={t} className="whitespace-nowrap px-3 py-2 text-right">{t}</th>
+                ))}
+                <th className="px-3 py-2 text-right font-semibold text-foreground">Total</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {matrix.rows.map((r) => (
+                <tr key={`${r.farm}-${r.greenhouse}`} className="border-b hover:bg-muted/40">
+                  <td className={`${pin} whitespace-nowrap px-3 py-2 font-medium`}>
+                    {r.greenhouse}
+                    {r.farm ? <span className="ml-1.5 text-[0.7rem] font-normal text-muted-foreground">{r.farm}</span> : null}
+                  </td>
+                  {matrix.targets.map((t) => (
+                    <td key={t} className="px-3 py-2 text-right">{amount(r.cells[t])}</td>
+                  ))}
+                  <td className="bg-muted/30 px-3 py-2 text-right">{amount({ recorded: r.recorded, derived: r.derived }, true)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="tabular-nums">
+              <tr className="border-t-2 bg-muted/30">
+                <td className={`${pin} bg-muted px-3 py-2 font-semibold`}>Total</td>
+                {matrix.targets.map((t) => (
+                  <td key={t} className="px-3 py-2 text-right">{amount(matrix.totals[t], true)}</td>
+                ))}
+                <td className="px-3 py-2 text-right">
+                  <div className="font-bold">{money(matrix.total)}</div>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -436,6 +511,9 @@ function PathSection({
         </Card>
       )}
 
+      {block.matrix && block.matrix.rows.length > 0 ? (
+        <SpendMatrix matrix={block.matrix} placeLabel={isDirect ? "Where" : "Greenhouse"} />
+      ) : null}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">By greenhouse</CardTitle>

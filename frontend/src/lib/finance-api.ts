@@ -293,6 +293,8 @@ export interface PathBlock {
   by_basis: PestBasisRow[];
   by_product: PathProduct[];
   by_greenhouse: PathPlace[];
+  /** Greenhouse x pest/disease chemical spend, recorded and derived kept apart. */
+  matrix?: FinanceMatrix;
   plans_completed?: number;
   in_progress?: { plans: number; value: number };
   by_source?: { from_material_request: number; no_material_request: number; returns?: number };
@@ -383,4 +385,18 @@ export function credibilityLabel(
     label: acc != null ? `Derived \u2014 est. ${Math.round(acc * 100)}%` : "Derived",
     accuracy: acc,
   };
+}
+
+export interface MatrixCell {
+  recorded: number;
+  derived: number;
+}
+
+export interface FinanceMatrix {
+  targets: string[];
+  rows: { farm: string; greenhouse: string; cells: Record<string, MatrixCell>; recorded: number; derived: number; total: number }[];
+  totals: Record<string, MatrixCell>;
+  recorded: number;
+  derived: number;
+  total: number;
 }
